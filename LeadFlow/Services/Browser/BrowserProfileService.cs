@@ -22,4 +22,14 @@ public sealed class BrowserProfileService : IBrowserProfileService
             Exists = Directory.Exists(path)
         };
     }
+
+    public void DeleteProfile(string profilePath)
+    {
+        if (string.IsNullOrWhiteSpace(profilePath) || !Directory.Exists(profilePath))
+        {
+            return;
+        }
+
+        Directory.Delete(profilePath, recursive: true);
+    }
 }

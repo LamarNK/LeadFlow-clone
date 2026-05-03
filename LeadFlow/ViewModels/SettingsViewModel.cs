@@ -21,6 +21,8 @@ public partial class SettingsViewModel(
     private const string FixedAvitoProfileUrl = "https://www.avito.ru/profile";
     private AppSettings _settings = new();
     private string _savedAccountsSnapshot = string.Empty;
+    private readonly HashSet<string> _pendingProfileDeletions = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _committedProfileDeletions = new(StringComparer.OrdinalIgnoreCase);
 
     public ObservableCollection<AvitoAccount> Accounts { get; } = [];
 
@@ -31,6 +33,7 @@ public partial class SettingsViewModel(
     public async Task LoadAsync()
     {
         _settings = await settingsService.LoadAsync(CancellationToken.None);
+        _pendingProfileDeletions.Clear();
         Accounts.Clear();
         foreach (var account in _settings.Avito.Accounts)
         {
@@ -65,6 +68,11 @@ public partial class SettingsViewModel(
         if (SelectedAccount is null)
         {
             return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(SelectedAccount.BrowserProfilePath))
+        {
+            _pendingProfileDeletions.Add(SelectedAccount.BrowserProfilePath);
         }
 
         Accounts.Remove(SelectedAccount);
@@ -112,6 +120,12 @@ public partial class SettingsViewModel(
         }
 
         await settingsService.SaveAsync(_settings, CancellationToken.None);
+        foreach (var profilePath in _pendingProfileDeletions)
+        {
+            _committedProfileDeletions.Add(profilePath);
+        }
+
+        _pendingProfileDeletions.Clear();
         UpdateSavedSnapshot();
     }
 
@@ -160,6 +174,22 @@ public partial class SettingsViewModel(
         : SelectedAccount!.LastErrorMessage;
 
     public bool HasUnsavedChanges() => BuildAccountsSnapshot() != _savedAccountsSnapshot;
+
+    public void DeleteCommittedProfiles()
+    {
+        foreach (var profilePath in _committedProfileDeletions.ToArray())
+        {
+            try
+            {
+                profileService.DeleteProfile(profilePath);
+            }
+            catch
+            {
+            }
+        }
+
+        _committedProfileDeletions.Clear();
+    }
 
     partial void OnSelectedAccountChanged(AvitoAccount? value)
     {

@@ -12,6 +12,7 @@ public partial class SettingsWindow : Window
     {
         InitializeComponent();
         Closing += OnClosingAsync;
+        Closed += OnClosed;
     }
 
     private async void OnClosingAsync(object? sender, CancelEventArgs e)
@@ -42,5 +43,13 @@ public partial class SettingsWindow : Window
 
         _allowClose = true;
         Close();
+    }
+
+    private void OnClosed(object? sender, EventArgs e)
+    {
+        if (DataContext is SettingsViewModel viewModel)
+        {
+            viewModel.DeleteCommittedProfiles();
+        }
     }
 }
