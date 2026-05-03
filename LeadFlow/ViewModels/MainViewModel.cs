@@ -75,13 +75,28 @@ public partial class MainViewModel : ObservableObject
         _ => "Ожидание"
     };
 
-    partial void OnSystemStatusChanged(MonitoringStatus value) => OnPropertyChanged(nameof(SystemStatusText));
+    public bool IsMonitoringRunning => SystemStatus == MonitoringStatus.Running;
+
+    public string MonitoringActionText => IsMonitoringRunning ? "Остановить" : "Запустить мониторинг";
+
+    partial void OnSystemStatusChanged(MonitoringStatus value)
+    {
+        OnPropertyChanged(nameof(SystemStatusText));
+        OnPropertyChanged(nameof(IsMonitoringRunning));
+        OnPropertyChanged(nameof(MonitoringActionText));
+    }
 
     [RelayCommand]
     public Task StartMonitoringAsync() => _monitoringService.StartAsync(CancellationToken.None);
 
     [RelayCommand]
     public Task StopMonitoringAsync() => _monitoringService.StopAsync();
+
+    [RelayCommand]
+    public Task ToggleMonitoringAsync() =>
+        IsMonitoringRunning
+            ? _monitoringService.StopAsync()
+            : _monitoringService.StartAsync(CancellationToken.None);
 
     [RelayCommand]
     public async Task OpenSettingsAsync(Window? owner)

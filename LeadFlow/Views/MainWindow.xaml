@@ -70,8 +70,18 @@
                             </Button>
                         </UniformGrid>
                         <WrapPanel HorizontalAlignment="Right">
-                            <Button Content="Запустить мониторинг" Command="{Binding StartMonitoringCommand}" />
-                            <Button Content="Остановить" Background="#E2E8F0" Foreground="{StaticResource TextBrush}" Command="{Binding StopMonitoringCommand}" />
+                            <Button Content="{Binding MonitoringActionText}" Command="{Binding ToggleMonitoringCommand}">
+                                <Button.Style>
+                                    <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsMonitoringRunning}" Value="True">
+                                                <Setter Property="Background" Value="#E2E8F0" />
+                                                <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
                         </WrapPanel>
                     </StackPanel>
                 </Grid>
