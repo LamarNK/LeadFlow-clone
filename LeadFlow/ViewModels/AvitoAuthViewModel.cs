@@ -110,6 +110,12 @@ public partial class AvitoAuthViewModel(
 
         if (result.IsAuthorized)
         {
+            if (!string.IsNullOrWhiteSpace(result.ProfileName))
+            {
+                _account.DisplayName = result.ProfileName.Trim();
+                AccountName = _account.DisplayName;
+            }
+
             _account.Status = AvitoAccountStatus.Authorized;
             await PersistAccountAsync(settings, cancellationToken);
             _authorizationPersisted = true;

@@ -1,0 +1,16 @@
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect x="8" y="8" width="112" height="112" rx="28" fill="#2563EB"/>
+
+  <!-- линии потока -->
+  <path d="M52 40H62C70.837 40 78 47.163 78 56V58" stroke="white" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M52 88H62C70.837 88 78 80.837 78 72V70" stroke="white" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M86 64H102" stroke="white" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- стрелка -->
+  <path d="M96 56L104 64L96 72" stroke="white" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- точки / лиды -->
+  <circle cx="42" cy="40" r="8" fill="white"/>
+  <circle cx="42" cy="88" r="8" fill="white"/>
+  <circle cx="78" cy="64" r="8" fill="white"/>
+</svg>

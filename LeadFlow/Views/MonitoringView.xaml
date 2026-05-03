@@ -8,19 +8,21 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <Grid>
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-            <StackPanel>
-                <TextBlock Text="Мониторинг" FontSize="28" FontWeight="SemiBold" />
-                <TextBlock Text="Текущие отклики и их состояние в обработке." Style="{StaticResource SubtleTextStyle}" Margin="0,8,0,0" />
-            </StackPanel>
-            <Button Grid.Column="1" Content="Обновить" Command="{Binding RefreshCommand}" VerticalAlignment="Top" />
-        </Grid>
+        <Border Style="{StaticResource CardBorderStyle}" Margin="0,0,0,18">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                    <TextBlock Text="Мониторинг" Style="{StaticResource SectionTitleStyle}" />
+                    <TextBlock Text="Текущие отклики и их состояние в обработке." Style="{StaticResource SubtleTextStyle}" Margin="0,8,0,0" />
+                </StackPanel>
+                <Button Grid.Column="1" Content="Обновить" Command="{Binding RefreshCommand}" VerticalAlignment="Top" />
+            </Grid>
+        </Border>
 
-        <UniformGrid Grid.Row="1" Rows="1" Columns="4" Margin="0,20,0,20">
+        <UniformGrid Grid.Row="1" Rows="1" Columns="4" Margin="0,0,0,20">
             <Border Style="{StaticResource CardBorderStyle}" Margin="0,0,12,0">
                 <StackPanel>
                     <TextBlock Text="Всего" Style="{StaticResource InfoLabelStyle}" />
@@ -60,19 +62,42 @@
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
 
-                    <Border Margin="0,0,0,16"
-                            Padding="10"
+                    <Border Margin="0,0,0,18"
+                            Padding="12"
                             Background="#F8FAFC"
                             BorderBrush="{StaticResource BorderBrush}"
                             BorderThickness="1"
                             CornerRadius="14"
                             HorizontalAlignment="Left">
-                        <WrapPanel VerticalAlignment="Center">
-                            <TextBox Width="260"
-                                     Margin="0"
-                                     Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" />
-                            <ComboBox Width="150"
-                                      Margin="10,0,0,0"
+                        <WrapPanel VerticalAlignment="Center" ItemHeight="42">
+                            <Grid Width="280">
+                                <TextBox x:Name="SearchTextBox"
+                                         Style="{StaticResource SearchTextBoxStyle}"
+                                         Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" />
+                                <TextBlock Margin="14,0,0,0"
+                                           VerticalAlignment="Center"
+                                           IsHitTestVisible="False"
+                                           Foreground="{StaticResource SecondaryTextBrush}"
+                                           Text="Поиск по имени, вакансии или телефону">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                            <Style.Triggers>
+                                                <MultiDataTrigger>
+                                                    <MultiDataTrigger.Conditions>
+                                                        <Condition Binding="{Binding Text, ElementName=SearchTextBox}" Value="" />
+                                                        <Condition Binding="{Binding IsKeyboardFocusWithin, ElementName=SearchTextBox}" Value="False" />
+                                                    </MultiDataTrigger.Conditions>
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                </MultiDataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                            </Grid>
+                            <ComboBox Width="170"
+                                      Margin="12,0,0,0"
+                                      Style="{StaticResource FilterComboBoxStyle}"
                                       SelectedValue="{Binding SelectedStatusFilter}"
                                       SelectedValuePath="Content">
                                 <ComboBoxItem Content="Все" IsSelected="True" />

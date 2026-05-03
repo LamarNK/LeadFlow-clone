@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.IO;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Data;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -19,6 +20,7 @@ public partial class SettingsViewModel(
 {
     private const string FixedAvitoProfileUrl = "https://www.avito.ru/profile";
     private AppSettings _settings = new();
+    private string _savedAccountsSnapshot = string.Empty;
 
     public ObservableCollection<AvitoAccount> Accounts { get; } = [];
 
@@ -37,6 +39,7 @@ public partial class SettingsViewModel(
         }
 
         SelectedAccount = Accounts.FirstOrDefault();
+        UpdateSavedSnapshot();
     }
 
     [RelayCommand]
@@ -83,6 +86,17 @@ public partial class SettingsViewModel(
     [RelayCommand]
     public async Task SaveAsync()
     {
+        var persistedAccounts = await repository.GetAccountsAsync(CancellationToken.None);
+        var currentAccountIds = Accounts.Select(account => account.Id).ToHashSet();
+
+        foreach (var persistedAccount in persistedAccounts)
+        {
+            if (!currentAccountIds.Contains(persistedAccount.Id))
+            {
+                await repository.DeleteAccountAsync(persistedAccount.Id, CancellationToken.None);
+            }
+        }
+
         _settings.Avito.Accounts.Clear();
         foreach (var account in Accounts)
         {
@@ -98,6 +112,7 @@ public partial class SettingsViewModel(
         }
 
         await settingsService.SaveAsync(_settings, CancellationToken.None);
+        UpdateSavedSnapshot();
     }
 
     [RelayCommand]
@@ -144,6 +159,8 @@ public partial class SettingsViewModel(
         ? "Ошибок не зафиксировано"
         : SelectedAccount!.LastErrorMessage;
 
+    public bool HasUnsavedChanges() => BuildAccountsSnapshot() != _savedAccountsSnapshot;
+
     partial void OnSelectedAccountChanged(AvitoAccount? value)
     {
         CollectionViewSource.GetDefaultView(Accounts)?.Refresh();
@@ -163,5 +180,30 @@ public partial class SettingsViewModel(
     {
         CollectionViewSource.GetDefaultView(Accounts)?.Refresh();
         OnSelectedAccountChanged(SelectedAccount);
+    }
+
+    private void UpdateSavedSnapshot()
+    {
+        _savedAccountsSnapshot = BuildAccountsSnapshot();
+    }
+
+    private string BuildAccountsSnapshot()
+    {
+        var snapshot = Accounts
+            .OrderBy(account => account.Id)
+            .Select(account => new
+            {
+                account.Id,
+                account.DisplayName,
+                AvitoResponsesUrl = FixedAvitoProfileUrl,
+                account.BrowserProfilePath,
+                account.IsEnabled,
+                Status = account.Status.ToString(),
+                account.LastAuthCheckAt,
+                account.LastMonitoringAt,
+                account.LastErrorMessage
+            });
+
+        return JsonSerializer.Serialize(snapshot);
     }
 }

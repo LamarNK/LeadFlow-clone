@@ -52,6 +52,18 @@ public sealed class AvitoPageReaderService(IWebPageAutomationService automationS
                     return /мои объявления|избранн|сообщени|кошел[её]к|заказы|настройки профиля|мой профиль/i.test(element.textContent ?? "");
                 });
 
+                const profileNameCandidates = [
+                    document.querySelector("[data-marker='profile-sidebar-head/avatar']")?.getAttribute("title"),
+                    document.querySelector("[data-marker='profile-sidebar-head/avatar']")?.parentElement?.parentElement?.querySelector("span div")?.textContent,
+                    document.querySelector("[data-marker='profile-sidebar-head/avatar']")?.parentElement?.parentElement?.querySelector("span")?.textContent,
+                    document.querySelector("meta[property='profile:first_name']")?.getAttribute("content"),
+                    document.querySelector("h1")?.textContent
+                ];
+
+                const profileName = profileNameCandidates
+                    .map((value) => value?.trim() ?? "")
+                    .find((value) => value.length > 0 && !/профиль|настройки|редактировать/i.test(value)) ?? "";
+
                 return {
                     url: window.location.href,
                     readyState: document.readyState,
@@ -59,7 +71,8 @@ public sealed class AvitoPageReaderService(IWebPageAutomationService automationS
                     hasCaptcha,
                     hasLogin,
                     hasProfileMarkers,
-                    isProfileUrl: /^https:\/\/www\.avito\.ru\/profile(?:[\/?#]|$)/i.test(window.location.href)
+                    isProfileUrl: /^https:\/\/www\.avito\.ru\/profile(?:[\/?#]|$)/i.test(window.location.href),
+                    profileName
                 };
             })();
             """,
@@ -85,6 +98,7 @@ public sealed class AvitoPageReaderService(IWebPageAutomationService automationS
             var hasLogin = root.TryGetProperty("hasLogin", out var loginProp) && loginProp.GetBoolean();
             var hasProfileMarkers = root.TryGetProperty("hasProfileMarkers", out var profileMarkersProp) && profileMarkersProp.GetBoolean();
             var isProfileUrl = root.TryGetProperty("isProfileUrl", out var profileUrlProp) && profileUrlProp.GetBoolean();
+            var profileName = root.TryGetProperty("profileName", out var profileNameProp) ? profileNameProp.GetString() ?? string.Empty : string.Empty;
 
             if (hasCaptcha)
             {
@@ -118,6 +132,7 @@ public sealed class AvitoPageReaderService(IWebPageAutomationService automationS
             {
                 CurrentUrl = currentUrl,
                 IsAuthorized = isProfileUrl && hasProfileMarkers,
+                ProfileName = profileName,
                 StatusMessage = isProfileUrl && hasProfileMarkers
                     ? "Авторизован"
                     : "Не удалось подтвердить авторизацию"
