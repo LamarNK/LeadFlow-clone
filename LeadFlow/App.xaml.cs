@@ -16,12 +16,53 @@ namespace LeadFlow;
 public partial class App : Application
 {
     private IHost? _host;
+    private Mutex? _singleInstanceMutex;
+    private EventWaitHandle? _activationEvent;
+    private RegisteredWaitHandle? _activationRegistration;
+
+    private const string SingleInstanceMutexName = @"Local\LeadFlow.SingleInstance";
+    private const string SingleInstanceActivationEventName = @"Local\LeadFlow.SingleInstance.Activate";
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        var createdNew = false;
+
+        try
+        {
+            _singleInstanceMutex = new Mutex(true, SingleInstanceMutexName, out createdNew);
+            _activationEvent = new EventWaitHandle(
+                initialState: false,
+                mode: EventResetMode.AutoReset,
+                name: SingleInstanceActivationEventName);
+        }
+        catch
+        {
+            _singleInstanceMutex?.Dispose();
+            _singleInstanceMutex = null;
+            _activationEvent?.Dispose();
+            _activationEvent = null;
+        }
+
+        if (_singleInstanceMutex is not null && !createdNew)
+        {
+            _activationEvent?.Set();
+            Shutdown();
+            return;
+        }
+
         Environment.SetEnvironmentVariable("LOG_SERVICE_NAME", "LeadFlow");
         base.OnStartup(e);
         LogStartup("OnStartup entered");
+
+        if (_activationEvent is not null)
+        {
+            _activationRegistration = ThreadPool.RegisterWaitForSingleObject(
+                _activationEvent,
+                static (state, _) => ((App)state!).ActivateExistingInstance(),
+                this,
+                Timeout.Infinite,
+                executeOnlyOnce: false);
+        }
 
         var settingsService = new JsonSettingsService();
         var settings = settingsService.LoadAsync(CancellationToken.None).GetAwaiter().GetResult();
@@ -117,12 +158,44 @@ public partial class App : Application
 
     protected override async void OnExit(ExitEventArgs e)
     {
+        _activationRegistration?.Unregister(null);
+        _activationEvent?.Dispose();
+        _singleInstanceMutex?.ReleaseMutex();
+        _singleInstanceMutex?.Dispose();
+
         if (_host is not null)
         {
             _host.Dispose();
         }
 
         base.OnExit(e);
+    }
+
+    private void ActivateExistingInstance()
+    {
+        Dispatcher.BeginInvoke(() =>
+        {
+            var window = MainWindow;
+            if (window is null)
+            {
+                return;
+            }
+
+            if (!window.IsVisible)
+            {
+                window.Show();
+            }
+
+            if (window.WindowState == WindowState.Minimized)
+            {
+                window.WindowState = WindowState.Normal;
+            }
+
+            window.Activate();
+            window.Topmost = true;
+            window.Topmost = false;
+            window.Focus();
+        });
     }
 
     private static void LogStartup(string message)

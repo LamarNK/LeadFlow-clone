@@ -8,6 +8,8 @@ namespace LeadFlow.Services;
 
 public sealed class WindowService(IServiceProvider serviceProvider) : IWindowService
 {
+    private readonly Dictionary<Type, Window> _openWindows = new();
+
     public Task ShowSettingsAsync(Window owner, CancellationToken cancellationToken)
     {
         var window = ActivatorUtilities.CreateInstance<SettingsWindow>(serviceProvider);
@@ -32,46 +34,61 @@ public sealed class WindowService(IServiceProvider serviceProvider) : IWindowSer
 
     public Task ShowMonitoringAsync(Window owner, CancellationToken cancellationToken)
     {
-        var window = ActivatorUtilities.CreateInstance<MonitoringWindow>(serviceProvider);
-        window.Owner = owner;
-        window.Show();
-        window.Activate();
+        ShowOrActivateWindow<MonitoringWindow>(owner);
         return Task.CompletedTask;
     }
 
     public Task ShowCandidateDetailsAsync(Window owner, CancellationToken cancellationToken)
     {
-        var window = ActivatorUtilities.CreateInstance<CandidateDetailsWindow>(serviceProvider);
-        window.Owner = owner;
-        window.Show();
-        window.Activate();
+        ShowOrActivateWindow<CandidateDetailsWindow>(owner);
         return Task.CompletedTask;
     }
 
     public Task ShowDuplicateCheckAsync(Window owner, CancellationToken cancellationToken)
     {
-        var window = ActivatorUtilities.CreateInstance<DuplicateCheckWindow>(serviceProvider);
-        window.Owner = owner;
-        window.Show();
-        window.Activate();
+        ShowOrActivateWindow<DuplicateCheckWindow>(owner);
         return Task.CompletedTask;
     }
 
     public Task ShowBitrixIntegrationAsync(Window owner, CancellationToken cancellationToken)
     {
-        var window = ActivatorUtilities.CreateInstance<BitrixIntegrationWindow>(serviceProvider);
-        window.Owner = owner;
-        window.Show();
-        window.Activate();
+        ShowOrActivateWindow<BitrixIntegrationWindow>(owner);
         return Task.CompletedTask;
     }
 
     public Task ShowJournalAsync(Window owner, CancellationToken cancellationToken)
     {
-        var window = ActivatorUtilities.CreateInstance<JournalWindow>(serviceProvider);
+        ShowOrActivateWindow<JournalWindow>(owner);
+        return Task.CompletedTask;
+    }
+
+    private void ShowOrActivateWindow<TWindow>(Window owner)
+        where TWindow : Window
+    {
+        if (_openWindows.TryGetValue(typeof(TWindow), out var existingWindow))
+        {
+            ActivateWindow(existingWindow);
+            return;
+        }
+
+        var window = ActivatorUtilities.CreateInstance<TWindow>(serviceProvider);
         window.Owner = owner;
+        window.Closed += (_, _) => _openWindows.Remove(typeof(TWindow));
+        _openWindows[typeof(TWindow)] = window;
+
+        window.Show();
+        ActivateWindow(window);
+    }
+
+    private static void ActivateWindow(Window window)
+    {
+        if (window.WindowState == WindowState.Minimized)
+        {
+            window.WindowState = WindowState.Normal;
+        }
+
         window.Show();
         window.Activate();
-        return Task.CompletedTask;
+        window.Focus();
     }
 }

@@ -29,18 +29,45 @@
 
                     <StackPanel Grid.Column="2" HorizontalAlignment="Right">
                         <UniformGrid Rows="1" Columns="3" Margin="0,0,0,10">
-                            <StackPanel Margin="6">
-                                <Button Content="1" Style="{StaticResource RoundNavButtonStyle}" Command="{Binding OpenMonitoringCommand}" CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}" ToolTip="Мониторинг откликов" />
-                                <TextBlock Text="Мониторинг" Style="{StaticResource SubtleTextStyle}" TextAlignment="Center" Margin="0,6,0,0"/>
-                            </StackPanel>
-                            <StackPanel Margin="6">
-                                <Button Content="2" Style="{StaticResource RoundNavButtonStyle}" Command="{Binding OpenJournalCommand}" CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}" ToolTip="Журнал и база" />
-                                <TextBlock Text="Журнал" Style="{StaticResource SubtleTextStyle}" TextAlignment="Center" Margin="0,6,0,0"/>
-                            </StackPanel>
-                            <StackPanel Margin="6">
-                                <Button Content="3" Style="{StaticResource RoundNavButtonStyle}" Command="{Binding OpenSettingsCommand}" CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}" ToolTip="Настройки" />
-                                <TextBlock Text="Настройки" Style="{StaticResource SubtleTextStyle}" TextAlignment="Center" Margin="0,6,0,0"/>
-                            </StackPanel>
+                            <Button Style="{StaticResource NavItemButtonStyle}"
+                                    Command="{Binding OpenMonitoringCommand}"
+                                    CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}"
+                                    ToolTip="Открыть мониторинг откликов">
+                                <StackPanel>
+                                    <Button Content="1" Style="{StaticResource RoundNavButtonStyle}" IsHitTestVisible="False" />
+                                    <TextBlock Text="Мониторинг"
+                                               Foreground="{StaticResource PrimaryBrush}"
+                                               FontWeight="SemiBold"
+                                               TextAlignment="Center"
+                                               Margin="0,6,0,0"/>
+                                </StackPanel>
+                            </Button>
+                            <Button Style="{StaticResource NavItemButtonStyle}"
+                                    Command="{Binding OpenJournalCommand}"
+                                    CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}"
+                                    ToolTip="Открыть журнал и базу">
+                                <StackPanel>
+                                    <Button Content="2" Style="{StaticResource RoundNavButtonStyle}" IsHitTestVisible="False" />
+                                    <TextBlock Text="Журнал"
+                                               Foreground="{StaticResource PrimaryBrush}"
+                                               FontWeight="SemiBold"
+                                               TextAlignment="Center"
+                                               Margin="0,6,0,0"/>
+                                </StackPanel>
+                            </Button>
+                            <Button Style="{StaticResource NavItemButtonStyle}"
+                                    Command="{Binding OpenSettingsCommand}"
+                                    CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}"
+                                    ToolTip="Открыть настройки">
+                                <StackPanel>
+                                    <Button Content="3" Style="{StaticResource RoundNavButtonStyle}" IsHitTestVisible="False" />
+                                    <TextBlock Text="Настройки"
+                                               Foreground="{StaticResource PrimaryBrush}"
+                                               FontWeight="SemiBold"
+                                               TextAlignment="Center"
+                                               Margin="0,6,0,0"/>
+                                </StackPanel>
+                            </Button>
                         </UniformGrid>
                         <WrapPanel HorizontalAlignment="Right">
                             <Button Content="Запустить мониторинг" Command="{Binding StartMonitoringCommand}" />

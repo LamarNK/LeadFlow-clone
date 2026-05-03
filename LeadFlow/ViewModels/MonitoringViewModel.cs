@@ -25,6 +25,11 @@ public partial class MonitoringViewModel : ObservableObject
     [ObservableProperty]
     private string selectedStatusFilter = "Все";
 
+    public int TotalResponsesCount => Responses.Count;
+    public int NewResponsesCount => Responses.Count(x => x.Status == ResponseStatus.New);
+    public int SentResponsesCount => Responses.Count(x => x.Status == ResponseStatus.Sent);
+    public int ErrorResponsesCount => Responses.Count(x => x.Status == ResponseStatus.Error);
+
     public MonitoringViewModel(AppRepository repository) : base()
     {
         ResponsesView = CollectionViewSource.GetDefaultView(Responses);
@@ -34,7 +39,13 @@ public partial class MonitoringViewModel : ObservableObject
 
     private readonly AppRepository _repository;
 
-    partial void OnSelectedResponseChanged(CandidateResponse? value) => SelectedResponseChanged?.Invoke(this, value);
+    partial void OnSelectedResponseChanged(CandidateResponse? value)
+    {
+        OnPropertyChanged(nameof(SelectedResponseStatusText));
+        OnPropertyChanged(nameof(SelectedResponseProcessedText));
+        OnPropertyChanged(nameof(SelectedResponseErrorText));
+        SelectedResponseChanged?.Invoke(this, value);
+    }
     partial void OnSearchTextChanged(string value) => ResponsesView.Refresh();
     partial void OnSelectedStatusFilterChanged(string value) => ResponsesView.Refresh();
 
@@ -48,8 +59,31 @@ public partial class MonitoringViewModel : ObservableObject
             Responses.Add(item);
         }
 
+        OnPropertyChanged(nameof(TotalResponsesCount));
+        OnPropertyChanged(nameof(NewResponsesCount));
+        OnPropertyChanged(nameof(SentResponsesCount));
+        OnPropertyChanged(nameof(ErrorResponsesCount));
         SelectedResponse ??= Responses.FirstOrDefault();
     }
+
+    public string SelectedResponseStatusText => SelectedResponse?.Status switch
+    {
+        ResponseStatus.New => "Новый отклик",
+        ResponseStatus.InProgress => "В обработке",
+        ResponseStatus.Sent => "Отправлен в Bitrix24",
+        ResponseStatus.Duplicate => "Найден дубль",
+        ResponseStatus.Error => "Ошибка обработки",
+        ResponseStatus.ActionRequired => "Нужно действие",
+        _ => "Отклик не выбран"
+    };
+
+    public string SelectedResponseProcessedText => SelectedResponse?.ProcessedAt is DateTime processedAt
+        ? processedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm")
+        : "Ещё не обработан";
+
+    public string SelectedResponseErrorText => string.IsNullOrWhiteSpace(SelectedResponse?.ErrorMessage)
+        ? "Ошибок не зафиксировано"
+        : SelectedResponse!.ErrorMessage;
 
     private bool FilterResponse(object obj)
     {

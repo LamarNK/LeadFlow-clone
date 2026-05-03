@@ -5,14 +5,78 @@
         <StackPanel>
             <TextBlock Text="Статистика" FontSize="22" FontWeight="SemiBold" />
             <UniformGrid Columns="4" Margin="0,16,0,0">
-                <Border Style="{StaticResource CardBorderStyle}" Padding="16"><StackPanel><TextBlock Text="Новых откликов" Style="{StaticResource SubtleTextStyle}"/><TextBlock Text="{Binding NewResponses}" FontSize="28" FontWeight="Bold"/><TextBlock Text="Перейти к мониторингу" Foreground="{StaticResource PrimaryBrush}"/></StackPanel></Border>
-                <Border Style="{StaticResource CardBorderStyle}" Padding="16"><StackPanel><TextBlock Text="Всего за сегодня" Style="{StaticResource SubtleTextStyle}"/><TextBlock Text="{Binding TotalToday}" FontSize="28" FontWeight="Bold"/><TextBlock Text="Перейти к мониторингу" Foreground="{StaticResource PrimaryBrush}"/></StackPanel></Border>
-                <Border Style="{StaticResource CardBorderStyle}" Padding="16"><StackPanel><TextBlock Text="Отправлено в CRM" Style="{StaticResource SubtleTextStyle}"/><TextBlock Text="{Binding SentToCrm}" FontSize="28" FontWeight="Bold" Foreground="{StaticResource SuccessBrush}"/><TextBlock Text="Открыть журнал" Foreground="{StaticResource PrimaryBrush}"/></StackPanel></Border>
-                <Border Style="{StaticResource CardBorderStyle}" Padding="16"><StackPanel><TextBlock Text="В обработке" Style="{StaticResource SubtleTextStyle}"/><TextBlock Text="{Binding InProgress}" FontSize="28" FontWeight="Bold"/><TextBlock Text="Перейти к мониторингу" Foreground="{StaticResource PrimaryBrush}"/></StackPanel></Border>
-                <Border Style="{StaticResource CardBorderStyle}" Padding="16"><StackPanel><TextBlock Text="Дубликаты" Style="{StaticResource SubtleTextStyle}"/><TextBlock Text="{Binding Duplicates}" FontSize="28" FontWeight="Bold" Foreground="{StaticResource WarningBrush}"/><TextBlock Text="Открыть журнал" Foreground="{StaticResource PrimaryBrush}"/></StackPanel></Border>
-                <Border Style="{StaticResource CardBorderStyle}" Padding="16"><StackPanel><TextBlock Text="Ошибки" Style="{StaticResource SubtleTextStyle}"/><TextBlock Text="{Binding Errors}" FontSize="28" FontWeight="Bold" Foreground="{StaticResource ErrorBrush}"/><TextBlock Text="Открыть журнал" Foreground="{StaticResource PrimaryBrush}"/></StackPanel></Border>
-                <Border Style="{StaticResource CardBorderStyle}" Padding="16"><StackPanel><TextBlock Text="Аккаунтов подключено" Style="{StaticResource SubtleTextStyle}"/><TextBlock Text="{Binding ConnectedAccounts}" FontSize="28" FontWeight="Bold"/><TextBlock Text="Открыть настройки" Foreground="{StaticResource PrimaryBrush}"/></StackPanel></Border>
-                <Border Style="{StaticResource CardBorderStyle}" Padding="16"><StackPanel><TextBlock Text="Требуют авторизацию" Style="{StaticResource SubtleTextStyle}"/><TextBlock Text="{Binding RequiresAuthorization}" FontSize="28" FontWeight="Bold"/><TextBlock Text="Открыть настройки" Foreground="{StaticResource PrimaryBrush}"/></StackPanel></Border>
+                <Button Style="{StaticResource StatCardButtonStyle}"
+                        Command="{Binding DataContext.OpenMonitoringCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                        CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}">
+                    <StackPanel>
+                        <TextBlock Text="Новых откликов" Style="{StaticResource SubtleTextStyle}"/>
+                        <TextBlock Text="{Binding NewResponses}" FontSize="28" FontWeight="Bold"/>
+                        <TextBlock Text="Перейти к мониторингу" Foreground="{StaticResource PrimaryBrush}" FontWeight="SemiBold"/>
+                    </StackPanel>
+                </Button>
+                <Button Style="{StaticResource StatCardButtonStyle}"
+                        Command="{Binding DataContext.OpenMonitoringCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                        CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}">
+                    <StackPanel>
+                        <TextBlock Text="Всего за сегодня" Style="{StaticResource SubtleTextStyle}"/>
+                        <TextBlock Text="{Binding TotalToday}" FontSize="28" FontWeight="Bold"/>
+                        <TextBlock Text="Перейти к мониторингу" Foreground="{StaticResource PrimaryBrush}" FontWeight="SemiBold"/>
+                    </StackPanel>
+                </Button>
+                <Button Style="{StaticResource StatCardButtonStyle}"
+                        Command="{Binding DataContext.OpenJournalCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                        CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}">
+                    <StackPanel>
+                        <TextBlock Text="Отправлено в CRM" Style="{StaticResource SubtleTextStyle}"/>
+                        <TextBlock Text="{Binding SentToCrm}" FontSize="28" FontWeight="Bold" Foreground="{StaticResource SuccessBrush}"/>
+                        <TextBlock Text="Открыть журнал" Foreground="{StaticResource PrimaryBrush}" FontWeight="SemiBold"/>
+                    </StackPanel>
+                </Button>
+                <Button Style="{StaticResource StatCardButtonStyle}"
+                        Command="{Binding DataContext.OpenMonitoringCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                        CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}">
+                    <StackPanel>
+                        <TextBlock Text="В обработке" Style="{StaticResource SubtleTextStyle}"/>
+                        <TextBlock Text="{Binding InProgress}" FontSize="28" FontWeight="Bold"/>
+                        <TextBlock Text="Перейти к мониторингу" Foreground="{StaticResource PrimaryBrush}" FontWeight="SemiBold"/>
+                    </StackPanel>
+                </Button>
+                <Button Style="{StaticResource StatCardButtonStyle}"
+                        Command="{Binding DataContext.OpenJournalCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                        CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}">
+                    <StackPanel>
+                        <TextBlock Text="Дубликаты" Style="{StaticResource SubtleTextStyle}"/>
+                        <TextBlock Text="{Binding Duplicates}" FontSize="28" FontWeight="Bold" Foreground="{StaticResource WarningBrush}"/>
+                        <TextBlock Text="Открыть журнал" Foreground="{StaticResource PrimaryBrush}" FontWeight="SemiBold"/>
+                    </StackPanel>
+                </Button>
+                <Button Style="{StaticResource StatCardButtonStyle}"
+                        Command="{Binding DataContext.OpenJournalCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                        CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}">
+                    <StackPanel>
+                        <TextBlock Text="Ошибки" Style="{StaticResource SubtleTextStyle}"/>
+                        <TextBlock Text="{Binding Errors}" FontSize="28" FontWeight="Bold" Foreground="{StaticResource ErrorBrush}"/>
+                        <TextBlock Text="Открыть журнал" Foreground="{StaticResource PrimaryBrush}" FontWeight="SemiBold"/>
+                    </StackPanel>
+                </Button>
+                <Button Style="{StaticResource StatCardButtonStyle}"
+                        Command="{Binding DataContext.OpenSettingsCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                        CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}">
+                    <StackPanel>
+                        <TextBlock Text="Аккаунтов подключено" Style="{StaticResource SubtleTextStyle}"/>
+                        <TextBlock Text="{Binding ConnectedAccounts}" FontSize="28" FontWeight="Bold"/>
+                        <TextBlock Text="Открыть настройки" Foreground="{StaticResource PrimaryBrush}" FontWeight="SemiBold"/>
+                    </StackPanel>
+                </Button>
+                <Button Style="{StaticResource StatCardButtonStyle}"
+                        Command="{Binding DataContext.OpenSettingsCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                        CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}">
+                    <StackPanel>
+                        <TextBlock Text="Требуют авторизацию" Style="{StaticResource SubtleTextStyle}"/>
+                        <TextBlock Text="{Binding RequiresAuthorization}" FontSize="28" FontWeight="Bold"/>
+                        <TextBlock Text="Открыть настройки" Foreground="{StaticResource PrimaryBrush}" FontWeight="SemiBold"/>
+                    </StackPanel>
+                </Button>
             </UniformGrid>
 
             <Grid Margin="0,16,0,0">
