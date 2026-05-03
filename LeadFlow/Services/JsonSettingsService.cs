@@ -6,6 +6,9 @@ namespace LeadFlow.Services;
 
 public sealed class JsonSettingsService : ISettingsService
 {
+    private const string SettingsFileName = "LeadFlow.settings.dat";
+    private const string DatabaseFileName = "leadflow.db";
+
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
         WriteIndented = true,
@@ -24,9 +27,15 @@ public sealed class JsonSettingsService : ISettingsService
             return defaults;
         }
 
-        await using var stream = File.OpenRead(path);
-        var settings = await JsonSerializer.DeserializeAsync<AppSettings>(stream, SerializerOptions, cancellationToken).ConfigureAwait(false)
-            ?? CreateDefaults();
+        AppSettings settings;
+        await using (var stream = File.OpenRead(path))
+        {
+            var bytes = EncryptedSettingsSerializer.DecryptFromStream(
+                stream,
+                SettingsEncryptionKeyHelper.GetDefaultKey(),
+                userPassword: null);
+            settings = JsonSerializer.Deserialize<AppSettings>(bytes, SerializerOptions) ?? CreateDefaults();
+        }
 
         if (string.IsNullOrWhiteSpace(settings.DatabasePath))
         {
@@ -42,15 +51,20 @@ public sealed class JsonSettingsService : ISettingsService
         settings.DatabasePath = string.IsNullOrWhiteSpace(settings.DatabasePath) ? GetDefaultDatabasePath() : settings.DatabasePath;
         var path = GetSettingsPath();
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(settings, SerializerOptions);
         await using var stream = File.Create(path);
-        await JsonSerializer.SerializeAsync(stream, settings, SerializerOptions, cancellationToken).ConfigureAwait(false);
+        EncryptedSettingsSerializer.EncryptToStream(stream, bytes, SettingsEncryptionKeyHelper.GetDefaultKey(), userPassword: null);
+        await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public string GetSettingsPath() =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "LeadFlow", "settings.json");
+        Path.Combine(GetDataDirectoryPath(), SettingsFileName);
 
     public static string GetDefaultDatabasePath() =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "LeadFlow", "leadflow.db");
+        Path.Combine(GetDataDirectoryPath(), DatabaseFileName);
+
+    public static string GetDataDirectoryPath() =>
+        Path.Combine(AppContext.BaseDirectory, "Data");
 
     private static AppSettings CreateDefaults() => new()
     {
