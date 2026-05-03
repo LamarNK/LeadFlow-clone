@@ -17,7 +17,6 @@
             <TextBlock Text="{Binding AccountName}" FontSize="24" FontWeight="Bold" />
             <TextBlock Text="{Binding CurrentUrl}" Style="{StaticResource SubtleTextStyle}" Margin="0,6,0,0" />
             <TextBlock Text="{Binding AuthorizationStatus}" Foreground="{StaticResource PrimaryBrush}" Margin="0,6,0,0" TextWrapping="Wrap"/>
-            <TextBlock Text="Войдите в аккаунт Авито вручную. После успешного входа профиль будет сохранён." Margin="0,6,0,0" />
         </StackPanel>
         <Border Grid.Row="1" Style="{StaticResource CardBorderStyle}" Margin="0,16,0,16">
             <wv2:WebView2 behaviors:WebView2Behavior.Session="{Binding Session}" />

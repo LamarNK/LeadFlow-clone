@@ -1,23 +1,32 @@
 using Microsoft.Web.WebView2.Core;
+using System.Windows;
 
 namespace LeadFlow.Services.Browser;
 
 public sealed class WebView2PageAutomationService : IWebPageAutomationService
 {
-    public Task NavigateAsync(BrowserAccountSession session, string url, CancellationToken cancellationToken)
+    public async Task NavigateAsync(BrowserAccountSession session, string url, CancellationToken cancellationToken)
     {
-        session.AttachedView?.CoreWebView2?.Navigate(url);
+        await Application.Current.Dispatcher.InvokeAsync(() =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            session.AttachedView?.CoreWebView2?.Navigate(url);
+        });
+
         session.CurrentUrl = url;
-        return Task.CompletedTask;
     }
 
     public async Task<string> ExecuteScriptAsync(BrowserAccountSession session, string script, CancellationToken cancellationToken)
     {
-        if (session.AttachedView?.CoreWebView2 is not CoreWebView2 core)
+        return await Application.Current.Dispatcher.InvokeAsync(async () =>
         {
-            return string.Empty;
-        }
+            cancellationToken.ThrowIfCancellationRequested();
+            if (session.AttachedView?.CoreWebView2 is not CoreWebView2 core)
+            {
+                return string.Empty;
+            }
 
-        return await core.ExecuteScriptAsync(script);
+            return await core.ExecuteScriptAsync(script);
+        }).Task.Unwrap();
     }
 }

@@ -100,18 +100,6 @@ public partial class MainViewModel : ObservableObject
         owner is null ? Task.CompletedTask : _windowService.ShowMonitoringAsync(owner, CancellationToken.None);
 
     [RelayCommand]
-    public Task OpenCandidateDetailsAsync(Window? owner) =>
-        owner is null ? Task.CompletedTask : _windowService.ShowCandidateDetailsAsync(owner, CancellationToken.None);
-
-    [RelayCommand]
-    public Task OpenDuplicateCheckAsync(Window? owner) =>
-        owner is null ? Task.CompletedTask : _windowService.ShowDuplicateCheckAsync(owner, CancellationToken.None);
-
-    [RelayCommand]
-    public Task OpenBitrixIntegrationAsync(Window? owner) =>
-        owner is null ? Task.CompletedTask : _windowService.ShowBitrixIntegrationAsync(owner, CancellationToken.None);
-
-    [RelayCommand]
     public Task OpenJournalAsync(Window? owner) =>
         owner is null ? Task.CompletedTask : _windowService.ShowJournalAsync(owner, CancellationToken.None);
 

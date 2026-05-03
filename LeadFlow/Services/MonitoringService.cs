@@ -18,6 +18,8 @@ public sealed class MonitoringService(
 {
     private CancellationTokenSource? _cts;
     private Task? _loopTask;
+    private static readonly TimeSpan MinCycleDelay = TimeSpan.FromMinutes(1);
+    private static readonly TimeSpan MaxCycleDelay = TimeSpan.FromMinutes(10);
 
     public event EventHandler<MonitoringStatus>? StatusChanged;
     public event EventHandler<CandidateResponse>? ResponseProcessed;
@@ -78,7 +80,7 @@ public sealed class MonitoringService(
 
                 CurrentStatus = MonitoringStatus.Waiting;
                 StatusChanged?.Invoke(this, CurrentStatus);
-                await Task.Delay(TimeSpan.FromSeconds(settings.MonitoringSafety.CheckIntervalSeconds), cancellationToken);
+                await Task.Delay(GetRandomCycleDelay(), cancellationToken);
                 CurrentStatus = MonitoringStatus.Running;
                 StatusChanged?.Invoke(this, CurrentStatus);
             }
@@ -136,7 +138,11 @@ public sealed class MonitoringService(
             await Task.Delay(TimeSpan.FromSeconds(settings.MonitoringSafety.DelayBetweenResponsesSeconds), cancellationToken);
         }
 
-        account.Status = AvitoAccountStatus.Authorized;
+        if (account.Status == AvitoAccountStatus.Monitoring)
+        {
+            account.Status = AvitoAccountStatus.Authorized;
+        }
+
         await repository.SaveAccountAsync(account, cancellationToken);
     }
 
@@ -221,5 +227,12 @@ public sealed class MonitoringService(
 
         await repository.SaveCandidateAsync(response, cancellationToken);
         ResponseProcessed?.Invoke(this, response);
+    }
+
+    private static TimeSpan GetRandomCycleDelay()
+    {
+        var minSeconds = (int)MinCycleDelay.TotalSeconds;
+        var maxSeconds = (int)MaxCycleDelay.TotalSeconds;
+        return TimeSpan.FromSeconds(Random.Shared.Next(minSeconds, maxSeconds + 1));
     }
 }

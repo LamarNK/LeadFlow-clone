@@ -8,6 +8,7 @@ public sealed class JsonSettingsService : ISettingsService
 {
     private const string SettingsFileName = "LeadFlow.settings.dat";
     private const string DatabaseFileName = "leadflow.db";
+    public const string FixedBitrixWebhookUrl = "https://b24-l7qyiy.bitrix24.ru/rest/22/i6l8tl41e71kmj5o/";
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
@@ -37,18 +38,13 @@ public sealed class JsonSettingsService : ISettingsService
             settings = JsonSerializer.Deserialize<AppSettings>(bytes, SerializerOptions) ?? CreateDefaults();
         }
 
-        if (string.IsNullOrWhiteSpace(settings.DatabasePath))
-        {
-            settings.DatabasePath = GetDefaultDatabasePath();
-        }
-
-        settings.DemoModeEnabled = string.IsNullOrWhiteSpace(settings.Bitrix.WebhookUrl) || settings.DemoModeEnabled;
+        NormalizeSettings(settings);
         return settings;
     }
 
     public async Task SaveAsync(AppSettings settings, CancellationToken cancellationToken)
     {
-        settings.DatabasePath = string.IsNullOrWhiteSpace(settings.DatabasePath) ? GetDefaultDatabasePath() : settings.DatabasePath;
+        NormalizeSettings(settings);
         var path = GetSettingsPath();
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         var bytes = JsonSerializer.SerializeToUtf8Bytes(settings, SerializerOptions);
@@ -66,11 +62,26 @@ public sealed class JsonSettingsService : ISettingsService
     public static string GetDataDirectoryPath() =>
         Path.Combine(AppContext.BaseDirectory, "Data");
 
+    private static void NormalizeSettings(AppSettings settings)
+    {
+        settings.DatabasePath = GetDefaultDatabasePath();
+        settings.DemoModeEnabled = false;
+        settings.Bitrix ??= new BitrixSettings();
+        settings.Bitrix.WebhookUrl = FixedBitrixWebhookUrl;
+        settings.MonitoringSafety ??= new MonitoringSafetyOptions();
+        settings.MonitoringSafety.CheckIntervalSeconds = 60;
+        settings.AvitoSelectors = new AvitoSelectorOptions();
+        settings.Avito ??= new AvitoSettings();
+    }
+
     private static AppSettings CreateDefaults() => new()
     {
         DatabasePath = GetDefaultDatabasePath(),
-        DemoModeEnabled = true,
-        Bitrix = new BitrixSettings(),
+        DemoModeEnabled = false,
+        Bitrix = new BitrixSettings
+        {
+            WebhookUrl = FixedBitrixWebhookUrl
+        },
         MonitoringSafety = new MonitoringSafetyOptions(),
         AvitoSelectors = new AvitoSelectorOptions(),
         Avito = new AvitoSettings()

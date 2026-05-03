@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Windows;
+using System.Windows.Data;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using LeadFlow.Data;
@@ -16,27 +17,13 @@ public partial class SettingsViewModel(
     IBrowserProfileService profileService,
     IWindowService windowService) : ObservableObject
 {
+    private const string FixedAvitoProfileUrl = "https://www.avito.ru/profile";
     private AppSettings _settings = new();
 
     public ObservableCollection<AvitoAccount> Accounts { get; } = [];
 
     [ObservableProperty]
     private AvitoAccount? selectedAccount;
-
-    [ObservableProperty]
-    private string webhookUrl = string.Empty;
-
-    [ObservableProperty]
-    private bool demoModeEnabled;
-
-    [ObservableProperty]
-    private int checkIntervalSeconds = 60;
-
-    [ObservableProperty]
-    private string databasePath = string.Empty;
-
-    [ObservableProperty]
-    private string responseListSelector = string.Empty;
 
     [RelayCommand]
     public async Task LoadAsync()
@@ -45,24 +32,21 @@ public partial class SettingsViewModel(
         Accounts.Clear();
         foreach (var account in _settings.Avito.Accounts)
         {
+            account.AvitoResponsesUrl = FixedAvitoProfileUrl;
             Accounts.Add(account);
         }
 
-        WebhookUrl = _settings.Bitrix.WebhookUrl;
-        DemoModeEnabled = _settings.DemoModeEnabled;
-        CheckIntervalSeconds = _settings.MonitoringSafety.CheckIntervalSeconds;
-        DatabasePath = _settings.DatabasePath;
-        ResponseListSelector = _settings.AvitoSelectors.ResponseListSelector;
         SelectedAccount = Accounts.FirstOrDefault();
     }
 
     [RelayCommand]
     public void AddAccount()
     {
+        var accountNumber = Accounts.Count + 1;
         var account = new AvitoAccount
         {
-            DisplayName = "Новый аккаунт",
-            AvitoResponsesUrl = "https://www.avito.ru/profile/responds",
+            DisplayName = $"Аккаунт {accountNumber}",
+            AvitoResponsesUrl = FixedAvitoProfileUrl,
             Status = AvitoAccountStatus.RequiresLogin
         };
 
@@ -93,20 +77,17 @@ public partial class SettingsViewModel(
         }
 
         SelectedAccount.IsEnabled = !SelectedAccount.IsEnabled;
-        OnPropertyChanged(nameof(SelectedAccount));
+        RefreshSelectedAccountState();
     }
 
     [RelayCommand]
     public async Task SaveAsync()
     {
-        _settings.Bitrix.WebhookUrl = WebhookUrl;
-        _settings.DemoModeEnabled = DemoModeEnabled || string.IsNullOrWhiteSpace(WebhookUrl);
-        _settings.MonitoringSafety.CheckIntervalSeconds = CheckIntervalSeconds;
-        _settings.DatabasePath = DatabasePath;
-        _settings.AvitoSelectors.ResponseListSelector = ResponseListSelector;
         _settings.Avito.Accounts.Clear();
         foreach (var account in Accounts)
         {
+            account.AvitoResponsesUrl = FixedAvitoProfileUrl;
+
             if (string.IsNullOrWhiteSpace(account.BrowserProfilePath))
             {
                 account.BrowserProfilePath = profileService.GetProfile(account).ProfilePath;
@@ -132,19 +113,55 @@ public partial class SettingsViewModel(
         await LoadAsync();
     }
 
-    [RelayCommand]
-    public async Task CheckAuthorizationAsync()
-    {
-        if (SelectedAccount is null)
-        {
-            return;
-        }
+    public string FixedProfileUrl => FixedAvitoProfileUrl;
 
-        SelectedAccount.LastAuthCheckAt = DateTime.UtcNow;
-        SelectedAccount.Status = Directory.Exists(SelectedAccount.BrowserProfilePath)
-            ? AvitoAccountStatus.Authorized
-            : AvitoAccountStatus.RequiresLogin;
-        await repository.SaveAccountAsync(SelectedAccount, CancellationToken.None);
-        await SaveAsync();
+    public string SelectedAccountName => SelectedAccount?.DisplayName ?? "Аккаунт не выбран";
+
+    public string SelectedAccountStatusText => SelectedAccount?.Status switch
+    {
+        AvitoAccountStatus.Authorized => "Готов к работе",
+        AvitoAccountStatus.Monitoring => "Сейчас мониторится",
+        AvitoAccountStatus.RequiresLogin => "Нужно войти",
+        AvitoAccountStatus.RequiresManualAction => "Нужно ручное действие",
+        AvitoAccountStatus.Paused => "Приостановлен",
+        AvitoAccountStatus.Error => "Есть ошибка",
+        _ => "Пока не настроен"
+    };
+
+    public string SelectedAccountStateHint => SelectedAccount is null
+        ? "Добавьте первый аккаунт Avito, чтобы подготовить его к мониторингу."
+        : SelectedAccount.IsEnabled
+            ? "Аккаунт участвует в мониторинге и использует отдельный профиль браузера."
+            : "Аккаунт сохранён, но сейчас исключён из мониторинга.";
+
+    public string SelectedAccountToggleText => SelectedAccount?.IsEnabled == true ? "Выключить аккаунт" : "Включить аккаунт";
+
+    public string SelectedAccountAuthCheckText => FormatDateTime(SelectedAccount?.LastAuthCheckAt, "Авторизация ещё не проверялась");
+
+    public string SelectedAccountMonitoringText => FormatDateTime(SelectedAccount?.LastMonitoringAt, "Мониторинг ещё не запускался");
+
+    public string SelectedAccountErrorText => string.IsNullOrWhiteSpace(SelectedAccount?.LastErrorMessage)
+        ? "Ошибок не зафиксировано"
+        : SelectedAccount!.LastErrorMessage;
+
+    partial void OnSelectedAccountChanged(AvitoAccount? value)
+    {
+        CollectionViewSource.GetDefaultView(Accounts)?.Refresh();
+        OnPropertyChanged(nameof(SelectedAccountName));
+        OnPropertyChanged(nameof(SelectedAccountStatusText));
+        OnPropertyChanged(nameof(SelectedAccountStateHint));
+        OnPropertyChanged(nameof(SelectedAccountToggleText));
+        OnPropertyChanged(nameof(SelectedAccountAuthCheckText));
+        OnPropertyChanged(nameof(SelectedAccountMonitoringText));
+        OnPropertyChanged(nameof(SelectedAccountErrorText));
+    }
+
+    private static string FormatDateTime(DateTime? value, string fallback) =>
+        value.HasValue ? value.Value.ToLocalTime().ToString("dd.MM.yyyy HH:mm") : fallback;
+
+    private void RefreshSelectedAccountState()
+    {
+        CollectionViewSource.GetDefaultView(Accounts)?.Refresh();
+        OnSelectedAccountChanged(SelectedAccount);
     }
 }
