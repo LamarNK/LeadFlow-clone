@@ -1,0 +1,71 @@
+<UserControl x:Class="LeadFlow.Views.JournalView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Border Style="{StaticResource CardBorderStyle}">
+        <DockPanel LastChildFill="True">
+            <DockPanel DockPanel.Dock="Top" Margin="0,0,0,16">
+                <StackPanel DockPanel.Dock="Left">
+                    <TextBlock Text="Журнал и логи" FontSize="22" FontWeight="SemiBold" />
+                    <TextBlock Text="Здесь доступны журнал откликов и файловые логи приложения." Style="{StaticResource SubtleTextStyle}" Margin="0,6,0,0" />
+                </StackPanel>
+                <Button Content="Обновить" Command="{Binding RefreshCommand}" DockPanel.Dock="Right" />
+            </DockPanel>
+
+            <TabControl>
+                <TabItem Header="Журнал откликов">
+                    <Grid Margin="0,12,0,0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <DockPanel Grid.Row="0">
+                            <TextBlock Text="Последние обработанные отклики" FontWeight="SemiBold" DockPanel.Dock="Left" />
+                            <Button Content="Экспорт CSV" Command="{Binding ExportCommand}" DockPanel.Dock="Right" />
+                        </DockPanel>
+
+                        <DataGrid Grid.Row="1" ItemsSource="{Binding Items}" Margin="0,12,0,0">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Дата/время" Binding="{Binding CreatedAt, StringFormat=dd.MM HH:mm}" Width="110"/>
+                                <DataGridTextColumn Header="ФИО" Binding="{Binding FullName}" Width="200"/>
+                                <DataGridTextColumn Header="Телефон" Binding="{Binding PhoneRaw}" Width="140"/>
+                                <DataGridTextColumn Header="Статус" Binding="{Binding Status}" Width="120"/>
+                                <DataGridTextColumn Header="Bitrix ID" Binding="{Binding BitrixEntityId}" Width="150"/>
+                                <DataGridTextColumn Header="Ошибка" Binding="{Binding ErrorMessage}" Width="*"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+
+                        <TextBlock Grid.Row="2" Text="{Binding ExportPath}" Style="{StaticResource SubtleTextStyle}" TextWrapping="Wrap" Margin="0,12,0,0"/>
+                    </Grid>
+                </TabItem>
+
+                <TabItem Header="Логи приложения">
+                    <Grid Margin="0,12,0,0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <StackPanel Grid.Row="0">
+                            <TextBlock Text="Бинарный лог приложения" FontWeight="SemiBold" />
+                            <TextBlock Text="{Binding LogDirectoryPath}" Style="{StaticResource SubtleTextStyle}" TextWrapping="Wrap" Margin="0,6,0,0" />
+                            <TextBlock Text="{Binding LogEntriesCount, StringFormat=Записей: {0}}" Style="{StaticResource SubtleTextStyle}" Margin="0,4,0,0" />
+                        </StackPanel>
+
+                        <DataGrid Grid.Row="1" ItemsSource="{Binding LogEntries}" Margin="0,12,0,0">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Дата/время" Binding="{Binding Timestamp, StringFormat=dd.MM.yyyy HH:mm:ss}" Width="150"/>
+                                <DataGridTextColumn Header="Уровень" Binding="{Binding Level}" Width="90"/>
+                                <DataGridTextColumn Header="Источник" Binding="{Binding Prefix}" Width="180"/>
+                                <DataGridTextColumn Header="Сообщение" Binding="{Binding Message}" Width="*"/>
+                                <DataGridTextColumn Header="TraceId" Binding="{Binding TraceId}" Width="150"/>
+                                <DataGridCheckBoxColumn Header="Tampered" Binding="{Binding IsTampered}" Width="90"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Grid>
+                </TabItem>
+            </TabControl>
+        </DockPanel>
+    </Border>
+</UserControl>

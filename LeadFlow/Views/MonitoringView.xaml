@@ -1,0 +1,31 @@
+<UserControl x:Class="LeadFlow.Views.MonitoringView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Border Style="{StaticResource CardBorderStyle}">
+        <StackPanel>
+            <TextBlock Text="2. Мониторинг откликов" FontSize="22" FontWeight="SemiBold" />
+            <DockPanel Margin="0,12,0,12">
+                <TextBox Width="220" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" DockPanel.Dock="Left" />
+                <ComboBox Width="140" SelectedValue="{Binding SelectedStatusFilter}" SelectedValuePath="Content" Margin="8,4,4,4">
+                    <ComboBoxItem Content="Все" IsSelected="True" />
+                    <ComboBoxItem Content="New" />
+                    <ComboBoxItem Content="Sent" />
+                    <ComboBoxItem Content="Duplicate" />
+                    <ComboBoxItem Content="Error" />
+                </ComboBox>
+                <Button Content="Обновить" Command="{Binding RefreshCommand}" DockPanel.Dock="Right" />
+            </DockPanel>
+            <DataGrid ItemsSource="{Binding ResponsesView}" SelectedItem="{Binding SelectedResponse}" Height="340">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="Время" Binding="{Binding CreatedAt, StringFormat=HH:mm}" Width="70" />
+                    <DataGridTextColumn Header="Аккаунт Авито" Binding="{Binding AccountName}" Width="140" />
+                    <DataGridTextColumn Header="ФИО" Binding="{Binding FullName}" Width="180" />
+                    <DataGridTextColumn Header="Телефон" Binding="{Binding PhoneRaw}" Width="130" />
+                    <DataGridTextColumn Header="Город" Binding="{Binding City}" Width="110" />
+                    <DataGridTextColumn Header="Вакансия" Binding="{Binding Vacancy}" Width="120" />
+                    <DataGridTextColumn Header="Статус" Binding="{Binding Status}" Width="100" />
+                </DataGrid.Columns>
+            </DataGrid>
+        </StackPanel>
+    </Border>
+</UserControl>

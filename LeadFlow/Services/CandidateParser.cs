@@ -1,0 +1,39 @@
+using LeadFlow.Models;
+
+namespace LeadFlow.Services;
+
+public sealed class CandidateParser : ICandidateParser
+{
+    public CandidateName ParseName(string fullName)
+    {
+        var parts = fullName.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return new CandidateName
+        {
+            LastName = parts.ElementAtOrDefault(0) ?? string.Empty,
+            FirstName = parts.ElementAtOrDefault(1) ?? string.Empty,
+            MiddleName = parts.ElementAtOrDefault(2) ?? string.Empty
+        };
+    }
+
+    public BitrixLeadPreview BuildPreview(CandidateResponse response, BitrixSettings settings)
+    {
+        return new BitrixLeadPreview
+        {
+            Title = $"Отклик Авито: {response.Vacancy} — {response.FullName}",
+            Name = response.FirstName,
+            LastName = response.LastName,
+            SecondName = response.MiddleName,
+            Phone = response.PhoneRaw,
+            City = response.City,
+            Vacancy = response.Vacancy,
+            Source = settings.LeadSource,
+            Comments =
+                $"Возраст: {response.Age?.ToString() ?? "-"}{Environment.NewLine}" +
+                $"Вакансия: {response.Vacancy}{Environment.NewLine}" +
+                $"Источник: Авито{Environment.NewLine}" +
+                $"Ссылка на отклик: {response.SourceUrl}{Environment.NewLine}" +
+                $"Аккаунт Авито: {response.AccountName}{Environment.NewLine}" +
+                $"Дата отклика: {response.CreatedAt:dd.MM.yyyy HH:mm}"
+        };
+    }
+}

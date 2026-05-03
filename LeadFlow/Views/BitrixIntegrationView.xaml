@@ -1,0 +1,36 @@
+<UserControl x:Class="LeadFlow.Views.BitrixIntegrationView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Border Style="{StaticResource CardBorderStyle}">
+        <StackPanel>
+            <TextBlock Text="5. Интеграция с Bitrix24" FontSize="22" FontWeight="SemiBold" />
+            <Grid Margin="0,16,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0">
+                    <TextBlock Text="Сопоставление полей" FontWeight="SemiBold" />
+                    <TextBlock Text="{Binding Preview.Name, StringFormat=Имя: {0}}" Margin="0,10,0,0"/>
+                    <TextBlock Text="{Binding Preview.LastName, StringFormat=Фамилия: {0}}" Margin="0,4,0,0"/>
+                    <TextBlock Text="{Binding Preview.Phone, StringFormat=Телефон: {0}}" Margin="0,4,0,0"/>
+                    <TextBlock Text="{Binding Preview.City, StringFormat=Город: {0}}" Margin="0,4,0,0"/>
+                    <TextBlock Text="{Binding Preview.Vacancy, StringFormat=Вакансия: {0}}" Margin="0,4,0,0"/>
+                </StackPanel>
+                <StackPanel Grid.Column="1">
+                    <TextBlock Text="Создаваемый лид в Bitrix24" FontWeight="SemiBold" />
+                    <TextBlock Text="{Binding Preview.Title}" TextWrapping="Wrap" Margin="0,10,0,0"/>
+                    <TextBlock Text="{Binding StatusText}" Margin="0,10,0,0" Foreground="{StaticResource PrimaryBrush}" />
+                    <TextBlock Text="{Binding EntityId, StringFormat=ID: {0}}" Margin="0,4,0,0"/>
+                    <TextBlock Text="{Binding ErrorText}" Foreground="{StaticResource ErrorBrush}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                </StackPanel>
+            </Grid>
+            <Border Background="#EFF6FF" CornerRadius="14" Padding="16" Margin="0,16,0,0">
+                <StackPanel>
+                    <TextBlock Text="Автоматическая отправка в Bitrix24" FontWeight="SemiBold" Foreground="{StaticResource PrimaryBrush}" />
+                    <TextBlock Text="После проверки на дубли лид создаётся автоматически" Style="{StaticResource SubtleTextStyle}" Margin="0,6,0,0" />
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </Border>
+</UserControl>
