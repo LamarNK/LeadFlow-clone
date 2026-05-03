@@ -1,6 +1,10 @@
 <UserControl x:Class="LeadFlow.Views.DashboardView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:conv="clr-namespace:LeadFlow.Converters">
+    <UserControl.Resources>
+        <conv:ZeroToCollapsedConverter x:Key="ZeroToCollapsedConverter"/>
+    </UserControl.Resources>
     <Border Style="{StaticResource CardBorderStyle}">
         <StackPanel>
             <TextBlock Text="Статистика" FontSize="22" FontWeight="SemiBold" />
@@ -63,18 +67,13 @@
                         Command="{Binding DataContext.OpenSettingsCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                         CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}">
                     <StackPanel>
-                        <TextBlock Text="Аккаунтов подключено" Style="{StaticResource SubtleTextStyle}"/>
+                        <TextBlock Text="Аккаунтов подключено" Style="{StaticResource SubtleTextStyle}" Margin="0,0,0,4"/>
                         <TextBlock Text="{Binding ConnectedAccounts}" FontSize="28" FontWeight="Bold"/>
-                        <TextBlock Text="Открыть настройки" Foreground="{StaticResource PrimaryBrush}" FontWeight="SemiBold"/>
-                    </StackPanel>
-                </Button>
-                <Button Style="{StaticResource StatCardButtonStyle}"
-                        Command="{Binding DataContext.OpenSettingsCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                        CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}">
-                    <StackPanel>
-                        <TextBlock Text="Требуют авторизацию" Style="{StaticResource SubtleTextStyle}"/>
-                        <TextBlock Text="{Binding RequiresAuthorization}" FontSize="28" FontWeight="Bold"/>
-                        <TextBlock Text="Открыть настройки" Foreground="{StaticResource PrimaryBrush}" FontWeight="SemiBold"/>
+                        <TextBlock Text="{Binding RequiresAuthorization, StringFormat=Требует авторизации: {0}}"
+                                   Style="{StaticResource SubtleTextStyle}"
+                                   Visibility="{Binding RequiresAuthorization, Converter={StaticResource ZeroToCollapsedConverter}}"
+                                   Margin="0,4,0,0"/>
+                        <TextBlock Text="Открыть настройки" Foreground="{StaticResource PrimaryBrush}" FontWeight="SemiBold" Margin="0,8,0,0"/>
                     </StackPanel>
                 </Button>
             </UniformGrid>
