@@ -11,6 +11,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<CandidateResponseEntity>().HasKey(x => x.Id);
+        modelBuilder.Entity<CandidateResponseEntity>().HasIndex(x => x.CreatedAt);
         modelBuilder.Entity<CandidateResponseEntity>().HasIndex(x => x.PhoneNormalized);
         modelBuilder.Entity<CandidateResponseEntity>().HasIndex(x => new { x.AccountId, x.PhoneNormalized });
         modelBuilder.Entity<ProcessingLogEntity>().HasKey(x => x.Id);

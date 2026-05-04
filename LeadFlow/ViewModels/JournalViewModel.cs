@@ -59,11 +59,7 @@ public partial class JournalViewModel : ObservableObject
     public async Task RefreshAsync()
     {
         var items = await _repository.GetRecentResponsesAsync(100, CancellationToken.None);
-        Items.Clear();
-        foreach (var item in items)
-        {
-            Items.Add(item);
-        }
+        ReplaceItems(items);
 
         var logs = await GlobalLogger.Instance.SearchLogsAsync(service: "LeadFlow");
         LogEntries.Clear();
@@ -80,6 +76,38 @@ public partial class JournalViewModel : ObservableObject
         SelectedItem ??= Items.FirstOrDefault();
         SelectedLogEntry ??= LogEntries.FirstOrDefault();
         LogEntriesView.Refresh();
+    }
+
+    public void ApplyProcessedResponse(CandidateResponse response)
+    {
+        var existingIndex = Items
+            .Select((item, index) => new { item, index })
+            .FirstOrDefault(x => x.item.Id == response.Id)
+            ?.index;
+
+        if (existingIndex.HasValue)
+        {
+            Items.RemoveAt(existingIndex.Value);
+        }
+
+        var insertIndex = 0;
+        while (insertIndex < Items.Count && Items[insertIndex].CreatedAt > response.CreatedAt)
+        {
+            insertIndex++;
+        }
+
+        Items.Insert(insertIndex, response);
+        while (Items.Count > 100)
+        {
+            Items.RemoveAt(Items.Count - 1);
+        }
+
+        if (SelectedItem?.Id == response.Id || SelectedItem is null)
+        {
+            SelectedItem = response;
+        }
+
+        NotifyJournalCountersChanged();
     }
 
     [RelayCommand]
@@ -195,5 +223,23 @@ public partial class JournalViewModel : ObservableObject
             || (item.Prefix?.Contains(search, StringComparison.OrdinalIgnoreCase) ?? false)
             || (item.TraceId?.Contains(search, StringComparison.OrdinalIgnoreCase) ?? false)
             || (item.Properties?.Contains(search, StringComparison.OrdinalIgnoreCase) ?? false);
+    }
+
+    private void ReplaceItems(IEnumerable<CandidateResponse> items)
+    {
+        Items.Clear();
+        foreach (var item in items)
+        {
+            Items.Add(item);
+        }
+
+        NotifyJournalCountersChanged();
+    }
+
+    private void NotifyJournalCountersChanged()
+    {
+        OnPropertyChanged(nameof(JournalItemsCount));
+        OnPropertyChanged(nameof(SentJournalItemsCount));
+        OnPropertyChanged(nameof(ErrorJournalItemsCount));
     }
 }

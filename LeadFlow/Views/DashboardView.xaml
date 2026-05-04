@@ -127,32 +127,46 @@
                     <TextBlock Text="{Binding TotalActiveViews, StringFormat='Просмотры: {0}'}" Foreground="{StaticResource SecondaryTextBrush}" Margin="0,6,0,0" FontSize="13" />
                     <TextBlock Text="{Binding TotalActiveContacts, StringFormat='Контакты: {0}'}" Foreground="{StaticResource SecondaryTextBrush}" FontSize="13" />
 
-                    <ScrollViewer MaxHeight="350" VerticalScrollBarVisibility="Auto" Margin="0,12,0,0">
-                        <ItemsControl ItemsSource="{Binding ActiveAds}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Border Background="#F8FAFC" CornerRadius="12" Padding="12,10" Margin="0,0,0,8" BorderBrush="#E2E8F0" BorderThickness="1">
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="Auto" />
-                                            </Grid.ColumnDefinitions>
-                                            <StackPanel Grid.Column="0">
-                                                <TextBlock Text="{Binding Title}" FontWeight="SemiBold" Foreground="#0F172A" TextTrimming="CharacterEllipsis" />
-                                                <TextBlock Text="{Binding City}" Foreground="#64748B" FontSize="12" Margin="0,2,0,0" />
-                                            </StackPanel>
-                                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                                <TextBlock Text="👁 " FontSize="12" />
-                                                <TextBlock Text="{Binding Views}" FontSize="12" Foreground="#64748B" Margin="0,0,8,0" />
-                                                <TextBlock Text="📞 " FontSize="12" />
-                                                <TextBlock Text="{Binding Contacts}" FontSize="12" Foreground="#64748B" />
-                                            </StackPanel>
-                                        </Grid>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </ScrollViewer>
+                    <ListBox ItemsSource="{Binding ActiveAds}"
+                             MaxHeight="350"
+                             Margin="0,12,0,0"
+                             BorderThickness="0"
+                             Background="Transparent"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto"
+                             ScrollViewer.CanContentScroll="True"
+                             VirtualizingPanel.IsVirtualizing="True"
+                             VirtualizingPanel.VirtualizationMode="Recycling">
+                        <ListBox.ItemContainerStyle>
+                            <Style TargetType="ListBoxItem">
+                                <Setter Property="Padding" Value="0" />
+                                <Setter Property="Margin" Value="0,0,0,8" />
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                            </Style>
+                        </ListBox.ItemContainerStyle>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Border Background="#F8FAFC" CornerRadius="12" Padding="12,10" BorderBrush="#E2E8F0" BorderThickness="1">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0">
+                                            <TextBlock Text="{Binding Title}" FontWeight="SemiBold" Foreground="#0F172A" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Text="{Binding City}" Foreground="#64748B" FontSize="12" Margin="0,2,0,0" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                            <TextBlock Text="👁 " FontSize="12" />
+                                            <TextBlock Text="{Binding Views}" FontSize="12" Foreground="#64748B" Margin="0,0,8,0" />
+                                            <TextBlock Text="📞 " FontSize="12" />
+                                            <TextBlock Text="{Binding Contacts}" FontSize="12" Foreground="#64748B" />
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
 
                     <!-- Пустое состояние для активных -->
                     <TextBlock Text="Активных объявлений нет" Foreground="#64748B" FontStyle="Italic" Margin="0,8,0,0"

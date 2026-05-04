@@ -57,11 +57,10 @@ public partial class MainViewModel : ObservableObject
             await BitrixIntegration.UpdateAsync(response);
         };
 
-        _monitoringService.StatusChanged += async (_, status) =>
+        _monitoringService.StatusChanged += (_, status) =>
         {
             var wasActive = IsMonitoringActive;
             SystemStatus = status;
-            await RefreshAllAsync();
 
             if (status == MonitoringStatus.Running && _monitoringService.IsActive && !wasActive && !_startNotificationShown)
             {
@@ -107,9 +106,9 @@ public partial class MainViewModel : ObservableObject
 
         _monitoringService.ResponseProcessed += async (_, response) =>
         {
-            await Monitoring.RefreshAsync();
-            await Dashboard.RefreshAsync();
-            await Journal.RefreshAsync();
+            Monitoring.ApplyProcessedResponse(response);
+            Dashboard.ApplyProcessedResponse(response);
+            Journal.ApplyProcessedResponse(response);
             CandidateDetails.Update(response);
             DuplicateCheck.Update(response);
             await BitrixIntegration.UpdateAsync(response);

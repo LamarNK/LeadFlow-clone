@@ -11,6 +11,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
         await db.Database.EnsureCreatedAsync(cancellationToken);
         await EnsureAvitoAccountsSchemaAsync(db, cancellationToken);
+        await EnsureCandidateResponsesSchemaAsync(db, cancellationToken);
 
         foreach (var account in settings.Avito.Accounts)
         {
@@ -53,7 +54,11 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
     public async Task<IReadOnlyList<AvitoAccount>> GetAccountsAsync(CancellationToken cancellationToken)
     {
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
-        return await db.AvitoAccounts.OrderBy(x => x.DisplayName).Select(x => ToModel(x)).ToListAsync(cancellationToken);
+        return await db.AvitoAccounts
+            .AsNoTracking()
+            .OrderBy(x => x.DisplayName)
+            .Select(x => ToModel(x))
+            .ToListAsync(cancellationToken);
     }
 
     public async Task SaveCandidateAsync(CandidateResponse response, CancellationToken cancellationToken)
@@ -91,7 +96,12 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
     public async Task<IReadOnlyList<CandidateResponse>> GetRecentResponsesAsync(int take, CancellationToken cancellationToken)
     {
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
-        return await db.CandidateResponses.OrderByDescending(x => x.CreatedAt).Take(take).Select(x => ToModel(x)).ToListAsync(cancellationToken);
+        return await db.CandidateResponses
+            .AsNoTracking()
+            .OrderByDescending(x => x.CreatedAt)
+            .Take(take)
+            .Select(x => ToModel(x))
+            .ToListAsync(cancellationToken);
     }
 
     public async Task<HashSet<string>> GetExistingSourceResponseIdsAsync(IEnumerable<string> sourceResponseIds, CancellationToken cancellationToken)
@@ -142,6 +152,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
     {
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
         return await db.ProcessingLogs
+            .AsNoTracking()
             .OrderByDescending(x => x.CreatedAt)
             .Take(take)
             .Select(x => new ProcessingLogItem
@@ -161,35 +172,73 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
     {
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
         var today = DateTime.UtcNow.Date;
-        var responsesToday = await db.CandidateResponses.Where(x => x.CreatedAt >= today).ToListAsync(cancellationToken);
-        var accounts = await db.AvitoAccounts.ToListAsync(cancellationToken);
+        var responseSummary = await db.CandidateResponses
+            .AsNoTracking()
+            .Where(x => x.CreatedAt >= today)
+            .GroupBy(static _ => 1)
+            .Select(g => new
+            {
+                Total = g.Count(),
+                Sent = g.Count(x => x.Status == nameof(ResponseStatus.Sent)),
+                InProgress = g.Count(x => x.Status == nameof(ResponseStatus.InProgress)),
+                Duplicates = g.Count(x => x.Status == nameof(ResponseStatus.Duplicate)),
+                Errors = g.Count(x => x.Status == nameof(ResponseStatus.Error))
+            })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var activityBuckets = await db.CandidateResponses
+            .AsNoTracking()
+            .Where(x => x.CreatedAt >= today)
+            .GroupBy(x => x.CreatedAt.Hour / 3)
+            .Select(g => new
+            {
+                Bucket = g.Key,
+                Total = g.Count(),
+                Sent = g.Count(x => x.Status == nameof(ResponseStatus.Sent)),
+                Duplicates = g.Count(x => x.Status == nameof(ResponseStatus.Duplicate)),
+                Errors = g.Count(x => x.Status == nameof(ResponseStatus.Error))
+            })
+            .ToListAsync(cancellationToken);
+
+        var accountSummary = await db.AvitoAccounts
+            .AsNoTracking()
+            .GroupBy(static _ => 1)
+            .Select(g => new
+            {
+                Connected = g.Count(x => x.IsEnabled),
+                RequiresAuthorization = g.Count(x => x.Status == nameof(AvitoAccountStatus.RequiresLogin)),
+                ActiveAds = g.Sum(x => x.ActiveAdsCount),
+                BlockedAds = g.Sum(x => x.BlockedCount),
+                Drafts = g.Sum(x => x.DraftsCount)
+            })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var totalToday = responseSummary?.Total ?? 0;
         var stats = new DashboardStats
         {
-            NewResponses = responsesToday.Count,
-            TotalToday = responsesToday.Count,
-            SentToCrm = responsesToday.Count(x => x.Status == nameof(ResponseStatus.Sent)),
-            InProgress = responsesToday.Count(x => x.Status == nameof(ResponseStatus.InProgress)),
-            Duplicates = responsesToday.Count(x => x.Status == nameof(ResponseStatus.Duplicate)),
-            Errors = responsesToday.Count(x => x.Status == nameof(ResponseStatus.Error)),
-            ConnectedAccounts = accounts.Count(x => x.IsEnabled),
-            RequiresAuthorization = accounts.Count(x => x.Status == nameof(AvitoAccountStatus.RequiresLogin)),
-            ActiveAdsCount = accounts.Sum(x => x.ActiveAdsCount),
-            BlockedAdsCount = accounts.Sum(x => x.BlockedCount),
-            DraftsCount = accounts.Sum(x => x.DraftsCount)
+            NewResponses = totalToday,
+            TotalToday = totalToday,
+            SentToCrm = responseSummary?.Sent ?? 0,
+            InProgress = responseSummary?.InProgress ?? 0,
+            Duplicates = responseSummary?.Duplicates ?? 0,
+            Errors = responseSummary?.Errors ?? 0,
+            ConnectedAccounts = accountSummary?.Connected ?? 0,
+            RequiresAuthorization = accountSummary?.RequiresAuthorization ?? 0,
+            ActiveAdsCount = accountSummary?.ActiveAds ?? 0,
+            BlockedAdsCount = accountSummary?.BlockedAds ?? 0,
+            DraftsCount = accountSummary?.Drafts ?? 0
         };
 
         for (var hour = 0; hour < 24; hour += 3)
         {
-            var from = today.AddHours(hour);
-            var to = from.AddHours(3);
-            var bucket = responsesToday.Where(x => x.CreatedAt >= from && x.CreatedAt < to).ToList();
+            var bucket = activityBuckets.FirstOrDefault(x => x.Bucket == hour / 3);
             stats.Activity.Add(new ActivityPoint
             {
                 Label = $"{hour:00}:00",
-                NewCount = bucket.Count,
-                SentCount = bucket.Count(x => x.Status == nameof(ResponseStatus.Sent)),
-                DuplicateCount = bucket.Count(x => x.Status == nameof(ResponseStatus.Duplicate)),
-                ErrorCount = bucket.Count(x => x.Status == nameof(ResponseStatus.Error))
+                NewCount = bucket?.Total ?? 0,
+                SentCount = bucket?.Sent ?? 0,
+                DuplicateCount = bucket?.Duplicates ?? 0,
+                ErrorCount = bucket?.Errors ?? 0
             });
         }
 
@@ -357,4 +406,9 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
             }
         }
     }
+
+    private static Task EnsureCandidateResponsesSchemaAsync(AppDbContext db, CancellationToken cancellationToken) =>
+        db.Database.ExecuteSqlRawAsync(
+            "CREATE INDEX IF NOT EXISTS IX_CandidateResponses_CreatedAt ON CandidateResponses (CreatedAt);",
+            cancellationToken);
 }

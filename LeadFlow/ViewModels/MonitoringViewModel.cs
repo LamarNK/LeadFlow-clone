@@ -53,17 +53,41 @@ public partial class MonitoringViewModel : ObservableObject
     public async Task RefreshAsync()
     {
         var items = await _repository.GetRecentResponsesAsync(100, CancellationToken.None);
-        Responses.Clear();
-        foreach (var item in items)
+        ReplaceResponses(items);
+        SelectedResponse ??= Responses.FirstOrDefault();
+    }
+
+    public void ApplyProcessedResponse(CandidateResponse response)
+    {
+        var existingIndex = Responses
+            .Select((item, index) => new { item, index })
+            .FirstOrDefault(x => x.item.Id == response.Id)
+            ?.index;
+
+        if (existingIndex.HasValue)
         {
-            Responses.Add(item);
+            Responses.RemoveAt(existingIndex.Value);
         }
 
-        OnPropertyChanged(nameof(TotalResponsesCount));
-        OnPropertyChanged(nameof(NewResponsesCount));
-        OnPropertyChanged(nameof(SentResponsesCount));
-        OnPropertyChanged(nameof(ErrorResponsesCount));
-        SelectedResponse ??= Responses.FirstOrDefault();
+        var insertIndex = 0;
+        while (insertIndex < Responses.Count && Responses[insertIndex].CreatedAt > response.CreatedAt)
+        {
+            insertIndex++;
+        }
+
+        Responses.Insert(insertIndex, response);
+        while (Responses.Count > 100)
+        {
+            Responses.RemoveAt(Responses.Count - 1);
+        }
+
+        if (SelectedResponse?.Id == response.Id || SelectedResponse is null)
+        {
+            SelectedResponse = response;
+        }
+
+        NotifyCountersChanged();
+        ResponsesView.Refresh();
     }
 
     public string SelectedResponseStatusText => SelectedResponse?.Status switch
@@ -99,5 +123,25 @@ public partial class MonitoringViewModel : ObservableObject
             || item.PhoneRaw.Contains(search, StringComparison.OrdinalIgnoreCase);
 
         return statusMatches && textMatches;
+    }
+
+    private void ReplaceResponses(IEnumerable<CandidateResponse> items)
+    {
+        Responses.Clear();
+        foreach (var item in items)
+        {
+            Responses.Add(item);
+        }
+
+        NotifyCountersChanged();
+        ResponsesView.Refresh();
+    }
+
+    private void NotifyCountersChanged()
+    {
+        OnPropertyChanged(nameof(TotalResponsesCount));
+        OnPropertyChanged(nameof(NewResponsesCount));
+        OnPropertyChanged(nameof(SentResponsesCount));
+        OnPropertyChanged(nameof(ErrorResponsesCount));
     }
 }

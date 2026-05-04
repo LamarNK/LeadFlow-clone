@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Windows;
+using System.Windows.Threading;
 using LeadFlow.ViewModels;
 
 namespace LeadFlow.Views;
@@ -42,7 +43,7 @@ public partial class SettingsWindow : Window
         }
 
         _allowClose = true;
-        Close();
+        _ = Dispatcher.BeginInvoke(Close, DispatcherPriority.Normal);
     }
 
     private void OnClosed(object? sender, EventArgs e)

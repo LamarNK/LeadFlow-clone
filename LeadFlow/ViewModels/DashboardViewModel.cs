@@ -63,6 +63,66 @@ public partial class DashboardViewModel : ObservableObject
     public async Task RefreshAsync()
     {
         var stats = await _repository.GetDashboardStatsAsync(CancellationToken.None);
+        ApplyStats(stats);
+
+        ApplyActiveAdsSnapshot();
+    }
+
+    public void ApplyProcessedResponse(CandidateResponse response)
+    {
+        if (response.CreatedAt < DateTime.UtcNow.Date)
+        {
+            return;
+        }
+
+        NewResponses++;
+        TotalToday++;
+
+        switch (response.Status)
+        {
+            case ResponseStatus.Sent:
+                SentToCrm++;
+                break;
+            case ResponseStatus.InProgress:
+                InProgress++;
+                break;
+            case ResponseStatus.Duplicate:
+                Duplicates++;
+                break;
+            case ResponseStatus.Error:
+                Errors++;
+                break;
+        }
+
+        EnsureActivityBuckets();
+        var bucketIndex = Math.Clamp(response.CreatedAt.Hour / 3, 0, Activity.Count - 1);
+        var bucket = Activity[bucketIndex];
+        bucket.NewCount++;
+        switch (response.Status)
+        {
+            case ResponseStatus.Sent:
+                bucket.SentCount++;
+                break;
+            case ResponseStatus.Duplicate:
+                bucket.DuplicateCount++;
+                break;
+            case ResponseStatus.Error:
+                bucket.ErrorCount++;
+                break;
+        }
+
+        Activity[bucketIndex] = new ActivityPoint
+        {
+            Label = bucket.Label,
+            NewCount = bucket.NewCount,
+            SentCount = bucket.SentCount,
+            DuplicateCount = bucket.DuplicateCount,
+            ErrorCount = bucket.ErrorCount
+        };
+    }
+
+    private void ApplyStats(DashboardStats stats)
+    {
         NewResponses = stats.NewResponses;
         TotalToday = stats.TotalToday;
         SentToCrm = stats.SentToCrm;
@@ -80,19 +140,49 @@ public partial class DashboardViewModel : ObservableObject
             Activity.Add(point);
         }
 
-        ApplyActiveAdsSnapshot();
+        EnsureActivityBuckets();
     }
 
     private void ApplyActiveAdsSnapshot()
     {
-        var snapshot = _monitoringService.GetActiveAdsSnapshot();
+        var snapshot = _monitoringService.GetActiveAdsSnapshot()
+            .OrderByDescending(static ad => ad.Views)
+            .ThenBy(static ad => ad.Title, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
 
         void UpdateCollection()
         {
-            ActiveAds.Clear();
-            foreach (var ad in snapshot.OrderByDescending(static ad => ad.Views).ThenBy(static ad => ad.Title, StringComparer.CurrentCultureIgnoreCase))
+            for (var index = 0; index < snapshot.Count; index++)
             {
-                ActiveAds.Add(ad);
+                var desired = snapshot[index];
+                if (index < ActiveAds.Count && string.Equals(ActiveAds[index].Id, desired.Id, StringComparison.Ordinal))
+                {
+                    if (!AreEquivalent(ActiveAds[index], desired))
+                    {
+                        ActiveAds[index] = CloneAd(desired);
+                    }
+
+                    continue;
+                }
+
+                var existingIndex = FindAdIndex(desired.Id, index + 1);
+                if (existingIndex >= 0)
+                {
+                    ActiveAds.Move(existingIndex, index);
+                    if (!AreEquivalent(ActiveAds[index], desired))
+                    {
+                        ActiveAds[index] = CloneAd(desired);
+                    }
+
+                    continue;
+                }
+
+                ActiveAds.Insert(index, CloneAd(desired));
+            }
+
+            while (ActiveAds.Count > snapshot.Count)
+            {
+                ActiveAds.RemoveAt(ActiveAds.Count - 1);
             }
 
             TotalActiveViews = snapshot.Sum(static ad => ad.Views);
@@ -108,4 +198,57 @@ public partial class DashboardViewModel : ObservableObject
 
         UpdateCollection();
     }
+
+    private void EnsureActivityBuckets()
+    {
+        if (Activity.Count == 8)
+        {
+            return;
+        }
+
+        Activity.Clear();
+        for (var hour = 0; hour < 24; hour += 3)
+        {
+            Activity.Add(new ActivityPoint { Label = $"{hour:00}:00" });
+        }
+    }
+
+    private int FindAdIndex(string id, int startIndex)
+    {
+        for (var index = startIndex; index < ActiveAds.Count; index++)
+        {
+            if (string.Equals(ActiveAds[index].Id, id, StringComparison.Ordinal))
+            {
+                return index;
+            }
+        }
+
+        return -1;
+    }
+
+    private static bool AreEquivalent(AvitoAdStatus left, AvitoAdStatus right) =>
+        string.Equals(left.Id, right.Id, StringComparison.Ordinal)
+        && string.Equals(left.Title, right.Title, StringComparison.Ordinal)
+        && string.Equals(left.City, right.City, StringComparison.Ordinal)
+        && string.Equals(left.Salary, right.Salary, StringComparison.Ordinal)
+        && left.Views == right.Views
+        && left.Contacts == right.Contacts
+        && left.Favorites == right.Favorites
+        && string.Equals(left.Status, right.Status, StringComparison.Ordinal)
+        && string.Equals(left.DeleteDate, right.DeleteDate, StringComparison.Ordinal)
+        && left.DaysOnAvito == right.DaysOnAvito;
+
+    private static AvitoAdStatus CloneAd(AvitoAdStatus ad) => new()
+    {
+        Id = ad.Id,
+        Title = ad.Title,
+        City = ad.City,
+        Salary = ad.Salary,
+        Views = ad.Views,
+        Contacts = ad.Contacts,
+        Favorites = ad.Favorites,
+        Status = ad.Status,
+        DeleteDate = ad.DeleteDate,
+        DaysOnAvito = ad.DaysOnAvito
+    };
 }
