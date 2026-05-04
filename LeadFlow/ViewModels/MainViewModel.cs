@@ -93,6 +93,8 @@ public partial class MainViewModel : ObservableObject
 
     public string MonitoringActionText => IsMonitoringRunning ? "Остановить" : "Запустить мониторинг";
 
+    public string MonitoringButtonText => IsMonitoringActive ? "Стоп" : "Старт";
+
     partial void OnSystemStatusChanged(MonitoringStatus value)
     {
         OnPropertyChanged(nameof(SystemStatusText));
@@ -102,6 +104,7 @@ public partial class MainViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(IsMonitoringRunning));
         OnPropertyChanged(nameof(MonitoringActionText));
+        OnPropertyChanged(nameof(MonitoringButtonText));
     }
 
     [RelayCommand]

@@ -48,7 +48,7 @@
                     </StackPanel>
 
                     <StackPanel Grid.Column="2" HorizontalAlignment="Right">
-                        <UniformGrid Rows="1" Columns="3" Margin="0,0,0,10">
+                        <UniformGrid Rows="1" Columns="4" Margin="0,0,0,10">
                             <Button Style="{StaticResource NavItemButtonStyle}"
                                     Command="{Binding OpenMonitoringCommand}"
                                     CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}"
@@ -88,21 +88,47 @@
                                                Margin="0,6,0,0"/>
                                 </StackPanel>
                             </Button>
-                        </UniformGrid>
-                        <WrapPanel HorizontalAlignment="Right">
-                            <Button Content="{Binding MonitoringActionText}" Command="{Binding ToggleMonitoringCommand}">
-                                <Button.Style>
-                                    <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding IsMonitoringRunning}" Value="True">
-                                                <Setter Property="Background" Value="#E2E8F0" />
-                                                <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </Button.Style>
+                            <!-- Play/Pause indicator button -->
+                            <Button Style="{StaticResource NavItemButtonStyle}"
+                                    Command="{Binding ToggleMonitoringCommand}"
+                                    ToolTip="{Binding MonitoringActionText}">
+                                <StackPanel>
+                                    <!-- Round button with icon - same size as 1/2/3 buttons -->
+                                    <Button Style="{StaticResource RoundNavButtonStyle}"
+                                            Background="{StaticResource PrimaryBrush}"
+                                            IsHitTestVisible="False"
+                                            HorizontalAlignment="Center"
+                                            VerticalAlignment="Center"
+                                            HorizontalContentAlignment="Center"
+                                            VerticalContentAlignment="Center"
+                                            Padding="0">
+                                        <Viewbox Width="18" Height="18" Stretch="Uniform">
+                                            <Grid HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                <!-- Play icon when not running -->
+                                                <Path Data="M8 5v14l11-7z" 
+                                                      Fill="White"
+                                                      Stretch="Uniform"
+                                                      HorizontalAlignment="Center"
+                                                      VerticalAlignment="Center"
+                                                      Visibility="{Binding IsMonitoringRunning, Converter={StaticResource BooleanToVisibilityConverter}, ConverterParameter=Invert}" />
+                                                <!-- Pause icon when running -->
+                                                <Path Data="M6 19h4V5H6v14zm8-14v14h4V5h-4z" 
+                                                      Fill="White"
+                                                      Stretch="Uniform"
+                                                      HorizontalAlignment="Center"
+                                                      VerticalAlignment="Center"
+                                                      Visibility="{Binding IsMonitoringRunning, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                            </Grid>
+                                        </Viewbox>
+                                    </Button>
+                                    <TextBlock Text="{Binding MonitoringButtonText}"
+                                               Foreground="{StaticResource PrimaryBrush}"
+                                               FontWeight="SemiBold"
+                                               TextAlignment="Center"
+                                               Margin="0,6,0,0"/>
+                                </StackPanel>
                             </Button>
-                        </WrapPanel>
+                        </UniformGrid>
                     </StackPanel>
                 </Grid>
             </Border>

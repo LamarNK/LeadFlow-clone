@@ -18,6 +18,8 @@ public sealed class MonitoringService(
 {
     private CancellationTokenSource? _cts;
     private Task? _loopTask;
+    private System.Threading.Timer? _countdownTimer;
+    private DateTime? _nextCheckTime;
     private static readonly TimeSpan MinCycleDelay = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan MaxCycleDelay = TimeSpan.FromMinutes(10);
 
@@ -84,6 +86,8 @@ public sealed class MonitoringService(
             await _loopTask;
         }
 
+        _countdownTimer?.Dispose();
+        _nextCheckTime = null;
         IsActive = false;
         UpdateStatus(MonitoringStatus.Stopped, string.Empty);
     }
@@ -114,8 +118,12 @@ public sealed class MonitoringService(
                 }
 
                 var delay = GetRandomCycleDelay();
+                _nextCheckTime = DateTime.UtcNow + delay;
                 UpdateStatus(MonitoringStatus.Waiting, $"Цикл завершён. Ждём следующую проверку {FormatDelay(delay)}.");
+                StartCountdownTimer(delay);
                 await Task.Delay(delay, cancellationToken);
+                _countdownTimer?.Dispose();
+                _nextCheckTime = null;
                 UpdateStatus(MonitoringStatus.Running, "Пауза завершена: запускаем следующий цикл мониторинга.");
             }
         }
@@ -333,5 +341,27 @@ public sealed class MonitoringService(
         }
 
         return $"{delay.Seconds} сек.";
+    }
+
+    private void StartCountdownTimer(TimeSpan initialDelay)
+    {
+        _countdownTimer?.Dispose();
+        _countdownTimer = new System.Threading.Timer(_ =>
+        {
+            if (CurrentStatus == MonitoringStatus.Waiting && _nextCheckTime.HasValue)
+            {
+                var remaining = _nextCheckTime.Value - DateTime.UtcNow;
+                if (remaining <= TimeSpan.Zero)
+                {
+                    return;
+                }
+                var newMessage = $"Цикл завершён. Ждём следующую проверку {FormatDelay(remaining)}.";
+                if (CurrentStatusMessage != newMessage)
+                {
+                    CurrentStatusMessage = newMessage;
+                    StatusMessageChanged?.Invoke(this, CurrentStatusMessage);
+                }
+            }
+        }, null, TimeSpan.Zero, TimeSpan.FromSeconds(1));
     }
 }
