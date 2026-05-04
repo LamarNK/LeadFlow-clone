@@ -18,7 +18,7 @@ public sealed class CandidateResponse
     public string Vacancy { get; set; } = string.Empty;
     public string SourceUrl { get; set; } = string.Empty;
     public ResponseStatus Status { get; set; } = ResponseStatus.New;
-    public string BitrixEntityType { get; set; } = "Lead";
+    public string BitrixEntityType { get; set; } = "Deal";
     public string BitrixEntityId { get; set; } = string.Empty;
     public string ErrorMessage { get; set; } = string.Empty;
     public string RawText { get; set; } = string.Empty;

@@ -13,6 +13,19 @@ public sealed class BitrixClient(
     ICandidateParser candidateParser) : IBitrixClient
 {
     private const string ImportedLeadSource = "Bitrix24";
+    private sealed record DealSnapshot(
+        string BitrixId,
+        string Title,
+        string Comments,
+        DateTime CreatedAt,
+        string ContactId);
+
+    private sealed record ContactSnapshot(
+        string Id,
+        string FirstName,
+        string LastName,
+        string MiddleName,
+        string Phone);
 
     public async Task<bool> HasDuplicateAsync(string phoneNormalized, AppSettings settings, CancellationToken cancellationToken)
     {
@@ -63,9 +76,9 @@ public sealed class BitrixClient(
             return [];
         }
 
-        var endpoint = settings.Bitrix.WebhookUrl.TrimEnd('/') + "/crm.lead.list.json";
+        var endpoint = settings.Bitrix.WebhookUrl.TrimEnd('/') + "/crm.deal.list.json";
         var client = httpClientFactory.CreateClient(nameof(BitrixClient));
-        var leads = new List<CandidateResponse>();
+        var deals = new List<DealSnapshot>();
         var start = 0;
 
         while (true)
@@ -73,7 +86,7 @@ public sealed class BitrixClient(
             var request = new
             {
                 order = new { ID = "ASC" },
-                select = new[] { "ID", "TITLE", "NAME", "LAST_NAME", "SECOND_NAME", "PHONE", "ADDRESS_CITY", "COMMENTS", "DATE_CREATE" },
+                select = new[] { "ID", "TITLE", "COMMENTS", "DATE_CREATE", "STAGE_ID", "CONTACT_ID" },
                 start
             };
 
@@ -89,10 +102,10 @@ public sealed class BitrixClient(
 
             foreach (var item in resultElement.EnumerateArray())
             {
-                var lead = ParseLead(item);
-                if (lead is not null)
+                var deal = ParseDealSnapshot(item);
+                if (deal is not null)
                 {
-                    leads.Add(lead);
+                    deals.Add(deal);
                 }
             }
 
@@ -104,10 +117,23 @@ public sealed class BitrixClient(
             start = nextElement.GetInt32();
         }
 
+        var contacts = await LoadContactsAsync(
+            client,
+            settings.Bitrix.WebhookUrl,
+            deals.Select(x => x.ContactId),
+            cancellationToken);
+
+        var responses = new List<CandidateResponse>(deals.Count);
+        foreach (var deal in deals)
+        {
+            contacts.TryGetValue(deal.ContactId, out var contact);
+            responses.Add(ParseDeal(deal, contact));
+        }
+
         _ = GlobalLogger.Instance.LogAsync(
-            $"Bitrix lead sync fetched {leads.Count} leads.",
+            $"Bitrix deal sync fetched {responses.Count} deals.",
             DeskLinkAuditLogLevel.Info);
-        return leads;
+        return responses;
     }
 
     public async Task<BitrixCreateLeadResponse> CreateLeadAsync(CandidateResponse response, AppSettings settings, CancellationToken cancellationToken)
@@ -127,11 +153,6 @@ public sealed class BitrixClient(
             fields = new
             {
                 TITLE = preview.Title,
-                NAME = preview.Name,
-                LAST_NAME = preview.LastName,
-                SECOND_NAME = preview.SecondName,
-                PHONE = new[] { new { VALUE = response.PhoneNormalized, VALUE_TYPE = "WORK" } },
-                ADDRESS_CITY = preview.City,
                 COMMENTS = preview.Comments,
                 SOURCE_DESCRIPTION = settings.Bitrix.LeadSource,
                 ASSIGNED_BY_ID = settings.Bitrix.ResponsibleId
@@ -140,20 +161,23 @@ public sealed class BitrixClient(
 
         try
         {
-            var endpoint = settings.Bitrix.WebhookUrl.TrimEnd('/') + "/crm.lead.add.json";
+            var endpoint = settings.Bitrix.WebhookUrl.TrimEnd('/') + "/crm.deal.add.json";
             var client = httpClientFactory.CreateClient(nameof(BitrixClient));
             var result = await client.PostAsJsonAsync(endpoint, request, cancellationToken);
             result.EnsureSuccessStatusCode();
+            await using var stream = await result.Content.ReadAsStreamAsync(cancellationToken);
+            using var json = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+            var entityId = GetCreateResultId(json.RootElement);
             return new BitrixCreateLeadResponse
             {
                 IsSuccess = true,
-                EntityId = $"BITRIX-{DateTime.UtcNow:HHmmss}"
+                EntityId = entityId
             };
         }
         catch (Exception ex)
         {
             _ = GlobalLogger.Instance.LogAsync(
-                $"Bitrix lead creation failed.{Environment.NewLine}{ex}",
+                $"Bitrix deal creation failed.{Environment.NewLine}{ex}",
                 DeskLinkAuditLogLevel.Error);
             return new BitrixCreateLeadResponse
             {
@@ -163,20 +187,34 @@ public sealed class BitrixClient(
         }
     }
 
-    private static CandidateResponse? ParseLead(JsonElement item)
+    private static DealSnapshot? ParseDealSnapshot(JsonElement item)
     {
         var bitrixId = GetString(item, "ID");
-        var phone = GetFirstPhone(item);
-        if (string.IsNullOrWhiteSpace(bitrixId) || string.IsNullOrWhiteSpace(phone))
+        if (string.IsNullOrWhiteSpace(bitrixId))
         {
             return null;
         }
 
-        var firstName = GetString(item, "NAME");
-        var lastName = GetString(item, "LAST_NAME");
-        var middleName = GetString(item, "SECOND_NAME");
-        var fullName = string.Join(" ", new[] { lastName, firstName, middleName }.Where(x => !string.IsNullOrWhiteSpace(x))).Trim();
-        var createdAt = ParseDate(GetString(item, "DATE_CREATE"));
+        return new DealSnapshot(
+            bitrixId,
+            GetString(item, "TITLE"),
+            GetString(item, "COMMENTS"),
+            ParseDate(GetString(item, "DATE_CREATE")),
+            GetString(item, "CONTACT_ID"));
+    }
+
+    private static CandidateResponse ParseDeal(DealSnapshot deal, ContactSnapshot? contact)
+    {
+        var fullName = !string.IsNullOrWhiteSpace(contact?.LastName) || !string.IsNullOrWhiteSpace(contact?.FirstName)
+            ? string.Join(" ", new[] { contact!.LastName, contact.FirstName, contact.MiddleName }.Where(x => !string.IsNullOrWhiteSpace(x))).Trim()
+            : ExtractFullName(deal.Title, deal.Comments);
+
+        var parsedName = ParseFullName(fullName);
+        var phone = !string.IsNullOrWhiteSpace(contact?.Phone)
+            ? contact.Phone
+            : ExtractFieldValue(deal.Comments, "Телефон");
+        var city = ExtractFieldValue(deal.Comments, "Город");
+        var vacancy = ExtractFieldValue(deal.Comments, "Вакансия");
 
         return new CandidateResponse
         {
@@ -184,27 +222,61 @@ public sealed class BitrixClient(
             AccountId = Guid.Empty,
             AccountName = ImportedLeadSource,
             Source = ImportedLeadSource,
-            SourceResponseId = $"BITRIX-LEAD-{bitrixId}",
+            SourceResponseId = $"BITRIX-DEAL-{deal.BitrixId}",
             FullName = fullName,
-            FirstName = firstName,
-            LastName = lastName,
-            MiddleName = middleName,
+            FirstName = parsedName.firstName,
+            LastName = parsedName.lastName,
+            MiddleName = parsedName.middleName,
             PhoneRaw = phone,
-            City = GetString(item, "ADDRESS_CITY"),
-            Vacancy = GetString(item, "TITLE"),
-            RawText = GetString(item, "COMMENTS"),
+            City = city,
+            Vacancy = string.IsNullOrWhiteSpace(vacancy) ? deal.Title : vacancy,
+            RawText = deal.Comments,
             Status = ResponseStatus.Sent,
-            BitrixEntityType = "Lead",
-            BitrixEntityId = bitrixId,
-            CreatedAt = createdAt,
-            ProcessedAt = createdAt
+            BitrixEntityType = "Deal",
+            BitrixEntityId = deal.BitrixId,
+            CreatedAt = deal.CreatedAt,
+            ProcessedAt = deal.CreatedAt
         };
     }
 
-    private static string GetString(JsonElement item, string propertyName) =>
-        item.TryGetProperty(propertyName, out var value) && value.ValueKind == JsonValueKind.String
-            ? value.GetString() ?? string.Empty
-            : string.Empty;
+    private static async Task<Dictionary<string, ContactSnapshot>> LoadContactsAsync(
+        HttpClient client,
+        string webhookUrl,
+        IEnumerable<string> contactIds,
+        CancellationToken cancellationToken)
+    {
+        var contacts = new Dictionary<string, ContactSnapshot>(StringComparer.OrdinalIgnoreCase);
+        var endpoint = webhookUrl.TrimEnd('/') + "/crm.contact.get.json";
+
+        foreach (var contactId in contactIds.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            try
+            {
+                using var result = await client.PostAsJsonAsync(endpoint, new { id = contactId }, cancellationToken);
+                result.EnsureSuccessStatusCode();
+
+                await using var stream = await result.Content.ReadAsStreamAsync(cancellationToken);
+                using var json = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+                if (!json.RootElement.TryGetProperty("result", out var contactElement) || contactElement.ValueKind != JsonValueKind.Object)
+                {
+                    continue;
+                }
+
+                contacts[contactId] = new ContactSnapshot(
+                    contactId,
+                    GetString(contactElement, "NAME"),
+                    GetString(contactElement, "LAST_NAME"),
+                    GetString(contactElement, "SECOND_NAME"),
+                    GetFirstPhone(contactElement));
+            }
+            catch
+            {
+                // Ignore one-off contact lookup failures and keep importing available deals.
+            }
+        }
+
+        return contacts;
+    }
 
     private static string GetFirstPhone(JsonElement item)
     {
@@ -226,6 +298,77 @@ public sealed class BitrixClient(
         }
 
         return string.Empty;
+    }
+
+    private static string GetString(JsonElement item, string propertyName) =>
+        item.TryGetProperty(propertyName, out var value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString() ?? string.Empty
+            : string.Empty;
+
+    private static string ExtractFieldValue(string text, string fieldName)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return string.Empty;
+        }
+
+        var lines = text.Split([Environment.NewLine, "\n"], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        foreach (var line in lines)
+        {
+            if (line.StartsWith(fieldName + ":", StringComparison.OrdinalIgnoreCase))
+            {
+                return line[(fieldName.Length + 1)..].Trim();
+            }
+        }
+
+        return string.Empty;
+    }
+
+    private static string ExtractFullName(string title, string comments)
+    {
+        var fromComments = ExtractFieldValue(comments, "ФИО");
+        if (!string.IsNullOrWhiteSpace(fromComments))
+        {
+            return fromComments;
+        }
+
+        const string separator = " — ";
+        var separatorIndex = title.LastIndexOf(separator, StringComparison.Ordinal);
+        if (separatorIndex >= 0 && separatorIndex + separator.Length < title.Length)
+        {
+            return title[(separatorIndex + separator.Length)..].Trim();
+        }
+
+        return title;
+    }
+
+    private static (string firstName, string lastName, string middleName) ParseFullName(string fullName)
+    {
+        if (string.IsNullOrWhiteSpace(fullName))
+        {
+            return (string.Empty, string.Empty, string.Empty);
+        }
+
+        var parts = fullName.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return (
+            parts.ElementAtOrDefault(1) ?? string.Empty,
+            parts.ElementAtOrDefault(0) ?? string.Empty,
+            parts.ElementAtOrDefault(2) ?? string.Empty);
+    }
+
+    private static string GetCreateResultId(JsonElement root)
+    {
+        if (!root.TryGetProperty("result", out var resultElement))
+        {
+            return $"BITRIX-{DateTime.UtcNow:HHmmss}";
+        }
+
+        return resultElement.ValueKind switch
+        {
+            JsonValueKind.Number => resultElement.GetInt32().ToString(CultureInfo.InvariantCulture),
+            JsonValueKind.String => resultElement.GetString() ?? $"BITRIX-{DateTime.UtcNow:HHmmss}",
+            _ => $"BITRIX-{DateTime.UtcNow:HHmmss}"
+        };
     }
 
     private static string[] BuildDuplicateLookupValues(string phoneNormalized)

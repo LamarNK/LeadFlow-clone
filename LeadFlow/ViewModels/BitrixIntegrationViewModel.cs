@@ -36,7 +36,7 @@ public partial class BitrixIntegrationViewModel(ICandidateParser candidateParser
         StatusText = response.Status switch
         {
             ResponseStatus.Duplicate => "Дубль найден",
-            ResponseStatus.Sent => "Лид создан",
+            ResponseStatus.Sent => "Сделка создана",
             ResponseStatus.Error => "Ошибка отправки",
             ResponseStatus.InProgress => "Отправляется в Bitrix24",
             _ => "Ожидает проверки дублей"

@@ -226,18 +226,18 @@ public sealed class MonitoringService(
             response.Status = ResponseStatus.Duplicate;
             response.ProcessedAt = DateTime.UtcNow;
             await repository.SaveCandidateAsync(response, cancellationToken);
-            UpdateStatus(MonitoringStatus.Running, $"Отклик \"{response.FullName}\" помечен как дубль. Новый лид в Bitrix24 не создаётся.");
+            UpdateStatus(MonitoringStatus.Running, $"Отклик \"{response.FullName}\" помечен как дубль. Новая сделка в Bitrix24 не создаётся.");
             ResponseProcessed?.Invoke(this, response);
             return;
         }
 
-        UpdateStatus(MonitoringStatus.Running, $"Отклик \"{response.FullName}\" уникален: отправляем лид в Bitrix24.");
+        UpdateStatus(MonitoringStatus.Running, $"Отклик \"{response.FullName}\" уникален: отправляем сделку в Bitrix24.");
         var lead = await bitrixClient.CreateLeadAsync(response, settings, cancellationToken);
         response.ProcessedAt = DateTime.UtcNow;
         if (lead.IsSuccess)
         {
             _ = GlobalLogger.Instance.LogAsync(
-                $"Bitrix lead created for response {response.Id}: {lead.EntityId}.",
+                $"Bitrix deal created for response {response.Id}: {lead.EntityId}.",
                 DeskLinkAuditLogLevel.Info);
             response.Status = ResponseStatus.Sent;
             response.BitrixEntityId = lead.EntityId;
@@ -246,15 +246,15 @@ public sealed class MonitoringService(
                 CandidateResponseId = response.Id,
                 AccountId = response.AccountId,
                 Level = "Info",
-                Message = "Лид создан в Bitrix24",
+                Message = "Сделка создана в Bitrix24",
                 Details = lead.EntityId
             }, cancellationToken);
-            UpdateStatus(MonitoringStatus.Running, $"Лид по отклику \"{response.FullName}\" успешно создан в Bitrix24. ID: {lead.EntityId}.");
+            UpdateStatus(MonitoringStatus.Running, $"Сделка по отклику \"{response.FullName}\" успешно создана в Bitrix24. ID: {lead.EntityId}.");
         }
         else
         {
             _ = GlobalLogger.Instance.LogAsync(
-                $"Bitrix lead creation failed for response {response.Id}: {lead.Error}.",
+                $"Bitrix deal creation failed for response {response.Id}: {lead.Error}.",
                 DeskLinkAuditLogLevel.Error);
             response.Status = ResponseStatus.Error;
             response.ErrorMessage = lead.Error;
@@ -266,7 +266,7 @@ public sealed class MonitoringService(
                 Message = "Ошибка Bitrix24",
                 Details = lead.Error
             }, cancellationToken);
-            UpdateStatus(MonitoringStatus.Error, $"Ошибка при создании лида по отклику \"{response.FullName}\": {lead.Error}");
+            UpdateStatus(MonitoringStatus.Error, $"Ошибка при создании сделки по отклику \"{response.FullName}\": {lead.Error}");
         }
 
         await repository.SaveCandidateAsync(response, cancellationToken);
@@ -275,11 +275,11 @@ public sealed class MonitoringService(
 
     private async Task SyncBitrixLeadsAsync(AppSettings settings, CancellationToken cancellationToken)
     {
-        UpdateStatus(MonitoringStatus.Running, "Синхронизация с Bitrix24: загружаем существующие лиды перед стартом мониторинга.");
+        UpdateStatus(MonitoringStatus.Running, "Синхронизация с Bitrix24: загружаем существующие сделки перед стартом мониторинга.");
         var bitrixLeads = await bitrixClient.GetExistingLeadsAsync(settings, cancellationToken);
         if (bitrixLeads.Count == 0)
         {
-            UpdateStatus(MonitoringStatus.Running, "Синхронизация с Bitrix24 завершена: новых лидов для импорта не найдено.");
+            UpdateStatus(MonitoringStatus.Running, "Синхронизация с Bitrix24 завершена: новых сделок для импорта не найдено.");
             return;
         }
 
@@ -304,9 +304,9 @@ public sealed class MonitoringService(
         {
             Level = "Info",
             Message = "Синхронизация Bitrix24 выполнена",
-            Details = $"Импортировано лидов: {imported}"
+            Details = $"Импортировано сделок: {imported}"
         }, cancellationToken);
-        UpdateStatus(MonitoringStatus.Running, $"Синхронизация с Bitrix24 завершена: импортировано лидов {imported}.");
+        UpdateStatus(MonitoringStatus.Running, $"Синхронизация с Bitrix24 завершена: импортировано сделок {imported}.");
     }
 
     private static TimeSpan GetRandomCycleDelay()

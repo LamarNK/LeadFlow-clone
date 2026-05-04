@@ -9,6 +9,6 @@ public sealed class DuplicateCheckResult
     public bool IsDuplicate => IsLocalDuplicate || IsBitrixDuplicate;
     public string Summary =>
         IsDuplicate
-            ? "Дубль найден — лид не создаётся"
-            : "Дубль не найден — лид будет создан автоматически";
+            ? "Дубль найден — сделка не создаётся"
+            : "Дубль не найден — сделка будет создана автоматически";
 }

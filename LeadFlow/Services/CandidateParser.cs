@@ -28,8 +28,11 @@ public sealed class CandidateParser : ICandidateParser
             Vacancy = response.Vacancy,
             Source = settings.LeadSource,
             Comments =
+                $"ФИО: {response.FullName}{Environment.NewLine}" +
+                $"Телефон: {response.PhoneRaw}{Environment.NewLine}" +
                 $"Возраст: {response.Age?.ToString() ?? "-"}{Environment.NewLine}" +
                 $"Вакансия: {response.Vacancy}{Environment.NewLine}" +
+                $"Город: {response.City}{Environment.NewLine}" +
                 $"Источник: Авито{Environment.NewLine}" +
                 $"Ссылка на отклик: {response.SourceUrl}{Environment.NewLine}" +
                 $"Аккаунт Авито: {response.AccountName}{Environment.NewLine}" +
