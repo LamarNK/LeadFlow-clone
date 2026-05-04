@@ -22,23 +22,51 @@ public sealed class MonitoringService(
     private static readonly TimeSpan MaxCycleDelay = TimeSpan.FromMinutes(10);
 
     public event EventHandler<MonitoringStatus>? StatusChanged;
+    public event EventHandler<string>? StatusMessageChanged;
     public event EventHandler<CandidateResponse>? ResponseProcessed;
 
     public MonitoringStatus CurrentStatus { get; private set; } = MonitoringStatus.Waiting;
+    public string CurrentStatusMessage { get; private set; } = string.Empty;
+    public bool IsActive { get; private set; }
 
-    public Task StartAsync(CancellationToken cancellationToken)
+    public async Task StartAsync(CancellationToken cancellationToken)
     {
         if (_loopTask is { IsCompleted: false })
         {
-            return Task.CompletedTask;
+            return;
         }
 
         _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        IsActive = true;
+        UpdateStatus(MonitoringStatus.Running, "Запуск мониторинга: загружаем настройки и готовим синхронизацию с Bitrix24.");
+        try
+        {
+            var settings = await settingsService.LoadAsync(_cts.Token);
+            await SyncBitrixLeadsAsync(settings, _cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            IsActive = false;
+            UpdateStatus(MonitoringStatus.Stopped, string.Empty);
+            _cts.Dispose();
+            _cts = null;
+            return;
+        }
+        catch (Exception ex)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Bitrix pre-sync failed.{Environment.NewLine}{ex}",
+                DeskLinkAuditLogLevel.Error);
+            IsActive = false;
+            _cts.Dispose();
+            _cts = null;
+            UpdateStatus(MonitoringStatus.Error, $"Ошибка запуска мониторинга: {ex.Message}");
+            return;
+        }
+
         _ = GlobalLogger.Instance.LogAsync("Monitoring started.", DeskLinkAuditLogLevel.Info);
-        CurrentStatus = MonitoringStatus.Running;
-        StatusChanged?.Invoke(this, CurrentStatus);
+        UpdateStatus(MonitoringStatus.Running, "Мониторинг запущен: начинаем обход активных аккаунтов Авито.");
         _loopTask = RunAsync(_cts.Token);
-        return Task.CompletedTask;
     }
 
     public async Task StopAsync()
@@ -48,14 +76,15 @@ public sealed class MonitoringService(
             return;
         }
 
+        UpdateStatus(MonitoringStatus.Stopped, "Останавливаем мониторинг и завершаем текущие операции.");
         _cts.Cancel();
         if (_loopTask is not null)
         {
             await _loopTask;
         }
 
-        CurrentStatus = MonitoringStatus.Stopped;
-        StatusChanged?.Invoke(this, CurrentStatus);
+        IsActive = false;
+        UpdateStatus(MonitoringStatus.Stopped, string.Empty);
     }
 
     private async Task RunAsync(CancellationToken cancellationToken)
@@ -66,6 +95,11 @@ public sealed class MonitoringService(
             {
                 var settings = await settingsService.LoadAsync(cancellationToken);
                 var accounts = settings.Avito.Accounts.Where(x => x.IsEnabled).ToList();
+                UpdateStatus(
+                    MonitoringStatus.Running,
+                    accounts.Count == 0
+                        ? "Активных аккаунтов Авито нет: откройте настройки и включите хотя бы один аккаунт."
+                        : $"Начинаем новый цикл мониторинга: активных аккаунтов {accounts.Count}.");
 
                 foreach (var account in accounts)
                 {
@@ -78,11 +112,10 @@ public sealed class MonitoringService(
                     await Task.Delay(TimeSpan.FromSeconds(settings.MonitoringSafety.DelayBetweenAccountsSeconds), cancellationToken);
                 }
 
-                CurrentStatus = MonitoringStatus.Waiting;
-                StatusChanged?.Invoke(this, CurrentStatus);
-                await Task.Delay(GetRandomCycleDelay(), cancellationToken);
-                CurrentStatus = MonitoringStatus.Running;
-                StatusChanged?.Invoke(this, CurrentStatus);
+                var delay = GetRandomCycleDelay();
+                UpdateStatus(MonitoringStatus.Waiting, $"Цикл завершён. Ждём следующую проверку {FormatDelay(delay)}.");
+                await Task.Delay(delay, cancellationToken);
+                UpdateStatus(MonitoringStatus.Running, "Пауза завершена: запускаем следующий цикл мониторинга.");
             }
         }
         catch (OperationCanceledException)
@@ -94,8 +127,8 @@ public sealed class MonitoringService(
             _ = GlobalLogger.Instance.LogAsync(
                 $"Monitoring loop failed.{Environment.NewLine}{ex}",
                 DeskLinkAuditLogLevel.Error);
-            CurrentStatus = MonitoringStatus.Error;
-            StatusChanged?.Invoke(this, CurrentStatus);
+            IsActive = false;
+            UpdateStatus(MonitoringStatus.Error, $"Мониторинг остановлен из-за ошибки: {ex.Message}");
         }
     }
 
@@ -103,6 +136,9 @@ public sealed class MonitoringService(
     {
         if (account.Status is AvitoAccountStatus.RequiresLogin or AvitoAccountStatus.RequiresManualAction or AvitoAccountStatus.Paused)
         {
+            UpdateStatus(
+                account.Status == AvitoAccountStatus.RequiresLogin ? MonitoringStatus.RequiresAuthorization : MonitoringStatus.RequiresManualAction,
+                $"Аккаунт \"{account.DisplayName}\" пропущен. Текущий статус: {account.Status}.");
             _ = GlobalLogger.Instance.LogAsync(
                 $"Account {account.DisplayName} skipped because of status {account.Status}.",
                 DeskLinkAuditLogLevel.Warning);
@@ -118,6 +154,7 @@ public sealed class MonitoringService(
 
         account.Status = AvitoAccountStatus.Monitoring;
         account.LastMonitoringAt = DateTime.UtcNow;
+        UpdateStatus(MonitoringStatus.Running, $"Проверяем аккаунт Авито \"{account.DisplayName}\": открываем список откликов.");
         _ = GlobalLogger.Instance.LogAsync(
             $"Processing account {account.DisplayName}.",
             DeskLinkAuditLogLevel.Info);
@@ -126,6 +163,7 @@ public sealed class MonitoringService(
         var responses = settings.DemoModeEnabled
             ? await avitoDemoResponseSource.GetBatchAsync(account, Math.Max(1, settings.MonitoringSafety.MaxResponsesPerCycle / 2), cancellationToken)
             : await avitoResponseSource.GetNewResponsesAsync(account, settings, cancellationToken);
+        UpdateStatus(MonitoringStatus.Running, $"Аккаунт \"{account.DisplayName}\" проверен: найдено новых откликов {responses.Count}.");
 
         foreach (var response in responses.Take(settings.MonitoringSafety.MaxResponsesPerCycle))
         {
@@ -148,6 +186,7 @@ public sealed class MonitoringService(
 
     private async Task ProcessResponseAsync(CandidateResponse response, AppSettings settings, CancellationToken cancellationToken)
     {
+        UpdateStatus(MonitoringStatus.Running, $"Обрабатываем отклик \"{response.FullName}\" ({response.PhoneRaw}): готовим данные кандидата.");
         var names = candidateParser.ParseName(response.FullName);
         response.FirstName = names.FirstName;
         response.LastName = names.LastName;
@@ -168,6 +207,7 @@ public sealed class MonitoringService(
             Details = response.FullName
         }, cancellationToken);
 
+        UpdateStatus(MonitoringStatus.Running, $"Отклик \"{response.FullName}\" ({response.PhoneNormalized}): проверяем дубли в локальной базе и Bitrix24.");
         var duplicate = await duplicateService.CheckAsync(response, settings, cancellationToken);
         await repository.AddLogAsync(new ProcessingLogItem
         {
@@ -186,10 +226,12 @@ public sealed class MonitoringService(
             response.Status = ResponseStatus.Duplicate;
             response.ProcessedAt = DateTime.UtcNow;
             await repository.SaveCandidateAsync(response, cancellationToken);
+            UpdateStatus(MonitoringStatus.Running, $"Отклик \"{response.FullName}\" помечен как дубль. Новый лид в Bitrix24 не создаётся.");
             ResponseProcessed?.Invoke(this, response);
             return;
         }
 
+        UpdateStatus(MonitoringStatus.Running, $"Отклик \"{response.FullName}\" уникален: отправляем лид в Bitrix24.");
         var lead = await bitrixClient.CreateLeadAsync(response, settings, cancellationToken);
         response.ProcessedAt = DateTime.UtcNow;
         if (lead.IsSuccess)
@@ -207,6 +249,7 @@ public sealed class MonitoringService(
                 Message = "Лид создан в Bitrix24",
                 Details = lead.EntityId
             }, cancellationToken);
+            UpdateStatus(MonitoringStatus.Running, $"Лид по отклику \"{response.FullName}\" успешно создан в Bitrix24. ID: {lead.EntityId}.");
         }
         else
         {
@@ -223,10 +266,47 @@ public sealed class MonitoringService(
                 Message = "Ошибка Bitrix24",
                 Details = lead.Error
             }, cancellationToken);
+            UpdateStatus(MonitoringStatus.Error, $"Ошибка при создании лида по отклику \"{response.FullName}\": {lead.Error}");
         }
 
         await repository.SaveCandidateAsync(response, cancellationToken);
         ResponseProcessed?.Invoke(this, response);
+    }
+
+    private async Task SyncBitrixLeadsAsync(AppSettings settings, CancellationToken cancellationToken)
+    {
+        UpdateStatus(MonitoringStatus.Running, "Синхронизация с Bitrix24: загружаем существующие лиды перед стартом мониторинга.");
+        var bitrixLeads = await bitrixClient.GetExistingLeadsAsync(settings, cancellationToken);
+        if (bitrixLeads.Count == 0)
+        {
+            UpdateStatus(MonitoringStatus.Running, "Синхронизация с Bitrix24 завершена: новых лидов для импорта не найдено.");
+            return;
+        }
+
+        var existingIds = await repository.GetExistingBitrixEntityIdsAsync(
+            bitrixLeads.Select(x => x.BitrixEntityId),
+            cancellationToken);
+
+        var imported = 0;
+        foreach (var lead in bitrixLeads)
+        {
+            if (existingIds.Contains(lead.BitrixEntityId))
+            {
+                continue;
+            }
+
+            lead.PhoneNormalized = phoneNormalizer.Normalize(lead.PhoneRaw);
+            await repository.SaveCandidateAsync(lead, cancellationToken);
+            imported++;
+        }
+
+        await repository.AddLogAsync(new ProcessingLogItem
+        {
+            Level = "Info",
+            Message = "Синхронизация Bitrix24 выполнена",
+            Details = $"Импортировано лидов: {imported}"
+        }, cancellationToken);
+        UpdateStatus(MonitoringStatus.Running, $"Синхронизация с Bitrix24 завершена: импортировано лидов {imported}.");
     }
 
     private static TimeSpan GetRandomCycleDelay()
@@ -234,5 +314,23 @@ public sealed class MonitoringService(
         var minSeconds = (int)MinCycleDelay.TotalSeconds;
         var maxSeconds = (int)MaxCycleDelay.TotalSeconds;
         return TimeSpan.FromSeconds(Random.Shared.Next(minSeconds, maxSeconds + 1));
+    }
+
+    private void UpdateStatus(MonitoringStatus status, string message)
+    {
+        CurrentStatus = status;
+        CurrentStatusMessage = message;
+        StatusChanged?.Invoke(this, status);
+        StatusMessageChanged?.Invoke(this, message);
+    }
+
+    private static string FormatDelay(TimeSpan delay)
+    {
+        if (delay.TotalMinutes >= 1)
+        {
+            return $"{(int)delay.TotalMinutes} мин. {delay.Seconds} сек.";
+        }
+
+        return $"{delay.Seconds} сек.";
     }
 }

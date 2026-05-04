@@ -21,6 +21,12 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty]
     private MonitoringStatus systemStatus = MonitoringStatus.Waiting;
 
+    [ObservableProperty]
+    private string systemStatusDetails = string.Empty;
+
+    [ObservableProperty]
+    private bool isMonitoringActive;
+
     public MainViewModel(
         IMonitoringService monitoringService,
         IWindowService windowService,
@@ -53,6 +59,12 @@ public partial class MainViewModel : ObservableObject
             await RefreshAllAsync();
         };
 
+        _monitoringService.StatusMessageChanged += (_, message) =>
+        {
+            SystemStatusDetails = message;
+            IsMonitoringActive = _monitoringService.IsActive;
+        };
+
         _monitoringService.ResponseProcessed += async (_, response) =>
         {
             await Monitoring.RefreshAsync();
@@ -65,23 +77,29 @@ public partial class MainViewModel : ObservableObject
 
     }
 
-    public string SystemStatusText => SystemStatus switch
-    {
-        MonitoringStatus.Running => "Мониторинг запущен",
-        MonitoringStatus.RequiresAuthorization => "Требуется авторизация",
-        MonitoringStatus.RequiresManualAction => "Требуется ручное действие",
-        MonitoringStatus.Error => "Ошибка",
-        MonitoringStatus.Stopped => "Мониторинг остановлен",
-        _ => "Ожидание"
-    };
+    public string SystemStatusText =>
+        !IsMonitoringActive ? "Мониторинг не запущен" : SystemStatus switch
+        {
+            MonitoringStatus.Running => "Мониторинг работает",
+            MonitoringStatus.Waiting => "Мониторинг ожидает следующий цикл",
+            MonitoringStatus.RequiresAuthorization => "Нужна авторизация",
+            MonitoringStatus.RequiresManualAction => "Нужно ручное действие",
+            MonitoringStatus.Error => "Ошибка",
+            MonitoringStatus.Stopped => "Мониторинг остановлен",
+            _ => "Ожидание"
+        };
 
-    public bool IsMonitoringRunning => SystemStatus == MonitoringStatus.Running;
+    public bool IsMonitoringRunning => IsMonitoringActive;
 
     public string MonitoringActionText => IsMonitoringRunning ? "Остановить" : "Запустить мониторинг";
 
     partial void OnSystemStatusChanged(MonitoringStatus value)
     {
         OnPropertyChanged(nameof(SystemStatusText));
+    }
+
+    partial void OnIsMonitoringActiveChanged(bool value)
+    {
         OnPropertyChanged(nameof(IsMonitoringRunning));
         OnPropertyChanged(nameof(MonitoringActionText));
     }
@@ -118,7 +136,13 @@ public partial class MainViewModel : ObservableObject
     public Task OpenJournalAsync(Window? owner) =>
         owner is null ? Task.CompletedTask : _windowService.ShowJournalAsync(owner, CancellationToken.None);
 
-    public Task InitializeAsync() => RefreshAllAsync();
+    public async Task InitializeAsync()
+    {
+        SystemStatus = _monitoringService.CurrentStatus;
+        SystemStatusDetails = _monitoringService.CurrentStatusMessage;
+        IsMonitoringActive = _monitoringService.IsActive;
+        await RefreshAllAsync();
+    }
 
     private async Task RefreshAllAsync()
     {

@@ -23,9 +23,28 @@
                     </Grid.ColumnDefinitions>
 
                     <Image Width="64" Height="64" Source="{StaticResource LeadFlowIcon}" Margin="0,0,18,0" />
-                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                    <StackPanel Grid.Column="1"
+                                VerticalAlignment="Center"
+                                HorizontalAlignment="Left"
+                                MaxWidth="720">
                         <TextBlock Text="LeadFlow" FontSize="30" FontWeight="Bold" />
                         <TextBlock Text="{Binding SystemStatusText}" Foreground="{Binding SystemStatus, Converter={StaticResource StatusToBrushConverter}}" FontWeight="SemiBold" Margin="0,8,0,0" />
+                        <TextBlock Text="{Binding SystemStatusDetails}"
+                                   Foreground="{StaticResource SecondaryTextBrush}"
+                                   TextWrapping="Wrap"
+                                   HorizontalAlignment="Left"
+                                   Margin="0,6,0,0">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding SystemStatusDetails}" Value="">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
                     </StackPanel>
 
                     <StackPanel Grid.Column="2" HorizontalAlignment="Right">

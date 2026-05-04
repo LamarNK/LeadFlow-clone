@@ -137,13 +137,7 @@ public static class GlobalLogger
 
     public static string ResolveLogsRootDirectory(string serviceName)
     {
-        // Prefer explicit LOCALAPPDATA (used by tests and some host profiles); otherwise use the OS profile path.
-        var localAppData = Environment.GetEnvironmentVariable("LOCALAPPDATA")?.Trim();
-        if (string.IsNullOrWhiteSpace(localAppData))
-            localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        if (!string.IsNullOrWhiteSpace(localAppData))
-            return Path.Combine(localAppData, "LeadFlow", "logs");
-        return Path.Combine(AppContext.BaseDirectory, "logs");
+        return Path.Combine(AppContext.BaseDirectory, "Data", "logs");
     }
 
     public static string ResolveLogDirectoryForService(string serviceName)
@@ -2243,4 +2237,3 @@ public class Logger
     }
 
 }
-

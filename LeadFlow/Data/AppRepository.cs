@@ -114,6 +114,28 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         return existing.ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
 
+    public async Task<HashSet<string>> GetExistingBitrixEntityIdsAsync(IEnumerable<string> bitrixEntityIds, CancellationToken cancellationToken)
+    {
+        var normalizedIds = bitrixEntityIds
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        if (normalizedIds.Length == 0)
+        {
+            return [];
+        }
+
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var existing = await db.CandidateResponses
+            .Where(x => normalizedIds.Contains(x.BitrixEntityId))
+            .Select(x => x.BitrixEntityId)
+            .ToListAsync(cancellationToken);
+
+        return existing.ToHashSet(StringComparer.OrdinalIgnoreCase);
+    }
+
     public async Task<IReadOnlyList<ProcessingLogItem>> GetRecentLogsAsync(int take, CancellationToken cancellationToken)
     {
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
