@@ -65,7 +65,7 @@
                 <TextBlock Margin="0,4,0,0"
                            Style="{StaticResource SubtleTextStyle}"
                            TextWrapping="Wrap"
-                           Text="Здесь осталось только управление аккаунтами Avito." />
+                           Text="Добавляйте аккаунты, при необходимости авторизуйтесь на Avito и включайте мониторинг; список сохраняется кнопкой внизу окна." />
             </StackPanel>
         </Border>
 
