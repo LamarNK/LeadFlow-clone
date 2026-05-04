@@ -10,7 +10,7 @@
         Closing="MainWindow_Closing"
         StateChanged="MainWindow_StateChanged">
     <ScrollViewer VerticalScrollBarVisibility="Auto">
-        <Grid Margin="8">
+        <Grid Margin="6">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />

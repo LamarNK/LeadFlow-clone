@@ -3,8 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:views="clr-namespace:LeadFlow.Views"
         Title="Интеграция с Bitrix24"
-        Width="1100"
-        Height="700"
+        Width="1020"
+        Height="660"
         WindowStartupLocation="CenterOwner">
     <views:BitrixIntegrationView />
 </Window>

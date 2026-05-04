@@ -1,14 +1,14 @@
 <UserControl x:Class="LeadFlow.Views.MonitoringView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <Grid Margin="12">
+    <Grid Margin="8">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <Border Style="{StaticResource CompactCardBorderStyle}" Margin="0,0,0,14">
+        <Border Style="{StaticResource CompactCardBorderStyle}" Margin="0,0,0,8">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
@@ -16,35 +16,35 @@
                 </Grid.ColumnDefinitions>
                 <StackPanel>
                     <TextBlock Text="Мониторинг" Style="{StaticResource SectionTitleStyle}" />
-                    <TextBlock Text="Текущие отклики и их состояние в обработке." Style="{StaticResource SubtleTextStyle}" Margin="0,8,0,0" />
+                    <TextBlock Text="Текущие отклики и их состояние в обработке." Style="{StaticResource SubtleTextStyle}" Margin="0,4,0,0" />
                 </StackPanel>
                 <Button Grid.Column="1" Content="Обновить" Command="{Binding RefreshCommand}" VerticalAlignment="Top" />
             </Grid>
         </Border>
 
-        <UniformGrid Grid.Row="1" Rows="1" Columns="4" Margin="0,0,0,14">
-            <Border Style="{StaticResource CompactCardBorderStyle}" Margin="0,0,10,0">
+        <UniformGrid Grid.Row="1" Rows="1" Columns="4" Margin="0,0,0,8">
+            <Border Style="{StaticResource CompactCardBorderStyle}" Margin="0,0,8,0">
                 <StackPanel>
                     <TextBlock Text="Всего" Style="{StaticResource InfoLabelStyle}" />
-                    <TextBlock Text="{Binding TotalResponsesCount}" FontSize="26" FontWeight="SemiBold" Margin="0,8,0,0" />
+                    <TextBlock Text="{Binding TotalResponsesCount}" FontSize="22" FontWeight="SemiBold" Margin="0,4,0,0" />
                 </StackPanel>
             </Border>
-            <Border Style="{StaticResource CompactCardBorderStyle}" Margin="0,0,10,0">
+            <Border Style="{StaticResource CompactCardBorderStyle}" Margin="0,0,8,0">
                 <StackPanel>
                     <TextBlock Text="Новые" Style="{StaticResource InfoLabelStyle}" />
-                    <TextBlock Text="{Binding NewResponsesCount}" FontSize="26" FontWeight="SemiBold" Margin="0,8,0,0" />
+                    <TextBlock Text="{Binding NewResponsesCount}" FontSize="22" FontWeight="SemiBold" Margin="0,4,0,0" />
                 </StackPanel>
             </Border>
-            <Border Style="{StaticResource CompactCardBorderStyle}" Margin="0,0,10,0">
+            <Border Style="{StaticResource CompactCardBorderStyle}" Margin="0,0,8,0">
                 <StackPanel>
                     <TextBlock Text="Отправлены" Style="{StaticResource InfoLabelStyle}" />
-                    <TextBlock Text="{Binding SentResponsesCount}" FontSize="26" FontWeight="SemiBold" Margin="0,8,0,0" />
+                    <TextBlock Text="{Binding SentResponsesCount}" FontSize="22" FontWeight="SemiBold" Margin="0,4,0,0" />
                 </StackPanel>
             </Border>
             <Border Style="{StaticResource CompactCardBorderStyle}" Margin="0">
                 <StackPanel>
                     <TextBlock Text="Ошибки" Style="{StaticResource InfoLabelStyle}" />
-                    <TextBlock Text="{Binding ErrorResponsesCount}" FontSize="26" FontWeight="SemiBold" Margin="0,8,0,0" />
+                    <TextBlock Text="{Binding ErrorResponsesCount}" FontSize="22" FontWeight="SemiBold" Margin="0,4,0,0" />
                 </StackPanel>
             </Border>
         </UniformGrid>
@@ -55,19 +55,19 @@
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
-            <Border Style="{StaticResource CompactCardBorderStyle}" Margin="0,0,14,0">
+            <Border Style="{StaticResource CompactCardBorderStyle}" Margin="0,0,10,0">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
 
-                    <Border Margin="0,0,0,14"
-                            Padding="12"
+                    <Border Margin="0,0,0,10"
+                            Padding="10"
                             Background="#F8FAFC"
                             BorderBrush="{StaticResource BorderBrush}"
                             BorderThickness="1"
-                            CornerRadius="14"
+                            CornerRadius="12"
                             HorizontalAlignment="Left">
                         <WrapPanel VerticalAlignment="Center" ItemHeight="42">
                             <Grid Width="280">
@@ -96,7 +96,7 @@
                                 </TextBlock>
                             </Grid>
                             <ComboBox Width="170"
-                                      Margin="12,0,0,0"
+                                      Margin="8,0,0,0"
                                       Style="{StaticResource FilterComboBoxStyle}"
                                       SelectedValue="{Binding SelectedStatusFilter}"
                                       SelectedValuePath="Content">
@@ -119,14 +119,14 @@
                         <ListBox.ItemContainerStyle>
                             <Style TargetType="ListBoxItem">
                                 <Setter Property="Padding" Value="0" />
-                                <Setter Property="Margin" Value="0,0,0,8" />
+                                <Setter Property="Margin" Value="0,0,0,6" />
                                 <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                                 <Setter Property="Template">
                                     <Setter.Value>
                                         <ControlTemplate TargetType="ListBoxItem">
                                             <Border x:Name="ItemBorder"
-                                                    Padding="14,12"
-                                                    CornerRadius="14"
+                                                    Padding="10,8"
+                                                    CornerRadius="12"
                                                     Background="Transparent"
                                                     BorderBrush="Transparent"
                                                     BorderThickness="1">
@@ -168,7 +168,7 @@
                                                Foreground="{Binding Status, Converter={StaticResource StatusToBrushConverter}}"
                                                FontWeight="SemiBold" />
 
-                                    <Grid Grid.Row="1" Grid.ColumnSpan="2" Margin="0,12,0,0">
+                                    <Grid Grid.Row="1" Grid.ColumnSpan="2" Margin="0,8,0,0">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="*" />
@@ -195,16 +195,16 @@
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
 
-                    <TextBlock Text="Детали отклика" FontSize="22" FontWeight="SemiBold" />
+                    <TextBlock Text="Детали отклика" FontSize="20" FontWeight="SemiBold" />
 
-                    <Grid Grid.Row="1" Margin="0,18,0,0">
+                    <Grid Grid.Row="1" Margin="0,10,0,0">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
                         <StackPanel>
-                            <TextBlock Text="{Binding SelectedResponse.FullName, TargetNullValue=Отклик не выбран}" FontSize="20" FontWeight="SemiBold" />
-                            <TextBlock Text="{Binding SelectedResponse.Vacancy}" Style="{StaticResource SubtleTextStyle}" Margin="0,6,0,0" />
+                            <TextBlock Text="{Binding SelectedResponse.FullName, TargetNullValue=Отклик не выбран}" FontSize="18" FontWeight="SemiBold" />
+                            <TextBlock Text="{Binding SelectedResponse.Vacancy}" Style="{StaticResource SubtleTextStyle}" Margin="0,4,0,0" />
                         </StackPanel>
                         <TextBlock Grid.Column="1"
                                    Text="{Binding SelectedResponseStatusText}"
@@ -212,18 +212,18 @@
                                    FontWeight="SemiBold" />
                     </Grid>
 
-                    <Grid Grid.Row="2" Margin="0,22,0,0">
+                    <Grid Grid.Row="2" Margin="0,12,0,0">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
-                        <Border Grid.Column="0" Padding="0,0,0,10" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Margin="0,0,10,0">
+                        <Border Grid.Column="0" Padding="0,0,0,8" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Margin="0,0,8,0">
                             <StackPanel>
                                 <TextBlock Text="Телефон" Style="{StaticResource InfoLabelStyle}" />
                                 <TextBlock Text="{Binding SelectedResponse.PhoneRaw, TargetNullValue=Нет данных}" FontWeight="SemiBold" />
                             </StackPanel>
                         </Border>
-                        <Border Grid.Column="1" Padding="0,0,0,10" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
+                        <Border Grid.Column="1" Padding="0,0,0,8" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
                             <StackPanel>
                                 <TextBlock Text="Город" Style="{StaticResource InfoLabelStyle}" />
                                 <TextBlock Text="{Binding SelectedResponse.City, TargetNullValue=Нет данных}" FontWeight="SemiBold" />
@@ -231,18 +231,18 @@
                         </Border>
                     </Grid>
 
-                    <Grid Grid.Row="3" Margin="0,14,0,0">
+                    <Grid Grid.Row="3" Margin="0,10,0,0">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
-                        <Border Grid.Column="0" Padding="0,0,0,10" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Margin="0,0,10,0">
+                        <Border Grid.Column="0" Padding="0,0,0,8" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Margin="0,0,8,0">
                             <StackPanel>
                                 <TextBlock Text="Создан" Style="{StaticResource InfoLabelStyle}" />
                                 <TextBlock Text="{Binding SelectedResponse.CreatedAt, StringFormat=dd.MM.yyyy HH:mm, TargetNullValue=Нет данных}" FontWeight="SemiBold" />
                             </StackPanel>
                         </Border>
-                        <Border Grid.Column="1" Padding="0,0,0,10" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
+                        <Border Grid.Column="1" Padding="0,0,0,8" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
                             <StackPanel>
                                 <TextBlock Text="Обработан" Style="{StaticResource InfoLabelStyle}" />
                                 <TextBlock Text="{Binding SelectedResponseProcessedText}" FontWeight="SemiBold" />
@@ -250,9 +250,9 @@
                         </Border>
                     </Grid>
 
-                    <StackPanel Grid.Row="4" Margin="0,18,0,0">
+                    <StackPanel Grid.Row="4" Margin="0,10,0,0">
                         <TextBlock Text="Ошибка / комментарий" Style="{StaticResource InfoLabelStyle}" />
-                        <TextBlock Text="{Binding SelectedResponseErrorText}" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,6,0,0" />
+                        <TextBlock Text="{Binding SelectedResponseErrorText}" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,4,0,0" />
                     </StackPanel>
                 </Grid>
             </Border>

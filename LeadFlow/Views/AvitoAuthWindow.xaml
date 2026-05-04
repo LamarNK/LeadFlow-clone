@@ -4,8 +4,8 @@
         xmlns:behaviors="clr-namespace:LeadFlow.Behaviors"
         xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
         Title="{Binding WindowTitle}"
-        Width="1100"
-        Height="760"
+        Width="1060"
+        Height="720"
         WindowStartupLocation="CenterOwner">
     <Window.Resources>
         <Style x:Key="BrowserToolbarButtonStyle" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
@@ -114,7 +114,7 @@
             </Setter>
         </Style>
     </Window.Resources>
-    <Grid Margin="14">
+    <Grid Margin="10">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -122,14 +122,14 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
         <StackPanel>
-            <TextBlock Text="{Binding AccountName}" FontSize="24" FontWeight="Bold" />
-            <TextBlock Text="{Binding AuthorizationStatus}" Foreground="{StaticResource PrimaryBrush}" Margin="0,6,0,0" TextWrapping="Wrap"/>
+            <TextBlock Text="{Binding AccountName}" FontSize="22" FontWeight="Bold" />
+            <TextBlock Text="{Binding AuthorizationStatus}" Foreground="{StaticResource PrimaryBrush}" Margin="0,4,0,0" TextWrapping="Wrap"/>
         </StackPanel>
 
         <Border Grid.Row="1"
                 Style="{StaticResource CompactCardBorderStyle}"
-                Margin="0,14,0,0"
-                Padding="12"
+                Margin="0,8,0,0"
+                Padding="10"
                 Background="#F8FAFC"
                 BorderBrush="#E2E8F0">
             <Grid>
@@ -150,7 +150,7 @@
             </Grid>
         </Border>
 
-        <Border Grid.Row="2" Style="{StaticResource CompactCardBorderStyle}" Margin="0,14,0,14">
+        <Border Grid.Row="2" Style="{StaticResource CompactCardBorderStyle}" Margin="0,8,0,8">
             <wv2:WebView2 behaviors:WebView2Behavior.Session="{Binding Session}" />
         </Border>
 
