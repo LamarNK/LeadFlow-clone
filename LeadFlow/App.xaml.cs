@@ -83,6 +83,7 @@ public partial class App : System.Windows.Application
         builder.Services.AddSingleton<ICsvExportService, CsvExportService>();
         builder.Services.AddSingleton<IAvitoResponseSource, AvitoResponseSource>();
         builder.Services.AddSingleton<AvitoDemoResponseSource>();
+        builder.Services.AddSingleton<LeadFlow.Services.Avito.AvitoParserService>();
         builder.Services.AddSingleton<AppRepository>();
         builder.Services.AddSingleton<IWindowService, WindowService>();
         builder.Services.AddSingleton<IMonitoringService, MonitoringService>();

@@ -3,6 +3,7 @@ using LeadFlow.Logging.Audit;
 using LeadFlow.Models;
 using LeadFlow.Services.Avito;
 using LeadFlow.Services.Bitrix;
+using System.Net.Http;
 
 namespace LeadFlow.Services;
 
@@ -14,11 +15,14 @@ public sealed class MonitoringService(
     IDuplicateService duplicateService,
     IBitrixClient bitrixClient,
     IAvitoResponseSource avitoResponseSource,
-    AvitoDemoResponseSource avitoDemoResponseSource) : IMonitoringService
+    AvitoDemoResponseSource avitoDemoResponseSource,
+    AvitoParserService avitoParser,
+    IHttpClientFactory httpClientFactory) : IMonitoringService
 {
     private CancellationTokenSource? _cts;
     private Task? _loopTask;
     private System.Threading.Timer? _countdownTimer;
+    private System.Threading.Timer? _profileStatsTimer;
     private DateTime? _nextCheckTime;
     private static readonly TimeSpan MinCycleDelay = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan MaxCycleDelay = TimeSpan.FromMinutes(10);
@@ -26,6 +30,7 @@ public sealed class MonitoringService(
     public event EventHandler<MonitoringStatus>? StatusChanged;
     public event EventHandler<string>? StatusMessageChanged;
     public event EventHandler<CandidateResponse>? ResponseProcessed;
+    public event EventHandler<AvitoAccount>? ProfileStatsUpdated;
 
     public MonitoringStatus CurrentStatus { get; private set; } = MonitoringStatus.Waiting;
     public string CurrentStatusMessage { get; private set; } = string.Empty;
@@ -69,6 +74,20 @@ public sealed class MonitoringService(
 
         _ = GlobalLogger.Instance.LogAsync("Monitoring started.", DeskLinkAuditLogLevel.Info);
         UpdateStatus(MonitoringStatus.Running, "Мониторинг запущен: начинаем обход активных аккаунтов Авито.");
+
+        // === ОБНОВЛЕНИЕ СТАТИСТИКИ ОБЪЯВЛЕНИЙ ПРИ СТАРТЕ ===
+        try
+        {
+            await UpdateProfileStatsAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _ = GlobalLogger.Instance.LogAsync($"Initial profile stats update failed: {ex.Message}", DeskLinkAuditLogLevel.Warning);
+        }
+
+        // === ЗАПУСК ТАЙМЕРА ДЛЯ ПЕРИОДИЧЕСКОГО ОБНОВЛЕНИЯ (30-60 МИН) ===
+        StartProfileStatsTimer();
+
         _loopTask = RunAsync(_cts.Token);
     }
 
@@ -87,9 +106,64 @@ public sealed class MonitoringService(
         }
 
         _countdownTimer?.Dispose();
+        _profileStatsTimer?.Dispose();
         _nextCheckTime = null;
         IsActive = false;
         UpdateStatus(MonitoringStatus.Stopped, string.Empty);
+    }
+
+    private void StartProfileStatsTimer()
+    {
+        // Первый запуск — сразу (уже выполнен в StartAsync), далее — рандомно 30-60 мин
+        _profileStatsTimer = new System.Threading.Timer(async _ =>
+        {
+            try
+            {
+                await UpdateProfileStatsAsync(CancellationToken.None);
+                // Следующий запуск через рандомный интервал 30-60 минут
+                var nextDelay = TimeSpan.FromMinutes(Random.Shared.Next(30, 61));
+                _profileStatsTimer?.Change(nextDelay, Timeout.InfiniteTimeSpan);
+            }
+            catch (Exception ex)
+            {
+                _ = GlobalLogger.Instance.LogAsync($"Periodic profile stats update failed: {ex.Message}", DeskLinkAuditLogLevel.Error);
+            }
+        }, null, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+    }
+
+    private async Task UpdateProfileStatsAsync(CancellationToken ct)
+    {
+        var accounts = await repository.GetAccountsAsync(ct);
+        foreach (var account in accounts)
+        {
+            try
+            {
+                // Получаем HTTP-клиент для сессии аккаунта (с куками и т.д.)
+                using var client = httpClientFactory.CreateClient("Avito");
+                client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
+                
+                // Загружаем страницу профиля
+                var html = await client.GetStringAsync("https://www.avito.ru/profile/pro/items", ct);
+                
+                // Парсим
+                var profileData = avitoParser.ParseProfilePage(html);
+                
+                // Обновляем аккаунт в БД
+                account.ActiveAdsCount = profileData.ActiveCount;
+                account.BlockedCount = profileData.BlockedCount;
+                account.DraftsCount = profileData.DraftsCount;
+                account.AdsStatsUpdatedAt = DateTime.UtcNow;
+                
+                await repository.SaveAccountAsync(account, ct);
+                
+                // Уведомляем ViewModel об обновлении
+                ProfileStatsUpdated?.Invoke(this, account);
+            }
+            catch (Exception ex)
+            {
+                _ = GlobalLogger.Instance.LogAsync($"Ошибка обновления статистики объявлений для аккаунта {account.DisplayName}: {ex.Message}", DeskLinkAuditLogLevel.Warning);
+            }
+        }
     }
 
     private async Task RunAsync(CancellationToken cancellationToken)

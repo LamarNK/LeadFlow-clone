@@ -2,6 +2,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using LeadFlow.Data;
 using LeadFlow.Models;
+using LeadFlow.Services.Avito;
 using System.Collections.ObjectModel;
 
 namespace LeadFlow.ViewModels;
@@ -32,7 +33,21 @@ public partial class DashboardViewModel(AppRepository repository) : ObservableOb
     [ObservableProperty]
     private int requiresAuthorization;
 
+    // === Статистика объявлений Авито ===
+    [ObservableProperty]
+    private int blockedAdsCount;
+
+    [ObservableProperty]
+    private int draftsCount;
+
+    [ObservableProperty]
+    private int totalActiveViews;
+
+    [ObservableProperty]
+    private int totalActiveContacts;
+
     public ObservableCollection<ActivityPoint> Activity { get; } = new();
+    public ObservableCollection<AvitoAdStatus> ActiveAds { get; } = new();
 
     [RelayCommand]
     public async Task RefreshAsync()
@@ -51,5 +66,15 @@ public partial class DashboardViewModel(AppRepository repository) : ObservableOb
         {
             Activity.Add(point);
         }
+        
+        // Загрузка статистики объявлений Авито (заглушка для демонстрации)
+        // В реальном приложении здесь будет вызов AvitoParserService.ParseProfilePage(html)
+        // var profileData = avitoParser.ParseProfilePage(html);
+        // ActiveAds.Clear();
+        // foreach (var ad in profileData.ActiveAds) ActiveAds.Add(ad);
+        // BlockedAdsCount = profileData.BlockedCount;
+        // DraftsCount = profileData.DraftsCount;
+        // TotalActiveViews = profileData.ActiveAds.Sum(a => a.Views);
+        // TotalActiveContacts = profileData.ActiveAds.Sum(a => a.Contacts);
     }
 }

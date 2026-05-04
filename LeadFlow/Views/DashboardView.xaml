@@ -113,6 +113,75 @@
                     </StackPanel>
                 </Border>
             </Grid>
+
+            <!-- 🟢 Активные объявления Авито (Детальный список) -->
+            <Border Style="{StaticResource CardBorderStyle}" Margin="0,16,0,0">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="🟢 Активные объявления" FontWeight="SemiBold" FontSize="18" />
+                        <Border Background="#DCFCE7" CornerRadius="8" Padding="6,2" Margin="8,2,0,0" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding ActiveAds.Count}" FontWeight="Bold" Foreground="#166534" FontSize="14" />
+                        </Border>
+                    </StackPanel>
+
+                    <TextBlock Text="{Binding TotalActiveViews, StringFormat='Просмотры: {0}'}" Foreground="{StaticResource SecondaryTextBrush}" Margin="0,6,0,0" FontSize="13" />
+                    <TextBlock Text="{Binding TotalActiveContacts, StringFormat='Контакты: {0}'}" Foreground="{StaticResource SecondaryTextBrush}" FontSize="13" />
+
+                    <ScrollViewer MaxHeight="350" VerticalScrollBarVisibility="Auto" Margin="0,12,0,0">
+                        <ItemsControl ItemsSource="{Binding ActiveAds}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="#F8FAFC" CornerRadius="12" Padding="12,10" Margin="0,0,0,8" BorderBrush="#E2E8F0" BorderThickness="1">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0">
+                                                <TextBlock Text="{Binding Title}" FontWeight="SemiBold" Foreground="#0F172A" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Text="{Binding City}" Foreground="#64748B" FontSize="12" Margin="0,2,0,0" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                                <TextBlock Text="👁 " FontSize="12" />
+                                                <TextBlock Text="{Binding Views}" FontSize="12" Foreground="#64748B" Margin="0,0,8,0" />
+                                                <TextBlock Text="📞 " FontSize="12" />
+                                                <TextBlock Text="{Binding Contacts}" FontSize="12" Foreground="#64748B" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+
+                    <!-- Пустое состояние для активных -->
+                    <TextBlock Text="Активных объявлений нет" Foreground="#64748B" FontStyle="Italic" Margin="0,8,0,0"
+                               Visibility="{Binding ActiveAds.Count, Converter={StaticResource ZeroToCollapsedConverter}, ConverterParameter=Invert}" />
+                </StackPanel>
+            </Border>
+
+            <!-- 🔴 Заблокированные и 🟡 Черновики (Только счётчики) -->
+            <Grid Margin="0,12,0,0">
+            <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="12" />
+            <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0" Background="#FEF2F2" CornerRadius="12" Padding="16" BorderBrush="#FECACA" BorderThickness="1">
+            <StackPanel>
+            <TextBlock Text="🔴 Заблокировано" FontWeight="SemiBold" FontSize="15" />
+            <TextBlock Text="{Binding BlockedAdsCount}" FontSize="28" FontWeight="Bold" Foreground="#DC2626" Margin="0,4,0,0" />
+            </StackPanel>
+            </Border>
+
+        <Border Grid.Column="2" Background="#FFFBEB" CornerRadius="12" Padding="16" BorderBrush="#FEF08A" BorderThickness="1">
+            <StackPanel>
+                <TextBlock Text="🟡 Черновики" FontWeight="SemiBold" FontSize="15" />
+                <TextBlock Text="{Binding DraftsCount}" FontSize="28" FontWeight="Bold" Foreground="#CA8A04" Margin="0,4,0,0" />
+            </StackPanel>
+        </Border>
+    </Grid>
         </StackPanel>
     </Border>
 </UserControl>

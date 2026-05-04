@@ -43,4 +43,26 @@ public sealed class AvitoAccount
     /// Тип прокси: "http" или "socks5"
     /// </summary>
     public string ProxyType { get; set; } = "http";
+
+    // === Статистика объявлений (парсится с профиля Авито) ===
+    
+    /// <summary>
+    /// Количество активных объявлений на Авито (парсится с /profile/pro/items)
+    /// </summary>
+    public int ActiveAdsCount { get; set; }
+
+    /// <summary>
+    /// Количество объявлений с ошибками/заблокированных на Авито (парсится с /profile/pro/items)
+    /// </summary>
+    public int BlockedCount { get; set; }
+
+    /// <summary>
+    /// Количество черновиков на Авито (парсится с /profile/pro/items)
+    /// </summary>
+    public int DraftsCount { get; set; }
+
+    /// <summary>
+    /// Время последнего обновления статистики объявлений (UTC)
+    /// </summary>
+    public DateTime? AdsStatsUpdatedAt { get; set; }
 }
