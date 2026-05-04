@@ -1,7 +1,7 @@
 <UserControl x:Class="LeadFlow.Views.CandidateDetailsView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <Border Style="{StaticResource CardBorderStyle}">
+    <Border Style="{StaticResource CompactCardBorderStyle}">
         <Grid>
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="3*" />
@@ -10,7 +10,7 @@
 
             <StackPanel>
                 <TextBlock Text="3. Карточка отклика" FontSize="22" FontWeight="SemiBold" />
-                <Grid Margin="0,16,0,0">
+                <Grid Margin="0,14,0,0">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
@@ -36,7 +36,7 @@
                     <TextBlock Grid.Row="5" Text="Дата отклика" Margin="0,6"/>
                     <TextBox Grid.Row="5" Grid.Column="1" Text="{Binding CurrentResponse.CreatedAt, StringFormat=dd.MM.yyyy HH:mm}" IsReadOnly="True"/>
                 </Grid>
-                <Border Background="#EFF6FF" CornerRadius="14" Padding="16" Margin="0,16,0,0">
+                <Border Style="{StaticResource ToolbarSurfaceBorderStyle}" Margin="0,14,0,0">
                     <StackPanel>
                         <TextBlock Text="Автоматическое считывание данных" FontWeight="SemiBold" Foreground="{StaticResource PrimaryBrush}" />
                         <TextBlock Text="При появлении нового отклика данные извлекаются автоматически" Style="{StaticResource SubtleTextStyle}" Margin="0,6,0,0" />
@@ -44,14 +44,14 @@
                 </Border>
             </StackPanel>
 
-            <Border Grid.Column="1" Style="{StaticResource CardBorderStyle}" Margin="12,0,0,0">
+            <Border Grid.Column="1" Style="{StaticResource CompactCardBorderStyle}" Margin="14,0,0,0">
                 <StackPanel>
                     <TextBlock Text="Источник (предпросмотр)" FontWeight="SemiBold" />
-                    <TextBlock Text="{Binding CurrentResponse.FullName}" FontSize="18" FontWeight="Bold" Margin="0,12,0,0"/>
+                    <TextBlock Text="{Binding CurrentResponse.FullName}" FontSize="18" FontWeight="Bold" Margin="0,10,0,0"/>
                     <TextBlock Text="{Binding CurrentResponse.PhoneRaw}" Margin="0,8,0,0"/>
                     <TextBlock Text="{Binding CurrentResponse.Vacancy}" Margin="0,8,0,0"/>
                     <TextBlock Text="{Binding CurrentResponse.City}" Margin="0,8,0,0"/>
-                    <TextBlock Text="{Binding CurrentResponse.SourceUrl}" TextWrapping="Wrap" Margin="0,12,0,0" Style="{StaticResource SubtleTextStyle}"/>
+                    <TextBlock Text="{Binding CurrentResponse.SourceUrl}" TextWrapping="Wrap" Margin="0,10,0,0" Style="{StaticResource SubtleTextStyle}"/>
                 </StackPanel>
             </Border>
         </Grid>

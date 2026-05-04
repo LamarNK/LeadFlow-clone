@@ -57,14 +57,14 @@
             </Setter>
         </Style>
     </Window.Resources>
-    <Grid Margin="20">
+    <Grid Margin="16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <Border Style="{StaticResource CardBorderStyle}" Margin="0,0,0,18">
+        <Border Style="{StaticResource CompactCardBorderStyle}" Margin="0,0,0,14">
             <StackPanel>
                 <TextBlock Text="Аккаунты Avito" Style="{StaticResource SectionTitleStyle}" />
                 <TextBlock Margin="0,8,0,0"
@@ -80,7 +80,7 @@
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
-            <Border Style="{StaticResource CardBorderStyle}" Margin="0,0,14,0">
+            <Border Style="{StaticResource CompactCardBorderStyle}" Margin="0,0,14,0">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
@@ -184,7 +184,7 @@
                 </Grid>
             </Border>
 
-            <Border Grid.Column="1" Style="{StaticResource CardBorderStyle}" Margin="0">
+            <Border Grid.Column="1" Style="{StaticResource CompactCardBorderStyle}" Margin="0">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
@@ -264,7 +264,7 @@
             </Border>
         </Grid>
 
-        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
             <Button Content="Сохранить аккаунты" Command="{Binding SaveCommand}" />
             <Button Content="Закрыть" Background="#E2E8F0" Foreground="{StaticResource TextBrush}" IsCancel="True" />
         </StackPanel>

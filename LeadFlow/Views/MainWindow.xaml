@@ -4,19 +4,19 @@
         xmlns:views="clr-namespace:LeadFlow.Views"
         Title="LeadFlow"
         Icon="/Assets/LeadFlowWindowIcon.png"
-        Width="1400"
-        Height="960"
+        Width="1220"
+        Height="840"
         WindowStartupLocation="CenterScreen"
         Closing="MainWindow_Closing"
         StateChanged="MainWindow_StateChanged">
     <ScrollViewer VerticalScrollBarVisibility="Auto">
-        <Grid Margin="18">
+        <Grid Margin="12">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
 
-            <Border Style="{StaticResource CardBorderStyle}" Margin="0,0,0,12">
+            <Border Style="{StaticResource CompactCardBorderStyle}" Margin="0,0,0,10">
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
@@ -24,18 +24,18 @@
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
 
-                    <Image Width="64" Height="64" Source="{StaticResource LeadFlowIcon}" Margin="0,0,18,0" />
+                    <Image Width="56" Height="56" Source="{StaticResource LeadFlowIcon}" Margin="0,0,14,0" />
                     <StackPanel Grid.Column="1"
                                 VerticalAlignment="Center"
                                 HorizontalAlignment="Left"
                                 MaxWidth="720">
-                        <TextBlock Text="LeadFlow" FontSize="30" FontWeight="Bold" />
-                        <TextBlock Text="{Binding SystemStatusText}" Foreground="{Binding SystemStatus, Converter={StaticResource StatusToBrushConverter}}" FontWeight="SemiBold" Margin="0,8,0,0" />
+                        <TextBlock Text="LeadFlow" FontSize="28" FontWeight="Bold" />
+                        <TextBlock Text="{Binding SystemStatusText}" Foreground="{Binding SystemStatus, Converter={StaticResource StatusToBrushConverter}}" FontWeight="SemiBold" Margin="0,6,0,0" />
                         <TextBlock Text="{Binding SystemStatusDetails}"
                                    Foreground="{StaticResource SecondaryTextBrush}"
                                    TextWrapping="Wrap"
                                    HorizontalAlignment="Left"
-                                   Margin="0,6,0,0">
+                                   Margin="0,4,0,0">
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock">
                                     <Setter Property="Visibility" Value="Visible" />
@@ -49,8 +49,8 @@
                         </TextBlock>
                     </StackPanel>
 
-                    <StackPanel Grid.Column="2" HorizontalAlignment="Right">
-                        <UniformGrid Rows="1" Columns="4" Margin="0,0,0,10">
+                    <StackPanel Grid.Column="2" HorizontalAlignment="Right" VerticalAlignment="Center">
+                        <UniformGrid Rows="1" Columns="4">
                             <Button Style="{StaticResource NavItemButtonStyle}"
                                     Command="{Binding OpenMonitoringCommand}"
                                     CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}"

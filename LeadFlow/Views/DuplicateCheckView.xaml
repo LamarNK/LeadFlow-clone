@@ -1,10 +1,10 @@
 <UserControl x:Class="LeadFlow.Views.DuplicateCheckView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <Border Style="{StaticResource CardBorderStyle}">
+    <Border Style="{StaticResource CompactCardBorderStyle}">
         <StackPanel>
             <TextBlock Text="4. Проверка дублей" FontSize="22" FontWeight="SemiBold" />
-            <TextBlock Text="Нормализованные телефоны" Margin="0,16,0,6" />
+            <TextBlock Text="Нормализованные телефоны" Margin="0,14,0,6" />
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
@@ -15,13 +15,13 @@
                 <TextBlock Grid.Column="1" Text="→" FontSize="24" VerticalAlignment="Center" Margin="16,0" />
                 <TextBox Grid.Column="2" Text="{Binding Result.PhoneNormalized}" IsReadOnly="True"/>
             </Grid>
-            <Border Style="{StaticResource CardBorderStyle}" Margin="0,16,0,0" Padding="16">
+            <Border Style="{StaticResource ToolbarSurfaceBorderStyle}" Margin="0,14,0,0">
                 <StackPanel>
                     <TextBlock Text="Проверка в локальной базе и Bitrix24" FontWeight="SemiBold" />
                     <TextBlock Text="{Binding Result.Summary}" Margin="0,10,0,0" Foreground="{StaticResource SuccessBrush}" />
                 </StackPanel>
             </Border>
-            <TextBlock Text="Если найден дубликат — лид не создаётся" Style="{StaticResource SubtleTextStyle}" Margin="0,16,0,0" />
+            <TextBlock Text="Если найден дубликат — лид не создаётся" Style="{StaticResource SubtleTextStyle}" Margin="0,14,0,0" />
         </StackPanel>
     </Border>
 </UserControl>
