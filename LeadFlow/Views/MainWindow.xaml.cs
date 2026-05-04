@@ -47,7 +47,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private void MainWindow_Closing(object sender, CancelEventArgs e)
+    private async void MainWindow_Closing(object sender, CancelEventArgs e)
     {
         if (_isClosing) return;
 
@@ -65,16 +65,23 @@ public partial class MainWindow : Window
             if (result == MessageBoxResult.Yes)
             {
                 _isClosing = true;
-                vm.ToggleMonitoringCommand?.Execute(null);
-                
-                Task.Delay(200).ContinueWith(_ =>
+                try
                 {
-                    System.Windows.Application.Current.Dispatcher.Invoke(() =>
-                    {
-                        _isClosing = false;
-                        Close();
-                    });
-                }, TaskScheduler.Default);
+                    await vm.StopMonitoringAsync();
+                }
+                catch (Exception ex)
+                {
+                    _isClosing = false;
+                    MessageBox.Show(
+                        $"Не удалось корректно остановить мониторинг.{Environment.NewLine}{ex.Message}",
+                        "LeadFlow",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Error);
+                    return;
+                }
+
+                _isClosing = false;
+                Close();
             }
         }
     }

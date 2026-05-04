@@ -165,7 +165,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         var accounts = await db.AvitoAccounts.ToListAsync(cancellationToken);
         var stats = new DashboardStats
         {
-            NewResponses = responsesToday.Count(x => x.Status == nameof(ResponseStatus.New)),
+            NewResponses = responsesToday.Count,
             TotalToday = responsesToday.Count,
             SentToCrm = responsesToday.Count(x => x.Status == nameof(ResponseStatus.Sent)),
             InProgress = responsesToday.Count(x => x.Status == nameof(ResponseStatus.InProgress)),
@@ -186,7 +186,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
             stats.Activity.Add(new ActivityPoint
             {
                 Label = $"{hour:00}:00",
-                NewCount = bucket.Count(x => x.Status == nameof(ResponseStatus.New)),
+                NewCount = bucket.Count,
                 SentCount = bucket.Count(x => x.Status == nameof(ResponseStatus.Sent)),
                 DuplicateCount = bucket.Count(x => x.Status == nameof(ResponseStatus.Duplicate)),
                 ErrorCount = bucket.Count(x => x.Status == nameof(ResponseStatus.Error))

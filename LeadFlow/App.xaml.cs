@@ -166,6 +166,7 @@ public partial class App : System.Windows.Application
 
         if (_host is not null)
         {
+            await _host.StopAsync();
             _host.Dispose();
         }
 

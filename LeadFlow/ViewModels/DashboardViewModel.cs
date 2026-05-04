@@ -2,13 +2,17 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using LeadFlow.Data;
 using LeadFlow.Models;
-using LeadFlow.Services.Avito;
+using LeadFlow.Services;
 using System.Collections.ObjectModel;
+using System.Windows;
 
 namespace LeadFlow.ViewModels;
 
-public partial class DashboardViewModel(AppRepository repository) : ObservableObject
+public partial class DashboardViewModel : ObservableObject
 {
+    private readonly AppRepository _repository;
+    private readonly IMonitoringService _monitoringService;
+
     [ObservableProperty]
     private int newResponses;
 
@@ -33,7 +37,6 @@ public partial class DashboardViewModel(AppRepository repository) : ObservableOb
     [ObservableProperty]
     private int requiresAuthorization;
 
-    // === Статистика объявлений Авито ===
     [ObservableProperty]
     private int blockedAdsCount;
 
@@ -49,10 +52,17 @@ public partial class DashboardViewModel(AppRepository repository) : ObservableOb
     public ObservableCollection<ActivityPoint> Activity { get; } = new();
     public ObservableCollection<AvitoAdStatus> ActiveAds { get; } = new();
 
+    public DashboardViewModel(AppRepository repository, IMonitoringService monitoringService)
+    {
+        _repository = repository;
+        _monitoringService = monitoringService;
+        _monitoringService.ProfileStatsUpdated += (_, _) => ApplyActiveAdsSnapshot();
+    }
+
     [RelayCommand]
     public async Task RefreshAsync()
     {
-        var stats = await repository.GetDashboardStatsAsync(CancellationToken.None);
+        var stats = await _repository.GetDashboardStatsAsync(CancellationToken.None);
         NewResponses = stats.NewResponses;
         TotalToday = stats.TotalToday;
         SentToCrm = stats.SentToCrm;
@@ -63,13 +73,39 @@ public partial class DashboardViewModel(AppRepository repository) : ObservableOb
         RequiresAuthorization = stats.RequiresAuthorization;
         BlockedAdsCount = stats.BlockedAdsCount;
         DraftsCount = stats.DraftsCount;
+
         Activity.Clear();
         foreach (var point in stats.Activity)
         {
             Activity.Add(point);
         }
-        ActiveAds.Clear();
-        TotalActiveViews = 0;
-        TotalActiveContacts = 0;
+
+        ApplyActiveAdsSnapshot();
+    }
+
+    private void ApplyActiveAdsSnapshot()
+    {
+        var snapshot = _monitoringService.GetActiveAdsSnapshot();
+
+        void UpdateCollection()
+        {
+            ActiveAds.Clear();
+            foreach (var ad in snapshot.OrderByDescending(static ad => ad.Views).ThenBy(static ad => ad.Title, StringComparer.CurrentCultureIgnoreCase))
+            {
+                ActiveAds.Add(ad);
+            }
+
+            TotalActiveViews = snapshot.Sum(static ad => ad.Views);
+            TotalActiveContacts = snapshot.Sum(static ad => ad.Contacts);
+        }
+
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher is not null && !dispatcher.CheckAccess())
+        {
+            dispatcher.Invoke(UpdateCollection);
+            return;
+        }
+
+        UpdateCollection();
     }
 }

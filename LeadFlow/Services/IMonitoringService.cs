@@ -11,6 +11,7 @@ public interface IMonitoringService
     MonitoringStatus CurrentStatus { get; }
     string CurrentStatusMessage { get; }
     bool IsActive { get; }
+    IReadOnlyList<AvitoAdStatus> GetActiveAdsSnapshot();
     Task StartAsync(CancellationToken cancellationToken);
     Task StopAsync();
 }

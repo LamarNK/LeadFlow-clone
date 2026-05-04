@@ -3,7 +3,8 @@ using LeadFlow.Logging.Audit;
 using LeadFlow.Models;
 using LeadFlow.Services.Avito;
 using LeadFlow.Services.Bitrix;
-using System.Net.Http;
+using LeadFlow.Services.Browser;
+using System.Text.Json;
 
 namespace LeadFlow.Services;
 
@@ -17,8 +18,10 @@ public sealed class MonitoringService(
     IAvitoResponseSource avitoResponseSource,
     AvitoDemoResponseSource avitoDemoResponseSource,
     AvitoParserService avitoParser,
-    IHttpClientFactory httpClientFactory) : IMonitoringService
+    IBrowserSessionService browserSessionService,
+    IWebPageAutomationService automationService) : IMonitoringService
 {
+    private const string ProfileItemsUrl = "https://www.avito.ru/profile/pro/items";
     private CancellationTokenSource? _cts;
     private Task? _loopTask;
     private System.Threading.Timer? _countdownTimer;
@@ -26,6 +29,8 @@ public sealed class MonitoringService(
     private DateTime? _nextCheckTime;
     private static readonly TimeSpan MinCycleDelay = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan MaxCycleDelay = TimeSpan.FromMinutes(10);
+    private readonly Lock _activeAdsSync = new();
+    private readonly Dictionary<Guid, IReadOnlyList<AvitoAdStatus>> _activeAdsByAccount = [];
 
     public event EventHandler<MonitoringStatus>? StatusChanged;
     public event EventHandler<string>? StatusMessageChanged;
@@ -35,6 +40,17 @@ public sealed class MonitoringService(
     public MonitoringStatus CurrentStatus { get; private set; } = MonitoringStatus.Waiting;
     public string CurrentStatusMessage { get; private set; } = string.Empty;
     public bool IsActive { get; private set; }
+
+    public IReadOnlyList<AvitoAdStatus> GetActiveAdsSnapshot()
+    {
+        lock (_activeAdsSync)
+        {
+            return _activeAdsByAccount.Values
+                .SelectMany(static ads => ads)
+                .Select(CloneAd)
+                .ToList();
+        }
+    }
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
@@ -165,15 +181,9 @@ public sealed class MonitoringService(
                 var previousBlockedCount = account.BlockedCount;
                 var previousDraftsCount = account.DraftsCount;
 
-                // Получаем HTTP-клиент для сессии аккаунта (с куками и т.д.)
-                using var client = httpClientFactory.CreateClient("Avito");
-                client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
-                
-                // Загружаем страницу профиля
-                var html = await client.GetStringAsync("https://www.avito.ru/profile/pro/items", ct);
-                
-                // Парсим
+                var html = await LoadProfilePageHtmlAsync(account, ct);
                 var profileData = avitoParser.ParseProfilePage(html);
+                UpdateActiveAdsSnapshot(account.Id, profileData.ActiveAds);
                 await GlobalLogger.Instance.LogAsync(
                     () => $"Парсинг активных объявлений завершён для аккаунта {account.DisplayName}: active={profileData.ActiveCount}, parsed={profileData.ActiveAds.Count}, blocked={profileData.BlockedCount}, drafts={profileData.DraftsCount}.",
                     DeskLinkAuditLogLevel.Info,
@@ -240,6 +250,7 @@ public sealed class MonitoringService(
             }
             catch (Exception ex)
             {
+                UpdateActiveAdsSnapshot(account.Id, []);
                 _ = GlobalLogger.Instance.LogAsync($"Ошибка обновления статистики объявлений для аккаунта {account.DisplayName}: {ex.Message}", DeskLinkAuditLogLevel.Warning);
             }
         }
@@ -526,4 +537,76 @@ public sealed class MonitoringService(
             }
         }, null, TimeSpan.Zero, TimeSpan.FromSeconds(1));
     }
+
+    private async Task<string> LoadProfilePageHtmlAsync(AvitoAccount account, CancellationToken cancellationToken)
+    {
+        var session = await browserSessionService.CreateSessionAsync(account, cancellationToken);
+        await using var host = await BackgroundWebViewHost.CreateAsync(cancellationToken);
+        await host.AttachAsync(session, cancellationToken);
+        await automationService.NavigateAsync(session, ProfileItemsUrl, cancellationToken);
+        await WaitForProfilePageAsync(session, cancellationToken);
+        var rawHtml = await automationService.ExecuteScriptAsync(
+            session,
+            "(() => document.documentElement.outerHTML ?? '')();",
+            cancellationToken);
+        var html = JsonSerializer.Deserialize<string>(rawHtml);
+
+        if (string.IsNullOrWhiteSpace(html))
+        {
+            throw new InvalidOperationException("Не удалось получить HTML страницы профиля Авито.");
+        }
+
+        return html;
+    }
+
+    private async Task WaitForProfilePageAsync(BrowserAccountSession session, CancellationToken cancellationToken)
+    {
+        for (var attempt = 0; attempt < 30; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var rawState = await automationService.ExecuteScriptAsync(
+                session,
+                "(() => ({ readyState: document.readyState, bodyLength: (document.body?.innerText ?? '').trim().length }))();",
+                cancellationToken);
+
+            if (!string.IsNullOrWhiteSpace(rawState))
+            {
+                using var json = JsonDocument.Parse(rawState);
+                var root = json.RootElement;
+                var readyState = root.TryGetProperty("readyState", out var readyStateProp) ? readyStateProp.GetString() : null;
+                var bodyLength = root.TryGetProperty("bodyLength", out var bodyLengthProp) ? bodyLengthProp.GetInt32() : 0;
+
+                if (string.Equals(readyState, "complete", StringComparison.OrdinalIgnoreCase) && bodyLength > 150)
+                {
+                    return;
+                }
+            }
+
+            await Task.Delay(1000, cancellationToken);
+        }
+
+        throw new TimeoutException("Страница профиля Авито не успела загрузиться.");
+    }
+
+    private void UpdateActiveAdsSnapshot(Guid accountId, IReadOnlyList<AvitoAdStatus> ads)
+    {
+        lock (_activeAdsSync)
+        {
+            _activeAdsByAccount[accountId] = ads.Select(CloneAd).ToList();
+        }
+    }
+
+    private static AvitoAdStatus CloneAd(AvitoAdStatus ad) => new()
+    {
+        Id = ad.Id,
+        Title = ad.Title,
+        City = ad.City,
+        Salary = ad.Salary,
+        Views = ad.Views,
+        Contacts = ad.Contacts,
+        Favorites = ad.Favorites,
+        Status = ad.Status,
+        DeleteDate = ad.DeleteDate,
+        DaysOnAvito = ad.DaysOnAvito
+    };
 }
