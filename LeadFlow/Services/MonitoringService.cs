@@ -248,14 +248,14 @@ public sealed class MonitoringService(
                 var profileData = avitoParser.ParseProfilePage(html, account.Id);
                 UpdateActiveAdsSnapshot(account.Id, profileData.ActiveAds);
                 await GlobalLogger.Instance.LogAsync(
-                    () => $"Парсинг активных объявлений завершён для аккаунта {account.DisplayName}: active={profileData.ActiveCount}, parsed={profileData.ActiveAds.Count}, blocked={profileData.BlockedCount}, drafts={profileData.DraftsCount}.",
+                    () => $"Парсинг активных объявлений завершён для аккаунта {account.DisplayName}: на вкладке «Активные»={profileData.ActiveCount}, вакансий (раздел /rabota/)={profileData.ActiveAds.Count}, blocked={profileData.BlockedCount}, drafts={profileData.DraftsCount}.",
                     DeskLinkAuditLogLevel.Info,
                     properties: new Dictionary<string, object?>
                     {
                         ["accountId"] = account.Id,
                         ["accountName"] = account.DisplayName,
-                        ["activeAdsCount"] = profileData.ActiveCount,
-                        ["parsedActiveAdsCount"] = profileData.ActiveAds.Count,
+                        ["tabActiveAdsCount"] = profileData.ActiveCount,
+                        ["vacancyActiveAdsCount"] = profileData.ActiveAds.Count,
                         ["blockedAdsCount"] = profileData.BlockedCount,
                         ["draftsCount"] = profileData.DraftsCount
                     });
@@ -288,14 +288,15 @@ public sealed class MonitoringService(
                         {
                             ["accountId"] = account.Id,
                             ["accountName"] = account.DisplayName,
-                            ["activeAdsCount"] = profileData.ActiveCount,
+                            ["tabActiveAdsCount"] = profileData.ActiveCount,
+                            ["vacancyActiveAdsCount"] = profileData.ActiveAds.Count,
                             ["blockedAdsCount"] = profileData.BlockedCount,
                             ["draftsCount"] = profileData.DraftsCount
                         });
                 }
                 
-                // Обновляем аккаунт в БД
-                account.ActiveAdsCount = profileData.ActiveCount;
+                // Обновляем аккаунт в БД (только вакансии; товары на вкладке «Активные» не учитываем)
+                account.ActiveAdsCount = profileData.ActiveAds.Count;
                 account.BlockedCount = profileData.BlockedCount;
                 account.DraftsCount = profileData.DraftsCount;
                 account.AdsStatsUpdatedAt = DateTime.UtcNow;

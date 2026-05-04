@@ -4,19 +4,19 @@
         xmlns:views="clr-namespace:LeadFlow.Views"
         Title="LeadFlow"
         Icon="/Assets/LeadFlowWindowIcon.png"
-        Width="1220"
-        Height="840"
+        Width="1080"
+        Height="720"
         WindowStartupLocation="CenterScreen"
         Closing="MainWindow_Closing"
         StateChanged="MainWindow_StateChanged">
     <ScrollViewer VerticalScrollBarVisibility="Auto">
-        <Grid Margin="12">
+        <Grid Margin="8">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
 
-            <Border Style="{StaticResource CompactCardBorderStyle}" Margin="0,0,0,10">
+            <Border Style="{StaticResource CompactCardBorderStyle}" Margin="0,0,0,6" Padding="12,10">
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
@@ -24,18 +24,19 @@
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
 
-                    <Image Width="56" Height="56" Source="{StaticResource LeadFlowIcon}" Margin="0,0,14,0" />
+                    <Image Width="44" Height="44" Source="{StaticResource LeadFlowIcon}" Margin="0,0,10,0" />
                     <StackPanel Grid.Column="1"
                                 VerticalAlignment="Center"
                                 HorizontalAlignment="Left"
-                                MaxWidth="720">
-                        <TextBlock Text="LeadFlow" FontSize="28" FontWeight="Bold" />
-                        <TextBlock Text="{Binding SystemStatusText}" Foreground="{Binding SystemStatus, Converter={StaticResource StatusToBrushConverter}}" FontWeight="SemiBold" Margin="0,6,0,0" />
+                                MaxWidth="640">
+                        <TextBlock Text="LeadFlow" FontSize="22" FontWeight="Bold" />
+                        <TextBlock Text="{Binding SystemStatusText}" Foreground="{Binding SystemStatus, Converter={StaticResource StatusToBrushConverter}}" FontWeight="SemiBold" FontSize="13" Margin="0,3,0,0" />
                         <TextBlock Text="{Binding SystemStatusDetails}"
                                    Foreground="{StaticResource SecondaryTextBrush}"
+                                   FontSize="12"
                                    TextWrapping="Wrap"
                                    HorizontalAlignment="Left"
-                                   Margin="0,4,0,0">
+                                   Margin="0,2,0,0">
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock">
                                     <Setter Property="Visibility" Value="Visible" />
@@ -56,12 +57,22 @@
                                     CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}"
                                     ToolTip="Открыть мониторинг откликов">
                                 <StackPanel>
-                                    <Button Content="1" Style="{StaticResource RoundNavButtonStyle}" IsHitTestVisible="False" />
+                                    <Button Style="{StaticResource RoundNavButtonStyle}"
+                                            IsHitTestVisible="False"
+                                            HorizontalAlignment="Center"
+                                            Padding="0">
+                                        <Viewbox Width="16" Height="16" Stretch="Uniform">
+                                            <Path Data="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h7v2H8v2h8v-2h-2v-2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 14H3V5h18v12z"
+                                                  Fill="White"
+                                                  Stretch="Uniform" />
+                                        </Viewbox>
+                                    </Button>
                                     <TextBlock Text="Мониторинг"
                                                Foreground="{StaticResource PrimaryBrush}"
                                                FontWeight="SemiBold"
+                                               FontSize="12"
                                                TextAlignment="Center"
-                                               Margin="0,6,0,0"/>
+                                               Margin="0,4,0,0"/>
                                 </StackPanel>
                             </Button>
                             <Button Style="{StaticResource NavItemButtonStyle}"
@@ -69,12 +80,22 @@
                                     CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}"
                                     ToolTip="Открыть журнал и базу">
                                 <StackPanel>
-                                    <Button Content="2" Style="{StaticResource RoundNavButtonStyle}" IsHitTestVisible="False" />
+                                    <Button Style="{StaticResource RoundNavButtonStyle}"
+                                            IsHitTestVisible="False"
+                                            HorizontalAlignment="Center"
+                                            Padding="0">
+                                        <Viewbox Width="16" Height="16" Stretch="Uniform">
+                                            <Path Data="M18 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 4h5v8l-2.5-1.5L6 12V4z"
+                                                  Fill="White"
+                                                  Stretch="Uniform" />
+                                        </Viewbox>
+                                    </Button>
                                     <TextBlock Text="Журнал"
                                                Foreground="{StaticResource PrimaryBrush}"
                                                FontWeight="SemiBold"
+                                               FontSize="12"
                                                TextAlignment="Center"
-                                               Margin="0,6,0,0"/>
+                                               Margin="0,4,0,0"/>
                                 </StackPanel>
                             </Button>
                             <Button Style="{StaticResource NavItemButtonStyle}"
@@ -82,20 +103,28 @@
                                     CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}"
                                     ToolTip="Открыть настройки">
                                 <StackPanel>
-                                    <Button Content="3" Style="{StaticResource RoundNavButtonStyle}" IsHitTestVisible="False" />
+                                    <Button Style="{StaticResource RoundNavButtonStyle}"
+                                            IsHitTestVisible="False"
+                                            HorizontalAlignment="Center"
+                                            Padding="0">
+                                        <Viewbox Width="16" Height="16" Stretch="Uniform">
+                                            <Path Data="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.488.488 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.488.488 0 0 0-.59.22l-1.92 3.32c-.12.22-.07.49.12.64l2.03 1.58c-.05.3-.07.63-.07.97 0 .33.02.65.07.97l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.03.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6a3.6 3.6 0 1 1 0-7.2 3.6 3.6 0 0 1 0 7.2z"
+                                                  Fill="White"
+                                                  Stretch="Uniform" />
+                                        </Viewbox>
+                                    </Button>
                                     <TextBlock Text="Настройки"
                                                Foreground="{StaticResource PrimaryBrush}"
                                                FontWeight="SemiBold"
+                                               FontSize="12"
                                                TextAlignment="Center"
-                                               Margin="0,6,0,0"/>
+                                               Margin="0,4,0,0"/>
                                 </StackPanel>
                             </Button>
-                            <!-- Play/Pause indicator button -->
                             <Button Style="{StaticResource NavItemButtonStyle}"
                                     Command="{Binding ToggleMonitoringCommand}"
                                     ToolTip="{Binding MonitoringActionText}">
                                 <StackPanel>
-                                    <!-- Round button with icon - same size as 1/2/3 buttons -->
                                     <Button Style="{StaticResource RoundNavButtonStyle}"
                                             Background="{StaticResource PrimaryBrush}"
                                             IsHitTestVisible="False"
@@ -104,17 +133,15 @@
                                             HorizontalContentAlignment="Center"
                                             VerticalContentAlignment="Center"
                                             Padding="0">
-                                        <Viewbox Width="18" Height="18" Stretch="Uniform">
+                                        <Viewbox Width="16" Height="16" Stretch="Uniform">
                                             <Grid HorizontalAlignment="Center" VerticalAlignment="Center">
-                                                <!-- Play icon when not running -->
-                                                <Path Data="M8 5v14l11-7z" 
+                                                <Path Data="M8 5v14l11-7z"
                                                       Fill="White"
                                                       Stretch="Uniform"
                                                       HorizontalAlignment="Center"
                                                       VerticalAlignment="Center"
                                                       Visibility="{Binding IsMonitoringRunning, Converter={StaticResource BooleanToVisibilityConverter}, ConverterParameter=Invert}" />
-                                                <!-- Pause icon when running -->
-                                                <Path Data="M6 19h4V5H6v14zm8-14v14h4V5h-4z" 
+                                                <Path Data="M6 19h4V5H6v14zm8-14v14h4V5h-4z"
                                                       Fill="White"
                                                       Stretch="Uniform"
                                                       HorizontalAlignment="Center"
@@ -126,8 +153,9 @@
                                     <TextBlock Text="{Binding MonitoringButtonText}"
                                                Foreground="{StaticResource PrimaryBrush}"
                                                FontWeight="SemiBold"
+                                               FontSize="12"
                                                TextAlignment="Center"
-                                               Margin="0,6,0,0"/>
+                                               Margin="0,4,0,0"/>
                                 </StackPanel>
                             </Button>
                         </UniformGrid>

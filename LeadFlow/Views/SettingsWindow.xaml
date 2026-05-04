@@ -98,7 +98,8 @@
                              Style="{StaticResource AccountListBoxStyle}"
                              ItemContainerStyle="{StaticResource AccountListItemStyle}"
                              BorderThickness="0"
-                             ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                             MouseDoubleClick="AccountsList_OnMouseDoubleClick">
                         <ListBox.ItemTemplate>
                             <DataTemplate>
                                 <Grid>
