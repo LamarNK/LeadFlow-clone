@@ -6,6 +6,8 @@ namespace LeadFlow.Data;
 
 public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFactory)
 {
+    /// <summary>Срабатывает после успешного сохранения аккаунта в БД. Подписчики не должны изменять переданный экземпляр.</summary>
+    public event EventHandler<AvitoAccount>? AccountPersisted;
     public async Task InitializeAsync(AppSettings settings, CancellationToken cancellationToken)
     {
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
@@ -38,6 +40,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         }
 
         await db.SaveChangesAsync(cancellationToken);
+        AccountPersisted?.Invoke(this, account);
     }
 
     public async Task DeleteAccountAsync(Guid accountId, CancellationToken cancellationToken)

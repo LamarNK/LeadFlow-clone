@@ -5,6 +5,7 @@ using LeadFlow.Models;
 using LeadFlow.Services;
 using System.Collections.ObjectModel;
 using System.Windows;
+using System.Windows.Threading;
 
 namespace LeadFlow.ViewModels;
 
@@ -53,12 +54,47 @@ public partial class DashboardViewModel : ObservableObject
     public ObservableCollection<ActivityPoint> Activity { get; } = new();
     public ObservableCollection<AvitoAdStatus> ActiveAds { get; } = new();
 
+    private readonly DispatcherTimer _accountPersistDebounce = new()
+    {
+        Interval = TimeSpan.FromMilliseconds(450)
+    };
+
     public DashboardViewModel(AppRepository repository, IMonitoringService monitoringService, IWindowService windowService)
     {
         _repository = repository;
         _monitoringService = monitoringService;
         _windowService = windowService;
         _monitoringService.ProfileStatsUpdated += (_, _) => ApplyActiveAdsSnapshot();
+        repository.AccountPersisted += OnAccountPersisted;
+        _accountPersistDebounce.Tick += async (_, _) =>
+        {
+            _accountPersistDebounce.Stop();
+            try
+            {
+                await RefreshAsync();
+            }
+            catch
+            {
+            }
+        };
+    }
+
+    private void OnAccountPersisted(object? sender, AvitoAccount e)
+    {
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher is null)
+        {
+            return;
+        }
+
+        if (!dispatcher.CheckAccess())
+        {
+            _ = dispatcher.BeginInvoke(() => OnAccountPersisted(sender, e));
+            return;
+        }
+
+        _accountPersistDebounce.Stop();
+        _accountPersistDebounce.Start();
     }
 
     [RelayCommand]

@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.IO;
 using System.Text.Json;
 using System.Windows;
@@ -23,6 +24,7 @@ public partial class SettingsViewModel(
     private string _savedAccountsSnapshot = string.Empty;
     private readonly HashSet<string> _pendingProfileDeletions = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _committedProfileDeletions = new(StringComparer.OrdinalIgnoreCase);
+    private AvitoAccount? _selectedAccountPropertySource;
 
     public ObservableCollection<AvitoAccount> Accounts { get; } = [];
 
@@ -32,6 +34,9 @@ public partial class SettingsViewModel(
     [RelayCommand]
     public async Task LoadAsync()
     {
+        repository.AccountPersisted -= OnAccountPersisted;
+        repository.AccountPersisted += OnAccountPersisted;
+
         _settings = await settingsService.LoadAsync(CancellationToken.None);
         _pendingProfileDeletions.Clear();
         Accounts.Clear();
@@ -214,7 +219,80 @@ public partial class SettingsViewModel(
         _committedProfileDeletions.Clear();
     }
 
+    public void DetachPersistenceListener()
+    {
+        repository.AccountPersisted -= OnAccountPersisted;
+        DetachSelectedAccountPropertyListener();
+    }
+
+    private void OnAccountPersisted(object? sender, AvitoAccount snapshot)
+    {
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher is null)
+        {
+            return;
+        }
+
+        _ = dispatcher.BeginInvoke(() =>
+        {
+            var local = Accounts.FirstOrDefault(a => a.Id == snapshot.Id);
+            if (local is null)
+            {
+                return;
+            }
+
+            local.MergePersistedSnapshotFrom(snapshot);
+            if (SelectedAccount?.Id == local.Id)
+            {
+                RefreshSelectedAccountState();
+            }
+        });
+    }
+
     partial void OnSelectedAccountChanged(AvitoAccount? value)
+    {
+        DetachSelectedAccountPropertyListener();
+        if (value is not null)
+        {
+            value.PropertyChanged += SelectedAccountOnPropertyChanged;
+            _selectedAccountPropertySource = value;
+        }
+
+        RefreshSelectedAccountPresentation();
+    }
+
+    private void DetachSelectedAccountPropertyListener()
+    {
+        if (_selectedAccountPropertySource is not null)
+        {
+            _selectedAccountPropertySource.PropertyChanged -= SelectedAccountOnPropertyChanged;
+            _selectedAccountPropertySource = null;
+        }
+    }
+
+    private void SelectedAccountOnPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (sender is not AvitoAccount acc || acc != SelectedAccount)
+        {
+            return;
+        }
+
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher is null)
+        {
+            return;
+        }
+
+        if (!dispatcher.CheckAccess())
+        {
+            _ = dispatcher.BeginInvoke(RefreshSelectedAccountPresentation);
+            return;
+        }
+
+        RefreshSelectedAccountPresentation();
+    }
+
+    private void RefreshSelectedAccountPresentation()
     {
         CollectionViewSource.GetDefaultView(Accounts)?.Refresh();
         OnPropertyChanged(nameof(SelectedAccountName));
@@ -233,7 +311,7 @@ public partial class SettingsViewModel(
     private void RefreshSelectedAccountState()
     {
         CollectionViewSource.GetDefaultView(Accounts)?.Refresh();
-        OnSelectedAccountChanged(SelectedAccount);
+        RefreshSelectedAccountPresentation();
     }
 
     private void UpdateSavedSnapshot()

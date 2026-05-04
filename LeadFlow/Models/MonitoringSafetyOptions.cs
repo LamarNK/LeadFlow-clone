@@ -12,7 +12,6 @@ public sealed class MonitoringSafetyOptions
     /// </summary>
     public int ActiveAdsRefreshIntervalMinutes { get; set; } = 45;
 
-    public int PauseOnErrorMinutes { get; set; } = 5;
     public bool StopOnCaptcha { get; set; } = true;
     public bool StopOnAuthRequired { get; set; } = true;
     public bool AutoStartMonitoring { get; set; }

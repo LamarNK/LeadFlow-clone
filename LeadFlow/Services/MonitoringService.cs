@@ -29,8 +29,17 @@ public sealed class MonitoringService(
     private DateTime? _nextCheckTime;
     private static readonly TimeSpan MinCycleDelay = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan MaxCycleDelay = TimeSpan.FromMinutes(10);
+
+    /// <summary>Пауза перед повтором основного цикла после необработанной ошибки (минуты).</summary>
+    private const int LoopRecoveryPauseMinutes = 5;
+
+    /// <summary>
+    /// После N успешно запланированных пауз восстановления при (N+1)-м сбое подряд мониторинг останавливается. 0 — без лимита.
+    /// </summary>
+    private const int MaxLoopRecoveryFailuresBeforeStop = 10;
     private readonly Lock _activeAdsSync = new();
     private readonly Dictionary<Guid, IReadOnlyList<AvitoAdStatus>> _activeAdsByAccount = [];
+    private int _consecutiveMonitoringLoopFailures;
 
     public event EventHandler<MonitoringStatus>? StatusChanged;
     public event EventHandler<string>? StatusMessageChanged;
@@ -316,47 +325,95 @@ public sealed class MonitoringService(
         {
             while (!cancellationToken.IsCancellationRequested)
             {
-                var settings = await settingsService.LoadAsync(cancellationToken);
-                var accounts = settings.Avito.Accounts.Where(x => x.IsEnabled).ToList();
-                UpdateStatus(
-                    MonitoringStatus.Running,
-                    accounts.Count == 0
-                        ? "Активных аккаунтов Авито нет: откройте настройки и включите хотя бы один аккаунт."
-                        : $"Начинаем новый цикл мониторинга: активных аккаунтов {accounts.Count}.");
-
-                foreach (var account in accounts)
+                try
                 {
-                    if (cancellationToken.IsCancellationRequested)
+                    var settings = await settingsService.LoadAsync(cancellationToken);
+                    var accounts = settings.Avito.Accounts.Where(x => x.IsEnabled).ToList();
+                    UpdateStatus(
+                        MonitoringStatus.Running,
+                        accounts.Count == 0
+                            ? "Активных аккаунтов Авито нет: откройте настройки и включите хотя бы один аккаунт."
+                            : $"Начинаем новый цикл мониторинга: активных аккаунтов {accounts.Count}.");
+
+                    foreach (var account in accounts)
+                    {
+                        if (cancellationToken.IsCancellationRequested)
+                        {
+                            break;
+                        }
+
+                        await ProcessAccountAsync(account, settings, cancellationToken);
+                        await Task.Delay(TimeSpan.FromSeconds(settings.MonitoringSafety.DelayBetweenAccountsSeconds), cancellationToken);
+                    }
+
+                    _consecutiveMonitoringLoopFailures = 0;
+
+                    var delay = GetRandomCycleDelay();
+                    _nextCheckTime = DateTime.UtcNow + delay;
+                    UpdateStatus(MonitoringStatus.Waiting, $"Цикл завершён. Ждём следующую проверку {FormatDelay(delay)}.");
+                    StartCountdownTimer(delay);
+                    await Task.Delay(delay, cancellationToken);
+                    _countdownTimer?.Dispose();
+                    _nextCheckTime = null;
+                    UpdateStatus(MonitoringStatus.Running, "Пауза завершена: запускаем следующий цикл мониторинга.");
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    if (!await TryRecoverMonitoringLoopAsync(ex, cancellationToken))
                     {
                         break;
                     }
-
-                    await ProcessAccountAsync(account, settings, cancellationToken);
-                    await Task.Delay(TimeSpan.FromSeconds(settings.MonitoringSafety.DelayBetweenAccountsSeconds), cancellationToken);
                 }
-
-                var delay = GetRandomCycleDelay();
-                _nextCheckTime = DateTime.UtcNow + delay;
-                UpdateStatus(MonitoringStatus.Waiting, $"Цикл завершён. Ждём следующую проверку {FormatDelay(delay)}.");
-                StartCountdownTimer(delay);
-                await Task.Delay(delay, cancellationToken);
-                _countdownTimer?.Dispose();
-                _nextCheckTime = null;
-                UpdateStatus(MonitoringStatus.Running, "Пауза завершена: запускаем следующий цикл мониторинга.");
             }
         }
         catch (OperationCanceledException)
         {
             _ = GlobalLogger.Instance.LogAsync("Monitoring stopped by cancellation.", DeskLinkAuditLogLevel.Info);
         }
-        catch (Exception ex)
+    }
+
+    private async Task<bool> TryRecoverMonitoringLoopAsync(Exception ex, CancellationToken cancellationToken)
+    {
+        _ = GlobalLogger.Instance.LogAsync(
+            $"Monitoring loop failed.{Environment.NewLine}{ex}",
+            DeskLinkAuditLogLevel.Error);
+
+        _countdownTimer?.Dispose();
+        _nextCheckTime = null;
+
+        _consecutiveMonitoringLoopFailures++;
+
+        var maxAttempts = MaxLoopRecoveryFailuresBeforeStop;
+        if (maxAttempts > 0 && _consecutiveMonitoringLoopFailures > maxAttempts)
         {
-            _ = GlobalLogger.Instance.LogAsync(
-                $"Monitoring loop failed.{Environment.NewLine}{ex}",
-                DeskLinkAuditLogLevel.Error);
             IsActive = false;
-            UpdateStatus(MonitoringStatus.Error, $"Мониторинг остановлен из-за ошибки: {ex.Message}");
+            UpdateStatus(
+                MonitoringStatus.Error,
+                $"Мониторинг остановлен: превышен лимит {maxAttempts} сбоев цикла подряд. Последняя ошибка: {ex.Message}");
+            return false;
         }
+
+        var pauseMinutes = Math.Clamp(LoopRecoveryPauseMinutes, 1, 120);
+        var pause = TimeSpan.FromMinutes(pauseMinutes);
+
+        UpdateStatus(
+            MonitoringStatus.Recovering,
+            $"Сбой цикла: {ex.Message}. Повтор через {pauseMinutes} мин.");
+
+        try
+        {
+            await Task.Delay(pause, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+
+        return true;
     }
 
     private async Task ProcessAccountAsync(AvitoAccount account, AppSettings settings, CancellationToken cancellationToken)

@@ -50,6 +50,7 @@ public partial class SettingsWindow : Window
     {
         if (DataContext is SettingsViewModel viewModel)
         {
+            viewModel.DetachPersistenceListener();
             viewModel.DeleteCommittedProfiles();
         }
     }

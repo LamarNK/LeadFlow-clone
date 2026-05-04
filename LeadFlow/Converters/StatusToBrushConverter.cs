@@ -14,6 +14,7 @@ public sealed class StatusToBrushConverter : IValueConverter
         {
             nameof(ResponseStatus.Sent) or nameof(AvitoAccountStatus.Authorized) or nameof(MonitoringStatus.Waiting) => new SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#16A34A")),
             nameof(ResponseStatus.Duplicate) or nameof(AvitoAccountStatus.RequiresManualAction) => new SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#F97316")),
+            nameof(MonitoringStatus.Recovering) => new SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#D97706")),
             nameof(ResponseStatus.Error) or nameof(AvitoAccountStatus.Error) or nameof(MonitoringStatus.Error) => new SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#EF4444")),
             nameof(MonitoringStatus.Running) or nameof(AvitoAccountStatus.Monitoring) => new SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#2563EB")),
             _ => new SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#64748B"))

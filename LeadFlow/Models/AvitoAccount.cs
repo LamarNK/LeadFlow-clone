@@ -1,68 +1,51 @@
+using CommunityToolkit.Mvvm.ComponentModel;
+
 namespace LeadFlow.Models;
 
-public sealed class AvitoAccount
+/// <summary>
+/// Поля, которые фоновый мониторинг и проверка авторизации обновляют в БД; при слиянии в UI не трогаем пользовательские настройки профиля.
+/// </summary>
+public sealed partial class AvitoAccount : ObservableObject
 {
-    public Guid Id { get; set; } = Guid.NewGuid();
-    public string DisplayName { get; set; } = string.Empty;
-    public string AvitoResponsesUrl { get; set; } = "https://www.avito.ru";
-    public string BrowserProfilePath { get; set; } = string.Empty;
-    public bool IsEnabled { get; set; } = true;
-    public AvitoAccountStatus Status { get; set; } = AvitoAccountStatus.NotConfigured;
-    public DateTime? LastAuthCheckAt { get; set; }
-    public DateTime? LastMonitoringAt { get; set; }
-    public string LastErrorMessage { get; set; } = string.Empty;
+    [ObservableProperty] private Guid id = Guid.NewGuid();
+    [ObservableProperty] private string displayName = string.Empty;
+    [ObservableProperty] private string avitoResponsesUrl = "https://www.avito.ru";
+    [ObservableProperty] private string browserProfilePath = string.Empty;
+    [ObservableProperty] private bool isEnabled = true;
+    [ObservableProperty] private AvitoAccountStatus status = AvitoAccountStatus.NotConfigured;
+    [ObservableProperty] private DateTime? lastAuthCheckAt;
+    [ObservableProperty] private DateTime? lastMonitoringAt;
+    [ObservableProperty] private string lastErrorMessage = string.Empty;
 
-    // === АНТИ-ДЕТЕКТ: Фингерпринт аккаунта (генерируется один раз при создании) ===
-    
-    /// <summary>
-    /// Фиксированный User-Agent для этого аккаунта. Должен соответствовать версии WebView2.
-    /// </summary>
-    public string? AssignedUserAgent { get; set; }
+    [ObservableProperty] private string? assignedUserAgent;
+    [ObservableProperty] private string? screenResolution = "1920x1080";
+    [ObservableProperty] private string? timezone = "Europe/Moscow";
+    [ObservableProperty] private string? languages = "ru-RU,ru,en-US,en";
+    [ObservableProperty] private string? proxyAddress;
+    [ObservableProperty] private string proxyType = "http";
 
-    /// <summary>
-    /// Разрешение экрана в формате "ШиринaxВысота" (напр. "1920x1080")
-    /// </summary>
-    public string? ScreenResolution { get; set; } = "1920x1080";
-
-    /// <summary>
-    /// Часовой пояс (напр. "Europe/Moscow")
-    /// </summary>
-    public string? Timezone { get; set; } = "Europe/Moscow";
+    [ObservableProperty] private int activeAdsCount;
+    [ObservableProperty] private int blockedCount;
+    [ObservableProperty] private int draftsCount;
+    [ObservableProperty] private DateTime? adsStatsUpdatedAt;
 
     /// <summary>
-    /// Языки браузера через запятую (напр. "ru-RU,ru,en-US,en")
+    /// Копирует в этот экземпляр поля, сохранённые в БД из фонового процесса (тот же <see cref="Id"/>).
     /// </summary>
-    public string? Languages { get; set; } = "ru-RU,ru,en-US,en";
+    public void MergePersistedSnapshotFrom(AvitoAccount source)
+    {
+        if (source.Id != Id)
+        {
+            return;
+        }
 
-    /// <summary>
-    /// Прокси-сервер в формате "user:pass@ip:port" или null если не используется
-    /// </summary>
-    public string? ProxyAddress { get; set; }
-
-    /// <summary>
-    /// Тип прокси: "http" или "socks5"
-    /// </summary>
-    public string ProxyType { get; set; } = "http";
-
-    // === Статистика объявлений (парсится с профиля Авито) ===
-    
-    /// <summary>
-    /// Количество активных объявлений на Авито (парсится с /profile/pro/items)
-    /// </summary>
-    public int ActiveAdsCount { get; set; }
-
-    /// <summary>
-    /// Количество объявлений с ошибками/заблокированных на Авито (парсится с /profile/pro/items)
-    /// </summary>
-    public int BlockedCount { get; set; }
-
-    /// <summary>
-    /// Количество черновиков на Авито (парсится с /profile/pro/items)
-    /// </summary>
-    public int DraftsCount { get; set; }
-
-    /// <summary>
-    /// Время последнего обновления статистики объявлений (UTC)
-    /// </summary>
-    public DateTime? AdsStatsUpdatedAt { get; set; }
+        Status = source.Status;
+        LastErrorMessage = source.LastErrorMessage;
+        LastMonitoringAt = source.LastMonitoringAt;
+        LastAuthCheckAt = source.LastAuthCheckAt;
+        ActiveAdsCount = source.ActiveAdsCount;
+        BlockedCount = source.BlockedCount;
+        DraftsCount = source.DraftsCount;
+        AdsStatsUpdatedAt = source.AdsStatsUpdatedAt;
+    }
 }

@@ -197,6 +197,7 @@ public partial class MainViewModel : ObservableObject
         {
             MonitoringStatus.Running => "Мониторинг работает",
             MonitoringStatus.Waiting => "Мониторинг ожидает следующий цикл",
+            MonitoringStatus.Recovering => "Восстановление после сбоя цикла",
             MonitoringStatus.RequiresAuthorization => "Нужна авторизация",
             MonitoringStatus.RequiresManualAction => "Нужно ручное действие",
             MonitoringStatus.Error => "Ошибка",
