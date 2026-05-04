@@ -1,4 +1,5 @@
 <UserControl x:Class="LeadFlow.Views.DashboardView"
+             x:Name="DashboardRoot"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:conv="clr-namespace:LeadFlow.Converters">
@@ -87,38 +88,87 @@
                     </Button>
                 </UniformGrid>
 
-                <Border Style="{StaticResource CompactCardBorderStyle}" Margin="4,8,4,0" Padding="10,8">
+                <Border x:Name="ChartActivityHost"
+                        Style="{StaticResource CompactCardBorderStyle}"
+                        Margin="4,8,4,0"
+                        Padding="10,8"
+                        Loaded="ChartActivityHost_OnLoaded"
+                        SizeChanged="ChartActivityHost_OnSizeChanged">
                     <StackPanel>
                         <TextBlock Text="Динамика за сегодня" Style="{StaticResource BodyTextStyle}" FontWeight="SemiBold" />
-                        <ItemsControl ItemsSource="{Binding Activity}" Margin="0,8,0,0">
-                            <ItemsControl.ItemsPanel>
-                                <ItemsPanelTemplate>
-                                    <UniformGrid Columns="8" />
-                                </ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Grid Height="72" Margin="2,0">
-                                        <Grid.RowDefinitions>
-                                            <RowDefinition Height="*" />
-                                            <RowDefinition Height="Auto" />
-                                        </Grid.RowDefinitions>
-                                        <Rectangle Grid.Row="0"
-                                                   Height="{Binding SentCount}"
-                                                   Width="14"
-                                                   Fill="{StaticResource PrimaryBrush}"
-                                                   VerticalAlignment="Bottom"
-                                                   HorizontalAlignment="Center" />
-                                        <TextBlock Grid.Row="1"
-                                                   Text="{Binding Label}"
-                                                   Style="{StaticResource SubtleTextStyle}"
-                                                   FontSize="11"
-                                                   HorizontalAlignment="Center"
-                                                   Margin="0,4,0,0" />
-                                    </Grid>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
+                        <Grid Margin="0,8,0,0" ClipToBounds="False">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="72" />
+                                <RowDefinition Height="26" />
+                            </Grid.RowDefinitions>
+                            <!-- Базовая линия общая для всех столбиков — сразу под ними, без зазора -->
+                            <Grid Grid.Row="0">
+                                <Rectangle Height="2"
+                                           VerticalAlignment="Bottom"
+                                           Fill="#94A3B8"
+                                           HorizontalAlignment="Stretch"
+                                           SnapsToDevicePixels="True" />
+                                <ItemsControl ItemsSource="{Binding Activity}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <UniformGrid Columns="{Binding DataContext.ActivityChartColumns, ElementName=DashboardRoot}" />
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Height="72"
+                                                  Margin="2,0"
+                                                  ToolTipService.InitialShowDelay="200"
+                                                  ToolTipService.ShowDuration="60000">
+                                                <Grid.ToolTip>
+                                                    <ToolTip>
+                                                        <TextBlock Text="{Binding ChartTooltip}"
+                                                                   TextWrapping="Wrap"
+                                                                   MaxWidth="320"
+                                                                   FontSize="12" />
+                                                    </ToolTip>
+                                                </Grid.ToolTip>
+                                                <Rectangle Height="{Binding ChartBarHeight}"
+                                                           Width="14"
+                                                           Fill="{StaticResource PrimaryBrush}"
+                                                           VerticalAlignment="Bottom"
+                                                           HorizontalAlignment="Center" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </Grid>
+                            <ItemsControl Grid.Row="1"
+                                          ItemsSource="{Binding Activity}"
+                                          VerticalAlignment="Stretch"
+                                          ClipToBounds="False">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <UniformGrid Columns="{Binding DataContext.ActivityChartColumns, ElementName=DashboardRoot}" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Height="26" ClipToBounds="False">
+                                            <!-- Штрих вверх к столбику, визуально из одной линейки с базой -->
+                                            <Border Width="1.5"
+                                                    Height="10"
+                                                    HorizontalAlignment="Left"
+                                                    VerticalAlignment="Top"
+                                                    Margin="0,-8,0,0"
+                                                    Background="#475569"
+                                                    SnapsToDevicePixels="True" />
+                                            <TextBlock Text="{Binding Label}"
+                                                       VerticalAlignment="Bottom"
+                                                       HorizontalAlignment="Center"
+                                                       FontSize="10"
+                                                       Foreground="#64748B"
+                                                       Margin="0,0,0,1" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </Grid>
                     </StackPanel>
                 </Border>
 

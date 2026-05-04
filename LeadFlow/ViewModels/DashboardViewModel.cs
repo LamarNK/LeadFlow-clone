@@ -11,9 +11,15 @@ namespace LeadFlow.ViewModels;
 
 public partial class DashboardViewModel : ObservableObject
 {
+    private const double ChartBarMaxHeight = 56d;
+
     private readonly AppRepository _repository;
     private readonly IMonitoringService _monitoringService;
     private readonly IWindowService _windowService;
+
+    private readonly ActivityPoint[] _hourlyUtcSlots = new ActivityPoint[24];
+    private readonly List<CandidateResponse> _responsesDuringDashboardRefresh = new();
+    private int _dashboardRefreshDepth;
 
     [ObservableProperty]
     private int newResponses;
@@ -51,6 +57,9 @@ public partial class DashboardViewModel : ObservableObject
     [ObservableProperty]
     private int totalActiveContacts;
 
+    [ObservableProperty]
+    private int activityChartColumns = 24;
+
     public ObservableCollection<ActivityPoint> Activity { get; } = new();
     public ObservableCollection<AvitoAdStatus> ActiveAds { get; } = new();
 
@@ -77,7 +86,24 @@ public partial class DashboardViewModel : ObservableObject
             {
             }
         };
+
+        InitEmptyHourlySlots();
     }
+
+    private void InitEmptyHourlySlots()
+    {
+        for (var h = 0; h < 24; h++)
+        {
+            _hourlyUtcSlots[h] = NewHourSlot(h);
+        }
+    }
+
+    private static ActivityPoint NewHourSlot(int hourUtc) => new()
+    {
+        Label = $"{hourUtc:00}:00",
+        SlotStartHour = hourUtc,
+        SlotSpanHours = 1
+    };
 
     private void OnAccountPersisted(object? sender, AvitoAccount e)
     {
@@ -100,64 +126,75 @@ public partial class DashboardViewModel : ObservableObject
     [RelayCommand]
     public async Task RefreshAsync()
     {
-        var stats = await _repository.GetDashboardStatsAsync(CancellationToken.None);
-        ApplyStats(stats);
+        _dashboardRefreshDepth++;
+        var outerRefresh = _dashboardRefreshDepth == 1;
+        if (outerRefresh)
+        {
+            _responsesDuringDashboardRefresh.Clear();
+        }
+
+        try
+        {
+            var stats = await _repository.GetDashboardStatsAsync(CancellationToken.None);
+            ApplyStats(stats);
+
+            if (outerRefresh)
+            {
+                var threshold = stats.AggregatedUpToUtc;
+                foreach (var response in _responsesDuringDashboardRefresh
+                    .GroupBy(static r => r.Id)
+                    .Select(static g => g.Last()))
+                {
+                    var processedAt = response.ProcessedAt ?? response.CreatedAt;
+                    if (processedAt > threshold)
+                    {
+                        ApplyProcessedResponseCore(response);
+                    }
+                }
+
+                _responsesDuringDashboardRefresh.Clear();
+            }
+        }
+        finally
+        {
+            _dashboardRefreshDepth--;
+        }
 
         ApplyActiveAdsSnapshot();
     }
 
     public void ApplyProcessedResponse(CandidateResponse response)
     {
-        if (response.CreatedAt < DateTime.UtcNow.Date)
+        if (_dashboardRefreshDepth > 0)
+        {
+            _responsesDuringDashboardRefresh.Add(response);
+            return;
+        }
+
+        ApplyProcessedResponseCore(response);
+    }
+
+    public void OnChartHostWidthChanged(double actualWidth)
+    {
+        var next = PickColumnCount(actualWidth);
+        if (next == ActivityChartColumns)
         {
             return;
         }
 
-        NewResponses++;
-        TotalToday++;
-
-        switch (response.Status)
-        {
-            case ResponseStatus.Sent:
-                SentToCrm++;
-                break;
-            case ResponseStatus.InProgress:
-                InProgress++;
-                break;
-            case ResponseStatus.Duplicate:
-                Duplicates++;
-                break;
-            case ResponseStatus.Error:
-                Errors++;
-                break;
-        }
-
-        EnsureActivityBuckets();
-        var bucketIndex = Math.Clamp(response.CreatedAt.Hour / 3, 0, Activity.Count - 1);
-        var bucket = Activity[bucketIndex];
-        bucket.NewCount++;
-        switch (response.Status)
-        {
-            case ResponseStatus.Sent:
-                bucket.SentCount++;
-                break;
-            case ResponseStatus.Duplicate:
-                bucket.DuplicateCount++;
-                break;
-            case ResponseStatus.Error:
-                bucket.ErrorCount++;
-                break;
-        }
-
-        Activity[bucketIndex] = new ActivityPoint
-        {
-            Label = bucket.Label,
-            NewCount = bucket.NewCount,
-            SentCount = bucket.SentCount,
-            DuplicateCount = bucket.DuplicateCount,
-            ErrorCount = bucket.ErrorCount
-        };
+        ActivityChartColumns = next;
+        RebuildDisplayedActivity();
     }
+
+    private static int PickColumnCount(double width) => width switch
+    {
+        >= 920d => 24,
+        >= 760d => 12,
+        >= 600d => 8,
+        >= 480d => 6,
+        >= 380d => 4,
+        _ => 3
+    };
 
     [RelayCommand]
     public async Task OpenAdAsync(object? parameter)
@@ -201,13 +238,151 @@ public partial class DashboardViewModel : ObservableObject
         BlockedAdsCount = stats.BlockedAdsCount;
         DraftsCount = stats.DraftsCount;
 
-        Activity.Clear();
-        foreach (var point in stats.Activity)
+        ReplaceHourlyFromStats(stats);
+    }
+
+    private void ReplaceHourlyFromStats(DashboardStats stats)
+    {
+        for (var h = 0; h < 24; h++)
         {
-            Activity.Add(point);
+            var src = h < stats.HourlyActivity.Count ? stats.HourlyActivity[h] : null;
+            _hourlyUtcSlots[h] = src is null
+                ? NewHourSlot(h)
+                : CloneHourlyPoint(src, h);
         }
 
-        EnsureActivityBuckets();
+        RebuildDisplayedActivity();
+    }
+
+    private static ActivityPoint CloneHourlyPoint(ActivityPoint src, int hourUtc) => new()
+    {
+        Label = $"{hourUtc:00}:00",
+        NewCount = src.NewCount,
+        SentCount = src.SentCount,
+        DuplicateCount = src.DuplicateCount,
+        ErrorCount = src.ErrorCount,
+        SlotStartHour = hourUtc,
+        SlotSpanHours = 1
+    };
+
+    private void ApplyProcessedResponseCore(CandidateResponse response)
+    {
+        if (response.CreatedAt < DateTime.UtcNow.Date)
+        {
+            return;
+        }
+
+        NewResponses++;
+        TotalToday++;
+
+        switch (response.Status)
+        {
+            case ResponseStatus.Sent:
+                SentToCrm++;
+                break;
+            case ResponseStatus.InProgress:
+                InProgress++;
+                break;
+            case ResponseStatus.Duplicate:
+                Duplicates++;
+                break;
+            case ResponseStatus.Error:
+                Errors++;
+                break;
+        }
+
+        var hour = Math.Clamp(response.CreatedAt.Hour, 0, 23);
+        var bucket = _hourlyUtcSlots[hour];
+        bucket.NewCount++;
+        switch (response.Status)
+        {
+            case ResponseStatus.Sent:
+                bucket.SentCount++;
+                break;
+            case ResponseStatus.Duplicate:
+                bucket.DuplicateCount++;
+                break;
+            case ResponseStatus.Error:
+                bucket.ErrorCount++;
+                break;
+        }
+
+        _hourlyUtcSlots[hour] = new ActivityPoint
+        {
+            Label = bucket.Label,
+            NewCount = bucket.NewCount,
+            SentCount = bucket.SentCount,
+            DuplicateCount = bucket.DuplicateCount,
+            ErrorCount = bucket.ErrorCount,
+            SlotStartHour = bucket.SlotStartHour,
+            SlotSpanHours = bucket.SlotSpanHours
+        };
+
+        RebuildDisplayedActivity();
+    }
+
+    private void RebuildDisplayedActivity()
+    {
+        var columns = ActivityChartColumns;
+        if (columns <= 0 || 24 % columns != 0)
+        {
+            columns = 24;
+        }
+
+        var hoursPerSlot = 24 / columns;
+        var maxDay = 0;
+        for (var h = 0; h < 24; h++)
+        {
+            maxDay = Math.Max(maxDay, _hourlyUtcSlots[h].NewCount);
+        }
+
+        Activity.Clear();
+        for (var slot = 0; slot < columns; slot++)
+        {
+            var startHour = slot * hoursPerSlot;
+            var endHour = startHour + hoursPerSlot - 1;
+            var merged = new ActivityPoint
+            {
+                SlotStartHour = startHour,
+                SlotSpanHours = hoursPerSlot,
+                Label = FormatSlotLabel(startHour, endHour, hoursPerSlot),
+                NewCount = 0,
+                SentCount = 0,
+                DuplicateCount = 0,
+                ErrorCount = 0
+            };
+
+            for (var h = startHour; h <= endHour; h++)
+            {
+                var p = _hourlyUtcSlots[h];
+                merged.NewCount += p.NewCount;
+                merged.SentCount += p.SentCount;
+                merged.DuplicateCount += p.DuplicateCount;
+                merged.ErrorCount += p.ErrorCount;
+            }
+
+            merged.ChartBarHeight = maxDay > 0
+                ? Math.Min(ChartBarMaxHeight, ChartBarMaxHeight * merged.NewCount / maxDay)
+                : 0d;
+            merged.ChartTooltip = BuildActivityTooltip(merged);
+            Activity.Add(merged);
+        }
+    }
+
+    private static string FormatSlotLabel(int startHour, int endHour, int hoursPerSlot) =>
+        hoursPerSlot <= 1
+            ? $"{startHour:00}:00"
+            : $"{startHour:00}:00–{endHour:00}:59";
+
+    private static string BuildActivityTooltip(ActivityPoint slot)
+    {
+        var endHour = slot.SlotStartHour + slot.SlotSpanHours - 1;
+        var span = slot.SlotSpanHours <= 1
+            ? $"UTC {slot.SlotStartHour:00}:00"
+            : $"UTC {slot.SlotStartHour:00}:00–{endHour:00}:59";
+
+        return FormattableString.Invariant(
+            $"{span}\nВсего: {slot.NewCount}\nВ CRM: {slot.SentCount}\nДубли: {slot.DuplicateCount}\nОшибки: {slot.ErrorCount}");
     }
 
     private void ApplyActiveAdsSnapshot()
@@ -264,20 +439,6 @@ public partial class DashboardViewModel : ObservableObject
         }
 
         UpdateCollection();
-    }
-
-    private void EnsureActivityBuckets()
-    {
-        if (Activity.Count == 8)
-        {
-            return;
-        }
-
-        Activity.Clear();
-        for (var hour = 0; hour < 24; hour += 3)
-        {
-            Activity.Add(new ActivityPoint { Label = $"{hour:00}:00" });
-        }
     }
 
     private int FindAdIndex(string id, int startIndex)

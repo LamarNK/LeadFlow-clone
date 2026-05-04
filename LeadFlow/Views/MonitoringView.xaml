@@ -148,18 +148,20 @@
                         </ListBox.ItemContainerStyle>
                         <ListBox.ItemTemplate>
                             <DataTemplate>
-                                <Grid>
+                                <!-- Tag = VM списка: из шаблона FindAncestor(ListBox) возможен; ElementName корня UserControl из DataTemplate — нет. -->
+                                <Grid Tag="{Binding DataContext, RelativeSource={RelativeSource FindAncestor, AncestorType=ListBox}}">
                                     <Grid.ContextMenu>
+                                        <!-- PlacementTarget = этот Grid: Tag — команды, DataContext — отклик строки. -->
                                         <ContextMenu>
                                             <MenuItem Header="Копировать телефон"
-                                                      Command="{Binding DataContext.CopyResponsePhoneCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
-                                                      CommandParameter="{Binding}" />
+                                                      Command="{Binding PlacementTarget.Tag.CopyResponsePhoneCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                      CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
                                             <MenuItem Header="Открыть в Avito"
-                                                      Command="{Binding DataContext.OpenResponseInAvitoCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
-                                                      CommandParameter="{Binding}" />
+                                                      Command="{Binding PlacementTarget.Tag.OpenResponseInAvitoCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                      CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
                                             <MenuItem Header="Открыть в Bitrix"
-                                                      Command="{Binding DataContext.OpenResponseInBitrixCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
-                                                      CommandParameter="{Binding}" />
+                                                      Command="{Binding PlacementTarget.Tag.OpenResponseInBitrixCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                      CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
                                         </ContextMenu>
                                     </Grid.ContextMenu>
                                     <Grid.RowDefinitions>

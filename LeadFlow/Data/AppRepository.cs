@@ -189,19 +189,21 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
             })
             .FirstOrDefaultAsync(cancellationToken);
 
-        var activityBuckets = await db.CandidateResponses
+        var hourlyActivity = await db.CandidateResponses
             .AsNoTracking()
             .Where(x => x.CreatedAt >= today)
-            .GroupBy(x => x.CreatedAt.Hour / 3)
+            .GroupBy(x => x.CreatedAt.Hour)
             .Select(g => new
             {
-                Bucket = g.Key,
+                Hour = g.Key,
                 Total = g.Count(),
                 Sent = g.Count(x => x.Status == nameof(ResponseStatus.Sent)),
                 Duplicates = g.Count(x => x.Status == nameof(ResponseStatus.Duplicate)),
                 Errors = g.Count(x => x.Status == nameof(ResponseStatus.Error))
             })
             .ToListAsync(cancellationToken);
+
+        var byHour = hourlyActivity.ToDictionary(x => x.Hour, x => x);
 
         var accountSummary = await db.AvitoAccounts
             .AsNoTracking()
@@ -232,12 +234,14 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
             DraftsCount = accountSummary?.Drafts ?? 0
         };
 
-        for (var hour = 0; hour < 24; hour += 3)
+        for (var hour = 0; hour < 24; hour++)
         {
-            var bucket = activityBuckets.FirstOrDefault(x => x.Bucket == hour / 3);
-            stats.Activity.Add(new ActivityPoint
+            _ = byHour.TryGetValue(hour, out var bucket);
+            stats.HourlyActivity.Add(new ActivityPoint
             {
                 Label = $"{hour:00}:00",
+                SlotStartHour = hour,
+                SlotSpanHours = 1,
                 NewCount = bucket?.Total ?? 0,
                 SentCount = bucket?.Sent ?? 0,
                 DuplicateCount = bucket?.Duplicates ?? 0,
@@ -245,6 +249,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
             });
         }
 
+        stats.AggregatedUpToUtc = DateTime.UtcNow;
         return stats;
     }
 
