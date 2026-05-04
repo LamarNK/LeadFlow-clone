@@ -2,7 +2,7 @@ using System.Windows.Controls;
 
 namespace LeadFlow.Views;
 
-public partial class JournalView : UserControl
+public partial class JournalView : System.Windows.Controls.UserControl
 {
     public JournalView()
     {

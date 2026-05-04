@@ -16,8 +16,8 @@ public sealed class LogLevelToBackgroundConverter : IValueConverter
             "error" or "critical" => (Brush)Application.Current.FindResource("ErrorBrush"),
             "warning" => (Brush)Application.Current.FindResource("WarningBrush"),
             "information" or "info" => (Brush)Application.Current.FindResource("PrimaryBrush"),
-            "debug" or "trace" => Brushes.Gray,
-            _ => Brushes.SlateGray
+            "debug" or "trace" => System.Windows.Media.Brushes.Gray,
+            _ => System.Windows.Media.Brushes.SlateGray
         };
     }
 

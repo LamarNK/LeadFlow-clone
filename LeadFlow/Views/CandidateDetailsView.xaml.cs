@@ -2,7 +2,7 @@ using System.Windows.Controls;
 
 namespace LeadFlow.Views;
 
-public partial class CandidateDetailsView : UserControl
+public partial class CandidateDetailsView : System.Windows.Controls.UserControl
 {
     public CandidateDetailsView()
     {

@@ -13,7 +13,7 @@ using Microsoft.Extensions.Hosting;
 
 namespace LeadFlow;
 
-public partial class App : Application
+public partial class App : System.Windows.Application
 {
     private IHost? _host;
     private Mutex? _singleInstanceMutex;

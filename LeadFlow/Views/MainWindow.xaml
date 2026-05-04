@@ -6,7 +6,9 @@
         Icon="/Assets/LeadFlowWindowIcon.png"
         Width="1400"
         Height="960"
-        WindowStartupLocation="CenterScreen">
+        WindowStartupLocation="CenterScreen"
+        Closing="MainWindow_Closing"
+        StateChanged="MainWindow_StateChanged">
     <ScrollViewer VerticalScrollBarVisibility="Auto">
         <Grid Margin="18">
             <Grid.RowDefinitions>
