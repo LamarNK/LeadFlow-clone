@@ -19,4 +19,11 @@
     <SolidColorBrush x:Key="SuccessBrush" Color="{StaticResource SuccessColor}" />
     <SolidColorBrush x:Key="WarningBrush" Color="{StaticResource WarningColor}" />
     <SolidColorBrush x:Key="ErrorBrush" Color="{StaticResource ErrorColor}" />
+    <!-- Текстовые ссылки и вторичные акценты (не заливка кнопок) -->
+    <SolidColorBrush x:Key="LinkTextBrush" Color="{StaticResource PrimaryColor}" />
+
+    <Thickness x:Key="PagePadding">8</Thickness>
+    <Thickness x:Key="SectionSpacing">0,8,0,0</Thickness>
+    <Thickness x:Key="CardInnerGap">0,6,0,0</Thickness>
+    <Thickness x:Key="TightSpacing">0,4,0,0</Thickness>
 </ResourceDictionary>

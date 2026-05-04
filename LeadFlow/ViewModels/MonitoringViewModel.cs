@@ -1,10 +1,12 @@
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Windows.Data;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using LeadFlow.Data;
 using LeadFlow.Models;
+using LeadFlow.Services;
 
 namespace LeadFlow.ViewModels;
 
@@ -30,14 +32,32 @@ public partial class MonitoringViewModel : ObservableObject
     public int SentResponsesCount => Responses.Count(x => x.Status == ResponseStatus.Sent);
     public int ErrorResponsesCount => Responses.Count(x => x.Status == ResponseStatus.Error);
 
-    public MonitoringViewModel(AppRepository repository) : base()
-    {
-        ResponsesView = CollectionViewSource.GetDefaultView(Responses);
-        ResponsesView.Filter = FilterResponse;
-        _repository = repository;
-    }
+    public bool ShowMonitoringResponsesEmpty => ResponsesView.IsEmpty;
+
+    public string MonitoringResponsesEmptyHint => Responses.Count == 0
+        ? "Пока нет откликов. Запустите мониторинг на главном экране или нажмите «Обновить»."
+        : "Нет откликов в текущем фильтре. Смените статус или строку поиска.";
 
     private readonly AppRepository _repository;
+    private readonly ISettingsService _settingsService;
+
+    public MonitoringViewModel(AppRepository repository, ISettingsService settingsService) : base()
+    {
+        _repository = repository;
+        _settingsService = settingsService;
+        ResponsesView = CollectionViewSource.GetDefaultView(Responses);
+        ResponsesView.Filter = FilterResponse;
+        Responses.CollectionChanged += OnResponsesCollectionChanged;
+    }
+
+    private void OnResponsesCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e) =>
+        NotifyMonitoringListUi();
+
+    private void NotifyMonitoringListUi()
+    {
+        OnPropertyChanged(nameof(ShowMonitoringResponsesEmpty));
+        OnPropertyChanged(nameof(MonitoringResponsesEmptyHint));
+    }
 
     partial void OnSelectedResponseChanged(CandidateResponse? value)
     {
@@ -46,8 +66,18 @@ public partial class MonitoringViewModel : ObservableObject
         OnPropertyChanged(nameof(SelectedResponseErrorText));
         SelectedResponseChanged?.Invoke(this, value);
     }
-    partial void OnSearchTextChanged(string value) => ResponsesView.Refresh();
-    partial void OnSelectedStatusFilterChanged(string value) => ResponsesView.Refresh();
+
+    partial void OnSearchTextChanged(string value)
+    {
+        ResponsesView.Refresh();
+        NotifyMonitoringListUi();
+    }
+
+    partial void OnSelectedStatusFilterChanged(string value)
+    {
+        ResponsesView.Refresh();
+        NotifyMonitoringListUi();
+    }
 
     [RelayCommand]
     public async Task RefreshAsync()
@@ -88,6 +118,7 @@ public partial class MonitoringViewModel : ObservableObject
 
         NotifyCountersChanged();
         ResponsesView.Refresh();
+        NotifyMonitoringListUi();
     }
 
     public string SelectedResponseStatusText => SelectedResponse?.Status switch
@@ -135,6 +166,7 @@ public partial class MonitoringViewModel : ObservableObject
 
         NotifyCountersChanged();
         ResponsesView.Refresh();
+        NotifyMonitoringListUi();
     }
 
     private void NotifyCountersChanged()
@@ -143,5 +175,25 @@ public partial class MonitoringViewModel : ObservableObject
         OnPropertyChanged(nameof(NewResponsesCount));
         OnPropertyChanged(nameof(SentResponsesCount));
         OnPropertyChanged(nameof(ErrorResponsesCount));
+    }
+
+    private bool CanCopyResponsePhone(CandidateResponse? r) => CandidateResponseUiActions.CanCopyPhone(r);
+
+    [RelayCommand(CanExecute = nameof(CanCopyResponsePhone))]
+    private void CopyResponsePhone(CandidateResponse? response) =>
+        CandidateResponseUiActions.TryCopyPhone(response);
+
+    private bool CanOpenResponseInAvito(CandidateResponse? r) => CandidateResponseUiActions.CanOpenSource(r);
+
+    [RelayCommand(CanExecute = nameof(CanOpenResponseInAvito))]
+    private void OpenResponseInAvito(CandidateResponse? response) =>
+        CandidateResponseUiActions.TryOpenSourceUrl(response);
+
+    private bool CanOpenResponseInBitrix(CandidateResponse? r) => CandidateResponseUiActions.CanOpenBitrix(r);
+
+    [RelayCommand(CanExecute = nameof(CanOpenResponseInBitrix))]
+    private async Task OpenResponseInBitrixAsync(CandidateResponse? response)
+    {
+        await CandidateResponseUiActions.TryOpenBitrixAsync(response, _settingsService, CancellationToken.None);
     }
 }

@@ -6,11 +6,6 @@
         Height="720"
         WindowStartupLocation="CenterOwner">
     <Window.Resources>
-        <Style x:Key="SectionTitleStyle" TargetType="TextBlock">
-            <Setter Property="FontSize" Value="18" />
-            <Setter Property="FontWeight" Value="SemiBold" />
-            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
-        </Style>
         <Style x:Key="ActionButtonStyle" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
             <Setter Property="MinWidth" Value="170" />
             <Setter Property="Padding" Value="12,8" />
@@ -57,7 +52,7 @@
             </Setter>
         </Style>
     </Window.Resources>
-    <Grid Margin="10">
+    <Grid Margin="{StaticResource PagePadding}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
@@ -113,7 +108,7 @@
                                     </Grid.ColumnDefinitions>
 
                                     <StackPanel>
-                                        <TextBlock Text="{Binding DisplayName}" FontSize="16" FontWeight="SemiBold" />
+                                        <TextBlock Text="{Binding DisplayName}" Style="{StaticResource ListRowTitleTextStyle}" />
                                         <TextBlock Margin="0,4,0,0"
                                                    Style="{StaticResource SubtleTextStyle}"
                                                    Text="{Binding LastAuthCheckAt, StringFormat=Проверка: {0:dd.MM.yyyy HH:mm}, TargetNullValue=Проверка: ещё не выполнялась}" />
@@ -202,7 +197,7 @@
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
                         <StackPanel>
-                            <TextBlock Text="{Binding SelectedAccountName}" FontSize="20" FontWeight="SemiBold" />
+                            <TextBlock Text="{Binding SelectedAccountName}" Style="{StaticResource PageTitleTextStyle}" />
                             <TextBlock Text="{Binding SelectedAccountStateHint}"
                                        Margin="0,4,0,0"
                                        TextWrapping="Wrap"

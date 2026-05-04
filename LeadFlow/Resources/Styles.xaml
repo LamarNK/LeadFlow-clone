@@ -35,21 +35,54 @@
         <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
     </Style>
 
-    <Style x:Key="SectionTitleStyle" TargetType="TextBlock">
-        <Setter Property="FontSize" Value="18" />
+    <!-- Иерархия: заголовок экрана → секция → основной текст → подпись -->
+    <Style x:Key="PageTitleTextStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="20" />
         <Setter Property="FontWeight" Value="SemiBold" />
         <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
     </Style>
 
-    <Style x:Key="SubtleTextStyle" TargetType="TextBlock">
-        <Setter Property="Foreground" Value="{StaticResource SecondaryTextBrush}" />
-        <Setter Property="FontSize" Value="12" />
+    <Style x:Key="SectionHeaderTextStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="17" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
     </Style>
 
-    <Style x:Key="InfoLabelStyle" TargetType="TextBlock">
+    <Style x:Key="SectionTitleStyle" TargetType="TextBlock" BasedOn="{StaticResource SectionHeaderTextStyle}">
+        <Setter Property="FontSize" Value="18" />
+    </Style>
+
+    <Style x:Key="BodyTextStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="14" />
+        <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+    </Style>
+
+    <Style x:Key="ListRowTitleTextStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="16" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+    </Style>
+
+    <Style x:Key="CaptionTextStyle" TargetType="TextBlock">
         <Setter Property="FontSize" Value="12" />
         <Setter Property="Foreground" Value="{StaticResource SecondaryTextBrush}" />
     </Style>
+
+    <Style x:Key="StatValueTextStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="20" />
+        <Setter Property="FontWeight" Value="Bold" />
+        <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+    </Style>
+
+    <Style x:Key="StatLinkTextStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{StaticResource LinkTextBrush}" />
+    </Style>
+
+    <Style x:Key="SubtleTextStyle" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextStyle}" />
+
+    <Style x:Key="InfoLabelStyle" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextStyle}" />
 
     <!-- Журнал / Логи и др.: полная ширина, равные ячейки, активная вкладка — нижняя черта -->
     <Style x:Key="SectionTabControlStyle" TargetType="TabControl">

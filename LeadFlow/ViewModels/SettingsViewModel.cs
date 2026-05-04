@@ -38,11 +38,19 @@ public partial class SettingsViewModel(
         repository.AccountPersisted += OnAccountPersisted;
 
         _settings = await settingsService.LoadAsync(CancellationToken.None);
+        var persistedAccounts = await repository.GetAccountsAsync(CancellationToken.None);
+        var persistedById = persistedAccounts.ToDictionary(a => a.Id);
+
         _pendingProfileDeletions.Clear();
         Accounts.Clear();
         foreach (var account in _settings.Avito.Accounts)
         {
             account.AvitoResponsesUrl = FixedAvitoProfileUrl;
+            if (persistedById.TryGetValue(account.Id, out var fromDb))
+            {
+                account.MergePersistedSnapshotFrom(fromDb);
+            }
+
             Accounts.Add(account);
         }
 

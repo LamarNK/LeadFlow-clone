@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Data;
@@ -15,6 +16,7 @@ public partial class JournalViewModel : ObservableObject
 {
     private readonly AppRepository _repository;
     private readonly ICsvExportService _csvExportService;
+    private readonly ISettingsService _settingsService;
 
     public ObservableCollection<CandidateResponse> Items { get; } = [];
     public ObservableCollection<LogFileEntry> LogEntries { get; } = [];
@@ -41,12 +43,47 @@ public partial class JournalViewModel : ObservableObject
     [ObservableProperty]
     private DateTime? selectedLogDate;
 
-    public JournalViewModel(AppRepository repository, ICsvExportService csvExportService)
+    public bool ShowJournalResponsesEmpty => Items.Count == 0;
+
+    public string JournalResponsesEmptyHint =>
+        "Пока нет записей. Запустите мониторинг или нажмите «Обновить».";
+
+    public bool ShowJournalLogsEmpty => LogEntriesView.IsEmpty;
+
+    public string JournalLogsEmptyHint => LogEntries.Count == 0
+        ? "Пока нет записей в логе."
+        : "Нет записей за выбранные условия. Сбросьте дату или уровень.";
+
+    public JournalViewModel(
+        AppRepository repository,
+        ICsvExportService csvExportService,
+        ISettingsService settingsService)
     {
         _repository = repository;
         _csvExportService = csvExportService;
+        _settingsService = settingsService;
         LogEntriesView = CollectionViewSource.GetDefaultView(LogEntries);
         LogEntriesView.Filter = FilterLogEntry;
+        Items.CollectionChanged += OnItemsCollectionChanged;
+        LogEntries.CollectionChanged += OnLogEntriesCollectionChanged;
+    }
+
+    private void OnItemsCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e) =>
+        NotifyJournalResponsesEmpty();
+
+    private void OnLogEntriesCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e) =>
+        NotifyJournalLogsEmpty();
+
+    private void NotifyJournalResponsesEmpty()
+    {
+        OnPropertyChanged(nameof(ShowJournalResponsesEmpty));
+        OnPropertyChanged(nameof(JournalResponsesEmptyHint));
+    }
+
+    private void NotifyJournalLogsEmpty()
+    {
+        OnPropertyChanged(nameof(ShowJournalLogsEmpty));
+        OnPropertyChanged(nameof(JournalLogsEmptyHint));
     }
 
     public int JournalItemsCount => Items.Count;
@@ -76,6 +113,8 @@ public partial class JournalViewModel : ObservableObject
         SelectedItem ??= Items.FirstOrDefault();
         SelectedLogEntry ??= LogEntries.FirstOrDefault();
         LogEntriesView.Refresh();
+        NotifyJournalLogsEmpty();
+        NotifyJournalResponsesEmpty();
     }
 
     public void ApplyProcessedResponse(CandidateResponse response)
@@ -108,6 +147,7 @@ public partial class JournalViewModel : ObservableObject
         }
 
         NotifyJournalCountersChanged();
+        NotifyJournalResponsesEmpty();
     }
 
     [RelayCommand]
@@ -187,11 +227,23 @@ public partial class JournalViewModel : ObservableObject
         OnPropertyChanged(nameof(SelectedLogDetails));
     }
 
-    partial void OnLogSearchTextChanged(string value) => LogEntriesView.Refresh();
+    partial void OnLogSearchTextChanged(string value)
+    {
+        LogEntriesView.Refresh();
+        NotifyJournalLogsEmpty();
+    }
 
-    partial void OnSelectedLogLevelFilterChanged(string value) => LogEntriesView.Refresh();
+    partial void OnSelectedLogLevelFilterChanged(string value)
+    {
+        LogEntriesView.Refresh();
+        NotifyJournalLogsEmpty();
+    }
 
-    partial void OnSelectedLogDateChanged(DateTime? value) => LogEntriesView.Refresh();
+    partial void OnSelectedLogDateChanged(DateTime? value)
+    {
+        LogEntriesView.Refresh();
+        NotifyJournalLogsEmpty();
+    }
 
     private bool FilterLogEntry(object obj)
     {
@@ -234,6 +286,7 @@ public partial class JournalViewModel : ObservableObject
         }
 
         NotifyJournalCountersChanged();
+        NotifyJournalResponsesEmpty();
     }
 
     private void NotifyJournalCountersChanged()
@@ -241,5 +294,25 @@ public partial class JournalViewModel : ObservableObject
         OnPropertyChanged(nameof(JournalItemsCount));
         OnPropertyChanged(nameof(SentJournalItemsCount));
         OnPropertyChanged(nameof(ErrorJournalItemsCount));
+    }
+
+    private bool CanCopyResponsePhone(CandidateResponse? r) => CandidateResponseUiActions.CanCopyPhone(r);
+
+    [RelayCommand(CanExecute = nameof(CanCopyResponsePhone))]
+    private void CopyResponsePhone(CandidateResponse? response) =>
+        CandidateResponseUiActions.TryCopyPhone(response);
+
+    private bool CanOpenResponseInAvito(CandidateResponse? r) => CandidateResponseUiActions.CanOpenSource(r);
+
+    [RelayCommand(CanExecute = nameof(CanOpenResponseInAvito))]
+    private void OpenResponseInAvito(CandidateResponse? response) =>
+        CandidateResponseUiActions.TryOpenSourceUrl(response);
+
+    private bool CanOpenResponseInBitrix(CandidateResponse? r) => CandidateResponseUiActions.CanOpenBitrix(r);
+
+    [RelayCommand(CanExecute = nameof(CanOpenResponseInBitrix))]
+    private async Task OpenResponseInBitrixAsync(CandidateResponse? response)
+    {
+        await CandidateResponseUiActions.TryOpenBitrixAsync(response, _settingsService, CancellationToken.None);
     }
 }

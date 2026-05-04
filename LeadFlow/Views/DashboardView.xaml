@@ -8,13 +8,13 @@
     <StackPanel>
         <Border Style="{StaticResource CompactCardBorderStyle}" Margin="0,0,0,6" Padding="12,10">
             <StackPanel>
-                <TextBlock Text="Отклики и CRM" FontSize="17" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" />
+                <TextBlock Text="Отклики и CRM" Style="{StaticResource SectionHeaderTextStyle}" />
                 <TextBlock Text="Счётчики за сегодня, динамика и сводка."
                            Style="{StaticResource SubtleTextStyle}"
                            TextWrapping="Wrap"
-                           Margin="0,2,0,0" />
+                           Margin="{StaticResource TightSpacing}" />
 
-                <UniformGrid Columns="4" Margin="0,8,0,0">
+                <UniformGrid Columns="4" Margin="{StaticResource SectionSpacing}">
                     <Button Style="{StaticResource StatCardButtonStyle}"
                             Padding="10"
                             Margin="4"
@@ -22,8 +22,8 @@
                             CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}">
                         <StackPanel>
                             <TextBlock Text="Новых откликов" Style="{StaticResource SubtleTextStyle}" />
-                            <TextBlock Text="{Binding NewResponses}" FontSize="20" FontWeight="Bold" />
-                            <TextBlock Text="К мониторингу" Foreground="{StaticResource PrimaryBrush}" FontWeight="SemiBold" FontSize="11" />
+                            <TextBlock Text="{Binding NewResponses}" Style="{StaticResource StatValueTextStyle}" />
+                            <TextBlock Text="К мониторингу" Style="{StaticResource StatLinkTextStyle}" />
                         </StackPanel>
                     </Button>
                     <Button Style="{StaticResource StatCardButtonStyle}"
@@ -33,8 +33,8 @@
                             CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}">
                         <StackPanel>
                             <TextBlock Text="Всего за сегодня" Style="{StaticResource SubtleTextStyle}" />
-                            <TextBlock Text="{Binding TotalToday}" FontSize="20" FontWeight="Bold" />
-                            <TextBlock Text="К мониторингу" Foreground="{StaticResource PrimaryBrush}" FontWeight="SemiBold" FontSize="11" />
+                            <TextBlock Text="{Binding TotalToday}" Style="{StaticResource StatValueTextStyle}" />
+                            <TextBlock Text="К мониторингу" Style="{StaticResource StatLinkTextStyle}" />
                         </StackPanel>
                     </Button>
                     <Button Style="{StaticResource StatCardButtonStyle}"
@@ -44,8 +44,8 @@
                             CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}">
                         <StackPanel>
                             <TextBlock Text="Отправлено в CRM" Style="{StaticResource SubtleTextStyle}" />
-                            <TextBlock Text="{Binding SentToCrm}" FontSize="20" FontWeight="Bold" Foreground="{StaticResource SuccessBrush}" />
-                            <TextBlock Text="Журнал" Foreground="{StaticResource PrimaryBrush}" FontWeight="SemiBold" FontSize="11" />
+                            <TextBlock Text="{Binding SentToCrm}" Style="{StaticResource StatValueTextStyle}" Foreground="{StaticResource SuccessBrush}" />
+                            <TextBlock Text="Журнал" Style="{StaticResource StatLinkTextStyle}" />
                         </StackPanel>
                     </Button>
                     <Button Style="{StaticResource StatCardButtonStyle}"
@@ -55,8 +55,8 @@
                             CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}">
                         <StackPanel>
                             <TextBlock Text="В обработке" Style="{StaticResource SubtleTextStyle}" />
-                            <TextBlock Text="{Binding InProgress}" FontSize="20" FontWeight="Bold" />
-                            <TextBlock Text="К мониторингу" Foreground="{StaticResource PrimaryBrush}" FontWeight="SemiBold" FontSize="11" />
+                            <TextBlock Text="{Binding InProgress}" Style="{StaticResource StatValueTextStyle}" />
+                            <TextBlock Text="К мониторингу" Style="{StaticResource StatLinkTextStyle}" />
                         </StackPanel>
                     </Button>
                     <Button Style="{StaticResource StatCardButtonStyle}"
@@ -66,8 +66,8 @@
                             CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}">
                         <StackPanel>
                             <TextBlock Text="Дубликаты" Style="{StaticResource SubtleTextStyle}" />
-                            <TextBlock Text="{Binding Duplicates}" FontSize="20" FontWeight="Bold" Foreground="{StaticResource WarningBrush}" />
-                            <TextBlock Text="Журнал" Foreground="{StaticResource PrimaryBrush}" FontWeight="SemiBold" FontSize="11" />
+                            <TextBlock Text="{Binding Duplicates}" Style="{StaticResource StatValueTextStyle}" Foreground="{StaticResource WarningBrush}" />
+                            <TextBlock Text="Журнал" Style="{StaticResource StatLinkTextStyle}" />
                         </StackPanel>
                     </Button>
                     <Button Style="{StaticResource StatCardButtonStyle}"
@@ -77,19 +77,19 @@
                             CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}">
                         <StackPanel>
                             <TextBlock Text="Аккаунтов подключено" Style="{StaticResource SubtleTextStyle}" />
-                            <TextBlock Text="{Binding ConnectedAccounts}" FontSize="20" FontWeight="Bold" />
+                            <TextBlock Text="{Binding ConnectedAccounts}" Style="{StaticResource StatValueTextStyle}" />
                             <TextBlock Text="{Binding RequiresAuthorization, StringFormat=Требует авторизации: {0}}"
                                        Style="{StaticResource SubtleTextStyle}"
                                        Visibility="{Binding RequiresAuthorization, Converter={StaticResource ZeroToCollapsedConverter}}"
-                                       Margin="0,2,0,0" />
-                            <TextBlock Text="Настройки" Foreground="{StaticResource PrimaryBrush}" FontWeight="SemiBold" FontSize="11" Margin="0,4,0,0" />
+                                       Margin="{StaticResource TightSpacing}" />
+                            <TextBlock Text="Настройки" Style="{StaticResource StatLinkTextStyle}" Margin="{StaticResource CardInnerGap}" />
                         </StackPanel>
                     </Button>
                 </UniformGrid>
 
                 <Border Style="{StaticResource CompactCardBorderStyle}" Margin="4,8,4,0" Padding="10,8">
                     <StackPanel>
-                        <TextBlock Text="Динамика за сегодня" FontWeight="SemiBold" FontSize="13" />
+                        <TextBlock Text="Динамика за сегодня" Style="{StaticResource BodyTextStyle}" FontWeight="SemiBold" />
                         <ItemsControl ItemsSource="{Binding Activity}" Margin="0,8,0,0">
                             <ItemsControl.ItemsPanel>
                                 <ItemsPanelTemplate>
@@ -124,11 +124,11 @@
 
                 <Border Style="{StaticResource DetailSectionBorderStyle}" Margin="4,8,4,0" Padding="10,8">
                     <StackPanel>
-                        <TextBlock Text="Краткая сводка" FontWeight="SemiBold" FontSize="13" />
-                        <TextBlock Text="{Binding TotalToday, StringFormat=Всего откликов: {0}}" FontSize="12" Margin="0,6,0,2" />
-                        <TextBlock Text="{Binding SentToCrm, StringFormat=Успешно отправлено: {0}}" FontSize="12" Margin="0,0,0,2" />
-                        <TextBlock Text="{Binding Duplicates, StringFormat=Дубликаты: {0}}" FontSize="12" Margin="0,0,0,2" />
-                        <TextBlock Text="{Binding Errors, StringFormat=Ошибки: {0}}" FontSize="12" />
+                        <TextBlock Text="Краткая сводка" Style="{StaticResource BodyTextStyle}" FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding TotalToday, StringFormat=Всего откликов: {0}}" Style="{StaticResource CaptionTextStyle}" Foreground="{StaticResource TextBrush}" Margin="0,6,0,2" />
+                        <TextBlock Text="{Binding SentToCrm, StringFormat=Успешно отправлено: {0}}" Style="{StaticResource CaptionTextStyle}" Foreground="{StaticResource SuccessBrush}" Margin="0,0,0,2" />
+                        <TextBlock Text="{Binding Duplicates, StringFormat=Дубликаты: {0}}" Style="{StaticResource CaptionTextStyle}" Foreground="{StaticResource WarningBrush}" Margin="0,0,0,2" />
+                        <TextBlock Text="{Binding Errors, StringFormat=Ошибки: {0}}" Style="{StaticResource CaptionTextStyle}" Foreground="{StaticResource ErrorBrush}" />
                     </StackPanel>
                 </Border>
             </StackPanel>
@@ -136,10 +136,10 @@
 
         <Border Style="{StaticResource CompactCardBorderStyle}" Padding="12,10">
             <StackPanel>
-                <TextBlock Text="Объявления на Avito" FontSize="17" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" />
+                <TextBlock Text="Объявления на Avito" Style="{StaticResource SectionHeaderTextStyle}" />
 
-                <StackPanel Orientation="Horizontal" Margin="0,6,0,0" VerticalAlignment="Center">
-                    <TextBlock Text="Активные" FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center" />
+                <StackPanel Orientation="Horizontal" Margin="{StaticResource CardInnerGap}" VerticalAlignment="Center">
+                    <TextBlock Text="Активные" Style="{StaticResource BodyTextStyle}" FontWeight="SemiBold" VerticalAlignment="Center" />
                     <Border Background="#DCFCE7" CornerRadius="6" Padding="5,1" Margin="6,0,0,0" VerticalAlignment="Center">
                         <TextBlock Text="{Binding ActiveAds.Count}" FontWeight="Bold" Foreground="#166534" FontSize="12" />
                     </Border>
@@ -159,7 +159,7 @@
                     </StackPanel>
                 </StackPanel>
 
-                <StackPanel Margin="0,6,0,0">
+                <StackPanel Margin="{StaticResource CardInnerGap}">
                     <ListBox ItemsSource="{Binding ActiveAds}"
                              MinHeight="120"
                              MaxHeight="280"
@@ -222,15 +222,15 @@
                         </ListBox.ItemTemplate>
                     </ListBox>
 
-                    <TextBlock Text="Нет активных в списке"
-                               Foreground="#64748B"
+                    <TextBlock Text="Нет активных объявлений. Проверьте аккаунт Avito или обновите данные на главной."
+                               Style="{StaticResource CaptionTextStyle}"
                                FontStyle="Italic"
-                               FontSize="12"
-                               Margin="0,6,0,0"
+                               TextWrapping="Wrap"
+                               Margin="{StaticResource CardInnerGap}"
                                Visibility="{Binding ActiveAds.Count, Converter={StaticResource ZeroToCollapsedConverter}, ConverterParameter=Invert}" />
                 </StackPanel>
 
-                <Grid Margin="0,10,0,0">
+                <Grid Margin="{StaticResource SectionSpacing}">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="8" />
@@ -239,15 +239,15 @@
 
                     <Border Grid.Column="0" Background="#FEF2F2" CornerRadius="10" Padding="12,10" Margin="4,0,4,0" BorderBrush="#FECACA" BorderThickness="1">
                         <StackPanel>
-                            <TextBlock Text="Заблокировано" FontWeight="SemiBold" FontSize="13" />
-                            <TextBlock Text="{Binding BlockedAdsCount}" FontSize="22" FontWeight="Bold" Foreground="#DC2626" Margin="0,2,0,0" />
+                            <TextBlock Text="Заблокировано" Style="{StaticResource BodyTextStyle}" FontWeight="SemiBold" />
+                            <TextBlock Text="{Binding BlockedAdsCount}" Style="{StaticResource StatValueTextStyle}" Foreground="{StaticResource ErrorBrush}" Margin="{StaticResource TightSpacing}" />
                         </StackPanel>
                     </Border>
 
                     <Border Grid.Column="2" Background="#FFFBEB" CornerRadius="10" Padding="12,10" Margin="4,0,4,0" BorderBrush="#FEF08A" BorderThickness="1">
                         <StackPanel>
-                            <TextBlock Text="Черновики" FontWeight="SemiBold" FontSize="13" />
-                            <TextBlock Text="{Binding DraftsCount}" FontSize="22" FontWeight="Bold" Foreground="#CA8A04" Margin="0,2,0,0" />
+                            <TextBlock Text="Черновики" Style="{StaticResource BodyTextStyle}" FontWeight="SemiBold" />
+                            <TextBlock Text="{Binding DraftsCount}" Style="{StaticResource StatValueTextStyle}" Foreground="{StaticResource WarningBrush}" Margin="{StaticResource TightSpacing}" />
                         </StackPanel>
                     </Border>
                 </Grid>
