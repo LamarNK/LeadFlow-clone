@@ -12,6 +12,9 @@ public sealed class DashboardStats
     public int Errors { get; set; }
     public int ConnectedAccounts { get; set; }
     public int RequiresAuthorization { get; set; }
+    public int ActiveAdsCount { get; set; }
+    public int BlockedAdsCount { get; set; }
+    public int DraftsCount { get; set; }
     public ObservableCollection<ActivityPoint> Activity { get; set; } = new();
 }
 

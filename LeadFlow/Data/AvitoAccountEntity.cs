@@ -11,4 +11,8 @@ public sealed class AvitoAccountEntity
     public DateTime? LastAuthCheckAt { get; set; }
     public DateTime? LastMonitoringAt { get; set; }
     public string LastErrorMessage { get; set; } = string.Empty;
+    public int ActiveAdsCount { get; set; }
+    public int BlockedCount { get; set; }
+    public int DraftsCount { get; set; }
+    public DateTime? AdsStatsUpdatedAt { get; set; }
 }

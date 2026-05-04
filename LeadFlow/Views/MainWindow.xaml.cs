@@ -24,7 +24,19 @@ public partial class MainWindow : Window
         if (DataContext is MainViewModel vm)
         {
             vm.PropertyChanged += ViewModel_PropertyChanged;
+            vm.NotificationRequested += ViewModel_NotificationRequested;
         }
+    }
+
+    private void ViewModel_NotificationRequested(object? sender, LeadFlow.Models.DesktopNotificationRequest e)
+    {
+        if (!Dispatcher.CheckAccess())
+        {
+            _ = Dispatcher.InvokeAsync(() => ShowTrayNotification(e));
+            return;
+        }
+
+        ShowTrayNotification(e);
     }
 
     private void ViewModel_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -131,8 +143,57 @@ public partial class MainWindow : Window
 
     protected override void OnClosed(System.EventArgs e)
     {
+        if (DataContext is MainViewModel vm)
+        {
+            vm.PropertyChanged -= ViewModel_PropertyChanged;
+            vm.NotificationRequested -= ViewModel_NotificationRequested;
+        }
+
         base.OnClosed(e);
         _trayIcon?.Dispose();
         _trayIcon = null;
+    }
+
+    private void ShowTrayNotification(LeadFlow.Models.DesktopNotificationRequest notification)
+    {
+        if (_trayIcon is null)
+        {
+            return;
+        }
+
+        var wasVisible = _trayIcon.Visible;
+        if (!wasVisible)
+        {
+            _trayIcon.Visible = true;
+        }
+
+        _trayIcon.BalloonTipTitle = notification.Title;
+        _trayIcon.BalloonTipText = notification.Message;
+        _trayIcon.BalloonTipIcon = notification.Severity switch
+        {
+            LeadFlow.Models.DesktopNotificationSeverity.Warning => WinForms.ToolTipIcon.Warning,
+            LeadFlow.Models.DesktopNotificationSeverity.Error => WinForms.ToolTipIcon.Error,
+            _ => WinForms.ToolTipIcon.Info
+        };
+        _trayIcon.ShowBalloonTip(notification.TimeoutMilliseconds);
+
+        if (!wasVisible)
+        {
+            Task.Delay(Math.Max(notification.TimeoutMilliseconds, 5000)).ContinueWith(_ =>
+            {
+                Dispatcher.Invoke(() =>
+                {
+                    if (_trayIcon is not null && !IsVisible)
+                    {
+                        return;
+                    }
+
+                    if (_trayIcon is not null)
+                    {
+                        _trayIcon.Visible = false;
+                    }
+                });
+            }, TaskScheduler.Default);
+        }
     }
 }

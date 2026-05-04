@@ -10,6 +10,10 @@ public partial class MainViewModel : ObservableObject
 {
     private readonly IMonitoringService _monitoringService;
     private readonly IWindowService _windowService;
+    private bool _startNotificationShown;
+    private bool _pauseNotificationShown;
+
+    public event EventHandler<DesktopNotificationRequest>? NotificationRequested;
 
     public DashboardViewModel Dashboard { get; }
     public MonitoringViewModel Monitoring { get; }
@@ -55,14 +59,50 @@ public partial class MainViewModel : ObservableObject
 
         _monitoringService.StatusChanged += async (_, status) =>
         {
+            var wasActive = IsMonitoringActive;
             SystemStatus = status;
             await RefreshAllAsync();
+
+            if (status == MonitoringStatus.Running && _monitoringService.IsActive && !wasActive && !_startNotificationShown)
+            {
+                _startNotificationShown = true;
+                _pauseNotificationShown = false;
+                RaiseNotification(new DesktopNotificationRequest
+                {
+                    Title = "Мониторинг запущен",
+                    Message = "LeadFlow начал проверку аккаунтов и новых откликов.",
+                    Severity = DesktopNotificationSeverity.Info
+                });
+            }
+
+            if (status == MonitoringStatus.Waiting && _monitoringService.IsActive && !_pauseNotificationShown)
+            {
+                _pauseNotificationShown = true;
+                RaiseNotification(new DesktopNotificationRequest
+                {
+                    Title = "Мониторинг на паузе",
+                    Message = string.IsNullOrWhiteSpace(_monitoringService.CurrentStatusMessage)
+                        ? "Цикл завершён, ждём следующую проверку."
+                        : _monitoringService.CurrentStatusMessage,
+                    Severity = DesktopNotificationSeverity.Info
+                });
+            }
         };
 
         _monitoringService.StatusMessageChanged += (_, message) =>
         {
             SystemStatusDetails = message;
             IsMonitoringActive = _monitoringService.IsActive;
+
+            if (!_monitoringService.IsActive)
+            {
+                _startNotificationShown = false;
+                _pauseNotificationShown = false;
+            }
+            else if (SystemStatus == MonitoringStatus.Running)
+            {
+                _pauseNotificationShown = false;
+            }
         };
 
         _monitoringService.ResponseProcessed += async (_, response) =>
@@ -73,6 +113,32 @@ public partial class MainViewModel : ObservableObject
             CandidateDetails.Update(response);
             DuplicateCheck.Update(response);
             await BitrixIntegration.UpdateAsync(response);
+            RaiseNotification(new DesktopNotificationRequest
+            {
+                Title = "Новый отклик",
+                Message = $"{response.FullName} — {response.Vacancy} ({response.AccountName})",
+                Severity = response.Status == ResponseStatus.Error ? DesktopNotificationSeverity.Warning : DesktopNotificationSeverity.Info
+            });
+        };
+
+        _monitoringService.ProfileStatsUpdated += (_, args) =>
+        {
+            if (!args.HasNewBlockedAds)
+            {
+                return;
+            }
+
+            var blockedText = args.Account.BlockedCount == 1
+                ? "1 объявление заблокировано"
+                : $"{args.Account.BlockedCount} объявлений заблокировано";
+
+            RaiseNotification(new DesktopNotificationRequest
+            {
+                Title = "Объявление заблокировано",
+                Message = $"{args.Account.DisplayName}: {blockedText}. Новых блокировок: +{args.BlockedCountDelta}.",
+                Severity = DesktopNotificationSeverity.Warning,
+                TimeoutMilliseconds = 7000
+            });
         };
 
     }
@@ -156,5 +222,10 @@ public partial class MainViewModel : ObservableObject
         await BitrixIntegration.UpdateAsync(Monitoring.SelectedResponse);
         DuplicateCheck.Update(Monitoring.SelectedResponse);
         CandidateDetails.Update(Monitoring.SelectedResponse);
+    }
+
+    private void RaiseNotification(DesktopNotificationRequest request)
+    {
+        NotificationRequested?.Invoke(this, request);
     }
 }

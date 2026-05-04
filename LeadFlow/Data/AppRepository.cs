@@ -1,4 +1,5 @@
 using LeadFlow.Models;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 
 namespace LeadFlow.Data;
@@ -9,6 +10,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
     {
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
         await db.Database.EnsureCreatedAsync(cancellationToken);
+        await EnsureAvitoAccountsSchemaAsync(db, cancellationToken);
 
         foreach (var account in settings.Avito.Accounts)
         {
@@ -170,7 +172,10 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
             Duplicates = responsesToday.Count(x => x.Status == nameof(ResponseStatus.Duplicate)),
             Errors = responsesToday.Count(x => x.Status == nameof(ResponseStatus.Error)),
             ConnectedAccounts = accounts.Count(x => x.IsEnabled),
-            RequiresAuthorization = accounts.Count(x => x.Status == nameof(AvitoAccountStatus.RequiresLogin))
+            RequiresAuthorization = accounts.Count(x => x.Status == nameof(AvitoAccountStatus.RequiresLogin)),
+            ActiveAdsCount = accounts.Sum(x => x.ActiveAdsCount),
+            BlockedAdsCount = accounts.Sum(x => x.BlockedCount),
+            DraftsCount = accounts.Sum(x => x.DraftsCount)
         };
 
         for (var hour = 0; hour < 24; hour += 3)
@@ -214,7 +219,11 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         Status = model.Status.ToString(),
         LastAuthCheckAt = model.LastAuthCheckAt,
         LastMonitoringAt = model.LastMonitoringAt,
-        LastErrorMessage = model.LastErrorMessage
+        LastErrorMessage = model.LastErrorMessage,
+        ActiveAdsCount = model.ActiveAdsCount,
+        BlockedCount = model.BlockedCount,
+        DraftsCount = model.DraftsCount,
+        AdsStatsUpdatedAt = model.AdsStatsUpdatedAt
     };
 
     private static AvitoAccount ToModel(AvitoAccountEntity entity) => new()
@@ -227,7 +236,11 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         Status = Enum.TryParse<AvitoAccountStatus>(entity.Status, out var status) ? status : AvitoAccountStatus.NotConfigured,
         LastAuthCheckAt = entity.LastAuthCheckAt,
         LastMonitoringAt = entity.LastMonitoringAt,
-        LastErrorMessage = entity.LastErrorMessage
+        LastErrorMessage = entity.LastErrorMessage,
+        ActiveAdsCount = entity.ActiveAdsCount,
+        BlockedCount = entity.BlockedCount,
+        DraftsCount = entity.DraftsCount,
+        AdsStatsUpdatedAt = entity.AdsStatsUpdatedAt
     };
 
     private static void Map(AvitoAccount source, AvitoAccountEntity target)
@@ -240,6 +253,10 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         target.LastAuthCheckAt = source.LastAuthCheckAt;
         target.LastMonitoringAt = source.LastMonitoringAt;
         target.LastErrorMessage = source.LastErrorMessage;
+        target.ActiveAdsCount = source.ActiveAdsCount;
+        target.BlockedCount = source.BlockedCount;
+        target.DraftsCount = source.DraftsCount;
+        target.AdsStatsUpdatedAt = source.AdsStatsUpdatedAt;
     }
 
     private static CandidateResponseEntity ToEntity(CandidateResponse model) => new()
@@ -317,5 +334,27 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         target.RawText = source.RawText;
         target.CreatedAt = source.CreatedAt;
         target.ProcessedAt = source.ProcessedAt;
+    }
+
+    private static async Task EnsureAvitoAccountsSchemaAsync(AppDbContext db, CancellationToken cancellationToken)
+    {
+        var alterStatements = new[]
+        {
+            "ALTER TABLE AvitoAccounts ADD COLUMN ActiveAdsCount INTEGER NOT NULL DEFAULT 0;",
+            "ALTER TABLE AvitoAccounts ADD COLUMN BlockedCount INTEGER NOT NULL DEFAULT 0;",
+            "ALTER TABLE AvitoAccounts ADD COLUMN DraftsCount INTEGER NOT NULL DEFAULT 0;",
+            "ALTER TABLE AvitoAccounts ADD COLUMN AdsStatsUpdatedAt TEXT NULL;"
+        };
+
+        foreach (var statement in alterStatements)
+        {
+            try
+            {
+                await db.Database.ExecuteSqlRawAsync(statement, cancellationToken);
+            }
+            catch (SqliteException ex) when (ex.Message.Contains("duplicate column name", StringComparison.OrdinalIgnoreCase))
+            {
+            }
+        }
     }
 }

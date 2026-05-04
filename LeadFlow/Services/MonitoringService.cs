@@ -30,7 +30,7 @@ public sealed class MonitoringService(
     public event EventHandler<MonitoringStatus>? StatusChanged;
     public event EventHandler<string>? StatusMessageChanged;
     public event EventHandler<CandidateResponse>? ResponseProcessed;
-    public event EventHandler<AvitoAccount>? ProfileStatsUpdated;
+    public event EventHandler<ProfileStatsUpdatedEventArgs>? ProfileStatsUpdated;
 
     public MonitoringStatus CurrentStatus { get; private set; } = MonitoringStatus.Waiting;
     public string CurrentStatusMessage { get; private set; } = string.Empty;
@@ -114,21 +114,44 @@ public sealed class MonitoringService(
 
     private void StartProfileStatsTimer()
     {
-        // Первый запуск — сразу (уже выполнен в StartAsync), далее — рандомно 30-60 мин
+        _profileStatsTimer?.Dispose();
+
+        // Первый запуск уже выполнен в StartAsync, далее обновляем статистику каждые 30-60 минут.
         _profileStatsTimer = new System.Threading.Timer(async _ =>
         {
             try
             {
-                await UpdateProfileStatsAsync(CancellationToken.None);
-                // Следующий запуск через рандомный интервал 30-60 минут
-                var nextDelay = TimeSpan.FromMinutes(Random.Shared.Next(30, 61));
-                _profileStatsTimer?.Change(nextDelay, Timeout.InfiniteTimeSpan);
+                var token = _cts?.Token ?? CancellationToken.None;
+                if (token.IsCancellationRequested)
+                {
+                    return;
+                }
+
+                await UpdateProfileStatsAsync(token);
+
+                var nextDelay = ScheduleNextProfileStatsUpdate();
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"Следующая проверка объявлений запланирована через {(int)nextDelay.TotalMinutes} мин.",
+                    DeskLinkAuditLogLevel.Info);
             }
             catch (Exception ex)
             {
                 _ = GlobalLogger.Instance.LogAsync($"Periodic profile stats update failed: {ex.Message}", DeskLinkAuditLogLevel.Error);
+                ScheduleNextProfileStatsUpdate();
             }
         }, null, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+
+        var initialDelay = ScheduleNextProfileStatsUpdate();
+        _ = GlobalLogger.Instance.LogAsync(
+            $"Автопроверка объявлений включена. Следующая проверка через {(int)initialDelay.TotalMinutes} мин.",
+            DeskLinkAuditLogLevel.Info);
+    }
+
+    private TimeSpan ScheduleNextProfileStatsUpdate()
+    {
+        var nextDelay = TimeSpan.FromMinutes(Random.Shared.Next(30, 61));
+        _profileStatsTimer?.Change(nextDelay, Timeout.InfiniteTimeSpan);
+        return nextDelay;
     }
 
     private async Task UpdateProfileStatsAsync(CancellationToken ct)
@@ -138,6 +161,10 @@ public sealed class MonitoringService(
         {
             try
             {
+                var previousActiveAdsCount = account.ActiveAdsCount;
+                var previousBlockedCount = account.BlockedCount;
+                var previousDraftsCount = account.DraftsCount;
+
                 // Получаем HTTP-клиент для сессии аккаунта (с куками и т.д.)
                 using var client = httpClientFactory.CreateClient("Avito");
                 client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
@@ -147,6 +174,52 @@ public sealed class MonitoringService(
                 
                 // Парсим
                 var profileData = avitoParser.ParseProfilePage(html);
+                await GlobalLogger.Instance.LogAsync(
+                    () => $"Парсинг активных объявлений завершён для аккаунта {account.DisplayName}: active={profileData.ActiveCount}, parsed={profileData.ActiveAds.Count}, blocked={profileData.BlockedCount}, drafts={profileData.DraftsCount}.",
+                    DeskLinkAuditLogLevel.Info,
+                    properties: new Dictionary<string, object?>
+                    {
+                        ["accountId"] = account.Id,
+                        ["accountName"] = account.DisplayName,
+                        ["activeAdsCount"] = profileData.ActiveCount,
+                        ["parsedActiveAdsCount"] = profileData.ActiveAds.Count,
+                        ["blockedAdsCount"] = profileData.BlockedCount,
+                        ["draftsCount"] = profileData.DraftsCount
+                    });
+
+                if (profileData.ActiveAds.Count > 0)
+                {
+                    await GlobalLogger.Instance.LogAsync(
+                        () => $"Активные объявления аккаунта {account.DisplayName}: {string.Join(" | ", profileData.ActiveAds.Select(ad => $"{ad.Id}:{ad.Title} [{ad.Views}/{ad.Contacts}]"))}",
+                        DeskLinkAuditLogLevel.Debug,
+                        properties: new Dictionary<string, object?>
+                        {
+                            ["accountId"] = account.Id,
+                            ["accountName"] = account.DisplayName,
+                            ["ads"] = profileData.ActiveAds.Select(ad => new
+                            {
+                                ad.Id,
+                                ad.Title,
+                                ad.City,
+                                ad.Views,
+                                ad.Contacts
+                            }).ToArray()
+                        });
+                }
+                else
+                {
+                    await GlobalLogger.Instance.LogAsync(
+                        () => $"Во время парсинга активных объявлений для аккаунта {account.DisplayName} активные объявления не найдены.",
+                        DeskLinkAuditLogLevel.Warning,
+                        properties: new Dictionary<string, object?>
+                        {
+                            ["accountId"] = account.Id,
+                            ["accountName"] = account.DisplayName,
+                            ["activeAdsCount"] = profileData.ActiveCount,
+                            ["blockedAdsCount"] = profileData.BlockedCount,
+                            ["draftsCount"] = profileData.DraftsCount
+                        });
+                }
                 
                 // Обновляем аккаунт в БД
                 account.ActiveAdsCount = profileData.ActiveCount;
@@ -157,7 +230,13 @@ public sealed class MonitoringService(
                 await repository.SaveAccountAsync(account, ct);
                 
                 // Уведомляем ViewModel об обновлении
-                ProfileStatsUpdated?.Invoke(this, account);
+                ProfileStatsUpdated?.Invoke(this, new ProfileStatsUpdatedEventArgs
+                {
+                    Account = account,
+                    PreviousActiveAdsCount = previousActiveAdsCount,
+                    PreviousBlockedCount = previousBlockedCount,
+                    PreviousDraftsCount = previousDraftsCount
+                });
             }
             catch (Exception ex)
             {

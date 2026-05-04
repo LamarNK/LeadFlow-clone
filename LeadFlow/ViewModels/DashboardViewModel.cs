@@ -61,20 +61,15 @@ public partial class DashboardViewModel(AppRepository repository) : ObservableOb
         Errors = stats.Errors;
         ConnectedAccounts = stats.ConnectedAccounts;
         RequiresAuthorization = stats.RequiresAuthorization;
+        BlockedAdsCount = stats.BlockedAdsCount;
+        DraftsCount = stats.DraftsCount;
         Activity.Clear();
         foreach (var point in stats.Activity)
         {
             Activity.Add(point);
         }
-        
-        // Загрузка статистики объявлений Авито (заглушка для демонстрации)
-        // В реальном приложении здесь будет вызов AvitoParserService.ParseProfilePage(html)
-        // var profileData = avitoParser.ParseProfilePage(html);
-        // ActiveAds.Clear();
-        // foreach (var ad in profileData.ActiveAds) ActiveAds.Add(ad);
-        // BlockedAdsCount = profileData.BlockedCount;
-        // DraftsCount = profileData.DraftsCount;
-        // TotalActiveViews = profileData.ActiveAds.Sum(a => a.Views);
-        // TotalActiveContacts = profileData.ActiveAds.Sum(a => a.Contacts);
+        ActiveAds.Clear();
+        TotalActiveViews = 0;
+        TotalActiveContacts = 0;
     }
 }
