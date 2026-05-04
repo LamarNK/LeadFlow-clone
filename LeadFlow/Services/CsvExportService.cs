@@ -8,7 +8,7 @@ public sealed class CsvExportService : ICsvExportService
 {
     public async Task<string> ExportJournalAsync(IEnumerable<CandidateResponse> items, CancellationToken cancellationToken)
     {
-        var directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "LeadFlowExports");
+        var directory = Path.Combine(AppContext.BaseDirectory, "Exports");
         Directory.CreateDirectory(directory);
         var path = Path.Combine(directory, $"leadflow-journal-{DateTime.Now:yyyyMMdd-HHmmss}.csv");
 

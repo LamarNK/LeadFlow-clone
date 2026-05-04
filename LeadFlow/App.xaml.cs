@@ -26,6 +26,7 @@ public partial class App : System.Windows.Application
     protected override void OnStartup(StartupEventArgs e)
     {
         var createdNew = false;
+        RegisterGlobalExceptionHandlers();
 
         try
         {
@@ -207,5 +208,39 @@ public partial class App : System.Windows.Application
             DeskLinkAuditLogLevel.Info,
             memberName: nameof(OnStartup),
             filePath: "App.xaml.cs").GetAwaiter().GetResult();
+    }
+
+    private void RegisterGlobalExceptionHandlers()
+    {
+        DispatcherUnhandledException += (_, args) =>
+        {
+            GlobalLogger.Instance.LogAsync(
+                $"DispatcherUnhandledException.{Environment.NewLine}{args.Exception}",
+                DeskLinkAuditLogLevel.Error,
+                memberName: nameof(RegisterGlobalExceptionHandlers),
+                filePath: "App.xaml.cs").GetAwaiter().GetResult();
+        };
+
+        AppDomain.CurrentDomain.UnhandledException += (_, args) =>
+        {
+            var exceptionText = args.ExceptionObject is Exception ex
+                ? ex.ToString()
+                : args.ExceptionObject?.ToString() ?? "Unknown exception object";
+
+            GlobalLogger.Instance.LogAsync(
+                $"AppDomain.UnhandledException (IsTerminating={args.IsTerminating}).{Environment.NewLine}{exceptionText}",
+                DeskLinkAuditLogLevel.Error,
+                memberName: nameof(RegisterGlobalExceptionHandlers),
+                filePath: "App.xaml.cs").GetAwaiter().GetResult();
+        };
+
+        TaskScheduler.UnobservedTaskException += (_, args) =>
+        {
+            GlobalLogger.Instance.LogAsync(
+                $"TaskScheduler.UnobservedTaskException.{Environment.NewLine}{args.Exception}",
+                DeskLinkAuditLogLevel.Error,
+                memberName: nameof(RegisterGlobalExceptionHandlers),
+                filePath: "App.xaml.cs").GetAwaiter().GetResult();
+        };
     }
 }

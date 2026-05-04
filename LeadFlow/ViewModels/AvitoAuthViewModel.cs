@@ -48,15 +48,26 @@ public partial class AvitoAuthViewModel(
         Configure(account, false);
     }
 
+    public void ConfigureForProfile(AvitoAccount account, string initialUrl)
+    {
+        Configure(account, false, initialUrl);
+    }
+
     private void Configure(AvitoAccount account, bool monitorAuthorization)
+    {
+        Configure(account, monitorAuthorization, null);
+    }
+
+    private void Configure(AvitoAccount account, bool monitorAuthorization, string? initialUrl)
     {
         StopMonitoring();
         _account = account;
         _monitorAuthorization = monitorAuthorization;
         _authorizationPersisted = false;
         AccountName = account.DisplayName;
-        CurrentUrl = account.AvitoResponsesUrl;
-        AddressBarUrl = account.AvitoResponsesUrl;
+        var startUrl = string.IsNullOrWhiteSpace(initialUrl) ? account.AvitoResponsesUrl : initialUrl;
+        CurrentUrl = startUrl;
+        AddressBarUrl = startUrl;
         WindowTitle = monitorAuthorization ? "Авторизация Avito" : "Avito под профилем аккаунта";
         AuthorizationStatus = monitorAuthorization
             ? "Ожидание"
@@ -73,6 +84,7 @@ public partial class AvitoAuthViewModel(
         }
 
         Session = await browserSessionService.CreateSessionAsync(_account, CancellationToken.None);
+        Session.CurrentUrl = CurrentUrl;
         CurrentUrl = Session.CurrentUrl;
         AddressBarUrl = Session.CurrentUrl;
         if (_monitorAuthorization)

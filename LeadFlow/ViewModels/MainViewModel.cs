@@ -1,6 +1,7 @@
 using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using LeadFlow.Logging.Audit;
 using LeadFlow.Models;
 using LeadFlow.Services;
 
@@ -52,94 +53,143 @@ public partial class MainViewModel : ObservableObject
 
         Monitoring.SelectedResponseChanged += async (_, response) =>
         {
-            CandidateDetails.Update(response);
-            DuplicateCheck.Update(response);
-            await BitrixIntegration.UpdateAsync(response);
+            try
+            {
+                await InvokeOnUiThreadAsync(async () =>
+                {
+                    CandidateDetails.Update(response);
+                    DuplicateCheck.Update(response);
+                    await BitrixIntegration.UpdateAsync(response);
+                });
+            }
+            catch (Exception ex)
+            {
+                await LogUiHandlerFailureAsync("selected response change", ex);
+            }
         };
 
         _monitoringService.StatusChanged += (_, status) =>
         {
-            var wasActive = IsMonitoringActive;
-            SystemStatus = status;
-
-            if (status == MonitoringStatus.Running && _monitoringService.IsActive && !wasActive && !_startNotificationShown)
+            try
             {
-                _startNotificationShown = true;
-                _pauseNotificationShown = false;
-                RaiseNotification(new DesktopNotificationRequest
+                InvokeOnUiThread(() =>
                 {
-                    Title = "Мониторинг запущен",
-                    Message = "LeadFlow начал проверку аккаунтов и новых откликов.",
-                    Severity = DesktopNotificationSeverity.Info
+                    var wasActive = IsMonitoringActive;
+                    SystemStatus = status;
+
+                    if (status == MonitoringStatus.Running && _monitoringService.IsActive && !wasActive && !_startNotificationShown)
+                    {
+                        _startNotificationShown = true;
+                        _pauseNotificationShown = false;
+                        RaiseNotification(new DesktopNotificationRequest
+                        {
+                            Title = "Мониторинг запущен",
+                            Message = "LeadFlow начал проверку аккаунтов и новых откликов.",
+                            Severity = DesktopNotificationSeverity.Info
+                        });
+                    }
+
+                    if (status == MonitoringStatus.Waiting && _monitoringService.IsActive && !_pauseNotificationShown)
+                    {
+                        _pauseNotificationShown = true;
+                        RaiseNotification(new DesktopNotificationRequest
+                        {
+                            Title = "Мониторинг на паузе",
+                            Message = string.IsNullOrWhiteSpace(_monitoringService.CurrentStatusMessage)
+                                ? "Цикл завершён, ждём следующую проверку."
+                                : _monitoringService.CurrentStatusMessage,
+                            Severity = DesktopNotificationSeverity.Info
+                        });
+                    }
                 });
             }
-
-            if (status == MonitoringStatus.Waiting && _monitoringService.IsActive && !_pauseNotificationShown)
+            catch (Exception ex)
             {
-                _pauseNotificationShown = true;
-                RaiseNotification(new DesktopNotificationRequest
-                {
-                    Title = "Мониторинг на паузе",
-                    Message = string.IsNullOrWhiteSpace(_monitoringService.CurrentStatusMessage)
-                        ? "Цикл завершён, ждём следующую проверку."
-                        : _monitoringService.CurrentStatusMessage,
-                    Severity = DesktopNotificationSeverity.Info
-                });
+                _ = LogUiHandlerFailureAsync("status change", ex);
             }
         };
 
         _monitoringService.StatusMessageChanged += (_, message) =>
         {
-            SystemStatusDetails = message;
-            IsMonitoringActive = _monitoringService.IsActive;
+            try
+            {
+                InvokeOnUiThread(() =>
+                {
+                    SystemStatusDetails = message;
+                    IsMonitoringActive = _monitoringService.IsActive;
 
-            if (!_monitoringService.IsActive)
-            {
-                _startNotificationShown = false;
-                _pauseNotificationShown = false;
+                    if (!_monitoringService.IsActive)
+                    {
+                        _startNotificationShown = false;
+                        _pauseNotificationShown = false;
+                    }
+                    else if (SystemStatus == MonitoringStatus.Running)
+                    {
+                        _pauseNotificationShown = false;
+                    }
+                });
             }
-            else if (SystemStatus == MonitoringStatus.Running)
+            catch (Exception ex)
             {
-                _pauseNotificationShown = false;
+                _ = LogUiHandlerFailureAsync("status message change", ex);
             }
         };
 
         _monitoringService.ResponseProcessed += async (_, response) =>
         {
-            Monitoring.ApplyProcessedResponse(response);
-            Dashboard.ApplyProcessedResponse(response);
-            Journal.ApplyProcessedResponse(response);
-            CandidateDetails.Update(response);
-            DuplicateCheck.Update(response);
-            await BitrixIntegration.UpdateAsync(response);
-            RaiseNotification(new DesktopNotificationRequest
+            try
             {
-                Title = "Новый отклик",
-                Message = $"{response.FullName} — {response.Vacancy} ({response.AccountName})",
-                Severity = response.Status == ResponseStatus.Error ? DesktopNotificationSeverity.Warning : DesktopNotificationSeverity.Info
-            });
+                await InvokeOnUiThreadAsync(async () =>
+                {
+                    Monitoring.ApplyProcessedResponse(response);
+                    Dashboard.ApplyProcessedResponse(response);
+                    Journal.ApplyProcessedResponse(response);
+                    CandidateDetails.Update(response);
+                    DuplicateCheck.Update(response);
+                    await BitrixIntegration.UpdateAsync(response);
+                    RaiseNotification(new DesktopNotificationRequest
+                    {
+                        Title = "Новый отклик",
+                        Message = $"{response.FullName} — {response.Vacancy} ({response.AccountName})",
+                        Severity = response.Status == ResponseStatus.Error ? DesktopNotificationSeverity.Warning : DesktopNotificationSeverity.Info
+                    });
+                });
+            }
+            catch (Exception ex)
+            {
+                await LogUiHandlerFailureAsync("processed response", ex);
+            }
         };
 
         _monitoringService.ProfileStatsUpdated += (_, args) =>
         {
-            if (!args.HasNewBlockedAds)
+            try
             {
-                return;
+                InvokeOnUiThread(() =>
+                {
+                    if (!args.HasNewBlockedAds)
+                    {
+                        return;
+                    }
+
+                    var blockedText = args.Account.BlockedCount == 1
+                        ? "1 объявление заблокировано"
+                        : $"{args.Account.BlockedCount} объявлений заблокировано";
+
+                    RaiseNotification(new DesktopNotificationRequest
+                    {
+                        Title = "Объявление заблокировано",
+                        Message = $"{args.Account.DisplayName}: {blockedText}. Новых блокировок: +{args.BlockedCountDelta}.",
+                        Severity = DesktopNotificationSeverity.Warning,
+                        TimeoutMilliseconds = 7000
+                    });
+                });
             }
-
-            var blockedText = args.Account.BlockedCount == 1
-                ? "1 объявление заблокировано"
-                : $"{args.Account.BlockedCount} объявлений заблокировано";
-
-            RaiseNotification(new DesktopNotificationRequest
+            catch (Exception ex)
             {
-                Title = "Объявление заблокировано",
-                Message = $"{args.Account.DisplayName}: {blockedText}. Новых блокировок: +{args.BlockedCountDelta}.",
-                Severity = DesktopNotificationSeverity.Warning,
-                TimeoutMilliseconds = 7000
-            });
+                _ = LogUiHandlerFailureAsync("profile stats update", ex);
+            }
         };
-
     }
 
     public string SystemStatusText =>
@@ -227,4 +277,32 @@ public partial class MainViewModel : ObservableObject
     {
         NotificationRequested?.Invoke(this, request);
     }
+
+    private static void InvokeOnUiThread(Action action)
+    {
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher is null || dispatcher.CheckAccess())
+        {
+            action();
+            return;
+        }
+
+        dispatcher.Invoke(action);
+    }
+
+    private static Task InvokeOnUiThreadAsync(Func<Task> action)
+    {
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher is null || dispatcher.CheckAccess())
+        {
+            return action();
+        }
+
+        return dispatcher.InvokeAsync(action).Task.Unwrap();
+    }
+
+    private static Task LogUiHandlerFailureAsync(string context, Exception exception) =>
+        GlobalLogger.Instance.LogAsync(
+            $"Unhandled UI event error during {context}.{Environment.NewLine}{exception}",
+            DeskLinkAuditLogLevel.Error);
 }

@@ -61,7 +61,7 @@ public sealed class MonitoringService(
 
         _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         IsActive = true;
-        UpdateStatus(MonitoringStatus.Running, "Запуск мониторинга: загружаем настройки и начинаем обработку откликов.");
+        UpdateStatus(MonitoringStatus.Running, "Запуск мониторинга: загружаем настройки.");
         try
         {
             var settings = await settingsService.LoadAsync(_cts.Token);
@@ -89,21 +89,48 @@ public sealed class MonitoringService(
         }
 
         _ = GlobalLogger.Instance.LogAsync("Monitoring started.", DeskLinkAuditLogLevel.Info);
-        UpdateStatus(MonitoringStatus.Running, "Мониторинг запущен: начинаем обход активных аккаунтов Авито.");
 
-        // === ОБНОВЛЕНИЕ СТАТИСТИКИ ОБЪЯВЛЕНИЙ ПРИ СТАРТЕ ===
         try
         {
-            await UpdateProfileStatsAsync(cancellationToken);
+            UpdateStatus(MonitoringStatus.Running, "Загружаем активные объявления Авито…");
+            await UpdateProfileStatsAsync(_cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            IsActive = false;
+            UpdateStatus(MonitoringStatus.Stopped, string.Empty);
+            _cts.Dispose();
+            _cts = null;
+            return;
         }
         catch (Exception ex)
         {
-            _ = GlobalLogger.Instance.LogAsync($"Initial profile stats update failed: {ex.Message}", DeskLinkAuditLogLevel.Warning);
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Парсинг активных объявлений при старте не завершён: {ex.Message}",
+                DeskLinkAuditLogLevel.Warning);
         }
 
-        // === ЗАПУСК ТАЙМЕРА ДЛЯ ПЕРИОДИЧЕСКОГО ОБНОВЛЕНИЯ (30-60 МИН) ===
         StartProfileStatsTimer();
+        try
+        {
+            await ArmNextProfileStatsTimerTickAsync(_cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            IsActive = false;
+            UpdateStatus(MonitoringStatus.Stopped, string.Empty);
+            _cts.Dispose();
+            _cts = null;
+            return;
+        }
+        catch (Exception ex)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Не удалось запланировать следующее обновление объявлений: {ex.Message}",
+                DeskLinkAuditLogLevel.Warning);
+        }
 
+        UpdateStatus(MonitoringStatus.Running, "Мониторинг запущен: начинаем обход активных аккаунтов Авито.");
         _loopTask = RunAsync(_cts.Token);
     }
 
@@ -128,11 +155,13 @@ public sealed class MonitoringService(
         UpdateStatus(MonitoringStatus.Stopped, string.Empty);
     }
 
+    /// <summary>
+    /// Таймер только для повторных прогонов парсинга объявлений (первый — при старте, до запуска цикла откликов).
+    /// </summary>
     private void StartProfileStatsTimer()
     {
         _profileStatsTimer?.Dispose();
 
-        // Первый запуск уже выполнен в StartAsync, далее обновляем статистику каждые 30-60 минут.
         _profileStatsTimer = new System.Threading.Timer(async _ =>
         {
             try
@@ -145,34 +174,59 @@ public sealed class MonitoringService(
 
                 await UpdateProfileStatsAsync(token);
 
-                var nextDelay = ScheduleNextProfileStatsUpdate();
+                var nextDelay = await ScheduleNextProfileStatsUpdateAsync(token);
                 _ = GlobalLogger.Instance.LogAsync(
                     $"Следующая проверка объявлений запланирована через {(int)nextDelay.TotalMinutes} мин.",
                     DeskLinkAuditLogLevel.Info);
             }
+            catch (OperationCanceledException)
+            {
+                // остановка мониторинга
+            }
             catch (Exception ex)
             {
                 _ = GlobalLogger.Instance.LogAsync($"Periodic profile stats update failed: {ex.Message}", DeskLinkAuditLogLevel.Error);
-                ScheduleNextProfileStatsUpdate();
+                try
+                {
+                    var token = _cts?.Token ?? CancellationToken.None;
+                    if (!token.IsCancellationRequested)
+                    {
+                        await ScheduleNextProfileStatsUpdateAsync(token);
+                    }
+                }
+                catch
+                {
+                    // игнорируем сбой планирования
+                }
             }
         }, null, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+    }
 
-        var initialDelay = ScheduleNextProfileStatsUpdate();
+    private async Task ArmNextProfileStatsTimerTickAsync(CancellationToken ct)
+    {
+        var nextDelay = await ScheduleNextProfileStatsUpdateAsync(ct);
         _ = GlobalLogger.Instance.LogAsync(
-            $"Автопроверка объявлений включена. Следующая проверка через {(int)initialDelay.TotalMinutes} мин.",
+            $"Автообновление объявлений: следующий цикл через {(int)nextDelay.TotalMinutes} мин. (интервал из настроек MonitoringSafety.ActiveAdsRefreshIntervalMinutes).",
             DeskLinkAuditLogLevel.Info);
     }
 
-    private TimeSpan ScheduleNextProfileStatsUpdate()
+    private async Task<TimeSpan> ScheduleNextProfileStatsUpdateAsync(CancellationToken ct)
     {
-        var nextDelay = TimeSpan.FromMinutes(Random.Shared.Next(30, 61));
+        var settings = await settingsService.LoadAsync(ct);
+        var minutes = Math.Clamp(settings.MonitoringSafety.ActiveAdsRefreshIntervalMinutes, 5, 240);
+        var nextDelay = TimeSpan.FromMinutes(minutes);
         _profileStatsTimer?.Change(nextDelay, Timeout.InfiniteTimeSpan);
         return nextDelay;
     }
 
     private async Task UpdateProfileStatsAsync(CancellationToken ct)
     {
-        var accounts = await repository.GetAccountsAsync(ct);
+        var settings = await settingsService.LoadAsync(ct);
+        var enabledIds = settings.Avito.Accounts.Where(static a => a.IsEnabled).Select(static a => a.Id).ToHashSet();
+        var accounts = (await repository.GetAccountsAsync(ct))
+            .Where(a => enabledIds.Contains(a.Id))
+            .ToList();
+
         foreach (var account in accounts)
         {
             try
@@ -182,7 +236,7 @@ public sealed class MonitoringService(
                 var previousDraftsCount = account.DraftsCount;
 
                 var html = await LoadProfilePageHtmlAsync(account, ct);
-                var profileData = avitoParser.ParseProfilePage(html);
+                var profileData = avitoParser.ParseProfilePage(html, account.Id);
                 UpdateActiveAdsSnapshot(account.Id, profileData.ActiveAds);
                 await GlobalLogger.Instance.LogAsync(
                     () => $"Парсинг активных объявлений завершён для аккаунта {account.DisplayName}: active={profileData.ActiveCount}, parsed={profileData.ActiveAds.Count}, blocked={profileData.BlockedCount}, drafts={profileData.DraftsCount}.",
@@ -598,6 +652,7 @@ public sealed class MonitoringService(
 
     private static AvitoAdStatus CloneAd(AvitoAdStatus ad) => new()
     {
+        AccountId = ad.AccountId,
         Id = ad.Id,
         Title = ad.Title,
         City = ad.City,

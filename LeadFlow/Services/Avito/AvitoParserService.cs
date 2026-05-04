@@ -6,7 +6,7 @@ namespace LeadFlow.Services.Avito;
 
 public class AvitoParserService
 {
-    public ProfileResult ParseProfilePage(string html)
+    public ProfileResult ParseProfilePage(string html, Guid? accountId = null)
     {
         var result = new ProfileResult();
         if (string.IsNullOrEmpty(html)) return result;
@@ -30,7 +30,7 @@ public class AvitoParserService
             
             string snippetHtml = html.Substring(startIndex, endIndex - startIndex);
 
-            var ad = new AvitoAdStatus { Id = id };
+            var ad = new AvitoAdStatus { Id = id, AccountId = accountId ?? Guid.Empty };
             ad.Title = ExtractSingle(snippetHtml, @"class=""styles-title-UJzSB"">([^<]+)");
             ad.City = ExtractSingle(snippetHtml, @"class=""styles-address-I7r1Q"">([^<]+)");
             

@@ -11,18 +11,29 @@ public static class FingerprintGenerator
 {
     private static readonly Random _random = new();
     
-    // Пул реалистичных разрешений экранов (популярные в РФ/СНГ)
+    // Пул реалистичных разрешений экранов (популярные в РФ)
     private static readonly string[] _resolutions = 
     {
         "1920x1080", "1366x768", "1440x900", "1536x864", 
         "1600x900", "1280x720", "2560x1440"
     };
 
-    // Пул часовых поясов РФ и соседних стран
+    // Пул часовых поясов РФ (IANA), без стран соседей
     private static readonly string[] _timezones =
     {
-        "Europe/Moscow", "Europe/Kiev", "Europe/Minsk", 
-        "Asia/Almaty", "Asia/Yekaterinburg", "Asia/Novosibirsk"
+        "Europe/Kaliningrad",
+        "Europe/Moscow",
+        "Europe/Samara",
+        "Asia/Yekaterinburg",
+        "Asia/Omsk",
+        "Asia/Novosibirsk",
+        "Asia/Krasnoyarsk",
+        "Asia/Irkutsk",
+        "Asia/Yakutsk",
+        "Asia/Vladivostok",
+        "Asia/Magadan",
+        "Asia/Kamchatka",
+        "Asia/Anadyr"
     };
 
     // Пул языковых настроек

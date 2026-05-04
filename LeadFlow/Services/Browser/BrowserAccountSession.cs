@@ -45,7 +45,11 @@ public partial class BrowserAccountSession : ObservableObject
         // === Применяем User-Agent из фингерпринта ===
         ApplyFingerprintSettings(view);
         
-        view.Source = new Uri(Account.AvitoResponsesUrl);
+        var initialUrl = string.IsNullOrWhiteSpace(CurrentUrl)
+            ? Account.AvitoResponsesUrl
+            : CurrentUrl;
+        view.Source = new Uri(initialUrl);
+        CurrentUrl = initialUrl;
         UpdateNavigationState();
         IsInitialized = true;
         StatusText = "Браузер готов";

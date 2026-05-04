@@ -12,6 +12,7 @@ public partial class DashboardViewModel : ObservableObject
 {
     private readonly AppRepository _repository;
     private readonly IMonitoringService _monitoringService;
+    private readonly IWindowService _windowService;
 
     [ObservableProperty]
     private int newResponses;
@@ -52,10 +53,11 @@ public partial class DashboardViewModel : ObservableObject
     public ObservableCollection<ActivityPoint> Activity { get; } = new();
     public ObservableCollection<AvitoAdStatus> ActiveAds { get; } = new();
 
-    public DashboardViewModel(AppRepository repository, IMonitoringService monitoringService)
+    public DashboardViewModel(AppRepository repository, IMonitoringService monitoringService, IWindowService windowService)
     {
         _repository = repository;
         _monitoringService = monitoringService;
+        _windowService = windowService;
         _monitoringService.ProfileStatsUpdated += (_, _) => ApplyActiveAdsSnapshot();
     }
 
@@ -119,6 +121,35 @@ public partial class DashboardViewModel : ObservableObject
             DuplicateCount = bucket.DuplicateCount,
             ErrorCount = bucket.ErrorCount
         };
+    }
+
+    [RelayCommand]
+    public async Task OpenAdAsync(object? parameter)
+    {
+        if (parameter is not AvitoAdStatus ad)
+        {
+            return;
+        }
+
+        var owner = Application.Current?.MainWindow;
+        if (owner is null)
+        {
+            return;
+        }
+
+        if (ad.AccountId == Guid.Empty)
+        {
+            return;
+        }
+
+        var account = (await _repository.GetAccountsAsync(CancellationToken.None))
+            .FirstOrDefault(x => x.Id == ad.AccountId);
+        if (account is null)
+        {
+            return;
+        }
+
+        await _windowService.ShowAvitoProfileAsync(owner, account, ad.Url, CancellationToken.None);
     }
 
     private void ApplyStats(DashboardStats stats)
@@ -240,6 +271,7 @@ public partial class DashboardViewModel : ObservableObject
 
     private static AvitoAdStatus CloneAd(AvitoAdStatus ad) => new()
     {
+        AccountId = ad.AccountId,
         Id = ad.Id,
         Title = ad.Title,
         City = ad.City,

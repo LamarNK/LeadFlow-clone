@@ -387,23 +387,23 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
 
     private static async Task EnsureAvitoAccountsSchemaAsync(AppDbContext db, CancellationToken cancellationToken)
     {
-        var alterStatements = new[]
+        var existingColumns = await GetTableColumnsAsync(db, "AvitoAccounts", cancellationToken);
+        var alterStatements = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
-            "ALTER TABLE AvitoAccounts ADD COLUMN ActiveAdsCount INTEGER NOT NULL DEFAULT 0;",
-            "ALTER TABLE AvitoAccounts ADD COLUMN BlockedCount INTEGER NOT NULL DEFAULT 0;",
-            "ALTER TABLE AvitoAccounts ADD COLUMN DraftsCount INTEGER NOT NULL DEFAULT 0;",
-            "ALTER TABLE AvitoAccounts ADD COLUMN AdsStatsUpdatedAt TEXT NULL;"
+            ["ActiveAdsCount"] = "ALTER TABLE AvitoAccounts ADD COLUMN ActiveAdsCount INTEGER NOT NULL DEFAULT 0;",
+            ["BlockedCount"] = "ALTER TABLE AvitoAccounts ADD COLUMN BlockedCount INTEGER NOT NULL DEFAULT 0;",
+            ["DraftsCount"] = "ALTER TABLE AvitoAccounts ADD COLUMN DraftsCount INTEGER NOT NULL DEFAULT 0;",
+            ["AdsStatsUpdatedAt"] = "ALTER TABLE AvitoAccounts ADD COLUMN AdsStatsUpdatedAt TEXT NULL;"
         };
 
-        foreach (var statement in alterStatements)
+        foreach (var (columnName, statement) in alterStatements)
         {
-            try
+            if (existingColumns.Contains(columnName))
             {
-                await db.Database.ExecuteSqlRawAsync(statement, cancellationToken);
+                continue;
             }
-            catch (SqliteException ex) when (ex.Message.Contains("duplicate column name", StringComparison.OrdinalIgnoreCase))
-            {
-            }
+
+            await db.Database.ExecuteSqlRawAsync(statement, cancellationToken);
         }
     }
 
@@ -411,4 +411,42 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         db.Database.ExecuteSqlRawAsync(
             "CREATE INDEX IF NOT EXISTS IX_CandidateResponses_CreatedAt ON CandidateResponses (CreatedAt);",
             cancellationToken);
+
+    private static async Task<HashSet<string>> GetTableColumnsAsync(
+        AppDbContext db,
+        string tableName,
+        CancellationToken cancellationToken)
+    {
+        var connection = db.Database.GetDbConnection();
+        var shouldCloseConnection = connection.State != System.Data.ConnectionState.Open;
+        if (shouldCloseConnection)
+        {
+            await connection.OpenAsync(cancellationToken);
+        }
+
+        try
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"PRAGMA table_info(\"{tableName.Replace("\"", "\"\"", StringComparison.Ordinal)}\");";
+
+            var columns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                if (!reader.IsDBNull(1))
+                {
+                    columns.Add(reader.GetString(1));
+                }
+            }
+
+            return columns;
+        }
+        finally
+        {
+            if (shouldCloseConnection)
+            {
+                await connection.CloseAsync();
+            }
+        }
+    }
 }

@@ -70,6 +70,10 @@ public sealed class JsonSettingsService : ISettingsService
         settings.Bitrix.WebhookUrl = FixedBitrixWebhookUrl;
         settings.MonitoringSafety ??= new MonitoringSafetyOptions();
         settings.MonitoringSafety.CheckIntervalSeconds = 60;
+        if (settings.MonitoringSafety.ActiveAdsRefreshIntervalMinutes is < 5 or > 240)
+        {
+            settings.MonitoringSafety.ActiveAdsRefreshIntervalMinutes = 45;
+        }
         settings.AvitoSelectors = new AvitoSelectorOptions();
         settings.Avito ??= new AvitoSettings();
     }

@@ -1,11 +1,16 @@
 using System.Windows;
+using LeadFlow.Logging.Audit;
 using Microsoft.Web.WebView2.Wpf;
 
 namespace LeadFlow.Services.Browser;
 
 public sealed class BackgroundWebViewHost : IAsyncDisposable
 {
+    private static readonly SemaphoreSlim HostSemaphore = new(1, 1);
+    private static readonly TimeSpan RecreateCooldown = TimeSpan.FromSeconds(2);
+    private static DateTime _lastDisposedAtUtc = DateTime.MinValue;
     private readonly Window _window;
+    private bool _ownsSemaphore;
 
     private BackgroundWebViewHost()
     {
@@ -28,14 +33,45 @@ public sealed class BackgroundWebViewHost : IAsyncDisposable
 
     public static async Task<BackgroundWebViewHost> CreateAsync(CancellationToken cancellationToken)
     {
-        return await Application.Current.Dispatcher.InvokeAsync(() =>
+        await HostSemaphore.WaitAsync(cancellationToken);
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            var host = new BackgroundWebViewHost();
-            host._window.Show();
-            host._window.Hide();
+            var cooldownDelay = (_lastDisposedAtUtc + RecreateCooldown) - DateTime.UtcNow;
+            if (cooldownDelay > TimeSpan.Zero)
+            {
+                await GlobalLogger.Instance.LogAsync(
+                    $"Waiting {cooldownDelay.TotalMilliseconds:F0} ms before creating the next background WebView2 host.",
+                    DeskLinkAuditLogLevel.Debug);
+                await Task.Delay(cooldownDelay, cancellationToken);
+            }
+
+            await GlobalLogger.Instance.LogAsync(
+                "Creating background WebView2 host.",
+                DeskLinkAuditLogLevel.Debug);
+
+            var host = await Application.Current.Dispatcher.InvokeAsync(() =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var createdHost = new BackgroundWebViewHost
+                {
+                    _ownsSemaphore = true
+                };
+                createdHost._window.Show();
+                createdHost._window.Hide();
+                return createdHost;
+            });
+
+            await GlobalLogger.Instance.LogAsync(
+                "Background WebView2 host created.",
+                DeskLinkAuditLogLevel.Debug);
+
             return host;
-        });
+        }
+        catch
+        {
+            HostSemaphore.Release();
+            throw;
+        }
     }
 
     public async Task AttachAsync(BrowserAccountSession session, CancellationToken cancellationToken)
@@ -49,10 +85,26 @@ public sealed class BackgroundWebViewHost : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        await Application.Current.Dispatcher.InvokeAsync(() =>
+        try
         {
-            Browser.Dispose();
-            _window.Close();
-        });
+            await Application.Current.Dispatcher.InvokeAsync(() =>
+            {
+                Browser.Dispose();
+                _window.Close();
+            });
+
+            await GlobalLogger.Instance.LogAsync(
+                "Background WebView2 host disposed.",
+                DeskLinkAuditLogLevel.Debug);
+        }
+        finally
+        {
+            if (_ownsSemaphore)
+            {
+                _lastDisposedAtUtc = DateTime.UtcNow;
+                _ownsSemaphore = false;
+                HostSemaphore.Release();
+            }
+        }
     }
 }

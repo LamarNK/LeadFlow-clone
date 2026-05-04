@@ -2,6 +2,7 @@ namespace LeadFlow.Models;
 
 public class AvitoAdStatus
 {
+    public Guid AccountId { get; set; }
     public string Id { get; set; } = "";
     public string Title { get; set; } = "";
     public string City { get; set; } = "";

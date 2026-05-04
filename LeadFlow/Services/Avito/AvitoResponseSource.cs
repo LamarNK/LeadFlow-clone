@@ -1,5 +1,6 @@
 using System.Text.Json;
 using LeadFlow.Data;
+using LeadFlow.Logging.Audit;
 using LeadFlow.Models;
 using LeadFlow.Services.Browser;
 
@@ -14,13 +15,31 @@ public sealed class AvitoResponseSource(
 
     public async Task<IReadOnlyList<CandidateResponse>> GetNewResponsesAsync(AvitoAccount account, AppSettings settings, CancellationToken cancellationToken)
     {
+        await GlobalLogger.Instance.LogAsync(
+            $"Preparing browser session for account {account.DisplayName}.",
+            DeskLinkAuditLogLevel.Debug);
         var session = await browserSessionService.CreateSessionAsync(account, cancellationToken);
+
+        await GlobalLogger.Instance.LogAsync(
+            $"Creating background browser host for account {account.DisplayName}.",
+            DeskLinkAuditLogLevel.Debug);
         await using var host = await BackgroundWebViewHost.CreateAsync(cancellationToken);
+
+        await GlobalLogger.Instance.LogAsync(
+            $"Attaching browser session for account {account.DisplayName}.",
+            DeskLinkAuditLogLevel.Debug);
         await host.AttachAsync(session, cancellationToken);
+
+        await GlobalLogger.Instance.LogAsync(
+            $"Navigating to candidates page for account {account.DisplayName}.",
+            DeskLinkAuditLogLevel.Debug);
         await automationService.NavigateAsync(session, CandidatesUrl, cancellationToken);
         await WaitForCandidatesPageAsync(session, cancellationToken);
         account.LastAuthCheckAt = DateTime.UtcNow;
 
+        await GlobalLogger.Instance.LogAsync(
+            $"Candidates page loaded for account {account.DisplayName}, starting extraction.",
+            DeskLinkAuditLogLevel.Debug);
         var raw = await automationService.ExecuteScriptAsync(session, BuildExtractionScript(), cancellationToken);
         if (string.IsNullOrWhiteSpace(raw))
         {
@@ -50,6 +69,10 @@ public sealed class AvitoResponseSource(
         account.Status = AvitoAccountStatus.Authorized;
         account.LastErrorMessage = string.Empty;
         var candidates = ParseCandidates(root, account);
+
+        await GlobalLogger.Instance.LogAsync(
+            $"Candidate extraction finished for account {account.DisplayName}: parsed {candidates.Count} responses.",
+            DeskLinkAuditLogLevel.Debug);
         var existingIds = await repository.GetExistingSourceResponseIdsAsync(
             candidates.Select(x => x.SourceResponseId),
             cancellationToken);
