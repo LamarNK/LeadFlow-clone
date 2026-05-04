@@ -16,6 +16,20 @@
         <Setter Property="Margin" Value="10" />
     </Style>
 
+    <Style x:Key="CompactCardBorderStyle" TargetType="Border" BasedOn="{StaticResource CardBorderStyle}">
+        <Setter Property="CornerRadius" Value="16" />
+        <Setter Property="Padding" Value="16" />
+        <Setter Property="Margin" Value="0" />
+    </Style>
+
+    <Style x:Key="ToolbarSurfaceBorderStyle" TargetType="Border" BasedOn="{StaticResource CompactCardBorderStyle}">
+        <Setter Property="Background" Value="#F8FAFC" />
+    </Style>
+
+    <Style x:Key="DetailSectionBorderStyle" TargetType="Border" BasedOn="{StaticResource CompactCardBorderStyle}">
+        <Setter Property="Background" Value="#FCFDFE" />
+    </Style>
+
     <Style x:Key="TitleTextStyle" TargetType="TextBlock">
         <Setter Property="FontWeight" Value="SemiBold" />
         <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
@@ -144,6 +158,23 @@
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
+    </Style>
+
+    <Style x:Key="SecondaryButtonStyle" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+        <Setter Property="Background" Value="#EFF6FF" />
+        <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}" />
+        <Setter Property="BorderBrush" Value="Transparent" />
+        <Setter Property="Padding" Value="12,8" />
+        <Setter Property="Margin" Value="0" />
+    </Style>
+
+    <Style x:Key="GhostButtonStyle" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Padding" Value="12,8" />
+        <Setter Property="Margin" Value="0" />
     </Style>
 
     <Style x:Key="RoundNavButtonStyle" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">

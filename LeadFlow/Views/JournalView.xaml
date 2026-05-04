@@ -1,50 +1,54 @@
 <UserControl x:Class="LeadFlow.Views.JournalView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <Grid Margin="6">
+    <Grid Margin="2">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <Border Style="{StaticResource CardBorderStyle}" Margin="0,0,0,18">
+        <Border Style="{StaticResource CompactCardBorderStyle}" Padding="24,18" Margin="0,0,0,14">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <StackPanel>
-                    <TextBlock Text="Журнал и логи" Style="{StaticResource SectionTitleStyle}" />
-                    <TextBlock Text="История обработанных откликов и системных записей." Style="{StaticResource SubtleTextStyle}" Margin="0,8,0,0" />
+                    <TextBlock Text="Журнал и логи" FontSize="22" FontWeight="SemiBold" />
+                    <TextBlock Text="История обработанных откликов и системных записей." Style="{StaticResource SubtleTextStyle}" Margin="0,6,0,0" />
                 </StackPanel>
-                <Button Grid.Column="1" Content="Обновить" Command="{Binding RefreshCommand}" VerticalAlignment="Top" />
+                <Button Grid.Column="1"
+                        Content="Обновить"
+                        Command="{Binding RefreshCommand}"
+                        Padding="16,9"
+                        VerticalAlignment="Center" />
             </Grid>
         </Border>
 
-        <UniformGrid Grid.Row="1" Rows="1" Columns="4" Margin="0,0,0,20">
-            <Border Style="{StaticResource CardBorderStyle}" Margin="0,0,12,0">
+        <UniformGrid Grid.Row="1" Rows="1" Columns="4" Margin="0,0,0,14">
+            <Border Style="{StaticResource CompactCardBorderStyle}" Margin="0,0,10,0" Padding="18,14">
                 <StackPanel>
                     <TextBlock Text="Отклики" Style="{StaticResource InfoLabelStyle}" />
-                    <TextBlock Text="{Binding JournalItemsCount}" FontSize="26" FontWeight="SemiBold" Margin="0,8,0,0" />
+                    <TextBlock Text="{Binding JournalItemsCount}" FontSize="24" FontWeight="SemiBold" Margin="0,6,0,0" />
                 </StackPanel>
             </Border>
-            <Border Style="{StaticResource CardBorderStyle}" Margin="0,0,12,0">
+            <Border Style="{StaticResource CompactCardBorderStyle}" Margin="0,0,10,0" Padding="18,14">
                 <StackPanel>
                     <TextBlock Text="Отправлены" Style="{StaticResource InfoLabelStyle}" />
-                    <TextBlock Text="{Binding SentJournalItemsCount}" FontSize="26" FontWeight="SemiBold" Margin="0,8,0,0" />
+                    <TextBlock Text="{Binding SentJournalItemsCount}" FontSize="24" FontWeight="SemiBold" Margin="0,6,0,0" />
                 </StackPanel>
             </Border>
-            <Border Style="{StaticResource CardBorderStyle}" Margin="0,0,12,0">
+            <Border Style="{StaticResource CompactCardBorderStyle}" Margin="0,0,10,0" Padding="18,14">
                 <StackPanel>
                     <TextBlock Text="Ошибки" Style="{StaticResource InfoLabelStyle}" />
-                    <TextBlock Text="{Binding ErrorJournalItemsCount}" FontSize="26" FontWeight="SemiBold" Margin="0,8,0,0" />
+                    <TextBlock Text="{Binding ErrorJournalItemsCount}" FontSize="24" FontWeight="SemiBold" Margin="0,6,0,0" />
                 </StackPanel>
             </Border>
-            <Border Style="{StaticResource CardBorderStyle}" Margin="0">
+            <Border Style="{StaticResource CompactCardBorderStyle}" Padding="18,14">
                 <StackPanel>
                     <TextBlock Text="Логи" Style="{StaticResource InfoLabelStyle}" />
-                    <TextBlock Text="{Binding LogEntriesCount}" FontSize="26" FontWeight="SemiBold" Margin="0,8,0,0" />
+                    <TextBlock Text="{Binding LogEntriesCount}" FontSize="24" FontWeight="SemiBold" Margin="0,6,0,0" />
                 </StackPanel>
             </Border>
         </UniformGrid>
@@ -186,55 +190,89 @@
             </TabItem>
 
             <TabItem Header="Логи">
-                <Grid Margin="0,16,0,0">
+                <Grid Margin="0,10,0,0">
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="1.8*" />
-                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="1.85*" />
+                        <ColumnDefinition Width="0.95*" />
                     </Grid.ColumnDefinitions>
 
-                    <Border Style="{StaticResource CardBorderStyle}" Margin="0,0,14,0">
+                    <Border Style="{StaticResource CompactCardBorderStyle}" Margin="0,0,14,0" Padding="18">
                         <Grid>
                             <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="*" />
                             </Grid.RowDefinitions>
 
-                            <Grid Margin="0,0,0,16">
+                            <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="170" />
-                                    <ColumnDefinition Width="180" />
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
-                                <StackPanel>
-                                    <TextBlock Text="Системные логи" FontWeight="SemiBold" />
-                                    <TextBlock Text="Таблица системных событий приложения." Style="{StaticResource SubtleTextStyle}" Margin="0,6,0,0" />
-                                </StackPanel>
-                                <DatePicker Grid.Column="1"
-                                            SelectedDate="{Binding SelectedLogDate}"
-                                            Margin="16,0,0,0"
-                                            VerticalAlignment="Center" />
-                                <TextBox Grid.Column="2"
-                                         Text="{Binding LogSearchText, UpdateSourceTrigger=PropertyChanged}"
-                                         Style="{StaticResource SearchTextBoxStyle}"
-                                         Margin="12,0,0,0"
-                                         VerticalAlignment="Center" />
-                                <ComboBox Grid.Column="3"
-                                          ItemsSource="{Binding LogLevelFilters}"
-                                          SelectedItem="{Binding SelectedLogLevelFilter}"
-                                          Style="{StaticResource FilterComboBoxStyle}"
-                                          Width="140"
-                                          Margin="12,0,0,0"
-                                          VerticalAlignment="Center" />
-                                <Button Grid.Column="4"
-                                        Content="Сбросить"
-                                        Command="{Binding ClearLogDateFilterCommand}"
-                                        Margin="12,0,0,0"
-                                        VerticalAlignment="Center" />
+                                <TextBlock Text="Системные логи" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center" />
                             </Grid>
 
-                            <DataGrid Grid.Row="1"
+                            <Border Grid.Row="1" Style="{StaticResource ToolbarSurfaceBorderStyle}" Margin="0,14,0,14">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="170" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="150" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+
+                                    <TextBlock Text="Дата" Style="{StaticResource InfoLabelStyle}" />
+                                    <TextBlock Grid.Column="1" Text="Поиск" Style="{StaticResource InfoLabelStyle}" />
+                                    <TextBlock Grid.Column="2" Text="Уровень" Style="{StaticResource InfoLabelStyle}" />
+
+                                    <Border Grid.Row="1"
+                                            Margin="0,6,12,0"
+                                            Background="#FFFFFF"
+                                            BorderBrush="{StaticResource BorderBrush}"
+                                            BorderThickness="1"
+                                            CornerRadius="12"
+                                            Padding="10,0">
+                                        <DatePicker SelectedDate="{Binding SelectedLogDate}"
+                                                    Height="38"
+                                                    BorderThickness="0"
+                                                    Background="Transparent"
+                                                    VerticalAlignment="Center" />
+                                    </Border>
+
+                                    <TextBox Grid.Row="1"
+                                             Grid.Column="1"
+                                             Text="{Binding LogSearchText, UpdateSourceTrigger=PropertyChanged}"
+                                             Style="{StaticResource SearchTextBoxStyle}"
+                                             Margin="0,6,12,0"
+                                             MinHeight="38"
+                                             VerticalAlignment="Center" />
+
+                                    <ComboBox Grid.Row="1"
+                                              Grid.Column="2"
+                                              ItemsSource="{Binding LogLevelFilters}"
+                                              SelectedItem="{Binding SelectedLogLevelFilter}"
+                                              Style="{StaticResource FilterComboBoxStyle}"
+                                              Margin="0,6,12,0"
+                                              MinHeight="38"
+                                              VerticalAlignment="Center" />
+
+                                    <Button Grid.Row="1"
+                                            Grid.Column="3"
+                                            Content="Сбросить"
+                                            Command="{Binding ClearLogDateFilterCommand}"
+                                            Style="{StaticResource GhostButtonStyle}"
+                                            MinWidth="104"
+                                            Height="38"
+                                            Padding="16,8"
+                                            Margin="0,6,0,0"
+                                            VerticalAlignment="Center" />
+                                </Grid>
+                            </Border>
+
+                            <DataGrid Grid.Row="2"
                                       ItemsSource="{Binding LogEntriesView}"
                                       SelectedItem="{Binding SelectedLogEntry}"
                                       IsReadOnly="True"
@@ -248,7 +286,8 @@
                                       GridLinesVisibility="Horizontal"
                                       RowBackground="#FFFFFF"
                                       AlternatingRowBackground="#F8FAFC"
-                                      BorderBrush="{StaticResource BorderBrush}">
+                                      BorderBrush="{StaticResource BorderBrush}"
+                                      RowHeaderWidth="0">
                                 <DataGrid.Resources>
                                     <Style TargetType="DataGridColumnHeader">
                                         <Setter Property="Background" Value="#F8FAFC" />
@@ -266,65 +305,99 @@
                                     <Style TargetType="DataGridRow">
                                         <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
                                         <Setter Property="BorderThickness" Value="0,0,0,1" />
+                                        <Setter Property="SnapsToDevicePixels" Value="True" />
                                         <Style.Triggers>
                                             <Trigger Property="IsMouseOver" Value="True">
                                                 <Setter Property="Background" Value="#F8FBFF" />
                                             </Trigger>
                                             <Trigger Property="IsSelected" Value="True">
-                                                <Setter Property="Background" Value="#DBEAFE" />
+                                                <Setter Property="Background" Value="#E8F0FF" />
                                                 <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
                                             </Trigger>
                                         </Style.Triggers>
                                     </Style>
                                 </DataGrid.Resources>
                                 <DataGrid.Columns>
-                                    <DataGridTextColumn Header="Время" Binding="{Binding Timestamp, StringFormat=dd.MM.yyyy HH:mm:ss}" Width="170" />
-                                    <DataGridTextColumn Header="Уровень" Binding="{Binding Level}" Width="90" />
+                                    <DataGridTextColumn Header="Время" Binding="{Binding Timestamp, StringFormat=dd.MM.yyyy HH:mm:ss}" Width="165" />
+                                    <DataGridTextColumn Header="Уровень" Binding="{Binding Level}" Width="100" />
                                     <DataGridTextColumn Header="Источник" Binding="{Binding Prefix}" Width="190" />
                                     <DataGridTextColumn Header="Сообщение" Binding="{Binding Message}" Width="*" />
-                                    <DataGridTextColumn Header="TraceId" Binding="{Binding TraceId}" Width="180" />
+                                    <DataGridTextColumn Header="TraceId" Binding="{Binding TraceId}" Width="150" />
                                 </DataGrid.Columns>
                             </DataGrid>
                         </Grid>
                     </Border>
 
-                    <Border Grid.Column="1" Style="{StaticResource CardBorderStyle}">
-                        <StackPanel>
-                            <TextBlock Text="Детали лога" FontSize="22" FontWeight="SemiBold" />
-                            <TextBlock Text="{Binding SelectedLogSummary}" FontWeight="SemiBold" Margin="0,18,0,0" />
+                    <Border Grid.Column="1" Style="{StaticResource CompactCardBorderStyle}" Padding="18">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
 
-                            <WrapPanel Margin="0,16,0,0">
-                                <Button Content="Копировать строку" Command="{Binding CopySelectedLogRowCommand}" />
-                                <Button Content="Копировать сообщение" Command="{Binding CopySelectedLogMessageCommand}" />
-                                <Button Content="Копировать детали" Command="{Binding CopySelectedLogDetailsCommand}" />
-                            </WrapPanel>
-
-                            <Border Padding="0,0,0,10" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Margin="0,16,0,0">
-                                <StackPanel>
-                                    <TextBlock Text="Источник" Style="{StaticResource InfoLabelStyle}" />
-                                    <TextBlock Text="{Binding SelectedLogEntry.Prefix, TargetNullValue=Нет данных}" FontWeight="SemiBold" />
-                                </StackPanel>
-                            </Border>
-
-                            <Border Padding="0,0,0,10" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Margin="0,14,0,0">
-                                <StackPanel>
-                                    <TextBlock Text="TraceId" Style="{StaticResource InfoLabelStyle}" />
-                                    <TextBlock Text="{Binding SelectedLogEntry.TraceId, TargetNullValue=Нет данных}" FontWeight="SemiBold" TextWrapping="Wrap" />
-                                </StackPanel>
-                            </Border>
-
-                            <Border Padding="0,0,0,10" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Margin="0,14,0,0">
-                                <StackPanel>
-                                    <TextBlock Text="Сообщение" Style="{StaticResource InfoLabelStyle}" />
-                                    <TextBlock Text="{Binding SelectedLogEntry.Message, TargetNullValue=Нет данных}" FontWeight="SemiBold" TextWrapping="Wrap" />
-                                </StackPanel>
-                            </Border>
-
-                            <StackPanel Margin="0,14,0,0">
-                                <TextBlock Text="Дополнительные свойства" Style="{StaticResource InfoLabelStyle}" />
-                                <TextBlock Text="{Binding SelectedLogDetails}" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,6,0,0" />
+                            <StackPanel>
+                                <TextBlock Text="Детали лога" FontSize="18" FontWeight="SemiBold" />
                             </StackPanel>
-                        </StackPanel>
+
+                            <ScrollViewer Grid.Row="1"
+                                          Margin="0,14,0,0"
+                                          VerticalScrollBarVisibility="Auto"
+                                          HorizontalScrollBarVisibility="Disabled">
+                                <StackPanel>
+                                    <Border Style="{StaticResource DetailSectionBorderStyle}">
+                                        <StackPanel>
+                                            <TextBlock Text="Источник" Style="{StaticResource InfoLabelStyle}" />
+                                            <TextBlock Text="{Binding SelectedLogEntry.Prefix, TargetNullValue=Нет данных}" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,8,0,0" />
+                                        </StackPanel>
+                                    </Border>
+
+                                    <Border Style="{StaticResource DetailSectionBorderStyle}" Margin="0,10,0,0">
+                                        <StackPanel>
+                                            <TextBlock Text="TraceId" Style="{StaticResource InfoLabelStyle}" />
+                                            <TextBlock Text="{Binding SelectedLogEntry.TraceId, TargetNullValue=Нет данных}" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,8,0,0" />
+                                        </StackPanel>
+                                    </Border>
+
+                                    <Border Style="{StaticResource DetailSectionBorderStyle}" Margin="0,10,0,0">
+                                        <StackPanel>
+                                            <TextBlock Text="Сообщение" Style="{StaticResource InfoLabelStyle}" />
+                                            <TextBlock Text="{Binding SelectedLogEntry.Message, TargetNullValue=Нет данных}" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,8,0,0" />
+                                        </StackPanel>
+                                    </Border>
+
+                                    <Border Style="{StaticResource ToolbarSurfaceBorderStyle}" Margin="0,10,0,0">
+                                        <StackPanel>
+                                            <TextBlock Text="Дополнительные свойства" Style="{StaticResource InfoLabelStyle}" />
+                                            <TextBlock Text="{Binding SelectedLogDetails}"
+                                                       FontFamily="Consolas"
+                                                       FontSize="12"
+                                                       TextWrapping="Wrap"
+                                                       Margin="0,10,0,0" />
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
+                            </ScrollViewer>
+
+                            <UniformGrid Grid.Row="2" Columns="2" Margin="0,14,0,0">
+                                <Button Content="Копировать строку"
+                                        Command="{Binding CopySelectedLogRowCommand}"
+                                        Style="{StaticResource SecondaryButtonStyle}"
+                                        Padding="12,7"
+                                        Margin="0,0,8,8" />
+                                <Button Content="Копировать сообщение"
+                                        Command="{Binding CopySelectedLogMessageCommand}"
+                                        Style="{StaticResource SecondaryButtonStyle}"
+                                        Padding="12,7"
+                                        Margin="8,0,0,8" />
+                                <Button Content="Копировать детали"
+                                        Command="{Binding CopySelectedLogDetailsCommand}"
+                                        Style="{StaticResource SecondaryButtonStyle}"
+                                        Padding="12,7"
+                                        Margin="0,0,8,0" />
+                                <Border Background="Transparent" Margin="8,0,0,0" />
+                            </UniformGrid>
+                        </Grid>
                     </Border>
                 </Grid>
             </TabItem>
