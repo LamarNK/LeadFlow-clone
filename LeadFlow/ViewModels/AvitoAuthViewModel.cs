@@ -17,12 +17,20 @@ public partial class AvitoAuthViewModel(
     private AvitoAccount? _account;
     private CancellationTokenSource? _authorizationMonitoringCts;
     private bool _authorizationPersisted;
+    private bool _monitorAuthorization;
+    private BrowserAccountSession? _subscribedSession;
 
     [ObservableProperty]
     private string accountName = string.Empty;
 
     [ObservableProperty]
+    private string windowTitle = "Авторизация Avito";
+
+    [ObservableProperty]
     private string currentUrl = string.Empty;
+
+    [ObservableProperty]
+    private string addressBarUrl = string.Empty;
 
     [ObservableProperty]
     private string authorizationStatus = "Ожидание";
@@ -30,13 +38,29 @@ public partial class AvitoAuthViewModel(
     [ObservableProperty]
     private BrowserAccountSession? session;
 
-    public void Configure(AvitoAccount account)
+    public void ConfigureForAuthorization(AvitoAccount account)
+    {
+        Configure(account, true);
+    }
+
+    public void ConfigureForProfile(AvitoAccount account)
+    {
+        Configure(account, false);
+    }
+
+    private void Configure(AvitoAccount account, bool monitorAuthorization)
     {
         StopMonitoring();
         _account = account;
+        _monitorAuthorization = monitorAuthorization;
         _authorizationPersisted = false;
         AccountName = account.DisplayName;
         CurrentUrl = account.AvitoResponsesUrl;
+        AddressBarUrl = account.AvitoResponsesUrl;
+        WindowTitle = monitorAuthorization ? "Авторизация Avito" : "Avito под профилем аккаунта";
+        AuthorizationStatus = monitorAuthorization
+            ? "Ожидание"
+            : "Открываем окно Avito с сохранённым браузерным профилем аккаунта.";
         InitializeCommand.Execute(null);
     }
 
@@ -50,13 +74,62 @@ public partial class AvitoAuthViewModel(
 
         Session = await browserSessionService.CreateSessionAsync(_account, CancellationToken.None);
         CurrentUrl = Session.CurrentUrl;
-        AuthorizationStatus = "Войдите в аккаунт Авито вручную. После успешного входа профиль будет сохранён.";
-        StartMonitoring();
+        AddressBarUrl = Session.CurrentUrl;
+        if (_monitorAuthorization)
+        {
+            AuthorizationStatus = "Войдите в аккаунт Авито вручную. После успешного входа профиль будет сохранён.";
+            StartMonitoring();
+        }
+        else
+        {
+            AuthorizationStatus = "Окно Avito открыто. Используется отдельный браузерный профиль выбранного аккаунта.";
+        }
     }
 
     [RelayCommand]
     public async Task CheckAuthorizationAsync()
         => await CheckAuthorizationCoreAsync(CancellationToken.None, persistOnSuccessOnly: false);
+
+    [RelayCommand(CanExecute = nameof(CanNavigateBack))]
+    public void NavigateBack()
+    {
+        Session?.GoBack();
+        SyncAddressFromSession();
+        NavigateBackCommand.NotifyCanExecuteChanged();
+        NavigateForwardCommand.NotifyCanExecuteChanged();
+    }
+
+    [RelayCommand(CanExecute = nameof(CanNavigateForward))]
+    public void NavigateForward()
+    {
+        Session?.GoForward();
+        SyncAddressFromSession();
+        NavigateBackCommand.NotifyCanExecuteChanged();
+        NavigateForwardCommand.NotifyCanExecuteChanged();
+    }
+
+    [RelayCommand]
+    public void ReloadPage()
+    {
+        Session?.Reload();
+        SyncAddressFromSession();
+    }
+
+    [RelayCommand]
+    public void NavigateToAddress()
+    {
+        if (string.IsNullOrWhiteSpace(AddressBarUrl))
+        {
+            return;
+        }
+
+        Session?.Navigate(AddressBarUrl);
+        SyncAddressFromSession();
+    }
+
+    public bool CanNavigateBack() => Session?.CanGoBack == true;
+
+    public bool CanNavigateForward() => Session?.CanGoForward == true;
 
     public void StopMonitoring()
     {
@@ -102,6 +175,7 @@ public partial class AvitoAuthViewModel(
         var settings = await settingsService.LoadAsync(cancellationToken);
         var result = await pageReaderService.CheckAuthorizationAsync(Session, settings.AvitoSelectors, cancellationToken);
         CurrentUrl = result.CurrentUrl;
+        AddressBarUrl = result.CurrentUrl;
         AuthorizationStatus = result.StatusMessage;
 
         _account.LastAuthCheckAt = DateTime.UtcNow;
@@ -166,5 +240,51 @@ public partial class AvitoAuthViewModel(
 
         await repository.SaveAccountAsync(_account, cancellationToken);
         await settingsService.SaveAsync(settings, cancellationToken);
+    }
+
+    partial void OnSessionChanged(BrowserAccountSession? value)
+    {
+        if (_subscribedSession is not null)
+        {
+            _subscribedSession.PropertyChanged -= OnSessionPropertyChanged;
+        }
+
+        _subscribedSession = value;
+
+        if (_subscribedSession is not null)
+        {
+            _subscribedSession.PropertyChanged += OnSessionPropertyChanged;
+            SyncAddressFromSession();
+        }
+
+        NavigateBackCommand.NotifyCanExecuteChanged();
+        NavigateForwardCommand.NotifyCanExecuteChanged();
+    }
+
+    private void OnSessionPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(BrowserAccountSession.CurrentUrl))
+        {
+            SyncAddressFromSession();
+        }
+
+        if (e.PropertyName is nameof(BrowserAccountSession.CurrentUrl)
+            or nameof(BrowserAccountSession.CanGoBack)
+            or nameof(BrowserAccountSession.CanGoForward))
+        {
+            NavigateBackCommand.NotifyCanExecuteChanged();
+            NavigateForwardCommand.NotifyCanExecuteChanged();
+        }
+    }
+
+    private void SyncAddressFromSession()
+    {
+        if (Session is null)
+        {
+            return;
+        }
+
+        CurrentUrl = Session.CurrentUrl;
+        AddressBarUrl = Session.CurrentUrl;
     }
 }

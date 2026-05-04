@@ -13,6 +13,12 @@ public partial class BrowserAccountSession : ObservableObject
     private string currentUrl = string.Empty;
 
     [ObservableProperty]
+    private bool canGoBack;
+
+    [ObservableProperty]
+    private bool canGoForward;
+
+    [ObservableProperty]
     private bool isInitialized;
 
     [ObservableProperty]
@@ -32,14 +38,57 @@ public partial class BrowserAccountSession : ObservableObject
         Environment = await CreateEnvironmentWithSettingsAsync();
         
         await view.EnsureCoreWebView2Async(Environment);
+
+        view.CoreWebView2.SourceChanged += (_, _) => UpdateNavigationState();
+        view.CoreWebView2.HistoryChanged += (_, _) => UpdateNavigationState();
         
         // === Применяем User-Agent из фингерпринта ===
         ApplyFingerprintSettings(view);
         
         view.Source = new Uri(Account.AvitoResponsesUrl);
-        CurrentUrl = Account.AvitoResponsesUrl;
+        UpdateNavigationState();
         IsInitialized = true;
         StatusText = "Браузер готов";
+    }
+
+    public void Navigate(string url)
+    {
+        if (AttachedView?.CoreWebView2 is null || string.IsNullOrWhiteSpace(url))
+        {
+            return;
+        }
+
+        var normalizedUrl = NormalizeUrl(url);
+        AttachedView.CoreWebView2.Navigate(normalizedUrl);
+        CurrentUrl = normalizedUrl;
+    }
+
+    public void GoBack()
+    {
+        if (AttachedView?.CoreWebView2?.CanGoBack != true)
+        {
+            return;
+        }
+
+        AttachedView.CoreWebView2.GoBack();
+        UpdateNavigationState();
+    }
+
+    public void GoForward()
+    {
+        if (AttachedView?.CoreWebView2?.CanGoForward != true)
+        {
+            return;
+        }
+
+        AttachedView.CoreWebView2.GoForward();
+        UpdateNavigationState();
+    }
+
+    public void Reload()
+    {
+        AttachedView?.CoreWebView2?.Reload();
+        UpdateNavigationState();
     }
 
     /// <summary>
@@ -104,5 +153,30 @@ public partial class BrowserAccountSession : ObservableObject
                 }
             ");
         }
+    }
+
+    private void UpdateNavigationState()
+    {
+        if (AttachedView?.CoreWebView2 is not CoreWebView2 core)
+        {
+            CanGoBack = false;
+            CanGoForward = false;
+            return;
+        }
+
+        CurrentUrl = core.Source ?? CurrentUrl;
+        CanGoBack = core.CanGoBack;
+        CanGoForward = core.CanGoForward;
+    }
+
+    private static string NormalizeUrl(string url)
+    {
+        var trimmedUrl = url.Trim();
+        if (Uri.TryCreate(trimmedUrl, UriKind.Absolute, out var absoluteUri))
+        {
+            return absoluteUri.ToString();
+        }
+
+        return $"https://{trimmedUrl}";
     }
 }

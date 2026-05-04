@@ -7,6 +7,7 @@ public interface IWindowService
 {
     Task ShowSettingsAsync(Window owner, CancellationToken cancellationToken);
     Task ShowAvitoAuthAsync(Window owner, AvitoAccount account, CancellationToken cancellationToken);
+    Task ShowAvitoProfileAsync(Window owner, AvitoAccount account, CancellationToken cancellationToken);
     Task ShowMonitoringAsync(Window owner, CancellationToken cancellationToken);
     Task ShowCandidateDetailsAsync(Window owner, CancellationToken cancellationToken);
     Task ShowDuplicateCheckAsync(Window owner, CancellationToken cancellationToken);

@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <Resource Include="..\LeadFlow.ico" Link="Assets\LeadFlow.ico" />
+    <Resource Include="Assets\LeadFlowWindowIcon.png" />
   </ItemGroup>
 
 </Project>

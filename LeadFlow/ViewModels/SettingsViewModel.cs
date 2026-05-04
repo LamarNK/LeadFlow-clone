@@ -142,6 +142,19 @@ public partial class SettingsViewModel(
         await LoadAsync();
     }
 
+    [RelayCommand]
+    public async Task OpenAvitoProfileAsync(Window? owner)
+    {
+        if (owner is null || SelectedAccount is null)
+        {
+            return;
+        }
+
+        await SaveAsync();
+        await windowService.ShowAvitoProfileAsync(owner, SelectedAccount, CancellationToken.None);
+        await LoadAsync();
+    }
+
     public string FixedProfileUrl => FixedAvitoProfileUrl;
 
     public string SelectedAccountName => SelectedAccount?.DisplayName ?? "Аккаунт не выбран";
