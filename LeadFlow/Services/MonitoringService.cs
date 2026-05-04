@@ -38,11 +38,12 @@ public sealed class MonitoringService(
 
         _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         IsActive = true;
-        UpdateStatus(MonitoringStatus.Running, "Запуск мониторинга: загружаем настройки и готовим синхронизацию с Bitrix24.");
+        UpdateStatus(MonitoringStatus.Running, "Запуск мониторинга: загружаем настройки и начинаем обработку откликов.");
         try
         {
             var settings = await settingsService.LoadAsync(_cts.Token);
-            await SyncBitrixLeadsAsync(settings, _cts.Token);
+            // Синхронизация при старте отключена: проверка дублей выполняется через API для каждого отклика
+            // await SyncBitrixLeadsAsync(settings, _cts.Token);
         }
         catch (OperationCanceledException)
         {

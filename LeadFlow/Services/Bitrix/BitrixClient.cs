@@ -148,30 +148,61 @@ public sealed class BitrixClient(
         }
 
         var preview = candidateParser.BuildPreview(response, settings.Bitrix);
-        var request = new
-        {
-            fields = new
-            {
-                TITLE = preview.Title,
-                COMMENTS = preview.Comments,
-                SOURCE_DESCRIPTION = settings.Bitrix.LeadSource,
-                ASSIGNED_BY_ID = settings.Bitrix.ResponsibleId
-            }
-        };
+        var client = httpClientFactory.CreateClient(nameof(BitrixClient));
+        var webhookBase = settings.Bitrix.WebhookUrl.TrimEnd('/');
 
         try
         {
-            var endpoint = settings.Bitrix.WebhookUrl.TrimEnd('/') + "/crm.deal.add.json";
-            var client = httpClientFactory.CreateClient(nameof(BitrixClient));
-            var result = await client.PostAsJsonAsync(endpoint, request, cancellationToken);
-            result.EnsureSuccessStatusCode();
-            await using var stream = await result.Content.ReadAsStreamAsync(cancellationToken);
-            using var json = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
-            var entityId = GetCreateResultId(json.RootElement);
+            // 1️⃣ Создаем Контакт с ФИО и телефоном
+            var contactRequest = new
+            {
+                fields = new
+                {
+                    NAME = response.FirstName,
+                    LAST_NAME = response.LastName,
+                    SECOND_NAME = response.MiddleName,
+                    PHONE = new[] { new { VALUE = response.PhoneRaw, VALUE_TYPE = "WORK" } }
+                }
+            };
+
+            var contactResult = await client.PostAsJsonAsync(
+                $"{webhookBase}/crm.contact.add.json",
+                contactRequest,
+                cancellationToken);
+            contactResult.EnsureSuccessStatusCode();
+
+            await using var contactStream = await contactResult.Content.ReadAsStreamAsync(cancellationToken);
+            using var contactJson = await JsonDocument.ParseAsync(contactStream, cancellationToken: cancellationToken);
+            var contactId = GetCreateResultId(contactJson.RootElement);
+
+            // 2️⃣ Создаем Сделку с привязкой к Контакту и указанием вакансии в заголовке и комментариях
+            var dealRequest = new
+            {
+                fields = new
+                {
+                    TITLE = preview.Title, // "Отклик Авито: {вакансия} — {ФИО}"
+                    COMMENTS = preview.Comments,
+                    SOURCE_DESCRIPTION = settings.Bitrix.LeadSource,
+                    ASSIGNED_BY_ID = settings.Bitrix.ResponsibleId,
+                    CONTACT_ID = contactId // 🔗 Привязка сделки к контакту!
+                }
+            };
+
+            var dealResult = await client.PostAsJsonAsync(
+                $"{webhookBase}/crm.deal.add.json",
+                dealRequest,
+                cancellationToken);
+            dealResult.EnsureSuccessStatusCode();
+
+            await using var dealStream = await dealResult.Content.ReadAsStreamAsync(cancellationToken);
+            using var dealJson = await JsonDocument.ParseAsync(dealStream, cancellationToken: cancellationToken);
+            var dealId = GetCreateResultId(dealJson.RootElement);
+
             return new BitrixCreateLeadResponse
             {
                 IsSuccess = true,
-                EntityId = entityId
+                EntityId = dealId,
+                ContactId = contactId
             };
         }
         catch (Exception ex)
