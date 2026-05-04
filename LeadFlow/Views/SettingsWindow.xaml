@@ -133,23 +133,49 @@
                                         <TextBlock Style="{StaticResource SubtleTextStyle}"
                                                    Text="{Binding LastMonitoringAt, StringFormat=Последний запуск: {0:dd.MM.yyyy HH:mm}, TargetNullValue=Последний запуск: ещё не было}" />
 
-                                        <TextBlock Grid.Column="1"
-                                                   Margin="16,0,0,0"
-                                                   FontWeight="SemiBold"
-                                                   VerticalAlignment="Center">
-                                                <TextBlock.Style>
-                                                    <Style TargetType="TextBlock">
-                                                        <Setter Property="Text" Value="Активен" />
-                                                        <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
-                                                        <Style.Triggers>
-                                                            <DataTrigger Binding="{Binding IsEnabled}" Value="False">
-                                                                <Setter Property="Text" Value="Выключен" />
-                                                                <Setter Property="Foreground" Value="{StaticResource SecondaryTextBrush}" />
-                                                            </DataTrigger>
-                                                        </Style.Triggers>
-                                                    </Style>
-                                                </TextBlock.Style>
-                                        </TextBlock>
+                                        <!-- Toggle switch for Enable/Disable directly in list item -->
+                                        <ToggleButton Grid.Column="1"
+                                                      Margin="12,0,0,0"
+                                                      IsChecked="{Binding IsEnabled, Mode=TwoWay}"
+                                                      Width="44" Height="24"
+                                                      VerticalAlignment="Center"
+                                                      HorizontalAlignment="Right">
+                                            <ToggleButton.Template>
+                                                <ControlTemplate TargetType="ToggleButton">
+                                                    <Grid>
+                                                        <Border x:Name="SwitchBorder"
+                                                                Width="44" Height="24"
+                                                                CornerRadius="12"
+                                                                Background="#E2E8F0"
+                                                                BorderThickness="0" />
+                                                        <Ellipse x:Name="SwitchThumb"
+                                                                 Width="20" Height="20"
+                                                                 Margin="2,0,0,0"
+                                                                 HorizontalAlignment="Left"
+                                                                 VerticalAlignment="Center"
+                                                                 Fill="White"
+                                                                 RenderTransformOrigin="0.5,0.5">
+                                                            <Ellipse.RenderTransform>
+                                                                <TranslateTransform X="0" />
+                                                            </Ellipse.RenderTransform>
+                                                        </Ellipse>
+                                                    </Grid>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsChecked" Value="True">
+                                                            <Setter TargetName="SwitchBorder" Property="Background" Value="{StaticResource PrimaryBrush}" />
+                                                            <Setter TargetName="SwitchThumb" Property="RenderTransform">
+                                                                <Setter.Value>
+                                                                    <TranslateTransform X="20" />
+                                                                </Setter.Value>
+                                                            </Setter>
+                                                        </Trigger>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter TargetName="SwitchBorder" Property="Opacity" Value="0.9" />
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </ToggleButton.Template>
+                                        </ToggleButton>
                                     </Grid>
                                 </Grid>
                             </DataTemplate>
@@ -231,7 +257,6 @@
                     <WrapPanel Grid.Row="3" Margin="0,24,0,0">
                         <Button Content="Добавить аккаунт" Style="{StaticResource ActionButtonStyle}" Command="{Binding AddAccountCommand}" />
                         <Button Content="Удалить аккаунт" Style="{StaticResource GhostButtonStyle}" Command="{Binding DeleteAccountCommand}" />
-                        <Button Content="{Binding SelectedAccountToggleText}" Style="{StaticResource GhostButtonStyle}" Command="{Binding ToggleAccountCommand}" />
                         <Button Content="Открыть окно Avito" Style="{StaticResource GhostButtonStyle}" Command="{Binding OpenAvitoProfileCommand}" CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}" />
                         <Button Content="Авторизовать в Avito" Style="{StaticResource ActionButtonStyle}" Command="{Binding AuthorizeCommand}" CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}" />
                     </WrapPanel>

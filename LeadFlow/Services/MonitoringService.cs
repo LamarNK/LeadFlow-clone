@@ -359,7 +359,16 @@ public sealed class MonitoringService(
                 if (CurrentStatusMessage != newMessage)
                 {
                     CurrentStatusMessage = newMessage;
-                    StatusMessageChanged?.Invoke(this, CurrentStatusMessage);
+                    // Всегда пытаемся обновить через UI-поток
+                    var dispatcher = System.Windows.Application.Current?.Dispatcher;
+                    if (dispatcher != null && !dispatcher.CheckAccess())
+                    {
+                        dispatcher.Invoke(() => StatusMessageChanged?.Invoke(this, CurrentStatusMessage));
+                    }
+                    else
+                    {
+                        StatusMessageChanged?.Invoke(this, CurrentStatusMessage);
+                    }
                 }
             }
         }, null, TimeSpan.Zero, TimeSpan.FromSeconds(1));

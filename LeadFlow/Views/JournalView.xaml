@@ -272,59 +272,103 @@
                                 </Grid>
                             </Border>
 
-                            <DataGrid Grid.Row="2"
-                                      ItemsSource="{Binding LogEntriesView}"
-                                      SelectedItem="{Binding SelectedLogEntry}"
-                                      IsReadOnly="True"
-                                      SelectionMode="Single"
-                                      CanUserAddRows="False"
-                                      CanUserDeleteRows="False"
-                                      HeadersVisibility="Column"
-                                      BorderThickness="0"
-                                      AutoGenerateColumns="False"
-                                      Background="Transparent"
-                                      GridLinesVisibility="Horizontal"
-                                      RowBackground="#FFFFFF"
-                                      AlternatingRowBackground="#F8FAFC"
-                                      BorderBrush="{StaticResource BorderBrush}"
-                                      RowHeaderWidth="0">
-                                <DataGrid.Resources>
-                                    <Style TargetType="DataGridColumnHeader">
-                                        <Setter Property="Background" Value="#F8FAFC" />
-                                        <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
-                                        <Setter Property="FontWeight" Value="SemiBold" />
-                                        <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
-                                        <Setter Property="BorderThickness" Value="0,0,0,1" />
-                                        <Setter Property="Padding" Value="12,10" />
+                            <ListBox Grid.Row="2"
+                                     ItemsSource="{Binding LogEntriesView}"
+                                     SelectedItem="{Binding SelectedLogEntry}"
+                                     BorderThickness="0"
+                                     Background="Transparent"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                     VirtualizingPanel.IsVirtualizing="True"
+                                     VirtualizingPanel.VirtualizationMode="Recycling">
+                                <ListBox.ItemContainerStyle>
+                                    <Style TargetType="ListBoxItem">
+                                        <Setter Property="Padding" Value="0" />
+                                        <Setter Property="Margin" Value="0,0,0,8" />
+                                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="ListBoxItem">
+                                                    <Border x:Name="ItemBorder"
+                                                            Padding="14,12"
+                                                            CornerRadius="14"
+                                                            Background="#FFFFFF"
+                                                            BorderBrush="{StaticResource BorderBrush}"
+                                                            BorderThickness="1">
+                                                        <ContentPresenter />
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter TargetName="ItemBorder" Property="Background" Value="#F8FBFF" />
+                                                            <Setter TargetName="ItemBorder" Property="BorderBrush" Value="{StaticResource PrimaryBrush}" />
+                                                        </Trigger>
+                                                        <Trigger Property="IsSelected" Value="True">
+                                                            <Setter TargetName="ItemBorder" Property="Background" Value="#E8F0FF" />
+                                                            <Setter TargetName="ItemBorder" Property="BorderBrush" Value="{StaticResource PrimaryBrush}" />
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
                                     </Style>
-                                    <Style TargetType="DataGridCell">
-                                        <Setter Property="BorderThickness" Value="0" />
-                                        <Setter Property="Padding" Value="12,8" />
-                                        <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
-                                    </Style>
-                                    <Style TargetType="DataGridRow">
-                                        <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
-                                        <Setter Property="BorderThickness" Value="0,0,0,1" />
-                                        <Setter Property="SnapsToDevicePixels" Value="True" />
-                                        <Style.Triggers>
-                                            <Trigger Property="IsMouseOver" Value="True">
-                                                <Setter Property="Background" Value="#F8FBFF" />
-                                            </Trigger>
-                                            <Trigger Property="IsSelected" Value="True">
-                                                <Setter Property="Background" Value="#E8F0FF" />
-                                                <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
-                                            </Trigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </DataGrid.Resources>
-                                <DataGrid.Columns>
-                                    <DataGridTextColumn Header="Время" Binding="{Binding Timestamp, StringFormat=dd.MM.yyyy HH:mm:ss}" Width="165" />
-                                    <DataGridTextColumn Header="Уровень" Binding="{Binding Level}" Width="100" />
-                                    <DataGridTextColumn Header="Источник" Binding="{Binding Prefix}" Width="190" />
-                                    <DataGridTextColumn Header="Сообщение" Binding="{Binding Message}" Width="*" />
-                                    <DataGridTextColumn Header="TraceId" Binding="{Binding TraceId}" Width="150" />
-                                </DataGrid.Columns>
-                            </DataGrid>
+                                </ListBox.ItemContainerStyle>
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="140" />
+                                                <ColumnDefinition Width="95" />
+                                                <ColumnDefinition Width="150" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="120" />
+                                            </Grid.ColumnDefinitions>
+
+                                            <!-- Время -->
+                                            <TextBlock Grid.Column="0"
+                                                       Text="{Binding Timestamp, StringFormat=HH:mm:ss}"
+                                                       FontWeight="SemiBold"
+                                                       Foreground="{StaticResource SecondaryTextBrush}"
+                                                       VerticalAlignment="Center" />
+
+                                            <!-- Уровень с цветным бейджем -->
+                                            <Border Grid.Column="1"
+                                                    CornerRadius="8"
+                                                    Padding="8,4"
+                                                    HorizontalAlignment="Left"
+                                                    VerticalAlignment="Center"
+                                                    Background="{Binding Level, Converter={StaticResource LogLevelToBackgroundConverter}}">
+                                                <TextBlock Text="{Binding Level}"
+                                                           Foreground="White"
+                                                           FontWeight="SemiBold"
+                                                           FontSize="11"
+                                                           TextAlignment="Center" />
+                                            </Border>
+
+                                            <!-- Источник -->
+                                            <TextBlock Grid.Column="2"
+                                                       Text="{Binding Prefix}"
+                                                       Foreground="{StaticResource TextBrush}"
+                                                       VerticalAlignment="Center"
+                                                       TextTrimming="CharacterEllipsis" />
+
+                                            <!-- Сообщение -->
+                                            <TextBlock Grid.Column="3"
+                                                       Text="{Binding Message}"
+                                                       Foreground="{StaticResource TextBrush}"
+                                                       TextWrapping="Wrap"
+                                                       VerticalAlignment="Center"
+                                                       Margin="0,0,8,0" />
+
+                                            <!-- TraceId -->
+                                            <TextBlock Grid.Column="4"
+                                                       Text="{Binding TraceId}"
+                                                       Foreground="{StaticResource SecondaryTextBrush}"
+                                                       FontSize="11"
+                                                       VerticalAlignment="Center"
+                                                       TextTrimming="CharacterEllipsis" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
                         </Grid>
                     </Border>
 

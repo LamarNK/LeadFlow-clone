@@ -105,6 +105,7 @@ public partial class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(IsMonitoringRunning));
         OnPropertyChanged(nameof(MonitoringActionText));
         OnPropertyChanged(nameof(MonitoringButtonText));
+        OnPropertyChanged(nameof(SystemStatusText));
     }
 
     [RelayCommand]

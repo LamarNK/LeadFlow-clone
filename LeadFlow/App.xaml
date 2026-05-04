@@ -11,6 +11,7 @@
             </ResourceDictionary.MergedDictionaries>
             <converters:StatusToBrushConverter x:Key="StatusToBrushConverter" />
             <converters:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
+            <converters:LogLevelToBackgroundConverter x:Key="LogLevelToBackgroundConverter" />
         </ResourceDictionary>
     </Application.Resources>
 </Application>
