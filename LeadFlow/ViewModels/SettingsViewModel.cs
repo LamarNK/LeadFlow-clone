@@ -186,6 +186,16 @@ public partial class SettingsViewModel(
         ? "Ошибок не зафиксировано"
         : SelectedAccount!.LastErrorMessage;
 
+    /// <summary>
+    /// Кнопка входа в Avito нужна только пока аккаунт не в рабочем авторизованном состоянии.
+    /// </summary>
+    public bool ShowAuthorizeButton =>
+        SelectedAccount is not null &&
+        SelectedAccount.Status is not (
+            AvitoAccountStatus.Authorized or
+            AvitoAccountStatus.Monitoring or
+            AvitoAccountStatus.Paused);
+
     public bool HasUnsavedChanges() => BuildAccountsSnapshot() != _savedAccountsSnapshot;
 
     public void DeleteCommittedProfiles()
@@ -214,6 +224,7 @@ public partial class SettingsViewModel(
         OnPropertyChanged(nameof(SelectedAccountAuthCheckText));
         OnPropertyChanged(nameof(SelectedAccountMonitoringText));
         OnPropertyChanged(nameof(SelectedAccountErrorText));
+        OnPropertyChanged(nameof(ShowAuthorizeButton));
     }
 
     private static string FormatDateTime(DateTime? value, string fallback) =>

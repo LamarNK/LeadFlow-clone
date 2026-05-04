@@ -258,7 +258,7 @@
                         <Button Content="Добавить аккаунт" Style="{StaticResource ActionButtonStyle}" Command="{Binding AddAccountCommand}" />
                         <Button Content="Удалить аккаунт" Style="{StaticResource GhostButtonStyle}" Command="{Binding DeleteAccountCommand}" />
                         <Button Content="Открыть окно Avito" Style="{StaticResource GhostButtonStyle}" Command="{Binding OpenAvitoProfileCommand}" CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}" />
-                        <Button Content="Авторизовать в Avito" Style="{StaticResource ActionButtonStyle}" Command="{Binding AuthorizeCommand}" CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}" />
+                        <Button Content="Авторизовать в Avito" Style="{StaticResource ActionButtonStyle}" Command="{Binding AuthorizeCommand}" CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}" Visibility="{Binding ShowAuthorizeButton, Converter={StaticResource BooleanToVisibilityConverter}}" />
                     </WrapPanel>
                 </Grid>
             </Border>
