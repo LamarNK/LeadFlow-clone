@@ -157,93 +157,91 @@
                 <TextBlock Text="Столбики по дням (снизу вверх: обработка → CRM → нужны действия → дубликаты → ошибки)"
                            Style="{StaticResource BodyTextStyle}"
                            FontWeight="SemiBold" />
-                <TextBlock Text="Прокрутите вправо, если дней много."
+                <TextBlock Text="Если дней много, столбики переносятся на новую строку."
                            FontSize="11"
                            Foreground="{StaticResource SecondaryTextBrush}"
                            Margin="0,2,0,6" />
-                <ScrollViewer HorizontalScrollBarVisibility="Auto"
-                              VerticalScrollBarVisibility="Disabled"
-                              Padding="0,2,0,0">
-                    <ItemsControl ItemsSource="{Binding DailyRows}">
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate>
-                                <StackPanel Orientation="Horizontal" />
-                            </ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <Border Width="56"
-                                        Padding="4,0"
-                                        BorderBrush="{StaticResource BorderBrush}"
-                                        BorderThickness="0,0,1,0"
-                                        ToolTipService.InitialShowDelay="200"
-                                        ToolTipService.ShowDuration="60000">
-                                    <Border.ToolTip>
-                                        <ToolTip>
-                                            <TextBlock Text="{Binding Tooltip}"
-                                                       TextWrapping="Wrap"
-                                                       MaxWidth="340"
-                                                       FontSize="12" />
-                                        </ToolTip>
-                                    </Border.ToolTip>
-                                    <StackPanel>
-                                        <Grid Height="128" Width="44" HorizontalAlignment="Center">
-                                            <Rectangle Height="2"
-                                                       VerticalAlignment="Bottom"
-                                                       Fill="#94A3B8"
-                                                       HorizontalAlignment="Stretch"
-                                                       SnapsToDevicePixels="True" />
-                                            <!-- Порядок сверху вниз: ошибки → дубликаты → нужны действия → CRM → обработка (низ у базовой линии) -->
-                                            <StackPanel VerticalAlignment="Bottom" HorizontalAlignment="Center" Width="22">
-                                                <Border Width="20"
-                                                        Height="{Binding ErrorHeight}"
-                                                        Background="{StaticResource ErrorBrush}"
-                                                        CornerRadius="2"
-                                                        HorizontalAlignment="Center"
-                                                        Visibility="{Binding Errors, Converter={StaticResource ZeroToCollapsedConverter}}" />
-                                                <Border Width="20"
-                                                        Height="{Binding DuplicateHeight}"
-                                                        Background="{StaticResource WarningBrush}"
-                                                        CornerRadius="2"
-                                                        HorizontalAlignment="Center"
-                                                        Visibility="{Binding Duplicates, Converter={StaticResource ZeroToCollapsedConverter}}" />
-                                                <Border Width="20"
-                                                        Height="{Binding ActionRequiredHeight}"
-                                                        Background="{StaticResource PrimaryBrush}"
-                                                        CornerRadius="2"
-                                                        HorizontalAlignment="Center"
-                                                        Visibility="{Binding ActionRequired, Converter={StaticResource ZeroToCollapsedConverter}}" />
-                                                <Border Width="20"
-                                                        Height="{Binding SentHeight}"
-                                                        Background="{StaticResource SuccessBrush}"
-                                                        CornerRadius="2"
-                                                        HorizontalAlignment="Center"
-                                                        Visibility="{Binding Sent, Converter={StaticResource ZeroToCollapsedConverter}}" />
-                                                <Border Width="20"
-                                                        Height="{Binding InProgressHeight}"
-                                                        Background="{StaticResource SecondaryTextBrush}"
-                                                        CornerRadius="2"
-                                                        HorizontalAlignment="Center"
-                                                        Visibility="{Binding InProgress, Converter={StaticResource ZeroToCollapsedConverter}}" />
-                                            </StackPanel>
-                                        </Grid>
-                                        <TextBlock Text="{Binding ShortLabel}"
-                                                   HorizontalAlignment="Center"
-                                                   FontSize="10"
-                                                   Foreground="#64748B"
-                                                   Margin="0,4,0,0"
-                                                   TextAlignment="Center" />
-                                        <TextBlock Text="{Binding WeekdayLabel}"
-                                                   HorizontalAlignment="Center"
-                                                   FontSize="9"
-                                                   Foreground="#94A3B8"
-                                                   TextAlignment="Center" />
-                                    </StackPanel>
-                                </Border>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </ScrollViewer>
+                <ItemsControl ItemsSource="{Binding DailyRows}"
+                              Padding="0,2,0,0"
+                              HorizontalAlignment="Center">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel Orientation="Horizontal" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Width="56"
+                                    Padding="4,0"
+                                    BorderBrush="{StaticResource BorderBrush}"
+                                    BorderThickness="0,0,1,0"
+                                    ToolTipService.InitialShowDelay="200"
+                                    ToolTipService.ShowDuration="60000">
+                                <Border.ToolTip>
+                                    <ToolTip>
+                                        <TextBlock Text="{Binding Tooltip}"
+                                                   TextWrapping="Wrap"
+                                                   MaxWidth="340"
+                                                   FontSize="12" />
+                                    </ToolTip>
+                                </Border.ToolTip>
+                                <StackPanel>
+                                    <Grid Height="128" Width="44" HorizontalAlignment="Center">
+                                        <Rectangle Height="2"
+                                                   VerticalAlignment="Bottom"
+                                                   Fill="#94A3B8"
+                                                   HorizontalAlignment="Stretch"
+                                                   SnapsToDevicePixels="True" />
+                                        <!-- Порядок сверху вниз: ошибки → дубликаты → нужны действия → CRM → обработка (низ у базовой линии) -->
+                                        <StackPanel VerticalAlignment="Bottom" HorizontalAlignment="Center" Width="22">
+                                            <Border Width="20"
+                                                    Height="{Binding ErrorHeight}"
+                                                    Background="{StaticResource ErrorBrush}"
+                                                    CornerRadius="2"
+                                                    HorizontalAlignment="Center"
+                                                    Visibility="{Binding Errors, Converter={StaticResource ZeroToCollapsedConverter}}" />
+                                            <Border Width="20"
+                                                    Height="{Binding DuplicateHeight}"
+                                                    Background="{StaticResource WarningBrush}"
+                                                    CornerRadius="2"
+                                                    HorizontalAlignment="Center"
+                                                    Visibility="{Binding Duplicates, Converter={StaticResource ZeroToCollapsedConverter}}" />
+                                            <Border Width="20"
+                                                    Height="{Binding ActionRequiredHeight}"
+                                                    Background="{StaticResource PrimaryBrush}"
+                                                    CornerRadius="2"
+                                                    HorizontalAlignment="Center"
+                                                    Visibility="{Binding ActionRequired, Converter={StaticResource ZeroToCollapsedConverter}}" />
+                                            <Border Width="20"
+                                                    Height="{Binding SentHeight}"
+                                                    Background="{StaticResource SuccessBrush}"
+                                                    CornerRadius="2"
+                                                    HorizontalAlignment="Center"
+                                                    Visibility="{Binding Sent, Converter={StaticResource ZeroToCollapsedConverter}}" />
+                                            <Border Width="20"
+                                                    Height="{Binding InProgressHeight}"
+                                                    Background="{StaticResource SecondaryTextBrush}"
+                                                    CornerRadius="2"
+                                                    HorizontalAlignment="Center"
+                                                    Visibility="{Binding InProgress, Converter={StaticResource ZeroToCollapsedConverter}}" />
+                                        </StackPanel>
+                                    </Grid>
+                                    <TextBlock Text="{Binding ShortLabel}"
+                                               HorizontalAlignment="Center"
+                                               FontSize="10"
+                                               Foreground="#64748B"
+                                               Margin="0,4,0,0"
+                                               TextAlignment="Center" />
+                                    <TextBlock Text="{Binding WeekdayLabel}"
+                                               HorizontalAlignment="Center"
+                                               FontSize="9"
+                                               Foreground="#94A3B8"
+                                               TextAlignment="Center" />
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
             </StackPanel>
         </Border>
 
@@ -252,24 +250,118 @@
                 <TextBlock Text="Тренд: всего откликов по дням"
                            Style="{StaticResource BodyTextStyle}"
                            FontWeight="SemiBold" />
-                <ScrollViewer HorizontalScrollBarVisibility="Auto"
-                              VerticalScrollBarVisibility="Disabled"
-                              Margin="0,8,0,0">
-                    <Canvas Height="110" Width="{Binding TrendCanvasWidth}" ClipToBounds="True">
+                <TextBlock Text="{Binding TrendMaxValue, StringFormat=Шкала: 0 … {0}}"
+                           FontSize="11"
+                           Foreground="{StaticResource SecondaryTextBrush}"
+                           Margin="0,2,0,0" />
+                <StackPanel Orientation="Horizontal" Margin="0,4,0,0" VerticalAlignment="Center">
+                    <Line X1="0" Y1="0" X2="18" Y2="0" Stroke="{StaticResource PrimaryBrush}" StrokeThickness="2.5" VerticalAlignment="Center" />
+                    <Ellipse Width="7" Height="7" Fill="{StaticResource PrimaryBrush}" Stroke="White" StrokeThickness="1" Margin="4,0,6,0" VerticalAlignment="Center" />
+                    <TextBlock Text="Линия и точки — всего откликов за день"
+                               FontSize="11"
+                               Foreground="{StaticResource SecondaryTextBrush}"
+                               VerticalAlignment="Center" />
+                </StackPanel>
+                <Grid x:Name="TrendHost"
+                      Margin="0,8,0,0"
+                      SizeChanged="TrendHost_OnSizeChanged">
+                    <Canvas Height="128" Width="{Binding TrendCanvasWidth}" ClipToBounds="True" HorizontalAlignment="Stretch">
                         <Canvas.Background>
                             <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
                                 <GradientStop Color="#F1F5F9" Offset="0" />
                                 <GradientStop Color="#FFFFFF" Offset="1" />
                             </LinearGradientBrush>
                         </Canvas.Background>
+                        <Line X1="0"
+                              Y1="110"
+                              X2="{Binding TrendCanvasWidth}"
+                              Y2="110"
+                              Stroke="#CBD5E1"
+                              StrokeThickness="1" />
+                        <Line X1="0"
+                              Y1="55"
+                              X2="{Binding TrendCanvasWidth}"
+                              Y2="55"
+                              Stroke="#E2E8F0"
+                              StrokeThickness="1"
+                              StrokeDashArray="2,3" />
                         <Polyline Points="{Binding TotalTrendPoints}"
                                   Stroke="{StaticResource PrimaryBrush}"
                                   StrokeThickness="2.5"
                                   StrokeLineJoin="Round"
                                   StrokeStartLineCap="Round"
                                   StrokeEndLineCap="Round" />
+                        <ItemsControl ItemsSource="{Binding TrendPoints}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <Canvas />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemContainerStyle>
+                                <Style TargetType="ContentPresenter">
+                                    <Setter Property="Canvas.Left" Value="{Binding X}" />
+                                    <Setter Property="Canvas.Top" Value="{Binding Y}" />
+                                </Style>
+                            </ItemsControl.ItemContainerStyle>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Width="10" Height="10" Margin="-5,-5,0,0">
+                                        <Ellipse Fill="{StaticResource PrimaryBrush}"
+                                                 Stroke="White"
+                                                 StrokeThickness="1.2"
+                                                 Width="8"
+                                                 Height="8"
+                                                 HorizontalAlignment="Center"
+                                                 VerticalAlignment="Center"
+                                                 ToolTipService.InitialShowDelay="100">
+                                            <Ellipse.ToolTip>
+                                                <TextBlock Text="{Binding Tooltip}" />
+                                            </Ellipse.ToolTip>
+                                        </Ellipse>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <ItemsControl ItemsSource="{Binding TrendPoints}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <Canvas />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemContainerStyle>
+                                <Style TargetType="ContentPresenter">
+                                    <Setter Property="Canvas.Left" Value="{Binding X}" />
+                                    <Setter Property="Canvas.Top" Value="114" />
+                                </Style>
+                            </ItemsControl.ItemContainerStyle>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding Label}"
+                                               Margin="-12,0,0,0"
+                                               FontSize="9"
+                                               Foreground="#64748B"
+                                               TextAlignment="Center"
+                                               Width="24" />
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
                     </Canvas>
-                </ScrollViewer>
+                </Grid>
+                <Grid Margin="0,4,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0"
+                               Text="{Binding TrendStartLabel, StringFormat=Дата (X): {0}}"
+                               FontSize="11"
+                               Foreground="{StaticResource SecondaryTextBrush}" />
+                    <TextBlock Grid.Column="2"
+                               Text="{Binding TrendEndLabel, StringFormat={}{0} :Дата (X)}"
+                               FontSize="11"
+                               Foreground="{StaticResource SecondaryTextBrush}" />
+                </Grid>
             </StackPanel>
         </Border>
 

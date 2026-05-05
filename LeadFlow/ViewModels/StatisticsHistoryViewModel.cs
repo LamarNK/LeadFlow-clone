@@ -15,6 +15,7 @@ public partial class StatisticsHistoryViewModel(AppRepository repository) : Obse
     private const double TrendChartHeight = 110d;
 
     private readonly AppRepository _repository = repository;
+    private List<DailyResponseBucket> _trendBuckets = [];
 
     public ObservableCollection<DailyResponseStatsRow> DailyRows { get; } = [];
 
@@ -51,8 +52,36 @@ public partial class StatisticsHistoryViewModel(AppRepository repository) : Obse
     [ObservableProperty]
     private PointCollection totalTrendPoints = [];
 
+    public ObservableCollection<TrendPointRow> TrendPoints { get; } = [];
+
     [ObservableProperty]
-    private double trendCanvasWidth = 480d;
+    private double trendCanvasWidth = 760d;
+
+    [ObservableProperty]
+    private int trendMaxValue;
+
+    [ObservableProperty]
+    private string trendStartLabel = string.Empty;
+
+    [ObservableProperty]
+    private string trendEndLabel = string.Empty;
+
+    public void UpdateTrendViewportWidth(double width)
+    {
+        if (double.IsNaN(width) || double.IsInfinity(width))
+        {
+            return;
+        }
+
+        var normalized = Math.Max(320d, width);
+        if (Math.Abs(TrendCanvasWidth - normalized) < 0.5d)
+        {
+            return;
+        }
+
+        TrendCanvasWidth = normalized;
+        RebuildTrendGeometry();
+    }
 
     [RelayCommand]
     private async Task ApplyQuickRangeAsync(object? parameter)
@@ -111,15 +140,30 @@ public partial class StatisticsHistoryViewModel(AppRepository repository) : Obse
             PeriodRangeText = first.Date == last.Date
                 ? first.ToString("d MMMM yyyy", culture)
                 : $"{first:dd.MM.yyyy} — {last:dd.MM.yyyy} ({buckets.Count} дн.)";
+            TrendStartLabel = first.ToString("dd.MM", culture);
+            TrendEndLabel = last.ToString("dd.MM", culture);
         }
         else
         {
             PeriodRangeText = string.Empty;
+            TrendStartLabel = string.Empty;
+            TrendEndLabel = string.Empty;
         }
 
-        var w = Math.Max(480d, buckets.Count * 44d);
-        TrendCanvasWidth = w;
+        _trendBuckets = buckets.ToList();
+        RebuildTrendGeometry();
+        TrendMaxValue = maxTotal;
+    }
+
+    private void RebuildTrendGeometry()
+    {
+        var culture = CultureInfo.GetCultureInfo("ru-RU");
+        var buckets = _trendBuckets;
+        var maxTotal = buckets.Count == 0 ? 0 : buckets.Max(b => b.Total);
+        var w = TrendCanvasWidth;
+
         var pts = new PointCollection();
+        TrendPoints.Clear();
         if (buckets.Count == 1)
         {
             var x = w / 2d;
@@ -127,8 +171,16 @@ public partial class StatisticsHistoryViewModel(AppRepository repository) : Obse
                 ? TrendChartHeight - TrendChartHeight * buckets[0].Total / maxTotal
                 : TrendChartHeight;
             pts.Add(new Point(x, y));
+            TrendPoints.Add(new TrendPointRow
+            {
+                X = x,
+                Y = y,
+                Total = buckets[0].Total,
+                Label = buckets[0].DateLocal.ToString("dd.MM", culture),
+                Tooltip = $"{buckets[0].DateLocal:dd.MM.yyyy}: {buckets[0].Total}"
+            });
         }
-        else
+        else if (buckets.Count > 1)
         {
             for (var i = 0; i < buckets.Count; i++)
             {
@@ -136,10 +188,19 @@ public partial class StatisticsHistoryViewModel(AppRepository repository) : Obse
                 var t = buckets[i].Total;
                 var y = maxTotal > 0 ? TrendChartHeight - TrendChartHeight * t / maxTotal : TrendChartHeight;
                 pts.Add(new Point(x, y));
+                TrendPoints.Add(new TrendPointRow
+                {
+                    X = x,
+                    Y = y,
+                    Total = t,
+                    Label = buckets[i].DateLocal.ToString("dd.MM", culture),
+                    Tooltip = $"{buckets[i].DateLocal:dd.MM.yyyy}: {t}"
+                });
             }
         }
 
         TotalTrendPoints = pts;
+        TrendMaxValue = maxTotal;
     }
 
     private static int ParseQuickDays(object? parameter) => parameter switch
@@ -193,4 +254,13 @@ public partial class StatisticsHistoryViewModel(AppRepository repository) : Obse
             + $"Дубликаты: {b.Duplicates}\n"
             + $"Ошибки: {b.Errors}";
     }
+}
+
+public sealed class TrendPointRow
+{
+    public double X { get; init; }
+    public double Y { get; init; }
+    public int Total { get; init; }
+    public string Label { get; init; } = string.Empty;
+    public string Tooltip { get; init; } = string.Empty;
 }
