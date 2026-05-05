@@ -87,6 +87,24 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         await db.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task DeleteCandidateResponseAsync(Guid id, CancellationToken cancellationToken)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var logs = await db.ProcessingLogs.Where(x => x.CandidateResponseId == id).ToListAsync(cancellationToken);
+        if (logs.Count > 0)
+        {
+            db.ProcessingLogs.RemoveRange(logs);
+        }
+
+        var existing = await db.CandidateResponses.FindAsync([id], cancellationToken);
+        if (existing is not null)
+        {
+            db.CandidateResponses.Remove(existing);
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
     public async Task AddLogAsync(ProcessingLogItem item, CancellationToken cancellationToken)
     {
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);

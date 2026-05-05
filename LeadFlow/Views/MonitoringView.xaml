@@ -324,14 +324,27 @@
                                             <MenuItem Header="Копировать телефон"
                                                       Command="{Binding PlacementTarget.Tag.CopyResponsePhoneCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
                                                       CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
-                                            <MenuItem Header="Чат"
+                                            <MenuItem Header="Открыть чат в Avito"
                                                       Command="{Binding PlacementTarget.Tag.OpenResponseChatInAvitoBrowserCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
                                                       CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
-                                            <MenuItem Header="Вакансия"
+                                            <MenuItem Header="Открыть вакансию в Avito"
                                                       Command="{Binding PlacementTarget.Tag.OpenResponseVacancyInAvitoBrowserCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
                                                       CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
                                             <MenuItem Header="Открыть в Bitrix"
                                                       Command="{Binding PlacementTarget.Tag.OpenResponseInBitrixCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                      CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                                            <Separator />
+                                            <MenuItem Header="Копировать ссылку на чат"
+                                                      Command="{Binding PlacementTarget.Tag.CopyResponseMessengerUrlCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                      CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                                            <MenuItem Header="Копировать ссылку на объявление"
+                                                      Command="{Binding PlacementTarget.Tag.CopyResponseVacancyUrlCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                      CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                                            <MenuItem Header="Копировать текст карточки"
+                                                      Command="{Binding PlacementTarget.Tag.CopyResponseCardSummaryCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                      CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                                            <MenuItem Header="Удалить отклик…"
+                                                      Command="{Binding PlacementTarget.Tag.DeleteSelectedResponseCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
                                                       CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
                                         </ContextMenu>
                                     </Grid.ContextMenu>
@@ -471,19 +484,74 @@
                         </Border>
                     </Grid>
 
-                    <StackPanel Grid.Row="4" Margin="0,12,0,0">
-                        <TextBlock Text="Действия в Avito" Style="{StaticResource InfoLabelStyle}" />
-                        <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                    <StackPanel Grid.Row="4" Margin="0,6,0,0">
+                        <TextBlock Text="Действия" Style="{StaticResource InfoLabelStyle}" />
+
+                        <TextBlock Text="В Avito"
+                                   Style="{StaticResource SubtleTextStyle}"
+                                   FontSize="11"
+                                   FontWeight="SemiBold"
+                                   Margin="0,6,0,2" />
+                        <WrapPanel>
                             <Button Content="Чат"
-                                    Style="{StaticResource MonitoringAvitoActionButtonStyle}"
-                                    Margin="0,0,8,0"
+                                    ToolTip="Открыть чат"
+                                    Style="{StaticResource MonitoringCompactActionButtonStyle}"
+                                    Margin="0,0,6,4"
                                     Command="{Binding OpenResponseChatInAvitoBrowserCommand}"
                                     CommandParameter="{Binding SelectedResponse}" />
-                            <Button Content="Открыть вакансию"
-                                    Style="{StaticResource MonitoringAvitoActionButtonStyle}"
+                            <Button Content="Объявление"
+                                    ToolTip="Открыть объявление"
+                                    Style="{StaticResource MonitoringCompactActionButtonStyle}"
+                                    Margin="0,0,6,4"
                                     Command="{Binding OpenResponseVacancyInAvitoBrowserCommand}"
                                     CommandParameter="{Binding SelectedResponse}" />
-                        </StackPanel>
+                        </WrapPanel>
+
+                        <TextBlock Text="Копировать"
+                                   Style="{StaticResource SubtleTextStyle}"
+                                   FontSize="11"
+                                   FontWeight="SemiBold"
+                                   Margin="0,6,0,2" />
+                        <WrapPanel>
+                            <Button Content="Телефон"
+                                    ToolTip="Скопировать номер в буфер"
+                                    Style="{StaticResource MonitoringCompactActionButtonStyle}"
+                                    Margin="0,0,6,4"
+                                    Command="{Binding CopyResponsePhoneCommand}"
+                                    CommandParameter="{Binding SelectedResponse}" />
+                            <Button Content="Ссылка на чат"
+                                    ToolTip="Скопировать URL чата в буфер"
+                                    Style="{StaticResource MonitoringCompactActionButtonStyle}"
+                                    Margin="0,0,6,4"
+                                    Command="{Binding CopyResponseMessengerUrlCommand}"
+                                    CommandParameter="{Binding SelectedResponse}" />
+                            <Button Content="Ссылка на объявление"
+                                    ToolTip="Скопировать URL объявления в буфер"
+                                    Style="{StaticResource MonitoringCompactActionButtonStyle}"
+                                    Margin="0,0,6,4"
+                                    Command="{Binding CopyResponseVacancyUrlCommand}"
+                                    CommandParameter="{Binding SelectedResponse}" />
+                            <Button Content="Текст карточки"
+                                    ToolTip="Скопировать все поля одним текстом"
+                                    Style="{StaticResource MonitoringCompactActionButtonStyle}"
+                                    Margin="0,0,6,4"
+                                    Command="{Binding CopyResponseCardSummaryCommand}"
+                                    CommandParameter="{Binding SelectedResponse}" />
+                        </WrapPanel>
+
+                        <TextBlock Text="Удаление"
+                                   Style="{StaticResource SubtleTextStyle}"
+                                   FontSize="11"
+                                   FontWeight="SemiBold"
+                                   Margin="0,6,0,2" />
+                        <WrapPanel>
+                            <Button Content="Удалить из журнала"
+                                    ToolTip="С подтверждением"
+                                    Style="{StaticResource MonitoringCompactDangerButtonStyle}"
+                                    Margin="0,0,6,4"
+                                    Command="{Binding DeleteSelectedResponseCommand}"
+                                    CommandParameter="{Binding SelectedResponse}" />
+                        </WrapPanel>
                     </StackPanel>
 
                     <StackPanel Grid.Row="5" Margin="0,10,0,0">

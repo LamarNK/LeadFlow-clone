@@ -131,6 +131,12 @@ public partial class MonitoringViewModel : ObservableObject
         OnPropertyChanged(nameof(SelectedResponseErrorText));
         OpenResponseChatInAvitoBrowserCommand.NotifyCanExecuteChanged();
         OpenResponseVacancyInAvitoBrowserCommand.NotifyCanExecuteChanged();
+        CopyResponsePhoneCommand.NotifyCanExecuteChanged();
+        CopyResponseMessengerUrlCommand.NotifyCanExecuteChanged();
+        CopyResponseVacancyUrlCommand.NotifyCanExecuteChanged();
+        CopyResponseCardSummaryCommand.NotifyCanExecuteChanged();
+        OpenResponseInBitrixCommand.NotifyCanExecuteChanged();
+        DeleteSelectedResponseCommand.NotifyCanExecuteChanged();
         SelectedResponseChanged?.Invoke(this, value);
     }
 
@@ -515,5 +521,53 @@ public partial class MonitoringViewModel : ObservableObject
         }
 
         await _windowService.ShowAvitoProfileAsync(owner, account, response.VacancyUrl.Trim(), CancellationToken.None);
+    }
+
+    private bool CanCopyResponseMessengerUrl(CandidateResponse? r) =>
+        CandidateResponseUiActions.CanCopyMessengerUrl(r);
+
+    [RelayCommand(CanExecute = nameof(CanCopyResponseMessengerUrl))]
+    private void CopyResponseMessengerUrl(CandidateResponse? response) =>
+        CandidateResponseUiActions.TryCopyMessengerUrl(response);
+
+    private bool CanCopyResponseVacancyUrl(CandidateResponse? r) =>
+        CandidateResponseUiActions.CanCopyVacancyUrl(r);
+
+    [RelayCommand(CanExecute = nameof(CanCopyResponseVacancyUrl))]
+    private void CopyResponseVacancyUrl(CandidateResponse? response) =>
+        CandidateResponseUiActions.TryCopyVacancyUrl(response);
+
+    private bool CanCopyResponseCardSummary(CandidateResponse? r) =>
+        CandidateResponseUiActions.CanCopyCardSummary(r);
+
+    [RelayCommand(CanExecute = nameof(CanCopyResponseCardSummary))]
+    private void CopyResponseCardSummary(CandidateResponse? response) =>
+        CandidateResponseUiActions.TryCopyCardSummary(response);
+
+    private bool CanDeleteSelectedResponse(CandidateResponse? r) => r is not null;
+
+    [RelayCommand(CanExecute = nameof(CanDeleteSelectedResponse))]
+    private async Task DeleteSelectedResponseAsync(CandidateResponse? response)
+    {
+        if (response is null)
+        {
+            return;
+        }
+
+        var confirmed = MessageBox.Show(
+            $"Удалить отклик «{response.FullName}» из журнала? Действие нельзя отменить.",
+            "Удаление отклика",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning,
+            MessageBoxResult.No);
+        if (confirmed != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        await _repository.DeleteCandidateResponseAsync(response.Id, CancellationToken.None);
+        Responses.Remove(response);
+        NotifyCountersChanged();
+        RefreshMonitoringFilter();
     }
 }
