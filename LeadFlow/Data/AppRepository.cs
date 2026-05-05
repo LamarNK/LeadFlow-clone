@@ -64,6 +64,13 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<AvitoAccount?> GetAccountByIdAsync(Guid accountId, CancellationToken cancellationToken)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var entity = await db.AvitoAccounts.AsNoTracking().FirstOrDefaultAsync(x => x.Id == accountId, cancellationToken);
+        return entity is null ? null : ToModel(entity);
+    }
+
     public async Task SaveCandidateAsync(CandidateResponse response, CancellationToken cancellationToken)
     {
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
@@ -332,7 +339,9 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         PhoneNormalized = model.PhoneNormalized,
         City = model.City,
         Vacancy = model.Vacancy,
+        VacancyUrl = model.VacancyUrl,
         SourceUrl = model.SourceUrl,
+        MessengerUrl = model.MessengerUrl,
         Status = model.Status.ToString(),
         BitrixEntityType = model.BitrixEntityType,
         BitrixEntityId = model.BitrixEntityId,
@@ -358,7 +367,9 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         PhoneNormalized = entity.PhoneNormalized,
         City = entity.City,
         Vacancy = entity.Vacancy,
+        VacancyUrl = string.IsNullOrWhiteSpace(entity.VacancyUrl) ? entity.SourceUrl : entity.VacancyUrl,
         SourceUrl = entity.SourceUrl,
+        MessengerUrl = entity.MessengerUrl,
         Status = Enum.TryParse<ResponseStatus>(entity.Status, out var status) ? status : ResponseStatus.New,
         BitrixEntityType = entity.BitrixEntityType,
         BitrixEntityId = entity.BitrixEntityId,
@@ -383,7 +394,9 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         target.PhoneNormalized = source.PhoneNormalized;
         target.City = source.City;
         target.Vacancy = source.Vacancy;
+        target.VacancyUrl = source.VacancyUrl;
         target.SourceUrl = source.SourceUrl;
+        target.MessengerUrl = source.MessengerUrl;
         target.Status = source.Status.ToString();
         target.BitrixEntityType = source.BitrixEntityType;
         target.BitrixEntityId = source.BitrixEntityId;
@@ -415,10 +428,28 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         }
     }
 
-    private static Task EnsureCandidateResponsesSchemaAsync(AppDbContext db, CancellationToken cancellationToken) =>
-        db.Database.ExecuteSqlRawAsync(
+    private static async Task EnsureCandidateResponsesSchemaAsync(AppDbContext db, CancellationToken cancellationToken)
+    {
+        await db.Database.ExecuteSqlRawAsync(
             "CREATE INDEX IF NOT EXISTS IX_CandidateResponses_CreatedAt ON CandidateResponses (CreatedAt);",
             cancellationToken);
+
+        var existingColumns = await GetTableColumnsAsync(db, "CandidateResponses", cancellationToken);
+        if (!existingColumns.Contains("MessengerUrl"))
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                "ALTER TABLE CandidateResponses ADD COLUMN MessengerUrl TEXT NOT NULL DEFAULT '';",
+                cancellationToken);
+        }
+
+        existingColumns = await GetTableColumnsAsync(db, "CandidateResponses", cancellationToken);
+        if (!existingColumns.Contains("VacancyUrl"))
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                "ALTER TABLE CandidateResponses ADD COLUMN VacancyUrl TEXT NOT NULL DEFAULT '';",
+                cancellationToken);
+        }
+    }
 
     private static async Task<HashSet<string>> GetTableColumnsAsync(
         AppDbContext db,

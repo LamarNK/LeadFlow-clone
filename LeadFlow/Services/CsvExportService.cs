@@ -17,7 +17,7 @@ public sealed class CsvExportService : ICsvExportService
         foreach (var item in items)
         {
             sb.AppendLine(
-                $"{item.CreatedAt:dd.MM.yyyy HH:mm};{Escape(item.AccountName)};{Escape(item.FullName)};{Escape(item.PhoneRaw)};{Escape(item.City)};{Escape(item.Vacancy)};{item.Status};{Escape(item.BitrixEntityId)};{Escape(item.ErrorMessage)}");
+                $"{item.CreatedAt:dd.MM.yyyy HH:mm};{Escape(item.AccountName)};{Escape(item.FullName)};{Escape(item.PhoneRaw)};{Escape(item.City)};{Escape(item.Vacancy)};{Escape(ResponseStatusFormatting.ShortLabel(item.Status))};{Escape(item.BitrixEntityId)};{Escape(item.ErrorMessage)}");
         }
 
         await File.WriteAllTextAsync(path, sb.ToString(), new UTF8Encoding(true), cancellationToken);

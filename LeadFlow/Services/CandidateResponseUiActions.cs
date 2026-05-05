@@ -19,12 +19,13 @@ public static class CandidateResponseUiActions
 
     public static void TryOpenSourceUrl(CandidateResponse? response)
     {
-        if (string.IsNullOrWhiteSpace(response?.SourceUrl))
+        var url = response?.EffectiveVacancyUrl;
+        if (string.IsNullOrWhiteSpace(url))
         {
             return;
         }
 
-        Process.Start(new ProcessStartInfo(response.SourceUrl) { UseShellExecute = true });
+        Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
     }
 
     public static async Task TryOpenBitrixAsync(
@@ -54,7 +55,7 @@ public static class CandidateResponseUiActions
         !string.IsNullOrWhiteSpace(response?.PhoneRaw);
 
     public static bool CanOpenSource(CandidateResponse? response) =>
-        !string.IsNullOrWhiteSpace(response?.SourceUrl);
+        !string.IsNullOrWhiteSpace(response?.EffectiveVacancyUrl);
 
     public static bool CanOpenBitrix(CandidateResponse? response) =>
         !string.IsNullOrWhiteSpace(response?.BitrixEntityId);

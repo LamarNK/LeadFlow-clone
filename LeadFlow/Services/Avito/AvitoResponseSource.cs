@@ -11,7 +11,7 @@ public sealed class AvitoResponseSource(
     IBrowserSessionService browserSessionService,
     IWebPageAutomationService automationService) : IAvitoResponseSource
 {
-    private const string CandidatesUrl = "https://www.avito.ru/profile/candidates";
+    public const string CandidatesPageUrl = "https://www.avito.ru/profile/candidates";
 
     public async Task<IReadOnlyList<CandidateResponse>> GetNewResponsesAsync(AvitoAccount account, AppSettings settings, CancellationToken cancellationToken)
     {
@@ -33,7 +33,7 @@ public sealed class AvitoResponseSource(
         await GlobalLogger.Instance.LogAsync(
             $"Navigating to candidates page for account {account.DisplayName}.",
             DeskLinkAuditLogLevel.Debug);
-        await automationService.NavigateAsync(session, CandidatesUrl, cancellationToken);
+        await automationService.NavigateAsync(session, CandidatesPageUrl, cancellationToken);
         await WaitForCandidatesPageAsync(session, cancellationToken);
         account.LastAuthCheckAt = DateTime.UtcNow;
 
@@ -130,7 +130,17 @@ public sealed class AvitoResponseSource(
 
             var vacancy = item.TryGetProperty("vacancy", out var vacancyProp) ? vacancyProp.GetString() ?? string.Empty : string.Empty;
             var city = item.TryGetProperty("city", out var cityProp) ? cityProp.GetString() ?? string.Empty : string.Empty;
-            var sourceUrl = item.TryGetProperty("sourceUrl", out var sourceUrlProp) ? sourceUrlProp.GetString() ?? CandidatesUrl : CandidatesUrl;
+            var vacancyUrl = item.TryGetProperty("vacancyUrl", out var vacancyUrlProp) ? vacancyUrlProp.GetString() ?? string.Empty : string.Empty;
+            if (string.IsNullOrWhiteSpace(vacancyUrl) && item.TryGetProperty("sourceUrl", out var legacySourceProp))
+            {
+                var legacy = legacySourceProp.GetString() ?? string.Empty;
+                if (!string.Equals(legacy.Trim(), CandidatesPageUrl, StringComparison.OrdinalIgnoreCase))
+                {
+                    vacancyUrl = legacy;
+                }
+            }
+
+            var messengerUrl = item.TryGetProperty("messengerUrl", out var messengerProp) ? messengerProp.GetString() ?? string.Empty : string.Empty;
             var rawText = item.TryGetProperty("rawText", out var rawTextProp) ? rawTextProp.GetString() ?? string.Empty : string.Empty;
             var age = ParseAge(item.TryGetProperty("age", out var ageProp) ? ageProp.GetString() : null);
 
@@ -146,7 +156,9 @@ public sealed class AvitoResponseSource(
                 City = city,
                 Vacancy = vacancy,
                 Age = age,
-                SourceUrl = sourceUrl,
+                VacancyUrl = vacancyUrl,
+                SourceUrl = vacancyUrl,
+                MessengerUrl = messengerUrl,
                 RawText = rawText,
                 CreatedAt = DateTime.UtcNow
             });
@@ -234,29 +246,74 @@ public sealed class AvitoResponseSource(
                     return "";
                 }
 
-                if (href.startsWith("//")) {
-                    return `https:${href}`;
+                const t = href.trim();
+                if (!t || t === "#") {
+                    return "";
                 }
 
-                if (href.startsWith("/")) {
-                    return `${window.location.origin}${href}`;
+                if (t.startsWith("//")) {
+                    return `https:${t}`;
                 }
 
-                return href;
+                if (t.startsWith("/")) {
+                    return `${window.location.origin}${t}`;
+                }
+
+                return t;
+            };
+
+            const resolveMessengerUrl = (root) => {
+                const pick = (href) => normalizeUrl(href ?? "");
+
+                const chatEl = root.querySelector("[data-marker='job-application/link/to-chat']");
+                if (chatEl) {
+                    if (chatEl.tagName === "A") {
+                        const h = pick(chatEl.getAttribute("href"));
+                        if (h) {
+                            return h;
+                        }
+                    }
+
+                    const parentA = chatEl.closest("a");
+                    if (parentA) {
+                        const h = pick(parentA.getAttribute("href"));
+                        if (h) {
+                            return h;
+                        }
+                    }
+
+                    for (const attr of ["data-href", "data-url", "data-to"]) {
+                        const h = pick(chatEl.getAttribute(attr));
+                        if (h) {
+                            return h;
+                        }
+                    }
+                }
+
+                for (const a of root.querySelectorAll("a[href*='messenger']")) {
+                    const h = pick(a.getAttribute("href"));
+                    if (h) {
+                        return h;
+                    }
+                }
+
+                return "";
             };
 
             const candidates = roots.map((root, index) => {
                 const name = root.querySelector("h3")?.textContent?.trim() ?? "";
                 const phone = root.querySelector("[data-marker='job-application/phone']")?.textContent?.trim() ?? "";
                 const ageText = root.querySelector("p[data-marker='undefined/container'] span")?.textContent?.trim() ?? "";
-                const resumeLink = root.querySelector("[data-marker='job-application/link/to-resume']");
-                const sourceUrl = normalizeUrl(resumeLink?.getAttribute("href") ?? "");
-                const vacancyLine = resumeLink?.textContent?.replace(/\s+/g, " ").trim() ?? "";
+                /* Вакансия: якорь «название · город», не «Резюме» (job-crm/response/cv-button). */
+                const vacancyListingAnchor = root.querySelector("[data-marker='job-application/link/to-resume']");
+                const vacancyUrl = normalizeUrl(vacancyListingAnchor?.getAttribute("href") ?? "");
+                const vacancyLine = vacancyListingAnchor?.textContent?.replace(/\s+/g, " ").trim() ?? "";
                 const vacancyParts = vacancyLine.split("·").map((x) => x.trim()).filter(Boolean);
                 const vacancy = vacancyParts[0] ?? "";
                 const city = vacancyParts.length > 1 ? vacancyParts[1] : "";
                 const rawText = root.innerText?.replace(/\s+/g, " ").trim() ?? "";
-                const sourceResponseId = sourceUrl || `${name}|${phone}|${vacancy}|${index}`;
+                const messengerUrl = resolveMessengerUrl(root);
+                const sourceResponseId = vacancyUrl || `${name}|${phone}|${vacancy}|${index}`;
 
                 return {
                     fullName: name,
@@ -264,7 +321,8 @@ public sealed class AvitoResponseSource(
                     age: ageText,
                     vacancy,
                     city,
-                    sourceUrl: sourceUrl || window.location.href,
+                    vacancyUrl,
+                    messengerUrl,
                     sourceResponseId,
                     rawText
                 };

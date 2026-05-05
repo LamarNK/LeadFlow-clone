@@ -165,13 +165,15 @@
                                       Margin="0,6,12,0"
                                       VerticalAlignment="Stretch"
                                       SelectedValue="{Binding SelectedStatusFilter}"
-                                      SelectedValuePath="Content">
-                                <ComboBoxItem Content="Все" IsSelected="True" />
-                                <ComboBoxItem Content="New" />
-                                <ComboBoxItem Content="InProgress" />
-                                <ComboBoxItem Content="Sent" />
-                                <ComboBoxItem Content="Duplicate" />
-                                <ComboBoxItem Content="Error" />
+                                      SelectedValuePath="Tag">
+                                <ComboBoxItem Tag="Все" Content="Все" IsSelected="True" />
+                                <ComboBoxItem Tag="Все, кроме дублей" Content="Все, кроме дублей" />
+                                <ComboBoxItem Tag="New" Content="Новый" />
+                                <ComboBoxItem Tag="InProgress" Content="В обработке" />
+                                <ComboBoxItem Tag="Sent" Content="В CRM" />
+                                <ComboBoxItem Tag="Duplicate" Content="Дубль" />
+                                <ComboBoxItem Tag="Error" Content="Ошибка" />
+                                <ComboBoxItem Tag="ActionRequired" Content="Нужны действия" />
                             </ComboBox>
 
                             <Button Grid.Row="1"
@@ -232,8 +234,11 @@
                                             <MenuItem Header="Копировать телефон"
                                                       Command="{Binding PlacementTarget.Tag.CopyResponsePhoneCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
                                                       CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
-                                            <MenuItem Header="Открыть в Avito"
-                                                      Command="{Binding PlacementTarget.Tag.OpenResponseInAvitoCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                            <MenuItem Header="Чат"
+                                                      Command="{Binding PlacementTarget.Tag.OpenResponseChatInAvitoBrowserCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                      CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                                            <MenuItem Header="Вакансия"
+                                                      Command="{Binding PlacementTarget.Tag.OpenResponseVacancyInAvitoBrowserCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
                                                       CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
                                             <MenuItem Header="Открыть в Bitrix"
                                                       Command="{Binding PlacementTarget.Tag.OpenResponseInBitrixCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
@@ -251,11 +256,14 @@
 
                                     <StackPanel>
                                         <TextBlock Text="{Binding FullName}" Style="{StaticResource ListRowTitleTextStyle}" />
-                                        <TextBlock Text="{Binding Vacancy}" Style="{StaticResource SubtleTextStyle}" Margin="0,4,0,0" />
+                                        <TextBlock Text="{Binding Vacancy, TargetNullValue=—}"
+                                                   Style="{StaticResource SubtleTextStyle}"
+                                                   TextWrapping="Wrap"
+                                                   Margin="0,4,0,0" />
                                     </StackPanel>
 
                                     <TextBlock Grid.Column="1"
-                                               Text="{Binding Status}"
+                                               Text="{Binding Status, Converter={StaticResource ResponseStatusToDisplayConverter}}"
                                                Foreground="{Binding Status, Converter={StaticResource StatusToBrushConverter}}"
                                                FontWeight="SemiBold" />
 
@@ -264,10 +272,15 @@
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
                                         <TextBlock Text="{Binding PhoneRaw}" Style="{StaticResource SubtleTextStyle}" />
                                         <TextBlock Grid.Column="1" Text="{Binding City}" Style="{StaticResource SubtleTextStyle}" />
-                                        <TextBlock Grid.Column="2" Text="{Binding CreatedAt, StringFormat=dd.MM HH:mm}" Style="{StaticResource SubtleTextStyle}" />
+                                        <TextBlock Grid.Column="2"
+                                                   Text="{Binding Age, Converter={StaticResource AgeToDisplayConverter}}"
+                                                   Style="{StaticResource SubtleTextStyle}"
+                                                   Margin="8,0,8,0" />
+                                        <TextBlock Grid.Column="3" Text="{Binding CreatedAt, StringFormat=dd.MM HH:mm}" Style="{StaticResource SubtleTextStyle}" />
                                     </Grid>
                                 </Grid>
                             </DataTemplate>
@@ -298,6 +311,7 @@
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
 
@@ -310,7 +324,11 @@
                         </Grid.ColumnDefinitions>
                         <StackPanel>
                             <TextBlock Text="{Binding SelectedResponse.FullName, TargetNullValue=Отклик не выбран}" Style="{StaticResource SectionTitleStyle}" />
-                            <TextBlock Text="{Binding SelectedResponse.Vacancy}" Style="{StaticResource SubtleTextStyle}" Margin="0,4,0,0" />
+                            <TextBlock Text="Вакансия" Style="{StaticResource InfoLabelStyle}" Margin="0,10,0,0" />
+                            <TextBlock Text="{Binding SelectedResponse.Vacancy, TargetNullValue=Не указано}"
+                                       FontWeight="SemiBold"
+                                       TextWrapping="Wrap"
+                                       Margin="0,4,0,0" />
                         </StackPanel>
                         <TextBlock Grid.Column="1"
                                    Text="{Binding SelectedResponseStatusText}"
@@ -322,6 +340,7 @@
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
                         <Border Grid.Column="0" Padding="0,0,0,8" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Margin="0,0,8,0">
                             <StackPanel>
@@ -329,10 +348,16 @@
                                 <TextBlock Text="{Binding SelectedResponse.PhoneRaw, TargetNullValue=Нет данных}" FontWeight="SemiBold" />
                             </StackPanel>
                         </Border>
-                        <Border Grid.Column="1" Padding="0,0,0,8" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
+                        <Border Grid.Column="1" Padding="0,0,0,8" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Margin="0,0,8,0">
                             <StackPanel>
                                 <TextBlock Text="Город" Style="{StaticResource InfoLabelStyle}" />
                                 <TextBlock Text="{Binding SelectedResponse.City, TargetNullValue=Нет данных}" FontWeight="SemiBold" />
+                            </StackPanel>
+                        </Border>
+                        <Border Grid.Column="2" Padding="0,0,0,8" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
+                            <StackPanel>
+                                <TextBlock Text="Возраст" Style="{StaticResource InfoLabelStyle}" />
+                                <TextBlock Text="{Binding SelectedResponse.Age, Converter={StaticResource AgeToDisplayConverter}}" FontWeight="SemiBold" />
                             </StackPanel>
                         </Border>
                     </Grid>
@@ -356,7 +381,22 @@
                         </Border>
                     </Grid>
 
-                    <StackPanel Grid.Row="4" Margin="0,10,0,0">
+                    <StackPanel Grid.Row="4" Margin="0,12,0,0">
+                        <TextBlock Text="Действия в Avito" Style="{StaticResource InfoLabelStyle}" />
+                        <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                            <Button Content="Чат"
+                                    Style="{StaticResource MonitoringAvitoActionButtonStyle}"
+                                    Margin="0,0,8,0"
+                                    Command="{Binding OpenResponseChatInAvitoBrowserCommand}"
+                                    CommandParameter="{Binding SelectedResponse}" />
+                            <Button Content="Открыть вакансию"
+                                    Style="{StaticResource MonitoringAvitoActionButtonStyle}"
+                                    Command="{Binding OpenResponseVacancyInAvitoBrowserCommand}"
+                                    CommandParameter="{Binding SelectedResponse}" />
+                        </StackPanel>
+                    </StackPanel>
+
+                    <StackPanel Grid.Row="5" Margin="0,10,0,0">
                         <TextBlock Text="Ошибка / комментарий" Style="{StaticResource InfoLabelStyle}" />
                         <TextBlock Text="{Binding SelectedResponseErrorText}" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,4,0,0" />
                     </StackPanel>

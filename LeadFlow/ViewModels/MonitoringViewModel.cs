@@ -1,17 +1,22 @@
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
+using System.Windows;
 using System.Windows.Data;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using LeadFlow.Data;
 using LeadFlow.Models;
 using LeadFlow.Services;
+using LeadFlow.Services.Avito;
 
 namespace LeadFlow.ViewModels;
 
 public partial class MonitoringViewModel : ObservableObject
 {
+    private const string StatusFilterAll = "Все";
+    private const string StatusFilterExcludeDuplicates = "Все, кроме дублей";
+
     public event EventHandler<CandidateResponse?>? SelectedResponseChanged;
 
     public ObservableCollection<CandidateResponse> Responses { get; } = [];
@@ -25,7 +30,7 @@ public partial class MonitoringViewModel : ObservableObject
     private string searchText = string.Empty;
 
     [ObservableProperty]
-    private string selectedStatusFilter = "Все";
+    private string selectedStatusFilter = StatusFilterAll;
 
     [ObservableProperty]
     private DateTime? selectedResponseDate;
@@ -43,11 +48,13 @@ public partial class MonitoringViewModel : ObservableObject
 
     private readonly AppRepository _repository;
     private readonly ISettingsService _settingsService;
+    private readonly IWindowService _windowService;
 
-    public MonitoringViewModel(AppRepository repository, ISettingsService settingsService) : base()
+    public MonitoringViewModel(AppRepository repository, ISettingsService settingsService, IWindowService windowService) : base()
     {
         _repository = repository;
         _settingsService = settingsService;
+        _windowService = windowService;
         ResponsesView = CollectionViewSource.GetDefaultView(Responses);
         ResponsesView.Filter = FilterResponse;
         Responses.CollectionChanged += OnResponsesCollectionChanged;
@@ -67,6 +74,8 @@ public partial class MonitoringViewModel : ObservableObject
         OnPropertyChanged(nameof(SelectedResponseStatusText));
         OnPropertyChanged(nameof(SelectedResponseProcessedText));
         OnPropertyChanged(nameof(SelectedResponseErrorText));
+        OpenResponseChatInAvitoBrowserCommand.NotifyCanExecuteChanged();
+        OpenResponseVacancyInAvitoBrowserCommand.NotifyCanExecuteChanged();
         SelectedResponseChanged?.Invoke(this, value);
     }
 
@@ -94,7 +103,7 @@ public partial class MonitoringViewModel : ObservableObject
     private void ClearMonitoringFilters()
     {
         SearchText = string.Empty;
-        SelectedStatusFilter = "Все";
+        SelectedStatusFilter = StatusFilterAll;
         SelectedResponseDate = null;
     }
 
@@ -138,16 +147,9 @@ public partial class MonitoringViewModel : ObservableObject
         RefreshMonitoringFilter();
     }
 
-    public string SelectedResponseStatusText => SelectedResponse?.Status switch
-    {
-        ResponseStatus.New => "Новый отклик",
-        ResponseStatus.InProgress => "В обработке",
-        ResponseStatus.Sent => "Отправлен в Bitrix24",
-        ResponseStatus.Duplicate => "Найден дубль",
-        ResponseStatus.Error => "Ошибка обработки",
-        ResponseStatus.ActionRequired => "Нужно действие",
-        _ => "Отклик не выбран"
-    };
+    public string SelectedResponseStatusText => SelectedResponse is null
+        ? "Отклик не выбран"
+        : ResponseStatusFormatting.DetailDescription(SelectedResponse.Status);
 
     public string SelectedResponseProcessedText => SelectedResponse?.ProcessedAt is DateTime processedAt
         ? processedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm")
@@ -164,7 +166,12 @@ public partial class MonitoringViewModel : ObservableObject
             return false;
         }
 
-        var statusMatches = SelectedStatusFilter == "Все" || item.Status.ToString() == SelectedStatusFilter;
+        var statusMatches = SelectedStatusFilter switch
+        {
+            StatusFilterAll => true,
+            StatusFilterExcludeDuplicates => item.Status != ResponseStatus.Duplicate,
+            _ => item.Status.ToString() == SelectedStatusFilter
+        };
         if (!statusMatches)
         {
             return false;
@@ -182,7 +189,8 @@ public partial class MonitoringViewModel : ObservableObject
         }
 
         return item.FullName.Contains(search, StringComparison.OrdinalIgnoreCase)
-            || item.PhoneRaw.Contains(search, StringComparison.OrdinalIgnoreCase);
+            || item.PhoneRaw.Contains(search, StringComparison.OrdinalIgnoreCase)
+            || item.Vacancy.Contains(search, StringComparison.OrdinalIgnoreCase);
     }
 
     private void ReplaceResponses(IEnumerable<CandidateResponse> items)
@@ -211,17 +219,73 @@ public partial class MonitoringViewModel : ObservableObject
     private void CopyResponsePhone(CandidateResponse? response) =>
         CandidateResponseUiActions.TryCopyPhone(response);
 
-    private bool CanOpenResponseInAvito(CandidateResponse? r) => CandidateResponseUiActions.CanOpenSource(r);
-
-    [RelayCommand(CanExecute = nameof(CanOpenResponseInAvito))]
-    private void OpenResponseInAvito(CandidateResponse? response) =>
-        CandidateResponseUiActions.TryOpenSourceUrl(response);
-
     private bool CanOpenResponseInBitrix(CandidateResponse? r) => CandidateResponseUiActions.CanOpenBitrix(r);
 
     [RelayCommand(CanExecute = nameof(CanOpenResponseInBitrix))]
     private async Task OpenResponseInBitrixAsync(CandidateResponse? response)
     {
         await CandidateResponseUiActions.TryOpenBitrixAsync(response, _settingsService, CancellationToken.None);
+    }
+
+    private bool CanOpenResponseChatInAvitoBrowser(CandidateResponse? r) =>
+        r is not null && !string.IsNullOrWhiteSpace(r.MessengerUrl);
+
+    [RelayCommand(CanExecute = nameof(CanOpenResponseChatInAvitoBrowser))]
+    private async Task OpenResponseChatInAvitoBrowserAsync(CandidateResponse? response)
+    {
+        if (response is null || string.IsNullOrWhiteSpace(response.MessengerUrl))
+        {
+            return;
+        }
+
+        var owner = Application.Current?.MainWindow;
+        if (owner is null)
+        {
+            return;
+        }
+
+        var account = await _repository.GetAccountByIdAsync(response.AccountId, CancellationToken.None);
+        if (account is null)
+        {
+            return;
+        }
+
+        await _windowService.ShowAvitoProfileAsync(owner, account, response.MessengerUrl, CancellationToken.None);
+    }
+
+    private static bool HasSpecificVacancyUrl(CandidateResponse? r)
+    {
+        var url = r?.EffectiveVacancyUrl;
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return false;
+        }
+
+        return !string.Equals(url.Trim(), AvitoResponseSource.CandidatesPageUrl, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool CanOpenResponseVacancyInAvitoBrowser(CandidateResponse? r) => HasSpecificVacancyUrl(r);
+
+    [RelayCommand(CanExecute = nameof(CanOpenResponseVacancyInAvitoBrowser))]
+    private async Task OpenResponseVacancyInAvitoBrowserAsync(CandidateResponse? response)
+    {
+        if (response is null || !HasSpecificVacancyUrl(response))
+        {
+            return;
+        }
+
+        var owner = Application.Current?.MainWindow;
+        if (owner is null)
+        {
+            return;
+        }
+
+        var account = await _repository.GetAccountByIdAsync(response.AccountId, CancellationToken.None);
+        if (account is null)
+        {
+            return;
+        }
+
+        await _windowService.ShowAvitoProfileAsync(owner, account, response.EffectiveVacancyUrl.Trim(), CancellationToken.None);
     }
 }

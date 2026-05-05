@@ -33,6 +33,7 @@ public sealed class AvitoDemoResponseSource
                 Vacancy = item.Vacancy,
                 Age = item.Age,
                 Source = "Avito Demo",
+                VacancyUrl = account.AvitoResponsesUrl,
                 SourceUrl = account.AvitoResponsesUrl,
                 SourceResponseId = $"demo-{_offset}",
                 CreatedAt = DateTime.UtcNow

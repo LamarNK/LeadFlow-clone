@@ -48,10 +48,12 @@
                 <StackPanel>
                     <TextBlock Text="Источник (предпросмотр)" FontWeight="SemiBold" />
                     <TextBlock Text="{Binding CurrentResponse.FullName}" FontSize="17" FontWeight="Bold" Margin="0,6,0,0"/>
-                    <TextBlock Text="{Binding CurrentResponse.PhoneRaw}" Margin="0,4,0,0"/>
-                    <TextBlock Text="{Binding CurrentResponse.Vacancy}" Margin="0,4,0,0"/>
+                    <TextBlock Text="Вакансия" Style="{StaticResource InfoLabelStyle}" Margin="0,8,0,0"/>
+                    <TextBlock Text="{Binding CurrentResponse.Vacancy, TargetNullValue=Не указано}" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                    <TextBlock Text="{Binding CurrentResponse.PhoneRaw}" Margin="0,6,0,0"/>
                     <TextBlock Text="{Binding CurrentResponse.City}" Margin="0,4,0,0"/>
-                    <TextBlock Text="{Binding CurrentResponse.SourceUrl}" TextWrapping="Wrap" Margin="0,6,0,0" Style="{StaticResource SubtleTextStyle}"/>
+                    <TextBlock Text="Ссылка на объявление" Style="{StaticResource InfoLabelStyle}" Margin="0,8,0,0"/>
+                    <TextBlock Text="{Binding CurrentResponse.EffectiveVacancyUrl}" TextWrapping="Wrap" Margin="0,4,0,0" Style="{StaticResource SubtleTextStyle}"/>
                 </StackPanel>
             </Border>
         </Grid>
