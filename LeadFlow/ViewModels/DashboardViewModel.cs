@@ -321,8 +321,11 @@ public partial class DashboardViewModel : ObservableObject
         var today = DateTime.Today;
         if (createdLocal.Date == today)
         {
-            NewResponses++;
             TotalToday++;
+            if (response.Status == ResponseStatus.New)
+            {
+                NewResponses++;
+            }
 
             switch (response.Status)
             {

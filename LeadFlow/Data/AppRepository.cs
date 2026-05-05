@@ -209,6 +209,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
             .ToListAsync(cancellationToken);
 
         var totalResponses = statusCounts.Sum(x => x.Count);
+        var newResponses = statusCounts.Where(x => x.Status == nameof(ResponseStatus.New)).Sum(x => x.Count);
         var sentResponses = statusCounts.Where(x => x.Status == nameof(ResponseStatus.Sent)).Sum(x => x.Count);
         var inProgressResponses = statusCounts.Where(x => x.Status == nameof(ResponseStatus.InProgress)).Sum(x => x.Count);
         var duplicateResponses = statusCounts.Where(x => x.Status == nameof(ResponseStatus.Duplicate)).Sum(x => x.Count);
@@ -262,7 +263,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         var totalToday = totalResponses;
         var stats = new DashboardStats
         {
-            NewResponses = totalToday,
+            NewResponses = newResponses,
             TotalToday = totalToday,
             SentToCrm = sentResponses,
             InProgress = inProgressResponses,
