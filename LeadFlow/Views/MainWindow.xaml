@@ -78,7 +78,7 @@
                             <Button Style="{StaticResource NavItemButtonStyle}"
                                     Command="{Binding OpenJournalCommand}"
                                     CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}"
-                                    ToolTip="Открыть журнал и базу">
+                                    ToolTip="Открыть системные логи">
                                 <StackPanel>
                                     <Button Style="{StaticResource RoundNavButtonStyle}"
                                             IsHitTestVisible="False"
@@ -90,7 +90,7 @@
                                                   Stretch="Uniform" />
                                         </Viewbox>
                                     </Button>
-                                    <TextBlock Text="Журнал"
+                                    <TextBlock Text="Логи"
                                                Foreground="{StaticResource LinkTextBrush}"
                                                FontWeight="SemiBold"
                                                FontSize="12"

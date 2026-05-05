@@ -27,6 +27,9 @@ public partial class MonitoringViewModel : ObservableObject
     [ObservableProperty]
     private string selectedStatusFilter = "Все";
 
+    [ObservableProperty]
+    private DateTime? selectedResponseDate;
+
     public int TotalResponsesCount => Responses.Count;
     public int NewResponsesCount => Responses.Count(x => x.Status == ResponseStatus.New);
     public int SentResponsesCount => Responses.Count(x => x.Status == ResponseStatus.Sent);
@@ -36,7 +39,7 @@ public partial class MonitoringViewModel : ObservableObject
 
     public string MonitoringResponsesEmptyHint => Responses.Count == 0
         ? "Пока нет откликов. Запустите мониторинг на главном экране или нажмите «Обновить»."
-        : "Нет откликов в текущем фильтре. Смените статус или строку поиска.";
+        : "Нет откликов в текущем фильтре. Смените дату, статус или строку поиска.";
 
     private readonly AppRepository _repository;
     private readonly ISettingsService _settingsService;
@@ -67,16 +70,32 @@ public partial class MonitoringViewModel : ObservableObject
         SelectedResponseChanged?.Invoke(this, value);
     }
 
-    partial void OnSearchTextChanged(string value)
+    partial void OnSearchTextChanged(string value) => RefreshMonitoringFilter();
+
+    partial void OnSelectedStatusFilterChanged(string value) => RefreshMonitoringFilter();
+
+    partial void OnSelectedResponseDateChanged(DateTime? value) => RefreshMonitoringFilter();
+
+    private void RefreshMonitoringFilter()
     {
         ResponsesView.Refresh();
+        var visible = ResponsesView.Cast<CandidateResponse>().ToList();
+        if (SelectedResponse is not null && visible.Contains(SelectedResponse))
+        {
+            NotifyMonitoringListUi();
+            return;
+        }
+
+        SelectedResponse = visible.FirstOrDefault();
         NotifyMonitoringListUi();
     }
 
-    partial void OnSelectedStatusFilterChanged(string value)
+    [RelayCommand]
+    private void ClearMonitoringFilters()
     {
-        ResponsesView.Refresh();
-        NotifyMonitoringListUi();
+        SearchText = string.Empty;
+        SelectedStatusFilter = "Все";
+        SelectedResponseDate = null;
     }
 
     [RelayCommand]
@@ -84,7 +103,6 @@ public partial class MonitoringViewModel : ObservableObject
     {
         var items = await _repository.GetRecentResponsesAsync(100, CancellationToken.None);
         ReplaceResponses(items);
-        SelectedResponse ??= Responses.FirstOrDefault();
     }
 
     public void ApplyProcessedResponse(CandidateResponse response)
@@ -117,8 +135,7 @@ public partial class MonitoringViewModel : ObservableObject
         }
 
         NotifyCountersChanged();
-        ResponsesView.Refresh();
-        NotifyMonitoringListUi();
+        RefreshMonitoringFilter();
     }
 
     public string SelectedResponseStatusText => SelectedResponse?.Status switch
@@ -148,12 +165,24 @@ public partial class MonitoringViewModel : ObservableObject
         }
 
         var statusMatches = SelectedStatusFilter == "Все" || item.Status.ToString() == SelectedStatusFilter;
-        var search = SearchText.Trim();
-        var textMatches = string.IsNullOrWhiteSpace(search)
-            || item.FullName.Contains(search, StringComparison.OrdinalIgnoreCase)
-            || item.PhoneRaw.Contains(search, StringComparison.OrdinalIgnoreCase);
+        if (!statusMatches)
+        {
+            return false;
+        }
 
-        return statusMatches && textMatches;
+        if (SelectedResponseDate.HasValue && item.CreatedAt.ToLocalTime().Date != SelectedResponseDate.Value.Date)
+        {
+            return false;
+        }
+
+        var search = SearchText.Trim();
+        if (string.IsNullOrWhiteSpace(search))
+        {
+            return true;
+        }
+
+        return item.FullName.Contains(search, StringComparison.OrdinalIgnoreCase)
+            || item.PhoneRaw.Contains(search, StringComparison.OrdinalIgnoreCase);
     }
 
     private void ReplaceResponses(IEnumerable<CandidateResponse> items)
@@ -165,8 +194,7 @@ public partial class MonitoringViewModel : ObservableObject
         }
 
         NotifyCountersChanged();
-        ResponsesView.Refresh();
-        NotifyMonitoringListUi();
+        RefreshMonitoringFilter();
     }
 
     private void NotifyCountersChanged()

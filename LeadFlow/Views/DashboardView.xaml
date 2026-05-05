@@ -46,7 +46,7 @@
                         <StackPanel>
                             <TextBlock Text="Отправлено в CRM" Style="{StaticResource SubtleTextStyle}" />
                             <TextBlock Text="{Binding SentToCrm}" Style="{StaticResource StatValueTextStyle}" Foreground="{StaticResource SuccessBrush}" />
-                            <TextBlock Text="Журнал" Style="{StaticResource StatLinkTextStyle}" />
+                            <TextBlock Text="Логи" Style="{StaticResource StatLinkTextStyle}" />
                         </StackPanel>
                     </Button>
                     <Button Style="{StaticResource StatCardButtonStyle}"
@@ -68,7 +68,7 @@
                         <StackPanel>
                             <TextBlock Text="Дубликаты" Style="{StaticResource SubtleTextStyle}" />
                             <TextBlock Text="{Binding Duplicates}" Style="{StaticResource StatValueTextStyle}" Foreground="{StaticResource WarningBrush}" />
-                            <TextBlock Text="Журнал" Style="{StaticResource StatLinkTextStyle}" />
+                            <TextBlock Text="Логи" Style="{StaticResource StatLinkTextStyle}" />
                         </StackPanel>
                     </Button>
                     <Button Style="{StaticResource StatCardButtonStyle}"

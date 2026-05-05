@@ -143,7 +143,6 @@ public partial class MainViewModel : ObservableObject
                 {
                     Monitoring.ApplyProcessedResponse(response);
                     Dashboard.ApplyProcessedResponse(response);
-                    Journal.ApplyProcessedResponse(response);
                     CandidateDetails.Update(response);
                     DuplicateCheck.Update(response);
                     await BitrixIntegration.UpdateAsync(response);

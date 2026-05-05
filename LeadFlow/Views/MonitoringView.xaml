@@ -4,52 +4,97 @@
     <Grid Margin="{StaticResource PagePadding}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <Border Style="{StaticResource CompactCardBorderStyle}" Margin="0,0,0,8">
+        <Border Style="{StaticResource CompactCardBorderStyle}" Padding="14,10" Margin="0,0,0,8">
             <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
-                <StackPanel>
-                    <TextBlock Text="Мониторинг" Style="{StaticResource SectionTitleStyle}" />
-                    <TextBlock Text="Текущие отклики и их состояние в обработке." Style="{StaticResource SubtleTextStyle}" Margin="{StaticResource TightSpacing}" />
+
+                <TextBlock Grid.Row="0"
+                           Grid.Column="0"
+                           Text="Мониторинг"
+                           Style="{StaticResource PageTitleTextStyle}" />
+                <TextBlock Grid.Row="1"
+                           Grid.Column="0"
+                           Text="Текущие отклики и их состояние в обработке."
+                           Style="{StaticResource SubtleTextStyle}"
+                           Margin="{StaticResource TightSpacing}" />
+
+                <StackPanel Grid.Row="0"
+                            Grid.Column="1"
+                            Grid.RowSpan="2"
+                            Orientation="Horizontal"
+                            VerticalAlignment="Center"
+                            Margin="12,0,12,0">
+                    <StackPanel Margin="0,0,14,0" MinWidth="44">
+                        <TextBlock Text="Всего" Style="{StaticResource InfoLabelStyle}" />
+                        <TextBlock Text="{Binding TotalResponsesCount}"
+                                   FontSize="17"
+                                   FontWeight="Bold"
+                                   Foreground="{StaticResource TextBrush}"
+                                   Margin="{StaticResource TightSpacing}" />
+                    </StackPanel>
+                    <Border Width="1"
+                            Background="{StaticResource BorderBrush}"
+                            Margin="0,4,14,4"
+                            VerticalAlignment="Stretch"
+                            Opacity="0.85" />
+                    <StackPanel Margin="0,0,14,0" MinWidth="44">
+                        <TextBlock Text="Новые" Style="{StaticResource InfoLabelStyle}" />
+                        <TextBlock Text="{Binding NewResponsesCount}"
+                                   FontSize="17"
+                                   FontWeight="Bold"
+                                   Foreground="{StaticResource TextBrush}"
+                                   Margin="{StaticResource TightSpacing}" />
+                    </StackPanel>
+                    <Border Width="1"
+                            Background="{StaticResource BorderBrush}"
+                            Margin="0,4,14,4"
+                            VerticalAlignment="Stretch"
+                            Opacity="0.85" />
+                    <StackPanel Margin="0,0,14,0" MinWidth="44">
+                        <TextBlock Text="Отправлены" Style="{StaticResource InfoLabelStyle}" />
+                        <TextBlock Text="{Binding SentResponsesCount}"
+                                   FontSize="17"
+                                   FontWeight="Bold"
+                                   Foreground="{StaticResource SuccessBrush}"
+                                   Margin="{StaticResource TightSpacing}" />
+                    </StackPanel>
+                    <Border Width="1"
+                            Background="{StaticResource BorderBrush}"
+                            Margin="0,4,14,4"
+                            VerticalAlignment="Stretch"
+                            Opacity="0.85" />
+                    <StackPanel MinWidth="44">
+                        <TextBlock Text="Ошибки" Style="{StaticResource InfoLabelStyle}" />
+                        <TextBlock Text="{Binding ErrorResponsesCount}"
+                                   FontSize="17"
+                                   FontWeight="Bold"
+                                   Foreground="{StaticResource ErrorBrush}"
+                                   Margin="{StaticResource TightSpacing}" />
+                    </StackPanel>
                 </StackPanel>
-                <Button Grid.Column="1" Content="Обновить" Command="{Binding RefreshCommand}" VerticalAlignment="Top" />
+
+                <Button Grid.Row="0"
+                        Grid.Column="2"
+                        Grid.RowSpan="2"
+                        Content="Обновить"
+                        Command="{Binding RefreshCommand}"
+                        Padding="14,8"
+                        VerticalAlignment="Center" />
             </Grid>
         </Border>
 
-        <UniformGrid Grid.Row="1" Rows="1" Columns="4" Margin="0,0,0,8">
-            <Border Style="{StaticResource CompactCardBorderStyle}" Margin="0,0,8,0">
-                <StackPanel>
-                    <TextBlock Text="Всего" Style="{StaticResource InfoLabelStyle}" />
-                    <TextBlock Text="{Binding TotalResponsesCount}" Style="{StaticResource StatValueTextStyle}" Margin="{StaticResource TightSpacing}" />
-                </StackPanel>
-            </Border>
-            <Border Style="{StaticResource CompactCardBorderStyle}" Margin="0,0,8,0">
-                <StackPanel>
-                    <TextBlock Text="Новые" Style="{StaticResource InfoLabelStyle}" />
-                    <TextBlock Text="{Binding NewResponsesCount}" Style="{StaticResource StatValueTextStyle}" Margin="{StaticResource TightSpacing}" />
-                </StackPanel>
-            </Border>
-            <Border Style="{StaticResource CompactCardBorderStyle}" Margin="0,0,8,0">
-                <StackPanel>
-                    <TextBlock Text="Отправлены" Style="{StaticResource InfoLabelStyle}" />
-                    <TextBlock Text="{Binding SentResponsesCount}" Style="{StaticResource StatValueTextStyle}" Foreground="{StaticResource SuccessBrush}" Margin="{StaticResource TightSpacing}" />
-                </StackPanel>
-            </Border>
-            <Border Style="{StaticResource CompactCardBorderStyle}" Margin="0">
-                <StackPanel>
-                    <TextBlock Text="Ошибки" Style="{StaticResource InfoLabelStyle}" />
-                    <TextBlock Text="{Binding ErrorResponsesCount}" Style="{StaticResource StatValueTextStyle}" Foreground="{StaticResource ErrorBrush}" Margin="{StaticResource TightSpacing}" />
-                </StackPanel>
-            </Border>
-        </UniformGrid>
-
-        <Grid Grid.Row="2">
+        <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="1.6*" />
                 <ColumnDefinition Width="*" />
@@ -62,25 +107,43 @@
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
 
-                    <Border Margin="0,0,0,10"
-                            Padding="10"
-                            Background="#F8FAFC"
-                            BorderBrush="{StaticResource BorderBrush}"
-                            BorderThickness="1"
-                            CornerRadius="12"
-                            HorizontalAlignment="Left">
-                        <WrapPanel VerticalAlignment="Center" ItemHeight="42">
-                            <Grid Width="280">
+                    <Border Style="{StaticResource PageFiltersToolbarBorderStyle}" Margin="0,0,0,10">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="170" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="150" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Text="Дата" Style="{StaticResource FilterToolbarLabelStyle}" />
+                            <TextBlock Grid.Column="1" Text="Поиск" Style="{StaticResource FilterToolbarLabelStyle}" />
+                            <TextBlock Grid.Column="2" Text="Статус" Style="{StaticResource FilterToolbarLabelStyle}" />
+
+                            <DatePicker Grid.Row="1"
+                                        SelectedDate="{Binding SelectedResponseDate}"
+                                        Style="{StaticResource ToolbarDatePickerStyle}"
+                                        Margin="0,6,12,0"
+                                        VerticalAlignment="Stretch" />
+
+                            <Grid Grid.Row="1"
+                                  Grid.Column="1"
+                                  Margin="0,6,12,0"
+                                  MinHeight="{StaticResource FilterControlMinHeight}"
+                                  VerticalAlignment="Stretch">
                                 <TextBox x:Name="SearchTextBox"
                                          Style="{StaticResource SearchTextBoxStyle}"
                                          Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" />
-                                <TextBlock Margin="14,0,0,0"
+                                <TextBlock Margin="10,0,0,0"
                                            VerticalAlignment="Center"
                                            IsHitTestVisible="False"
-                                           Foreground="{StaticResource SecondaryTextBrush}"
                                            Text="Поиск по имени, вакансии или телефону">
                                     <TextBlock.Style>
-                                        <Style TargetType="TextBlock">
+                                        <Style TargetType="TextBlock" BasedOn="{StaticResource FilterSearchWatermarkStyle}">
                                             <Setter Property="Visibility" Value="Collapsed" />
                                             <Style.Triggers>
                                                 <MultiDataTrigger>
@@ -95,9 +158,12 @@
                                     </TextBlock.Style>
                                 </TextBlock>
                             </Grid>
-                            <ComboBox Width="170"
-                                      Margin="8,0,0,0"
+
+                            <ComboBox Grid.Row="1"
+                                      Grid.Column="2"
                                       Style="{StaticResource FilterComboBoxStyle}"
+                                      Margin="0,6,12,0"
+                                      VerticalAlignment="Stretch"
                                       SelectedValue="{Binding SelectedStatusFilter}"
                                       SelectedValuePath="Content">
                                 <ComboBoxItem Content="Все" IsSelected="True" />
@@ -107,7 +173,17 @@
                                 <ComboBoxItem Content="Duplicate" />
                                 <ComboBoxItem Content="Error" />
                             </ComboBox>
-                        </WrapPanel>
+
+                            <Button Grid.Row="1"
+                                    Grid.Column="3"
+                                    Content="Сбросить"
+                                    Command="{Binding ClearMonitoringFiltersCommand}"
+                                    Style="{StaticResource FilterToolbarResetButtonStyle}"
+                                    MinWidth="104"
+                                    Padding="12,6"
+                                    Margin="0,6,0,0"
+                                    VerticalAlignment="Stretch" />
+                        </Grid>
                     </Border>
 
                     <Grid Grid.Row="1" MinHeight="200">

@@ -4,21 +4,63 @@
     <Grid Margin="{StaticResource PagePadding}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
         <Border Style="{StaticResource CompactCardBorderStyle}" Padding="14,10" Margin="0,0,0,8">
             <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
-                <StackPanel>
-                    <TextBlock Text="Журнал и логи" Style="{StaticResource PageTitleTextStyle}" />
-                    <TextBlock Text="История обработанных откликов и системных записей." Style="{StaticResource SubtleTextStyle}" Margin="{StaticResource TightSpacing}" />
+
+                <TextBlock Grid.Row="0"
+                           Grid.Column="0"
+                           Text="Логи"
+                           Style="{StaticResource PageTitleTextStyle}" />
+                <TextBlock Grid.Row="1"
+                           Grid.Column="0"
+                           Text="Системные записи приложения (аудит и диагностика)."
+                           Style="{StaticResource SubtleTextStyle}"
+                           Margin="{StaticResource TightSpacing}" />
+
+                <StackPanel Grid.Row="0"
+                            Grid.Column="1"
+                            Grid.RowSpan="2"
+                            Orientation="Horizontal"
+                            VerticalAlignment="Center"
+                            Margin="12,0,12,0">
+                    <StackPanel Margin="0,0,14,0" MinWidth="44">
+                        <TextBlock Text="Записей" Style="{StaticResource InfoLabelStyle}" />
+                        <TextBlock Text="{Binding LogEntriesCount}"
+                                   FontSize="17"
+                                   FontWeight="Bold"
+                                   Foreground="{StaticResource TextBrush}"
+                                   Margin="{StaticResource TightSpacing}" />
+                    </StackPanel>
+                    <Border Width="1"
+                            Background="{StaticResource BorderBrush}"
+                            Margin="0,4,14,4"
+                            VerticalAlignment="Stretch"
+                            Opacity="0.85" />
+                    <StackPanel MinWidth="44">
+                        <TextBlock Text="Целостность" Style="{StaticResource InfoLabelStyle}" />
+                        <TextBlock Text="{Binding TamperedLogEntriesCount}"
+                                   FontSize="17"
+                                   FontWeight="Bold"
+                                   Foreground="{StaticResource WarningBrush}"
+                                   Margin="{StaticResource TightSpacing}" />
+                    </StackPanel>
                 </StackPanel>
-                <Button Grid.Column="1"
+
+                <Button Grid.Row="0"
+                        Grid.Column="2"
+                        Grid.RowSpan="2"
                         Content="Обновить"
                         Command="{Binding RefreshCommand}"
                         Padding="14,8"
@@ -26,472 +68,280 @@
             </Grid>
         </Border>
 
-        <UniformGrid Grid.Row="1" Rows="1" Columns="4" Margin="0,0,0,8">
-            <Border Style="{StaticResource CompactCardBorderStyle}" Margin="0,0,8,0" Padding="12,10">
-                <StackPanel>
-                    <TextBlock Text="Отклики" Style="{StaticResource InfoLabelStyle}" />
-                    <TextBlock Text="{Binding JournalItemsCount}" Style="{StaticResource StatValueTextStyle}" Margin="{StaticResource TightSpacing}" />
-                </StackPanel>
-            </Border>
-            <Border Style="{StaticResource CompactCardBorderStyle}" Margin="0,0,8,0" Padding="12,10">
-                <StackPanel>
-                    <TextBlock Text="Отправлены" Style="{StaticResource InfoLabelStyle}" />
-                    <TextBlock Text="{Binding SentJournalItemsCount}" Style="{StaticResource StatValueTextStyle}" Foreground="{StaticResource SuccessBrush}" Margin="{StaticResource TightSpacing}" />
-                </StackPanel>
-            </Border>
-            <Border Style="{StaticResource CompactCardBorderStyle}" Margin="0,0,8,0" Padding="12,10">
-                <StackPanel>
-                    <TextBlock Text="Ошибки" Style="{StaticResource InfoLabelStyle}" />
-                    <TextBlock Text="{Binding ErrorJournalItemsCount}" Style="{StaticResource StatValueTextStyle}" Foreground="{StaticResource ErrorBrush}" Margin="{StaticResource TightSpacing}" />
-                </StackPanel>
-            </Border>
-            <Border Style="{StaticResource CompactCardBorderStyle}" Padding="12,10">
-                <StackPanel>
-                    <TextBlock Text="Логи" Style="{StaticResource InfoLabelStyle}" />
-                    <TextBlock Text="{Binding LogEntriesCount}" Style="{StaticResource StatValueTextStyle}" Margin="{StaticResource TightSpacing}" />
-                </StackPanel>
-            </Border>
-        </UniformGrid>
+        <Grid Grid.Row="1"
+              Margin="{StaticResource CardInnerGap}"
+              TextElement.FontFamily="Segoe UI"
+              TextElement.FontWeight="Normal"
+              TextElement.FontSize="14">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="1.85*" />
+                <ColumnDefinition Width="0.95*" />
+            </Grid.ColumnDefinitions>
 
-        <TabControl Grid.Row="2"
-                    Style="{StaticResource SectionTabControlStyle}"
-                    ItemContainerStyle="{StaticResource SectionTabItemStyle}">
-            <TabItem Header="Журнал">
-                <Grid Margin="{StaticResource SectionSpacing}">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="1.6*" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
+            <Border Style="{StaticResource CompactCardBorderStyle}" Margin="0,0,10,0" Padding="12">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
 
-                    <Border Style="{StaticResource CompactCardBorderStyle}" Margin="0,0,10,0">
+                    <Grid Margin="0,0,0,6">
+                        <TextBlock Text="Системные логи" Style="{StaticResource SectionTitleStyle}" VerticalAlignment="Center" />
+                    </Grid>
+
+                    <Border Grid.Row="1" Style="{StaticResource PageFiltersToolbarBorderStyle}" Margin="0,0,0,10">
                         <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="170" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="150" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto" />
-                                <RowDefinition Height="*" />
                                 <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
 
-                            <DockPanel Margin="0,0,0,10" LastChildFill="False">
-                                <TextBlock Text="Последние обработанные отклики" Style="{StaticResource SectionHeaderTextStyle}" DockPanel.Dock="Left" />
-                                <Button Content="Экспорт"
-                                        Command="{Binding ExportCommand}"
-                                        DockPanel.Dock="Right"
-                                        MinWidth="104"
-                                        Padding="14,7"
-                                        ToolTip="Экспортировать журнал в CSV" />
-                            </DockPanel>
+                            <TextBlock Text="Дата" Style="{StaticResource FilterToolbarLabelStyle}" />
+                            <TextBlock Grid.Column="1" Text="Поиск" Style="{StaticResource FilterToolbarLabelStyle}" />
+                            <TextBlock Grid.Column="2" Text="Уровень" Style="{StaticResource FilterToolbarLabelStyle}" />
 
-                            <Grid Grid.Row="1" MinHeight="160">
-                            <ListBox ItemsSource="{Binding Items}"
-                                     SelectedItem="{Binding SelectedItem}"
-                                     BorderThickness="0"
-                                     Background="Transparent"
-                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                                <ListBox.ItemContainerStyle>
-                                    <Style TargetType="ListBoxItem">
-                                        <Setter Property="Padding" Value="0" />
-                                        <Setter Property="Margin" Value="0,0,0,6" />
-                                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                                        <Setter Property="Template">
-                                            <Setter.Value>
-                                                <ControlTemplate TargetType="ListBoxItem">
-                                                    <Border x:Name="ItemBorder" Padding="10,8" CornerRadius="12" Background="Transparent" BorderBrush="Transparent" BorderThickness="1">
-                                                        <ContentPresenter />
-                                                    </Border>
-                                                    <ControlTemplate.Triggers>
-                                                        <Trigger Property="IsMouseOver" Value="True">
-                                                            <Setter TargetName="ItemBorder" Property="Background" Value="#F8FAFC" />
-                                                        </Trigger>
-                                                        <Trigger Property="IsSelected" Value="True">
-                                                            <Setter TargetName="ItemBorder" Property="Background" Value="#F8FAFC" />
-                                                            <Setter TargetName="ItemBorder" Property="BorderBrush" Value="{StaticResource BorderBrush}" />
-                                                        </Trigger>
-                                                    </ControlTemplate.Triggers>
-                                                </ControlTemplate>
-                                            </Setter.Value>
-                                        </Setter>
-                                    </Style>
-                                </ListBox.ItemContainerStyle>
-                                <ListBox.ItemTemplate>
-                                    <DataTemplate>
-                                        <Grid>
-                                            <Grid.ContextMenu>
-                                                <ContextMenu>
-                                                    <MenuItem Header="Копировать телефон"
-                                                              Command="{Binding DataContext.CopyResponsePhoneCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
-                                                              CommandParameter="{Binding}" />
-                                                    <MenuItem Header="Открыть в Avito"
-                                                              Command="{Binding DataContext.OpenResponseInAvitoCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
-                                                              CommandParameter="{Binding}" />
-                                                    <MenuItem Header="Открыть в Bitrix"
-                                                              Command="{Binding DataContext.OpenResponseInBitrixCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
-                                                              CommandParameter="{Binding}" />
-                                                </ContextMenu>
-                                            </Grid.ContextMenu>
-                                            <Grid.RowDefinitions>
-                                                <RowDefinition Height="Auto" />
-                                                <RowDefinition Height="Auto" />
-                                            </Grid.RowDefinitions>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="Auto" />
-                                            </Grid.ColumnDefinitions>
+                            <DatePicker Grid.Row="1"
+                                        SelectedDate="{Binding SelectedLogDate}"
+                                        Style="{StaticResource ToolbarDatePickerStyle}"
+                                        Margin="0,6,12,0"
+                                        VerticalAlignment="Stretch" />
 
-                                            <StackPanel>
-                                                <TextBlock Text="{Binding FullName}" Style="{StaticResource ListRowTitleTextStyle}" />
-                                                <TextBlock Text="{Binding PhoneRaw}" Style="{StaticResource SubtleTextStyle}" Margin="0,4,0,0" />
-                                            </StackPanel>
-
-                                            <TextBlock Grid.Column="1"
-                                                       Text="{Binding Status}"
-                                                       Foreground="{Binding Status, Converter={StaticResource StatusToBrushConverter}}"
-                                                       FontWeight="SemiBold" />
-
-                                            <Grid Grid.Row="1" Grid.ColumnSpan="2" Margin="0,8,0,0">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="*" />
-                                                    <ColumnDefinition Width="*" />
-                                                    <ColumnDefinition Width="Auto" />
-                                                </Grid.ColumnDefinitions>
-                                                <TextBlock Text="{Binding BitrixEntityId}" Style="{StaticResource SubtleTextStyle}" />
-                                                <TextBlock Grid.Column="1" Text="{Binding ErrorMessage}" Style="{StaticResource SubtleTextStyle}" />
-                                                <TextBlock Grid.Column="2" Text="{Binding CreatedAt, StringFormat=dd.MM HH:mm}" Style="{StaticResource SubtleTextStyle}" />
-                                            </Grid>
-                                        </Grid>
-                                    </DataTemplate>
-                                </ListBox.ItemTemplate>
-                            </ListBox>
-                            <Border Padding="16"
-                                    CornerRadius="12"
-                                    Background="#F8FAFC"
-                                    BorderBrush="{StaticResource BorderBrush}"
-                                    BorderThickness="1"
-                                    VerticalAlignment="Center"
-                                    HorizontalAlignment="Stretch"
-                                    Margin="0,0,0,6"
-                                    Visibility="{Binding ShowJournalResponsesEmpty, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                <TextBlock Text="{Binding JournalResponsesEmptyHint}"
-                                           Style="{StaticResource BodyTextStyle}"
-                                           TextWrapping="Wrap"
-                                           TextAlignment="Center" />
-                            </Border>
+                            <Grid Grid.Row="1"
+                                  Grid.Column="1"
+                                  Margin="0,6,12,0"
+                                  MinHeight="{StaticResource FilterControlMinHeight}"
+                                  VerticalAlignment="Stretch">
+                                <TextBox x:Name="JournalLogsFilterSearchTextBox"
+                                         Style="{StaticResource SearchTextBoxStyle}"
+                                         Text="{Binding LogSearchText, UpdateSourceTrigger=PropertyChanged}" />
+                                <TextBlock Margin="10,0,0,0"
+                                           VerticalAlignment="Center"
+                                           IsHitTestVisible="False"
+                                           Text="Сообщение, источник, TraceId…">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock" BasedOn="{StaticResource FilterSearchWatermarkStyle}">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                            <Style.Triggers>
+                                                <MultiDataTrigger>
+                                                    <MultiDataTrigger.Conditions>
+                                                        <Condition Binding="{Binding Text, ElementName=JournalLogsFilterSearchTextBox}" Value="" />
+                                                        <Condition Binding="{Binding IsKeyboardFocusWithin, ElementName=JournalLogsFilterSearchTextBox}" Value="False" />
+                                                    </MultiDataTrigger.Conditions>
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                </MultiDataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
                             </Grid>
 
-                            <TextBlock Grid.Row="2" Text="{Binding ExportPath}" Style="{StaticResource SubtleTextStyle}" TextWrapping="Wrap" Margin="{StaticResource SectionSpacing}"/>
+                            <ComboBox Grid.Row="1"
+                                      Grid.Column="2"
+                                      ItemsSource="{Binding LogLevelFilters}"
+                                      SelectedItem="{Binding SelectedLogLevelFilter}"
+                                      Style="{StaticResource FilterComboBoxStyle}"
+                                      Margin="0,6,12,0"
+                                      VerticalAlignment="Stretch" />
+
+                            <Button Grid.Row="1"
+                                    Grid.Column="3"
+                                    Content="Сбросить"
+                                    Command="{Binding ClearLogFiltersCommand}"
+                                    Style="{StaticResource FilterToolbarResetButtonStyle}"
+                                    MinWidth="104"
+                                    Padding="12,6"
+                                    Margin="0,6,0,0"
+                                    VerticalAlignment="Stretch" />
                         </Grid>
                     </Border>
 
-                    <Border Grid.Column="1" Style="{StaticResource CompactCardBorderStyle}">
-                        <StackPanel>
-                            <TextBlock Text="Запись журнала" Style="{StaticResource PageTitleTextStyle}" />
-                            <TextBlock Text="{Binding SelectedItem.FullName, TargetNullValue=Запись не выбрана}" Style="{StaticResource SectionTitleStyle}" Margin="{StaticResource SectionSpacing}" />
-                            <TextBlock Text="{Binding SelectedJournalStatusText}" Foreground="{Binding SelectedItem.Status, Converter={StaticResource StatusToBrushConverter}}" FontWeight="SemiBold" Margin="0,4,0,0" />
+                    <Grid Grid.Row="2" MinHeight="160">
+                        <ListBox ItemsSource="{Binding LogEntriesView}"
+                                 SelectedItem="{Binding SelectedLogEntry}"
+                                 BorderThickness="0"
+                                 Background="Transparent"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                 VirtualizingPanel.IsVirtualizing="True"
+                                 VirtualizingPanel.VirtualizationMode="Recycling">
+                            <ListBox.ItemContainerStyle>
+                                <Style TargetType="ListBoxItem">
+                                    <Setter Property="Padding" Value="0" />
+                                    <Setter Property="Margin" Value="0,0,0,6" />
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="ListBoxItem">
+                                                <Border x:Name="ItemBorder"
+                                                        Padding="10,8"
+                                                        CornerRadius="12"
+                                                        Background="#FFFFFF"
+                                                        BorderBrush="{StaticResource BorderBrush}"
+                                                        BorderThickness="1">
+                                                    <ContentPresenter />
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="ItemBorder" Property="Background" Value="#F8FBFF" />
+                                                        <Setter TargetName="ItemBorder" Property="BorderBrush" Value="{StaticResource PrimaryBrush}" />
+                                                    </Trigger>
+                                                    <Trigger Property="IsSelected" Value="True">
+                                                        <Setter TargetName="ItemBorder" Property="Background" Value="#E8F0FF" />
+                                                        <Setter TargetName="ItemBorder" Property="BorderBrush" Value="{StaticResource PrimaryBrush}" />
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </ListBox.ItemContainerStyle>
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="140" />
+                                            <ColumnDefinition Width="95" />
+                                            <ColumnDefinition Width="150" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="120" />
+                                        </Grid.ColumnDefinitions>
 
-                            <Grid Margin="0,14,0,0">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-                                <Border Grid.Column="0" Padding="0,0,0,8" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Margin="0,0,8,0">
-                                    <StackPanel>
-                                        <TextBlock Text="Телефон" Style="{StaticResource InfoLabelStyle}" />
-                                        <TextBlock Text="{Binding SelectedItem.PhoneRaw, TargetNullValue=Нет данных}" FontWeight="SemiBold" />
-                                    </StackPanel>
-                                </Border>
-                                <Border Grid.Column="1" Padding="0,0,0,8" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
-                                    <StackPanel>
-                                        <TextBlock Text="Bitrix ID" Style="{StaticResource InfoLabelStyle}" />
-                                        <TextBlock Text="{Binding SelectedItem.BitrixEntityId, TargetNullValue=Нет данных}" FontWeight="SemiBold" />
-                                    </StackPanel>
-                                </Border>
-                            </Grid>
+                                        <TextBlock Grid.Column="0"
+                                                   Text="{Binding Timestamp, StringFormat=HH:mm:ss}"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="{StaticResource SecondaryTextBrush}"
+                                                   VerticalAlignment="Center" />
 
-                            <Border Padding="0,0,0,8" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Margin="0,10,0,0">
-                                <StackPanel>
-                                    <TextBlock Text="Создан" Style="{StaticResource InfoLabelStyle}" />
-                                    <TextBlock Text="{Binding SelectedItem.CreatedAt, StringFormat=dd.MM.yyyy HH:mm, TargetNullValue=Нет данных}" FontWeight="SemiBold" />
-                                </StackPanel>
-                            </Border>
-
-                            <StackPanel Margin="0,10,0,0">
-                                <TextBlock Text="Ошибка / комментарий" Style="{StaticResource InfoLabelStyle}" />
-                                <TextBlock Text="{Binding SelectedJournalErrorText}" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,4,0,0" />
-                            </StackPanel>
-                        </StackPanel>
-                    </Border>
-                </Grid>
-            </TabItem>
-
-            <TabItem Header="Логи">
-                <Grid Margin="{StaticResource CardInnerGap}">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="1.85*" />
-                        <ColumnDefinition Width="0.95*" />
-                    </Grid.ColumnDefinitions>
-
-                    <Border Style="{StaticResource CompactCardBorderStyle}" Margin="0,0,10,0" Padding="12">
-                        <Grid>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="*" />
-                            </Grid.RowDefinitions>
-
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Text="Системные логи" Style="{StaticResource SectionTitleStyle}" VerticalAlignment="Center" />
-                            </Grid>
-
-                            <Border Grid.Row="1" Style="{StaticResource ToolbarSurfaceBorderStyle}" Margin="0,8,0,8">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="170" />
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="150" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
-                                    </Grid.RowDefinitions>
-
-                                    <TextBlock Text="Дата" Style="{StaticResource InfoLabelStyle}" />
-                                    <TextBlock Grid.Column="1" Text="Поиск" Style="{StaticResource InfoLabelStyle}" />
-                                    <TextBlock Grid.Column="2" Text="Уровень" Style="{StaticResource InfoLabelStyle}" />
-
-                                    <Border Grid.Row="1"
-                                            Margin="0,6,12,0"
-                                            Background="#FFFFFF"
-                                            BorderBrush="{StaticResource BorderBrush}"
-                                            BorderThickness="1"
-                                            CornerRadius="12"
-                                            Padding="10,0">
-                                        <DatePicker SelectedDate="{Binding SelectedLogDate}"
-                                                    Height="38"
-                                                    BorderThickness="0"
-                                                    Background="Transparent"
-                                                    VerticalAlignment="Center" />
-                                    </Border>
-
-                                    <TextBox Grid.Row="1"
-                                             Grid.Column="1"
-                                             Text="{Binding LogSearchText, UpdateSourceTrigger=PropertyChanged}"
-                                             Style="{StaticResource SearchTextBoxStyle}"
-                                             Margin="0,6,12,0"
-                                             MinHeight="38"
-                                             VerticalAlignment="Center" />
-
-                                    <ComboBox Grid.Row="1"
-                                              Grid.Column="2"
-                                              ItemsSource="{Binding LogLevelFilters}"
-                                              SelectedItem="{Binding SelectedLogLevelFilter}"
-                                              Style="{StaticResource FilterComboBoxStyle}"
-                                              Margin="0,6,12,0"
-                                              MinHeight="38"
-                                              VerticalAlignment="Center" />
-
-                                    <Button Grid.Row="1"
-                                            Grid.Column="3"
-                                            Content="Сбросить"
-                                            Command="{Binding ClearLogDateFilterCommand}"
-                                            Style="{StaticResource GhostButtonStyle}"
-                                            MinWidth="104"
-                                            Height="38"
-                                            Padding="14,7"
-                                            Margin="0,6,0,0"
-                                            VerticalAlignment="Center" />
-                                </Grid>
-                            </Border>
-
-                            <Grid Grid.Row="2" MinHeight="160">
-                            <ListBox ItemsSource="{Binding LogEntriesView}"
-                                     SelectedItem="{Binding SelectedLogEntry}"
-                                     BorderThickness="0"
-                                     Background="Transparent"
-                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                                     VirtualizingPanel.IsVirtualizing="True"
-                                     VirtualizingPanel.VirtualizationMode="Recycling">
-                                <ListBox.ItemContainerStyle>
-                                    <Style TargetType="ListBoxItem">
-                                        <Setter Property="Padding" Value="0" />
-                                        <Setter Property="Margin" Value="0,0,0,6" />
-                                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                                        <Setter Property="Template">
-                                            <Setter.Value>
-                                                <ControlTemplate TargetType="ListBoxItem">
-                                                    <Border x:Name="ItemBorder"
-                                                            Padding="10,8"
-                                                            CornerRadius="12"
-                                                            Background="#FFFFFF"
-                                                            BorderBrush="{StaticResource BorderBrush}"
-                                                            BorderThickness="1">
-                                                        <ContentPresenter />
-                                                    </Border>
-                                                    <ControlTemplate.Triggers>
-                                                        <Trigger Property="IsMouseOver" Value="True">
-                                                            <Setter TargetName="ItemBorder" Property="Background" Value="#F8FBFF" />
-                                                            <Setter TargetName="ItemBorder" Property="BorderBrush" Value="{StaticResource PrimaryBrush}" />
-                                                        </Trigger>
-                                                        <Trigger Property="IsSelected" Value="True">
-                                                            <Setter TargetName="ItemBorder" Property="Background" Value="#E8F0FF" />
-                                                            <Setter TargetName="ItemBorder" Property="BorderBrush" Value="{StaticResource PrimaryBrush}" />
-                                                        </Trigger>
-                                                    </ControlTemplate.Triggers>
-                                                </ControlTemplate>
-                                            </Setter.Value>
-                                        </Setter>
-                                    </Style>
-                                </ListBox.ItemContainerStyle>
-                                <ListBox.ItemTemplate>
-                                    <DataTemplate>
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="140" />
-                                                <ColumnDefinition Width="95" />
-                                                <ColumnDefinition Width="150" />
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="120" />
-                                            </Grid.ColumnDefinitions>
-
-                                            <!-- Время -->
-                                            <TextBlock Grid.Column="0"
-                                                       Text="{Binding Timestamp, StringFormat=HH:mm:ss}"
+                                        <Border Grid.Column="1"
+                                                CornerRadius="8"
+                                                Padding="8,4"
+                                                HorizontalAlignment="Left"
+                                                VerticalAlignment="Center"
+                                                Background="{Binding Level, Converter={StaticResource LogLevelToBackgroundConverter}}">
+                                            <TextBlock Text="{Binding Level}"
+                                                       Foreground="White"
                                                        FontWeight="SemiBold"
-                                                       Foreground="{StaticResource SecondaryTextBrush}"
-                                                       VerticalAlignment="Center" />
-
-                                            <!-- Уровень с цветным бейджем -->
-                                            <Border Grid.Column="1"
-                                                    CornerRadius="8"
-                                                    Padding="8,4"
-                                                    HorizontalAlignment="Left"
-                                                    VerticalAlignment="Center"
-                                                    Background="{Binding Level, Converter={StaticResource LogLevelToBackgroundConverter}}">
-                                                <TextBlock Text="{Binding Level}"
-                                                           Foreground="White"
-                                                           FontWeight="SemiBold"
-                                                           FontSize="11"
-                                                           TextAlignment="Center" />
-                                            </Border>
-
-                                            <!-- Источник -->
-                                            <TextBlock Grid.Column="2"
-                                                       Text="{Binding Prefix}"
-                                                       Foreground="{StaticResource TextBrush}"
-                                                       VerticalAlignment="Center"
-                                                       TextTrimming="CharacterEllipsis" />
-
-                                            <!-- Сообщение -->
-                                            <TextBlock Grid.Column="3"
-                                                       Text="{Binding Message}"
-                                                       Foreground="{StaticResource TextBrush}"
-                                                       TextWrapping="Wrap"
-                                                       VerticalAlignment="Center"
-                                                       Margin="0,0,8,0" />
-
-                                            <!-- TraceId -->
-                                            <TextBlock Grid.Column="4"
-                                                       Text="{Binding TraceId}"
-                                                       Foreground="{StaticResource SecondaryTextBrush}"
                                                        FontSize="11"
-                                                       VerticalAlignment="Center"
-                                                       TextTrimming="CharacterEllipsis" />
-                                        </Grid>
-                                    </DataTemplate>
-                                </ListBox.ItemTemplate>
-                            </ListBox>
-                            <Border Padding="16"
-                                    CornerRadius="12"
-                                    Background="#F8FAFC"
-                                    BorderBrush="{StaticResource BorderBrush}"
-                                    BorderThickness="1"
-                                    VerticalAlignment="Center"
-                                    HorizontalAlignment="Stretch"
-                                    Visibility="{Binding ShowJournalLogsEmpty, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                <TextBlock Text="{Binding JournalLogsEmptyHint}"
-                                           Style="{StaticResource BodyTextStyle}"
-                                           TextWrapping="Wrap"
-                                           TextAlignment="Center" />
-                            </Border>
-                            </Grid>
-                        </Grid>
-                    </Border>
+                                                       TextAlignment="Center" />
+                                        </Border>
 
-                    <Border Grid.Column="1" Style="{StaticResource CompactCardBorderStyle}" Padding="12">
-                        <Grid>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="*" />
-                                <RowDefinition Height="Auto" />
-                            </Grid.RowDefinitions>
+                                        <TextBlock Grid.Column="2"
+                                                   Text="{Binding Prefix}"
+                                                   Foreground="{StaticResource TextBrush}"
+                                                   VerticalAlignment="Center"
+                                                   TextTrimming="CharacterEllipsis" />
 
-                            <StackPanel>
-                                <TextBlock Text="Детали лога" Style="{StaticResource SectionTitleStyle}" />
-                            </StackPanel>
+                                        <TextBlock Grid.Column="3"
+                                                   Text="{Binding Message}"
+                                                   Foreground="{StaticResource TextBrush}"
+                                                   TextWrapping="Wrap"
+                                                   VerticalAlignment="Center"
+                                                   Margin="0,0,8,0" />
 
-                            <ScrollViewer Grid.Row="1"
-                                          Margin="0,8,0,0"
-                                          VerticalScrollBarVisibility="Auto"
-                                          HorizontalScrollBarVisibility="Disabled">
-                                <StackPanel>
-                                    <Border Style="{StaticResource DetailSectionBorderStyle}">
-                                        <StackPanel>
-                                            <TextBlock Text="Источник" Style="{StaticResource InfoLabelStyle}" />
-                                            <TextBlock Text="{Binding SelectedLogEntry.Prefix, TargetNullValue=Нет данных}" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,6,0,0" />
-                                        </StackPanel>
-                                    </Border>
-
-                                    <Border Style="{StaticResource DetailSectionBorderStyle}" Margin="0,6,0,0">
-                                        <StackPanel>
-                                            <TextBlock Text="TraceId" Style="{StaticResource InfoLabelStyle}" />
-                                            <TextBlock Text="{Binding SelectedLogEntry.TraceId, TargetNullValue=Нет данных}" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,6,0,0" />
-                                        </StackPanel>
-                                    </Border>
-
-                                    <Border Style="{StaticResource DetailSectionBorderStyle}" Margin="0,6,0,0">
-                                        <StackPanel>
-                                            <TextBlock Text="Сообщение" Style="{StaticResource InfoLabelStyle}" />
-                                            <TextBlock Text="{Binding SelectedLogEntry.Message, TargetNullValue=Нет данных}" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,6,0,0" />
-                                        </StackPanel>
-                                    </Border>
-
-                                    <Border Style="{StaticResource ToolbarSurfaceBorderStyle}" Margin="0,6,0,0">
-                                        <StackPanel>
-                                            <TextBlock Text="Дополнительные свойства" Style="{StaticResource InfoLabelStyle}" />
-                                            <TextBlock Text="{Binding SelectedLogDetails}"
-                                                       FontFamily="Consolas"
-                                                       FontSize="12"
-                                                       TextWrapping="Wrap"
-                                                       Margin="0,6,0,0" />
-                                        </StackPanel>
-                                    </Border>
-                                </StackPanel>
-                            </ScrollViewer>
-
-                            <UniformGrid Grid.Row="2" Columns="2" Margin="0,8,0,0">
-                                <Button Content="Копировать строку"
-                                        Command="{Binding CopySelectedLogRowCommand}"
-                                        Style="{StaticResource SecondaryButtonStyle}"
-                                        Padding="12,7"
-                                        Margin="0,0,8,8" />
-                                <Button Content="Копировать сообщение"
-                                        Command="{Binding CopySelectedLogMessageCommand}"
-                                        Style="{StaticResource SecondaryButtonStyle}"
-                                        Padding="12,7"
-                                        Margin="8,0,0,8" />
-                                <Button Content="Копировать детали"
-                                        Command="{Binding CopySelectedLogDetailsCommand}"
-                                        Style="{StaticResource SecondaryButtonStyle}"
-                                        Padding="12,7"
-                                        Margin="0,0,8,0" />
-                                <Border Background="Transparent" Margin="8,0,0,0" />
-                            </UniformGrid>
-                        </Grid>
-                    </Border>
+                                        <TextBlock Grid.Column="4"
+                                                   Text="{Binding TraceId}"
+                                                   Foreground="{StaticResource SecondaryTextBrush}"
+                                                   FontSize="11"
+                                                   VerticalAlignment="Center"
+                                                   TextTrimming="CharacterEllipsis" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                        <Border Padding="16"
+                                CornerRadius="12"
+                                Background="#F8FAFC"
+                                BorderBrush="{StaticResource BorderBrush}"
+                                BorderThickness="1"
+                                VerticalAlignment="Center"
+                                HorizontalAlignment="Stretch"
+                                Visibility="{Binding ShowJournalLogsEmpty, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <TextBlock Text="{Binding JournalLogsEmptyHint}"
+                                       Style="{StaticResource BodyTextStyle}"
+                                       TextWrapping="Wrap"
+                                       TextAlignment="Center" />
+                        </Border>
+                    </Grid>
                 </Grid>
-            </TabItem>
-        </TabControl>
+            </Border>
+
+            <Border Grid.Column="1" Style="{StaticResource CompactCardBorderStyle}" Padding="12">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <StackPanel>
+                        <TextBlock Text="Детали лога" Style="{StaticResource SectionTitleStyle}" />
+                    </StackPanel>
+
+                    <ScrollViewer Grid.Row="1"
+                                  Margin="0,8,0,0"
+                                  VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled">
+                        <StackPanel>
+                            <Border Style="{StaticResource DetailSectionBorderStyle}">
+                                <StackPanel>
+                                    <TextBlock Text="Источник" Style="{StaticResource InfoLabelStyle}" />
+                                    <TextBlock Text="{Binding SelectedLogEntry.Prefix, TargetNullValue=Нет данных}" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,6,0,0" />
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{StaticResource DetailSectionBorderStyle}" Margin="0,6,0,0">
+                                <StackPanel>
+                                    <TextBlock Text="TraceId" Style="{StaticResource InfoLabelStyle}" />
+                                    <TextBlock Text="{Binding SelectedLogEntry.TraceId, TargetNullValue=Нет данных}" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,6,0,0" />
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{StaticResource DetailSectionBorderStyle}" Margin="0,6,0,0">
+                                <StackPanel>
+                                    <TextBlock Text="Сообщение" Style="{StaticResource InfoLabelStyle}" />
+                                    <TextBlock Text="{Binding SelectedLogEntry.Message, TargetNullValue=Нет данных}" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,6,0,0" />
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{StaticResource ToolbarSurfaceBorderStyle}" Margin="0,6,0,0">
+                                <StackPanel>
+                                    <TextBlock Text="Дополнительные свойства" Style="{StaticResource InfoLabelStyle}" />
+                                    <TextBlock Text="{Binding SelectedLogDetails}"
+                                               FontFamily="Consolas"
+                                               FontSize="12"
+                                               TextWrapping="Wrap"
+                                               Margin="0,6,0,0" />
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <UniformGrid Grid.Row="2" Columns="2" Margin="0,8,0,0">
+                        <Button Content="Копировать строку"
+                                Command="{Binding CopySelectedLogRowCommand}"
+                                Style="{StaticResource SecondaryButtonStyle}"
+                                Padding="12,7"
+                                Margin="0,0,8,8" />
+                        <Button Content="Копировать сообщение"
+                                Command="{Binding CopySelectedLogMessageCommand}"
+                                Style="{StaticResource SecondaryButtonStyle}"
+                                Padding="12,7"
+                                Margin="8,0,0,8" />
+                        <Button Content="Копировать детали"
+                                Command="{Binding CopySelectedLogDetailsCommand}"
+                                Style="{StaticResource SecondaryButtonStyle}"
+                                Padding="12,7"
+                                Margin="0,0,8,0" />
+                        <Border Background="Transparent" Margin="8,0,0,0" />
+                    </UniformGrid>
+                </Grid>
+            </Border>
+        </Grid>
     </Grid>
 </UserControl>
