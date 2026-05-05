@@ -28,7 +28,7 @@ public partial class JournalViewModel : ObservableObject
     private string selectedLogLevelFilter = "Все";
 
     [ObservableProperty]
-    private DateTime? selectedLogDate;
+    private DateTime? selectedLogDate = DateTime.Today;
 
     public bool ShowJournalLogsEmpty => LogEntriesView.IsEmpty;
 

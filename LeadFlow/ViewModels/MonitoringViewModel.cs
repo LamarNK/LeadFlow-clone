@@ -43,7 +43,7 @@ public partial class MonitoringViewModel : ObservableObject
     private string selectedStatusFilter = StatusFilterAll;
 
     [ObservableProperty]
-    private DateTime? selectedResponseDate;
+    private DateTime? selectedResponseDate = DateTime.Today;
 
     [ObservableProperty]
     private string selectedVacancyFilter = AllVacanciesLabel;
