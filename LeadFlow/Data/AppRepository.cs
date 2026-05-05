@@ -258,6 +258,92 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         return stats;
     }
 
+    /// <summary>Отклики по календарным дням (локально), за последние <paramref name="dayCount"/> дней включая сегодня.</summary>
+    public Task<IReadOnlyList<DailyResponseBucket>> GetDailyResponseStatsAsync(int dayCount, CancellationToken cancellationToken)
+    {
+        dayCount = Math.Clamp(dayCount, 1, 366);
+        var todayLocal = DateTime.Today;
+        var firstDayLocal = todayLocal.AddDays(-(dayCount - 1));
+        return GetDailyResponseStatsForLocalRangeAsync(firstDayLocal, todayLocal, cancellationToken);
+    }
+
+    /// <summary>
+    /// Отклики по календарным дням (локально) на интервале [<paramref name="startLocalDate"/>, <paramref name="endLocalDate"/>] включительно.
+    /// Конец не позже сегодня; при перепутанных датах границы меняются местами; не более 366 дней.
+    /// </summary>
+    public async Task<IReadOnlyList<DailyResponseBucket>> GetDailyResponseStatsForLocalRangeAsync(
+        DateTime startLocalDate,
+        DateTime endLocalDate,
+        CancellationToken cancellationToken)
+    {
+        const int maxCalendarDays = 366;
+        var todayLocal = DateTime.Today;
+        var start = startLocalDate.Date;
+        var end = endLocalDate.Date;
+
+        if (end > todayLocal)
+        {
+            end = todayLocal;
+        }
+
+        if (start > end)
+        {
+            (start, end) = (end, start);
+        }
+
+        if ((end - start).Days + 1 > maxCalendarDays)
+        {
+            start = end.AddDays(-(maxCalendarDays - 1));
+        }
+
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var utcStart = DateTimeAssumedUtc.GetUtcRangeForLocalCalendarDay(start).UtcStartInclusive;
+        var utcEnd = DateTimeAssumedUtc.GetUtcRangeForLocalCalendarDay(end).UtcEndExclusive;
+
+        var responses = await db.CandidateResponses
+            .AsNoTracking()
+            .Where(x => x.CreatedAt >= utcStart && x.CreatedAt < utcEnd)
+            .Select(x => new { x.Status, x.CreatedAt })
+            .ToListAsync(cancellationToken);
+
+        var byDay = responses
+            .GroupBy(x => x.CreatedAt.ToLocalTimeFromStoredUtc().Date)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        var capacity = (end - start).Days + 1;
+        var list = new List<DailyResponseBucket>(capacity);
+        for (var d = start; d <= end; d = d.AddDays(1))
+        {
+            if (!byDay.TryGetValue(d, out var dayItems))
+            {
+                list.Add(new DailyResponseBucket
+                {
+                    DateLocal = d,
+                    Total = 0,
+                    Sent = 0,
+                    InProgress = 0,
+                    ActionRequired = 0,
+                    Duplicates = 0,
+                    Errors = 0
+                });
+                continue;
+            }
+
+            list.Add(new DailyResponseBucket
+            {
+                DateLocal = d,
+                Total = dayItems.Count,
+                Sent = dayItems.Count(x => x.Status == nameof(ResponseStatus.Sent)),
+                InProgress = dayItems.Count(x => x.Status == nameof(ResponseStatus.InProgress)),
+                ActionRequired = dayItems.Count(x => x.Status == nameof(ResponseStatus.ActionRequired)),
+                Duplicates = dayItems.Count(x => x.Status == nameof(ResponseStatus.Duplicate)),
+                Errors = dayItems.Count(x => x.Status == nameof(ResponseStatus.Error))
+            });
+        }
+
+        return list;
+    }
+
     public async Task<CandidateResponse?> FindDuplicateAsync(string phoneNormalized, DuplicateScope scope, Guid accountId, CancellationToken cancellationToken)
     {
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);

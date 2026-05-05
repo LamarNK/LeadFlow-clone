@@ -84,6 +84,28 @@ public sealed class WindowService(IServiceProvider serviceProvider) : IWindowSer
         return Task.CompletedTask;
     }
 
+    public Task ShowStatisticsHistoryAsync(Window owner, CancellationToken cancellationToken)
+    {
+        if (_openWindows.TryGetValue(typeof(StatisticsHistoryWindow), out var existingWindow))
+        {
+            if (existingWindow.DataContext is StatisticsHistoryViewModel vm)
+            {
+                _ = vm.RefreshAsync();
+            }
+
+            ActivateWindow(existingWindow);
+            return Task.CompletedTask;
+        }
+
+        var window = ActivatorUtilities.CreateInstance<StatisticsHistoryWindow>(serviceProvider);
+        window.Owner = owner;
+        window.Closed += (_, _) => _openWindows.Remove(typeof(StatisticsHistoryWindow));
+        _openWindows[typeof(StatisticsHistoryWindow)] = window;
+        window.Show();
+        ActivateWindow(window);
+        return Task.CompletedTask;
+    }
+
     private void ShowOrActivateWindow<TWindow>(Window owner)
         where TWindow : Window
     {

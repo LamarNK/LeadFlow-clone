@@ -14,4 +14,5 @@ public interface IWindowService
     Task ShowDuplicateCheckAsync(Window owner, CancellationToken cancellationToken);
     Task ShowBitrixIntegrationAsync(Window owner, CancellationToken cancellationToken);
     Task ShowJournalAsync(Window owner, CancellationToken cancellationToken);
+    Task ShowStatisticsHistoryAsync(Window owner, CancellationToken cancellationToken);
 }

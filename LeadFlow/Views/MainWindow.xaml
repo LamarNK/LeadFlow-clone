@@ -51,7 +51,7 @@
                     </StackPanel>
 
                     <StackPanel Grid.Column="2" HorizontalAlignment="Right" VerticalAlignment="Center">
-                        <UniformGrid Rows="1" Columns="4">
+                        <UniformGrid Rows="1" Columns="5">
                             <Button Style="{StaticResource NavItemButtonStyle}"
                                     Command="{Binding OpenMonitoringCommand}"
                                     CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}"
@@ -91,6 +91,29 @@
                                         </Viewbox>
                                     </Button>
                                     <TextBlock Text="Логи"
+                                               Foreground="{StaticResource LinkTextBrush}"
+                                               FontWeight="SemiBold"
+                                               FontSize="12"
+                                               TextAlignment="Center"
+                                               Margin="0,4,0,0"/>
+                                </StackPanel>
+                            </Button>
+                            <Button Style="{StaticResource NavItemButtonStyle}"
+                                    Command="{Binding OpenStatisticsHistoryCommand}"
+                                    CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}"
+                                    ToolTip="Статистика откликов по дням и графики">
+                                <StackPanel>
+                                    <Button Style="{StaticResource RoundNavButtonStyle}"
+                                            IsHitTestVisible="False"
+                                            HorizontalAlignment="Center"
+                                            Padding="0">
+                                        <Viewbox Width="16" Height="16" Stretch="Uniform">
+                                            <Path Data="M3 13h2v8H3v-8zm4-6h2v14H7V7zm4-4h2v18h-2V3zm4 8h2v10h-2V11zm4-3h2v13h-2V8z"
+                                                  Fill="White"
+                                                  Stretch="Uniform" />
+                                        </Viewbox>
+                                    </Button>
+                                    <TextBlock Text="Статистика"
                                                Foreground="{StaticResource LinkTextBrush}"
                                                FontWeight="SemiBold"
                                                FontSize="12"

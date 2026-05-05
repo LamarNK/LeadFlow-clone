@@ -255,6 +255,10 @@ public partial class MainViewModel : ObservableObject
     public Task OpenJournalAsync(Window? owner) =>
         owner is null ? Task.CompletedTask : _windowService.ShowJournalAsync(owner, CancellationToken.None);
 
+    [RelayCommand]
+    public Task OpenStatisticsHistoryAsync(Window? owner) =>
+        owner is null ? Task.CompletedTask : _windowService.ShowStatisticsHistoryAsync(owner, CancellationToken.None);
+
     public async Task InitializeAsync()
     {
         SystemStatus = _monitoringService.CurrentStatus;

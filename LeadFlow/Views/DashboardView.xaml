@@ -248,8 +248,22 @@
                         Loaded="ChartActivityHost_OnLoaded"
                         SizeChanged="ChartActivityHost_OnSizeChanged">
                     <StackPanel>
-                        <TextBlock Text="Динамика за сегодня" Style="{StaticResource BodyTextStyle}" FontWeight="SemiBold" />
-                        <Grid Margin="0,6,0,0" ClipToBounds="False">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,0,4">
+                            <TextBlock Text="Динамика за сегодня"
+                                       Style="{StaticResource BodyTextStyle}"
+                                       FontWeight="SemiBold"
+                                       VerticalAlignment="Center" />
+                            <Button Style="{StaticResource GhostButtonStyle}"
+                                    Content="По дням — графики"
+                                    Margin="10,0,0,0"
+                                    Padding="10,4"
+                                    VerticalAlignment="Center"
+                                    FontSize="12"
+                                    Command="{Binding DataContext.OpenStatisticsHistoryCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                    CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}"
+                                    ToolTip="Подробная статистика по календарным дням" />
+                        </StackPanel>
+                        <Grid Margin="0,2,0,0" ClipToBounds="False">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="72" />
                                 <RowDefinition Height="26" />

@@ -124,6 +124,7 @@ public partial class App : System.Windows.Application
         builder.Services.AddSingleton<DuplicateCheckViewModel>();
         builder.Services.AddSingleton<BitrixIntegrationViewModel>();
         builder.Services.AddSingleton<JournalViewModel>();
+        builder.Services.AddSingleton<StatisticsHistoryViewModel>();
         builder.Services.AddTransient<SettingsViewModel>();
         builder.Services.AddTransient<AvitoAuthViewModel>();
 
@@ -133,6 +134,7 @@ public partial class App : System.Windows.Application
         builder.Services.AddTransient<DuplicateCheckWindow>();
         builder.Services.AddTransient<BitrixIntegrationWindow>();
         builder.Services.AddTransient<JournalWindow>();
+        builder.Services.AddTransient<StatisticsHistoryWindow>();
         builder.Services.AddTransient<SettingsWindow>();
         builder.Services.AddTransient<AvitoAuthWindow>();
 
