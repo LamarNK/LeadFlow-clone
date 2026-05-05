@@ -21,6 +21,7 @@ public sealed class CandidateResponseEntity
     public string Status { get; set; } = string.Empty;
     public string BitrixEntityType { get; set; } = string.Empty;
     public string BitrixEntityId { get; set; } = string.Empty;
+    public string BitrixContactId { get; set; } = string.Empty;
     public string ErrorMessage { get; set; } = string.Empty;
     public string RawText { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }

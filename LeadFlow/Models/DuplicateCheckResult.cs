@@ -6,9 +6,20 @@ public sealed class DuplicateCheckResult
     public string PhoneNormalized { get; set; } = string.Empty;
     public bool IsLocalDuplicate { get; set; }
     public bool IsBitrixDuplicate { get; set; }
+
+    /// <summary>Включена проверка в Bitrix24, но запрос не удалось выполнить или ответ невалиден.</summary>
+    public bool IsBitrixCheckUnavailable { get; set; }
+
+    public string? BitrixCheckUnavailableReason { get; set; }
+
     public bool IsDuplicate => IsLocalDuplicate || IsBitrixDuplicate;
+
+    public bool ShouldDeferBitrixSend => IsBitrixCheckUnavailable;
+
     public string Summary =>
-        IsDuplicate
-            ? "Дубль найден — сделка не создаётся"
-            : "Дубль не найден — сделка будет создана автоматически";
+        IsBitrixCheckUnavailable
+            ? $"Проверка дублей в Bitrix24 недоступна — отправка в CRM отложена. {BitrixCheckUnavailableReason}".Trim()
+            : IsDuplicate
+                ? "Дубль найден — сделка не создаётся"
+                : "Дубль не найден — сделка будет создана автоматически";
 }

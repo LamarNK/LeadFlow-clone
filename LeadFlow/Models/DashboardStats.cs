@@ -10,6 +10,7 @@ public sealed class DashboardStats
     public int InProgress { get; set; }
     public int Duplicates { get; set; }
     public int Errors { get; set; }
+    public int ActionRequired { get; set; }
     public int ConnectedAccounts { get; set; }
     public int RequiresAuthorization { get; set; }
     public int ActiveAdsCount { get; set; }

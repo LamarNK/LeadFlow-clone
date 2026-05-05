@@ -10,6 +10,7 @@ using LeadFlow.Data;
 using LeadFlow.Models;
 using LeadFlow.Services;
 using LeadFlow.Services.Avito;
+using LeadFlow.Services.Bitrix;
 
 namespace LeadFlow.ViewModels;
 
@@ -95,13 +96,22 @@ public partial class MonitoringViewModel : ObservableObject
     private readonly AppRepository _repository;
     private readonly ISettingsService _settingsService;
     private readonly IWindowService _windowService;
+    private readonly IBitrixClient _bitrixClient;
+    private readonly IDuplicateService _duplicateService;
     private bool _suppressFilterLookupRefresh;
 
-    public MonitoringViewModel(AppRepository repository, ISettingsService settingsService, IWindowService windowService) : base()
+    public MonitoringViewModel(
+        AppRepository repository,
+        ISettingsService settingsService,
+        IWindowService windowService,
+        IBitrixClient bitrixClient,
+        IDuplicateService duplicateService) : base()
     {
         _repository = repository;
         _settingsService = settingsService;
         _windowService = windowService;
+        _bitrixClient = bitrixClient;
+        _duplicateService = duplicateService;
         ResponsesView = CollectionViewSource.GetDefaultView(Responses);
         ResponsesView.Filter = FilterResponse;
         Responses.CollectionChanged += OnResponsesCollectionChanged;
@@ -137,6 +147,7 @@ public partial class MonitoringViewModel : ObservableObject
         CopyResponseCardSummaryCommand.NotifyCanExecuteChanged();
         OpenResponseInBitrixCommand.NotifyCanExecuteChanged();
         DeleteSelectedResponseCommand.NotifyCanExecuteChanged();
+        SendToBitrixManuallyCommand.NotifyCanExecuteChanged();
         SelectedResponseChanged?.Invoke(this, value);
     }
 
@@ -543,6 +554,118 @@ public partial class MonitoringViewModel : ObservableObject
     [RelayCommand(CanExecute = nameof(CanCopyResponseCardSummary))]
     private void CopyResponseCardSummary(CandidateResponse? response) =>
         CandidateResponseUiActions.TryCopyCardSummary(response);
+
+    private static bool CanSendToBitrixManually(CandidateResponse? r) =>
+        r is not null
+        && (r.Status == ResponseStatus.ActionRequired || r.Status == ResponseStatus.Error)
+        && string.IsNullOrWhiteSpace(r.BitrixEntityId);
+
+    [RelayCommand(CanExecute = nameof(CanSendToBitrixManually))]
+    private async Task SendToBitrixManuallyAsync(CandidateResponse? response)
+    {
+        if (response is null || !string.IsNullOrWhiteSpace(response.BitrixEntityId))
+        {
+            return;
+        }
+
+        var settings = await _settingsService.LoadAsync(CancellationToken.None);
+        var duplicate = await _duplicateService.CheckAsync(response, settings, CancellationToken.None);
+
+        if (duplicate.IsDuplicate)
+        {
+            response.Status = ResponseStatus.Duplicate;
+            response.ProcessedAt = DateTime.UtcNow;
+            response.ErrorMessage = string.Empty;
+            await _repository.SaveCandidateAsync(response, CancellationToken.None);
+            await _repository.AddLogAsync(new ProcessingLogItem
+            {
+                CandidateResponseId = response.Id,
+                AccountId = response.AccountId,
+                Level = "Info",
+                Message = "Ручная проверка: дубль",
+                Details = duplicate.Summary
+            }, CancellationToken.None);
+            ApplyProcessedResponse(response);
+            NotifyCountersChanged();
+            return;
+        }
+
+        if (duplicate.ShouldDeferBitrixSend)
+        {
+            MessageBox.Show(
+                duplicate.Summary,
+                "Проверка дублей в Bitrix24",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+            return;
+        }
+
+        BitrixCreateLeadResponse lead;
+        if (!string.IsNullOrWhiteSpace(response.BitrixContactId) && string.IsNullOrWhiteSpace(response.BitrixEntityId))
+        {
+            lead = await _bitrixClient.CreateDealForContactAsync(
+                response,
+                response.BitrixContactId,
+                settings,
+                CancellationToken.None);
+        }
+        else
+        {
+            lead = await _bitrixClient.CreateLeadAsync(response, settings, CancellationToken.None);
+        }
+
+        response.ProcessedAt = DateTime.UtcNow;
+        if (lead.IsSuccess)
+        {
+            response.Status = ResponseStatus.Sent;
+            response.BitrixEntityId = lead.EntityId;
+            if (!string.IsNullOrWhiteSpace(lead.ContactId))
+            {
+                response.BitrixContactId = lead.ContactId;
+            }
+
+            response.ErrorMessage = string.Empty;
+            await _repository.AddLogAsync(new ProcessingLogItem
+            {
+                CandidateResponseId = response.Id,
+                AccountId = response.AccountId,
+                Level = "Info",
+                Message = "Сделка создана в Bitrix24 (вручную)",
+                Details = lead.EntityId
+            }, CancellationToken.None);
+        }
+        else if (!string.IsNullOrWhiteSpace(lead.ContactId))
+        {
+            response.BitrixContactId = lead.ContactId;
+            response.Status = ResponseStatus.ActionRequired;
+            response.ErrorMessage = lead.Error;
+            await _repository.AddLogAsync(new ProcessingLogItem
+            {
+                CandidateResponseId = response.Id,
+                AccountId = response.AccountId,
+                Level = "Warning",
+                Message = "Контакт в Bitrix24 без сделки (вручную)",
+                Details = lead.Error
+            }, CancellationToken.None);
+        }
+        else
+        {
+            response.Status = ResponseStatus.Error;
+            response.ErrorMessage = lead.Error;
+            await _repository.AddLogAsync(new ProcessingLogItem
+            {
+                CandidateResponseId = response.Id,
+                AccountId = response.AccountId,
+                Level = "Error",
+                Message = "Ошибка Bitrix24 (вручную)",
+                Details = lead.Error
+            }, CancellationToken.None);
+        }
+
+        await _repository.SaveCandidateAsync(response, CancellationToken.None);
+        ApplyProcessedResponse(response);
+        NotifyCountersChanged();
+    }
 
     private bool CanDeleteSelectedResponse(CandidateResponse? r) => r is not null;
 

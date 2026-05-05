@@ -39,6 +39,7 @@ public partial class BitrixIntegrationViewModel(ICandidateParser candidateParser
             ResponseStatus.Sent => "Сделка создана",
             ResponseStatus.Error => "Ошибка отправки",
             ResponseStatus.InProgress => "Отправляется в Bitrix24",
+            ResponseStatus.ActionRequired => "Требуется действие (отложено или контакт без сделки)",
             _ => "Ожидает проверки дублей"
         };
     }

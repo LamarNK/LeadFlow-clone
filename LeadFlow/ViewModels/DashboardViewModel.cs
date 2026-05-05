@@ -43,6 +43,9 @@ public partial class DashboardViewModel : ObservableObject
     private int errors;
 
     [ObservableProperty]
+    private int actionRequired;
+
+    [ObservableProperty]
     private int connectedAccounts;
 
     [ObservableProperty]
@@ -259,6 +262,7 @@ public partial class DashboardViewModel : ObservableObject
         InProgress = stats.InProgress;
         Duplicates = stats.Duplicates;
         Errors = stats.Errors;
+        ActionRequired = stats.ActionRequired;
         ConnectedAccounts = stats.ConnectedAccounts;
         RequiresAuthorization = stats.RequiresAuthorization;
         BlockedAdsCount = stats.BlockedAdsCount;
@@ -340,6 +344,9 @@ public partial class DashboardViewModel : ObservableObject
                     break;
                 case ResponseStatus.Error:
                     Errors++;
+                    break;
+                case ResponseStatus.ActionRequired:
+                    ActionRequired++;
                     break;
             }
 

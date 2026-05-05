@@ -214,6 +214,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         var inProgressResponses = statusCounts.Where(x => x.Status == nameof(ResponseStatus.InProgress)).Sum(x => x.Count);
         var duplicateResponses = statusCounts.Where(x => x.Status == nameof(ResponseStatus.Duplicate)).Sum(x => x.Count);
         var errorResponses = statusCounts.Where(x => x.Status == nameof(ResponseStatus.Error)).Sum(x => x.Count);
+        var actionRequiredResponses = statusCounts.Where(x => x.Status == nameof(ResponseStatus.ActionRequired)).Sum(x => x.Count);
 
         var hourlyGroupsUtc = await db.CandidateResponses
             .AsNoTracking()
@@ -269,6 +270,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
             InProgress = inProgressResponses,
             Duplicates = duplicateResponses,
             Errors = errorResponses,
+            ActionRequired = actionRequiredResponses,
             ConnectedAccounts = accountSummary?.Connected ?? 0,
             RequiresAuthorization = accountSummary?.RequiresAuthorization ?? 0,
             ActiveAdsCount = accountSummary?.ActiveAds ?? 0,
@@ -684,6 +686,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         Status = model.Status.ToString(),
         BitrixEntityType = model.BitrixEntityType,
         BitrixEntityId = model.BitrixEntityId,
+        BitrixContactId = model.BitrixContactId,
         ErrorMessage = model.ErrorMessage,
         RawText = model.RawText,
         CreatedAt = model.CreatedAt,
@@ -711,6 +714,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         Status = Enum.TryParse<ResponseStatus>(entity.Status, out var status) ? status : ResponseStatus.New,
         BitrixEntityType = entity.BitrixEntityType,
         BitrixEntityId = entity.BitrixEntityId,
+        BitrixContactId = entity.BitrixContactId,
         ErrorMessage = entity.ErrorMessage,
         RawText = entity.RawText,
         CreatedAt = entity.CreatedAt,
@@ -737,6 +741,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         target.Status = source.Status.ToString();
         target.BitrixEntityType = source.BitrixEntityType;
         target.BitrixEntityId = source.BitrixEntityId;
+        target.BitrixContactId = source.BitrixContactId;
         target.ErrorMessage = source.ErrorMessage;
         target.RawText = source.RawText;
         target.CreatedAt = source.CreatedAt;
@@ -784,6 +789,14 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         {
             await db.Database.ExecuteSqlRawAsync(
                 "ALTER TABLE CandidateResponses ADD COLUMN VacancyUrl TEXT NOT NULL DEFAULT '';",
+                cancellationToken);
+        }
+
+        existingColumns = await GetTableColumnsAsync(db, "CandidateResponses", cancellationToken);
+        if (!existingColumns.Contains("BitrixContactId"))
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                "ALTER TABLE CandidateResponses ADD COLUMN BitrixContactId TEXT NOT NULL DEFAULT '';",
                 cancellationToken);
         }
     }

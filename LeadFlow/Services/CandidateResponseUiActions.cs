@@ -121,6 +121,11 @@ public static class CandidateResponseUiActions
             sb.AppendLine($"Bitrix: {response.BitrixEntityType} #{response.BitrixEntityId}");
         }
 
+        if (!string.IsNullOrWhiteSpace(response.BitrixContactId))
+        {
+            sb.AppendLine($"Bitrix контакт: #{response.BitrixContactId.Trim()}");
+        }
+
         if (!string.IsNullOrWhiteSpace(response.ErrorMessage))
         {
             sb.AppendLine($"Ошибка: {response.ErrorMessage.Trim()}");

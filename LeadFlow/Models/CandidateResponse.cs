@@ -23,6 +23,10 @@ public sealed class CandidateResponse
     public ResponseStatus Status { get; set; } = ResponseStatus.New;
     public string BitrixEntityType { get; set; } = "Deal";
     public string BitrixEntityId { get; set; } = string.Empty;
+
+    /// <summary>ID контакта в Bitrix24 (после успешной отправки или при сбое создания сделки, если контакт остался в портале).</summary>
+    public string BitrixContactId { get; set; } = string.Empty;
+
     public string ErrorMessage { get; set; } = string.Empty;
     public string RawText { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

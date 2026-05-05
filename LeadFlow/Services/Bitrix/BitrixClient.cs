@@ -31,11 +31,16 @@ public sealed class BitrixClient(
         string MiddleName,
         string Phone);
 
-    public async Task<bool> HasDuplicateAsync(string phoneNormalized, AppSettings settings, CancellationToken cancellationToken)
+    public async Task<BitrixDuplicateLookupResult> HasDuplicateAsync(string phoneNormalized, AppSettings settings, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(settings.Bitrix.WebhookUrl) || string.IsNullOrWhiteSpace(phoneNormalized))
+        if (string.IsNullOrWhiteSpace(settings.Bitrix.WebhookUrl))
         {
-            return false;
+            return new BitrixDuplicateLookupResult(BitrixDuplicateLookupOutcome.Skipped);
+        }
+
+        if (string.IsNullOrWhiteSpace(phoneNormalized))
+        {
+            return new BitrixDuplicateLookupResult(BitrixDuplicateLookupOutcome.Skipped);
         }
 
         _ = GlobalLogger.Instance.LogAsync(
@@ -53,24 +58,61 @@ public sealed class BitrixClient(
         try
         {
             using var result = await client.PostAsJsonAsync(endpoint, request, cancellationToken);
-            result.EnsureSuccessStatusCode();
+            if (!result.IsSuccessStatusCode)
+            {
+                var body = await result.Content.ReadAsStringAsync(cancellationToken);
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"Bitrix duplicate check HTTP {(int)result.StatusCode} for {phoneNormalized}. Body: {body}",
+                    DeskLinkAuditLogLevel.Error);
+                return new BitrixDuplicateLookupResult(
+                    BitrixDuplicateLookupOutcome.Unavailable,
+                    $"Bitrix24 вернул код {(int)result.StatusCode}. Проверка дублей недоступна.");
+            }
 
             await using var stream = await result.Content.ReadAsStreamAsync(cancellationToken);
             using var json = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
-            var hasDuplicate = HasDuplicateResult(json.RootElement);
+            var root = json.RootElement;
+            if (TryGetBitrixApiError(root, out var apiError))
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"Bitrix duplicate check API error for {phoneNormalized}: {apiError}",
+                    DeskLinkAuditLogLevel.Error);
+                return new BitrixDuplicateLookupResult(BitrixDuplicateLookupOutcome.Unavailable, apiError);
+            }
+
+            var hasDuplicate = HasDuplicateResult(root);
 
             _ = GlobalLogger.Instance.LogAsync(
                 $"Bitrix duplicate check for {phoneNormalized} returned {(hasDuplicate ? "match" : "no match")}.",
                 DeskLinkAuditLogLevel.Info);
-            return hasDuplicate;
+            return new BitrixDuplicateLookupResult(
+                hasDuplicate ? BitrixDuplicateLookupOutcome.Duplicate : BitrixDuplicateLookupOutcome.NoDuplicate);
         }
         catch (Exception ex)
         {
             _ = GlobalLogger.Instance.LogAsync(
                 $"Bitrix duplicate check failed for {phoneNormalized}.{Environment.NewLine}{ex}",
                 DeskLinkAuditLogLevel.Error);
+            return new BitrixDuplicateLookupResult(
+                BitrixDuplicateLookupOutcome.Unavailable,
+                $"Проверка дублей в Bitrix24 недоступна: {ex.Message}");
+        }
+    }
+
+    private static bool TryGetBitrixApiError(JsonElement root, out string message)
+    {
+        message = string.Empty;
+        if (!root.TryGetProperty("error", out var errorProp) || errorProp.ValueKind != JsonValueKind.String)
+        {
             return false;
         }
+
+        var err = errorProp.GetString() ?? "error";
+        var desc = root.TryGetProperty("error_description", out var d) && d.ValueKind == JsonValueKind.String
+            ? d.GetString()
+            : null;
+        message = string.IsNullOrWhiteSpace(desc) ? err : $"{err}: {desc}";
+        return true;
     }
 
     public async Task<IReadOnlyList<CandidateResponse>> GetExistingLeadsAsync(AppSettings settings, CancellationToken cancellationToken)
@@ -157,7 +199,6 @@ public sealed class BitrixClient(
 
         try
         {
-            // 1️⃣ Создаем Контакт с ФИО и телефоном
             var contactRequest = new
             {
                 fields = new
@@ -179,29 +220,88 @@ public sealed class BitrixClient(
             using var contactJson = await JsonDocument.ParseAsync(contactStream, cancellationToken: cancellationToken);
             var contactId = GetCreateResultId(contactJson.RootElement);
 
-            // 2️⃣ Создаем Сделку с привязкой к Контакту и указанием вакансии в заголовке и комментариях
-            var dealRequest = new
+            try
             {
-                fields = new
+                var dealId = await PostDealAsync(client, webhookBase, preview, settings, contactId, cancellationToken);
+                return new BitrixCreateLeadResponse
                 {
-                    TITLE = preview.Title, // "Отклик Авито: {вакансия} — {ФИО}"
-                    COMMENTS = preview.Comments,
-                    SOURCE_DESCRIPTION = settings.Bitrix.LeadSource,
-                    ASSIGNED_BY_ID = settings.Bitrix.ResponsibleId,
-                    CONTACT_ID = contactId // 🔗 Привязка сделки к контакту!
+                    IsSuccess = true,
+                    EntityId = dealId,
+                    ContactId = contactId
+                };
+            }
+            catch (Exception dealEx)
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"Bitrix deal creation failed after contact {contactId}.{Environment.NewLine}{dealEx}",
+                    DeskLinkAuditLogLevel.Error);
+
+                var deleted = await TryDeleteContactAsync(client, webhookBase, contactId, cancellationToken);
+                if (deleted)
+                {
+                    return new BitrixCreateLeadResponse
+                    {
+                        IsSuccess = false,
+                        Error = dealEx.Message,
+                        ContactId = string.Empty
+                    };
                 }
+
+                var orphanMessage =
+                    $"{dealEx.Message} Контакт в Bitrix24 остался (ID {contactId}); удаление контакта не удалось — создайте сделку вручную из мониторинга или удалите контакт в портале.";
+                return new BitrixCreateLeadResponse
+                {
+                    IsSuccess = false,
+                    Error = orphanMessage,
+                    ContactId = contactId
+                };
+            }
+        }
+        catch (Exception ex)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Bitrix contact/deal creation failed.{Environment.NewLine}{ex}",
+                DeskLinkAuditLogLevel.Error);
+            return new BitrixCreateLeadResponse
+            {
+                IsSuccess = false,
+                Error = ex.Message
             };
+        }
+    }
 
-            var dealResult = await client.PostAsJsonAsync(
-                $"{webhookBase}/crm.deal.add.json",
-                dealRequest,
-                cancellationToken);
-            dealResult.EnsureSuccessStatusCode();
+    public async Task<BitrixCreateLeadResponse> CreateDealForContactAsync(
+        CandidateResponse response,
+        string contactId,
+        AppSettings settings,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(settings.Bitrix.WebhookUrl))
+        {
+            return new BitrixCreateLeadResponse
+            {
+                IsSuccess = true,
+                EntityId = $"DEMO-{DateTime.UtcNow:HHmmss}-{Random.Shared.Next(100, 999)}",
+                ContactId = contactId
+            };
+        }
 
-            await using var dealStream = await dealResult.Content.ReadAsStreamAsync(cancellationToken);
-            using var dealJson = await JsonDocument.ParseAsync(dealStream, cancellationToken: cancellationToken);
-            var dealId = GetCreateResultId(dealJson.RootElement);
+        if (string.IsNullOrWhiteSpace(contactId))
+        {
+            return new BitrixCreateLeadResponse
+            {
+                IsSuccess = false,
+                Error = "Не указан ID контакта Bitrix24."
+            };
+        }
 
+        var preview = candidateParser.BuildPreview(response, settings.Bitrix);
+        var client = httpClientFactory.CreateClient(nameof(BitrixClient));
+        var webhookBase = settings.Bitrix.WebhookUrl.TrimEnd('/');
+
+        try
+        {
+            var dealId = await PostDealAsync(client, webhookBase, preview, settings, contactId, cancellationToken);
             return new BitrixCreateLeadResponse
             {
                 IsSuccess = true,
@@ -212,13 +312,86 @@ public sealed class BitrixClient(
         catch (Exception ex)
         {
             _ = GlobalLogger.Instance.LogAsync(
-                $"Bitrix deal creation failed.{Environment.NewLine}{ex}",
+                $"Bitrix deal-only creation failed for contact {contactId}.{Environment.NewLine}{ex}",
                 DeskLinkAuditLogLevel.Error);
             return new BitrixCreateLeadResponse
             {
                 IsSuccess = false,
-                Error = ex.Message
+                Error = ex.Message,
+                ContactId = contactId
             };
+        }
+    }
+
+    private static async Task<string> PostDealAsync(
+        HttpClient client,
+        string webhookBase,
+        BitrixLeadPreview preview,
+        AppSettings settings,
+        string contactId,
+        CancellationToken cancellationToken)
+    {
+        var dealRequest = new
+        {
+            fields = new
+            {
+                TITLE = preview.Title,
+                COMMENTS = preview.Comments,
+                SOURCE_DESCRIPTION = settings.Bitrix.LeadSource,
+                ASSIGNED_BY_ID = settings.Bitrix.ResponsibleId,
+                CONTACT_ID = contactId
+            }
+        };
+
+        var dealResult = await client.PostAsJsonAsync(
+            $"{webhookBase}/crm.deal.add.json",
+            dealRequest,
+            cancellationToken);
+        dealResult.EnsureSuccessStatusCode();
+
+        await using var dealStream = await dealResult.Content.ReadAsStreamAsync(cancellationToken);
+        using var dealJson = await JsonDocument.ParseAsync(dealStream, cancellationToken: cancellationToken);
+        var dealRoot = dealJson.RootElement;
+        if (TryGetBitrixApiError(dealRoot, out var apiError))
+        {
+            throw new InvalidOperationException(apiError);
+        }
+
+        return GetCreateResultId(dealRoot);
+    }
+
+    private static async Task<bool> TryDeleteContactAsync(
+        HttpClient client,
+        string webhookBase,
+        string contactId,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(contactId))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var result = await client.PostAsJsonAsync(
+                $"{webhookBase}/crm.contact.delete.json",
+                new { id = contactId },
+                cancellationToken);
+            if (!result.IsSuccessStatusCode)
+            {
+                return false;
+            }
+
+            await using var stream = await result.Content.ReadAsStreamAsync(cancellationToken);
+            using var json = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+            return json.RootElement.TryGetProperty("result", out var res) && res.ValueKind == JsonValueKind.True;
+        }
+        catch (Exception ex)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"crm.contact.delete failed for {contactId}: {ex.Message}",
+                DeskLinkAuditLogLevel.Warning);
+            return false;
         }
     }
 

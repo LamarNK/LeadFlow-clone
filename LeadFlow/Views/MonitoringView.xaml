@@ -333,6 +333,9 @@
                                             <MenuItem Header="Открыть в Bitrix"
                                                       Command="{Binding PlacementTarget.Tag.OpenResponseInBitrixCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
                                                       CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                                            <MenuItem Header="Отправить в Bitrix24…"
+                                                      Command="{Binding PlacementTarget.Tag.SendToBitrixManuallyCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                      CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
                                             <Separator />
                                             <MenuItem Header="Копировать ссылку на чат"
                                                       Command="{Binding PlacementTarget.Tag.CopyResponseMessengerUrlCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
@@ -504,6 +507,26 @@
                                     Style="{StaticResource MonitoringCompactActionButtonStyle}"
                                     Margin="0,0,6,4"
                                     Command="{Binding OpenResponseVacancyInAvitoBrowserCommand}"
+                                    CommandParameter="{Binding SelectedResponse}" />
+                        </WrapPanel>
+
+                        <TextBlock Text="Bitrix24"
+                                   Style="{StaticResource SubtleTextStyle}"
+                                   FontSize="11"
+                                   FontWeight="SemiBold"
+                                   Margin="0,6,0,2" />
+                        <WrapPanel>
+                            <Button Content="Отправить в Bitrix24"
+                                    ToolTip="Повторить проверку дублей и создать сделку (для отложенных или ошибок)"
+                                    Style="{StaticResource MonitoringCompactActionButtonStyle}"
+                                    Margin="0,0,6,4"
+                                    Command="{Binding SendToBitrixManuallyCommand}"
+                                    CommandParameter="{Binding SelectedResponse}" />
+                            <Button Content="Открыть сделку"
+                                    ToolTip="Открыть сделку в портале Bitrix24"
+                                    Style="{StaticResource MonitoringCompactActionButtonStyle}"
+                                    Margin="0,0,6,4"
+                                    Command="{Binding OpenResponseInBitrixCommand}"
                                     CommandParameter="{Binding SelectedResponse}" />
                         </WrapPanel>
 

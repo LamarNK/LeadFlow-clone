@@ -299,7 +299,16 @@ public sealed class AvitoResponseSource(
                 return "";
             };
 
-            const candidates = roots.map((root, index) => {
+            const fnv1a32Hex = (text) => {
+                let h = 2166136261 >>> 0;
+                for (let i = 0; i < text.length; i++) {
+                    h ^= text.charCodeAt(i);
+                    h = Math.imul(h, 16777619) >>> 0;
+                }
+                return h.toString(16);
+            };
+
+            const candidates = roots.map((root) => {
                 const name = root.querySelector("h3")?.textContent?.trim() ?? "";
                 const phone = root.querySelector("[data-marker='job-application/phone']")?.textContent?.trim() ?? "";
                 const ageText = root.querySelector("p[data-marker='undefined/container'] span")?.textContent?.trim() ?? "";
@@ -312,7 +321,10 @@ public sealed class AvitoResponseSource(
                 const city = vacancyParts.length > 1 ? vacancyParts[1] : "";
                 const rawText = root.innerText?.replace(/\s+/g, " ").trim() ?? "";
                 const messengerUrl = resolveMessengerUrl(root);
-                const sourceResponseId = vacancyUrl || `${name}|${phone}|${vacancy}|${index}`;
+                const stablePayload = [name, phone, vacancy, city, messengerUrl]
+                    .map((x) => (x ?? "").trim().replace(/\s+/g, " "))
+                    .join("\u001f");
+                const sourceResponseId = vacancyUrl || `avito:${fnv1a32Hex(stablePayload)}`;
 
                 return {
                     fullName: name,

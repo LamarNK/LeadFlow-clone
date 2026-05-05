@@ -22,7 +22,7 @@
                                TextTrimming="CharacterEllipsis" />
                 </StackPanel>
 
-                <UniformGrid Rows="1" Columns="6" Margin="0,6,0,0">
+                <UniformGrid Rows="1" Columns="7" Margin="0,6,0,0">
                     <Button Style="{StaticResource StatCardButtonStyle}"
                             Command="{Binding DataContext.OpenMonitoringCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                             CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}">
@@ -191,6 +191,42 @@
                             </Grid>
                             <TextBlock Grid.Row="1"
                                        Text="Логи"
+                                       Style="{StaticResource StatLinkTextStyle}"
+                                       FontSize="10"
+                                       Margin="0,2,0,0" />
+                        </Grid>
+                    </Button>
+                    <Button Style="{StaticResource StatCardButtonStyle}"
+                            Command="{Binding DataContext.OpenMonitoringCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                            CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <Grid Grid.Row="0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0"
+                                           Text="Нужны действия"
+                                           FontSize="11"
+                                           Foreground="{StaticResource SecondaryTextBrush}"
+                                           TextTrimming="CharacterEllipsis"
+                                           TextWrapping="NoWrap"
+                                           VerticalAlignment="Center"
+                                           ToolTip="Отложена отправка в CRM или контакт без сделки" />
+                                <TextBlock Grid.Column="1"
+                                           Text="{Binding ActionRequired}"
+                                           FontSize="16"
+                                           FontWeight="Bold"
+                                           Foreground="{StaticResource WarningBrush}"
+                                           Margin="4,0,0,0"
+                                           VerticalAlignment="Center" />
+                            </Grid>
+                            <TextBlock Grid.Row="1"
+                                       Text="К мониторингу"
                                        Style="{StaticResource StatLinkTextStyle}"
                                        FontSize="10"
                                        Margin="0,2,0,0" />

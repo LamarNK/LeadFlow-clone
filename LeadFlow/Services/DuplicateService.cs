@@ -15,16 +15,33 @@ public sealed class DuplicateService(
         response.PhoneNormalized = normalized;
 
         var local = await repository.FindDuplicateAsync(normalized, settings.DuplicateScope, response.AccountId, cancellationToken);
-        var bitrix = settings.Bitrix.CheckDuplicatesInBitrix
-            ? await bitrixClient.HasDuplicateAsync(normalized, settings, cancellationToken)
-            : false;
+
+        var isBitrixDuplicate = false;
+        var bitrixUnavailable = false;
+        string? bitrixUnavailableReason = null;
+
+        if (settings.Bitrix.CheckDuplicatesInBitrix)
+        {
+            var bitrixLookup = await bitrixClient.HasDuplicateAsync(normalized, settings, cancellationToken);
+            if (bitrixLookup.IsUnavailable)
+            {
+                bitrixUnavailable = true;
+                bitrixUnavailableReason = bitrixLookup.ErrorMessage;
+            }
+            else if (!bitrixLookup.IsSkipped)
+            {
+                isBitrixDuplicate = bitrixLookup.IsDuplicate;
+            }
+        }
 
         return new DuplicateCheckResult
         {
             PhoneRaw = response.PhoneRaw,
             PhoneNormalized = normalized,
             IsLocalDuplicate = local is not null && local.Id != response.Id,
-            IsBitrixDuplicate = bitrix
+            IsBitrixDuplicate = isBitrixDuplicate,
+            IsBitrixCheckUnavailable = bitrixUnavailable,
+            BitrixCheckUnavailableReason = bitrixUnavailableReason
         };
     }
 }

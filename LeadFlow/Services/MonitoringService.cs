@@ -492,70 +492,225 @@ public sealed class MonitoringService(
             Details = response.FullName
         }, cancellationToken);
 
-        UpdateStatus(MonitoringStatus.Running, $"Отклик \"{response.FullName}\" ({response.PhoneNormalized}): проверяем дубли в локальной базе и Bitrix24.");
-        var duplicate = await duplicateService.CheckAsync(response, settings, cancellationToken);
-        await repository.AddLogAsync(new ProcessingLogItem
+        var recoverStuckInProgress = false;
+        try
         {
-            CandidateResponseId = response.Id,
-            AccountId = response.AccountId,
-            Level = "Info",
-            Message = "Проверка дублей выполнена",
-            Details = duplicate.Summary
-        }, cancellationToken);
-
-        if (duplicate.IsDuplicate)
-        {
-            _ = GlobalLogger.Instance.LogAsync(
-                $"Duplicate detected for response {response.Id}.",
-                DeskLinkAuditLogLevel.Info);
-            response.Status = ResponseStatus.Duplicate;
-            response.ProcessedAt = DateTime.UtcNow;
-            await repository.SaveCandidateAsync(response, cancellationToken);
-            UpdateStatus(MonitoringStatus.Running, $"Отклик \"{response.FullName}\" помечен как дубль. Новая сделка в Bitrix24 не создаётся.");
-            ResponseProcessed?.Invoke(this, response);
-            return;
-        }
-
-        UpdateStatus(MonitoringStatus.Running, $"Отклик \"{response.FullName}\" уникален: отправляем сделку в Bitrix24.");
-        var lead = await bitrixClient.CreateLeadAsync(response, settings, cancellationToken);
-        response.ProcessedAt = DateTime.UtcNow;
-        if (lead.IsSuccess)
-        {
-            _ = GlobalLogger.Instance.LogAsync(
-                $"Bitrix deal created for response {response.Id}: {lead.EntityId}.",
-                DeskLinkAuditLogLevel.Info);
-            response.Status = ResponseStatus.Sent;
-            response.BitrixEntityId = lead.EntityId;
+            UpdateStatus(MonitoringStatus.Running, $"Отклик \"{response.FullName}\" ({response.PhoneNormalized}): проверяем дубли в локальной базе и Bitrix24.");
+            var duplicate = await duplicateService.CheckAsync(response, settings, cancellationToken);
             await repository.AddLogAsync(new ProcessingLogItem
             {
                 CandidateResponseId = response.Id,
                 AccountId = response.AccountId,
                 Level = "Info",
-                Message = "Сделка создана в Bitrix24",
-                Details = lead.EntityId
+                Message = "Проверка дублей выполнена",
+                Details = duplicate.Summary
             }, cancellationToken);
-            UpdateStatus(MonitoringStatus.Running, $"Сделка по отклику \"{response.FullName}\" успешно создана в Bitrix24. ID: {lead.EntityId}.");
-        }
-        else
-        {
-            _ = GlobalLogger.Instance.LogAsync(
-                $"Bitrix deal creation failed for response {response.Id}: {lead.Error}.",
-                DeskLinkAuditLogLevel.Error);
-            response.Status = ResponseStatus.Error;
-            response.ErrorMessage = lead.Error;
-            await repository.AddLogAsync(new ProcessingLogItem
+
+            if (duplicate.IsDuplicate)
             {
-                CandidateResponseId = response.Id,
-                AccountId = response.AccountId,
-                Level = "Error",
-                Message = "Ошибка Bitrix24",
-                Details = lead.Error
-            }, cancellationToken);
-            UpdateStatus(MonitoringStatus.Error, $"Ошибка при создании сделки по отклику \"{response.FullName}\": {lead.Error}");
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"Duplicate detected for response {response.Id}.",
+                    DeskLinkAuditLogLevel.Info);
+                response.Status = ResponseStatus.Duplicate;
+                response.ProcessedAt = DateTime.UtcNow;
+                await repository.SaveCandidateAsync(response, cancellationToken);
+                UpdateStatus(MonitoringStatus.Running, $"Отклик \"{response.FullName}\" помечен как дубль. Новая сделка в Bitrix24 не создаётся.");
+                ResponseProcessed?.Invoke(this, response);
+                return;
+            }
+
+            if (duplicate.ShouldDeferBitrixSend)
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"Bitrix duplicate check unavailable for response {response.Id}; CRM send deferred.",
+                    DeskLinkAuditLogLevel.Warning);
+                response.Status = ResponseStatus.ActionRequired;
+                response.ProcessedAt = DateTime.UtcNow;
+                response.ErrorMessage = duplicate.Summary;
+                await repository.SaveCandidateAsync(response, cancellationToken);
+                await repository.AddLogAsync(new ProcessingLogItem
+                {
+                    CandidateResponseId = response.Id,
+                    AccountId = response.AccountId,
+                    Level = "Warning",
+                    Message = "Отправка в Bitrix24 отложена",
+                    Details = duplicate.BitrixCheckUnavailableReason ?? duplicate.Summary
+                }, cancellationToken);
+                UpdateStatus(
+                    MonitoringStatus.Running,
+                    $"Отклик \"{response.FullName}\": проверка дублей в Bitrix24 недоступна. Отправку в CRM можно повторить вручную из мониторинга.");
+                ResponseProcessed?.Invoke(this, response);
+                return;
+            }
+
+            UpdateStatus(MonitoringStatus.Running, $"Отклик \"{response.FullName}\" уникален: отправляем сделку в Bitrix24.");
+            var lead = await bitrixClient.CreateLeadAsync(response, settings, cancellationToken);
+            response.ProcessedAt = DateTime.UtcNow;
+            if (lead.IsSuccess)
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"Bitrix deal created for response {response.Id}: {lead.EntityId}.",
+                    DeskLinkAuditLogLevel.Info);
+                response.Status = ResponseStatus.Sent;
+                response.BitrixEntityId = lead.EntityId;
+                if (!string.IsNullOrWhiteSpace(lead.ContactId))
+                {
+                    response.BitrixContactId = lead.ContactId;
+                }
+
+                await repository.AddLogAsync(new ProcessingLogItem
+                {
+                    CandidateResponseId = response.Id,
+                    AccountId = response.AccountId,
+                    Level = "Info",
+                    Message = "Сделка создана в Bitrix24",
+                    Details = lead.EntityId
+                }, cancellationToken);
+                UpdateStatus(MonitoringStatus.Running, $"Сделка по отклику \"{response.FullName}\" успешно создана в Bitrix24. ID: {lead.EntityId}.");
+            }
+            else
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"Bitrix deal creation failed for response {response.Id}: {lead.Error}.",
+                    DeskLinkAuditLogLevel.Error);
+                if (!string.IsNullOrWhiteSpace(lead.ContactId))
+                {
+                    response.BitrixContactId = lead.ContactId;
+                    response.Status = ResponseStatus.ActionRequired;
+                    response.ErrorMessage = lead.Error;
+                    await repository.AddLogAsync(new ProcessingLogItem
+                    {
+                        CandidateResponseId = response.Id,
+                        AccountId = response.AccountId,
+                        Level = "Warning",
+                        Message = "Контакт в Bitrix24 без сделки — требуется действие",
+                        Details = lead.Error
+                    }, cancellationToken);
+                    UpdateStatus(
+                        MonitoringStatus.Running,
+                        $"Отклик \"{response.FullName}\": контакт Bitrix24 создан, сделка не создана. Исправьте в портале или нажмите «Отправить в Bitrix24» для повторной попытки.");
+                }
+                else
+                {
+                    response.Status = ResponseStatus.Error;
+                    response.ErrorMessage = lead.Error;
+                    await repository.AddLogAsync(new ProcessingLogItem
+                    {
+                        CandidateResponseId = response.Id,
+                        AccountId = response.AccountId,
+                        Level = "Error",
+                        Message = "Ошибка Bitrix24",
+                        Details = lead.Error
+                    }, cancellationToken);
+                    UpdateStatus(MonitoringStatus.Error, $"Ошибка при создании сделки по отклику \"{response.FullName}\": {lead.Error}");
+                }
+            }
+
+            await repository.SaveCandidateAsync(response, cancellationToken);
+            ResponseProcessed?.Invoke(this, response);
+        }
+        catch (OperationCanceledException)
+        {
+            response.Status = ResponseStatus.ActionRequired;
+            response.ErrorMessage = "Обработка прервана (отмена). Повторите отправку в Bitrix24 вручную при необходимости.";
+            response.ProcessedAt = DateTime.UtcNow;
+            try
+            {
+                await repository.SaveCandidateAsync(response, CancellationToken.None);
+                await repository.AddLogAsync(new ProcessingLogItem
+                {
+                    CandidateResponseId = response.Id,
+                    AccountId = response.AccountId,
+                    Level = "Warning",
+                    Message = "Обработка отклика прервана",
+                    Details = response.ErrorMessage
+                }, CancellationToken.None);
+            }
+            catch (Exception saveEx)
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"Failed to persist cancelled response {response.Id}: {saveEx.Message}",
+                    DeskLinkAuditLogLevel.Warning);
+            }
+
+            ResponseProcessed?.Invoke(this, response);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            if (response.Status == ResponseStatus.InProgress)
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"Response processing failed for {response.Id}.{Environment.NewLine}{ex}",
+                    DeskLinkAuditLogLevel.Error);
+                response.Status = ResponseStatus.Error;
+                response.ErrorMessage = ex.Message;
+                response.ProcessedAt = DateTime.UtcNow;
+                try
+                {
+                    await repository.SaveCandidateAsync(response, CancellationToken.None);
+                    await repository.AddLogAsync(new ProcessingLogItem
+                    {
+                        CandidateResponseId = response.Id,
+                        AccountId = response.AccountId,
+                        Level = "Error",
+                        Message = "Ошибка обработки отклика",
+                        Details = ex.Message
+                    }, CancellationToken.None);
+                }
+                catch (Exception saveEx)
+                {
+                    _ = GlobalLogger.Instance.LogAsync(
+                        $"Failed to persist error state for response {response.Id}: {saveEx.Message}",
+                        DeskLinkAuditLogLevel.Error);
+                }
+
+                ResponseProcessed?.Invoke(this, response);
+            }
+            else
+            {
+                throw;
+            }
+        }
+        finally
+        {
+            if (response.Status == ResponseStatus.InProgress)
+            {
+                response.Status = ResponseStatus.ActionRequired;
+                response.ErrorMessage = string.IsNullOrWhiteSpace(response.ErrorMessage)
+                    ? "Обработка остановлена нештатно — используйте ручную отправку в Bitrix24."
+                    : response.ErrorMessage;
+                response.ProcessedAt = DateTime.UtcNow;
+                recoverStuckInProgress = true;
+            }
         }
 
-        await repository.SaveCandidateAsync(response, cancellationToken);
-        ResponseProcessed?.Invoke(this, response);
+        if (recoverStuckInProgress)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Response {response.Id} left InProgress; marked ActionRequired.",
+                DeskLinkAuditLogLevel.Warning);
+            try
+            {
+                await repository.SaveCandidateAsync(response, CancellationToken.None);
+                await repository.AddLogAsync(new ProcessingLogItem
+                {
+                    CandidateResponseId = response.Id,
+                    AccountId = response.AccountId,
+                    Level = "Warning",
+                    Message = "Статус восстановлен после сбоя",
+                    Details = response.ErrorMessage
+                }, CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"Failed to finalize stuck InProgress response {response.Id}: {ex.Message}",
+                    DeskLinkAuditLogLevel.Error);
+            }
+
+            ResponseProcessed?.Invoke(this, response);
+        }
     }
 
     private async Task SyncBitrixLeadsAsync(AppSettings settings, CancellationToken cancellationToken)
