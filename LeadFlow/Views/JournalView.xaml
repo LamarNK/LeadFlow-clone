@@ -213,7 +213,7 @@
                                         </Grid.ColumnDefinitions>
 
                                         <TextBlock Grid.Column="0"
-                                                   Text="{Binding Timestamp, StringFormat=HH:mm:ss}"
+                                                   Text="{Binding Timestamp, Converter={StaticResource UtcToLocalDateTimeConverter}, StringFormat=HH:mm:ss}"
                                                    FontWeight="SemiBold"
                                                    Foreground="{StaticResource SecondaryTextBrush}"
                                                    VerticalAlignment="Center" />

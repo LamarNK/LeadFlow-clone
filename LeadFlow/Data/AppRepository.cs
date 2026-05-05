@@ -1,3 +1,4 @@
+using LeadFlow;
 using LeadFlow.Models;
 using Microsoft.EntityFrameworkCore;
 
@@ -180,36 +181,34 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
     public async Task<DashboardStats> GetDashboardStatsAsync(CancellationToken cancellationToken)
     {
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
-        var today = DateTime.UtcNow.Date;
-        var responseSummary = await db.CandidateResponses
-            .AsNoTracking()
-            .Where(x => x.CreatedAt >= today)
-            .GroupBy(static _ => 1)
-            .Select(g => new
-            {
-                Total = g.Count(),
-                Sent = g.Count(x => x.Status == nameof(ResponseStatus.Sent)),
-                InProgress = g.Count(x => x.Status == nameof(ResponseStatus.InProgress)),
-                Duplicates = g.Count(x => x.Status == nameof(ResponseStatus.Duplicate)),
-                Errors = g.Count(x => x.Status == nameof(ResponseStatus.Error))
-            })
-            .FirstOrDefaultAsync(cancellationToken);
+        var (utcStart, utcEnd) = DateTimeAssumedUtc.GetUtcRangeForLocalToday();
 
-        var hourlyActivity = await db.CandidateResponses
+        var todaysResponses = await db.CandidateResponses
             .AsNoTracking()
-            .Where(x => x.CreatedAt >= today)
-            .GroupBy(x => x.CreatedAt.Hour)
-            .Select(g => new
-            {
-                Hour = g.Key,
-                Total = g.Count(),
-                Sent = g.Count(x => x.Status == nameof(ResponseStatus.Sent)),
-                Duplicates = g.Count(x => x.Status == nameof(ResponseStatus.Duplicate)),
-                Errors = g.Count(x => x.Status == nameof(ResponseStatus.Error))
-            })
+            .Where(x => x.CreatedAt >= utcStart && x.CreatedAt < utcEnd)
+            .Select(x => new { x.Status, x.CreatedAt })
             .ToListAsync(cancellationToken);
 
-        var byHour = hourlyActivity.ToDictionary(x => x.Hour, x => x);
+        var responseSummary = new
+        {
+            Total = todaysResponses.Count,
+            Sent = todaysResponses.Count(x => x.Status == nameof(ResponseStatus.Sent)),
+            InProgress = todaysResponses.Count(x => x.Status == nameof(ResponseStatus.InProgress)),
+            Duplicates = todaysResponses.Count(x => x.Status == nameof(ResponseStatus.Duplicate)),
+            Errors = todaysResponses.Count(x => x.Status == nameof(ResponseStatus.Error))
+        };
+
+        var byHour = todaysResponses
+            .GroupBy(x => x.CreatedAt.ToLocalTimeFromStoredUtc().Hour)
+            .ToDictionary(
+                g => g.Key,
+                g => new
+                {
+                    Total = g.Count(),
+                    Sent = g.Count(x => x.Status == nameof(ResponseStatus.Sent)),
+                    Duplicates = g.Count(x => x.Status == nameof(ResponseStatus.Duplicate)),
+                    Errors = g.Count(x => x.Status == nameof(ResponseStatus.Error))
+                });
 
         var accountSummary = await db.AvitoAccounts
             .AsNoTracking()
@@ -224,15 +223,15 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
             })
             .FirstOrDefaultAsync(cancellationToken);
 
-        var totalToday = responseSummary?.Total ?? 0;
+        var totalToday = responseSummary.Total;
         var stats = new DashboardStats
         {
             NewResponses = totalToday,
             TotalToday = totalToday,
-            SentToCrm = responseSummary?.Sent ?? 0,
-            InProgress = responseSummary?.InProgress ?? 0,
-            Duplicates = responseSummary?.Duplicates ?? 0,
-            Errors = responseSummary?.Errors ?? 0,
+            SentToCrm = responseSummary.Sent,
+            InProgress = responseSummary.InProgress,
+            Duplicates = responseSummary.Duplicates,
+            Errors = responseSummary.Errors,
             ConnectedAccounts = accountSummary?.Connected ?? 0,
             RequiresAuthorization = accountSummary?.RequiresAuthorization ?? 0,
             ActiveAdsCount = accountSummary?.ActiveAds ?? 0,

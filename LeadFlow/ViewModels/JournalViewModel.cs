@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Data;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using LeadFlow;
 using LeadFlow.Logging.Audit;
 
 namespace LeadFlow.ViewModels;
@@ -98,7 +99,7 @@ public partial class JournalViewModel : ObservableObject
             return;
         }
 
-        var row = $"{SelectedLogEntry.Timestamp.ToLocalTime():dd.MM.yyyy HH:mm:ss}\t{SelectedLogEntry.Level}\t{SelectedLogEntry.Prefix}\t{SelectedLogEntry.Message}\t{SelectedLogEntry.TraceId}\t{SelectedLogEntry.Properties}";
+        var row = $"{SelectedLogEntry.Timestamp.ToLocalTimeFromStoredUtc():dd.MM.yyyy HH:mm:ss}\t{SelectedLogEntry.Level}\t{SelectedLogEntry.Prefix}\t{SelectedLogEntry.Message}\t{SelectedLogEntry.TraceId}\t{SelectedLogEntry.Properties}";
         Clipboard.SetText(row);
     }
 
@@ -149,7 +150,7 @@ public partial class JournalViewModel : ObservableObject
             return false;
         }
 
-        var dateMatches = !SelectedLogDate.HasValue || item.Timestamp.ToLocalTime().Date == SelectedLogDate.Value.Date;
+        var dateMatches = !SelectedLogDate.HasValue || item.Timestamp.ToLocalTimeFromStoredUtc().Date == SelectedLogDate.Value.Date;
         if (!dateMatches)
         {
             return false;

@@ -370,7 +370,7 @@
                                                    Text="{Binding Age, Converter={StaticResource AgeToDisplayConverter}}"
                                                    Style="{StaticResource SubtleTextStyle}"
                                                    Margin="8,0,8,0" />
-                                        <TextBlock Grid.Column="3" Text="{Binding CreatedAt, StringFormat=dd.MM HH:mm}" Style="{StaticResource SubtleTextStyle}" />
+                                        <TextBlock Grid.Column="3" Text="{Binding CreatedAt, Converter={StaticResource UtcToLocalDateTimeConverter}, StringFormat=dd.MM HH:mm}" Style="{StaticResource SubtleTextStyle}" />
                                     </Grid>
                                 </Grid>
                             </DataTemplate>
@@ -460,7 +460,7 @@
                         <Border Grid.Column="0" Padding="0,0,0,8" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Margin="0,0,8,0">
                             <StackPanel>
                                 <TextBlock Text="Создан" Style="{StaticResource InfoLabelStyle}" />
-                                <TextBlock Text="{Binding SelectedResponse.CreatedAt, StringFormat=dd.MM.yyyy HH:mm, TargetNullValue=Нет данных}" FontWeight="SemiBold" />
+                                <TextBlock Text="{Binding SelectedResponse.CreatedAt, Converter={StaticResource UtcToLocalDateTimeConverter}, StringFormat=dd.MM.yyyy HH:mm, TargetNullValue=Нет данных}" FontWeight="SemiBold" />
                             </StackPanel>
                         </Border>
                         <Border Grid.Column="1" Padding="0,0,0,8" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">

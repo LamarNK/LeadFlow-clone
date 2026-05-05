@@ -15,7 +15,7 @@ public sealed class DashboardStats
     public int ActiveAdsCount { get; set; }
     public int BlockedAdsCount { get; set; }
     public int DraftsCount { get; set; }
-    /// <summary>24 точки — отклики по часу суток (UTC), для построения шкалы с любым шагом.</summary>
+    /// <summary>24 точки — отклики по часу суток (локальное время ПК), для построения шкалы с любым шагом.</summary>
     public ObservableCollection<ActivityPoint> HourlyActivity { get; set; } = new();
 
     /// <summary>Момент завершения агрегации на сервере (UTC). Отклики с ProcessedAt позже могли не попасть в снимок.</summary>
@@ -32,7 +32,7 @@ public sealed class ActivityPoint
     public int ErrorCount { get; set; }
     /// <summary>Высота столбца в пикселях (0–56), пересчитывается относительно максимума за день.</summary>
     public double ChartBarHeight { get; set; }
-    /// <summary>Начало интервала по часу суток (UTC), 0…23.</summary>
+    /// <summary>Начало интервала по часу суток (локальное время ПК), 0…23.</summary>
     public int SlotStartHour { get; set; }
     /// <summary>Длина интервала в часах (1, 2, 3, 6…), для подписи и подсказки.</summary>
     public int SlotSpanHours { get; set; } = 1;

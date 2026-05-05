@@ -6,6 +6,7 @@ using System.Windows;
 using System.Windows.Data;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using LeadFlow;
 using LeadFlow.Data;
 using LeadFlow.Models;
 using LeadFlow.Services;
@@ -314,7 +315,7 @@ public partial class SettingsViewModel(
     }
 
     private static string FormatDateTime(DateTime? value, string fallback) =>
-        value.HasValue ? value.Value.ToLocalTime().ToString("dd.MM.yyyy HH:mm") : fallback;
+        value.HasValue ? value.Value.ToLocalTimeFromStoredUtc().ToString("dd.MM.yyyy HH:mm") : fallback;
 
     private void RefreshSelectedAccountState()
     {

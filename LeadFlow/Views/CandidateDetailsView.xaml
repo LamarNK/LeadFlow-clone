@@ -34,7 +34,7 @@
                     <TextBlock Grid.Row="4" Text="Вакансия" Margin="0,4"/>
                     <TextBox Grid.Row="4" Grid.Column="1" Text="{Binding CurrentResponse.Vacancy}" IsReadOnly="True"/>
                     <TextBlock Grid.Row="5" Text="Дата отклика" Margin="0,4"/>
-                    <TextBox Grid.Row="5" Grid.Column="1" Text="{Binding CurrentResponse.CreatedAt, StringFormat=dd.MM.yyyy HH:mm}" IsReadOnly="True"/>
+                    <TextBox Grid.Row="5" Grid.Column="1" Text="{Binding CurrentResponse.CreatedAt, Converter={StaticResource UtcToLocalDateTimeConverter}, StringFormat=dd.MM.yyyy HH:mm}" IsReadOnly="True"/>
                 </Grid>
                 <Border Style="{StaticResource ToolbarSurfaceBorderStyle}" Margin="0,8,0,0">
                     <StackPanel>

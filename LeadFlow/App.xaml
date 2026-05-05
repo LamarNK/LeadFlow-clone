@@ -15,6 +15,7 @@
             <converters:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
             <converters:LogLevelToBackgroundConverter x:Key="LogLevelToBackgroundConverter" />
             <converters:ZeroToCollapsedConverter x:Key="ZeroToCollapsedConverter" />
+            <converters:UtcToLocalDateTimeConverter x:Key="UtcToLocalDateTimeConverter" />
         </ResourceDictionary>
     </Application.Resources>
 </Application>

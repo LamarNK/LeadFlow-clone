@@ -1,3 +1,4 @@
+using LeadFlow;
 using LeadFlow.Models;
 
 namespace LeadFlow.Services;
@@ -36,7 +37,7 @@ public sealed class CandidateParser : ICandidateParser
                 $"Источник: Авито{Environment.NewLine}" +
                 $"Ссылка на вакансию: {response.VacancyUrl}{Environment.NewLine}" +
                 $"Аккаунт Авито: {response.AccountName}{Environment.NewLine}" +
-                $"Дата отклика: {response.CreatedAt:dd.MM.yyyy HH:mm}"
+                $"Дата отклика: {response.CreatedAt.ToLocalTimeFromStoredUtc():dd.MM.yyyy HH:mm}"
         };
     }
 }

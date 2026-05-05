@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using LeadFlow;
 using LeadFlow.Data;
 using LeadFlow.Models;
 using LeadFlow.Services;
@@ -17,7 +18,7 @@ public partial class DashboardViewModel : ObservableObject
     private readonly IMonitoringService _monitoringService;
     private readonly IWindowService _windowService;
 
-    private readonly ActivityPoint[] _hourlyUtcSlots = new ActivityPoint[24];
+    private readonly ActivityPoint[] _hourlyLocalSlots = new ActivityPoint[24];
     private readonly List<CandidateResponse> _responsesDuringDashboardRefresh = new();
     private int _dashboardRefreshDepth;
 
@@ -94,14 +95,14 @@ public partial class DashboardViewModel : ObservableObject
     {
         for (var h = 0; h < 24; h++)
         {
-            _hourlyUtcSlots[h] = NewHourSlot(h);
+            _hourlyLocalSlots[h] = NewHourSlot(h);
         }
     }
 
-    private static ActivityPoint NewHourSlot(int hourUtc) => new()
+    private static ActivityPoint NewHourSlot(int hourLocal) => new()
     {
-        Label = $"{hourUtc:00}:00",
-        SlotStartHour = hourUtc,
+        Label = $"{hourLocal:00}:00",
+        SlotStartHour = hourLocal,
         SlotSpanHours = 1
     };
 
@@ -246,7 +247,7 @@ public partial class DashboardViewModel : ObservableObject
         for (var h = 0; h < 24; h++)
         {
             var src = h < stats.HourlyActivity.Count ? stats.HourlyActivity[h] : null;
-            _hourlyUtcSlots[h] = src is null
+            _hourlyLocalSlots[h] = src is null
                 ? NewHourSlot(h)
                 : CloneHourlyPoint(src, h);
         }
@@ -254,20 +255,21 @@ public partial class DashboardViewModel : ObservableObject
         RebuildDisplayedActivity();
     }
 
-    private static ActivityPoint CloneHourlyPoint(ActivityPoint src, int hourUtc) => new()
+    private static ActivityPoint CloneHourlyPoint(ActivityPoint src, int hourLocal) => new()
     {
-        Label = $"{hourUtc:00}:00",
+        Label = $"{hourLocal:00}:00",
         NewCount = src.NewCount,
         SentCount = src.SentCount,
         DuplicateCount = src.DuplicateCount,
         ErrorCount = src.ErrorCount,
-        SlotStartHour = hourUtc,
+        SlotStartHour = hourLocal,
         SlotSpanHours = 1
     };
 
     private void ApplyProcessedResponseCore(CandidateResponse response)
     {
-        if (response.CreatedAt < DateTime.UtcNow.Date)
+        var createdLocal = response.CreatedAt.ToLocalTimeFromStoredUtc();
+        if (createdLocal.Date < DateTime.Today)
         {
             return;
         }
@@ -291,8 +293,8 @@ public partial class DashboardViewModel : ObservableObject
                 break;
         }
 
-        var hour = Math.Clamp(response.CreatedAt.Hour, 0, 23);
-        var bucket = _hourlyUtcSlots[hour];
+        var hour = Math.Clamp(createdLocal.Hour, 0, 23);
+        var bucket = _hourlyLocalSlots[hour];
         bucket.NewCount++;
         switch (response.Status)
         {
@@ -307,7 +309,7 @@ public partial class DashboardViewModel : ObservableObject
                 break;
         }
 
-        _hourlyUtcSlots[hour] = new ActivityPoint
+        _hourlyLocalSlots[hour] = new ActivityPoint
         {
             Label = bucket.Label,
             NewCount = bucket.NewCount,
@@ -333,7 +335,7 @@ public partial class DashboardViewModel : ObservableObject
         var maxDay = 0;
         for (var h = 0; h < 24; h++)
         {
-            maxDay = Math.Max(maxDay, _hourlyUtcSlots[h].NewCount);
+            maxDay = Math.Max(maxDay, _hourlyLocalSlots[h].NewCount);
         }
 
         Activity.Clear();
@@ -354,7 +356,7 @@ public partial class DashboardViewModel : ObservableObject
 
             for (var h = startHour; h <= endHour; h++)
             {
-                var p = _hourlyUtcSlots[h];
+                var p = _hourlyLocalSlots[h];
                 merged.NewCount += p.NewCount;
                 merged.SentCount += p.SentCount;
                 merged.DuplicateCount += p.DuplicateCount;
@@ -378,8 +380,8 @@ public partial class DashboardViewModel : ObservableObject
     {
         var endHour = slot.SlotStartHour + slot.SlotSpanHours - 1;
         var span = slot.SlotSpanHours <= 1
-            ? $"UTC {slot.SlotStartHour:00}:00"
-            : $"UTC {slot.SlotStartHour:00}:00–{endHour:00}:59";
+            ? $"{slot.SlotStartHour:00}:00"
+            : $"{slot.SlotStartHour:00}:00–{endHour:00}:59";
 
         return FormattableString.Invariant(
             $"{span}\nВсего: {slot.NewCount}\nВ CRM: {slot.SentCount}\nДубли: {slot.DuplicateCount}\nОшибки: {slot.ErrorCount}");

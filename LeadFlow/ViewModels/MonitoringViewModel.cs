@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Data;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using LeadFlow;
 using LeadFlow.Data;
 using LeadFlow.Models;
 using LeadFlow.Services;
@@ -228,7 +229,7 @@ public partial class MonitoringViewModel : ObservableObject
         : ResponseStatusFormatting.DetailDescription(SelectedResponse.Status);
 
     public string SelectedResponseProcessedText => SelectedResponse?.ProcessedAt is DateTime processedAt
-        ? processedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm")
+        ? processedAt.ToLocalTimeFromStoredUtc().ToString("dd.MM.yyyy HH:mm")
         : "Ещё не обработан";
 
     public string SelectedResponseErrorText => string.IsNullOrWhiteSpace(SelectedResponse?.ErrorMessage)
@@ -253,7 +254,7 @@ public partial class MonitoringViewModel : ObservableObject
             return false;
         }
 
-        if (SelectedResponseDate.HasValue && item.CreatedAt.ToLocalTime().Date != SelectedResponseDate.Value.Date)
+        if (SelectedResponseDate.HasValue && item.CreatedAt.ToLocalTimeFromStoredUtc().Date != SelectedResponseDate.Value.Date)
         {
             return false;
         }
