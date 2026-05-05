@@ -53,7 +53,7 @@
                     <TextBlock Text="{Binding CurrentResponse.PhoneRaw}" Margin="0,6,0,0"/>
                     <TextBlock Text="{Binding CurrentResponse.City}" Margin="0,4,0,0"/>
                     <TextBlock Text="Ссылка на объявление" Style="{StaticResource InfoLabelStyle}" Margin="0,8,0,0"/>
-                    <TextBlock Text="{Binding CurrentResponse.EffectiveVacancyUrl}" TextWrapping="Wrap" Margin="0,4,0,0" Style="{StaticResource SubtleTextStyle}"/>
+                    <TextBlock Text="{Binding CurrentResponse.VacancyUrl}" TextWrapping="Wrap" Margin="0,4,0,0" Style="{StaticResource SubtleTextStyle}"/>
                 </StackPanel>
             </Border>
         </Grid>

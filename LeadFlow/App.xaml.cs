@@ -1,6 +1,7 @@
 using System.Windows;
 using LeadFlow.Data;
 using LeadFlow.Logging.Audit;
+using LeadFlow.Models;
 using LeadFlow.Services;
 using LeadFlow.Services.Avito;
 using LeadFlow.Services.Bitrix;
@@ -10,6 +11,7 @@ using LeadFlow.Views;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using SQLitePCL;
 
 namespace LeadFlow;
 
@@ -55,6 +57,8 @@ public partial class App : System.Windows.Application
         base.OnStartup(e);
         LogStartup("OnStartup entered");
 
+        Batteries_V2.Init();
+
         if (_activationEvent is not null)
         {
             _activationRegistration = ThreadPool.RegisterWaitForSingleObject(
@@ -68,6 +72,24 @@ public partial class App : System.Windows.Application
         var settingsService = new JsonSettingsService();
         var settings = settingsService.LoadAsync(CancellationToken.None).GetAwaiter().GetResult();
         LogStartup("Settings loaded");
+        settingsService.EnsureDatabaseEncryptionKeyAsync(settings, CancellationToken.None).GetAwaiter().GetResult();
+        LogStartup("Database encryption key ensured");
+
+        try
+        {
+            DatabaseEncryptionMigration.MigratePlainDatabaseIfNeeded(settings.DatabasePath, settings.DatabaseEncryptionKey);
+        }
+        catch (Exception ex)
+        {
+            LogStartup($"Database encryption migration failed: {ex}");
+            MessageBox.Show(
+                $"Не удалось зашифровать существующую базу данных.{Environment.NewLine}{ex.Message}",
+                "LeadFlow",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+            Shutdown();
+            return;
+        }
 
         var builder = Host.CreateApplicationBuilder();
         builder.Services.AddHttpClient();
@@ -89,9 +111,10 @@ public partial class App : System.Windows.Application
         builder.Services.AddSingleton<IWindowService, WindowService>();
         builder.Services.AddSingleton<IMonitoringService, MonitoringService>();
 
-        builder.Services.AddDbContextFactory<AppDbContext>((_, options) =>
+        builder.Services.AddDbContextFactory<AppDbContext>((sp, options) =>
         {
-            options.UseSqlite($"Data Source={settings.DatabasePath}");
+            var appSettings = sp.GetRequiredService<AppSettings>();
+            options.UseSqlite(EncryptedSqliteConnectionBuilder.BuildConnectionString(appSettings));
         });
 
         builder.Services.AddSingleton<MainViewModel>();

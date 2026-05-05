@@ -157,7 +157,6 @@ public sealed class AvitoResponseSource(
                 Vacancy = vacancy,
                 Age = age,
                 VacancyUrl = vacancyUrl,
-                SourceUrl = vacancyUrl,
                 MessengerUrl = messengerUrl,
                 RawText = rawText,
                 CreatedAt = DateTime.UtcNow

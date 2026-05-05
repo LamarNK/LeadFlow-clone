@@ -17,9 +17,9 @@ public static class CandidateResponseUiActions
         Clipboard.SetText(response.PhoneRaw);
     }
 
-    public static void TryOpenSourceUrl(CandidateResponse? response)
+    public static void TryOpenVacancyUrl(CandidateResponse? response)
     {
-        var url = response?.EffectiveVacancyUrl;
+        var url = response?.VacancyUrl;
         if (string.IsNullOrWhiteSpace(url))
         {
             return;
@@ -54,8 +54,8 @@ public static class CandidateResponseUiActions
     public static bool CanCopyPhone(CandidateResponse? response) =>
         !string.IsNullOrWhiteSpace(response?.PhoneRaw);
 
-    public static bool CanOpenSource(CandidateResponse? response) =>
-        !string.IsNullOrWhiteSpace(response?.EffectiveVacancyUrl);
+    public static bool CanOpenVacancyUrl(CandidateResponse? response) =>
+        !string.IsNullOrWhiteSpace(response?.VacancyUrl);
 
     public static bool CanOpenBitrix(CandidateResponse? response) =>
         !string.IsNullOrWhiteSpace(response?.BitrixEntityId);

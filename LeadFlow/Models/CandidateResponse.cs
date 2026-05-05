@@ -18,12 +18,6 @@ public sealed class CandidateResponse
     public string Vacancy { get; set; } = string.Empty;
     /// <summary>URL объявления вакансии на Avito, на которую откликнулся кандидат (href у job-application/link/to-resume — строка «вакансия · город», не ссылка «Резюме» / cv-button).</summary>
     public string VacancyUrl { get; set; } = string.Empty;
-    /// <summary>Исторически дублирует вакансию; для отображения и внешних ссылок используйте <see cref="EffectiveVacancyUrl"/>.</summary>
-    public string SourceUrl { get; set; } = string.Empty;
-
-    /// <summary>Актуальная ссылка на вакансию или запись из SourceUrl у старых откликов.</summary>
-    public string EffectiveVacancyUrl =>
-        !string.IsNullOrWhiteSpace(VacancyUrl) ? VacancyUrl : SourceUrl;
     /// <summary>Ссылка на чат с кандидатом в мессенджере Avito (если удалось извлечь при парсинге).</summary>
     public string MessengerUrl { get; set; } = string.Empty;
     public ResponseStatus Status { get; set; } = ResponseStatus.New;

@@ -482,7 +482,7 @@ public partial class MonitoringViewModel : ObservableObject
 
     private static bool HasSpecificVacancyUrl(CandidateResponse? r)
     {
-        var url = r?.EffectiveVacancyUrl;
+        var url = r?.VacancyUrl;
         if (string.IsNullOrWhiteSpace(url))
         {
             return false;
@@ -513,6 +513,6 @@ public partial class MonitoringViewModel : ObservableObject
             return;
         }
 
-        await _windowService.ShowAvitoProfileAsync(owner, account, response.EffectiveVacancyUrl.Trim(), CancellationToken.None);
+        await _windowService.ShowAvitoProfileAsync(owner, account, response.VacancyUrl.Trim(), CancellationToken.None);
     }
 }

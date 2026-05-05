@@ -34,7 +34,7 @@ public sealed class CandidateParser : ICandidateParser
                 $"Вакансия: {response.Vacancy}{Environment.NewLine}" +
                 $"Город: {response.City}{Environment.NewLine}" +
                 $"Источник: Авито{Environment.NewLine}" +
-                $"Ссылка на вакансию: {response.EffectiveVacancyUrl}{Environment.NewLine}" +
+                $"Ссылка на вакансию: {response.VacancyUrl}{Environment.NewLine}" +
                 $"Аккаунт Авито: {response.AccountName}{Environment.NewLine}" +
                 $"Дата отклика: {response.CreatedAt:dd.MM.yyyy HH:mm}"
         };

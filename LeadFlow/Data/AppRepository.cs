@@ -1,5 +1,4 @@
 using LeadFlow.Models;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 
 namespace LeadFlow.Data;
@@ -340,7 +339,6 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         City = model.City,
         Vacancy = model.Vacancy,
         VacancyUrl = model.VacancyUrl,
-        SourceUrl = model.SourceUrl,
         MessengerUrl = model.MessengerUrl,
         Status = model.Status.ToString(),
         BitrixEntityType = model.BitrixEntityType,
@@ -367,8 +365,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         PhoneNormalized = entity.PhoneNormalized,
         City = entity.City,
         Vacancy = entity.Vacancy,
-        VacancyUrl = string.IsNullOrWhiteSpace(entity.VacancyUrl) ? entity.SourceUrl : entity.VacancyUrl,
-        SourceUrl = entity.SourceUrl,
+        VacancyUrl = entity.VacancyUrl,
         MessengerUrl = entity.MessengerUrl,
         Status = Enum.TryParse<ResponseStatus>(entity.Status, out var status) ? status : ResponseStatus.New,
         BitrixEntityType = entity.BitrixEntityType,
@@ -395,7 +392,6 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         target.City = source.City;
         target.Vacancy = source.Vacancy;
         target.VacancyUrl = source.VacancyUrl;
-        target.SourceUrl = source.SourceUrl;
         target.MessengerUrl = source.MessengerUrl;
         target.Status = source.Status.ToString();
         target.BitrixEntityType = source.BitrixEntityType;

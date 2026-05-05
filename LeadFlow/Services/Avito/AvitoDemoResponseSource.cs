@@ -34,7 +34,6 @@ public sealed class AvitoDemoResponseSource
                 Age = item.Age,
                 Source = "Avito Demo",
                 VacancyUrl = account.AvitoResponsesUrl,
-                SourceUrl = account.AvitoResponsesUrl,
                 SourceResponseId = $"demo-{_offset}",
                 CreatedAt = DateTime.UtcNow
             });

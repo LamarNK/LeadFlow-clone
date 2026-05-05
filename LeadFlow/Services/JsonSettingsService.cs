@@ -1,4 +1,5 @@
 using System.IO;
+using System.Security.Cryptography;
 using System.Text.Json;
 using LeadFlow.Models;
 
@@ -40,6 +41,20 @@ public sealed class JsonSettingsService : ISettingsService
 
         NormalizeSettings(settings);
         return settings;
+    }
+
+    /// <summary>Generates and persists <see cref="AppSettings.DatabaseEncryptionKey"/> when missing.</summary>
+    public async Task EnsureDatabaseEncryptionKeyAsync(AppSettings settings, CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(settings.DatabaseEncryptionKey))
+        {
+            return;
+        }
+
+        var bytes = new byte[32];
+        RandomNumberGenerator.Fill(bytes);
+        settings.DatabaseEncryptionKey = Convert.ToBase64String(bytes);
+        await SaveAsync(settings, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task SaveAsync(AppSettings settings, CancellationToken cancellationToken)
