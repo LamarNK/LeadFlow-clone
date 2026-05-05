@@ -1,3 +1,4 @@
+using System.Globalization;
 using LeadFlow;
 using LeadFlow.Models;
 using Microsoft.EntityFrameworkCore;
@@ -286,6 +287,24 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
                 SentCount = bucket?.Sent ?? 0,
                 DuplicateCount = bucket?.Duplicates ?? 0,
                 ErrorCount = bucket?.Errors ?? 0
+            });
+        }
+
+        var weekStartLocal = DateTime.Today.AddDays(-6);
+        var weekDays = await GetDailyResponseStatsForLocalRangeAsync(weekStartLocal, DateTime.Today, cancellationToken);
+        var ru = CultureInfo.GetCultureInfo("ru-RU");
+        foreach (var day in weekDays)
+        {
+            stats.WeeklyByDayActivity.Add(new ActivityPoint
+            {
+                Label = day.DateLocal.ToString("ddd d.MM", ru),
+                LocalDate = day.DateLocal,
+                NewCount = day.Total,
+                SentCount = day.Sent,
+                DuplicateCount = day.Duplicates,
+                ErrorCount = day.Errors,
+                SlotStartHour = 0,
+                SlotSpanHours = 1
             });
         }
 

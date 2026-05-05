@@ -18,6 +18,9 @@ public sealed class DashboardStats
     /// <summary>24 точки — отклики по часу суток (локальное время ПК), для построения шкалы с любым шагом.</summary>
     public ObservableCollection<ActivityPoint> HourlyActivity { get; set; } = new();
 
+    /// <summary>Скользящая неделя: сегодня и шесть предыдущих календарных дней (локально).</summary>
+    public ObservableCollection<ActivityPoint> WeeklyByDayActivity { get; set; } = new();
+
     /// <summary>Момент завершения агрегации на сервере (UTC). Отклики с ProcessedAt позже могли не попасть в снимок.</summary>
     public DateTime AggregatedUpToUtc { get; set; }
 }
@@ -32,6 +35,9 @@ public sealed class ActivityPoint
     public int ErrorCount { get; set; }
     /// <summary>Высота столбца в пикселях (0–56), пересчитывается относительно максимума за день.</summary>
     public double ChartBarHeight { get; set; }
+    /// <summary>Календарный день для недельного графика (локально); для почасового графика не задан.</summary>
+    public DateTime? LocalDate { get; set; }
+
     /// <summary>Начало интервала по часу суток (локальное время ПК), 0…23.</summary>
     public int SlotStartHour { get; set; }
     /// <summary>Длина интервала в часах (1, 2, 3, 6…), для подписи и подсказки.</summary>

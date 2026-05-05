@@ -1,3 +1,4 @@
+using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using LeadFlow;
@@ -19,6 +20,7 @@ public partial class DashboardViewModel : ObservableObject
     private readonly IWindowService _windowService;
 
     private readonly ActivityPoint[] _hourlyLocalSlots = new ActivityPoint[24];
+    private readonly ActivityPoint[] _weeklyLocalSlots = new ActivityPoint[7];
     private readonly List<CandidateResponse> _responsesDuringDashboardRefresh = new();
     private int _dashboardRefreshDepth;
 
@@ -62,6 +64,7 @@ public partial class DashboardViewModel : ObservableObject
     private int activityChartColumns = 24;
 
     public ObservableCollection<ActivityPoint> Activity { get; } = new();
+    public ObservableCollection<ActivityPoint> WeeklyActivity { get; } = new();
     public ObservableCollection<AvitoAdStatus> ActiveAds { get; } = new();
 
     private readonly DispatcherTimer _accountPersistDebounce = new()
@@ -89,6 +92,7 @@ public partial class DashboardViewModel : ObservableObject
         };
 
         InitEmptyHourlySlots();
+        InitEmptyWeeklySlots();
     }
 
     private void InitEmptyHourlySlots()
@@ -105,6 +109,27 @@ public partial class DashboardViewModel : ObservableObject
         SlotStartHour = hourLocal,
         SlotSpanHours = 1
     };
+
+    private void InitEmptyWeeklySlots()
+    {
+        for (var i = 0; i < 7; i++)
+        {
+            _weeklyLocalSlots[i] = NewEmptyWeekSlot(i);
+        }
+    }
+
+    private static ActivityPoint NewEmptyWeekSlot(int indexFromWeekStart)
+    {
+        var d = DateTime.Today.AddDays(-6 + indexFromWeekStart);
+        var ru = CultureInfo.GetCultureInfo("ru-RU");
+        return new ActivityPoint
+        {
+            Label = d.ToString("ddd d.MM", ru),
+            LocalDate = d,
+            SlotStartHour = 0,
+            SlotSpanHours = 1
+        };
+    }
 
     private void OnAccountPersisted(object? sender, AvitoAccount e)
     {
@@ -240,6 +265,7 @@ public partial class DashboardViewModel : ObservableObject
         DraftsCount = stats.DraftsCount;
 
         ReplaceHourlyFromStats(stats);
+        ReplaceWeeklyFromStats(stats);
     }
 
     private void ReplaceHourlyFromStats(DashboardStats stats)
@@ -255,6 +281,29 @@ public partial class DashboardViewModel : ObservableObject
         RebuildDisplayedActivity();
     }
 
+    private void ReplaceWeeklyFromStats(DashboardStats stats)
+    {
+        for (var i = 0; i < 7; i++)
+        {
+            var src = i < stats.WeeklyByDayActivity.Count ? stats.WeeklyByDayActivity[i] : null;
+            _weeklyLocalSlots[i] = src is null ? NewEmptyWeekSlot(i) : CloneWeekPoint(src);
+        }
+
+        RebuildWeeklyActivity();
+    }
+
+    private static ActivityPoint CloneWeekPoint(ActivityPoint src) => new()
+    {
+        Label = src.Label,
+        LocalDate = src.LocalDate,
+        NewCount = src.NewCount,
+        SentCount = src.SentCount,
+        DuplicateCount = src.DuplicateCount,
+        ErrorCount = src.ErrorCount,
+        SlotStartHour = src.SlotStartHour,
+        SlotSpanHours = src.SlotSpanHours
+    };
+
     private static ActivityPoint CloneHourlyPoint(ActivityPoint src, int hourLocal) => new()
     {
         Label = $"{hourLocal:00}:00",
@@ -269,58 +318,60 @@ public partial class DashboardViewModel : ObservableObject
     private void ApplyProcessedResponseCore(CandidateResponse response)
     {
         var createdLocal = response.CreatedAt.ToLocalTimeFromStoredUtc();
-        if (createdLocal.Date < DateTime.Today)
+        var today = DateTime.Today;
+        if (createdLocal.Date == today)
         {
-            return;
+            NewResponses++;
+            TotalToday++;
+
+            switch (response.Status)
+            {
+                case ResponseStatus.Sent:
+                    SentToCrm++;
+                    break;
+                case ResponseStatus.InProgress:
+                    InProgress++;
+                    break;
+                case ResponseStatus.Duplicate:
+                    Duplicates++;
+                    break;
+                case ResponseStatus.Error:
+                    Errors++;
+                    break;
+            }
+
+            var hour = Math.Clamp(createdLocal.Hour, 0, 23);
+            var bucket = _hourlyLocalSlots[hour];
+            bucket.NewCount++;
+            switch (response.Status)
+            {
+                case ResponseStatus.Sent:
+                    bucket.SentCount++;
+                    break;
+                case ResponseStatus.Duplicate:
+                    bucket.DuplicateCount++;
+                    break;
+                case ResponseStatus.Error:
+                    bucket.ErrorCount++;
+                    break;
+            }
+
+            _hourlyLocalSlots[hour] = new ActivityPoint
+            {
+                Label = bucket.Label,
+                NewCount = bucket.NewCount,
+                SentCount = bucket.SentCount,
+                DuplicateCount = bucket.DuplicateCount,
+                ErrorCount = bucket.ErrorCount,
+                SlotStartHour = bucket.SlotStartHour,
+                SlotSpanHours = bucket.SlotSpanHours
+            };
+
+            RebuildDisplayedActivity();
         }
 
-        NewResponses++;
-        TotalToday++;
-
-        switch (response.Status)
-        {
-            case ResponseStatus.Sent:
-                SentToCrm++;
-                break;
-            case ResponseStatus.InProgress:
-                InProgress++;
-                break;
-            case ResponseStatus.Duplicate:
-                Duplicates++;
-                break;
-            case ResponseStatus.Error:
-                Errors++;
-                break;
-        }
-
-        var hour = Math.Clamp(createdLocal.Hour, 0, 23);
-        var bucket = _hourlyLocalSlots[hour];
-        bucket.NewCount++;
-        switch (response.Status)
-        {
-            case ResponseStatus.Sent:
-                bucket.SentCount++;
-                break;
-            case ResponseStatus.Duplicate:
-                bucket.DuplicateCount++;
-                break;
-            case ResponseStatus.Error:
-                bucket.ErrorCount++;
-                break;
-        }
-
-        _hourlyLocalSlots[hour] = new ActivityPoint
-        {
-            Label = bucket.Label,
-            NewCount = bucket.NewCount,
-            SentCount = bucket.SentCount,
-            DuplicateCount = bucket.DuplicateCount,
-            ErrorCount = bucket.ErrorCount,
-            SlotStartHour = bucket.SlotStartHour,
-            SlotSpanHours = bucket.SlotSpanHours
-        };
-
-        RebuildDisplayedActivity();
+        BumpWeeklyLocalSlot(response, createdLocal);
+        RebuildWeeklyActivity();
     }
 
     private void RebuildDisplayedActivity()
@@ -375,6 +426,82 @@ public partial class DashboardViewModel : ObservableObject
         hoursPerSlot <= 1
             ? $"{startHour:00}:00"
             : $"{startHour:00}:00–{endHour:00}:59";
+
+    private void BumpWeeklyLocalSlot(CandidateResponse response, DateTime createdLocal)
+    {
+        var weekStart = DateTime.Today.AddDays(-6);
+        if (createdLocal.Date < weekStart || createdLocal.Date > DateTime.Today)
+        {
+            return;
+        }
+
+        for (var i = 0; i < 7; i++)
+        {
+            var slot = _weeklyLocalSlots[i];
+            if (slot.LocalDate != createdLocal.Date)
+            {
+                continue;
+            }
+
+            slot.NewCount++;
+            switch (response.Status)
+            {
+                case ResponseStatus.Sent:
+                    slot.SentCount++;
+                    break;
+                case ResponseStatus.Duplicate:
+                    slot.DuplicateCount++;
+                    break;
+                case ResponseStatus.Error:
+                    slot.ErrorCount++;
+                    break;
+            }
+
+            return;
+        }
+    }
+
+    private void RebuildWeeklyActivity()
+    {
+        var maxDay = 0;
+        for (var i = 0; i < 7; i++)
+        {
+            maxDay = Math.Max(maxDay, _weeklyLocalSlots[i].NewCount);
+        }
+
+        WeeklyActivity.Clear();
+        for (var i = 0; i < 7; i++)
+        {
+            var src = _weeklyLocalSlots[i];
+            var merged = new ActivityPoint
+            {
+                Label = src.Label,
+                LocalDate = src.LocalDate,
+                NewCount = src.NewCount,
+                SentCount = src.SentCount,
+                DuplicateCount = src.DuplicateCount,
+                ErrorCount = src.ErrorCount,
+                SlotStartHour = src.SlotStartHour,
+                SlotSpanHours = src.SlotSpanHours,
+                ChartBarHeight = maxDay > 0
+                    ? Math.Min(ChartBarMaxHeight, ChartBarMaxHeight * src.NewCount / maxDay)
+                    : 0d,
+                ChartTooltip = BuildWeekActivityTooltip(src)
+            };
+            WeeklyActivity.Add(merged);
+        }
+    }
+
+    private static string BuildWeekActivityTooltip(ActivityPoint day)
+    {
+        var ru = CultureInfo.GetCultureInfo("ru-RU");
+        var dateText = day.LocalDate is DateTime d
+            ? d.ToString("dddd d MMMM yyyy", ru)
+            : day.Label;
+
+        return FormattableString.Invariant(
+            $"{dateText}\nВсего: {day.NewCount}\nВ CRM: {day.SentCount}\nДубли: {day.DuplicateCount}\nОшибки: {day.ErrorCount}");
+    }
 
     private static string BuildActivityTooltip(ActivityPoint slot)
     {
