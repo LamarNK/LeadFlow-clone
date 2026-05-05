@@ -53,6 +53,10 @@ public partial class StatisticsHistoryViewModel(AppRepository repository) : Obse
     private PointCollection totalTrendPoints = [];
 
     public ObservableCollection<TrendPointRow> TrendPoints { get; } = [];
+    public ObservableCollection<HrMetricRow> TopCities { get; } = [];
+    public ObservableCollection<HrMetricRow> TopVacancies { get; } = [];
+    public ObservableCollection<HrMetricRow> TopAccounts { get; } = [];
+    public ObservableCollection<AgeBucketMetricRow> AgeBuckets { get; } = [];
 
     [ObservableProperty]
     private double trendCanvasWidth = 760d;
@@ -65,6 +69,10 @@ public partial class StatisticsHistoryViewModel(AppRepository repository) : Obse
 
     [ObservableProperty]
     private string trendEndLabel = string.Empty;
+
+    [ObservableProperty]
+    private string averageAgeText = "н/д";
+
 
     public void UpdateTrendViewportWidth(double width)
     {
@@ -153,6 +161,13 @@ public partial class StatisticsHistoryViewModel(AppRepository repository) : Obse
         _trendBuckets = buckets.ToList();
         RebuildTrendGeometry();
         TrendMaxValue = maxTotal;
+
+        var hr = await _repository.GetHrInsightsForLocalRangeAsync(start, end, CancellationToken.None);
+        RebindMetrics(TopCities, hr.TopCities);
+        RebindMetrics(TopVacancies, hr.TopVacancies);
+        RebindMetrics(TopAccounts, hr.TopAccounts);
+        RebindMetrics(AgeBuckets, hr.AgeBuckets);
+        AverageAgeText = hr.AverageAgeText;
     }
 
     private void RebuildTrendGeometry()
@@ -253,6 +268,15 @@ public partial class StatisticsHistoryViewModel(AppRepository repository) : Obse
             + $"Нужны действия: {b.ActionRequired}\n"
             + $"Дубликаты: {b.Duplicates}\n"
             + $"Ошибки: {b.Errors}";
+    }
+
+    private static void RebindMetrics<T>(ObservableCollection<T> target, IReadOnlyList<T> source)
+    {
+        target.Clear();
+        foreach (var item in source)
+        {
+            target.Add(item);
+        }
     }
 }
 

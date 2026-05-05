@@ -4,9 +4,36 @@
              xmlns:conv="clr-namespace:LeadFlow.Converters">
     <UserControl.Resources>
         <conv:ZeroToCollapsedConverter x:Key="ZeroToCollapsedConverter" />
+        <DataTemplate x:Key="HrMetricRowTemplate">
+            <Grid Margin="0,1,0,1">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                <TextBlock Grid.Column="1" Text="{Binding Total, StringFormat={} {0}}" Margin="10,0,0,0" Foreground="{StaticResource SecondaryTextBrush}" />
+                <TextBlock Grid.Column="2" Text="{Binding Sent, StringFormat={} / CRM {0}}" Margin="8,0,0,0" Foreground="{StaticResource SuccessBrush}" />
+                <TextBlock Grid.Column="3" Text="{Binding ConversionText, StringFormat={} ({0})}" Margin="8,0,0,0" Foreground="{StaticResource PrimaryBrush}" />
+            </Grid>
+        </DataTemplate>
+        <DataTemplate x:Key="AgeMetricRowTemplate">
+            <Grid Margin="0,1,0,1">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="{Binding Bucket}" />
+                <TextBlock Grid.Column="1" Text="{Binding Total, StringFormat={} {0}}" Margin="10,0,0,0" Foreground="{StaticResource SecondaryTextBrush}" />
+                <TextBlock Grid.Column="2" Text="{Binding ConversionText, StringFormat={} / CRM {0}}" Margin="8,0,0,0" Foreground="{StaticResource SuccessBrush}" />
+            </Grid>
+        </DataTemplate>
     </UserControl.Resources>
     <Grid Margin="{StaticResource PagePadding}">
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -365,7 +392,55 @@
             </StackPanel>
         </Border>
 
-        <TextBlock Grid.Row="5"
+        <Border Grid.Row="5" Style="{StaticResource CompactCardBorderStyle}" Padding="10,8" Margin="0,0,0,8">
+            <StackPanel>
+                <TextBlock Text="HR-метрики за период"
+                           Style="{StaticResource BodyTextStyle}"
+                           FontWeight="SemiBold" />
+                <WrapPanel Margin="0,6,0,8">
+                    <StackPanel Orientation="Horizontal" Margin="0,0,18,4">
+                        <TextBlock Text="Средний возраст: " Foreground="{StaticResource SecondaryTextBrush}" />
+                        <TextBlock Text="{Binding AverageAgeText}" FontWeight="SemiBold" />
+                    </StackPanel>
+                </WrapPanel>
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Border Grid.Row="0" Grid.Column="0" Style="{StaticResource DetailSectionBorderStyle}" Margin="0,0,6,6" Padding="8,6">
+                        <StackPanel>
+                            <TextBlock Text="Топ городов (отклики / CRM)" FontWeight="SemiBold" />
+                            <ItemsControl ItemsSource="{Binding TopCities}" ItemTemplate="{StaticResource HrMetricRowTemplate}" Margin="0,6,0,0" />
+                        </StackPanel>
+                    </Border>
+                    <Border Grid.Row="0" Grid.Column="1" Style="{StaticResource DetailSectionBorderStyle}" Margin="6,0,0,6" Padding="8,6">
+                        <StackPanel>
+                            <TextBlock Text="Топ вакансий (отклики / CRM)" FontWeight="SemiBold" />
+                            <ItemsControl ItemsSource="{Binding TopVacancies}" ItemTemplate="{StaticResource HrMetricRowTemplate}" Margin="0,6,0,0" />
+                        </StackPanel>
+                    </Border>
+                    <Border Grid.Row="1" Grid.Column="0" Style="{StaticResource DetailSectionBorderStyle}" Margin="0,0,6,0" Padding="8,6">
+                        <StackPanel>
+                            <TextBlock Text="Топ аккаунтов (отклики / CRM)" FontWeight="SemiBold" />
+                            <ItemsControl ItemsSource="{Binding TopAccounts}" ItemTemplate="{StaticResource HrMetricRowTemplate}" Margin="0,6,0,0" />
+                        </StackPanel>
+                    </Border>
+                    <Border Grid.Row="1" Grid.Column="1" Style="{StaticResource DetailSectionBorderStyle}" Margin="6,0,0,0" Padding="8,6">
+                        <StackPanel>
+                            <TextBlock Text="Возрастные группы" FontWeight="SemiBold" />
+                            <ItemsControl ItemsSource="{Binding AgeBuckets}" ItemTemplate="{StaticResource AgeMetricRowTemplate}" Margin="0,6,0,0" />
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </StackPanel>
+        </Border>
+
+        <TextBlock Grid.Row="6"
                    Text="За выбранный период откликов в базе нет — графики появятся после появления данных."
                    Style="{StaticResource CaptionTextStyle}"
                    FontStyle="Italic"

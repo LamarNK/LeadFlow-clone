@@ -344,6 +344,143 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         return list;
     }
 
+    /// <summary>HR-разрезы за локальный календарный период: города, вакансии, аккаунты, возраст и покрытие мессенджером.</summary>
+    public async Task<HrInsightsSnapshot> GetHrInsightsForLocalRangeAsync(
+        DateTime startLocalDate,
+        DateTime endLocalDate,
+        CancellationToken cancellationToken)
+    {
+        var todayLocal = DateTime.Today;
+        var start = startLocalDate.Date;
+        var end = endLocalDate.Date;
+        if (end > todayLocal)
+        {
+            end = todayLocal;
+        }
+
+        if (start > end)
+        {
+            (start, end) = (end, start);
+        }
+
+        const int maxCalendarDays = 366;
+        if ((end - start).Days + 1 > maxCalendarDays)
+        {
+            start = end.AddDays(-(maxCalendarDays - 1));
+        }
+
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var utcStart = DateTimeAssumedUtc.GetUtcRangeForLocalCalendarDay(start).UtcStartInclusive;
+        var utcEnd = DateTimeAssumedUtc.GetUtcRangeForLocalCalendarDay(end).UtcEndExclusive;
+
+        var responses = await db.CandidateResponses
+            .AsNoTracking()
+            .Where(x => x.CreatedAt >= utcStart && x.CreatedAt < utcEnd)
+            .Select(x => new
+            {
+                x.City,
+                x.Vacancy,
+                x.AccountName,
+                x.Status,
+                x.Age,
+                x.MessengerUrl
+            })
+            .ToListAsync(cancellationToken);
+
+        var total = responses.Count;
+        if (total == 0)
+        {
+            return new HrInsightsSnapshot();
+        }
+
+        static bool IsSent(string status) => status == nameof(ResponseStatus.Sent);
+        static string Normalize(string? value, string fallback) =>
+            string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
+        string Percent(int part, int whole) => whole <= 0 ? "0%" : $"{Math.Round(part * 100d / whole, 1):0.#}%";
+
+        IReadOnlyList<HrMetricRow> BuildTop<T>(
+            IEnumerable<T> source,
+            Func<T, string> keySelector,
+            Func<T, string> statusSelector,
+            int take) =>
+            source
+                .GroupBy(keySelector)
+                .Select(g =>
+                {
+                    var sent = g.Count(x => IsSent(statusSelector(x)));
+                    var count = g.Count();
+                    return new HrMetricRow
+                    {
+                        Name = g.Key,
+                        Total = count,
+                        Sent = sent,
+                        ConversionText = Percent(sent, count),
+                        ShareText = Percent(count, total)
+                    };
+                })
+                .OrderByDescending(x => x.Total)
+                .ThenBy(x => x.Name)
+                .Take(take)
+                .ToList();
+
+        var topCities = BuildTop(
+            responses,
+            x => Normalize(x.City, "Город не указан"),
+            x => x.Status,
+            8);
+        var topVacancies = BuildTop(
+            responses,
+            x => Normalize(x.Vacancy, "Вакансия не указана"),
+            x => x.Status,
+            8);
+        var topAccounts = BuildTop(
+            responses,
+            x => Normalize(x.AccountName, "Аккаунт не указан"),
+            x => x.Status,
+            8);
+
+        string GetAgeBucket(int? age) => age switch
+        {
+            null => "Возраст не указан",
+            < 18 => "< 18",
+            <= 24 => "18-24",
+            <= 34 => "25-34",
+            <= 44 => "35-44",
+            _ => "45+"
+        };
+
+        var ageBuckets = responses
+            .GroupBy(x => GetAgeBucket(x.Age))
+            .Select(g =>
+            {
+                var count = g.Count();
+                var sent = g.Count(x => IsSent(x.Status));
+                return new AgeBucketMetricRow
+                {
+                    Bucket = g.Key,
+                    Total = count,
+                    Sent = sent,
+                    ConversionText = Percent(sent, count)
+                };
+            })
+            .OrderByDescending(x => x.Total)
+            .ToList();
+
+        var ages = responses.Where(x => x.Age.HasValue).Select(x => x.Age!.Value).ToList();
+        var avgAgeText = ages.Count == 0 ? "н/д" : $"{Math.Round(ages.Average(), 1):0.#} лет";
+        var withMessenger = responses.Count(x => !string.IsNullOrWhiteSpace(x.MessengerUrl));
+
+        return new HrInsightsSnapshot
+        {
+            TopCities = topCities,
+            TopVacancies = topVacancies,
+            TopAccounts = topAccounts,
+            AgeBuckets = ageBuckets,
+            AverageAgeText = avgAgeText,
+            MessengerCoverageText = Percent(withMessenger, total)
+        };
+    }
+
     public async Task<CandidateResponse?> FindDuplicateAsync(string phoneNormalized, DuplicateScope scope, Guid accountId, CancellationToken cancellationToken)
     {
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
