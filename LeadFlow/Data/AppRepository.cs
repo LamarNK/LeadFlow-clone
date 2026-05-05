@@ -182,33 +182,50 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
     {
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
         var (utcStart, utcEnd) = DateTimeAssumedUtc.GetUtcRangeForLocalToday();
-
-        var todaysResponses = await db.CandidateResponses
+        var statusCounts = await db.CandidateResponses
             .AsNoTracking()
             .Where(x => x.CreatedAt >= utcStart && x.CreatedAt < utcEnd)
-            .Select(x => new { x.Status, x.CreatedAt })
+            .GroupBy(x => x.Status)
+            .Select(g => new StatusCountRow(g.Key, g.Count()))
             .ToListAsync(cancellationToken);
 
-        var responseSummary = new
-        {
-            Total = todaysResponses.Count,
-            Sent = todaysResponses.Count(x => x.Status == nameof(ResponseStatus.Sent)),
-            InProgress = todaysResponses.Count(x => x.Status == nameof(ResponseStatus.InProgress)),
-            Duplicates = todaysResponses.Count(x => x.Status == nameof(ResponseStatus.Duplicate)),
-            Errors = todaysResponses.Count(x => x.Status == nameof(ResponseStatus.Error))
-        };
+        var totalResponses = statusCounts.Sum(x => x.Count);
+        var sentResponses = statusCounts.Where(x => x.Status == nameof(ResponseStatus.Sent)).Sum(x => x.Count);
+        var inProgressResponses = statusCounts.Where(x => x.Status == nameof(ResponseStatus.InProgress)).Sum(x => x.Count);
+        var duplicateResponses = statusCounts.Where(x => x.Status == nameof(ResponseStatus.Duplicate)).Sum(x => x.Count);
+        var errorResponses = statusCounts.Where(x => x.Status == nameof(ResponseStatus.Error)).Sum(x => x.Count);
 
-        var byHour = todaysResponses
-            .GroupBy(x => x.CreatedAt.ToLocalTimeFromStoredUtc().Hour)
-            .ToDictionary(
-                g => g.Key,
-                g => new
-                {
-                    Total = g.Count(),
-                    Sent = g.Count(x => x.Status == nameof(ResponseStatus.Sent)),
-                    Duplicates = g.Count(x => x.Status == nameof(ResponseStatus.Duplicate)),
-                    Errors = g.Count(x => x.Status == nameof(ResponseStatus.Error))
-                });
+        var hourlyGroupsUtc = await db.CandidateResponses
+            .AsNoTracking()
+            .Where(x => x.CreatedAt >= utcStart && x.CreatedAt < utcEnd)
+            .GroupBy(x => new { x.CreatedAt.Year, x.CreatedAt.Month, x.CreatedAt.Day, x.CreatedAt.Hour })
+            .Select(g => new HourlyStatusAggregateRow(
+                g.Key.Year,
+                g.Key.Month,
+                g.Key.Day,
+                g.Key.Hour,
+                g.Count(),
+                g.Count(x => x.Status == nameof(ResponseStatus.Sent)),
+                g.Count(x => x.Status == nameof(ResponseStatus.Duplicate)),
+                g.Count(x => x.Status == nameof(ResponseStatus.Error))))
+            .ToListAsync(cancellationToken);
+
+        var byHour = new Dictionary<int, HourlyCounters>();
+        foreach (var row in hourlyGroupsUtc)
+        {
+            var utcHour = new DateTime(row.Year, row.Month, row.Day, row.Hour, 0, 0, DateTimeKind.Utc);
+            var localHour = utcHour.ToLocalTimeFromStoredUtc().Hour;
+            if (!byHour.TryGetValue(localHour, out var bucket))
+            {
+                bucket = new HourlyCounters();
+                byHour[localHour] = bucket;
+            }
+
+            bucket.Total += row.Total;
+            bucket.Sent += row.Sent;
+            bucket.Duplicates += row.Duplicates;
+            bucket.Errors += row.Errors;
+        }
 
         var accountSummary = await db.AvitoAccounts
             .AsNoTracking()
@@ -223,15 +240,15 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
             })
             .FirstOrDefaultAsync(cancellationToken);
 
-        var totalToday = responseSummary.Total;
+        var totalToday = totalResponses;
         var stats = new DashboardStats
         {
             NewResponses = totalToday,
             TotalToday = totalToday,
-            SentToCrm = responseSummary.Sent,
-            InProgress = responseSummary.InProgress,
-            Duplicates = responseSummary.Duplicates,
-            Errors = responseSummary.Errors,
+            SentToCrm = sentResponses,
+            InProgress = inProgressResponses,
+            Duplicates = duplicateResponses,
+            Errors = errorResponses,
             ConnectedAccounts = accountSummary?.Connected ?? 0,
             RequiresAuthorization = accountSummary?.RequiresAuthorization ?? 0,
             ActiveAdsCount = accountSummary?.ActiveAds ?? 0,
@@ -300,15 +317,41 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         var utcStart = DateTimeAssumedUtc.GetUtcRangeForLocalCalendarDay(start).UtcStartInclusive;
         var utcEnd = DateTimeAssumedUtc.GetUtcRangeForLocalCalendarDay(end).UtcEndExclusive;
 
-        var responses = await db.CandidateResponses
+        var groupedByUtcHour = await db.CandidateResponses
             .AsNoTracking()
             .Where(x => x.CreatedAt >= utcStart && x.CreatedAt < utcEnd)
-            .Select(x => new { x.Status, x.CreatedAt })
+            .GroupBy(x => new { x.CreatedAt.Year, x.CreatedAt.Month, x.CreatedAt.Day, x.CreatedAt.Hour })
+            .Select(g => new HourlyStatusAggregateRow(
+                g.Key.Year,
+                g.Key.Month,
+                g.Key.Day,
+                g.Key.Hour,
+                g.Count(),
+                g.Count(x => x.Status == nameof(ResponseStatus.Sent)),
+                g.Count(x => x.Status == nameof(ResponseStatus.Duplicate)),
+                g.Count(x => x.Status == nameof(ResponseStatus.Error)),
+                g.Count(x => x.Status == nameof(ResponseStatus.InProgress)),
+                g.Count(x => x.Status == nameof(ResponseStatus.ActionRequired))))
             .ToListAsync(cancellationToken);
 
-        var byDay = responses
-            .GroupBy(x => x.CreatedAt.ToLocalTimeFromStoredUtc().Date)
-            .ToDictionary(g => g.Key, g => g.ToList());
+        var byDay = new Dictionary<DateTime, DailyCounters>();
+        foreach (var row in groupedByUtcHour)
+        {
+            var utcHour = new DateTime(row.Year, row.Month, row.Day, row.Hour, 0, 0, DateTimeKind.Utc);
+            var localDate = utcHour.ToLocalTimeFromStoredUtc().Date;
+            if (!byDay.TryGetValue(localDate, out var bucket))
+            {
+                bucket = new DailyCounters();
+                byDay[localDate] = bucket;
+            }
+
+            bucket.Total += row.Total;
+            bucket.Sent += row.Sent;
+            bucket.InProgress += row.InProgress;
+            bucket.ActionRequired += row.ActionRequired;
+            bucket.Duplicates += row.Duplicates;
+            bucket.Errors += row.Errors;
+        }
 
         var capacity = (end - start).Days + 1;
         var list = new List<DailyResponseBucket>(capacity);
@@ -332,12 +375,12 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
             list.Add(new DailyResponseBucket
             {
                 DateLocal = d,
-                Total = dayItems.Count,
-                Sent = dayItems.Count(x => x.Status == nameof(ResponseStatus.Sent)),
-                InProgress = dayItems.Count(x => x.Status == nameof(ResponseStatus.InProgress)),
-                ActionRequired = dayItems.Count(x => x.Status == nameof(ResponseStatus.ActionRequired)),
-                Duplicates = dayItems.Count(x => x.Status == nameof(ResponseStatus.Duplicate)),
-                Errors = dayItems.Count(x => x.Status == nameof(ResponseStatus.Error))
+                Total = dayItems.Total,
+                Sent = dayItems.Sent,
+                InProgress = dayItems.InProgress,
+                ActionRequired = dayItems.ActionRequired,
+                Duplicates = dayItems.Duplicates,
+                Errors = dayItems.Errors
             });
         }
 
@@ -373,42 +416,54 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         var utcStart = DateTimeAssumedUtc.GetUtcRangeForLocalCalendarDay(start).UtcStartInclusive;
         var utcEnd = DateTimeAssumedUtc.GetUtcRangeForLocalCalendarDay(end).UtcEndExclusive;
 
-        var responses = await db.CandidateResponses
+        var baseQuery = db.CandidateResponses
             .AsNoTracking()
-            .Where(x => x.CreatedAt >= utcStart && x.CreatedAt < utcEnd)
-            .Select(x => new
-            {
-                x.City,
-                x.Vacancy,
-                x.AccountName,
-                x.Status,
-                x.Age,
-                x.MessengerUrl
-            })
-            .ToListAsync(cancellationToken);
+            .Where(x => x.CreatedAt >= utcStart && x.CreatedAt < utcEnd);
 
-        var total = responses.Count;
+        var total = await baseQuery.CountAsync(cancellationToken);
         if (total == 0)
         {
             return new HrInsightsSnapshot();
         }
 
+        var withMessenger = await baseQuery.CountAsync(x => x.MessengerUrl != null && x.MessengerUrl != string.Empty, cancellationToken);
+        var avgAge = await baseQuery
+            .Where(x => x.Age.HasValue)
+            .Select(x => (double?)x.Age)
+            .AverageAsync(cancellationToken);
+
+        var cityRows = await baseQuery
+            .GroupBy(x => new { x.City, x.Status })
+            .Select(g => new GroupedStatusRow(g.Key.City, g.Key.Status, g.Count()))
+            .ToListAsync(cancellationToken);
+        var vacancyRows = await baseQuery
+            .GroupBy(x => new { x.Vacancy, x.Status })
+            .Select(g => new GroupedStatusRow(g.Key.Vacancy, g.Key.Status, g.Count()))
+            .ToListAsync(cancellationToken);
+        var accountRows = await baseQuery
+            .GroupBy(x => new { x.AccountName, x.Status })
+            .Select(g => new GroupedStatusRow(g.Key.AccountName, g.Key.Status, g.Count()))
+            .ToListAsync(cancellationToken);
+        var ageRows = await baseQuery
+            .GroupBy(x => new { x.Age, x.Status })
+            .Select(g => new GroupedAgeStatusRow(g.Key.Age, g.Key.Status, g.Count()))
+            .ToListAsync(cancellationToken);
+
+        string Percent(int part, int whole) => whole <= 0 ? "0%" : $"{Math.Round(part * 100d / whole, 1):0.#}%";
         static bool IsSent(string status) => status == nameof(ResponseStatus.Sent);
         static string Normalize(string? value, string fallback) =>
             string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
-        string Percent(int part, int whole) => whole <= 0 ? "0%" : $"{Math.Round(part * 100d / whole, 1):0.#}%";
 
-        IReadOnlyList<HrMetricRow> BuildTop<T>(
-            IEnumerable<T> source,
-            Func<T, string> keySelector,
-            Func<T, string> statusSelector,
+        IReadOnlyList<HrMetricRow> BuildTop(
+            IEnumerable<GroupedStatusRow> groupedRows,
+            string fallback,
             int take) =>
-            source
-                .GroupBy(keySelector)
+            groupedRows
+                .GroupBy(x => Normalize(x.Key, fallback))
                 .Select(g =>
                 {
-                    var sent = g.Count(x => IsSent(statusSelector(x)));
-                    var count = g.Count();
+                    var sent = g.Where(x => IsSent(x.Status)).Sum(x => x.Count);
+                    var count = g.Sum(x => x.Count);
                     return new HrMetricRow
                     {
                         Name = g.Key,
@@ -424,19 +479,16 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
                 .ToList();
 
         var topCities = BuildTop(
-            responses,
-            x => Normalize(x.City, "Город не указан"),
-            x => x.Status,
+            cityRows,
+            "Город не указан",
             8);
         var topVacancies = BuildTop(
-            responses,
-            x => Normalize(x.Vacancy, "Вакансия не указана"),
-            x => x.Status,
+            vacancyRows,
+            "Вакансия не указана",
             8);
         var topAccounts = BuildTop(
-            responses,
-            x => Normalize(x.AccountName, "Аккаунт не указан"),
-            x => x.Status,
+            accountRows,
+            "Аккаунт не указан",
             8);
 
         string GetAgeBucket(int? age) => age switch
@@ -449,12 +501,12 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
             _ => "45+"
         };
 
-        var ageBuckets = responses
+        var ageBuckets = ageRows
             .GroupBy(x => GetAgeBucket(x.Age))
             .Select(g =>
             {
-                var count = g.Count();
-                var sent = g.Count(x => IsSent(x.Status));
+                var count = g.Sum(x => x.Count);
+                var sent = g.Where(x => IsSent(x.Status)).Sum(x => x.Count);
                 return new AgeBucketMetricRow
                 {
                     Bucket = g.Key,
@@ -466,9 +518,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
             .OrderByDescending(x => x.Total)
             .ToList();
 
-        var ages = responses.Where(x => x.Age.HasValue).Select(x => x.Age!.Value).ToList();
-        var avgAgeText = ages.Count == 0 ? "н/д" : $"{Math.Round(ages.Average(), 1):0.#} лет";
-        var withMessenger = responses.Count(x => !string.IsNullOrWhiteSpace(x.MessengerUrl));
+        var avgAgeText = avgAge is null ? "н/д" : $"{Math.Round(avgAge.Value, 1):0.#} лет";
 
         return new HrInsightsSnapshot
         {
@@ -479,6 +529,37 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
             AverageAgeText = avgAgeText,
             MessengerCoverageText = Percent(withMessenger, total)
         };
+    }
+
+    private sealed record StatusCountRow(string Status, int Count);
+    private sealed record GroupedStatusRow(string? Key, string Status, int Count);
+    private sealed record GroupedAgeStatusRow(int? Age, string Status, int Count);
+    private sealed record HourlyStatusAggregateRow(
+        int Year,
+        int Month,
+        int Day,
+        int Hour,
+        int Total,
+        int Sent,
+        int Duplicates,
+        int Errors,
+        int InProgress = 0,
+        int ActionRequired = 0);
+    private sealed class HourlyCounters
+    {
+        public int Total { get; set; }
+        public int Sent { get; set; }
+        public int Duplicates { get; set; }
+        public int Errors { get; set; }
+    }
+    private sealed class DailyCounters
+    {
+        public int Total { get; set; }
+        public int Sent { get; set; }
+        public int InProgress { get; set; }
+        public int ActionRequired { get; set; }
+        public int Duplicates { get; set; }
+        public int Errors { get; set; }
     }
 
     public async Task<CandidateResponse?> FindDuplicateAsync(string phoneNormalized, DuplicateScope scope, Guid accountId, CancellationToken cancellationToken)

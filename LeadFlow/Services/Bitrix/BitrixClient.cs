@@ -1,10 +1,12 @@
 using System.Net.Http.Json;
 using System.Globalization;
 using System.Text.Json;
+using System.Collections.Concurrent;
 using LeadFlow.Logging.Audit;
 using LeadFlow.Models;
 using System.Net.Http;
 using Microsoft.Extensions.Http;
+using System.Net;
 
 namespace LeadFlow.Services.Bitrix;
 
@@ -13,6 +15,8 @@ public sealed class BitrixClient(
     ICandidateParser candidateParser) : IBitrixClient
 {
     private const string ImportedLeadSource = "Bitrix24";
+    private const int ContactLookupMaxConcurrency = 6;
+    private const int ContactLookupMaxAttempts = 3;
     private sealed record DealSnapshot(
         string BitrixId,
         string Title,
@@ -276,38 +280,78 @@ public sealed class BitrixClient(
         IEnumerable<string> contactIds,
         CancellationToken cancellationToken)
     {
-        var contacts = new Dictionary<string, ContactSnapshot>(StringComparer.OrdinalIgnoreCase);
+        var contacts = new ConcurrentDictionary<string, ContactSnapshot>(StringComparer.OrdinalIgnoreCase);
         var endpoint = webhookUrl.TrimEnd('/') + "/crm.contact.get.json";
-
-        foreach (var contactId in contactIds.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase))
+        var distinctIds = contactIds
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (distinctIds.Length == 0)
         {
-            try
-            {
-                using var result = await client.PostAsJsonAsync(endpoint, new { id = contactId }, cancellationToken);
-                result.EnsureSuccessStatusCode();
-
-                await using var stream = await result.Content.ReadAsStreamAsync(cancellationToken);
-                using var json = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
-                if (!json.RootElement.TryGetProperty("result", out var contactElement) || contactElement.ValueKind != JsonValueKind.Object)
-                {
-                    continue;
-                }
-
-                contacts[contactId] = new ContactSnapshot(
-                    contactId,
-                    GetString(contactElement, "NAME"),
-                    GetString(contactElement, "LAST_NAME"),
-                    GetString(contactElement, "SECOND_NAME"),
-                    GetFirstPhone(contactElement));
-            }
-            catch
-            {
-                // Ignore one-off contact lookup failures and keep importing available deals.
-            }
+            return new Dictionary<string, ContactSnapshot>(StringComparer.OrdinalIgnoreCase);
         }
 
-        return contacts;
+        using var gate = new SemaphoreSlim(ContactLookupMaxConcurrency, ContactLookupMaxConcurrency);
+        var tasks = distinctIds.Select(async contactId =>
+        {
+            await gate.WaitAsync(cancellationToken);
+            try
+            {
+                for (var attempt = 1; attempt <= ContactLookupMaxAttempts; attempt++)
+                {
+                    try
+                    {
+                        using var result = await client.PostAsJsonAsync(endpoint, new { id = contactId }, cancellationToken);
+                        if (ShouldRetry(result.StatusCode) && attempt < ContactLookupMaxAttempts)
+                        {
+                            await Task.Delay(TimeSpan.FromMilliseconds(200 * attempt), cancellationToken);
+                            continue;
+                        }
+
+                        result.EnsureSuccessStatusCode();
+                        await using var stream = await result.Content.ReadAsStreamAsync(cancellationToken);
+                        using var json = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+                        if (!json.RootElement.TryGetProperty("result", out var contactElement) || contactElement.ValueKind != JsonValueKind.Object)
+                        {
+                            return;
+                        }
+
+                        contacts[contactId] = new ContactSnapshot(
+                            contactId,
+                            GetString(contactElement, "NAME"),
+                            GetString(contactElement, "LAST_NAME"),
+                            GetString(contactElement, "SECOND_NAME"),
+                            GetFirstPhone(contactElement));
+                        return;
+                    }
+                    catch (Exception ex) when (IsTransient(ex) && attempt < ContactLookupMaxAttempts)
+                    {
+                        await Task.Delay(TimeSpan.FromMilliseconds(200 * attempt), cancellationToken);
+                    }
+                    catch
+                    {
+                        // Ignore one-off contact lookup failures and keep importing available deals.
+                        return;
+                    }
+                }
+            }
+            finally
+            {
+                gate.Release();
+            }
+        });
+
+        await Task.WhenAll(tasks);
+        return contacts.ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.OrdinalIgnoreCase);
     }
+
+    private static bool ShouldRetry(HttpStatusCode statusCode) =>
+        statusCode == HttpStatusCode.RequestTimeout ||
+        (int)statusCode == 429 ||
+        (int)statusCode >= 500;
+
+    private static bool IsTransient(Exception ex) =>
+        ex is HttpRequestException || ex is TaskCanceledException;
 
     private static string GetFirstPhone(JsonElement item)
     {

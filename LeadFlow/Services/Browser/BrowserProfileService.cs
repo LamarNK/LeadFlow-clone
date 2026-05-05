@@ -64,9 +64,9 @@ public sealed class BrowserProfileService : IBrowserProfileService
     {
         try
         {
-            // Пытаемся получить реальную версию установленного WebView2
-            var env = CoreWebView2Environment.CreateAsync().Result;
-            return env.BrowserVersionString ?? "125.0.0.0";
+            // Получаем версию установленного WebView2 без блокирующего ожидания async-API.
+            var version = CoreWebView2Environment.GetAvailableBrowserVersionString();
+            return string.IsNullOrWhiteSpace(version) ? "125.0.0.0" : version;
         }
         catch
         {
