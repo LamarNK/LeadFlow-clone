@@ -118,6 +118,7 @@
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
 
                             <TextBlock Text="Дата" Style="{StaticResource FilterToolbarLabelStyle}" />
@@ -141,7 +142,7 @@
                                 <TextBlock Margin="10,0,0,0"
                                            VerticalAlignment="Center"
                                            IsHitTestVisible="False"
-                                           Text="Поиск по имени, вакансии или телефону">
+                                           Text="Имя, телефон, вакансия, город, аккаунт">
                                     <TextBlock.Style>
                                         <Style TargetType="TextBlock" BasedOn="{StaticResource FilterSearchWatermarkStyle}">
                                             <Setter Property="Visibility" Value="Collapsed" />
@@ -185,6 +186,95 @@
                                     Padding="12,6"
                                     Margin="0,6,0,0"
                                     VerticalAlignment="Stretch" />
+
+                            <Expander Grid.Row="2"
+                                      Grid.Column="0"
+                                      Grid.ColumnSpan="4"
+                                      Margin="0,10,0,0"
+                                      Padding="0,2,0,0"
+                                      BorderThickness="0"
+                                      Background="Transparent">
+                                <Expander.Header>
+                                    <TextBlock Style="{StaticResource FilterToolbarLabelStyle}"
+                                               Foreground="{StaticResource LinkTextBrush}">
+                                        <Run Text="Ещё фильтры" />
+                                        <Run Text="{Binding ExtraFiltersHeaderSuffix, Mode=OneWay}" />
+                                    </TextBlock>
+                                </Expander.Header>
+                                <Grid Margin="0,8,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+
+                                    <TextBlock Text="Вакансия" Style="{StaticResource FilterToolbarLabelStyle}" />
+                                    <TextBlock Grid.Column="1" Text="Город" Style="{StaticResource FilterToolbarLabelStyle}" />
+                                    <TextBlock Grid.Column="2" Text="Аккаунт" Style="{StaticResource FilterToolbarLabelStyle}" />
+                                    <TextBlock Grid.Column="3"
+                                               Grid.ColumnSpan="2"
+                                               Text="Возраст (от — до)"
+                                               Style="{StaticResource FilterToolbarLabelStyle}" />
+
+                                    <ComboBox Grid.Row="1"
+                                              Grid.Column="0"
+                                              Style="{StaticResource FilterComboBoxStyle}"
+                                              Margin="0,6,8,0"
+                                              ItemsSource="{Binding VacancyFilterOptions}"
+                                              SelectedItem="{Binding SelectedVacancyFilter}"
+                                              MaxDropDownHeight="220" />
+
+                                    <ComboBox Grid.Row="1"
+                                              Grid.Column="1"
+                                              Style="{StaticResource FilterComboBoxStyle}"
+                                              Margin="0,6,8,0"
+                                              ItemsSource="{Binding CityFilterOptions}"
+                                              SelectedItem="{Binding SelectedCityFilter}"
+                                              MaxDropDownHeight="220" />
+
+                                    <ComboBox Grid.Row="1"
+                                              Grid.Column="2"
+                                              Style="{StaticResource FilterComboBoxStyle}"
+                                              Margin="0,6,8,0"
+                                              ItemsSource="{Binding AccountFilterOptions}"
+                                              SelectedItem="{Binding SelectedAccountFilter}"
+                                              MaxDropDownHeight="220" />
+
+                                    <Grid Grid.Row="1"
+                                          Grid.Column="3"
+                                          Grid.ColumnSpan="2"
+                                          Margin="0,6,0,0"
+                                          VerticalAlignment="Stretch">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBox Grid.Column="0"
+                                                 Text="{Binding AgeFilterMinText, UpdateSourceTrigger=PropertyChanged}"
+                                                 MinHeight="{StaticResource FilterControlMinHeight}"
+                                                 Margin="0,0,6,0"
+                                                 VerticalContentAlignment="Center"
+                                                 ToolTip="От" />
+                                        <TextBlock Grid.Column="1"
+                                                   Text="—"
+                                                   VerticalAlignment="Center"
+                                                   Margin="0,0,6,0"
+                                                   Style="{StaticResource FilterToolbarLabelStyle}" />
+                                        <TextBox Grid.Column="2"
+                                                 Text="{Binding AgeFilterMaxText, UpdateSourceTrigger=PropertyChanged}"
+                                                 MinHeight="{StaticResource FilterControlMinHeight}"
+                                                 VerticalContentAlignment="Center"
+                                                 ToolTip="До" />
+                                    </Grid>
+                                </Grid>
+                            </Expander>
                         </Grid>
                     </Border>
 

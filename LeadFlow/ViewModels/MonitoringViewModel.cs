@@ -16,10 +16,19 @@ public partial class MonitoringViewModel : ObservableObject
 {
     private const string StatusFilterAll = "Все";
     private const string StatusFilterExcludeDuplicates = "Все, кроме дублей";
+    private const string AllVacanciesLabel = "Все вакансии";
+    private const string AllCitiesLabel = "Все города";
+    private const string AllAccountsLabel = "Все аккаунты";
 
     public event EventHandler<CandidateResponse?>? SelectedResponseChanged;
 
     public ObservableCollection<CandidateResponse> Responses { get; } = [];
+
+    public ObservableCollection<string> VacancyFilterOptions { get; } = [];
+
+    public ObservableCollection<string> CityFilterOptions { get; } = [];
+
+    public ObservableCollection<string> AccountFilterOptions { get; } = [];
 
     public ICollectionView ResponsesView { get; }
 
@@ -35,6 +44,42 @@ public partial class MonitoringViewModel : ObservableObject
     [ObservableProperty]
     private DateTime? selectedResponseDate;
 
+    [ObservableProperty]
+    private string selectedVacancyFilter = AllVacanciesLabel;
+
+    [ObservableProperty]
+    private string selectedCityFilter = AllCitiesLabel;
+
+    [ObservableProperty]
+    private string selectedAccountFilter = AllAccountsLabel;
+
+    [ObservableProperty]
+    private string ageFilterMinText = string.Empty;
+
+    [ObservableProperty]
+    private string ageFilterMaxText = string.Empty;
+
+    public int ExtraFiltersActiveCount =>
+        (IsSpecificVacancyFilter ? 1 : 0)
+        + (IsSpecificCityFilter ? 1 : 0)
+        + (IsSpecificAccountFilter ? 1 : 0)
+        + (HasAgeRangeFilter ? 1 : 0);
+
+    public string ExtraFiltersHeaderSuffix => ExtraFiltersActiveCount > 0 ? $" ({ExtraFiltersActiveCount})" : string.Empty;
+
+    private bool IsSpecificVacancyFilter =>
+        !string.IsNullOrEmpty(SelectedVacancyFilter) && !string.Equals(SelectedVacancyFilter, AllVacanciesLabel, StringComparison.Ordinal);
+
+    private bool IsSpecificCityFilter =>
+        !string.IsNullOrEmpty(SelectedCityFilter) && !string.Equals(SelectedCityFilter, AllCitiesLabel, StringComparison.Ordinal);
+
+    private bool IsSpecificAccountFilter =>
+        !string.IsNullOrEmpty(SelectedAccountFilter) && !string.Equals(SelectedAccountFilter, AllAccountsLabel, StringComparison.Ordinal);
+
+    private bool HasAgeRangeFilter =>
+        int.TryParse(AgeFilterMinText.Trim(), out _)
+        || int.TryParse(AgeFilterMaxText.Trim(), out _);
+
     public int TotalResponsesCount => Responses.Count;
     public int NewResponsesCount => Responses.Count(x => x.Status == ResponseStatus.New);
     public int SentResponsesCount => Responses.Count(x => x.Status == ResponseStatus.Sent);
@@ -44,11 +89,12 @@ public partial class MonitoringViewModel : ObservableObject
 
     public string MonitoringResponsesEmptyHint => Responses.Count == 0
         ? "Пока нет откликов. Запустите мониторинг на главном экране или нажмите «Обновить»."
-        : "Нет откликов в текущем фильтре. Смените дату, статус или строку поиска.";
+        : "Нет откликов в текущем фильтре. Смените дату, статус, доп. фильтры или строку поиска.";
 
     private readonly AppRepository _repository;
     private readonly ISettingsService _settingsService;
     private readonly IWindowService _windowService;
+    private bool _suppressFilterLookupRefresh;
 
     public MonitoringViewModel(AppRepository repository, ISettingsService settingsService, IWindowService windowService) : base()
     {
@@ -58,10 +104,18 @@ public partial class MonitoringViewModel : ObservableObject
         ResponsesView = CollectionViewSource.GetDefaultView(Responses);
         ResponsesView.Filter = FilterResponse;
         Responses.CollectionChanged += OnResponsesCollectionChanged;
+        RefreshFilterLookups();
     }
 
-    private void OnResponsesCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e) =>
+    private void OnResponsesCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (!_suppressFilterLookupRefresh)
+        {
+            RefreshFilterLookups();
+        }
+
         NotifyMonitoringListUi();
+    }
 
     private void NotifyMonitoringListUi()
     {
@@ -85,6 +139,23 @@ public partial class MonitoringViewModel : ObservableObject
 
     partial void OnSelectedResponseDateChanged(DateTime? value) => RefreshMonitoringFilter();
 
+    partial void OnSelectedVacancyFilterChanged(string value) => NotifyExtraFiltersAndRefresh();
+
+    partial void OnSelectedCityFilterChanged(string value) => NotifyExtraFiltersAndRefresh();
+
+    partial void OnSelectedAccountFilterChanged(string value) => NotifyExtraFiltersAndRefresh();
+
+    partial void OnAgeFilterMinTextChanged(string value) => NotifyExtraFiltersAndRefresh();
+
+    partial void OnAgeFilterMaxTextChanged(string value) => NotifyExtraFiltersAndRefresh();
+
+    private void NotifyExtraFiltersAndRefresh()
+    {
+        OnPropertyChanged(nameof(ExtraFiltersActiveCount));
+        OnPropertyChanged(nameof(ExtraFiltersHeaderSuffix));
+        RefreshMonitoringFilter();
+    }
+
     private void RefreshMonitoringFilter()
     {
         ResponsesView.Refresh();
@@ -105,6 +176,11 @@ public partial class MonitoringViewModel : ObservableObject
         SearchText = string.Empty;
         SelectedStatusFilter = StatusFilterAll;
         SelectedResponseDate = null;
+        SelectedVacancyFilter = AllVacanciesLabel;
+        SelectedCityFilter = AllCitiesLabel;
+        SelectedAccountFilter = AllAccountsLabel;
+        AgeFilterMinText = string.Empty;
+        AgeFilterMaxText = string.Empty;
     }
 
     [RelayCommand]
@@ -182,6 +258,57 @@ public partial class MonitoringViewModel : ObservableObject
             return false;
         }
 
+        if (IsSpecificVacancyFilter)
+        {
+            var v = item.Vacancy.Trim();
+            if (!string.Equals(v, SelectedVacancyFilter.Trim(), StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+        }
+
+        if (IsSpecificCityFilter)
+        {
+            var c = item.City.Trim();
+            if (!string.Equals(c, SelectedCityFilter.Trim(), StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+        }
+
+        if (IsSpecificAccountFilter)
+        {
+            var a = item.AccountName.Trim();
+            if (!string.Equals(a, SelectedAccountFilter.Trim(), StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+        }
+
+        if (HasAgeRangeFilter)
+        {
+            if (!TryParseAgeBounds(out var minAge, out var maxAge))
+            {
+                return true;
+            }
+
+            if (!item.Age.HasValue)
+            {
+                return false;
+            }
+
+            var age = item.Age.Value;
+            if (minAge.HasValue && age < minAge.Value)
+            {
+                return false;
+            }
+
+            if (maxAge.HasValue && age > maxAge.Value)
+            {
+                return false;
+            }
+        }
+
         var search = SearchText.Trim();
         if (string.IsNullOrWhiteSpace(search))
         {
@@ -190,15 +317,115 @@ public partial class MonitoringViewModel : ObservableObject
 
         return item.FullName.Contains(search, StringComparison.OrdinalIgnoreCase)
             || item.PhoneRaw.Contains(search, StringComparison.OrdinalIgnoreCase)
-            || item.Vacancy.Contains(search, StringComparison.OrdinalIgnoreCase);
+            || item.Vacancy.Contains(search, StringComparison.OrdinalIgnoreCase)
+            || item.City.Contains(search, StringComparison.OrdinalIgnoreCase)
+            || item.AccountName.Contains(search, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void RefreshFilterLookups()
+    {
+        var vacancyPreserve = SelectedVacancyFilter;
+        var cityPreserve = SelectedCityFilter;
+        var accountPreserve = SelectedAccountFilter;
+
+        VacancyFilterOptions.Clear();
+        VacancyFilterOptions.Add(AllVacanciesLabel);
+        foreach (var v in Responses
+                     .Select(r => r.Vacancy.Trim())
+                     .Where(s => !string.IsNullOrEmpty(s))
+                     .Distinct(StringComparer.OrdinalIgnoreCase)
+                     .OrderBy(s => s, StringComparer.CurrentCultureIgnoreCase))
+        {
+            VacancyFilterOptions.Add(v);
+        }
+
+        CityFilterOptions.Clear();
+        CityFilterOptions.Add(AllCitiesLabel);
+        foreach (var c in Responses
+                     .Select(r => r.City.Trim())
+                     .Where(s => !string.IsNullOrEmpty(s))
+                     .Distinct(StringComparer.OrdinalIgnoreCase)
+                     .OrderBy(s => s, StringComparer.CurrentCultureIgnoreCase))
+        {
+            CityFilterOptions.Add(c);
+        }
+
+        AccountFilterOptions.Clear();
+        AccountFilterOptions.Add(AllAccountsLabel);
+        foreach (var a in Responses
+                     .Select(r => r.AccountName.Trim())
+                     .Where(s => !string.IsNullOrEmpty(s))
+                     .Distinct(StringComparer.OrdinalIgnoreCase)
+                     .OrderBy(s => s, StringComparer.CurrentCultureIgnoreCase))
+        {
+            AccountFilterOptions.Add(a);
+        }
+
+        if (!VacancyFilterOptions.Contains(vacancyPreserve))
+        {
+            vacancyPreserve = AllVacanciesLabel;
+        }
+
+        if (!CityFilterOptions.Contains(cityPreserve))
+        {
+            cityPreserve = AllCitiesLabel;
+        }
+
+        if (!AccountFilterOptions.Contains(accountPreserve))
+        {
+            accountPreserve = AllAccountsLabel;
+        }
+
+        if (!string.Equals(SelectedVacancyFilter, vacancyPreserve, StringComparison.Ordinal))
+        {
+            SelectedVacancyFilter = vacancyPreserve;
+        }
+
+        if (!string.Equals(SelectedCityFilter, cityPreserve, StringComparison.Ordinal))
+        {
+            SelectedCityFilter = cityPreserve;
+        }
+
+        if (!string.Equals(SelectedAccountFilter, accountPreserve, StringComparison.Ordinal))
+        {
+            SelectedAccountFilter = accountPreserve;
+        }
+    }
+
+    private bool TryParseAgeBounds(out int? minAge, out int? maxAge)
+    {
+        minAge = null;
+        maxAge = null;
+        var minOk = int.TryParse(AgeFilterMinText.Trim(), out var minV);
+        var maxOk = int.TryParse(AgeFilterMaxText.Trim(), out var maxV);
+        if (minOk)
+        {
+            minAge = minV;
+        }
+
+        if (maxOk)
+        {
+            maxAge = maxV;
+        }
+
+        return minOk || maxOk;
     }
 
     private void ReplaceResponses(IEnumerable<CandidateResponse> items)
     {
-        Responses.Clear();
-        foreach (var item in items)
+        _suppressFilterLookupRefresh = true;
+        try
         {
-            Responses.Add(item);
+            Responses.Clear();
+            foreach (var item in items)
+            {
+                Responses.Add(item);
+            }
+        }
+        finally
+        {
+            _suppressFilterLookupRefresh = false;
+            RefreshFilterLookups();
         }
 
         NotifyCountersChanged();
