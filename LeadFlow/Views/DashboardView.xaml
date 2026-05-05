@@ -7,96 +7,249 @@
         <conv:ZeroToCollapsedConverter x:Key="ZeroToCollapsedConverter"/>
     </UserControl.Resources>
     <StackPanel>
-        <Border Style="{StaticResource CompactCardBorderStyle}" Margin="0,0,0,6" Padding="12,10">
+        <Border Style="{StaticResource CompactCardBorderStyle}" Margin="0,0,0,6" Padding="10,8">
             <StackPanel>
-                <TextBlock Text="Отклики и CRM" Style="{StaticResource SectionHeaderTextStyle}" />
-                <TextBlock Text="Счётчики за сегодня, динамика и сводка."
-                           Style="{StaticResource SubtleTextStyle}"
-                           TextWrapping="Wrap"
-                           Margin="{StaticResource TightSpacing}" />
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,0,2">
+                    <TextBlock Text="Отклики и CRM" Style="{StaticResource SectionHeaderTextStyle}" VerticalAlignment="Center" />
+                    <TextBlock Text=" · "
+                               Foreground="{StaticResource SecondaryTextBrush}"
+                               FontSize="13"
+                               VerticalAlignment="Center"
+                               Margin="2,0,2,0" />
+                    <TextBlock Text="Счётчики за сегодня, динамика и сводка"
+                               Style="{StaticResource SubtleTextStyle}"
+                               VerticalAlignment="Center"
+                               TextTrimming="CharacterEllipsis" />
+                </StackPanel>
 
-                <UniformGrid Columns="4" Margin="{StaticResource SectionSpacing}">
+                <UniformGrid Rows="1" Columns="6" Margin="0,6,0,0">
                     <Button Style="{StaticResource StatCardButtonStyle}"
-                            Padding="10"
-                            Margin="4"
                             Command="{Binding DataContext.OpenMonitoringCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                             CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}">
-                        <StackPanel>
-                            <TextBlock Text="Новых откликов" Style="{StaticResource SubtleTextStyle}" />
-                            <TextBlock Text="{Binding NewResponses}" Style="{StaticResource StatValueTextStyle}" />
-                            <TextBlock Text="К мониторингу" Style="{StaticResource StatLinkTextStyle}" />
-                        </StackPanel>
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <Grid Grid.Row="0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0"
+                                           Text="Новых откликов"
+                                           FontSize="11"
+                                           Foreground="{StaticResource SecondaryTextBrush}"
+                                           TextTrimming="CharacterEllipsis"
+                                           TextWrapping="NoWrap"
+                                           VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1"
+                                           Text="{Binding NewResponses}"
+                                           FontSize="16"
+                                           FontWeight="Bold"
+                                           Margin="4,0,0,0"
+                                           VerticalAlignment="Center" />
+                            </Grid>
+                            <TextBlock Grid.Row="1"
+                                       Text="К мониторингу"
+                                       Style="{StaticResource StatLinkTextStyle}"
+                                       FontSize="10"
+                                       Margin="0,2,0,0" />
+                        </Grid>
                     </Button>
                     <Button Style="{StaticResource StatCardButtonStyle}"
-                            Padding="10"
-                            Margin="4"
                             Command="{Binding DataContext.OpenMonitoringCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                             CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}">
-                        <StackPanel>
-                            <TextBlock Text="Всего за сегодня" Style="{StaticResource SubtleTextStyle}" />
-                            <TextBlock Text="{Binding TotalToday}" Style="{StaticResource StatValueTextStyle}" />
-                            <TextBlock Text="К мониторингу" Style="{StaticResource StatLinkTextStyle}" />
-                        </StackPanel>
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <Grid Grid.Row="0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0"
+                                           Text="Всего за сегодня"
+                                           FontSize="11"
+                                           Foreground="{StaticResource SecondaryTextBrush}"
+                                           TextTrimming="CharacterEllipsis"
+                                           TextWrapping="NoWrap"
+                                           VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1"
+                                           Text="{Binding TotalToday}"
+                                           FontSize="16"
+                                           FontWeight="Bold"
+                                           Margin="4,0,0,0"
+                                           VerticalAlignment="Center" />
+                            </Grid>
+                            <TextBlock Grid.Row="1"
+                                       Text="К мониторингу"
+                                       Style="{StaticResource StatLinkTextStyle}"
+                                       FontSize="10"
+                                       Margin="0,2,0,0" />
+                        </Grid>
                     </Button>
                     <Button Style="{StaticResource StatCardButtonStyle}"
-                            Padding="10"
-                            Margin="4"
                             Command="{Binding DataContext.OpenJournalCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                             CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}">
-                        <StackPanel>
-                            <TextBlock Text="Отправлено в CRM" Style="{StaticResource SubtleTextStyle}" />
-                            <TextBlock Text="{Binding SentToCrm}" Style="{StaticResource StatValueTextStyle}" Foreground="{StaticResource SuccessBrush}" />
-                            <TextBlock Text="Логи" Style="{StaticResource StatLinkTextStyle}" />
-                        </StackPanel>
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <Grid Grid.Row="0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0"
+                                           Text="В CRM"
+                                           FontSize="11"
+                                           Foreground="{StaticResource SecondaryTextBrush}"
+                                           TextTrimming="CharacterEllipsis"
+                                           TextWrapping="NoWrap"
+                                           VerticalAlignment="Center"
+                                           ToolTip="Отправлено в CRM" />
+                                <TextBlock Grid.Column="1"
+                                           Text="{Binding SentToCrm}"
+                                           FontSize="16"
+                                           FontWeight="Bold"
+                                           Foreground="{StaticResource SuccessBrush}"
+                                           Margin="4,0,0,0"
+                                           VerticalAlignment="Center" />
+                            </Grid>
+                            <TextBlock Grid.Row="1"
+                                       Text="Логи"
+                                       Style="{StaticResource StatLinkTextStyle}"
+                                       FontSize="10"
+                                       Margin="0,2,0,0" />
+                        </Grid>
                     </Button>
                     <Button Style="{StaticResource StatCardButtonStyle}"
-                            Padding="10"
-                            Margin="4"
                             Command="{Binding DataContext.OpenMonitoringCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                             CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}">
-                        <StackPanel>
-                            <TextBlock Text="В обработке" Style="{StaticResource SubtleTextStyle}" />
-                            <TextBlock Text="{Binding InProgress}" Style="{StaticResource StatValueTextStyle}" />
-                            <TextBlock Text="К мониторингу" Style="{StaticResource StatLinkTextStyle}" />
-                        </StackPanel>
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <Grid Grid.Row="0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0"
+                                           Text="В обработке"
+                                           FontSize="11"
+                                           Foreground="{StaticResource SecondaryTextBrush}"
+                                           TextTrimming="CharacterEllipsis"
+                                           TextWrapping="NoWrap"
+                                           VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1"
+                                           Text="{Binding InProgress}"
+                                           FontSize="16"
+                                           FontWeight="Bold"
+                                           Margin="4,0,0,0"
+                                           VerticalAlignment="Center" />
+                            </Grid>
+                            <TextBlock Grid.Row="1"
+                                       Text="К мониторингу"
+                                       Style="{StaticResource StatLinkTextStyle}"
+                                       FontSize="10"
+                                       Margin="0,2,0,0" />
+                        </Grid>
                     </Button>
                     <Button Style="{StaticResource StatCardButtonStyle}"
-                            Padding="10"
-                            Margin="4"
                             Command="{Binding DataContext.OpenJournalCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                             CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}">
-                        <StackPanel>
-                            <TextBlock Text="Дубликаты" Style="{StaticResource SubtleTextStyle}" />
-                            <TextBlock Text="{Binding Duplicates}" Style="{StaticResource StatValueTextStyle}" Foreground="{StaticResource WarningBrush}" />
-                            <TextBlock Text="Логи" Style="{StaticResource StatLinkTextStyle}" />
-                        </StackPanel>
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <Grid Grid.Row="0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0"
+                                           Text="Дубликаты"
+                                           FontSize="11"
+                                           Foreground="{StaticResource SecondaryTextBrush}"
+                                           TextTrimming="CharacterEllipsis"
+                                           TextWrapping="NoWrap"
+                                           VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1"
+                                           Text="{Binding Duplicates}"
+                                           FontSize="16"
+                                           FontWeight="Bold"
+                                           Foreground="{StaticResource WarningBrush}"
+                                           Margin="4,0,0,0"
+                                           VerticalAlignment="Center" />
+                            </Grid>
+                            <TextBlock Grid.Row="1"
+                                       Text="Логи"
+                                       Style="{StaticResource StatLinkTextStyle}"
+                                       FontSize="10"
+                                       Margin="0,2,0,0" />
+                        </Grid>
                     </Button>
                     <Button Style="{StaticResource StatCardButtonStyle}"
-                            Padding="10"
-                            Margin="4"
                             Command="{Binding DataContext.OpenSettingsCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                             CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}">
-                        <StackPanel>
-                            <TextBlock Text="Аккаунтов подключено" Style="{StaticResource SubtleTextStyle}" />
-                            <TextBlock Text="{Binding ConnectedAccounts}" Style="{StaticResource StatValueTextStyle}" />
-                            <TextBlock Text="{Binding RequiresAuthorization, StringFormat=Требует авторизации: {0}}"
-                                       Style="{StaticResource SubtleTextStyle}"
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <Grid Grid.Row="0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0"
+                                           Text="Аккаунты"
+                                           FontSize="11"
+                                           Foreground="{StaticResource SecondaryTextBrush}"
+                                           TextTrimming="CharacterEllipsis"
+                                           TextWrapping="NoWrap"
+                                           VerticalAlignment="Center"
+                                           ToolTip="Аккаунтов подключено" />
+                                <TextBlock Grid.Column="1"
+                                           Text="{Binding ConnectedAccounts}"
+                                           FontSize="16"
+                                           FontWeight="Bold"
+                                           Margin="4,0,0,0"
+                                           VerticalAlignment="Center" />
+                            </Grid>
+                            <TextBlock Grid.Row="1"
+                                       Text="{Binding RequiresAuthorization, StringFormat=Требует авторизации: {0}}"
+                                       FontSize="10"
+                                       Foreground="{StaticResource SecondaryTextBrush}"
+                                       TextTrimming="CharacterEllipsis"
                                        Visibility="{Binding RequiresAuthorization, Converter={StaticResource ZeroToCollapsedConverter}}"
-                                       Margin="{StaticResource TightSpacing}" />
-                            <TextBlock Text="Настройки" Style="{StaticResource StatLinkTextStyle}" Margin="{StaticResource CardInnerGap}" />
-                        </StackPanel>
+                                       Margin="0,1,0,0" />
+                            <TextBlock Grid.Row="2"
+                                       Text="Настройки"
+                                       Style="{StaticResource StatLinkTextStyle}"
+                                       FontSize="10"
+                                       Margin="0,2,0,0" />
+                        </Grid>
                     </Button>
                 </UniformGrid>
 
                 <Border x:Name="ChartActivityHost"
                         Style="{StaticResource CompactCardBorderStyle}"
-                        Margin="4,8,4,0"
-                        Padding="10,8"
+                        Margin="2,6,2,0"
+                        Padding="8,6"
                         Loaded="ChartActivityHost_OnLoaded"
                         SizeChanged="ChartActivityHost_OnSizeChanged">
                     <StackPanel>
                         <TextBlock Text="Динамика за сегодня" Style="{StaticResource BodyTextStyle}" FontWeight="SemiBold" />
-                        <Grid Margin="0,8,0,0" ClipToBounds="False">
+                        <Grid Margin="0,6,0,0" ClipToBounds="False">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="72" />
                                 <RowDefinition Height="26" />
@@ -172,13 +325,27 @@
                     </StackPanel>
                 </Border>
 
-                <Border Style="{StaticResource DetailSectionBorderStyle}" Margin="4,8,4,0" Padding="10,8">
+                <Border Style="{StaticResource DetailSectionBorderStyle}" Margin="2,6,2,0" Padding="8,6">
                     <StackPanel>
-                        <TextBlock Text="Краткая сводка" Style="{StaticResource BodyTextStyle}" FontWeight="SemiBold" />
-                        <TextBlock Text="{Binding TotalToday, StringFormat=Всего откликов: {0}}" Style="{StaticResource CaptionTextStyle}" Foreground="{StaticResource TextBrush}" Margin="0,6,0,2" />
-                        <TextBlock Text="{Binding SentToCrm, StringFormat=Успешно отправлено: {0}}" Style="{StaticResource CaptionTextStyle}" Foreground="{StaticResource SuccessBrush}" Margin="0,0,0,2" />
-                        <TextBlock Text="{Binding Duplicates, StringFormat=Дубликаты: {0}}" Style="{StaticResource CaptionTextStyle}" Foreground="{StaticResource WarningBrush}" Margin="0,0,0,2" />
-                        <TextBlock Text="{Binding Errors, StringFormat=Ошибки: {0}}" Style="{StaticResource CaptionTextStyle}" Foreground="{StaticResource ErrorBrush}" />
+                        <TextBlock Text="Краткая сводка" Style="{StaticResource BodyTextStyle}" FontWeight="SemiBold" FontSize="13" Margin="0,0,0,4" />
+                        <WrapPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,14,4">
+                                <TextBlock Text="Всего: " Style="{StaticResource CaptionTextStyle}" VerticalAlignment="Center" />
+                                <TextBlock Text="{Binding TotalToday}" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" FontSize="12" VerticalAlignment="Center" />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,14,4">
+                                <TextBlock Text="В CRM: " Style="{StaticResource CaptionTextStyle}" VerticalAlignment="Center" />
+                                <TextBlock Text="{Binding SentToCrm}" FontWeight="SemiBold" Foreground="{StaticResource SuccessBrush}" FontSize="12" VerticalAlignment="Center" />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,14,4">
+                                <TextBlock Text="Дубликаты: " Style="{StaticResource CaptionTextStyle}" VerticalAlignment="Center" />
+                                <TextBlock Text="{Binding Duplicates}" FontWeight="SemiBold" Foreground="{StaticResource WarningBrush}" FontSize="12" VerticalAlignment="Center" />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                <TextBlock Text="Ошибки: " Style="{StaticResource CaptionTextStyle}" VerticalAlignment="Center" />
+                                <TextBlock Text="{Binding Errors}" FontWeight="SemiBold" Foreground="{StaticResource ErrorBrush}" FontSize="12" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </WrapPanel>
                     </StackPanel>
                 </Border>
             </StackPanel>
