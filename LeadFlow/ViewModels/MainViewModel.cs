@@ -322,7 +322,7 @@ public partial class MainViewModel : ObservableObject
 
         var local = TimeZoneInfo.ConvertTimeFromUtc(utc, TimeZoneInfo.Local);
         NextMonitoringCycleHint =
-            $"Следующий цикл (локально): {local.ToString("dd.MM.yyyy HH:mm:ss", CultureInfo.GetCultureInfo("ru-RU"))}";
+            $"Следующий цикл: {local.ToString("dd.MM.yyyy HH:mm:ss", CultureInfo.GetCultureInfo("ru-RU"))}";
     }
 
     private async Task RefreshAllAsync()
