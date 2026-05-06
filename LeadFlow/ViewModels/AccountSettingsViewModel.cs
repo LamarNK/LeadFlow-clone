@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Text.Json;
 using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -10,11 +11,59 @@ namespace LeadFlow.ViewModels;
 
 public partial class AccountSettingsViewModel(
     AvitoAccount account,
-    IProfileCookiesService profileCookiesService) : ObservableObject
+    IProfileCookiesService profileCookiesService,
+    IProxyCheckService proxyCheckService) : ObservableObject
 {
+    private const int MaxDisplayNameLen = 100;
+    private const int MaxNotesLen = 1500;
+
+    private static readonly JsonSerializerOptions PresetJsonReadOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        ReadCommentHandling = JsonCommentHandling.Skip,
+        AllowTrailingCommas = true
+    };
+
+    private static readonly JsonSerializerOptions PresetJsonWriteOptions = new()
+    {
+        WriteIndented = true,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+    };
+
     private static readonly Random Random = new();
     private readonly AvitoAccount _account = account;
+    private readonly IProxyCheckService _proxyCheckService = proxyCheckService;
     private bool _uaSyncBusy;
+    private bool _fingerprintOverviewHooked;
+    private FingerprintOverviewState _fpOverview = FingerprintOverviewState.Parse(account.FingerprintOverviewJson);
+
+    private static readonly (string Vendor, string Renderer)[] WebGlPresetPairs =
+    [
+        ("Google Inc. (Intel)", "ANGLE (Intel, Intel(R) UHD Graphics 630 Direct3D11 vs_5_0 ps_5_0, D3D11)"),
+        ("Google Inc. (NVIDIA)", "ANGLE (NVIDIA, NVIDIA GeForce GTX 1660 SUPER Direct3D11 vs_5_0 ps_5_0, D3D11)"),
+        ("Google Inc. (AMD)", "ANGLE (AMD, AMD Radeon RX 580 Series Direct3D11 vs_5_0 ps_5_0, D3D11)"),
+        ("Google Inc. (Intel)", "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)")
+    ];
+
+    private static readonly HashSet<string> FingerprintOverviewSourceProps =
+    [
+        nameof(Languages),
+        nameof(ScreenResolution),
+        nameof(AssignedUserAgent),
+        nameof(CanvasFingerprintNoise),
+        nameof(AudioFingerprintNoise),
+        nameof(SpoofWebGl),
+        nameof(WebGlVendor),
+        nameof(WebGlRenderer),
+        nameof(DoNotTrack),
+        nameof(WebRtcLaunchFlags),
+        nameof(NavigatorPlatform),
+        nameof(UseWindowsOs),
+        nameof(UseMacOs),
+        nameof(UseLinuxOs),
+        nameof(UseAndroidOs),
+        nameof(UseIosOs)
+    ];
 
     public IReadOnlyList<string> BrowserOptions { get; } = ["Chrome", "Edge", "Firefox", "Safari", "Opera"];
 
@@ -26,6 +75,8 @@ public partial class AccountSettingsViewModel(
     public IReadOnlyList<string> LinuxVersionOptions { get; } = ["Linux x86_64", "Ubuntu", "Debian", "Fedora"];
     public IReadOnlyList<string> AndroidVersionOptions { get; } = ["All Android", "Android 15", "Android 14", "Android 13", "Android 12", "Android 11", "Android 10", "Android 9"];
     public IReadOnlyList<string> IosVersionOptions { get; } = ["All iOS", "iOS 18", "iOS 17", "iOS 16", "iOS 15"];
+
+    public IReadOnlyList<string> ProxyTypeOptions { get; } = ["http", "socks5"];
 
     public ObservableCollection<UaPresetRow> UaPresetRows { get; } = [];
 
@@ -47,6 +98,151 @@ public partial class AccountSettingsViewModel(
     [ObservableProperty] private string? assignedUserAgent = account.AssignedUserAgent;
     [ObservableProperty] private string cookiesJson = account.CookiesJson;
     [ObservableProperty] private string notes = account.Notes;
+    [ObservableProperty] private string? proxyAddress = string.IsNullOrWhiteSpace(account.ProxyAddress) ? null : account.ProxyAddress.Trim();
+    [ObservableProperty] private string proxyType = NormalizeProxyType(account.ProxyType);
+    [ObservableProperty] private string screenResolution = string.IsNullOrWhiteSpace(account.ScreenResolution) ? "1920x1080" : account.ScreenResolution!;
+    [ObservableProperty] private string timezone = string.IsNullOrWhiteSpace(account.Timezone) ? "Europe/Moscow" : account.Timezone!;
+    [ObservableProperty] private string languages = string.IsNullOrWhiteSpace(account.Languages) ? "ru-RU,ru,en-US,en" : account.Languages!;
+    [ObservableProperty] private string? proxyUsername = account.ProxyUsername;
+    [ObservableProperty] private string? proxyPassword = account.ProxyPassword;
+    [ObservableProperty] private string? proxyRotationUrl = account.ProxyRotationUrl;
+    [ObservableProperty] private string browserLaunchArgs = account.BrowserLaunchArgs ?? "";
+    [ObservableProperty] private string? navigatorPlatform = account.NavigatorPlatform;
+    [ObservableProperty] private bool doNotTrack = account.DoNotTrack;
+    [ObservableProperty] private bool spoofWebGl = account.SpoofWebGl;
+    [ObservableProperty] private string? webGlVendor = account.WebGlVendor;
+    [ObservableProperty] private string? webGlRenderer = account.WebGlRenderer;
+    [ObservableProperty] private bool canvasFingerprintNoise = account.CanvasFingerprintNoise;
+    [ObservableProperty] private bool audioFingerprintNoise = account.AudioFingerprintNoise;
+    [ObservableProperty] private string? webRtcLaunchFlags = account.WebRtcLaunchFlags;
+    [ObservableProperty] private string statusHint = "";
+
+    public ObservableCollection<ProxyPresetRowViewModel> ProxyPresets { get; } = [];
+
+    public string DisplayNameCounter => $"{DisplayName.Length} / {MaxDisplayNameLen}";
+
+    public string NotesCounter => $"{Notes.Length} / {MaxNotesLen}";
+
+    partial void OnDisplayNameChanged(string value) => OnPropertyChanged(nameof(DisplayNameCounter));
+
+    partial void OnNotesChanged(string value) => OnPropertyChanged(nameof(NotesCounter));
+
+    partial void OnScreenResolutionChanged(string value) => _fpOverview.ScreenFollowsUa = false;
+
+    public string OverviewLanguageText =>
+        string.IsNullOrWhiteSpace(AssignedUserAgent) ? "—" : "На основе языка";
+
+    public string OverviewScreenText =>
+        _fpOverview.ScreenFollowsUa && !string.IsNullOrWhiteSpace(AssignedUserAgent)
+            ? "На основе User-Agent"
+            : (string.IsNullOrWhiteSpace(ScreenResolution) ? "—" : ScreenResolution);
+
+    public string OverviewFontsText => "По умолчанию";
+
+    public string OverviewCanvasText => CanvasFingerprintNoise ? "Шум" : "Реальный";
+
+    public string OverviewWebGlImageText =>
+        SpoofWebGl && !string.IsNullOrWhiteSpace(WebGlVendor) ? "Подмена" : "Реальный";
+
+    public string OverviewAudioText => AudioFingerprintNoise
+        ? (string.IsNullOrWhiteSpace(_fpOverview.AudioSeedHex) ? "Шум" : $"Шум [{_fpOverview.AudioSeedHex}]")
+        : "Реальный";
+
+    public string OverviewMediaDevicesText =>
+        string.IsNullOrWhiteSpace(_fpOverview.MediaLabel) ? "—" : $"Шум [{_fpOverview.MediaLabel}]";
+
+    public string OverviewClientRectsText =>
+        string.IsNullOrWhiteSpace(_fpOverview.ClientRectsSeedHex)
+            ? "—"
+            : $"Шум [{_fpOverview.ClientRectsSeedHex}]";
+
+    public string OverviewSpeechVoicesText =>
+        string.IsNullOrWhiteSpace(_fpOverview.SpeechLabel) ? "—" : $"Шум [{_fpOverview.SpeechLabel}]";
+
+    public string OverviewWebGlMetaText
+    {
+        get
+        {
+            if (!SpoofWebGl || string.IsNullOrWhiteSpace(WebGlVendor))
+            {
+                return "Реальный (без подмены WebGL)";
+            }
+
+            var r = WebGlRenderer ?? "";
+            return string.IsNullOrWhiteSpace(r) ? WebGlVendor! : $"{WebGlVendor} — {r}";
+        }
+    }
+
+    public string OverviewWebGpuText => "По WebGL (ограничено в WebView2)";
+
+    public string OverviewCpuText =>
+        _fpOverview.HardwareConcurrency > 0 ? $"{_fpOverview.HardwareConcurrency} ядер" : "—";
+
+    public string OverviewRamText =>
+        _fpOverview.DeviceMemoryGb > 0 ? $"{_fpOverview.DeviceMemoryGb} GB" : "—";
+
+    public string OverviewDeviceNameText =>
+        string.IsNullOrWhiteSpace(_fpOverview.DeviceName) ? "—" : _fpOverview.DeviceName;
+
+    public string OverviewMacText =>
+        string.IsNullOrWhiteSpace(_fpOverview.MacAddress) ? "—" : _fpOverview.MacAddress;
+
+    public string OverviewDntText => DoNotTrack ? "Включён (1)" : "Отключён (null)";
+
+    public string OverviewWebRtcText =>
+        string.IsNullOrWhiteSpace(WebRtcLaunchFlags) ? "По умолчанию" : "Задано в поле";
+
+    public string OverviewPlatformText =>
+        string.IsNullOrWhiteSpace(NavigatorPlatform) ? "(из системы UA слева)" : NavigatorPlatform!;
+
+    private void OnPropertyChangedForFingerprintOverview(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is null || e.PropertyName.StartsWith("Overview", StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        if (FingerprintOverviewSourceProps.Contains(e.PropertyName))
+        {
+            RefreshFingerprintOverview();
+        }
+    }
+
+    private void RefreshFingerprintOverview()
+    {
+        OnPropertyChanged(nameof(OverviewLanguageText));
+        OnPropertyChanged(nameof(OverviewScreenText));
+        OnPropertyChanged(nameof(OverviewFontsText));
+        OnPropertyChanged(nameof(OverviewCanvasText));
+        OnPropertyChanged(nameof(OverviewWebGlImageText));
+        OnPropertyChanged(nameof(OverviewAudioText));
+        OnPropertyChanged(nameof(OverviewMediaDevicesText));
+        OnPropertyChanged(nameof(OverviewClientRectsText));
+        OnPropertyChanged(nameof(OverviewSpeechVoicesText));
+        OnPropertyChanged(nameof(OverviewWebGlMetaText));
+        OnPropertyChanged(nameof(OverviewWebGpuText));
+        OnPropertyChanged(nameof(OverviewCpuText));
+        OnPropertyChanged(nameof(OverviewRamText));
+        OnPropertyChanged(nameof(OverviewDeviceNameText));
+        OnPropertyChanged(nameof(OverviewMacText));
+        OnPropertyChanged(nameof(OverviewDntText));
+        OnPropertyChanged(nameof(OverviewWebRtcText));
+        OnPropertyChanged(nameof(OverviewPlatformText));
+    }
+
+    [RelayCommand]
+    private void RegenerateNewFingerprint()
+    {
+        RegenerateUserAgent();
+        var pair = WebGlPresetPairs[Random.Next(WebGlPresetPairs.Length)];
+        WebGlVendor = pair.Vendor;
+        WebGlRenderer = pair.Renderer;
+        SpoofWebGl = true;
+        CanvasFingerprintNoise = true;
+        AudioFingerprintNoise = true;
+        _fpOverview.RegenerateCosmeticHardwareAndSeeds();
+        RefreshFingerprintOverview();
+    }
 
     public string UaPresetHeaderText
     {
@@ -120,6 +316,9 @@ public partial class AccountSettingsViewModel(
             BrowserVersion = opts[0];
         }
     }
+
+    private static string NormalizeProxyType(string? value) =>
+        string.Equals(value?.Trim(), "socks5", StringComparison.OrdinalIgnoreCase) ? "socks5" : "http";
 
     private void BuildUaPresetRows()
     {
@@ -277,6 +476,15 @@ public partial class AccountSettingsViewModel(
             BuildUaPresetRows();
         }
 
+        if (!_fingerprintOverviewHooked)
+        {
+            PropertyChanged += OnPropertyChangedForFingerprintOverview;
+            _fingerprintOverviewHooked = true;
+        }
+
+        _fpOverview = FingerprintOverviewState.Parse(_account.FingerprintOverviewJson);
+        LoadProxyPresetsFromAccount();
+
         // Не затираем JSON из БД/вставку: раньше при каждом открытии окна подставлялся экспорт из профиля (часто []).
         if (string.IsNullOrWhiteSpace(_account.CookiesJson))
         {
@@ -291,6 +499,117 @@ public partial class AccountSettingsViewModel(
         }
 
         NormalizeBrowserVersionForCurrentBrowser();
+        RefreshFingerprintOverview();
+    }
+
+    private void LoadProxyPresetsFromAccount()
+    {
+        ProxyPresets.Clear();
+        try
+        {
+            var list = JsonSerializer.Deserialize<List<SavedProxyPreset>>(_account.ProxyPresetsJson ?? "[]", PresetJsonReadOptions);
+            foreach (var p in list ?? [])
+            {
+                ProxyPresets.Add(ProxyPresetRowViewModel.FromModel(p));
+            }
+        }
+        catch (JsonException)
+        {
+        }
+    }
+
+    [RelayCommand]
+    private void MergeCookiesWithSaved()
+    {
+        CookiesJson = CookieJsonMerger.Merge(_account.CookiesJson ?? "[]", CookiesJson ?? "[]");
+        StatusHint = "Cookie объединены с данными, сохранёнными для аккаунта в базе.";
+    }
+
+    [RelayCommand]
+    private async Task CheckProxyAsync()
+    {
+        StatusHint = "";
+        try
+        {
+            var ip = await _proxyCheckService.CheckPublicIpAsync(CreateProxyProbeAccount(), CancellationToken.None);
+            MessageBox.Show(
+                $"Исходящий IP через прокси: {ip}",
+                "Проверка прокси",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                ex.Message,
+                "Проверка прокси",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+        }
+    }
+
+    [RelayCommand]
+    private async Task RotateProxyIpAsync()
+    {
+        StatusHint = "";
+        try
+        {
+            await _proxyCheckService.RequestRotationUrlAsync(ProxyRotationUrl, CancellationToken.None);
+            MessageBox.Show(
+                "Запрос на смену IP отправлен.",
+                "Смена IP",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                ex.Message,
+                "Смена IP",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+        }
+    }
+
+    [RelayCommand]
+    private void AddProxyPreset()
+    {
+        ProxyPresets.Add(new ProxyPresetRowViewModel { Label = "Пресет", ProxyType = NormalizeProxyType(ProxyType) });
+    }
+
+    [RelayCommand]
+    private void RemoveProxyPreset(ProxyPresetRowViewModel? row)
+    {
+        if (row is not null)
+        {
+            ProxyPresets.Remove(row);
+        }
+    }
+
+    [RelayCommand]
+    private void ApplyProxyPreset(ProxyPresetRowViewModel? row)
+    {
+        if (row is null)
+        {
+            return;
+        }
+
+        ProxyType = NormalizeProxyType(row.ProxyType);
+        ProxyAddress = string.IsNullOrWhiteSpace(row.Address) ? null : row.Address.Trim();
+        ProxyUsername = row.Username;
+        ProxyPassword = row.Password;
+        ProxyRotationUrl = string.IsNullOrWhiteSpace(row.RotationUrl) ? null : row.RotationUrl.Trim();
+    }
+
+    private AvitoAccount CreateProxyProbeAccount()
+    {
+        return new AvitoAccount
+        {
+            ProxyAddress = string.IsNullOrWhiteSpace(ProxyAddress) ? null : ProxyAddress.Trim(),
+            ProxyType = NormalizeProxyType(ProxyType),
+            ProxyUsername = string.IsNullOrWhiteSpace(ProxyUsername) ? null : ProxyUsername.Trim(),
+            ProxyPassword = ProxyPassword
+        };
     }
 
     /// <summary>
@@ -471,7 +790,19 @@ public partial class AccountSettingsViewModel(
     public void Save(Window? window)
     {
         PersistUaSelectionToAccountField();
-        _account.DisplayName = DisplayName;
+        var name = DisplayName.Trim();
+        if (name.Length > MaxDisplayNameLen)
+        {
+            name = name[..MaxDisplayNameLen];
+        }
+
+        var notes = Notes.Trim();
+        if (notes.Length > MaxNotesLen)
+        {
+            notes = notes[..MaxNotesLen];
+        }
+
+        _account.DisplayName = name;
         _account.BrowserName = BrowserName;
         _account.BrowserVersion = BrowserVersion;
         _account.UseWindowsOs = UseWindowsOs;
@@ -487,7 +818,28 @@ public partial class AccountSettingsViewModel(
         _account.UserAgentDevice = UserAgentDevice;
         _account.AssignedUserAgent = AssignedUserAgent;
         _account.CookiesJson = CookiesJson;
-        _account.Notes = Notes;
+        _account.Notes = notes;
+        _account.ProxyAddress = string.IsNullOrWhiteSpace(ProxyAddress) ? null : ProxyAddress.Trim();
+        _account.ProxyType = NormalizeProxyType(ProxyType);
+        _account.ProxyUsername = string.IsNullOrWhiteSpace(ProxyUsername) ? null : ProxyUsername.Trim();
+        _account.ProxyPassword = string.IsNullOrWhiteSpace(ProxyPassword) ? null : ProxyPassword;
+        _account.ProxyRotationUrl = string.IsNullOrWhiteSpace(ProxyRotationUrl) ? null : ProxyRotationUrl.Trim();
+        _account.BrowserLaunchArgs = BrowserLaunchArgs.Trim();
+        _account.NavigatorPlatform = string.IsNullOrWhiteSpace(NavigatorPlatform) ? null : NavigatorPlatform.Trim();
+        _account.DoNotTrack = DoNotTrack;
+        _account.SpoofWebGl = SpoofWebGl;
+        _account.WebGlVendor = string.IsNullOrWhiteSpace(WebGlVendor) ? null : WebGlVendor.Trim();
+        _account.WebGlRenderer = string.IsNullOrWhiteSpace(WebGlRenderer) ? null : WebGlRenderer.Trim();
+        _account.CanvasFingerprintNoise = CanvasFingerprintNoise;
+        _account.AudioFingerprintNoise = AudioFingerprintNoise;
+        _account.WebRtcLaunchFlags = string.IsNullOrWhiteSpace(WebRtcLaunchFlags) ? null : WebRtcLaunchFlags.Trim();
+        _account.ProxyPresetsJson = JsonSerializer.Serialize(
+            ProxyPresets.Select(static x => x.ToModel()).ToList(),
+            PresetJsonWriteOptions);
+        _account.ScreenResolution = string.IsNullOrWhiteSpace(ScreenResolution) ? "1920x1080" : ScreenResolution.Trim();
+        _account.Timezone = string.IsNullOrWhiteSpace(Timezone) ? "Europe/Moscow" : Timezone.Trim();
+        _account.Languages = string.IsNullOrWhiteSpace(Languages) ? "ru-RU,ru,en-US,en" : Languages.Trim();
+        _account.FingerprintOverviewJson = FingerprintOverviewState.Serialize(_fpOverview);
 
         if (window is null)
         {

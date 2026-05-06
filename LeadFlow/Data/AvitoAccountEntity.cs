@@ -27,6 +27,26 @@ public sealed class AvitoAccountEntity
     public string? AssignedUserAgent { get; set; }
     public string CookiesJson { get; set; } = string.Empty;
     public string Notes { get; set; } = string.Empty;
+    public string? ProxyAddress { get; set; }
+    public string ProxyType { get; set; } = "http";
+    public string? ProxyUsername { get; set; }
+    public string? ProxyPassword { get; set; }
+    public string? ProxyRotationUrl { get; set; }
+    public string BrowserLaunchArgs { get; set; } = string.Empty;
+    public string? NavigatorPlatform { get; set; }
+    public bool DoNotTrack { get; set; }
+    public string? WebGlVendor { get; set; }
+    public string? WebGlRenderer { get; set; }
+    public bool SpoofWebGl { get; set; }
+    public bool CanvasFingerprintNoise { get; set; } = true;
+    public bool AudioFingerprintNoise { get; set; } = true;
+    public string? WebRtcLaunchFlags { get; set; }
+    public string StartupTabsJson { get; set; } = "[]";
+    public string ProxyPresetsJson { get; set; } = "[]";
+    public string FingerprintOverviewJson { get; set; } = "{}";
+    public string? ScreenResolution { get; set; }
+    public string? Timezone { get; set; }
+    public string? Languages { get; set; }
     public int ActiveAdsCount { get; set; }
     public int BlockedCount { get; set; }
     public int DraftsCount { get; set; }

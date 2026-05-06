@@ -3,8 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="clr-namespace:LeadFlow.ViewModels"
         Title="Настройки аккаунта"
-        Width="860"
-        Height="680"
+        Width="1160"
+        Height="820"
         WindowStartupLocation="CenterOwner">
     <Window.Resources>
         <Style x:Key="ActionButtonStyle" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
@@ -48,6 +48,18 @@
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
+        </Style>
+        <Style x:Key="OverviewLabelStyle" TargetType="TextBlock" BasedOn="{StaticResource InfoLabelStyle}">
+            <Setter Property="Margin" Value="0,0,0,2" />
+        </Style>
+        <Style x:Key="OverviewValueStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyTextStyle}">
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Margin" Value="0,0,0,10" />
+        </Style>
+        <Style x:Key="OverviewToolbarButtonStyle" TargetType="Button" BasedOn="{StaticResource GhostButtonStyle}">
+            <Setter Property="MinWidth" Value="0" />
+            <Setter Property="Padding" Value="10,6" />
+            <Setter Property="Margin" Value="0" />
         </Style>
         <Style x:Key="UaPresetToggleStyle" TargetType="ToggleButton">
             <Setter Property="FontFamily" Value="Segoe UI" />
@@ -94,8 +106,14 @@
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" MinWidth="420" />
+            <ColumnDefinition Width="280" />
+        </Grid.ColumnDefinitions>
 
-        <Border Grid.Row="0" Style="{StaticResource CompactCardBorderStyle}">
+        <Border Grid.Row="0"
+                Grid.Column="0"
+                Style="{StaticResource CompactCardBorderStyle}">
             <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <StackPanel>
                     <TextBlock Text="Настройки аккаунта" Style="{StaticResource PageTitleTextStyle}" />
@@ -108,9 +126,21 @@
                     <TextBlock Margin="0,4,0,10" Style="{StaticResource SubtleTextStyle}" Text="Отображаемое имя и имитация браузера для сессии." />
 
                     <TextBlock Text="Имя" Style="{StaticResource InfoLabelStyle}" />
-                    <TextBox Margin="0,4,0,12"
-                             Style="{StaticResource SearchTextBoxStyle}"
-                             Text="{Binding DisplayName, UpdateSourceTrigger=PropertyChanged}" />
+                    <Grid Margin="0,4,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBox Grid.Column="0"
+                                 MaxLength="100"
+                                 Margin="0,0,8,0"
+                                 Style="{StaticResource SearchTextBoxStyle}"
+                                 Text="{Binding DisplayName, UpdateSourceTrigger=PropertyChanged}" />
+                        <TextBlock Grid.Column="1"
+                                   VerticalAlignment="Center"
+                                   Foreground="{StaticResource SecondaryTextBrush}"
+                                   Text="{Binding DisplayNameCounter}" />
+                    </Grid>
 
                     <TextBlock Text="Браузер" Style="{StaticResource InfoLabelStyle}" />
                     <Grid Margin="0,4,0,16">
@@ -181,6 +211,128 @@
                                   SelectedItem="{Binding IosVersion, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                   IsEnabled="{Binding UseIosOs}" />
                     </Grid>
+
+                    <TextBlock Text="Сеть" Style="{StaticResource SectionTitleStyle}" />
+                    <TextBlock Margin="0,4,0,10"
+                               Style="{StaticResource SubtleTextStyle}"
+                               TextWrapping="Wrap"
+                               Text="Прокси для WebView2 (Chromium). Пустой адрес — без прокси. Для HTTPS через HTTP-прокси укажите http://хост:порт." />
+
+                    <Grid Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="120" />
+                            <ColumnDefinition Width="10" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0"
+                                   VerticalAlignment="Center"
+                                   Style="{StaticResource InfoLabelStyle}"
+                                   Text="Тип" />
+                        <ComboBox Grid.Column="2"
+                                  Style="{StaticResource FilterComboBoxStyle}"
+                                  ItemsSource="{Binding ProxyTypeOptions}"
+                                  SelectedItem="{Binding ProxyType, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                    </Grid>
+                    <TextBlock Text="Адрес прокси" Style="{StaticResource InfoLabelStyle}" />
+                    <TextBox Margin="0,4,0,8"
+                             Style="{StaticResource SearchTextBoxStyle}"
+                             Text="{Binding ProxyAddress, UpdateSourceTrigger=PropertyChanged}" />
+
+                    <TextBlock Text="Логин прокси" Style="{StaticResource InfoLabelStyle}" />
+                    <TextBox Margin="0,4,0,8"
+                             Style="{StaticResource SearchTextBoxStyle}"
+                             Text="{Binding ProxyUsername, UpdateSourceTrigger=PropertyChanged}" />
+                    <TextBlock Text="Пароль прокси" Style="{StaticResource InfoLabelStyle}" />
+                    <TextBox Margin="0,4,0,8"
+                             Style="{StaticResource SearchTextBoxStyle}"
+                             Text="{Binding ProxyPassword, UpdateSourceTrigger=PropertyChanged}" />
+                    <TextBlock Text="URL смены IP" Style="{StaticResource InfoLabelStyle}" />
+                    <TextBox Margin="0,4,0,8"
+                             Style="{StaticResource SearchTextBoxStyle}"
+                             Text="{Binding ProxyRotationUrl, UpdateSourceTrigger=PropertyChanged}" />
+
+                    <StackPanel Margin="0,0,0,16" Orientation="Horizontal">
+                        <Button Command="{Binding CheckProxyCommand}"
+                                Content="Проверить прокси"
+                                Style="{StaticResource GhostButtonStyle}" />
+                        <Button Command="{Binding RotateProxyIpCommand}"
+                                Content="Сменить IP"
+                                Style="{StaticResource GhostButtonStyle}" />
+                    </StackPanel>
+
+                    <TextBlock Text="Аргументы запуска Chromium" Style="{StaticResource SectionTitleStyle}" />
+                    <TextBlock Margin="0,4,0,8"
+                               Style="{StaticResource SubtleTextStyle}"
+                               Text="Дополнительные флаги через пробел; добавляются к прокси и WebRTC, не подменяют их."
+                               TextWrapping="Wrap" />
+                    <TextBox MinHeight="56"
+                             Margin="0,0,0,16"
+                             Padding="10,8"
+                             AcceptsReturn="True"
+                             Background="#FFFFFF"
+                             BorderBrush="{StaticResource BorderBrush}"
+                             BorderThickness="1"
+                             Text="{Binding BrowserLaunchArgs, UpdateSourceTrigger=PropertyChanged}"
+                             TextWrapping="Wrap"
+                             VerticalScrollBarVisibility="Auto" />
+
+                    <TextBlock Text="Отпечаток страницы" Style="{StaticResource SectionTitleStyle}" />
+                    <TextBlock Margin="0,4,0,10"
+                               Style="{StaticResource SubtleTextStyle}"
+                               TextWrapping="Wrap"
+                               Text="Разрешение, часовой пояс IANA (Intl) и языки. Полный JS-спуфинг экрана и времени применяется только при заданном User-Agent ниже." />
+
+                    <TextBlock Text="Разрешение (Ш×В)" Style="{StaticResource InfoLabelStyle}" />
+                    <TextBox Margin="0,4,0,10"
+                             Style="{StaticResource SearchTextBoxStyle}"
+                             Text="{Binding ScreenResolution, UpdateSourceTrigger=PropertyChanged}" />
+                    <TextBlock Text="Часовой пояс" Style="{StaticResource InfoLabelStyle}" />
+                    <TextBox Margin="0,4,0,10"
+                             Style="{StaticResource SearchTextBoxStyle}"
+                             Text="{Binding Timezone, UpdateSourceTrigger=PropertyChanged}" />
+                    <TextBlock Text="Языки" Style="{StaticResource InfoLabelStyle}" />
+                    <TextBox Margin="0,4,0,12"
+                             Style="{StaticResource SearchTextBoxStyle}"
+                             Text="{Binding Languages, UpdateSourceTrigger=PropertyChanged}" />
+
+                    <TextBlock Text="Отпечаток (stealth JS)" Style="{StaticResource SectionTitleStyle}" />
+                    <TextBlock Margin="0,4,0,10"
+                               Style="{StaticResource SubtleTextStyle}"
+                               Text="Параметры для инъекции при непустом User-Agent: platform, DNT, WebGL, шум canvas/audio."
+                               TextWrapping="Wrap" />
+
+                    <TextBlock Text="navigator.platform (пусто — по ОС из настроек UA)" Style="{StaticResource InfoLabelStyle}" />
+                    <TextBox Margin="0,4,0,10"
+                             Style="{StaticResource SearchTextBoxStyle}"
+                             Text="{Binding NavigatorPlatform, UpdateSourceTrigger=PropertyChanged}" />
+                    <CheckBox Margin="0,0,0,10"
+                              Content="Do Not Track (navigator.doNotTrack = «1»)"
+                              IsChecked="{Binding DoNotTrack, Mode=TwoWay}" />
+                    <CheckBox Margin="0,0,0,8"
+                              Content="Подмена WebGL vendor / renderer"
+                              IsChecked="{Binding SpoofWebGl, Mode=TwoWay}" />
+                    <TextBlock Text="WebGL vendor" Style="{StaticResource InfoLabelStyle}" />
+                    <TextBox Margin="0,4,0,8"
+                             Style="{StaticResource SearchTextBoxStyle}"
+                             Text="{Binding WebGlVendor, UpdateSourceTrigger=PropertyChanged}" />
+                    <TextBlock Text="WebGL renderer" Style="{StaticResource InfoLabelStyle}" />
+                    <TextBox Margin="0,4,0,10"
+                             Style="{StaticResource SearchTextBoxStyle}"
+                             Text="{Binding WebGlRenderer, UpdateSourceTrigger=PropertyChanged}" />
+                    <CheckBox Margin="0,0,0,6"
+                              Content="Шум Canvas (toDataURL)"
+                              IsChecked="{Binding CanvasFingerprintNoise, Mode=TwoWay}" />
+                    <CheckBox Margin="0,0,0,10"
+                              Content="Шум Audio (getChannelData)"
+                              IsChecked="{Binding AudioFingerprintNoise, Mode=TwoWay}" />
+                    <TextBlock Text="WebRTC — флаги Chromium" Style="{StaticResource InfoLabelStyle}" />
+                    <TextBlock Margin="0,2,0,6"
+                               Style="{StaticResource SubtleTextStyle}"
+                               Text="Проверьте актуальность флагов для вашей версии WebView2. Пример: --force-webrtc-ip-handling-policy=disable_non_proxied_udp"
+                               TextWrapping="Wrap" />
+                    <TextBox Margin="0,0,0,16"
+                             Style="{StaticResource SearchTextBoxStyle}"
+                             Text="{Binding WebRtcLaunchFlags, UpdateSourceTrigger=PropertyChanged}" />
 
                     <TextBlock Text="User-Agent" Style="{StaticResource SectionTitleStyle}" />
                     <TextBlock Margin="0,4,0,10" Style="{StaticResource SubtleTextStyle}" Text="Пресеты Chrome и итоговая строка; кнопка справа в поле пересобирает UA по текущим настройкам." />
@@ -275,6 +427,15 @@
                     </Grid>
 
                     <TextBlock Text="Cookie" Style="{StaticResource SectionTitleStyle}" />
+                    <StackPanel Margin="0,4,0,8" Orientation="Horizontal">
+                        <Button Command="{Binding MergeCookiesWithSavedCommand}"
+                                Content="Объединить с сохранёнными"
+                                Style="{StaticResource GhostButtonStyle}" />
+                    </StackPanel>
+                    <TextBlock Margin="0,0,0,8"
+                               Foreground="{StaticResource SecondaryTextBrush}"
+                               Text="{Binding StatusHint}"
+                               TextWrapping="Wrap" />
                     <TextBox MinHeight="160"
                              Margin="0,8,0,16"
                              Padding="10,8"
@@ -288,20 +449,178 @@
 
                     <TextBlock Text="Заметки" Style="{StaticResource SectionTitleStyle}" />
                     <TextBlock Margin="0,4,0,8" Style="{StaticResource SubtleTextStyle}" Text="Произвольный текст, только для вас." />
-                    <TextBox MinHeight="72"
-                             Padding="10,8"
-                             AcceptsReturn="True"
-                             Background="#FFFFFF"
-                             BorderBrush="{StaticResource BorderBrush}"
-                             BorderThickness="1"
-                             Text="{Binding Notes, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                             TextWrapping="Wrap"
-                             VerticalScrollBarVisibility="Auto" />
+                    <DockPanel Margin="0,0,0,8" LastChildFill="True">
+                        <TextBlock DockPanel.Dock="Right"
+                                   Margin="8,0,0,8"
+                                   VerticalAlignment="Bottom"
+                                   Foreground="{StaticResource SecondaryTextBrush}"
+                                   Text="{Binding NotesCounter}" />
+                        <TextBox MinHeight="72"
+                                 MaxLength="1500"
+                                 Padding="10,8"
+                                 AcceptsReturn="True"
+                                 Background="#FFFFFF"
+                                 BorderBrush="{StaticResource BorderBrush}"
+                                 BorderThickness="1"
+                                 Text="{Binding Notes, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                 TextWrapping="Wrap"
+                                 VerticalScrollBarVisibility="Auto" />
+                    </DockPanel>
+
+                    <TextBlock Text="Сохранённые прокси" Style="{StaticResource SectionTitleStyle}" />
+                    <TextBlock Margin="0,4,0,8"
+                               Style="{StaticResource SubtleTextStyle}"
+                               Text="Локальные пресеты для быстрого заполнения полей прокси."
+                               TextWrapping="Wrap" />
+                    <Button Margin="0,0,0,10"
+                            HorizontalAlignment="Left"
+                            Command="{Binding AddProxyPresetCommand}"
+                            Content="Добавить пресет"
+                            Style="{StaticResource GhostButtonStyle}" />
+                    <ItemsControl ItemsSource="{Binding ProxyPresets}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type vm:ProxyPresetRowViewModel}">
+                                <Border Margin="0,0,0,12"
+                                        Padding="12"
+                                        Background="#F8FAFC"
+                                        BorderBrush="{StaticResource BorderBrush}"
+                                        BorderThickness="1"
+                                        CornerRadius="10">
+                                    <StackPanel>
+                                        <Grid Margin="0,0,0,8">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBox Style="{StaticResource SearchTextBoxStyle}"
+                                                     Text="{Binding Label, UpdateSourceTrigger=PropertyChanged}" />
+                                            <StackPanel Grid.Column="1"
+                                                        Margin="8,0,0,0"
+                                                        Orientation="Horizontal">
+                                                <Button Margin="0,0,6,0"
+                                                        Command="{Binding DataContext.ApplyProxyPresetCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                        CommandParameter="{Binding}"
+                                                        Content="Применить"
+                                                        Style="{StaticResource GhostButtonStyle}" />
+                                                <Button Command="{Binding DataContext.RemoveProxyPresetCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                        CommandParameter="{Binding}"
+                                                        Content="Удалить"
+                                                        Style="{StaticResource GhostButtonStyle}" />
+                                            </StackPanel>
+                                        </Grid>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="120" />
+                                                <ColumnDefinition Width="10" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <ComboBox Grid.Column="0"
+                                                      Style="{StaticResource FilterComboBoxStyle}"
+                                                      ItemsSource="{Binding DataContext.ProxyTypeOptions, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                      SelectedItem="{Binding ProxyType, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                            <TextBox Grid.Column="2"
+                                                     Style="{StaticResource SearchTextBoxStyle}"
+                                                     Text="{Binding Address, UpdateSourceTrigger=PropertyChanged}" />
+                                        </Grid>
+                                        <TextBlock Margin="0,8,0,2" Style="{StaticResource InfoLabelStyle}" Text="Логин / пароль / URL смены IP" />
+                                        <TextBox Style="{StaticResource SearchTextBoxStyle}"
+                                                 Text="{Binding Username, UpdateSourceTrigger=PropertyChanged}" />
+                                        <TextBox Margin="0,6,0,0"
+                                                 Style="{StaticResource SearchTextBoxStyle}"
+                                                 Text="{Binding Password, UpdateSourceTrigger=PropertyChanged}" />
+                                        <TextBox Margin="0,6,0,0"
+                                                 Style="{StaticResource SearchTextBoxStyle}"
+                                                 Text="{Binding RotationUrl, UpdateSourceTrigger=PropertyChanged}" />
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
                 </StackPanel>
             </ScrollViewer>
         </Border>
 
+        <Border Grid.Row="0"
+                Grid.Column="1"
+                Margin="12,0,0,0"
+                Padding="14,12"
+                VerticalAlignment="Stretch"
+                Style="{StaticResource CompactCardBorderStyle}">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <TextBlock Grid.Row="0"
+                           Margin="0,0,0,4"
+                           Style="{StaticResource SectionTitleStyle}"
+                           Text="Обзор отпечатка"
+                           TextWrapping="Wrap" />
+                <Button Grid.Row="1"
+                        Margin="0,0,0,10"
+                        HorizontalAlignment="Right"
+                        Command="{Binding RegenerateNewFingerprintCommand}"
+                        Style="{StaticResource OverviewToolbarButtonStyle}">
+                    <StackPanel VerticalAlignment="Center" Orientation="Horizontal">
+                        <TextBlock Margin="0,0,6,0"
+                                   VerticalAlignment="Center"
+                                   FontFamily="Segoe MDL2 Assets"
+                                   FontSize="14"
+                                   Foreground="{StaticResource PrimaryBrush}"
+                                   Text="&#xE8B1;" />
+                        <TextBlock VerticalAlignment="Center" Text="Новый отпечаток" />
+                    </StackPanel>
+                </Button>
+                <ScrollViewer Grid.Row="2"
+                              Focusable="False"
+                              HorizontalScrollBarVisibility="Disabled"
+                              VerticalScrollBarVisibility="Disabled">
+                    <StackPanel>
+                    <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="Язык интерфейса" />
+                    <TextBlock Style="{StaticResource OverviewValueStyle}" Text="{Binding OverviewLanguageText}" />
+                    <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="Разрешение экрана" />
+                    <TextBlock Style="{StaticResource OverviewValueStyle}" Text="{Binding OverviewScreenText}" />
+                    <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="navigator.platform" />
+                    <TextBlock Style="{StaticResource OverviewValueStyle}" Text="{Binding OverviewPlatformText}" />
+                    <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="Шрифты" />
+                    <TextBlock Style="{StaticResource OverviewValueStyle}" Text="{Binding OverviewFontsText}" />
+                    <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="Canvas" />
+                    <TextBlock Style="{StaticResource OverviewValueStyle}" Text="{Binding OverviewCanvasText}" />
+                    <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="WebGL (image)" />
+                    <TextBlock Style="{StaticResource OverviewValueStyle}" Text="{Binding OverviewWebGlImageText}" />
+                    <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="AudioContext" />
+                    <TextBlock Style="{StaticResource OverviewValueStyle}" Text="{Binding OverviewAudioText}" />
+                    <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="Медиа-устройства" />
+                    <TextBlock Style="{StaticResource OverviewValueStyle}" Text="{Binding OverviewMediaDevicesText}" />
+                    <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="ClientRects" />
+                    <TextBlock Style="{StaticResource OverviewValueStyle}" Text="{Binding OverviewClientRectsText}" />
+                    <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="SpeechVoices" />
+                    <TextBlock Style="{StaticResource OverviewValueStyle}" Text="{Binding OverviewSpeechVoicesText}" />
+                    <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="WebGL метаданные" />
+                    <TextBlock Style="{StaticResource OverviewValueStyle}" Text="{Binding OverviewWebGlMetaText}" />
+                    <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="WebGPU" />
+                    <TextBlock Style="{StaticResource OverviewValueStyle}" Text="{Binding OverviewWebGpuText}" />
+                    <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="CPU" />
+                    <TextBlock Style="{StaticResource OverviewValueStyle}" Text="{Binding OverviewCpuText}" />
+                    <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="RAM" />
+                    <TextBlock Style="{StaticResource OverviewValueStyle}" Text="{Binding OverviewRamText}" />
+                    <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="Имя устройства" />
+                    <TextBlock Style="{StaticResource OverviewValueStyle}" Text="{Binding OverviewDeviceNameText}" />
+                    <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="MAC-адрес" />
+                    <TextBlock Style="{StaticResource OverviewValueStyle}" Text="{Binding OverviewMacText}" />
+                    <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="Do Not Track" />
+                    <TextBlock Style="{StaticResource OverviewValueStyle}" Text="{Binding OverviewDntText}" />
+                    <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="WebRTC (флаги)" />
+                    <TextBlock Style="{StaticResource OverviewValueStyle}" Text="{Binding OverviewWebRtcText}" />
+                    </StackPanel>
+                </ScrollViewer>
+            </Grid>
+        </Border>
+
         <StackPanel Grid.Row="1"
+                    Grid.Column="0"
+                    Grid.ColumnSpan="2"
                     Margin="0,10,0,0"
                     HorizontalAlignment="Right"
                     Orientation="Horizontal">

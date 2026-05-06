@@ -13,6 +13,8 @@ public sealed class DashboardStats
     public int ActionRequired { get; set; }
     public int ConnectedAccounts { get; set; }
     public int RequiresAuthorization { get; set; }
+    /// <summary>Включённые аккаунты со статусом «нужна авторизация», «ручное действие» или «ошибка» — для акцента на дашборде.</summary>
+    public int AccountsNeedAttentionCount { get; set; }
     public int ActiveAdsCount { get; set; }
     public int BlockedAdsCount { get; set; }
     public int DraftsCount { get; set; }

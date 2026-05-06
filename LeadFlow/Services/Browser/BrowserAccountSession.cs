@@ -42,8 +42,8 @@ public partial class BrowserAccountSession : ObservableObject
         view.CoreWebView2.SourceChanged += (_, _) => UpdateNavigationState();
         view.CoreWebView2.HistoryChanged += (_, _) => UpdateNavigationState();
         
-        // === Применяем User-Agent из фингерпринта ===
-        ApplyFingerprintSettings(view);
+        // UA, stealth (если задан) и блок геолокации — до навигации
+        await ApplyFingerprintSettingsAsync(view, cancellationToken).ConfigureAwait(true);
 
         // Куки из сохранённого JSON аккаунта (редактируемое поле в настройках) — до первой навигации
         if (view.CoreWebView2 is not null)
@@ -108,61 +108,75 @@ public partial class BrowserAccountSession : ObservableObject
     private async Task<CoreWebView2Environment> CreateEnvironmentWithSettingsAsync()
     {
         var options = new CoreWebView2EnvironmentOptions();
-        
-        // === Прокси настройка ===
-        if (!string.IsNullOrWhiteSpace(Account.ProxyAddress))
+        var args = ChromiumLaunchArgumentsBuilder.Build(Account);
+        if (!string.IsNullOrWhiteSpace(args))
         {
-            var proxyArg = Account.ProxyType == "socks5" 
-                ? $"--proxy-server=socks5://{Account.ProxyAddress}" 
-                : $"--proxy-server={Account.ProxyAddress}";
-            options.AdditionalBrowserArguments = proxyArg;
+            options.AdditionalBrowserArguments = args;
         }
 
         return await CoreWebView2Environment.CreateAsync(null, ProfilePath, options);
     }
 
     /// <summary>
-    /// Применяет настройки фингерпринта к WebView2 контролу.
+    /// User-Agent, stealth по полям аккаунта (при непустом UA) и блок геолокации.
     /// </summary>
-    private void ApplyFingerprintSettings(WebView2 view)
+    private async Task ApplyFingerprintSettingsAsync(WebView2 view, CancellationToken cancellationToken)
     {
-        // Применяем User-Agent если он задан в аккаунте
-        if (!string.IsNullOrWhiteSpace(Account.AssignedUserAgent) && view.CoreWebView2 != null)
+        if (view.CoreWebView2 is not CoreWebView2 core)
+        {
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(Account.AssignedUserAgent))
         {
             try
             {
-                view.CoreWebView2.Settings.UserAgent = Account.AssignedUserAgent;
+                core.Settings.UserAgent = Account.AssignedUserAgent;
             }
-            catch { /* Игнорируем ошибки — UA может не поддерживаться в данной версии */ }
+            catch { /* UA может не поддерживаться в данной версии */ }
+
+            var fingerprint = AccountFingerprintBuilder.FromAccount(Account);
+            var stealthScript = StealthScripts.GetMainStealthScript(fingerprint);
+            try
+            {
+                await core.AddScriptToExecuteOnDocumentCreatedAsync(stealthScript)
+                    .WaitAsync(cancellationToken).ConfigureAwait(true);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[AntiDetect] Stealth injection failed: {ex.Message}");
+            }
         }
 
-        // === Дополнительные настройки для консистентности фингерпринта ===
-        if (view.CoreWebView2 != null)
+        const string geoBlockScript = """
+            if (navigator.permissions && navigator.permissions.query) {
+                const originalQuery = navigator.permissions.query.bind(navigator.permissions);
+                navigator.permissions.query = function(parameters) {
+                    if (parameters.name === 'geolocation' || parameters.name === 'notifications') {
+                        return Promise.resolve({ state: 'denied', name: parameters.name });
+                    }
+                    return originalQuery(parameters);
+                };
+            }
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition = function(success, error, options) {
+                    if (error) error({ code: 1, message: 'Geolocation disabled by anti-detect' });
+                };
+                navigator.geolocation.watchPosition = function(success, error, options) {
+                    if (error) error({ code: 1, message: 'Geolocation disabled by anti-detect' });
+                    return -1;
+                };
+            }
+            """;
+
+        try
         {
-            // Отключаем геолокацию и уведомления через инъекцию скриптов (совместимо со всеми версиями WebView2)
-            // SetPreferenceAsync доступен только в WebView2 SDK 2.0+, поэтому используем универсальный подход
-            _ = view.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(@"
-                // Блокируем запросы на геолокацию
-                if (navigator.permissions && navigator.permissions.query) {
-                    const originalQuery = navigator.permissions.query.bind(navigator.permissions);
-                    navigator.permissions.query = function(parameters) {
-                        if (parameters.name === 'geolocation' || parameters.name === 'notifications') {
-                            return Promise.resolve({ state: 'denied', name: parameters.name });
-                        }
-                        return originalQuery(parameters);
-                    };
-                }
-                // Переопределяем navigator.geolocation
-                if (navigator.geolocation) {
-                    navigator.geolocation.getCurrentPosition = function(success, error, options) {
-                        if (error) error({ code: 1, message: 'Geolocation disabled by anti-detect' });
-                    };
-                    navigator.geolocation.watchPosition = function(success, error, options) {
-                        if (error) error({ code: 1, message: 'Geolocation disabled by anti-detect' });
-                        return -1;
-                    };
-                }
-            ");
+            await core.AddScriptToExecuteOnDocumentCreatedAsync(geoBlockScript)
+                .WaitAsync(cancellationToken).ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[AntiDetect] Geoblock injection failed: {ex.Message}");
         }
     }
 

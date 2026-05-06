@@ -52,6 +52,9 @@ public partial class DashboardViewModel : ObservableObject
     private int requiresAuthorization;
 
     [ObservableProperty]
+    private bool accountsNeedAttention;
+
+    [ObservableProperty]
     private int blockedAdsCount;
 
     [ObservableProperty]
@@ -265,6 +268,7 @@ public partial class DashboardViewModel : ObservableObject
         ActionRequired = stats.ActionRequired;
         ConnectedAccounts = stats.ConnectedAccounts;
         RequiresAuthorization = stats.RequiresAuthorization;
+        AccountsNeedAttention = stats.AccountsNeedAttentionCount > 0;
         BlockedAdsCount = stats.BlockedAdsCount;
         DraftsCount = stats.DraftsCount;
 

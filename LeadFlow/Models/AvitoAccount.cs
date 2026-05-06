@@ -38,6 +38,23 @@ public sealed partial class AvitoAccount : ObservableObject
     [ObservableProperty] private string? languages = "ru-RU,ru,en-US,en";
     [ObservableProperty] private string? proxyAddress;
     [ObservableProperty] private string proxyType = "http";
+    [ObservableProperty] private string? proxyUsername;
+    [ObservableProperty] private string? proxyPassword;
+    [ObservableProperty] private string? proxyRotationUrl;
+    [ObservableProperty] private string browserLaunchArgs = string.Empty;
+
+    [ObservableProperty] private string? navigatorPlatform;
+    [ObservableProperty] private bool doNotTrack;
+    [ObservableProperty] private string? webGlVendor;
+    [ObservableProperty] private string? webGlRenderer;
+    [ObservableProperty] private bool spoofWebGl;
+    [ObservableProperty] private bool canvasFingerprintNoise = true;
+    [ObservableProperty] private bool audioFingerprintNoise = true;
+    [ObservableProperty] private string? webRtcLaunchFlags;
+
+    [ObservableProperty] private string startupTabsJson = "[]";
+    [ObservableProperty] private string proxyPresetsJson = "[]";
+    [ObservableProperty] private string fingerprintOverviewJson = "{}";
 
     [ObservableProperty] private int activeAdsCount;
     [ObservableProperty] private int blockedCount;

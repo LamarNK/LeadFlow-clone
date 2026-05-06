@@ -81,22 +81,10 @@ public sealed class BrowserProfileService : IBrowserProfileService
     public async Task<CoreWebView2Environment> CreateEnvironmentAsync(AvitoAccount account)
     {
         var options = new CoreWebView2EnvironmentOptions();
-        
-        // === Прокси настройка ===
-        if (!string.IsNullOrWhiteSpace(account.ProxyAddress))
+        var args = ChromiumLaunchArgumentsBuilder.Build(account);
+        if (!string.IsNullOrWhiteSpace(args))
         {
-            string proxyArg;
-            if (account.ProxyType == "socks5")
-            {
-                // Для SOCKS5 прокси нужен префикс
-                proxyArg = $"--proxy-server=socks5://{account.ProxyAddress}";
-            }
-            else
-            {
-                // HTTP/HTTPS прокси
-                proxyArg = $"--proxy-server={account.ProxyAddress}";
-            }
-            options.AdditionalBrowserArguments = proxyArg;
+            options.AdditionalBrowserArguments = args;
         }
 
         var profilePath = GetProfile(account).ProfilePath;

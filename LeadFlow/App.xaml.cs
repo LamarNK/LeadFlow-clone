@@ -97,6 +97,7 @@ public partial class App : System.Windows.Application
         builder.Services.AddSingleton<ISettingsService>(settingsService);
         builder.Services.AddSingleton<IBrowserProfileService, BrowserProfileService>();
         builder.Services.AddSingleton<IProfileCookiesService, ProfileCookiesService>();
+        builder.Services.AddSingleton<IProxyCheckService, ProxyCheckService>();
         builder.Services.AddSingleton<IBrowserSessionService, BrowserSessionService>();
         builder.Services.AddSingleton<IWebPageAutomationService, WebView2PageAutomationService>();
         builder.Services.AddSingleton<IAvitoPageReaderService, AvitoPageReaderService>();

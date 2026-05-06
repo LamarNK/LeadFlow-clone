@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace LeadFlow.Models;
 
 /// <summary>
@@ -50,6 +52,28 @@ public sealed class AccountFingerprint
     /// Количество логических процессоров
     /// </summary>
     public int HardwareConcurrency { get; set; } = 8;
+
+    /// <summary><see cref="Navigator.platform"/></summary>
+    public string? NavigatorPlatform { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? DoNotTrack { get; set; }
+
+    public bool SpoofWebGl { get; set; }
+
+    public string? WebGlVendor { get; set; }
+
+    public string? WebGlRenderer { get; set; }
+
+    public bool CanvasNoise { get; set; } = true;
+
+    public bool AudioNoise { get; set; } = true;
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? AudioNoiseSeedHex { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ClientRectsNoiseSeedHex { get; set; }
 
     /// <summary>
     /// Применяет параметры фингерпринта к аккаунту

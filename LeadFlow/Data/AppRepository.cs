@@ -255,6 +255,10 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
             {
                 Connected = g.Count(x => x.IsEnabled),
                 RequiresAuthorization = g.Count(x => x.Status == nameof(AvitoAccountStatus.RequiresLogin)),
+                AccountsNeedAttention = g.Count(x => x.IsEnabled
+                    && (x.Status == nameof(AvitoAccountStatus.RequiresLogin)
+                        || x.Status == nameof(AvitoAccountStatus.RequiresManualAction)
+                        || x.Status == nameof(AvitoAccountStatus.Error))),
                 ActiveAds = g.Sum(x => x.ActiveAdsCount),
                 BlockedAds = g.Sum(x => x.BlockedCount),
                 Drafts = g.Sum(x => x.DraftsCount)
@@ -273,6 +277,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
             ActionRequired = actionRequiredResponses,
             ConnectedAccounts = accountSummary?.Connected ?? 0,
             RequiresAuthorization = accountSummary?.RequiresAuthorization ?? 0,
+            AccountsNeedAttentionCount = accountSummary?.AccountsNeedAttention ?? 0,
             ActiveAdsCount = accountSummary?.ActiveAds ?? 0,
             BlockedAdsCount = accountSummary?.BlockedAds ?? 0,
             DraftsCount = accountSummary?.Drafts ?? 0
@@ -642,6 +647,26 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         AssignedUserAgent = model.AssignedUserAgent,
         CookiesJson = model.CookiesJson,
         Notes = model.Notes,
+        ProxyAddress = model.ProxyAddress,
+        ProxyType = string.IsNullOrWhiteSpace(model.ProxyType) ? "http" : model.ProxyType,
+        ProxyUsername = model.ProxyUsername,
+        ProxyPassword = model.ProxyPassword,
+        ProxyRotationUrl = model.ProxyRotationUrl,
+        BrowserLaunchArgs = model.BrowserLaunchArgs ?? string.Empty,
+        NavigatorPlatform = model.NavigatorPlatform,
+        DoNotTrack = model.DoNotTrack,
+        WebGlVendor = model.WebGlVendor,
+        WebGlRenderer = model.WebGlRenderer,
+        SpoofWebGl = model.SpoofWebGl,
+        CanvasFingerprintNoise = model.CanvasFingerprintNoise,
+        AudioFingerprintNoise = model.AudioFingerprintNoise,
+        WebRtcLaunchFlags = model.WebRtcLaunchFlags,
+        StartupTabsJson = string.IsNullOrWhiteSpace(model.StartupTabsJson) ? "[]" : model.StartupTabsJson,
+        ProxyPresetsJson = string.IsNullOrWhiteSpace(model.ProxyPresetsJson) ? "[]" : model.ProxyPresetsJson,
+        FingerprintOverviewJson = string.IsNullOrWhiteSpace(model.FingerprintOverviewJson) ? "{}" : model.FingerprintOverviewJson,
+        ScreenResolution = model.ScreenResolution,
+        Timezone = model.Timezone,
+        Languages = model.Languages,
         ActiveAdsCount = model.ActiveAdsCount,
         BlockedCount = model.BlockedCount,
         DraftsCount = model.DraftsCount,
@@ -675,6 +700,26 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         AssignedUserAgent = entity.AssignedUserAgent,
         CookiesJson = entity.CookiesJson,
         Notes = entity.Notes,
+        ProxyAddress = entity.ProxyAddress,
+        ProxyType = string.IsNullOrWhiteSpace(entity.ProxyType) ? "http" : entity.ProxyType,
+        ProxyUsername = entity.ProxyUsername,
+        ProxyPassword = entity.ProxyPassword,
+        ProxyRotationUrl = entity.ProxyRotationUrl,
+        BrowserLaunchArgs = entity.BrowserLaunchArgs ?? string.Empty,
+        NavigatorPlatform = entity.NavigatorPlatform,
+        DoNotTrack = entity.DoNotTrack,
+        WebGlVendor = entity.WebGlVendor,
+        WebGlRenderer = entity.WebGlRenderer,
+        SpoofWebGl = entity.SpoofWebGl,
+        CanvasFingerprintNoise = entity.CanvasFingerprintNoise,
+        AudioFingerprintNoise = entity.AudioFingerprintNoise,
+        WebRtcLaunchFlags = entity.WebRtcLaunchFlags,
+        StartupTabsJson = string.IsNullOrWhiteSpace(entity.StartupTabsJson) ? "[]" : entity.StartupTabsJson,
+        ProxyPresetsJson = string.IsNullOrWhiteSpace(entity.ProxyPresetsJson) ? "[]" : entity.ProxyPresetsJson,
+        FingerprintOverviewJson = string.IsNullOrWhiteSpace(entity.FingerprintOverviewJson) ? "{}" : entity.FingerprintOverviewJson,
+        ScreenResolution = string.IsNullOrWhiteSpace(entity.ScreenResolution) ? "1920x1080" : entity.ScreenResolution,
+        Timezone = string.IsNullOrWhiteSpace(entity.Timezone) ? "Europe/Moscow" : entity.Timezone,
+        Languages = string.IsNullOrWhiteSpace(entity.Languages) ? "ru-RU,ru,en-US,en" : entity.Languages,
         ActiveAdsCount = entity.ActiveAdsCount,
         BlockedCount = entity.BlockedCount,
         DraftsCount = entity.DraftsCount,
@@ -707,6 +752,26 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         target.AssignedUserAgent = source.AssignedUserAgent;
         target.CookiesJson = source.CookiesJson;
         target.Notes = source.Notes;
+        target.ProxyAddress = source.ProxyAddress;
+        target.ProxyType = string.IsNullOrWhiteSpace(source.ProxyType) ? "http" : source.ProxyType;
+        target.ProxyUsername = source.ProxyUsername;
+        target.ProxyPassword = source.ProxyPassword;
+        target.ProxyRotationUrl = source.ProxyRotationUrl;
+        target.BrowserLaunchArgs = source.BrowserLaunchArgs ?? string.Empty;
+        target.NavigatorPlatform = source.NavigatorPlatform;
+        target.DoNotTrack = source.DoNotTrack;
+        target.WebGlVendor = source.WebGlVendor;
+        target.WebGlRenderer = source.WebGlRenderer;
+        target.SpoofWebGl = source.SpoofWebGl;
+        target.CanvasFingerprintNoise = source.CanvasFingerprintNoise;
+        target.AudioFingerprintNoise = source.AudioFingerprintNoise;
+        target.WebRtcLaunchFlags = source.WebRtcLaunchFlags;
+        target.StartupTabsJson = string.IsNullOrWhiteSpace(source.StartupTabsJson) ? "[]" : source.StartupTabsJson;
+        target.ProxyPresetsJson = string.IsNullOrWhiteSpace(source.ProxyPresetsJson) ? "[]" : source.ProxyPresetsJson;
+        target.FingerprintOverviewJson = string.IsNullOrWhiteSpace(source.FingerprintOverviewJson) ? "{}" : source.FingerprintOverviewJson;
+        target.ScreenResolution = source.ScreenResolution;
+        target.Timezone = source.Timezone;
+        target.Languages = source.Languages;
         target.ActiveAdsCount = source.ActiveAdsCount;
         target.BlockedCount = source.BlockedCount;
         target.DraftsCount = source.DraftsCount;
@@ -820,7 +885,28 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
             ["IosVersion"] = "ALTER TABLE AvitoAccounts ADD COLUMN IosVersion TEXT NOT NULL DEFAULT 'All iOS';",
             ["AssignedUserAgent"] = "ALTER TABLE AvitoAccounts ADD COLUMN AssignedUserAgent TEXT NULL;",
             ["CookiesJson"] = "ALTER TABLE AvitoAccounts ADD COLUMN CookiesJson TEXT NOT NULL DEFAULT '';",
-            ["Notes"] = "ALTER TABLE AvitoAccounts ADD COLUMN Notes TEXT NOT NULL DEFAULT '';"
+            ["Notes"] = "ALTER TABLE AvitoAccounts ADD COLUMN Notes TEXT NOT NULL DEFAULT '';",
+            ["ProxyAddress"] = "ALTER TABLE AvitoAccounts ADD COLUMN ProxyAddress TEXT NULL;",
+            ["ProxyType"] = "ALTER TABLE AvitoAccounts ADD COLUMN ProxyType TEXT NOT NULL DEFAULT 'http';",
+            ["ScreenResolution"] = "ALTER TABLE AvitoAccounts ADD COLUMN ScreenResolution TEXT NULL;",
+            ["Timezone"] = "ALTER TABLE AvitoAccounts ADD COLUMN Timezone TEXT NULL;",
+            ["Languages"] = "ALTER TABLE AvitoAccounts ADD COLUMN Languages TEXT NULL;",
+            ["ProxyUsername"] = "ALTER TABLE AvitoAccounts ADD COLUMN ProxyUsername TEXT NULL;",
+            ["ProxyPassword"] = "ALTER TABLE AvitoAccounts ADD COLUMN ProxyPassword TEXT NULL;",
+            ["ProxyRotationUrl"] = "ALTER TABLE AvitoAccounts ADD COLUMN ProxyRotationUrl TEXT NULL;",
+            ["BrowserLaunchArgs"] = "ALTER TABLE AvitoAccounts ADD COLUMN BrowserLaunchArgs TEXT NOT NULL DEFAULT '';",
+            ["NavigatorPlatform"] = "ALTER TABLE AvitoAccounts ADD COLUMN NavigatorPlatform TEXT NULL;",
+            ["DoNotTrack"] = "ALTER TABLE AvitoAccounts ADD COLUMN DoNotTrack INTEGER NOT NULL DEFAULT 0;",
+            ["WebGlVendor"] = "ALTER TABLE AvitoAccounts ADD COLUMN WebGlVendor TEXT NULL;",
+            ["WebGlRenderer"] = "ALTER TABLE AvitoAccounts ADD COLUMN WebGlRenderer TEXT NULL;",
+            ["SpoofWebGl"] = "ALTER TABLE AvitoAccounts ADD COLUMN SpoofWebGl INTEGER NOT NULL DEFAULT 0;",
+            ["CanvasFingerprintNoise"] = "ALTER TABLE AvitoAccounts ADD COLUMN CanvasFingerprintNoise INTEGER NOT NULL DEFAULT 1;",
+            ["AudioFingerprintNoise"] = "ALTER TABLE AvitoAccounts ADD COLUMN AudioFingerprintNoise INTEGER NOT NULL DEFAULT 1;",
+            ["WebRtcLaunchFlags"] = "ALTER TABLE AvitoAccounts ADD COLUMN WebRtcLaunchFlags TEXT NULL;",
+            ["StartupTabsJson"] = "ALTER TABLE AvitoAccounts ADD COLUMN StartupTabsJson TEXT NOT NULL DEFAULT '[]';",
+            ["ProxyPresetsJson"] = "ALTER TABLE AvitoAccounts ADD COLUMN ProxyPresetsJson TEXT NOT NULL DEFAULT '[]';",
+            // '{{}}' — экранирование для ExecuteSqlRaw (иначе '{}' ломает string.Format).
+            ["FingerprintOverviewJson"] = "ALTER TABLE AvitoAccounts ADD COLUMN FingerprintOverviewJson TEXT NOT NULL DEFAULT '{{}}';"
         };
 
         foreach (var (columnName, statement) in alterStatements)

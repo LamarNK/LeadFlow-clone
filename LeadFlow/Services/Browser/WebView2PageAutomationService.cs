@@ -3,23 +3,16 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
-using LeadFlow.Models;
-using LeadFlow.Services.AntiDetect;
 
 namespace LeadFlow.Services.Browser;
 
 public sealed class WebView2PageAutomationService : IWebPageAutomationService
 {
-    private bool _stealthScriptsInjected = false;
-
     /// <summary>
-    /// Навигация с предварительной инъекцией stealth-скриптов.
+    /// Навигация (stealth и геолокация уже регистрируются в <see cref="BrowserAccountSession.AttachAsync"/>).
     /// </summary>
     public async Task NavigateAsync(BrowserAccountSession session, string url, CancellationToken cancellationToken)
     {
-        // Инжектируем stealth-скрипты один раз при первой навигации сессии
-        await EnsureStealthScriptsInjectedAsync(session, cancellationToken);
-
         await Application.Current.Dispatcher.InvokeAsync(() =>
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -60,64 +53,6 @@ public sealed class WebView2PageAutomationService : IWebPageAutomationService
             }
             catch { /* Игнорируем ошибки установки UA */ }
         });
-    }
-
-    /// <summary>
-    /// Инжектирует stealth-скрипты в документ при создании.
-    /// Выполняется только один раз за сессию.
-    /// </summary>
-    private async Task EnsureStealthScriptsInjectedAsync(BrowserAccountSession session, CancellationToken cancellationToken)
-    {
-        if (_stealthScriptsInjected || session.AttachedView?.CoreWebView2 is not CoreWebView2 core)
-            return;
-
-        // Получаем фингерпринт из аккаунта сессии
-        var fingerprint = session.Account != null 
-            ? BuildFingerprintFromAccount(session.Account) 
-            : null;
-
-        var stealthScript = StealthScripts.GetMainStealthScript(fingerprint);
-
-        await Application.Current.Dispatcher.InvokeAsync(async () =>
-        {
-            try
-            {
-                // Инжектируем скрипт — он выполнится при каждой загрузке любого документа
-                await core.AddScriptToExecuteOnDocumentCreatedAsync(stealthScript);
-                _stealthScriptsInjected = true;
-            }
-            catch (Exception ex)
-            {
-                // Логируем ошибку, но не прерываем работу — сайт может работать и без скриптов
-                System.Diagnostics.Debug.WriteLine($"[AntiDetect] Script injection failed: {ex.Message}");
-            }
-        });
-    }
-
-    /// <summary>
-    /// Строит объект фингерпринта из полей аккаунта.
-    /// </summary>
-    private static AccountFingerprint? BuildFingerprintFromAccount(AvitoAccount account)
-    {
-        if (string.IsNullOrWhiteSpace(account.AssignedUserAgent))
-            return null;
-
-        var parts = account.ScreenResolution?.Split('x') ?? new[] { "1920", "1080" };
-        var width = int.TryParse(parts[0], out var w) ? w : 1920;
-        var height = int.TryParse(parts[1], out var h) ? h : 1080;
-
-        return new AccountFingerprint
-        {
-            UserAgent = account.AssignedUserAgent,
-            ScreenResolution = account.ScreenResolution ?? "1920x1080",
-            Timezone = account.Timezone ?? "Europe/Moscow",
-            Languages = account.Languages ?? "ru-RU,ru,en-US,en",
-            ViewportWidth = width - 20,
-            ViewportHeight = height - 100,
-            ColorDepth = 24,
-            DeviceMemory = 8,
-            HardwareConcurrency = 8
-        };
     }
 
     /// <summary>
