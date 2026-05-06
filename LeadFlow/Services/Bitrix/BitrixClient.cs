@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Net.Http.Json;
 using System.Globalization;
 using System.Text.Json;
@@ -17,6 +18,8 @@ public sealed class BitrixClient(
     private const string ImportedLeadSource = "Bitrix24";
     private const int ContactLookupMaxConcurrency = 6;
     private const int ContactLookupMaxAttempts = 3;
+    private const int DealIdempotencyKeyMaxLength = 255;
+    private const string MissingWebhookMessage = "Не задан URL вебхука Bitrix24.";
     private sealed record DealSnapshot(
         string BitrixId,
         string Title,
@@ -35,6 +38,13 @@ public sealed class BitrixClient(
     {
         if (string.IsNullOrWhiteSpace(settings.Bitrix.WebhookUrl))
         {
+            if (!settings.DemoModeEnabled && settings.Bitrix.CheckDuplicatesInBitrix)
+            {
+                return new BitrixDuplicateLookupResult(
+                    BitrixDuplicateLookupOutcome.Unavailable,
+                    $"{MissingWebhookMessage} Проверка дублей в CRM недоступна.");
+            }
+
             return new BitrixDuplicateLookupResult(BitrixDuplicateLookupOutcome.Skipped);
         }
 
@@ -186,6 +196,15 @@ public sealed class BitrixClient(
     {
         if (string.IsNullOrWhiteSpace(settings.Bitrix.WebhookUrl))
         {
+            if (!settings.DemoModeEnabled)
+            {
+                return new BitrixCreateLeadResponse
+                {
+                    IsSuccess = false,
+                    Error = MissingWebhookMessage
+                };
+            }
+
             return new BitrixCreateLeadResponse
             {
                 IsSuccess = true,
@@ -196,9 +215,33 @@ public sealed class BitrixClient(
         var preview = candidateParser.BuildPreview(response, settings.Bitrix);
         var client = httpClientFactory.CreateClient(nameof(BitrixClient));
         var webhookBase = settings.Bitrix.WebhookUrl.TrimEnd('/');
+        var idempotencyUfCode = settings.Bitrix.DealIdempotencyUfCode.Trim();
+        var idempotencyKey = BuildDealIdempotencyKey(response);
 
         try
         {
+            if (!string.IsNullOrWhiteSpace(idempotencyUfCode))
+            {
+                var existing = await TryFindDealByIdempotencyKeyAsync(
+                    client,
+                    webhookBase,
+                    idempotencyUfCode,
+                    idempotencyKey,
+                    cancellationToken);
+                if (existing is not null)
+                {
+                    _ = GlobalLogger.Instance.LogAsync(
+                        $"Bitrix idempotent hit: deal {existing.Value.DealId} for key {idempotencyKey}.",
+                        DeskLinkAuditLogLevel.Info);
+                    return new BitrixCreateLeadResponse
+                    {
+                        IsSuccess = true,
+                        EntityId = existing.Value.DealId,
+                        ContactId = existing.Value.ContactId
+                    };
+                }
+            }
+
             var contactRequest = new
             {
                 fields = new
@@ -218,11 +261,37 @@ public sealed class BitrixClient(
 
             await using var contactStream = await contactResult.Content.ReadAsStreamAsync(cancellationToken);
             using var contactJson = await JsonDocument.ParseAsync(contactStream, cancellationToken: cancellationToken);
-            var contactId = GetCreateResultId(contactJson.RootElement);
+            var contactRoot = contactJson.RootElement;
+            if (TryGetBitrixApiError(contactRoot, out var contactApiError))
+            {
+                return new BitrixCreateLeadResponse
+                {
+                    IsSuccess = false,
+                    Error = contactApiError
+                };
+            }
+
+            var contactId = GetCreateResultId(contactRoot);
+            if (string.IsNullOrWhiteSpace(contactId))
+            {
+                return new BitrixCreateLeadResponse
+                {
+                    IsSuccess = false,
+                    Error = "Bitrix24 не вернул ID созданного контакта."
+                };
+            }
 
             try
             {
-                var dealId = await PostDealAsync(client, webhookBase, preview, settings, contactId, cancellationToken);
+                var dealId = await PostDealAsync(
+                    client,
+                    webhookBase,
+                    preview,
+                    settings,
+                    contactId,
+                    idempotencyUfCode,
+                    idempotencyKey,
+                    cancellationToken);
                 return new BitrixCreateLeadResponse
                 {
                     IsSuccess = true,
@@ -278,6 +347,16 @@ public sealed class BitrixClient(
     {
         if (string.IsNullOrWhiteSpace(settings.Bitrix.WebhookUrl))
         {
+            if (!settings.DemoModeEnabled)
+            {
+                return new BitrixCreateLeadResponse
+                {
+                    IsSuccess = false,
+                    Error = MissingWebhookMessage,
+                    ContactId = contactId
+                };
+            }
+
             return new BitrixCreateLeadResponse
             {
                 IsSuccess = true,
@@ -298,10 +377,44 @@ public sealed class BitrixClient(
         var preview = candidateParser.BuildPreview(response, settings.Bitrix);
         var client = httpClientFactory.CreateClient(nameof(BitrixClient));
         var webhookBase = settings.Bitrix.WebhookUrl.TrimEnd('/');
+        var idempotencyUfCode = settings.Bitrix.DealIdempotencyUfCode.Trim();
+        var idempotencyKey = BuildDealIdempotencyKey(response);
 
         try
         {
-            var dealId = await PostDealAsync(client, webhookBase, preview, settings, contactId, cancellationToken);
+            if (!string.IsNullOrWhiteSpace(idempotencyUfCode))
+            {
+                var existing = await TryFindDealByIdempotencyKeyAsync(
+                    client,
+                    webhookBase,
+                    idempotencyUfCode,
+                    idempotencyKey,
+                    cancellationToken);
+                if (existing is not null)
+                {
+                    _ = GlobalLogger.Instance.LogAsync(
+                        $"Bitrix idempotent hit (deal-only): deal {existing.Value.DealId} for key {idempotencyKey}.",
+                        DeskLinkAuditLogLevel.Info);
+                    return new BitrixCreateLeadResponse
+                    {
+                        IsSuccess = true,
+                        EntityId = existing.Value.DealId,
+                        ContactId = string.IsNullOrWhiteSpace(existing.Value.ContactId)
+                            ? contactId
+                            : existing.Value.ContactId
+                    };
+                }
+            }
+
+            var dealId = await PostDealAsync(
+                client,
+                webhookBase,
+                preview,
+                settings,
+                contactId,
+                idempotencyUfCode,
+                idempotencyKey,
+                cancellationToken);
             return new BitrixCreateLeadResponse
             {
                 IsSuccess = true,
@@ -323,25 +436,96 @@ public sealed class BitrixClient(
         }
     }
 
+    private static string BuildDealIdempotencyKey(CandidateResponse response)
+    {
+        var source = string.IsNullOrWhiteSpace(response.Source) ? "Avito" : response.Source.Trim();
+        var sid = string.IsNullOrWhiteSpace(response.SourceResponseId) ? string.Empty : response.SourceResponseId.Trim();
+        var key = $"{source}|{response.AccountId:N}|{sid}";
+        return key.Length <= DealIdempotencyKeyMaxLength ? key : key[..DealIdempotencyKeyMaxLength];
+    }
+
+    private static async Task<(string DealId, string ContactId)?> TryFindDealByIdempotencyKeyAsync(
+        HttpClient client,
+        string webhookBase,
+        string ufCode,
+        string idempotencyKey,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(ufCode) || string.IsNullOrWhiteSpace(idempotencyKey))
+        {
+            return null;
+        }
+
+        var filter = new Dictionary<string, string>(StringComparer.Ordinal) { [ufCode] = idempotencyKey };
+        var listRequest = new
+        {
+            filter,
+            select = new[] { "ID", "CONTACT_ID" },
+            start = 0
+        };
+
+        using var result = await client.PostAsJsonAsync(
+            $"{webhookBase}/crm.deal.list.json",
+            listRequest,
+            cancellationToken);
+        if (!result.IsSuccessStatusCode)
+        {
+            return null;
+        }
+
+        await using var stream = await result.Content.ReadAsStreamAsync(cancellationToken);
+        using var json = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+        var root = json.RootElement;
+        if (TryGetBitrixApiError(root, out _))
+        {
+            return null;
+        }
+
+        if (!root.TryGetProperty("result", out var resultElement) || resultElement.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        foreach (var item in resultElement.EnumerateArray())
+        {
+            var dealId = GetString(item, "ID");
+            if (string.IsNullOrWhiteSpace(dealId))
+            {
+                continue;
+            }
+
+            var contactId = GetString(item, "CONTACT_ID");
+            return (dealId, contactId);
+        }
+
+        return null;
+    }
+
     private static async Task<string> PostDealAsync(
         HttpClient client,
         string webhookBase,
         BitrixLeadPreview preview,
         AppSettings settings,
         string contactId,
+        string idempotencyUfCode,
+        string idempotencyKey,
         CancellationToken cancellationToken)
     {
-        var dealRequest = new
+        var fields = new Dictionary<string, object?>
         {
-            fields = new
-            {
-                TITLE = preview.Title,
-                COMMENTS = preview.Comments,
-                SOURCE_DESCRIPTION = settings.Bitrix.LeadSource,
-                ASSIGNED_BY_ID = settings.Bitrix.ResponsibleId,
-                CONTACT_ID = contactId
-            }
+            ["TITLE"] = preview.Title,
+            ["COMMENTS"] = preview.Comments,
+            ["SOURCE_DESCRIPTION"] = settings.Bitrix.LeadSource,
+            ["ASSIGNED_BY_ID"] = settings.Bitrix.ResponsibleId,
+            ["CONTACT_ID"] = contactId
         };
+
+        if (!string.IsNullOrWhiteSpace(idempotencyUfCode) && !string.IsNullOrWhiteSpace(idempotencyKey))
+        {
+            fields[idempotencyUfCode] = idempotencyKey;
+        }
+
+        var dealRequest = new { fields };
 
         var dealResult = await client.PostAsJsonAsync(
             $"{webhookBase}/crm.deal.add.json",

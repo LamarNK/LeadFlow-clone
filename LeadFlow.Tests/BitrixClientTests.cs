@@ -14,14 +14,26 @@ public sealed class BitrixClientTests
     private const string Webhook = "https://b24-test.bitrix24.ru/rest/1/abc/";
 
     [Fact]
-    public async Task HasDuplicate_EmptyWebhook_ReturnsSkipped()
+    public async Task HasDuplicate_EmptyWebhook_DemoMode_Skips()
     {
         var client = BuildClient((_, _) => throw new InvalidOperationException("Не должно быть HTTP-вызовов"));
-        var settings = NewSettings(webhook: string.Empty);
+        var settings = NewSettings(webhook: string.Empty, demoMode: true);
 
         var result = await client.HasDuplicateAsync("79000000000", settings, CancellationToken.None);
 
         Assert.True(result.IsSkipped);
+    }
+
+    [Fact]
+    public async Task HasDuplicate_EmptyWebhook_NoDemo_CheckBitrix_ReturnsUnavailable()
+    {
+        var client = BuildClient((_, _) => throw new InvalidOperationException("Не должно быть HTTP-вызовов"));
+        var settings = NewSettings(webhook: string.Empty, demoMode: false);
+
+        var result = await client.HasDuplicateAsync("79000000000", settings, CancellationToken.None);
+
+        Assert.True(result.IsUnavailable);
+        Assert.Contains("вебхука", result.ErrorMessage ?? string.Empty, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -194,18 +206,103 @@ public sealed class BitrixClientTests
     }
 
     [Fact]
-    public async Task CreateDealForContact_EmptyWebhook_ReturnsDemoSuccess()
+    public async Task CreateDealForContact_EmptyWebhook_DemoMode_ReturnsDemoSuccess()
     {
         var client = BuildClient((_, _) => throw new InvalidOperationException("Не должно быть HTTP-вызовов"));
 
         var result = await client.CreateDealForContactAsync(
             NewResponse(),
             "42",
-            NewSettings(webhook: string.Empty),
+            NewSettings(webhook: string.Empty, demoMode: true),
             CancellationToken.None);
 
         Assert.True(result.IsSuccess);
         Assert.Equal("42", result.ContactId);
+    }
+
+    [Fact]
+    public async Task CreateDealForContact_EmptyWebhook_NoDemo_ReturnsFailure()
+    {
+        var client = BuildClient((_, _) => throw new InvalidOperationException("Не должно быть HTTP-вызовов"));
+
+        var result = await client.CreateDealForContactAsync(
+            NewResponse(),
+            "42",
+            NewSettings(webhook: string.Empty, demoMode: false),
+            CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Contains("вебхука", result.Error ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task CreateLead_EmptyWebhook_NoDemo_ReturnsFailure()
+    {
+        var client = BuildClient((_, _) => throw new InvalidOperationException("Не должно быть HTTP-вызовов"));
+
+        var result = await client.CreateLeadAsync(NewResponse(), NewSettings(webhook: string.Empty, demoMode: false), CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Contains("вебхука", result.Error ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task CreateLead_ContactApiError_DoesNotCallDealAdd()
+    {
+        var (handler, client) = BuildClientWithHandler((req, _) =>
+        {
+            return req.RequestUri!.AbsolutePath switch
+            {
+                var p when p.EndsWith("/crm.contact.add.json", StringComparison.Ordinal)
+                    => Task.FromResult(StubHttpMessageHandler.Ok(
+                        """{"error":"ACCESS_DENIED","error_description":"no"}""")),
+                _ => Task.FromResult(StubHttpMessageHandler.Json(HttpStatusCode.NotFound, "{}"))
+            };
+        });
+
+        var result = await client.CreateLeadAsync(NewResponse(), NewSettings(), CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Contains("ACCESS_DENIED", result.Error ?? string.Empty);
+        Assert.Single(handler.Calls);
+        Assert.EndsWith("/crm.contact.add.json", handler.Calls[0].Path);
+    }
+
+    [Fact]
+    public async Task CreateLead_Idempotency_DealListHit_SkipsContactAndDeal()
+    {
+        var response = NewResponse();
+        response.AccountId = Guid.Parse("a1a1a1a1-a1a1-a1a1-a1a1-a1a1a1a1a1a1");
+        response.Source = "Avito";
+        response.SourceResponseId = "src-99";
+
+        var (handler, client) = BuildClientWithHandler((req, body) =>
+        {
+            return req.RequestUri!.AbsolutePath switch
+            {
+                var p when p.EndsWith("/crm.deal.list.json", StringComparison.Ordinal)
+                    => Task.FromResult(StubHttpMessageHandler.Ok(
+                        """
+                        {"result":[{"ID":"500","CONTACT_ID":"600"}]}
+                        """)),
+                _ => Task.FromResult(StubHttpMessageHandler.Json(HttpStatusCode.NotFound, "{}"))
+            };
+        });
+
+        var settings = NewSettings();
+        settings.Bitrix.DealIdempotencyUfCode = "UF_CRM_TEST_ID";
+
+        var result = await client.CreateLeadAsync(response, settings, CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("500", result.EntityId);
+        Assert.Equal("600", result.ContactId);
+        Assert.Single(handler.Calls);
+        Assert.EndsWith("/crm.deal.list.json", handler.Calls[0].Path);
+        using var doc = JsonDocument.Parse(handler.Calls[0].Body);
+        Assert.True(doc.RootElement.TryGetProperty("filter", out var filter));
+        Assert.True(filter.TryGetProperty("UF_CRM_TEST_ID", out var keyProp));
+        Assert.Contains("src-99", keyProp.GetString() ?? string.Empty);
     }
 
     [Fact]
@@ -273,8 +370,9 @@ public sealed class BitrixClientTests
         Assert.Equal(2, handler.Calls.Count(c => c.Path.EndsWith("/crm.deal.list.json", StringComparison.Ordinal)));
     }
 
-    private static AppSettings NewSettings(string? webhook = Webhook) => new()
+    private static AppSettings NewSettings(string? webhook = Webhook, bool demoMode = true) => new()
     {
+        DemoModeEnabled = demoMode,
         Bitrix = new BitrixSettings
         {
             WebhookUrl = webhook ?? string.Empty,
@@ -286,6 +384,9 @@ public sealed class BitrixClientTests
 
     private static CandidateResponse NewResponse() => new()
     {
+        AccountId = Guid.Parse("b2b2b2b2-b2b2-b2b2-b2b2-b2b2b2b2b2b2"),
+        Source = "Avito",
+        SourceResponseId = "avito-test-1",
         FullName = "Иванов Иван Иванович",
         FirstName = "Иван",
         LastName = "Иванов",

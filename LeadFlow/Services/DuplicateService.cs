@@ -14,7 +14,11 @@ public sealed class DuplicateService(
         var normalized = phoneNormalizer.Normalize(response.PhoneRaw);
         response.PhoneNormalized = normalized;
 
-        var local = await duplicateRepository.FindDuplicateAsync(normalized, settings.DuplicateScope, response.AccountId, cancellationToken);
+        CandidateResponse? local = null;
+        if (!string.IsNullOrWhiteSpace(normalized))
+        {
+            local = await duplicateRepository.FindDuplicateAsync(normalized, settings.DuplicateScope, response.AccountId, cancellationToken);
+        }
 
         var isBitrixDuplicate = false;
         var bitrixUnavailable = false;

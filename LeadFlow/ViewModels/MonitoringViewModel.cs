@@ -625,6 +625,7 @@ public partial class MonitoringViewModel : ObservableObject
             }
 
             response.ErrorMessage = string.Empty;
+            await _repository.SaveCandidateAsync(response, CancellationToken.None);
             await _repository.AddLogAsync(new ProcessingLogItem
             {
                 CandidateResponseId = response.Id,
@@ -647,6 +648,7 @@ public partial class MonitoringViewModel : ObservableObject
                 Message = "Контакт в Bitrix24 без сделки (вручную)",
                 Details = lead.Error
             }, CancellationToken.None);
+            await _repository.SaveCandidateAsync(response, CancellationToken.None);
         }
         else
         {
@@ -660,9 +662,8 @@ public partial class MonitoringViewModel : ObservableObject
                 Message = "Ошибка Bitrix24 (вручную)",
                 Details = lead.Error
             }, CancellationToken.None);
+            await _repository.SaveCandidateAsync(response, CancellationToken.None);
         }
-
-        await _repository.SaveCandidateAsync(response, CancellationToken.None);
         ApplyProcessedResponse(response);
         NotifyCountersChanged();
     }

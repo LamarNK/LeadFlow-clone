@@ -459,7 +459,7 @@ public sealed class MonitoringService(
         try
         {
             var responses = settings.DemoModeEnabled
-                ? await avitoDemoResponseSource.GetBatchAsync(account, Math.Max(1, settings.MonitoringSafety.MaxResponsesPerCycle / 2), cancellationToken)
+                ? await avitoDemoResponseSource.GetBatchAsync(account, settings.MonitoringSafety.MaxResponsesPerCycle, cancellationToken)
                 : await avitoResponseSource.GetNewResponsesAsync(account, settings, cancellationToken);
             var maxPerCycle = settings.MonitoringSafety.MaxResponsesPerCycle;
             if (responses.Count > maxPerCycle)
@@ -592,6 +592,7 @@ public sealed class MonitoringService(
                     response.BitrixContactId = lead.ContactId;
                 }
 
+                await repository.SaveCandidateAsync(response, cancellationToken);
                 await repository.AddLogAsync(new ProcessingLogItem
                 {
                     CandidateResponseId = response.Id,
@@ -638,9 +639,10 @@ public sealed class MonitoringService(
                     }, cancellationToken);
                     UpdateStatus(MonitoringStatus.Error, $"Ошибка при создании сделки по отклику \"{response.FullName}\": {lead.Error}");
                 }
+
+                await repository.SaveCandidateAsync(response, cancellationToken);
             }
 
-            await repository.SaveCandidateAsync(response, cancellationToken);
             ResponseProcessed?.Invoke(this, response);
         }
         catch (OperationCanceledException)
@@ -672,7 +674,33 @@ public sealed class MonitoringService(
         }
         catch (Exception ex)
         {
-            if (response.Status == ResponseStatus.InProgress)
+            if (response.Status == ResponseStatus.Sent && !string.IsNullOrWhiteSpace(response.BitrixEntityId))
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"Post-CRM failure for response {response.Id} (Bitrix deal {response.BitrixEntityId}).{Environment.NewLine}{ex}",
+                    DeskLinkAuditLogLevel.Warning);
+                try
+                {
+                    await repository.SaveCandidateAsync(response, CancellationToken.None);
+                    await repository.AddLogAsync(new ProcessingLogItem
+                    {
+                        CandidateResponseId = response.Id,
+                        AccountId = response.AccountId,
+                        Level = "Warning",
+                        Message = "Сделка в Bitrix24 создана, ошибка после сохранения",
+                        Details = ex.Message
+                    }, CancellationToken.None);
+                }
+                catch (Exception saveEx)
+                {
+                    _ = GlobalLogger.Instance.LogAsync(
+                        $"Failed to persist Sent state after post-CRM error for response {response.Id}: {saveEx.Message}",
+                        DeskLinkAuditLogLevel.Error);
+                }
+
+                ResponseProcessed?.Invoke(this, response);
+            }
+            else if (response.Status == ResponseStatus.InProgress)
             {
                 _ = GlobalLogger.Instance.LogAsync(
                     $"Response processing failed for {response.Id}.{Environment.NewLine}{ex}",

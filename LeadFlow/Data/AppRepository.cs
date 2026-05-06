@@ -78,6 +78,21 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         var existing = await db.CandidateResponses.FindAsync([response.Id], cancellationToken);
         if (existing is null)
         {
+            if (!string.IsNullOrWhiteSpace(response.SourceResponseId))
+            {
+                var sameSource = await db.CandidateResponses
+                    .FirstOrDefaultAsync(
+                        x => x.AccountId == response.AccountId && x.SourceResponseId == response.SourceResponseId,
+                        cancellationToken);
+                if (sameSource is not null)
+                {
+                    response.Id = sameSource.Id;
+                    Map(response, sameSource);
+                    await db.SaveChangesAsync(cancellationToken);
+                    return;
+                }
+            }
+
             db.CandidateResponses.Add(ToEntity(response));
         }
         else
@@ -924,6 +939,17 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
     {
         await db.Database.ExecuteSqlRawAsync(
             "CREATE INDEX IF NOT EXISTS IX_CandidateResponses_CreatedAt ON CandidateResponses (CreatedAt);",
+            cancellationToken);
+
+        await db.Database.ExecuteSqlRawAsync(
+            "DROP INDEX IF EXISTS IX_CandidateResponses_AccountId_SourceResponseId;",
+            cancellationToken);
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS IX_CandidateResponses_AccountId_SourceResponseId
+            ON CandidateResponses (AccountId, SourceResponseId)
+            WHERE length(trim(SourceResponseId)) > 0;
+            """,
             cancellationToken);
 
         var existingColumns = await GetTableColumnsAsync(db, "CandidateResponses", cancellationToken);

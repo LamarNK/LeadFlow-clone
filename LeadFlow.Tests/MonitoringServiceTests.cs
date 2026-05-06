@@ -133,6 +133,13 @@ public sealed class MonitoringServiceTests
         Assert.Equal("CONT-7", processed.BitrixContactId);
         Assert.NotNull(processed.ProcessedAt);
         Assert.Contains(harness.Repository.Logs, l => l.Message == "Сделка создана в Bitrix24" && l.Details == "DEAL-42");
+        var saveSentIdx = harness.Repository.OperationTrace.FindIndex(t =>
+            t.StartsWith("Save:Sent:", StringComparison.Ordinal));
+        var logDealIdx = harness.Repository.OperationTrace.FindIndex(t =>
+            t.Contains("Сделка создана в Bitrix24", StringComparison.Ordinal));
+        Assert.True(saveSentIdx >= 0);
+        Assert.True(logDealIdx >= 0);
+        Assert.True(saveSentIdx < logDealIdx);
     }
 
     [Fact]

@@ -18,6 +18,13 @@ public sealed class CandidateParser : ICandidateParser
 
     public BitrixLeadPreview BuildPreview(CandidateResponse response, BitrixSettings settings)
     {
+        const int rawTextMaxLen = 500;
+        var rawSnippet = string.IsNullOrWhiteSpace(response.RawText)
+            ? string.Empty
+            : response.RawText.Length <= rawTextMaxLen
+                ? response.RawText
+                : response.RawText[..rawTextMaxLen] + "…";
+
         return new BitrixLeadPreview
         {
             Title = $"Отклик Авито: {response.Vacancy} — {response.FullName}",
@@ -35,9 +42,14 @@ public sealed class CandidateParser : ICandidateParser
                 $"Вакансия: {response.Vacancy}{Environment.NewLine}" +
                 $"Город: {response.City}{Environment.NewLine}" +
                 $"Источник: Авито{Environment.NewLine}" +
+                $"ID отклика (источник): {response.SourceResponseId}{Environment.NewLine}" +
                 $"Ссылка на вакансию: {response.VacancyUrl}{Environment.NewLine}" +
+                $"Ссылка на мессенджер: {response.MessengerUrl}{Environment.NewLine}" +
                 $"Аккаунт Авито: {response.AccountName}{Environment.NewLine}" +
-                $"Дата отклика: {response.CreatedAt.ToLocalTimeFromStoredUtc():dd.MM.yyyy HH:mm}"
+                $"Дата отклика: {response.CreatedAt.ToLocalTimeFromStoredUtc():dd.MM.yyyy HH:mm}" +
+                (string.IsNullOrEmpty(rawSnippet)
+                    ? string.Empty
+                    : $"{Environment.NewLine}Текст отклика (фрагмент): {rawSnippet}")
         };
     }
 }

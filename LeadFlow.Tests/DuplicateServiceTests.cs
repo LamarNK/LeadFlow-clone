@@ -106,6 +106,25 @@ public sealed class DuplicateServiceTests
         Assert.Equal(DuplicateScope.PerAvitoAccount, repo.LastScopeArgument);
     }
 
+    [Fact]
+    public async Task EmptyPhone_SkipsLocalDuplicateLookup()
+    {
+        var repo = new FakeDuplicateRepository
+        {
+            Lookup = (_, _, _) => new CandidateResponse { Id = Guid.NewGuid() }
+        };
+        var bitrix = new FakeBitrixClient();
+        var sut = new DuplicateService(repo, new PhoneNormalizer(), bitrix);
+        var response = NewResponse();
+        response.PhoneRaw = string.Empty;
+
+        var result = await sut.CheckAsync(response, NewSettings(), CancellationToken.None);
+
+        Assert.Equal(0, repo.CallCount);
+        Assert.False(result.IsLocalDuplicate);
+        Assert.False(result.IsDuplicate);
+    }
+
     private static AppSettings NewSettings(
         bool checkBitrixDuplicates = true,
         DuplicateScope scope = DuplicateScope.GlobalAcrossAllAccounts) => new()
