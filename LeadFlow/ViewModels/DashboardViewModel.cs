@@ -37,12 +37,14 @@ public partial class DashboardViewModel : ObservableObject
     private int inProgress;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasDuplicatesAttention))]
     private int duplicates;
 
     [ObservableProperty]
     private int errors;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasActionRequiredAttention))]
     private int actionRequired;
 
     [ObservableProperty]
@@ -68,6 +70,10 @@ public partial class DashboardViewModel : ObservableObject
 
     [ObservableProperty]
     private int activityChartColumns = 24;
+
+    public bool HasDuplicatesAttention => Duplicates > 0;
+
+    public bool HasActionRequiredAttention => ActionRequired > 0;
 
     public ObservableCollection<ActivityPoint> Activity { get; } = new();
     public ObservableCollection<ActivityPoint> WeeklyActivity { get; } = new();

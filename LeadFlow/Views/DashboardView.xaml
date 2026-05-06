@@ -161,9 +161,19 @@
                                        Margin="0,2,0,0" />
                         </Grid>
                     </Button>
-                    <Button Style="{StaticResource StatCardButtonStyle}"
-                            Command="{Binding DataContext.OpenJournalCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                    <Button Command="{Binding DataContext.OpenJournalCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                             CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource StatCardButtonStyle}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasDuplicatesAttention}" Value="True">
+                                        <Setter Property="BorderBrush" Value="{StaticResource WarningBrush}" />
+                                        <Setter Property="BorderThickness" Value="2" />
+                                        <Setter Property="Background" Value="#FFF7ED" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
                         <Grid>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto" />
@@ -196,9 +206,19 @@
                                        Margin="0,2,0,0" />
                         </Grid>
                     </Button>
-                    <Button Style="{StaticResource StatCardButtonStyle}"
-                            Command="{Binding DataContext.OpenMonitoringCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                    <Button Command="{Binding DataContext.OpenMonitoringCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                             CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource StatCardButtonStyle}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasActionRequiredAttention}" Value="True">
+                                        <Setter Property="BorderBrush" Value="{StaticResource WarningBrush}" />
+                                        <Setter Property="BorderThickness" Value="2" />
+                                        <Setter Property="Background" Value="#FFF7ED" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
                         <Grid>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto" />
