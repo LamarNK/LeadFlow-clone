@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using LeadFlow.Data;
 using LeadFlow.Logging.Audit;
 using LeadFlow.Models;
@@ -10,7 +11,7 @@ namespace LeadFlow.Services;
 
 public sealed class MonitoringService(
     ISettingsService settingsService,
-    AppRepository repository,
+    IMonitoringRepository repository,
     IPhoneNormalizer phoneNormalizer,
     ICandidateParser candidateParser,
     IDuplicateService duplicateService,
@@ -19,6 +20,7 @@ public sealed class MonitoringService(
     AvitoDemoResponseSource avitoDemoResponseSource,
     AvitoParserService avitoParser,
     IBrowserSessionService browserSessionService,
+    IBackgroundWebViewHostFactory backgroundWebViewHostFactory,
     IWebPageAutomationService automationService) : IMonitoringService
 {
     private const string ProfileItemsUrl = "https://www.avito.ru/profile/pro/items";
@@ -27,8 +29,6 @@ public sealed class MonitoringService(
     private System.Threading.Timer? _countdownTimer;
     private System.Threading.Timer? _profileStatsTimer;
     private DateTime? _nextCheckTime;
-    private static readonly TimeSpan MinCycleDelay = TimeSpan.FromMinutes(1);
-    private static readonly TimeSpan MaxCycleDelay = TimeSpan.FromMinutes(10);
 
     /// <summary>Пауза перед повтором основного цикла после необработанной ошибки (минуты).</summary>
     private const int LoopRecoveryPauseMinutes = 5;
@@ -45,10 +45,13 @@ public sealed class MonitoringService(
     public event EventHandler<string>? StatusMessageChanged;
     public event EventHandler<CandidateResponse>? ResponseProcessed;
     public event EventHandler<ProfileStatsUpdatedEventArgs>? ProfileStatsUpdated;
+    public event EventHandler? NextCycleCheckTimeChanged;
+    public event EventHandler<string>? MonitoringAutoStopped;
 
     public MonitoringStatus CurrentStatus { get; private set; } = MonitoringStatus.Waiting;
     public string CurrentStatusMessage { get; private set; } = string.Empty;
     public bool IsActive { get; private set; }
+    public DateTime? NextCycleCheckAtUtc { get; private set; }
 
     public IReadOnlyList<AvitoAdStatus> GetActiveAdsSnapshot()
     {
@@ -159,7 +162,7 @@ public sealed class MonitoringService(
 
         _countdownTimer?.Dispose();
         _profileStatsTimer?.Dispose();
-        _nextCheckTime = null;
+        SetNextCheckTime(null);
         IsActive = false;
         UpdateStatus(MonitoringStatus.Stopped, string.Empty);
     }
@@ -336,6 +339,7 @@ public sealed class MonitoringService(
                             ? "Активных аккаунтов Авито нет: откройте настройки и включите хотя бы один аккаунт."
                             : $"Начинаем новый цикл мониторинга: активных аккаунтов {accounts.Count}.");
 
+                    var cycleSw = Stopwatch.StartNew();
                     foreach (var account in accounts)
                     {
                         if (cancellationToken.IsCancellationRequested)
@@ -347,15 +351,20 @@ public sealed class MonitoringService(
                         await Task.Delay(TimeSpan.FromSeconds(settings.MonitoringSafety.DelayBetweenAccountsSeconds), cancellationToken);
                     }
 
+                    cycleSw.Stop();
+                    _ = GlobalLogger.Instance.LogAsync(
+                        $"[monitoring] Цикл обхода аккаунтов завершён за {cycleSw.Elapsed.TotalSeconds:F1} с (аккаунтов: {accounts.Count}).",
+                        DeskLinkAuditLogLevel.Info);
+
                     _consecutiveMonitoringLoopFailures = 0;
 
-                    var delay = GetRandomCycleDelay();
-                    _nextCheckTime = DateTime.UtcNow + delay;
+                    var delay = MonitoringCycleDelay.GetRandomDelay(settings.MonitoringSafety);
+                    SetNextCheckTime(DateTime.UtcNow + delay);
                     UpdateStatus(MonitoringStatus.Waiting, $"Цикл завершён. Ждём следующую проверку {FormatDelay(delay)}.");
                     StartCountdownTimer(delay);
                     await Task.Delay(delay, cancellationToken);
                     _countdownTimer?.Dispose();
-                    _nextCheckTime = null;
+                    SetNextCheckTime(null);
                     UpdateStatus(MonitoringStatus.Running, "Пауза завершена: запускаем следующий цикл мониторинга.");
                 }
                 catch (OperationCanceledException)
@@ -377,14 +386,14 @@ public sealed class MonitoringService(
         }
     }
 
-    private async Task<bool> TryRecoverMonitoringLoopAsync(Exception ex, CancellationToken cancellationToken)
+    internal async Task<bool> TryRecoverMonitoringLoopAsync(Exception ex, CancellationToken cancellationToken)
     {
         _ = GlobalLogger.Instance.LogAsync(
             $"Monitoring loop failed.{Environment.NewLine}{ex}",
             DeskLinkAuditLogLevel.Error);
 
         _countdownTimer?.Dispose();
-        _nextCheckTime = null;
+        SetNextCheckTime(null);
 
         _consecutiveMonitoringLoopFailures++;
 
@@ -392,9 +401,10 @@ public sealed class MonitoringService(
         if (maxAttempts > 0 && _consecutiveMonitoringLoopFailures > maxAttempts)
         {
             IsActive = false;
-            UpdateStatus(
-                MonitoringStatus.Error,
-                $"Мониторинг остановлен: превышен лимит {maxAttempts} сбоев цикла подряд. Последняя ошибка: {ex.Message}");
+            var fatalMessage =
+                $"Мониторинг остановлен: превышен лимит {maxAttempts} сбоев цикла подряд. Последняя ошибка: {ex.Message}";
+            UpdateStatus(MonitoringStatus.Error, fatalMessage);
+            MonitoringAutoStopped?.Invoke(this, fatalMessage);
             return false;
         }
 
@@ -417,7 +427,7 @@ public sealed class MonitoringService(
         return true;
     }
 
-    private async Task ProcessAccountAsync(AvitoAccount account, AppSettings settings, CancellationToken cancellationToken)
+    internal async Task ProcessAccountAsync(AvitoAccount account, AppSettings settings, CancellationToken cancellationToken)
     {
         if (account.Status is AvitoAccountStatus.RequiresLogin or AvitoAccountStatus.RequiresManualAction or AvitoAccountStatus.Paused)
         {
@@ -445,31 +455,55 @@ public sealed class MonitoringService(
             DeskLinkAuditLogLevel.Info);
         await repository.SaveAccountAsync(account, cancellationToken);
 
-        var responses = settings.DemoModeEnabled
-            ? await avitoDemoResponseSource.GetBatchAsync(account, Math.Max(1, settings.MonitoringSafety.MaxResponsesPerCycle / 2), cancellationToken)
-            : await avitoResponseSource.GetNewResponsesAsync(account, settings, cancellationToken);
-        UpdateStatus(MonitoringStatus.Running, $"Аккаунт \"{account.DisplayName}\" проверен: найдено новых откликов {responses.Count}.");
-
-        foreach (var response in responses.Take(settings.MonitoringSafety.MaxResponsesPerCycle))
+        var accountSw = Stopwatch.StartNew();
+        try
         {
-            if (cancellationToken.IsCancellationRequested)
+            var responses = settings.DemoModeEnabled
+                ? await avitoDemoResponseSource.GetBatchAsync(account, Math.Max(1, settings.MonitoringSafety.MaxResponsesPerCycle / 2), cancellationToken)
+                : await avitoResponseSource.GetNewResponsesAsync(account, settings, cancellationToken);
+            var maxPerCycle = settings.MonitoringSafety.MaxResponsesPerCycle;
+            if (responses.Count > maxPerCycle)
             {
-                break;
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"[monitoring] Аккаунт \"{account.DisplayName}\": новых откликов {responses.Count}, в этом цикле обрабатываем {maxPerCycle}; остальные подтянутся в следующих проверках.",
+                    DeskLinkAuditLogLevel.Info);
+                UpdateStatus(
+                    MonitoringStatus.Running,
+                    $"Аккаунт \"{account.DisplayName}\": найдено новых откликов {responses.Count}, в этом цикле обрабатываем {maxPerCycle}. Остальные — в следующих проверках.");
+            }
+            else
+            {
+                UpdateStatus(MonitoringStatus.Running, $"Аккаунт \"{account.DisplayName}\" проверен: найдено новых откликов {responses.Count}.");
             }
 
-            await ProcessResponseAsync(response, settings, cancellationToken);
-            await Task.Delay(TimeSpan.FromSeconds(settings.MonitoringSafety.DelayBetweenResponsesSeconds), cancellationToken);
-        }
+            foreach (var response in responses.Take(maxPerCycle))
+            {
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    break;
+                }
 
-        if (account.Status == AvitoAccountStatus.Monitoring)
+                await ProcessResponseAsync(response, settings, cancellationToken);
+                await Task.Delay(TimeSpan.FromSeconds(settings.MonitoringSafety.DelayBetweenResponsesSeconds), cancellationToken);
+            }
+
+            if (account.Status == AvitoAccountStatus.Monitoring)
+            {
+                account.Status = AvitoAccountStatus.Authorized;
+            }
+
+            await repository.SaveAccountAsync(account, cancellationToken);
+        }
+        finally
         {
-            account.Status = AvitoAccountStatus.Authorized;
+            accountSw.Stop();
+            _ = GlobalLogger.Instance.LogAsync(
+                $"[monitoring] Аккаунт \"{account.DisplayName}\": этап проверки и обработки откликов за {accountSw.Elapsed.TotalSeconds:F1} с.",
+                DeskLinkAuditLogLevel.Info);
         }
-
-        await repository.SaveAccountAsync(account, cancellationToken);
     }
 
-    private async Task ProcessResponseAsync(CandidateResponse response, AppSettings settings, CancellationToken cancellationToken)
+    internal async Task ProcessResponseAsync(CandidateResponse response, AppSettings settings, CancellationToken cancellationToken)
     {
         UpdateStatus(MonitoringStatus.Running, $"Обрабатываем отклик \"{response.FullName}\" ({response.PhoneRaw}): готовим данные кандидата.");
         var names = candidateParser.ParseName(response.FullName);
@@ -749,11 +783,16 @@ public sealed class MonitoringService(
         UpdateStatus(MonitoringStatus.Running, $"Синхронизация с Bitrix24 завершена: импортировано сделок {imported}.");
     }
 
-    private static TimeSpan GetRandomCycleDelay()
+    internal void SetNextCheckTime(DateTime? utc)
     {
-        var minSeconds = (int)MinCycleDelay.TotalSeconds;
-        var maxSeconds = (int)MaxCycleDelay.TotalSeconds;
-        return TimeSpan.FromSeconds(Random.Shared.Next(minSeconds, maxSeconds + 1));
+        if (_nextCheckTime == utc)
+        {
+            return;
+        }
+
+        _nextCheckTime = utc;
+        NextCycleCheckAtUtc = utc;
+        NextCycleCheckTimeChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private void UpdateStatus(MonitoringStatus status, string message)
@@ -808,7 +847,7 @@ public sealed class MonitoringService(
     private async Task<string> LoadProfilePageHtmlAsync(AvitoAccount account, CancellationToken cancellationToken)
     {
         var session = await browserSessionService.CreateSessionAsync(account, cancellationToken);
-        await using var host = await BackgroundWebViewHost.CreateAsync(cancellationToken);
+        await using var host = await backgroundWebViewHostFactory.CreateAsync(cancellationToken);
         await host.AttachAsync(session, cancellationToken);
         await automationService.NavigateAsync(session, ProfileItemsUrl, cancellationToken);
         await WaitForProfilePageAsync(session, cancellationToken);

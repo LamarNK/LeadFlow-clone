@@ -99,6 +99,7 @@ public partial class App : System.Windows.Application
         builder.Services.AddSingleton<IProfileCookiesService, ProfileCookiesService>();
         builder.Services.AddSingleton<IProxyCheckService, ProxyCheckService>();
         builder.Services.AddSingleton<IBrowserSessionService, BrowserSessionService>();
+        builder.Services.AddSingleton<IBackgroundWebViewHostFactory, BackgroundWebViewHostFactory>();
         builder.Services.AddSingleton<IWebPageAutomationService, WebView2PageAutomationService>();
         builder.Services.AddSingleton<IAvitoPageReaderService, AvitoPageReaderService>();
         builder.Services.AddSingleton<IPhoneNormalizer, PhoneNormalizer>();
@@ -110,6 +111,8 @@ public partial class App : System.Windows.Application
         builder.Services.AddSingleton<AvitoDemoResponseSource>();
         builder.Services.AddSingleton<LeadFlow.Services.Avito.AvitoParserService>();
         builder.Services.AddSingleton<AppRepository>();
+        builder.Services.AddSingleton<ICandidateDuplicateRepository>(sp => sp.GetRequiredService<AppRepository>());
+        builder.Services.AddSingleton<IMonitoringRepository>(sp => sp.GetRequiredService<AppRepository>());
         builder.Services.AddSingleton<IWindowService, WindowService>();
         builder.Services.AddSingleton<IMonitoringService, MonitoringService>();
 

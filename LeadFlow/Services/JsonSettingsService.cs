@@ -5,11 +5,13 @@ using LeadFlow.Models;
 
 namespace LeadFlow.Services;
 
-public sealed class JsonSettingsService : ISettingsService
+public sealed class JsonSettingsService(string? dataDirectoryOverride = null) : ISettingsService
 {
     private const string SettingsFileName = "LeadFlow.settings.dat";
     private const string DatabaseFileName = "leadflow.db";
     public const string FixedBitrixWebhookUrl = "https://b24-l7qyiy.bitrix24.ru/rest/22/i6l8tl41e71kmj5o/";
+
+    private readonly string _dataDirectoryPath = dataDirectoryOverride ?? Path.Combine(AppContext.BaseDirectory, "Data");
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
@@ -24,7 +26,7 @@ public sealed class JsonSettingsService : ISettingsService
 
         if (!File.Exists(path))
         {
-            var defaults = CreateDefaults();
+            var defaults = CreateDefaults(_dataDirectoryPath);
             await SaveAsync(defaults, cancellationToken).ConfigureAwait(false);
             return defaults;
         }
@@ -36,10 +38,10 @@ public sealed class JsonSettingsService : ISettingsService
                 stream,
                 SettingsEncryptionKeyHelper.GetDefaultKey(),
                 userPassword: null);
-            settings = JsonSerializer.Deserialize<AppSettings>(bytes, SerializerOptions) ?? CreateDefaults();
+            settings = JsonSerializer.Deserialize<AppSettings>(bytes, SerializerOptions) ?? CreateDefaults(_dataDirectoryPath);
         }
 
-        NormalizeSettings(settings);
+        NormalizeSettings(settings, _dataDirectoryPath);
         return settings;
     }
 
@@ -59,7 +61,7 @@ public sealed class JsonSettingsService : ISettingsService
 
     public async Task SaveAsync(AppSettings settings, CancellationToken cancellationToken)
     {
-        NormalizeSettings(settings);
+        NormalizeSettings(settings, _dataDirectoryPath);
         var path = GetSettingsPath();
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         var bytes = JsonSerializer.SerializeToUtf8Bytes(settings, SerializerOptions);
@@ -69,7 +71,7 @@ public sealed class JsonSettingsService : ISettingsService
     }
 
     public string GetSettingsPath() =>
-        Path.Combine(GetDataDirectoryPath(), SettingsFileName);
+        Path.Combine(_dataDirectoryPath, SettingsFileName);
 
     public static string GetDefaultDatabasePath() =>
         Path.Combine(GetDataDirectoryPath(), DatabaseFileName);
@@ -77,14 +79,18 @@ public sealed class JsonSettingsService : ISettingsService
     public static string GetDataDirectoryPath() =>
         Path.Combine(AppContext.BaseDirectory, "Data");
 
-    private static void NormalizeSettings(AppSettings settings)
+    internal static void NormalizeSettings(AppSettings settings) =>
+        NormalizeSettings(settings, GetDataDirectoryPath());
+
+    internal static void NormalizeSettings(AppSettings settings, string dataDirectoryPath)
     {
-        settings.DatabasePath = GetDefaultDatabasePath();
+        settings.DatabasePath = Path.Combine(dataDirectoryPath, DatabaseFileName);
         settings.DemoModeEnabled = false;
         settings.Bitrix ??= new BitrixSettings();
         settings.Bitrix.WebhookUrl = FixedBitrixWebhookUrl;
         settings.MonitoringSafety ??= new MonitoringSafetyOptions();
-        settings.MonitoringSafety.CheckIntervalSeconds = 60;
+        settings.MonitoringSafety.CheckIntervalSeconds = Math.Clamp(settings.MonitoringSafety.CheckIntervalSeconds, 30, 3600);
+        MonitoringCycleDelay.NormalizeBounds(settings.MonitoringSafety);
         if (settings.MonitoringSafety.ActiveAdsRefreshIntervalMinutes is < 5 or > 240)
         {
             settings.MonitoringSafety.ActiveAdsRefreshIntervalMinutes = 45;
@@ -93,9 +99,9 @@ public sealed class JsonSettingsService : ISettingsService
         settings.Avito ??= new AvitoSettings();
     }
 
-    private static AppSettings CreateDefaults() => new()
+    private static AppSettings CreateDefaults(string dataDirectoryPath) => new()
     {
-        DatabasePath = GetDefaultDatabasePath(),
+        DatabasePath = Path.Combine(dataDirectoryPath, DatabaseFileName),
         DemoModeEnabled = false,
         Bitrix = new BitrixSettings
         {

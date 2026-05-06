@@ -9,6 +9,7 @@ namespace LeadFlow.Services.Avito;
 public sealed class AvitoResponseSource(
     AppRepository repository,
     IBrowserSessionService browserSessionService,
+    IBackgroundWebViewHostFactory backgroundWebViewHostFactory,
     IWebPageAutomationService automationService) : IAvitoResponseSource
 {
     public const string CandidatesPageUrl = "https://www.avito.ru/profile/candidates";
@@ -23,64 +24,117 @@ public sealed class AvitoResponseSource(
         await GlobalLogger.Instance.LogAsync(
             $"Creating background browser host for account {account.DisplayName}.",
             DeskLinkAuditLogLevel.Debug);
-        await using var host = await BackgroundWebViewHost.CreateAsync(cancellationToken);
+        await using var host = await backgroundWebViewHostFactory.CreateAsync(cancellationToken);
 
         await GlobalLogger.Instance.LogAsync(
             $"Attaching browser session for account {account.DisplayName}.",
             DeskLinkAuditLogLevel.Debug);
         await host.AttachAsync(session, cancellationToken);
 
-        await GlobalLogger.Instance.LogAsync(
-            $"Navigating to candidates page for account {account.DisplayName}.",
-            DeskLinkAuditLogLevel.Debug);
-        await automationService.NavigateAsync(session, CandidatesPageUrl, cancellationToken);
-        await WaitForCandidatesPageAsync(session, cancellationToken);
-        account.LastAuthCheckAt = DateTime.UtcNow;
-
-        await GlobalLogger.Instance.LogAsync(
-            $"Candidates page loaded for account {account.DisplayName}, starting extraction.",
-            DeskLinkAuditLogLevel.Debug);
-        var raw = await automationService.ExecuteScriptAsync(session, BuildExtractionScript(), cancellationToken);
-        if (string.IsNullOrWhiteSpace(raw))
+        const int maxAttempts = 3;
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
-            account.LastErrorMessage = "Не удалось получить данные со страницы кандидатов";
-            return [];
+            if (attempt > 1)
+            {
+                var pause = attempt == 2 ? TimeSpan.FromSeconds(2) : TimeSpan.FromSeconds(5);
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"Candidates page fetch retry {attempt}/{maxAttempts} for {account.DisplayName} after {pause.TotalSeconds:F0} s.",
+                    DeskLinkAuditLogLevel.Info);
+                await Task.Delay(pause, cancellationToken);
+            }
+
+            try
+            {
+                await GlobalLogger.Instance.LogAsync(
+                    $"Navigating to candidates page for account {account.DisplayName} (attempt {attempt}/{maxAttempts}).",
+                    DeskLinkAuditLogLevel.Debug);
+                await automationService.NavigateAsync(session, CandidatesPageUrl, cancellationToken);
+                await WaitForCandidatesPageAsync(session, cancellationToken);
+                account.LastAuthCheckAt = DateTime.UtcNow;
+
+                await GlobalLogger.Instance.LogAsync(
+                    $"Candidates page loaded for account {account.DisplayName}, starting extraction.",
+                    DeskLinkAuditLogLevel.Debug);
+                var raw = await automationService.ExecuteScriptAsync(session, BuildExtractionScript(), cancellationToken);
+                if (string.IsNullOrWhiteSpace(raw))
+                {
+                    _ = GlobalLogger.Instance.LogAsync(
+                        $"Empty extraction script result for {account.DisplayName} (attempt {attempt}/{maxAttempts}).",
+                        DeskLinkAuditLogLevel.Warning);
+                    if (attempt == maxAttempts)
+                    {
+                        account.LastErrorMessage = "Пустой ответ скрипта со страницы кандидатов после нескольких попыток";
+                        return [];
+                    }
+
+                    continue;
+                }
+
+                using var json = JsonDocument.Parse(raw);
+                var root = json.RootElement;
+                var hasCaptcha = root.TryGetProperty("hasCaptcha", out var captchaProp) && captchaProp.GetBoolean();
+                var hasLogin = root.TryGetProperty("hasLogin", out var loginProp) && loginProp.GetBoolean();
+
+                if (hasCaptcha)
+                {
+                    account.Status = AvitoAccountStatus.RequiresManualAction;
+                    account.LastErrorMessage = "На странице кандидатов требуется ручное действие";
+                    return [];
+                }
+
+                if (hasLogin)
+                {
+                    account.Status = AvitoAccountStatus.RequiresLogin;
+                    account.LastErrorMessage = "Для страницы кандидатов требуется повторная авторизация";
+                    return [];
+                }
+
+                account.Status = AvitoAccountStatus.Authorized;
+                account.LastErrorMessage = string.Empty;
+                var candidates = AvitoCandidatesJsonParser.ParseCandidates(root, account);
+
+                await GlobalLogger.Instance.LogAsync(
+                    $"Candidate extraction finished for account {account.DisplayName}: parsed {candidates.Count} responses.",
+                    DeskLinkAuditLogLevel.Debug);
+                var existingIds = await repository.GetExistingSourceResponseIdsAsync(
+                    candidates.Select(x => x.SourceResponseId),
+                    cancellationToken);
+
+                return candidates
+                    .Where(x => !existingIds.Contains(x.SourceResponseId))
+                    .OrderByDescending(x => x.CreatedAt)
+                    .ToList();
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (JsonException ex)
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"JSON parse error on candidates extraction for {account.DisplayName} (attempt {attempt}/{maxAttempts}): {ex.Message}",
+                    DeskLinkAuditLogLevel.Warning);
+                if (attempt == maxAttempts)
+                {
+                    account.LastErrorMessage = "Некорректный JSON ответа страницы кандидатов после нескольких попыток";
+                    return [];
+                }
+            }
+            catch (TimeoutException ex)
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"Timeout waiting for candidates page for {account.DisplayName} (attempt {attempt}/{maxAttempts}): {ex.Message}",
+                    DeskLinkAuditLogLevel.Warning);
+                if (attempt == maxAttempts)
+                {
+                    account.LastErrorMessage = "Таймаут загрузки страницы кандидатов после нескольких попыток";
+                    return [];
+                }
+            }
         }
 
-        using var json = JsonDocument.Parse(raw);
-        var root = json.RootElement;
-        var hasCaptcha = root.TryGetProperty("hasCaptcha", out var captchaProp) && captchaProp.GetBoolean();
-        var hasLogin = root.TryGetProperty("hasLogin", out var loginProp) && loginProp.GetBoolean();
-
-        if (hasCaptcha)
-        {
-            account.Status = AvitoAccountStatus.RequiresManualAction;
-            account.LastErrorMessage = "На странице кандидатов требуется ручное действие";
-            return [];
-        }
-
-        if (hasLogin)
-        {
-            account.Status = AvitoAccountStatus.RequiresLogin;
-            account.LastErrorMessage = "Для страницы кандидатов требуется повторная авторизация";
-            return [];
-        }
-
-        account.Status = AvitoAccountStatus.Authorized;
-        account.LastErrorMessage = string.Empty;
-        var candidates = ParseCandidates(root, account);
-
-        await GlobalLogger.Instance.LogAsync(
-            $"Candidate extraction finished for account {account.DisplayName}: parsed {candidates.Count} responses.",
-            DeskLinkAuditLogLevel.Debug);
-        var existingIds = await repository.GetExistingSourceResponseIdsAsync(
-            candidates.Select(x => x.SourceResponseId),
-            cancellationToken);
-
-        return candidates
-            .Where(x => !existingIds.Contains(x.SourceResponseId))
-            .OrderByDescending(x => x.CreatedAt)
-            .ToList();
+        account.LastErrorMessage = "Не удалось получить отклики со страницы кандидатов после нескольких попыток";
+        return [];
     }
 
     private async Task WaitForCandidatesPageAsync(BrowserAccountSession session, CancellationToken cancellationToken)
@@ -107,74 +161,8 @@ public sealed class AvitoResponseSource(
 
             await Task.Delay(1000, cancellationToken);
         }
-    }
 
-    private static IReadOnlyList<CandidateResponse> ParseCandidates(JsonElement root, AvitoAccount account)
-    {
-        if (!root.TryGetProperty("candidates", out var candidatesElement) || candidatesElement.ValueKind != JsonValueKind.Array)
-        {
-            return [];
-        }
-
-        var results = new List<CandidateResponse>();
-        foreach (var item in candidatesElement.EnumerateArray())
-        {
-            var fullName = item.TryGetProperty("fullName", out var fullNameProp) ? fullNameProp.GetString() ?? string.Empty : string.Empty;
-            var phone = item.TryGetProperty("phone", out var phoneProp) ? phoneProp.GetString() ?? string.Empty : string.Empty;
-            var sourceResponseId = item.TryGetProperty("sourceResponseId", out var sourceIdProp) ? sourceIdProp.GetString() ?? string.Empty : string.Empty;
-
-            if (string.IsNullOrWhiteSpace(fullName) || string.IsNullOrWhiteSpace(phone) || string.IsNullOrWhiteSpace(sourceResponseId))
-            {
-                continue;
-            }
-
-            var vacancy = item.TryGetProperty("vacancy", out var vacancyProp) ? vacancyProp.GetString() ?? string.Empty : string.Empty;
-            var city = item.TryGetProperty("city", out var cityProp) ? cityProp.GetString() ?? string.Empty : string.Empty;
-            var vacancyUrl = item.TryGetProperty("vacancyUrl", out var vacancyUrlProp) ? vacancyUrlProp.GetString() ?? string.Empty : string.Empty;
-            if (string.IsNullOrWhiteSpace(vacancyUrl) && item.TryGetProperty("sourceUrl", out var legacySourceProp))
-            {
-                var legacy = legacySourceProp.GetString() ?? string.Empty;
-                if (!string.Equals(legacy.Trim(), CandidatesPageUrl, StringComparison.OrdinalIgnoreCase))
-                {
-                    vacancyUrl = legacy;
-                }
-            }
-
-            var messengerUrl = item.TryGetProperty("messengerUrl", out var messengerProp) ? messengerProp.GetString() ?? string.Empty : string.Empty;
-            var rawText = item.TryGetProperty("rawText", out var rawTextProp) ? rawTextProp.GetString() ?? string.Empty : string.Empty;
-            var age = ParseAge(item.TryGetProperty("age", out var ageProp) ? ageProp.GetString() : null);
-
-            results.Add(new CandidateResponse
-            {
-                Id = Guid.NewGuid(),
-                AccountId = account.Id,
-                AccountName = account.DisplayName,
-                Source = "Avito",
-                SourceResponseId = sourceResponseId,
-                FullName = fullName,
-                PhoneRaw = phone,
-                City = city,
-                Vacancy = vacancy,
-                Age = age,
-                VacancyUrl = vacancyUrl,
-                MessengerUrl = messengerUrl,
-                RawText = rawText,
-                CreatedAt = DateTime.UtcNow
-            });
-        }
-
-        return results;
-    }
-
-    private static int? ParseAge(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return null;
-        }
-
-        var digits = new string(value.TakeWhile(char.IsDigit).ToArray());
-        return int.TryParse(digits, out var age) ? age : null;
+        throw new TimeoutException("Таймаут загрузки страницы кандидатов Авито.");
     }
 
     private static string BuildExtractionScript() =>

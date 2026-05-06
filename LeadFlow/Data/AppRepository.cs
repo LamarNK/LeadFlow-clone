@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace LeadFlow.Data;
 
-public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFactory)
+public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFactory) : ICandidateDuplicateRepository, IMonitoringRepository
 {
     /// <summary>Срабатывает после успешного сохранения аккаунта в БД. Подписчики не должны изменять переданный экземпляр.</summary>
     public event EventHandler<AvitoAccount>? AccountPersisted;

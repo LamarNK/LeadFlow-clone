@@ -57,6 +57,7 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
         <Border Style="{StaticResource CompactCardBorderStyle}" Margin="0,0,0,8">
@@ -261,7 +262,53 @@
             </Border>
         </Grid>
 
-        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,0">
+        <Border Grid.Row="2" Style="{StaticResource CompactCardBorderStyle}" Margin="0,0,0,8">
+            <StackPanel>
+                <TextBlock Text="Мониторинг откликов" Style="{StaticResource SectionTitleStyle}" />
+                <TextBlock Margin="0,4,0,10"
+                           Style="{StaticResource SubtleTextStyle}"
+                           TextWrapping="Wrap"
+                           Text="Случайная пауза между полными обходами всех включённых аккаунтов (минимум и максимум в минутах). Остальные параметры снижают нагрузку на Avito и на портал." />
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,8,8">
+                        <TextBlock Text="Пауза между циклами: мин. (мин)" Style="{StaticResource InfoLabelStyle}" />
+                        <TextBox Text="{Binding CycleDelayMinMinutes, UpdateSourceTrigger=PropertyChanged}" Margin="0,4,0,0" />
+                    </StackPanel>
+                    <StackPanel Grid.Row="0" Grid.Column="1" Margin="0,0,0,8">
+                        <TextBlock Text="Пауза между циклами: макс. (мин)" Style="{StaticResource InfoLabelStyle}" />
+                        <TextBox Text="{Binding CycleDelayMaxMinutes, UpdateSourceTrigger=PropertyChanged}" Margin="0,4,0,0" />
+                    </StackPanel>
+                    <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,0,8,8">
+                        <TextBlock Text="Пауза между аккаунтами (сек)" Style="{StaticResource InfoLabelStyle}" />
+                        <TextBox Text="{Binding DelayBetweenAccountsSeconds, UpdateSourceTrigger=PropertyChanged}" Margin="0,4,0,0" />
+                    </StackPanel>
+                    <StackPanel Grid.Row="1" Grid.Column="1" Margin="0,0,0,8">
+                        <TextBlock Text="Пауза между откликами (сек)" Style="{StaticResource InfoLabelStyle}" />
+                        <TextBox Text="{Binding DelayBetweenResponsesSeconds, UpdateSourceTrigger=PropertyChanged}" Margin="0,4,0,0" />
+                    </StackPanel>
+                    <StackPanel Grid.Row="2" Grid.Column="0" Margin="0,0,8,8">
+                        <TextBlock Text="Макс. откликов за аккаунт за цикл" Style="{StaticResource InfoLabelStyle}" />
+                        <TextBox Text="{Binding MaxResponsesPerCycle, UpdateSourceTrigger=PropertyChanged}" Margin="0,4,0,0" />
+                    </StackPanel>
+                    <StackPanel Grid.Row="2" Grid.Column="1" Margin="0,0,0,8">
+                        <TextBlock Text="Интервал обновления объявлений (мин)" Style="{StaticResource InfoLabelStyle}" />
+                        <TextBox Text="{Binding ActiveAdsRefreshIntervalMinutes, UpdateSourceTrigger=PropertyChanged}" Margin="0,4,0,0" />
+                    </StackPanel>
+                </Grid>
+            </StackPanel>
+        </Border>
+
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,0">
             <Button Content="Сохранить аккаунты" Command="{Binding SaveCommand}" />
             <Button Content="Закрыть" Background="#E2E8F0" Foreground="{StaticResource TextBrush}" IsCancel="True" />
         </StackPanel>

@@ -2,7 +2,15 @@ namespace LeadFlow.Models;
 
 public sealed class MonitoringSafetyOptions
 {
+    /// <summary>Резерв под будущие сценарии; не используется основным циклом мониторинга.</summary>
     public int CheckIntervalSeconds { get; set; } = 60;
+
+    /// <summary>Минимальная случайная пауза между полными циклами обхода аккаунтов (минуты).</summary>
+    public int CycleDelayMinMinutes { get; set; } = 1;
+
+    /// <summary>Максимальная случайная пауза между полными циклами (минуты).</summary>
+    public int CycleDelayMaxMinutes { get; set; } = 10;
+
     public int DelayBetweenAccountsSeconds { get; set; } = 10;
     public int DelayBetweenResponsesSeconds { get; set; } = 3;
     public int MaxResponsesPerCycle { get; set; } = 10;

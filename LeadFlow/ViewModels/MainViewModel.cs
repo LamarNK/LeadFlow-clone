@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -31,6 +32,9 @@ public partial class MainViewModel : ObservableObject
 
     [ObservableProperty]
     private bool isMonitoringActive;
+
+    [ObservableProperty]
+    private string nextMonitoringCycleHint = string.Empty;
 
     public MainViewModel(
         IMonitoringService monitoringService,
@@ -76,6 +80,7 @@ public partial class MainViewModel : ObservableObject
                 {
                     var wasActive = IsMonitoringActive;
                     SystemStatus = status;
+                    RefreshNextMonitoringCycleHint();
 
                     if (status == MonitoringStatus.Running && _monitoringService.IsActive && !wasActive && !_startNotificationShown)
                     {
@@ -117,6 +122,7 @@ public partial class MainViewModel : ObservableObject
                 {
                     SystemStatusDetails = message;
                     IsMonitoringActive = _monitoringService.IsActive;
+                    RefreshNextMonitoringCycleHint();
 
                     if (!_monitoringService.IsActive)
                     {
@@ -189,6 +195,42 @@ public partial class MainViewModel : ObservableObject
                 _ = LogUiHandlerFailureAsync("profile stats update", ex);
             }
         };
+
+        _monitoringService.NextCycleCheckTimeChanged += (_, _) =>
+        {
+            try
+            {
+                InvokeOnUiThread(RefreshNextMonitoringCycleHint);
+            }
+            catch (Exception ex)
+            {
+                _ = LogUiHandlerFailureAsync("next cycle check time", ex);
+            }
+        };
+
+        _monitoringService.MonitoringAutoStopped += (_, message) =>
+        {
+            try
+            {
+                InvokeOnUiThread(() =>
+                {
+                    RefreshNextMonitoringCycleHint();
+                    RaiseNotification(new DesktopNotificationRequest
+                    {
+                        Title = "Мониторинг остановлен",
+                        Message = string.IsNullOrWhiteSpace(message)
+                            ? "Цикл мониторинга остановлен из-за повторяющихся ошибок."
+                            : message,
+                        Severity = DesktopNotificationSeverity.Warning,
+                        TimeoutMilliseconds = 12_000
+                    });
+                });
+            }
+            catch (Exception ex)
+            {
+                _ = LogUiHandlerFailureAsync("monitoring auto stopped", ex);
+            }
+        };
     }
 
     public string SystemStatusText =>
@@ -217,6 +259,7 @@ public partial class MainViewModel : ObservableObject
 
     partial void OnIsMonitoringActiveChanged(bool value)
     {
+        RefreshNextMonitoringCycleHint();
         OnPropertyChanged(nameof(IsMonitoringRunning));
         OnPropertyChanged(nameof(MonitoringActionText));
         OnPropertyChanged(nameof(MonitoringButtonText));
@@ -264,7 +307,22 @@ public partial class MainViewModel : ObservableObject
         SystemStatus = _monitoringService.CurrentStatus;
         SystemStatusDetails = _monitoringService.CurrentStatusMessage;
         IsMonitoringActive = _monitoringService.IsActive;
+        RefreshNextMonitoringCycleHint();
         await RefreshAllAsync();
+    }
+
+    private void RefreshNextMonitoringCycleHint()
+    {
+        if (!IsMonitoringActive || SystemStatus != MonitoringStatus.Waiting ||
+            _monitoringService.NextCycleCheckAtUtc is not { } utc)
+        {
+            NextMonitoringCycleHint = string.Empty;
+            return;
+        }
+
+        var local = TimeZoneInfo.ConvertTimeFromUtc(utc, TimeZoneInfo.Local);
+        NextMonitoringCycleHint =
+            $"Следующий цикл (локально): {local.ToString("dd.MM.yyyy HH:mm:ss", CultureInfo.GetCultureInfo("ru-RU"))}";
     }
 
     private async Task RefreshAllAsync()

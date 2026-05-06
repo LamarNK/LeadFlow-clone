@@ -4,7 +4,7 @@ using Microsoft.Web.WebView2.Wpf;
 
 namespace LeadFlow.Services.Browser;
 
-public sealed class BackgroundWebViewHost : IAsyncDisposable
+public sealed class BackgroundWebViewHost : IBackgroundWebViewHost
 {
     private static readonly SemaphoreSlim HostSemaphore = new(1, 1);
     private static readonly TimeSpan RecreateCooldown = TimeSpan.FromSeconds(2);

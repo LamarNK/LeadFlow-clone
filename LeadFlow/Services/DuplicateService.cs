@@ -5,7 +5,7 @@ using LeadFlow.Services.Bitrix;
 namespace LeadFlow.Services;
 
 public sealed class DuplicateService(
-    AppRepository repository,
+    ICandidateDuplicateRepository duplicateRepository,
     IPhoneNormalizer phoneNormalizer,
     IBitrixClient bitrixClient) : IDuplicateService
 {
@@ -14,7 +14,7 @@ public sealed class DuplicateService(
         var normalized = phoneNormalizer.Normalize(response.PhoneRaw);
         response.PhoneNormalized = normalized;
 
-        var local = await repository.FindDuplicateAsync(normalized, settings.DuplicateScope, response.AccountId, cancellationToken);
+        var local = await duplicateRepository.FindDuplicateAsync(normalized, settings.DuplicateScope, response.AccountId, cancellationToken);
 
         var isBitrixDuplicate = false;
         var bitrixUnavailable = false;
