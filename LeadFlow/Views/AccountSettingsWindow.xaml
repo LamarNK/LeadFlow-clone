@@ -1,0 +1,320 @@
+<Window x:Class="LeadFlow.Views.AccountSettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:LeadFlow.ViewModels"
+        Title="Настройки аккаунта"
+        Width="860"
+        Height="680"
+        WindowStartupLocation="CenterOwner">
+    <Window.Resources>
+        <Style x:Key="ActionButtonStyle" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="MinWidth" Value="170" />
+            <Setter Property="Padding" Value="12,8" />
+            <Setter Property="Margin" Value="0,0,8,0" />
+        </Style>
+        <Style x:Key="GhostButtonStyle" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="MinWidth" Value="170" />
+            <Setter Property="Padding" Value="12,8" />
+            <Setter Property="Margin" Value="0,0,8,0" />
+            <Setter Property="Background" Value="#EAF1FF" />
+            <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}" />
+        </Style>
+        <Style x:Key="UaInlineRegenerateButtonStyle" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="6,0" />
+            <Setter Property="MinWidth" Value="36" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bg"
+                                Background="{TemplateBinding Background}"
+                                CornerRadius="8"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="#EAF1FF" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="#DBEAFE" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.45" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="UaPresetToggleStyle" TargetType="ToggleButton">
+            <Setter Property="FontFamily" Value="Segoe UI" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="FontWeight" Value="Normal" />
+            <Setter Property="MinHeight" Value="{StaticResource FilterControlMinHeight}" />
+            <Setter Property="Padding" Value="10,6" />
+            <Setter Property="Background" Value="#FFFFFF" />
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="Bd"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="10">
+                            <ContentPresenter Margin="{TemplateBinding Padding}"
+                                              HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource PrimaryBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource PrimaryBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource PrimaryBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+    <Grid Margin="{StaticResource PagePadding}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0" Style="{StaticResource CompactCardBorderStyle}">
+            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <StackPanel>
+                    <TextBlock Text="Настройки аккаунта" Style="{StaticResource PageTitleTextStyle}" />
+                    <TextBlock Margin="0,6,0,16"
+                               Style="{StaticResource SubtleTextStyle}"
+                               TextWrapping="Wrap"
+                               Text="Параметры браузера, User-Agent и cookie для выбранного аккаунта Avito. Изменения сохраняются кнопкой «Сохранить»." />
+
+                    <TextBlock Text="Профиль и браузер" Style="{StaticResource SectionTitleStyle}" />
+                    <TextBlock Margin="0,4,0,10" Style="{StaticResource SubtleTextStyle}" Text="Отображаемое имя и имитация браузера для сессии." />
+
+                    <TextBlock Text="Имя" Style="{StaticResource InfoLabelStyle}" />
+                    <TextBox Margin="0,4,0,12"
+                             Style="{StaticResource SearchTextBoxStyle}"
+                             Text="{Binding DisplayName, UpdateSourceTrigger=PropertyChanged}" />
+
+                    <TextBlock Text="Браузер" Style="{StaticResource InfoLabelStyle}" />
+                    <Grid Margin="0,4,0,16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="220" />
+                            <ColumnDefinition Width="10" />
+                            <ColumnDefinition Width="140" />
+                        </Grid.ColumnDefinitions>
+                        <ComboBox Grid.Column="0"
+                                  Style="{StaticResource FilterComboBoxStyle}"
+                                  ItemsSource="{Binding BrowserOptions}"
+                                  SelectedItem="{Binding BrowserName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                        <ComboBox Grid.Column="2"
+                                  Style="{StaticResource FilterComboBoxStyle}"
+                                  ItemsSource="{Binding BrowserVersionOptions}"
+                                  SelectedItem="{Binding BrowserVersion, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                    </Grid>
+
+                    <TextBlock Text="Система" Style="{StaticResource SectionTitleStyle}" />
+                    <TextBlock Margin="0,4,0,10" Style="{StaticResource SubtleTextStyle}" Text="Операционные системы и версии, которые допускаются для генерации User-Agent." />
+
+                    <Grid Margin="0,0,0,16">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="120" />
+                            <ColumnDefinition Width="10" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
+                        <CheckBox Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Content="Windows" IsChecked="{Binding UseWindowsOs, Mode=TwoWay}" />
+                        <ComboBox Grid.Row="0" Grid.Column="2"
+                                  Style="{StaticResource FilterComboBoxStyle}"
+                                  ItemsSource="{Binding WindowsVersionOptions}"
+                                  SelectedItem="{Binding WindowsVersion, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                  IsEnabled="{Binding UseWindowsOs}" />
+
+                        <CheckBox Grid.Row="1" Grid.Column="0" Margin="0,8,0,0" VerticalAlignment="Center" Content="macOS" IsChecked="{Binding UseMacOs, Mode=TwoWay}" />
+                        <ComboBox Grid.Row="1" Grid.Column="2" Margin="0,8,0,0"
+                                  Style="{StaticResource FilterComboBoxStyle}"
+                                  ItemsSource="{Binding MacOsVersionOptions}"
+                                  SelectedItem="{Binding MacOsVersion, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                  IsEnabled="{Binding UseMacOs}" />
+
+                        <CheckBox Grid.Row="2" Grid.Column="0" Margin="0,8,0,0" VerticalAlignment="Center" Content="Linux" IsChecked="{Binding UseLinuxOs, Mode=TwoWay}" />
+                        <ComboBox Grid.Row="2" Grid.Column="2" Margin="0,8,0,0"
+                                  Style="{StaticResource FilterComboBoxStyle}"
+                                  ItemsSource="{Binding LinuxVersionOptions}"
+                                  SelectedItem="{Binding LinuxVersion, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                  IsEnabled="{Binding UseLinuxOs}" />
+
+                        <CheckBox Grid.Row="3" Grid.Column="0" Margin="0,8,0,0" VerticalAlignment="Center" Content="Android" IsChecked="{Binding UseAndroidOs, Mode=TwoWay}" />
+                        <ComboBox Grid.Row="3" Grid.Column="2" Margin="0,8,0,0"
+                                  Style="{StaticResource FilterComboBoxStyle}"
+                                  ItemsSource="{Binding AndroidVersionOptions}"
+                                  SelectedItem="{Binding AndroidVersion, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                  IsEnabled="{Binding UseAndroidOs}" />
+
+                        <CheckBox Grid.Row="4" Grid.Column="0" Margin="0,8,0,0" VerticalAlignment="Center" Content="iOS" IsChecked="{Binding UseIosOs, Mode=TwoWay}" />
+                        <ComboBox Grid.Row="4" Grid.Column="2" Margin="0,8,0,0"
+                                  Style="{StaticResource FilterComboBoxStyle}"
+                                  ItemsSource="{Binding IosVersionOptions}"
+                                  SelectedItem="{Binding IosVersion, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                  IsEnabled="{Binding UseIosOs}" />
+                    </Grid>
+
+                    <TextBlock Text="User-Agent" Style="{StaticResource SectionTitleStyle}" />
+                    <TextBlock Margin="0,4,0,10" Style="{StaticResource SubtleTextStyle}" Text="Пресеты Chrome и итоговая строка; кнопка справа в поле пересобирает UA по текущим настройкам." />
+
+                    <Grid Margin="0,4,0,16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="168" />
+                            <ColumnDefinition Width="10" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid Grid.Column="0">
+                            <ToggleButton x:Name="UaPresetToggle"
+                                          Style="{StaticResource UaPresetToggleStyle}"
+                                          HorizontalAlignment="Stretch"
+                                          IsChecked="{Binding IsUaPresetDropdownOpen, Mode=TwoWay}">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock VerticalAlignment="Center"
+                                               Foreground="{StaticResource TextBrush}"
+                                               Text="{Binding UaPresetHeaderText}"
+                                               TextTrimming="CharacterEllipsis" />
+                                    <Path Grid.Column="1"
+                                          Width="10"
+                                          Height="6"
+                                          Margin="8,0,0,0"
+                                          VerticalAlignment="Center"
+                                          Data="M 0 0 L 5 6 L 10 0"
+                                          Stroke="{StaticResource SecondaryTextBrush}"
+                                          StrokeThickness="1.5"
+                                          StrokeEndLineCap="Round"
+                                          StrokeLineJoin="Round"
+                                          StrokeStartLineCap="Round" />
+                                </Grid>
+                            </ToggleButton>
+                            <Popup x:Name="UaPresetPopup"
+                                   AllowsTransparency="True"
+                                   Closed="UaPresetPopup_OnClosed"
+                                   IsOpen="{Binding IsUaPresetDropdownOpen, Mode=TwoWay}"
+                                   Placement="Bottom"
+                                   PlacementTarget="{Binding ElementName=UaPresetToggle}"
+                                   StaysOpen="False">
+                                <Border MinWidth="{Binding ActualWidth, ElementName=UaPresetToggle}"
+                                        Background="#FFFFFF"
+                                        BorderBrush="{StaticResource BorderBrush}"
+                                        BorderThickness="1"
+                                        CornerRadius="10"
+                                        MaxHeight="240">
+                                    <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                                        <ItemsControl Margin="0,4" ItemsSource="{Binding UaPresetRows}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate DataType="{x:Type vm:UaPresetRow}">
+                                                    <CheckBox Margin="10,3,10,3"
+                                                              Content="{Binding Label}"
+                                                              IsChecked="{Binding IsChecked, Mode=TwoWay}" />
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                        <Grid Grid.Column="2"
+                              MinHeight="{StaticResource FilterControlMinHeight}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBox x:Name="UaAssignedTextBox"
+                                     Grid.Column="0"
+                                     Margin="0,0,6,0"
+                                     Padding="10,6"
+                                     VerticalContentAlignment="Center"
+                                     Style="{StaticResource SearchTextBoxStyle}"
+                                     Text="{Binding AssignedUserAgent, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" />
+                            <Button Grid.Column="1"
+                                    MinWidth="40"
+                                    VerticalAlignment="Stretch"
+                                    Click="RegenerateUserAgent_OnClick"
+                                    PreviewMouseLeftButtonDown="RegenerateUserAgent_PreviewMouseLeftButtonDown"
+                                    Focusable="False"
+                                    Style="{StaticResource UaInlineRegenerateButtonStyle}"
+                                    ToolTip="Перегенерировать User-Agent">
+                                <TextBlock FontFamily="Segoe MDL2 Assets"
+                                           FontSize="15"
+                                           Foreground="{StaticResource PrimaryBrush}"
+                                           Text="&#xE8B1;" />
+                            </Button>
+                        </Grid>
+                    </Grid>
+
+                    <TextBlock Text="Cookie" Style="{StaticResource SectionTitleStyle}" />
+                    <TextBox MinHeight="160"
+                             Margin="0,8,0,16"
+                             Padding="10,8"
+                             AcceptsReturn="True"
+                             Background="#FFFFFF"
+                             BorderBrush="{StaticResource BorderBrush}"
+                             BorderThickness="1"
+                             Text="{Binding CookiesJson, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                             TextWrapping="Wrap"
+                             VerticalScrollBarVisibility="Auto" />
+
+                    <TextBlock Text="Заметки" Style="{StaticResource SectionTitleStyle}" />
+                    <TextBlock Margin="0,4,0,8" Style="{StaticResource SubtleTextStyle}" Text="Произвольный текст, только для вас." />
+                    <TextBox MinHeight="72"
+                             Padding="10,8"
+                             AcceptsReturn="True"
+                             Background="#FFFFFF"
+                             BorderBrush="{StaticResource BorderBrush}"
+                             BorderThickness="1"
+                             Text="{Binding Notes, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                             TextWrapping="Wrap"
+                             VerticalScrollBarVisibility="Auto" />
+                </StackPanel>
+            </ScrollViewer>
+        </Border>
+
+        <StackPanel Grid.Row="1"
+                    Margin="0,10,0,0"
+                    HorizontalAlignment="Right"
+                    Orientation="Horizontal">
+            <Button Command="{Binding SaveCommand}"
+                    CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}"
+                    Content="Сохранить"
+                    Style="{StaticResource ActionButtonStyle}" />
+            <Button MinWidth="120"
+                    Padding="12,8"
+                    Background="#E2E8F0"
+                    Content="Отмена"
+                    Foreground="{StaticResource TextBrush}"
+                    IsCancel="True" />
+        </StackPanel>
+    </Grid>
+</Window>

@@ -96,6 +96,7 @@ public partial class App : System.Windows.Application
         builder.Services.AddSingleton(settings);
         builder.Services.AddSingleton<ISettingsService>(settingsService);
         builder.Services.AddSingleton<IBrowserProfileService, BrowserProfileService>();
+        builder.Services.AddSingleton<IProfileCookiesService, ProfileCookiesService>();
         builder.Services.AddSingleton<IBrowserSessionService, BrowserSessionService>();
         builder.Services.AddSingleton<IWebPageAutomationService, WebView2PageAutomationService>();
         builder.Services.AddSingleton<IAvitoPageReaderService, AvitoPageReaderService>();
@@ -126,6 +127,7 @@ public partial class App : System.Windows.Application
         builder.Services.AddSingleton<JournalViewModel>();
         builder.Services.AddSingleton<StatisticsHistoryViewModel>();
         builder.Services.AddTransient<SettingsViewModel>();
+        builder.Services.AddTransient<AccountSettingsViewModel>();
         builder.Services.AddTransient<AvitoAuthViewModel>();
 
         builder.Services.AddTransient<MainWindow>();
@@ -136,6 +138,7 @@ public partial class App : System.Windows.Application
         builder.Services.AddTransient<JournalWindow>();
         builder.Services.AddTransient<StatisticsHistoryWindow>();
         builder.Services.AddTransient<SettingsWindow>();
+        builder.Services.AddTransient<AccountSettingsWindow>();
         builder.Services.AddTransient<AvitoAuthWindow>();
 
         _host = builder.Build();

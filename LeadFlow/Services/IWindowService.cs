@@ -7,6 +7,7 @@ public interface IWindowService
 {
     Task ShowSettingsAsync(Window owner, CancellationToken cancellationToken);
     Task ShowAvitoAuthAsync(Window owner, AvitoAccount account, CancellationToken cancellationToken);
+    Task ShowAccountSettingsAsync(Window owner, AvitoAccount account, CancellationToken cancellationToken);
     Task ShowAvitoProfileAsync(Window owner, AvitoAccount account, CancellationToken cancellationToken);
     Task ShowAvitoProfileAsync(Window owner, AvitoAccount account, string initialUrl, CancellationToken cancellationToken);
     Task ShowMonitoringAsync(Window owner, CancellationToken cancellationToken);

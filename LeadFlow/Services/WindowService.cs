@@ -32,6 +32,16 @@ public sealed class WindowService(IServiceProvider serviceProvider) : IWindowSer
         return Task.CompletedTask;
     }
 
+    public Task ShowAccountSettingsAsync(Window owner, AvitoAccount account, CancellationToken cancellationToken)
+    {
+        var window = ActivatorUtilities.CreateInstance<AccountSettingsWindow>(serviceProvider);
+        var viewModel = ActivatorUtilities.CreateInstance<AccountSettingsViewModel>(serviceProvider, account);
+        window.Owner = owner;
+        window.DataContext = viewModel;
+        window.ShowDialog();
+        return Task.CompletedTask;
+    }
+
     public Task ShowAvitoProfileAsync(Window owner, AvitoAccount account, CancellationToken cancellationToken)
     {
         var window = ActivatorUtilities.CreateInstance<AvitoAuthWindow>(serviceProvider);

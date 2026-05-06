@@ -18,6 +18,21 @@ public sealed partial class AvitoAccount : ObservableObject
     [ObservableProperty] private string lastErrorMessage = string.Empty;
 
     [ObservableProperty] private string? assignedUserAgent;
+    [ObservableProperty] private string browserName = string.Empty;
+    [ObservableProperty] private string browserVersion = "146";
+    [ObservableProperty] private string userAgentDevice = "Все";
+    [ObservableProperty] private bool useWindowsOs = true;
+    [ObservableProperty] private string windowsVersion = "Windows 10";
+    [ObservableProperty] private bool useMacOs;
+    [ObservableProperty] private string macOsVersion = "All macOS";
+    [ObservableProperty] private bool useLinuxOs;
+    [ObservableProperty] private string linuxVersion = "Linux x86_64";
+    [ObservableProperty] private bool useAndroidOs;
+    [ObservableProperty] private string androidVersion = "All Android";
+    [ObservableProperty] private bool useIosOs;
+    [ObservableProperty] private string iosVersion = "All iOS";
+    [ObservableProperty] private string cookiesJson = string.Empty;
+    [ObservableProperty] private string notes = string.Empty;
     [ObservableProperty] private string? screenResolution = "1920x1080";
     [ObservableProperty] private string? timezone = "Europe/Moscow";
     [ObservableProperty] private string? languages = "ru-RU,ru,en-US,en";

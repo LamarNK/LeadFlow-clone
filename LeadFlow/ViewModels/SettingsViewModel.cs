@@ -169,6 +169,17 @@ public partial class SettingsViewModel(
         await LoadAsync();
     }
 
+    [RelayCommand]
+    public Task OpenAccountSettingsAsync(Window? owner)
+    {
+        if (owner is null || SelectedAccount is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        return windowService.ShowAccountSettingsAsync(owner, SelectedAccount, CancellationToken.None);
+    }
+
     public string FixedProfileUrl => FixedAvitoProfileUrl;
 
     public string SelectedAccountName => SelectedAccount?.DisplayName ?? "Аккаунт не выбран";
@@ -339,6 +350,22 @@ public partial class SettingsViewModel(
                 AvitoResponsesUrl = FixedAvitoProfileUrl,
                 account.BrowserProfilePath,
                 account.IsEnabled,
+                account.BrowserName,
+                account.BrowserVersion,
+                account.UserAgentDevice,
+                account.UseWindowsOs,
+                account.WindowsVersion,
+                account.UseMacOs,
+                account.MacOsVersion,
+                account.UseLinuxOs,
+                account.LinuxVersion,
+                account.UseAndroidOs,
+                account.AndroidVersion,
+                account.UseIosOs,
+                account.IosVersion,
+                account.AssignedUserAgent,
+                account.CookiesJson,
+                account.Notes,
                 Status = account.Status.ToString(),
                 account.LastAuthCheckAt,
                 account.LastMonitoringAt,

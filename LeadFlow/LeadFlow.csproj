@@ -13,6 +13,7 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.Sqlite.Core" Version="10.0.7" />
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlcipher" Version="2.1.11" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.0" />
     <Using Remove="System.Drawing" />
     <Using Remove="System.Windows.Forms" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />

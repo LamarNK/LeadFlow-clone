@@ -44,7 +44,14 @@ public partial class BrowserAccountSession : ObservableObject
         
         // === Применяем User-Agent из фингерпринта ===
         ApplyFingerprintSettings(view);
-        
+
+        // Куки из сохранённого JSON аккаунта (редактируемое поле в настройках) — до первой навигации
+        if (view.CoreWebView2 is not null)
+        {
+            await WebViewSessionCookies.ApplyFromStoredCookiesJsonAsync(view.CoreWebView2, Account.CookiesJson, cancellationToken)
+                .ConfigureAwait(true);
+        }
+
         var initialUrl = string.IsNullOrWhiteSpace(CurrentUrl)
             ? Account.AvitoResponsesUrl
             : CurrentUrl;
