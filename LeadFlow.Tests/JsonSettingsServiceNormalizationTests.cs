@@ -24,36 +24,6 @@ public sealed class JsonSettingsServiceNormalizationTests
     }
 
     [Fact]
-    public void Normalize_AppliesCycleDelayBoundsRules()
-    {
-        var settings = NewSettings();
-        settings.MonitoringSafety.CycleDelayMinMinutes = 200;
-        settings.MonitoringSafety.CycleDelayMaxMinutes = 0;
-
-        JsonSettingsService.NormalizeSettings(settings);
-
-        Assert.Equal(MonitoringCycleDelay.MinAllowedMinutes, settings.MonitoringSafety.CycleDelayMinMinutes);
-        Assert.Equal(MonitoringCycleDelay.MaxAllowedMinutes, settings.MonitoringSafety.CycleDelayMaxMinutes);
-    }
-
-    [Theory]
-    [InlineData(0, 45)]
-    [InlineData(4, 45)]
-    [InlineData(5, 5)]
-    [InlineData(45, 45)]
-    [InlineData(240, 240)]
-    [InlineData(241, 45)]
-    public void Normalize_ClampsActiveAdsRefreshInterval(int input, int expected)
-    {
-        var settings = NewSettings();
-        settings.MonitoringSafety.ActiveAdsRefreshIntervalMinutes = input;
-
-        JsonSettingsService.NormalizeSettings(settings);
-
-        Assert.Equal(expected, settings.MonitoringSafety.ActiveAdsRefreshIntervalMinutes);
-    }
-
-    [Fact]
     public void Normalize_AlwaysSetsFixedBitrixWebhookUrl()
     {
         var settings = NewSettings();

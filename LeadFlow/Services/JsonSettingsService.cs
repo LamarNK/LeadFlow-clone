@@ -90,11 +90,6 @@ public sealed class JsonSettingsService(string? dataDirectoryOverride = null) : 
         settings.Bitrix.WebhookUrl = FixedBitrixWebhookUrl;
         settings.MonitoringSafety ??= new MonitoringSafetyOptions();
         settings.MonitoringSafety.CheckIntervalSeconds = Math.Clamp(settings.MonitoringSafety.CheckIntervalSeconds, 30, 3600);
-        MonitoringCycleDelay.NormalizeBounds(settings.MonitoringSafety);
-        if (settings.MonitoringSafety.ActiveAdsRefreshIntervalMinutes is < 5 or > 240)
-        {
-            settings.MonitoringSafety.ActiveAdsRefreshIntervalMinutes = 45;
-        }
         settings.AvitoSelectors = new AvitoSelectorOptions();
         settings.Avito ??= new AvitoSettings();
     }

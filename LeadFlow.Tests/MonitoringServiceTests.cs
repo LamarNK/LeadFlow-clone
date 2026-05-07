@@ -13,10 +13,10 @@ public sealed class MonitoringServiceTests
     [Fact]
     public async Task ProcessAccount_RespectsMaxResponsesPerCycle()
     {
-        var settings = NewSettings(maxPerCycle: 2);
+        var settings = NewSettings();
         var source = new FakeAvitoResponseSource
         {
-            Impl = (account, _) => Enumerable.Range(0, 5)
+            Impl = (account, _) => Enumerable.Range(0, 15)
                 .Select(i => NewIncomingResponse(account, $"src-{i}"))
                 .Cast<CandidateResponse>()
                 .ToList()
@@ -32,11 +32,11 @@ public sealed class MonitoringServiceTests
         var account = NewAccount();
         await harness.Service.ProcessAccountAsync(account, settings, CancellationToken.None);
 
-        Assert.Equal(2, processed.Count);
-        Assert.Equal(2, bitrix.CreateLeadCallCount);
+        Assert.Equal(MonitoringTiming.MaxResponsesPerAccountPerCycle, processed.Count);
+        Assert.Equal(MonitoringTiming.MaxResponsesPerAccountPerCycle, bitrix.CreateLeadCallCount);
         Assert.Contains(harness.Statuses, s =>
-            s.Item2.Contains("обрабатываем 2", StringComparison.Ordinal) &&
-            s.Item2.Contains("5", StringComparison.Ordinal));
+            s.Item2.Contains($"обрабатываем {MonitoringTiming.MaxResponsesPerAccountPerCycle}", StringComparison.Ordinal) &&
+            s.Item2.Contains("15", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -251,17 +251,10 @@ public sealed class MonitoringServiceTests
         Assert.Null(harness.Service.NextCycleCheckAtUtc);
     }
 
-    private static AppSettings NewSettings(int maxPerCycle = 5) => new()
+    private static AppSettings NewSettings() => new()
     {
         DemoModeEnabled = false,
-        MonitoringSafety = new MonitoringSafetyOptions
-        {
-            CycleDelayMinMinutes = 1,
-            CycleDelayMaxMinutes = 1,
-            DelayBetweenAccountsSeconds = 0,
-            DelayBetweenResponsesSeconds = 0,
-            MaxResponsesPerCycle = maxPerCycle
-        },
+        MonitoringSafety = new MonitoringSafetyOptions(),
         Bitrix = new BitrixSettings
         {
             WebhookUrl = string.Empty,

@@ -218,17 +218,16 @@ public sealed class MonitoringService(
     {
         var nextDelay = await ScheduleNextProfileStatsUpdateAsync(ct);
         _ = GlobalLogger.Instance.LogAsync(
-            $"Автообновление объявлений: следующий цикл через {(int)nextDelay.TotalMinutes} мин. (интервал из настроек MonitoringSafety.ActiveAdsRefreshIntervalMinutes).",
+            $"Автообновление объявлений: следующий цикл через {(int)nextDelay.TotalMinutes} мин. (интервал {MonitoringTiming.ActiveAdsRefreshIntervalMinutes} мин, задан в коде).",
             DeskLinkAuditLogLevel.Info);
     }
 
-    private async Task<TimeSpan> ScheduleNextProfileStatsUpdateAsync(CancellationToken ct)
+    private Task<TimeSpan> ScheduleNextProfileStatsUpdateAsync(CancellationToken ct)
     {
-        var settings = await settingsService.LoadAsync(ct);
-        var minutes = Math.Clamp(settings.MonitoringSafety.ActiveAdsRefreshIntervalMinutes, 5, 240);
-        var nextDelay = TimeSpan.FromMinutes(minutes);
+        ct.ThrowIfCancellationRequested();
+        var nextDelay = TimeSpan.FromMinutes(MonitoringTiming.ActiveAdsRefreshIntervalMinutes);
         _profileStatsTimer?.Change(nextDelay, Timeout.InfiniteTimeSpan);
-        return nextDelay;
+        return Task.FromResult(nextDelay);
     }
 
     private async Task UpdateProfileStatsAsync(CancellationToken ct)
@@ -348,7 +347,7 @@ public sealed class MonitoringService(
                         }
 
                         await ProcessAccountAsync(account, settings, cancellationToken);
-                        await Task.Delay(TimeSpan.FromSeconds(settings.MonitoringSafety.DelayBetweenAccountsSeconds), cancellationToken);
+                        await Task.Delay(TimeSpan.FromSeconds(MonitoringTiming.DelayBetweenAccountsSeconds), cancellationToken);
                     }
 
                     cycleSw.Stop();
@@ -358,7 +357,7 @@ public sealed class MonitoringService(
 
                     _consecutiveMonitoringLoopFailures = 0;
 
-                    var delay = MonitoringCycleDelay.GetRandomDelay(settings.MonitoringSafety);
+                    var delay = MonitoringCycleDelay.GetRandomDelay();
                     SetNextCheckTime(DateTime.UtcNow + delay);
                     UpdateStatus(MonitoringStatus.Waiting, $"Цикл завершён. Ждём следующую проверку {FormatDelay(delay)}.");
                     StartCountdownTimer(delay);
@@ -459,9 +458,9 @@ public sealed class MonitoringService(
         try
         {
             var responses = settings.DemoModeEnabled
-                ? await avitoDemoResponseSource.GetBatchAsync(account, settings.MonitoringSafety.MaxResponsesPerCycle, cancellationToken)
+                ? await avitoDemoResponseSource.GetBatchAsync(account, MonitoringTiming.MaxResponsesPerAccountPerCycle, cancellationToken)
                 : await avitoResponseSource.GetNewResponsesAsync(account, settings, cancellationToken);
-            var maxPerCycle = settings.MonitoringSafety.MaxResponsesPerCycle;
+            var maxPerCycle = MonitoringTiming.MaxResponsesPerAccountPerCycle;
             if (responses.Count > maxPerCycle)
             {
                 _ = GlobalLogger.Instance.LogAsync(
@@ -484,7 +483,7 @@ public sealed class MonitoringService(
                 }
 
                 await ProcessResponseAsync(response, settings, cancellationToken);
-                await Task.Delay(TimeSpan.FromSeconds(settings.MonitoringSafety.DelayBetweenResponsesSeconds), cancellationToken);
+                await Task.Delay(TimeSpan.FromSeconds(MonitoringTiming.DelayBetweenResponsesSeconds), cancellationToken);
             }
 
             if (account.Status == AvitoAccountStatus.Monitoring)

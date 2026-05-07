@@ -28,22 +28,20 @@ public sealed class JsonSettingsServiceTests
     }
 
     [Fact]
-    public async Task SaveAsync_Then_LoadAsync_PreservesMonitoringSafetyWithinNormalizeRules()
+    public async Task SaveAsync_Then_LoadAsync_PreservesMonitoringSafetyCheckInterval()
     {
         var dir = CreateTempDataDir();
         try
         {
             var sut = new JsonSettingsService(dir);
             var first = await sut.LoadAsync(CancellationToken.None);
-            first.MonitoringSafety.CycleDelayMinMinutes = 4;
-            first.MonitoringSafety.CycleDelayMaxMinutes = 20;
+            first.MonitoringSafety.CheckIntervalSeconds = 120;
             await sut.SaveAsync(first, CancellationToken.None);
 
             var sut2 = new JsonSettingsService(dir);
             var second = await sut2.LoadAsync(CancellationToken.None);
 
-            Assert.Equal(4, second.MonitoringSafety.CycleDelayMinMinutes);
-            Assert.Equal(20, second.MonitoringSafety.CycleDelayMaxMinutes);
+            Assert.Equal(120, second.MonitoringSafety.CheckIntervalSeconds);
         }
         finally
         {

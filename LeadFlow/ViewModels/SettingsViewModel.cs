@@ -57,7 +57,6 @@ public partial class SettingsViewModel(
 
         SelectedAccount = Accounts.FirstOrDefault();
         UpdateSavedSnapshot();
-        NotifyMonitoringSafetyProperties();
     }
 
     [RelayCommand]
@@ -182,96 +181,6 @@ public partial class SettingsViewModel(
     }
 
     public string FixedProfileUrl => FixedAvitoProfileUrl;
-
-    public int CycleDelayMinMinutes
-    {
-        get => _settings.MonitoringSafety.CycleDelayMinMinutes;
-        set
-        {
-            if (_settings.MonitoringSafety.CycleDelayMinMinutes == value)
-            {
-                return;
-            }
-
-            _settings.MonitoringSafety.CycleDelayMinMinutes = value;
-            OnPropertyChanged();
-        }
-    }
-
-    public int CycleDelayMaxMinutes
-    {
-        get => _settings.MonitoringSafety.CycleDelayMaxMinutes;
-        set
-        {
-            if (_settings.MonitoringSafety.CycleDelayMaxMinutes == value)
-            {
-                return;
-            }
-
-            _settings.MonitoringSafety.CycleDelayMaxMinutes = value;
-            OnPropertyChanged();
-        }
-    }
-
-    public int DelayBetweenAccountsSeconds
-    {
-        get => _settings.MonitoringSafety.DelayBetweenAccountsSeconds;
-        set
-        {
-            if (_settings.MonitoringSafety.DelayBetweenAccountsSeconds == value)
-            {
-                return;
-            }
-
-            _settings.MonitoringSafety.DelayBetweenAccountsSeconds = value;
-            OnPropertyChanged();
-        }
-    }
-
-    public int DelayBetweenResponsesSeconds
-    {
-        get => _settings.MonitoringSafety.DelayBetweenResponsesSeconds;
-        set
-        {
-            if (_settings.MonitoringSafety.DelayBetweenResponsesSeconds == value)
-            {
-                return;
-            }
-
-            _settings.MonitoringSafety.DelayBetweenResponsesSeconds = value;
-            OnPropertyChanged();
-        }
-    }
-
-    public int MaxResponsesPerCycle
-    {
-        get => _settings.MonitoringSafety.MaxResponsesPerCycle;
-        set
-        {
-            if (_settings.MonitoringSafety.MaxResponsesPerCycle == value)
-            {
-                return;
-            }
-
-            _settings.MonitoringSafety.MaxResponsesPerCycle = value;
-            OnPropertyChanged();
-        }
-    }
-
-    public int ActiveAdsRefreshIntervalMinutes
-    {
-        get => _settings.MonitoringSafety.ActiveAdsRefreshIntervalMinutes;
-        set
-        {
-            if (_settings.MonitoringSafety.ActiveAdsRefreshIntervalMinutes == value)
-            {
-                return;
-            }
-
-            _settings.MonitoringSafety.ActiveAdsRefreshIntervalMinutes = value;
-            OnPropertyChanged();
-        }
-    }
 
     public string SelectedAccountName => SelectedAccount?.DisplayName ?? "Аккаунт не выбран";
 
@@ -401,16 +310,6 @@ public partial class SettingsViewModel(
         }
 
         RefreshSelectedAccountPresentation();
-    }
-
-    private void NotifyMonitoringSafetyProperties()
-    {
-        OnPropertyChanged(nameof(CycleDelayMinMinutes));
-        OnPropertyChanged(nameof(CycleDelayMaxMinutes));
-        OnPropertyChanged(nameof(DelayBetweenAccountsSeconds));
-        OnPropertyChanged(nameof(DelayBetweenResponsesSeconds));
-        OnPropertyChanged(nameof(MaxResponsesPerCycle));
-        OnPropertyChanged(nameof(ActiveAdsRefreshIntervalMinutes));
     }
 
     private void RefreshSelectedAccountPresentation()
