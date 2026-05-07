@@ -13,7 +13,7 @@ public static class MonitoringTiming
     public const int CycleQuietBackoffExtraMinutesPerStep = 2;
 
     /// <summary>Верхняя граница добавки к паузе при длинной серии пустых циклов.</summary>
-    public const int CycleQuietBackoffExtraMinutesMax = 20;
+    public const int CycleQuietBackoffExtraMinutesMax = 50;
 
     /// <summary>Сколько дней истории учитывать для «календаря» прихода откликов (локальное время ПК).</summary>
     public const int CycleHistoricalHeatLookbackDays = 56;

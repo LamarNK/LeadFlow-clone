@@ -52,6 +52,13 @@ public static class MonitoringCycleDelay
         }
 
         var absoluteMax = max + MonitoringTiming.CycleQuietBackoffExtraMinutesMax;
+        if (newResponsesInCycle == 0 && consecutiveQuietCycles > 1 && minutes >= absoluteMax)
+        {
+            // Вместо жесткого потолка (например, ровно 60 мин) добавляем небольшой джиттер.
+            var randomizedTop = absoluteMax - 10 + Random.Shared.NextDouble() * 10;
+            minutes = randomizedTop;
+        }
+
         minutes = Math.Clamp(minutes, min, absoluteMax);
         return TimeSpan.FromMinutes(minutes);
     }
