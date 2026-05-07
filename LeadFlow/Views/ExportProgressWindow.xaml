@@ -1,0 +1,44 @@
+<Window x:Class="LeadFlow.Views.ExportProgressWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Экспорт профиля"
+        Width="420"
+        Background="#FAFBFC"
+        SizeToContent="Height"
+        MinHeight="160"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False">
+    <!-- Явные цвета: окно показывается до полной загрузки ResourceDictionary приложения. -->
+    <Border Padding="20"
+            Background="#FAFBFC"
+            BorderBrush="#E2E8F0"
+            BorderThickness="1">
+        <StackPanel>
+            <TextBlock FontSize="15"
+                       FontWeight="SemiBold"
+                       Foreground="#0F172A"
+                       Text="{Binding Headline}"
+                       TextWrapping="Wrap" />
+            <TextBlock Margin="0,6,0,0"
+                       Foreground="#64748B"
+                       Text="{Binding AccountDisplayName}"
+                       TextWrapping="Wrap" />
+            <ProgressBar Height="10"
+                         Margin="0,16,0,8"
+                         Maximum="100"
+                         Minimum="0"
+                         Value="{Binding Percent}" />
+            <TextBlock Foreground="#0F172A"
+                       Text="{Binding DoneLine}" />
+            <TextBlock Margin="0,2,0,0"
+                       Foreground="#64748B"
+                       Text="{Binding RemainingLine}" />
+            <TextBlock Margin="0,12,0,0"
+                       FontSize="12"
+                       Foreground="#64748B"
+                       Text="Большие профили могут занимать несколько минут. Это окно закроется само по завершении."
+                       TextWrapping="Wrap" />
+        </StackPanel>
+    </Border>
+</Window>

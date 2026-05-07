@@ -39,6 +39,13 @@ public partial class AvitoAuthViewModel(
     [ObservableProperty]
     private BrowserAccountSession? session;
 
+    /// <summary>Видимость WebView2 этой вкладки (перекрывающиеся контролы в одном окне).</summary>
+    [ObservableProperty]
+    private bool isActiveTab;
+
+    /// <summary>Идентификатор аккаунта вкладки (поиск уже открытой вкладки).</summary>
+    public Guid? AccountKey => _account?.Id;
+
     public void ConfigureForAuthorization(AvitoAccount account)
     {
         Configure(account, true);
@@ -69,7 +76,9 @@ public partial class AvitoAuthViewModel(
         var startUrl = string.IsNullOrWhiteSpace(initialUrl) ? account.AvitoResponsesUrl : initialUrl;
         CurrentUrl = startUrl;
         AddressBarUrl = startUrl;
-        WindowTitle = monitorAuthorization ? "Авторизация Avito" : "Avito под профилем аккаунта";
+        WindowTitle = monitorAuthorization
+            ? $"Авторизация Avito — {account.DisplayName}"
+            : $"Avito — {account.DisplayName}";
         AuthorizationStatus = monitorAuthorization
             ? "Ожидание"
             : "Открываем окно Avito с сохранённым браузерным профилем аккаунта.";
@@ -140,6 +149,24 @@ public partial class AvitoAuthViewModel(
         SyncAddressFromSession();
     }
 
+    /// <summary>Переход по URL извне (например, та же вкладка выбрана повторно из мониторинга).</summary>
+    public void ApplyExternalNavigate(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return;
+        }
+
+        AddressBarUrl = url.Trim();
+        CurrentUrl = AddressBarUrl;
+        if (Session is not null)
+        {
+            Session.CurrentUrl = CurrentUrl;
+        }
+
+        NavigateToAddress();
+    }
+
     public bool CanNavigateBack() => Session?.CanGoBack == true;
 
     public bool CanNavigateForward() => Session?.CanGoForward == true;
@@ -149,6 +176,19 @@ public partial class AvitoAuthViewModel(
         _authorizationMonitoringCts?.Cancel();
         _authorizationMonitoringCts?.Dispose();
         _authorizationMonitoringCts = null;
+    }
+
+    /// <summary>Закрывает мониторинг и отключает WebView2 (только с UI-потока).</summary>
+    public void ReleaseBrowser()
+    {
+        StopMonitoring();
+        if (Session is null)
+        {
+            return;
+        }
+
+        Session.DisposeWebView();
+        Session = null;
     }
 
     private void StartMonitoring()

@@ -293,6 +293,39 @@ public partial class BrowserAccountSession : ObservableObject
         core.Navigate(NormalizeUrl(raw));
     }
 
+    /// <summary>Освобождает WebView2 (вызов с UI-потока), чтобы профиль не держал файлы открытыми.</summary>
+    public void DisposeWebView()
+    {
+        if (AttachedView is not { } view)
+        {
+            return;
+        }
+
+        try
+        {
+            if (view.CoreWebView2 is { } core)
+            {
+                core.BasicAuthenticationRequested -= OnBasicAuthenticationRequested;
+                core.NewWindowRequested -= OnNewWindowRequested;
+            }
+        }
+        catch
+        {
+        }
+
+        try
+        {
+            view.Dispose();
+        }
+        catch
+        {
+        }
+
+        AttachedView = null;
+        Environment = null;
+        IsInitialized = false;
+    }
+
     private void UpdateNavigationState()
     {
         if (AttachedView?.CoreWebView2 is not CoreWebView2 core)

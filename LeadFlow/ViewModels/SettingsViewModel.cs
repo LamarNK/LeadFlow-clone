@@ -3,6 +3,8 @@ using System.ComponentModel;
 using System.IO;
 using System.Text.Json;
 using System.Windows;
+using System.Windows.Threading;
+using Microsoft.Win32;
 using System.Windows.Data;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -11,6 +13,7 @@ using LeadFlow.Data;
 using LeadFlow.Models;
 using LeadFlow.Services;
 using LeadFlow.Services.Browser;
+using LeadFlow.Views;
 
 namespace LeadFlow.ViewModels;
 
@@ -18,6 +21,7 @@ public partial class SettingsViewModel(
     ISettingsService settingsService,
     AppRepository repository,
     IBrowserProfileService profileService,
+    IBrowserProfileArchiveService profileArchiveService,
     IWindowService windowService) : ObservableObject
 {
     private const string FixedAvitoProfileUrl = "https://www.avito.ru/profile";
@@ -31,6 +35,12 @@ public partial class SettingsViewModel(
 
     [ObservableProperty]
     private AvitoAccount? selectedAccount;
+
+    [ObservableProperty]
+    private bool isExportingProfile;
+
+    [ObservableProperty]
+    private bool isImportingProfile;
 
     [RelayCommand]
     public async Task LoadAsync()
@@ -143,7 +153,7 @@ public partial class SettingsViewModel(
         UpdateSavedSnapshot();
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanOpenSelectedAccountBrowserOrSettings))]
     public async Task AuthorizeAsync(Window? owner)
     {
         if (owner is null || SelectedAccount is null)
@@ -156,7 +166,7 @@ public partial class SettingsViewModel(
         await LoadAsync();
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanOpenSelectedAccountBrowserOrSettings))]
     public async Task OpenAvitoProfileAsync(Window? owner)
     {
         if (owner is null || SelectedAccount is null)
@@ -169,7 +179,7 @@ public partial class SettingsViewModel(
         await LoadAsync();
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanOpenSelectedAccountBrowserOrSettings))]
     public Task OpenAccountSettingsAsync(Window? owner)
     {
         if (owner is null || SelectedAccount is null)
@@ -178,6 +188,260 @@ public partial class SettingsViewModel(
         }
 
         return windowService.ShowAccountSettingsAsync(owner, SelectedAccount, CancellationToken.None);
+    }
+
+    /// <summary>Во время экспорта или импорта профиля нельзя открывать Avito и карточку настроек этого аккаунта.</summary>
+    private bool CanOpenSelectedAccountBrowserOrSettings() =>
+        SelectedAccount is not null && !IsExportingProfile && !IsImportingProfile;
+
+    [RelayCommand(CanExecute = nameof(CanExportProfileArchive))]
+    private async Task ExportProfileArchiveAsync(Window? owner)
+    {
+        if (owner is null || SelectedAccount is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var dlg = new SaveFileDialog
+            {
+                Filter = "Архив профиля (*.zip)|*.zip",
+                FileName = $"LeadFlow-Avito-{SanitizeFileName(SelectedAccount.DisplayName)}-profile.zip",
+                DefaultExt = ".zip",
+            };
+
+            if (dlg.ShowDialog() != true)
+            {
+                return;
+            }
+
+            var confirm = MessageBox.Show(
+                owner,
+                "Перед экспортом будут закрыты вкладки окна Avito для этого аккаунта (если открыты), "
+                + "чтобы браузер не удерживал файлы папки профиля.\n\nПродолжить экспорт?",
+                "Экспорт профиля",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question,
+                MessageBoxResult.Yes);
+            if (confirm != MessageBoxResult.Yes)
+            {
+                return;
+            }
+
+            windowService.CloseAvitoBrowserTabsForAccount(SelectedAccount.Id);
+            await Task.Delay(250).ConfigureAwait(true);
+
+            var progressVm = new ExportProgressViewModel(SelectedAccount.DisplayName);
+            var progressWindow = new ExportProgressWindow
+            {
+                Owner = owner,
+                DataContext = progressVm,
+            };
+
+            try
+            {
+                IsExportingProfile = true;
+                progressWindow.Show();
+                await progressWindow.Dispatcher.InvokeAsync(static () => { }, DispatcherPriority.Render);
+                var progress = new Progress<int>(pct => progressVm.Percent = pct);
+                await profileArchiveService.ExportAsync(SelectedAccount, dlg.FileName, progress, CancellationToken.None);
+
+                MessageBox.Show(
+                    owner,
+                    "Папка профиля WebView2 и настройки аккаунта записаны в ZIP.",
+                    "Экспорт профиля",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+            }
+            finally
+            {
+                progressWindow.Close();
+                IsExportingProfile = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(owner, ex.Message, "Экспорт профиля", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanImportProfileArchive))]
+    private async Task ImportProfileArchiveAsync(Window? owner)
+    {
+        if (owner is null)
+        {
+            return;
+        }
+
+        var dlg = new OpenFileDialog
+        {
+            Filter = "Архив профиля (*.zip)|*.zip",
+            Multiselect = false,
+        };
+
+        if (dlg.ShowDialog() != true)
+        {
+            return;
+        }
+
+        await ImportProfileArchiveCoreAsync(owner, dlg.FileName);
+    }
+
+    /// <summary>Drag-and-drop: первый .zip из списка путей.</summary>
+    public async Task ImportProfileArchiveFromDroppedPathsAsync(IReadOnlyList<string> paths, Window? dialogOwner = null)
+    {
+        var owner = dialogOwner ?? Application.Current?.MainWindow;
+        var zip = paths.FirstOrDefault(static p =>
+            p.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) && File.Exists(p));
+        if (zip is null)
+        {
+            MessageBox.Show(
+                owner,
+                "Перетащите один файл .zip — архив профиля LeadFlow.",
+                "Импорт профиля",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+            return;
+        }
+
+        await ImportProfileArchiveCoreAsync(owner, zip);
+    }
+
+    private async Task ImportProfileArchiveCoreAsync(Window? owner, string zipPath)
+    {
+        AvitoProfileArchiveManifest manifest;
+        try
+        {
+            manifest = await profileArchiveService.ReadManifestAsync(zipPath, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(owner, ex.Message, "Импорт профиля", MessageBoxButton.OK, MessageBoxImage.Error);
+            return;
+        }
+
+        var suggestedName = SuggestImportedAccountDisplayName(manifest, zipPath);
+        var r = MessageBox.Show(
+            owner,
+            $"Будет создан новый аккаунт «{suggestedName}» с профилем и настройками из архива (как при экспорте).\n\nПродолжить?",
+            "Импорт профиля",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Question,
+            MessageBoxResult.No);
+        if (r != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        var newAccount = new AvitoAccount
+        {
+            Id = Guid.NewGuid(),
+            DisplayName = suggestedName,
+            AvitoResponsesUrl = FixedAvitoProfileUrl,
+            Status = AvitoAccountStatus.RequiresLogin,
+        };
+
+        var profile = profileService.GetProfile(newAccount);
+        newAccount.BrowserProfilePath = profile.ProfilePath;
+
+        var progressVm = new ExportProgressViewModel(newAccount.DisplayName, "Распаковывается архив профиля…");
+        var progressWindow = new ExportProgressWindow
+        {
+            Owner = owner,
+            Title = "Импорт профиля",
+            DataContext = progressVm,
+        };
+
+        try
+        {
+            IsImportingProfile = true;
+            progressWindow.Show();
+            await progressWindow.Dispatcher.InvokeAsync(static () => { }, DispatcherPriority.Render);
+            var progress = new Progress<int>(pct => progressVm.Percent = pct);
+            await profileArchiveService.ImportAsync(
+                newAccount,
+                zipPath,
+                applyManifestToAccount: true,
+                progress,
+                CancellationToken.None);
+
+            var newId = newAccount.Id;
+            Accounts.Add(newAccount);
+            await SaveAsync();
+            await LoadAsync();
+            SelectedAccount = Accounts.FirstOrDefault(a => a.Id == newId);
+
+            MessageBox.Show(
+                owner,
+                "Новый аккаунт добавлен в список, настройки сохранены.",
+                "Импорт профиля",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(owner, ex.Message, "Импорт профиля", MessageBoxButton.OK, MessageBoxImage.Error);
+            try
+            {
+                if (!Accounts.Contains(newAccount)
+                    && !string.IsNullOrWhiteSpace(newAccount.BrowserProfilePath))
+                {
+                    profileService.DeleteProfile(newAccount.BrowserProfilePath);
+                }
+            }
+            catch
+            {
+            }
+        }
+        finally
+        {
+            progressWindow.Close();
+            IsImportingProfile = false;
+        }
+    }
+
+    private bool CanExportProfileArchive() =>
+        SelectedAccount is not null && !IsExportingProfile && !IsImportingProfile;
+
+    private bool CanImportProfileArchive() => !IsExportingProfile && !IsImportingProfile;
+
+    private static string SuggestImportedAccountDisplayName(AvitoProfileArchiveManifest manifest, string zipPath)
+    {
+        var fromManifest = manifest.SourceDisplayName?.Trim();
+        if (!string.IsNullOrEmpty(fromManifest))
+        {
+            return fromManifest;
+        }
+
+        var fn = Path.GetFileNameWithoutExtension(zipPath);
+        if (!string.IsNullOrEmpty(fn))
+        {
+            return SanitizeFileName(fn);
+        }
+
+        return "Импорт профиля";
+    }
+
+    partial void OnIsExportingProfileChanged(bool value)
+    {
+        NotifyProfileArchiveAndAccountBrowserCommands();
+    }
+
+    partial void OnIsImportingProfileChanged(bool value)
+    {
+        NotifyProfileArchiveAndAccountBrowserCommands();
+    }
+
+    private static string SanitizeFileName(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return "account";
+        }
+
+        var invalid = Path.GetInvalidFileNameChars();
+        return string.Join("_", name.Split(invalid, StringSplitOptions.RemoveEmptyEntries)).Trim();
     }
 
     public string FixedProfileUrl => FixedAvitoProfileUrl;
@@ -279,6 +543,16 @@ public partial class SettingsViewModel(
         }
 
         RefreshSelectedAccountPresentation();
+        NotifyProfileArchiveAndAccountBrowserCommands();
+    }
+
+    private void NotifyProfileArchiveAndAccountBrowserCommands()
+    {
+        ExportProfileArchiveCommand.NotifyCanExecuteChanged();
+        ImportProfileArchiveCommand.NotifyCanExecuteChanged();
+        AuthorizeCommand.NotifyCanExecuteChanged();
+        OpenAvitoProfileCommand.NotifyCanExecuteChanged();
+        OpenAccountSettingsCommand.NotifyCanExecuteChanged();
     }
 
     private void DetachSelectedAccountPropertyListener()

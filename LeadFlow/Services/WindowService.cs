@@ -9,6 +9,16 @@ namespace LeadFlow.Services;
 public sealed class WindowService(IServiceProvider serviceProvider) : IWindowService
 {
     private readonly Dictionary<Type, Window> _openWindows = new();
+    private AvitoAuthWindow? _avitoBrowserWindow;
+
+    /// <summary>
+    /// Окна Avito не привязываем к окну настроек как к <see cref="Window.Owner"/>:
+    /// при закрытии настроек WPF закрыл бы все дочерние немодальные окна.
+    /// </summary>
+    private static void SetAvitoWindowOwner(Window window, Window fallbackOwner)
+    {
+        window.Owner = Application.Current?.MainWindow ?? fallbackOwner;
+    }
 
     public Task ShowSettingsAsync(Window owner, CancellationToken cancellationToken)
     {
@@ -23,12 +33,9 @@ public sealed class WindowService(IServiceProvider serviceProvider) : IWindowSer
 
     public Task ShowAvitoAuthAsync(Window owner, AvitoAccount account, CancellationToken cancellationToken)
     {
-        var window = ActivatorUtilities.CreateInstance<AvitoAuthWindow>(serviceProvider);
-        var viewModel = ActivatorUtilities.CreateInstance<AvitoAuthViewModel>(serviceProvider);
-        viewModel.ConfigureForAuthorization(account);
-        window.Owner = owner;
-        window.DataContext = viewModel;
-        window.ShowDialog();
+        var host = GetOrCreateAvitoBrowserHost(owner);
+        host.AddAuthTab(account);
+        ActivateWindow(_avitoBrowserWindow!);
         return Task.CompletedTask;
     }
 
@@ -44,24 +51,53 @@ public sealed class WindowService(IServiceProvider serviceProvider) : IWindowSer
 
     public Task ShowAvitoProfileAsync(Window owner, AvitoAccount account, CancellationToken cancellationToken)
     {
-        var window = ActivatorUtilities.CreateInstance<AvitoAuthWindow>(serviceProvider);
-        var viewModel = ActivatorUtilities.CreateInstance<AvitoAuthViewModel>(serviceProvider);
-        viewModel.ConfigureForProfile(account);
-        window.Owner = owner;
-        window.DataContext = viewModel;
-        window.ShowDialog();
+        var host = GetOrCreateAvitoBrowserHost(owner);
+        host.AddProfileTab(account, initialUrl: null);
+        ActivateWindow(_avitoBrowserWindow!);
         return Task.CompletedTask;
     }
 
     public Task ShowAvitoProfileAsync(Window owner, AvitoAccount account, string initialUrl, CancellationToken cancellationToken)
     {
-        var window = ActivatorUtilities.CreateInstance<AvitoAuthWindow>(serviceProvider);
-        var viewModel = ActivatorUtilities.CreateInstance<AvitoAuthViewModel>(serviceProvider);
-        viewModel.ConfigureForProfile(account, initialUrl);
-        window.Owner = owner;
-        window.DataContext = viewModel;
-        window.ShowDialog();
+        var host = GetOrCreateAvitoBrowserHost(owner);
+        host.AddProfileTab(account, initialUrl);
+        ActivateWindow(_avitoBrowserWindow!);
         return Task.CompletedTask;
+    }
+
+    public void CloseAvitoBrowserTabsForAccount(Guid accountId)
+    {
+        if (_avitoBrowserWindow?.DataContext is AvitoBrowserHostViewModel host)
+        {
+            host.CloseTabsForAccount(accountId);
+        }
+    }
+
+    private AvitoBrowserHostViewModel GetOrCreateAvitoBrowserHost(Window owner)
+    {
+        if (_avitoBrowserWindow is not null)
+        {
+            try
+            {
+                if (_avitoBrowserWindow.DataContext is AvitoBrowserHostViewModel existing)
+                {
+                    return existing;
+                }
+            }
+            catch
+            {
+                // окно в неконсистентном состоянии
+            }
+        }
+
+        _avitoBrowserWindow = ActivatorUtilities.CreateInstance<AvitoAuthWindow>(serviceProvider);
+        var host = ActivatorUtilities.CreateInstance<AvitoBrowserHostViewModel>(serviceProvider);
+        _avitoBrowserWindow.DataContext = host;
+        host.AttachWindow(_avitoBrowserWindow);
+        _avitoBrowserWindow.Closed += (_, _) => _avitoBrowserWindow = null;
+        SetAvitoWindowOwner(_avitoBrowserWindow, owner);
+        _avitoBrowserWindow.Show();
+        return host;
     }
 
     public Task ShowMonitoringAsync(Window owner, CancellationToken cancellationToken)

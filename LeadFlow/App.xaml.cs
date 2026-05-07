@@ -96,6 +96,7 @@ public partial class App : System.Windows.Application
         builder.Services.AddSingleton(settings);
         builder.Services.AddSingleton<ISettingsService>(settingsService);
         builder.Services.AddSingleton<IBrowserProfileService, BrowserProfileService>();
+        builder.Services.AddSingleton<IBrowserProfileArchiveService, BrowserProfileArchiveService>();
         builder.Services.AddSingleton<IProfileCookiesService, ProfileCookiesService>();
         builder.Services.AddSingleton<IProxyCheckService, ProxyCheckService>();
         builder.Services.AddSingleton<IBrowserSessionService, BrowserSessionService>();
@@ -133,6 +134,7 @@ public partial class App : System.Windows.Application
         builder.Services.AddTransient<SettingsViewModel>();
         builder.Services.AddTransient<AccountSettingsViewModel>();
         builder.Services.AddTransient<AvitoAuthViewModel>();
+        builder.Services.AddTransient<AvitoBrowserHostViewModel>();
 
         builder.Services.AddTransient<MainWindow>();
         builder.Services.AddTransient<MonitoringWindow>();

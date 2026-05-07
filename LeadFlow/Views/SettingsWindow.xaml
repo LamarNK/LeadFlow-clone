@@ -2,19 +2,25 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Настройки LeadFlow"
+        PreviewDragOver="SettingsWindow_OnPreviewDragOver"
+        DragLeave="SettingsWindow_OnDragLeave"
+        PreviewKeyDown="SettingsWindow_OnPreviewKeyDown"
         Width="1060"
         Height="720"
         WindowStartupLocation="CenterOwner">
     <Window.Resources>
-        <Style x:Key="ActionButtonStyle" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-            <Setter Property="MinWidth" Value="170" />
-            <Setter Property="Padding" Value="12,8" />
-            <Setter Property="Margin" Value="0,0,8,8" />
+        <!-- Две колонки * / * + Stretch: одинаковая ширина; без MinWidth — иначе разъезжаются с WrapPanel. -->
+        <Style x:Key="SettingsCardPrimaryButtonStyle" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Padding" Value="10,6" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
         </Style>
-        <Style x:Key="GhostButtonStyle" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-            <Setter Property="MinWidth" Value="170" />
-            <Setter Property="Padding" Value="12,8" />
-            <Setter Property="Margin" Value="0,0,8,8" />
+        <Style x:Key="SettingsCardGhostButtonStyle" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Padding" Value="10,6" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
             <Setter Property="Background" Value="#EAF1FF" />
             <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}" />
         </Style>
@@ -39,9 +45,6 @@
                             <ContentPresenter />
                         </Border>
                         <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="CardBorder" Property="Background" Value="#F8FAFC" />
-                            </Trigger>
                             <Trigger Property="IsSelected" Value="True">
                                 <Setter TargetName="CardBorder" Property="Background" Value="#F8FAFC" />
                                 <Setter TargetName="CardBorder" Property="BorderBrush" Value="{StaticResource BorderBrush}" />
@@ -75,7 +78,12 @@
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
-            <Border Style="{StaticResource CompactCardBorderStyle}" Margin="0,0,10,0">
+            <Border x:Name="AccountsListDropCard"
+                    AllowDrop="True"
+                    Drop="AccountsListDropCard_OnDrop"
+                    PreviewDragOver="AccountsListDropCard_OnPreviewDragOver"
+                    Style="{StaticResource CompactCardBorderStyle}"
+                    Margin="0,0,10,0">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
@@ -88,6 +96,9 @@
                     </StackPanel>
 
                     <ListBox Grid.Row="1"
+                             AllowDrop="True"
+                             Drop="AccountsListDropCard_OnDrop"
+                             PreviewDragOver="AccountsListDropCard_OnPreviewDragOver"
                              ItemsSource="{Binding Accounts}"
                              SelectedItem="{Binding SelectedAccount}"
                              Style="{StaticResource AccountListBoxStyle}"
@@ -187,6 +198,7 @@
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" />
                         <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
 
                     <TextBlock Text="Карточка аккаунта" Style="{StaticResource SectionTitleStyle}" />
@@ -250,13 +262,76 @@
                         </Border>
                     </Grid>
 
-                    <WrapPanel Grid.Row="3" Margin="0,14,0,0">
-                        <Button Content="Добавить аккаунт" Style="{StaticResource ActionButtonStyle}" Command="{Binding AddAccountCommand}" />
-                        <Button Content="Удалить аккаунт" Style="{StaticResource GhostButtonStyle}" Command="{Binding DeleteAccountCommand}" />
-                        <Button Content="Настройки аккаунта" Style="{StaticResource GhostButtonStyle}" Command="{Binding OpenAccountSettingsCommand}" CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}" />
-                        <Button Content="Открыть окно Avito" Style="{StaticResource GhostButtonStyle}" Command="{Binding OpenAvitoProfileCommand}" CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}" />
-                        <Button Content="Авторизовать в Avito" Style="{StaticResource ActionButtonStyle}" Command="{Binding AuthorizeCommand}" CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}" Visibility="{Binding ShowAuthorizeButton, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                    </WrapPanel>
+                    <Grid Grid.Row="3" Margin="0,14,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="6" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Button Grid.Row="0"
+                                Grid.Column="0"
+                                Margin="0,0,0,6"
+                                Command="{Binding AddAccountCommand}"
+                                Content="Добавить аккаунт"
+                                Style="{StaticResource SettingsCardPrimaryButtonStyle}" />
+                        <Button Grid.Row="0"
+                                Grid.Column="2"
+                                Margin="0,0,0,6"
+                                Command="{Binding DeleteAccountCommand}"
+                                Content="Удалить аккаунт"
+                                Style="{StaticResource SettingsCardGhostButtonStyle}" />
+                        <Button Grid.Row="1"
+                                Grid.Column="0"
+                                Margin="0,0,0,6"
+                                Command="{Binding OpenAccountSettingsCommand}"
+                                CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}"
+                                Content="Настройки аккаунта"
+                                Style="{StaticResource SettingsCardGhostButtonStyle}" />
+                        <Button Grid.Row="1"
+                                Grid.Column="2"
+                                Margin="0,0,0,6"
+                                Command="{Binding OpenAvitoProfileCommand}"
+                                CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}"
+                                Content="Открыть окно Avito"
+                                Style="{StaticResource SettingsCardGhostButtonStyle}" />
+                        <Button Grid.Row="2"
+                                Grid.Column="0"
+                                Grid.ColumnSpan="3"
+                                Command="{Binding AuthorizeCommand}"
+                                CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}"
+                                Content="Авторизовать в Avito"
+                                Style="{StaticResource SettingsCardPrimaryButtonStyle}"
+                                Visibility="{Binding ShowAuthorizeButton, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                    </Grid>
+
+                    <Border Grid.Row="4"
+                            Margin="0,14,0,0"
+                            Padding="0,10,0,0"
+                            BorderBrush="{StaticResource BorderBrush}"
+                            BorderThickness="0,1,0,0">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="6" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Button Grid.Column="0"
+                                    Command="{Binding ExportProfileArchiveCommand}"
+                                    CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}"
+                                    Content="Экспорт"
+                                    Style="{StaticResource SettingsCardGhostButtonStyle}" />
+                            <Button Grid.Column="2"
+                                    Command="{Binding ImportProfileArchiveCommand}"
+                                    CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}"
+                                    Content="Импорт"
+                                    Style="{StaticResource SettingsCardGhostButtonStyle}" />
+                        </Grid>
+                    </Border>
                 </Grid>
             </Border>
         </Grid>
