@@ -40,6 +40,7 @@ public sealed class MonitoringService(
     private readonly Lock _activeAdsSync = new();
     private readonly Dictionary<Guid, IReadOnlyList<AvitoAdStatus>> _activeAdsByAccount = [];
     private int _consecutiveMonitoringLoopFailures;
+    private int _consecutiveQuietMonitoringCycles;
 
     public event EventHandler<MonitoringStatus>? StatusChanged;
     public event EventHandler<string>? StatusMessageChanged;
@@ -73,6 +74,7 @@ public sealed class MonitoringService(
 
         _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         IsActive = true;
+        _consecutiveQuietMonitoringCycles = 0;
         UpdateStatus(MonitoringStatus.Running, "Запуск мониторинга: загружаем настройки.");
         try
         {
@@ -339,6 +341,9 @@ public sealed class MonitoringService(
                             : $"Начинаем новый цикл мониторинга: активных аккаунтов {accounts.Count}.");
 
                     var cycleSw = Stopwatch.StartNew();
+                    var newResponsesThisCycle = 0;
+                    var accountsPolled = 0;
+                    var hadUndischargedBacklog = false;
                     foreach (var account in accounts)
                     {
                         if (cancellationToken.IsCancellationRequested)
@@ -346,7 +351,14 @@ public sealed class MonitoringService(
                             break;
                         }
 
-                        await ProcessAccountAsync(account, settings, cancellationToken);
+                        var (newCount, polled, backlog) = await ProcessAccountAsync(account, settings, cancellationToken);
+                        if (polled)
+                        {
+                            accountsPolled++;
+                            newResponsesThisCycle += newCount;
+                            hadUndischargedBacklog |= backlog;
+                        }
+
                         await Task.Delay(TimeSpan.FromSeconds(MonitoringTiming.DelayBetweenAccountsSeconds), cancellationToken);
                     }
 
@@ -357,9 +369,30 @@ public sealed class MonitoringService(
 
                     _consecutiveMonitoringLoopFailures = 0;
 
-                    var delay = MonitoringCycleDelay.GetRandomDelay();
+                    if (newResponsesThisCycle > 0 || hadUndischargedBacklog)
+                    {
+                        _consecutiveQuietMonitoringCycles = 0;
+                    }
+                    else
+                    {
+                        _consecutiveQuietMonitoringCycles++;
+                    }
+
+                    var historicalHeat = await repository.GetHistoricalResponseIngestHeatScoreAsync(DateTime.UtcNow, cancellationToken);
+                    var delay = MonitoringCycleDelay.GetDelayAfterCycle(
+                        newResponsesThisCycle,
+                        accountsPolled,
+                        _consecutiveQuietMonitoringCycles,
+                        hadUndischargedBacklog,
+                        historicalHeat);
+                    _ = GlobalLogger.Instance.LogAsync(
+                        $"[monitoring] Следующий цикл через {delay.TotalMinutes:F1} мин (новых: {newResponsesThisCycle}, опрошено аккаунтов: {accountsPolled}, тихих циклов подряд: {_consecutiveQuietMonitoringCycles}, очередь откликов: {hadUndischargedBacklog}, истор. «жара» слота: {historicalHeat:F2}).",
+                        DeskLinkAuditLogLevel.Info);
                     SetNextCheckTime(DateTime.UtcNow + delay);
-                    UpdateStatus(MonitoringStatus.Waiting, $"Цикл завершён. Ждём следующую проверку {FormatDelay(delay)}.");
+                    var waitHint = newResponsesThisCycle > 0
+                        ? $"Найдено новых откликов: {newResponsesThisCycle}. Следующая проверка {FormatDelay(delay)}."
+                        : $"Новых откликов нет. Следующая проверка {FormatDelay(delay)}.";
+                    UpdateStatus(MonitoringStatus.Waiting, $"Цикл завершён. {waitHint}");
                     StartCountdownTimer(delay);
                     await Task.Delay(delay, cancellationToken);
                     _countdownTimer?.Dispose();
@@ -426,7 +459,8 @@ public sealed class MonitoringService(
         return true;
     }
 
-    internal async Task ProcessAccountAsync(AvitoAccount account, AppSettings settings, CancellationToken cancellationToken)
+    /// <returns>Новые откликов с Авито, был ли опрос источника, есть ли необработанный «хвост» сверх лимита за цикл.</returns>
+    internal async Task<(int NewResponsesDetected, bool PolledSource, bool HasUndischargedBacklog)> ProcessAccountAsync(AvitoAccount account, AppSettings settings, CancellationToken cancellationToken)
     {
         if (account.Status is AvitoAccountStatus.RequiresLogin or AvitoAccountStatus.RequiresManualAction or AvitoAccountStatus.Paused)
         {
@@ -443,7 +477,7 @@ public sealed class MonitoringService(
                 Message = "Аккаунт пропущен",
                 Details = $"Статус: {account.Status}"
             }, cancellationToken);
-            return;
+            return (0, false, false);
         }
 
         account.Status = AvitoAccountStatus.Monitoring;
@@ -492,6 +526,9 @@ public sealed class MonitoringService(
             }
 
             await repository.SaveAccountAsync(account, cancellationToken);
+
+            var backlog = responses.Count > maxPerCycle;
+            return (responses.Count, true, backlog);
         }
         finally
         {

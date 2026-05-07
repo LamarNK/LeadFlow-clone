@@ -15,6 +15,8 @@ internal sealed class FakeMonitoringRepository : IMonitoringRepository
     public Func<IEnumerable<string>, HashSet<string>> ExistingBitrixEntityIdsImpl { get; set; } =
         _ => new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
+    public Func<DateTime, double> HistoricalHeatImpl { get; set; } = _ => 0;
+
     public Task<IReadOnlyList<AvitoAccount>> GetAccountsAsync(CancellationToken cancellationToken) =>
         Task.FromResult(AccountsImpl());
 
@@ -41,4 +43,7 @@ internal sealed class FakeMonitoringRepository : IMonitoringRepository
     public Task<HashSet<string>> GetExistingBitrixEntityIdsAsync(
         IEnumerable<string> bitrixEntityIds, CancellationToken cancellationToken) =>
         Task.FromResult(ExistingBitrixEntityIdsImpl(bitrixEntityIds));
+
+    public Task<double> GetHistoricalResponseIngestHeatScoreAsync(DateTime utcNow, CancellationToken cancellationToken) =>
+        Task.FromResult(HistoricalHeatImpl(utcNow));
 }

@@ -1,6 +1,7 @@
 using System.Globalization;
 using LeadFlow;
 using LeadFlow.Models;
+using LeadFlow.Services;
 using Microsoft.EntityFrameworkCore;
 
 namespace LeadFlow.Data;
@@ -190,6 +191,19 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
             .ToListAsync(cancellationToken);
 
         return existing.ToHashSet(StringComparer.OrdinalIgnoreCase);
+    }
+
+    public async Task<double> GetHistoricalResponseIngestHeatScoreAsync(DateTime utcNow, CancellationToken cancellationToken)
+    {
+        var cut = utcNow.AddDays(-MonitoringTiming.CycleHistoricalHeatLookbackDays);
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var timestamps = await db.CandidateResponses
+            .AsNoTracking()
+            .Where(c => c.CreatedAt >= cut)
+            .Select(c => c.CreatedAt)
+            .ToListAsync(cancellationToken);
+
+        return MonitoringHistoricalHeat.ComputeScore(timestamps, utcNow, TimeZoneInfo.Local);
     }
 
     public async Task<IReadOnlyList<ProcessingLogItem>> GetRecentLogsAsync(int take, CancellationToken cancellationToken)

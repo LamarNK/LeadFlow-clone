@@ -13,4 +13,7 @@ public interface IMonitoringRepository
     Task SaveCandidateAsync(CandidateResponse response, CancellationToken cancellationToken);
     Task AddLogAsync(ProcessingLogItem item, CancellationToken cancellationToken);
     Task<HashSet<string>> GetExistingBitrixEntityIdsAsync(IEnumerable<string> bitrixEntityIds, CancellationToken cancellationToken);
+
+    /// <summary>0…1 — насколько текущий момент (локальный день/час ПК) исторически совпадает с частыми приходами новых откликов в БД.</summary>
+    Task<double> GetHistoricalResponseIngestHeatScoreAsync(DateTime utcNow, CancellationToken cancellationToken);
 }
