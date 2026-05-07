@@ -42,6 +42,12 @@ public partial class BrowserAccountSession : ObservableObject
         
         await view.EnsureCoreWebView2Async(Environment);
 
+        if (view.CoreWebView2 is { } coreForProxyAuth)
+        {
+            coreForProxyAuth.BasicAuthenticationRequested += OnBasicAuthenticationRequested;
+            coreForProxyAuth.NewWindowRequested += OnNewWindowRequested;
+        }
+
         view.CoreWebView2.SourceChanged += (_, _) => UpdateNavigationState();
         view.CoreWebView2.HistoryChanged += (_, _) => UpdateNavigationState();
         
@@ -248,6 +254,43 @@ public partial class BrowserAccountSession : ObservableObject
         {
             System.Diagnostics.Debug.WriteLine($"[AntiDetect] Smoke-check failed: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Ответ на Basic (в т.ч. 407 Proxy-Authenticate). Учётные данные в --proxy-server Chromium не передаём —
+    /// иначе часто <c>ERR_NO_SUPPORTED_PROXIES</c>.
+    /// </summary>
+    private void OnBasicAuthenticationRequested(object? sender, CoreWebView2BasicAuthenticationRequestedEventArgs e)
+    {
+        if (string.IsNullOrWhiteSpace(Account.ProxyAddress)
+            || string.IsNullOrWhiteSpace(Account.ProxyUsername)
+            || string.Equals(Account.ProxyType, "socks5", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        e.Response.UserName = Account.ProxyUsername.Trim();
+        e.Response.Password = Account.ProxyPassword ?? string.Empty;
+    }
+
+    /// <summary>
+    /// Ссылки с target=_blank и window.open — в одном окне WebView2, иначе переход «теряется».
+    /// </summary>
+    private void OnNewWindowRequested(object? sender, CoreWebView2NewWindowRequestedEventArgs e)
+    {
+        e.Handled = true;
+        if (AttachedView?.CoreWebView2 is not { } core || string.IsNullOrWhiteSpace(e.Uri))
+        {
+            return;
+        }
+
+        var raw = e.Uri.Trim();
+        if (raw.StartsWith("javascript:", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        core.Navigate(NormalizeUrl(raw));
     }
 
     private void UpdateNavigationState()

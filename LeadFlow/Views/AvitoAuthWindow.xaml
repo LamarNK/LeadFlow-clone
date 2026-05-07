@@ -138,15 +138,25 @@
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
                 <Button Grid.Column="0" Content="←" Command="{Binding NavigateBackCommand}" Style="{StaticResource BrowserToolbarButtonStyle}" ToolTip="Назад" />
                 <Button Grid.Column="1" Content="→" Command="{Binding NavigateForwardCommand}" Style="{StaticResource BrowserToolbarButtonStyle}" ToolTip="Вперёд" />
                 <Button Grid.Column="2" Content="↻" Command="{Binding ReloadPageCommand}" Style="{StaticResource BrowserToolbarButtonStyle}" ToolTip="Обновить" />
                 <TextBox Grid.Column="3"
-                         Text="{Binding AddressBarUrl}"
-                         IsReadOnly="True"
-                         Style="{StaticResource BrowserAddressTextBoxStyle}" />
+                         Text="{Binding AddressBarUrl, UpdateSourceTrigger=PropertyChanged}"
+                         AcceptsReturn="False"
+                         Style="{StaticResource BrowserAddressTextBoxStyle}">
+                    <TextBox.InputBindings>
+                        <KeyBinding Key="Enter" Command="{Binding NavigateToAddressCommand}" />
+                    </TextBox.InputBindings>
+                </TextBox>
+                <Button Grid.Column="4"
+                        Content="Перейти"
+                        Command="{Binding NavigateToAddressCommand}"
+                        Style="{StaticResource BrowserPrimaryButtonStyle}"
+                        ToolTip="Открыть введённый адрес" />
             </Grid>
         </Border>
 

@@ -19,6 +19,15 @@
             <Setter Property="Background" Value="#EAF1FF" />
             <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}" />
         </Style>
+        <Style x:Key="ProxyHostPortInnerTextBoxStyle" TargetType="TextBox">
+            <Setter Property="FontFamily" Value="Segoe UI" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+            <Setter Property="CaretBrush" Value="{StaticResource TextBrush}" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
         <Style x:Key="UaInlineRegenerateButtonStyle" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
@@ -243,10 +252,35 @@
                             <TextBlock Grid.Row="0"
                                        Margin="0,0,0,2"
                                        Style="{StaticResource InfoLabelStyle}"
-                                       Text="Адрес прокси" />
-                            <TextBox Grid.Row="1"
-                                     Style="{StaticResource SearchTextBoxStyle}"
-                                     Text="{Binding ProxyAddress, UpdateSourceTrigger=PropertyChanged}" />
+                                       Text="Хост:порт" />
+                            <Border Grid.Row="1"
+                                    Background="#FFFFFF"
+                                    BorderBrush="{StaticResource BorderBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="10"
+                                    MinHeight="{StaticResource FilterControlMinHeight}"
+                                    SnapsToDevicePixels="True">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="92" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox Grid.Column="0"
+                                             Style="{StaticResource ProxyHostPortInnerTextBoxStyle}"
+                                             Padding="10,6,4,6"
+                                             Text="{Binding ProxyHost, UpdateSourceTrigger=PropertyChanged}" />
+                                    <TextBlock Grid.Column="1"
+                                               VerticalAlignment="Center"
+                                               FontSize="14"
+                                               Foreground="{StaticResource SecondaryTextBrush}"
+                                               Text=":" />
+                                    <TextBox Grid.Column="2"
+                                             Style="{StaticResource ProxyHostPortInnerTextBoxStyle}"
+                                             Padding="4,6,10,6"
+                                             Text="{Binding ProxyPort, UpdateSourceTrigger=PropertyChanged}" />
+                                </Grid>
+                            </Border>
                         </Grid>
                     </Grid>
 
@@ -289,13 +323,36 @@
                              Style="{StaticResource SearchTextBoxStyle}"
                              Text="{Binding ProxyRotationUrl, UpdateSourceTrigger=PropertyChanged}" />
 
-                    <StackPanel Margin="0,0,0,10" Orientation="Horizontal">
-                        <Button Command="{Binding CheckProxyCommand}"
-                                Content="Проверить прокси"
-                                Style="{StaticResource GhostButtonStyle}" />
-                        <Button Command="{Binding RotateProxyIpCommand}"
-                                Content="Сменить IP"
-                                Style="{StaticResource GhostButtonStyle}" />
+                    <StackPanel Margin="0,0,0,10">
+                        <StackPanel Orientation="Horizontal">
+                            <Button Command="{Binding CheckProxyCommand}"
+                                    Content="Проверить прокси"
+                                    Style="{StaticResource GhostButtonStyle}" />
+                            <Button Command="{Binding RotateProxyIpCommand}"
+                                    Content="Сменить IP"
+                                    Style="{StaticResource GhostButtonStyle}" />
+                        </StackPanel>
+                        <StackPanel Margin="0,8,0,0"
+                                    Visibility="{Binding ShowProxyCheckFeedback, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <TextBlock Style="{StaticResource SubtleTextStyle}"
+                                       Text="Запрос внешнего IP…"
+                                       TextWrapping="Wrap"
+                                       Visibility="{Binding IsProxyChecking, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                            <TextBlock Text="{Binding ProxyCheckResultText}"
+                                       TextWrapping="Wrap"
+                                       Visibility="{Binding IsProxyChecking, Converter={StaticResource BooleanToVisibilityConverter}, ConverterParameter=Invert}">
+                                <TextBlock.Style>
+                                    <Style BasedOn="{StaticResource SubtleTextStyle}" TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding ProxyCheckIsError}" Value="True">
+                                                <Setter Property="Foreground" Value="{StaticResource ErrorBrush}" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </StackPanel>
                     </StackPanel>
 
                     <TextBlock Text="Шаблоны прокси" Style="{StaticResource InfoLabelStyle}" />

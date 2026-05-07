@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Globalization;
 using System.Text.Json;
 using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -33,6 +34,7 @@ public partial class AccountSettingsViewModel(
     private static readonly Random Random = new();
     private readonly AvitoAccount _account = account;
     private readonly IProxyCheckService _proxyCheckService = proxyCheckService;
+    private bool _proxyInternalUpdate;
     private bool _uaSyncBusy;
     private bool _fingerprintOverviewHooked;
     private FingerprintOverviewState _fpOverview = FingerprintOverviewState.Parse(account.FingerprintOverviewJson);
@@ -100,6 +102,8 @@ public partial class AccountSettingsViewModel(
     [ObservableProperty] private bool importCookiesOnNextStart = account.ImportCookiesOnNextStart;
     [ObservableProperty] private string notes = account.Notes;
     [ObservableProperty] private string? proxyAddress = string.IsNullOrWhiteSpace(account.ProxyAddress) ? null : account.ProxyAddress.Trim();
+    [ObservableProperty] private string proxyHost = ParseProxyAddressForUi(string.IsNullOrWhiteSpace(account.ProxyAddress) ? null : account.ProxyAddress.Trim()).Host;
+    [ObservableProperty] private string proxyPort = ParseProxyAddressForUi(string.IsNullOrWhiteSpace(account.ProxyAddress) ? null : account.ProxyAddress.Trim()).Port;
     [ObservableProperty] private string proxyType = NormalizeProxyType(account.ProxyType);
     [ObservableProperty] private string screenResolution = string.IsNullOrWhiteSpace(account.ScreenResolution) ? "1920x1080" : account.ScreenResolution!;
     [ObservableProperty] private string timezone = string.IsNullOrWhiteSpace(account.Timezone) ? "Europe/Moscow" : account.Timezone!;
@@ -107,6 +111,9 @@ public partial class AccountSettingsViewModel(
     [ObservableProperty] private string? proxyUsername = account.ProxyUsername;
     [ObservableProperty] private string? proxyPassword = account.ProxyPassword;
     [ObservableProperty] private string? proxyRotationUrl = account.ProxyRotationUrl;
+    [ObservableProperty] private bool isProxyChecking;
+    [ObservableProperty] private string proxyCheckResultText = "";
+    [ObservableProperty] private bool proxyCheckIsError;
     [ObservableProperty] private string browserLaunchArgs = account.BrowserLaunchArgs ?? "";
     [ObservableProperty] private string? navigatorPlatform = account.NavigatorPlatform;
     [ObservableProperty] private bool doNotTrack = account.DoNotTrack;
@@ -120,6 +127,8 @@ public partial class AccountSettingsViewModel(
 
     public ObservableCollection<ProxyPresetRowViewModel> ProxyPresets { get; } = [];
 
+    public bool ShowProxyCheckFeedback => IsProxyChecking || !string.IsNullOrWhiteSpace(ProxyCheckResultText);
+
     public string DisplayNameCounter => $"{DisplayName.Length} / {MaxDisplayNameLen}";
 
     public string NotesCounter => $"{Notes.Length} / {MaxNotesLen}";
@@ -128,6 +137,57 @@ public partial class AccountSettingsViewModel(
 
     partial void OnNotesChanged(string value) => OnPropertyChanged(nameof(NotesCounter));
     partial void OnScreenResolutionChanged(string value) => _fpOverview.ScreenFollowsUa = false;
+
+    partial void OnIsProxyCheckingChanged(bool value)
+    {
+        CheckProxyCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(ShowProxyCheckFeedback));
+    }
+
+    partial void OnProxyCheckResultTextChanged(string value) => OnPropertyChanged(nameof(ShowProxyCheckFeedback));
+
+    partial void OnProxyAddressChanged(string? value)
+    {
+        if (_proxyInternalUpdate)
+        {
+            CheckProxyCommand.NotifyCanExecuteChanged();
+            return;
+        }
+
+        _proxyInternalUpdate = true;
+        try
+        {
+            var (h, p) = ParseProxyAddressForUi(value);
+            ProxyHost = h;
+            ProxyPort = p;
+        }
+        finally
+        {
+            _proxyInternalUpdate = false;
+        }
+
+        CheckProxyCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnProxyHostChanged(string value)
+    {
+        if (_proxyInternalUpdate)
+        {
+            return;
+        }
+
+        RecombineProxyAddressFromHostPort();
+    }
+
+    partial void OnProxyPortChanged(string value)
+    {
+        if (_proxyInternalUpdate)
+        {
+            return;
+        }
+
+        RecombineProxyAddressFromHostPort();
+    }
 
     public string OverviewLanguageText =>
         string.IsNullOrWhiteSpace(AssignedUserAgent) ? "—" : "На основе языка";
@@ -526,28 +586,31 @@ public partial class AccountSettingsViewModel(
         StatusHint = "Cookie объединены с данными, сохранёнными для аккаунта в базе.";
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanCheckProxy))]
     private async Task CheckProxyAsync()
     {
         StatusHint = "";
+        ProxyCheckResultText = "";
+        ProxyCheckIsError = false;
+        IsProxyChecking = true;
         try
         {
             var ip = await _proxyCheckService.CheckPublicIpAsync(CreateProxyProbeAccount(), CancellationToken.None);
-            MessageBox.Show(
-                $"Исходящий IP через прокси: {ip}",
-                "Проверка прокси",
-                MessageBoxButton.OK,
-                MessageBoxImage.Information);
+            ProxyCheckResultText = $"Внешний IP через прокси: {ip}";
+            ProxyCheckIsError = false;
         }
         catch (Exception ex)
         {
-            MessageBox.Show(
-                ex.Message,
-                "Проверка прокси",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
+            ProxyCheckResultText = ex.Message;
+            ProxyCheckIsError = true;
+        }
+        finally
+        {
+            IsProxyChecking = false;
         }
     }
+
+    private bool CanCheckProxy() => !IsProxyChecking && !string.IsNullOrWhiteSpace(ProxyAddress);
 
     [RelayCommand]
     private async Task RotateProxyIpAsync()
@@ -611,6 +674,79 @@ public partial class AccountSettingsViewModel(
             ProxyUsername = string.IsNullOrWhiteSpace(ProxyUsername) ? null : ProxyUsername.Trim(),
             ProxyPassword = ProxyPassword
         };
+    }
+
+    private void RecombineProxyAddressFromHostPort()
+    {
+        var h = ProxyHost?.Trim() ?? "";
+        var p = ProxyPort?.Trim() ?? "";
+        string? combined = string.IsNullOrEmpty(h) ? null : string.IsNullOrEmpty(p) ? h : $"{h}:{p}";
+        var next = string.IsNullOrWhiteSpace(combined) ? null : combined.Trim();
+        if (string.Equals(ProxyAddress ?? "", next ?? "", StringComparison.Ordinal))
+        {
+            CheckProxyCommand.NotifyCanExecuteChanged();
+            return;
+        }
+
+        _proxyInternalUpdate = true;
+        try
+        {
+            ProxyAddress = next;
+        }
+        finally
+        {
+            _proxyInternalUpdate = false;
+        }
+
+        CheckProxyCommand.NotifyCanExecuteChanged();
+    }
+
+    private static (string Host, string Port) ParseProxyAddressForUi(string? address)
+    {
+        if (string.IsNullOrWhiteSpace(address))
+        {
+            return ("", "");
+        }
+
+        var a = address.Trim();
+        if (Uri.TryCreate(a, UriKind.Absolute, out var uri)
+            && !string.IsNullOrEmpty(uri.Host)
+            && (uri.Scheme == Uri.UriSchemeHttp
+                || uri.Scheme == Uri.UriSchemeHttps
+                || string.Equals(uri.Scheme, "socks5", StringComparison.OrdinalIgnoreCase)))
+        {
+            var host = uri.Host;
+            if (host.Contains(':') && !host.StartsWith('['))
+            {
+                host = $"[{host}]";
+            }
+
+            var port = !uri.IsDefaultPort && uri.Port > 0
+                ? uri.Port.ToString(CultureInfo.InvariantCulture)
+                : "";
+            return (host, port);
+        }
+
+        if (a.StartsWith('['))
+        {
+            var endBracket = a.IndexOf(']', StringComparison.Ordinal);
+            if (endBracket > 0 && endBracket + 1 < a.Length && a[endBracket + 1] == ':')
+            {
+                return (a[..(endBracket + 1)], a[(endBracket + 2)..]);
+            }
+        }
+
+        var idx = a.LastIndexOf(':');
+        if (idx > 0 && idx < a.Length - 1)
+        {
+            var tail = a[(idx + 1)..];
+            if (tail.Length > 0 && tail.All(static c => c is >= '0' and <= '9'))
+            {
+                return (a[..idx], tail);
+            }
+        }
+
+        return (a, "");
     }
 
     /// <summary>
