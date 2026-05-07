@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
+using System.Linq;
 using System.Windows;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -18,10 +19,26 @@ public partial class AvitoBrowserHostViewModel : ObservableObject
     private readonly IServiceProvider _serviceProvider;
     private Window? _windowHost;
 
+    /// <summary>Отступ между вкладками из отрицательного Margin (совпадает с AvitoAuthWindow).</summary>
+    private const double TabOverlapPx = 18;
+
+    /// <summary>Запас справа: кнопки окна, стрелки прокрутки вкладок, поля.</summary>
+    private const double TabStripRightReservePx = 230;
+
+    private const double TabStripHorizontalMarginsPx = 52;
+
     public ObservableCollection<AvitoAuthViewModel> Tabs { get; } = [];
 
     [ObservableProperty]
     private AvitoAuthViewModel? selectedTab;
+
+    /// <summary>Максимальная ширина вкладки в полосе (уменьшается при большом числе вкладок).</summary>
+    [ObservableProperty]
+    private double tabChromeMaxWidth = 200;
+
+    /// <summary>Максимальная ширина текста имени на вкладке.</summary>
+    [ObservableProperty]
+    private double tabLabelMaxWidth = 156;
 
     public string WindowTitle => Tabs.Count switch
     {
@@ -47,12 +64,23 @@ public partial class AvitoBrowserHostViewModel : ObservableObject
         if (_windowHost is not null)
         {
             _windowHost.StateChanged -= OnHostWindowStateChanged;
+            _windowHost.SizeChanged -= OnWindowHostSizeChanged;
+            _windowHost.Loaded -= OnWindowHostLoaded;
         }
 
         _windowHost = window;
         _windowHost.StateChanged += OnHostWindowStateChanged;
+        _windowHost.SizeChanged += OnWindowHostSizeChanged;
+        _windowHost.Loaded += OnWindowHostLoaded;
         OnPropertyChanged(nameof(IsWindowMaximized));
+        ScheduleRefreshTabStripSizing();
     }
+
+    private void OnWindowHostLoaded(object sender, RoutedEventArgs e) =>
+        RefreshTabStripSizing();
+
+    private void OnWindowHostSizeChanged(object sender, SizeChangedEventArgs e) =>
+        RefreshTabStripSizing();
 
     /// <summary>Состояние окна для иконки «Развернуть / Восстановить».</summary>
     public bool IsWindowMaximized => _windowHost?.WindowState == WindowState.Maximized;
@@ -193,6 +221,8 @@ public partial class AvitoBrowserHostViewModel : ObservableObject
         if (_windowHost is not null)
         {
             _windowHost.StateChanged -= OnHostWindowStateChanged;
+            _windowHost.SizeChanged -= OnWindowHostSizeChanged;
+            _windowHost.Loaded -= OnWindowHostLoaded;
             _windowHost = null;
         }
 
@@ -241,6 +271,53 @@ public partial class AvitoBrowserHostViewModel : ObservableObject
         SelectedTab.NavigateForwardCommand.NotifyCanExecuteChanged();
     }
 
-    private void OnTabsCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e) =>
+    private void OnTabsCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
         OnPropertyChanged(nameof(WindowTitle));
+        ScheduleRefreshTabStripSizing();
+    }
+
+    private void ScheduleRefreshTabStripSizing()
+    {
+        if (_windowHost is null)
+        {
+            return;
+        }
+
+        _windowHost.Dispatcher.BeginInvoke(RefreshTabStripSizing, DispatcherPriority.Loaded);
+    }
+
+    /// <summary>
+    /// Делит ширину полосы вкладок между вкладками с учётом наложения (<see cref="TabOverlapPx"/> между соседями).
+    /// </summary>
+    private void RefreshTabStripSizing()
+    {
+        if (_windowHost is null || Tabs.Count == 0)
+        {
+            return;
+        }
+
+        var w = _windowHost.ActualWidth;
+        if (w <= 1)
+        {
+            return;
+        }
+
+        var usable = w - TabStripRightReservePx - TabStripHorizontalMarginsPx;
+        if (usable < 120)
+        {
+            usable = 120;
+        }
+
+        var n = Tabs.Count;
+        var perTab = (usable + TabOverlapPx * Math.Max(0, n - 1)) / n;
+        var maxTab = Math.Clamp(perTab, 72.0, 220.0);
+        var labelMax = Math.Max(28.0, maxTab - 44.0);
+
+        if (Math.Abs(maxTab - TabChromeMaxWidth) > 0.25 || Math.Abs(labelMax - TabLabelMaxWidth) > 0.25)
+        {
+            TabChromeMaxWidth = maxTab;
+            TabLabelMaxWidth = labelMax;
+        }
+    }
 }

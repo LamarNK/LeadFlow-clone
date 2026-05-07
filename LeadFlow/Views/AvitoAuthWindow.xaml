@@ -9,6 +9,7 @@
         Width="1060"
         Height="720"
         Background="#F8FAFC"
+        Loaded="AvitoAuthWindow_OnLoaded"
         ResizeMode="CanResize"
         WindowStartupLocation="CenterOwner"
         WindowStyle="None">
@@ -185,21 +186,32 @@
             </Setter>
         </Style>
 
+        <Style x:Key="TabStripScrollButtonStyle" TargetType="Button" BasedOn="{StaticResource CaptionChromeButtonStyle}">
+            <Setter Property="Width" Value="28" />
+            <Setter Property="Height" Value="28" />
+            <Setter Property="FontSize" Value="9" />
+            <Setter Property="Margin" Value="0,0,2,0" />
+            <Setter Property="shell:WindowChrome.IsHitTestVisibleInChrome" Value="True" />
+        </Style>
+
         <Style x:Key="AvitoTabListBoxStyle" TargetType="ListBox">
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Padding" Value="0" />
             <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Auto" />
+            <Setter Property="ScrollViewer.CanContentScroll" Value="False" />
             <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Disabled" />
             <Setter Property="shell:WindowChrome.IsHitTestVisibleInChrome" Value="True" />
             <Setter Property="ItemContainerStyle">
                 <Setter.Value>
                     <Style TargetType="ListBoxItem">
                         <Setter Property="Padding" Value="0" />
-                        <Setter Property="Margin" Value="0,4,6,0" />
+                        <!-- Отрицательный Margin справа: следующая вкладка заезжает на предыдущую (накладка). -->
+                        <Setter Property="Margin" Value="0,4,-18,0" />
                         <Setter Property="VerticalContentAlignment" Value="Stretch" />
                         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                         <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+                        <Setter Property="Panel.ZIndex" Value="0" />
                         <Setter Property="shell:WindowChrome.IsHitTestVisibleInChrome" Value="True" />
                         <Setter Property="Template">
                             <Setter.Value>
@@ -208,22 +220,38 @@
                                 </ControlTemplate>
                             </Setter.Value>
                         </Setter>
+                        <Style.Triggers>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter Property="Panel.ZIndex" Value="100" />
+                            </Trigger>
+                            <MultiTrigger>
+                                <MultiTrigger.Conditions>
+                                    <Condition Property="IsSelected" Value="False" />
+                                    <Condition Property="IsMouseOver" Value="True" />
+                                </MultiTrigger.Conditions>
+                                <Setter Property="Panel.ZIndex" Value="50" />
+                            </MultiTrigger>
+                        </Style.Triggers>
                     </Style>
                 </Setter.Value>
             </Setter>
         </Style>
 
         <Style x:Key="AvitoTabCloseButtonStyle" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-            <Setter Property="Width" Value="26" />
-            <Setter Property="Height" Value="26" />
+            <Setter Property="Width" Value="22" />
+            <Setter Property="Height" Value="22" />
+            <Setter Property="MinWidth" Value="22" />
+            <Setter Property="MinHeight" Value="22" />
             <Setter Property="Padding" Value="0" />
-            <Setter Property="Margin" Value="4,0,2,0" />
-            <Setter Property="FontSize" Value="16" />
+            <Setter Property="Margin" Value="4,0,0,0" />
+            <Setter Property="FontSize" Value="13" />
             <Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Foreground" Value="{StaticResource SecondaryTextBrush}" />
             <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
             <Setter Property="ToolTip" Value="Закрыть вкладку" />
             <Setter Property="shell:WindowChrome.IsHitTestVisibleInChrome" Value="True" />
         </Style>
@@ -248,10 +276,14 @@
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
-                <ListBox Grid.Column="0"
+                <ListBox x:Name="TabsListBox"
+                         Grid.Column="0"
                          ItemsSource="{Binding Tabs}"
+                         PreviewMouseWheel="TabsListBox_OnPreviewMouseWheel"
                          SelectedItem="{Binding SelectedTab, Mode=TwoWay}"
+                         SelectionChanged="TabsListBox_OnSelectionChanged"
                          Style="{StaticResource AvitoTabListBoxStyle}">
                     <ListBox.ItemsPanel>
                         <ItemsPanelTemplate>
@@ -260,7 +292,9 @@
                     </ListBox.ItemsPanel>
                     <ListBox.ItemTemplate>
                         <DataTemplate DataType="{x:Type vm:AvitoAuthViewModel}">
-                            <Grid Height="34" MinWidth="120">
+                            <Grid Height="34"
+                                  MinWidth="72"
+                                  MaxWidth="{Binding DataContext.TabChromeMaxWidth, RelativeSource={RelativeSource AncestorType=Window}, FallbackValue=200}">
                                 <Viewbox Stretch="Fill">
                                     <Path SnapsToDevicePixels="True">
                                         <Path.Data>
@@ -302,13 +336,15 @@
                                         </Path.Style>
                                     </Path>
                                 </Viewbox>
-                                <Grid Margin="12,0,4,0">
+                                <!-- Правый отступ заметнее: у трапеции грань наклонена — текст и × не должны лезть в обводку. -->
+                                <Grid Margin="12,2,22,2"
+                                      VerticalAlignment="Stretch">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Grid.Column="0"
-                                               MaxWidth="220"
+                                               MaxWidth="{Binding DataContext.TabLabelMaxWidth, RelativeSource={RelativeSource AncestorType=Window}, FallbackValue=156}"
                                                VerticalAlignment="Center"
                                                FontSize="12"
                                                FontWeight="SemiBold"
@@ -329,6 +365,24 @@
                 </ListBox>
 
                 <StackPanel Grid.Column="1"
+                            VerticalAlignment="Center"
+                            Orientation="Horizontal"
+                            shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                    <Button x:Name="TabsScrollLeftButton"
+                            Click="TabsScrollLeft_OnClick"
+                            Content="&#xE76B;"
+                            Focusable="False"
+                            Style="{StaticResource TabStripScrollButtonStyle}"
+                            ToolTip="Листать вкладки влево" />
+                    <Button x:Name="TabsScrollRightButton"
+                            Click="TabsScrollRight_OnClick"
+                            Content="&#xE76C;"
+                            Focusable="False"
+                            Style="{StaticResource TabStripScrollButtonStyle}"
+                            ToolTip="Листать вкладки вправо" />
+                </StackPanel>
+
+                <StackPanel Grid.Column="2"
                             VerticalAlignment="Center"
                             Orientation="Horizontal"
                             shell:WindowChrome.IsHitTestVisibleInChrome="True">
