@@ -212,46 +212,84 @@
                                   IsEnabled="{Binding UseIosOs}" />
                     </Grid>
 
-                    <TextBlock Text="Сеть" Style="{StaticResource SectionTitleStyle}" />
-                    <TextBlock Margin="0,4,0,10"
-                               Style="{StaticResource SubtleTextStyle}"
-                               TextWrapping="Wrap"
-                               Text="Прокси для WebView2 (Chromium). Пустой адрес — без прокси. Для HTTPS через HTTP-прокси укажите http://хост:порт." />
+                    <TextBlock Text="Прокси" Style="{StaticResource SectionTitleStyle}" />
+                    <Border Height="4" Background="Transparent" />
 
-                    <Grid Margin="0,0,0,10">
+                    <Grid Margin="0,0,0,6">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="120" />
+                            <ColumnDefinition Width="180" />
                             <ColumnDefinition Width="10" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
-                        <TextBlock Grid.Column="0"
-                                   VerticalAlignment="Center"
-                                   Style="{StaticResource InfoLabelStyle}"
-                                   Text="Тип" />
-                        <ComboBox Grid.Column="2"
-                                  Style="{StaticResource FilterComboBoxStyle}"
-                                  ItemsSource="{Binding ProxyTypeOptions}"
-                                  SelectedItem="{Binding ProxyType, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                        <Grid Grid.Column="0">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <TextBlock Grid.Row="0"
+                                       Margin="0,0,0,2"
+                                       Style="{StaticResource InfoLabelStyle}"
+                                       Text="Тип" />
+                            <ComboBox Grid.Row="1"
+                                      Style="{StaticResource FilterComboBoxStyle}"
+                                      ItemsSource="{Binding ProxyTypeOptions}"
+                                      SelectedItem="{Binding ProxyType, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                        </Grid>
+                        <Grid Grid.Column="2">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <TextBlock Grid.Row="0"
+                                       Margin="0,0,0,2"
+                                       Style="{StaticResource InfoLabelStyle}"
+                                       Text="Адрес прокси" />
+                            <TextBox Grid.Row="1"
+                                     Style="{StaticResource SearchTextBoxStyle}"
+                                     Text="{Binding ProxyAddress, UpdateSourceTrigger=PropertyChanged}" />
+                        </Grid>
                     </Grid>
-                    <TextBlock Text="Адрес прокси" Style="{StaticResource InfoLabelStyle}" />
-                    <TextBox Margin="0,4,0,8"
-                             Style="{StaticResource SearchTextBoxStyle}"
-                             Text="{Binding ProxyAddress, UpdateSourceTrigger=PropertyChanged}" />
 
-                    <TextBlock Text="Логин прокси" Style="{StaticResource InfoLabelStyle}" />
-                    <TextBox Margin="0,4,0,8"
-                             Style="{StaticResource SearchTextBoxStyle}"
-                             Text="{Binding ProxyUsername, UpdateSourceTrigger=PropertyChanged}" />
-                    <TextBlock Text="Пароль прокси" Style="{StaticResource InfoLabelStyle}" />
-                    <TextBox Margin="0,4,0,8"
-                             Style="{StaticResource SearchTextBoxStyle}"
-                             Text="{Binding ProxyPassword, UpdateSourceTrigger=PropertyChanged}" />
+                    <Grid Margin="0,0,0,6">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="10" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid Grid.Column="0">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <TextBlock Grid.Row="0"
+                                       Margin="0,0,0,2"
+                                       Style="{StaticResource InfoLabelStyle}"
+                                       Text="Логин прокси" />
+                            <TextBox Grid.Row="1"
+                                     Style="{StaticResource SearchTextBoxStyle}"
+                                     Text="{Binding ProxyUsername, UpdateSourceTrigger=PropertyChanged}" />
+                        </Grid>
+                        <Grid Grid.Column="2">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <TextBlock Grid.Row="0"
+                                       Margin="0,0,0,2"
+                                       Style="{StaticResource InfoLabelStyle}"
+                                       Text="Пароль прокси" />
+                            <TextBox Grid.Row="1"
+                                     Style="{StaticResource SearchTextBoxStyle}"
+                                     Text="{Binding ProxyPassword, UpdateSourceTrigger=PropertyChanged}" />
+                        </Grid>
+                    </Grid>
+
                     <TextBlock Text="URL смены IP" Style="{StaticResource InfoLabelStyle}" />
-                    <TextBox Margin="0,4,0,8"
+                    <TextBox Margin="0,2,0,6"
                              Style="{StaticResource SearchTextBoxStyle}"
                              Text="{Binding ProxyRotationUrl, UpdateSourceTrigger=PropertyChanged}" />
 
-                    <StackPanel Margin="0,0,0,16" Orientation="Horizontal">
+                    <StackPanel Margin="0,0,0,10" Orientation="Horizontal">
                         <Button Command="{Binding CheckProxyCommand}"
                                 Content="Проверить прокси"
                                 Style="{StaticResource GhostButtonStyle}" />
@@ -259,6 +297,103 @@
                                 Content="Сменить IP"
                                 Style="{StaticResource GhostButtonStyle}" />
                     </StackPanel>
+
+                    <TextBlock Text="Шаблоны прокси" Style="{StaticResource InfoLabelStyle}" />
+                    <TextBlock Margin="0,2,0,8"
+                               Style="{StaticResource SubtleTextStyle}"
+                               Text="Быстрая подстановка в текущий прокси."
+                               TextWrapping="Wrap" />
+                    <Button Margin="0,0,0,10"
+                            HorizontalAlignment="Left"
+                            Command="{Binding AddProxyPresetCommand}"
+                            Content="Добавить шаблон"
+                            Style="{StaticResource GhostButtonStyle}" />
+                    <ItemsControl Margin="0,0,0,16" ItemsSource="{Binding ProxyPresets}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type vm:ProxyPresetRowViewModel}">
+                                <Border Margin="0,0,0,12"
+                                        Padding="12"
+                                        Background="#F8FAFC"
+                                        BorderBrush="{StaticResource BorderBrush}"
+                                        BorderThickness="1"
+                                        CornerRadius="10">
+                                    <StackPanel>
+                                        <Grid Margin="0,0,0,8">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBox Style="{StaticResource SearchTextBoxStyle}"
+                                                     Text="{Binding Label, UpdateSourceTrigger=PropertyChanged}" />
+                                            <StackPanel Grid.Column="1"
+                                                        Margin="8,0,0,0"
+                                                        Orientation="Horizontal">
+                                                <Button Margin="0,0,6,0"
+                                                        Command="{Binding DataContext.ApplyProxyPresetCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                        CommandParameter="{Binding}"
+                                                        Content="Применить"
+                                                        Style="{StaticResource GhostButtonStyle}" />
+                                                <Button Command="{Binding DataContext.RemoveProxyPresetCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                        CommandParameter="{Binding}"
+                                                        Content="Удалить"
+                                                        Style="{StaticResource GhostButtonStyle}" />
+                                            </StackPanel>
+                                        </Grid>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="120" />
+                                                <ColumnDefinition Width="10" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <ComboBox Grid.Column="0"
+                                                      Style="{StaticResource FilterComboBoxStyle}"
+                                                      ItemsSource="{Binding DataContext.ProxyTypeOptions, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                      SelectedItem="{Binding ProxyType, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                            <TextBox Grid.Column="2"
+                                                     Style="{StaticResource SearchTextBoxStyle}"
+                                                     Text="{Binding Address, UpdateSourceTrigger=PropertyChanged}" />
+                                        </Grid>
+                                        <Grid Margin="0,8,0,0">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="10" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <Grid Grid.Column="0">
+                                                <Grid.RowDefinitions>
+                                                    <RowDefinition Height="Auto" />
+                                                    <RowDefinition Height="Auto" />
+                                                </Grid.RowDefinitions>
+                                                <TextBlock Grid.Row="0"
+                                                           Margin="0,0,0,2"
+                                                           Style="{StaticResource InfoLabelStyle}"
+                                                           Text="Логин" />
+                                                <TextBox Grid.Row="1"
+                                                         Style="{StaticResource SearchTextBoxStyle}"
+                                                         Text="{Binding Username, UpdateSourceTrigger=PropertyChanged}" />
+                                            </Grid>
+                                            <Grid Grid.Column="2">
+                                                <Grid.RowDefinitions>
+                                                    <RowDefinition Height="Auto" />
+                                                    <RowDefinition Height="Auto" />
+                                                </Grid.RowDefinitions>
+                                                <TextBlock Grid.Row="0"
+                                                           Margin="0,0,0,2"
+                                                           Style="{StaticResource InfoLabelStyle}"
+                                                           Text="Пароль" />
+                                                <TextBox Grid.Row="1"
+                                                         Style="{StaticResource SearchTextBoxStyle}"
+                                                         Text="{Binding Password, UpdateSourceTrigger=PropertyChanged}" />
+                                            </Grid>
+                                        </Grid>
+                                        <TextBlock Margin="0,6,0,2" Style="{StaticResource InfoLabelStyle}" Text="URL смены IP" />
+                                        <TextBox Style="{StaticResource SearchTextBoxStyle}"
+                                                 Text="{Binding RotationUrl, UpdateSourceTrigger=PropertyChanged}" />
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
 
                     <TextBlock Text="Аргументы запуска Chromium" Style="{StaticResource SectionTitleStyle}" />
                     <TextBlock Margin="0,4,0,8"
@@ -467,75 +602,6 @@
                                  VerticalScrollBarVisibility="Auto" />
                     </DockPanel>
 
-                    <TextBlock Text="Сохранённые прокси" Style="{StaticResource SectionTitleStyle}" />
-                    <TextBlock Margin="0,4,0,8"
-                               Style="{StaticResource SubtleTextStyle}"
-                               Text="Локальные пресеты для быстрого заполнения полей прокси."
-                               TextWrapping="Wrap" />
-                    <Button Margin="0,0,0,10"
-                            HorizontalAlignment="Left"
-                            Command="{Binding AddProxyPresetCommand}"
-                            Content="Добавить пресет"
-                            Style="{StaticResource GhostButtonStyle}" />
-                    <ItemsControl ItemsSource="{Binding ProxyPresets}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate DataType="{x:Type vm:ProxyPresetRowViewModel}">
-                                <Border Margin="0,0,0,12"
-                                        Padding="12"
-                                        Background="#F8FAFC"
-                                        BorderBrush="{StaticResource BorderBrush}"
-                                        BorderThickness="1"
-                                        CornerRadius="10">
-                                    <StackPanel>
-                                        <Grid Margin="0,0,0,8">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="Auto" />
-                                            </Grid.ColumnDefinitions>
-                                            <TextBox Style="{StaticResource SearchTextBoxStyle}"
-                                                     Text="{Binding Label, UpdateSourceTrigger=PropertyChanged}" />
-                                            <StackPanel Grid.Column="1"
-                                                        Margin="8,0,0,0"
-                                                        Orientation="Horizontal">
-                                                <Button Margin="0,0,6,0"
-                                                        Command="{Binding DataContext.ApplyProxyPresetCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                        CommandParameter="{Binding}"
-                                                        Content="Применить"
-                                                        Style="{StaticResource GhostButtonStyle}" />
-                                                <Button Command="{Binding DataContext.RemoveProxyPresetCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                        CommandParameter="{Binding}"
-                                                        Content="Удалить"
-                                                        Style="{StaticResource GhostButtonStyle}" />
-                                            </StackPanel>
-                                        </Grid>
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="120" />
-                                                <ColumnDefinition Width="10" />
-                                                <ColumnDefinition Width="*" />
-                                            </Grid.ColumnDefinitions>
-                                            <ComboBox Grid.Column="0"
-                                                      Style="{StaticResource FilterComboBoxStyle}"
-                                                      ItemsSource="{Binding DataContext.ProxyTypeOptions, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                      SelectedItem="{Binding ProxyType, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                                            <TextBox Grid.Column="2"
-                                                     Style="{StaticResource SearchTextBoxStyle}"
-                                                     Text="{Binding Address, UpdateSourceTrigger=PropertyChanged}" />
-                                        </Grid>
-                                        <TextBlock Margin="0,8,0,2" Style="{StaticResource InfoLabelStyle}" Text="Логин / пароль / URL смены IP" />
-                                        <TextBox Style="{StaticResource SearchTextBoxStyle}"
-                                                 Text="{Binding Username, UpdateSourceTrigger=PropertyChanged}" />
-                                        <TextBox Margin="0,6,0,0"
-                                                 Style="{StaticResource SearchTextBoxStyle}"
-                                                 Text="{Binding Password, UpdateSourceTrigger=PropertyChanged}" />
-                                        <TextBox Margin="0,6,0,0"
-                                                 Style="{StaticResource SearchTextBoxStyle}"
-                                                 Text="{Binding RotationUrl, UpdateSourceTrigger=PropertyChanged}" />
-                                    </StackPanel>
-                                </Border>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
                 </StackPanel>
             </ScrollViewer>
         </Border>

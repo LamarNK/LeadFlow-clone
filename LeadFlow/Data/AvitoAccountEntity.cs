@@ -26,6 +26,7 @@ public sealed class AvitoAccountEntity
     public string IosVersion { get; set; } = "All iOS";
     public string? AssignedUserAgent { get; set; }
     public string CookiesJson { get; set; } = string.Empty;
+    public bool ImportCookiesOnNextStart { get; set; }
     public string Notes { get; set; } = string.Empty;
     public string? ProxyAddress { get; set; }
     public string ProxyType { get; set; } = "http";

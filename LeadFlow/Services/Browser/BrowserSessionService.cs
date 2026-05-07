@@ -1,8 +1,11 @@
+using LeadFlow.Data;
 using LeadFlow.Models;
 
 namespace LeadFlow.Services.Browser;
 
-public sealed class BrowserSessionService(IBrowserProfileService profileService) : IBrowserSessionService
+public sealed class BrowserSessionService(
+    IBrowserProfileService profileService,
+    AppRepository repository) : IBrowserSessionService
 {
     public Task<BrowserAccountSession> CreateSessionAsync(AvitoAccount account, CancellationToken cancellationToken)
     {
@@ -12,7 +15,8 @@ public sealed class BrowserSessionService(IBrowserProfileService profileService)
         {
             Account = account,
             ProfilePath = profile.ProfilePath,
-            CurrentUrl = account.AvitoResponsesUrl
+            CurrentUrl = account.AvitoResponsesUrl,
+            PersistAccountAsync = ct => repository.SaveAccountAsync(account, ct)
         });
     }
 }

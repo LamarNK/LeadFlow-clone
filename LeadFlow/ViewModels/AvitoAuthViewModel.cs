@@ -10,6 +10,7 @@ namespace LeadFlow.ViewModels;
 
 public partial class AvitoAuthViewModel(
     IBrowserSessionService browserSessionService,
+    IProfileCookiesService profileCookiesService,
     IAvitoPageReaderService pageReaderService,
     ISettingsService settingsService,
     AppRepository repository) : ObservableObject
@@ -203,6 +204,8 @@ public partial class AvitoAuthViewModel(
             }
 
             _account.Status = AvitoAccountStatus.Authorized;
+            _account.CookiesJson = await profileCookiesService.ReadCurrentProfileCookiesAsJsonAsync(_account, cancellationToken);
+            _account.ImportCookiesOnNextStart = false;
             await PersistAccountAsync(settings, cancellationToken);
             _authorizationPersisted = true;
             AuthorizationStatus = $"Авторизация успешна. Профиль сохранён: {Session.ProfilePath}";
@@ -248,6 +251,8 @@ public partial class AvitoAuthViewModel(
             existing.LastAuthCheckAt = _account.LastAuthCheckAt;
             existing.LastMonitoringAt = _account.LastMonitoringAt;
             existing.LastErrorMessage = _account.LastErrorMessage;
+            existing.CookiesJson = _account.CookiesJson;
+            existing.ImportCookiesOnNextStart = _account.ImportCookiesOnNextStart;
         }
 
         await repository.SaveAccountAsync(_account, cancellationToken);

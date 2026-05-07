@@ -97,6 +97,7 @@ public partial class AccountSettingsViewModel(
     [ObservableProperty] private string userAgentDevice = string.IsNullOrWhiteSpace(account.UserAgentDevice) ? "Все" : account.UserAgentDevice;
     [ObservableProperty] private string? assignedUserAgent = account.AssignedUserAgent;
     [ObservableProperty] private string cookiesJson = account.CookiesJson;
+    [ObservableProperty] private bool importCookiesOnNextStart = account.ImportCookiesOnNextStart;
     [ObservableProperty] private string notes = account.Notes;
     [ObservableProperty] private string? proxyAddress = string.IsNullOrWhiteSpace(account.ProxyAddress) ? null : account.ProxyAddress.Trim();
     [ObservableProperty] private string proxyType = NormalizeProxyType(account.ProxyType);
@@ -126,7 +127,6 @@ public partial class AccountSettingsViewModel(
     partial void OnDisplayNameChanged(string value) => OnPropertyChanged(nameof(DisplayNameCounter));
 
     partial void OnNotesChanged(string value) => OnPropertyChanged(nameof(NotesCounter));
-
     partial void OnScreenResolutionChanged(string value) => _fpOverview.ScreenFollowsUa = false;
 
     public string OverviewLanguageText =>
@@ -497,6 +497,7 @@ public partial class AccountSettingsViewModel(
         {
             CookiesJson = _account.CookiesJson;
         }
+        ImportCookiesOnNextStart = _account.ImportCookiesOnNextStart;
 
         NormalizeBrowserVersionForCurrentBrowser();
         RefreshFingerprintOverview();
@@ -817,7 +818,11 @@ public partial class AccountSettingsViewModel(
         _account.IosVersion = IosVersion;
         _account.UserAgentDevice = UserAgentDevice;
         _account.AssignedUserAgent = AssignedUserAgent;
+        var previousCookiesJson = _account.CookiesJson ?? string.Empty;
+        var nextCookiesJson = CookiesJson ?? string.Empty;
+        var cookiesJsonChanged = !string.Equals(previousCookiesJson, nextCookiesJson, StringComparison.Ordinal);
         _account.CookiesJson = CookiesJson;
+        _account.ImportCookiesOnNextStart = cookiesJsonChanged && !string.IsNullOrWhiteSpace(nextCookiesJson);
         _account.Notes = notes;
         _account.ProxyAddress = string.IsNullOrWhiteSpace(ProxyAddress) ? null : ProxyAddress.Trim();
         _account.ProxyType = NormalizeProxyType(ProxyType);

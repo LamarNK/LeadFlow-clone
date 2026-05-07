@@ -32,6 +32,7 @@ public sealed partial class AvitoAccount : ObservableObject
     [ObservableProperty] private bool useIosOs;
     [ObservableProperty] private string iosVersion = "All iOS";
     [ObservableProperty] private string cookiesJson = string.Empty;
+    [ObservableProperty] private bool importCookiesOnNextStart;
     [ObservableProperty] private string notes = string.Empty;
     [ObservableProperty] private string? screenResolution = "1920x1080";
     [ObservableProperty] private string? timezone = "Europe/Moscow";

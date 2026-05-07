@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using LeadFlow.Models;
 
 namespace LeadFlow.Services.AntiDetect;
@@ -51,16 +52,21 @@ public static class FingerprintGenerator
     /// </summary>
     public static string GenerateUserAgent(string webView2Version)
     {
-        // Парсим версию WebView2 (формат: "125.0.2535.92")
-        var versionParts = webView2Version?.Split('.') ?? new[] { "125", "0", "0", "0" };
-        var major = versionParts.Length > 0 ? versionParts[0] : "125";
-        var minor = versionParts.Length > 1 ? versionParts[1] : "0";
-        
-        // Добавляем небольшой рандом в patch/build версию для вариативности
-        var patch = RandomNumber(0, 99).ToString().PadLeft(2, '0');
-        var build = RandomNumber(0, 9).ToString();
-        
-        return $"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{major}.{minor}.{patch}.{build} Safari/537.36";
+        var cleanVersion = (webView2Version ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(cleanVersion))
+        {
+            cleanVersion = "125.0.0.0";
+        }
+
+        // GetAvailableBrowserVersionString может возвращать "xxx xxx"; берём первую часть с версией.
+        var versionToken = cleanVersion.Split(' ', StringSplitOptions.RemoveEmptyEntries)[0];
+        var versionParts = versionToken.Split('.');
+        if (versionParts.Length < 4)
+        {
+            versionToken = "125.0.0.0";
+        }
+
+        return $"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{versionToken} Safari/537.36";
     }
 
     /// <summary>
@@ -110,6 +116,18 @@ public static class FingerprintGenerator
         if (!string.IsNullOrWhiteSpace(account.Timezone) && !account.Timezone.Contains('/'))
             return false;
 
+        if (!IsLanguageSetValid(account.Languages))
+            return false;
+
+        if (!IsPlatformConsistentWithUserAgent(account.AssignedUserAgent, account.NavigatorPlatform))
+            return false;
+
+        var overview = FingerprintOverviewState.Parse(account.FingerprintOverviewJson);
+        if (overview.DeviceMemoryGb is < 1 or > 32)
+            return false;
+        if (overview.HardwareConcurrency is < 1 or > 64)
+            return false;
+
         return true;
     }
 
@@ -128,4 +146,35 @@ public static class FingerprintGenerator
 
     private static int RandomNumber(int min, int max) => _random.Next(min, max + 1);
     private static T RandomChoice<T>(T[] options) => options[_random.Next(options.Length)];
+
+    private static bool IsLanguageSetValid(string? languages)
+    {
+        if (string.IsNullOrWhiteSpace(languages))
+            return false;
+
+        var parts = languages.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length == 0)
+            return false;
+
+        return parts.All(static p => p.Length is >= 2 and <= 15);
+    }
+
+    private static bool IsPlatformConsistentWithUserAgent(string userAgent, string? platform)
+    {
+        if (string.IsNullOrWhiteSpace(platform))
+            return true;
+
+        if (userAgent.Contains("Windows", StringComparison.OrdinalIgnoreCase))
+            return platform.Equals("Win32", StringComparison.OrdinalIgnoreCase);
+        if (userAgent.Contains("Mac OS X", StringComparison.OrdinalIgnoreCase))
+            return platform.Equals("MacIntel", StringComparison.OrdinalIgnoreCase);
+        if (userAgent.Contains("Android", StringComparison.OrdinalIgnoreCase))
+            return platform.StartsWith("Linux", StringComparison.OrdinalIgnoreCase);
+        if (userAgent.Contains("iPhone", StringComparison.OrdinalIgnoreCase) || userAgent.Contains("iPad", StringComparison.OrdinalIgnoreCase))
+            return platform.Equals("iPhone", StringComparison.OrdinalIgnoreCase);
+        if (userAgent.Contains("Linux", StringComparison.OrdinalIgnoreCase))
+            return platform.StartsWith("Linux", StringComparison.OrdinalIgnoreCase);
+
+        return true;
+    }
 }

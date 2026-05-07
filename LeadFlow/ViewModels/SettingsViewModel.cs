@@ -365,6 +365,7 @@ public partial class SettingsViewModel(
                 account.IosVersion,
                 account.AssignedUserAgent,
                 account.CookiesJson,
+                account.ImportCookiesOnNextStart,
                 account.Notes,
                 account.ProxyAddress,
                 account.ProxyType,

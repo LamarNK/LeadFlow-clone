@@ -675,6 +675,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         IosVersion = model.IosVersion,
         AssignedUserAgent = model.AssignedUserAgent,
         CookiesJson = model.CookiesJson,
+        ImportCookiesOnNextStart = model.ImportCookiesOnNextStart,
         Notes = model.Notes,
         ProxyAddress = model.ProxyAddress,
         ProxyType = string.IsNullOrWhiteSpace(model.ProxyType) ? "http" : model.ProxyType,
@@ -728,6 +729,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         IosVersion = entity.IosVersion,
         AssignedUserAgent = entity.AssignedUserAgent,
         CookiesJson = entity.CookiesJson,
+        ImportCookiesOnNextStart = entity.ImportCookiesOnNextStart,
         Notes = entity.Notes,
         ProxyAddress = entity.ProxyAddress,
         ProxyType = string.IsNullOrWhiteSpace(entity.ProxyType) ? "http" : entity.ProxyType,
@@ -780,6 +782,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         target.IosVersion = source.IosVersion;
         target.AssignedUserAgent = source.AssignedUserAgent;
         target.CookiesJson = source.CookiesJson;
+        target.ImportCookiesOnNextStart = source.ImportCookiesOnNextStart;
         target.Notes = source.Notes;
         target.ProxyAddress = source.ProxyAddress;
         target.ProxyType = string.IsNullOrWhiteSpace(source.ProxyType) ? "http" : source.ProxyType;
@@ -914,6 +917,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
             ["IosVersion"] = "ALTER TABLE AvitoAccounts ADD COLUMN IosVersion TEXT NOT NULL DEFAULT 'All iOS';",
             ["AssignedUserAgent"] = "ALTER TABLE AvitoAccounts ADD COLUMN AssignedUserAgent TEXT NULL;",
             ["CookiesJson"] = "ALTER TABLE AvitoAccounts ADD COLUMN CookiesJson TEXT NOT NULL DEFAULT '';",
+            ["ImportCookiesOnNextStart"] = "ALTER TABLE AvitoAccounts ADD COLUMN ImportCookiesOnNextStart INTEGER NOT NULL DEFAULT 0;",
             ["Notes"] = "ALTER TABLE AvitoAccounts ADD COLUMN Notes TEXT NOT NULL DEFAULT '';",
             ["ProxyAddress"] = "ALTER TABLE AvitoAccounts ADD COLUMN ProxyAddress TEXT NULL;",
             ["ProxyType"] = "ALTER TABLE AvitoAccounts ADD COLUMN ProxyType TEXT NOT NULL DEFAULT 'http';",

@@ -9,11 +9,18 @@ namespace LeadFlow.Services.Browser;
 /// </summary>
 internal static class WebViewSessionCookies
 {
-    public static Task ApplyFromStoredCookiesJsonAsync(CoreWebView2 core, string? cookiesJson, CancellationToken cancellationToken)
+    public sealed record ApplyCookiesReport(
+        int TotalEntries,
+        int Applied,
+        int SkippedInvalid,
+        int SkippedErrors,
+        string? Summary);
+
+    public static Task<ApplyCookiesReport> ApplyFromStoredCookiesJsonAsync(CoreWebView2 core, string? cookiesJson, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(cookiesJson))
         {
-            return Task.CompletedTask;
+            return Task.FromResult(new ApplyCookiesReport(0, 0, 0, 0, "Cookies JSON пустой - импорт пропущен."));
         }
 
         JsonDocument doc;
@@ -23,45 +30,56 @@ internal static class WebViewSessionCookies
         }
         catch (JsonException)
         {
-            return Task.CompletedTask;
+            return Task.FromResult(new ApplyCookiesReport(0, 0, 0, 0, "Cookies JSON невалидный - импорт пропущен."));
         }
 
         using (doc)
         {
             if (doc.RootElement.ValueKind != JsonValueKind.Array)
             {
-                return Task.CompletedTask;
+                return Task.FromResult(new ApplyCookiesReport(0, 0, 0, 0, "Ожидался JSON-массив cookies - импорт пропущен."));
             }
 
             var manager = core.CookieManager;
+            var total = 0;
+            var applied = 0;
+            var skippedInvalid = 0;
+            var skippedErrors = 0;
+
             foreach (var el in doc.RootElement.EnumerateArray())
             {
+                total++;
                 cancellationToken.ThrowIfCancellationRequested();
                 if (el.ValueKind != JsonValueKind.Object)
                 {
+                    skippedInvalid++;
                     continue;
                 }
 
                 if (!el.TryGetProperty("name", out var nameProp) || nameProp.ValueKind != JsonValueKind.String)
                 {
+                    skippedInvalid++;
                     continue;
                 }
 
                 var name = nameProp.GetString();
                 if (string.IsNullOrEmpty(name))
                 {
+                    skippedInvalid++;
                     continue;
                 }
 
                 var value = ReadJsonValueAsString(el, "value");
                 if (!el.TryGetProperty("domain", out var domainProp) || domainProp.ValueKind != JsonValueKind.String)
                 {
+                    skippedInvalid++;
                     continue;
                 }
 
                 var domain = domainProp.GetString()?.Trim();
                 if (string.IsNullOrEmpty(domain))
                 {
+                    skippedInvalid++;
                     continue;
                 }
 
@@ -82,6 +100,7 @@ internal static class WebViewSessionCookies
                 }
                 catch (ArgumentException)
                 {
+                    skippedErrors++;
                     continue;
                 }
 
@@ -125,19 +144,23 @@ internal static class WebViewSessionCookies
                 try
                 {
                     manager.AddOrUpdateCookie(cookie);
+                    applied++;
                 }
                 catch (ArgumentException)
                 {
                     // неверная комбинация domain/path/samesite для движка
+                    skippedErrors++;
                 }
                 catch (InvalidOperationException)
                 {
                     // сессия / cookie manager недоступен
+                    skippedErrors++;
                 }
             }
-        }
 
-        return Task.CompletedTask;
+            var summary = $"Импорт cookies: всего={total}, применено={applied}, пропущено невалидных={skippedInvalid}, ошибок={skippedErrors}.";
+            return Task.FromResult(new ApplyCookiesReport(total, applied, skippedInvalid, skippedErrors, summary));
+        }
     }
 
 
