@@ -22,7 +22,7 @@ public sealed partial class AvitoAccount : ObservableObject
     [ObservableProperty] private string browserVersion = "146";
     [ObservableProperty] private string userAgentDevice = "Все";
     [ObservableProperty] private bool useWindowsOs = true;
-    [ObservableProperty] private string windowsVersion = "Windows 10";
+    [ObservableProperty] private string windowsVersion = string.Empty;
     [ObservableProperty] private bool useMacOs;
     [ObservableProperty] private string macOsVersion = "All macOS";
     [ObservableProperty] private bool useLinuxOs;
@@ -34,10 +34,10 @@ public sealed partial class AvitoAccount : ObservableObject
     [ObservableProperty] private string cookiesJson = string.Empty;
     [ObservableProperty] private bool importCookiesOnNextStart;
     [ObservableProperty] private string notes = string.Empty;
-    [ObservableProperty] private string? screenResolution = "1920x1080";
+    [ObservableProperty] private string? screenResolution;
     [ObservableProperty] private bool useIpTimezone = true;
-    [ObservableProperty] private string? timezone = "Europe/Moscow";
-    [ObservableProperty] private string? languages = "ru-RU,ru,en-US,en";
+    [ObservableProperty] private string? timezone;
+    [ObservableProperty] private string? languages;
     [ObservableProperty] private string? proxyAddress;
     [ObservableProperty] private string proxyType = "http";
     [ObservableProperty] private string? proxyUsername;

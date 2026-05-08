@@ -6,6 +6,7 @@ using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using LeadFlow.Models;
+using LeadFlow.Services.AntiDetect;
 using LeadFlow.Services.Browser;
 
 namespace LeadFlow.ViewModels;
@@ -219,10 +220,16 @@ public partial class AccountSettingsViewModel(
     [ObservableProperty] private string proxyHost = ParseProxyAddressForUi(string.IsNullOrWhiteSpace(account.ProxyAddress) ? null : account.ProxyAddress.Trim()).Host;
     [ObservableProperty] private string proxyPort = ParseProxyAddressForUi(string.IsNullOrWhiteSpace(account.ProxyAddress) ? null : account.ProxyAddress.Trim()).Port;
     [ObservableProperty] private string proxyType = NormalizeProxyType(account.ProxyType);
-    [ObservableProperty] private string screenResolution = string.IsNullOrWhiteSpace(account.ScreenResolution) ? "1920x1080" : account.ScreenResolution!;
+    [ObservableProperty] private string screenResolution = string.IsNullOrWhiteSpace(account.ScreenResolution)
+        ? HostFingerprintProvider.GetPrimaryScreenResolution()
+        : account.ScreenResolution!;
     [ObservableProperty] private bool useIpTimezone = account.UseIpTimezone;
-    [ObservableProperty] private string timezone = string.IsNullOrWhiteSpace(account.Timezone) ? "Europe/Moscow" : account.Timezone!;
-    [ObservableProperty] private string languages = string.IsNullOrWhiteSpace(account.Languages) ? "ru-RU,ru,en-US,en" : account.Languages!;
+    [ObservableProperty] private string timezone = string.IsNullOrWhiteSpace(account.Timezone)
+        ? HostFingerprintProvider.GetLocalIanaTimeZoneId()
+        : account.Timezone!;
+    [ObservableProperty] private string languages = string.IsNullOrWhiteSpace(account.Languages)
+        ? HostFingerprintProvider.GetAcceptLanguageStyleList()
+        : account.Languages!;
     [ObservableProperty] private string? proxyUsername = account.ProxyUsername;
     [ObservableProperty] private string? proxyPassword = account.ProxyPassword;
     [ObservableProperty] private string? proxyRotationUrl = account.ProxyRotationUrl;

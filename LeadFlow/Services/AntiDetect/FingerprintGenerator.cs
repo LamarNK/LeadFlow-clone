@@ -10,42 +10,6 @@ namespace LeadFlow.Services.AntiDetect;
 /// </summary>
 public static class FingerprintGenerator
 {
-    private static readonly Random _random = new();
-    
-    // Пул реалистичных разрешений экранов (популярные в РФ)
-    private static readonly string[] _resolutions = 
-    {
-        "1920x1080", "1366x768", "1440x900", "1536x864", 
-        "1600x900", "1280x720", "2560x1440"
-    };
-
-    // Пул часовых поясов РФ (IANA), без стран соседей
-    private static readonly string[] _timezones =
-    {
-        "Europe/Kaliningrad",
-        "Europe/Moscow",
-        "Europe/Samara",
-        "Asia/Yekaterinburg",
-        "Asia/Omsk",
-        "Asia/Novosibirsk",
-        "Asia/Krasnoyarsk",
-        "Asia/Irkutsk",
-        "Asia/Yakutsk",
-        "Asia/Vladivostok",
-        "Asia/Magadan",
-        "Asia/Kamchatka",
-        "Asia/Anadyr"
-    };
-
-    // Пул языковых настроек
-    private static readonly string[] _languages =
-    {
-        "ru-RU,ru,en-US,en",
-        "ru,en-US,en",
-        "ru-RU,ru,en",
-        "en-US,en,ru-RU,ru"
-    };
-
     /// <summary>
     /// Генерирует реалистичный User-Agent на основе версии WebView2.
     /// НЕ используйте случайные версии браузера — это детектируется!
@@ -70,25 +34,25 @@ public static class FingerprintGenerator
     }
 
     /// <summary>
-    /// Генерирует полный набор фингерпринтов для нового аккаунта.
-    /// Вызывайте один раз при создании аккаунта и сохраняйте в БД.
+    /// Генерирует начальный отпечаток для нового аккаунта по параметрам текущего ПК (без рандомизации).
+    /// Вызывайте один раз при первом обращении к профилю и сохраняйте в БД.
     /// </summary>
     public static AccountFingerprint GenerateFingerprint(string webView2Version)
     {
-        var resolution = _resolutions[_random.Next(_resolutions.Length)];
+        var resolution = HostFingerprintProvider.GetPrimaryScreenResolution();
         var (viewportW, viewportH) = GetViewportDimensions(resolution);
-        
+
         return new AccountFingerprint
         {
             UserAgent = GenerateUserAgent(webView2Version),
             ScreenResolution = resolution,
-            Timezone = _timezones[_random.Next(_timezones.Length)],
-            Languages = _languages[_random.Next(_languages.Length)],
+            Timezone = HostFingerprintProvider.GetLocalIanaTimeZoneId(),
+            Languages = HostFingerprintProvider.GetAcceptLanguageStyleList(),
             ViewportWidth = viewportW,
             ViewportHeight = viewportH,
             ColorDepth = 24,
-            DeviceMemory = RandomChoice(new[] { 4, 8, 16 }),
-            HardwareConcurrency = RandomChoice(new[] { 4, 6, 8, 12 })
+            DeviceMemory = null,
+            HardwareConcurrency = null
         };
     }
 
@@ -112,9 +76,15 @@ public static class FingerprintGenerator
                 return false;
         }
 
-        // Проверяем формат таймзоны
-        if (!string.IsNullOrWhiteSpace(account.Timezone) && !account.Timezone.Contains('/'))
-            return false;
+        // Проверяем формат таймзоны (IANA или UTC)
+        if (!string.IsNullOrWhiteSpace(account.Timezone))
+        {
+            var tz = account.Timezone.Trim();
+            if (!tz.Contains('/') && !tz.Equals("UTC", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+        }
 
         if (!IsLanguageSetValid(account.Languages))
             return false;
@@ -143,9 +113,6 @@ public static class FingerprintGenerator
 
         return (Math.Max(800, w - 20), Math.Max(600, h - 100));
     }
-
-    private static int RandomNumber(int min, int max) => _random.Next(min, max + 1);
-    private static T RandomChoice<T>(T[] options) => options[_random.Next(options.Length)];
 
     private static bool IsLanguageSetValid(string? languages)
     {

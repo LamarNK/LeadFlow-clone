@@ -25,7 +25,7 @@ public sealed class BrowserProfileService : IBrowserProfileService
 
         Directory.CreateDirectory(path);
 
-        // === АНТИ-ДЕТЕКТ: Генерация фингерпринта при первом создании ===
+        // Первичный отпечаток: разрешение, языки, часовой пояс и ОС — с текущего ПК.
         EnsureFingerprintGenerated(account);
 
         return new BrowserProfileInfo
@@ -52,9 +52,9 @@ public sealed class BrowserProfileService : IBrowserProfileService
         // Получаем версию WebView2 для генерации совместимого UA
         var webView2Version = GetWebView2Version();
         
-        // Генерируем и применяем фингерпринт
         var fingerprint = FingerprintGenerator.GenerateFingerprint(webView2Version);
         fingerprint.ApplyToAccount(account);
+        HostFingerprintProvider.ApplyHostOsFlagsToAccount(account);
         
         // Сохраняем изменения, если есть доступ к репозиторию/сервису настроек
         // (в реальном приложении здесь должен быть вызов репозитория)
