@@ -68,7 +68,7 @@
                 <TextBlock Margin="0,4,0,0"
                            Style="{StaticResource SubtleTextStyle}"
                            TextWrapping="Wrap"
-                           Text="Добавляйте аккаунты, при необходимости авторизуйтесь на Avito и включайте мониторинг; список сохраняется кнопкой внизу окна." />
+                           Text="Добавляйте аккаунты, при необходимости авторизуйтесь на Avito и включайте мониторинг; изменения сохраняются автоматически." />
             </StackPanel>
         </Border>
 
@@ -337,7 +337,6 @@
         </Grid>
 
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,0">
-            <Button Content="Сохранить аккаунты" Command="{Binding SaveCommand}" />
             <Button Content="Закрыть" Background="#E2E8F0" Foreground="{StaticResource TextBrush}" IsCancel="True" />
         </StackPanel>
     </Grid>

@@ -38,6 +38,7 @@ public sealed class AvitoProfileAccountSnapshot
     public bool ImportCookiesOnNextStart { get; set; }
     public string Notes { get; set; } = "";
     public string? ScreenResolution { get; set; }
+    public bool UseIpTimezone { get; set; }
     public string? Timezone { get; set; }
     public string? Languages { get; set; }
     public string? ProxyAddress { get; set; }
@@ -80,6 +81,7 @@ public sealed class AvitoProfileAccountSnapshot
             ImportCookiesOnNextStart = a.ImportCookiesOnNextStart,
             Notes = a.Notes,
             ScreenResolution = a.ScreenResolution,
+            UseIpTimezone = a.UseIpTimezone,
             Timezone = a.Timezone,
             Languages = a.Languages,
             ProxyAddress = a.ProxyAddress,
@@ -126,6 +128,7 @@ public sealed class AvitoProfileAccountSnapshot
         target.ImportCookiesOnNextStart = ImportCookiesOnNextStart;
         target.Notes = Notes;
         target.ScreenResolution = ScreenResolution;
+        target.UseIpTimezone = UseIpTimezone;
         target.Timezone = Timezone;
         target.Languages = Languages;
         target.ProxyAddress = ProxyAddress;

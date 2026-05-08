@@ -46,12 +46,14 @@ public sealed class AccountFingerprint
     /// <summary>
     /// Объём памяти устройства в ГБ (4, 8, 16, 32)
     /// </summary>
-    public int DeviceMemory { get; set; } = 8;
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? DeviceMemory { get; set; } = 8;
 
     /// <summary>
     /// Количество логических процессоров
     /// </summary>
-    public int HardwareConcurrency { get; set; } = 8;
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? HardwareConcurrency { get; set; } = 8;
 
     /// <summary><see cref="Navigator.platform"/></summary>
     public string? NavigatorPlatform { get; set; }
@@ -74,6 +76,51 @@ public sealed class AccountFingerprint
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? ClientRectsNoiseSeedHex { get; set; }
+
+    /// <summary>Низкоэнтропийный <c>navigator.userAgentData.platform</c> (например Windows, macOS).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ChPlatform { get; set; }
+
+    /// <summary>Версия платформы для CH / getHighEntropyValues (например 10.0.0 vs 15.0.0 для Win10 и Win11).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ChPlatformVersion { get; set; }
+
+    /// <summary>Низкоэнтропийный Client Hint mobile: <c>?0</c> / <c>?1</c> для согласования с <see cref="ChPlatform"/>.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ChMobile { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? UiLanguage { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? GeolocationMode { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? GeolocationLatitude { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? GeolocationLongitude { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? GeolocationAccuracyMeters { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? MediaDevicesMode { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? MediaLabel { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? ClientRectsNoise { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? SpeechVoicesMode { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? SpeechLabel { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? WebGpuMode { get; set; }
 
     /// <summary>
     /// Применяет параметры фингерпринта к аккаунту

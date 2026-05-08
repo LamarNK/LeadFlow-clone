@@ -695,6 +695,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         ProxyPresetsJson = string.IsNullOrWhiteSpace(model.ProxyPresetsJson) ? "[]" : model.ProxyPresetsJson,
         FingerprintOverviewJson = string.IsNullOrWhiteSpace(model.FingerprintOverviewJson) ? "{}" : model.FingerprintOverviewJson,
         ScreenResolution = model.ScreenResolution,
+        UseIpTimezone = model.UseIpTimezone,
         Timezone = model.Timezone,
         Languages = model.Languages,
         ActiveAdsCount = model.ActiveAdsCount,
@@ -749,6 +750,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         ProxyPresetsJson = string.IsNullOrWhiteSpace(entity.ProxyPresetsJson) ? "[]" : entity.ProxyPresetsJson,
         FingerprintOverviewJson = string.IsNullOrWhiteSpace(entity.FingerprintOverviewJson) ? "{}" : entity.FingerprintOverviewJson,
         ScreenResolution = string.IsNullOrWhiteSpace(entity.ScreenResolution) ? "1920x1080" : entity.ScreenResolution,
+        UseIpTimezone = entity.UseIpTimezone,
         Timezone = string.IsNullOrWhiteSpace(entity.Timezone) ? "Europe/Moscow" : entity.Timezone,
         Languages = string.IsNullOrWhiteSpace(entity.Languages) ? "ru-RU,ru,en-US,en" : entity.Languages,
         ActiveAdsCount = entity.ActiveAdsCount,
@@ -802,6 +804,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         target.ProxyPresetsJson = string.IsNullOrWhiteSpace(source.ProxyPresetsJson) ? "[]" : source.ProxyPresetsJson;
         target.FingerprintOverviewJson = string.IsNullOrWhiteSpace(source.FingerprintOverviewJson) ? "{}" : source.FingerprintOverviewJson;
         target.ScreenResolution = source.ScreenResolution;
+        target.UseIpTimezone = source.UseIpTimezone;
         target.Timezone = source.Timezone;
         target.Languages = source.Languages;
         target.ActiveAdsCount = source.ActiveAdsCount;
@@ -826,6 +829,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         PhoneNormalized = model.PhoneNormalized,
         City = model.City,
         Vacancy = model.Vacancy,
+        SourceUrl = model.VacancyUrl,
         VacancyUrl = model.VacancyUrl,
         MessengerUrl = model.MessengerUrl,
         Status = model.Status.ToString(),
@@ -854,7 +858,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         PhoneNormalized = entity.PhoneNormalized,
         City = entity.City,
         Vacancy = entity.Vacancy,
-        VacancyUrl = entity.VacancyUrl,
+        VacancyUrl = string.IsNullOrWhiteSpace(entity.VacancyUrl) ? entity.SourceUrl : entity.VacancyUrl,
         MessengerUrl = entity.MessengerUrl,
         Status = Enum.TryParse<ResponseStatus>(entity.Status, out var status) ? status : ResponseStatus.New,
         BitrixEntityType = entity.BitrixEntityType,
@@ -881,6 +885,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         target.PhoneNormalized = source.PhoneNormalized;
         target.City = source.City;
         target.Vacancy = source.Vacancy;
+        target.SourceUrl = source.VacancyUrl;
         target.VacancyUrl = source.VacancyUrl;
         target.MessengerUrl = source.MessengerUrl;
         target.Status = source.Status.ToString();
@@ -922,6 +927,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
             ["ProxyAddress"] = "ALTER TABLE AvitoAccounts ADD COLUMN ProxyAddress TEXT NULL;",
             ["ProxyType"] = "ALTER TABLE AvitoAccounts ADD COLUMN ProxyType TEXT NOT NULL DEFAULT 'http';",
             ["ScreenResolution"] = "ALTER TABLE AvitoAccounts ADD COLUMN ScreenResolution TEXT NULL;",
+            ["UseIpTimezone"] = "ALTER TABLE AvitoAccounts ADD COLUMN UseIpTimezone INTEGER NOT NULL DEFAULT 0;",
             ["Timezone"] = "ALTER TABLE AvitoAccounts ADD COLUMN Timezone TEXT NULL;",
             ["Languages"] = "ALTER TABLE AvitoAccounts ADD COLUMN Languages TEXT NULL;",
             ["ProxyUsername"] = "ALTER TABLE AvitoAccounts ADD COLUMN ProxyUsername TEXT NULL;",
@@ -975,6 +981,14 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         {
             await db.Database.ExecuteSqlRawAsync(
                 "ALTER TABLE CandidateResponses ADD COLUMN MessengerUrl TEXT NOT NULL DEFAULT '';",
+                cancellationToken);
+        }
+
+        existingColumns = await GetTableColumnsAsync(db, "CandidateResponses", cancellationToken);
+        if (!existingColumns.Contains("SourceUrl"))
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                "ALTER TABLE CandidateResponses ADD COLUMN SourceUrl TEXT NOT NULL DEFAULT '';",
                 cancellationToken);
         }
 

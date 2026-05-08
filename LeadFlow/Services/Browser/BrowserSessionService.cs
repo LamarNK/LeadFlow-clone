@@ -5,6 +5,7 @@ namespace LeadFlow.Services.Browser;
 
 public sealed class BrowserSessionService(
     IBrowserProfileService profileService,
+    IProxyCheckService proxyCheckService,
     AppRepository repository) : IBrowserSessionService
 {
     public Task<BrowserAccountSession> CreateSessionAsync(AvitoAccount account, CancellationToken cancellationToken)
@@ -16,6 +17,7 @@ public sealed class BrowserSessionService(
             Account = account,
             ProfilePath = profile.ProfilePath,
             CurrentUrl = account.AvitoResponsesUrl,
+            ProxyCheckService = proxyCheckService,
             PersistAccountAsync = ct => repository.SaveAccountAsync(account, ct)
         });
     }

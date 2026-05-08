@@ -62,17 +62,9 @@ public sealed class BrowserProfileService : IBrowserProfileService
 
     private static string GetWebView2Version()
     {
-        try
-        {
-            // Получаем версию установленного WebView2 без блокирующего ожидания async-API.
-            var version = CoreWebView2Environment.GetAvailableBrowserVersionString();
-            return string.IsNullOrWhiteSpace(version) ? "125.0.0.0" : version;
-        }
-        catch
-        {
-            // Фолбэк на известную стабильную версию
-            return "125.0.0.0";
-        }
+        // Возвращаем реальную установленную версию движка, чтобы UI и UA не расходились с тем,
+        // что сайты вроде 2ip могут определить по WebView2.
+        return BrowserVersionProvider.GetCurrentBrowserVersionString();
     }
 
     /// <summary>

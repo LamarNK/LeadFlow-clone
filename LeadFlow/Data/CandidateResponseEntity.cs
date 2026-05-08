@@ -16,6 +16,8 @@ public sealed class CandidateResponseEntity
     public string PhoneNormalized { get; set; } = string.Empty;
     public string City { get; set; } = string.Empty;
     public string Vacancy { get; set; } = string.Empty;
+    // Legacy column retained for backward-compatible inserts into older SQLite schemas.
+    public string SourceUrl { get; set; } = string.Empty;
     public string VacancyUrl { get; set; } = string.Empty;
     public string MessengerUrl { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;

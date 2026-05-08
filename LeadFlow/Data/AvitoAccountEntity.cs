@@ -46,6 +46,7 @@ public sealed class AvitoAccountEntity
     public string ProxyPresetsJson { get; set; } = "[]";
     public string FingerprintOverviewJson { get; set; } = "{}";
     public string? ScreenResolution { get; set; }
+    public bool UseIpTimezone { get; set; }
     public string? Timezone { get; set; }
     public string? Languages { get; set; }
     public int ActiveAdsCount { get; set; }

@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
+using System.Text;
 using System.Windows;
 using System.Windows.Data;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -13,6 +14,7 @@ namespace LeadFlow.ViewModels;
 public partial class JournalViewModel : ObservableObject
 {
     public ObservableCollection<LogFileEntry> LogEntries { get; } = [];
+    public ObservableCollection<LogFileEntry> SelectedLogEntries { get; } = [];
     public ICollectionView LogEntriesView { get; }
 
     [ObservableProperty]
@@ -115,8 +117,98 @@ public partial class JournalViewModel : ObservableObject
         ? "Дополнительные свойства отсутствуют"
         : SelectedLogEntry!.Properties;
 
-    partial void OnSelectedLogEntryChanged(LogFileEntry? value) =>
+    public int SelectedLogEntriesCount => SelectedLogEntries.Count;
+
+    public string SelectedLogEntriesSummary => SelectedLogEntries.Count == 0
+        ? "Нет выбранных записей"
+        : $"Выбрано записей: {SelectedLogEntries.Count}";
+
+    partial void OnSelectedLogEntryChanged(LogFileEntry? value)
+    {
         OnPropertyChanged(nameof(SelectedLogDetails));
+        if (value is null)
+        {
+            return;
+        }
+
+        if (!SelectedLogEntries.Contains(value))
+        {
+            SelectedLogEntries.Clear();
+            SelectedLogEntries.Add(value);
+            NotifySelectedLogEntriesChanged();
+        }
+    }
+
+    public void UpdateSelectedLogEntries(IList<LogFileEntry> selectedEntries)
+    {
+        SelectedLogEntries.Clear();
+        foreach (var entry in selectedEntries)
+        {
+            SelectedLogEntries.Add(entry);
+        }
+
+        SelectedLogEntry = SelectedLogEntries.FirstOrDefault();
+        NotifySelectedLogEntriesChanged();
+    }
+
+    [RelayCommand]
+    private void CopySelectedLogsRows()
+    {
+        if (SelectedLogEntries.Count == 0)
+        {
+            return;
+        }
+
+        var builder = new StringBuilder();
+        foreach (var entry in SelectedLogEntries)
+        {
+            builder.AppendLine($"{entry.Timestamp.ToLocalTimeFromStoredUtc():dd.MM.yyyy HH:mm:ss}\t{entry.Level}\t{entry.Prefix}\t{entry.Message}\t{entry.TraceId}\t{entry.Properties}");
+        }
+
+        Clipboard.SetText(builder.ToString().TrimEnd());
+    }
+
+    [RelayCommand]
+    private void CopySelectedLogsMessages()
+    {
+        if (SelectedLogEntries.Count == 0)
+        {
+            return;
+        }
+
+        var messages = SelectedLogEntries
+            .Select(x => x.Message)
+            .Where(static x => !string.IsNullOrWhiteSpace(x));
+        var payload = string.Join(Environment.NewLine, messages);
+        if (!string.IsNullOrWhiteSpace(payload))
+        {
+            Clipboard.SetText(payload);
+        }
+    }
+
+    [RelayCommand]
+    private void CopySelectedLogsDetails()
+    {
+        if (SelectedLogEntries.Count == 0)
+        {
+            return;
+        }
+
+        var details = SelectedLogEntries
+            .Select(x => x.Properties)
+            .Where(static x => !string.IsNullOrWhiteSpace(x));
+        var payload = string.Join(Environment.NewLine + Environment.NewLine, details);
+        if (!string.IsNullOrWhiteSpace(payload))
+        {
+            Clipboard.SetText(payload);
+        }
+    }
+
+    private void NotifySelectedLogEntriesChanged()
+    {
+        OnPropertyChanged(nameof(SelectedLogEntriesCount));
+        OnPropertyChanged(nameof(SelectedLogEntriesSummary));
+    }
 
     partial void OnLogSearchTextChanged(string value)
     {

@@ -201,7 +201,7 @@ public sealed class AvitoResponseSource(
             };
 
             for (const button of statusButtons) {
-                const root = findCardRoot(button);
+                const root = button.closest?.("[data-marker='job-application/item']") ?? findCardRoot(button);
                 if (!root || seen.has(root)) {
                     continue;
                 }
@@ -233,14 +233,39 @@ public sealed class AvitoResponseSource(
 
             const resolveMessengerUrl = (root) => {
                 const pick = (href) => normalizeUrl(href ?? "");
+                const attrCandidates = ["href", "data-href", "data-url", "data-to", "data-link", "data-state", "onclick"];
+                const fromAttributes = (element) => {
+                    if (!element) {
+                        return "";
+                    }
+
+                    for (const attr of attrCandidates) {
+                        const raw = element.getAttribute?.(attr);
+                        if (!raw) {
+                            continue;
+                        }
+
+                        // Plain URL in attribute.
+                        const direct = pick(raw);
+                        if (direct && /(messenger|chat|dialog)/i.test(direct)) {
+                            return direct;
+                        }
+
+                        // URL embedded into JSON/text attributes.
+                        const match = String(raw).match(/https?:\/\/[^"'\\\s]*(messenger|chat|dialog)[^"'\\\s]*/i);
+                        if (match?.[0]) {
+                            return pick(match[0]);
+                        }
+                    }
+
+                    return "";
+                };
 
                 const chatEl = root.querySelector("[data-marker='job-application/link/to-chat']");
                 if (chatEl) {
-                    if (chatEl.tagName === "A") {
-                        const h = pick(chatEl.getAttribute("href"));
-                        if (h) {
-                            return h;
-                        }
+                    const ownUrl = fromAttributes(chatEl);
+                    if (ownUrl) {
+                        return ownUrl;
                     }
 
                     const parentA = chatEl.closest("a");
@@ -251,16 +276,15 @@ public sealed class AvitoResponseSource(
                         }
                     }
 
-                    for (const attr of ["data-href", "data-url", "data-to"]) {
-                        const h = pick(chatEl.getAttribute(attr));
-                        if (h) {
-                            return h;
-                        }
+                    const parentWithAttrs = chatEl.closest("[href],[data-href],[data-url],[data-to],[data-link],[data-state],[onclick]");
+                    const parentUrl = fromAttributes(parentWithAttrs);
+                    if (parentUrl) {
+                        return parentUrl;
                     }
                 }
 
-                for (const a of root.querySelectorAll("a[href*='messenger']")) {
-                    const h = pick(a.getAttribute("href"));
+                for (const element of root.querySelectorAll("[href],[data-href],[data-url],[data-to],[data-link],[data-state],[onclick]")) {
+                    const h = fromAttributes(element);
                     if (h) {
                         return h;
                     }
@@ -284,17 +308,22 @@ public sealed class AvitoResponseSource(
                 const ageText = root.querySelector("p[data-marker='undefined/container'] span")?.textContent?.trim() ?? "";
                 /* Вакансия: якорь «название · город», не «Резюме» (job-crm/response/cv-button). */
                 const vacancyListingAnchor = root.querySelector("[data-marker='job-application/link/to-resume']");
-                const vacancyUrl = normalizeUrl(vacancyListingAnchor?.getAttribute("href") ?? "");
+                let vacancyUrl = normalizeUrl(vacancyListingAnchor?.getAttribute("href") ?? "");
+                if (/\/profile\/candidates(?:[/?#]|$)/i.test(vacancyUrl)) {
+                    vacancyUrl = "";
+                }
                 const vacancyLine = vacancyListingAnchor?.textContent?.replace(/\s+/g, " ").trim() ?? "";
                 const vacancyParts = vacancyLine.split("·").map((x) => x.trim()).filter(Boolean);
                 const vacancy = vacancyParts[0] ?? "";
                 const city = vacancyParts.length > 1 ? vacancyParts[1] : "";
                 const rawText = root.innerText?.replace(/\s+/g, " ").trim() ?? "";
                 const messengerUrl = resolveMessengerUrl(root);
-                const stablePayload = [name, phone, vacancy, city, messengerUrl]
+                const stablePayload = [name, phone, vacancy, city, vacancyUrl, messengerUrl]
                     .map((x) => (x ?? "").trim().replace(/\s+/g, " "))
                     .join("\u001f");
-                const sourceResponseId = vacancyUrl || `avito:${fnv1a32Hex(stablePayload)}`;
+                // vacancyUrl is often shared by multiple candidates for the same job;
+                // prefer a per-dialog link and fall back to a stable content hash.
+                const sourceResponseId = messengerUrl || `avito:${fnv1a32Hex(stablePayload)}`;
 
                 return {
                     fullName: name,

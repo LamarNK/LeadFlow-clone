@@ -163,8 +163,11 @@
                     </Border>
 
                     <Grid Grid.Row="2" MinHeight="160">
-                        <ListBox ItemsSource="{Binding LogEntriesView}"
+                        <ListBox x:Name="JournalLogsListBox"
+                                 ItemsSource="{Binding LogEntriesView}"
                                  SelectedItem="{Binding SelectedLogEntry}"
+                                 SelectionMode="Extended"
+                                 SelectionChanged="JournalLogsListBox_OnSelectionChanged"
                                  BorderThickness="0"
                                  Background="Transparent"
                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
@@ -281,6 +284,9 @@
 
                     <StackPanel>
                         <TextBlock Text="Детали лога" Style="{StaticResource SectionTitleStyle}" />
+                        <TextBlock Text="{Binding SelectedLogEntriesSummary}"
+                                   Style="{StaticResource SubtleTextStyle}"
+                                   Margin="0,4,0,0" />
                     </StackPanel>
 
                     <ScrollViewer Grid.Row="1"
@@ -319,22 +325,37 @@
                                                Margin="0,6,0,0" />
                                 </StackPanel>
                             </Border>
+
+                            <Border Style="{StaticResource ToolbarSurfaceBorderStyle}" Margin="0,6,0,0">
+                                <StackPanel>
+                                    <TextBlock Text="Выбрано" Style="{StaticResource InfoLabelStyle}" />
+                                    <ItemsControl ItemsSource="{Binding SelectedLogEntries}" Margin="0,6,0,0">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding Message}"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           Foreground="{StaticResource SecondaryTextBrush}" />
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Border>
                         </StackPanel>
                     </ScrollViewer>
 
                     <UniformGrid Grid.Row="2" Columns="2" Margin="0,8,0,0">
-                        <Button Content="Копировать строку"
-                                Command="{Binding CopySelectedLogRowCommand}"
+                        <Button Content="Копировать строки"
+                                Command="{Binding CopySelectedLogsRowsCommand}"
                                 Style="{StaticResource SecondaryButtonStyle}"
                                 Padding="12,7"
                                 Margin="0,0,8,8" />
-                        <Button Content="Копировать сообщение"
-                                Command="{Binding CopySelectedLogMessageCommand}"
+                        <Button Content="Копировать сообщения"
+                                Command="{Binding CopySelectedLogsMessagesCommand}"
                                 Style="{StaticResource SecondaryButtonStyle}"
                                 Padding="12,7"
                                 Margin="8,0,0,8" />
                         <Button Content="Копировать детали"
-                                Command="{Binding CopySelectedLogDetailsCommand}"
+                                Command="{Binding CopySelectedLogsDetailsCommand}"
                                 Style="{StaticResource SecondaryButtonStyle}"
                                 Padding="12,7"
                                 Margin="0,0,8,0" />

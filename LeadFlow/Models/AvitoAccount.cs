@@ -35,6 +35,7 @@ public sealed partial class AvitoAccount : ObservableObject
     [ObservableProperty] private bool importCookiesOnNextStart;
     [ObservableProperty] private string notes = string.Empty;
     [ObservableProperty] private string? screenResolution = "1920x1080";
+    [ObservableProperty] private bool useIpTimezone = true;
     [ObservableProperty] private string? timezone = "Europe/Moscow";
     [ObservableProperty] private string? languages = "ru-RU,ru,en-US,en";
     [ObservableProperty] private string? proxyAddress;
@@ -49,8 +50,8 @@ public sealed partial class AvitoAccount : ObservableObject
     [ObservableProperty] private string? webGlVendor;
     [ObservableProperty] private string? webGlRenderer;
     [ObservableProperty] private bool spoofWebGl;
-    [ObservableProperty] private bool canvasFingerprintNoise = true;
-    [ObservableProperty] private bool audioFingerprintNoise = true;
+    [ObservableProperty] private bool canvasFingerprintNoise;
+    [ObservableProperty] private bool audioFingerprintNoise;
     [ObservableProperty] private string? webRtcLaunchFlags;
 
     [ObservableProperty] private string startupTabsJson = "[]";

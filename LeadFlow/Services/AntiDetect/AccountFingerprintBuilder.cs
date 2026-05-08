@@ -23,15 +23,40 @@ public static class AccountFingerprintBuilder
             && !string.IsNullOrWhiteSpace(account.WebGlRenderer);
 
         var overview = FingerprintOverviewState.Parse(account.FingerprintOverviewJson);
-        var devMem = overview.DeviceMemoryGb is >= 1 and <= 32 ? overview.DeviceMemoryGb : 8;
-        var hw = overview.HardwareConcurrency is >= 1 and <= 64 ? overview.HardwareConcurrency : 8;
+        int? devMem = overview.RamMode == "Реальный"
+            ? null
+            : overview.DeviceMemoryGb is >= 1 and <= 32 ? overview.DeviceMemoryGb : 8;
+        int? hw = overview.CpuMode == "Реальный"
+            ? null
+            : overview.HardwareConcurrency is >= 1 and <= 64 ? overview.HardwareConcurrency : 8;
+        var ch = ClientHintsSpoof.GetForAccount(account);
+        var languages = overview.LanguageMode == "На основе IP"
+            ? null
+            : account.Languages ?? "ru-RU,ru,en-US,en";
+        var uiLanguage = overview.UiLanguageMode switch
+        {
+            "Реальный" => null,
+            "Настроить" => string.IsNullOrWhiteSpace(overview.CustomUiLanguage) ? null : overview.CustomUiLanguage.Trim(),
+            _ => languages?.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()
+        };
+        bool? doNotTrack = overview.DoNotTrackMode switch
+        {
+            "По умолчанию" => null,
+            "Выключить" => false,
+            _ => true
+        };
 
         return new AccountFingerprint
         {
             UserAgent = account.AssignedUserAgent,
+            ChPlatform = ch.Platform,
+            ChPlatformVersion = ch.PlatformVersion,
+            ChMobile = ch.Mobile,
             ScreenResolution = account.ScreenResolution ?? "1920x1080",
-            Timezone = account.Timezone ?? "Europe/Moscow",
-            Languages = account.Languages ?? "ru-RU,ru,en-US,en",
+            // When enabled, keep browser/native timezone (typically aligned with proxy/IP),
+            // otherwise apply manual timezone spoofing value.
+            Timezone = account.UseIpTimezone ? null : (account.Timezone ?? "Europe/Moscow"),
+            Languages = languages,
             ViewportWidth = width - 20,
             ViewportHeight = height - 100,
             ColorDepth = 24,
@@ -40,14 +65,25 @@ public static class AccountFingerprintBuilder
             NavigatorPlatform = string.IsNullOrWhiteSpace(account.NavigatorPlatform)
                 ? DeriveNavigatorPlatform(account)
                 : account.NavigatorPlatform.Trim(),
-            DoNotTrack = account.DoNotTrack,
+            DoNotTrack = doNotTrack,
             SpoofWebGl = spoofGl,
             WebGlVendor = account.WebGlVendor?.Trim(),
             WebGlRenderer = account.WebGlRenderer?.Trim(),
             CanvasNoise = account.CanvasFingerprintNoise,
             AudioNoise = account.AudioFingerprintNoise,
             AudioNoiseSeedHex = string.IsNullOrWhiteSpace(overview.AudioSeedHex) ? null : overview.AudioSeedHex.Trim(),
-            ClientRectsNoiseSeedHex = string.IsNullOrWhiteSpace(overview.ClientRectsSeedHex) ? null : overview.ClientRectsSeedHex.Trim()
+            ClientRectsNoiseSeedHex = string.IsNullOrWhiteSpace(overview.ClientRectsSeedHex) ? null : overview.ClientRectsSeedHex.Trim(),
+            UiLanguage = uiLanguage,
+            GeolocationMode = overview.GeolocationMode,
+            GeolocationLatitude = string.IsNullOrWhiteSpace(overview.GeolocationLatitude) ? null : overview.GeolocationLatitude.Trim(),
+            GeolocationLongitude = string.IsNullOrWhiteSpace(overview.GeolocationLongitude) ? null : overview.GeolocationLongitude.Trim(),
+            GeolocationAccuracyMeters = string.IsNullOrWhiteSpace(overview.GeolocationAccuracyMeters) ? null : overview.GeolocationAccuracyMeters.Trim(),
+            MediaDevicesMode = overview.MediaDevicesMode,
+            MediaLabel = string.IsNullOrWhiteSpace(overview.MediaLabel) ? null : overview.MediaLabel.Trim(),
+            ClientRectsNoise = overview.ClientRectsMode != "Реальный",
+            SpeechVoicesMode = overview.SpeechVoicesMode,
+            SpeechLabel = string.IsNullOrWhiteSpace(overview.SpeechLabel) ? null : overview.SpeechLabel.Trim(),
+            WebGpuMode = overview.WebGpuMode
         };
     }
 

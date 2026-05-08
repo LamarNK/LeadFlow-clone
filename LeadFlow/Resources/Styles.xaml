@@ -453,6 +453,92 @@
         </Setter>
     </Style>
 
+    <!-- Единый вид с полями фильтра: скругление, акцент Primary, без системного «чекбокса Windows» -->
+    <Style TargetType="CheckBox">
+        <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+        <Setter Property="FontFamily" Value="Segoe UI" />
+        <Setter Property="FontSize" Value="14" />
+        <Setter Property="FontWeight" Value="Normal" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="CheckBox">
+                    <StackPanel Orientation="Horizontal" SnapsToDevicePixels="True">
+                        <Border x:Name="BoxOuter"
+                                Width="20"
+                                Height="20"
+                                CornerRadius="6"
+                                Background="#FFFFFF"
+                                BorderBrush="{StaticResource BorderBrush}"
+                                BorderThickness="1">
+                            <Grid>
+                                <Path x:Name="CheckGlyph"
+                                      Visibility="Collapsed"
+                                      HorizontalAlignment="Center"
+                                      VerticalAlignment="Center"
+                                      Data="M 3.2 6.4 L 5.6 8.8 L 9.8 3.6"
+                                      Stroke="White"
+                                      StrokeThickness="1.85"
+                                      StrokeLineJoin="Round"
+                                      StrokeStartLineCap="Round"
+                                      StrokeEndLineCap="Round" />
+                                <Border x:Name="IndeterminateBar"
+                                        Visibility="Collapsed"
+                                        Width="10"
+                                        Height="3"
+                                        CornerRadius="1.5"
+                                        Background="{StaticResource PrimaryBrush}"
+                                        VerticalAlignment="Center"
+                                        HorizontalAlignment="Center" />
+                            </Grid>
+                        </Border>
+                        <ContentPresenter x:Name="ContentHost"
+                                          Margin="10,0,0,0"
+                                          VerticalAlignment="Center"
+                                          RecognizesAccessKey="True"
+                                          Focusable="False" />
+                    </StackPanel>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="BoxOuter" Property="Background" Value="{StaticResource PrimaryBrush}" />
+                            <Setter TargetName="BoxOuter" Property="BorderBrush" Value="{StaticResource PrimaryBrush}" />
+                            <Setter TargetName="CheckGlyph" Property="Visibility" Value="Visible" />
+                        </Trigger>
+                        <Trigger Property="IsChecked" Value="{x:Null}">
+                            <Setter TargetName="BoxOuter" Property="BorderBrush" Value="{StaticResource PrimaryBrush}" />
+                            <Setter TargetName="IndeterminateBar" Property="Visibility" Value="Visible" />
+                        </Trigger>
+                        <MultiTrigger>
+                            <MultiTrigger.Conditions>
+                                <Condition Property="IsMouseOver" Value="True" />
+                                <Condition Property="IsChecked" Value="False" />
+                            </MultiTrigger.Conditions>
+                            <Setter TargetName="BoxOuter" Property="BorderBrush" Value="{StaticResource PrimaryBrush}" />
+                            <Setter TargetName="BoxOuter" Property="Background" Value="#F8FBFF" />
+                        </MultiTrigger>
+                        <MultiTrigger>
+                            <MultiTrigger.Conditions>
+                                <Condition Property="IsMouseOver" Value="True" />
+                                <Condition Property="IsChecked" Value="True" />
+                            </MultiTrigger.Conditions>
+                            <Setter TargetName="BoxOuter" Property="Background" Value="#1D4ED8" />
+                            <Setter TargetName="BoxOuter" Property="BorderBrush" Value="#1D4ED8" />
+                        </MultiTrigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="BoxOuter" Property="BorderBrush" Value="{StaticResource PrimaryBrush}" />
+                            <Setter TargetName="BoxOuter" Property="BorderThickness" Value="2" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.5" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <Style x:Key="FilterComboBoxItemStyle" TargetType="ComboBoxItem">
         <Setter Property="FontFamily" Value="Segoe UI" />
         <Setter Property="FontSize" Value="14" />

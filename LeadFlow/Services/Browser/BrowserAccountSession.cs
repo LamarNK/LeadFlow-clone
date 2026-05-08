@@ -11,6 +11,7 @@ namespace LeadFlow.Services.Browser;
 public partial class BrowserAccountSession : ObservableObject
 {
     private bool _cookiesImportedInCurrentSession;
+    private bool _clientHintsHeaderHookRegistered;
     [ObservableProperty]
     private string currentUrl = string.Empty;
 
@@ -28,6 +29,7 @@ public partial class BrowserAccountSession : ObservableObject
 
     public required AvitoAccount Account { get; init; }
     public required string ProfilePath { get; init; }
+    public IProxyCheckService? ProxyCheckService { get; init; }
     public Func<CancellationToken, Task>? PersistAccountAsync { get; init; }
     public CoreWebView2Environment? Environment { get; private set; }
     public WebView2? AttachedView { get; private set; }
@@ -47,6 +49,8 @@ public partial class BrowserAccountSession : ObservableObject
             coreForProxyAuth.BasicAuthenticationRequested += OnBasicAuthenticationRequested;
             coreForProxyAuth.NewWindowRequested += OnNewWindowRequested;
         }
+
+        await TryResolveTimezoneFromProxyAsync(cancellationToken).ConfigureAwait(true);
 
         view.CoreWebView2.SourceChanged += (_, _) => UpdateNavigationState();
         view.CoreWebView2.HistoryChanged += (_, _) => UpdateNavigationState();
@@ -93,6 +97,35 @@ public partial class BrowserAccountSession : ObservableObject
         UpdateNavigationState();
         IsInitialized = true;
         StatusText = "Браузер готов";
+    }
+
+    private async Task TryResolveTimezoneFromProxyAsync(CancellationToken cancellationToken)
+    {
+        if (ProxyCheckService is null || string.IsNullOrWhiteSpace(Account.ProxyAddress))
+        {
+            return;
+        }
+
+        try
+        {
+            var ip = await ProxyCheckService.CheckPublicIpAsync(Account, cancellationToken).ConfigureAwait(true);
+            var timezone = await ProxyCheckService.ResolveTimezoneByIpAsync(ip, cancellationToken).ConfigureAwait(true);
+
+            if (Account.UseIpTimezone)
+            {
+                Account.Timezone = timezone;
+                if (PersistAccountAsync is not null)
+                {
+                    await PersistAccountAsync(cancellationToken).ConfigureAwait(true);
+                }
+            }
+
+            StatusText = $"Прокси IP: {ip}. Часовой пояс: {timezone}.";
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[ProxyGeoIP] Auto timezone resolve failed: {ex.Message}");
+        }
     }
 
     public void Navigate(string url)
@@ -168,6 +201,8 @@ public partial class BrowserAccountSession : ObservableObject
             }
             catch { /* UA может не поддерживаться в данной версии */ }
 
+            TryRegisterClientHintsHeaderOverride(core);
+
             var fingerprint = AccountFingerprintBuilder.FromAccount(Account);
             var stealthScript = StealthScripts.GetMainStealthScript(fingerprint);
             try
@@ -179,37 +214,6 @@ public partial class BrowserAccountSession : ObservableObject
             {
                 System.Diagnostics.Debug.WriteLine($"[AntiDetect] Stealth injection failed: {ex.Message}");
             }
-        }
-
-        const string geoBlockScript = """
-            if (navigator.permissions && navigator.permissions.query) {
-                const originalQuery = navigator.permissions.query.bind(navigator.permissions);
-                navigator.permissions.query = function(parameters) {
-                    if (parameters.name === 'geolocation' || parameters.name === 'notifications') {
-                        return Promise.resolve({ state: 'denied', name: parameters.name });
-                    }
-                    return originalQuery(parameters);
-                };
-            }
-            if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition = function(success, error, options) {
-                    if (error) error({ code: 1, message: 'Geolocation disabled by anti-detect' });
-                };
-                navigator.geolocation.watchPosition = function(success, error, options) {
-                    if (error) error({ code: 1, message: 'Geolocation disabled by anti-detect' });
-                    return -1;
-                };
-            }
-            """;
-
-        try
-        {
-            await core.AddScriptToExecuteOnDocumentCreatedAsync(geoBlockScript)
-                .WaitAsync(cancellationToken).ConfigureAwait(true);
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"[AntiDetect] Geoblock injection failed: {ex.Message}");
         }
 
         // Smoke-check консистентности ключевых fingerprint-сигналов в рантайме.
@@ -254,6 +258,67 @@ public partial class BrowserAccountSession : ObservableObject
         {
             System.Diagnostics.Debug.WriteLine($"[AntiDetect] Smoke-check failed: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Подмена Sec-CH-UA-Platform / Platform-Version в исходящих запросах: иначе на Win11-хосте сайты видят 15.0.0 при выбранной в аккаунте Win10.
+    /// </summary>
+    private void TryRegisterClientHintsHeaderOverride(CoreWebView2 core)
+    {
+        if (_clientHintsHeaderHookRegistered)
+        {
+            return;
+        }
+
+        var ch = ClientHintsSpoof.GetForAccount(Account);
+        if (string.IsNullOrEmpty(ch.Platform) && string.IsNullOrEmpty(ch.PlatformVersion) && string.IsNullOrEmpty(ch.Mobile))
+        {
+            return;
+        }
+
+        try
+        {
+            core.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[AntiDetect] AddWebResourceRequestedFilter failed: {ex.Message}");
+            return;
+        }
+
+        var browserCh = SecChUaHeaders.FromUserAgent(Account.AssignedUserAgent);
+
+        _clientHintsHeaderHookRegistered = true;
+        core.WebResourceRequested += (_, e) =>
+        {
+            try
+            {
+                if (!string.IsNullOrEmpty(ch.Platform))
+                {
+                    e.Request.Headers.SetHeader("Sec-CH-UA-Platform", $"\"{ch.Platform}\"");
+                }
+
+                if (!string.IsNullOrEmpty(ch.PlatformVersion))
+                {
+                    e.Request.Headers.SetHeader("Sec-CH-UA-Platform-Version", $"\"{ch.PlatformVersion}\"");
+                }
+
+                if (!string.IsNullOrEmpty(ch.Mobile))
+                {
+                    e.Request.Headers.SetHeader("Sec-CH-UA-Mobile", ch.Mobile);
+                }
+
+                if (browserCh is not null)
+                {
+                    e.Request.Headers.SetHeader("Sec-CH-UA", browserCh.SecChUa);
+                    e.Request.Headers.SetHeader("Sec-CH-UA-Full-Version-List", browserCh.SecChUaFullVersionList);
+                }
+            }
+            catch
+            {
+                // заголовок может отсутствовать или быть неизменяемым для части запросов
+            }
+        };
     }
 
     /// <summary>
@@ -343,6 +408,11 @@ public partial class BrowserAccountSession : ObservableObject
     private static string NormalizeUrl(string url)
     {
         var trimmedUrl = url.Trim();
+        if (trimmedUrl.StartsWith("//", StringComparison.Ordinal))
+        {
+            trimmedUrl = $"https:{trimmedUrl}";
+        }
+
         if (Uri.TryCreate(trimmedUrl, UriKind.Absolute, out var absoluteUri))
         {
             return absoluteUri.ToString();

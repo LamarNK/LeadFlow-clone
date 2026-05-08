@@ -32,7 +32,11 @@ public static class AvitoCandidatesJsonParser
                 var legacy = legacySourceProp.GetString() ?? string.Empty;
                 if (!string.Equals(legacy.Trim(), AvitoResponseSource.CandidatesPageUrl, StringComparison.OrdinalIgnoreCase))
                 {
-                    vacancyUrl = legacy;
+                    vacancyUrl = legacy.Trim();
+                    if (vacancyUrl.StartsWith("//", StringComparison.Ordinal))
+                    {
+                        vacancyUrl = $"https:{vacancyUrl}";
+                    }
                 }
             }
 

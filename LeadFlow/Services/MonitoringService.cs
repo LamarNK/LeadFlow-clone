@@ -613,71 +613,23 @@ public sealed class MonitoringService(
                 return;
             }
 
-            UpdateStatus(MonitoringStatus.Running, $"Отклик \"{response.FullName}\" уникален: отправляем сделку в Bitrix24.");
-            var lead = await bitrixClient.CreateLeadAsync(response, settings, cancellationToken);
+            const string sendDisabledMessage = "Тестовый режим: отправка в Bitrix24 временно отключена.";
+            UpdateStatus(MonitoringStatus.Running, $"Отклик \"{response.FullName}\" уникален, но отправка в Bitrix24 отключена.");
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Bitrix send skipped for response {response.Id}: temporary disabled mode.",
+                DeskLinkAuditLogLevel.Warning);
+            response.Status = ResponseStatus.ActionRequired;
             response.ProcessedAt = DateTime.UtcNow;
-            if (lead.IsSuccess)
+            response.ErrorMessage = sendDisabledMessage;
+            await repository.SaveCandidateAsync(response, cancellationToken);
+            await repository.AddLogAsync(new ProcessingLogItem
             {
-                _ = GlobalLogger.Instance.LogAsync(
-                    $"Bitrix deal created for response {response.Id}: {lead.EntityId}.",
-                    DeskLinkAuditLogLevel.Info);
-                response.Status = ResponseStatus.Sent;
-                response.BitrixEntityId = lead.EntityId;
-                if (!string.IsNullOrWhiteSpace(lead.ContactId))
-                {
-                    response.BitrixContactId = lead.ContactId;
-                }
-
-                await repository.SaveCandidateAsync(response, cancellationToken);
-                await repository.AddLogAsync(new ProcessingLogItem
-                {
-                    CandidateResponseId = response.Id,
-                    AccountId = response.AccountId,
-                    Level = "Info",
-                    Message = "Сделка создана в Bitrix24",
-                    Details = lead.EntityId
-                }, cancellationToken);
-                UpdateStatus(MonitoringStatus.Running, $"Сделка по отклику \"{response.FullName}\" успешно создана в Bitrix24. ID: {lead.EntityId}.");
-            }
-            else
-            {
-                _ = GlobalLogger.Instance.LogAsync(
-                    $"Bitrix deal creation failed for response {response.Id}: {lead.Error}.",
-                    DeskLinkAuditLogLevel.Error);
-                if (!string.IsNullOrWhiteSpace(lead.ContactId))
-                {
-                    response.BitrixContactId = lead.ContactId;
-                    response.Status = ResponseStatus.ActionRequired;
-                    response.ErrorMessage = lead.Error;
-                    await repository.AddLogAsync(new ProcessingLogItem
-                    {
-                        CandidateResponseId = response.Id,
-                        AccountId = response.AccountId,
-                        Level = "Warning",
-                        Message = "Контакт в Bitrix24 без сделки — требуется действие",
-                        Details = lead.Error
-                    }, cancellationToken);
-                    UpdateStatus(
-                        MonitoringStatus.Running,
-                        $"Отклик \"{response.FullName}\": контакт Bitrix24 создан, сделка не создана. Исправьте в портале или нажмите «Отправить в Bitrix24» для повторной попытки.");
-                }
-                else
-                {
-                    response.Status = ResponseStatus.Error;
-                    response.ErrorMessage = lead.Error;
-                    await repository.AddLogAsync(new ProcessingLogItem
-                    {
-                        CandidateResponseId = response.Id,
-                        AccountId = response.AccountId,
-                        Level = "Error",
-                        Message = "Ошибка Bitrix24",
-                        Details = lead.Error
-                    }, cancellationToken);
-                    UpdateStatus(MonitoringStatus.Error, $"Ошибка при создании сделки по отклику \"{response.FullName}\": {lead.Error}");
-                }
-
-                await repository.SaveCandidateAsync(response, cancellationToken);
-            }
+                CandidateResponseId = response.Id,
+                AccountId = response.AccountId,
+                Level = "Warning",
+                Message = "Отправка в Bitrix24 отключена",
+                Details = sendDisabledMessage
+            }, cancellationToken);
 
             ResponseProcessed?.Invoke(this, response);
         }

@@ -13,6 +13,7 @@ namespace LeadFlow.Views;
 public partial class SettingsWindow : Window
 {
     private bool _allowClose;
+    private bool _isClosingSaveInProgress;
 
     public SettingsWindow()
     {
@@ -23,28 +24,30 @@ public partial class SettingsWindow : Window
 
     private async void OnClosingAsync(object? sender, CancelEventArgs e)
     {
-        if (_allowClose || DataContext is not SettingsViewModel viewModel || !viewModel.HasUnsavedChanges())
+        if (_allowClose)
+        {
+            return;
+        }
+
+        if (DataContext is not SettingsViewModel viewModel)
         {
             return;
         }
 
         e.Cancel = true;
-
-        var result = MessageBox.Show(
-            this,
-            "Есть несохраненные изменения. Сохранить их перед закрытием?",
-            "Несохраненные изменения",
-            MessageBoxButton.YesNoCancel,
-            MessageBoxImage.Question);
-
-        if (result == MessageBoxResult.Cancel)
+        if (_isClosingSaveInProgress)
         {
             return;
         }
 
-        if (result == MessageBoxResult.Yes)
+        _isClosingSaveInProgress = true;
+        try
         {
             await viewModel.SaveAsync();
+        }
+        finally
+        {
+            _isClosingSaveInProgress = false;
         }
 
         _allowClose = true;
@@ -56,7 +59,6 @@ public partial class SettingsWindow : Window
         if (DataContext is SettingsViewModel viewModel)
         {
             viewModel.DetachPersistenceListener();
-            viewModel.DeleteCommittedProfiles();
         }
     }
 

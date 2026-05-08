@@ -22,6 +22,54 @@ public sealed class FingerprintOverviewState
 
     public string SpeechLabel { get; set; } = "Auto";
 
+    public string LanguageMode { get; set; } = "На основе IP";
+
+    public string UiLanguageMode { get; set; } = "Реальный";
+
+    public string CustomUiLanguage { get; set; } = "";
+
+    public string ScreenMode { get; set; } = "На основе User-Agent";
+
+    public string FontsMode { get; set; } = "По умолчанию";
+
+    public string CustomFonts { get; set; } = "";
+
+    public string GeolocationMode { get; set; } = "На основе IP";
+
+    public string GeolocationLatitude { get; set; } = "";
+
+    public string GeolocationLongitude { get; set; } = "";
+
+    public string GeolocationAccuracyMeters { get; set; } = "";
+
+    public string WebRtcMode { get; set; } = "Реальный";
+
+    public string MediaDevicesMode { get; set; } = "Реальный";
+
+    public string ClientRectsMode { get; set; } = "Реальный";
+
+    public string SpeechVoicesMode { get; set; } = "Реальный";
+
+    public string WebGpuMode { get; set; } = "Реальный";
+
+    public string CpuMode { get; set; } = "Реальный";
+
+    public string RamMode { get; set; } = "Реальный";
+
+    public string DeviceNameMode { get; set; } = "Реальный";
+
+    public string MacAddressMode { get; set; } = "Реальный";
+
+    public string DoNotTrackMode { get; set; } = "По умолчанию";
+
+    public bool PortScanProtectionEnabled { get; set; }
+
+    public string AllowedPortScanPorts { get; set; } = "";
+
+    public string HardwareAccelerationMode { get; set; } = "По умолчанию";
+
+    public bool DisableTlsFeatures { get; set; }
+
     public int DeviceMemoryGb { get; set; } = 8;
 
     public int HardwareConcurrency { get; set; } = 8;
@@ -61,6 +109,7 @@ public sealed class FingerprintOverviewState
         SpeechLabel = "Auto";
         DeviceName = NewDeviceTag();
         MacAddress = NewMac();
+        GeolocationAccuracyMeters = "25";
         HardwareConcurrency = Random.Shared.Next(4, 17);
         DeviceMemoryGb = Random.Shared.Next(0, 6) switch
         {

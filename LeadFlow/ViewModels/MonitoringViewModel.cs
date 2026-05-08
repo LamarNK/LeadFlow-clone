@@ -16,6 +16,7 @@ namespace LeadFlow.ViewModels;
 
 public partial class MonitoringViewModel : ObservableObject
 {
+    private const int MonitoringListMaxItems = 1000;
     private const string StatusFilterAll = "Все";
     private const string StatusFilterExcludeDuplicates = "Все, кроме дублей";
     private const string AllVacanciesLabel = "Все вакансии";
@@ -44,7 +45,7 @@ public partial class MonitoringViewModel : ObservableObject
     private string selectedStatusFilter = StatusFilterAll;
 
     [ObservableProperty]
-    private DateTime? selectedResponseDate = DateTime.Today;
+    private DateTime? selectedResponseDate;
 
     [ObservableProperty]
     private string selectedVacancyFilter = AllVacanciesLabel;
@@ -204,7 +205,7 @@ public partial class MonitoringViewModel : ObservableObject
     [RelayCommand]
     public async Task RefreshAsync()
     {
-        var items = await _repository.GetRecentResponsesAsync(100, CancellationToken.None);
+        var items = await _repository.GetRecentResponsesAsync(MonitoringListMaxItems, CancellationToken.None);
         ReplaceResponses(items);
     }
 
@@ -227,7 +228,7 @@ public partial class MonitoringViewModel : ObservableObject
         }
 
         Responses.Insert(insertIndex, response);
-        while (Responses.Count > 100)
+        while (Responses.Count > MonitoringListMaxItems)
         {
             Responses.RemoveAt(Responses.Count - 1);
         }
@@ -506,7 +507,13 @@ public partial class MonitoringViewModel : ObservableObject
             return false;
         }
 
-        return !string.Equals(url.Trim(), AvitoResponseSource.CandidatesPageUrl, StringComparison.OrdinalIgnoreCase);
+        var normalized = url.Trim();
+        if (string.Equals(normalized, AvitoResponseSource.CandidatesPageUrl, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return !normalized.Contains("/profile/candidates", StringComparison.OrdinalIgnoreCase);
     }
 
     private bool CanOpenResponseVacancyInAvitoBrowser(CandidateResponse? r) => HasSpecificVacancyUrl(r);
@@ -600,70 +607,25 @@ public partial class MonitoringViewModel : ObservableObject
             return;
         }
 
-        BitrixCreateLeadResponse lead;
-        if (!string.IsNullOrWhiteSpace(response.BitrixContactId) && string.IsNullOrWhiteSpace(response.BitrixEntityId))
-        {
-            lead = await _bitrixClient.CreateDealForContactAsync(
-                response,
-                response.BitrixContactId,
-                settings,
-                CancellationToken.None);
-        }
-        else
-        {
-            lead = await _bitrixClient.CreateLeadAsync(response, settings, CancellationToken.None);
-        }
+        const string sendDisabledMessage = "Тестовый режим: отправка в Bitrix24 временно отключена.";
+        MessageBox.Show(
+            sendDisabledMessage,
+            "Bitrix24",
+            MessageBoxButton.OK,
+            MessageBoxImage.Information);
 
         response.ProcessedAt = DateTime.UtcNow;
-        if (lead.IsSuccess)
+        response.Status = ResponseStatus.ActionRequired;
+        response.ErrorMessage = sendDisabledMessage;
+        await _repository.AddLogAsync(new ProcessingLogItem
         {
-            response.Status = ResponseStatus.Sent;
-            response.BitrixEntityId = lead.EntityId;
-            if (!string.IsNullOrWhiteSpace(lead.ContactId))
-            {
-                response.BitrixContactId = lead.ContactId;
-            }
-
-            response.ErrorMessage = string.Empty;
-            await _repository.SaveCandidateAsync(response, CancellationToken.None);
-            await _repository.AddLogAsync(new ProcessingLogItem
-            {
-                CandidateResponseId = response.Id,
-                AccountId = response.AccountId,
-                Level = "Info",
-                Message = "Сделка создана в Bitrix24 (вручную)",
-                Details = lead.EntityId
-            }, CancellationToken.None);
-        }
-        else if (!string.IsNullOrWhiteSpace(lead.ContactId))
-        {
-            response.BitrixContactId = lead.ContactId;
-            response.Status = ResponseStatus.ActionRequired;
-            response.ErrorMessage = lead.Error;
-            await _repository.AddLogAsync(new ProcessingLogItem
-            {
-                CandidateResponseId = response.Id,
-                AccountId = response.AccountId,
-                Level = "Warning",
-                Message = "Контакт в Bitrix24 без сделки (вручную)",
-                Details = lead.Error
-            }, CancellationToken.None);
-            await _repository.SaveCandidateAsync(response, CancellationToken.None);
-        }
-        else
-        {
-            response.Status = ResponseStatus.Error;
-            response.ErrorMessage = lead.Error;
-            await _repository.AddLogAsync(new ProcessingLogItem
-            {
-                CandidateResponseId = response.Id,
-                AccountId = response.AccountId,
-                Level = "Error",
-                Message = "Ошибка Bitrix24 (вручную)",
-                Details = lead.Error
-            }, CancellationToken.None);
-            await _repository.SaveCandidateAsync(response, CancellationToken.None);
-        }
+            CandidateResponseId = response.Id,
+            AccountId = response.AccountId,
+            Level = "Warning",
+            Message = "Ручная отправка в Bitrix24 отключена",
+            Details = sendDisabledMessage
+        }, CancellationToken.None);
+        await _repository.SaveCandidateAsync(response, CancellationToken.None);
         ApplyProcessedResponse(response);
         NotifyCountersChanged();
     }

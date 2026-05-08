@@ -1,7 +1,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.IO;
-using System.Text.Json;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Threading;
 using Microsoft.Win32;
@@ -26,10 +26,9 @@ public partial class SettingsViewModel(
 {
     private const string FixedAvitoProfileUrl = "https://www.avito.ru/profile";
     private AppSettings _settings = new();
-    private string _savedAccountsSnapshot = string.Empty;
     private readonly HashSet<string> _pendingProfileDeletions = new(StringComparer.OrdinalIgnoreCase);
-    private readonly HashSet<string> _committedProfileDeletions = new(StringComparer.OrdinalIgnoreCase);
     private AvitoAccount? _selectedAccountPropertySource;
+    private readonly SemaphoreSlim _saveGate = new(1, 1);
 
     public ObservableCollection<AvitoAccount> Accounts { get; } = [];
 
@@ -66,11 +65,10 @@ public partial class SettingsViewModel(
         }
 
         SelectedAccount = Accounts.FirstOrDefault();
-        UpdateSavedSnapshot();
     }
 
     [RelayCommand]
-    public void AddAccount()
+    public async Task AddAccount()
     {
         var accountNumber = Accounts.Count + 1;
         var account = new AvitoAccount
@@ -84,10 +82,11 @@ public partial class SettingsViewModel(
         account.BrowserProfilePath = profile.ProfilePath;
         Accounts.Add(account);
         SelectedAccount = account;
+        await SaveAsync();
     }
 
     [RelayCommand]
-    public void DeleteAccount()
+    public async Task DeleteAccount()
     {
         if (SelectedAccount is null)
         {
@@ -101,10 +100,11 @@ public partial class SettingsViewModel(
 
         Accounts.Remove(SelectedAccount);
         SelectedAccount = Accounts.FirstOrDefault();
+        await SaveAsync();
     }
 
     [RelayCommand]
-    public void ToggleAccount()
+    public async Task ToggleAccount()
     {
         if (SelectedAccount is null)
         {
@@ -113,44 +113,57 @@ public partial class SettingsViewModel(
 
         SelectedAccount.IsEnabled = !SelectedAccount.IsEnabled;
         RefreshSelectedAccountState();
+        await SaveAsync();
     }
 
     [RelayCommand]
     public async Task SaveAsync()
     {
-        var persistedAccounts = await repository.GetAccountsAsync(CancellationToken.None);
-        var currentAccountIds = Accounts.Select(account => account.Id).ToHashSet();
-
-        foreach (var persistedAccount in persistedAccounts)
+        await _saveGate.WaitAsync();
+        string[]? profileDirsToDelete = null;
+        try
         {
-            if (!currentAccountIds.Contains(persistedAccount.Id))
-            {
-                await repository.DeleteAccountAsync(persistedAccount.Id, CancellationToken.None);
-            }
-        }
+            var persistedAccounts = await repository.GetAccountsAsync(CancellationToken.None);
+            var currentAccountIds = Accounts.Select(account => account.Id).ToHashSet();
 
-        _settings.Avito.Accounts.Clear();
-        foreach (var account in Accounts)
-        {
-            account.AvitoResponsesUrl = FixedAvitoProfileUrl;
-
-            if (string.IsNullOrWhiteSpace(account.BrowserProfilePath))
+            foreach (var persistedAccount in persistedAccounts)
             {
-                account.BrowserProfilePath = profileService.GetProfile(account).ProfilePath;
+                if (!currentAccountIds.Contains(persistedAccount.Id))
+                {
+                    await repository.DeleteAccountAsync(persistedAccount.Id, CancellationToken.None);
+                }
             }
 
-            _settings.Avito.Accounts.Add(account);
-            await repository.SaveAccountAsync(account, CancellationToken.None);
-        }
+            _settings.Avito.Accounts.Clear();
+            foreach (var account in Accounts)
+            {
+                account.AvitoResponsesUrl = FixedAvitoProfileUrl;
 
-        await settingsService.SaveAsync(_settings, CancellationToken.None);
-        foreach (var profilePath in _pendingProfileDeletions)
+                if (string.IsNullOrWhiteSpace(account.BrowserProfilePath))
+                {
+                    account.BrowserProfilePath = profileService.GetProfile(account).ProfilePath;
+                }
+
+                _settings.Avito.Accounts.Add(account);
+                await repository.SaveAccountAsync(account, CancellationToken.None);
+            }
+
+            await settingsService.SaveAsync(_settings, CancellationToken.None);
+            if (_pendingProfileDeletions.Count > 0)
+            {
+                profileDirsToDelete = _pendingProfileDeletions.ToArray();
+                _pendingProfileDeletions.Clear();
+            }
+        }
+        finally
         {
-            _committedProfileDeletions.Add(profilePath);
+            _saveGate.Release();
         }
 
-        _pendingProfileDeletions.Clear();
-        UpdateSavedSnapshot();
+        if (profileDirsToDelete is { Length: > 0 })
+        {
+            ScheduleProfileDirectoryDeletion(profileDirsToDelete);
+        }
     }
 
     [RelayCommand(CanExecute = nameof(CanOpenSelectedAccountBrowserOrSettings))]
@@ -387,7 +400,7 @@ public partial class SettingsViewModel(
                 if (!Accounts.Contains(newAccount)
                     && !string.IsNullOrWhiteSpace(newAccount.BrowserProfilePath))
                 {
-                    profileService.DeleteProfile(newAccount.BrowserProfilePath);
+                    ScheduleProfileDirectoryDeletion([newAccount.BrowserProfilePath]);
                 }
             }
             catch
@@ -484,24 +497,6 @@ public partial class SettingsViewModel(
             AvitoAccountStatus.Authorized or
             AvitoAccountStatus.Monitoring or
             AvitoAccountStatus.Paused);
-
-    public bool HasUnsavedChanges() => BuildAccountsSnapshot() != _savedAccountsSnapshot;
-
-    public void DeleteCommittedProfiles()
-    {
-        foreach (var profilePath in _committedProfileDeletions.ToArray())
-        {
-            try
-            {
-                profileService.DeleteProfile(profilePath);
-            }
-            catch
-            {
-            }
-        }
-
-        _committedProfileDeletions.Clear();
-    }
 
     public void DetachPersistenceListener()
     {
@@ -608,64 +603,24 @@ public partial class SettingsViewModel(
         RefreshSelectedAccountPresentation();
     }
 
-    private void UpdateSavedSnapshot()
+    /// <summary>
+    /// Удаление каталога профиля WebView2 может занять много времени; выполняется в фоне, чтобы не блокировать UI.
+    /// </summary>
+    private void ScheduleProfileDirectoryDeletion(string[] profilePaths)
     {
-        _savedAccountsSnapshot = BuildAccountsSnapshot();
-    }
-
-    private string BuildAccountsSnapshot()
-    {
-        var snapshot = Accounts
-            .OrderBy(account => account.Id)
-            .Select(account => new
+        _ = Task.Run(() =>
+        {
+            foreach (var profilePath in profilePaths)
             {
-                account.Id,
-                account.DisplayName,
-                AvitoResponsesUrl = FixedAvitoProfileUrl,
-                account.BrowserProfilePath,
-                account.IsEnabled,
-                account.BrowserName,
-                account.BrowserVersion,
-                account.UserAgentDevice,
-                account.UseWindowsOs,
-                account.WindowsVersion,
-                account.UseMacOs,
-                account.MacOsVersion,
-                account.UseLinuxOs,
-                account.LinuxVersion,
-                account.UseAndroidOs,
-                account.AndroidVersion,
-                account.UseIosOs,
-                account.IosVersion,
-                account.AssignedUserAgent,
-                account.CookiesJson,
-                account.ImportCookiesOnNextStart,
-                account.Notes,
-                account.ProxyAddress,
-                account.ProxyType,
-                account.ProxyUsername,
-                account.ProxyPassword,
-                account.ProxyRotationUrl,
-                account.BrowserLaunchArgs,
-                account.NavigatorPlatform,
-                account.DoNotTrack,
-                account.SpoofWebGl,
-                account.WebGlVendor,
-                account.WebGlRenderer,
-                account.CanvasFingerprintNoise,
-                account.AudioFingerprintNoise,
-                account.WebRtcLaunchFlags,
-                account.ProxyPresetsJson,
-                account.FingerprintOverviewJson,
-                account.ScreenResolution,
-                account.Timezone,
-                account.Languages,
-                Status = account.Status.ToString(),
-                account.LastAuthCheckAt,
-                account.LastMonitoringAt,
-                account.LastErrorMessage
-            });
-
-        return JsonSerializer.Serialize(snapshot);
+                try
+                {
+                    profileService.DeleteProfile(profilePath);
+                }
+                catch
+                {
+                }
+            }
+        });
     }
+
 }

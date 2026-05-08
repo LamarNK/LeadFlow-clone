@@ -13,11 +13,14 @@ public static class ChromiumLaunchArgumentsBuilder
     public static string Build(AvitoAccount account)
     {
         var sb = new StringBuilder();
+        var overview = FingerprintOverviewState.Parse(account.FingerprintOverviewJson);
         var proxyArg = BuildProxyServerSwitchValue(account);
         if (!string.IsNullOrEmpty(proxyArg))
         {
             sb.Append("--proxy-server=").Append(proxyArg);
         }
+
+        AppendDerivedFingerprintFlags(sb, overview);
 
         var extra = account.BrowserLaunchArgs?.Trim();
         if (!string.IsNullOrEmpty(extra))
@@ -31,6 +34,11 @@ public static class ChromiumLaunchArgumentsBuilder
         }
 
         var webrtc = account.WebRtcLaunchFlags?.Trim();
+        if (string.IsNullOrWhiteSpace(webrtc))
+        {
+            webrtc = GetWebRtcFlags(overview.WebRtcMode)?.Trim();
+        }
+
         if (!string.IsNullOrEmpty(webrtc))
         {
             if (sb.Length > 0)
@@ -43,6 +51,44 @@ public static class ChromiumLaunchArgumentsBuilder
 
         return sb.ToString();
     }
+
+    private static void AppendDerivedFingerprintFlags(StringBuilder sb, FingerprintOverviewState overview)
+    {
+        AppendFlag(sb, GetHardwareAccelerationFlag(overview.HardwareAccelerationMode));
+        AppendFlag(sb, overview.DisableTlsFeatures ? "--disable-features=UseChromeRootStore,AsyncDns" : null);
+        AppendFlag(sb, overview.PortScanProtectionEnabled ? "--enable-features=BlockInsecurePrivateNetworkRequests" : null);
+    }
+
+    private static void AppendFlag(StringBuilder sb, string? flag)
+    {
+        if (string.IsNullOrWhiteSpace(flag))
+        {
+            return;
+        }
+
+        if (sb.Length > 0)
+        {
+            sb.Append(' ');
+        }
+
+        sb.Append(flag.Trim());
+    }
+
+    private static string? GetHardwareAccelerationFlag(string? mode) => mode switch
+    {
+        "Включить" => "--enable-gpu-rasterization",
+        "Выключить" => "--disable-gpu --disable-software-rasterizer",
+        _ => null
+    };
+
+    private static string? GetWebRtcFlags(string? mode) => mode switch
+    {
+        "Отключить" => "--disable-features=WebRtcHideLocalIpsWithMdns --force-webrtc-ip-handling-policy=disable_non_proxied_udp",
+        "Прокси UDP" => "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
+        "Переадресация" => "--force-webrtc-ip-handling-policy=default_public_interface_only",
+        "Подмена" => "--force-webrtc-ip-handling-policy=default_public_and_private_interfaces --webrtc-ip-handling-policy=default_public_interface_only",
+        _ => null
+    };
 
     /// <summary>
     /// Значение для <c>--proxy-server=...</c> (без префикса флага).
