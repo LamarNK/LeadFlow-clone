@@ -110,12 +110,14 @@ public partial class App : System.Windows.Application
         builder.Services.AddSingleton<IBitrixClient, BitrixClient>();
         builder.Services.AddSingleton<ICsvExportService, CsvExportService>();
         builder.Services.AddSingleton<IAvitoResponseSource, AvitoResponseSource>();
+        builder.Services.AddSingleton<IAdsPowerAvitoAutomationService, AdsPowerAvitoAutomationService>();
         builder.Services.AddSingleton<AvitoDemoResponseSource>();
         builder.Services.AddSingleton<LeadFlow.Services.Avito.AvitoParserService>();
         builder.Services.AddSingleton<AppRepository>();
         builder.Services.AddSingleton<ICandidateDuplicateRepository>(sp => sp.GetRequiredService<AppRepository>());
         builder.Services.AddSingleton<IMonitoringRepository>(sp => sp.GetRequiredService<AppRepository>());
         builder.Services.AddSingleton<IAdsPowerApiClient, AdsPowerApiClient>();
+        builder.Services.AddSingleton<IAdsPowerAvitoAuthService, AdsPowerAvitoAuthService>();
         builder.Services.AddSingleton<IWindowService, WindowService>();
         builder.Services.AddSingleton<IMonitoringService, MonitoringService>();
 

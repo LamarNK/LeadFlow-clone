@@ -1,14 +1,21 @@
 using System.Windows;
+using LeadFlow.Data;
 using LeadFlow.Logging.Audit;
 using LeadFlow.Models;
 using LeadFlow.Services.AdsPower;
+using LeadFlow.Services.Avito;
 using LeadFlow.ViewModels;
 using LeadFlow.Views;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace LeadFlow.Services;
 
-public sealed class WindowService(IServiceProvider serviceProvider, IAdsPowerApiClient adsPowerApiClient) : IWindowService
+public sealed class WindowService(
+    IServiceProvider serviceProvider,
+    IAdsPowerApiClient adsPowerApiClient,
+    IAdsPowerAvitoAuthService adsPowerAvitoAuthService,
+    IAdsPowerAvitoAutomationService adsPowerAvitoAutomationService,
+    AppRepository repository) : IWindowService
 {
     private readonly Dictionary<Type, Window> _openWindows = new();
     private AvitoAuthWindow? _avitoBrowserWindow;
@@ -37,13 +44,195 @@ public sealed class WindowService(IServiceProvider serviceProvider, IAdsPowerApi
     {
         if (account.ProfileProvider == AvitoProfileProvider.AdsPower)
         {
-            await LaunchAdsPowerBrowserAsync(owner, account, "https://www.avito.ru/", cancellationToken).ConfigureAwait(true);
+            await CheckAdsPowerAvitoAuthorizationAsync(account, cancellationToken).ConfigureAwait(true);
             return;
         }
 
         var host = GetOrCreateAvitoBrowserHost(owner);
         host.AddAuthTab(account);
         ActivateWindow(_avitoBrowserWindow!);
+    }
+
+    /// <summary>
+    /// Запускает браузер AdsPower на /profile, через CDP читает имя пользователя и форму входа,
+    /// сохраняет результат в аккаунт (DisplayName не трогаем — пишем отдельно <see cref="AvitoAccount.AvitoProfileName"/>).
+    /// </summary>
+    private async Task CheckAdsPowerAvitoAuthorizationAsync(AvitoAccount account, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(account.AdsPowerProfileId) || string.IsNullOrWhiteSpace(account.AdsPowerApiBaseUrl))
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"AdsPower auth check skipped for account {account.DisplayName}: profile not configured.",
+                DeskLinkAuditLogLevel.Warning,
+                memberName: nameof(CheckAdsPowerAvitoAuthorizationAsync),
+                filePath: "WindowService.cs",
+                properties: new Dictionary<string, object?>
+                {
+                    ["step"] = "skipped_not_configured",
+                    ["account.id"] = account.Id,
+                    ["account.displayName"] = account.DisplayName
+                });
+            account.LastAuthCheckAt = DateTime.UtcNow;
+            account.Status = AvitoAccountStatus.NotConfigured;
+            account.LastErrorMessage = "Не задан профиль AdsPower или URL Local API.";
+            await repository.SaveAccountAsync(account, cancellationToken).ConfigureAwait(true);
+            return;
+        }
+
+        var options = new AdsPowerConnectionOptions(
+            account.AdsPowerApiBaseUrl,
+            string.IsNullOrWhiteSpace(account.AdsPowerApiKey) ? null : account.AdsPowerApiKey);
+
+        _ = GlobalLogger.Instance.LogAsync(
+            $"AdsPower auth check requested for account {account.DisplayName}.",
+            DeskLinkAuditLogLevel.Info,
+            memberName: nameof(CheckAdsPowerAvitoAuthorizationAsync),
+            filePath: "WindowService.cs",
+            properties: new Dictionary<string, object?>
+            {
+                ["step"] = "requested",
+                ["account.id"] = account.Id,
+                ["account.displayName"] = account.DisplayName,
+                ["adsPower.userId"] = account.AdsPowerProfileId,
+                ["adsPower.baseUrl"] = options.BaseUrl,
+                ["adsPower.hasApiKey"] = !string.IsNullOrWhiteSpace(options.ApiKey)
+            });
+
+        AdsPowerAvitoAuthResult result;
+        try
+        {
+            result = await adsPowerAvitoAuthService
+                .CheckAuthorizationAsync(options, account.AdsPowerProfileId!, cancellationToken)
+                .ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"AdsPower auth check threw unexpected exception for account {account.DisplayName}: {ex}",
+                DeskLinkAuditLogLevel.Error,
+                memberName: nameof(CheckAdsPowerAvitoAuthorizationAsync),
+                filePath: "WindowService.cs",
+                properties: new Dictionary<string, object?>
+                {
+                    ["step"] = "exception",
+                    ["account.id"] = account.Id,
+                    ["error.type"] = ex.GetType().FullName
+                });
+            account.LastAuthCheckAt = DateTime.UtcNow;
+            account.Status = AvitoAccountStatus.Error;
+            account.LastErrorMessage = $"Не удалось проверить авторизацию: {ex.Message}";
+            await repository.SaveAccountAsync(account, cancellationToken).ConfigureAwait(true);
+            return;
+        }
+
+        account.LastAuthCheckAt = DateTime.UtcNow;
+        if (result.IsAuthorized)
+        {
+            account.Status = AvitoAccountStatus.Authorized;
+            // Сохраняем имя только если удалось распарсить — иначе оставляем то, что уже было.
+            if (!string.IsNullOrWhiteSpace(result.ProfileName))
+            {
+                account.AvitoProfileName = result.ProfileName;
+            }
+
+            account.LastErrorMessage = string.IsNullOrWhiteSpace(result.ProfileName)
+                ? "Авторизован. Имя профиля Avito не удалось распознать со страницы — это не мешает работе."
+                : string.Empty;
+
+            await TryRefreshSubProfilesAsync(account, options, cancellationToken).ConfigureAwait(true);
+        }
+        else if (result.HasCaptcha)
+        {
+            account.Status = AvitoAccountStatus.RequiresManualAction;
+            account.LastErrorMessage = "Avito показал капчу — пройдите проверку в окне AdsPower и повторите.";
+        }
+        else if (result.HasLoginForm)
+        {
+            account.Status = AvitoAccountStatus.RequiresLogin;
+            account.LastErrorMessage = "Войдите в Avito в открывшемся окне AdsPower и нажмите «Авторизовать в Avito» снова.";
+        }
+        else
+        {
+            account.Status = AvitoAccountStatus.RequiresLogin;
+            account.LastErrorMessage = string.IsNullOrWhiteSpace(result.ErrorMessage)
+                ? "Не удалось определить состояние авторизации Avito."
+                : result.ErrorMessage!;
+        }
+
+        _ = GlobalLogger.Instance.LogAsync(
+            $"AdsPower auth check result for {account.DisplayName}: status={account.Status}, avitoProfileName={account.AvitoProfileName ?? "<null>"}.",
+            DeskLinkAuditLogLevel.Info,
+            memberName: nameof(CheckAdsPowerAvitoAuthorizationAsync),
+            filePath: "WindowService.cs",
+            properties: new Dictionary<string, object?>
+            {
+                ["step"] = "applied",
+                ["account.id"] = account.Id,
+                ["account.displayName"] = account.DisplayName,
+                ["account.avitoProfileName"] = account.AvitoProfileName,
+                ["account.status"] = account.Status.ToString(),
+                ["auth.isAuthorized"] = result.IsAuthorized,
+                ["auth.hasLoginForm"] = result.HasLoginForm,
+                ["auth.hasCaptcha"] = result.HasCaptcha,
+                ["auth.currentUrl"] = result.CurrentUrl,
+                ["auth.errorMessage"] = result.ErrorMessage
+            });
+
+        await repository.SaveAccountAsync(account, cancellationToken).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// После успешной авторизации тянем список суб-профилей Avito Pro (модалка
+    /// <c>/profile/pro/items#profile/switch?withEntities=true</c>) и сохраняем в аккаунте.
+    /// Любые ошибки логируем, но авторизацию не валим — сабпрофилей может не быть в принципе.
+    /// </summary>
+    private async Task TryRefreshSubProfilesAsync(
+        AvitoAccount account,
+        AdsPowerConnectionOptions options,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(account.AdsPowerProfileId))
+        {
+            return;
+        }
+
+        try
+        {
+            var html = await adsPowerAvitoAutomationService
+                .LoadProfileSwitchHtmlAsync(options, account.AdsPowerProfileId!, cancellationToken)
+                .ConfigureAwait(true);
+
+            var subProfiles = AvitoSubProfilesParser.Parse(html);
+            account.SetSubProfiles(subProfiles);
+
+            _ = GlobalLogger.Instance.LogAsync(
+                $"AdsPower sub-profiles parsed for {account.DisplayName}: count={subProfiles.Count}.",
+                DeskLinkAuditLogLevel.Info,
+                memberName: nameof(TryRefreshSubProfilesAsync),
+                filePath: "WindowService.cs",
+                properties: new Dictionary<string, object?>
+                {
+                    ["step"] = "parsed",
+                    ["account.id"] = account.Id,
+                    ["account.displayName"] = account.DisplayName,
+                    ["subProfiles.count"] = subProfiles.Count,
+                    ["subProfiles.items"] = subProfiles.Select(p => new { p.Id, p.Name, p.Category, p.IsCurrent }).ToArray()
+                });
+        }
+        catch (Exception ex)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"AdsPower sub-profiles refresh failed for {account.DisplayName}: {ex.Message}",
+                DeskLinkAuditLogLevel.Warning,
+                memberName: nameof(TryRefreshSubProfilesAsync),
+                filePath: "WindowService.cs",
+                properties: new Dictionary<string, object?>
+                {
+                    ["step"] = "failed",
+                    ["account.id"] = account.Id,
+                    ["error.type"] = ex.GetType().FullName
+                });
+        }
     }
 
     public Task ShowAccountSettingsAsync(Window owner, AvitoAccount account, CancellationToken cancellationToken)
@@ -82,16 +271,25 @@ public sealed class WindowService(IServiceProvider serviceProvider, IAdsPowerApi
         ActivateWindow(_avitoBrowserWindow!);
     }
 
-    private async Task LaunchAdsPowerBrowserAsync(Window owner, AvitoAccount account, string? openUrl, CancellationToken cancellationToken)
+    private async Task LaunchAdsPowerBrowserAsync(
+        Window owner,
+        AvitoAccount account,
+        string? openUrl,
+        CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(account.AdsPowerProfileId) || string.IsNullOrWhiteSpace(account.AdsPowerApiBaseUrl))
         {
-            MessageBox.Show(
-                owner,
-                "Для аккаунта AdsPower не заданы идентификатор профиля или URL Local API.",
-                "AdsPower",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
+            _ = GlobalLogger.Instance.LogAsync(
+                $"AdsPower launch skipped for account {account.DisplayName}: profile not configured.",
+                DeskLinkAuditLogLevel.Warning,
+                memberName: nameof(LaunchAdsPowerBrowserAsync),
+                filePath: "WindowService.cs",
+                properties: new Dictionary<string, object?>
+                {
+                    ["step"] = "skipped_not_configured",
+                    ["account.id"] = account.Id,
+                    ["account.displayName"] = account.DisplayName
+                });
             return;
         }
 
@@ -113,7 +311,7 @@ public sealed class WindowService(IServiceProvider serviceProvider, IAdsPowerApi
                     ["adsPower.userId"] = account.AdsPowerProfileId,
                     ["adsPower.openUrl"] = openUrl
                 });
-            await adsPowerApiClient.StartBrowserAsync(options, account.AdsPowerProfileId, openUrl, cancellationToken)
+            _ = await adsPowerApiClient.StartBrowserAsync(options, account.AdsPowerProfileId, openUrl, cancellationToken)
                 .ConfigureAwait(true);
             _ = GlobalLogger.Instance.LogAsync(
                 $"AdsPower browser launch completed for account {account.DisplayName}.",
@@ -144,7 +342,6 @@ public sealed class WindowService(IServiceProvider serviceProvider, IAdsPowerApi
                     ["adsPower.userId"] = account.AdsPowerProfileId,
                     ["adsPower.openUrl"] = openUrl
                 });
-            MessageBox.Show(owner, ex.Message, "AdsPower", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
 
@@ -255,9 +452,9 @@ public sealed class WindowService(IServiceProvider serviceProvider, IAdsPowerApi
 
     private static void ActivateWindow(Window window)
     {
-        if (window.WindowState == WindowState.Minimized)
+        if (window.WindowState == System.Windows.WindowState.Minimized)
         {
-            window.WindowState = WindowState.Normal;
+            window.WindowState = System.Windows.WindowState.Normal;
         }
 
         window.Show();

@@ -123,18 +123,57 @@
                                         <TextBlock Text="{Binding DisplayName}" Style="{StaticResource ListRowTitleTextStyle}" />
                                         <TextBlock Margin="0,2,0,0"
                                                    FontSize="11"
-                                                   Foreground="#64748B">
+                                                   Foreground="#64748B"
+                                                   Text="AdsPower — внешний браузер">
                                             <TextBlock.Style>
                                                 <Style TargetType="TextBlock">
                                                     <Setter Property="Visibility" Value="Collapsed" />
                                                     <Style.Triggers>
                                                         <DataTrigger Binding="{Binding ProfileProvider}" Value="{x:Static models:AvitoProfileProvider.AdsPower}">
                                                             <Setter Property="Visibility" Value="Visible" />
-                                                            <Setter Property="Text" Value="AdsPower — внешний браузер" />
                                                         </DataTrigger>
                                                     </Style.Triggers>
                                                 </Style>
                                             </TextBlock.Style>
+                                        </TextBlock>
+                                        <TextBlock Margin="0,2,0,0"
+                                                   FontSize="11"
+                                                   Foreground="#0F172A"
+                                                   FontWeight="SemiBold"
+                                                   TextTrimming="CharacterEllipsis">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding AvitoProfileName}" Value="{x:Null}">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding AvitoProfileName}" Value="">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                            <Run Text="Avito: " Foreground="#64748B" FontWeight="Normal" />
+                                            <Run Text="{Binding AvitoProfileName}" />
+                                        </TextBlock>
+                                        <TextBlock Margin="0,2,0,0"
+                                                   FontSize="11"
+                                                   Foreground="#0F172A"
+                                                   FontWeight="SemiBold"
+                                                   TextTrimming="CharacterEllipsis">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding HasSubProfiles}" Value="True">
+                                                            <Setter Property="Visibility" Value="Visible" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                            <Run Text="Профили AdsPower: " Foreground="#64748B" FontWeight="Normal" />
+                                            <Run Text="{Binding SubProfilesCount, Mode=OneWay}" />
                                         </TextBlock>
                                         <TextBlock Margin="0,4,0,0"
                                                    Style="{StaticResource SubtleTextStyle}"
@@ -226,6 +265,12 @@
                         </Grid.ColumnDefinitions>
                         <StackPanel>
                             <TextBlock Text="{Binding SelectedAccountName}" Style="{StaticResource PageTitleTextStyle}" />
+                            <TextBlock Margin="0,2,0,0"
+                                       FontSize="12"
+                                       Foreground="#0F172A"
+                                       FontWeight="SemiBold"
+                                       Text="{Binding SelectedAccountAvitoProfileText}"
+                                       Visibility="{Binding HasAvitoProfileName, Converter={StaticResource BooleanToVisibilityConverter}}" />
                             <TextBlock Text="{Binding SelectedAccountStateHint}"
                                        Margin="0,4,0,0"
                                        TextWrapping="Wrap"
@@ -277,6 +322,65 @@
                             </StackPanel>
                         </Border>
                     </Grid>
+
+                    <Border Grid.Row="2"
+                            VerticalAlignment="Bottom"
+                            Margin="0,12,0,0"
+                            Padding="0,8,0,0"
+                            BorderBrush="{StaticResource BorderBrush}"
+                            BorderThickness="0,1,0,0"
+                            Visibility="{Binding HasSubProfiles, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <StackPanel>
+                            <TextBlock Text="{Binding SelectedAccountSubProfilesHeader}"
+                                       FontSize="12"
+                                       Foreground="#0F172A"
+                                       FontWeight="SemiBold" />
+                            <TextBlock Text="Avito Pro переключает их по очереди во время мониторинга."
+                                       Style="{StaticResource SubtleTextStyle}"
+                                       Margin="0,2,0,6" />
+                            <ItemsControl ItemsSource="{Binding SelectedAccountSubProfiles}"
+                                          MaxHeight="160">
+                                <ItemsControl.Template>
+                                    <ControlTemplate TargetType="ItemsControl">
+                                        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                            <ItemsPresenter />
+                                        </ScrollViewer>
+                                    </ControlTemplate>
+                                </ItemsControl.Template>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Margin="0,2">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel>
+                                                <TextBlock FontSize="12" FontWeight="SemiBold" Foreground="#0F172A"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           Text="{Binding Name}" />
+                                                <TextBlock FontSize="11" Foreground="#64748B"
+                                                           TextTrimming="CharacterEllipsis">
+                                                    <Run Text="{Binding Category, Mode=OneWay}" />
+                                                    <Run Text=" · id " Foreground="#94A3B8" />
+                                                    <Run Text="{Binding Id, Mode=OneWay}" Foreground="#94A3B8" />
+                                                </TextBlock>
+                                            </StackPanel>
+                                            <Border Grid.Column="1"
+                                                    CornerRadius="10"
+                                                    Padding="6,2"
+                                                    Background="#DCFCE7"
+                                                    Visibility="{Binding IsCurrent, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                <TextBlock Text="активный"
+                                                           FontSize="10"
+                                                           FontWeight="SemiBold"
+                                                           Foreground="#166534" />
+                                            </Border>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Border>
 
                     <Grid Grid.Row="3" Margin="0,14,0,0">
                         <Grid.ColumnDefinitions>

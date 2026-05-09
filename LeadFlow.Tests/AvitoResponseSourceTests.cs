@@ -1,5 +1,6 @@
 using LeadFlow.Data;
 using LeadFlow.Models;
+using LeadFlow.Services.AdsPower;
 using LeadFlow.Services.Avito;
 using LeadFlow.Services.Browser;
 using LeadFlow.Tests.Support;
@@ -23,7 +24,8 @@ public sealed class AvitoResponseSourceTests
             repo,
             new FakeBrowserSessionService(),
             new NoOpBackgroundWebViewHostFactory(),
-            automation);
+            automation,
+            new FakeAdsPowerAvitoAutomationService());
 
         var list = await sut.GetNewResponsesAsync(account, NewSettings(), CancellationToken.None);
 
@@ -46,7 +48,8 @@ public sealed class AvitoResponseSourceTests
             repo,
             new FakeBrowserSessionService(),
             new NoOpBackgroundWebViewHostFactory(),
-            automation);
+            automation,
+            new FakeAdsPowerAvitoAutomationService());
 
         var list = await sut.GetNewResponsesAsync(account, NewSettings(), CancellationToken.None);
 
@@ -67,7 +70,8 @@ public sealed class AvitoResponseSourceTests
             repo,
             new FakeBrowserSessionService(),
             new NoOpBackgroundWebViewHostFactory(),
-            automation);
+            automation,
+            new FakeAdsPowerAvitoAutomationService());
 
         var list = await sut.GetNewResponsesAsync(account, NewSettings(), CancellationToken.None);
 
@@ -91,7 +95,8 @@ public sealed class AvitoResponseSourceTests
             repo,
             new FakeBrowserSessionService(),
             new NoOpBackgroundWebViewHostFactory(),
-            automation);
+            automation,
+            new FakeAdsPowerAvitoAutomationService());
 
         var list = await sut.GetNewResponsesAsync(account, NewSettings(), CancellationToken.None);
 
@@ -114,7 +119,8 @@ public sealed class AvitoResponseSourceTests
             repo,
             new FakeBrowserSessionService(),
             new NoOpBackgroundWebViewHostFactory(),
-            automation);
+            automation,
+            new FakeAdsPowerAvitoAutomationService());
 
         var list = await sut.GetNewResponsesAsync(account, NewSettings(), CancellationToken.None);
 
@@ -160,5 +166,33 @@ public sealed class AvitoResponseSourceTests
 
             return Task.FromResult("{}");
         }
+    }
+
+    private sealed class FakeAdsPowerAvitoAutomationService : IAdsPowerAvitoAutomationService
+    {
+        public Task<string> ExtractCandidatesJsonAsync(
+            AdsPowerConnectionOptions options,
+            string adsPowerUserId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult("""{"hasCaptcha":false,"hasLogin":false,"candidates":[]}""");
+
+        public Task<string> LoadProfileItemsHtmlAsync(
+            AdsPowerConnectionOptions options,
+            string adsPowerUserId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult("<html><body></body></html>");
+
+        public Task<string> LoadProfileSwitchHtmlAsync(
+            AdsPowerConnectionOptions options,
+            string adsPowerUserId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult("<html><body></body></html>");
+
+        public Task<bool> SwitchActiveProfileAsync(
+            AdsPowerConnectionOptions options,
+            string adsPowerUserId,
+            string subProfileId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(true);
     }
 }

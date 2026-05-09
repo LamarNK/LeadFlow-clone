@@ -98,7 +98,7 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
         return result;
     }
 
-    public async Task StartBrowserAsync(
+    public async Task<AdsPowerBrowserStartResult> StartBrowserAsync(
         AdsPowerConnectionOptions options,
         string adsPowerUserId,
         string? openUrl,
@@ -168,6 +168,24 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
             }
         }
 
+        string? webSocketDebuggerUrl = null;
+        string? debugPort = null;
+        if (root.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Object)
+        {
+            if (data.TryGetProperty("debug_port", out var debugPortProp))
+            {
+                debugPort = debugPortProp.GetString();
+            }
+
+            if (data.TryGetProperty("ws", out var ws) && ws.ValueKind == JsonValueKind.Object)
+            {
+                if (ws.TryGetProperty("puppeteer", out var puppeteerProp))
+                {
+                    webSocketDebuggerUrl = puppeteerProp.GetString();
+                }
+            }
+        }
+
         Log(
             $"AdsPower browser/start completed successfully for profile {adsPowerUserId}.",
             DeskLinkAuditLogLevel.Info,
@@ -177,6 +195,7 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
                 hasApiKey: !string.IsNullOrWhiteSpace(options.ApiKey),
                 userId: adsPowerUserId,
                 openUrl: openUrl));
+        return new AdsPowerBrowserStartResult(webSocketDebuggerUrl, debugPort);
     }
 
     private static void AddAuthorizationHeader(HttpRequestMessage request, string? apiKey)

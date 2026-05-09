@@ -1,5 +1,6 @@
 using LeadFlow.Models;
 using LeadFlow.Services;
+using LeadFlow.Services.AdsPower;
 using LeadFlow.Services.Avito;
 using LeadFlow.Services.Browser;
 
@@ -96,4 +97,32 @@ internal sealed class NoOpBackgroundWebViewHostFactory : IBackgroundWebViewHostF
         cancellationToken.ThrowIfCancellationRequested();
         return Task.FromResult<IBackgroundWebViewHost>(new NoOpBackgroundWebViewHost());
     }
+}
+
+internal sealed class StubAdsPowerAvitoAutomationService : IAdsPowerAvitoAutomationService
+{
+    public Task<string> ExtractCandidatesJsonAsync(
+        AdsPowerConnectionOptions options,
+        string adsPowerUserId,
+        CancellationToken cancellationToken = default) =>
+        throw new InvalidOperationException("AdsPower CDP не должен вызываться в этих тестах.");
+
+    public Task<string> LoadProfileItemsHtmlAsync(
+        AdsPowerConnectionOptions options,
+        string adsPowerUserId,
+        CancellationToken cancellationToken = default) =>
+        throw new InvalidOperationException("AdsPower CDP не должен вызываться в этих тестах.");
+
+    public Task<string> LoadProfileSwitchHtmlAsync(
+        AdsPowerConnectionOptions options,
+        string adsPowerUserId,
+        CancellationToken cancellationToken = default) =>
+        throw new InvalidOperationException("AdsPower CDP не должен вызываться в этих тестах.");
+
+    public Task<bool> SwitchActiveProfileAsync(
+        AdsPowerConnectionOptions options,
+        string adsPowerUserId,
+        string subProfileId,
+        CancellationToken cancellationToken = default) =>
+        throw new InvalidOperationException("AdsPower CDP не должен вызываться в этих тестах.");
 }

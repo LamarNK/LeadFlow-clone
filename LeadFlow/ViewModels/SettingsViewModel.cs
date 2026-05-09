@@ -551,6 +551,25 @@ public partial class SettingsViewModel(
 
     public string SelectedAccountMonitoringText => FormatDateTime(SelectedAccount?.LastMonitoringAt, "Мониторинг ещё не запускался");
 
+    /// <summary>Имя профиля, прочитанное со страницы Avito (показываем рядом с DisplayName, оба значения сохраняются).</summary>
+    public string SelectedAccountAvitoProfileText =>
+        string.IsNullOrWhiteSpace(SelectedAccount?.AvitoProfileName)
+            ? string.Empty
+            : $"Avito: {SelectedAccount!.AvitoProfileName}";
+
+    public bool HasAvitoProfileName => !string.IsNullOrWhiteSpace(SelectedAccount?.AvitoProfileName);
+
+    /// <summary>Краткая шапка над списком суб-профилей: «Профилей AdsPower: 10».</summary>
+    public string SelectedAccountSubProfilesHeader =>
+        SelectedAccount?.SubProfilesCount > 0
+            ? $"Профилей AdsPower: {SelectedAccount.SubProfilesCount}"
+            : string.Empty;
+
+    public bool HasSubProfiles => SelectedAccount?.SubProfilesCount > 0;
+
+    public IReadOnlyList<AvitoSubProfile> SelectedAccountSubProfiles =>
+        SelectedAccount?.SubProfiles ?? Array.Empty<AvitoSubProfile>();
+
     public string SelectedAccountErrorText => string.IsNullOrWhiteSpace(SelectedAccount?.LastErrorMessage)
         ? "Ошибок не зафиксировано"
         : SelectedAccount!.LastErrorMessage;
@@ -658,6 +677,11 @@ public partial class SettingsViewModel(
         OnPropertyChanged(nameof(SelectedAccountAuthCheckText));
         OnPropertyChanged(nameof(SelectedAccountMonitoringText));
         OnPropertyChanged(nameof(SelectedAccountErrorText));
+        OnPropertyChanged(nameof(SelectedAccountAvitoProfileText));
+        OnPropertyChanged(nameof(HasAvitoProfileName));
+        OnPropertyChanged(nameof(SelectedAccountSubProfilesHeader));
+        OnPropertyChanged(nameof(HasSubProfiles));
+        OnPropertyChanged(nameof(SelectedAccountSubProfiles));
         OnPropertyChanged(nameof(ShowAuthorizeButton));
     }
 

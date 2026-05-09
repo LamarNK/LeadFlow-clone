@@ -706,7 +706,9 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         AdsPowerProfileId = model.AdsPowerProfileId,
         AdsPowerProfileName = model.AdsPowerProfileName,
         AdsPowerApiBaseUrl = model.AdsPowerApiBaseUrl,
-        AdsPowerApiKey = model.AdsPowerApiKey
+        AdsPowerApiKey = model.AdsPowerApiKey,
+        AvitoProfileName = model.AvitoProfileName,
+        SubProfilesJson = string.IsNullOrWhiteSpace(model.SubProfilesJson) ? "[]" : model.SubProfilesJson
     };
 
     private static AvitoAccount ToModel(AvitoAccountEntity entity) => new()
@@ -768,7 +770,9 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         AdsPowerProfileId = entity.AdsPowerProfileId,
         AdsPowerProfileName = entity.AdsPowerProfileName,
         AdsPowerApiBaseUrl = entity.AdsPowerApiBaseUrl,
-        AdsPowerApiKey = entity.AdsPowerApiKey
+        AdsPowerApiKey = entity.AdsPowerApiKey,
+        AvitoProfileName = entity.AvitoProfileName,
+        SubProfilesJson = string.IsNullOrWhiteSpace(entity.SubProfilesJson) ? "[]" : entity.SubProfilesJson
     };
 
     private static void Map(AvitoAccount source, AvitoAccountEntity target)
@@ -828,6 +832,8 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         target.AdsPowerProfileName = source.AdsPowerProfileName;
         target.AdsPowerApiBaseUrl = source.AdsPowerApiBaseUrl;
         target.AdsPowerApiKey = source.AdsPowerApiKey;
+        target.AvitoProfileName = source.AvitoProfileName;
+        target.SubProfilesJson = string.IsNullOrWhiteSpace(source.SubProfilesJson) ? "[]" : source.SubProfilesJson;
     }
 
     private static CandidateResponseEntity ToEntity(CandidateResponse model) => new()
@@ -967,7 +973,9 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
             ["AdsPowerProfileId"] = "ALTER TABLE AvitoAccounts ADD COLUMN AdsPowerProfileId TEXT NULL;",
             ["AdsPowerProfileName"] = "ALTER TABLE AvitoAccounts ADD COLUMN AdsPowerProfileName TEXT NULL;",
             ["AdsPowerApiBaseUrl"] = "ALTER TABLE AvitoAccounts ADD COLUMN AdsPowerApiBaseUrl TEXT NULL;",
-            ["AdsPowerApiKey"] = "ALTER TABLE AvitoAccounts ADD COLUMN AdsPowerApiKey TEXT NULL;"
+            ["AdsPowerApiKey"] = "ALTER TABLE AvitoAccounts ADD COLUMN AdsPowerApiKey TEXT NULL;",
+            ["AvitoProfileName"] = "ALTER TABLE AvitoAccounts ADD COLUMN AvitoProfileName TEXT NULL;",
+            ["SubProfilesJson"] = "ALTER TABLE AvitoAccounts ADD COLUMN SubProfilesJson TEXT NOT NULL DEFAULT '[]';"
         };
 
         foreach (var (columnName, statement) in alterStatements)

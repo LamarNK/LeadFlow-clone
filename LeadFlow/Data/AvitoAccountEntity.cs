@@ -61,4 +61,14 @@ public sealed class AvitoAccountEntity
     public string? AdsPowerProfileName { get; set; }
     public string? AdsPowerApiBaseUrl { get; set; }
     public string? AdsPowerApiKey { get; set; }
+
+    /// <summary>
+    /// Имя пользователя со страницы Avito (последняя удачная проверка авторизации).
+    /// </summary>
+    public string? AvitoProfileName { get; set; }
+
+    /// <summary>
+    /// JSON-массив суб-профилей Avito Pro, распарсенных из модалки переключения профилей.
+    /// </summary>
+    public string SubProfilesJson { get; set; } = "[]";
 }

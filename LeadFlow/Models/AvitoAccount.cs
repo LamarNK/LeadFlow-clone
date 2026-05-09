@@ -1,3 +1,6 @@
+using System.Collections.Generic;
+using System.Linq;
+using System.Text.Json;
 using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace LeadFlow.Models;
@@ -71,6 +74,92 @@ public sealed partial class AvitoAccount : ObservableObject
     [ObservableProperty] private string? adsPowerApiKey;
 
     /// <summary>
+    /// Имя пользователя, прочитанное со страницы Avito при последней проверке авторизации.
+    /// DisplayName при этом не перезаписываем — показываем оба значения в UI.
+    /// </summary>
+    [ObservableProperty] private string? avitoProfileName;
+
+    /// <summary>
+    /// Сериализованный JSON-массив суб-профилей Avito Pro (модалка <c>#profile/switch?withEntities=true</c>).
+    /// Хранится как строка, чтобы не плодить отдельную таблицу в SQLite; UI читает его через <see cref="SubProfiles"/>.
+    /// </summary>
+    [ObservableProperty] private string subProfilesJson = "[]";
+
+    private static readonly JsonSerializerOptions SubProfilesJsonOptions = new()
+    {
+        WriteIndented = false,
+        PropertyNameCaseInsensitive = true
+    };
+
+    /// <summary>Распарсенный список суб-профилей. Не наблюдаемое свойство — чтобы избежать рекурсивных уведомлений.</summary>
+    public IReadOnlyList<AvitoSubProfile> SubProfiles
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(SubProfilesJson))
+            {
+                return Array.Empty<AvitoSubProfile>();
+            }
+
+            try
+            {
+                return JsonSerializer.Deserialize<List<AvitoSubProfile>>(SubProfilesJson, SubProfilesJsonOptions)
+                       ?? new List<AvitoSubProfile>();
+            }
+            catch
+            {
+                return Array.Empty<AvitoSubProfile>();
+            }
+        }
+    }
+
+    public int SubProfilesCount => SubProfiles.Count;
+
+    /// <summary>Короткое перечисление имён для отображения в карточке аккаунта.</summary>
+    public string SubProfilesSummary
+    {
+        get
+        {
+            var items = SubProfiles;
+            if (items.Count == 0)
+            {
+                return string.Empty;
+            }
+
+            return string.Join(", ", items.Select(s => string.IsNullOrWhiteSpace(s.Name) ? s.Id : s.Name));
+        }
+    }
+
+    public bool HasSubProfiles => SubProfiles.Count > 0;
+
+    /// <summary>Сохраняет распарсенный список и обновляет JSON-представление + наблюдатели.</summary>
+    public void SetSubProfiles(IReadOnlyList<AvitoSubProfile> profiles)
+    {
+        var serialized = profiles is { Count: > 0 }
+            ? JsonSerializer.Serialize(profiles, SubProfilesJsonOptions)
+            : "[]";
+
+        if (string.Equals(serialized, SubProfilesJson, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        SubProfilesJson = serialized;
+        OnPropertyChanged(nameof(SubProfiles));
+        OnPropertyChanged(nameof(SubProfilesCount));
+        OnPropertyChanged(nameof(SubProfilesSummary));
+        OnPropertyChanged(nameof(HasSubProfiles));
+    }
+
+    partial void OnSubProfilesJsonChanged(string value)
+    {
+        OnPropertyChanged(nameof(SubProfiles));
+        OnPropertyChanged(nameof(SubProfilesCount));
+        OnPropertyChanged(nameof(SubProfilesSummary));
+        OnPropertyChanged(nameof(HasSubProfiles));
+    }
+
+    /// <summary>
     /// Копирует в этот экземпляр поля, сохранённые в БД из фонового процесса (тот же <see cref="Id"/>).
     /// </summary>
     public void MergePersistedSnapshotFrom(AvitoAccount source)
@@ -88,5 +177,7 @@ public sealed partial class AvitoAccount : ObservableObject
         BlockedCount = source.BlockedCount;
         DraftsCount = source.DraftsCount;
         AdsStatsUpdatedAt = source.AdsStatsUpdatedAt;
+        AvitoProfileName = source.AvitoProfileName;
+        SubProfilesJson = string.IsNullOrWhiteSpace(source.SubProfilesJson) ? "[]" : source.SubProfilesJson;
     }
 }

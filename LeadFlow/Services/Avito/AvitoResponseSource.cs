@@ -2,6 +2,7 @@ using System.Text.Json;
 using LeadFlow.Data;
 using LeadFlow.Logging.Audit;
 using LeadFlow.Models;
+using LeadFlow.Services.AdsPower;
 using LeadFlow.Services.Browser;
 
 namespace LeadFlow.Services.Avito;
@@ -10,7 +11,8 @@ public sealed class AvitoResponseSource(
     AppRepository repository,
     IBrowserSessionService browserSessionService,
     IBackgroundWebViewHostFactory backgroundWebViewHostFactory,
-    IWebPageAutomationService automationService) : IAvitoResponseSource
+    IWebPageAutomationService automationService,
+    IAdsPowerAvitoAutomationService adsPowerAvitoAutomationService) : IAvitoResponseSource
 {
     public const string CandidatesPageUrl = "https://www.avito.ru/profile/candidates";
 
@@ -18,9 +20,19 @@ public sealed class AvitoResponseSource(
     {
         if (account.ProfileProvider == AvitoProfileProvider.AdsPower && !settings.DemoModeEnabled)
         {
-            account.LastErrorMessage =
-                "Аккаунт AdsPower: автоматический опрос откликов через встроенный браузер недоступен. Используйте локальный профиль или демо-режим.";
-            return [];
+            if (string.IsNullOrWhiteSpace(account.AdsPowerProfileId) || string.IsNullOrWhiteSpace(account.AdsPowerApiBaseUrl))
+            {
+                account.LastErrorMessage = "Аккаунт AdsPower: не заданы user_id или base URL Local API.";
+                return [];
+            }
+
+            var options = new AdsPowerConnectionOptions(
+                account.AdsPowerApiBaseUrl,
+                string.IsNullOrWhiteSpace(account.AdsPowerApiKey) ? null : account.AdsPowerApiKey);
+            var rawAdsPower = await adsPowerAvitoAutomationService
+                .ExtractCandidatesJsonAsync(options, account.AdsPowerProfileId, cancellationToken)
+                .ConfigureAwait(false);
+            return await ParseResponsesFromRawExtractionAsync(account, rawAdsPower, cancellationToken).ConfigureAwait(false);
         }
 
         var session = await browserSessionService.CreateSessionAsync(account, cancellationToken);
@@ -62,37 +74,7 @@ public sealed class AvitoResponseSource(
                     continue;
                 }
 
-                using var json = JsonDocument.Parse(raw);
-                var root = json.RootElement;
-                var hasCaptcha = root.TryGetProperty("hasCaptcha", out var captchaProp) && captchaProp.GetBoolean();
-                var hasLogin = root.TryGetProperty("hasLogin", out var loginProp) && loginProp.GetBoolean();
-
-                if (hasCaptcha)
-                {
-                    account.Status = AvitoAccountStatus.RequiresManualAction;
-                    account.LastErrorMessage = "На странице кандидатов требуется ручное действие";
-                    return [];
-                }
-
-                if (hasLogin)
-                {
-                    account.Status = AvitoAccountStatus.RequiresLogin;
-                    account.LastErrorMessage = "Для страницы кандидатов требуется повторная авторизация";
-                    return [];
-                }
-
-                account.Status = AvitoAccountStatus.Authorized;
-                account.LastErrorMessage = string.Empty;
-                var candidates = AvitoCandidatesJsonParser.ParseCandidates(root, account);
-
-                var existingIds = await repository.GetExistingSourceResponseIdsAsync(
-                    candidates.Select(x => x.SourceResponseId),
-                    cancellationToken);
-
-                return candidates
-                    .Where(x => !existingIds.Contains(x.SourceResponseId))
-                    .OrderByDescending(x => x.CreatedAt)
-                    .ToList();
+                return await ParseResponsesFromRawExtractionAsync(account, raw, cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -124,6 +106,45 @@ public sealed class AvitoResponseSource(
 
         account.LastErrorMessage = "Не удалось получить отклики со страницы кандидатов после нескольких попыток";
         return [];
+    }
+
+    private async Task<IReadOnlyList<CandidateResponse>> ParseResponsesFromRawExtractionAsync(
+        AvitoAccount account,
+        string raw,
+        CancellationToken cancellationToken)
+    {
+        using var json = JsonDocument.Parse(raw);
+        var root = json.RootElement;
+        var hasCaptcha = root.TryGetProperty("hasCaptcha", out var captchaProp) && captchaProp.GetBoolean();
+        var hasLogin = root.TryGetProperty("hasLogin", out var loginProp) && loginProp.GetBoolean();
+
+        if (hasCaptcha)
+        {
+            account.Status = AvitoAccountStatus.RequiresManualAction;
+            account.LastErrorMessage = "На странице кандидатов требуется ручное действие";
+            return [];
+        }
+
+        if (hasLogin)
+        {
+            account.Status = AvitoAccountStatus.RequiresLogin;
+            account.LastErrorMessage = "Для страницы кандидатов требуется повторная авторизация";
+            return [];
+        }
+
+        account.Status = AvitoAccountStatus.Authorized;
+        account.LastErrorMessage = string.Empty;
+        account.LastAuthCheckAt = DateTime.UtcNow;
+        var candidates = AvitoCandidatesJsonParser.ParseCandidates(root, account);
+
+        var existingIds = await repository.GetExistingSourceResponseIdsAsync(
+            candidates.Select(x => x.SourceResponseId),
+            cancellationToken);
+
+        return candidates
+            .Where(x => !existingIds.Contains(x.SourceResponseId))
+            .OrderByDescending(x => x.CreatedAt)
+            .ToList();
     }
 
     private async Task WaitForCandidatesPageAsync(BrowserAccountSession session, CancellationToken cancellationToken)

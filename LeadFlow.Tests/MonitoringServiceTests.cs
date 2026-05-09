@@ -311,7 +311,8 @@ public sealed class MonitoringServiceTests
                 new AvitoParserService(),
                 new StubBrowserSessionService(),
                 new NoOpBackgroundWebViewHostFactory(),
-                new StubWebPageAutomationService());
+                new StubWebPageAutomationService(),
+                new StubAdsPowerAvitoAutomationService());
 
             Service.StatusChanged += (_, status) => Statuses.Add((status, Service.CurrentStatusMessage));
             Service.StatusMessageChanged += (_, message) => Statuses.Add((Service.CurrentStatus, message));

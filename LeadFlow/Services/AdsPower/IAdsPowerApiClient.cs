@@ -9,7 +9,7 @@ public interface IAdsPowerApiClient
     /// <summary>
     /// Запускает браузер профиля AdsPower (GET /api/v1/browser/start).
     /// </summary>
-    Task StartBrowserAsync(
+    Task<AdsPowerBrowserStartResult> StartBrowserAsync(
         AdsPowerConnectionOptions options,
         string adsPowerUserId,
         string? openUrl,

@@ -7,7 +7,8 @@ namespace LeadFlow.Services.Avito;
 public class AvitoParserService
 {
     /// <summary>
-    /// В URL карточки на Авито вакансии и прочие «рабочие» категории попадают под сегмент <c>/rabota/</c>.
+    /// В URL карточки на Авито вакансии и сопутствующие «рабочие» категории попадают
+    /// под сегменты <c>/vakansii/</c> (Avito Pro) или <c>/rabota/</c> (старая разметка).
     /// Товары и услуги (не вакансии) учитывать не нужно.
     /// </summary>
     private static bool IsJobSectionListing(string? relativeOrAbsoluteHref)
@@ -17,12 +18,33 @@ public class AvitoParserService
             return false;
         }
 
-        return relativeOrAbsoluteHref.Contains("/rabota/", StringComparison.OrdinalIgnoreCase);
+        return relativeOrAbsoluteHref.Contains("/vakansii/", StringComparison.OrdinalIgnoreCase)
+            || relativeOrAbsoluteHref.Contains("/rabota/", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string ExtractItemListingHref(string snippetHtml)
     {
+        // Новая разметка Avito Pro: <a data-marker="view-link" ... href="...">
         var m = Regex.Match(
+            snippetHtml,
+            @"data-marker=""view-link""[^>]*href=""([^""]+)""",
+            RegexOptions.IgnoreCase);
+        if (m.Success)
+        {
+            return m.Groups[1].Value.Trim();
+        }
+
+        m = Regex.Match(
+            snippetHtml,
+            @"href=""([^""]+)""[^>]*data-marker=""view-link""",
+            RegexOptions.IgnoreCase);
+        if (m.Success)
+        {
+            return m.Groups[1].Value.Trim();
+        }
+
+        // Старые варианты разметки
+        m = Regex.Match(
             snippetHtml,
             @"class=""item-preview-root[^""]*""\s+href=""([^""]+)""",
             RegexOptions.IgnoreCase);
@@ -46,43 +68,86 @@ public class AvitoParserService
 
     private static string ExtractTitle(string snippetHtml)
     {
-        var title = ExtractSingle(snippetHtml, @"styles-module-root_preset_black[^>]*>([^<]+)</a>");
+        // Новая разметка Avito Pro: заголовок внутри <a data-marker="view-link"><span ...>Заголовок</span></a>
+        var title = ExtractSingle(
+            snippetHtml,
+            @"data-marker=""view-link""[^>]*>[\s\S]*?<span[^>]*>([^<]+)</span>");
         if (!string.IsNullOrEmpty(title))
         {
             return title;
         }
 
-        return ExtractSingle(snippetHtml, @"class=""styles-title-UJzSB"">([^<]+)");
+        title = ExtractSingle(snippetHtml, @"styles-module-root_preset_black[^>]*>([^<]+)</a>");
+        if (!string.IsNullOrEmpty(title))
+        {
+            return title;
+        }
+
+        return ExtractSingle(snippetHtml, @"class=""styles-title-[A-Za-z0-9_-]+""[^>]*>([^<]+)");
     }
 
     private static string ExtractCity(string snippetHtml)
     {
-        var city = ExtractSingle(snippetHtml, @"geo-root-p3kEY[^>]*>[\s\S]*?<span>([^<]+)</span>");
+        var city = ExtractSingle(snippetHtml, @"geo-root-[A-Za-z0-9_-]+[^>]*>[\s\S]*?<span[^>]*>([^<]+)</span>");
         if (!string.IsNullOrEmpty(city))
         {
             return city;
         }
 
-        return ExtractSingle(snippetHtml, @"class=""styles-address-I7r1Q"">([^<]+)");
+        return ExtractSingle(snippetHtml, @"class=""styles-address-[A-Za-z0-9_-]+""[^>]*>([^<]+)");
     }
 
-    private static int ExtractCounterAfterIcon(string snippetHtml, string iconName)
+    private static int ExtractCounterAfterIcon(string snippetHtml, params string[] iconNames)
     {
-        var pattern = $@"data-icon-name=""{Regex.Escape(iconName)}""[\s\S]*?<p[^>]*>(\d+)</p>";
+        foreach (var iconName in iconNames)
+        {
+            // Новая разметка: значение в <span>...</span> после <svg data-icon-name="...">
+            var spanPattern = $@"data-icon-name=""{Regex.Escape(iconName)}""[\s\S]*?<span[^>]*>\s*(\d+)";
+            var m = Regex.Match(snippetHtml, spanPattern, RegexOptions.Singleline);
+            if (m.Success)
+            {
+                return int.Parse(m.Groups[1].Value);
+            }
+
+            // Старая разметка: значение в <p>...</p>
+            var pPattern = $@"data-icon-name=""{Regex.Escape(iconName)}""[\s\S]*?<p[^>]*>\s*(\d+)\s*</p>";
+            m = Regex.Match(snippetHtml, pPattern, RegexOptions.Singleline);
+            if (m.Success)
+            {
+                return int.Parse(m.Groups[1].Value);
+            }
+        }
+
+        return 0;
+    }
+
+    private static int ExtractCounterByRoleMarker(string snippetHtml, string roleMarker)
+    {
+        // Новая Avito Pro разметка: <div role-marker="views"> ... <span ...>2</span> ...
+        var pattern = $@"role-marker=""{Regex.Escape(roleMarker)}""[^>]*>[\s\S]*?<span[^>]*>\s*(\d+)";
         var m = Regex.Match(snippetHtml, pattern, RegexOptions.Singleline);
         return m.Success ? int.Parse(m.Groups[1].Value) : 0;
     }
 
     private static void FillViewsContactsFavorites(AvitoAdStatus ad, string snippetHtml)
     {
-        var views = ExtractCounterAfterIcon(snippetHtml, "visibility");
-        var contacts = ExtractCounterAfterIcon(snippetHtml, "person");
-        var favorites = ExtractCounterAfterIcon(snippetHtml, "favorite");
+        // Сначала пытаемся новую разметку через role-marker (наиболее надёжно для /profile/pro/items).
+        var views = ExtractCounterByRoleMarker(snippetHtml, "views");
+        var contacts = ExtractCounterByRoleMarker(snippetHtml, "contacts");
+        var favorites = ExtractCounterByRoleMarker(snippetHtml, "favorites");
 
-        if (views == 0 && contacts == 0)
+        // Фолбэк на иконки (поддерживаем и новые, и старые имена иконок).
+        if (views == 0)
         {
-            views = ParseInt(ExtractSingle(snippetHtml, @"role-marker=""views"">.*?<span[^>]*>(\d+)"));
-            contacts = ParseInt(ExtractSingle(snippetHtml, @"role-marker=""contacts"">.*?<span[^>]*>(\d+)"));
+            views = ExtractCounterAfterIcon(snippetHtml, "visiblefilled", "visibility", "view");
+        }
+        if (contacts == 0)
+        {
+            contacts = ExtractCounterAfterIcon(snippetHtml, "user", "person");
+        }
+        if (favorites == 0)
+        {
+            favorites = ExtractCounterAfterIcon(snippetHtml, "favoritesfilled", "favorite");
         }
 
         ad.Views = views;
@@ -152,8 +217,6 @@ public class AvitoParserService
         var match = Regex.Match(html, pattern, RegexOptions.Singleline);
         return match.Success ? match.Groups[1].Value.Trim() : "";
     }
-
-    private static int ParseInt(string s) => int.TryParse(s, out var n) ? n : 0;
 }
 
 public class ProfileResult
