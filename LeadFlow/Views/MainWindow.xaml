@@ -203,7 +203,9 @@
                 </Grid>
             </Border>
 
-            <views:DashboardView Grid.Row="1" DataContext="{Binding Dashboard}" />
+            <views:DashboardView Grid.Row="1"
+                                 HorizontalAlignment="Stretch"
+                                 DataContext="{Binding Dashboard}" />
         </Grid>
     </ScrollViewer>
 </Window>

@@ -33,7 +33,7 @@ public sealed class MonitoringService(
     private DateTime? _nextCheckTime;
 
     /// <summary>Пауза перед повтором основного цикла после необработанной ошибки (минуты).</summary>
-    private const int LoopRecoveryPauseMinutes = 5;
+    private const int LoopRecoveryPauseMinutes = 12;
 
     /// <summary>
     /// После N успешно запланированных пауз восстановления при (N+1)-м сбое подряд мониторинг останавливается. 0 — без лимита.
@@ -80,6 +80,34 @@ public sealed class MonitoringService(
                 .SelectMany(static ads => ads)
                 .Select(CloneAd)
                 .ToList();
+        }
+    }
+
+    /// <inheritdoc />
+    public void RestorePersistedAdSnapshots(IReadOnlyList<AvitoAccount> accounts)
+    {
+        lock (_activeAdsSync)
+        {
+            foreach (var kv in _activeAdsByAccount.Keys.ToArray())
+            {
+                if (accounts.All(a => a.Id != kv))
+                {
+                    _activeAdsByAccount.Remove(kv);
+                    _blockedAdsByAccount.Remove(kv);
+                }
+            }
+
+            foreach (var account in accounts)
+            {
+                _activeAdsByAccount[account.Id] = AvitoAdSnapshots
+                    .Deserialize(account.ActiveAdsSnapshotJson, account.Id)
+                    .Select(CloneAd)
+                    .ToList();
+                _blockedAdsByAccount[account.Id] = AvitoAdSnapshots
+                    .Deserialize(account.BlockedAdsSnapshotJson, account.Id)
+                    .Select(CloneAd)
+                    .ToList();
+            }
         }
     }
 
@@ -341,6 +369,11 @@ public sealed class MonitoringService(
                 UpdateActiveAdsSnapshot(account.Id, []);
                 await HandleCaptchaForAccountAsync(account, captchaEx, ct).ConfigureAwait(false);
             }
+            catch (AdsPowerDailyOpenLimitExceededException limitEx)
+            {
+                UpdateActiveAdsSnapshot(account.Id, []);
+                await HandleAdsPowerDailyOpenLimitForAccountAsync(account, limitEx, ct).ConfigureAwait(false);
+            }
             catch (Exception ex)
             {
                 UpdateActiveAdsSnapshot(account.Id, []);
@@ -454,9 +487,29 @@ public sealed class MonitoringService(
 
     internal async Task<bool> TryRecoverMonitoringLoopAsync(Exception ex, CancellationToken cancellationToken)
     {
-        _ = GlobalLogger.Instance.LogAsync(
-            $"Monitoring loop failed.{Environment.NewLine}{ex}",
-            DeskLinkAuditLogLevel.Error);
+        var adsPowerLimit =
+            ex as AdsPowerDailyOpenLimitExceededException
+            ?? ex.InnerException as AdsPowerDailyOpenLimitExceededException;
+        if (adsPowerLimit is not null)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Monitoring loop failed: AdsPower daily browser open limit.{Environment.NewLine}{adsPowerLimit}",
+                DeskLinkAuditLogLevel.Warning,
+                memberName: nameof(TryRecoverMonitoringLoopAsync),
+                filePath: "MonitoringService.cs",
+                errorKey: AdsPowerDailyOpenLimitExceededException.ErrorKey,
+                properties: new Dictionary<string, object?>
+                {
+                    ["adsPower.apiCode"] = adsPowerLimit.ApiCode,
+                    ["adsPower.apiMessage"] = adsPowerLimit.ApiMessage
+                });
+        }
+        else
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Monitoring loop failed.{Environment.NewLine}{ex}",
+                DeskLinkAuditLogLevel.Error);
+        }
 
         _countdownTimer?.Dispose();
         SetNextCheckTime(null);
@@ -544,6 +597,11 @@ public sealed class MonitoringService(
             await HandleCaptchaForAccountAsync(account, captchaEx, cancellationToken).ConfigureAwait(false);
             return (0, true, false);
         }
+        catch (AdsPowerDailyOpenLimitExceededException limitEx)
+        {
+            await HandleAdsPowerDailyOpenLimitForAccountAsync(account, limitEx, cancellationToken).ConfigureAwait(false);
+            return (0, true, false);
+        }
         finally
         {
             accountSw.Stop();
@@ -597,6 +655,52 @@ public sealed class MonitoringService(
                 ["accountName"] = account.DisplayName,
                 ["captcha.kind"] = captchaEx.Kind,
                 ["captcha.url"] = captchaEx.Url
+            });
+    }
+
+    private async Task HandleAdsPowerDailyOpenLimitForAccountAsync(
+        AvitoAccount account,
+        AdsPowerDailyOpenLimitExceededException limitEx,
+        CancellationToken ct)
+    {
+        account.Status = AvitoAccountStatus.RequiresManualAction;
+        account.LastErrorMessage =
+            "AdsPower: исчерпан дневной лимит запусков браузера для профиля. Дождитесь снятия лимита или обновите тариф AdsPower, затем снова включите аккаунт для мониторинга.";
+
+        try
+        {
+            await repository.SaveAccountAsync(account, ct).ConfigureAwait(false);
+            await repository.AddLogAsync(new ProcessingLogItem
+            {
+                AccountId = account.Id,
+                Level = "Warning",
+                Message = "Лимит запусков AdsPower",
+                Details = limitEx.ApiMessage ?? limitEx.Message
+            }, ct).ConfigureAwait(false);
+        }
+        catch (Exception persistEx)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Не удалось сохранить статус лимита AdsPower для аккаунта {account.DisplayName}: {persistEx.Message}",
+                DeskLinkAuditLogLevel.Error);
+        }
+
+        UpdateStatus(
+            MonitoringStatus.RequiresManualAction,
+            $"Аккаунт \"{account.DisplayName}\": лимит запусков браузера AdsPower (дневной). Повторите после снятия лимита или смены тарифа.");
+
+        _ = GlobalLogger.Instance.LogAsync(
+            $"AdsPower daily open limit for account {account.DisplayName} (api code {limitEx.ApiCode}).",
+            DeskLinkAuditLogLevel.Warning,
+            memberName: nameof(HandleAdsPowerDailyOpenLimitForAccountAsync),
+            filePath: "MonitoringService.cs",
+            errorKey: AdsPowerDailyOpenLimitExceededException.ErrorKey,
+            properties: new Dictionary<string, object?>
+            {
+                ["accountId"] = account.Id,
+                ["accountName"] = account.DisplayName,
+                ["adsPower.apiCode"] = limitEx.ApiCode,
+                ["adsPower.apiMessage"] = limitEx.ApiMessage
             });
     }
 
@@ -715,6 +819,10 @@ public sealed class MonitoringService(
                     // Капча — пробрасываем, чтобы ProcessAccountAsync поставил RequiresManualAction.
                     throw;
                 }
+                catch (AdsPowerDailyOpenLimitExceededException)
+                {
+                    throw;
+                }
                 catch (Exception ex)
                 {
                     _ = GlobalLogger.Instance.LogAsync(
@@ -737,6 +845,9 @@ public sealed class MonitoringService(
                 _ = GlobalLogger.Instance.LogAsync(
                     $"[monitoring] Аккаунт \"{account.DisplayName}\": новых откликов {responses.Count}, в этом цикле обрабатываем {maxPerCycle}; остальные подтянутся в следующих проверках.",
                     DeskLinkAuditLogLevel.Info);
+                UpdateStatus(
+                    MonitoringStatus.Running,
+                    $"Аккаунт \"{account.DisplayName}\": найдено новых откликов {responses.Count}, в этом цикле обрабатываем до {maxPerCycle}.");
             }
             else
             {
@@ -844,6 +955,10 @@ public sealed class MonitoringService(
                         // Не глушим: пробрасываем в верхний catch, который завершит обход аккаунта.
                         throw;
                     }
+                    catch (AdsPowerDailyOpenLimitExceededException)
+                    {
+                        throw;
+                    }
                     catch (Exception statsEx)
                     {
                         _ = GlobalLogger.Instance.LogAsync(
@@ -865,6 +980,11 @@ public sealed class MonitoringService(
                     .GetNewResponsesAsync(account, settings, cancellationToken)
                     .ConfigureAwait(false);
 
+                foreach (var r in batch)
+                {
+                    r.AvitoSubProfileId = sub.Id;
+                }
+
                 var freshInBatch = await ProcessBatchInlineAsync(batch, subLabel).ConfigureAwait(false);
 
                 _ = GlobalLogger.Instance.LogAsync(
@@ -885,6 +1005,10 @@ public sealed class MonitoringService(
             catch (AvitoCaptchaDetectedException)
             {
                 // Капча/firewall — выбрасываем наверх, остальные суб-профили этого аккаунта не трогаем.
+                throw;
+            }
+            catch (AdsPowerDailyOpenLimitExceededException)
+            {
                 throw;
             }
             catch (Exception ex)
@@ -987,24 +1111,74 @@ public sealed class MonitoringService(
                 return;
             }
 
-            const string sendDisabledMessage = "Тестовый режим: отправка в Bitrix24 временно отключена.";
-            UpdateStatus(MonitoringStatus.Running, $"Отклик \"{response.FullName}\" уникален, но отправка в Bitrix24 отключена.");
+            UpdateStatus(MonitoringStatus.Running, $"Отклик \"{response.FullName}\" уникален, создаём сделку в Bitrix24.");
             _ = GlobalLogger.Instance.LogAsync(
-                $"Bitrix send skipped for response {response.Id}: temporary disabled mode.",
-                DeskLinkAuditLogLevel.Warning);
-            response.Status = ResponseStatus.ActionRequired;
+                $"Sending response {response.Id} to Bitrix24.",
+                DeskLinkAuditLogLevel.Info);
+
+            var bitrixResult = await bitrixClient.CreateLeadAsync(response, settings, cancellationToken).ConfigureAwait(false);
+
+            if (bitrixResult.IsSuccess)
+            {
+                response.Status = ResponseStatus.Sent;
+                response.BitrixEntityId = bitrixResult.EntityId ?? string.Empty;
+                response.BitrixContactId = bitrixResult.ContactId ?? string.Empty;
+                response.ProcessedAt = DateTime.UtcNow;
+                response.ErrorMessage = string.Empty;
+                await repository.SaveCandidateAsync(response, cancellationToken);
+                await repository.AddLogAsync(new ProcessingLogItem
+                {
+                    CandidateResponseId = response.Id,
+                    AccountId = response.AccountId,
+                    Level = "Info",
+                    Message = "Сделка создана в Bitrix24",
+                    Details = bitrixResult.EntityId ?? string.Empty
+                }, cancellationToken);
+                UpdateStatus(MonitoringStatus.Running, $"Отклик \"{response.FullName}\" отправлен в Bitrix24.");
+                ResponseProcessed?.Invoke(this, response);
+                return;
+            }
+
+            var orphanContact =
+                !string.IsNullOrWhiteSpace(bitrixResult.ContactId)
+                && string.IsNullOrWhiteSpace(bitrixResult.EntityId);
+
+            if (orphanContact)
+            {
+                response.Status = ResponseStatus.ActionRequired;
+                response.BitrixContactId = bitrixResult.ContactId;
+                response.BitrixEntityId = string.Empty;
+                response.ProcessedAt = DateTime.UtcNow;
+                response.ErrorMessage = bitrixResult.Error;
+                await repository.SaveCandidateAsync(response, cancellationToken);
+                await repository.AddLogAsync(new ProcessingLogItem
+                {
+                    CandidateResponseId = response.Id,
+                    AccountId = response.AccountId,
+                    Level = "Warning",
+                    Message = "Контакт в Bitrix24 без сделки — требуется действие",
+                    Details = bitrixResult.Error
+                }, cancellationToken);
+                UpdateStatus(
+                    MonitoringStatus.Running,
+                    $"Отклик \"{response.FullName}\": контакт Bitrix24 создан, сделка не создана — требуется действие.");
+                ResponseProcessed?.Invoke(this, response);
+                return;
+            }
+
+            response.Status = ResponseStatus.Error;
             response.ProcessedAt = DateTime.UtcNow;
-            response.ErrorMessage = sendDisabledMessage;
+            response.ErrorMessage = bitrixResult.Error;
             await repository.SaveCandidateAsync(response, cancellationToken);
             await repository.AddLogAsync(new ProcessingLogItem
             {
                 CandidateResponseId = response.Id,
                 AccountId = response.AccountId,
-                Level = "Warning",
-                Message = "Отправка в Bitrix24 отключена",
-                Details = sendDisabledMessage
+                Level = "Error",
+                Message = "Ошибка Bitrix24",
+                Details = bitrixResult.Error
             }, cancellationToken);
-
+            UpdateStatus(MonitoringStatus.Error, $"Bitrix24: {bitrixResult.Error}");
             ResponseProcessed?.Invoke(this, response);
         }
         catch (OperationCanceledException)
@@ -1287,6 +1461,10 @@ public sealed class MonitoringService(
                 // Капча на вкладке «С ошибками» — пробрасываем наверх.
                 throw;
             }
+            catch (AdsPowerDailyOpenLimitExceededException)
+            {
+                throw;
+            }
             catch (Exception ex)
             {
                 _ = GlobalLogger.Instance.LogAsync(
@@ -1354,7 +1532,7 @@ public sealed class MonitoringService(
                 }
             }
 
-            await Task.Delay(1000, cancellationToken);
+            await Task.Delay(1500, cancellationToken);
         }
 
         throw new TimeoutException("Страница профиля Авито не успела загрузиться.");
@@ -1406,6 +1584,8 @@ public sealed class MonitoringService(
         account.BlockedCount = snapshot.BlockedAds.Count > 0 ? snapshot.BlockedAds.Count : snapshot.BlockedCount;
         account.DraftsCount = snapshot.DraftsCount;
         account.AdsStatsUpdatedAt = DateTime.UtcNow;
+        account.ActiveAdsSnapshotJson = AvitoAdSnapshots.Serialize(snapshot.ActiveAds);
+        account.BlockedAdsSnapshotJson = AvitoAdSnapshots.Serialize(snapshot.BlockedAds);
         await repository.SaveAccountAsync(account, ct).ConfigureAwait(false);
 
         ProfileStatsUpdated?.Invoke(this, new ProfileStatsUpdatedEventArgs

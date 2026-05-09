@@ -31,9 +31,12 @@ public sealed class MonitoringCycleDelayTests
     [Fact]
     public void GetDelayAfterCycle_SparseNewsAcrossAccounts_DoesNotLookAlmostIdle()
     {
-        // 2 аккаунта опрошено, всего 1 новый: сырая 1/20, perAccount min(1, 1/2)=0.5 → 5.5 мин
+        // 2 аккаунта опрошено, всего 1 новый: сырая 1/20, perAccount min(1, 1/2)=0.5 → середина диапазона [min..max] минут
         var d = MonitoringCycleDelay.GetDelayAfterCycle(1, 2);
-        Assert.Equal(5.5, d.TotalMinutes);
+        var min = (double)MonitoringTiming.CycleDelayMinMinutes;
+        var max = (double)MonitoringTiming.CycleDelayMaxMinutes;
+        var expectedMinutes = max - 0.5 * (max - min);
+        Assert.Equal(expectedMinutes, d.TotalMinutes);
     }
 
     [Fact]

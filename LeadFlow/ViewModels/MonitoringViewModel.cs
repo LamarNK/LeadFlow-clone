@@ -496,7 +496,8 @@ public partial class MonitoringViewModel : ObservableObject
             return;
         }
 
-        await _windowService.ShowAvitoProfileAsync(owner, account, response.MessengerUrl, CancellationToken.None);
+        var subId = string.IsNullOrWhiteSpace(response.AvitoSubProfileId) ? null : response.AvitoSubProfileId.Trim();
+        await _windowService.ShowAvitoProfileAsync(owner, account, response.MessengerUrl, CancellationToken.None, subId);
     }
 
     private static bool HasSpecificVacancyUrl(CandidateResponse? r)
@@ -538,7 +539,8 @@ public partial class MonitoringViewModel : ObservableObject
             return;
         }
 
-        await _windowService.ShowAvitoProfileAsync(owner, account, response.VacancyUrl.Trim(), CancellationToken.None);
+        var subId = string.IsNullOrWhiteSpace(response.AvitoSubProfileId) ? null : response.AvitoSubProfileId.Trim();
+        await _windowService.ShowAvitoProfileAsync(owner, account, response.VacancyUrl.Trim(), CancellationToken.None, subId);
     }
 
     private bool CanCopyResponseMessengerUrl(CandidateResponse? r) =>

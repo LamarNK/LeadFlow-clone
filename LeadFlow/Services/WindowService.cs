@@ -249,7 +249,8 @@ public sealed class WindowService(
     {
         if (account.ProfileProvider == AvitoProfileProvider.AdsPower)
         {
-            await LaunchAdsPowerBrowserAsync(owner, account, account.AvitoResponsesUrl, cancellationToken).ConfigureAwait(true);
+            await LaunchAdsPowerBrowserAsync(owner, account, account.AvitoResponsesUrl, avitoSubProfileId: null, cancellationToken)
+                .ConfigureAwait(true);
             return;
         }
 
@@ -258,11 +259,17 @@ public sealed class WindowService(
         ActivateWindow(_avitoBrowserWindow!);
     }
 
-    public async Task ShowAvitoProfileAsync(Window owner, AvitoAccount account, string initialUrl, CancellationToken cancellationToken)
+    public async Task ShowAvitoProfileAsync(
+        Window owner,
+        AvitoAccount account,
+        string initialUrl,
+        CancellationToken cancellationToken,
+        string? avitoSubProfileId)
     {
         if (account.ProfileProvider == AvitoProfileProvider.AdsPower)
         {
-            await LaunchAdsPowerBrowserAsync(owner, account, initialUrl, cancellationToken).ConfigureAwait(true);
+            await LaunchAdsPowerBrowserAsync(owner, account, initialUrl, avitoSubProfileId, cancellationToken)
+                .ConfigureAwait(true);
             return;
         }
 
@@ -275,6 +282,7 @@ public sealed class WindowService(
         Window owner,
         AvitoAccount account,
         string? openUrl,
+        string? avitoSubProfileId,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(account.AdsPowerProfileId) || string.IsNullOrWhiteSpace(account.AdsPowerApiBaseUrl))
@@ -298,6 +306,75 @@ public sealed class WindowService(
             var options = new AdsPowerConnectionOptions(
                 account.AdsPowerApiBaseUrl,
                 string.IsNullOrWhiteSpace(account.AdsPowerApiKey) ? null : account.AdsPowerApiKey);
+
+            if (!string.IsNullOrWhiteSpace(avitoSubProfileId))
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"AdsPower: перед открытием ссылки переключаем суб-профиль Avito (аккаунт {account.DisplayName}).",
+                    DeskLinkAuditLogLevel.Info,
+                    memberName: nameof(LaunchAdsPowerBrowserAsync),
+                    filePath: "WindowService.cs",
+                    properties: new Dictionary<string, object?>
+                    {
+                        ["step"] = "sub_profile_switch",
+                        ["account.displayName"] = account.DisplayName,
+                        ["adsPower.userId"] = account.AdsPowerProfileId,
+                        ["avito.subProfileId"] = avitoSubProfileId.Trim()
+                    });
+                try
+                {
+                    var switched = await adsPowerAvitoAutomationService
+                        .SwitchActiveProfileAsync(
+                            options,
+                            account.AdsPowerProfileId!,
+                            avitoSubProfileId.Trim(),
+                            cancellationToken)
+                        .ConfigureAwait(true);
+                    if (!switched)
+                    {
+                        _ = GlobalLogger.Instance.LogAsync(
+                            $"AdsPower: переключение суб-профиля Avito не подтверждено (id={avitoSubProfileId.Trim()}), открываем URL в текущем кабинете.",
+                            DeskLinkAuditLogLevel.Warning,
+                            memberName: nameof(LaunchAdsPowerBrowserAsync),
+                            filePath: "WindowService.cs",
+                            properties: new Dictionary<string, object?>
+                            {
+                                ["account.displayName"] = account.DisplayName,
+                                ["avito.subProfileId"] = avitoSubProfileId.Trim()
+                            });
+                    }
+                }
+                catch (AdsPowerDailyOpenLimitExceededException ex)
+                {
+                    _ = GlobalLogger.Instance.LogAsync(
+                        $"AdsPower: дневной лимит запусков — не удалось переключить суб-профиль перед открытием ссылки ({account.DisplayName}): {ex.Message}",
+                        DeskLinkAuditLogLevel.Warning,
+                        memberName: nameof(LaunchAdsPowerBrowserAsync),
+                        filePath: "WindowService.cs",
+                        errorKey: AdsPowerDailyOpenLimitExceededException.ErrorKey,
+                        properties: new Dictionary<string, object?>
+                        {
+                            ["account.displayName"] = account.DisplayName,
+                            ["avito.subProfileId"] = avitoSubProfileId.Trim(),
+                            ["adsPower.apiCode"] = ex.ApiCode
+                        });
+                }
+                catch (Exception ex)
+                {
+                    _ = GlobalLogger.Instance.LogAsync(
+                        $"AdsPower: не удалось переключить суб-профиль Avito перед открытием ссылки: {ex.Message}",
+                        DeskLinkAuditLogLevel.Warning,
+                        memberName: nameof(LaunchAdsPowerBrowserAsync),
+                        filePath: "WindowService.cs",
+                        properties: new Dictionary<string, object?>
+                        {
+                            ["account.displayName"] = account.DisplayName,
+                            ["avito.subProfileId"] = avitoSubProfileId.Trim(),
+                            ["error.type"] = ex.GetType().FullName
+                        });
+                }
+            }
+
             _ = GlobalLogger.Instance.LogAsync(
                 $"AdsPower browser launch requested for account {account.DisplayName}.",
                 DeskLinkAuditLogLevel.Info,
@@ -309,7 +386,8 @@ public sealed class WindowService(
                     ["adsPower.baseUrl"] = options.BaseUrl,
                     ["adsPower.hasApiKey"] = !string.IsNullOrWhiteSpace(options.ApiKey),
                     ["adsPower.userId"] = account.AdsPowerProfileId,
-                    ["adsPower.openUrl"] = openUrl
+                    ["adsPower.openUrl"] = openUrl,
+                    ["avito.subProfileId"] = string.IsNullOrWhiteSpace(avitoSubProfileId) ? null : avitoSubProfileId.Trim()
                 });
             _ = await adsPowerApiClient.StartBrowserAsync(options, account.AdsPowerProfileId, openUrl, cancellationToken)
                 .ConfigureAwait(true);
@@ -325,6 +403,24 @@ public sealed class WindowService(
                     ["adsPower.hasApiKey"] = !string.IsNullOrWhiteSpace(options.ApiKey),
                     ["adsPower.userId"] = account.AdsPowerProfileId,
                     ["adsPower.openUrl"] = openUrl
+                });
+        }
+        catch (AdsPowerDailyOpenLimitExceededException ex)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"AdsPower browser launch: дневной лимит запусков для аккаунта {account.DisplayName}. {ex.Message}",
+                DeskLinkAuditLogLevel.Warning,
+                memberName: nameof(LaunchAdsPowerBrowserAsync),
+                filePath: "WindowService.cs",
+                errorKey: AdsPowerDailyOpenLimitExceededException.ErrorKey,
+                properties: new Dictionary<string, object?>
+                {
+                    ["account.displayName"] = account.DisplayName,
+                    ["adsPower.baseUrl"] = account.AdsPowerApiBaseUrl,
+                    ["adsPower.hasApiKey"] = !string.IsNullOrWhiteSpace(account.AdsPowerApiKey),
+                    ["adsPower.userId"] = account.AdsPowerProfileId,
+                    ["adsPower.openUrl"] = openUrl,
+                    ["adsPower.apiCode"] = ex.ApiCode
                 });
         }
         catch (Exception ex)

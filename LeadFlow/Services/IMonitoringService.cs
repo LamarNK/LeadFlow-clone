@@ -22,6 +22,12 @@ public interface IMonitoringService
     /// </summary>
     IReadOnlyList<AvitoAdStatus> GetBlockedAdsSnapshot();
 
+    /// <summary>
+    /// Восстанавливает в памяти снимки объявлений из полей <c>ActiveAdsSnapshotJson</c> / <c>BlockedAdsSnapshotJson</c>
+    /// загруженных аккаунтов (например после чтения из БД при старте UI).
+    /// </summary>
+    void RestorePersistedAdSnapshots(IReadOnlyList<AvitoAccount> accounts);
+
     Task StartAsync(CancellationToken cancellationToken);
     Task StopAsync();
 }

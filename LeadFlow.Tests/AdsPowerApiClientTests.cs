@@ -53,6 +53,23 @@ public sealed class AdsPowerApiClientTests
         Assert.Contains("""open_urls=["https://www.avito.ru/profile"]""", decodedQuery);
     }
 
+    [Fact]
+    public async Task StartBrowserAsync_ThrowsAdsPowerDailyOpenLimitExceededException_WhenApiReturnsDailyLimit()
+    {
+        var body = """{"code":-1,"msg":"Exceeding open daily limit, recovery after 7 hours"}""";
+        var client = BuildClient((_, _) => Task.FromResult(StubHttpMessageHandler.Ok(body)));
+
+        var ex = await Assert.ThrowsAsync<AdsPowerDailyOpenLimitExceededException>(() =>
+            client.StartBrowserAsync(
+                new AdsPowerConnectionOptions("http://127.0.0.1:57610", null),
+                "user-1",
+                null,
+                CancellationToken.None));
+
+        Assert.Equal(-1, ex.ApiCode);
+        Assert.Contains("daily limit", ex.ApiMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static AdsPowerApiClient BuildClient(Func<HttpRequestMessage, string, Task<HttpResponseMessage>> handler)
     {
         var stub = new StubHttpMessageHandler(handler);

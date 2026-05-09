@@ -56,7 +56,7 @@ public sealed class AdsPowerAvitoAutomationService(IAdsPowerApiClient adsPowerAp
                 }
                 catch (Exception ex) when (IsRecoverableNavigationError(ex))
                 {
-                    await Task.Delay(800, cancellationToken).ConfigureAwait(false);
+                    await Task.Delay(1400, cancellationToken).ConfigureAwait(false);
                 }
             }
 
@@ -69,7 +69,7 @@ public sealed class AdsPowerAvitoAutomationService(IAdsPowerApiClient adsPowerAp
             }
             catch (Exception ex) when (IsRecoverableNavigationError(ex))
             {
-                await Task.Delay(800, cancellationToken).ConfigureAwait(false);
+                await Task.Delay(1400, cancellationToken).ConfigureAwait(false);
             }
 
             var raw = await EvaluateWithRetryAsync<string>(page, ExtractionScript, cancellationToken).ConfigureAwait(false);
@@ -173,7 +173,7 @@ public sealed class AdsPowerAvitoAutomationService(IAdsPowerApiClient adsPowerAp
                         DeskLinkAuditLogLevel.Warning,
                         memberName: nameof(LoadProfileItemsHtmlAsync),
                         filePath: "AdsPowerAvitoAutomationService.cs");
-                    await Task.Delay(800, cancellationToken).ConfigureAwait(false);
+                    await Task.Delay(1400, cancellationToken).ConfigureAwait(false);
                 }
             }
 
@@ -241,7 +241,7 @@ public sealed class AdsPowerAvitoAutomationService(IAdsPowerApiClient adsPowerAp
             {
                 await page.WaitForFunctionAsync(
                         itemsReadyExpression,
-                        new WaitForFunctionOptions { Timeout = 60_000, PollingInterval = 500 })
+                        new WaitForFunctionOptions { Timeout = 60_000, PollingInterval = 750 })
                     .ConfigureAwait(false);
 
                 _ = GlobalLogger.Instance.LogAsync(
@@ -270,7 +270,7 @@ public sealed class AdsPowerAvitoAutomationService(IAdsPowerApiClient adsPowerAp
             }
 
             // Шаг 3: настройщик SPA подтягивает счётчики просмотров/контактов и позицию в поиске уже после первого рендера.
-            // Используем «человеческую» рандомную задержку (1.5–3.5 с), чтобы не палить ботскую частоту запросов.
+            // Используем «человеческую» рандомную задержку (см. MonitoringTiming.HumanDelayAfterItemsRender*), чтобы не палить ботскую частоту запросов.
             await HumanDelay.AfterItemsRenderAsync(cancellationToken).ConfigureAwait(false);
 
             var html = await EvaluateWithRetryAsync<string>(
@@ -376,7 +376,7 @@ public sealed class AdsPowerAvitoAutomationService(IAdsPowerApiClient adsPowerAp
                 }
                 catch (Exception ex) when (IsRecoverableNavigationError(ex))
                 {
-                    await Task.Delay(800, cancellationToken).ConfigureAwait(false);
+                    await Task.Delay(1400, cancellationToken).ConfigureAwait(false);
                 }
             }
 
@@ -420,7 +420,7 @@ public sealed class AdsPowerAvitoAutomationService(IAdsPowerApiClient adsPowerAp
             {
                 await page.WaitForFunctionAsync(
                         blockedReadyExpression,
-                        new WaitForFunctionOptions { Timeout = 60_000, PollingInterval = 500 })
+                        new WaitForFunctionOptions { Timeout = 60_000, PollingInterval = 750 })
                     .ConfigureAwait(false);
             }
             catch (Exception ex)
@@ -574,7 +574,7 @@ public sealed class AdsPowerAvitoAutomationService(IAdsPowerApiClient adsPowerAp
             {
                 await page.WaitForFunctionAsync(
                         "() => !!document.querySelector(\"[data-marker^='component-profile-switch/profile-']\")",
-                        new WaitForFunctionOptions { Timeout = 20_000, PollingInterval = 400 })
+                        new WaitForFunctionOptions { Timeout = 20_000, PollingInterval = 650 })
                     .ConfigureAwait(false);
             }
             catch (Exception ex)
@@ -729,7 +729,7 @@ public sealed class AdsPowerAvitoAutomationService(IAdsPowerApiClient adsPowerAp
             {
                 await page.WaitForFunctionAsync(
                         "() => !document.querySelector(\"[data-marker='component-profile-switch/root']\") || !document.querySelector(\"[role='dialog']\")",
-                        new WaitForFunctionOptions { Timeout = 30_000, PollingInterval = 400 })
+                        new WaitForFunctionOptions { Timeout = 30_000, PollingInterval = 650 })
                     .ConfigureAwait(false);
             }
             catch (Exception ex)
@@ -792,7 +792,7 @@ public sealed class AdsPowerAvitoAutomationService(IAdsPowerApiClient adsPowerAp
         }
         catch (Exception ex) when (IsRecoverableNavigationError(ex))
         {
-            await Task.Delay(800, cancellationToken).ConfigureAwait(false);
+            await Task.Delay(1400, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -845,7 +845,7 @@ public sealed class AdsPowerAvitoAutomationService(IAdsPowerApiClient adsPowerAp
         }
         catch (Exception ex) when (IsRecoverableNavigationError(ex))
         {
-            await Task.Delay(800, cancellationToken).ConfigureAwait(false);
+            await Task.Delay(1400, cancellationToken).ConfigureAwait(false);
             return await page.EvaluateExpressionAsync<T>(expression).ConfigureAwait(false);
         }
     }

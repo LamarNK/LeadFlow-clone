@@ -159,6 +159,15 @@ public partial class AccountSettingsViewModel(
     public string CurrentBrowserName => BrowserVersionProvider.CurrentBrowserName;
     public string CurrentBrowserVersion => BrowserVersionProvider.GetCurrentChromiumMajorString();
 
+    /// <summary>Встроенный WebView2; для AdsPower показываются поля Local API и профиля.</summary>
+    public bool IsLocalEmbeddedBrowser => _account.ProfileProvider == AvitoProfileProvider.Local;
+
+    /// <summary>Внешний браузер через Local API AdsPower.</summary>
+    public bool IsAdsPowerExternalBrowser => _account.ProfileProvider == AvitoProfileProvider.AdsPower;
+
+    /// <summary>Имя на Avito после проверки авторизации (для подсказки в боковой панели).</summary>
+    public string? AvitoProfileNameOnAvito => _account.AvitoProfileName;
+
     public IReadOnlyList<string> WindowsVersionOptions { get; } = ["All Windows", "Windows 11", "Windows 10", "Windows 8", "Windows 7"];
     public IReadOnlyList<string> MacOsVersionOptions { get; } = ["All macOS", "macOS 26", "macOS 15", "macOS 14", "macOS 13", "macOS 12", "macOS 11", "macOS 10"];
     public IReadOnlyList<string> LinuxVersionOptions { get; } = ["Linux x86_64", "Ubuntu", "Debian", "Fedora"];
@@ -216,6 +225,10 @@ public partial class AccountSettingsViewModel(
     [ObservableProperty] private string cookiesJson = account.CookiesJson;
     [ObservableProperty] private bool importCookiesOnNextStart = account.ImportCookiesOnNextStart;
     [ObservableProperty] private string notes = account.Notes;
+    [ObservableProperty] private string? adsPowerApiBaseUrl = account.AdsPowerApiBaseUrl;
+    [ObservableProperty] private string? adsPowerApiKey = account.AdsPowerApiKey;
+    [ObservableProperty] private string? adsPowerProfileId = account.AdsPowerProfileId;
+    [ObservableProperty] private string? adsPowerProfileName = account.AdsPowerProfileName;
     [ObservableProperty] private string? proxyAddress = string.IsNullOrWhiteSpace(account.ProxyAddress) ? null : account.ProxyAddress.Trim();
     [ObservableProperty] private string proxyHost = ParseProxyAddressForUi(string.IsNullOrWhiteSpace(account.ProxyAddress) ? null : account.ProxyAddress.Trim()).Host;
     [ObservableProperty] private string proxyPort = ParseProxyAddressForUi(string.IsNullOrWhiteSpace(account.ProxyAddress) ? null : account.ProxyAddress.Trim()).Port;
@@ -1174,21 +1187,32 @@ public partial class AccountSettingsViewModel(
             LoadProxyPresetsFromAccount();
             SelectWebGlPresetFromCurrentValues();
 
-            // Не затираем JSON из БД/вставку: раньше при каждом открытии окна подставлялся экспорт из профиля (часто []).
-            if (string.IsNullOrWhiteSpace(_account.CookiesJson))
+            if (_account.ProfileProvider == AvitoProfileProvider.Local)
             {
-                if (!string.IsNullOrWhiteSpace(_account.BrowserProfilePath))
+                // Не затираем JSON из БД/вставку: раньше при каждом открытии окна подставлялся экспорт из профиля (часто []).
+                if (string.IsNullOrWhiteSpace(_account.CookiesJson))
                 {
-                    CookiesJson = await profileCookiesService.ReadCurrentProfileCookiesAsJsonAsync(_account, CancellationToken.None);
+                    if (!string.IsNullOrWhiteSpace(_account.BrowserProfilePath))
+                    {
+                        CookiesJson = await profileCookiesService.ReadCurrentProfileCookiesAsJsonAsync(_account, CancellationToken.None);
+                    }
                 }
+                else
+                {
+                    CookiesJson = _account.CookiesJson;
+                }
+
+                ImportCookiesOnNextStart = _account.ImportCookiesOnNextStart;
+                NormalizeBrowserVersionForCurrentBrowser();
             }
             else
             {
-                CookiesJson = _account.CookiesJson;
+                AdsPowerApiBaseUrl = _account.AdsPowerApiBaseUrl;
+                AdsPowerApiKey = _account.AdsPowerApiKey;
+                AdsPowerProfileId = _account.AdsPowerProfileId;
+                AdsPowerProfileName = _account.AdsPowerProfileName;
             }
-            ImportCookiesOnNextStart = _account.ImportCookiesOnNextStart;
 
-            NormalizeBrowserVersionForCurrentBrowser();
             RefreshFingerprintOverview();
         }
         finally
@@ -1508,7 +1532,6 @@ public partial class AccountSettingsViewModel(
     [RelayCommand]
     public void Save(Window? window)
     {
-        PersistUaSelectionToAccountField();
         var name = DisplayName.Trim();
         if (name.Length > MaxDisplayNameLen)
         {
@@ -1522,48 +1545,62 @@ public partial class AccountSettingsViewModel(
         }
 
         _account.DisplayName = name;
-        _account.BrowserName = BrowserName;
-        _account.BrowserVersion = BrowserVersion;
-        _account.UseWindowsOs = UseWindowsOs;
-        _account.WindowsVersion = WindowsVersion;
-        _account.UseMacOs = UseMacOs;
-        _account.MacOsVersion = MacOsVersion;
-        _account.UseLinuxOs = UseLinuxOs;
-        _account.LinuxVersion = LinuxVersion;
-        _account.UseAndroidOs = UseAndroidOs;
-        _account.AndroidVersion = AndroidVersion;
-        _account.UseIosOs = UseIosOs;
-        _account.IosVersion = IosVersion;
-        _account.UserAgentDevice = UserAgentDevice;
-        _account.AssignedUserAgent = AssignedUserAgent;
-        var previousCookiesJson = _account.CookiesJson ?? string.Empty;
-        var nextCookiesJson = CookiesJson ?? string.Empty;
-        var cookiesJsonChanged = !string.Equals(previousCookiesJson, nextCookiesJson, StringComparison.Ordinal);
-        _account.CookiesJson = CookiesJson;
-        _account.ImportCookiesOnNextStart = cookiesJsonChanged && !string.IsNullOrWhiteSpace(nextCookiesJson);
         _account.Notes = notes;
-        _account.ProxyAddress = string.IsNullOrWhiteSpace(ProxyAddress) ? null : ProxyAddress.Trim();
-        _account.ProxyType = NormalizeProxyType(ProxyType);
-        _account.ProxyUsername = string.IsNullOrWhiteSpace(ProxyUsername) ? null : ProxyUsername.Trim();
-        _account.ProxyPassword = string.IsNullOrWhiteSpace(ProxyPassword) ? null : ProxyPassword;
-        _account.ProxyRotationUrl = string.IsNullOrWhiteSpace(ProxyRotationUrl) ? null : ProxyRotationUrl.Trim();
-        _account.BrowserLaunchArgs = BrowserLaunchArgs.Trim();
-        _account.NavigatorPlatform = string.IsNullOrWhiteSpace(NavigatorPlatform) ? null : NavigatorPlatform.Trim();
-        _account.DoNotTrack = DoNotTrackMode == "Включить";
-        _account.SpoofWebGl = SpoofWebGl;
-        _account.WebGlVendor = string.IsNullOrWhiteSpace(WebGlVendor) ? null : WebGlVendor.Trim();
-        _account.WebGlRenderer = string.IsNullOrWhiteSpace(WebGlRenderer) ? null : WebGlRenderer.Trim();
-        _account.CanvasFingerprintNoise = CanvasFingerprintNoise;
-        _account.AudioFingerprintNoise = AudioFingerprintNoise;
-        _account.WebRtcLaunchFlags = string.IsNullOrWhiteSpace(WebRtcLaunchFlags) ? null : WebRtcLaunchFlags.Trim();
-        _account.ProxyPresetsJson = JsonSerializer.Serialize(
-            ProxyPresets.Select(static x => x.ToModel()).ToList(),
-            PresetJsonWriteOptions);
-        _account.ScreenResolution = string.IsNullOrWhiteSpace(ScreenResolution) ? "1920x1080" : ScreenResolution.Trim();
-        _account.UseIpTimezone = TimezoneMode == "На основе IP";
-        _account.Timezone = string.IsNullOrWhiteSpace(Timezone) ? "Europe/Moscow" : Timezone.Trim();
-        _account.Languages = string.IsNullOrWhiteSpace(Languages) ? "ru-RU,ru,en-US,en" : Languages.Trim();
-        _account.FingerprintOverviewJson = FingerprintOverviewState.Serialize(_fpOverview);
+
+        if (_account.ProfileProvider == AvitoProfileProvider.AdsPower)
+        {
+            _account.AdsPowerApiBaseUrl = string.IsNullOrWhiteSpace(AdsPowerApiBaseUrl)
+                ? null
+                : AdsPowerApiBaseUrl.Trim().TrimEnd('/');
+            _account.AdsPowerApiKey = string.IsNullOrWhiteSpace(AdsPowerApiKey) ? null : AdsPowerApiKey.Trim();
+            _account.AdsPowerProfileId = string.IsNullOrWhiteSpace(AdsPowerProfileId) ? null : AdsPowerProfileId.Trim();
+            _account.AdsPowerProfileName = string.IsNullOrWhiteSpace(AdsPowerProfileName) ? null : AdsPowerProfileName.Trim();
+        }
+        else
+        {
+            PersistUaSelectionToAccountField();
+            _account.BrowserName = BrowserName;
+            _account.BrowserVersion = BrowserVersion;
+            _account.UseWindowsOs = UseWindowsOs;
+            _account.WindowsVersion = WindowsVersion;
+            _account.UseMacOs = UseMacOs;
+            _account.MacOsVersion = MacOsVersion;
+            _account.UseLinuxOs = UseLinuxOs;
+            _account.LinuxVersion = LinuxVersion;
+            _account.UseAndroidOs = UseAndroidOs;
+            _account.AndroidVersion = AndroidVersion;
+            _account.UseIosOs = UseIosOs;
+            _account.IosVersion = IosVersion;
+            _account.UserAgentDevice = UserAgentDevice;
+            _account.AssignedUserAgent = AssignedUserAgent;
+            var previousCookiesJson = _account.CookiesJson ?? string.Empty;
+            var nextCookiesJson = CookiesJson ?? string.Empty;
+            var cookiesJsonChanged = !string.Equals(previousCookiesJson, nextCookiesJson, StringComparison.Ordinal);
+            _account.CookiesJson = CookiesJson;
+            _account.ImportCookiesOnNextStart = cookiesJsonChanged && !string.IsNullOrWhiteSpace(nextCookiesJson);
+            _account.ProxyAddress = string.IsNullOrWhiteSpace(ProxyAddress) ? null : ProxyAddress.Trim();
+            _account.ProxyType = NormalizeProxyType(ProxyType);
+            _account.ProxyUsername = string.IsNullOrWhiteSpace(ProxyUsername) ? null : ProxyUsername.Trim();
+            _account.ProxyPassword = string.IsNullOrWhiteSpace(ProxyPassword) ? null : ProxyPassword;
+            _account.ProxyRotationUrl = string.IsNullOrWhiteSpace(ProxyRotationUrl) ? null : ProxyRotationUrl.Trim();
+            _account.BrowserLaunchArgs = BrowserLaunchArgs.Trim();
+            _account.NavigatorPlatform = string.IsNullOrWhiteSpace(NavigatorPlatform) ? null : NavigatorPlatform.Trim();
+            _account.DoNotTrack = DoNotTrackMode == "Включить";
+            _account.SpoofWebGl = SpoofWebGl;
+            _account.WebGlVendor = string.IsNullOrWhiteSpace(WebGlVendor) ? null : WebGlVendor.Trim();
+            _account.WebGlRenderer = string.IsNullOrWhiteSpace(WebGlRenderer) ? null : WebGlRenderer.Trim();
+            _account.CanvasFingerprintNoise = CanvasFingerprintNoise;
+            _account.AudioFingerprintNoise = AudioFingerprintNoise;
+            _account.WebRtcLaunchFlags = string.IsNullOrWhiteSpace(WebRtcLaunchFlags) ? null : WebRtcLaunchFlags.Trim();
+            _account.ProxyPresetsJson = JsonSerializer.Serialize(
+                ProxyPresets.Select(static x => x.ToModel()).ToList(),
+                PresetJsonWriteOptions);
+            _account.ScreenResolution = string.IsNullOrWhiteSpace(ScreenResolution) ? "1920x1080" : ScreenResolution.Trim();
+            _account.UseIpTimezone = TimezoneMode == "На основе IP";
+            _account.Timezone = string.IsNullOrWhiteSpace(Timezone) ? "Europe/Moscow" : Timezone.Trim();
+            _account.Languages = string.IsNullOrWhiteSpace(Languages) ? "ru-RU,ru,en-US,en" : Languages.Trim();
+            _account.FingerprintOverviewJson = FingerprintOverviewState.Serialize(_fpOverview);
+        }
 
         if (window is null)
         {

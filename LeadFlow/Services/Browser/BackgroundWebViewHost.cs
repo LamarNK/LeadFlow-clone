@@ -7,7 +7,7 @@ namespace LeadFlow.Services.Browser;
 public sealed class BackgroundWebViewHost : IBackgroundWebViewHost
 {
     private static readonly SemaphoreSlim HostSemaphore = new(1, 1);
-    private static readonly TimeSpan RecreateCooldown = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan RecreateCooldown = TimeSpan.FromSeconds(4);
     private static DateTime _lastDisposedAtUtc = DateTime.MinValue;
     private readonly Window _window;
     private bool _ownsSemaphore;

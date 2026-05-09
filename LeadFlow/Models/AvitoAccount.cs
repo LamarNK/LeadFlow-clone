@@ -66,6 +66,12 @@ public sealed partial class AvitoAccount : ObservableObject
     [ObservableProperty] private int draftsCount;
     [ObservableProperty] private DateTime? adsStatsUpdatedAt;
 
+    /// <summary>JSON-массив последних активных объявлений (вакансий), сохранённый в БД между сеансами.</summary>
+    [ObservableProperty] private string activeAdsSnapshotJson = "[]";
+
+    /// <summary>JSON-массив последних объявлений с вкладки «С ошибками», сохранённый в БД между сеансами.</summary>
+    [ObservableProperty] private string blockedAdsSnapshotJson = "[]";
+
     [ObservableProperty] private AvitoProfileProvider profileProvider = AvitoProfileProvider.Local;
     /// <summary>Идентификатор профиля в AdsPower (поле user_id в Local API).</summary>
     [ObservableProperty] private string? adsPowerProfileId;
@@ -179,5 +185,11 @@ public sealed partial class AvitoAccount : ObservableObject
         AdsStatsUpdatedAt = source.AdsStatsUpdatedAt;
         AvitoProfileName = source.AvitoProfileName;
         SubProfilesJson = string.IsNullOrWhiteSpace(source.SubProfilesJson) ? "[]" : source.SubProfilesJson;
+        ActiveAdsSnapshotJson = string.IsNullOrWhiteSpace(source.ActiveAdsSnapshotJson)
+            ? "[]"
+            : source.ActiveAdsSnapshotJson;
+        BlockedAdsSnapshotJson = string.IsNullOrWhiteSpace(source.BlockedAdsSnapshotJson)
+            ? "[]"
+            : source.BlockedAdsSnapshotJson;
     }
 }

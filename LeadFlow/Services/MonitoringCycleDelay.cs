@@ -55,7 +55,7 @@ public static class MonitoringCycleDelay
         if (newResponsesInCycle == 0 && consecutiveQuietCycles > 1 && minutes >= absoluteMax)
         {
             // Вместо жесткого потолка (например, ровно 60 мин) добавляем небольшой джиттер.
-            var randomizedTop = absoluteMax - 10 + Random.Shared.NextDouble() * 10;
+            var randomizedTop = absoluteMax - 15 + Random.Shared.NextDouble() * 15;
             minutes = randomizedTop;
         }
 

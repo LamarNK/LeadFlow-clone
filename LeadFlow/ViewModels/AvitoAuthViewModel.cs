@@ -204,7 +204,7 @@ public partial class AvitoAuthViewModel(
     {
         try
         {
-            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(3));
+            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
             while (await timer.WaitForNextTickAsync(cancellationToken))
             {
                 await CheckAuthorizationCoreAsync(cancellationToken, persistOnSuccessOnly: true);

@@ -56,6 +56,12 @@ public sealed class AvitoAccountEntity
     public int DraftsCount { get; set; }
     public DateTime? AdsStatsUpdatedAt { get; set; }
 
+    /// <summary>JSON-массив активных вакансий (<c>AvitoAdStatus</c>), кэш между сеансами.</summary>
+    public string ActiveAdsSnapshotJson { get; set; } = "[]";
+
+    /// <summary>JSON-массив заблокированных / «с ошибками» объявлений.</summary>
+    public string BlockedAdsSnapshotJson { get; set; } = "[]";
+
     public string ProfileProvider { get; set; } = nameof(AvitoProfileProvider.Local);
     public string? AdsPowerProfileId { get; set; }
     public string? AdsPowerProfileName { get; set; }

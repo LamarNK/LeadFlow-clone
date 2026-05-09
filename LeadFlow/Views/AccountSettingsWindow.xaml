@@ -165,7 +165,11 @@
                 <StackPanel Grid.Row="0" Margin="0,0,0,4">
                     <TextBlock Text="Настройки аккаунта" Style="{StaticResource AccountWindowTitleStyle}" />
                     <TextBlock Style="{StaticResource AccountHintStyle}"
-                               Text="Параметры браузера, User-Agent и cookie для выбранного аккаунта Avito. Изменения сохраняются кнопкой «Сохранить»." />
+                               Text="Параметры браузера, User-Agent и cookie для выбранного аккаунта Avito. Изменения сохраняются кнопкой «Сохранить»."
+                               Visibility="{Binding IsLocalEmbeddedBrowser, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                    <TextBlock Style="{StaticResource AccountHintStyle}"
+                               Text="Local API AdsPower и профиль (user_id). Отпечаток и сеть настраиваются в AdsPower. Изменения сохраняются кнопкой «Сохранить»."
+                               Visibility="{Binding IsAdsPowerExternalBrowser, Converter={StaticResource BooleanToVisibilityConverter}}" />
                 </StackPanel>
                 <TabControl Grid.Row="1"
                             Style="{StaticResource SectionTabControlStyle}"
@@ -177,7 +181,12 @@
                             <StackPanel>
                                 <Border Style="{StaticResource AccountSettingsGroupBorderStyle}">
                                     <StackPanel>
-                                        <TextBlock Text="Профиль и браузер" Style="{StaticResource AccountSettingsGroupTitleStyle}" />
+                                        <TextBlock Text="Профиль и браузер"
+                                                   Style="{StaticResource AccountSettingsGroupTitleStyle}"
+                                                   Visibility="{Binding IsLocalEmbeddedBrowser, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                        <TextBlock Text="Подключение AdsPower"
+                                                   Style="{StaticResource AccountSettingsGroupTitleStyle}"
+                                                   Visibility="{Binding IsAdsPowerExternalBrowser, Converter={StaticResource BooleanToVisibilityConverter}}" />
                                         <Grid Margin="0,0,0,8">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="118" />
@@ -201,7 +210,7 @@
                                                            Text="{Binding DisplayNameCounter}" />
                                             </Grid>
                                         </Grid>
-                                        <Grid>
+                                        <Grid Visibility="{Binding IsLocalEmbeddedBrowser, Converter={StaticResource BooleanToVisibilityConverter}}">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="118" />
                                                 <ColumnDefinition Width="8" />
@@ -238,10 +247,69 @@
                                                 </Border>
                                             </Grid>
                                         </Grid>
+                                        <StackPanel Visibility="{Binding IsAdsPowerExternalBrowser, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                            <Grid Margin="0,0,0,8">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="118" />
+                                                    <ColumnDefinition Width="8" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0"
+                                                           Text="URL API"
+                                                           Style="{StaticResource AccountFormLabelStyle}" />
+                                                <TextBox Grid.Column="2"
+                                                         Style="{StaticResource SearchTextBoxStyle}"
+                                                         Text="{Binding AdsPowerApiBaseUrl, UpdateSourceTrigger=PropertyChanged}"
+                                                         ToolTip="Базовый URL Local API, например http://127.0.0.1:50325" />
+                                            </Grid>
+                                            <Grid Margin="0,0,0,8">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="118" />
+                                                    <ColumnDefinition Width="8" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0"
+                                                           Text="API Key"
+                                                           Style="{StaticResource AccountFormLabelStyle}" />
+                                                <TextBox Grid.Column="2"
+                                                         Style="{StaticResource SearchTextBoxStyle}"
+                                                         Text="{Binding AdsPowerApiKey, UpdateSourceTrigger=PropertyChanged}"
+                                                         ToolTip="Если в AdsPower включена проверка API Key" />
+                                            </Grid>
+                                            <Grid Margin="0,0,0,8">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="118" />
+                                                    <ColumnDefinition Width="8" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0"
+                                                           Text="user_id"
+                                                           Style="{StaticResource AccountFormLabelStyle}" />
+                                                <TextBox Grid.Column="2"
+                                                         Style="{StaticResource SearchTextBoxStyle}"
+                                                         Text="{Binding AdsPowerProfileId, UpdateSourceTrigger=PropertyChanged}"
+                                                         ToolTip="Идентификатор профиля в AdsPower (user_id в ответе Local API)" />
+                                            </Grid>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="118" />
+                                                    <ColumnDefinition Width="8" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0"
+                                                           Text="Профиль"
+                                                           Style="{StaticResource AccountFormLabelStyle}" />
+                                                <TextBox Grid.Column="2"
+                                                         Style="{StaticResource SearchTextBoxStyle}"
+                                                         Text="{Binding AdsPowerProfileName, UpdateSourceTrigger=PropertyChanged}"
+                                                         ToolTip="Имя профиля в AdsPower (для подписи в списке)" />
+                                            </Grid>
+                                        </StackPanel>
                                     </StackPanel>
                                 </Border>
 
-                                <Border Style="{StaticResource AccountSettingsGroupBorderStyle}">
+                                <Border Style="{StaticResource AccountSettingsGroupBorderStyle}"
+                                        Visibility="{Binding IsLocalEmbeddedBrowser, Converter={StaticResource BooleanToVisibilityConverter}}">
                                     <StackPanel>
                                         <TextBlock Text="Система (для User-Agent)" Style="{StaticResource AccountSettingsGroupTitleStyle}" />
                                         <TextBlock Margin="0,-4,0,8"
@@ -314,7 +382,8 @@
                                     </StackPanel>
                                 </Border>
 
-                                <Border Style="{StaticResource AccountSettingsGroupBorderStyle}">
+                                <Border Style="{StaticResource AccountSettingsGroupBorderStyle}"
+                                        Visibility="{Binding IsLocalEmbeddedBrowser, Converter={StaticResource BooleanToVisibilityConverter}}">
                                     <StackPanel>
                                         <TextBlock Text="User-Agent" Style="{StaticResource AccountSettingsGroupTitleStyle}" />
                                         <TextBlock Margin="0,-4,0,6"
@@ -420,7 +489,8 @@
                                     </StackPanel>
                                 </Border>
 
-                                <Border Style="{StaticResource AccountSettingsGroupBorderStyle}">
+                                <Border Style="{StaticResource AccountSettingsGroupBorderStyle}"
+                                        Visibility="{Binding IsLocalEmbeddedBrowser, Converter={StaticResource BooleanToVisibilityConverter}}">
                                     <StackPanel>
                                         <TextBlock Text="Cookie" Style="{StaticResource AccountSettingsGroupTitleStyle}" />
                                         <StackPanel Margin="0,0,0,4" Orientation="Horizontal">
@@ -473,7 +543,9 @@
                         </ScrollViewer>
                     </TabItem>
 
-                    <TabItem Header="Прокси" Style="{StaticResource SectionTabItemStyle}">
+                    <TabItem Header="Прокси"
+                             Style="{StaticResource SectionTabItemStyle}"
+                             Visibility="{Binding IsLocalEmbeddedBrowser, Converter={StaticResource BooleanToVisibilityConverter}}">
                         <ScrollViewer Padding="0,8,8,0"
                                       HorizontalScrollBarVisibility="Disabled"
                                       VerticalScrollBarVisibility="Auto">
@@ -706,7 +778,9 @@
                         </ScrollViewer>
                     </TabItem>
 
-                    <TabItem Header="Платформа" Style="{StaticResource SectionTabItemStyle}">
+                    <TabItem Header="Платформа"
+                             Style="{StaticResource SectionTabItemStyle}"
+                             Visibility="{Binding IsLocalEmbeddedBrowser, Converter={StaticResource BooleanToVisibilityConverter}}">
                         <ScrollViewer Padding="0,8,8,0"
                                       HorizontalScrollBarVisibility="Disabled"
                                       VerticalScrollBarVisibility="Auto">
@@ -752,7 +826,9 @@
                         </ScrollViewer>
                     </TabItem>
 
-                    <TabItem Header="Отпечаток" Style="{StaticResource SectionTabItemStyle}">
+                    <TabItem Header="Отпечаток"
+                             Style="{StaticResource SectionTabItemStyle}"
+                             Visibility="{Binding IsLocalEmbeddedBrowser, Converter={StaticResource BooleanToVisibilityConverter}}">
                         <ScrollViewer Padding="0,8,8,0"
                                       HorizontalScrollBarVisibility="Disabled"
                                       VerticalScrollBarVisibility="Auto">
@@ -1007,7 +1083,9 @@
                         </ScrollViewer>
                     </TabItem>
 
-                    <TabItem Header="Дополнительно" Style="{StaticResource SectionTabItemStyle}">
+                    <TabItem Header="Дополнительно"
+                             Style="{StaticResource SectionTabItemStyle}"
+                             Visibility="{Binding IsLocalEmbeddedBrowser, Converter={StaticResource BooleanToVisibilityConverter}}">
                         <ScrollViewer Padding="0,8,8,0"
                                       HorizontalScrollBarVisibility="Disabled"
                                       VerticalScrollBarVisibility="Auto">
@@ -1043,74 +1121,108 @@
                 VerticalAlignment="Stretch"
                 Style="{StaticResource CompactCardBorderStyle}">
             <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="*" />
-                </Grid.RowDefinitions>
-                <TextBlock Grid.Row="0"
-                           Margin="0,0,0,2"
-                           Style="{StaticResource AccountSectionTitleFirstStyle}"
-                           Text="Обзор отпечатка"
-                           TextWrapping="Wrap" />
-                <Button Grid.Row="1"
-                        Margin="0,0,0,6"
-                        HorizontalAlignment="Right"
-                        Command="{Binding RegenerateNewFingerprintCommand}"
-                        Style="{StaticResource OverviewToolbarButtonStyle}">
-                    <StackPanel VerticalAlignment="Center" Orientation="Horizontal">
-                        <TextBlock Margin="0,0,6,0"
-                                   VerticalAlignment="Center"
-                                   FontFamily="Segoe MDL2 Assets"
-                                   FontSize="14"
-                                   Foreground="{StaticResource PrimaryBrush}"
-                                   Text="&#xE8B1;" />
-                        <TextBlock VerticalAlignment="Center" Text="Новый отпечаток" />
-                    </StackPanel>
-                </Button>
-                <ScrollViewer Grid.Row="2"
-                              Focusable="False"
-                              HorizontalScrollBarVisibility="Disabled"
-                              VerticalScrollBarVisibility="Auto">
-                    <StackPanel>
-                        <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="Язык интерфейса" />
-                        <TextBlock Style="{StaticResource OverviewValueStyle}" Text="{Binding OverviewLanguageText}" />
-                        <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="Разрешение экрана" />
-                        <TextBlock Style="{StaticResource OverviewValueStyle}" Text="{Binding OverviewScreenText}" />
-                        <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="navigator.platform" />
-                        <TextBlock Style="{StaticResource OverviewValueStyle}" Text="{Binding OverviewPlatformText}" />
-                        <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="Шрифты" />
-                        <TextBlock Style="{StaticResource OverviewValueStyle}" Text="{Binding OverviewFontsText}" />
-                        <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="Canvas" />
-                        <TextBlock Style="{StaticResource OverviewValueStyle}" Text="{Binding OverviewCanvasText}" />
-                        <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="WebGL (image)" />
-                        <TextBlock Style="{StaticResource OverviewValueStyle}" Text="{Binding OverviewWebGlImageText}" />
-                        <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="AudioContext" />
-                        <TextBlock Style="{StaticResource OverviewValueStyle}" Text="{Binding OverviewAudioText}" />
-                        <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="Медиа-устройства" />
-                        <TextBlock Style="{StaticResource OverviewValueStyle}" Text="{Binding OverviewMediaDevicesText}" />
-                        <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="ClientRects" />
-                        <TextBlock Style="{StaticResource OverviewValueStyle}" Text="{Binding OverviewClientRectsText}" />
-                        <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="SpeechVoices" />
-                        <TextBlock Style="{StaticResource OverviewValueStyle}" Text="{Binding OverviewSpeechVoicesText}" />
-                        <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="WebGL метаданные" />
-                        <TextBlock Style="{StaticResource OverviewValueStyle}" Text="{Binding OverviewWebGlMetaText}" />
-                        <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="WebGPU" />
-                        <TextBlock Style="{StaticResource OverviewValueStyle}" Text="{Binding OverviewWebGpuText}" />
-                        <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="CPU" />
-                        <TextBlock Style="{StaticResource OverviewValueStyle}" Text="{Binding OverviewCpuText}" />
-                        <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="RAM" />
-                        <TextBlock Style="{StaticResource OverviewValueStyle}" Text="{Binding OverviewRamText}" />
-                        <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="Имя устройства" />
-                        <TextBlock Style="{StaticResource OverviewValueStyle}" Text="{Binding OverviewDeviceNameText}" />
-                        <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="MAC-адрес" />
-                        <TextBlock Style="{StaticResource OverviewValueStyle}" Text="{Binding OverviewMacText}" />
-                        <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="Do Not Track" />
-                        <TextBlock Style="{StaticResource OverviewValueStyle}" Text="{Binding OverviewDntText}" />
-                        <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="WebRTC (флаги)" />
-                        <TextBlock Style="{StaticResource OverviewValueStyle}" Text="{Binding OverviewWebRtcText}" />
-                    </StackPanel>
-                </ScrollViewer>
+                <Grid Visibility="{Binding IsLocalEmbeddedBrowser, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <TextBlock Grid.Row="0"
+                               Margin="0,0,0,2"
+                               Style="{StaticResource AccountSectionTitleFirstStyle}"
+                               Text="Обзор отпечатка"
+                               TextWrapping="Wrap" />
+                    <Button Grid.Row="1"
+                            Margin="0,0,0,6"
+                            HorizontalAlignment="Right"
+                            Command="{Binding RegenerateNewFingerprintCommand}"
+                            Style="{StaticResource OverviewToolbarButtonStyle}">
+                        <StackPanel VerticalAlignment="Center" Orientation="Horizontal">
+                            <TextBlock Margin="0,0,6,0"
+                                       VerticalAlignment="Center"
+                                       FontFamily="Segoe MDL2 Assets"
+                                       FontSize="14"
+                                       Foreground="{StaticResource PrimaryBrush}"
+                                       Text="&#xE8B1;" />
+                            <TextBlock VerticalAlignment="Center" Text="Новый отпечаток" />
+                        </StackPanel>
+                    </Button>
+                    <ScrollViewer Grid.Row="2"
+                                  Focusable="False"
+                                  HorizontalScrollBarVisibility="Disabled"
+                                  VerticalScrollBarVisibility="Auto">
+                        <StackPanel>
+                            <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="Язык интерфейса" />
+                            <TextBlock Style="{StaticResource OverviewValueStyle}" Text="{Binding OverviewLanguageText}" />
+                            <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="Разрешение экрана" />
+                            <TextBlock Style="{StaticResource OverviewValueStyle}" Text="{Binding OverviewScreenText}" />
+                            <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="navigator.platform" />
+                            <TextBlock Style="{StaticResource OverviewValueStyle}" Text="{Binding OverviewPlatformText}" />
+                            <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="Шрифты" />
+                            <TextBlock Style="{StaticResource OverviewValueStyle}" Text="{Binding OverviewFontsText}" />
+                            <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="Canvas" />
+                            <TextBlock Style="{StaticResource OverviewValueStyle}" Text="{Binding OverviewCanvasText}" />
+                            <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="WebGL (image)" />
+                            <TextBlock Style="{StaticResource OverviewValueStyle}" Text="{Binding OverviewWebGlImageText}" />
+                            <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="AudioContext" />
+                            <TextBlock Style="{StaticResource OverviewValueStyle}" Text="{Binding OverviewAudioText}" />
+                            <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="Медиа-устройства" />
+                            <TextBlock Style="{StaticResource OverviewValueStyle}" Text="{Binding OverviewMediaDevicesText}" />
+                            <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="ClientRects" />
+                            <TextBlock Style="{StaticResource OverviewValueStyle}" Text="{Binding OverviewClientRectsText}" />
+                            <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="SpeechVoices" />
+                            <TextBlock Style="{StaticResource OverviewValueStyle}" Text="{Binding OverviewSpeechVoicesText}" />
+                            <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="WebGL метаданные" />
+                            <TextBlock Style="{StaticResource OverviewValueStyle}" Text="{Binding OverviewWebGlMetaText}" />
+                            <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="WebGPU" />
+                            <TextBlock Style="{StaticResource OverviewValueStyle}" Text="{Binding OverviewWebGpuText}" />
+                            <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="CPU" />
+                            <TextBlock Style="{StaticResource OverviewValueStyle}" Text="{Binding OverviewCpuText}" />
+                            <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="RAM" />
+                            <TextBlock Style="{StaticResource OverviewValueStyle}" Text="{Binding OverviewRamText}" />
+                            <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="Имя устройства" />
+                            <TextBlock Style="{StaticResource OverviewValueStyle}" Text="{Binding OverviewDeviceNameText}" />
+                            <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="MAC-адрес" />
+                            <TextBlock Style="{StaticResource OverviewValueStyle}" Text="{Binding OverviewMacText}" />
+                            <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="Do Not Track" />
+                            <TextBlock Style="{StaticResource OverviewValueStyle}" Text="{Binding OverviewDntText}" />
+                            <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="WebRTC (флаги)" />
+                            <TextBlock Style="{StaticResource OverviewValueStyle}" Text="{Binding OverviewWebRtcText}" />
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
+                <Grid Visibility="{Binding IsAdsPowerExternalBrowser, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <TextBlock Grid.Row="0"
+                               Margin="0,0,0,6"
+                               Style="{StaticResource AccountSectionTitleFirstStyle}"
+                               Text="Внешний браузер"
+                               TextWrapping="Wrap" />
+                    <ScrollViewer Grid.Row="1"
+                                  Focusable="False"
+                                  HorizontalScrollBarVisibility="Disabled"
+                                  VerticalScrollBarVisibility="Auto">
+                        <StackPanel>
+                            <TextBlock Margin="0,0,0,4"
+                                       Foreground="{StaticResource SecondaryTextBrush}"
+                                       FontSize="12"
+                                       TextWrapping="Wrap"
+                                       Text="Параметры ниже дублируют форму слева; отпечаток и прокси задаются в профиле AdsPower." />
+                            <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="Имя на Avito" />
+                            <TextBlock Style="{StaticResource OverviewValueStyle}"
+                                       Text="{Binding AvitoProfileNameOnAvito, TargetNullValue=—}" />
+                            <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="Local API" />
+                            <TextBlock Style="{StaticResource OverviewValueStyle}" Text="{Binding AdsPowerApiBaseUrl, TargetNullValue=—}" />
+                            <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="user_id" />
+                            <TextBlock Style="{StaticResource OverviewValueStyle}" Text="{Binding AdsPowerProfileId, TargetNullValue=—}" />
+                            <TextBlock Style="{StaticResource OverviewLabelStyle}" Text="Профиль в AdsPower" />
+                            <TextBlock Style="{StaticResource OverviewValueStyle}" Text="{Binding AdsPowerProfileName, TargetNullValue=—}" />
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
             </Grid>
         </Border>
 

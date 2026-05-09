@@ -71,6 +71,12 @@ public partial class DashboardViewModel : ObservableObject
     [ObservableProperty]
     private int activityChartColumns = 24;
 
+    /// <summary>
+    /// Число колонок сетки активных объявлений на главном экране (зависит от ширины блока).
+    /// </summary>
+    [ObservableProperty]
+    private int activeAdsGridColumns = 2;
+
     public bool HasDuplicatesAttention => Duplicates > 0;
 
     public bool HasActionRequiredAttention => ActionRequired > 0;
@@ -185,6 +191,9 @@ public partial class DashboardViewModel : ObservableObject
 
         try
         {
+            var persistedAccounts = await _repository.GetAccountsAsync(CancellationToken.None);
+            _monitoringService.RestorePersistedAdSnapshots(persistedAccounts);
+
             var stats = await _repository.GetDashboardStatsAsync(CancellationToken.None);
             ApplyStats(stats);
 
@@ -246,6 +255,26 @@ public partial class DashboardViewModel : ObservableObject
         >= 380d => 4,
         _ => 3
     };
+
+    /// <summary>
+    /// Вызывается из разметки главного экрана при изменении ширины блока «Объявления на Avito».
+    /// </summary>
+    public void OnAdsSectionWidthChanged(double actualWidth)
+    {
+        var next = actualWidth switch
+        {
+            >= 980d => 3,
+            >= 560d => 2,
+            _ => 1
+        };
+
+        if (next == ActiveAdsGridColumns)
+        {
+            return;
+        }
+
+        ActiveAdsGridColumns = next;
+    }
 
     [RelayCommand]
     public async Task OpenAdAsync(object? parameter)

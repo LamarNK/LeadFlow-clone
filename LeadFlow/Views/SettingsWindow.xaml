@@ -251,6 +251,7 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
@@ -323,26 +324,35 @@
                         </Border>
                     </Grid>
 
-                    <Border Grid.Row="2"
-                            VerticalAlignment="Bottom"
+                    <Border Grid.Row="3"
                             Margin="0,12,0,0"
                             Padding="0,8,0,0"
                             BorderBrush="{StaticResource BorderBrush}"
                             BorderThickness="0,1,0,0"
                             Visibility="{Binding HasSubProfiles, Converter={StaticResource BooleanToVisibilityConverter}}">
-                        <StackPanel>
-                            <TextBlock Text="{Binding SelectedAccountSubProfilesHeader}"
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" MinHeight="96" />
+                            </Grid.RowDefinitions>
+                            <TextBlock Grid.Row="0"
+                                       Text="{Binding SelectedAccountSubProfilesHeader}"
                                        FontSize="12"
                                        Foreground="#0F172A"
                                        FontWeight="SemiBold" />
-                            <TextBlock Text="Avito Pro переключает их по очереди во время мониторинга."
+                            <TextBlock Grid.Row="1"
+                                       Text="Avito Pro переключает их по очереди во время мониторинга."
                                        Style="{StaticResource SubtleTextStyle}"
                                        Margin="0,2,0,6" />
-                            <ItemsControl ItemsSource="{Binding SelectedAccountSubProfiles}"
-                                          MaxHeight="160">
+                            <ItemsControl Grid.Row="2"
+                                          ItemsSource="{Binding SelectedAccountSubProfiles}"
+                                          VerticalAlignment="Stretch">
                                 <ItemsControl.Template>
                                     <ControlTemplate TargetType="ItemsControl">
-                                        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                        <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                                      HorizontalScrollBarVisibility="Disabled"
+                                                      VerticalAlignment="Stretch">
                                             <ItemsPresenter />
                                         </ScrollViewer>
                                     </ControlTemplate>
@@ -379,10 +389,10 @@
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
-                        </StackPanel>
+                        </Grid>
                     </Border>
 
-                    <Grid Grid.Row="3" Margin="0,14,0,0">
+                    <Grid Grid.Row="4" Margin="0,14,0,0">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="6" />
@@ -468,7 +478,7 @@
                                 Visibility="{Binding ShowAuthorizeButton, Converter={StaticResource BooleanToVisibilityConverter}}" />
                     </Grid>
 
-                    <Border Grid.Row="4"
+                    <Border Grid.Row="5"
                             Margin="0,14,0,0"
                             Padding="0,10,0,0"
                             BorderBrush="{StaticResource BorderBrush}"

@@ -46,7 +46,7 @@ public sealed class AvitoResponseSource(
         {
             if (attempt > 1)
             {
-                var pause = attempt == 2 ? TimeSpan.FromSeconds(2) : TimeSpan.FromSeconds(5);
+                var pause = attempt == 2 ? TimeSpan.FromSeconds(5) : TimeSpan.FromSeconds(12);
                 _ = GlobalLogger.Instance.LogAsync(
                     $"Candidates page fetch retry {attempt}/{maxAttempts} for {account.DisplayName} after {pause.TotalSeconds:F0} s.",
                     DeskLinkAuditLogLevel.Info);
@@ -176,7 +176,7 @@ public sealed class AvitoResponseSource(
                 }
             }
 
-            await Task.Delay(1000, cancellationToken);
+            await Task.Delay(1500, cancellationToken);
         }
 
         throw new TimeoutException("Таймаут загрузки страницы кандидатов Авито.");

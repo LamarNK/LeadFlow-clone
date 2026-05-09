@@ -55,6 +55,27 @@ public sealed class AdsPowerAvitoAuthService(IAdsPowerApiClient adsPowerApiClien
                     ["adsPower.debugPort"] = start.DebugPort
                 });
         }
+        catch (AdsPowerDailyOpenLimitExceededException ex)
+        {
+            Log(
+                DeskLinkAuditLogLevel.Warning,
+                $"AdsPower browser/start: дневной лимит запусков during auth check: {ex.Message}",
+                new Dictionary<string, object?>
+                {
+                    ["step"] = "browser_start_daily_limit",
+                    ["adsPower.userId"] = adsPowerUserId,
+                    ["adsPower.apiCode"] = ex.ApiCode
+                },
+                AdsPowerDailyOpenLimitExceededException.ErrorKey);
+            return new AdsPowerAvitoAuthResult(
+                IsAuthorized: false,
+                ProfileName: null,
+                CurrentUrl: null,
+                HasLoginForm: false,
+                HasCaptcha: false,
+                ErrorMessage:
+                    "Исчерпан дневной лимит запусков браузера AdsPower для этого профиля. Дождитесь снятия лимита или обновите тариф.");
+        }
         catch (Exception ex)
         {
             Log(
@@ -268,19 +289,19 @@ public sealed class AdsPowerAvitoAuthService(IAdsPowerApiClient adsPowerApiClien
                     ["step"] = "navigation_recoverable_error",
                     ["error.type"] = ex.GetType().FullName
                 });
-            await Task.Delay(TimeSpan.FromMilliseconds(800), cancellationToken).ConfigureAwait(false);
+            await Task.Delay(TimeSpan.FromMilliseconds(1400), cancellationToken).ConfigureAwait(false);
         }
     }
 
     /// <summary>
-    /// Ждёт появления имени в боковой панели до 8 секунд. Если страница — login, ждать нечего и сразу идём дальше.
+    /// Ждёт появления имени в боковой панели до 12 секунд. Если страница — login, ждать нечего и сразу идём дальше.
     /// </summary>
     private static async Task WaitForProfileSidebarAsync(IPage page, CancellationToken cancellationToken)
     {
         var url = page.Url ?? string.Empty;
         if (url.Contains("avito.ru/login", StringComparison.OrdinalIgnoreCase))
         {
-            await Task.Delay(TimeSpan.FromMilliseconds(800), cancellationToken).ConfigureAwait(false);
+            await Task.Delay(TimeSpan.FromMilliseconds(1400), cancellationToken).ConfigureAwait(false);
             return;
         }
 
@@ -288,7 +309,7 @@ public sealed class AdsPowerAvitoAuthService(IAdsPowerApiClient adsPowerApiClien
         {
             await page.WaitForSelectorAsync(
                 ProfileNameSelector,
-                new WaitForSelectorOptions { Timeout = 8_000, Visible = false }).ConfigureAwait(false);
+                new WaitForSelectorOptions { Timeout = 12_000, Visible = false }).ConfigureAwait(false);
             Log(
                 DeskLinkAuditLogLevel.Info,
                 "Profile sidebar selector appeared.",
@@ -308,7 +329,7 @@ public sealed class AdsPowerAvitoAuthService(IAdsPowerApiClient adsPowerApiClien
                     ["step"] = "sidebar_timeout",
                     ["selector"] = ProfileNameSelector
                 });
-            await Task.Delay(TimeSpan.FromMilliseconds(1200), cancellationToken).ConfigureAwait(false);
+            await Task.Delay(TimeSpan.FromMilliseconds(2000), cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -330,7 +351,7 @@ public sealed class AdsPowerAvitoAuthService(IAdsPowerApiClient adsPowerApiClien
                 {
                     ["step"] = "evaluate_retry"
                 });
-            await Task.Delay(TimeSpan.FromMilliseconds(1200), cancellationToken).ConfigureAwait(false);
+            await Task.Delay(TimeSpan.FromMilliseconds(2000), cancellationToken).ConfigureAwait(false);
             return await page.EvaluateExpressionAsync<string>(ExtractionScript).ConfigureAwait(false);
         }
     }
@@ -383,7 +404,8 @@ public sealed class AdsPowerAvitoAuthService(IAdsPowerApiClient adsPowerApiClien
     private static void Log(
         DeskLinkAuditLogLevel level,
         string message,
-        Dictionary<string, object?>? properties)
+        Dictionary<string, object?>? properties,
+        string? errorKey = null)
     {
         try
         {
@@ -392,6 +414,7 @@ public sealed class AdsPowerAvitoAuthService(IAdsPowerApiClient adsPowerApiClien
                 level,
                 memberName: nameof(AdsPowerAvitoAuthService),
                 filePath: "AdsPowerAvitoAuthService.cs",
+                errorKey: errorKey,
                 properties: properties);
         }
         catch

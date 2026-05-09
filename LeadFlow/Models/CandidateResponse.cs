@@ -20,6 +20,13 @@ public sealed class CandidateResponse
     public string VacancyUrl { get; set; } = string.Empty;
     /// <summary>Ссылка на чат с кандидатом в мессенджере Avito (если удалось извлечь при парсинге).</summary>
     public string MessengerUrl { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Суб-профиль Avito Pro (<c>data-marker=component-profile-switch/profile-…</c>), с которого собран отклик в AdsPower.
+    /// Пусто — один кабинет в профиле или встроенный WebView2.
+    /// </summary>
+    public string AvitoSubProfileId { get; set; } = string.Empty;
+
     public ResponseStatus Status { get; set; } = ResponseStatus.New;
     public string BitrixEntityType { get; set; } = "Deal";
     public string BitrixEntityId { get; set; } = string.Empty;

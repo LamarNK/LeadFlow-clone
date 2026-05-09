@@ -35,8 +35,11 @@ public sealed class MonitoringServiceTests
         Assert.Equal(MonitoringTiming.MaxResponsesPerAccountPerCycle, processed.Count);
         Assert.Equal(MonitoringTiming.MaxResponsesPerAccountPerCycle, bitrix.CreateLeadCallCount);
         Assert.Contains(harness.Statuses, s =>
-            s.Item2.Contains($"обрабатываем {MonitoringTiming.MaxResponsesPerAccountPerCycle}", StringComparison.Ordinal) &&
-            s.Item2.Contains("15", StringComparison.Ordinal));
+            s.Item2.Contains("15", StringComparison.Ordinal) &&
+            s.Item2.Contains($"до {MonitoringTiming.MaxResponsesPerAccountPerCycle}", StringComparison.Ordinal));
+        Assert.Contains(harness.Statuses, s =>
+            s.Item2.Contains("обрабатываем отклик", StringComparison.Ordinal) &&
+            s.Item2.Contains($"/{MonitoringTiming.MaxResponsesPerAccountPerCycle}", StringComparison.Ordinal));
     }
 
     [Fact]

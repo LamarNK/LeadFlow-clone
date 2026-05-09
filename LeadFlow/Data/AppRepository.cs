@@ -702,6 +702,8 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         BlockedCount = model.BlockedCount,
         DraftsCount = model.DraftsCount,
         AdsStatsUpdatedAt = model.AdsStatsUpdatedAt,
+        ActiveAdsSnapshotJson = string.IsNullOrWhiteSpace(model.ActiveAdsSnapshotJson) ? "[]" : model.ActiveAdsSnapshotJson,
+        BlockedAdsSnapshotJson = string.IsNullOrWhiteSpace(model.BlockedAdsSnapshotJson) ? "[]" : model.BlockedAdsSnapshotJson,
         ProfileProvider = model.ProfileProvider.ToString(),
         AdsPowerProfileId = model.AdsPowerProfileId,
         AdsPowerProfileName = model.AdsPowerProfileName,
@@ -764,6 +766,8 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         BlockedCount = entity.BlockedCount,
         DraftsCount = entity.DraftsCount,
         AdsStatsUpdatedAt = entity.AdsStatsUpdatedAt,
+        ActiveAdsSnapshotJson = string.IsNullOrWhiteSpace(entity.ActiveAdsSnapshotJson) ? "[]" : entity.ActiveAdsSnapshotJson,
+        BlockedAdsSnapshotJson = string.IsNullOrWhiteSpace(entity.BlockedAdsSnapshotJson) ? "[]" : entity.BlockedAdsSnapshotJson,
         ProfileProvider = Enum.TryParse<AvitoProfileProvider>(entity.ProfileProvider, out var provider)
             ? provider
             : AvitoProfileProvider.Local,
@@ -827,6 +831,8 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         target.BlockedCount = source.BlockedCount;
         target.DraftsCount = source.DraftsCount;
         target.AdsStatsUpdatedAt = source.AdsStatsUpdatedAt;
+        target.ActiveAdsSnapshotJson = string.IsNullOrWhiteSpace(source.ActiveAdsSnapshotJson) ? "[]" : source.ActiveAdsSnapshotJson;
+        target.BlockedAdsSnapshotJson = string.IsNullOrWhiteSpace(source.BlockedAdsSnapshotJson) ? "[]" : source.BlockedAdsSnapshotJson;
         target.ProfileProvider = source.ProfileProvider.ToString();
         target.AdsPowerProfileId = source.AdsPowerProfileId;
         target.AdsPowerProfileName = source.AdsPowerProfileName;
@@ -855,6 +861,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         SourceUrl = model.VacancyUrl,
         VacancyUrl = model.VacancyUrl,
         MessengerUrl = model.MessengerUrl,
+        AvitoSubProfileId = model.AvitoSubProfileId,
         Status = model.Status.ToString(),
         BitrixEntityType = model.BitrixEntityType,
         BitrixEntityId = model.BitrixEntityId,
@@ -883,6 +890,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         Vacancy = entity.Vacancy,
         VacancyUrl = string.IsNullOrWhiteSpace(entity.VacancyUrl) ? entity.SourceUrl : entity.VacancyUrl,
         MessengerUrl = entity.MessengerUrl,
+        AvitoSubProfileId = entity.AvitoSubProfileId,
         Status = Enum.TryParse<ResponseStatus>(entity.Status, out var status) ? status : ResponseStatus.New,
         BitrixEntityType = entity.BitrixEntityType,
         BitrixEntityId = entity.BitrixEntityId,
@@ -911,6 +919,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         target.SourceUrl = source.VacancyUrl;
         target.VacancyUrl = source.VacancyUrl;
         target.MessengerUrl = source.MessengerUrl;
+        target.AvitoSubProfileId = source.AvitoSubProfileId;
         target.Status = source.Status.ToString();
         target.BitrixEntityType = source.BitrixEntityType;
         target.BitrixEntityId = source.BitrixEntityId;
@@ -975,7 +984,9 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
             ["AdsPowerApiBaseUrl"] = "ALTER TABLE AvitoAccounts ADD COLUMN AdsPowerApiBaseUrl TEXT NULL;",
             ["AdsPowerApiKey"] = "ALTER TABLE AvitoAccounts ADD COLUMN AdsPowerApiKey TEXT NULL;",
             ["AvitoProfileName"] = "ALTER TABLE AvitoAccounts ADD COLUMN AvitoProfileName TEXT NULL;",
-            ["SubProfilesJson"] = "ALTER TABLE AvitoAccounts ADD COLUMN SubProfilesJson TEXT NOT NULL DEFAULT '[]';"
+            ["SubProfilesJson"] = "ALTER TABLE AvitoAccounts ADD COLUMN SubProfilesJson TEXT NOT NULL DEFAULT '[]';",
+            ["ActiveAdsSnapshotJson"] = "ALTER TABLE AvitoAccounts ADD COLUMN ActiveAdsSnapshotJson TEXT NOT NULL DEFAULT '[]';",
+            ["BlockedAdsSnapshotJson"] = "ALTER TABLE AvitoAccounts ADD COLUMN BlockedAdsSnapshotJson TEXT NOT NULL DEFAULT '[]';"
         };
 
         foreach (var (columnName, statement) in alterStatements)
@@ -1035,6 +1046,14 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         {
             await db.Database.ExecuteSqlRawAsync(
                 "ALTER TABLE CandidateResponses ADD COLUMN BitrixContactId TEXT NOT NULL DEFAULT '';",
+                cancellationToken);
+        }
+
+        existingColumns = await GetTableColumnsAsync(db, "CandidateResponses", cancellationToken);
+        if (!existingColumns.Contains("AvitoSubProfileId"))
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                "ALTER TABLE CandidateResponses ADD COLUMN AvitoSubProfileId TEXT NOT NULL DEFAULT '';",
                 cancellationToken);
         }
     }

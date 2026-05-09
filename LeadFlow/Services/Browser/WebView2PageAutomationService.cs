@@ -59,7 +59,7 @@ public sealed class WebView2PageAutomationService : IWebPageAutomationService
     /// Симулирует "человеческую" задержку перед действием.
     /// Используется для обхода поведенческого детекта.
     /// </summary>
-    public static async Task HumanDelayAsync(int minMs = 800, int maxMs = 2500)
+    public static async Task HumanDelayAsync(int minMs = 1200, int maxMs = 4000)
     {
         var delay = Random.Shared.Next(minMs, maxMs + 1);
         await Task.Delay(delay);
@@ -71,7 +71,7 @@ public sealed class WebView2PageAutomationService : IWebPageAutomationService
     public async Task ScrollToElementAsync(BrowserAccountSession session, string selector, CancellationToken cancellationToken)
     {
         var escapedSelector = EscapeSelector(selector);
-        var duration = Random.Shared.Next(500, 1500);
+        var duration = Random.Shared.Next(700, 2200);
         
         var script = $@"
 (function() {{
@@ -101,7 +101,7 @@ public sealed class WebView2PageAutomationService : IWebPageAutomationService
 }})();";
         
         await ExecuteScriptAsync(session, script, cancellationToken);
-        await HumanDelayAsync(300, 800); // Небольшая пауза после скролла
+        await HumanDelayAsync(500, 1200); // Небольшая пауза после скролла
     }
 
     private static string EscapeSelector(string selector) => 

@@ -154,16 +154,30 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
             if (code != 0)
             {
                 var msg = root.TryGetProperty("msg", out var m) ? m.GetString() : null;
+                var props = CreateProperties(
+                    baseUrl,
+                    hasApiKey: !string.IsNullOrWhiteSpace(options.ApiKey),
+                    userId: adsPowerUserId,
+                    openUrl: openUrl,
+                    apiCode: code);
+                props["adsPower.apiMessage"] = msg;
+
+                if (AdsPowerDailyOpenLimitExceededException.LooksLikeDailyOpenLimit(code, msg))
+                {
+                    Log(
+                        $"AdsPower browser/start: дневной лимит запусков (API code {code}).",
+                        DeskLinkAuditLogLevel.Warning,
+                        nameof(StartBrowserAsync),
+                        props,
+                        AdsPowerDailyOpenLimitExceededException.ErrorKey);
+                    throw new AdsPowerDailyOpenLimitExceededException(code, msg);
+                }
+
                 Log(
                     $"AdsPower browser/start returned API error {code}: {msg ?? "ошибка"}.",
                     DeskLinkAuditLogLevel.Warning,
                     nameof(StartBrowserAsync),
-                    CreateProperties(
-                        baseUrl,
-                        hasApiKey: !string.IsNullOrWhiteSpace(options.ApiKey),
-                        userId: adsPowerUserId,
-                        openUrl: openUrl,
-                        apiCode: code));
+                    props);
                 throw new InvalidOperationException($"AdsPower browser/start: {msg ?? "ошибка"} (code {code})");
             }
         }
@@ -254,7 +268,8 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
         string message,
         DeskLinkAuditLogLevel level,
         string memberName,
-        Dictionary<string, object?>? properties = null)
+        Dictionary<string, object?>? properties = null,
+        string? errorKey = null)
     {
         try
         {
@@ -263,6 +278,7 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
                 level,
                 memberName: memberName,
                 filePath: "AdsPowerApiClient.cs",
+                errorKey: errorKey,
                 properties: properties);
         }
         catch

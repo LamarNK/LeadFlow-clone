@@ -661,7 +661,7 @@ public sealed class BitrixClient(
                         using var result = await client.PostAsJsonAsync(endpoint, new { id = contactId }, cancellationToken);
                         if (ShouldRetry(result.StatusCode) && attempt < ContactLookupMaxAttempts)
                         {
-                            await Task.Delay(TimeSpan.FromMilliseconds(200 * attempt), cancellationToken);
+                            await Task.Delay(TimeSpan.FromMilliseconds(350 * attempt), cancellationToken);
                             continue;
                         }
 
@@ -683,7 +683,7 @@ public sealed class BitrixClient(
                     }
                     catch (Exception ex) when (IsTransient(ex) && attempt < ContactLookupMaxAttempts)
                     {
-                        await Task.Delay(TimeSpan.FromMilliseconds(200 * attempt), cancellationToken);
+                        await Task.Delay(TimeSpan.FromMilliseconds(350 * attempt), cancellationToken);
                     }
                     catch
                     {
