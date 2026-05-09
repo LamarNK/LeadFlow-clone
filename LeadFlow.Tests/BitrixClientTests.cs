@@ -14,6 +14,34 @@ public sealed class BitrixClientTests
     private const string Webhook = "https://b24-test.bitrix24.ru/rest/1/abc/";
 
     [Fact]
+    public void RestJsonPreserveFieldNames_SerializesBitrixContactFieldsWithCorrectCasing()
+    {
+        var contactRequest = new
+        {
+            fields = new
+            {
+                NAME = "Иван",
+                LAST_NAME = "Иванов",
+                SECOND_NAME = "Иванович",
+                PHONE = new[] { new { VALUE = "+79001234567", VALUE_TYPE = "WORK" } }
+            }
+        };
+
+        var json = JsonSerializer.Serialize(contactRequest, BitrixClient.RestJsonPreserveFieldNames);
+
+        using var doc = JsonDocument.Parse(json);
+        var fields = doc.RootElement.GetProperty("fields");
+        Assert.Equal("Иван", fields.GetProperty("NAME").GetString());
+        Assert.Equal("Иванов", fields.GetProperty("LAST_NAME").GetString());
+        Assert.Equal("Иванович", fields.GetProperty("SECOND_NAME").GetString());
+        var phone = fields.GetProperty("PHONE")[0];
+        Assert.Equal("+79001234567", phone.GetProperty("VALUE").GetString());
+        Assert.Equal("WORK", phone.GetProperty("VALUE_TYPE").GetString());
+
+        Assert.DoesNotContain("lasT_NAME", json, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task HasDuplicate_EmptyWebhook_DemoMode_Skips()
     {
         var client = BuildClient((_, _) => throw new InvalidOperationException("Не должно быть HTTP-вызовов"));

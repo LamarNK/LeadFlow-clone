@@ -609,27 +609,115 @@ public partial class MonitoringViewModel : ObservableObject
             return;
         }
 
-        const string sendDisabledMessage = "Тестовый режим: отправка в Bitrix24 временно отключена.";
-        MessageBox.Show(
-            sendDisabledMessage,
-            "Bitrix24",
-            MessageBoxButton.OK,
-            MessageBoxImage.Information);
+        var bitrixResult =
+            !string.IsNullOrWhiteSpace(response.BitrixContactId) && string.IsNullOrWhiteSpace(response.BitrixEntityId)
+                ? await _bitrixClient.CreateDealForContactAsync(
+                        response,
+                        response.BitrixContactId.Trim(),
+                        settings,
+                        CancellationToken.None)
+                    .ConfigureAwait(true)
+                : await _bitrixClient.CreateLeadAsync(response, settings, CancellationToken.None).ConfigureAwait(true);
 
+        if (bitrixResult.BitrixCreationSuppressed)
+        {
+            response.Status = ResponseStatus.ActionRequired;
+            response.ProcessedAt = DateTime.UtcNow;
+            response.ErrorMessage = bitrixResult.Error;
+            await _repository.SaveCandidateAsync(response, CancellationToken.None);
+            await _repository.AddLogAsync(new ProcessingLogItem
+            {
+                CandidateResponseId = response.Id,
+                AccountId = response.AccountId,
+                Level = "Warning",
+                Message = "Создание в Bitrix24 отключено",
+                Details = bitrixResult.Error
+            }, CancellationToken.None);
+            ApplyProcessedResponse(response);
+            NotifyCountersChanged();
+            MessageBox.Show(
+                bitrixResult.Error,
+                "Bitrix24",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+            return;
+        }
+
+        if (bitrixResult.IsSuccess)
+        {
+            response.Status = ResponseStatus.Sent;
+            response.BitrixEntityId = bitrixResult.EntityId ?? string.Empty;
+            response.BitrixContactId = bitrixResult.ContactId ?? string.Empty;
+            response.ProcessedAt = DateTime.UtcNow;
+            response.ErrorMessage = string.Empty;
+            await _repository.SaveCandidateAsync(response, CancellationToken.None);
+            await _repository.AddLogAsync(new ProcessingLogItem
+            {
+                CandidateResponseId = response.Id,
+                AccountId = response.AccountId,
+                Level = "Info",
+                Message = "Ручная отправка: сделка в Bitrix24",
+                Details = bitrixResult.EntityId ?? string.Empty
+            }, CancellationToken.None);
+            ApplyProcessedResponse(response);
+            NotifyCountersChanged();
+            MessageBox.Show(
+                $"Сделка создана в Bitrix24 (ID {bitrixResult.EntityId}).",
+                "Bitrix24",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+            return;
+        }
+
+        var orphanContact =
+            !string.IsNullOrWhiteSpace(bitrixResult.ContactId)
+            && string.IsNullOrWhiteSpace(bitrixResult.EntityId);
+
+        if (orphanContact)
+        {
+            response.Status = ResponseStatus.ActionRequired;
+            response.BitrixContactId = bitrixResult.ContactId;
+            response.BitrixEntityId = string.Empty;
+            response.ProcessedAt = DateTime.UtcNow;
+            response.ErrorMessage = bitrixResult.Error;
+            await _repository.SaveCandidateAsync(response, CancellationToken.None);
+            await _repository.AddLogAsync(new ProcessingLogItem
+            {
+                CandidateResponseId = response.Id,
+                AccountId = response.AccountId,
+                Level = "Warning",
+                Message = "Контакт в Bitrix24 без сделки — требуется действие",
+                Details = bitrixResult.Error
+            }, CancellationToken.None);
+            ApplyProcessedResponse(response);
+            NotifyCountersChanged();
+            MessageBox.Show(
+                bitrixResult.Error,
+                "Bitrix24",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+            return;
+        }
+
+        response.Status = ResponseStatus.Error;
         response.ProcessedAt = DateTime.UtcNow;
-        response.Status = ResponseStatus.ActionRequired;
-        response.ErrorMessage = sendDisabledMessage;
+        response.ErrorMessage = bitrixResult.Error;
+        await _repository.SaveCandidateAsync(response, CancellationToken.None);
         await _repository.AddLogAsync(new ProcessingLogItem
         {
             CandidateResponseId = response.Id,
             AccountId = response.AccountId,
-            Level = "Warning",
-            Message = "Ручная отправка в Bitrix24 отключена",
-            Details = sendDisabledMessage
+            Level = "Error",
+            Message = "Ошибка Bitrix24 (ручная отправка)",
+            Details = bitrixResult.Error
         }, CancellationToken.None);
-        await _repository.SaveCandidateAsync(response, CancellationToken.None);
         ApplyProcessedResponse(response);
         NotifyCountersChanged();
+        MessageBox.Show(
+            bitrixResult.Error,
+            "Bitrix24",
+            MessageBoxButton.OK,
+            MessageBoxImage.Error);
     }
 
     private bool CanDeleteSelectedResponse(CandidateResponse? r) => r is not null;

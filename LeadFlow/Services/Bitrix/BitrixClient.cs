@@ -16,6 +16,14 @@ public sealed class BitrixClient(
     ICandidateParser candidateParser) : IBitrixClient
 {
     /// <summary>
+    /// Bitrix REST ожидает ключи полей как в документации (<c>NAME</c>, <c>LAST_NAME</c>, <c>VALUE</c>).
+    /// Перегрузка <c>PostAsJsonAsync</c> без <see cref="JsonSerializerOptions"/> использует <see cref="JsonSerializerOptions.Web"/>
+    /// и портит регистр имён — CRM игнорирует поля и создаёт пустой контакт.
+    /// </summary>
+    internal static readonly JsonSerializerOptions RestJsonPreserveFieldNames =
+        new(JsonSerializerDefaults.General);
+
+    /// <summary>
     /// Временный стоп-кран: при <c>true</c> контакты и сделки в Bitrix24 не создаются (REST не вызывается).
     /// Поставьте <c>false</c>, чтобы снова включить отправку.
     /// </summary>
@@ -73,7 +81,7 @@ public sealed class BitrixClient(
 
         try
         {
-            using var result = await client.PostAsJsonAsync(endpoint, request, cancellationToken);
+            using var result = await client.PostAsJsonAsync(endpoint, request, RestJsonPreserveFieldNames, cancellationToken);
             if (!result.IsSuccessStatusCode)
             {
                 var body = await result.Content.ReadAsStringAsync(cancellationToken);
@@ -152,7 +160,7 @@ public sealed class BitrixClient(
                 start
             };
 
-            using var result = await client.PostAsJsonAsync(endpoint, request, cancellationToken);
+            using var result = await client.PostAsJsonAsync(endpoint, request, RestJsonPreserveFieldNames, cancellationToken);
             result.EnsureSuccessStatusCode();
 
             await using var stream = await result.Content.ReadAsStreamAsync(cancellationToken);
@@ -276,6 +284,7 @@ public sealed class BitrixClient(
             var contactResult = await client.PostAsJsonAsync(
                 $"{webhookBase}/crm.contact.add.json",
                 contactRequest,
+                RestJsonPreserveFieldNames,
                 cancellationToken);
             contactResult.EnsureSuccessStatusCode();
 
@@ -526,6 +535,7 @@ public sealed class BitrixClient(
         using var result = await client.PostAsJsonAsync(
             $"{webhookBase}/crm.deal.list.json",
             listRequest,
+            RestJsonPreserveFieldNames,
             cancellationToken);
         if (!result.IsSuccessStatusCode)
         {
@@ -591,6 +601,7 @@ public sealed class BitrixClient(
         var dealResult = await client.PostAsJsonAsync(
             $"{webhookBase}/crm.deal.add.json",
             dealRequest,
+            RestJsonPreserveFieldNames,
             cancellationToken);
         dealResult.EnsureSuccessStatusCode();
 
@@ -621,6 +632,7 @@ public sealed class BitrixClient(
             using var result = await client.PostAsJsonAsync(
                 $"{webhookBase}/crm.contact.delete.json",
                 new { id = contactId },
+                RestJsonPreserveFieldNames,
                 cancellationToken);
             if (!result.IsSuccessStatusCode)
             {
@@ -719,7 +731,11 @@ public sealed class BitrixClient(
                 {
                     try
                     {
-                        using var result = await client.PostAsJsonAsync(endpoint, new { id = contactId }, cancellationToken);
+                        using var result = await client.PostAsJsonAsync(
+                            endpoint,
+                            new { id = contactId },
+                            RestJsonPreserveFieldNames,
+                            cancellationToken);
                         if (ShouldRetry(result.StatusCode) && attempt < ContactLookupMaxAttempts)
                         {
                             await Task.Delay(TimeSpan.FromMilliseconds(350 * attempt), cancellationToken);
