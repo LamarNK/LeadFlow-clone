@@ -60,7 +60,7 @@ public partial class DashboardView : UserControl
         }
 
         // Шапка окна, блок «Сегодня», графики, «Требуют внимания», шапка Avito/фильтры и отступы.
-        const double verticalReserve = 560;
+        const double verticalReserve = 472;
         AdsListScrollViewer.MaxHeight = Math.Max(200, w.ActualHeight - verticalReserve);
     }
 

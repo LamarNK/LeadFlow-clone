@@ -3,6 +3,7 @@ using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Data;
+using LeadFlow.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using LeadFlow;
@@ -119,6 +120,24 @@ public partial class MonitoringViewModel : ObservableObject
         RefreshFilterLookups();
     }
 
+    /// <summary>
+    /// Настраивает фильтр и сортировку списка перед загрузкой данных (вызывается из <see cref="IWindowService.ShowMonitoringAsync"/>).
+    /// </summary>
+    public void ApplyLaunchRequest(MonitoringWindowLaunchRequest request)
+    {
+        if (request.FocusStatus is ResponseStatus status)
+        {
+            SelectedStatusFilter = status.ToString();
+        }
+
+        if (request.SortByStatusAscending)
+        {
+            ResponsesView.SortDescriptions.Clear();
+            ResponsesView.SortDescriptions.Add(new SortDescription(nameof(CandidateResponse.Status), ListSortDirection.Ascending));
+            ResponsesView.SortDescriptions.Add(new SortDescription(nameof(CandidateResponse.CreatedAt), ListSortDirection.Descending));
+        }
+    }
+
     private void OnResponsesCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
         if (!_suppressFilterLookupRefresh)
@@ -200,6 +219,7 @@ public partial class MonitoringViewModel : ObservableObject
         SelectedAccountFilter = AllAccountsLabel;
         AgeFilterMinText = string.Empty;
         AgeFilterMaxText = string.Empty;
+        ResponsesView.SortDescriptions.Clear();
     }
 
     [RelayCommand]

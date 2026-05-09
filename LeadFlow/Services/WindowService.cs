@@ -489,10 +489,43 @@ public sealed class WindowService(
         return host;
     }
 
-    public Task ShowMonitoringAsync(Window owner, CancellationToken cancellationToken)
+    public async Task ShowMonitoringAsync(
+        Window owner,
+        CancellationToken cancellationToken,
+        MonitoringWindowLaunchRequest? launchRequest = null)
     {
-        ShowOrActivateWindow<MonitoringWindow>(owner);
-        return Task.CompletedTask;
+        if (_openWindows.TryGetValue(typeof(MonitoringWindow), out var existingWindow))
+        {
+            if (existingWindow.DataContext is MonitoringViewModel existingVm)
+            {
+                if (launchRequest is not null)
+                {
+                    existingVm.ApplyLaunchRequest(launchRequest);
+                    await existingVm.RefreshAsync().ConfigureAwait(true);
+                }
+            }
+
+            ActivateWindow(existingWindow);
+            return;
+        }
+
+        var window = ActivatorUtilities.CreateInstance<MonitoringWindow>(serviceProvider);
+        window.Owner = owner;
+        window.Closed += (_, _) => _openWindows.Remove(typeof(MonitoringWindow));
+        _openWindows[typeof(MonitoringWindow)] = window;
+
+        if (window.DataContext is MonitoringViewModel vm)
+        {
+            if (launchRequest is not null)
+            {
+                vm.ApplyLaunchRequest(launchRequest);
+            }
+
+            await vm.RefreshAsync().ConfigureAwait(true);
+        }
+
+        window.Show();
+        ActivateWindow(window);
     }
 
     public Task ShowCandidateDetailsAsync(Window owner, CancellationToken cancellationToken)

@@ -15,9 +15,9 @@ namespace LeadFlow.ViewModels;
 public partial class DashboardViewModel : ObservableObject
 {
     /// <summary>Высота столбца в UI (px); не влияет на расчёт метрик, только на визуальное масштабирование.</summary>
-    private const double ChartBarMaxHeight = 168d;
+    private const double ChartBarMaxHeight = 128d;
 
-    /// <summary>Меньшая шкала для недельного мини-графика в правой колонке.</summary>
+    /// <summary>Меньшая шкала для недельного графика на дашборде.</summary>
     private const double WeeklyChartBarMaxHeight = 56d;
 
     private readonly AppRepository _repository;
@@ -195,10 +195,20 @@ public partial class DashboardViewModel : ObservableObject
     }
 
     [RelayCommand]
-    public void GoToAttentionProblems()
+    public async Task GoToAttentionProblemsAsync()
     {
-        SelectedAdsFilter = AdsDashboardFilter.WithIssues;
-        SelectedAdsSort = AdsSortOption.ByProblemsFirst;
+        var owner = Application.Current?.MainWindow;
+        if (owner is null)
+        {
+            return;
+        }
+
+        await _windowService.ShowMonitoringAsync(
+            owner,
+            CancellationToken.None,
+            new MonitoringWindowLaunchRequest(
+                FocusStatus: ResponseStatus.ActionRequired,
+                SortByStatusAscending: true));
     }
 
     /// <summary>Пересобирает <see cref="DisplayedAds"/> после смены фильтра, поиска или сортировки.</summary>

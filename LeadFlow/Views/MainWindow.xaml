@@ -21,7 +21,7 @@
         <Grid Margin="{StaticResource PagePadding}">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
-                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
             <Border Style="{StaticResource MinimalShellHeaderBorderStyle}" Margin="0,0,0,12">
@@ -263,6 +263,7 @@
 
             <views:DashboardView Grid.Row="1"
                                  HorizontalAlignment="Stretch"
+                                 VerticalAlignment="Top"
                                  DataContext="{Binding Dashboard}" />
         </Grid>
     </ScrollViewer>

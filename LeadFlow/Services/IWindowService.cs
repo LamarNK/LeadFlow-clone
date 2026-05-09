@@ -19,7 +19,10 @@ public interface IWindowService
         string? avitoSubProfileId = null);
     /// <summary>Закрывает вкладки окна Avito для аккаунта и освобождает WebView2 (папка профиля не держится процессом).</summary>
     void CloseAvitoBrowserTabsForAccount(Guid accountId);
-    Task ShowMonitoringAsync(Window owner, CancellationToken cancellationToken);
+    Task ShowMonitoringAsync(
+        Window owner,
+        CancellationToken cancellationToken,
+        MonitoringWindowLaunchRequest? launchRequest = null);
     Task ShowCandidateDetailsAsync(Window owner, CancellationToken cancellationToken);
     Task ShowDuplicateCheckAsync(Window owner, CancellationToken cancellationToken);
     Task ShowBitrixIntegrationAsync(Window owner, CancellationToken cancellationToken);

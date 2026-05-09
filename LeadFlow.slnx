@@ -1,10 +1,10 @@
 <Solution>
-  <Project Path="LeadFlow/LeadFlow.csproj">
-    <Platform Solution="*|x64" Project="x64" />
-  </Project>
   <Configurations>
     <Platform Name="Any CPU" />
     <Platform Name="x64" />
   </Configurations>
   <Project Path="LeadFlow.Tests/LeadFlow.Tests.csproj" />
+  <Project Path="LeadFlow/LeadFlow.csproj">
+    <Platform Solution="*|x64" Project="x64" />
+  </Project>
 </Solution>

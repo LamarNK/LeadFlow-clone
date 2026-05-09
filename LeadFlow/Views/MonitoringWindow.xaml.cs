@@ -9,6 +9,5 @@ public partial class MonitoringWindow : Window
     {
         InitializeComponent();
         DataContext = viewModel;
-        viewModel.RefreshCommand.Execute(null);
     }
 }

@@ -30,7 +30,7 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
         <!-- Hero «Сегодня»: один блок, слева главный KPI, справа плотная полоса из 5 KPI -->
@@ -110,7 +110,7 @@
         </Border>
 
         <!-- Основная аналитика: график слева, статусы справа -->
-        <Grid Grid.Row="1" Margin="0,0,0,12">
+        <Grid Grid.Row="1" Margin="0,0,0,0">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="3.2*" MinWidth="400" />
                 <ColumnDefinition Width="1*" MinWidth="248" />
@@ -119,10 +119,16 @@
             <Border Grid.Column="0"
                     Style="{StaticResource MinimalDashSurfaceStyle}"
                     Margin="0,0,20,0"
-                    Padding="18,14"
-                    VerticalAlignment="Stretch">
-                <StackPanel>
-                    <Grid Margin="0,0,0,8">
+                    Padding="18,12"
+                    VerticalAlignment="Top">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid Grid.Row="0" Margin="0,0,0,6">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
@@ -162,18 +168,22 @@
                     </Grid>
 
                     <Border x:Name="ChartActivityHost"
-                            Margin="0,12,0,0"
+                            Grid.Row="1"
+                            Margin="-18,0,0,0"
                             Padding="0"
                             Background="Transparent"
                             BorderThickness="0"
                             Loaded="ChartActivityHost_OnLoaded"
                             SizeChanged="ChartActivityHost_OnSizeChanged">
-                        <Grid MinHeight="248" MaxHeight="278">
+                        <Grid>
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="32" />
+                                <ColumnDefinition Width="22" />
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
-                            <Grid Grid.Column="0" Margin="0,0,6,26" VerticalAlignment="Stretch" MinHeight="210">
+                            <Grid Grid.Column="0"
+                                  Height="168"
+                                  Margin="0,0,4,20"
+                                  VerticalAlignment="Top">
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="*" />
                                     <RowDefinition Height="*" />
@@ -192,15 +202,14 @@
                             </Grid>
                             <Grid Grid.Column="1" Margin="0,0,0,0">
                                 <Grid.RowDefinitions>
-                                    <RowDefinition Height="*" />
-                                    <RowDefinition Height="28" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="18" />
                                 </Grid.RowDefinitions>
                                 <Border Grid.Row="0"
-                                        Background="#F1F5F9"
-                                        CornerRadius="8"
-                                        Padding="6,8"
-                                        SnapsToDevicePixels="True">
-                                    <Grid Height="188">
+                                        Style="{StaticResource MinimalAnalyticsPlotAreaStyle}"
+                                        Padding="0,6,6,6"
+                                        VerticalAlignment="Top">
+                                    <Grid Height="156">
                                         <UniformGrid Rows="4" Columns="1" Opacity="0.9">
                                             <Border BorderBrush="#E2E8F0" BorderThickness="0,0,0,1" Background="Transparent" />
                                             <Border BorderBrush="#E2E8F0" BorderThickness="0,0,0,1" Background="Transparent" />
@@ -210,11 +219,11 @@
                                         <Rectangle Height="2"
                                                    VerticalAlignment="Bottom"
                                                    Fill="#64748B"
-                                                   Margin="4,0,4,0"
+                                                   Margin="0,0,4,0"
                                                    Opacity="0.45"
                                                    SnapsToDevicePixels="True" />
                                         <ItemsControl ItemsSource="{Binding Activity}"
-                                                      Margin="4,0,4,4"
+                                                      Margin="0,0,4,3"
                                                       VerticalAlignment="Bottom">
                                             <ItemsControl.ItemsPanel>
                                                 <ItemsPanelTemplate>
@@ -223,7 +232,7 @@
                                             </ItemsControl.ItemsPanel>
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate>
-                                                    <Grid Height="178"
+                                                    <Grid Height="146"
                                                           Margin="1,0"
                                                           VerticalAlignment="Bottom"
                                                           ToolTipService.InitialShowDelay="200"
@@ -236,17 +245,17 @@
                                                         <TextBlock Text="{Binding ChartDisplayValue}"
                                                                    HorizontalAlignment="Center"
                                                                    VerticalAlignment="Top"
-                                                                   FontSize="11"
+                                                                   FontSize="10"
                                                                    FontWeight="SemiBold"
                                                                    Foreground="{StaticResource TextBrush}"
-                                                                   Margin="0,4,0,0"
+                                                                   Margin="0,2,0,0"
                                                                    Visibility="{Binding ChartDisplayValue, Converter={StaticResource ZeroToCollapsedConverter}}" />
                                                         <Border Width="18"
                                                                 Height="{Binding ChartBarHeight}"
                                                                 MinHeight="3"
                                                                 VerticalAlignment="Bottom"
                                                                 HorizontalAlignment="Center"
-                                                                Margin="0,0,0,4"
+                                                                Margin="0,0,0,3"
                                                                 CornerRadius="5,5,2,2"
                                                                 Background="{Binding ChartBarFillHex, Converter={StaticResource HexColorToBrushConverter}}"
                                                                 SnapsToDevicePixels="True" />
@@ -259,8 +268,8 @@
                                 <ItemsControl Grid.Row="1"
                                               ItemsSource="{Binding Activity}"
                                               VerticalAlignment="Top"
-                                              Margin="6,4,6,0"
-                                              Height="24">
+                                              Margin="0,1,6,0"
+                                              Height="18">
                                     <ItemsControl.ItemsPanel>
                                         <ItemsPanelTemplate>
                                             <UniformGrid Columns="{Binding DataContext.ActivityChartColumns, ElementName=DashboardRoot}" />
@@ -268,7 +277,7 @@
                                     </ItemsControl.ItemsPanel>
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
-                                            <Grid Height="24" ClipToBounds="False">
+                                            <Grid Height="18" ClipToBounds="False">
                                                 <Border Width="1"
                                                         Height="5"
                                                         HorizontalAlignment="Left"
@@ -279,7 +288,7 @@
                                                 <TextBlock Text="{Binding Label}"
                                                            VerticalAlignment="Bottom"
                                                            HorizontalAlignment="Center"
-                                                           FontSize="10"
+                                                           FontSize="9"
                                                            Foreground="#64748B"
                                                            TextTrimming="CharacterEllipsis" />
                                             </Grid>
@@ -290,13 +299,147 @@
                         </Grid>
                     </Border>
 
-                    <Border Margin="0,8,0,0"
-                            Padding="10,8"
+                    <!-- Недельная динамика: та же сетка оси Y + plot-area, что у почасового графика -->
+                    <Grid Grid.Row="2" Margin="0,13,0,0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <StackPanel Grid.Row="0">
+                            <TextBlock Text="Динамика за неделю"
+                                       FontSize="15"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource TextBrush}" />
+                            <TextBlock Margin="0,2,0,0"
+                                       Text="Отклики по дням за последние 7 дней"
+                                       FontSize="11"
+                                       Foreground="{StaticResource SecondaryTextBrush}" />
+                        </StackPanel>
+                        <Grid Grid.Row="1" Margin="-18,8,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="22" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Grid Grid.Column="0"
+                                  Height="168"
+                                  Margin="0,0,4,20"
+                                  VerticalAlignment="Top">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="*" />
+                                    <RowDefinition Height="*" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+                                <TextBlock Grid.Row="0"
+                                           FontSize="9"
+                                           Foreground="#94A3B8"
+                                           VerticalAlignment="Top"
+                                           HorizontalAlignment="Right"
+                                           Text="·" />
+                                <TextBlock Grid.Row="1" Text=" " />
+                                <TextBlock Grid.Row="2"
+                                           Text="0"
+                                           FontSize="9"
+                                           Foreground="#94A3B8"
+                                           VerticalAlignment="Bottom"
+                                           HorizontalAlignment="Right" />
+                            </Grid>
+                            <Grid Grid.Column="1" Margin="0,0,0,0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="18" />
+                                </Grid.RowDefinitions>
+                                <Border Grid.Row="0"
+                                        Style="{StaticResource MinimalAnalyticsPlotAreaStyle}"
+                                        Padding="0,6,6,6"
+                                        VerticalAlignment="Top">
+                                    <Grid Height="156">
+                                        <UniformGrid Rows="3" Columns="1" Opacity="0.9">
+                                            <Border BorderBrush="#E2E8F0" BorderThickness="0,0,0,1" Background="Transparent" />
+                                            <Border BorderBrush="#E2E8F0" BorderThickness="0,0,0,1" Background="Transparent" />
+                                            <Border BorderBrush="Transparent" Background="Transparent" />
+                                        </UniformGrid>
+                                        <Rectangle Height="2"
+                                                   VerticalAlignment="Bottom"
+                                                   Fill="#64748B"
+                                                   Margin="0,0,4,0"
+                                                   Opacity="0.45"
+                                                   SnapsToDevicePixels="True" />
+                                        <ItemsControl ItemsSource="{Binding WeeklyActivity}"
+                                                      Margin="0,0,4,3"
+                                                      VerticalAlignment="Bottom">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate>
+                                                    <UniformGrid Columns="7" />
+                                                </ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Grid Height="130"
+                                                          Margin="1,0"
+                                                          VerticalAlignment="Bottom"
+                                                          ToolTipService.InitialShowDelay="200"
+                                                          ToolTipService.ShowDuration="60000">
+                                                        <Grid.ToolTip>
+                                                            <ToolTip>
+                                                                <TextBlock Text="{Binding ChartTooltip}" TextWrapping="Wrap" MaxWidth="280" FontSize="11" />
+                                                            </ToolTip>
+                                                        </Grid.ToolTip>
+                                                        <Border Width="14"
+                                                                Height="{Binding ChartBarHeight}"
+                                                                MinHeight="3"
+                                                                VerticalAlignment="Bottom"
+                                                                HorizontalAlignment="Center"
+                                                                Margin="0,0,0,3"
+                                                                CornerRadius="5,5,2,2"
+                                                                Background="{Binding ChartBarFillHex, Converter={StaticResource HexColorToBrushConverter}}"
+                                                                SnapsToDevicePixels="True" />
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </Grid>
+                                </Border>
+                                <ItemsControl Grid.Row="1"
+                                              ItemsSource="{Binding WeeklyActivity}"
+                                              VerticalAlignment="Top"
+                                              Margin="0,1,6,0"
+                                              Height="18">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <UniformGrid Columns="7" />
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Height="18" ClipToBounds="False">
+                                                <Border Width="1"
+                                                        Height="5"
+                                                        HorizontalAlignment="Left"
+                                                        VerticalAlignment="Top"
+                                                        Background="#94A3B8"
+                                                        SnapsToDevicePixels="True" />
+                                                <TextBlock Text="{Binding Label}"
+                                                           VerticalAlignment="Bottom"
+                                                           HorizontalAlignment="Center"
+                                                           FontSize="9"
+                                                           Foreground="#64748B"
+                                                           TextTrimming="CharacterEllipsis" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </Grid>
+                        </Grid>
+                    </Grid>
+
+                    <Border Grid.Row="3"
+                            Margin="0,14,0,0"
+                            Padding="44,6,10,6"
                             HorizontalAlignment="Stretch"
                             Background="#F8FAFC"
                             BorderBrush="#E2E8F0"
                             BorderThickness="1"
-                            CornerRadius="10"
+                            CornerRadius="8"
                             SnapsToDevicePixels="True">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock VerticalAlignment="Center" FontSize="11" Foreground="{StaticResource SecondaryTextBrush}" Text="Сводка:" />
@@ -312,16 +455,16 @@
                             </TextBlock>
                         </StackPanel>
                     </Border>
-                </StackPanel>
+                </Grid>
             </Border>
 
             <Border Grid.Column="1"
                     Background="#E8EAED"
                     CornerRadius="14"
                     Padding="10"
-                    VerticalAlignment="Stretch"
+                    VerticalAlignment="Top"
                     SnapsToDevicePixels="True">
-                <StackPanel VerticalAlignment="Stretch">
+                <StackPanel>
                     <Border Style="{StaticResource MinimalAnalyticsRailCardStyle}">
                         <StackPanel>
                             <TextBlock Text="Требуют внимания"
@@ -370,11 +513,11 @@
                                     FontSize="12"
                                     Content="Разобрать"
                                     Command="{Binding GoToAttentionProblemsCommand}"
-                                    ToolTip="Показать объявления с проблемами и отсортировать по приоритету" />
+                                    ToolTip="Открыть мониторинг: отклики «Нужны действия», сортировка по статусу" />
                         </StackPanel>
                     </Border>
 
-                    <Border Style="{StaticResource MinimalAnalyticsRailCardStyle}">
+                    <Border Style="{StaticResource MinimalAnalyticsRailCardStyle}" Margin="0,0,0,0">
                         <StackPanel>
                             <TextBlock Text="Avito"
                                        FontSize="12"
@@ -426,82 +569,6 @@
                             </Grid>
                         </StackPanel>
                     </Border>
-
-                    <Border Style="{StaticResource MinimalAnalyticsRailCardStyle}" Margin="0,0,0,0">
-                        <StackPanel>
-                            <TextBlock Text="Неделя"
-                                       FontSize="12"
-                                       FontWeight="SemiBold"
-                                       Foreground="{StaticResource TextBrush}" />
-                            <TextBlock Margin="0,2,0,8"
-                                       Text="Отклики по дням (7 дней)"
-                                       FontSize="10"
-                                       Foreground="{StaticResource SecondaryTextBrush}" />
-                            <Border Background="#F1F5F9" CornerRadius="8" Padding="6,6" SnapsToDevicePixels="True">
-                                <Grid Height="92">
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="*" />
-                                        <RowDefinition Height="18" />
-                                    </Grid.RowDefinitions>
-                                    <Grid Grid.Row="0">
-                                        <UniformGrid Rows="3" Columns="1" Opacity="0.85">
-                                            <Border BorderBrush="#E2E8F0" BorderThickness="0,0,0,1" Background="Transparent" />
-                                            <Border BorderBrush="#E2E8F0" BorderThickness="0,0,0,1" Background="Transparent" />
-                                            <Border BorderBrush="Transparent" Background="Transparent" />
-                                        </UniformGrid>
-                                        <Rectangle Height="1.5" VerticalAlignment="Bottom" Fill="#94A3B8" Margin="2,0,2,0" Opacity="0.5" />
-                                        <ItemsControl ItemsSource="{Binding WeeklyActivity}" Margin="2,0,2,2" VerticalAlignment="Bottom">
-                                            <ItemsControl.ItemsPanel>
-                                                <ItemsPanelTemplate>
-                                                    <UniformGrid Columns="7" />
-                                                </ItemsPanelTemplate>
-                                            </ItemsControl.ItemsPanel>
-                                            <ItemsControl.ItemTemplate>
-                                                <DataTemplate>
-                                                    <Grid Height="68" Margin="1,0" VerticalAlignment="Bottom" ToolTipService.InitialShowDelay="200" ToolTipService.ShowDuration="60000">
-                                                        <Grid.ToolTip>
-                                                            <ToolTip>
-                                                                <TextBlock Text="{Binding ChartTooltip}" TextWrapping="Wrap" MaxWidth="260" FontSize="11" />
-                                                            </ToolTip>
-                                                        </Grid.ToolTip>
-                                                        <Border Width="11"
-                                                                Height="{Binding ChartBarHeight}"
-                                                                MinHeight="3"
-                                                                VerticalAlignment="Bottom"
-                                                                HorizontalAlignment="Center"
-                                                                Margin="0,0,0,2"
-                                                                CornerRadius="4,4,1,1"
-                                                                Background="{Binding ChartBarFillHex, Converter={StaticResource HexColorToBrushConverter}}" />
-                                                    </Grid>
-                                                </DataTemplate>
-                                            </ItemsControl.ItemTemplate>
-                                        </ItemsControl>
-                                    </Grid>
-                                    <ItemsControl Grid.Row="1"
-                                                  ItemsSource="{Binding WeeklyActivity}"
-                                                  VerticalAlignment="Top"
-                                                  Margin="0,2,0,0"
-                                                  Height="18">
-                                        <ItemsControl.ItemsPanel>
-                                            <ItemsPanelTemplate>
-                                                <UniformGrid Columns="7" />
-                                            </ItemsPanelTemplate>
-                                        </ItemsControl.ItemsPanel>
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate>
-                                                <TextBlock Text="{Binding Label}"
-                                                           FontSize="9"
-                                                           Foreground="#64748B"
-                                                           TextTrimming="CharacterEllipsis"
-                                                           HorizontalAlignment="Center"
-                                                           TextAlignment="Center" />
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
-                                </Grid>
-                            </Border>
-                        </StackPanel>
-                    </Border>
                 </StackPanel>
             </Border>
         </Grid>
@@ -509,9 +576,10 @@
         <Border x:Name="AdsSectionHost"
                 Grid.Row="2"
                 Style="{StaticResource MinimalDashSurfaceStyle}"
-                Margin="0,10,0,0"
+                Margin="0,18,0,0"
                 Padding="0"
                 HorizontalAlignment="Stretch"
+                VerticalAlignment="Top"
                 Loaded="AdsSectionHost_OnLoaded"
                 SizeChanged="AdsSectionHost_OnSizeChanged">
             <Grid HorizontalAlignment="Stretch"
@@ -520,7 +588,7 @@
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
-                    <RowDefinition Height="*" MinHeight="200" />
+                    <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
                 <!-- Заголовок и компактные метрики в одной зоне (перенос на узком окне) -->
@@ -760,7 +828,7 @@
                       HorizontalAlignment="Stretch">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
 
                     <TextBlock Grid.Row="0"
@@ -774,6 +842,7 @@
 
                     <ScrollViewer x:Name="AdsListScrollViewer"
                                   Grid.Row="1"
+                                  MinHeight="200"
                                   HorizontalScrollBarVisibility="Disabled"
                                   VerticalScrollBarVisibility="Auto"
                                   Padding="0,0,4,0"
