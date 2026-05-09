@@ -545,18 +545,22 @@
                     <RowDefinition Height="*" MinHeight="240" />
                 </Grid.RowDefinitions>
 
-                <!-- Заголовок и карточки статистики -->
-                <StackPanel Grid.Row="0" Margin="20,20,20,12">
-                    <TextBlock Text="Объявления на Avito"
-                               FontSize="22"
-                               FontWeight="SemiBold"
-                               Foreground="{StaticResource DashTextPrimaryBrush}" />
-                    <TextBlock Margin="0,8,0,0"
-                               FontSize="14"
-                               LineHeight="20"
-                               Foreground="{StaticResource DashTextSecondaryBrush}"
-                               Text="Сводка по всем подключённым аккаунтам: активные вакансии, просмотры, сообщения, заблокированные и черновики. Нажмите карточку объявления, чтобы открыть его на Avito."
-                               TextWrapping="Wrap" />
+                <!-- Заголовок и карточки статистики (та же иерархия, что у «Отклики и CRM») -->
+                <StackPanel Grid.Row="0" Margin="10,8,10,12">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,0,2">
+                        <TextBlock Text="Объявления на Avito"
+                                   Style="{StaticResource SectionHeaderTextStyle}"
+                                   VerticalAlignment="Center" />
+                        <TextBlock Text=" · "
+                                   Foreground="{StaticResource SecondaryTextBrush}"
+                                   FontSize="13"
+                                   VerticalAlignment="Center"
+                                   Margin="2,0,2,0" />
+                        <TextBlock Text="Сводка по аккаунтам: активные, просмотры, сообщения, статусы"
+                                   Style="{StaticResource SubtleTextStyle}"
+                                   VerticalAlignment="Center"
+                                   TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
                     <!-- Внешний вид как у плиток CRM (StatCardButtonStyle), без перехода в мониторинг -->
                     <UniformGrid Margin="0,6,0,0" Columns="5" Rows="1">
                         <Button Style="{StaticResource StatCardButtonStyle}"
@@ -706,7 +710,7 @@
 
                 <!-- Фильтры, поиск, сортировка -->
                 <Border Grid.Row="1"
-                        Padding="20,4,20,16"
+                        Padding="10,4,10,16"
                         BorderBrush="{StaticResource DashBorderBrush}"
                         BorderThickness="0,0,0,1"
                         Background="Transparent">
@@ -797,7 +801,7 @@
 
                 <!-- Список объявлений (прокрутка только здесь) -->
                 <Grid Grid.Row="2"
-                      Margin="20,4,20,20"
+                      Margin="10,4,10,20"
                       HorizontalAlignment="Stretch">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />

@@ -46,6 +46,10 @@ public partial class SettingsViewModel(
     [ObservableProperty]
     private bool isAddMenuOpen;
 
+    /// <summary>URL входящего вебхука Bitrix24; синхронизируется с <see cref="AppSettings.Bitrix"/> при загрузке и сохранении.</summary>
+    [ObservableProperty]
+    private string bitrixWebhookUrl = string.Empty;
+
     [RelayCommand]
     public async Task LoadAsync()
     {
@@ -53,6 +57,7 @@ public partial class SettingsViewModel(
         repository.AccountPersisted += OnAccountPersisted;
 
         _settings = await settingsService.LoadAsync(CancellationToken.None);
+        BitrixWebhookUrl = _settings.Bitrix.WebhookUrl ?? string.Empty;
         var persistedAccounts = await repository.GetAccountsAsync(CancellationToken.None);
         var persistedById = persistedAccounts.ToDictionary(a => a.Id);
 
@@ -179,6 +184,8 @@ public partial class SettingsViewModel(
         string[]? profileDirsToDelete = null;
         try
         {
+            _settings.Bitrix.WebhookUrl = BitrixWebhookUrl?.Trim() ?? string.Empty;
+
             var persistedAccounts = await repository.GetAccountsAsync(CancellationToken.None);
             var currentAccountIds = Accounts.Select(account => account.Id).ToHashSet();
 

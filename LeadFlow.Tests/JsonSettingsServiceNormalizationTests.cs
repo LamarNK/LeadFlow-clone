@@ -24,14 +24,14 @@ public sealed class JsonSettingsServiceNormalizationTests
     }
 
     [Fact]
-    public void Normalize_AlwaysSetsFixedBitrixWebhookUrl()
+    public void Normalize_TrimsBitrixWebhookUrl()
     {
         var settings = NewSettings();
-        settings.Bitrix.WebhookUrl = "https://malicious.example/";
+        settings.Bitrix.WebhookUrl = "  https://example.bitrix24.ru/rest/1/x/  ";
 
         JsonSettingsService.NormalizeSettings(settings);
 
-        Assert.Equal(JsonSettingsService.FixedBitrixWebhookUrl, settings.Bitrix.WebhookUrl);
+        Assert.Equal("https://example.bitrix24.ru/rest/1/x/", settings.Bitrix.WebhookUrl);
     }
 
     [Fact]

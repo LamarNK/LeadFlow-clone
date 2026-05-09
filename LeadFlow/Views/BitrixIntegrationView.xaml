@@ -29,6 +29,7 @@
                 <StackPanel>
                     <TextBlock Text="Автоматическая отправка в Bitrix24" FontWeight="SemiBold" Foreground="{StaticResource PrimaryBrush}" />
                     <TextBlock Text="После проверки на дубли лид создаётся автоматически" Style="{StaticResource SubtleTextStyle}" Margin="0,4,0,0" />
+                    <TextBlock Text="URL вебхука задаётся в окне «Настройки LeadFlow»." Style="{StaticResource SubtleTextStyle}" Margin="0,6,0,0" TextWrapping="Wrap" />
                 </StackPanel>
             </Border>
         </StackPanel>

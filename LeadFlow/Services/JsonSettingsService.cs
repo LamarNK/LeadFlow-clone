@@ -9,7 +9,6 @@ public sealed class JsonSettingsService(string? dataDirectoryOverride = null) : 
 {
     private const string SettingsFileName = "LeadFlow.settings.dat";
     private const string DatabaseFileName = "leadflow.db";
-    public const string FixedBitrixWebhookUrl = "https://b24-l7qyiy.bitrix24.ru/rest/22/i6l8tl41e71kmj5o/";
 
     private readonly string _dataDirectoryPath = dataDirectoryOverride ?? Path.Combine(AppContext.BaseDirectory, "Data");
 
@@ -87,7 +86,7 @@ public sealed class JsonSettingsService(string? dataDirectoryOverride = null) : 
         settings.DatabasePath = Path.Combine(dataDirectoryPath, DatabaseFileName);
         settings.DemoModeEnabled = false;
         settings.Bitrix ??= new BitrixSettings();
-        settings.Bitrix.WebhookUrl = FixedBitrixWebhookUrl;
+        settings.Bitrix.WebhookUrl = settings.Bitrix.WebhookUrl?.Trim() ?? string.Empty;
         settings.MonitoringSafety ??= new MonitoringSafetyOptions();
         settings.MonitoringSafety.CheckIntervalSeconds = Math.Clamp(settings.MonitoringSafety.CheckIntervalSeconds, 30, 3600);
         settings.AvitoSelectors = new AvitoSelectorOptions();
@@ -98,10 +97,7 @@ public sealed class JsonSettingsService(string? dataDirectoryOverride = null) : 
     {
         DatabasePath = Path.Combine(dataDirectoryPath, DatabaseFileName),
         DemoModeEnabled = false,
-        Bitrix = new BitrixSettings
-        {
-            WebhookUrl = FixedBitrixWebhookUrl
-        },
+        Bitrix = new BitrixSettings(),
         MonitoringSafety = new MonitoringSafetyOptions(),
         AvitoSelectors = new AvitoSelectorOptions(),
         Avito = new AvitoSettings()

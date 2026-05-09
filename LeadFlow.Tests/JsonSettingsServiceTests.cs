@@ -18,8 +18,30 @@ public sealed class JsonSettingsServiceTests
 
             Assert.True(File.Exists(sut.GetSettingsPath()));
             Assert.False(settings.DemoModeEnabled);
-            Assert.Equal(JsonSettingsService.FixedBitrixWebhookUrl, settings.Bitrix.WebhookUrl);
+            Assert.Equal(string.Empty, settings.Bitrix.WebhookUrl);
             Assert.Equal(Path.Combine(dir, "leadflow.db"), settings.DatabasePath);
+        }
+        finally
+        {
+            TryDeleteDirectory(dir);
+        }
+    }
+
+    [Fact]
+    public async Task SaveAsync_Then_LoadAsync_PreservesBitrixWebhookUrl()
+    {
+        var dir = CreateTempDataDir();
+        try
+        {
+            var sut = new JsonSettingsService(dir);
+            var first = await sut.LoadAsync(CancellationToken.None);
+            first.Bitrix.WebhookUrl = "https://example.bitrix24.ru/rest/1/abc/";
+            await sut.SaveAsync(first, CancellationToken.None);
+
+            var sut2 = new JsonSettingsService(dir);
+            var second = await sut2.LoadAsync(CancellationToken.None);
+
+            Assert.Equal("https://example.bitrix24.ru/rest/1/abc/", second.Bitrix.WebhookUrl);
         }
         finally
         {
