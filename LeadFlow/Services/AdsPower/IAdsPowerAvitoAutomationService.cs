@@ -31,7 +31,7 @@ public interface IAdsPowerAvitoAutomationService
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Открывает модалку <c>/profile/pro/items#profile/switch?withEntities=true</c> и возвращает HTML
+    /// Открывает модалку <c>/profile/dashboard#profile/switch?withEntities=true</c> и возвращает HTML
     /// со списком всех суб-профилей Avito Pro (data-marker="component-profile-switch/profile-{id}").
     /// </summary>
     Task<string> LoadProfileSwitchHtmlAsync(
@@ -47,5 +47,15 @@ public interface IAdsPowerAvitoAutomationService
         AdsPowerConnectionOptions options,
         string adsPowerUserId,
         string subProfileId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Подключается к уже запущенному профилю AdsPower и открывает URL в новой вкладке через CDP.
+    /// Не полагается на <c>open_urls</c> в <c>browser/start</c> при повторном вызове — вкладка часто не создаётся.
+    /// </summary>
+    Task OpenUrlInRunningProfileAsync(
+        AdsPowerConnectionOptions options,
+        string adsPowerUserId,
+        string url,
         CancellationToken cancellationToken = default);
 }

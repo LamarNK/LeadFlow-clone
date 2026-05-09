@@ -100,7 +100,7 @@
                         </Grid>
                     </Button>
                     <Button Style="{StaticResource StatCardButtonStyle}"
-                            Command="{Binding DataContext.OpenJournalCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                            Command="{Binding DataContext.OpenMonitoringCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                             CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}">
                         <Grid>
                             <Grid.RowDefinitions>
@@ -129,7 +129,7 @@
                                            VerticalAlignment="Center" />
                             </Grid>
                             <TextBlock Grid.Row="1"
-                                       Text="Логи"
+                                       Text="К мониторингу"
                                        Style="{StaticResource StatLinkTextStyle}"
                                        FontSize="10"
                                        Margin="0,2,0,0" />
@@ -169,7 +169,7 @@
                                        Margin="0,2,0,0" />
                         </Grid>
                     </Button>
-                    <Button Command="{Binding DataContext.OpenJournalCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                    <Button Command="{Binding DataContext.OpenMonitoringCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                             CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}">
                         <Button.Style>
                             <Style TargetType="Button" BasedOn="{StaticResource StatCardButtonStyle}">
@@ -208,7 +208,7 @@
                                            VerticalAlignment="Center" />
                             </Grid>
                             <TextBlock Grid.Row="1"
-                                       Text="Логи"
+                                       Text="К мониторингу"
                                        Style="{StaticResource StatLinkTextStyle}"
                                        FontSize="10"
                                        Margin="0,2,0,0" />

@@ -183,7 +183,7 @@ public sealed class WindowService(
 
     /// <summary>
     /// После успешной авторизации тянем список суб-профилей Avito Pro (модалка
-    /// <c>/profile/pro/items#profile/switch?withEntities=true</c>) и сохраняем в аккаунте.
+    /// <c>/profile/dashboard#profile/switch?withEntities=true</c>) и сохраняем в аккаунте.
     /// Любые ошибки логируем, но авторизацию не валим — сабпрофилей может не быть в принципе.
     /// </summary>
     private async Task TryRefreshSubProfilesAsync(
@@ -389,8 +389,21 @@ public sealed class WindowService(
                     ["adsPower.openUrl"] = openUrl,
                     ["avito.subProfileId"] = string.IsNullOrWhiteSpace(avitoSubProfileId) ? null : avitoSubProfileId.Trim()
                 });
-            _ = await adsPowerApiClient.StartBrowserAsync(options, account.AdsPowerProfileId, openUrl, cancellationToken)
-                .ConfigureAwait(true);
+
+            if (!string.IsNullOrWhiteSpace(openUrl))
+            {
+                // После SwitchActiveProfileAsync повторный browser/start с open_urls часто не открывает вкладку.
+                await adsPowerAvitoAutomationService
+                    .OpenUrlInRunningProfileAsync(options, account.AdsPowerProfileId!, openUrl.Trim(), cancellationToken)
+                    .ConfigureAwait(true);
+            }
+            else
+            {
+                _ = await adsPowerApiClient
+                    .StartBrowserAsync(options, account.AdsPowerProfileId, openUrl: null, cancellationToken)
+                    .ConfigureAwait(true);
+            }
+
             _ = GlobalLogger.Instance.LogAsync(
                 $"AdsPower browser launch completed for account {account.DisplayName}.",
                 DeskLinkAuditLogLevel.Info,

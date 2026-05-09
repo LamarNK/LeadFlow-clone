@@ -86,7 +86,7 @@ public sealed partial class AvitoAccount : ObservableObject
     [ObservableProperty] private string? avitoProfileName;
 
     /// <summary>
-    /// Сериализованный JSON-массив суб-профилей Avito Pro (модалка <c>#profile/switch?withEntities=true</c>).
+    /// Сериализованный JSON-массив суб-профилей Avito Pro (модалка с дашборда <c>#profile/switch?withEntities=true</c>).
     /// Хранится как строка, чтобы не плодить отдельную таблицу в SQLite; UI читает его через <see cref="SubProfiles"/>.
     /// </summary>
     [ObservableProperty] private string subProfilesJson = "[]";

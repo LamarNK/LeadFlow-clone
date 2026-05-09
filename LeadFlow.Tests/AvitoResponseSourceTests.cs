@@ -205,5 +205,12 @@ public sealed class AvitoResponseSourceTests
             string subProfileId,
             CancellationToken cancellationToken = default) =>
             Task.FromResult(true);
+
+        public Task OpenUrlInRunningProfileAsync(
+            AdsPowerConnectionOptions options,
+            string adsPowerUserId,
+            string url,
+            CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
     }
 }

@@ -5,7 +5,7 @@ using LeadFlow.Models;
 namespace LeadFlow.Services.Avito;
 
 /// <summary>
-/// Парсит модалку Avito Pro «Выбор профиля» (URL <c>/profile/pro/items#profile/switch?withEntities=true</c>):
+/// Парсит модалку Avito Pro «Выбор профиля» (URL <c>/profile/dashboard#profile/switch?withEntities=true</c>):
 /// разбирает карточки <c>data-marker="component-profile-switch/profile-{Id}"</c>, имя в <c>&lt;h5&gt;</c>,
 /// категорию в <c>&lt;p&gt;</c> и пометку текущего профиля по классу <c>ProfileCard-module-isCurrent-...</c>.
 /// </summary>

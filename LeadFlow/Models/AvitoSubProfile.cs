@@ -2,7 +2,7 @@ namespace LeadFlow.Models;
 
 /// <summary>
 /// Один из суб-профилей внутри Avito Pro мульти-аккаунта (см. модалку
-/// <c>https://www.avito.ru/profile/pro/items#profile/switch?withEntities=true</c>).
+/// <c>https://www.avito.ru/profile/dashboard#profile/switch?withEntities=true</c>).
 /// </summary>
 public sealed class AvitoSubProfile
 {
