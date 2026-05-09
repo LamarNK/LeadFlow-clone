@@ -233,18 +233,23 @@ public partial class MainViewModel : ObservableObject
         };
     }
 
-    public string SystemStatusText =>
-        !IsMonitoringActive ? "Мониторинг не запущен" : SystemStatus switch
+    public string SystemStatusText
+    {
+        get
         {
-            MonitoringStatus.Running => "Мониторинг работает",
-            MonitoringStatus.Waiting => "Мониторинг ожидает следующий цикл",
-            MonitoringStatus.Recovering => "Восстановление после сбоя цикла",
-            MonitoringStatus.RequiresAuthorization => "Нужна авторизация",
-            MonitoringStatus.RequiresManualAction => "Нужно ручное действие",
-            MonitoringStatus.Error => "Ошибка",
-            MonitoringStatus.Stopped => "Мониторинг остановлен",
-            _ => "Ожидание"
-        };
+            if (SystemStatus == MonitoringStatus.Error)
+            {
+                return "Ошибка мониторинга";
+            }
+
+            if (!IsMonitoringActive)
+            {
+                return "Мониторинг остановлен";
+            }
+
+            return "Мониторинг активен";
+        }
+    }
 
     public bool IsMonitoringRunning => IsMonitoringActive;
 

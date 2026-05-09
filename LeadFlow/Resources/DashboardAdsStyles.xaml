@@ -25,10 +25,56 @@
     <SolidColorBrush x:Key="DashAccentPurpleBrush" Color="{StaticResource DashAccentPurpleColor}" />
     <SolidColorBrush x:Key="DashBlockedBgBrush" Color="{StaticResource DashBlockedBgColor}" />
 
+    <Color x:Key="DashboardPageChromeColor">#EEF2F7</Color>
+    <SolidColorBrush x:Key="DashboardPageChromeBrush" Color="{StaticResource DashboardPageChromeColor}" />
+
+    <!-- Карточки метрик / объявлений: чуть крупнее скругление и лёгкая тень -->
+    <Style x:Key="DashboardMetricCardButtonStyle" TargetType="Button" BasedOn="{StaticResource StatCardButtonStyle}">
+        <Setter Property="Padding" Value="8,6" />
+        <Setter Property="Margin" Value="3" />
+        <Setter Property="Effect">
+            <Setter.Value>
+                <DropShadowEffect BlurRadius="10"
+                                  Direction="270"
+                                  Opacity="0.08"
+                                  ShadowDepth="1"
+                                  Color="#000000" />
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Компактные карточки CRM на дашборде (~70–90 px по высоте контента). -->
+    <Style x:Key="DashboardCrmMetricCardButtonStyle"
+           TargetType="Button"
+           BasedOn="{StaticResource DashboardMetricCardButtonStyle}">
+        <Setter Property="Padding" Value="6,4" />
+        <Setter Property="MinHeight" Value="72" />
+        <Setter Property="MaxHeight" Value="96" />
+        <Setter Property="VerticalContentAlignment" Value="Top" />
+    </Style>
+
+    <Style x:Key="DashboardAdCardBorderStyle" TargetType="Border">
+        <Setter Property="Background" Value="{StaticResource DashCardBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource DashBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="10" />
+        <Setter Property="Padding" Value="7,4" />
+        <Setter Property="Margin" Value="2,1" />
+        <Setter Property="SnapsToDevicePixels" Value="True" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Effect" Value="{x:Null}" />
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Background" Value="#F8FAFC" />
+                <Setter Property="BorderBrush" Value="#CBD5E1" />
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
     <Style x:Key="DashboardFilterTabsListBoxStyle" TargetType="ListBox">
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderThickness" Value="0" />
-        <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
+        <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Auto" />
         <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Disabled" />
         <Setter Property="ItemContainerStyle">
             <Setter.Value>
@@ -44,7 +90,7 @@
                                         BorderBrush="{StaticResource DashBorderBrush}"
                                         BorderThickness="1"
                                         CornerRadius="10"
-                                        Padding="16,10">
+                                        Padding="14,8">
                                     <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                                 </Border>
                                 <ControlTemplate.Triggers>
@@ -67,6 +113,41 @@
                 <ItemsPanelTemplate>
                     <StackPanel Orientation="Horizontal" />
                 </ItemsPanelTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="DashboardChartSeriesListBoxStyle" TargetType="ListBox" BasedOn="{StaticResource DashboardFilterTabsListBoxStyle}">
+        <Setter Property="ItemContainerStyle">
+            <Setter.Value>
+                <Style TargetType="ListBoxItem">
+                    <Setter Property="Padding" Value="0" />
+                    <Setter Property="Margin" Value="0,0,6,0" />
+                    <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="ListBoxItem">
+                                <Border x:Name="Bd"
+                                        Background="Transparent"
+                                        BorderBrush="{StaticResource DashBorderBrush}"
+                                        BorderThickness="1"
+                                        CornerRadius="8"
+                                        Padding="9,5">
+                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="Bd" Property="Background" Value="#F1F5F9" />
+                                    </Trigger>
+                                    <Trigger Property="IsSelected" Value="True">
+                                        <Setter TargetName="Bd" Property="Background" Value="#EFF6FF" />
+                                        <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource PrimaryBrush}" />
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
             </Setter.Value>
         </Setter>
     </Style>

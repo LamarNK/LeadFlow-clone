@@ -14,7 +14,11 @@ namespace LeadFlow.ViewModels;
 
 public partial class DashboardViewModel : ObservableObject
 {
-    private const double ChartBarMaxHeight = 56d;
+    /// <summary>Высота столбца в UI (px); не влияет на расчёт метрик, только на визуальное масштабирование.</summary>
+    private const double ChartBarMaxHeight = 168d;
+
+    /// <summary>Меньшая шкала для недельного мини-графика в правой колонке.</summary>
+    private const double WeeklyChartBarMaxHeight = 56d;
 
     private readonly AppRepository _repository;
     private readonly IMonitoringService _monitoringService;
@@ -88,6 +92,9 @@ public partial class DashboardViewModel : ObservableObject
     private AdsSortOption selectedAdsSort = AdsSortOption.ByViews;
 
     [ObservableProperty]
+    private DashboardChartSeries selectedChartSeries = DashboardChartSeries.Responses;
+
+    [ObservableProperty]
     private bool showStandardAdsEmpty;
 
     /// <summary>Единая сетка объявлений с учётом фильтра, поиска и сортировки.</summary>
@@ -97,15 +104,31 @@ public partial class DashboardViewModel : ObservableObject
     [
         new AdsFilterTab(AdsDashboardFilter.All, "Все"),
         new AdsFilterTab(AdsDashboardFilter.Active, "Активные"),
-        new AdsFilterTab(AdsDashboardFilter.Blocked, "Заблокированные")
+        new AdsFilterTab(AdsDashboardFilter.Blocked, "Заблокированные"),
+        new AdsFilterTab(AdsDashboardFilter.WithMessages, "С сообщениями"),
+        new AdsFilterTab(AdsDashboardFilter.WithoutMessages, "Без сообщений"),
+        new AdsFilterTab(AdsDashboardFilter.Drafts, "Черновики"),
+        new AdsFilterTab(AdsDashboardFilter.WithIssues, "С проблемами")
     ];
 
     public IReadOnlyList<AdsSortChoice> AdsSortChoices { get; } =
     [
-        new AdsSortChoice(AdsSortOption.ByViews, "Просмотры"),
-        new AdsSortChoice(AdsSortOption.ByContacts, "Сообщения"),
-        new AdsSortChoice(AdsSortOption.ByStatus, "Статус"),
+        new AdsSortChoice(AdsSortOption.ByViews, "Просмотры ↓"),
+        new AdsSortChoice(AdsSortOption.ByViewsAscending, "Просмотры ↑"),
+        new AdsSortChoice(AdsSortOption.ByContacts, "Сообщения ↓"),
+        new AdsSortChoice(AdsSortOption.ByContactsAscending, "Сообщения ↑"),
+        new AdsSortChoice(AdsSortOption.ByNewestFirst, "Новые сначала"),
+        new AdsSortChoice(AdsSortOption.ByProblemsFirst, "Проблемные сначала"),
+        new AdsSortChoice(AdsSortOption.ByStatus, "Статус (А→Я)"),
         new AdsSortChoice(AdsSortOption.ByDeleteDate, "Дата удаления")
+    ];
+
+    public IReadOnlyList<ChartSeriesTab> ChartSeriesTabs { get; } =
+    [
+        new ChartSeriesTab(DashboardChartSeries.Responses, "Отклики"),
+        new ChartSeriesTab(DashboardChartSeries.Crm, "CRM"),
+        new ChartSeriesTab(DashboardChartSeries.Duplicates, "Дубликаты"),
+        new ChartSeriesTab(DashboardChartSeries.Errors, "Ошибки")
     ];
 
     public int DisplayedAdsCount => DisplayedAds.Count;
@@ -165,6 +188,19 @@ public partial class DashboardViewModel : ObservableObject
 
     partial void OnSelectedAdsSortChanged(AdsSortOption value) => RebuildDisplayedAds();
 
+    partial void OnSelectedChartSeriesChanged(DashboardChartSeries value)
+    {
+        RebuildDisplayedActivity();
+        RebuildWeeklyActivity();
+    }
+
+    [RelayCommand]
+    public void GoToAttentionProblems()
+    {
+        SelectedAdsFilter = AdsDashboardFilter.WithIssues;
+        SelectedAdsSort = AdsSortOption.ByProblemsFirst;
+    }
+
     /// <summary>Пересобирает <see cref="DisplayedAds"/> после смены фильтра, поиска или сортировки.</summary>
     public void RebuildDisplayedAds()
     {
@@ -198,6 +234,49 @@ public partial class DashboardViewModel : ObservableObject
                 }
 
                 break;
+            case AdsDashboardFilter.WithMessages:
+                foreach (var ad in ActiveAds.Where(static a => a.Contacts > 0))
+                {
+                    rows.Add((ad, DashboardAdKind.Active));
+                }
+
+                foreach (var ad in BlockedAds.Where(static a => a.Contacts > 0))
+                {
+                    rows.Add((ad, DashboardAdKind.Blocked));
+                }
+
+                break;
+            case AdsDashboardFilter.WithoutMessages:
+                foreach (var ad in ActiveAds.Where(static a => a.Contacts == 0))
+                {
+                    rows.Add((ad, DashboardAdKind.Active));
+                }
+
+                foreach (var ad in BlockedAds.Where(static a => a.Contacts == 0))
+                {
+                    rows.Add((ad, DashboardAdKind.Blocked));
+                }
+
+                break;
+            case AdsDashboardFilter.Drafts:
+                foreach (var ad in ActiveAds.Where(static a => IsDraftStatus(a)))
+                {
+                    rows.Add((ad, DashboardAdKind.Active));
+                }
+
+                break;
+            case AdsDashboardFilter.WithIssues:
+                foreach (var ad in ActiveAds.Where(static a => IsProblemActiveAd(a)))
+                {
+                    rows.Add((ad, DashboardAdKind.Active));
+                }
+
+                foreach (var ad in BlockedAds)
+                {
+                    rows.Add((ad, DashboardAdKind.Blocked));
+                }
+
+                break;
         }
 
         var q = (AdsSearchQuery ?? string.Empty).Trim();
@@ -207,7 +286,8 @@ public partial class DashboardViewModel : ObservableObject
                 .Where(t =>
                     t.ad.Title.Contains(q, StringComparison.CurrentCultureIgnoreCase)
                     || t.ad.City.Contains(q, StringComparison.CurrentCultureIgnoreCase)
-                    || t.ad.Id.Contains(q, StringComparison.OrdinalIgnoreCase))
+                    || t.ad.Id.Contains(q, StringComparison.OrdinalIgnoreCase)
+                    || t.ad.Status.Contains(q, StringComparison.CurrentCultureIgnoreCase))
                 .ToList();
         }
 
@@ -216,14 +296,28 @@ public partial class DashboardViewModel : ObservableObject
             AdsSortOption.ByViews => rows
                 .OrderByDescending(t => t.ad.Views)
                 .ThenBy(t => t.ad.Title, StringComparer.CurrentCultureIgnoreCase),
+            AdsSortOption.ByViewsAscending => rows
+                .OrderBy(t => t.ad.Views)
+                .ThenBy(t => t.ad.Title, StringComparer.CurrentCultureIgnoreCase),
             AdsSortOption.ByContacts => rows
                 .OrderByDescending(t => t.ad.Contacts)
+                .ThenBy(t => t.ad.Title, StringComparer.CurrentCultureIgnoreCase),
+            AdsSortOption.ByContactsAscending => rows
+                .OrderBy(t => t.ad.Contacts)
                 .ThenBy(t => t.ad.Title, StringComparer.CurrentCultureIgnoreCase),
             AdsSortOption.ByStatus => rows
                 .OrderBy(t => t.ad.Status, StringComparer.CurrentCultureIgnoreCase)
                 .ThenBy(t => t.ad.Title, StringComparer.CurrentCultureIgnoreCase),
             AdsSortOption.ByDeleteDate => rows
                 .OrderBy(t => string.IsNullOrEmpty(t.ad.DeleteDate) ? "\uFFFF" : t.ad.DeleteDate, StringComparer.Ordinal)
+                .ThenBy(t => t.ad.Title, StringComparer.CurrentCultureIgnoreCase),
+            AdsSortOption.ByNewestFirst => rows
+                .OrderBy(t => t.ad.DaysOnAvito)
+                .ThenByDescending(t => t.ad.Views)
+                .ThenBy(t => t.ad.Title, StringComparer.CurrentCultureIgnoreCase),
+            AdsSortOption.ByProblemsFirst => rows
+                .OrderByDescending(t => ProblemAttentionRank(t.kind, t.ad))
+                .ThenByDescending(t => t.ad.Contacts)
                 .ThenBy(t => t.ad.Title, StringComparer.CurrentCultureIgnoreCase),
             _ => rows.OrderByDescending(t => t.ad.Views)
         };
@@ -559,12 +653,15 @@ public partial class DashboardViewModel : ObservableObject
         }
 
         var hoursPerSlot = 24 / columns;
-        var maxDay = 0;
+        var series = SelectedChartSeries;
+        var maxMetric = 0;
         for (var h = 0; h < 24; h++)
         {
-            maxDay = Math.Max(maxDay, _hourlyLocalSlots[h].NewCount);
+            var p = _hourlyLocalSlots[h];
+            maxMetric = Math.Max(maxMetric, GetMetricForSeries(p, series));
         }
 
+        var fillHex = HexForSeries(series);
         Activity.Clear();
         for (var slot = 0; slot < columns; slot++)
         {
@@ -590,8 +687,11 @@ public partial class DashboardViewModel : ObservableObject
                 merged.ErrorCount += p.ErrorCount;
             }
 
-            merged.ChartBarHeight = maxDay > 0
-                ? Math.Min(ChartBarMaxHeight, ChartBarMaxHeight * merged.NewCount / maxDay)
+            var slotMetric = GetMetricForSeries(merged, series);
+            merged.ChartDisplayValue = slotMetric;
+            merged.ChartBarFillHex = fillHex;
+            merged.ChartBarHeight = maxMetric > 0
+                ? Math.Min(ChartBarMaxHeight, ChartBarMaxHeight * slotMetric / (double)maxMetric)
                 : 0d;
             merged.ChartTooltip = BuildActivityTooltip(merged);
             Activity.Add(merged);
@@ -639,16 +739,20 @@ public partial class DashboardViewModel : ObservableObject
 
     private void RebuildWeeklyActivity()
     {
-        var maxDay = 0;
+        var series = SelectedChartSeries;
+        var maxMetric = 0;
         for (var i = 0; i < 7; i++)
         {
-            maxDay = Math.Max(maxDay, _weeklyLocalSlots[i].NewCount);
+            var p = _weeklyLocalSlots[i];
+            maxMetric = Math.Max(maxMetric, GetMetricForSeries(p, series));
         }
 
+        var fillHex = HexForSeries(series);
         WeeklyActivity.Clear();
         for (var i = 0; i < 7; i++)
         {
             var src = _weeklyLocalSlots[i];
+            var slotMetric = GetMetricForSeries(src, series);
             var merged = new ActivityPoint
             {
                 Label = src.Label,
@@ -659,13 +763,79 @@ public partial class DashboardViewModel : ObservableObject
                 ErrorCount = src.ErrorCount,
                 SlotStartHour = src.SlotStartHour,
                 SlotSpanHours = src.SlotSpanHours,
-                ChartBarHeight = maxDay > 0
-                    ? Math.Min(ChartBarMaxHeight, ChartBarMaxHeight * src.NewCount / maxDay)
+                ChartDisplayValue = slotMetric,
+                ChartBarFillHex = fillHex,
+                ChartBarHeight = maxMetric > 0
+                    ? Math.Min(WeeklyChartBarMaxHeight, WeeklyChartBarMaxHeight * slotMetric / (double)maxMetric)
                     : 0d,
                 ChartTooltip = BuildWeekActivityTooltip(src)
             };
             WeeklyActivity.Add(merged);
         }
+    }
+
+    private static int GetMetricForSeries(ActivityPoint p, DashboardChartSeries series) =>
+        series switch
+        {
+            DashboardChartSeries.Crm => p.SentCount,
+            DashboardChartSeries.Duplicates => p.DuplicateCount,
+            DashboardChartSeries.Errors => p.ErrorCount,
+            _ => p.NewCount
+        };
+
+    private static string HexForSeries(DashboardChartSeries series) =>
+        series switch
+        {
+            DashboardChartSeries.Crm => "#16A34A",
+            DashboardChartSeries.Duplicates => "#F97316",
+            DashboardChartSeries.Errors => "#EF4444",
+            _ => "#2563EB"
+        };
+
+    private static bool IsDraftStatus(AvitoAdStatus ad) =>
+        ad.Status.Contains("черновик", StringComparison.CurrentCultureIgnoreCase)
+        || ad.Status.Contains("draft", StringComparison.CurrentCultureIgnoreCase);
+
+    private static bool IsProblemActiveAd(AvitoAdStatus ad) =>
+        IsDraftStatus(ad)
+        || ad.Status.Contains("отклон", StringComparison.CurrentCultureIgnoreCase)
+        || ad.Status.Contains("блок", StringComparison.CurrentCultureIgnoreCase)
+        || ad.Status.Contains("модерац", StringComparison.CurrentCultureIgnoreCase)
+        || ad.Status.Contains("наруш", StringComparison.CurrentCultureIgnoreCase)
+        || ad.Status.Contains("действ", StringComparison.CurrentCultureIgnoreCase)
+        || ad.Status.Contains("требу", StringComparison.CurrentCultureIgnoreCase)
+        || ad.Status.Contains("истёк", StringComparison.CurrentCultureIgnoreCase)
+        || ad.Status.Contains("истек", StringComparison.CurrentCultureIgnoreCase);
+
+    private static int ProblemAttentionRank(DashboardAdKind kind, AvitoAdStatus ad)
+    {
+        if (kind == DashboardAdKind.Blocked)
+        {
+            return 400;
+        }
+
+        if (IsDraftStatus(ad))
+        {
+            return 300;
+        }
+
+        if (ad.Status.Contains("отклон", StringComparison.CurrentCultureIgnoreCase)
+            || ad.Status.Contains("модерац", StringComparison.CurrentCultureIgnoreCase)
+            || ad.Status.Contains("наруш", StringComparison.CurrentCultureIgnoreCase)
+            || ad.Status.Contains("действ", StringComparison.CurrentCultureIgnoreCase)
+            || ad.Status.Contains("требу", StringComparison.CurrentCultureIgnoreCase)
+            || ad.Status.Contains("истёк", StringComparison.CurrentCultureIgnoreCase)
+            || ad.Status.Contains("истек", StringComparison.CurrentCultureIgnoreCase))
+        {
+            return 200;
+        }
+
+        if (ad.Contacts > 0)
+        {
+            return 50;
+        }
+
+        return 0;
     }
 
     private static string BuildWeekActivityTooltip(ActivityPoint day)

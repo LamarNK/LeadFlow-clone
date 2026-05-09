@@ -38,6 +38,12 @@ public sealed class ActivityPoint
     public int ErrorCount { get; set; }
     /// <summary>Высота столбца в пикселях (0–56), пересчитывается относительно максимума за день.</summary>
     public double ChartBarHeight { get; set; }
+
+    /// <summary>Значение выбранной серии для подписи над столбцом (отклики / CRM / дубли / ошибки).</summary>
+    public int ChartDisplayValue { get; set; }
+
+    /// <summary>Цвет столбца (#RRGGBB), задаётся ViewModel вместе с выбранной серией.</summary>
+    public string ChartBarFillHex { get; set; } = "#2563EB";
     /// <summary>Календарный день для недельного графика (локально); для почасового графика не задан.</summary>
     public DateTime? LocalDate { get; set; }
 

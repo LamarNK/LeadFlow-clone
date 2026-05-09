@@ -10,352 +10,257 @@
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
                 <ResourceDictionary Source="/Resources/DashboardAdsStyles.xaml" />
+                <ResourceDictionary Source="/Resources/MinimalDashboardResources.xaml" />
             </ResourceDictionary.MergedDictionaries>
             <conv:ZeroToCollapsedConverter x:Key="ZeroToCollapsedConverter" />
+            <Style TargetType="Hyperlink">
+                <Setter Property="Foreground" Value="#64748B" />
+                <Setter Property="TextDecorations" Value="None" />
+                <Style.Triggers>
+                    <Trigger Property="IsMouseOver" Value="True">
+                        <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}" />
+                        <Setter Property="TextDecorations" Value="Underline" />
+                    </Trigger>
+                </Style.Triggers>
+            </Style>
         </ResourceDictionary>
     </UserControl.Resources>
     <!-- Grid вместо StackPanel: строки получают полную ширину окна при Measure, иначе ListBox сжимается по самому широкому объявлению и выглядит «узкой колонкой» по центру. -->
-    <Grid>
+    <Grid Background="{StaticResource DashboardPageChromeBrush}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <Border Grid.Row="0" Style="{StaticResource CompactCardBorderStyle}" Margin="0,0,0,6" Padding="10,8" HorizontalAlignment="Stretch">
-            <StackPanel>
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,0,2">
-                    <TextBlock Text="Отклики и CRM" Style="{StaticResource SectionHeaderTextStyle}" VerticalAlignment="Center" />
-                    <TextBlock Text=" · "
-                               Foreground="{StaticResource SecondaryTextBrush}"
+        <!-- Hero «Сегодня»: один блок, слева главный KPI, справа плотная полоса из 5 KPI -->
+        <Border Grid.Row="0"
+                Style="{StaticResource MinimalDashSurfaceStyle}"
+                Margin="0,0,0,12"
+                Padding="16,12">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="220" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                    <TextBlock Text="СЕГОДНЯ"
+                               FontSize="10"
+                               FontWeight="SemiBold"
+                               Foreground="{StaticResource SecondaryTextBrush}" />
+                    <TextBlock Text="{Binding TotalToday}"
+                               FontSize="42"
+                               FontWeight="Bold"
+                               Foreground="{StaticResource TextBrush}"
+                               Margin="0,2,0,0" />
+                    <TextBlock Text="откликов сегодня"
                                FontSize="13"
-                               VerticalAlignment="Center"
-                               Margin="2,0,2,0" />
-                    <TextBlock Text="Счётчики за сегодня, динамика и сводка"
-                               Style="{StaticResource SubtleTextStyle}"
-                               VerticalAlignment="Center"
-                               TextTrimming="CharacterEllipsis" />
+                               FontWeight="SemiBold"
+                               Foreground="{StaticResource TextBrush}"
+                               Margin="0,2,0,0" />
+                    <TextBlock Text="За календарный день"
+                               FontSize="11"
+                               Foreground="{StaticResource SecondaryTextBrush}"
+                               Margin="0,4,0,0" />
                 </StackPanel>
+                <Border Grid.Column="1"
+                        Margin="16,0,0,0"
+                        Background="#F1F5F9"
+                        BorderBrush="#E2E8F0"
+                        BorderThickness="1"
+                        CornerRadius="10"
+                        Padding="0"
+                        VerticalAlignment="Center">
+                    <UniformGrid Columns="5" Rows="1">
+                        <Border BorderBrush="#E2E8F0" BorderThickness="0,0,1,0" Padding="10,8">
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock FontSize="10" Foreground="{StaticResource SecondaryTextBrush}" Text="В CRM" />
+                                <StackPanel Margin="0,4,0,0" Orientation="Horizontal">
+                                    <TextBlock Text="{Binding SentToCrm}" FontSize="17" FontWeight="SemiBold" Foreground="#15803D" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                        <Border BorderBrush="#E2E8F0" BorderThickness="0,0,1,0" Padding="10,8">
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock FontSize="10" Foreground="{StaticResource SecondaryTextBrush}" Text="Дубликаты" />
+                                <TextBlock Margin="0,4,0,0" Text="{Binding Duplicates}" FontSize="17" FontWeight="SemiBold" Foreground="#B45309" />
+                            </StackPanel>
+                        </Border>
+                        <Border BorderBrush="#E2E8F0" BorderThickness="0,0,1,0" Padding="10,8">
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock FontSize="10" Foreground="{StaticResource SecondaryTextBrush}" TextWrapping="Wrap" Text="Нужны действия" />
+                                <TextBlock Margin="0,4,0,0" Text="{Binding ActionRequired}" FontSize="17" FontWeight="SemiBold" Foreground="#C2410C" />
+                            </StackPanel>
+                        </Border>
+                        <Border BorderBrush="#E2E8F0" BorderThickness="0,0,1,0" Padding="10,8">
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock FontSize="10" Foreground="{StaticResource SecondaryTextBrush}" Text="Просмотры" />
+                                <TextBlock Margin="0,4,0,0" Text="{Binding TotalActiveViews}" FontSize="17" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" />
+                            </StackPanel>
+                        </Border>
+                        <Border Padding="10,8">
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock FontSize="10" Foreground="{StaticResource SecondaryTextBrush}" Text="Сообщения" />
+                                <TextBlock Margin="0,4,0,0" Text="{Binding TotalActiveContacts}" FontSize="17" FontWeight="SemiBold" Foreground="#2563EB" />
+                            </StackPanel>
+                        </Border>
+                    </UniformGrid>
+                </Border>
+            </Grid>
+        </Border>
 
-                <UniformGrid Rows="1" Columns="7" Margin="0,6,0,0">
-                    <Button Style="{StaticResource StatCardButtonStyle}"
-                            Command="{Binding DataContext.OpenMonitoringCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                            CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}">
-                        <Grid>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                            </Grid.RowDefinitions>
-                            <Grid Grid.Row="0">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0"
-                                           Text="Новых откликов"
-                                           FontSize="11"
-                                           Foreground="{StaticResource SecondaryTextBrush}"
-                                           TextTrimming="CharacterEllipsis"
-                                           TextWrapping="NoWrap"
-                                           VerticalAlignment="Center" />
-                                <TextBlock Grid.Column="1"
-                                           Text="{Binding NewResponses}"
-                                           FontSize="16"
-                                           FontWeight="Bold"
-                                           Margin="4,0,0,0"
-                                           VerticalAlignment="Center" />
-                            </Grid>
-                            <TextBlock Grid.Row="1"
-                                       Text="К мониторингу"
-                                       Style="{StaticResource StatLinkTextStyle}"
-                                       FontSize="10"
-                                       Margin="0,2,0,0" />
-                        </Grid>
-                    </Button>
-                    <Button Style="{StaticResource StatCardButtonStyle}"
-                            Command="{Binding DataContext.OpenMonitoringCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                            CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}">
-                        <Grid>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                            </Grid.RowDefinitions>
-                            <Grid Grid.Row="0">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0"
-                                           Text="Всего за сегодня"
-                                           FontSize="11"
-                                           Foreground="{StaticResource SecondaryTextBrush}"
-                                           TextTrimming="CharacterEllipsis"
-                                           TextWrapping="NoWrap"
-                                           VerticalAlignment="Center" />
-                                <TextBlock Grid.Column="1"
-                                           Text="{Binding TotalToday}"
-                                           FontSize="16"
-                                           FontWeight="Bold"
-                                           Margin="4,0,0,0"
-                                           VerticalAlignment="Center" />
-                            </Grid>
-                            <TextBlock Grid.Row="1"
-                                       Text="К мониторингу"
-                                       Style="{StaticResource StatLinkTextStyle}"
-                                       FontSize="10"
-                                       Margin="0,2,0,0" />
-                        </Grid>
-                    </Button>
-                    <Button Style="{StaticResource StatCardButtonStyle}"
-                            Command="{Binding DataContext.OpenMonitoringCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                            CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}">
-                        <Grid>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                            </Grid.RowDefinitions>
-                            <Grid Grid.Row="0">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0"
-                                           Text="В CRM"
-                                           FontSize="11"
-                                           Foreground="{StaticResource SecondaryTextBrush}"
-                                           TextTrimming="CharacterEllipsis"
-                                           TextWrapping="NoWrap"
-                                           VerticalAlignment="Center"
-                                           ToolTip="Отправлено в CRM" />
-                                <TextBlock Grid.Column="1"
-                                           Text="{Binding SentToCrm}"
-                                           FontSize="16"
-                                           FontWeight="Bold"
-                                           Foreground="{StaticResource SuccessBrush}"
-                                           Margin="4,0,0,0"
-                                           VerticalAlignment="Center" />
-                            </Grid>
-                            <TextBlock Grid.Row="1"
-                                       Text="К мониторингу"
-                                       Style="{StaticResource StatLinkTextStyle}"
-                                       FontSize="10"
-                                       Margin="0,2,0,0" />
-                        </Grid>
-                    </Button>
-                    <Button Style="{StaticResource StatCardButtonStyle}"
-                            Command="{Binding DataContext.OpenMonitoringCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                            CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}">
-                        <Grid>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                            </Grid.RowDefinitions>
-                            <Grid Grid.Row="0">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0"
-                                           Text="В обработке"
-                                           FontSize="11"
-                                           Foreground="{StaticResource SecondaryTextBrush}"
-                                           TextTrimming="CharacterEllipsis"
-                                           TextWrapping="NoWrap"
-                                           VerticalAlignment="Center" />
-                                <TextBlock Grid.Column="1"
-                                           Text="{Binding InProgress}"
-                                           FontSize="16"
-                                           FontWeight="Bold"
-                                           Margin="4,0,0,0"
-                                           VerticalAlignment="Center" />
-                            </Grid>
-                            <TextBlock Grid.Row="1"
-                                       Text="К мониторингу"
-                                       Style="{StaticResource StatLinkTextStyle}"
-                                       FontSize="10"
-                                       Margin="0,2,0,0" />
-                        </Grid>
-                    </Button>
-                    <Button Command="{Binding DataContext.OpenMonitoringCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                            CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}">
-                        <Button.Style>
-                            <Style TargetType="Button" BasedOn="{StaticResource StatCardButtonStyle}">
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding HasDuplicatesAttention}" Value="True">
-                                        <Setter Property="BorderBrush" Value="{StaticResource WarningBrush}" />
-                                        <Setter Property="BorderThickness" Value="2" />
-                                        <Setter Property="Background" Value="#FFF7ED" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Button.Style>
-                        <Grid>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                            </Grid.RowDefinitions>
-                            <Grid Grid.Row="0">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0"
-                                           Text="Дубликаты"
-                                           FontSize="11"
-                                           Foreground="{StaticResource SecondaryTextBrush}"
-                                           TextTrimming="CharacterEllipsis"
-                                           TextWrapping="NoWrap"
-                                           VerticalAlignment="Center" />
-                                <TextBlock Grid.Column="1"
-                                           Text="{Binding Duplicates}"
-                                           FontSize="16"
-                                           FontWeight="Bold"
-                                           Foreground="{StaticResource WarningBrush}"
-                                           Margin="4,0,0,0"
-                                           VerticalAlignment="Center" />
-                            </Grid>
-                            <TextBlock Grid.Row="1"
-                                       Text="К мониторингу"
-                                       Style="{StaticResource StatLinkTextStyle}"
-                                       FontSize="10"
-                                       Margin="0,2,0,0" />
-                        </Grid>
-                    </Button>
-                    <Button Command="{Binding DataContext.OpenMonitoringCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                            CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}">
-                        <Button.Style>
-                            <Style TargetType="Button" BasedOn="{StaticResource StatCardButtonStyle}">
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding HasActionRequiredAttention}" Value="True">
-                                        <Setter Property="BorderBrush" Value="{StaticResource WarningBrush}" />
-                                        <Setter Property="BorderThickness" Value="2" />
-                                        <Setter Property="Background" Value="#FFF7ED" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Button.Style>
-                        <Grid>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                            </Grid.RowDefinitions>
-                            <Grid Grid.Row="0">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0"
-                                           Text="Нужны действия"
-                                           FontSize="11"
-                                           Foreground="{StaticResource SecondaryTextBrush}"
-                                           TextTrimming="CharacterEllipsis"
-                                           TextWrapping="NoWrap"
-                                           VerticalAlignment="Center"
-                                           ToolTip="Отложена отправка в CRM или контакт без сделки" />
-                                <TextBlock Grid.Column="1"
-                                           Text="{Binding ActionRequired}"
-                                           FontSize="16"
-                                           FontWeight="Bold"
-                                           Foreground="{StaticResource WarningBrush}"
-                                           Margin="4,0,0,0"
-                                           VerticalAlignment="Center" />
-                            </Grid>
-                            <TextBlock Grid.Row="1"
-                                       Text="К мониторингу"
-                                       Style="{StaticResource StatLinkTextStyle}"
-                                       FontSize="10"
-                                       Margin="0,2,0,0" />
-                        </Grid>
-                    </Button>
-                    <Button Command="{Binding DataContext.OpenSettingsCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                            CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}">
-                        <Button.Style>
-                            <Style TargetType="Button" BasedOn="{StaticResource StatCardButtonStyle}">
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding AccountsNeedAttention}" Value="True">
-                                        <Setter Property="BorderBrush" Value="#EF4444" />
-                                        <Setter Property="BorderThickness" Value="2" />
-                                        <Setter Property="Background" Value="#FEF2F2" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Button.Style>
-                        <Grid>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                            </Grid.RowDefinitions>
-                            <Grid Grid.Row="0">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0"
-                                           Text="Аккаунты"
-                                           FontSize="11"
-                                           Foreground="{StaticResource SecondaryTextBrush}"
-                                           TextTrimming="CharacterEllipsis"
-                                           TextWrapping="NoWrap"
-                                           VerticalAlignment="Center"
-                                           ToolTip="Аккаунтов подключено" />
-                                <TextBlock Grid.Column="1"
-                                           Text="{Binding ConnectedAccounts}"
-                                           FontSize="16"
-                                           FontWeight="Bold"
-                                           Margin="4,0,0,0"
-                                           VerticalAlignment="Center" />
-                            </Grid>
-                            <TextBlock Grid.Row="1"
-                                       Text="{Binding RequiresAuthorization, StringFormat=Требует авторизации: {0}}"
-                                       FontSize="10"
-                                       Foreground="{StaticResource SecondaryTextBrush}"
-                                       TextTrimming="CharacterEllipsis"
-                                       Visibility="{Binding RequiresAuthorization, Converter={StaticResource ZeroToCollapsedConverter}}"
-                                       Margin="0,1,0,0" />
-                            <TextBlock Grid.Row="2"
-                                       Text="Настройки"
-                                       Style="{StaticResource StatLinkTextStyle}"
-                                       FontSize="10"
-                                       Margin="0,2,0,0" />
-                        </Grid>
-                    </Button>
-                </UniformGrid>
+        <!-- Основная аналитика: график слева, статусы справа -->
+        <Grid Grid.Row="1" Margin="0,0,0,12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="3.2*" MinWidth="400" />
+                <ColumnDefinition Width="1*" MinWidth="248" />
+            </Grid.ColumnDefinitions>
 
-                <Border x:Name="ChartActivityHost"
-                        Style="{StaticResource CompactCardBorderStyle}"
-                        Margin="2,6,2,0"
-                        Padding="8,6"
-                        Loaded="ChartActivityHost_OnLoaded"
-                        SizeChanged="ChartActivityHost_OnSizeChanged">
-                    <StackPanel>
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,0,4">
-                            <TextBlock Text="Динамика за сегодня"
-                                       Style="{StaticResource BodyTextStyle}"
+            <Border Grid.Column="0"
+                    Style="{StaticResource MinimalDashSurfaceStyle}"
+                    Margin="0,0,20,0"
+                    Padding="18,14"
+                    VerticalAlignment="Stretch">
+                <StackPanel>
+                    <Grid Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="Отклики по часам"
+                                       FontSize="18"
                                        FontWeight="SemiBold"
-                                       VerticalAlignment="Center" />
-                            <Button Style="{StaticResource GhostButtonStyle}"
-                                    Content="По дням — графики"
-                                    Margin="10,0,0,0"
-                                    Padding="10,4"
-                                    VerticalAlignment="Center"
-                                    FontSize="12"
-                                    Command="{Binding DataContext.OpenStatisticsHistoryCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                    CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}"
-                                    ToolTip="Подробная статистика по календарным дням" />
+                                       Foreground="{StaticResource TextBrush}" />
+                            <TextBlock Margin="0,2,0,0"
+                                       Text="Распределение по локальным часам суток"
+                                       FontSize="11"
+                                       Foreground="{StaticResource SecondaryTextBrush}" />
                         </StackPanel>
-                        <Grid Margin="0,2,0,0" ClipToBounds="False">
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="72" />
-                                <RowDefinition Height="26" />
-                            </Grid.RowDefinitions>
-                            <!-- Базовая линия общая для всех столбиков — сразу под ними, без зазора -->
-                            <Grid Grid.Row="0">
-                                <Rectangle Height="2"
-                                           VerticalAlignment="Bottom"
-                                           Fill="#94A3B8"
-                                           HorizontalAlignment="Stretch"
-                                           SnapsToDevicePixels="True" />
-                                <ItemsControl ItemsSource="{Binding Activity}">
+                        <Border Grid.Column="1"
+                                Style="{StaticResource MinimalSegmentedToolbarBorderStyle}"
+                                VerticalAlignment="Center">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="Ряд:"
+                                           VerticalAlignment="Center"
+                                           Foreground="{StaticResource SecondaryTextBrush}"
+                                           FontSize="11"
+                                           Margin="4,0,6,0" />
+                                <ListBox Style="{StaticResource MinimalChartSeriesListBoxStyle}"
+                                         ItemsSource="{Binding ChartSeriesTabs}"
+                                         DisplayMemberPath="Title"
+                                         SelectedValuePath="Series"
+                                         SelectedValue="{Binding SelectedChartSeries, Mode=TwoWay}" />
+                                <Button Style="{StaticResource MinimalSegmentedOutlineButtonStyle}"
+                                        Content="По дням"
+                                        VerticalAlignment="Center"
+                                        Command="{Binding DataContext.OpenStatisticsHistoryCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                        CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}"
+                                        ToolTip="Подробная статистика по календарным дням" />
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+
+                    <Border x:Name="ChartActivityHost"
+                            Margin="0,12,0,0"
+                            Padding="0"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            Loaded="ChartActivityHost_OnLoaded"
+                            SizeChanged="ChartActivityHost_OnSizeChanged">
+                        <Grid MinHeight="248" MaxHeight="278">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="32" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Grid Grid.Column="0" Margin="0,0,6,26" VerticalAlignment="Stretch" MinHeight="210">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="*" />
+                                    <RowDefinition Height="*" />
+                                    <RowDefinition Height="*" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+                                <TextBlock Grid.Row="0"
+                                           FontSize="9"
+                                           Foreground="#94A3B8"
+                                           VerticalAlignment="Top"
+                                           HorizontalAlignment="Right"
+                                           Text="·" />
+                                <TextBlock Grid.Row="1" Text=" " />
+                                <TextBlock Grid.Row="2" Text=" " />
+                                <TextBlock Grid.Row="3" Text="0" FontSize="9" Foreground="#94A3B8" VerticalAlignment="Bottom" HorizontalAlignment="Right" />
+                            </Grid>
+                            <Grid Grid.Column="1" Margin="0,0,0,0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="*" />
+                                    <RowDefinition Height="28" />
+                                </Grid.RowDefinitions>
+                                <Border Grid.Row="0"
+                                        Background="#F1F5F9"
+                                        CornerRadius="8"
+                                        Padding="6,8"
+                                        SnapsToDevicePixels="True">
+                                    <Grid Height="188">
+                                        <UniformGrid Rows="4" Columns="1" Opacity="0.9">
+                                            <Border BorderBrush="#E2E8F0" BorderThickness="0,0,0,1" Background="Transparent" />
+                                            <Border BorderBrush="#E2E8F0" BorderThickness="0,0,0,1" Background="Transparent" />
+                                            <Border BorderBrush="#E2E8F0" BorderThickness="0,0,0,1" Background="Transparent" />
+                                            <Border BorderBrush="Transparent" Background="Transparent" />
+                                        </UniformGrid>
+                                        <Rectangle Height="2"
+                                                   VerticalAlignment="Bottom"
+                                                   Fill="#64748B"
+                                                   Margin="4,0,4,0"
+                                                   Opacity="0.45"
+                                                   SnapsToDevicePixels="True" />
+                                        <ItemsControl ItemsSource="{Binding Activity}"
+                                                      Margin="4,0,4,4"
+                                                      VerticalAlignment="Bottom">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate>
+                                                    <UniformGrid Columns="{Binding DataContext.ActivityChartColumns, ElementName=DashboardRoot}" />
+                                                </ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Grid Height="178"
+                                                          Margin="1,0"
+                                                          VerticalAlignment="Bottom"
+                                                          ToolTipService.InitialShowDelay="200"
+                                                          ToolTipService.ShowDuration="60000">
+                                                        <Grid.ToolTip>
+                                                            <ToolTip>
+                                                                <TextBlock Text="{Binding ChartTooltip}" TextWrapping="Wrap" MaxWidth="320" FontSize="12" />
+                                                            </ToolTip>
+                                                        </Grid.ToolTip>
+                                                        <TextBlock Text="{Binding ChartDisplayValue}"
+                                                                   HorizontalAlignment="Center"
+                                                                   VerticalAlignment="Top"
+                                                                   FontSize="11"
+                                                                   FontWeight="SemiBold"
+                                                                   Foreground="{StaticResource TextBrush}"
+                                                                   Margin="0,4,0,0"
+                                                                   Visibility="{Binding ChartDisplayValue, Converter={StaticResource ZeroToCollapsedConverter}}" />
+                                                        <Border Width="18"
+                                                                Height="{Binding ChartBarHeight}"
+                                                                MinHeight="3"
+                                                                VerticalAlignment="Bottom"
+                                                                HorizontalAlignment="Center"
+                                                                Margin="0,0,0,4"
+                                                                CornerRadius="5,5,2,2"
+                                                                Background="{Binding ChartBarFillHex, Converter={StaticResource HexColorToBrushConverter}}"
+                                                                SnapsToDevicePixels="True" />
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </Grid>
+                                </Border>
+                                <ItemsControl Grid.Row="1"
+                                              ItemsSource="{Binding Activity}"
+                                              VerticalAlignment="Top"
+                                              Margin="6,4,6,0"
+                                              Height="24">
                                     <ItemsControl.ItemsPanel>
                                         <ItemsPanelTemplate>
                                             <UniformGrid Columns="{Binding DataContext.ActivityChartColumns, ElementName=DashboardRoot}" />
@@ -363,175 +268,248 @@
                                     </ItemsControl.ItemsPanel>
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
-                                            <Grid Height="72"
-                                                  Margin="2,0"
-                                                  ToolTipService.InitialShowDelay="200"
-                                                  ToolTipService.ShowDuration="60000">
-                                                <Grid.ToolTip>
-                                                    <ToolTip>
-                                                        <TextBlock Text="{Binding ChartTooltip}"
-                                                                   TextWrapping="Wrap"
-                                                                   MaxWidth="320"
-                                                                   FontSize="12" />
-                                                    </ToolTip>
-                                                </Grid.ToolTip>
-                                                <Rectangle Height="{Binding ChartBarHeight}"
-                                                           Width="14"
-                                                           Fill="{StaticResource PrimaryBrush}"
+                                            <Grid Height="24" ClipToBounds="False">
+                                                <Border Width="1"
+                                                        Height="5"
+                                                        HorizontalAlignment="Left"
+                                                        VerticalAlignment="Top"
+                                                        Margin="0,0,0,0"
+                                                        Background="#94A3B8"
+                                                        SnapsToDevicePixels="True" />
+                                                <TextBlock Text="{Binding Label}"
                                                            VerticalAlignment="Bottom"
-                                                           HorizontalAlignment="Center" />
+                                                           HorizontalAlignment="Center"
+                                                           FontSize="10"
+                                                           Foreground="#64748B"
+                                                           TextTrimming="CharacterEllipsis" />
                                             </Grid>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
                             </Grid>
-                            <ItemsControl Grid.Row="1"
-                                          ItemsSource="{Binding Activity}"
-                                          VerticalAlignment="Stretch"
-                                          ClipToBounds="False">
-                                <ItemsControl.ItemsPanel>
-                                    <ItemsPanelTemplate>
-                                        <UniformGrid Columns="{Binding DataContext.ActivityChartColumns, ElementName=DashboardRoot}" />
-                                    </ItemsPanelTemplate>
-                                </ItemsControl.ItemsPanel>
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <Grid Height="26" ClipToBounds="False">
-                                            <!-- Штрих вверх к столбику, визуально из одной линейки с базой -->
-                                            <Border Width="1.5"
-                                                    Height="10"
-                                                    HorizontalAlignment="Left"
-                                                    VerticalAlignment="Top"
-                                                    Margin="0,-8,0,0"
-                                                    Background="#475569"
-                                                    SnapsToDevicePixels="True" />
-                                            <TextBlock Text="{Binding Label}"
-                                                       VerticalAlignment="Bottom"
-                                                       HorizontalAlignment="Center"
-                                                       FontSize="10"
-                                                       Foreground="#64748B"
-                                                       Margin="0,0,0,1" />
-                                        </Grid>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
                         </Grid>
-                    </StackPanel>
-                </Border>
+                    </Border>
 
-                <Border Style="{StaticResource CompactCardBorderStyle}"
-                        Margin="2,6,2,0"
-                        Padding="8,6">
-                    <StackPanel>
-                        <TextBlock Text="Динамика за неделю"
-                                   Style="{StaticResource BodyTextStyle}"
-                                   FontWeight="SemiBold"
-                                   Margin="0,0,0,4" />
-                        <Grid Margin="0,2,0,0" ClipToBounds="False">
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="72" />
-                                <RowDefinition Height="26" />
-                            </Grid.RowDefinitions>
-                            <Grid Grid.Row="0">
-                                <Rectangle Height="2"
-                                           VerticalAlignment="Bottom"
-                                           Fill="#94A3B8"
-                                           HorizontalAlignment="Stretch"
-                                           SnapsToDevicePixels="True" />
-                                <ItemsControl ItemsSource="{Binding WeeklyActivity}">
-                                    <ItemsControl.ItemsPanel>
-                                        <ItemsPanelTemplate>
-                                            <UniformGrid Columns="7" />
-                                        </ItemsPanelTemplate>
-                                    </ItemsControl.ItemsPanel>
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <Grid Height="72"
-                                                  Margin="2,0"
-                                                  ToolTipService.InitialShowDelay="200"
-                                                  ToolTipService.ShowDuration="60000">
-                                                <Grid.ToolTip>
-                                                    <ToolTip>
-                                                        <TextBlock Text="{Binding ChartTooltip}"
-                                                                   TextWrapping="Wrap"
-                                                                   MaxWidth="320"
-                                                                   FontSize="12" />
-                                                    </ToolTip>
-                                                </Grid.ToolTip>
-                                                <Rectangle Height="{Binding ChartBarHeight}"
-                                                           Width="14"
-                                                           Fill="{StaticResource PrimaryBrush}"
-                                                           VerticalAlignment="Bottom"
-                                                           HorizontalAlignment="Center" />
-                                            </Grid>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
+                    <Border Margin="0,8,0,0"
+                            Padding="10,8"
+                            HorizontalAlignment="Stretch"
+                            Background="#F8FAFC"
+                            BorderBrush="#E2E8F0"
+                            BorderThickness="1"
+                            CornerRadius="10"
+                            SnapsToDevicePixels="True">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock VerticalAlignment="Center" FontSize="11" Foreground="{StaticResource SecondaryTextBrush}" Text="Сводка:" />
+                            <TextBlock Margin="8,0,0,0" VerticalAlignment="Center" FontSize="11" Foreground="{StaticResource TextBrush}">
+                                <TextBlock.Text>
+                                    <MultiBinding StringFormat="всего {0} · CRM {1} · дубли {2} · ошибки {3}">
+                                        <Binding Path="TotalToday" />
+                                        <Binding Path="SentToCrm" />
+                                        <Binding Path="Duplicates" />
+                                        <Binding Path="Errors" />
+                                    </MultiBinding>
+                                </TextBlock.Text>
+                            </TextBlock>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Border>
+
+            <Border Grid.Column="1"
+                    Background="#E8EAED"
+                    CornerRadius="14"
+                    Padding="10"
+                    VerticalAlignment="Stretch"
+                    SnapsToDevicePixels="True">
+                <StackPanel VerticalAlignment="Stretch">
+                    <Border Style="{StaticResource MinimalAnalyticsRailCardStyle}">
+                        <StackPanel>
+                            <TextBlock Text="Требуют внимания"
+                                       FontSize="12"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource TextBrush}" />
+                            <TextBlock Margin="0,2,0,8"
+                                       Text="Объявления и CRM"
+                                       FontSize="10"
+                                       Foreground="{StaticResource SecondaryTextBrush}" />
+                            <Grid Margin="0,0,0,6">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Дубликаты" FontSize="11" Foreground="{StaticResource SecondaryTextBrush}" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" Text="{Binding Duplicates}" FontSize="13" FontWeight="SemiBold" Foreground="#B45309" VerticalAlignment="Center" />
                             </Grid>
-                            <ItemsControl Grid.Row="1"
-                                          ItemsSource="{Binding WeeklyActivity}"
-                                          VerticalAlignment="Stretch"
-                                          ClipToBounds="False">
-                                <ItemsControl.ItemsPanel>
-                                    <ItemsPanelTemplate>
-                                        <UniformGrid Columns="7" />
-                                    </ItemsPanelTemplate>
-                                </ItemsControl.ItemsPanel>
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <Grid Height="26" ClipToBounds="False">
-                                            <Border Width="1.5"
-                                                    Height="10"
-                                                    HorizontalAlignment="Left"
-                                                    VerticalAlignment="Top"
-                                                    Margin="0,-8,0,0"
-                                                    Background="#475569"
-                                                    SnapsToDevicePixels="True" />
-                                            <TextBlock Text="{Binding Label}"
-                                                       VerticalAlignment="Bottom"
-                                                       HorizontalAlignment="Center"
-                                                       FontSize="10"
-                                                       Foreground="#64748B"
-                                                       TextWrapping="Wrap"
-                                                       TextAlignment="Center"
-                                                       Margin="0,0,0,1" />
-                                        </Grid>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                        </Grid>
-                    </StackPanel>
-                </Border>
+                            <Grid Margin="0,0,0,6">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Нужны действия" FontSize="11" Foreground="{StaticResource SecondaryTextBrush}" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" Text="{Binding ActionRequired}" FontSize="13" FontWeight="SemiBold" Foreground="#C2410C" VerticalAlignment="Center" />
+                            </Grid>
+                            <Grid Margin="0,0,0,6">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Черновики" FontSize="11" Foreground="{StaticResource SecondaryTextBrush}" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" Text="{Binding DraftsCount}" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" VerticalAlignment="Center" />
+                            </Grid>
+                            <Grid Margin="0,0,0,10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Заблокировано" FontSize="11" Foreground="{StaticResource SecondaryTextBrush}" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" Text="{Binding BlockedAdsCount}" FontSize="13" FontWeight="SemiBold" Foreground="#DC2626" VerticalAlignment="Center" />
+                            </Grid>
+                            <Button HorizontalAlignment="Stretch"
+                                    Style="{StaticResource SecondaryButtonStyle}"
+                                    Padding="10,6"
+                                    FontSize="12"
+                                    Content="Разобрать"
+                                    Command="{Binding GoToAttentionProblemsCommand}"
+                                    ToolTip="Показать объявления с проблемами и отсортировать по приоритету" />
+                        </StackPanel>
+                    </Border>
 
-                <Border Style="{StaticResource DetailSectionBorderStyle}" Margin="2,6,2,0" Padding="8,6">
-                    <StackPanel>
-                        <TextBlock Text="Краткая сводка" Style="{StaticResource BodyTextStyle}" FontWeight="SemiBold" FontSize="13" Margin="0,0,0,4" />
-                        <WrapPanel>
-                            <StackPanel Orientation="Horizontal" Margin="0,0,14,4">
-                                <TextBlock Text="Всего: " Style="{StaticResource CaptionTextStyle}" VerticalAlignment="Center" />
-                                <TextBlock Text="{Binding TotalToday}" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" FontSize="12" VerticalAlignment="Center" />
-                            </StackPanel>
-                            <StackPanel Orientation="Horizontal" Margin="0,0,14,4">
-                                <TextBlock Text="В CRM: " Style="{StaticResource CaptionTextStyle}" VerticalAlignment="Center" />
-                                <TextBlock Text="{Binding SentToCrm}" FontWeight="SemiBold" Foreground="{StaticResource SuccessBrush}" FontSize="12" VerticalAlignment="Center" />
-                            </StackPanel>
-                            <StackPanel Orientation="Horizontal" Margin="0,0,14,4">
-                                <TextBlock Text="Дубликаты: " Style="{StaticResource CaptionTextStyle}" VerticalAlignment="Center" />
-                                <TextBlock Text="{Binding Duplicates}" FontWeight="SemiBold" Foreground="{StaticResource WarningBrush}" FontSize="12" VerticalAlignment="Center" />
-                            </StackPanel>
-                            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
-                                <TextBlock Text="Ошибки: " Style="{StaticResource CaptionTextStyle}" VerticalAlignment="Center" />
-                                <TextBlock Text="{Binding Errors}" FontWeight="SemiBold" Foreground="{StaticResource ErrorBrush}" FontSize="12" VerticalAlignment="Center" />
-                            </StackPanel>
-                        </WrapPanel>
-                    </StackPanel>
-                </Border>
-            </StackPanel>
-        </Border>
+                    <Border Style="{StaticResource MinimalAnalyticsRailCardStyle}">
+                        <StackPanel>
+                            <TextBlock Text="Avito"
+                                       FontSize="12"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource TextBrush}" />
+                            <TextBlock Margin="0,2,0,8"
+                                       Text="Активные объявления"
+                                       FontSize="10"
+                                       Foreground="{StaticResource SecondaryTextBrush}" />
+                            <Grid Margin="0,0,0,5">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Активные" FontSize="11" Foreground="{StaticResource SecondaryTextBrush}" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" Text="{Binding ActiveAds.Count}" FontSize="13" FontWeight="SemiBold" Foreground="#15803D" VerticalAlignment="Center" />
+                            </Grid>
+                            <Grid Margin="0,0,0,5">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Просмотры" FontSize="11" Foreground="{StaticResource SecondaryTextBrush}" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" Text="{Binding TotalActiveViews}" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" VerticalAlignment="Center" />
+                            </Grid>
+                            <Grid Margin="0,0,0,5">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Сообщения" FontSize="11" Foreground="{StaticResource SecondaryTextBrush}" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" Text="{Binding TotalActiveContacts}" FontSize="13" FontWeight="SemiBold" Foreground="#2563EB" VerticalAlignment="Center" />
+                            </Grid>
+                            <Grid Margin="0,0,0,5">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Заблокированные" FontSize="11" Foreground="{StaticResource SecondaryTextBrush}" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" Text="{Binding BlockedAdsCount}" FontSize="13" FontWeight="SemiBold" Foreground="#DC2626" VerticalAlignment="Center" />
+                            </Grid>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Черновики" FontSize="11" Foreground="{StaticResource SecondaryTextBrush}" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" Text="{Binding DraftsCount}" FontSize="13" FontWeight="SemiBold" Foreground="#B45309" VerticalAlignment="Center" />
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource MinimalAnalyticsRailCardStyle}" Margin="0,0,0,0">
+                        <StackPanel>
+                            <TextBlock Text="Неделя"
+                                       FontSize="12"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource TextBrush}" />
+                            <TextBlock Margin="0,2,0,8"
+                                       Text="Отклики по дням (7 дней)"
+                                       FontSize="10"
+                                       Foreground="{StaticResource SecondaryTextBrush}" />
+                            <Border Background="#F1F5F9" CornerRadius="8" Padding="6,6" SnapsToDevicePixels="True">
+                                <Grid Height="92">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="*" />
+                                        <RowDefinition Height="18" />
+                                    </Grid.RowDefinitions>
+                                    <Grid Grid.Row="0">
+                                        <UniformGrid Rows="3" Columns="1" Opacity="0.85">
+                                            <Border BorderBrush="#E2E8F0" BorderThickness="0,0,0,1" Background="Transparent" />
+                                            <Border BorderBrush="#E2E8F0" BorderThickness="0,0,0,1" Background="Transparent" />
+                                            <Border BorderBrush="Transparent" Background="Transparent" />
+                                        </UniformGrid>
+                                        <Rectangle Height="1.5" VerticalAlignment="Bottom" Fill="#94A3B8" Margin="2,0,2,0" Opacity="0.5" />
+                                        <ItemsControl ItemsSource="{Binding WeeklyActivity}" Margin="2,0,2,2" VerticalAlignment="Bottom">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate>
+                                                    <UniformGrid Columns="7" />
+                                                </ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Grid Height="68" Margin="1,0" VerticalAlignment="Bottom" ToolTipService.InitialShowDelay="200" ToolTipService.ShowDuration="60000">
+                                                        <Grid.ToolTip>
+                                                            <ToolTip>
+                                                                <TextBlock Text="{Binding ChartTooltip}" TextWrapping="Wrap" MaxWidth="260" FontSize="11" />
+                                                            </ToolTip>
+                                                        </Grid.ToolTip>
+                                                        <Border Width="11"
+                                                                Height="{Binding ChartBarHeight}"
+                                                                MinHeight="3"
+                                                                VerticalAlignment="Bottom"
+                                                                HorizontalAlignment="Center"
+                                                                Margin="0,0,0,2"
+                                                                CornerRadius="4,4,1,1"
+                                                                Background="{Binding ChartBarFillHex, Converter={StaticResource HexColorToBrushConverter}}" />
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </Grid>
+                                    <ItemsControl Grid.Row="1"
+                                                  ItemsSource="{Binding WeeklyActivity}"
+                                                  VerticalAlignment="Top"
+                                                  Margin="0,2,0,0"
+                                                  Height="18">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <UniformGrid Columns="7" />
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding Label}"
+                                                           FontSize="9"
+                                                           Foreground="#64748B"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           HorizontalAlignment="Center"
+                                                           TextAlignment="Center" />
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </Grid>
+                            </Border>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Border>
+        </Grid>
 
         <Border x:Name="AdsSectionHost"
-                Grid.Row="1"
-                Style="{StaticResource CompactCardBorderStyle}"
+                Grid.Row="2"
+                Style="{StaticResource MinimalDashSurfaceStyle}"
+                Margin="0,10,0,0"
                 Padding="0"
                 HorizontalAlignment="Stretch"
                 Loaded="AdsSectionHost_OnLoaded"
@@ -542,179 +520,156 @@
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
-                    <RowDefinition Height="*" MinHeight="240" />
+                    <RowDefinition Height="*" MinHeight="200" />
                 </Grid.RowDefinitions>
 
-                <!-- Заголовок и карточки статистики (та же иерархия, что у «Отклики и CRM») -->
-                <StackPanel Grid.Row="0" Margin="10,8,10,12">
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,0,2">
+                <!-- Заголовок и компактные метрики в одной зоне (перенос на узком окне) -->
+                <Border Grid.Row="0"
+                        BorderBrush="#E5E7EB"
+                        BorderThickness="0,0,0,1"
+                        Background="Transparent"
+                        Padding="0,0,0,0"
+                        Margin="0,0,0,0">
+                    <WrapPanel Margin="14,10,14,8"
+                               VerticalAlignment="Center"
+                               Orientation="Horizontal">
+                    <StackPanel Orientation="Horizontal"
+                                VerticalAlignment="Center"
+                                Margin="0,0,12,4">
                         <TextBlock Text="Объявления на Avito"
                                    Style="{StaticResource SectionHeaderTextStyle}"
+                                   FontSize="14"
+                                   FontWeight="SemiBold"
                                    VerticalAlignment="Center" />
                         <TextBlock Text=" · "
                                    Foreground="{StaticResource SecondaryTextBrush}"
-                                   FontSize="13"
+                                   FontSize="11"
                                    VerticalAlignment="Center"
-                                   Margin="2,0,2,0" />
-                        <TextBlock Text="Сводка по аккаунтам: активные, просмотры, сообщения, статусы"
+                                   Margin="2,0,4,0" />
+                        <TextBlock Text="сводка по аккаунтам"
                                    Style="{StaticResource SubtleTextStyle}"
+                                   FontSize="11"
                                    VerticalAlignment="Center"
                                    TextTrimming="CharacterEllipsis" />
                     </StackPanel>
-                    <!-- Внешний вид как у плиток CRM (StatCardButtonStyle), без перехода в мониторинг -->
-                    <UniformGrid Margin="0,6,0,0" Columns="5" Rows="1">
-                        <Button Style="{StaticResource StatCardButtonStyle}"
-                                Focusable="False"
-                                IsTabStop="False">
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0"
-                                           Text="Активные"
-                                           FontSize="11"
+                    <StackPanel Orientation="Horizontal"
+                                VerticalAlignment="Center"
+                                Margin="0,0,0,4">
+                        <Border Background="#ECFDF5"
+                                BorderBrush="#D1FAE5"
+                                BorderThickness="1"
+                                CornerRadius="8"
+                                Padding="7,3"
+                                Margin="0,0,6,0"
+                                VerticalAlignment="Center"
+                                ToolTip="Активные объявления">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="Активные"
+                                           FontSize="10"
                                            Foreground="{StaticResource SecondaryTextBrush}"
-                                           TextTrimming="CharacterEllipsis"
-                                           TextWrapping="NoWrap"
+                                           VerticalAlignment="Center"
+                                           Margin="0,0,6,0" />
+                                <TextBlock Text="{Binding ActiveAds.Count}"
+                                           FontSize="15"
+                                           FontWeight="SemiBold"
+                                           Foreground="#15803D"
                                            VerticalAlignment="Center" />
-                                <TextBlock Grid.Column="1"
-                                           Text="{Binding ActiveAds.Count}"
-                                           FontSize="16"
-                                           FontWeight="Bold"
-                                           Foreground="{StaticResource SuccessBrush}"
-                                           Margin="4,0,0,0"
-                                           VerticalAlignment="Center" />
-                            </Grid>
-                        </Button>
-                        <Button Style="{StaticResource StatCardButtonStyle}"
-                                Focusable="False"
-                                IsTabStop="False">
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0"
-                                           Text="Заблокированные"
-                                           FontSize="11"
+                            </StackPanel>
+                        </Border>
+                        <Border Background="#FEF2F2"
+                                BorderBrush="#FECACA"
+                                BorderThickness="1"
+                                CornerRadius="8"
+                                Padding="8,4"
+                                Margin="0,0,6,0"
+                                VerticalAlignment="Center"
+                                ToolTip="Заблокированные объявления">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="Заблок."
+                                           FontSize="10"
                                            Foreground="{StaticResource SecondaryTextBrush}"
-                                           TextTrimming="CharacterEllipsis"
-                                           TextWrapping="NoWrap"
-                                           VerticalAlignment="Center" />
-                                <TextBlock Grid.Column="1"
-                                           Text="{Binding BlockedAdsCount}"
-                                           FontSize="16"
-                                           FontWeight="Bold"
+                                           VerticalAlignment="Center"
+                                           Margin="0,0,6,0" />
+                                <TextBlock Text="{Binding BlockedAdsCount}"
+                                           FontSize="15"
+                                           FontWeight="SemiBold"
                                            Foreground="{StaticResource ErrorBrush}"
-                                           Margin="4,0,0,0"
                                            VerticalAlignment="Center" />
-                            </Grid>
-                        </Button>
-                        <Button Style="{StaticResource StatCardButtonStyle}"
-                                Focusable="False"
-                                IsTabStop="False">
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0"
-                                           Text="Черновики"
-                                           FontSize="11"
+                            </StackPanel>
+                        </Border>
+                        <Border Background="#FFF7ED"
+                                BorderBrush="#FDBA74"
+                                BorderThickness="1"
+                                CornerRadius="8"
+                                Padding="8,4"
+                                Margin="0,0,6,0"
+                                VerticalAlignment="Center"
+                                ToolTip="Черновики">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="Черновики"
+                                           FontSize="10"
                                            Foreground="{StaticResource SecondaryTextBrush}"
-                                           TextTrimming="CharacterEllipsis"
-                                           TextWrapping="NoWrap"
-                                           VerticalAlignment="Center" />
-                                <TextBlock Grid.Column="1"
-                                           Text="{Binding DraftsCount}"
-                                           FontSize="16"
-                                           FontWeight="Bold"
+                                           VerticalAlignment="Center"
+                                           Margin="0,0,6,0" />
+                                <TextBlock Text="{Binding DraftsCount}"
+                                           FontSize="15"
+                                           FontWeight="SemiBold"
                                            Foreground="{StaticResource WarningBrush}"
-                                           Margin="4,0,0,0"
                                            VerticalAlignment="Center" />
-                            </Grid>
-                        </Button>
-                        <Button Style="{StaticResource StatCardButtonStyle}"
-                                Focusable="False"
-                                IsTabStop="False">
-                            <Grid>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                </Grid.RowDefinitions>
-                                <Grid Grid.Row="0">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0"
-                                               Text="Просмотры"
-                                               FontSize="11"
-                                               Foreground="{StaticResource SecondaryTextBrush}"
-                                               TextTrimming="CharacterEllipsis"
-                                               TextWrapping="NoWrap"
-                                               VerticalAlignment="Center" />
-                                    <TextBlock Grid.Column="1"
-                                               Text="{Binding TotalActiveViews}"
-                                               FontSize="16"
-                                               FontWeight="Bold"
-                                               Margin="4,0,0,0"
-                                               VerticalAlignment="Center" />
-                                </Grid>
-                                <TextBlock Grid.Row="1"
-                                           Text="по активным"
+                            </StackPanel>
+                        </Border>
+                        <Border Background="{StaticResource DashCardBrush}"
+                                BorderBrush="{StaticResource DashBorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="8"
+                                Padding="8,4"
+                                Margin="0,0,6,0"
+                                VerticalAlignment="Center"
+                                ToolTip="Просмотры по активным объявлениям">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="Просмотры"
                                            FontSize="10"
                                            Foreground="{StaticResource SecondaryTextBrush}"
-                                           TextTrimming="CharacterEllipsis"
-                                           Margin="0,1,0,0" />
-                            </Grid>
-                        </Button>
-                        <Button Style="{StaticResource StatCardButtonStyle}"
-                                Focusable="False"
-                                IsTabStop="False">
-                            <Grid>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                </Grid.RowDefinitions>
-                                <Grid Grid.Row="0">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0"
-                                               Text="Сообщения"
-                                               FontSize="11"
-                                               Foreground="{StaticResource SecondaryTextBrush}"
-                                               TextTrimming="CharacterEllipsis"
-                                               TextWrapping="NoWrap"
-                                               VerticalAlignment="Center" />
-                                    <TextBlock Grid.Column="1"
-                                               Text="{Binding TotalActiveContacts}"
-                                               FontSize="16"
-                                               FontWeight="Bold"
-                                               Margin="4,0,0,0"
-                                               VerticalAlignment="Center" />
-                                </Grid>
-                                <TextBlock Grid.Row="1"
-                                           Text="по активным"
+                                           VerticalAlignment="Center"
+                                           Margin="0,0,6,0" />
+                                <TextBlock Text="{Binding TotalActiveViews}"
+                                           FontSize="15"
+                                           FontWeight="SemiBold"
+                                           Foreground="#475569"
+                                           VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Border>
+                        <Border Background="{StaticResource DashCardBrush}"
+                                BorderBrush="{StaticResource DashBorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="8"
+                                Padding="8,4"
+                                VerticalAlignment="Center"
+                                ToolTip="Сообщения по активным объявлениям">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="Сообщения"
                                            FontSize="10"
                                            Foreground="{StaticResource SecondaryTextBrush}"
-                                           TextTrimming="CharacterEllipsis"
-                                           Margin="0,1,0,0" />
-                            </Grid>
-                        </Button>
-                    </UniformGrid>
-                </StackPanel>
+                                           VerticalAlignment="Center"
+                                           Margin="0,0,6,0" />
+                                <TextBlock Text="{Binding TotalActiveContacts}"
+                                           FontSize="15"
+                                           FontWeight="SemiBold"
+                                           Foreground="#2563EB"
+                                           VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </WrapPanel>
+                </Border>
 
                 <!-- Фильтры, поиск, сортировка -->
                 <Border Grid.Row="1"
-                        Padding="10,4,10,16"
+                        Padding="8,2,8,6"
                         BorderBrush="{StaticResource DashBorderBrush}"
                         BorderThickness="0,0,0,1"
                         Background="Transparent">
-                    <Grid MinHeight="52">
+                    <Grid MinHeight="40">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
@@ -729,7 +684,7 @@
                                  Grid.Column="0"
                                  Margin="0,0,12,0"
                                  VerticalAlignment="Center"
-                                 Style="{StaticResource DashboardFilterTabsListBoxStyle}"
+                                 Style="{StaticResource MinimalAdsFilterListBoxStyle}"
                                  ItemsSource="{Binding AdsFilterTabs}"
                                  SelectedValue="{Binding SelectedAdsFilter, Mode=TwoWay}"
                                  SelectedValuePath="Filter">
@@ -760,12 +715,12 @@
                               VerticalAlignment="Stretch">
                             <TextBox x:Name="AdsSearchTextBox"
                                      Style="{StaticResource SearchTextBoxStyle}"
-                                     ToolTip="Поиск по названию, городу или ID объявления"
+                                     ToolTip="Поиск по названию, городу, ID объявления или тексту статуса"
                                      Text="{Binding AdsSearchQuery, UpdateSourceTrigger=PropertyChanged}" />
                             <TextBlock Margin="10,0,0,0"
                                        VerticalAlignment="Center"
                                        IsHitTestVisible="False"
-                                       Text="Название, город или ID">
+                                       Text="Название, город, ID или статус">
                                 <TextBlock.Style>
                                     <Style TargetType="TextBlock" BasedOn="{StaticResource FilterSearchWatermarkStyle}">
                                         <Setter Property="Visibility" Value="Collapsed" />
@@ -801,7 +756,7 @@
 
                 <!-- Список объявлений (прокрутка только здесь) -->
                 <Grid Grid.Row="2"
-                      Margin="10,4,10,20"
+                      Margin="8,2,8,12"
                       HorizontalAlignment="Stretch">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
@@ -832,97 +787,169 @@
                             </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate DataType="{x:Type vm:DashboardAdDisplayItem}">
-                                    <Button Style="{StaticResource StatCardButtonStyle}"
-                                            HorizontalAlignment="Stretch"
-                                            HorizontalContentAlignment="Stretch"
-                                            VerticalContentAlignment="Stretch"
-                                            Cursor="Hand"
-                                            Focusable="False"
-                                            IsTabStop="False"
-                                            Command="{Binding DataContext.OpenAdCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                            CommandParameter="{Binding Ad}">
-                                        <Grid HorizontalAlignment="Stretch">
-                                            <Grid.RowDefinitions>
-                                                <RowDefinition Height="Auto" />
-                                                <RowDefinition Height="Auto" />
-                                                <RowDefinition Height="Auto" />
-                                            </Grid.RowDefinitions>
-                                            <Grid Grid.Row="0">
+                                    <Grid HorizontalAlignment="Stretch">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <Border Grid.Column="0"
+                                                Width="3"
+                                                Margin="0,0,0,0"
+                                                VerticalAlignment="Stretch"
+                                                Background="#93C5FD"
+                                                Opacity="0.85"
+                                                CornerRadius="1,0,0,1"
+                                                Visibility="{Binding HasUnreadMessages, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                        <Border Grid.Column="1"
+                                                HorizontalAlignment="Stretch">
+                                            <Border.Style>
+                                                <Style BasedOn="{StaticResource DashboardAdCardBorderStyle}" TargetType="Border" />
+                                            </Border.Style>
+                                            <Border.InputBindings>
+                                                <MouseBinding Command="{Binding DataContext.OpenAdCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                              CommandParameter="{Binding Ad}"
+                                                              MouseAction="LeftClick" />
+                                            </Border.InputBindings>
+                                            <Grid Margin="0,0,0,0">
+                                                <Grid.RowDefinitions>
+                                                    <RowDefinition Height="Auto" />
+                                                    <RowDefinition Height="Auto" />
+                                                    <RowDefinition Height="Auto" />
+                                                    <RowDefinition Height="Auto" />
+                                                    <RowDefinition Height="Auto" />
+                                                </Grid.RowDefinitions>
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="*" />
                                                     <ColumnDefinition Width="Auto" />
                                                 </Grid.ColumnDefinitions>
-                                                <TextBlock Grid.Column="0"
+                                                <TextBlock Grid.Row="0"
+                                                           Grid.Column="0"
                                                            Text="{Binding Ad.Title}"
-                                                           FontSize="11"
-                                                           Foreground="{StaticResource SecondaryTextBrush}"
+                                                           FontSize="13"
+                                                           FontWeight="SemiBold"
+                                                           Foreground="{StaticResource TextBrush}"
                                                            TextTrimming="CharacterEllipsis"
                                                            TextWrapping="NoWrap"
-                                                           VerticalAlignment="Center"
                                                            ToolTip="{Binding Ad.Title}" />
-                                                <TextBlock Grid.Column="1"
-                                                           Text="{Binding Ad.Views}"
-                                                           FontSize="16"
-                                                           FontWeight="Bold"
-                                                           Margin="4,0,0,0"
-                                                           VerticalAlignment="Center">
-                                                    <TextBlock.Style>
-                                                        <Style TargetType="TextBlock">
-                                                            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
-                                                            <Style.Triggers>
-                                                                <DataTrigger Binding="{Binding Kind}" Value="{x:Static vm:DashboardAdKind.Active}">
-                                                                    <Setter Property="Foreground" Value="{StaticResource SuccessBrush}" />
-                                                                </DataTrigger>
-                                                                <DataTrigger Binding="{Binding Kind}" Value="{x:Static vm:DashboardAdKind.Blocked}">
-                                                                    <Setter Property="Foreground" Value="{StaticResource ErrorBrush}" />
-                                                                </DataTrigger>
-                                                            </Style.Triggers>
-                                                        </Style>
-                                                    </TextBlock.Style>
-                                                </TextBlock>
-                                            </Grid>
-                                            <StackPanel Grid.Row="1" Margin="0,1,0,0">
-                                                <StackPanel Orientation="Horizontal">
-                                                    <TextBlock FontSize="10"
+                                                <StackPanel Grid.Row="0"
+                                                            Grid.Column="1"
+                                                            Margin="7,0,0,0"
+                                                            VerticalAlignment="Center"
+                                                            HorizontalAlignment="Right">
+                                                    <TextBlock Text="просм."
+                                                               FontSize="9"
                                                                Foreground="{StaticResource SecondaryTextBrush}"
-                                                               Text="{Binding Ad.City}"
-                                                               TextTrimming="CharacterEllipsis" />
-                                                    <TextBlock Margin="2,0,2,0"
-                                                               FontSize="10"
-                                                               Foreground="{StaticResource SecondaryTextBrush}"
-                                                               Text="·" />
-                                                    <TextBlock FontSize="10"
-                                                               Foreground="{StaticResource SecondaryTextBrush}"
-                                                               Text="{Binding Ad.Status}"
-                                                               TextTrimming="CharacterEllipsis" />
-                                                    <TextBlock Margin="2,0,2,0"
-                                                               FontSize="10"
-                                                               Foreground="{StaticResource SecondaryTextBrush}"
-                                                               Text="·" />
-                                                    <TextBlock FontSize="10"
-                                                               Foreground="{StaticResource SecondaryTextBrush}"
-                                                               Text="сообщ." />
-                                                    <TextBlock Margin="2,0,0,0"
-                                                               FontSize="10"
-                                                               FontWeight="SemiBold"
-                                                               Foreground="{StaticResource TextBrush}"
-                                                               Text="{Binding Ad.Contacts}" />
-                                                    <StackPanel Margin="4,0,0,0" Orientation="Horizontal">
-                                                        <TextBlock FontSize="10"
-                                                                   Foreground="{StaticResource SecondaryTextBrush}"
-                                                                   Text="· ID " />
-                                                        <TextBlock FontSize="10"
-                                                                   Foreground="{StaticResource SecondaryTextBrush}"
-                                                                   Text="{Binding Ad.Id}"
-                                                                   TextTrimming="CharacterEllipsis" />
-                                                    </StackPanel>
+                                                               HorizontalAlignment="Right" />
+                                                    <TextBlock Text="{Binding Ad.Views}"
+                                                               FontSize="13"
+                                                               FontWeight="Normal"
+                                                               HorizontalAlignment="Right"
+                                                               Margin="0,0,0,0">
+                                                        <TextBlock.Style>
+                                                            <Style TargetType="TextBlock">
+                                                                <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding Kind}" Value="{x:Static vm:DashboardAdKind.Active}">
+                                                                        <Setter Property="Foreground" Value="#15803D" />
+                                                                    </DataTrigger>
+                                                                    <DataTrigger Binding="{Binding Kind}" Value="{x:Static vm:DashboardAdKind.Blocked}">
+                                                                        <Setter Property="Foreground" Value="{StaticResource ErrorBrush}" />
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBlock.Style>
+                                                    </TextBlock>
                                                 </StackPanel>
-                                                <TextBlock Margin="0,2,0,0"
+                                                <StackPanel Grid.Row="1"
+                                                            Grid.ColumnSpan="2"
+                                                            Margin="0,2,0,0"
+                                                            Orientation="Horizontal"
+                                                            Visibility="{Binding ShowAnyBadgeRow, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                    <Border Padding="5,2"
+                                                            CornerRadius="6"
+                                                            Margin="0,0,5,0"
+                                                            Visibility="{Binding ShowPrimaryStatusBadge, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                        <Border.Style>
+                                                            <Style TargetType="Border">
+                                                                <Setter Property="Background" Value="#DCFCE7" />
+                                                                <Setter Property="BorderBrush" Value="#BBF7D0" />
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding PrimaryBadgeKind}" Value="{x:Static vm:DashboardAdBadgeKind.Blocked}">
+                                                                        <Setter Property="Background" Value="#FEE2E2" />
+                                                                        <Setter Property="BorderBrush" Value="#FECACA" />
+                                                                    </DataTrigger>
+                                                                    <DataTrigger Binding="{Binding PrimaryBadgeKind}" Value="{x:Static vm:DashboardAdBadgeKind.Draft}">
+                                                                        <Setter Property="Background" Value="#F3F4F6" />
+                                                                        <Setter Property="BorderBrush" Value="#E5E7EB" />
+                                                                    </DataTrigger>
+                                                                    <DataTrigger Binding="{Binding PrimaryBadgeKind}" Value="{x:Static vm:DashboardAdBadgeKind.Messages}">
+                                                                        <Setter Property="Background" Value="#EFF6FF" />
+                                                                        <Setter Property="BorderBrush" Value="#CBD5E1" />
+                                                                    </DataTrigger>
+                                                                    <DataTrigger Binding="{Binding PrimaryBadgeKind}" Value="{x:Static vm:DashboardAdBadgeKind.NeedsAction}">
+                                                                        <Setter Property="Background" Value="#FFEDD5" />
+                                                                        <Setter Property="BorderBrush" Value="#FDBA74" />
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </Border.Style>
+                                                        <TextBlock Text="{Binding StatusBadgeCaption}"
+                                                                   FontSize="11"
+                                                                   FontWeight="SemiBold">
+                                                            <TextBlock.Style>
+                                                                <Style TargetType="TextBlock">
+                                                                    <Setter Property="Foreground" Value="#166534" />
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding PrimaryBadgeKind}" Value="{x:Static vm:DashboardAdBadgeKind.Blocked}">
+                                                                            <Setter Property="Foreground" Value="#991B1B" />
+                                                                        </DataTrigger>
+                                                                        <DataTrigger Binding="{Binding PrimaryBadgeKind}" Value="{x:Static vm:DashboardAdBadgeKind.Draft}">
+                                                                            <Setter Property="Foreground" Value="#4B5563" />
+                                                                        </DataTrigger>
+                                                                        <DataTrigger Binding="{Binding PrimaryBadgeKind}" Value="{x:Static vm:DashboardAdBadgeKind.Messages}">
+                                                                            <Setter Property="Foreground" Value="#2563EB" />
+                                                                        </DataTrigger>
+                                                                        <DataTrigger Binding="{Binding PrimaryBadgeKind}" Value="{x:Static vm:DashboardAdBadgeKind.NeedsAction}">
+                                                                            <Setter Property="Foreground" Value="#C2410C" />
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </TextBlock.Style>
+                                                        </TextBlock>
+                                                    </Border>
+                                                    <Border Padding="4,1"
+                                                            CornerRadius="4"
+                                                            Background="#F1F5F9"
+                                                            BorderBrush="#E2E8F0"
+                                                            BorderThickness="1"
+                                                            Visibility="{Binding ShowMessageCountPill, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                        <TextBlock Text="{Binding MessageCountPillText}"
+                                                                   FontSize="10"
+                                                                   FontWeight="SemiBold"
+                                                                   Foreground="#475569" />
+                                                    </Border>
+                                                </StackPanel>
+                                                <TextBlock Grid.Row="2"
+                                                           Grid.ColumnSpan="2"
+                                                           Margin="0,2,0,0"
+                                                           FontSize="10"
+                                                           Foreground="#6B7280"
+                                                           TextTrimming="CharacterEllipsis">
+                                                    <TextBlock.Text>
+                                                        <MultiBinding StringFormat="{}{0} · {1} · id {2}">
+                                                            <Binding Path="Ad.City" />
+                                                            <Binding Path="Ad.Status" />
+                                                            <Binding Path="Ad.Id" />
+                                                        </MultiBinding>
+                                                    </TextBlock.Text>
+                                                </TextBlock>
+                                                <TextBlock Grid.Row="3"
+                                                           Grid.ColumnSpan="2"
+                                                           Margin="0,2,0,0"
                                                            FontSize="10"
                                                            Foreground="#B91C1C"
                                                            Text="{Binding Ad.DeleteDate}"
-                                                           TextTrimming="CharacterEllipsis"
-                                                           TextWrapping="Wrap">
+                                                           TextTrimming="CharacterEllipsis">
                                                     <TextBlock.Style>
                                                         <Style TargetType="TextBlock">
                                                             <Setter Property="Visibility" Value="Collapsed" />
@@ -934,14 +961,32 @@
                                                         </Style>
                                                     </TextBlock.Style>
                                                 </TextBlock>
-                                            </StackPanel>
-                                            <TextBlock Grid.Row="2"
-                                                       Text="Открыть на Avito"
-                                                       Style="{StaticResource StatLinkTextStyle}"
-                                                       FontSize="10"
-                                                       Margin="0,2,0,0" />
-                                        </Grid>
-                                    </Button>
+                                                <TextBlock Grid.Row="4"
+                                                           Grid.ColumnSpan="2"
+                                                           Margin="0,2,0,0"
+                                                           FontSize="10"
+                                                           Foreground="#94A3B8"
+                                                           TextWrapping="Wrap">
+                                                    <Hyperlink Command="{Binding DataContext.OpenAdCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                               CommandParameter="{Binding Ad}">
+                                                        <Run Text="Avito" />
+                                                    </Hyperlink>
+                                                    <Run Text="  ·  "
+                                                         Foreground="#94A3B8" />
+                                                    <Hyperlink Command="{Binding DataContext.OpenMonitoringCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                               CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}">
+                                                        <Run Text="Отклики" />
+                                                    </Hyperlink>
+                                                    <Run Text="  ·  "
+                                                         Foreground="#94A3B8" />
+                                                    <Hyperlink Command="{Binding DataContext.OpenStatisticsHistoryCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                               CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}">
+                                                        <Run Text="Статистика" />
+                                                    </Hyperlink>
+                                                </TextBlock>
+                                            </Grid>
+                                        </Border>
+                                    </Grid>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
@@ -949,5 +994,6 @@
                 </Grid>
             </Grid>
         </Border>
+
     </Grid>
 </UserControl>

@@ -18,6 +18,8 @@
             <converters:LogLevelToBackgroundConverter x:Key="LogLevelToBackgroundConverter" />
             <converters:ZeroToCollapsedConverter x:Key="ZeroToCollapsedConverter" />
             <converters:UtcToLocalDateTimeConverter x:Key="UtcToLocalDateTimeConverter" />
+            <converters:MonitoringHeaderForegroundMultiConverter x:Key="MonitoringHeaderForegroundMultiConverter" />
+            <converters:HexColorToBrushConverter x:Key="HexColorToBrushConverter" />
         </ResourceDictionary>
     </Application.Resources>
 </Application>

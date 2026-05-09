@@ -59,8 +59,8 @@ public partial class DashboardView : UserControl
             return;
         }
 
-        // Шапка окна, блок CRM, заголовок/плитки/фильтры объявлений и отступы.
-        const double verticalReserve = 320;
+        // Шапка окна, блок «Сегодня», графики, «Требуют внимания», шапка Avito/фильтры и отступы.
+        const double verticalReserve = 560;
         AdsListScrollViewer.MaxHeight = Math.Max(200, w.ActualHeight - verticalReserve);
     }
 
