@@ -9,7 +9,8 @@ public interface IAdsPowerAvitoAutomationService
     Task<string> ExtractCandidatesJsonAsync(
         AdsPowerConnectionOptions options,
         string adsPowerUserId,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        CandidatesMessengerEnrichmentHints? messengerEnrichmentHints = null);
 
     /// <summary>
     /// Открывает в AdsPower-браузере страницу <c>/profile/pro/items</c> и возвращает её HTML

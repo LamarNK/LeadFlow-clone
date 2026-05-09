@@ -19,7 +19,7 @@ public sealed class BitrixClient(
     /// Временный стоп-кран: при <c>true</c> контакты и сделки в Bitrix24 не создаются (REST не вызывается).
     /// Поставьте <c>false</c>, чтобы снова включить отправку.
     /// </summary>
-    public static bool DealCreationTemporarilyDisabled { get; set; } = true;
+    public static bool DealCreationTemporarilyDisabled { get; set; } = false;
 
     private const string ImportedLeadSource = "Bitrix24";
     private const int ContactLookupMaxConcurrency = 6;
@@ -261,13 +261,14 @@ public sealed class BitrixClient(
                 }
             }
 
+            var (contactName, contactLastName, contactSecondName) = BuildContactNameFields(response);
             var contactRequest = new
             {
                 fields = new
                 {
-                    NAME = response.FirstName,
-                    LAST_NAME = response.LastName,
-                    SECOND_NAME = response.MiddleName,
+                    NAME = contactName,
+                    LAST_NAME = contactLastName,
+                    SECOND_NAME = contactSecondName,
                     PHONE = new[] { new { VALUE = response.PhoneRaw, VALUE_TYPE = "WORK" } }
                 }
             };
@@ -477,6 +478,31 @@ public sealed class BitrixClient(
         return key.Length <= DealIdempotencyKeyMaxLength ? key : key[..DealIdempotencyKeyMaxLength];
     }
 
+    /// <summary>
+    /// Поля имени контакта в Bitrix: если парсер не разбил ФИО на части, передаём целиком в фамилию, чтобы карточка не была пустой.
+    /// </summary>
+    private static (string Name, string LastName, string SecondName) BuildContactNameFields(CandidateResponse response)
+    {
+        var hasParts = !string.IsNullOrWhiteSpace(response.LastName) || !string.IsNullOrWhiteSpace(response.FirstName);
+        if (hasParts)
+        {
+            return (response.FirstName, response.LastName, response.MiddleName);
+        }
+
+        var full = response.FullName.Trim();
+        return string.IsNullOrEmpty(full) ? (string.Empty, string.Empty, string.Empty) : (string.Empty, full, string.Empty);
+    }
+
+    private static object[] BuildContactIdsForDeal(string contactId)
+    {
+        if (int.TryParse(contactId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var numericId))
+        {
+            return [numericId];
+        }
+
+        return [contactId];
+    }
+
     private static async Task<(string DealId, string ContactId)?> TryFindDealByIdempotencyKeyAsync(
         HttpClient client,
         string webhookBase,
@@ -550,7 +576,9 @@ public sealed class BitrixClient(
             ["COMMENTS"] = preview.Comments,
             ["SOURCE_DESCRIPTION"] = settings.Bitrix.LeadSource,
             ["ASSIGNED_BY_ID"] = settings.Bitrix.ResponsibleId,
-            ["CONTACT_ID"] = contactId
+            // Bitrix24 ожидает CONTACT_IDS (массив); CONTACT_ID в новых порталах часто не связывает клиента со сделкой.
+            ["CONTACT_ID"] = contactId,
+            ["CONTACT_IDS"] = BuildContactIdsForDeal(contactId)
         };
 
         if (!string.IsNullOrWhiteSpace(idempotencyUfCode) && !string.IsNullOrWhiteSpace(idempotencyKey))

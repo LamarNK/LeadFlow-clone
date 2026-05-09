@@ -10,4 +10,14 @@ public interface ICandidateDuplicateRepository
         DuplicateScope scope,
         Guid accountId,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Какие из переданных нормализованных номеров уже встречались в сохранённых откликах
+    /// (для пропуска тяжёлого обогащения мессенджером на странице кандидатов).
+    /// </summary>
+    Task<HashSet<string>> GetExistingNormalizedPhonesAsync(
+        IEnumerable<string> phoneNormalizedCandidates,
+        DuplicateScope scope,
+        Guid accountId,
+        CancellationToken cancellationToken);
 }

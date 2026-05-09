@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using LeadFlow.Data;
 using LeadFlow.Logging.Audit;
 using LeadFlow.Services;
 using LeadFlow.Services.Avito;
@@ -11,7 +12,10 @@ namespace LeadFlow.Services.AdsPower;
 /// и <c>/profile/pro/items</c>. Браузер AdsPower никогда не закрываем — после работы
 /// вызываем <see cref="IBrowser.Disconnect"/>, чтобы пользователь продолжал работать в окне.
 /// </summary>
-public sealed class AdsPowerAvitoAutomationService(IAdsPowerApiClient adsPowerApiClient) : IAdsPowerAvitoAutomationService
+public sealed class AdsPowerAvitoAutomationService(
+    IAdsPowerApiClient adsPowerApiClient,
+    ICandidateDuplicateRepository duplicateRepository,
+    IPhoneNormalizer phoneNormalizer) : IAdsPowerAvitoAutomationService
 {
     private const string CandidatesPageUrl = "https://www.avito.ru/profile/candidates";
     private const string ProfileItemsPageUrl = "https://www.avito.ru/profile/pro/items";
@@ -22,7 +26,8 @@ public sealed class AdsPowerAvitoAutomationService(IAdsPowerApiClient adsPowerAp
     public async Task<string> ExtractCandidatesJsonAsync(
         AdsPowerConnectionOptions options,
         string adsPowerUserId,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        CandidatesMessengerEnrichmentHints? messengerEnrichmentHints = null)
     {
         var start = await adsPowerApiClient
             .StartBrowserAsync(options, adsPowerUserId, CandidatesPageUrl, cancellationToken)
@@ -80,7 +85,8 @@ public sealed class AdsPowerAvitoAutomationService(IAdsPowerApiClient adsPowerAp
                 throw new InvalidOperationException("AdsPower CDP: скрипт извлечения вернул пустой результат.");
             }
 
-            raw = await TryEnrichCandidatesJsonMessengerUrlsAsync(page, raw, cancellationToken).ConfigureAwait(false);
+            raw = await TryEnrichCandidatesJsonMessengerUrlsAsync(page, raw, messengerEnrichmentHints, cancellationToken)
+                .ConfigureAwait(false);
 
             _ = GlobalLogger.Instance.LogAsync(
                 "AdsPower CDP candidates extraction completed.",
@@ -999,9 +1005,14 @@ public sealed class AdsPowerAvitoAutomationService(IAdsPowerApiClient adsPowerAp
     /// На странице откликов кнопка «в чат» часто без href; ссылка канала появляется в шапке мини-мессенджера
     /// (<c>mini-messenger/messenger-page-link</c>) только после клика — дополняем JSON для AdsPower CDP.
     /// </summary>
-    private static async Task<string> TryEnrichCandidatesJsonMessengerUrlsAsync(
+    /// <summary>Номер уже полностью на карточке (не «узнать в чате»): после <see cref="IPhoneNormalizer.Normalize"/> — типичный РФ-мобильный.</summary>
+    private static bool LooksLikeCompleteRussianMobile(string normalized) =>
+        normalized.Length == 11 && normalized.StartsWith("7", StringComparison.Ordinal);
+
+    private async Task<string> TryEnrichCandidatesJsonMessengerUrlsAsync(
         IPage page,
         string rawJson,
+        CandidatesMessengerEnrichmentHints? enrichmentHints,
         CancellationToken cancellationToken)
     {
         JsonNode? root;
@@ -1025,6 +1036,38 @@ public sealed class AdsPowerAvitoAutomationService(IAdsPowerApiClient adsPowerAp
             return rawJson;
         }
 
+        HashSet<string>? existingNormalizedFromDb = null;
+        if (enrichmentHints is not null)
+        {
+            var toQuery = new List<string>();
+            foreach (var node in candidates)
+            {
+                var o = node?.AsObject();
+                if (o is null)
+                {
+                    continue;
+                }
+
+                var phoneRaw = o["phone"]?.GetValue<string>() ?? string.Empty;
+                var n = phoneNormalizer.Normalize(phoneRaw);
+                if (LooksLikeCompleteRussianMobile(n))
+                {
+                    toQuery.Add(n);
+                }
+            }
+
+            if (toQuery.Count > 0)
+            {
+                existingNormalizedFromDb = await duplicateRepository
+                    .GetExistingNormalizedPhonesAsync(
+                        toQuery,
+                        enrichmentHints.DuplicateScope,
+                        enrichmentHints.AccountId,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+        }
+
         const int maxEnrich = 80;
         for (var i = 0; i < candidates.Count && i < maxEnrich; i++)
         {
@@ -1038,6 +1081,15 @@ public sealed class AdsPowerAvitoAutomationService(IAdsPowerApiClient adsPowerAp
 
             var messengerUrl = item["messengerUrl"]?.GetValue<string>();
             if (LooksLikeAvitoMessengerChannelUrl(messengerUrl))
+            {
+                continue;
+            }
+
+            var phoneRawForSkip = item["phone"]?.GetValue<string>() ?? string.Empty;
+            var normalizedForSkip = phoneNormalizer.Normalize(phoneRawForSkip);
+            if (existingNormalizedFromDb is not null
+                && LooksLikeCompleteRussianMobile(normalizedForSkip)
+                && existingNormalizedFromDb.Contains(normalizedForSkip))
             {
                 continue;
             }

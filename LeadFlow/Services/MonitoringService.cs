@@ -737,9 +737,12 @@ public sealed class MonitoringService(
                     break;
                 }
 
-                var key = string.IsNullOrWhiteSpace(response.SourceResponseId)
-                    ? $"{response.PhoneNormalized}|{response.FullName}|{response.Vacancy}"
-                    : response.SourceResponseId;
+                var normalizedForKey = phoneNormalizer.Normalize(response.PhoneRaw);
+                var key = !string.IsNullOrWhiteSpace(normalizedForKey)
+                    ? $"phone:{normalizedForKey}"
+                    : (string.IsNullOrWhiteSpace(response.SourceResponseId)
+                        ? $"{response.PhoneRaw}|{response.FullName}|{response.Vacancy}"
+                        : response.SourceResponseId);
 
                 if (!seenKeys.Add(key))
                 {

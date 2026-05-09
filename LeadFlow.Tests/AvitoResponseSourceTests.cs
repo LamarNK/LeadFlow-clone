@@ -1,5 +1,6 @@
 using LeadFlow.Data;
 using LeadFlow.Models;
+using LeadFlow.Services;
 using LeadFlow.Services.AdsPower;
 using LeadFlow.Services.Avito;
 using LeadFlow.Services.Browser;
@@ -20,12 +21,7 @@ public sealed class AvitoResponseSourceTests
         automation.EnqueueExtraction(
             """{"hasCaptcha":false,"hasLogin":false,"candidates":[{"fullName":"Иван Иванов","phone":"+79001234567","sourceResponseId":"src-1"}]}""");
 
-        var sut = new AvitoResponseSource(
-            repo,
-            new FakeBrowserSessionService(),
-            new NoOpBackgroundWebViewHostFactory(),
-            automation,
-            new FakeAdsPowerAvitoAutomationService());
+        var sut = CreateSut(repo, automation);
 
         var list = await sut.GetNewResponsesAsync(account, NewSettings(), CancellationToken.None);
 
@@ -44,12 +40,7 @@ public sealed class AvitoResponseSourceTests
         var automation = new AvitoCandidatesPageAutomationStub();
         automation.EnqueueExtraction("""{"hasCaptcha":true,"hasLogin":false,"candidates":[]}""");
 
-        var sut = new AvitoResponseSource(
-            repo,
-            new FakeBrowserSessionService(),
-            new NoOpBackgroundWebViewHostFactory(),
-            automation,
-            new FakeAdsPowerAvitoAutomationService());
+        var sut = CreateSut(repo, automation);
 
         // Поведение по запросу пользователя «отслеживать капчу»: источник бросает типизированное
         // исключение, чтобы мониторинг СРАЗУ вышел из обхода аккаунта (а не пытался идти дальше).
@@ -71,12 +62,7 @@ public sealed class AvitoResponseSourceTests
         var automation = new AvitoCandidatesPageAutomationStub();
         automation.EnqueueExtraction("""{"hasCaptcha":false,"hasLogin":true,"candidates":[]}""");
 
-        var sut = new AvitoResponseSource(
-            repo,
-            new FakeBrowserSessionService(),
-            new NoOpBackgroundWebViewHostFactory(),
-            automation,
-            new FakeAdsPowerAvitoAutomationService());
+        var sut = CreateSut(repo, automation);
 
         var list = await sut.GetNewResponsesAsync(account, NewSettings(), CancellationToken.None);
 
@@ -96,12 +82,7 @@ public sealed class AvitoResponseSourceTests
         automation.EnqueueExtraction(
             """{"hasCaptcha":false,"hasLogin":false,"candidates":[{"fullName":"A","phone":"+7999","sourceResponseId":"retry-ok"}]}""");
 
-        var sut = new AvitoResponseSource(
-            repo,
-            new FakeBrowserSessionService(),
-            new NoOpBackgroundWebViewHostFactory(),
-            automation,
-            new FakeAdsPowerAvitoAutomationService());
+        var sut = CreateSut(repo, automation);
 
         var list = await sut.GetNewResponsesAsync(account, NewSettings(), CancellationToken.None);
 
@@ -120,18 +101,71 @@ public sealed class AvitoResponseSourceTests
         automation.EnqueueExtraction("");
         automation.EnqueueExtraction("");
 
-        var sut = new AvitoResponseSource(
-            repo,
-            new FakeBrowserSessionService(),
-            new NoOpBackgroundWebViewHostFactory(),
-            automation,
-            new FakeAdsPowerAvitoAutomationService());
+        var sut = CreateSut(repo, automation);
 
         var list = await sut.GetNewResponsesAsync(account, NewSettings(), CancellationToken.None);
 
         Assert.Empty(list);
         Assert.Contains("Пустой ответ скрипта", account.LastErrorMessage, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public async Task GetNewResponsesAsync_NewSourceResponseIdSamePhoneAsJournal_SkipsDuplicateRow()
+    {
+        var db = new EfInMemoryDatabase();
+        var repo = new AppRepository(db.Factory);
+        var account = NewAccount();
+        var phoneNormalizer = new PhoneNormalizer();
+        var norm = phoneNormalizer.Normalize("8 952 333-24-46");
+        await repo.SaveCandidateAsync(
+            new CandidateResponse
+            {
+                Id = Guid.NewGuid(),
+                AccountId = account.Id,
+                AccountName = account.DisplayName,
+                SourceResponseId = "https://www.avito.ru/profile/messenger/channel/old",
+                FullName = "Филимонов Станислав Васильевич",
+                PhoneRaw = "8 952 333-24-46",
+                PhoneNormalized = norm,
+                Status = ResponseStatus.Duplicate,
+                CreatedAt = DateTime.UtcNow.AddHours(-1)
+            },
+            CancellationToken.None);
+
+        var automation = new AvitoCandidatesPageAutomationStub();
+        automation.EnqueueExtraction(
+            """{"hasCaptcha":false,"hasLogin":false,"candidates":[{"fullName":"Филимонов Станислав Васильевич","phone":"8 952 333-24-46","sourceResponseId":"https://www.avito.ru/profile/messenger/channel/new"}]}""");
+
+        var sut = CreateSut(repo, automation);
+        var list = await sut.GetNewResponsesAsync(account, NewSettings(), CancellationToken.None);
+
+        Assert.Empty(list);
+    }
+
+    [Fact]
+    public async Task GetNewResponsesAsync_TwoCardsSamePhoneSameFetch_ReturnsOne()
+    {
+        var db = new EfInMemoryDatabase();
+        var repo = new AppRepository(db.Factory);
+        var account = NewAccount();
+        var automation = new AvitoCandidatesPageAutomationStub();
+        automation.EnqueueExtraction(
+            """{"hasCaptcha":false,"hasLogin":false,"candidates":[{"fullName":"Иван Иванов","phone":"+7 900 111-22-33","sourceResponseId":"id-a"},{"fullName":"Иван Иванов","phone":"89001112233","sourceResponseId":"id-b"}]}""");
+
+        var sut = CreateSut(repo, automation);
+        var list = await sut.GetNewResponsesAsync(account, NewSettings(), CancellationToken.None);
+
+        Assert.Single(list);
+    }
+
+    private static AvitoResponseSource CreateSut(AppRepository repo, AvitoCandidatesPageAutomationStub automation) =>
+        new(
+            repo,
+            new FakeBrowserSessionService(),
+            new NoOpBackgroundWebViewHostFactory(),
+            automation,
+            new FakeAdsPowerAvitoAutomationService(),
+            new PhoneNormalizer());
 
     private static AvitoAccount NewAccount() => new()
     {
@@ -178,7 +212,8 @@ public sealed class AvitoResponseSourceTests
         public Task<string> ExtractCandidatesJsonAsync(
             AdsPowerConnectionOptions options,
             string adsPowerUserId,
-            CancellationToken cancellationToken = default) =>
+            CancellationToken cancellationToken = default,
+            CandidatesMessengerEnrichmentHints? messengerEnrichmentHints = null) =>
             Task.FromResult("""{"hasCaptcha":false,"hasLogin":false,"candidates":[]}""");
 
         public Task<string> LoadProfileItemsHtmlAsync(

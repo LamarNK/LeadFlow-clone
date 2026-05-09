@@ -104,7 +104,8 @@ internal sealed class StubAdsPowerAvitoAutomationService : IAdsPowerAvitoAutomat
     public Task<string> ExtractCandidatesJsonAsync(
         AdsPowerConnectionOptions options,
         string adsPowerUserId,
-        CancellationToken cancellationToken = default) =>
+        CancellationToken cancellationToken = default,
+        CandidatesMessengerEnrichmentHints? messengerEnrichmentHints = null) =>
         throw new InvalidOperationException("AdsPower CDP не должен вызываться в этих тестах.");
 
     public Task<string> LoadProfileItemsHtmlAsync(

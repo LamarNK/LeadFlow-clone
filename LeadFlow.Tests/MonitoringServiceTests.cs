@@ -17,7 +17,7 @@ public sealed class MonitoringServiceTests
         var source = new FakeAvitoResponseSource
         {
             Impl = (account, _) => Enumerable.Range(0, 15)
-                .Select(i => NewIncomingResponse(account, $"src-{i}"))
+                .Select(i => NewIncomingResponse(account, $"src-{i}", $"+7900000{i:04}"))
                 .Cast<CandidateResponse>()
                 .ToList()
         };
@@ -274,7 +274,10 @@ public sealed class MonitoringServiceTests
         Status = AvitoAccountStatus.Authorized
     };
 
-    private static CandidateResponse NewIncomingResponse(AvitoAccount account, string sourceId) => new()
+    private static CandidateResponse NewIncomingResponse(
+        AvitoAccount account,
+        string sourceId,
+        string? phoneRaw = null) => new()
     {
         Id = Guid.NewGuid(),
         AccountId = account.Id,
@@ -282,7 +285,7 @@ public sealed class MonitoringServiceTests
         Source = "Avito",
         SourceResponseId = sourceId,
         FullName = "Иванов Иван Иванович",
-        PhoneRaw = "+7 900 000-00-00",
+        PhoneRaw = phoneRaw ?? "+7 900 000-00-00",
         City = "Москва",
         Vacancy = "Продавец",
         VacancyUrl = "https://www.avito.ru/item/1",

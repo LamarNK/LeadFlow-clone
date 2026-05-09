@@ -4,6 +4,7 @@ using LeadFlow.Logging.Audit;
 using LeadFlow.Models;
 using LeadFlow.Services.AdsPower;
 using LeadFlow.Services.Browser;
+using LeadFlow.Services;
 
 namespace LeadFlow.Services.Avito;
 
@@ -12,7 +13,8 @@ public sealed class AvitoResponseSource(
     IBrowserSessionService browserSessionService,
     IBackgroundWebViewHostFactory backgroundWebViewHostFactory,
     IWebPageAutomationService automationService,
-    IAdsPowerAvitoAutomationService adsPowerAvitoAutomationService) : IAvitoResponseSource
+    IAdsPowerAvitoAutomationService adsPowerAvitoAutomationService,
+    IPhoneNormalizer phoneNormalizer) : IAvitoResponseSource
 {
     public const string CandidatesPageUrl = "https://www.avito.ru/profile/candidates";
 
@@ -29,10 +31,12 @@ public sealed class AvitoResponseSource(
             var options = new AdsPowerConnectionOptions(
                 account.AdsPowerApiBaseUrl,
                 string.IsNullOrWhiteSpace(account.AdsPowerApiKey) ? null : account.AdsPowerApiKey);
+            var messengerHints = new CandidatesMessengerEnrichmentHints(account.Id, settings.DuplicateScope);
             var rawAdsPower = await adsPowerAvitoAutomationService
-                .ExtractCandidatesJsonAsync(options, account.AdsPowerProfileId, cancellationToken)
+                .ExtractCandidatesJsonAsync(options, account.AdsPowerProfileId, cancellationToken, messengerHints)
                 .ConfigureAwait(false);
-            return await ParseResponsesFromRawExtractionAsync(account, rawAdsPower, cancellationToken).ConfigureAwait(false);
+            return await ParseResponsesFromRawExtractionAsync(account, settings, rawAdsPower, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         var session = await browserSessionService.CreateSessionAsync(account, cancellationToken);
@@ -74,7 +78,8 @@ public sealed class AvitoResponseSource(
                     continue;
                 }
 
-                return await ParseResponsesFromRawExtractionAsync(account, raw, cancellationToken).ConfigureAwait(false);
+                return await ParseResponsesFromRawExtractionAsync(account, settings, raw, cancellationToken)
+                    .ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -110,6 +115,7 @@ public sealed class AvitoResponseSource(
 
     private async Task<IReadOnlyList<CandidateResponse>> ParseResponsesFromRawExtractionAsync(
         AvitoAccount account,
+        AppSettings settings,
         string raw,
         CancellationToken cancellationToken)
     {
@@ -148,8 +154,47 @@ public sealed class AvitoResponseSource(
             candidates.Select(x => x.SourceResponseId),
             cancellationToken);
 
-        return candidates
+        var afterSourceId = candidates
             .Where(x => !existingIds.Contains(x.SourceResponseId))
+            .ToList();
+
+        // Avito меняет sourceResponseId (чат / хэш) — отсекаем по телефону так же, как при проверке дублей.
+        var phonesToQuery = afterSourceId
+            .Select(c => phoneNormalizer.Normalize(c.PhoneRaw))
+            .Where(p => !string.IsNullOrWhiteSpace(p))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        var existingPhones = phonesToQuery.Count == 0
+            ? []
+            : await repository.GetExistingNormalizedPhonesAsync(
+                phonesToQuery,
+                settings.DuplicateScope,
+                account.Id,
+                cancellationToken);
+
+        var afterDbPhone = afterSourceId
+            .Where(c =>
+            {
+                var n = phoneNormalizer.Normalize(c.PhoneRaw);
+                return string.IsNullOrWhiteSpace(n) || !existingPhones.Contains(n);
+            })
+            .ToList();
+
+        var seenPhoneThisFetch = new HashSet<string>(StringComparer.Ordinal);
+        var deduped = new List<CandidateResponse>();
+        foreach (var c in afterDbPhone)
+        {
+            var n = phoneNormalizer.Normalize(c.PhoneRaw);
+            if (!string.IsNullOrWhiteSpace(n) && !seenPhoneThisFetch.Add(n))
+            {
+                continue;
+            }
+
+            deduped.Add(c);
+        }
+
+        return deduped
             .OrderByDescending(x => x.CreatedAt)
             .ToList();
     }

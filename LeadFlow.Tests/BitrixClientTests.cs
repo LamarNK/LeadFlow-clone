@@ -11,9 +11,6 @@ namespace LeadFlow.Tests;
 
 public sealed class BitrixClientTests
 {
-    static BitrixClientTests() =>
-        BitrixClient.DealCreationTemporarilyDisabled = false;
-
     private const string Webhook = "https://b24-test.bitrix24.ru/rest/1/abc/";
 
     [Fact]

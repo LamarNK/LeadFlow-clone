@@ -649,6 +649,34 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         return entity is null ? null : ToModel(entity);
     }
 
+    public async Task<HashSet<string>> GetExistingNormalizedPhonesAsync(
+        IEnumerable<string> phoneNormalizedCandidates,
+        DuplicateScope scope,
+        Guid accountId,
+        CancellationToken cancellationToken)
+    {
+        var distinct = phoneNormalizedCandidates
+            .Where(static p => !string.IsNullOrWhiteSpace(p))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        if (distinct.Count == 0)
+        {
+            return [];
+        }
+
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var query = db.CandidateResponses.AsNoTracking().Where(x => distinct.Contains(x.PhoneNormalized));
+        if (scope == DuplicateScope.PerAvitoAccount)
+        {
+            query = query.Where(x => x.AccountId == accountId);
+        }
+
+        return await query
+            .Select(x => x.PhoneNormalized)
+            .Distinct()
+            .ToHashSetAsync(cancellationToken);
+    }
+
     private static AvitoAccountEntity ToEntity(AvitoAccount model) => new()
     {
         Id = model.Id,
