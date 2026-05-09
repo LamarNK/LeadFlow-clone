@@ -632,6 +632,92 @@
                         </StackPanel>
                     </Border>
                 </Grid>
+
+                <!--
+                    Список заблокированных объявлений: показываем какие именно вакансии висят в «С ошибках»
+                    у Avito и сколько дней осталось до удаления (Avito удаляет блок-карточки через ~30 дней).
+                    Видна только если что-то распарсили; иначе свёрнута, чтобы не занимать место.
+                -->
+                <StackPanel Margin="{StaticResource SectionSpacing}"
+                            Visibility="{Binding BlockedAds.Count, Converter={StaticResource ZeroToCollapsedConverter}}">
+                    <StackPanel Orientation="Horizontal" Margin="0,4,0,6">
+                        <TextBlock Text="Заблокированные объявления" Style="{StaticResource BodyTextStyle}" FontWeight="SemiBold" Foreground="{StaticResource ErrorBrush}" />
+                        <Border Background="#FECACA" CornerRadius="9" Margin="8,0,0,0" Padding="6,1">
+                            <TextBlock Text="{Binding BlockedAds.Count}" FontWeight="Bold" Foreground="#7F1D1D" FontSize="12" />
+                        </Border>
+                    </StackPanel>
+
+                    <ListBox ItemsSource="{Binding BlockedAds}"
+                             MinHeight="80"
+                             MaxHeight="240"
+                             Margin="0"
+                             BorderThickness="0"
+                             Background="Transparent"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto"
+                             ScrollViewer.CanContentScroll="True"
+                             VirtualizingPanel.IsVirtualizing="True"
+                             VirtualizingPanel.VirtualizationMode="Recycling">
+                        <ListBox.ItemContainerStyle>
+                            <Style TargetType="ListBoxItem">
+                                <Setter Property="Padding" Value="0" />
+                                <Setter Property="Margin" Value="0,0,0,3" />
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                            </Style>
+                        </ListBox.ItemContainerStyle>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Button Command="{Binding DataContext.OpenAdCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                        CommandParameter="{Binding}"
+                                        Background="Transparent"
+                                        BorderThickness="0"
+                                        Padding="0"
+                                        HorizontalContentAlignment="Stretch">
+                                    <Border Background="#FEF2F2" CornerRadius="6" Padding="6,5" BorderBrush="#FECACA" BorderThickness="1">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding Title}"
+                                                           FontWeight="SemiBold"
+                                                           FontSize="12"
+                                                           Foreground="#0F172A"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           TextWrapping="NoWrap" />
+                                                <StackPanel Orientation="Horizontal" Margin="0,1,0,0">
+                                                    <Border Background="#DC2626" CornerRadius="4" Padding="4,1" Margin="0,0,6,0">
+                                                        <TextBlock Text="{Binding Status}" FontSize="10" FontWeight="SemiBold" Foreground="White" />
+                                                    </Border>
+                                                    <TextBlock Text="{Binding City}"
+                                                               Foreground="#64748B"
+                                                               FontSize="11"
+                                                               TextTrimming="CharacterEllipsis"
+                                                               TextWrapping="NoWrap" />
+                                                </StackPanel>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1"
+                                                        VerticalAlignment="Center"
+                                                        Margin="6,0,0,0">
+                                                <TextBlock Text="{Binding DeleteDate}"
+                                                           FontSize="10"
+                                                           Foreground="#B91C1C"
+                                                           HorizontalAlignment="Right"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           TextWrapping="NoWrap" />
+                                                <TextBlock Text="{Binding Id, StringFormat=ID {0}}"
+                                                           FontSize="10"
+                                                           Foreground="#94A3B8"
+                                                           HorizontalAlignment="Right" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </Button>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </StackPanel>
             </StackPanel>
         </Border>
     </StackPanel>

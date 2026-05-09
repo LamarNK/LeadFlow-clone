@@ -12,6 +12,36 @@ public sealed class AvitoParserBlockedTests
     private readonly AvitoParserService _parser = new();
 
     [Fact]
+    public void ParseProfilePage_TabsRow_ReadsActiveAndRejectedAndDraftsCounters()
+    {
+        // Реальная разметка панели вкладок с пользовательского снимка: «Активные 49 / С ошибками 1 / Черновики 4».
+        // Это ровно тот случай, при котором мониторинг должен открывать вкладку rejected — иначе блок не парсится.
+        const string html = """
+            <div role="tablist" data-marker="profile-items-tab">
+              <button data-marker="profile-items-tab/tab(active)">
+                <span><span>Активные</span><span class="styles-module-counter-prLgf styles-module-counter_size-l-drhmu">49</span></span>
+              </button>
+              <button data-marker="profile-items-tab/tab(rejected)">
+                <span><span>С ошибками</span><span class="styles-module-counter-prLgf styles-module-counter_size-l-drhmu">1</span></span>
+              </button>
+              <button data-marker="profile-items-tab/tab(inactive)">
+                <span><span>Неопубликованные</span><span class="styles-module-counter-prLgf styles-module-counter_disabled-bJRBA">0</span></span>
+              </button>
+              <button data-marker="profile-items-tab/tab(drafts)">
+                <span><span>Черновики</span><span class="styles-module-counter-prLgf styles-module-counter_size-l-drhmu">4</span></span>
+              </button>
+            </div>
+            """;
+
+        var result = _parser.ParseProfilePage(html);
+
+        Assert.Equal(49, result.ActiveCount);
+        // Именно по этому счётчику мониторинг решает «открывать ли вкладку rejected».
+        Assert.Equal(1, result.BlockedCount);
+        Assert.Equal(4, result.DraftsCount);
+    }
+
+    [Fact]
     public void ParseBlockedTabPage_SingleRejectedJob_ReturnsOneAdWithStatusAndDeleteDate()
     {
         // Минимально-достаточная разметка вкладки «С ошибками»: одна вакансия в /rabota/-категории,
@@ -46,6 +76,8 @@ public sealed class AvitoParserBlockedTests
         Assert.Equal("Пермский край, Соликамск", ad.City);
         Assert.Equal("Заблокировано", ad.Status);
         Assert.Equal("удалится навсегда 22 мая в 20:50", ad.DeleteDate);
+        // Полный URL нужен, чтобы из дашборда можно было открыть страницу заблокированного объявления.
+        Assert.Equal("https://www.avito.ru/solikamsk/vakansii/raznorabochiy_vahta_8095860333", ad.Url);
     }
 
     [Fact]

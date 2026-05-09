@@ -187,6 +187,7 @@ public class AvitoParserService
             var ad = new AvitoAdStatus { Id = id, AccountId = accountId ?? Guid.Empty };
             ad.Title = ExtractTitle(snippetHtml);
             ad.City = ExtractCity(snippetHtml);
+            ad.Url = NormalizeAvitoHref(listingHref);
             FillViewsContactsFavorites(ad, snippetHtml);
             result.ActiveAds.Add(ad);
         }
@@ -213,6 +214,7 @@ public class AvitoParserService
             var ad = new AvitoAdStatus { Id = id, AccountId = accountId ?? Guid.Empty };
             ad.Title = ExtractTitle(snippetHtml);
             ad.City = ExtractCity(snippetHtml);
+            ad.Url = NormalizeAvitoHref(listingHref);
             ad.Status = ExtractBlockedStatusName(snippetHtml);
             ad.DeleteDate = ExtractBlockedDeleteDate(snippetHtml);
             FillViewsContactsFavorites(ad, snippetHtml);
@@ -220,6 +222,28 @@ public class AvitoParserService
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Авито часто отдаёт ссылки в виде <c>//www.avito.ru/...</c> или <c>/profile/...</c>.
+    /// Нормализуем в полный <c>https://www.avito.ru/...</c>, чтобы можно было открыть напрямую из UI.
+    /// </summary>
+    private static string NormalizeAvitoHref(string href)
+    {
+        if (string.IsNullOrWhiteSpace(href)) return string.Empty;
+
+        var trimmed = href.Trim();
+        if (trimmed.StartsWith("//", StringComparison.Ordinal))
+        {
+            return "https:" + trimmed;
+        }
+
+        if (trimmed.StartsWith("/", StringComparison.Ordinal))
+        {
+            return "https://www.avito.ru" + trimmed;
+        }
+
+        return trimmed;
     }
 
     private static IEnumerable<(string Id, string SnippetHtml)> EnumerateItemSnippets(string html)
@@ -281,9 +305,16 @@ public class AvitoParserService
         return rest.TrimStart(',', ' ', '\t', '\n', '\r').Trim();
     }
 
+    /// <summary>
+    /// Достаёт число с счётчика вкладки <c>profile-items-tab/tab(...)</c> (Активные/С ошибками/Черновики и т.п.).
+    /// ВАЖНО: маркер вида <c>tab(rejected)</c> содержит литеральные скобки — обязательно экранируем через
+    /// <see cref="Regex.Escape(string)"/>, иначе они интерпретируются как regex-группа и счётчик уходит в 0,
+    /// а из-за этого мониторинг даже не открывает вкладку «С ошибками».
+    /// </summary>
     private int ExtractCounter(string html, string tabMarker)
     {
-        var pattern = $@"data-marker=""profile-items-tab/{tabMarker}"".*?class=""[^""]*styles-module-counter[^""]*"".*?>(\d+)<";
+        var escapedMarker = Regex.Escape(tabMarker);
+        var pattern = $@"data-marker=""profile-items-tab/{escapedMarker}"".*?class=""[^""]*styles-module-counter[^""]*"".*?>(\d+)<";
         var match = Regex.Match(html, pattern, RegexOptions.Singleline);
         return match.Success ? int.Parse(match.Groups[1].Value) : 0;
     }

@@ -1251,6 +1251,17 @@ public sealed class MonitoringService(
 
         if (part.BlockedCount > 0)
         {
+            // Видно в журнале почему мы пошли на rejected-вкладку: счётчик в шапке Pro сказал «есть N штук».
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Аккаунт {account.DisplayName}: вкладка «С ошибками» показывает {part.BlockedCount} — открываем для разбора.",
+                DeskLinkAuditLogLevel.Info,
+                properties: new Dictionary<string, object?>
+                {
+                    ["accountId"] = account.Id,
+                    ["accountName"] = account.DisplayName,
+                    ["blockedCount"] = part.BlockedCount
+                });
+
             try
             {
                 var blockedHtml = await adsPowerAvitoAutomationService
@@ -1259,6 +1270,17 @@ public sealed class MonitoringService(
 
                 var blocked = avitoParser.ParseBlockedTabPage(blockedHtml, account.Id);
                 part.BlockedAds.AddRange(blocked);
+
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"Аккаунт {account.DisplayName}: распарсено заблокированных {blocked.Count} (счётчик показывал {part.BlockedCount}).",
+                    DeskLinkAuditLogLevel.Info,
+                    properties: new Dictionary<string, object?>
+                    {
+                        ["accountId"] = account.Id,
+                        ["accountName"] = account.DisplayName,
+                        ["blockedCounter"] = part.BlockedCount,
+                        ["blockedParsed"] = blocked.Count
+                    });
             }
             catch (AvitoCaptchaDetectedException)
             {

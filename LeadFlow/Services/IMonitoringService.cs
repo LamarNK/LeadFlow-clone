@@ -15,6 +15,13 @@ public interface IMonitoringService
     bool IsActive { get; }
     DateTime? NextCycleCheckAtUtc { get; }
     IReadOnlyList<AvitoAdStatus> GetActiveAdsSnapshot();
+
+    /// <summary>
+    /// Срез заблокированных объявлений (вкладка «С ошибками» Avito Pro) по всем аккаунтам.
+    /// Используется дашбордом, чтобы показать список и подкорректировать поведение бота.
+    /// </summary>
+    IReadOnlyList<AvitoAdStatus> GetBlockedAdsSnapshot();
+
     Task StartAsync(CancellationToken cancellationToken);
     Task StopAsync();
 }

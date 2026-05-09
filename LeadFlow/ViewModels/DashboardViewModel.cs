@@ -78,6 +78,12 @@ public partial class DashboardViewModel : ObservableObject
     public ObservableCollection<ActivityPoint> Activity { get; } = new();
     public ObservableCollection<ActivityPoint> WeeklyActivity { get; } = new();
     public ObservableCollection<AvitoAdStatus> ActiveAds { get; } = new();
+    /// <summary>
+    /// Snapshot заблокированных объявлений со всех аккаунтов: id/title/city/Status (Заблокировано / Отклонено)
+    /// и дата удаления. Заполняется из <see cref="IMonitoringService.GetBlockedAdsSnapshot"/> в том же
+    /// обработчике <see cref="IMonitoringService.ProfileStatsUpdated"/>, что и активные.
+    /// </summary>
+    public ObservableCollection<AvitoAdStatus> BlockedAds { get; } = new();
 
     private readonly DispatcherTimer _accountPersistDebounce = new()
     {
@@ -89,7 +95,13 @@ public partial class DashboardViewModel : ObservableObject
         _repository = repository;
         _monitoringService = monitoringService;
         _windowService = windowService;
-        _monitoringService.ProfileStatsUpdated += (_, _) => ApplyActiveAdsSnapshot();
+        _monitoringService.ProfileStatsUpdated += (_, _) =>
+        {
+            // Один раз пришло событие — обновляем оба списка вместе, чтобы счётчик «Заблокировано» в
+            // плитке и список под ней не разъезжались по содержимому.
+            ApplyActiveAdsSnapshot();
+            ApplyBlockedAdsSnapshot();
+        };
         repository.AccountPersisted += OnAccountPersisted;
         _accountPersistDebounce.Tick += async (_, _) =>
         {
@@ -199,6 +211,7 @@ public partial class DashboardViewModel : ObservableObject
         }
 
         ApplyActiveAdsSnapshot();
+        ApplyBlockedAdsSnapshot();
     }
 
     public void ApplyProcessedResponse(CandidateResponse response)
@@ -595,6 +608,80 @@ public partial class DashboardViewModel : ObservableObject
         for (var index = startIndex; index < ActiveAds.Count; index++)
         {
             if (string.Equals(ActiveAds[index].Id, id, StringComparison.Ordinal))
+            {
+                return index;
+            }
+        }
+
+        return -1;
+    }
+
+    /// <summary>
+    /// Аналог <see cref="ApplyActiveAdsSnapshot"/> для заблокированных. Отдельный список нужен,
+    /// чтобы пользователь сразу видел: какие именно объявления улетели в «С ошибками» и в какую дату
+    /// будут удалены навсегда (Avito удаляет блок-ы через ~30 дней).
+    /// </summary>
+    private void ApplyBlockedAdsSnapshot()
+    {
+        // Сортируем «свежие к удалению» первыми: чем меньше осталось дней, тем выше приоритет внимания.
+        // DeleteDate — свободный текст («удалится навсегда 22 мая в 20:50»), сравниваем по нему лексикографически
+        // только в пределах одного снапшота — для UI этого достаточно, точная дата не нужна.
+        var snapshot = _monitoringService.GetBlockedAdsSnapshot()
+            .OrderBy(static ad => ad.DeleteDate, StringComparer.Ordinal)
+            .ThenBy(static ad => ad.Title, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+
+        void UpdateCollection()
+        {
+            for (var index = 0; index < snapshot.Count; index++)
+            {
+                var desired = snapshot[index];
+                if (index < BlockedAds.Count && string.Equals(BlockedAds[index].Id, desired.Id, StringComparison.Ordinal))
+                {
+                    if (!AreEquivalent(BlockedAds[index], desired))
+                    {
+                        BlockedAds[index] = CloneAd(desired);
+                    }
+
+                    continue;
+                }
+
+                var existingIndex = FindBlockedAdIndex(desired.Id, index + 1);
+                if (existingIndex >= 0)
+                {
+                    BlockedAds.Move(existingIndex, index);
+                    if (!AreEquivalent(BlockedAds[index], desired))
+                    {
+                        BlockedAds[index] = CloneAd(desired);
+                    }
+
+                    continue;
+                }
+
+                BlockedAds.Insert(index, CloneAd(desired));
+            }
+
+            while (BlockedAds.Count > snapshot.Count)
+            {
+                BlockedAds.RemoveAt(BlockedAds.Count - 1);
+            }
+        }
+
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher is not null && !dispatcher.CheckAccess())
+        {
+            dispatcher.Invoke(UpdateCollection);
+            return;
+        }
+
+        UpdateCollection();
+    }
+
+    private int FindBlockedAdIndex(string id, int startIndex)
+    {
+        for (var index = startIndex; index < BlockedAds.Count; index++)
+        {
+            if (string.Equals(BlockedAds[index].Id, id, StringComparison.Ordinal))
             {
                 return index;
             }
