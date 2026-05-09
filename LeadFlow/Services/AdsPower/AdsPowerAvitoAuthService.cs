@@ -419,7 +419,14 @@ public sealed class AdsPowerAvitoAuthService(IAdsPowerApiClient adsPowerApiClien
                 return true;
             };
 
-            const hasCaptcha = /капч|captcha|подтвердите[\s\S]*проверочный код|firewall/i.test(bodyText);
+            // Текстовые + структурные маркеры: firewall-страница Avito («Доступ ограничен»)
+            // в bodyText слова «firewall» не содержит, поэтому проверяем DOM-узлы напрямую.
+            const hasCaptcha =
+                /капч|captcha|подтвердите[\s\S]*проверочный код|Доступ\s+ограничен|проблема\s+с\s+IP/i.test(bodyText) ||
+                !!document.querySelector('.firewall-container, .js-firewall-form, .firewall-title, .h-captcha') ||
+                !!document.getElementById('h-captcha') ||
+                !!document.getElementById('geetest_captcha') ||
+                !!document.getElementById('inner-captcha');
             const hasLoginForm =
                 !!document.querySelector("input[type='password']") ||
                 !!document.querySelector("[data-marker='login/password']") ||

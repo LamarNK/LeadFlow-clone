@@ -113,6 +113,12 @@ internal sealed class StubAdsPowerAvitoAutomationService : IAdsPowerAvitoAutomat
         CancellationToken cancellationToken = default) =>
         throw new InvalidOperationException("AdsPower CDP не должен вызываться в этих тестах.");
 
+    public Task<string> LoadBlockedItemsHtmlAsync(
+        AdsPowerConnectionOptions options,
+        string adsPowerUserId,
+        CancellationToken cancellationToken = default) =>
+        throw new InvalidOperationException("AdsPower CDP не должен вызываться в этих тестах.");
+
     public Task<string> LoadProfileSwitchHtmlAsync(
         AdsPowerConnectionOptions options,
         string adsPowerUserId,

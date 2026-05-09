@@ -41,6 +41,7 @@ public sealed class MonitoringService(
     private const int MaxLoopRecoveryFailuresBeforeStop = 10;
     private readonly Lock _activeAdsSync = new();
     private readonly Dictionary<Guid, IReadOnlyList<AvitoAdStatus>> _activeAdsByAccount = [];
+    private readonly Dictionary<Guid, IReadOnlyList<AvitoAdStatus>> _blockedAdsByAccount = [];
     private int _consecutiveMonitoringLoopFailures;
     private int _consecutiveQuietMonitoringCycles;
 
@@ -61,6 +62,21 @@ public sealed class MonitoringService(
         lock (_activeAdsSync)
         {
             return _activeAdsByAccount.Values
+                .SelectMany(static ads => ads)
+                .Select(CloneAd)
+                .ToList();
+        }
+    }
+
+    /// <summary>
+    /// Снимок заблокированных/«с ошибками» вакансий (вкладка <c>tab(rejected)</c>) по всем аккаунтам.
+    /// Заполняется во время единого прохода вместе с активными объявлениями.
+    /// </summary>
+    public IReadOnlyList<AvitoAdStatus> GetBlockedAdsSnapshot()
+    {
+        lock (_activeAdsSync)
+        {
+            return _blockedAdsByAccount.Values
                 .SelectMany(static ads => ads)
                 .Select(CloneAd)
                 .ToList();
@@ -246,42 +262,29 @@ public sealed class MonitoringService(
         {
             try
             {
-                var previousActiveAdsCount = account.ActiveAdsCount;
-                var previousBlockedCount = account.BlockedCount;
-                var previousDraftsCount = account.DraftsCount;
-
-                Avito.ProfileResult profileData;
                 if (account.ProfileProvider == AvitoProfileProvider.AdsPower)
                 {
-                    if (string.IsNullOrWhiteSpace(account.AdsPowerProfileId) ||
-                        string.IsNullOrWhiteSpace(account.AdsPowerApiBaseUrl))
-                    {
-                        _ = GlobalLogger.Instance.LogAsync(
-                            $"Пропускаем парсинг объявлений для AdsPower-аккаунта {account.DisplayName}: не заданы user_id или base URL Local API.",
-                            DeskLinkAuditLogLevel.Warning,
-                            properties: new Dictionary<string, object?>
-                            {
-                                ["accountId"] = account.Id,
-                                ["accountName"] = account.DisplayName,
-                                ["adsPower.hasUserId"] = !string.IsNullOrWhiteSpace(account.AdsPowerProfileId),
-                                ["adsPower.hasBaseUrl"] = !string.IsNullOrWhiteSpace(account.AdsPowerApiBaseUrl)
-                            });
-                        continue;
-                    }
-
-                    var options = new AdsPowerConnectionOptions(
-                        account.AdsPowerApiBaseUrl,
-                        string.IsNullOrWhiteSpace(account.AdsPowerApiKey) ? null : account.AdsPowerApiKey);
-
-                    profileData = await CollectAdsPowerProfileStatsAsync(account, options, ct).ConfigureAwait(false);
-                }
-                else
-                {
-                    var html = await LoadProfilePageHtmlAsync(account, ct);
-                    profileData = avitoParser.ParseProfilePage(html, account.Id);
+                    // Для AdsPower-аккаунтов объявления и отклики собираются единым проходом
+                    // в RunAsync → StreamProcessAccountResponsesAsync (один switch на суб-профиль),
+                    // чтобы не делать двойное переключение между вкладками. Здесь не дублируем.
+                    _ = GlobalLogger.Instance.LogAsync(
+                        $"AdsPower-аккаунт {account.DisplayName}: парсинг объявлений идёт в общем цикле мониторинга, отдельный пробег пропускаем.",
+                        DeskLinkAuditLogLevel.Debug,
+                        properties: new Dictionary<string, object?>
+                        {
+                            ["accountId"] = account.Id,
+                            ["accountName"] = account.DisplayName,
+                            ["profileProvider"] = account.ProfileProvider.ToString()
+                        });
+                    continue;
                 }
 
-                UpdateActiveAdsSnapshot(account.Id, profileData.ActiveAds);
+                var prev = new StatsPreviousCounts(account.ActiveAdsCount, account.BlockedCount, account.DraftsCount);
+
+                var html = await LoadProfilePageHtmlAsync(account, ct);
+                var profileData = avitoParser.ParseProfilePage(html, account.Id);
+                await ApplyStatsSnapshotAsync(account, profileData, prev, ct).ConfigureAwait(false);
+
                 await GlobalLogger.Instance.LogAsync(
                     () => $"Парсинг активных объявлений завершён для аккаунта {account.DisplayName} ({account.ProfileProvider}): на вкладке «Активные»={profileData.ActiveCount}, вакансий (раздел /rabota/)={profileData.ActiveAds.Count}, blocked={profileData.BlockedCount}, drafts={profileData.DraftsCount}.",
                     DeskLinkAuditLogLevel.Info,
@@ -332,23 +335,11 @@ public sealed class MonitoringService(
                             ["draftsCount"] = profileData.DraftsCount
                         });
                 }
-
-                // Обновляем аккаунт в БД (только вакансии; товары на вкладке «Активные» не учитываем)
-                account.ActiveAdsCount = profileData.ActiveAds.Count;
-                account.BlockedCount = profileData.BlockedCount;
-                account.DraftsCount = profileData.DraftsCount;
-                account.AdsStatsUpdatedAt = DateTime.UtcNow;
-
-                await repository.SaveAccountAsync(account, ct);
-
-                // Уведомляем ViewModel об обновлении
-                ProfileStatsUpdated?.Invoke(this, new ProfileStatsUpdatedEventArgs
-                {
-                    Account = account,
-                    PreviousActiveAdsCount = previousActiveAdsCount,
-                    PreviousBlockedCount = previousBlockedCount,
-                    PreviousDraftsCount = previousDraftsCount
-                });
+            }
+            catch (AvitoCaptchaDetectedException captchaEx)
+            {
+                UpdateActiveAdsSnapshot(account.Id, []);
+                await HandleCaptchaForAccountAsync(account, captchaEx, ct).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -534,40 +525,8 @@ public sealed class MonitoringService(
         var accountSw = Stopwatch.StartNew();
         try
         {
-            IReadOnlyList<CandidateResponse> responses;
-            if (settings.DemoModeEnabled)
-            {
-                responses = await avitoDemoResponseSource.GetBatchAsync(account, MonitoringTiming.MaxResponsesPerAccountPerCycle, cancellationToken);
-            }
-            else
-            {
-                responses = await CollectResponsesAcrossSubProfilesAsync(account, settings, cancellationToken).ConfigureAwait(false);
-            }
             var maxPerCycle = MonitoringTiming.MaxResponsesPerAccountPerCycle;
-            if (responses.Count > maxPerCycle)
-            {
-                _ = GlobalLogger.Instance.LogAsync(
-                    $"[monitoring] Аккаунт \"{account.DisplayName}\": новых откликов {responses.Count}, в этом цикле обрабатываем {maxPerCycle}; остальные подтянутся в следующих проверках.",
-                    DeskLinkAuditLogLevel.Info);
-                UpdateStatus(
-                    MonitoringStatus.Running,
-                    $"Аккаунт \"{account.DisplayName}\": найдено новых откликов {responses.Count}, в этом цикле обрабатываем {maxPerCycle}. Остальные — в следующих проверках.");
-            }
-            else
-            {
-                UpdateStatus(MonitoringStatus.Running, $"Аккаунт \"{account.DisplayName}\" проверен: найдено новых откликов {responses.Count}.");
-            }
-
-            foreach (var response in responses.Take(maxPerCycle))
-            {
-                if (cancellationToken.IsCancellationRequested)
-                {
-                    break;
-                }
-
-                await ProcessResponseAsync(response, settings, cancellationToken);
-                await Task.Delay(TimeSpan.FromSeconds(MonitoringTiming.DelayBetweenResponsesSeconds), cancellationToken);
-            }
+            var (detectedTotal, backlog) = await StreamProcessAccountResponsesAsync(account, settings, maxPerCycle, cancellationToken).ConfigureAwait(false);
 
             if (account.Status == AvitoAccountStatus.Monitoring)
             {
@@ -576,8 +535,14 @@ public sealed class MonitoringService(
 
             await repository.SaveAccountAsync(account, cancellationToken);
 
-            var backlog = responses.Count > maxPerCycle;
-            return (responses.Count, true, backlog);
+            return (detectedTotal, true, backlog);
+        }
+        catch (AvitoCaptchaDetectedException captchaEx)
+        {
+            // Avito показал firewall/капчу: переводим аккаунт в RequiresManualAction
+            // и не возвращаемся к нему до ручного действия пользователя в этом цикле.
+            await HandleCaptchaForAccountAsync(account, captchaEx, cancellationToken).ConfigureAwait(false);
+            return (0, true, false);
         }
         finally
         {
@@ -586,6 +551,366 @@ public sealed class MonitoringService(
                 $"[monitoring] Аккаунт \"{account.DisplayName}\": этап проверки и обработки откликов за {accountSw.Elapsed.TotalSeconds:F1} с.",
                 DeskLinkAuditLogLevel.Info);
         }
+    }
+
+    /// <summary>
+    /// Применяет к аккаунту факт «Avito показал капчу/firewall»: статус, сообщение, лог + событие в UI.
+    /// Используется и из верхнего уровня, и из вспомогательных путей (UpdateProfileStatsAsync), чтобы поведение
+    /// для всех точек входа было одинаковым.
+    /// </summary>
+    private async Task HandleCaptchaForAccountAsync(
+        AvitoAccount account,
+        AvitoCaptchaDetectedException captchaEx,
+        CancellationToken ct)
+    {
+        account.Status = AvitoAccountStatus.RequiresManualAction;
+        account.LastErrorMessage = $"Avito показал капчу/блок IP ({captchaEx.Kind}). Откройте браузер и пройдите проверку.";
+
+        try
+        {
+            await repository.SaveAccountAsync(account, ct).ConfigureAwait(false);
+            await repository.AddLogAsync(new ProcessingLogItem
+            {
+                AccountId = account.Id,
+                Level = "Warning",
+                Message = "Avito показал капчу/firewall",
+                Details = $"{captchaEx.Kind} :: {captchaEx.Url ?? "<unknown url>"}"
+            }, ct).ConfigureAwait(false);
+        }
+        catch (Exception persistEx)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Не удалось сохранить статус капчи для аккаунта {account.DisplayName}: {persistEx.Message}",
+                DeskLinkAuditLogLevel.Error);
+        }
+
+        UpdateStatus(
+            MonitoringStatus.RequiresManualAction,
+            $"Аккаунт \"{account.DisplayName}\": Avito показал капчу/блок IP ({captchaEx.Kind}). Пройдите проверку в браузере, чтобы продолжить.");
+
+        _ = GlobalLogger.Instance.LogAsync(
+            $"Avito captcha/firewall detected for account {account.DisplayName} (kind={captchaEx.Kind}, url={captchaEx.Url ?? "<unknown>"}).",
+            DeskLinkAuditLogLevel.Warning,
+            properties: new Dictionary<string, object?>
+            {
+                ["accountId"] = account.Id,
+                ["accountName"] = account.DisplayName,
+                ["captcha.kind"] = captchaEx.Kind,
+                ["captcha.url"] = captchaEx.Url
+            });
+    }
+
+    /// <summary>
+    /// Стримовая обработка: отклики каждого суб-профиля немедленно идут в <see cref="ProcessResponseAsync"/>
+    /// (до перехода к следующему суб-профилю). Это убирает большой буфер «сначала собираем всё, потом обрабатываем»
+    /// и сокращает задержку до отправки в Bitrix.
+    /// </summary>
+    /// <returns>(всего обнаружено новых откликов, превышен ли бюджет цикла).</returns>
+    private async Task<(int Detected, bool Backlog)> StreamProcessAccountResponsesAsync(
+        AvitoAccount account,
+        AppSettings settings,
+        int maxPerCycle,
+        CancellationToken cancellationToken)
+    {
+        var processedInCycle = 0;
+        var detectedTotal = 0;
+        var seenKeys = new HashSet<string>(StringComparer.Ordinal);
+        var budgetExhausted = false;
+
+        // Локальная функция: получает пачку, дедуплицирует в рамках цикла, шлёт в обработку немедленно.
+        async Task<int> ProcessBatchInlineAsync(IReadOnlyList<CandidateResponse> batch, string sourceLabel)
+        {
+            if (batch.Count == 0)
+            {
+                return 0;
+            }
+
+            var freshCount = 0;
+            foreach (var response in batch)
+            {
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    break;
+                }
+
+                var key = string.IsNullOrWhiteSpace(response.SourceResponseId)
+                    ? $"{response.PhoneNormalized}|{response.FullName}|{response.Vacancy}"
+                    : response.SourceResponseId;
+
+                if (!seenKeys.Add(key))
+                {
+                    continue;
+                }
+
+                freshCount++;
+                detectedTotal++;
+
+                if (processedInCycle >= maxPerCycle)
+                {
+                    budgetExhausted = true;
+                    continue;
+                }
+
+                UpdateStatus(
+                    MonitoringStatus.Running,
+                    $"Аккаунт \"{account.DisplayName}\" ({sourceLabel}): обрабатываем отклик {processedInCycle + 1}/{maxPerCycle}.");
+
+                await ProcessResponseAsync(response, settings, cancellationToken).ConfigureAwait(false);
+                processedInCycle++;
+
+                if (processedInCycle < maxPerCycle && !cancellationToken.IsCancellationRequested)
+                {
+                    // Рандомная пауза имитирует «человек прочитал отклик и переключается на следующий».
+                    await HumanDelay.BetweenResponsesAsync(cancellationToken).ConfigureAwait(false);
+                }
+            }
+
+            return freshCount;
+        }
+
+        if (settings.DemoModeEnabled)
+        {
+            var demo = await avitoDemoResponseSource.GetBatchAsync(account, maxPerCycle, cancellationToken).ConfigureAwait(false);
+            await ProcessBatchInlineAsync(demo, "demo").ConfigureAwait(false);
+            return (detectedTotal, budgetExhausted || detectedTotal > maxPerCycle);
+        }
+
+        var subProfiles = account.ProfileProvider == AvitoProfileProvider.AdsPower
+            ? account.SubProfiles
+            : Array.Empty<AvitoSubProfile>();
+
+        var hasAdsPowerCreds =
+            !string.IsNullOrWhiteSpace(account.AdsPowerProfileId) &&
+            !string.IsNullOrWhiteSpace(account.AdsPowerApiBaseUrl);
+
+        if (subProfiles.Count == 0 || !hasAdsPowerCreds)
+        {
+            // Для AdsPower-аккаунтов без суб-профилей всё равно надо обновлять статистику объявлений
+            // (раньше это делал _profileStatsTimer, теперь он скипает AdsPower, чтобы не было двойных переходов).
+            if (hasAdsPowerCreds && IsAdsStatsStale(account))
+            {
+                try
+                {
+                    var optionsForStats = new AdsPowerConnectionOptions(
+                        account.AdsPowerApiBaseUrl!,
+                        string.IsNullOrWhiteSpace(account.AdsPowerApiKey) ? null : account.AdsPowerApiKey);
+
+                    var prev = new StatsPreviousCounts(account.ActiveAdsCount, account.BlockedCount, account.DraftsCount);
+                    var part = await CollectProfileItemsAsync(account, optionsForStats, cancellationToken).ConfigureAwait(false);
+                    await ApplyStatsSnapshotAsync(account, part, prev, cancellationToken).ConfigureAwait(false);
+
+                    _ = GlobalLogger.Instance.LogAsync(
+                        $"AdsPower-аккаунт {account.DisplayName} (без суб-профилей): объявления обновлены инлайн ({part.ActiveAds.Count} активных, {part.BlockedAds.Count} заблокированных).",
+                        DeskLinkAuditLogLevel.Info,
+                        properties: new Dictionary<string, object?>
+                        {
+                            ["accountId"] = account.Id,
+                            ["accountName"] = account.DisplayName,
+                            ["activeAds"] = part.ActiveAds.Count,
+                            ["blockedAds"] = part.BlockedAds.Count
+                        });
+                }
+                catch (AvitoCaptchaDetectedException)
+                {
+                    // Капча — пробрасываем, чтобы ProcessAccountAsync поставил RequiresManualAction.
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _ = GlobalLogger.Instance.LogAsync(
+                        $"AdsPower-аккаунт {account.DisplayName} (без суб-профилей): не удалось собрать объявления инлайн: {ex.Message}",
+                        DeskLinkAuditLogLevel.Warning,
+                        properties: new Dictionary<string, object?>
+                        {
+                            ["accountId"] = account.Id,
+                            ["accountName"] = account.DisplayName,
+                            ["error.type"] = ex.GetType().FullName
+                        });
+                }
+            }
+
+            UpdateStatus(MonitoringStatus.Running, $"Аккаунт \"{account.DisplayName}\": запрашиваем новые отклики.");
+            var responses = await avitoResponseSource.GetNewResponsesAsync(account, settings, cancellationToken).ConfigureAwait(false);
+
+            if (responses.Count > maxPerCycle)
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"[monitoring] Аккаунт \"{account.DisplayName}\": новых откликов {responses.Count}, в этом цикле обрабатываем {maxPerCycle}; остальные подтянутся в следующих проверках.",
+                    DeskLinkAuditLogLevel.Info);
+            }
+            else
+            {
+                UpdateStatus(MonitoringStatus.Running, $"Аккаунт \"{account.DisplayName}\" проверен: найдено новых откликов {responses.Count}.");
+            }
+
+            await ProcessBatchInlineAsync(responses, account.DisplayName).ConfigureAwait(false);
+            return (detectedTotal, budgetExhausted || responses.Count > maxPerCycle);
+        }
+
+        var options = new AdsPowerConnectionOptions(
+            account.AdsPowerApiBaseUrl!,
+            string.IsNullOrWhiteSpace(account.AdsPowerApiKey) ? null : account.AdsPowerApiKey);
+
+        // Раз в ActiveAdsRefreshIntervalMinutes на этом же переключении тянем ещё и объявления
+        // (active + rejected вкладки). Это убирает отдельный «двойной» switch на тот же суб-профиль —
+        // один заход = и активные, и заблокированные, и отклики.
+        var collectStats = IsAdsStatsStale(account);
+        var statsAggregate = collectStats ? new Avito.ProfileResult() : null;
+        var statsPrev = collectStats
+            ? new StatsPreviousCounts(account.ActiveAdsCount, account.BlockedCount, account.DraftsCount)
+            : null;
+
+        if (collectStats)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Аккаунт \"{account.DisplayName}\": статистика объявлений устарела — соберём вместе с откликами в этом цикле.",
+                DeskLinkAuditLogLevel.Info,
+                properties: new Dictionary<string, object?>
+                {
+                    ["accountId"] = account.Id,
+                    ["accountName"] = account.DisplayName,
+                    ["adsStatsUpdatedAt"] = account.AdsStatsUpdatedAt?.ToString("O") ?? "<null>",
+                    ["refreshIntervalMinutes"] = MonitoringTiming.ActiveAdsRefreshIntervalMinutes
+                });
+        }
+
+        for (var i = 0; i < subProfiles.Count; i++)
+        {
+            if (cancellationToken.IsCancellationRequested || budgetExhausted)
+            {
+                break;
+            }
+
+            var sub = subProfiles[i];
+            var subLabel = $"{sub.Name} {i + 1}/{subProfiles.Count}";
+
+            try
+            {
+                UpdateStatus(
+                    MonitoringStatus.Running,
+                    $"Аккаунт \"{account.DisplayName}\": переключаемся на суб-профиль «{sub.Name}» ({i + 1}/{subProfiles.Count}).");
+
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"Avito Pro переключаем суб-профиль {i + 1}/{subProfiles.Count} (отклики{(collectStats ? "+объявления" : string.Empty)}, стрим) для {account.DisplayName}: {sub.Name} (id={sub.Id}).",
+                    DeskLinkAuditLogLevel.Info,
+                    properties: new Dictionary<string, object?>
+                    {
+                        ["accountId"] = account.Id,
+                        ["accountName"] = account.DisplayName,
+                        ["subProfile.id"] = sub.Id,
+                        ["subProfile.name"] = sub.Name,
+                        ["subProfile.index"] = i + 1,
+                        ["subProfile.total"] = subProfiles.Count,
+                        ["collectStats"] = collectStats
+                    });
+
+                await adsPowerAvitoAutomationService
+                    .SwitchActiveProfileAsync(options, account.AdsPowerProfileId!, sub.Id, cancellationToken)
+                    .ConfigureAwait(false);
+
+                // 1️⃣ Объявления — только если кэш статистики устарел (раз в ActiveAdsRefreshIntervalMinutes).
+                if (collectStats && statsAggregate is not null && statsPrev is not null)
+                {
+                    try
+                    {
+                        UpdateStatus(
+                            MonitoringStatus.Running,
+                            $"Аккаунт \"{account.DisplayName}\": собираем объявления — суб-профиль «{sub.Name}» ({i + 1}/{subProfiles.Count}).");
+
+                        var part = await CollectProfileItemsAsync(account, options, cancellationToken).ConfigureAwait(false);
+                        statsAggregate.ActiveCount += part.ActiveCount;
+                        statsAggregate.BlockedCount += part.BlockedCount;
+                        statsAggregate.DraftsCount += part.DraftsCount;
+                        statsAggregate.ActiveAds.AddRange(part.ActiveAds);
+                        statsAggregate.BlockedAds.AddRange(part.BlockedAds);
+
+                        _ = GlobalLogger.Instance.LogAsync(
+                            $"Суб-профиль «{sub.Name}» (объявления): активных {part.ActiveAds.Count}, заблокированных {part.BlockedAds.Count}, drafts={part.DraftsCount}.",
+                            DeskLinkAuditLogLevel.Info,
+                            properties: new Dictionary<string, object?>
+                            {
+                                ["accountId"] = account.Id,
+                                ["accountName"] = account.DisplayName,
+                                ["subProfile.id"] = sub.Id,
+                                ["subProfile.name"] = sub.Name,
+                                ["activeAds"] = part.ActiveAds.Count,
+                                ["blockedAds"] = part.BlockedAds.Count
+                            });
+
+                        await ApplyStatsSnapshotAsync(account, statsAggregate, statsPrev, cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (AvitoCaptchaDetectedException)
+                    {
+                        // Не глушим: пробрасываем в верхний catch, который завершит обход аккаунта.
+                        throw;
+                    }
+                    catch (Exception statsEx)
+                    {
+                        _ = GlobalLogger.Instance.LogAsync(
+                            $"Сбор объявлений суб-профиля «{sub.Name}» аккаунта {account.DisplayName} не удался: {statsEx.Message}",
+                            DeskLinkAuditLogLevel.Warning,
+                            properties: new Dictionary<string, object?>
+                            {
+                                ["accountId"] = account.Id,
+                                ["accountName"] = account.DisplayName,
+                                ["subProfile.id"] = sub.Id,
+                                ["subProfile.name"] = sub.Name,
+                                ["error.type"] = statsEx.GetType().FullName
+                            });
+                    }
+                }
+
+                // 2️⃣ Отклики — всегда. Берём с того же суб-профиля, на который только что переключились.
+                var batch = await avitoResponseSource
+                    .GetNewResponsesAsync(account, settings, cancellationToken)
+                    .ConfigureAwait(false);
+
+                var freshInBatch = await ProcessBatchInlineAsync(batch, subLabel).ConfigureAwait(false);
+
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"Суб-профиль «{sub.Name}» аккаунта {account.DisplayName}: получено откликов {batch.Count}, новых после дедупа {freshInBatch}, обработано в цикле {processedInCycle}/{maxPerCycle}.",
+                    DeskLinkAuditLogLevel.Info,
+                    properties: new Dictionary<string, object?>
+                    {
+                        ["accountId"] = account.Id,
+                        ["accountName"] = account.DisplayName,
+                        ["subProfile.id"] = sub.Id,
+                        ["subProfile.name"] = sub.Name,
+                        ["batchTotal"] = batch.Count,
+                        ["freshInBatch"] = freshInBatch,
+                        ["processedInCycle"] = processedInCycle,
+                        ["maxPerCycle"] = maxPerCycle
+                    });
+            }
+            catch (AvitoCaptchaDetectedException)
+            {
+                // Капча/firewall — выбрасываем наверх, остальные суб-профили этого аккаунта не трогаем.
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"Не удалось обработать суб-профиль «{sub.Name}» (id={sub.Id}, отклики, стрим) аккаунта {account.DisplayName}: {ex.Message}",
+                    DeskLinkAuditLogLevel.Warning,
+                    properties: new Dictionary<string, object?>
+                    {
+                        ["accountId"] = account.Id,
+                        ["accountName"] = account.DisplayName,
+                        ["subProfile.id"] = sub.Id,
+                        ["subProfile.name"] = sub.Name,
+                        ["error.type"] = ex.GetType().FullName
+                    });
+            }
+
+            // Рандомная пауза между суб-профилями: «человек посмотрел один кабинет, переключился на следующий».
+            // Не делаем после последнего, чтобы не задерживать общий цикл мониторинга зря.
+            if (i < subProfiles.Count - 1 && !cancellationToken.IsCancellationRequested && !budgetExhausted)
+            {
+                await HumanDelay.BetweenSubProfilesAsync(cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        return (detectedTotal, budgetExhausted);
     }
 
     internal async Task ProcessResponseAsync(CandidateResponse response, AppSettings settings, CancellationToken cancellationToken)
@@ -910,190 +1235,51 @@ public sealed class MonitoringService(
     }
 
     /// <summary>
-    /// Собирает новые отклики для аккаунта; для AdsPower-аккаунта с несколькими суб-профилями
-    /// поочерёдно переключается в каждый и склеивает результаты (с защитой от дублей по ключу источника).
+    /// Загружает обе вкладки кабинета («Активные» и «С ошибками») на текущем суб-профиле AdsPower.
+    /// Если на вкладке «Активные» счётчик rejected = 0, по rejected не ходим — экономим переход.
     /// </summary>
-    private async Task<IReadOnlyList<CandidateResponse>> CollectResponsesAcrossSubProfilesAsync(
-        AvitoAccount account,
-        AppSettings settings,
-        CancellationToken cancellationToken)
-    {
-        var subProfiles = account.ProfileProvider == AvitoProfileProvider.AdsPower
-            ? account.SubProfiles
-            : Array.Empty<AvitoSubProfile>();
-
-        if (subProfiles.Count == 0)
-        {
-            return await avitoResponseSource.GetNewResponsesAsync(account, settings, cancellationToken).ConfigureAwait(false);
-        }
-
-        if (string.IsNullOrWhiteSpace(account.AdsPowerProfileId) || string.IsNullOrWhiteSpace(account.AdsPowerApiBaseUrl))
-        {
-            return await avitoResponseSource.GetNewResponsesAsync(account, settings, cancellationToken).ConfigureAwait(false);
-        }
-
-        var options = new AdsPowerConnectionOptions(
-            account.AdsPowerApiBaseUrl!,
-            string.IsNullOrWhiteSpace(account.AdsPowerApiKey) ? null : account.AdsPowerApiKey);
-
-        var aggregated = new List<CandidateResponse>();
-        var seenKeys = new HashSet<string>(StringComparer.Ordinal);
-
-        for (var i = 0; i < subProfiles.Count; i++)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var sub = subProfiles[i];
-
-            try
-            {
-                _ = GlobalLogger.Instance.LogAsync(
-                    $"Avito Pro переключаем суб-профиль {i + 1}/{subProfiles.Count} (отклики) для {account.DisplayName}: {sub.Name} (id={sub.Id}).",
-                    DeskLinkAuditLogLevel.Info,
-                    properties: new Dictionary<string, object?>
-                    {
-                        ["accountId"] = account.Id,
-                        ["accountName"] = account.DisplayName,
-                        ["subProfile.id"] = sub.Id,
-                        ["subProfile.name"] = sub.Name,
-                        ["subProfile.index"] = i + 1,
-                        ["subProfile.total"] = subProfiles.Count
-                    });
-
-                await adsPowerAvitoAutomationService
-                    .SwitchActiveProfileAsync(options, account.AdsPowerProfileId!, sub.Id, cancellationToken)
-                    .ConfigureAwait(false);
-
-                var batch = await avitoResponseSource.GetNewResponsesAsync(account, settings, cancellationToken).ConfigureAwait(false);
-                foreach (var response in batch)
-                {
-                    var key = string.IsNullOrWhiteSpace(response.SourceResponseId)
-                        ? $"{response.PhoneNormalized}|{response.FullName}|{response.Vacancy}"
-                        : response.SourceResponseId;
-                    if (seenKeys.Add(key))
-                    {
-                        aggregated.Add(response);
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _ = GlobalLogger.Instance.LogAsync(
-                    $"Не удалось обработать суб-профиль «{sub.Name}» (id={sub.Id}, отклики) аккаунта {account.DisplayName}: {ex.Message}",
-                    DeskLinkAuditLogLevel.Warning,
-                    properties: new Dictionary<string, object?>
-                    {
-                        ["accountId"] = account.Id,
-                        ["accountName"] = account.DisplayName,
-                        ["subProfile.id"] = sub.Id,
-                        ["subProfile.name"] = sub.Name,
-                        ["error.type"] = ex.GetType().FullName
-                    });
-            }
-        }
-
-        return aggregated;
-    }
-
-    /// <summary>
-    /// Парсит объявления для AdsPower-аккаунта. Если у аккаунта в Avito Pro несколько суб-профилей —
-    /// поочерёдно переключаемся в каждый и суммируем счётчики/списки. Если суб-профилей нет —
-    /// один проход по текущему активному профилю в браузере (старое поведение).
-    /// </summary>
-    private async Task<Avito.ProfileResult> CollectAdsPowerProfileStatsAsync(
+    private async Task<Avito.ProfileResult> CollectProfileItemsAsync(
         AvitoAccount account,
         AdsPowerConnectionOptions options,
         CancellationToken cancellationToken)
     {
-        var subProfiles = account.SubProfiles;
+        var activeHtml = await adsPowerAvitoAutomationService
+            .LoadProfileItemsHtmlAsync(options, account.AdsPowerProfileId!, cancellationToken)
+            .ConfigureAwait(false);
 
-        if (subProfiles.Count == 0)
+        var part = avitoParser.ParseProfilePage(activeHtml, account.Id);
+
+        if (part.BlockedCount > 0)
         {
-            _ = GlobalLogger.Instance.LogAsync(
-                $"Парсинг объявлений (AdsPower) запускается для аккаунта {account.DisplayName} без суб-профилей.",
-                DeskLinkAuditLogLevel.Info,
-                properties: new Dictionary<string, object?>
-                {
-                    ["accountId"] = account.Id,
-                    ["accountName"] = account.DisplayName,
-                    ["adsPower.userId"] = account.AdsPowerProfileId,
-                    ["adsPower.baseUrl"] = options.BaseUrl
-                });
-
-            var html = await adsPowerAvitoAutomationService
-                .LoadProfileItemsHtmlAsync(options, account.AdsPowerProfileId!, cancellationToken)
-                .ConfigureAwait(false);
-
-            return avitoParser.ParseProfilePage(html, account.Id);
-        }
-
-        var aggregate = new Avito.ProfileResult();
-
-        for (var i = 0; i < subProfiles.Count; i++)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var sub = subProfiles[i];
-
             try
             {
-                _ = GlobalLogger.Instance.LogAsync(
-                    $"Avito Pro переключаем суб-профиль {i + 1}/{subProfiles.Count} для {account.DisplayName}: {sub.Name} (id={sub.Id}).",
-                    DeskLinkAuditLogLevel.Info,
-                    properties: new Dictionary<string, object?>
-                    {
-                        ["accountId"] = account.Id,
-                        ["accountName"] = account.DisplayName,
-                        ["subProfile.id"] = sub.Id,
-                        ["subProfile.name"] = sub.Name,
-                        ["subProfile.index"] = i + 1,
-                        ["subProfile.total"] = subProfiles.Count
-                    });
-
-                await adsPowerAvitoAutomationService
-                    .SwitchActiveProfileAsync(options, account.AdsPowerProfileId!, sub.Id, cancellationToken)
+                var blockedHtml = await adsPowerAvitoAutomationService
+                    .LoadBlockedItemsHtmlAsync(options, account.AdsPowerProfileId!, cancellationToken)
                     .ConfigureAwait(false);
 
-                var html = await adsPowerAvitoAutomationService
-                    .LoadProfileItemsHtmlAsync(options, account.AdsPowerProfileId!, cancellationToken)
-                    .ConfigureAwait(false);
-
-                var part = avitoParser.ParseProfilePage(html, account.Id);
-                aggregate.ActiveCount += part.ActiveCount;
-                aggregate.BlockedCount += part.BlockedCount;
-                aggregate.DraftsCount += part.DraftsCount;
-                aggregate.ActiveAds.AddRange(part.ActiveAds);
-
-                _ = GlobalLogger.Instance.LogAsync(
-                    $"Avito Pro суб-профиль «{sub.Name}»: вакансий {part.ActiveAds.Count}, активные={part.ActiveCount}, blocked={part.BlockedCount}, drafts={part.DraftsCount}.",
-                    DeskLinkAuditLogLevel.Info,
-                    properties: new Dictionary<string, object?>
-                    {
-                        ["accountId"] = account.Id,
-                        ["accountName"] = account.DisplayName,
-                        ["subProfile.id"] = sub.Id,
-                        ["subProfile.name"] = sub.Name,
-                        ["vacancyCount"] = part.ActiveAds.Count,
-                        ["tabActiveAdsCount"] = part.ActiveCount,
-                        ["blockedAdsCount"] = part.BlockedCount,
-                        ["draftsCount"] = part.DraftsCount
-                    });
+                var blocked = avitoParser.ParseBlockedTabPage(blockedHtml, account.Id);
+                part.BlockedAds.AddRange(blocked);
+            }
+            catch (AvitoCaptchaDetectedException)
+            {
+                // Капча на вкладке «С ошибками» — пробрасываем наверх.
+                throw;
             }
             catch (Exception ex)
             {
                 _ = GlobalLogger.Instance.LogAsync(
-                    $"Не удалось обработать суб-профиль «{sub.Name}» (id={sub.Id}) аккаунта {account.DisplayName}: {ex.Message}",
+                    $"Не удалось загрузить вкладку «С ошибками» для аккаунта {account.DisplayName}: {ex.Message}",
                     DeskLinkAuditLogLevel.Warning,
                     properties: new Dictionary<string, object?>
                     {
                         ["accountId"] = account.Id,
                         ["accountName"] = account.DisplayName,
-                        ["subProfile.id"] = sub.Id,
-                        ["subProfile.name"] = sub.Name,
                         ["error.type"] = ex.GetType().FullName
                     });
             }
         }
 
-        return aggregate;
+        return part;
     }
 
     private async Task<string> LoadProfilePageHtmlAsync(AvitoAccount account, CancellationToken cancellationToken)
@@ -1112,6 +1298,12 @@ public sealed class MonitoringService(
         if (string.IsNullOrWhiteSpace(html))
         {
             throw new InvalidOperationException("Не удалось получить HTML страницы профиля Авито.");
+        }
+
+        var captchaKind = AvitoCaptchaDetector.Classify(html);
+        if (captchaKind is not null)
+        {
+            throw new AvitoCaptchaDetectedException(captchaKind, ProfileItemsUrl, html);
         }
 
         return html;
@@ -1152,6 +1344,69 @@ public sealed class MonitoringService(
         {
             _activeAdsByAccount[accountId] = ads.Select(CloneAd).ToList();
         }
+    }
+
+    private void UpdateBlockedAdsSnapshot(Guid accountId, IReadOnlyList<AvitoAdStatus> ads)
+    {
+        lock (_activeAdsSync)
+        {
+            _blockedAdsByAccount[accountId] = ads.Select(CloneAd).ToList();
+        }
+    }
+
+    /// <summary>
+    /// Истёк ли «возраст» закэшированной статистики объявлений: если да — на ближайшем переключении
+    /// в суб-профиль соберём active+rejected вкладки. Иначе тратим переключение только на отклики.
+    /// </summary>
+    private static bool IsAdsStatsStale(AvitoAccount account)
+    {
+        var last = account.AdsStatsUpdatedAt;
+        if (last is null) return true;
+        var age = DateTime.UtcNow - last.Value;
+        return age >= TimeSpan.FromMinutes(MonitoringTiming.ActiveAdsRefreshIntervalMinutes);
+    }
+
+    /// <summary>
+    /// Атомарно применяет агрегированный snapshot к аккаунту: snapshot в памяти, запись в БД, событие в UI.
+    /// Используется и при отдельном сборе по таймеру, и в едином проходе с откликами.
+    /// </summary>
+    private async Task ApplyStatsSnapshotAsync(
+        AvitoAccount account,
+        Avito.ProfileResult snapshot,
+        StatsPreviousCounts prev,
+        CancellationToken ct)
+    {
+        UpdateActiveAdsSnapshot(account.Id, snapshot.ActiveAds);
+        UpdateBlockedAdsSnapshot(account.Id, snapshot.BlockedAds);
+        account.ActiveAdsCount = snapshot.ActiveAds.Count;
+        // Если вкладку «С ошибками» не открывали — берём счётчик из вкладки активных (он там тоже виден).
+        // Если открыли — точное число распарсенных карточек.
+        account.BlockedCount = snapshot.BlockedAds.Count > 0 ? snapshot.BlockedAds.Count : snapshot.BlockedCount;
+        account.DraftsCount = snapshot.DraftsCount;
+        account.AdsStatsUpdatedAt = DateTime.UtcNow;
+        await repository.SaveAccountAsync(account, ct).ConfigureAwait(false);
+
+        ProfileStatsUpdated?.Invoke(this, new ProfileStatsUpdatedEventArgs
+        {
+            Account = account,
+            PreviousActiveAdsCount = prev.Active,
+            PreviousBlockedCount = prev.Blocked,
+            PreviousDraftsCount = prev.Drafts
+        });
+
+        // На следующем сабпрофиле prev-значения должны равняться только что-сохранённому состоянию,
+        // иначе UI считает «приращением» весь накопленный список.
+        prev.Active = account.ActiveAdsCount;
+        prev.Blocked = account.BlockedCount;
+        prev.Drafts = account.DraftsCount;
+    }
+
+    /// <summary>Mutable-контейнер с предыдущими счётчиками для инкрементальных snapshot-ов в одном цикле.</summary>
+    private sealed class StatsPreviousCounts(int active, int blocked, int drafts)
+    {
+        public int Active { get; set; } = active;
+        public int Blocked { get; set; } = blocked;
+        public int Drafts { get; set; } = drafts;
     }
 
     private static AvitoAdStatus CloneAd(AvitoAdStatus ad) => new()

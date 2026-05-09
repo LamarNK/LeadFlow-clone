@@ -14,7 +14,14 @@ public sealed class AvitoPageReaderService(IWebPageAutomationService automationS
             """
             (() => {
                 const bodyText = document.body?.innerText ?? "";
-                const hasCaptcha = /капч|captcha|подтвердите|проверочный код/i.test(bodyText);
+                // Текстовые + структурные маркеры: firewall-страница Avito («Доступ ограничен»)
+                // не содержит слова «капча», но имеет div.firewall-container с hCaptcha/geetest.
+                const hasCaptcha =
+                    /капч|captcha|подтвердите|проверочный код|Доступ\s+ограничен|проблема\s+с\s+IP/i.test(bodyText) ||
+                    !!document.querySelector('.firewall-container, .js-firewall-form, .firewall-title, .h-captcha') ||
+                    !!document.getElementById('h-captcha') ||
+                    !!document.getElementById('geetest_captcha') ||
+                    !!document.getElementById('inner-captcha');
                 const isVisible = (element) => {
                     if (!element) {
                         return false;

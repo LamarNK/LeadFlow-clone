@@ -1,4 +1,6 @@
 using LeadFlow.Logging.Audit;
+using LeadFlow.Services;
+using LeadFlow.Services.Avito;
 using PuppeteerSharp;
 
 namespace LeadFlow.Services.AdsPower;
@@ -12,6 +14,7 @@ public sealed class AdsPowerAvitoAutomationService(IAdsPowerApiClient adsPowerAp
 {
     private const string CandidatesPageUrl = "https://www.avito.ru/profile/candidates";
     private const string ProfileItemsPageUrl = "https://www.avito.ru/profile/pro/items";
+    private const string ProfileBlockedItemsPageUrl = "https://www.avito.ru/profile/pro/items?filters=%7B%22tabs%22%3A%22rejected%22%7D";
     private const string ProfileSwitchPageUrl = "https://www.avito.ru/profile/pro/items#profile/switch?withEntities=true";
 
     public async Task<string> ExtractCandidatesJsonAsync(
@@ -209,6 +212,9 @@ public sealed class AdsPowerAvitoAutomationService(IAdsPowerApiClient adsPowerAp
             // Шаг 2: ждём, что спиннер #personal-items-root-element .styles-loader-* исчез и появились карточки объявлений
             // (либо явно отрисовалось пустое состояние «нет объявлений»). Это ключевой момент: без этого мы успеваем
             // снять HTML на этапе spinner-only и парсер возвращает 0 объявлений.
+            // Эвристики пустого состояния: ссылка [data-marker='additem'] внутри лоадера, эмпти-стейт картинка
+            // emptystate_personal_items_*.png, либо текст с обоими словами «активн…» и «нет» в любом порядке
+            // (Avito показывает «Активных объявлений нет», старая регулярка «нет объявлений» не ловила).
             const string itemsReadyExpression = """
                 (() => {
                     const root = document.querySelector('#personal-items-root-element') || document.body;
@@ -216,8 +222,17 @@ public sealed class AdsPowerAvitoAutomationService(IAdsPowerApiClient adsPowerAp
                     if (hasLoader) return false;
                     const hasItems = !!document.querySelector("[data-marker^='item-snippet/']");
                     if (hasItems) return true;
+                    const hasAddItemEmpty = !!root.querySelector("[data-marker='additem']");
+                    const hasEmptyStateImg = !!root.querySelector("img[src*='emptystate_personal_items']");
+                    if (hasAddItemEmpty || hasEmptyStateImg) return true;
                     const text = (root.innerText || '').toLowerCase();
-                    const looksEmpty = /нет объявлений|у вас нет активных|не найдено|пока пусто/.test(text);
+                    const looksEmpty =
+                        /активн[а-я]*\s+объявлен[а-я]*\s+нет/.test(text) ||
+                        /нет\s+(активных\s+)?объявлен/.test(text) ||
+                        /у\s+вас\s+нет\s+активных/.test(text) ||
+                        /объявлен[а-я]*\s+не\s+найден/.test(text) ||
+                        /пока\s+пусто/.test(text) ||
+                        /можно\s+создать\s+новое/.test(text);
                     return looksEmpty;
                 })
                 """;
@@ -255,8 +270,8 @@ public sealed class AdsPowerAvitoAutomationService(IAdsPowerApiClient adsPowerAp
             }
 
             // Шаг 3: настройщик SPA подтягивает счётчики просмотров/контактов и позицию в поиске уже после первого рендера.
-            // Даём 2 секунды на досборку; раньше было 1.2 сек — иногда было мало.
-            await Task.Delay(2000, cancellationToken).ConfigureAwait(false);
+            // Используем «человеческую» рандомную задержку (1.5–3.5 с), чтобы не палить ботскую частоту запросов.
+            await HumanDelay.AfterItemsRenderAsync(cancellationToken).ConfigureAwait(false);
 
             var html = await EvaluateWithRetryAsync<string>(
                 page,
@@ -267,6 +282,8 @@ public sealed class AdsPowerAvitoAutomationService(IAdsPowerApiClient adsPowerAp
             {
                 throw new InvalidOperationException("AdsPower CDP: страница объявлений Avito вернула пустой HTML.");
             }
+
+            ThrowIfCaptcha(html, page.Url, nameof(LoadProfileItemsHtmlAsync), adsPowerUserId);
 
             _ = GlobalLogger.Instance.LogAsync(
                 $"AdsPower profile-items: HTML captured ({html.Length} chars).",
@@ -304,6 +321,190 @@ public sealed class AdsPowerAvitoAutomationService(IAdsPowerApiClient adsPowerAp
                 // Disconnect must never throw out of the finally.
             }
         }
+    }
+
+    public async Task<string> LoadBlockedItemsHtmlAsync(
+        AdsPowerConnectionOptions options,
+        string adsPowerUserId,
+        CancellationToken cancellationToken = default)
+    {
+        _ = GlobalLogger.Instance.LogAsync(
+            $"AdsPower blocked-items load started for user {adsPowerUserId}.",
+            DeskLinkAuditLogLevel.Info,
+            memberName: nameof(LoadBlockedItemsHtmlAsync),
+            filePath: "AdsPowerAvitoAutomationService.cs",
+            properties: new Dictionary<string, object?>
+            {
+                ["step"] = "start",
+                ["adsPower.userId"] = adsPowerUserId,
+                ["adsPower.baseUrl"] = options.BaseUrl,
+                ["avito.url"] = ProfileBlockedItemsPageUrl
+            });
+
+        var start = await adsPowerApiClient
+            .StartBrowserAsync(options, adsPowerUserId, ProfileBlockedItemsPageUrl, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (string.IsNullOrWhiteSpace(start.WebSocketDebuggerUrl))
+        {
+            throw new InvalidOperationException(
+                "AdsPower не вернул ws.puppeteer endpoint. Проверьте Local API и версию клиента AdsPower.");
+        }
+
+        var connectOptions = new ConnectOptions
+        {
+            BrowserWSEndpoint = start.WebSocketDebuggerUrl,
+            DefaultViewport = null
+        };
+
+        IBrowser? browser = null;
+        try
+        {
+            browser = await Puppeteer.ConnectAsync(connectOptions).ConfigureAwait(false);
+            var page = await GetOrCreateAvitoPageAsync(browser, ProfileBlockedItemsPageUrl).ConfigureAwait(false);
+
+            // Гарантируем, что мы на rejected-вкладке: даже если хеш/фильтр сбросились — переходим явно.
+            if (!IsOnRejectedTab(page.Url))
+            {
+                try
+                {
+                    await page.GoToAsync(ProfileBlockedItemsPageUrl, new NavigationOptions
+                    {
+                        Timeout = 60_000,
+                        WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
+                    }).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (IsRecoverableNavigationError(ex))
+                {
+                    await Task.Delay(800, cancellationToken).ConfigureAwait(false);
+                }
+            }
+
+            try
+            {
+                await page.WaitForSelectorAsync(
+                    "[data-marker='profile-items-tab/tab(rejected)'], [data-marker^='item-snippet/']",
+                    new WaitForSelectorOptions { Timeout = 30_000 }).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"AdsPower blocked-items: shell wait timed out: {ex.Message}",
+                    DeskLinkAuditLogLevel.Warning,
+                    memberName: nameof(LoadBlockedItemsHtmlAsync),
+                    filePath: "AdsPowerAvitoAutomationService.cs");
+            }
+
+            // Ждём: лоадер исчез + либо есть карточки, либо явный эмпти-стейт «нет … объявлений / можно создать».
+            const string blockedReadyExpression = """
+                (() => {
+                    const root = document.querySelector('#personal-items-root-element') || document.body;
+                    const hasLoader = !!root.querySelector("[class*='styles-loader'], [class*='style-loader']");
+                    if (hasLoader) return false;
+                    const hasItems = !!document.querySelector("[data-marker^='item-snippet/']");
+                    if (hasItems) return true;
+                    const hasAddItemEmpty = !!root.querySelector("[data-marker='additem']");
+                    const hasEmptyStateImg = !!root.querySelector("img[src*='emptystate_personal_items']");
+                    if (hasAddItemEmpty || hasEmptyStateImg) return true;
+                    const text = (root.innerText || '').toLowerCase();
+                    const looksEmpty =
+                        /объявлен[а-я]*\s+с\s+ошибк/.test(text) ||
+                        /нет\s+объявлен/.test(text) ||
+                        /объявлен[а-я]*\s+нет/.test(text) ||
+                        /пока\s+пусто/.test(text);
+                    return looksEmpty;
+                })
+                """;
+
+            try
+            {
+                await page.WaitForFunctionAsync(
+                        blockedReadyExpression,
+                        new WaitForFunctionOptions { Timeout = 60_000, PollingInterval = 500 })
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"AdsPower blocked-items: items wait timed out, capturing whatever is on the page: {ex.Message}",
+                    DeskLinkAuditLogLevel.Warning,
+                    memberName: nameof(LoadBlockedItemsHtmlAsync),
+                    filePath: "AdsPowerAvitoAutomationService.cs",
+                    properties: new Dictionary<string, object?>
+                    {
+                        ["step"] = "items_timeout",
+                        ["page.url"] = page.Url
+                    });
+            }
+
+            await HumanDelay.AfterItemsRenderAsync(cancellationToken).ConfigureAwait(false);
+
+            var html = await EvaluateWithRetryAsync<string>(
+                page,
+                "(() => document.documentElement?.outerHTML || '')()",
+                cancellationToken).ConfigureAwait(false);
+
+            if (string.IsNullOrWhiteSpace(html))
+            {
+                throw new InvalidOperationException("AdsPower CDP: вкладка «С ошибками» вернула пустой HTML.");
+            }
+
+            ThrowIfCaptcha(html, page.Url, nameof(LoadBlockedItemsHtmlAsync), adsPowerUserId);
+
+            _ = GlobalLogger.Instance.LogAsync(
+                $"AdsPower blocked-items: HTML captured ({html.Length} chars).",
+                DeskLinkAuditLogLevel.Info,
+                memberName: nameof(LoadBlockedItemsHtmlAsync),
+                filePath: "AdsPowerAvitoAutomationService.cs",
+                properties: new Dictionary<string, object?>
+                {
+                    ["step"] = "captured",
+                    ["adsPower.userId"] = adsPowerUserId,
+                    ["page.url"] = page.Url,
+                    ["html.length"] = html.Length
+                });
+
+            return html;
+        }
+        finally
+        {
+            try { browser?.Disconnect(); } catch { /* keep AdsPower window alive */ }
+        }
+    }
+
+    private static bool IsOnRejectedTab(string? url)
+    {
+        if (string.IsNullOrEmpty(url)) return false;
+        return url.Contains("/profile/pro/items", StringComparison.OrdinalIgnoreCase)
+            && url.Contains("rejected", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Если в HTML обнаружена капча/firewall — логируем и бросаем <see cref="AvitoCaptchaDetectedException"/>,
+    /// чтобы мониторинг перевёл аккаунт в RequiresManualAction и не долбил Avito дальше.
+    /// </summary>
+    private static void ThrowIfCaptcha(string html, string? pageUrl, string memberName, string adsPowerUserId)
+    {
+        var kind = AvitoCaptchaDetector.Classify(html);
+        if (kind is null)
+        {
+            return;
+        }
+
+        _ = GlobalLogger.Instance.LogAsync(
+            $"AdsPower {memberName}: обнаружена капча/firewall ({kind}) на {pageUrl ?? "<unknown>"}.",
+            DeskLinkAuditLogLevel.Warning,
+            memberName: memberName,
+            filePath: "AdsPowerAvitoAutomationService.cs",
+            properties: new Dictionary<string, object?>
+            {
+                ["step"] = "captcha_detected",
+                ["adsPower.userId"] = adsPowerUserId,
+                ["page.url"] = pageUrl,
+                ["captcha.kind"] = kind
+            });
+
+        throw new AvitoCaptchaDetectedException(kind, pageUrl, html);
     }
 
     public async Task<string> LoadProfileSwitchHtmlAsync(
@@ -390,7 +591,7 @@ public sealed class AdsPowerAvitoAutomationService(IAdsPowerApiClient adsPowerAp
                     });
             }
 
-            await Task.Delay(500, cancellationToken).ConfigureAwait(false);
+            await HumanDelay.AfterSwitchModalAsync(cancellationToken).ConfigureAwait(false);
 
             var html = await EvaluateWithRetryAsync<string>(
                 page,
@@ -401,6 +602,8 @@ public sealed class AdsPowerAvitoAutomationService(IAdsPowerApiClient adsPowerAp
             {
                 throw new InvalidOperationException("AdsPower CDP: страница переключения профилей вернула пустой HTML.");
             }
+
+            ThrowIfCaptcha(html, page.Url, nameof(LoadProfileSwitchHtmlAsync), adsPowerUserId);
 
             _ = GlobalLogger.Instance.LogAsync(
                 $"AdsPower profile-switch: HTML captured ({html.Length} chars).",
@@ -543,8 +746,8 @@ public sealed class AdsPowerAvitoAutomationService(IAdsPowerApiClient adsPowerAp
                     });
             }
 
-            // Даём время реакту дозагрузить данные нового профиля.
-            await Task.Delay(1500, cancellationToken).ConfigureAwait(false);
+            // Даём React-у дозагрузить данные нового профиля + рандом, чтобы не было ровного интервала между переключениями.
+            await HumanDelay.AfterProfileSwitchAsync(cancellationToken).ConfigureAwait(false);
 
             _ = GlobalLogger.Instance.LogAsync(
                 $"AdsPower profile-switch: subProfile {subProfileId} activated.",
@@ -651,7 +854,14 @@ public sealed class AdsPowerAvitoAutomationService(IAdsPowerApiClient adsPowerAp
         """
         JSON.stringify((() => {
             const bodyText = document.body?.innerText ?? "";
-            const hasCaptcha = /капч|captcha|подтвердите|проверочный код/i.test(bodyText);
+            // Текстовые маркеры + структурные (Avito firewall не пишет «капча» в видимом тексте,
+            // но всегда имеет div.firewall-container / форму js-firewall-form / встроенный hCaptcha/geetest).
+            const hasCaptcha =
+                /капч|captcha|подтвердите|проверочный код|Доступ\s+ограничен|проблема\s+с\s+IP/i.test(bodyText) ||
+                !!document.querySelector('.firewall-container, .js-firewall-form, .firewall-title, .h-captcha') ||
+                !!document.getElementById('h-captcha') ||
+                !!document.getElementById('geetest_captcha') ||
+                !!document.getElementById('inner-captcha');
             const isVisible = (element) => {
                 if (!element) return false;
                 const style = window.getComputedStyle(element);

@@ -155,6 +155,10 @@ public class AvitoParserService
         ad.Favorites = favorites;
     }
 
+    /// <summary>
+    /// Парсит «Активные» вкладку: счётчики всех вкладок + список активных вакансий.
+    /// Заблокированные карточки пропускаем — их парсит <see cref="ParseBlockedTabPage"/> на вкладке «С ошибками».
+    /// </summary>
     public ProfileResult ParseProfilePage(string html, Guid? accountId = null)
     {
         var result = new ProfileResult();
@@ -166,21 +170,40 @@ public class AvitoParserService
         result.DraftsCount = ExtractCounter(html, "tab(drafts)");
 
         // 2️⃣ Парсинг активных объявлений (только вакансии / раздел «Работа» на Авито)
-        var snippetMatches = Regex.Matches(html, @"data-marker=""item-snippet/(\d+)""");
-
-        for (var i = 0; i < snippetMatches.Count; i++)
+        foreach (var (id, snippetHtml) in EnumerateItemSnippets(html))
         {
-            var match = snippetMatches[i];
-            if (!match.Success) continue;
-            var id = match.Groups[1].Value;
+            var listingHref = ExtractItemListingHref(snippetHtml);
+            if (!IsJobSectionListing(listingHref))
+            {
+                continue;
+            }
 
-            var startIndex = match.Index;
-            var endIndex = i + 1 < snippetMatches.Count
-                ? snippetMatches[i + 1].Index
-                : Math.Min(startIndex + 12000, html.Length);
+            // Заблокированные снимки на этой вкладке игнорируем — их везде по пути «С ошибками».
+            if (snippetHtml.Contains("styles-status-name_red-", StringComparison.Ordinal))
+            {
+                continue;
+            }
 
-            var snippetHtml = html.Substring(startIndex, endIndex - startIndex);
+            var ad = new AvitoAdStatus { Id = id, AccountId = accountId ?? Guid.Empty };
+            ad.Title = ExtractTitle(snippetHtml);
+            ad.City = ExtractCity(snippetHtml);
+            FillViewsContactsFavorites(ad, snippetHtml);
+            result.ActiveAds.Add(ad);
+        }
 
+        return result;
+    }
+
+    /// <summary>
+    /// Парсит вкладку «С ошибками» (<c>tab(rejected)</c>): возвращает список заблокированных вакансий со статусом и датой удаления.
+    /// </summary>
+    public IReadOnlyList<AvitoAdStatus> ParseBlockedTabPage(string html, Guid? accountId = null)
+    {
+        var result = new List<AvitoAdStatus>();
+        if (string.IsNullOrEmpty(html)) return result;
+
+        foreach (var (id, snippetHtml) in EnumerateItemSnippets(html))
+        {
             var listingHref = ExtractItemListingHref(snippetHtml);
             if (!IsJobSectionListing(listingHref))
             {
@@ -190,19 +213,72 @@ public class AvitoParserService
             var ad = new AvitoAdStatus { Id = id, AccountId = accountId ?? Guid.Empty };
             ad.Title = ExtractTitle(snippetHtml);
             ad.City = ExtractCity(snippetHtml);
-
-            // Пропускаем заблокированные
-            if (snippetHtml.Contains("styles-status-name_red-", StringComparison.Ordinal))
-            {
-                continue;
-            }
-
+            ad.Status = ExtractBlockedStatusName(snippetHtml);
+            ad.DeleteDate = ExtractBlockedDeleteDate(snippetHtml);
             FillViewsContactsFavorites(ad, snippetHtml);
-
-            result.ActiveAds.Add(ad);
+            result.Add(ad);
         }
 
         return result;
+    }
+
+    private static IEnumerable<(string Id, string SnippetHtml)> EnumerateItemSnippets(string html)
+    {
+        var snippetMatches = Regex.Matches(html, @"data-marker=""item-snippet/(\d+)""");
+        for (var i = 0; i < snippetMatches.Count; i++)
+        {
+            var match = snippetMatches[i];
+            if (!match.Success) continue;
+
+            var id = match.Groups[1].Value;
+            var startIndex = match.Index;
+            var endIndex = i + 1 < snippetMatches.Count
+                ? snippetMatches[i + 1].Index
+                : Math.Min(startIndex + 12000, html.Length);
+
+            yield return (id, html.Substring(startIndex, endIndex - startIndex));
+        }
+    }
+
+    /// <summary>
+    /// Извлекает текст из <c>&lt;span class="styles-status-name_red-..."&gt;Заблокировано&lt;/span&gt;</c>.
+    /// Если ничего не нашли — возвращаем «Заблокировано» по умолчанию.
+    /// </summary>
+    private static string ExtractBlockedStatusName(string snippetHtml)
+    {
+        var match = Regex.Match(
+            snippetHtml,
+            @"<span[^>]*\bstyles-status-name_red-[^""]*""[^>]*>([^<]+)</span>",
+            RegexOptions.IgnoreCase);
+        return match.Success ? match.Groups[1].Value.Trim() : "Заблокировано";
+    }
+
+    /// <summary>
+    /// «Заблокировано, удалится навсегда 22 мая в 20:50» — забираем хвост после запятой.
+    /// На реальной странице структура такая:
+    /// <code>
+    /// &lt;span class="styles-status-EGgGM"&gt;
+    ///     &lt;div class="styles-catch-block-EZLET"&gt;
+    ///         &lt;span class="styles-status-name_red-..."&gt;Заблокировано&lt;/span&gt;
+    ///     &lt;/div&gt;, удалится навсегда 22 мая в 20:50
+    /// &lt;/span&gt;
+    /// </code>
+    /// — после внутренних <c>&lt;/span&gt;&lt;/div&gt;</c> идёт текст с запятой.
+    /// </summary>
+    private static string ExtractBlockedDeleteDate(string snippetHtml)
+    {
+        var match = Regex.Match(
+            snippetHtml,
+            @"styles-status-name_red-[^""]*""[^>]*>[^<]+</span>\s*(?:</div>\s*)?(?<rest>[^<]*)",
+            RegexOptions.IgnoreCase);
+        if (!match.Success)
+        {
+            return string.Empty;
+        }
+
+        var rest = match.Groups["rest"].Value;
+        // Обычно формат «, удалится навсегда 22 мая в 20:50» — убираем ведущую запятую/пробелы.
+        return rest.TrimStart(',', ' ', '\t', '\n', '\r').Trim();
     }
 
     private int ExtractCounter(string html, string tabMarker)
@@ -225,4 +301,6 @@ public class ProfileResult
     public int BlockedCount { get; set; }
     public int DraftsCount { get; set; }
     public List<AvitoAdStatus> ActiveAds { get; set; } = new();
+    /// <summary>Заблокированные/«с ошибками» вакансии — парсятся отдельным проходом по вкладке rejected.</summary>
+    public List<AvitoAdStatus> BlockedAds { get; set; } = new();
 }

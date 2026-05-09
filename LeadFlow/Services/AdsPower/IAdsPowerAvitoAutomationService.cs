@@ -22,6 +22,15 @@ public interface IAdsPowerAvitoAutomationService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Открывает вкладку «С ошибками» (<c>tabs=rejected</c>) и возвращает её HTML — список
+    /// заблокированных/отклонённых вакансий.
+    /// </summary>
+    Task<string> LoadBlockedItemsHtmlAsync(
+        AdsPowerConnectionOptions options,
+        string adsPowerUserId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Открывает модалку <c>/profile/pro/items#profile/switch?withEntities=true</c> и возвращает HTML
     /// со списком всех суб-профилей Avito Pro (data-marker="component-profile-switch/profile-{id}").
     /// </summary>

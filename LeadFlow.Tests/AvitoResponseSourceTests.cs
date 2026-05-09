@@ -36,7 +36,7 @@ public sealed class AvitoResponseSourceTests
     }
 
     [Fact]
-    public async Task GetNewResponsesAsync_HasCaptcha_SetsManualAction_AndReturnsEmpty()
+    public async Task GetNewResponsesAsync_HasCaptcha_ThrowsCaptchaDetectedException_AndMarksRequiresManualAction()
     {
         var db = new EfInMemoryDatabase();
         var repo = new AppRepository(db.Factory);
@@ -51,10 +51,15 @@ public sealed class AvitoResponseSourceTests
             automation,
             new FakeAdsPowerAvitoAutomationService());
 
-        var list = await sut.GetNewResponsesAsync(account, NewSettings(), CancellationToken.None);
+        // Поведение по запросу пользователя «отслеживать капчу»: источник бросает типизированное
+        // исключение, чтобы мониторинг СРАЗУ вышел из обхода аккаунта (а не пытался идти дальше).
+        var ex = await Assert.ThrowsAsync<AvitoCaptchaDetectedException>(
+            () => sut.GetNewResponsesAsync(account, NewSettings(), CancellationToken.None));
 
-        Assert.Empty(list);
+        // Статус и сообщение проставляются ДО throw — даже если кто-то проигнорирует исключение,
+        // в БД отложится корректное состояние.
         Assert.Equal(AvitoAccountStatus.RequiresManualAction, account.Status);
+        Assert.NotEmpty(ex.Kind);
     }
 
     [Fact]
@@ -177,6 +182,12 @@ public sealed class AvitoResponseSourceTests
             Task.FromResult("""{"hasCaptcha":false,"hasLogin":false,"candidates":[]}""");
 
         public Task<string> LoadProfileItemsHtmlAsync(
+            AdsPowerConnectionOptions options,
+            string adsPowerUserId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult("<html><body></body></html>");
+
+        public Task<string> LoadBlockedItemsHtmlAsync(
             AdsPowerConnectionOptions options,
             string adsPowerUserId,
             CancellationToken cancellationToken = default) =>

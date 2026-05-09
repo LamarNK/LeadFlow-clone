@@ -28,4 +28,28 @@ public static class MonitoringTiming
     public const int DelayBetweenResponsesSeconds = 3;
     public const int MaxResponsesPerAccountPerCycle = 10;
     public const int ActiveAdsRefreshIntervalMinutes = 45;
+
+    // ---- «Человеческие» рандомные паузы ----
+    // Идея: после открытия страницы / переключения профиля / обработки отклика
+    // имитируем чтение пользователем, чтобы не палить ботскую частоту запросов.
+
+    /// <summary>Между обработкой откликов: рандом в [min..max] секунд (вокруг <see cref="DelayBetweenResponsesSeconds"/>).</summary>
+    public const int HumanDelayBetweenResponsesMinSeconds = 2;
+    public const int HumanDelayBetweenResponsesMaxSeconds = 6;
+
+    /// <summary>После переключения суб-профиля и до того, как тянуть с него данные.</summary>
+    public const int HumanDelayAfterProfileSwitchMinMs = 1500;
+    public const int HumanDelayAfterProfileSwitchMaxMs = 4500;
+
+    /// <summary>После загрузки страницы /profile/pro/items до снятия HTML — даём «дочитать» SPA + лёгкий jitter.</summary>
+    public const int HumanDelayAfterItemsRenderMinMs = 1500;
+    public const int HumanDelayAfterItemsRenderMaxMs = 3500;
+
+    /// <summary>После загрузки модалки переключения профилей.</summary>
+    public const int HumanDelayAfterSwitchModalMinMs = 400;
+    public const int HumanDelayAfterSwitchModalMaxMs = 1200;
+
+    /// <summary>Пауза между суб-профилями на одном аккаунте — крупнее, имитируем «походили по кабинету».</summary>
+    public const int HumanDelayBetweenSubProfilesMinMs = 2500;
+    public const int HumanDelayBetweenSubProfilesMaxMs = 7000;
 }

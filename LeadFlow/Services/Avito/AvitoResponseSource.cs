@@ -117,12 +117,19 @@ public sealed class AvitoResponseSource(
         var root = json.RootElement;
         var hasCaptcha = root.TryGetProperty("hasCaptcha", out var captchaProp) && captchaProp.GetBoolean();
         var hasLogin = root.TryGetProperty("hasLogin", out var loginProp) && loginProp.GetBoolean();
+        var pageUrl = root.TryGetProperty("url", out var urlProp) ? urlProp.GetString() : null;
 
         if (hasCaptcha)
         {
+            // Поднимаем типизированное исключение: единый catch в MonitoringService поставит
+            // RequiresManualAction и СРАЗУ выйдет из обхода аккаунта (без перебора оставшихся суб-профилей).
+            // Кладём базовый статус сразу — на случай, если кто-то проигнорирует исключение.
             account.Status = AvitoAccountStatus.RequiresManualAction;
             account.LastErrorMessage = "На странице кандидатов требуется ручное действие";
-            return [];
+            // Дополнительно строим короткий fingerprint HTML, если он есть — пригодится для классификации.
+            var rawHtml = root.TryGetProperty("html", out var htmlProp) ? htmlProp.GetString() : null;
+            var kind = AvitoCaptchaDetector.Classify(rawHtml) ?? "captcha";
+            throw new AvitoCaptchaDetectedException(kind, pageUrl, rawHtml);
         }
 
         if (hasLogin)
@@ -179,7 +186,14 @@ public sealed class AvitoResponseSource(
         """
         (() => {
             const bodyText = document.body?.innerText ?? "";
-            const hasCaptcha = /капч|captcha|подтвердите|проверочный код/i.test(bodyText);
+            // Текстовые + структурные маркеры: Avito firewall («Доступ ограничен») в видимом тексте
+            // не содержит слова «капча», но имеет div.firewall-container и встроенный hCaptcha/geetest.
+            const hasCaptcha =
+                /капч|captcha|подтвердите|проверочный код|Доступ\s+ограничен|проблема\s+с\s+IP/i.test(bodyText) ||
+                !!document.querySelector('.firewall-container, .js-firewall-form, .firewall-title, .h-captcha') ||
+                !!document.getElementById('h-captcha') ||
+                !!document.getElementById('geetest_captcha') ||
+                !!document.getElementById('inner-captcha');
 
             const isVisible = (element) => {
                 if (!element) {
