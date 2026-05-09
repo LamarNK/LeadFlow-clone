@@ -22,6 +22,14 @@ public partial class SettingsWindow : Window
         Closed += OnClosed;
     }
 
+    private void AddAccountMenuButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is SettingsViewModel vm)
+        {
+            vm.IsAddMenuOpen = true;
+        }
+    }
+
     private async void OnClosingAsync(object? sender, CancelEventArgs e)
     {
         if (_allowClose)

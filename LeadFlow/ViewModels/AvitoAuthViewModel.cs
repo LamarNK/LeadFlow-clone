@@ -1,3 +1,5 @@
+using System.Windows;
+using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using LeadFlow.Data;
@@ -316,6 +318,29 @@ public partial class AvitoAuthViewModel(
 
         NavigateBackCommand.NotifyCanExecuteChanged();
         NavigateForwardCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnIsActiveTabChanged(bool value)
+    {
+        if (!value || Session is null || Session.IsInitialized)
+        {
+            return;
+        }
+
+        Application.Current?.Dispatcher.BeginInvoke(RetrySessionBindingForWebView, DispatcherPriority.Loaded);
+    }
+
+    /// <summary>Повторяет привязку Session → WebView2, если вкладка стала активной до завершения инициализации.</summary>
+    private void RetrySessionBindingForWebView()
+    {
+        if (!IsActiveTab || Session is null || Session.IsInitialized)
+        {
+            return;
+        }
+
+        var s = Session;
+        Session = null;
+        Session = s;
     }
 
     private void OnSessionPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)

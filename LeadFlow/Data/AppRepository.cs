@@ -701,7 +701,12 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         ActiveAdsCount = model.ActiveAdsCount,
         BlockedCount = model.BlockedCount,
         DraftsCount = model.DraftsCount,
-        AdsStatsUpdatedAt = model.AdsStatsUpdatedAt
+        AdsStatsUpdatedAt = model.AdsStatsUpdatedAt,
+        ProfileProvider = model.ProfileProvider.ToString(),
+        AdsPowerProfileId = model.AdsPowerProfileId,
+        AdsPowerProfileName = model.AdsPowerProfileName,
+        AdsPowerApiBaseUrl = model.AdsPowerApiBaseUrl,
+        AdsPowerApiKey = model.AdsPowerApiKey
     };
 
     private static AvitoAccount ToModel(AvitoAccountEntity entity) => new()
@@ -756,7 +761,14 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         ActiveAdsCount = entity.ActiveAdsCount,
         BlockedCount = entity.BlockedCount,
         DraftsCount = entity.DraftsCount,
-        AdsStatsUpdatedAt = entity.AdsStatsUpdatedAt
+        AdsStatsUpdatedAt = entity.AdsStatsUpdatedAt,
+        ProfileProvider = Enum.TryParse<AvitoProfileProvider>(entity.ProfileProvider, out var provider)
+            ? provider
+            : AvitoProfileProvider.Local,
+        AdsPowerProfileId = entity.AdsPowerProfileId,
+        AdsPowerProfileName = entity.AdsPowerProfileName,
+        AdsPowerApiBaseUrl = entity.AdsPowerApiBaseUrl,
+        AdsPowerApiKey = entity.AdsPowerApiKey
     };
 
     private static void Map(AvitoAccount source, AvitoAccountEntity target)
@@ -811,6 +823,11 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         target.BlockedCount = source.BlockedCount;
         target.DraftsCount = source.DraftsCount;
         target.AdsStatsUpdatedAt = source.AdsStatsUpdatedAt;
+        target.ProfileProvider = source.ProfileProvider.ToString();
+        target.AdsPowerProfileId = source.AdsPowerProfileId;
+        target.AdsPowerProfileName = source.AdsPowerProfileName;
+        target.AdsPowerApiBaseUrl = source.AdsPowerApiBaseUrl;
+        target.AdsPowerApiKey = source.AdsPowerApiKey;
     }
 
     private static CandidateResponseEntity ToEntity(CandidateResponse model) => new()
@@ -945,7 +962,12 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
             ["StartupTabsJson"] = "ALTER TABLE AvitoAccounts ADD COLUMN StartupTabsJson TEXT NOT NULL DEFAULT '[]';",
             ["ProxyPresetsJson"] = "ALTER TABLE AvitoAccounts ADD COLUMN ProxyPresetsJson TEXT NOT NULL DEFAULT '[]';",
             // '{{}}' — экранирование для ExecuteSqlRaw (иначе '{}' ломает string.Format).
-            ["FingerprintOverviewJson"] = "ALTER TABLE AvitoAccounts ADD COLUMN FingerprintOverviewJson TEXT NOT NULL DEFAULT '{{}}';"
+            ["FingerprintOverviewJson"] = "ALTER TABLE AvitoAccounts ADD COLUMN FingerprintOverviewJson TEXT NOT NULL DEFAULT '{{}}';",
+            ["ProfileProvider"] = "ALTER TABLE AvitoAccounts ADD COLUMN ProfileProvider TEXT NOT NULL DEFAULT 'Local';",
+            ["AdsPowerProfileId"] = "ALTER TABLE AvitoAccounts ADD COLUMN AdsPowerProfileId TEXT NULL;",
+            ["AdsPowerProfileName"] = "ALTER TABLE AvitoAccounts ADD COLUMN AdsPowerProfileName TEXT NULL;",
+            ["AdsPowerApiBaseUrl"] = "ALTER TABLE AvitoAccounts ADD COLUMN AdsPowerApiBaseUrl TEXT NULL;",
+            ["AdsPowerApiKey"] = "ALTER TABLE AvitoAccounts ADD COLUMN AdsPowerApiKey TEXT NULL;"
         };
 
         foreach (var (columnName, statement) in alterStatements)

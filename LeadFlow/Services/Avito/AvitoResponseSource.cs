@@ -16,6 +16,13 @@ public sealed class AvitoResponseSource(
 
     public async Task<IReadOnlyList<CandidateResponse>> GetNewResponsesAsync(AvitoAccount account, AppSettings settings, CancellationToken cancellationToken)
     {
+        if (account.ProfileProvider == AvitoProfileProvider.AdsPower && !settings.DemoModeEnabled)
+        {
+            account.LastErrorMessage =
+                "Аккаунт AdsPower: автоматический опрос откликов через встроенный браузер недоступен. Используйте локальный профиль или демо-режим.";
+            return [];
+        }
+
         var session = await browserSessionService.CreateSessionAsync(account, cancellationToken);
 
         await using var host = await backgroundWebViewHostFactory.CreateAsync(cancellationToken);

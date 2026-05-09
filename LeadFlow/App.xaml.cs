@@ -4,6 +4,7 @@ using LeadFlow.Logging.Audit;
 using LeadFlow.Models;
 using LeadFlow.Services;
 using LeadFlow.Services.Avito;
+using LeadFlow.Services.AdsPower;
 using LeadFlow.Services.Bitrix;
 using LeadFlow.Services.Browser;
 using LeadFlow.ViewModels;
@@ -114,6 +115,7 @@ public partial class App : System.Windows.Application
         builder.Services.AddSingleton<AppRepository>();
         builder.Services.AddSingleton<ICandidateDuplicateRepository>(sp => sp.GetRequiredService<AppRepository>());
         builder.Services.AddSingleton<IMonitoringRepository>(sp => sp.GetRequiredService<AppRepository>());
+        builder.Services.AddSingleton<IAdsPowerApiClient, AdsPowerApiClient>();
         builder.Services.AddSingleton<IWindowService, WindowService>();
         builder.Services.AddSingleton<IMonitoringService, MonitoringService>();
 
@@ -135,6 +137,8 @@ public partial class App : System.Windows.Application
         builder.Services.AddTransient<AccountSettingsViewModel>();
         builder.Services.AddTransient<AvitoAuthViewModel>();
         builder.Services.AddTransient<AvitoBrowserHostViewModel>();
+        builder.Services.AddTransient<AdsPowerProfilePickerViewModel>();
+        builder.Services.AddTransient<AdsPowerProfilePickerWindow>();
 
         builder.Services.AddTransient<MainWindow>();
         builder.Services.AddTransient<MonitoringWindow>();

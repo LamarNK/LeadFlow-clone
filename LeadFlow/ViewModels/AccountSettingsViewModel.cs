@@ -1413,125 +1413,61 @@ public partial class AccountSettingsViewModel(
     }
 
     /// <summary>
-    /// Случайный браузер + случайная допустимая для него версия в комбо, затем UA строго под эти поля
-    /// (раньше всегда использовался один и тот же выбранный браузер).
+    /// Новая строка Microsoft Edge UA: случайный Chromium-мажор из отмеченных пресетов (или из полного списка пресетов),
+    /// независимо от поля «версия» — иначе при режиме «Все» мажор совпадал с установленным Edge и строка не менялась.
     /// </summary>
     public void RegenerateUserAgent()
     {
+        NormalizeBrowserVersionForCurrentBrowser();
+        var osToken = BuildOsToken();
+        var pool = GetChromiumMajorPoolForRegenerateButton();
         var previous = AssignedUserAgent;
         string next;
+        var chosenMajor = 0;
         var attempt = 0;
         do
         {
-            NormalizeBrowserVersionForCurrentBrowser();
-            var osToken = BuildOsToken();
-            next = BuildChromiumEdgeUserAgent(osToken);
+            chosenMajor = pool[Random.Next(pool.Count)];
+            next = FormatMicrosoftEdgeUserAgent(osToken, chosenMajor);
             attempt++;
-        } while (attempt < 24 && string.Equals(next, previous, StringComparison.Ordinal));
+        } while (attempt < 20 && pool.Count > 1 && string.Equals(next, previous, StringComparison.Ordinal));
 
         AssignedUserAgent = next;
     }
 
-    private string BuildChromeUserAgent(string osToken, bool preferRandomAmongAllowedMajors = false)
+    private List<int> GetChromiumMajorPoolForRegenerateButton()
     {
-        var maj = ResolveChromiumMajorForChromeFamily(preferRandomAmongAllowedMajors);
-        return $"Mozilla/5.0 ({osToken}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{maj}.0.0.0 Safari/537.36";
-    }
-
-    private string BuildChromiumEdgeUserAgent(string osToken, bool preferRandomAmongAllowedMajors = false)
-    {
-        var maj = ResolveChromiumMajorForChromeFamily(preferRandomAmongAllowedMajors);
-        return $"Mozilla/5.0 ({osToken}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{maj}.0.0.0 Safari/537.36 Edg/{maj}.0.0.0";
-    }
-
-    /// <summary>
-    /// Opera: в комбо — мажор OPR (как у реального Opera). В строке UA — OPR/{opr} и отдельно Chrome/{chrome},
-    /// где chrome ≈ opr + 16 (типичная связка Chromium-ядра и OPR), чтобы не слать сайту «Opera 146».
-    /// </summary>
-    private string BuildOperaUserAgent(string osToken, bool preferRandomVersion = false)
-    {
-        int opr;
-        if (preferRandomVersion)
+        if (UaPresetRows.Count <= 1)
         {
-            opr = Random.Next(70, 131);
-        }
-        else
-        {
-            opr = int.TryParse(BrowserVersion, out var o) ? o : 115;
-            opr = Math.Clamp(opr, 70, 130);
-        }
-
-        var chrome = Math.Clamp(opr + 16, 88, 147);
-        return $"Mozilla/5.0 ({osToken}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{chrome}.0.0.0 Safari/537.36 OPR/{opr}.0.0.0";
-    }
-
-    private string BuildFirefoxUserAgent(string osToken, bool preferRandomVersion = false)
-    {
-        int ff;
-        if (preferRandomVersion)
-        {
-            ff = Random.Next(88, 141);
-        }
-        else
-        {
-            ff = int.TryParse(BrowserVersion, out var v) ? v : 128;
-            ff = Math.Clamp(ff, 88, 200);
-        }
-
-        return $"Mozilla/5.0 ({osToken}; rv:{ff}.0) Gecko/20100101 Firefox/{ff}.0";
-    }
-
-    private string BuildSafariUserAgent(string osToken, bool preferRandomVersion = false)
-    {
-        string ver;
-        if (preferRandomVersion)
-        {
-            ver = "18";
-        }
-        else
-        {
-            ver = string.IsNullOrWhiteSpace(BrowserVersion) ? "18" : BrowserVersion.Trim();
-        }
-
-        if (!ver.Contains('.', StringComparison.Ordinal))
-        {
-            ver = $"{ver}.0";
-        }
-
-        return $"Mozilla/5.0 ({osToken}) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/{ver} Safari/605.1.15";
-    }
-
-    /// <summary>Chromium major для Chrome/Edge: из пресетов UA или из поля версии браузера.</summary>
-    /// <param name="preferRandomAmongAllowedMajors">Для кнопки перегенерации: случайный мажор среди отмеченных пресетов (или всех 88–147), без «залипания» на версии из комбо.</param>
-    private int ResolveChromiumMajorForChromeFamily(bool preferRandomAmongAllowedMajors = false)
-    {
-        if (UaPresetRows.Count == 0)
-        {
-            return int.TryParse(BrowserVersion, out var b) ? Math.Clamp(b, 88, 147) : 146;
-        }
-
-        var allMajorsFromPresets = UaPresetRows.Skip(1).Select(static x => x.UaMajor!.Value).ToList();
-        var checkedMajors = UaPresetRows.Skip(1).Where(static x => x.IsChecked).Select(static x => x.UaMajor!.Value).ToList();
-
-        if (preferRandomAmongAllowedMajors)
-        {
-            var pool = checkedMajors.Count > 0 ? checkedMajors : allMajorsFromPresets;
-            return pool.Count > 0 ? pool[Random.Next(pool.Count)] : (int.TryParse(BrowserVersion, out var b) ? Math.Clamp(b, 88, 147) : 146);
-        }
-
-        var allRow = UaPresetRows[0];
-        var uaRows = checkedMajors;
-        if (allRow.IsChecked || uaRows.Count == 0 || uaRows.Count == UaPresetRows.Count - 1)
-        {
-            if (int.TryParse(BrowserVersion, out var fromCombo))
+            if (int.TryParse(BrowserVersionProvider.GetCurrentChromiumMajorString(), out var wv))
             {
-                return Math.Clamp(fromCombo, 88, 147);
+                return [Math.Clamp(wv, 88, 147)];
             }
 
-            return uaRows.Count > 0 ? uaRows[Random.Next(uaRows.Count)] : 146;
+            if (int.TryParse(BrowserVersion, out var bv))
+            {
+                return [Math.Clamp(bv, 88, 147)];
+            }
+
+            return [131];
         }
 
-        return uaRows[Random.Next(uaRows.Count)];
+        var all = UaPresetRows.Skip(1).Where(static r => r.UaMajor.HasValue).Select(static r => r.UaMajor!.Value).Distinct().ToList();
+        var checkedOnly = UaPresetRows.Skip(1).Where(static r => r is { IsChecked: true, UaMajor: not null }).Select(static r => r.UaMajor!.Value).Distinct().ToList();
+        var pool = checkedOnly.Count > 0 ? checkedOnly : all;
+        if (pool.Count > 0)
+        {
+            return pool;
+        }
+
+        var fallback = int.TryParse(BrowserVersion, out var fb) ? Math.Clamp(fb, 88, 147) : 131;
+        return [fallback];
+    }
+
+    private static string FormatMicrosoftEdgeUserAgent(string osToken, int major)
+    {
+        major = Math.Clamp(major, 88, 147);
+        return $"Mozilla/5.0 ({osToken}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{major}.0.0.0 Safari/537.36 Edg/{major}.0.0.0";
     }
 
     private string BuildOsToken()

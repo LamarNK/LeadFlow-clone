@@ -407,7 +407,6 @@
                                                             VerticalAlignment="Stretch"
                                                             Click="RegenerateUserAgent_OnClick"
                                                             Focusable="False"
-                                                            PreviewMouseLeftButtonDown="RegenerateUserAgent_PreviewMouseLeftButtonDown"
                                                             Style="{StaticResource UaInlineRegenerateButtonStyle}"
                                                             ToolTip="Перегенерировать User-Agent">
                                                         <TextBlock FontFamily="Segoe MDL2 Assets"

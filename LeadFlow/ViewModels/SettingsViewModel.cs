@@ -14,6 +14,7 @@ using LeadFlow.Models;
 using LeadFlow.Services;
 using LeadFlow.Services.Browser;
 using LeadFlow.Views;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace LeadFlow.ViewModels;
 
@@ -22,7 +23,8 @@ public partial class SettingsViewModel(
     AppRepository repository,
     IBrowserProfileService profileService,
     IBrowserProfileArchiveService profileArchiveService,
-    IWindowService windowService) : ObservableObject
+    IWindowService windowService,
+    IServiceProvider serviceProvider) : ObservableObject
 {
     private const string FixedAvitoProfileUrl = "https://www.avito.ru/profile";
     private AppSettings _settings = new();
@@ -40,6 +42,9 @@ public partial class SettingsViewModel(
 
     [ObservableProperty]
     private bool isImportingProfile;
+
+    [ObservableProperty]
+    private bool isAddMenuOpen;
 
     [RelayCommand]
     public async Task LoadAsync()
@@ -68,18 +73,68 @@ public partial class SettingsViewModel(
     }
 
     [RelayCommand]
-    public async Task AddAccount()
+    public async Task AddLocalAccountAsync()
     {
+        IsAddMenuOpen = false;
         var accountNumber = Accounts.Count + 1;
         var account = new AvitoAccount
         {
             DisplayName = $"Аккаунт {accountNumber}",
             AvitoResponsesUrl = FixedAvitoProfileUrl,
-            Status = AvitoAccountStatus.RequiresLogin
+            Status = AvitoAccountStatus.RequiresLogin,
+            ProfileProvider = AvitoProfileProvider.Local
         };
 
         var profile = profileService.GetProfile(account);
         account.BrowserProfilePath = profile.ProfilePath;
+        Accounts.Add(account);
+        SelectedAccount = account;
+        await SaveAsync();
+    }
+
+    [RelayCommand]
+    public async Task AddFromAdsPowerAsync(Window? owner)
+    {
+        IsAddMenuOpen = false;
+        owner ??= Application.Current?.MainWindow;
+        var picker = ActivatorUtilities.CreateInstance<AdsPowerProfilePickerWindow>(serviceProvider);
+        if (owner is not null)
+        {
+            picker.Owner = owner;
+        }
+
+        if (picker.ShowDialog() != true || picker.Result is not { } r)
+        {
+            return;
+        }
+
+        if (Accounts.Any(a =>
+                a.ProfileProvider == AvitoProfileProvider.AdsPower
+                && string.Equals(a.AdsPowerProfileId, r.UserId, StringComparison.Ordinal)))
+        {
+            MessageBox.Show(
+                owner,
+                "Этот профиль AdsPower уже есть в списке.",
+                "Добавление аккаунта",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+            return;
+        }
+
+        var n = Accounts.Count + 1;
+        var account = new AvitoAccount
+        {
+            DisplayName = string.IsNullOrWhiteSpace(r.DisplayName) ? $"AdsPower {n}" : r.DisplayName,
+            AvitoResponsesUrl = FixedAvitoProfileUrl,
+            Status = AvitoAccountStatus.RequiresLogin,
+            ProfileProvider = AvitoProfileProvider.AdsPower,
+            AdsPowerProfileId = r.UserId,
+            AdsPowerProfileName = r.DisplayName,
+            AdsPowerApiBaseUrl = r.ApiBaseUrl,
+            AdsPowerApiKey = r.ApiKey,
+            BrowserProfilePath = string.Empty
+        };
+
         Accounts.Add(account);
         SelectedAccount = account;
         await SaveAsync();
@@ -93,7 +148,8 @@ public partial class SettingsViewModel(
             return;
         }
 
-        if (!string.IsNullOrWhiteSpace(SelectedAccount.BrowserProfilePath))
+        if (SelectedAccount.ProfileProvider == AvitoProfileProvider.Local
+            && !string.IsNullOrWhiteSpace(SelectedAccount.BrowserProfilePath))
         {
             _pendingProfileDeletions.Add(SelectedAccount.BrowserProfilePath);
         }
@@ -139,9 +195,16 @@ public partial class SettingsViewModel(
             {
                 account.AvitoResponsesUrl = FixedAvitoProfileUrl;
 
-                if (string.IsNullOrWhiteSpace(account.BrowserProfilePath))
+                if (account.ProfileProvider == AvitoProfileProvider.Local)
                 {
-                    account.BrowserProfilePath = profileService.GetProfile(account).ProfilePath;
+                    if (string.IsNullOrWhiteSpace(account.BrowserProfilePath))
+                    {
+                        account.BrowserProfilePath = profileService.GetProfile(account).ProfilePath;
+                    }
+                }
+                else
+                {
+                    account.BrowserProfilePath = string.Empty;
                 }
 
                 _settings.Avito.Accounts.Add(account);
@@ -353,6 +416,7 @@ public partial class SettingsViewModel(
             DisplayName = suggestedName,
             AvitoResponsesUrl = FixedAvitoProfileUrl,
             Status = AvitoAccountStatus.RequiresLogin,
+            ProfileProvider = AvitoProfileProvider.Local
         };
 
         var profile = profileService.GetProfile(newAccount);
@@ -415,7 +479,10 @@ public partial class SettingsViewModel(
     }
 
     private bool CanExportProfileArchive() =>
-        SelectedAccount is not null && !IsExportingProfile && !IsImportingProfile;
+        SelectedAccount is not null
+        && SelectedAccount.ProfileProvider == AvitoProfileProvider.Local
+        && !IsExportingProfile
+        && !IsImportingProfile;
 
     private bool CanImportProfileArchive() => !IsExportingProfile && !IsImportingProfile;
 

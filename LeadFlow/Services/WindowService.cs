@@ -1,12 +1,14 @@
 using System.Windows;
+using LeadFlow.Logging.Audit;
 using LeadFlow.Models;
+using LeadFlow.Services.AdsPower;
 using LeadFlow.ViewModels;
 using LeadFlow.Views;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace LeadFlow.Services;
 
-public sealed class WindowService(IServiceProvider serviceProvider) : IWindowService
+public sealed class WindowService(IServiceProvider serviceProvider, IAdsPowerApiClient adsPowerApiClient) : IWindowService
 {
     private readonly Dictionary<Type, Window> _openWindows = new();
     private AvitoAuthWindow? _avitoBrowserWindow;
@@ -31,12 +33,17 @@ public sealed class WindowService(IServiceProvider serviceProvider) : IWindowSer
         return Task.CompletedTask;
     }
 
-    public Task ShowAvitoAuthAsync(Window owner, AvitoAccount account, CancellationToken cancellationToken)
+    public async Task ShowAvitoAuthAsync(Window owner, AvitoAccount account, CancellationToken cancellationToken)
     {
+        if (account.ProfileProvider == AvitoProfileProvider.AdsPower)
+        {
+            await LaunchAdsPowerBrowserAsync(owner, account, "https://www.avito.ru/", cancellationToken).ConfigureAwait(true);
+            return;
+        }
+
         var host = GetOrCreateAvitoBrowserHost(owner);
         host.AddAuthTab(account);
         ActivateWindow(_avitoBrowserWindow!);
-        return Task.CompletedTask;
     }
 
     public Task ShowAccountSettingsAsync(Window owner, AvitoAccount account, CancellationToken cancellationToken)
@@ -49,20 +56,96 @@ public sealed class WindowService(IServiceProvider serviceProvider) : IWindowSer
         return Task.CompletedTask;
     }
 
-    public Task ShowAvitoProfileAsync(Window owner, AvitoAccount account, CancellationToken cancellationToken)
+    public async Task ShowAvitoProfileAsync(Window owner, AvitoAccount account, CancellationToken cancellationToken)
     {
+        if (account.ProfileProvider == AvitoProfileProvider.AdsPower)
+        {
+            await LaunchAdsPowerBrowserAsync(owner, account, account.AvitoResponsesUrl, cancellationToken).ConfigureAwait(true);
+            return;
+        }
+
         var host = GetOrCreateAvitoBrowserHost(owner);
         host.AddProfileTab(account, initialUrl: null);
         ActivateWindow(_avitoBrowserWindow!);
-        return Task.CompletedTask;
     }
 
-    public Task ShowAvitoProfileAsync(Window owner, AvitoAccount account, string initialUrl, CancellationToken cancellationToken)
+    public async Task ShowAvitoProfileAsync(Window owner, AvitoAccount account, string initialUrl, CancellationToken cancellationToken)
     {
+        if (account.ProfileProvider == AvitoProfileProvider.AdsPower)
+        {
+            await LaunchAdsPowerBrowserAsync(owner, account, initialUrl, cancellationToken).ConfigureAwait(true);
+            return;
+        }
+
         var host = GetOrCreateAvitoBrowserHost(owner);
         host.AddProfileTab(account, initialUrl);
         ActivateWindow(_avitoBrowserWindow!);
-        return Task.CompletedTask;
+    }
+
+    private async Task LaunchAdsPowerBrowserAsync(Window owner, AvitoAccount account, string? openUrl, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(account.AdsPowerProfileId) || string.IsNullOrWhiteSpace(account.AdsPowerApiBaseUrl))
+        {
+            MessageBox.Show(
+                owner,
+                "Для аккаунта AdsPower не заданы идентификатор профиля или URL Local API.",
+                "AdsPower",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+            return;
+        }
+
+        try
+        {
+            var options = new AdsPowerConnectionOptions(
+                account.AdsPowerApiBaseUrl,
+                string.IsNullOrWhiteSpace(account.AdsPowerApiKey) ? null : account.AdsPowerApiKey);
+            _ = GlobalLogger.Instance.LogAsync(
+                $"AdsPower browser launch requested for account {account.DisplayName}.",
+                DeskLinkAuditLogLevel.Info,
+                memberName: nameof(LaunchAdsPowerBrowserAsync),
+                filePath: "WindowService.cs",
+                properties: new Dictionary<string, object?>
+                {
+                    ["account.displayName"] = account.DisplayName,
+                    ["adsPower.baseUrl"] = options.BaseUrl,
+                    ["adsPower.hasApiKey"] = !string.IsNullOrWhiteSpace(options.ApiKey),
+                    ["adsPower.userId"] = account.AdsPowerProfileId,
+                    ["adsPower.openUrl"] = openUrl
+                });
+            await adsPowerApiClient.StartBrowserAsync(options, account.AdsPowerProfileId, openUrl, cancellationToken)
+                .ConfigureAwait(true);
+            _ = GlobalLogger.Instance.LogAsync(
+                $"AdsPower browser launch completed for account {account.DisplayName}.",
+                DeskLinkAuditLogLevel.Info,
+                memberName: nameof(LaunchAdsPowerBrowserAsync),
+                filePath: "WindowService.cs",
+                properties: new Dictionary<string, object?>
+                {
+                    ["account.displayName"] = account.DisplayName,
+                    ["adsPower.baseUrl"] = options.BaseUrl,
+                    ["adsPower.hasApiKey"] = !string.IsNullOrWhiteSpace(options.ApiKey),
+                    ["adsPower.userId"] = account.AdsPowerProfileId,
+                    ["adsPower.openUrl"] = openUrl
+                });
+        }
+        catch (Exception ex)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"AdsPower browser launch failed for account {account.DisplayName}.{Environment.NewLine}{ex}",
+                DeskLinkAuditLogLevel.Error,
+                memberName: nameof(LaunchAdsPowerBrowserAsync),
+                filePath: "WindowService.cs",
+                properties: new Dictionary<string, object?>
+                {
+                    ["account.displayName"] = account.DisplayName,
+                    ["adsPower.baseUrl"] = account.AdsPowerApiBaseUrl,
+                    ["adsPower.hasApiKey"] = !string.IsNullOrWhiteSpace(account.AdsPowerApiKey),
+                    ["adsPower.userId"] = account.AdsPowerProfileId,
+                    ["adsPower.openUrl"] = openUrl
+                });
+            MessageBox.Show(owner, ex.Message, "AdsPower", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
     }
 
     public void CloseAvitoBrowserTabsForAccount(Guid accountId)

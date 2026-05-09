@@ -13,6 +13,7 @@
             <converters:ResponseStatusToDisplayConverter x:Key="ResponseStatusToDisplayConverter" />
             <converters:AgeToDisplayConverter x:Key="AgeToDisplayConverter" />
             <converters:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
+            <converters:InverseBooleanConverter x:Key="InverseBooleanConverter" />
             <converters:LogLevelToBackgroundConverter x:Key="LogLevelToBackgroundConverter" />
             <converters:ZeroToCollapsedConverter x:Key="ZeroToCollapsedConverter" />
             <converters:UtcToLocalDateTimeConverter x:Key="UtcToLocalDateTimeConverter" />

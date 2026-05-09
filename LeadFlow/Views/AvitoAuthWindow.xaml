@@ -473,7 +473,18 @@
                 </ItemsControl.ItemContainerStyle>
                 <ItemsControl.ItemTemplate>
                     <DataTemplate DataType="{x:Type vm:AvitoAuthViewModel}">
-                        <Border Visibility="{Binding IsActiveTab, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <!-- Collapsed даёт WebView2 нулевой размер при инициализации — часто пустое окно (особенно fixed runtime). -->
+                        <Border IsHitTestVisible="{Binding IsActiveTab}">
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Setter Property="Panel.ZIndex" Value="0" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsActiveTab}" Value="True">
+                                            <Setter Property="Panel.ZIndex" Value="10" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
                             <wv2:WebView2 HorizontalAlignment="Stretch"
                                           VerticalAlignment="Stretch"
                                           behaviors:WebView2Behavior.Session="{Binding Session}" />

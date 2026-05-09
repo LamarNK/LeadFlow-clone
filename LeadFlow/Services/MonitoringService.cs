@@ -242,6 +242,11 @@ public sealed class MonitoringService(
 
         foreach (var account in accounts)
         {
+            if (account.ProfileProvider == AvitoProfileProvider.AdsPower)
+            {
+                continue;
+            }
+
             try
             {
                 var previousActiveAdsCount = account.ActiveAdsCount;
@@ -462,6 +467,24 @@ public sealed class MonitoringService(
     /// <returns>Новые откликов с Авито, был ли опрос источника, есть ли необработанный «хвост» сверх лимита за цикл.</returns>
     internal async Task<(int NewResponsesDetected, bool PolledSource, bool HasUndischargedBacklog)> ProcessAccountAsync(AvitoAccount account, AppSettings settings, CancellationToken cancellationToken)
     {
+        if (account.ProfileProvider == AvitoProfileProvider.AdsPower && !settings.DemoModeEnabled)
+        {
+            UpdateStatus(
+                MonitoringStatus.Running,
+                $"Аккаунт «{account.DisplayName}» (AdsPower) пропущен: мониторинг откликов работает только с локальным профилем WebView2.");
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Account {account.DisplayName} skipped: AdsPower profile (no embedded WebView2 monitoring).",
+                DeskLinkAuditLogLevel.Warning);
+            await repository.AddLogAsync(new ProcessingLogItem
+            {
+                AccountId = account.Id,
+                Level = "Warning",
+                Message = "Аккаунт AdsPower пропущен",
+                Details = "Автоопрос откликов требует локального профиля."
+            }, cancellationToken);
+            return (0, false, false);
+        }
+
         if (account.Status is AvitoAccountStatus.RequiresLogin or AvitoAccountStatus.RequiresManualAction or AvitoAccountStatus.Paused)
         {
             UpdateStatus(

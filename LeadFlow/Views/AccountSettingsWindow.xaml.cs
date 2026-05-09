@@ -1,7 +1,6 @@
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Data;
-using System.Windows.Input;
-using System.Windows.Threading;
 using LeadFlow.ViewModels;
 
 namespace LeadFlow.Views;
@@ -30,30 +29,12 @@ public partial class AccountSettingsWindow : Window
         }
     }
 
-    private void RegenerateUserAgent_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-    {
-        // Пока фокус ещё в TextBox — явно отправляем текст в VM до смены фокуса и клика,
-        // иначе привязка может позже перезаписать новый User-Agent старым значением из поля.
-        var expr = BindingOperations.GetBindingExpression(UaAssignedTextBox, System.Windows.Controls.TextBox.TextProperty);
-        expr?.UpdateSource();
-    }
-
     private void RegenerateUserAgent_OnClick(object sender, RoutedEventArgs e)
     {
-        if (DataContext is not AccountSettingsViewModel vm)
+        BindingOperations.GetBindingExpression(UaAssignedTextBox, TextBox.TextProperty)?.UpdateSource();
+        if (DataContext is AccountSettingsViewModel vm)
         {
-            return;
+            vm.RegenerateUserAgent();
         }
-
-        // После LostFocus/обновления привязки — иначе иногда коммит TextBox идёт после Click и откатывает строку.
-        Dispatcher.BeginInvoke(
-            () =>
-            {
-                if (DataContext is AccountSettingsViewModel still)
-                {
-                    still.RegenerateUserAgent();
-                }
-            },
-            DispatcherPriority.ApplicationIdle);
     }
 }

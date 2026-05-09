@@ -1,3 +1,5 @@
+using LeadFlow.Models;
+
 namespace LeadFlow.Data;
 
 public sealed class AvitoAccountEntity
@@ -53,4 +55,10 @@ public sealed class AvitoAccountEntity
     public int BlockedCount { get; set; }
     public int DraftsCount { get; set; }
     public DateTime? AdsStatsUpdatedAt { get; set; }
+
+    public string ProfileProvider { get; set; } = nameof(AvitoProfileProvider.Local);
+    public string? AdsPowerProfileId { get; set; }
+    public string? AdsPowerProfileName { get; set; }
+    public string? AdsPowerApiBaseUrl { get; set; }
+    public string? AdsPowerApiKey { get; set; }
 }

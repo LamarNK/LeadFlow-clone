@@ -10,8 +10,12 @@ namespace LeadFlow.Services.Browser;
 
 public partial class BrowserAccountSession : ObservableObject
 {
+    private readonly SemaphoreSlim _attachSemaphore = new(1, 1);
     private bool _cookiesImportedInCurrentSession;
     private bool _clientHintsHeaderHookRegistered;
+    private bool _coreEventsAttached;
+    private bool _fingerprintApplied;
+    private bool _proxyTimezoneResolved;
     [ObservableProperty]
     private string currentUrl = string.Empty;
 
@@ -36,67 +40,92 @@ public partial class BrowserAccountSession : ObservableObject
 
     public async Task AttachAsync(WebView2 view, CancellationToken cancellationToken)
     {
-        AttachedView = view;
-        Directory.CreateDirectory(ProfilePath);
-
-        // === АНТИ-ДЕТЕКТ: Создаём окружение с прокси и настройками ===
-        Environment = await CreateEnvironmentWithSettingsAsync();
-        
-        await view.EnsureCoreWebView2Async(Environment);
-
-        if (view.CoreWebView2 is { } coreForProxyAuth)
+        await _attachSemaphore.WaitAsync(cancellationToken).ConfigureAwait(true);
+        try
         {
-            coreForProxyAuth.BasicAuthenticationRequested += OnBasicAuthenticationRequested;
-            coreForProxyAuth.NewWindowRequested += OnNewWindowRequested;
-        }
-
-        await TryResolveTimezoneFromProxyAsync(cancellationToken).ConfigureAwait(true);
-
-        view.CoreWebView2.SourceChanged += (_, _) => UpdateNavigationState();
-        view.CoreWebView2.HistoryChanged += (_, _) => UpdateNavigationState();
-        
-        // UA, stealth (если задан) и блок геолокации — до навигации
-        await ApplyFingerprintSettingsAsync(view, cancellationToken).ConfigureAwait(true);
-
-        // Импорт cookies из JSON выполняем только по явному одноразовому флагу.
-        if (view.CoreWebView2 is not null && Account.ImportCookiesOnNextStart && !_cookiesImportedInCurrentSession)
-        {
-            var report = await WebViewSessionCookies.ApplyFromStoredCookiesJsonAsync(view.CoreWebView2, Account.CookiesJson, cancellationToken)
-                .ConfigureAwait(true);
-            StatusText = report.Summary ?? "Импорт cookies завершён.";
-            System.Diagnostics.Debug.WriteLine($"[Cookies] {StatusText}");
-            _cookiesImportedInCurrentSession = true;
-
-            if (PersistAccountAsync is not null)
+            if (ReferenceEquals(AttachedView, view) && view.CoreWebView2 is not null && IsInitialized)
             {
-                try
+                UpdateNavigationState();
+                return;
+            }
+
+            AttachedView = view;
+            Directory.CreateDirectory(ProfilePath);
+
+            // Первый запуск создаёт окружение и CoreWebView2; повторные привязки того же контрола его не переинициализируют.
+            if (view.CoreWebView2 is null)
+            {
+                Environment ??= await CreateEnvironmentWithSettingsAsync().ConfigureAwait(true);
+                await view.EnsureCoreWebView2Async(Environment).ConfigureAwait(true);
+            }
+
+            if (view.CoreWebView2 is { } core && !_coreEventsAttached)
+            {
+                core.BasicAuthenticationRequested += OnBasicAuthenticationRequested;
+                core.NewWindowRequested += OnNewWindowRequested;
+                core.SourceChanged += (_, _) => UpdateNavigationState();
+                core.HistoryChanged += (_, _) => UpdateNavigationState();
+                _coreEventsAttached = true;
+            }
+
+            if (!_proxyTimezoneResolved)
+            {
+                await TryResolveTimezoneFromProxyAsync(cancellationToken).ConfigureAwait(true);
+                _proxyTimezoneResolved = true;
+            }
+
+            // UA, stealth (если задан) и блок геолокации — до первой навигации.
+            if (!_fingerprintApplied)
+            {
+                await ApplyFingerprintSettingsAsync(view, cancellationToken).ConfigureAwait(true);
+                _fingerprintApplied = true;
+            }
+
+            // Импорт cookies из JSON выполняем только по явному одноразовому флагу.
+            if (view.CoreWebView2 is not null && Account.ImportCookiesOnNextStart && !_cookiesImportedInCurrentSession)
+            {
+                var report = await WebViewSessionCookies.ApplyFromStoredCookiesJsonAsync(view.CoreWebView2, Account.CookiesJson, cancellationToken)
+                    .ConfigureAwait(true);
+                StatusText = report.Summary ?? "Импорт cookies завершён.";
+                System.Diagnostics.Debug.WriteLine($"[Cookies] {StatusText}");
+                _cookiesImportedInCurrentSession = true;
+
+                if (PersistAccountAsync is not null)
                 {
-                    Account.ImportCookiesOnNextStart = false;
-                    await PersistAccountAsync(cancellationToken).ConfigureAwait(true);
+                    try
+                    {
+                        Account.ImportCookiesOnNextStart = false;
+                        await PersistAccountAsync(cancellationToken).ConfigureAwait(true);
+                    }
+                    catch (Exception ex)
+                    {
+                        // Семантика "одноразово" считается подтверждённой только после сохранения.
+                        Account.ImportCookiesOnNextStart = true;
+                        _cookiesImportedInCurrentSession = false;
+                        System.Diagnostics.Debug.WriteLine($"[Cookies] Failed to persist ImportCookiesOnNextStart reset: {ex.Message}");
+                    }
                 }
-                catch (Exception ex)
+                else
                 {
-                    // Семантика "одноразово" считается подтверждённой только после сохранения.
-                    Account.ImportCookiesOnNextStart = true;
+                    // Без персистентности не подтверждаем сброс флага.
                     _cookiesImportedInCurrentSession = false;
-                    System.Diagnostics.Debug.WriteLine($"[Cookies] Failed to persist ImportCookiesOnNextStart reset: {ex.Message}");
                 }
             }
-            else
-            {
-                // Без персистентности не подтверждаем сброс флага.
-                _cookiesImportedInCurrentSession = false;
-            }
-        }
 
-        var initialUrl = string.IsNullOrWhiteSpace(CurrentUrl)
-            ? Account.AvitoResponsesUrl
-            : CurrentUrl;
-        view.Source = new Uri(initialUrl);
-        CurrentUrl = initialUrl;
-        UpdateNavigationState();
-        IsInitialized = true;
-        StatusText = "Браузер готов";
+            var initialUrl = string.IsNullOrWhiteSpace(CurrentUrl)
+                ? Account.AvitoResponsesUrl
+                : CurrentUrl;
+            var normalizedUrl = NormalizeUrl(initialUrl);
+            view.CoreWebView2?.Navigate(normalizedUrl);
+            CurrentUrl = normalizedUrl;
+            UpdateNavigationState();
+            IsInitialized = true;
+            StatusText = "Браузер готов";
+        }
+        finally
+        {
+            _attachSemaphore.Release();
+        }
     }
 
     private async Task TryResolveTimezoneFromProxyAsync(CancellationToken cancellationToken)

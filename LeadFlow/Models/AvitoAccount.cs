@@ -63,6 +63,13 @@ public sealed partial class AvitoAccount : ObservableObject
     [ObservableProperty] private int draftsCount;
     [ObservableProperty] private DateTime? adsStatsUpdatedAt;
 
+    [ObservableProperty] private AvitoProfileProvider profileProvider = AvitoProfileProvider.Local;
+    /// <summary>Идентификатор профиля в AdsPower (поле user_id в Local API).</summary>
+    [ObservableProperty] private string? adsPowerProfileId;
+    [ObservableProperty] private string? adsPowerProfileName;
+    [ObservableProperty] private string? adsPowerApiBaseUrl;
+    [ObservableProperty] private string? adsPowerApiKey;
+
     /// <summary>
     /// Копирует в этот экземпляр поля, сохранённые в БД из фонового процесса (тот же <see cref="Id"/>).
     /// </summary>
