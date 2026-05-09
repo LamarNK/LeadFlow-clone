@@ -1118,6 +1118,30 @@ public sealed class MonitoringService(
 
             var bitrixResult = await bitrixClient.CreateLeadAsync(response, settings, cancellationToken).ConfigureAwait(false);
 
+            if (bitrixResult.BitrixCreationSuppressed)
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"Bitrix create suppressed for response {response.Id}.",
+                    DeskLinkAuditLogLevel.Warning);
+                response.Status = ResponseStatus.ActionRequired;
+                response.ProcessedAt = DateTime.UtcNow;
+                response.ErrorMessage = bitrixResult.Error;
+                await repository.SaveCandidateAsync(response, cancellationToken);
+                await repository.AddLogAsync(new ProcessingLogItem
+                {
+                    CandidateResponseId = response.Id,
+                    AccountId = response.AccountId,
+                    Level = "Warning",
+                    Message = "Создание в Bitrix24 отключено",
+                    Details = bitrixResult.Error
+                }, cancellationToken);
+                UpdateStatus(
+                    MonitoringStatus.Running,
+                    $"Отклик \"{response.FullName}\": создание в Bitrix24 временно отключено в приложении.");
+                ResponseProcessed?.Invoke(this, response);
+                return;
+            }
+
             if (bitrixResult.IsSuccess)
             {
                 response.Status = ResponseStatus.Sent;

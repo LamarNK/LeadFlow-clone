@@ -11,6 +11,9 @@ namespace LeadFlow.Tests;
 
 public sealed class BitrixClientTests
 {
+    static BitrixClientTests() =>
+        BitrixClient.DealCreationTemporarilyDisabled = false;
+
     private const string Webhook = "https://b24-test.bitrix24.ru/rest/1/abc/";
 
     [Fact]
@@ -112,6 +115,28 @@ public sealed class BitrixClientTests
             .ToHashSet();
         Assert.Contains("79000000000", values);
         Assert.Contains("+79000000000", values);
+    }
+
+    [Fact]
+    public async Task CreateLead_WhenDealCreationDisabled_SuppressesWithoutHttp()
+    {
+        var previous = BitrixClient.DealCreationTemporarilyDisabled;
+        try
+        {
+            BitrixClient.DealCreationTemporarilyDisabled = true;
+            var (handler, client) = BuildClientWithHandler((_, _) =>
+                Task.FromResult(StubHttpMessageHandler.Json(HttpStatusCode.InternalServerError, "{}")));
+
+            var result = await client.CreateLeadAsync(NewResponse(), NewSettings(), CancellationToken.None);
+
+            Assert.False(result.IsSuccess);
+            Assert.True(result.BitrixCreationSuppressed);
+            Assert.Empty(handler.Calls);
+        }
+        finally
+        {
+            BitrixClient.DealCreationTemporarilyDisabled = previous;
+        }
     }
 
     [Fact]

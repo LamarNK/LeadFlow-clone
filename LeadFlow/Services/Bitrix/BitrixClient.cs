@@ -15,6 +15,12 @@ public sealed class BitrixClient(
     IHttpClientFactory httpClientFactory,
     ICandidateParser candidateParser) : IBitrixClient
 {
+    /// <summary>
+    /// Временный стоп-кран: при <c>true</c> контакты и сделки в Bitrix24 не создаются (REST не вызывается).
+    /// Поставьте <c>false</c>, чтобы снова включить отправку.
+    /// </summary>
+    public static bool DealCreationTemporarilyDisabled { get; set; } = true;
+
     private const string ImportedLeadSource = "Bitrix24";
     private const int ContactLookupMaxConcurrency = 6;
     private const int ContactLookupMaxAttempts = 3;
@@ -212,6 +218,19 @@ public sealed class BitrixClient(
             };
         }
 
+        if (DealCreationTemporarilyDisabled)
+        {
+            const string msg =
+                "Создание контактов и сделок в Bitrix24 отключено (BitrixClient.DealCreationTemporarilyDisabled).";
+            _ = GlobalLogger.Instance.LogAsync(msg, DeskLinkAuditLogLevel.Warning);
+            return new BitrixCreateLeadResponse
+            {
+                IsSuccess = false,
+                BitrixCreationSuppressed = true,
+                Error = msg
+            };
+        }
+
         var preview = candidateParser.BuildPreview(response, settings.Bitrix);
         var client = httpClientFactory.CreateClient(nameof(BitrixClient));
         var webhookBase = settings.Bitrix.WebhookUrl.TrimEnd('/');
@@ -361,6 +380,20 @@ public sealed class BitrixClient(
             {
                 IsSuccess = true,
                 EntityId = $"DEMO-{DateTime.UtcNow:HHmmss}-{Random.Shared.Next(100, 999)}",
+                ContactId = contactId
+            };
+        }
+
+        if (DealCreationTemporarilyDisabled)
+        {
+            const string msg =
+                "Создание сделок в Bitrix24 отключено (BitrixClient.DealCreationTemporarilyDisabled).";
+            _ = GlobalLogger.Instance.LogAsync(msg, DeskLinkAuditLogLevel.Warning);
+            return new BitrixCreateLeadResponse
+            {
+                IsSuccess = false,
+                BitrixCreationSuppressed = true,
+                Error = msg,
                 ContactId = contactId
             };
         }

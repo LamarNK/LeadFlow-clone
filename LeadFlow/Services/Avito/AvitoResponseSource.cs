@@ -313,7 +313,7 @@ public sealed class AvitoResponseSource(
                     const parentA = chatEl.closest("a");
                     if (parentA) {
                         const h = pick(parentA.getAttribute("href"));
-                        if (h) {
+                        if (h && /(messenger|chat|dialog)/i.test(h)) {
                             return h;
                         }
                     }
@@ -326,6 +326,10 @@ public sealed class AvitoResponseSource(
                 }
 
                 for (const element of root.querySelectorAll("[href],[data-href],[data-url],[data-to],[data-link],[data-state],[onclick]")) {
+                    if (element.closest?.("a[data-marker='job-application/link/to-resume']")) {
+                        continue;
+                    }
+
                     const h = fromAttributes(element);
                     if (h) {
                         return h;

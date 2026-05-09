@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using LeadFlow.Logging.Audit;
 using LeadFlow.Services;
 using LeadFlow.Services.Avito;
@@ -78,6 +79,8 @@ public sealed class AdsPowerAvitoAutomationService(IAdsPowerApiClient adsPowerAp
             {
                 throw new InvalidOperationException("AdsPower CDP: скрипт извлечения вернул пустой результат.");
             }
+
+            raw = await TryEnrichCandidatesJsonMessengerUrlsAsync(page, raw, cancellationToken).ConfigureAwait(false);
 
             _ = GlobalLogger.Instance.LogAsync(
                 "AdsPower CDP candidates extraction completed.",
@@ -981,6 +984,208 @@ public sealed class AdsPowerAvitoAutomationService(IAdsPowerApiClient adsPowerAp
          ex.Message.Contains("Target closed", StringComparison.OrdinalIgnoreCase) ||
          ex.Message.Contains("frame got detached", StringComparison.OrdinalIgnoreCase));
 
+    private static bool LooksLikeAvitoMessengerChannelUrl(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return false;
+        }
+
+        return url.Contains("/profile/messenger/", StringComparison.OrdinalIgnoreCase)
+            || url.Contains("messenger/channel", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// На странице откликов кнопка «в чат» часто без href; ссылка канала появляется в шапке мини-мессенджера
+    /// (<c>mini-messenger/messenger-page-link</c>) только после клика — дополняем JSON для AdsPower CDP.
+    /// </summary>
+    private static async Task<string> TryEnrichCandidatesJsonMessengerUrlsAsync(
+        IPage page,
+        string rawJson,
+        CancellationToken cancellationToken)
+    {
+        JsonNode? root;
+        try
+        {
+            root = JsonNode.Parse(rawJson);
+        }
+        catch
+        {
+            return rawJson;
+        }
+
+        if (root is null)
+        {
+            return rawJson;
+        }
+
+        var candidates = root["candidates"]?.AsArray();
+        if (candidates is null || candidates.Count == 0)
+        {
+            return rawJson;
+        }
+
+        const int maxEnrich = 80;
+        for (var i = 0; i < candidates.Count && i < maxEnrich; i++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var item = candidates[i]?.AsObject();
+            if (item is null)
+            {
+                continue;
+            }
+
+            var messengerUrl = item["messengerUrl"]?.GetValue<string>();
+            if (LooksLikeAvitoMessengerChannelUrl(messengerUrl))
+            {
+                continue;
+            }
+
+            var channelUrl = await TryReadMessengerChannelUrlForCandidateCardAsync(page, i, cancellationToken)
+                .ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(channelUrl))
+            {
+                continue;
+            }
+
+            item["messengerUrl"] = channelUrl;
+            item["sourceResponseId"] = channelUrl;
+        }
+
+        await CloseMiniMessengerPanelIfOpenAsync(page, cancellationToken).ConfigureAwait(false);
+
+        return root.ToJsonString();
+    }
+
+    private static async Task CloseMiniMessengerPanelIfOpenAsync(IPage page, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var hasPanel = await page.EvaluateExpressionAsync<bool>(
+                    "!!document.querySelector(\"a[data-marker='mini-messenger/messenger-page-link']\")")
+                .ConfigureAwait(false);
+            if (!hasPanel)
+            {
+                return;
+            }
+
+            await page.EvaluateExpressionAsync(@"(() => {
+                const link = document.querySelector(""a[data-marker='mini-messenger/messenger-page-link']"");
+                if (!link) {
+                    return;
+                }
+                const mini = link.closest('[class*=""channel-module-root""]');
+                const back = mini?.querySelector('[data-marker=""navigation/back""]');
+                if (back) {
+                    back.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+                }
+            })()").ConfigureAwait(false);
+
+            await page.WaitForFunctionAsync(
+                    "() => !document.querySelector(\"a[data-marker='mini-messenger/messenger-page-link']\")",
+                    new WaitForFunctionOptions { Timeout = 6000 })
+                .ConfigureAwait(false);
+        }
+        catch
+        {
+            // DOM мог измениться; не прерываем выдачу списка кандидатов.
+        }
+
+        await Task.Delay(200, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<string?> TryReadMessengerChannelUrlForCandidateCardAsync(
+        IPage page,
+        int candidateIndex,
+        CancellationToken cancellationToken)
+    {
+        await CloseMiniMessengerPanelIfOpenAsync(page, cancellationToken).ConfigureAwait(false);
+
+        var clickExpr = CandidateCardChatClickExpression.Replace(
+            "__INDEX__",
+            candidateIndex.ToString(),
+            StringComparison.Ordinal);
+
+        var clicked = await page.EvaluateExpressionAsync<bool>(clickExpr).ConfigureAwait(false);
+        if (!clicked)
+        {
+            return null;
+        }
+
+        await Task.Delay(350, cancellationToken).ConfigureAwait(false);
+
+        try
+        {
+            await page.WaitForSelectorAsync(
+                    "a[data-marker='mini-messenger/messenger-page-link'][href*='/profile/messenger/']",
+                    new WaitForSelectorOptions { Timeout = 12_000 })
+                .ConfigureAwait(false);
+        }
+        catch
+        {
+            return null;
+        }
+
+        var href = await page.EvaluateExpressionAsync<string>(
+                @"(() => {
+                    const a = document.querySelector(""a[data-marker='mini-messenger/messenger-page-link']"");
+                    return a?.href ?? """";
+                })()")
+            .ConfigureAwait(false);
+
+        return string.IsNullOrWhiteSpace(href) ? null : href.Trim();
+    }
+
+    /// <summary>Тот же порядок карточек, что и в <see cref="ExtractionScript"/>.</summary>
+    private const string CandidateCardChatClickExpression =
+        """
+        (() => {
+            const idx = __INDEX__;
+            const statusButtons = Array.from(document.querySelectorAll("[data-marker='job-application/response/status-select-button']"));
+            const roots = [];
+            const seen = new Set();
+            const findCardRoot = (element) => {
+                let current = element;
+                while (current) {
+                    const name = current.querySelector?.("h3");
+                    const phone = current.querySelector?.("[data-marker='job-application/phone']");
+                    if (name && phone) {
+                        return current;
+                    }
+                    current = current.parentElement;
+                }
+                return null;
+            };
+            for (const button of statusButtons) {
+                const root = button.closest?.("[data-marker='job-application/item']") ?? findCardRoot(button);
+                if (!root || seen.has(root)) {
+                    continue;
+                }
+                seen.add(root);
+                roots.push(root);
+            }
+            const root = roots[idx];
+            if (!root) {
+                return false;
+            }
+            const chat = root.querySelector("[data-marker='job-application/link/to-chat']");
+            if (!chat) {
+                return false;
+            }
+            try {
+                chat.scrollIntoView({ block: "center", inline: "nearest" });
+            } catch {
+            }
+            try {
+                chat.click();
+            } catch {
+                return false;
+            }
+            return true;
+        })()
+        """;
+
     private static async Task<T> EvaluateWithRetryAsync<T>(IPage page, string expression, CancellationToken cancellationToken)
     {
         try
@@ -1052,12 +1257,67 @@ public sealed class AdsPowerAvitoAutomationService(IAdsPowerApiClient adsPowerAp
                 return t;
             };
             const resolveMessengerUrl = (root) => {
+                const pick = (href) => normalizeUrl(href ?? "");
+                const attrCandidates = ["href", "data-href", "data-url", "data-to", "data-link", "data-state", "onclick"];
+                const fromAttributes = (element) => {
+                    if (!element) {
+                        return "";
+                    }
+
+                    for (const attr of attrCandidates) {
+                        const raw = element.getAttribute?.(attr);
+                        if (!raw) {
+                            continue;
+                        }
+
+                        const direct = pick(raw);
+                        if (direct && /(messenger|chat|dialog)/i.test(direct)) {
+                            return direct;
+                        }
+
+                        const match = String(raw).match(/https?:\/\/[^"'\\\s]*(messenger|chat|dialog)[^"'\\\s]*/i);
+                        if (match?.[0]) {
+                            return pick(match[0]);
+                        }
+                    }
+
+                    return "";
+                };
+
                 const chatEl = root.querySelector("[data-marker='job-application/link/to-chat']");
-                const fromEl = (el) => normalizeUrl(el?.getAttribute?.("href") ?? el?.getAttribute?.("data-href") ?? "");
-                const direct = fromEl(chatEl) || fromEl(chatEl?.closest?.("a"));
-                if (direct) return direct;
-                const anyLink = Array.from(root.querySelectorAll("[href],[data-href]")).map(fromEl).find(Boolean);
-                return anyLink || "";
+                if (chatEl) {
+                    const ownUrl = fromAttributes(chatEl);
+                    if (ownUrl) {
+                        return ownUrl;
+                    }
+
+                    const parentA = chatEl.closest("a");
+                    if (parentA) {
+                        const h = pick(parentA.getAttribute("href"));
+                        if (h && /(messenger|chat|dialog)/i.test(h)) {
+                            return h;
+                        }
+                    }
+
+                    const parentWithAttrs = chatEl.closest("[href],[data-href],[data-url],[data-to],[data-link],[data-state],[onclick]");
+                    const parentUrl = fromAttributes(parentWithAttrs);
+                    if (parentUrl) {
+                        return parentUrl;
+                    }
+                }
+
+                for (const element of root.querySelectorAll("[href],[data-href],[data-url],[data-to],[data-link],[data-state],[onclick]")) {
+                    if (element.closest?.("a[data-marker='job-application/link/to-resume']")) {
+                        continue;
+                    }
+
+                    const h = fromAttributes(element);
+                    if (h) {
+                        return h;
+                    }
+                }
+
+                return "";
             };
             const fnv1a32Hex = (text) => {
                 let h = 2166136261 >>> 0;
