@@ -48,8 +48,7 @@
                                        FontSize="17"
                                        FontWeight="SemiBold"
                                        Foreground="{StaticResource TextBrush}" />
-                            <StackPanel Orientation="Horizontal"
-                                        Margin="0,7,0,0"
+                            <StackPanel Margin="0,7,0,0"
                                         VerticalAlignment="Center"
                                         ToolTipService.ShowDuration="60000">
                                 <StackPanel.ToolTip>
@@ -85,38 +84,57 @@
                                         </StackPanel>
                                     </ToolTip>
                                 </StackPanel.ToolTip>
-                                <Ellipse Width="6"
-                                         Height="6"
-                                         Margin="0,0,7,0"
-                                         VerticalAlignment="Center"
-                                         SnapsToDevicePixels="True">
-                                    <Ellipse.Style>
-                                        <Style TargetType="Ellipse">
-                                            <Setter Property="Fill" Value="#D4A27C" />
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding IsMonitoringRunning}" Value="True">
-                                                    <Setter Property="Fill" Value="#6B9B76" />
-                                                </DataTrigger>
-                                                <DataTrigger Binding="{Binding SystemStatus}" Value="{x:Static models:MonitoringStatus.Error}">
-                                                    <Setter Property="Fill" Value="#C56A6A" />
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </Ellipse.Style>
-                                </Ellipse>
-                                <TextBlock FontWeight="Normal"
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Ellipse Width="6"
+                                             Height="6"
+                                             Margin="0,0,7,0"
+                                             VerticalAlignment="Center"
+                                             SnapsToDevicePixels="True">
+                                        <Ellipse.Style>
+                                            <Style TargetType="Ellipse">
+                                                <Setter Property="Fill" Value="#D4A27C" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsMonitoringRunning}" Value="True">
+                                                        <Setter Property="Fill" Value="#6B9B76" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding SystemStatus}" Value="{x:Static models:MonitoringStatus.Error}">
+                                                        <Setter Property="Fill" Value="#C56A6A" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Ellipse.Style>
+                                    </Ellipse>
+                                    <TextBlock FontWeight="Normal"
+                                               FontSize="11"
+                                               VerticalAlignment="Center"
+                                               Text="{Binding SystemStatusText}">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Foreground" Value="#9A7B68" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsMonitoringRunning}" Value="True">
+                                                        <Setter Property="Foreground" Value="#64748B" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding SystemStatus}" Value="{x:Static models:MonitoringStatus.Error}">
+                                                        <Setter Property="Foreground" Value="#A84848" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </StackPanel>
+                                <!-- Текущий шаг цикла (как средний блок тултипа), виден сразу под статусом -->
+                                <TextBlock Margin="13,2,0,0"
                                            FontSize="11"
-                                           VerticalAlignment="Center"
-                                           Text="{Binding SystemStatusText}">
+                                           Foreground="#64748B"
+                                           TextWrapping="Wrap"
+                                           Text="{Binding SystemStatusDetails}">
                                     <TextBlock.Style>
                                         <Style TargetType="TextBlock">
-                                            <Setter Property="Foreground" Value="#9A7B68" />
+                                            <Setter Property="Visibility" Value="Collapsed" />
                                             <Style.Triggers>
-                                                <DataTrigger Binding="{Binding IsMonitoringRunning}" Value="True">
-                                                    <Setter Property="Foreground" Value="#64748B" />
-                                                </DataTrigger>
-                                                <DataTrigger Binding="{Binding SystemStatus}" Value="{x:Static models:MonitoringStatus.Error}">
-                                                    <Setter Property="Foreground" Value="#A84848" />
+                                                <DataTrigger Binding="{Binding SystemStatusDetails, Converter={StaticResource IsNullOrEmptyConverter}}" Value="False">
+                                                    <Setter Property="Visibility" Value="Visible" />
                                                 </DataTrigger>
                                             </Style.Triggers>
                                         </Style>
