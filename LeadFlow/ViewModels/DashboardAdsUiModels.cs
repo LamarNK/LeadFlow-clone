@@ -33,6 +33,8 @@ public sealed class AdsSortChoice(AdsSortOption option, string label)
 {
     public AdsSortOption Option { get; } = option;
     public string Label { get; } = label;
+
+    public override string ToString() => Label;
 }
 
 /// <summary>

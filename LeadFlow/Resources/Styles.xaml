@@ -751,12 +751,14 @@
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
+                                    <!-- SelectionBoxItem + шаблоны с TemplatedParent: иначе в поле часто попадает ToString() вместо DisplayMemberPath / ItemTemplate. -->
                                     <ContentPresenter Grid.Column="0"
                                                       Margin="{TemplateBinding Padding}"
                                                       VerticalAlignment="Center"
                                                       HorizontalAlignment="Left"
-                                                      Content="{TemplateBinding SelectionBoxItem}"
-                                                      ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}" />
+                                                      ContentSource="SelectionBoxItem"
+                                                      ContentTemplate="{TemplateBinding ItemTemplate}"
+                                                      ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}" />
                                     <Path Grid.Column="1"
                                           Width="10"
                                           Height="6"

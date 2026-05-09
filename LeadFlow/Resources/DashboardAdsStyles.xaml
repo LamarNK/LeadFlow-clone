@@ -71,21 +71,4 @@
         </Setter>
     </Style>
 
-    <Style x:Key="DashboardToolbarComboStyle" TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
-        <Setter Property="FontFamily" Value="Segoe UI" />
-        <Setter Property="FontSize" Value="13" />
-        <Setter Property="Foreground" Value="{StaticResource DashTextPrimaryBrush}" />
-        <Setter Property="MinHeight" Value="38" />
-        <Setter Property="Padding" Value="10,6" />
-    </Style>
-
-    <Style x:Key="DashboardSearchTextBoxStyle" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
-        <Setter Property="FontFamily" Value="Segoe UI" />
-        <Setter Property="FontSize" Value="13" />
-        <Setter Property="Foreground" Value="{StaticResource DashTextPrimaryBrush}" />
-        <Setter Property="MinHeight" Value="38" />
-        <Setter Property="Padding" Value="12,8" />
-        <Setter Property="BorderBrush" Value="{StaticResource DashBorderBrush}" />
-    </Style>
-
 </ResourceDictionary>

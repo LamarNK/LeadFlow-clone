@@ -710,13 +710,19 @@
                         BorderBrush="{StaticResource DashBorderBrush}"
                         BorderThickness="0,0,0,1"
                         Background="Transparent">
-                    <Grid MinHeight="44">
+                    <Grid MinHeight="52">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" MinWidth="200" />
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
-                        <ListBox Grid.Column="0"
+                        <ListBox Grid.Row="0"
+                                 Grid.RowSpan="2"
+                                 Grid.Column="0"
                                  Margin="0,0,12,0"
                                  VerticalAlignment="Center"
                                  Style="{StaticResource DashboardFilterTabsListBoxStyle}"
@@ -732,21 +738,60 @@
                                 </DataTemplate>
                             </ListBox.ItemTemplate>
                         </ListBox>
-                        <TextBox Grid.Column="1"
-                                 Width="260"
-                                 Margin="0,0,12,0"
-                                 VerticalAlignment="Center"
-                                 Style="{StaticResource DashboardSearchTextBoxStyle}"
-                                 ToolTip="Поиск по названию, городу или ID"
-                                 Text="{Binding AdsSearchQuery, UpdateSourceTrigger=PropertyChanged}" />
-                        <ComboBox Grid.Column="2"
+                        <TextBlock Grid.Row="0"
+                                   Grid.Column="1"
+                                   Margin="0,0,12,4"
+                                   Style="{StaticResource FilterToolbarLabelStyle}"
+                                   Text="Поиск" />
+                        <TextBlock Grid.Row="0"
+                                   Grid.Column="2"
+                                   Margin="0,0,0,4"
+                                   Style="{StaticResource FilterToolbarLabelStyle}"
+                                   Text="Сортировка" />
+                        <Grid Grid.Row="1"
+                              Grid.Column="1"
+                              Width="260"
+                              Margin="0,0,12,0"
+                              MinHeight="{StaticResource FilterControlMinHeight}"
+                              VerticalAlignment="Stretch">
+                            <TextBox x:Name="AdsSearchTextBox"
+                                     Style="{StaticResource SearchTextBoxStyle}"
+                                     ToolTip="Поиск по названию, городу или ID объявления"
+                                     Text="{Binding AdsSearchQuery, UpdateSourceTrigger=PropertyChanged}" />
+                            <TextBlock Margin="10,0,0,0"
+                                       VerticalAlignment="Center"
+                                       IsHitTestVisible="False"
+                                       Text="Название, город или ID">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock" BasedOn="{StaticResource FilterSearchWatermarkStyle}">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                        <Style.Triggers>
+                                            <MultiDataTrigger>
+                                                <MultiDataTrigger.Conditions>
+                                                    <Condition Binding="{Binding Text, ElementName=AdsSearchTextBox}" Value="" />
+                                                    <Condition Binding="{Binding IsKeyboardFocusWithin, ElementName=AdsSearchTextBox}" Value="False" />
+                                                </MultiDataTrigger.Conditions>
+                                                <Setter Property="Visibility" Value="Visible" />
+                                            </MultiDataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Grid>
+                        <ComboBox Grid.Row="1"
+                                  Grid.Column="2"
                                   Width="200"
-                                  VerticalAlignment="Center"
-                                  Style="{StaticResource DashboardToolbarComboStyle}"
+                                  VerticalAlignment="Stretch"
+                                  Style="{StaticResource FilterComboBoxStyle}"
                                   ItemsSource="{Binding AdsSortChoices}"
-                                  DisplayMemberPath="Label"
                                   SelectedValuePath="Option"
-                                  SelectedValue="{Binding SelectedAdsSort, Mode=TwoWay}" />
+                                  SelectedValue="{Binding SelectedAdsSort, Mode=TwoWay}">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate DataType="{x:Type vm:AdsSortChoice}">
+                                    <TextBlock Text="{Binding Label}" />
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
                     </Grid>
                 </Border>
 

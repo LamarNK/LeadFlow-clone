@@ -24,6 +24,11 @@
     <!-- Текстовые ссылки и вторичные акценты (не заливка кнопок) -->
     <SolidColorBrush x:Key="LinkTextBrush" Color="{StaticResource PrimaryColor}" />
 
+    <!-- Минималистичный скроллбар (см. ScrollBarStyles.xaml) -->
+    <SolidColorBrush x:Key="ScrollBarThumbBrush" Color="#64748B" Opacity="0.35" />
+    <SolidColorBrush x:Key="ScrollBarThumbHoverBrush" Color="#64748B" Opacity="0.55" />
+    <SolidColorBrush x:Key="ScrollBarThumbPressedBrush" Color="#2563EB" Opacity="0.45" />
+
     <Thickness x:Key="PagePadding">8</Thickness>
     <Thickness x:Key="SectionSpacing">0,8,0,0</Thickness>
     <Thickness x:Key="CardInnerGap">0,6,0,0</Thickness>
