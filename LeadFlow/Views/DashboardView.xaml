@@ -33,9 +33,11 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <!-- Hero «Сегодня»: один блок, слева главный KPI, справа плотная полоса из 5 KPI -->
+        <!-- Hero «Сегодня»: нижняя часть монолита с шапкой MainWindow (без скругления и рамки сверху) -->
         <Border Grid.Row="0"
                 Style="{StaticResource MinimalDashSurfaceStyle}"
+                CornerRadius="0,0,14,14"
+                BorderThickness="1,0,1,1"
                 Margin="0,0,0,12"
                 Padding="16,12">
             <Grid>
@@ -752,6 +754,7 @@
                                  Grid.Column="0"
                                  Margin="0,0,12,0"
                                  VerticalAlignment="Center"
+                                 PreviewMouseWheel="AdsFilterListBox_OnPreviewMouseWheel"
                                  Style="{StaticResource MinimalAdsFilterListBoxStyle}"
                                  ItemsSource="{Binding AdsFilterTabs}"
                                  SelectedValue="{Binding SelectedAdsFilter, Mode=TwoWay}"
@@ -824,7 +827,7 @@
 
                 <!-- Список объявлений (прокрутка только здесь) -->
                 <Grid Grid.Row="2"
-                      Margin="8,2,8,12"
+                      Margin="0,2,0,12"
                       HorizontalAlignment="Stretch">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />

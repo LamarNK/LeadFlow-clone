@@ -95,11 +95,11 @@
         <Setter Property="SnapsToDevicePixels" Value="True" />
     </Style>
 
-    <!-- Шапка главного окна -->
+    <!-- Шапка: белый фон под дашборд, без отдельной «рамки» и скруглений -->
     <Style x:Key="MinimalShellHeaderBorderStyle" TargetType="Border">
-        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Background" Value="#FFFFFF" />
         <Setter Property="BorderThickness" Value="0" />
-        <Setter Property="Padding" Value="0,6,0,10" />
+        <Setter Property="Padding" Value="0,6,0,0" />
     </Style>
 
     <Style x:Key="MinimalShellNavButtonStyle" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">

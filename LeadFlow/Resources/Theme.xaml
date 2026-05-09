@@ -29,7 +29,7 @@
     <SolidColorBrush x:Key="ScrollBarThumbHoverBrush" Color="#64748B" Opacity="0.55" />
     <SolidColorBrush x:Key="ScrollBarThumbPressedBrush" Color="#2563EB" Opacity="0.45" />
 
-    <Thickness x:Key="PagePadding">8</Thickness>
+    <Thickness x:Key="PagePadding">0</Thickness>
     <Thickness x:Key="SectionSpacing">0,8,0,0</Thickness>
     <Thickness x:Key="CardInnerGap">0,6,0,0</Thickness>
     <Thickness x:Key="TightSpacing">0,4,0,0</Thickness>

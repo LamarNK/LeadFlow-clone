@@ -109,6 +109,42 @@ public partial class DashboardView : UserControl
     }
 
     /// <summary>
+    /// Встроенный ScrollViewer шаблона ListBox перехватывает колесо и помечает событие обработанным,
+    /// хотя вертикальная прокрутка отключена — страница главного окна не двигается. Обрабатываем раньше дочернего ScrollViewer.
+    /// </summary>
+    private void AdsFilterListBox_OnPreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (sender is not ListBox listBox)
+        {
+            return;
+        }
+
+        var innerSv = FindDescendantScrollViewer(listBox);
+        const double horizontalStep = 48;
+
+        if (innerSv is not null && innerSv.ScrollableWidth >= 0.5)
+        {
+            var next = innerSv.HorizontalOffset + (e.Delta > 0 ? -horizontalStep : horizontalStep);
+            var clamped = Math.Clamp(next, 0, innerSv.ScrollableWidth);
+            if (Math.Abs(clamped - innerSv.HorizontalOffset) > 0.5)
+            {
+                innerSv.ScrollToHorizontalOffset(clamped);
+                e.Handled = true;
+                return;
+            }
+        }
+
+        var outer = FindAncestorScrollViewer(listBox);
+        if (outer is not null
+            && outer.ScrollableHeight >= 0.5
+            && CanScrollVertically(outer, e.Delta))
+        {
+            ApplyMouseWheelScroll(outer, e);
+            e.Handled = true;
+        }
+    }
+
+    /// <summary>
     /// Колесо над карточками (Button) и вложенный ScrollViewer внутри внешнего ScrollViewer главного окна.
     /// </summary>
     private void AdsListScrollViewer_OnPreviewMouseWheel(object sender, MouseWheelEventArgs e)
@@ -213,6 +249,26 @@ public partial class DashboardView : UserControl
             if (p is ScrollViewer sv)
             {
                 return sv;
+            }
+        }
+
+        return null;
+    }
+
+    private static ScrollViewer? FindDescendantScrollViewer(DependencyObject parent)
+    {
+        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, i);
+            if (child is ScrollViewer sv)
+            {
+                return sv;
+            }
+
+            var nested = FindDescendantScrollViewer(child);
+            if (nested is not null)
+            {
+                return nested;
             }
         }
 

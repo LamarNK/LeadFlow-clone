@@ -292,6 +292,8 @@
         <Setter Property="MinHeight" Value="44" />
         <Setter Property="Padding" Value="20,10" />
         <Setter Property="Margin" Value="0" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="HorizontalContentAlignment" Value="Center" />
         <Setter Property="FontSize" Value="15" />
         <Setter Property="FontWeight" Value="SemiBold" />
         <Setter Property="Background" Value="{StaticResource SuccessBrush}" />

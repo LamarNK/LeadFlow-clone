@@ -9,8 +9,26 @@ using Xunit;
 
 namespace LeadFlow.Tests;
 
-public sealed class BitrixClientTests
+/// <summary>Статический <see cref="BitrixClient.DealCreationTemporarilyDisabled"/> — общий для процесса; тесты идут последовательно.</summary>
+[CollectionDefinition("BitrixClient", DisableParallelization = true)]
+public sealed class BitrixClientTestCollection;
+
+[Collection("BitrixClient")]
+public sealed class BitrixClientTests : IDisposable
 {
+    private readonly bool _previousDealCreationDisabled;
+
+    public BitrixClientTests()
+    {
+        _previousDealCreationDisabled = BitrixClient.DealCreationTemporarilyDisabled;
+        BitrixClient.DealCreationTemporarilyDisabled = false;
+    }
+
+    public void Dispose()
+    {
+        BitrixClient.DealCreationTemporarilyDisabled = _previousDealCreationDisabled;
+    }
+
     private const string Webhook = "https://b24-test.bitrix24.ru/rest/1/abc/";
 
     [Fact]
