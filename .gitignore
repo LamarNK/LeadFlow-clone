@@ -361,3 +361,19 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+# LeadFlow — локальные пакеты / publish в dist (не коммитить)
+dist/
+
+# JetBrains Rider
+.idea/
+*.sln.iml
+
+# OS / оболочка
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Локальные копии настроек с секретами (если появятся)
+**/appsettings.Development.Local.json
