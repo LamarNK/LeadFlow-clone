@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:views="clr-namespace:LeadFlow.Views"
         xmlns:models="clr-namespace:LeadFlow.Models"
+        x:Name="RootWindow"
         Title="LeadFlow"
         Icon="/Assets/LeadFlowWindowIcon.png"
         Width="1080"
@@ -10,6 +11,12 @@
         WindowStartupLocation="CenterScreen"
         Closing="MainWindow_Closing"
         StateChanged="MainWindow_StateChanged">
+    <Window.InputBindings>
+        <KeyBinding Key="F1"
+                    Modifiers="Shift"
+                    Command="{Binding OpenJournalCommand}"
+                    CommandParameter="{Binding ElementName=RootWindow}" />
+    </Window.InputBindings>
     <Window.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
@@ -160,22 +167,6 @@
                                               Stretch="Uniform" />
                                     </Viewbox>
                                     <TextBlock Text="Мониторинг"
-                                               VerticalAlignment="Center"
-                                               Foreground="#475569"
-                                               FontSize="13" />
-                                </StackPanel>
-                            </Button>
-                            <Button Style="{StaticResource MinimalShellNavButtonStyle}"
-                                    Command="{Binding OpenJournalCommand}"
-                                    CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}"
-                                    ToolTip="Системные логи">
-                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                    <Viewbox Width="18" Height="18" Margin="0,0,8,0" VerticalAlignment="Center">
-                                        <Path Data="M18 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 4h5v8l-2.5-1.5L6 12V4z"
-                                              Fill="#64748B"
-                                              Stretch="Uniform" />
-                                    </Viewbox>
-                                    <TextBlock Text="Логи"
                                                VerticalAlignment="Center"
                                                Foreground="#475569"
                                                FontSize="13" />

@@ -27,7 +27,7 @@ public sealed class BitrixClient(
     /// Временный стоп-кран: при <c>true</c> контакты и сделки в Bitrix24 не создаются (REST не вызывается).
     /// Поставьте <c>false</c>, чтобы снова включить отправку.
     /// </summary>
-    public static bool DealCreationTemporarilyDisabled { get; set; } = true;
+    public static bool DealCreationTemporarilyDisabled { get; set; } = false;
 
     private const string ImportedLeadSource = "Bitrix24";
     private const int ContactLookupMaxConcurrency = 6;

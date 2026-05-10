@@ -22,6 +22,7 @@ public partial class App : System.Windows.Application
     private Mutex? _singleInstanceMutex;
     private EventWaitHandle? _activationEvent;
     private RegisteredWaitHandle? _activationRegistration;
+    private CancellationTokenSource? _remoteReleaseGateCts;
 
     private const string SingleInstanceMutexName = @"Local\LeadFlow.SingleInstance";
     private const string SingleInstanceActivationEventName = @"Local\LeadFlow.SingleInstance.Activate";
@@ -165,6 +166,9 @@ public partial class App : System.Windows.Application
         mainWindow.Show();
         LogStartup("MainWindow shown");
 
+        _remoteReleaseGateCts = new CancellationTokenSource();
+        _ = RunRemoteReleaseGateLoopAsync(_remoteReleaseGateCts.Token);
+
         Dispatcher.BeginInvoke(async () =>
         {
             try
@@ -200,6 +204,18 @@ public partial class App : System.Windows.Application
 
     protected override async void OnExit(ExitEventArgs e)
     {
+        try
+        {
+            _remoteReleaseGateCts?.Cancel();
+        }
+        catch
+        {
+            // ignore
+        }
+
+        _remoteReleaseGateCts?.Dispose();
+        _remoteReleaseGateCts = null;
+
         _activationRegistration?.Unregister(null);
         _activationEvent?.Dispose();
         _singleInstanceMutex?.ReleaseMutex();
@@ -239,6 +255,40 @@ public partial class App : System.Windows.Application
             window.Topmost = false;
             window.Focus();
         });
+    }
+
+    private static readonly TimeSpan RemoteReleaseGateInterval = TimeSpan.FromMinutes(30);
+
+    private async Task RunRemoteReleaseGateLoopAsync(CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+                if (await RemoteReleaseGate.IsRevokedAsync(cancellationToken))
+                {
+                    await Dispatcher.InvokeAsync(Shutdown);
+                    return;
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+            catch
+            {
+                // сеть/сервер — повторим по интервалу
+            }
+
+            try
+            {
+                await Task.Delay(RemoteReleaseGateInterval, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+        }
     }
 
     private static void LogStartup(string message)
