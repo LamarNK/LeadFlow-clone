@@ -22,29 +22,119 @@ public class AvitoParserService
             || relativeOrAbsoluteHref.Contains("/rabota/", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static string ExtractItemListingHref(string snippetHtml)
+    private static bool IsRecruiterCandidatesHref(string? href)
     {
-        // Новая разметка Avito Pro: <a data-marker="view-link" ... href="...">
+        if (string.IsNullOrEmpty(href))
+        {
+            return false;
+        }
+
+        return href.Contains("cv2Vacancy", StringComparison.OrdinalIgnoreCase)
+            || href.Contains("/all/rezume", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Публичная карточка вакансии в URL обычно заканчивается на <c>_{itemId}</c> (или содержит <c>/..._{itemId}</c>).
+    /// Ссылка «Подходящие кандидаты» передаёт id в query (<c>cv2Vacancy=</c>) — её отсекаем отдельно.
+    /// </summary>
+    private static bool ListingHrefContainsItemId(string href, string itemId)
+    {
+        if (string.IsNullOrEmpty(href) || string.IsNullOrEmpty(itemId))
+        {
+            return false;
+        }
+
+        // .../slug_8126932974 или .../8126932974 — после id должен быть конец или разделитель (не 81269329740).
+        for (var i = 0; i < href.Length; i++)
+        {
+            if (href[i] != '_' && href[i] != '/')
+            {
+                continue;
+            }
+
+            var start = i + 1;
+            if (start + itemId.Length > href.Length)
+            {
+                continue;
+            }
+
+            var slice = href.AsSpan(start, itemId.Length);
+            if (!slice.Equals(itemId.AsSpan(), StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var after = start + itemId.Length;
+            if (after >= href.Length)
+            {
+                return true;
+            }
+
+            var c = href[after];
+            if (c is '?' or '/' or '#' or '&')
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsPreferredJobListingHref(string href, string itemId) =>
+        IsJobSectionListing(href)
+        && !IsRecruiterCandidatesHref(href)
+        && ListingHrefContainsItemId(href, itemId);
+
+    private static bool IsAcceptableJobListingHref(string href) =>
+        IsJobSectionListing(href) && !IsRecruiterCandidatesHref(href);
+
+    private static IEnumerable<string> EnumerateDoubleQuotedHrefs(string snippetHtml)
+    {
+        foreach (Match m in Regex.Matches(snippetHtml, @"\bhref\s*=\s*""([^""]*)""", RegexOptions.IgnoreCase))
+        {
+            yield return m.Groups[1].Value;
+        }
+    }
+
+    private static IEnumerable<string> CollectViewLinkHrefs(string snippetHtml)
+    {
+        var patterns = new[]
+        {
+            @"data-marker\s*=\s*""view-link""[^>]*\bhref\s*=\s*""([^""]+)""",
+            @"\bhref\s*=\s*""([^""]+)""[^>]*data-marker\s*=\s*""view-link""",
+        };
+
+        foreach (var pattern in patterns)
+        {
+            foreach (Match m in Regex.Matches(snippetHtml, pattern, RegexOptions.IgnoreCase))
+            {
+                yield return m.Groups[1].Value.Trim();
+            }
+        }
+    }
+
+    private static string? TryPickHref(Func<string, bool> predicate, IEnumerable<string> candidates)
+    {
+        foreach (var c in candidates)
+        {
+            var t = c.Trim();
+            if (string.IsNullOrEmpty(t))
+            {
+                continue;
+            }
+
+            if (predicate(t))
+            {
+                return t;
+            }
+        }
+
+        return null;
+    }
+
+    private static string? TryLegacyItemPreviewHref(string snippetHtml)
+    {
         var m = Regex.Match(
-            snippetHtml,
-            @"data-marker=""view-link""[^>]*href=""([^""]+)""",
-            RegexOptions.IgnoreCase);
-        if (m.Success)
-        {
-            return m.Groups[1].Value.Trim();
-        }
-
-        m = Regex.Match(
-            snippetHtml,
-            @"href=""([^""]+)""[^>]*data-marker=""view-link""",
-            RegexOptions.IgnoreCase);
-        if (m.Success)
-        {
-            return m.Groups[1].Value.Trim();
-        }
-
-        // Старые варианты разметки
-        m = Regex.Match(
             snippetHtml,
             @"class=""item-preview-root[^""]*""\s+href=""([^""]+)""",
             RegexOptions.IgnoreCase);
@@ -63,7 +153,39 @@ public class AvitoParserService
         }
 
         m = Regex.Match(snippetHtml, @"item-preview-root-[A-Za-z0-9_]+[^>]*href=""([^""]+)""", RegexOptions.IgnoreCase);
-        return m.Success ? m.Groups[1].Value.Trim() : "";
+        return m.Success ? m.Groups[1].Value.Trim() : null;
+    }
+
+    private static string ExtractItemListingHref(string snippetHtml, string itemId)
+    {
+        var viewLinkHrefs = CollectViewLinkHrefs(snippetHtml);
+        var allHrefs = EnumerateDoubleQuotedHrefs(snippetHtml);
+
+        // 1) Явный view-link и путь карточки с id объявления (отсекаем /all/rezume?cv2Vacancy=… и прочее).
+        var preferred = TryPickHref(h => IsPreferredJobListingHref(h, itemId), viewLinkHrefs)
+            ?? TryPickHref(h => IsPreferredJobListingHref(h, itemId), allHrefs);
+
+        if (!string.IsNullOrEmpty(preferred))
+        {
+            return preferred;
+        }
+
+        // 2) Первый подходящий view-link без проверки id (старые/редкие шаблоны URL).
+        var anyView = TryPickHref(IsAcceptableJobListingHref, viewLinkHrefs);
+        if (!string.IsNullOrEmpty(anyView))
+        {
+            return anyView;
+        }
+
+        // 3) Любой /vakansii/|/rabota/ в сниппете, кроме кабинетных «кандидатов».
+        var anyJob = TryPickHref(IsAcceptableJobListingHref, allHrefs);
+        if (!string.IsNullOrEmpty(anyJob))
+        {
+            return anyJob;
+        }
+
+        // 4) Старые классы превью
+        return TryLegacyItemPreviewHref(snippetHtml) ?? "";
     }
 
     private static string ExtractTitle(string snippetHtml)
@@ -172,7 +294,7 @@ public class AvitoParserService
         // 2️⃣ Парсинг активных объявлений (только вакансии / раздел «Работа» на Авито)
         foreach (var (id, snippetHtml) in EnumerateItemSnippets(html))
         {
-            var listingHref = ExtractItemListingHref(snippetHtml);
+            var listingHref = ExtractItemListingHref(snippetHtml, id);
             if (!IsJobSectionListing(listingHref))
             {
                 continue;
@@ -205,7 +327,7 @@ public class AvitoParserService
 
         foreach (var (id, snippetHtml) in EnumerateItemSnippets(html))
         {
-            var listingHref = ExtractItemListingHref(snippetHtml);
+            var listingHref = ExtractItemListingHref(snippetHtml, id);
             if (!IsJobSectionListing(listingHref))
             {
                 continue;
@@ -324,14 +446,4 @@ public class AvitoParserService
         var match = Regex.Match(html, pattern, RegexOptions.Singleline);
         return match.Success ? match.Groups[1].Value.Trim() : "";
     }
-}
-
-public class ProfileResult
-{
-    public int ActiveCount { get; set; }
-    public int BlockedCount { get; set; }
-    public int DraftsCount { get; set; }
-    public List<AvitoAdStatus> ActiveAds { get; set; } = new();
-    /// <summary>Заблокированные/«с ошибками» вакансии — парсятся отдельным проходом по вкладке rejected.</summary>
-    public List<AvitoAdStatus> BlockedAds { get; set; } = new();
 }

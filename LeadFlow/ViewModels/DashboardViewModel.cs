@@ -882,7 +882,9 @@ public partial class DashboardViewModel : ObservableObject
             for (var index = 0; index < snapshot.Count; index++)
             {
                 var desired = snapshot[index];
-                if (index < ActiveAds.Count && string.Equals(ActiveAds[index].Id, desired.Id, StringComparison.Ordinal))
+                if (index < ActiveAds.Count
+                    && ActiveAds[index].AccountId == desired.AccountId
+                    && string.Equals(ActiveAds[index].Id, desired.Id, StringComparison.Ordinal))
                 {
                     if (!AreEquivalent(ActiveAds[index], desired))
                     {
@@ -892,7 +894,7 @@ public partial class DashboardViewModel : ObservableObject
                     continue;
                 }
 
-                var existingIndex = FindAdIndex(desired.Id, index + 1);
+                var existingIndex = FindAdIndex(desired.AccountId, desired.Id, index + 1);
                 if (existingIndex >= 0)
                 {
                     ActiveAds.Move(existingIndex, index);
@@ -931,11 +933,12 @@ public partial class DashboardViewModel : ObservableObject
         RebuildDisplayedAds();
     }
 
-    private int FindAdIndex(string id, int startIndex)
+    private int FindAdIndex(Guid accountId, string id, int startIndex)
     {
         for (var index = startIndex; index < ActiveAds.Count; index++)
         {
-            if (string.Equals(ActiveAds[index].Id, id, StringComparison.Ordinal))
+            if (ActiveAds[index].AccountId == accountId
+                && string.Equals(ActiveAds[index].Id, id, StringComparison.Ordinal))
             {
                 return index;
             }
@@ -964,7 +967,9 @@ public partial class DashboardViewModel : ObservableObject
             for (var index = 0; index < snapshot.Count; index++)
             {
                 var desired = snapshot[index];
-                if (index < BlockedAds.Count && string.Equals(BlockedAds[index].Id, desired.Id, StringComparison.Ordinal))
+                if (index < BlockedAds.Count
+                    && BlockedAds[index].AccountId == desired.AccountId
+                    && string.Equals(BlockedAds[index].Id, desired.Id, StringComparison.Ordinal))
                 {
                     if (!AreEquivalent(BlockedAds[index], desired))
                     {
@@ -974,7 +979,7 @@ public partial class DashboardViewModel : ObservableObject
                     continue;
                 }
 
-                var existingIndex = FindBlockedAdIndex(desired.Id, index + 1);
+                var existingIndex = FindBlockedAdIndex(desired.AccountId, desired.Id, index + 1);
                 if (existingIndex >= 0)
                 {
                     BlockedAds.Move(existingIndex, index);
@@ -1010,11 +1015,12 @@ public partial class DashboardViewModel : ObservableObject
         RebuildDisplayedAds();
     }
 
-    private int FindBlockedAdIndex(string id, int startIndex)
+    private int FindBlockedAdIndex(Guid accountId, string id, int startIndex)
     {
         for (var index = startIndex; index < BlockedAds.Count; index++)
         {
-            if (string.Equals(BlockedAds[index].Id, id, StringComparison.Ordinal))
+            if (BlockedAds[index].AccountId == accountId
+                && string.Equals(BlockedAds[index].Id, id, StringComparison.Ordinal))
             {
                 return index;
             }
@@ -1024,7 +1030,8 @@ public partial class DashboardViewModel : ObservableObject
     }
 
     private static bool AreEquivalent(AvitoAdStatus left, AvitoAdStatus right) =>
-        string.Equals(left.Id, right.Id, StringComparison.Ordinal)
+        left.AccountId == right.AccountId
+        && string.Equals(left.Id, right.Id, StringComparison.Ordinal)
         && string.Equals(left.Title, right.Title, StringComparison.Ordinal)
         && string.Equals(left.City, right.City, StringComparison.Ordinal)
         && string.Equals(left.Salary, right.Salary, StringComparison.Ordinal)
@@ -1033,7 +1040,8 @@ public partial class DashboardViewModel : ObservableObject
         && left.Favorites == right.Favorites
         && string.Equals(left.Status, right.Status, StringComparison.Ordinal)
         && string.Equals(left.DeleteDate, right.DeleteDate, StringComparison.Ordinal)
-        && left.DaysOnAvito == right.DaysOnAvito;
+        && left.DaysOnAvito == right.DaysOnAvito
+        && string.Equals(left.Url, right.Url, StringComparison.Ordinal);
 
     private static AvitoAdStatus CloneAd(AvitoAdStatus ad) => new()
     {
@@ -1047,6 +1055,7 @@ public partial class DashboardViewModel : ObservableObject
         Favorites = ad.Favorites,
         Status = ad.Status,
         DeleteDate = ad.DeleteDate,
-        DaysOnAvito = ad.DaysOnAvito
+        DaysOnAvito = ad.DaysOnAvito,
+        Url = ad.Url
     };
 }

@@ -152,6 +152,19 @@ public sealed class MonitoringService(
 
         try
         {
+            var persistedForSnapshots = await repository.GetAccountsAsync(_cts.Token);
+            RestorePersistedAdSnapshots(persistedForSnapshots);
+        }
+        catch (Exception ex)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"При старте мониторинга не удалось восстановить снимки объявлений из БД: {ex.Message}",
+                DeskLinkAuditLogLevel.Warning,
+                properties: new Dictionary<string, object?> { ["error.type"] = ex.GetType().FullName });
+        }
+
+        try
+        {
             UpdateStatus(MonitoringStatus.Running, "Загружаем активные объявления Авито…");
             await UpdateProfileStatsAsync(_cts.Token);
         }
@@ -366,19 +379,17 @@ public sealed class MonitoringService(
             }
             catch (AvitoCaptchaDetectedException captchaEx)
             {
-                UpdateActiveAdsSnapshot(account.Id, []);
+                // Снимок объявлений не сбрасываем — в UI остаётся последний успешный парсинг этого аккаунта.
                 await HandleCaptchaForAccountAsync(account, captchaEx, ct).ConfigureAwait(false);
             }
             catch (AdsPowerDailyOpenLimitExceededException limitEx)
             {
-                UpdateActiveAdsSnapshot(account.Id, []);
                 await HandleAdsPowerDailyOpenLimitForAccountAsync(account, limitEx, ct).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
-                UpdateActiveAdsSnapshot(account.Id, []);
                 _ = GlobalLogger.Instance.LogAsync(
-                    $"Ошибка обновления статистики объявлений для аккаунта {account.DisplayName} ({account.ProfileProvider}): {ex.Message}",
+                    $"Ошибка обновления статистики объявлений для аккаунта {account.DisplayName} ({account.ProfileProvider}): {ex.Message}. Снимок объявлений аккаунта не меняем.",
                     DeskLinkAuditLogLevel.Warning,
                     properties: new Dictionary<string, object?>
                     {
@@ -804,10 +815,26 @@ public sealed class MonitoringService(
 
                     var prev = new StatsPreviousCounts(account.ActiveAdsCount, account.BlockedCount, account.DraftsCount);
                     var part = await CollectProfileItemsAsync(account, optionsForStats, cancellationToken).ConfigureAwait(false);
-                    await ApplyStatsSnapshotAsync(account, part, prev, cancellationToken).ConfigureAwait(false);
+                    if (!part.ParseSuccess)
+                    {
+                        _ = GlobalLogger.Instance.LogAsync(
+                            $"AdsPower-аккаунт {account.DisplayName} (без суб-профилей): снимок объявлений не обновлён ({part.ParseFailureReason ?? "parse_failed"}).",
+                            DeskLinkAuditLogLevel.Warning,
+                            properties: new Dictionary<string, object?>
+                            {
+                                ["accountId"] = account.Id,
+                                ["accountName"] = account.DisplayName,
+                                ["parseSuccess"] = false,
+                                ["parseFailureReason"] = part.ParseFailureReason
+                            });
+                    }
+                    else
+                    {
+                        await ApplyStatsSnapshotAsync(account, part, prev, cancellationToken).ConfigureAwait(false);
+                    }
 
                     _ = GlobalLogger.Instance.LogAsync(
-                        $"AdsPower-аккаунт {account.DisplayName} (без суб-профилей): объявления обновлены инлайн ({part.ActiveAds.Count} активных, {part.BlockedAds.Count} заблокированных).",
+                        $"AdsPower-аккаунт {account.DisplayName} (без суб-профилей): объявления {(part.ParseSuccess ? "обновлены инлайн" : "не обновлялись")} ({part.ActiveAds.Count} активных в ответе парсера, {part.BlockedAds.Count} заблокированных).",
                         DeskLinkAuditLogLevel.Info,
                         properties: new Dictionary<string, object?>
                         {
@@ -869,7 +896,8 @@ public sealed class MonitoringService(
         // (active + rejected вкладки). Это убирает отдельный «двойной» switch на тот же суб-профиль —
         // один заход = и активные, и заблокированные, и отклики.
         var collectStats = IsAdsStatsStale(account);
-        var statsAggregate = collectStats ? new Avito.ProfileResult() : null;
+        // Пока ни один суб-профиль не дал валидный HTML, не применяем агрегат (иначе затрём снимок пустым).
+        var statsAggregate = collectStats ? new ProfileResult { ParseSuccess = false } : null;
         var statsPrev = collectStats
             ? new StatsPreviousCounts(account.ActiveAdsCount, account.BlockedCount, account.DraftsCount)
             : null;
@@ -932,6 +960,24 @@ public sealed class MonitoringService(
                             $"Аккаунт \"{account.DisplayName}\": собираем объявления — суб-профиль «{sub.Name}» ({i + 1}/{subProfiles.Count}).");
 
                         var part = await CollectProfileItemsAsync(account, options, cancellationToken).ConfigureAwait(false);
+                        if (!part.ParseSuccess)
+                        {
+                            _ = GlobalLogger.Instance.LogAsync(
+                                $"Суб-профиль «{sub.Name}» аккаунта {account.DisplayName}: снимок объявлений не обновляем ({part.ParseFailureReason ?? "parse_failed"}).",
+                                DeskLinkAuditLogLevel.Warning,
+                                properties: new Dictionary<string, object?>
+                                {
+                                    ["accountId"] = account.Id,
+                                    ["accountName"] = account.DisplayName,
+                                    ["subProfile.id"] = sub.Id,
+                                    ["subProfile.name"] = sub.Name,
+                                    ["parseSuccess"] = false,
+                                    ["parseFailureReason"] = part.ParseFailureReason
+                                });
+                            continue;
+                        }
+
+                        statsAggregate.ParseSuccess = true;
                         statsAggregate.ActiveCount += part.ActiveCount;
                         statsAggregate.BlockedCount += part.BlockedCount;
                         statsAggregate.DraftsCount += part.DraftsCount;
@@ -1439,7 +1485,7 @@ public sealed class MonitoringService(
     /// Загружает обе вкладки кабинета («Активные» и «С ошибками») на текущем суб-профиле AdsPower.
     /// Если на вкладке «Активные» счётчик rejected = 0, по rejected не ходим — экономим переход.
     /// </summary>
-    private async Task<Avito.ProfileResult> CollectProfileItemsAsync(
+    private async Task<ProfileResult> CollectProfileItemsAsync(
         AvitoAccount account,
         AdsPowerConnectionOptions options,
         CancellationToken cancellationToken)
@@ -1447,6 +1493,17 @@ public sealed class MonitoringService(
         var activeHtml = await adsPowerAvitoAutomationService
             .LoadProfileItemsHtmlAsync(options, account.AdsPowerProfileId!, cancellationToken)
             .ConfigureAwait(false);
+
+        if (string.IsNullOrWhiteSpace(activeHtml))
+        {
+            return new ProfileResult
+            {
+                ParseSuccess = false,
+                ParseFailureReason = "empty_active_items_html",
+                ActiveAds = [],
+                BlockedAds = []
+            };
+        }
 
         var part = avitoParser.ParseProfilePage(activeHtml, account.Id);
 
@@ -1599,10 +1656,45 @@ public sealed class MonitoringService(
     /// </summary>
     private async Task ApplyStatsSnapshotAsync(
         AvitoAccount account,
-        Avito.ProfileResult snapshot,
+        ProfileResult snapshot,
         StatsPreviousCounts prev,
         CancellationToken ct)
     {
+        snapshot.ActiveAds ??= [];
+        snapshot.BlockedAds ??= [];
+
+        if (!snapshot.ParseSuccess)
+        {
+            var oldCount = GetPersistedOrMemoryActiveAdCount(account);
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Снимок активных объявлений не обновлялся для аккаунта {account.DisplayName} (id={account.Id}): парсинг неуспешен. Причина: {snapshot.ParseFailureReason ?? "unknown"}. Сохраняем предыдущий снимок ({oldCount} объявлений).",
+                DeskLinkAuditLogLevel.Warning,
+                properties: new Dictionary<string, object?>
+                {
+                    ["accountId"] = account.Id,
+                    ["accountName"] = account.DisplayName,
+                    ["oldActiveAdsCount"] = oldCount,
+                    ["parseSuccess"] = false,
+                    ["parseFailureReason"] = snapshot.ParseFailureReason
+                });
+            return;
+        }
+
+        var oldAdsCount = GetPersistedOrMemoryActiveAdCount(account);
+        var newAdsCount = snapshot.ActiveAds.Count;
+
+        _ = GlobalLogger.Instance.LogAsync(
+            $"Обновление снимка активных объявлений: accountId={account.Id}, account=\"{account.DisplayName}\", было объявлений={oldAdsCount}, стало={newAdsCount}, parseSuccess=true.",
+            DeskLinkAuditLogLevel.Info,
+            properties: new Dictionary<string, object?>
+            {
+                ["accountId"] = account.Id,
+                ["accountName"] = account.DisplayName,
+                ["oldActiveAdsCount"] = oldAdsCount,
+                ["newActiveAdsCount"] = newAdsCount,
+                ["parseSuccess"] = true
+            });
+
         UpdateActiveAdsSnapshot(account.Id, snapshot.ActiveAds);
         UpdateBlockedAdsSnapshot(account.Id, snapshot.BlockedAds);
         account.ActiveAdsCount = snapshot.ActiveAds.Count;
@@ -1630,6 +1722,22 @@ public sealed class MonitoringService(
         prev.Drafts = account.DraftsCount;
     }
 
+    /// <summary>
+    /// Число объявлений в последнем известном снимке аккаунта: сначала память мониторинга, иначе JSON в модели.
+    /// </summary>
+    private int GetPersistedOrMemoryActiveAdCount(AvitoAccount account)
+    {
+        lock (_activeAdsSync)
+        {
+            if (_activeAdsByAccount.TryGetValue(account.Id, out var mem))
+            {
+                return mem.Count;
+            }
+        }
+
+        return AvitoAdSnapshots.Deserialize(account.ActiveAdsSnapshotJson, account.Id).Count;
+    }
+
     /// <summary>Mutable-контейнер с предыдущими счётчиками для инкрементальных snapshot-ов в одном цикле.</summary>
     private sealed class StatsPreviousCounts(int active, int blocked, int drafts)
     {
@@ -1650,6 +1758,7 @@ public sealed class MonitoringService(
         Favorites = ad.Favorites,
         Status = ad.Status,
         DeleteDate = ad.DeleteDate,
-        DaysOnAvito = ad.DaysOnAvito
+        DaysOnAvito = ad.DaysOnAvito,
+        Url = ad.Url
     };
 }

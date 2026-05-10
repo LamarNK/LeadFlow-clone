@@ -132,6 +132,51 @@ public sealed class AvitoParserBlockedTests
     }
 
     [Fact]
+    public void ParseProfilePage_VacancyCardWithResumeLink_UsesPublicListingUrl()
+    {
+        // Реальный снимок Pro: рядом с заголовком есть data-marker="view-link" на карточку,
+        // а ниже — ссылка «Подходящие кандидаты» (cvlink) на /all/rezume?cv2Vacancy=...
+        const string html = """
+            <div data-marker="item-snippet/8126932974">
+              <a data-marker="view-link" target="_blank" rel="noopener noreferrer"
+                 href="//www.avito.ru/kudrovo/vakansii/raznorabochiy_vahta_8126932974"
+                 class="x">
+                <span class="styles-title-UJzSB">Разнорабочий вахта</span>
+              </a>
+              <a target="_blank" data-marker="cvlink"
+                 href="https://www.avito.ru/all/rezume?cv2Vacancy=8126932974&amp;fromPage=rec_cv2vac_my_items">Подходящие кандидаты</a>
+            </div>
+            """;
+
+        var ad = Assert.Single(_parser.ParseProfilePage(html).ActiveAds);
+
+        Assert.Equal("8126932974", ad.Id);
+        Assert.Equal(
+            "https://www.avito.ru/kudrovo/vakansii/raznorabochiy_vahta_8126932974",
+            ad.Url);
+    }
+
+    [Fact]
+    public void ParseProfilePage_ViewLinkWrapperWithoutHrefOnSameTag_StillFindsListingUrl()
+    {
+        const string html = """
+            <div data-marker="item-snippet/8126932974">
+              <div data-marker="view-link">
+                <a href="//www.avito.ru/kudrovo/vakansii/raznorabochiy_vahta_8126932974">
+                  <span class="styles-title-UJzSB">Разнорабочий вахта</span>
+                </a>
+              </div>
+            </div>
+            """;
+
+        var ad = Assert.Single(_parser.ParseProfilePage(html).ActiveAds);
+
+        Assert.Equal(
+            "https://www.avito.ru/kudrovo/vakansii/raznorabochiy_vahta_8126932974",
+            ad.Url);
+    }
+
+    [Fact]
     public void ParseProfilePage_BlockedSnippetOnActiveTab_StillSkipped()
     {
         // Если кейс «осталась заблокированная карточка на активной вкладке» — её

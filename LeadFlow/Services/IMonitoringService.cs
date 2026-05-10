@@ -14,6 +14,10 @@ public interface IMonitoringService
     string CurrentStatusMessage { get; }
     bool IsActive { get; }
     DateTime? NextCycleCheckAtUtc { get; }
+    /// <summary>
+    /// Объединённый список активных объявлений: по одному снимку на каждый аккаунт в памяти мониторинга
+    /// (ключ — <see cref="AvitoAccount.Id"/>), без «глобальной» подмены всего списка одним проходом.
+    /// </summary>
     IReadOnlyList<AvitoAdStatus> GetActiveAdsSnapshot();
 
     /// <summary>
