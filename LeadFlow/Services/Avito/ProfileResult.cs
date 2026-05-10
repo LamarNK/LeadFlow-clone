@@ -15,6 +15,25 @@ public sealed class ProfileResult
 
     public string? ParseFailureReason { get; set; }
 
+    /// <summary>
+    /// Сколько раз в сыром HTML активной вкладки встретился маркер <c>data-marker="item-snippet/{id}"</c>.
+    /// Нужен для защиты от преждевременного снятия DOM (спиннер): вкладка показывает ненулевой счётчик, а карточек ещё нет.
+    /// При агрегации нескольких суб-профилей суммируется.
+    /// </summary>
+    public int ItemSnippetMarkersFound { get; set; }
+
+    /// <summary>
+    /// HTML списка объявлений получен (не пустой) до вызова парсера — иначе «ноль вакансий» не считаем подтверждённым.
+    /// </summary>
+    public bool PageLoadedSuccessfully { get; set; }
+
+    /// <summary>
+    /// В разметке найден счётчик вкладки «Активные» (<c>profile-items-tab/tab(active)</c>).
+    /// Если false, <see cref="ActiveCount"/> == 0 нельзя трактовать как «в кабинете 0 объявлений».
+    /// При агрегации суб-профилей: логическое AND.
+    /// </summary>
+    public bool ActiveTabCounterResolved { get; set; }
+
     public int ActiveCount { get; set; }
     public int BlockedCount { get; set; }
     public int DraftsCount { get; set; }

@@ -286,8 +286,10 @@ public class AvitoParserService
         var result = new ProfileResult();
         if (string.IsNullOrEmpty(html)) return result;
 
-        // 1️⃣ Счётчики из вкладок (только цифры)
-        result.ActiveCount = ExtractCounter(html, "tab(active)");
+        // 1️⃣ Счётчики из вкладок (только цифры). Для «Активных» фиксируем, найден ли счётчик в HTML — иначе 0 ненадёжен.
+        var (activeTabOk, activeCount) = TryExtractCounter(html, "tab(active)");
+        result.ActiveTabCounterResolved = activeTabOk;
+        result.ActiveCount = activeCount;
         result.BlockedCount = ExtractCounter(html, "tab(rejected)");
         result.DraftsCount = ExtractCounter(html, "tab(drafts)");
 
@@ -433,13 +435,26 @@ public class AvitoParserService
     /// <see cref="Regex.Escape(string)"/>, иначе они интерпретируются как regex-группа и счётчик уходит в 0,
     /// а из-за этого мониторинг даже не открывает вкладку «С ошибками».
     /// </summary>
-    private int ExtractCounter(string html, string tabMarker)
+    private (bool Found, int Value) TryExtractCounter(string html, string tabMarker)
     {
+        if (string.IsNullOrEmpty(html))
+        {
+            return (false, 0);
+        }
+
         var escapedMarker = Regex.Escape(tabMarker);
         var pattern = $@"data-marker=""profile-items-tab/{escapedMarker}"".*?class=""[^""]*styles-module-counter[^""]*"".*?>(\d+)<";
         var match = Regex.Match(html, pattern, RegexOptions.Singleline);
-        return match.Success ? int.Parse(match.Groups[1].Value) : 0;
+        if (!match.Success)
+        {
+            return (false, 0);
+        }
+
+        return (true, int.Parse(match.Groups[1].Value));
     }
+
+    private int ExtractCounter(string html, string tabMarker) =>
+        TryExtractCounter(html, tabMarker).Value;
 
     private static string ExtractSingle(string html, string pattern)
     {

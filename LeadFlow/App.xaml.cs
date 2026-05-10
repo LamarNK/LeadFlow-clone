@@ -276,11 +276,44 @@ public partial class App : System.Windows.Application
 
         TaskScheduler.UnobservedTaskException += (_, args) =>
         {
+            // PuppeteerSharp/CDP иногда завершает внутренние задачи с этими сообщениями при навигации
+            // и Disconnect — это не сбой приложения; иначе сотни дублей в логе.
+            if (IsBenignPuppeteerUnobservedException(args.Exception))
+            {
+                args.SetObserved();
+                return;
+            }
+
             GlobalLogger.Instance.LogAsync(
                 $"TaskScheduler.UnobservedTaskException.{Environment.NewLine}{args.Exception}",
                 DeskLinkAuditLogLevel.Error,
                 memberName: nameof(RegisterGlobalExceptionHandlers),
                 filePath: "App.xaml.cs").GetAwaiter().GetResult();
         };
+    }
+
+    private static bool IsBenignPuppeteerUnobservedException(Exception ex)
+    {
+        if (ex is AggregateException agg)
+        {
+            foreach (var inner in agg.Flatten().InnerExceptions)
+            {
+                if (IsBenignPuppeteerUnobservedException(inner))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        if (ex is PuppeteerSharp.PuppeteerException pex)
+        {
+            var msg = pex.Message ?? string.Empty;
+            return msg.Contains("Execution Context was destroyed", StringComparison.OrdinalIgnoreCase)
+                || msg.Contains("Response body is unavailable for redirect responses", StringComparison.OrdinalIgnoreCase);
+        }
+
+        return ex.InnerException is not null && IsBenignPuppeteerUnobservedException(ex.InnerException);
     }
 }

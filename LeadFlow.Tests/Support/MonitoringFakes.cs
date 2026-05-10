@@ -43,6 +43,7 @@ internal sealed class FakeAvitoResponseSource : IAvitoResponseSource
 {
     public Func<AvitoAccount, AppSettings, IReadOnlyList<CandidateResponse>> Impl { get; set; } =
         (_, _) => Array.Empty<CandidateResponse>();
+    public Func<AvitoAccount, AppSettings, CancellationToken, Task<IReadOnlyList<CandidateResponse>>>? AsyncImpl { get; set; }
 
     public int CallCount { get; private set; }
 
@@ -50,7 +51,9 @@ internal sealed class FakeAvitoResponseSource : IAvitoResponseSource
         AvitoAccount account, AppSettings settings, CancellationToken cancellationToken)
     {
         CallCount++;
-        return Task.FromResult(Impl(account, settings));
+        return AsyncImpl is not null
+            ? AsyncImpl(account, settings, cancellationToken)
+            : Task.FromResult(Impl(account, settings));
     }
 }
 

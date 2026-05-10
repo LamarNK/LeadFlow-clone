@@ -111,6 +111,60 @@ public sealed class MonitoringService(
         }
     }
 
+    private static int CountItemSnippetMarkers(string? html)
+    {
+        if (string.IsNullOrEmpty(html))
+        {
+            return 0;
+        }
+
+        const StringComparison c = StringComparison.Ordinal;
+        const string needle = "data-marker=\"item-snippet/";
+        var count = 0;
+        for (var i = 0; ;)
+        {
+            i = html.IndexOf(needle, i, c);
+            if (i < 0)
+            {
+                break;
+            }
+
+            count++;
+            i += needle.Length;
+        }
+
+        return count;
+    }
+
+    private int GetTotalActiveAdsInMemoryCount()
+    {
+        lock (_activeAdsSync)
+        {
+            var n = 0;
+            foreach (var list in _activeAdsByAccount.Values)
+            {
+                n += list.Count;
+            }
+
+            return n;
+        }
+    }
+
+    private void LogActiveAdsChange(string source, Guid? accountId, int oldCount, int newCount, bool parseSuccess)
+    {
+        _ = GlobalLogger.Instance.LogAsync(
+            $"ACTIVE ADS CHANGE: Source={source}, AccountId={accountId?.ToString() ?? "<aggregate>"}, OldCount={oldCount}, NewCount={newCount}, ParseSuccess={parseSuccess}",
+            DeskLinkAuditLogLevel.Warning,
+            properties: new Dictionary<string, object?>
+            {
+                ["Source"] = source,
+                ["AccountId"] = accountId,
+                ["OldCount"] = oldCount,
+                ["NewCount"] = newCount,
+                ["ParseSuccess"] = parseSuccess
+            });
+    }
+
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         if (_loopTask is { IsCompleted: false })
@@ -122,9 +176,10 @@ public sealed class MonitoringService(
         IsActive = true;
         _consecutiveQuietMonitoringCycles = 0;
         UpdateStatus(MonitoringStatus.Running, "Запуск мониторинга: загружаем настройки.");
+        AppSettings settings;
         try
         {
-            var settings = await settingsService.LoadAsync(_cts.Token);
+            settings = await settingsService.LoadAsync(_cts.Token);
             // Синхронизация при старте отключена: проверка дублей выполняется через API для каждого отклика
             // await SyncBitrixLeadsAsync(settings, _cts.Token);
         }
@@ -152,8 +207,9 @@ public sealed class MonitoringService(
 
         try
         {
-            var persistedForSnapshots = await repository.GetAccountsAsync(_cts.Token);
-            RestorePersistedAdSnapshots(persistedForSnapshots);
+            await SyncPersistedAccountRuntimeStateAsync(settings, _cts.Token).ConfigureAwait(false);
+            var totalAfterRestore = GetTotalActiveAdsInMemoryCount();
+            LogActiveAdsChange("StartAsync.after_restore_persisted_snapshots", null, totalAfterRestore, totalAfterRestore, true);
         }
         catch (Exception ex)
         {
@@ -166,7 +222,9 @@ public sealed class MonitoringService(
         try
         {
             UpdateStatus(MonitoringStatus.Running, "Загружаем активные объявления Авито…");
+            LogActiveAdsChange("StartAsync.before_update_profile_stats", null, GetTotalActiveAdsInMemoryCount(), GetTotalActiveAdsInMemoryCount(), true);
             await UpdateProfileStatsAsync(_cts.Token);
+            LogActiveAdsChange("StartAsync.after_update_profile_stats", null, GetTotalActiveAdsInMemoryCount(), GetTotalActiveAdsInMemoryCount(), true);
         }
         catch (OperationCanceledException)
         {
@@ -303,6 +361,9 @@ public sealed class MonitoringService(
         {
             try
             {
+                var memBefore = GetPersistedOrMemoryActiveAdCount(account);
+                LogActiveAdsChange("UpdateProfileStatsAsync.account_enter", account.Id, memBefore, memBefore, true);
+
                 if (account.ProfileProvider == AvitoProfileProvider.AdsPower)
                 {
                     // Для AdsPower-аккаунтов объявления и отклики собираются единым проходом
@@ -323,7 +384,16 @@ public sealed class MonitoringService(
                 var prev = new StatsPreviousCounts(account.ActiveAdsCount, account.BlockedCount, account.DraftsCount);
 
                 var html = await LoadProfilePageHtmlAsync(account, ct);
+                LogActiveAdsChange("UpdateProfileStatsAsync.before_parse_local", account.Id, memBefore, memBefore, true);
                 var profileData = avitoParser.ParseProfilePage(html, account.Id);
+                profileData.ItemSnippetMarkersFound = CountItemSnippetMarkers(html);
+                profileData.PageLoadedSuccessfully = true;
+                LogActiveAdsChange(
+                    "UpdateProfileStatsAsync.after_parse_local",
+                    account.Id,
+                    memBefore,
+                    profileData.ActiveAds.Count,
+                    profileData.ParseSuccess);
                 await ApplyStatsSnapshotAsync(account, profileData, prev, ct).ConfigureAwait(false);
 
                 await GlobalLogger.Instance.LogAsync(
@@ -379,15 +449,18 @@ public sealed class MonitoringService(
             }
             catch (AvitoCaptchaDetectedException captchaEx)
             {
+                LogActiveAdsChange("UpdateProfileStatsAsync.catch_captcha", account.Id, GetPersistedOrMemoryActiveAdCount(account), GetPersistedOrMemoryActiveAdCount(account), false);
                 // Снимок объявлений не сбрасываем — в UI остаётся последний успешный парсинг этого аккаунта.
                 await HandleCaptchaForAccountAsync(account, captchaEx, ct).ConfigureAwait(false);
             }
             catch (AdsPowerDailyOpenLimitExceededException limitEx)
             {
+                LogActiveAdsChange("UpdateProfileStatsAsync.catch_ads_power_limit", account.Id, GetPersistedOrMemoryActiveAdCount(account), GetPersistedOrMemoryActiveAdCount(account), false);
                 await HandleAdsPowerDailyOpenLimitForAccountAsync(account, limitEx, ct).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
+                LogActiveAdsChange("UpdateProfileStatsAsync.catch_generic", account.Id, GetPersistedOrMemoryActiveAdCount(account), GetPersistedOrMemoryActiveAdCount(account), false);
                 _ = GlobalLogger.Instance.LogAsync(
                     $"Ошибка обновления статистики объявлений для аккаунта {account.DisplayName} ({account.ProfileProvider}): {ex.Message}. Снимок объявлений аккаунта не меняем.",
                     DeskLinkAuditLogLevel.Warning,
@@ -411,12 +484,15 @@ public sealed class MonitoringService(
                 try
                 {
                     var settings = await settingsService.LoadAsync(cancellationToken);
+                    await SyncPersistedAccountRuntimeStateAsync(settings, cancellationToken).ConfigureAwait(false);
                     var accounts = settings.Avito.Accounts.Where(x => x.IsEnabled).ToList();
                     UpdateStatus(
                         MonitoringStatus.Running,
                         accounts.Count == 0
                             ? "Активных аккаунтов Авито нет: откройте настройки и включите хотя бы один аккаунт."
                             : $"Начинаем новый цикл мониторинга: активных аккаунтов {accounts.Count}.");
+
+                    LogActiveAdsChange("RunAsync.cycle_start", null, GetTotalActiveAdsInMemoryCount(), GetTotalActiveAdsInMemoryCount(), true);
 
                     var cycleSw = Stopwatch.StartNew();
                     var newResponsesThisCycle = 0;
@@ -578,12 +654,19 @@ public sealed class MonitoringService(
             return (0, false, false);
         }
 
+        SyncRestoredRuntimeStateIntoAccount(account);
         account.Status = AvitoAccountStatus.Monitoring;
         account.LastMonitoringAt = DateTime.UtcNow;
         UpdateStatus(MonitoringStatus.Running, $"Проверяем аккаунт Авито \"{account.DisplayName}\": открываем список откликов.");
         _ = GlobalLogger.Instance.LogAsync(
             $"Processing account {account.DisplayName}.",
             DeskLinkAuditLogLevel.Info);
+        LogActiveAdsChange(
+            "ProcessAccountAsync.account_start",
+            account.Id,
+            GetPersistedOrMemoryActiveAdCount(account),
+            GetPersistedOrMemoryActiveAdCount(account),
+            true);
         await repository.SaveAccountAsync(account, cancellationToken);
 
         var accountSw = Stopwatch.StartNew();
@@ -897,7 +980,16 @@ public sealed class MonitoringService(
         // один заход = и активные, и заблокированные, и отклики.
         var collectStats = IsAdsStatsStale(account);
         // Пока ни один суб-профиль не дал валидный HTML, не применяем агрегат (иначе затрём снимок пустым).
-        var statsAggregate = collectStats ? new ProfileResult { ParseSuccess = false } : null;
+        var statsAggregate = collectStats
+            ? new ProfileResult
+            {
+                ParseSuccess = false,
+                PageLoadedSuccessfully = true,
+                ActiveTabCounterResolved = true
+            }
+            : null;
+        var subProfileStatsSuccesses = 0;
+        var hadEmptySnapshotAtCycleStart = collectStats && GetPersistedOrMemoryActiveAdCount(account) == 0;
         var statsPrev = collectStats
             ? new StatsPreviousCounts(account.ActiveAdsCount, account.BlockedCount, account.DraftsCount)
             : null;
@@ -977,10 +1069,14 @@ public sealed class MonitoringService(
                             continue;
                         }
 
+                        subProfileStatsSuccesses++;
                         statsAggregate.ParseSuccess = true;
+                        statsAggregate.PageLoadedSuccessfully &= part.PageLoadedSuccessfully;
+                        statsAggregate.ActiveTabCounterResolved &= part.ActiveTabCounterResolved;
                         statsAggregate.ActiveCount += part.ActiveCount;
                         statsAggregate.BlockedCount += part.BlockedCount;
                         statsAggregate.DraftsCount += part.DraftsCount;
+                        statsAggregate.ItemSnippetMarkersFound += part.ItemSnippetMarkersFound;
                         statsAggregate.ActiveAds.AddRange(part.ActiveAds);
                         statsAggregate.BlockedAds.AddRange(part.BlockedAds);
 
@@ -997,7 +1093,19 @@ public sealed class MonitoringService(
                                 ["blockedAds"] = part.BlockedAds.Count
                             });
 
-                        await ApplyStatsSnapshotAsync(account, statsAggregate, statsPrev, cancellationToken).ConfigureAwait(false);
+                        // Если при старте аккаунт был пустым, показываем накопленный результат сразу по мере
+                        // прохода суб-профилей. Но не считаем статистику «свежей» до полного успешного прохода,
+                        // чтобы следующий цикл продолжал добирать остальные кабинеты.
+                        if (hadEmptySnapshotAtCycleStart)
+                        {
+                            await ApplyStatsSnapshotAsync(
+                                    account,
+                                    statsAggregate,
+                                    statsPrev,
+                                    cancellationToken,
+                                    markStatsFresh: false)
+                                .ConfigureAwait(false);
+                        }
                     }
                     catch (AvitoCaptchaDetectedException)
                     {
@@ -1080,6 +1188,94 @@ public sealed class MonitoringService(
             if (i < subProfiles.Count - 1 && !cancellationToken.IsCancellationRequested && !budgetExhausted)
             {
                 await HumanDelay.BetweenSubProfilesAsync(cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        if (collectStats && statsPrev is not null && statsAggregate is { ParseSuccess: true })
+        {
+            var oldActiveAdsCount = GetPersistedOrMemoryActiveAdCount(account);
+            if (subProfileStatsSuccesses < subProfiles.Count)
+            {
+                if (hadEmptySnapshotAtCycleStart)
+                {
+                    LogActiveAdsChange(
+                        "StreamProcessAccountResponsesAsync.keep_progressive_partial_sub_stats_old_empty",
+                        account.Id,
+                        oldActiveAdsCount,
+                        statsAggregate.ActiveAds.Count,
+                        true);
+                    _ = GlobalLogger.Instance.LogAsync(
+                        $"Снимок объявлений аккаунта {account.DisplayName} частично сохранён по ходу обхода ({subProfileStatsSuccesses}/{subProfiles.Count} суб-профилей). Финальную пометку свежести не ставим, чтобы следующий цикл добрал остальные данные.",
+                        DeskLinkAuditLogLevel.Warning,
+                        properties: new Dictionary<string, object?>
+                        {
+                            ["accountId"] = account.Id,
+                            ["accountName"] = account.DisplayName,
+                            ["subProfileStatsSuccesses"] = subProfileStatsSuccesses,
+                            ["subProfileTotal"] = subProfiles.Count,
+                            ["oldActiveAdsCount"] = oldActiveAdsCount,
+                            ["newActiveAdsCount"] = statsAggregate.ActiveAds.Count
+                        });
+                }
+                else if (oldActiveAdsCount > 0)
+                {
+                    LogActiveAdsChange(
+                        "StreamProcessAccountResponsesAsync.skip_final_apply_incomplete_sub_stats",
+                        account.Id,
+                        oldActiveAdsCount,
+                        statsAggregate.ActiveAds.Count,
+                        false);
+                    _ = GlobalLogger.Instance.LogAsync(
+                        $"Снимок объявлений аккаунта {account.DisplayName} не применён: собрана статистика только по {subProfileStatsSuccesses}/{subProfiles.Count} суб-профилям — не затираем прежний JSON при частичном проходе.",
+                        DeskLinkAuditLogLevel.Warning,
+                        properties: new Dictionary<string, object?>
+                        {
+                            ["accountId"] = account.Id,
+                            ["accountName"] = account.DisplayName,
+                            ["subProfileStatsSuccesses"] = subProfileStatsSuccesses,
+                            ["subProfileTotal"] = subProfiles.Count,
+                            ["oldActiveAdsCount"] = oldActiveAdsCount,
+                            ["newActiveAdsCount"] = statsAggregate.ActiveAds.Count
+                        });
+                }
+                else
+                {
+                    LogActiveAdsChange(
+                        "StreamProcessAccountResponsesAsync.apply_partial_sub_stats_old_empty",
+                        account.Id,
+                        oldActiveAdsCount,
+                        statsAggregate.ActiveAds.Count,
+                        true);
+                    _ = GlobalLogger.Instance.LogAsync(
+                        $"Снимок объявлений аккаунта {account.DisplayName} собран только по {subProfileStatsSuccesses}/{subProfiles.Count} суб-профилям, но предыдущий snapshot пуст — применяем частичный результат, чтобы UI не оставался на 0.",
+                        DeskLinkAuditLogLevel.Warning,
+                        properties: new Dictionary<string, object?>
+                        {
+                            ["accountId"] = account.Id,
+                            ["accountName"] = account.DisplayName,
+                            ["subProfileStatsSuccesses"] = subProfileStatsSuccesses,
+                            ["subProfileTotal"] = subProfiles.Count,
+                            ["oldActiveAdsCount"] = oldActiveAdsCount,
+                            ["newActiveAdsCount"] = statsAggregate.ActiveAds.Count
+                        });
+                    await ApplyStatsSnapshotAsync(
+                            account,
+                            statsAggregate,
+                            statsPrev,
+                            cancellationToken,
+                            markStatsFresh: false)
+                        .ConfigureAwait(false);
+                }
+            }
+            else
+            {
+                LogActiveAdsChange(
+                    "StreamProcessAccountResponsesAsync.before_final_apply_subprofiles",
+                    account.Id,
+                    oldActiveAdsCount,
+                    statsAggregate.ActiveAds.Count,
+                    true);
+                await ApplyStatsSnapshotAsync(account, statsAggregate, statsPrev, cancellationToken).ConfigureAwait(false);
             }
         }
 
@@ -1432,6 +1628,13 @@ public sealed class MonitoringService(
         NextCycleCheckTimeChanged?.Invoke(this, EventArgs.Empty);
     }
 
+    private async Task SyncPersistedAccountRuntimeStateAsync(AppSettings settings, CancellationToken cancellationToken)
+    {
+        var persistedAccounts = await repository.GetAccountsAsync(cancellationToken).ConfigureAwait(false);
+        AvitoAccountRuntimeStateSync.MergePersistedIntoAccounts(settings.Avito.Accounts, persistedAccounts);
+        RestorePersistedAdSnapshots(persistedAccounts);
+    }
+
     private void UpdateStatus(MonitoringStatus status, string message)
     {
         CurrentStatus = status;
@@ -1506,6 +1709,8 @@ public sealed class MonitoringService(
         }
 
         var part = avitoParser.ParseProfilePage(activeHtml, account.Id);
+        part.ItemSnippetMarkersFound = CountItemSnippetMarkers(activeHtml);
+        part.PageLoadedSuccessfully = true;
 
         if (part.BlockedCount > 0)
         {
@@ -1622,12 +1827,16 @@ public sealed class MonitoringService(
         throw new TimeoutException("Страница профиля Авито не успела загрузиться.");
     }
 
-    private void UpdateActiveAdsSnapshot(Guid accountId, IReadOnlyList<AvitoAdStatus> ads)
+    private void UpdateActiveAdsSnapshot(Guid accountId, IReadOnlyList<AvitoAdStatus> ads, string source, bool parseSuccess)
     {
+        int oldCount;
         lock (_activeAdsSync)
         {
+            oldCount = _activeAdsByAccount.TryGetValue(accountId, out var cur) ? cur.Count : 0;
             _activeAdsByAccount[accountId] = ads.Select(CloneAd).ToList();
         }
+
+        LogActiveAdsChange(source, accountId, oldCount, ads.Count, parseSuccess);
     }
 
     private void UpdateBlockedAdsSnapshot(Guid accountId, IReadOnlyList<AvitoAdStatus> ads)
@@ -1658,7 +1867,8 @@ public sealed class MonitoringService(
         AvitoAccount account,
         ProfileResult snapshot,
         StatsPreviousCounts prev,
-        CancellationToken ct)
+        CancellationToken ct,
+        bool markStatsFresh = true)
     {
         snapshot.ActiveAds ??= [];
         snapshot.BlockedAds ??= [];
@@ -1666,6 +1876,7 @@ public sealed class MonitoringService(
         if (!snapshot.ParseSuccess)
         {
             var oldCount = GetPersistedOrMemoryActiveAdCount(account);
+            LogActiveAdsChange("ApplyStatsSnapshotAsync.skip_parse_failed", account.Id, oldCount, oldCount, false);
             _ = GlobalLogger.Instance.LogAsync(
                 $"Снимок активных объявлений не обновлялся для аккаунта {account.DisplayName} (id={account.Id}): парсинг неуспешен. Причина: {snapshot.ParseFailureReason ?? "unknown"}. Сохраняем предыдущий снимок ({oldCount} объявлений).",
                 DeskLinkAuditLogLevel.Warning,
@@ -1683,6 +1894,28 @@ public sealed class MonitoringService(
         var oldAdsCount = GetPersistedOrMemoryActiveAdCount(account);
         var newAdsCount = snapshot.ActiveAds.Count;
 
+        if (ActiveAdsSnapshotApplyPolicy.ShouldSkipApplyingSnapshot(snapshot, oldAdsCount, newAdsCount, out var policySkipReason))
+        {
+            LogActiveAdsChange("ApplyStatsSnapshotAsync.guard_skip_policy", account.Id, oldAdsCount, newAdsCount, true);
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Снимок активных не применён для {account.DisplayName} (id={account.Id}): old={oldAdsCount}, new={newAdsCount}, activeTabCount={snapshot.ActiveCount}, markers={snapshot.ItemSnippetMarkersFound}, pageOk={snapshot.PageLoadedSuccessfully}, tabCounterResolved={snapshot.ActiveTabCounterResolved}, причина={policySkipReason}.",
+                DeskLinkAuditLogLevel.Warning,
+                properties: new Dictionary<string, object?>
+                {
+                    ["accountId"] = account.Id,
+                    ["accountName"] = account.DisplayName,
+                    ["policySkipReason"] = policySkipReason,
+                    ["tabActiveAdsCount"] = snapshot.ActiveCount,
+                    ["itemSnippetMarkersFound"] = snapshot.ItemSnippetMarkersFound,
+                    ["oldActiveAdsCount"] = oldAdsCount,
+                    ["newActiveAdsCount"] = newAdsCount,
+                    ["pageLoadedSuccessfully"] = snapshot.PageLoadedSuccessfully,
+                    ["activeTabCounterResolved"] = snapshot.ActiveTabCounterResolved
+                });
+            return;
+        }
+
+        LogActiveAdsChange("ApplyStatsSnapshotAsync.before_update_memory", account.Id, oldAdsCount, newAdsCount, true);
         _ = GlobalLogger.Instance.LogAsync(
             $"Обновление снимка активных объявлений: accountId={account.Id}, account=\"{account.DisplayName}\", было объявлений={oldAdsCount}, стало={newAdsCount}, parseSuccess=true.",
             DeskLinkAuditLogLevel.Info,
@@ -1695,17 +1928,20 @@ public sealed class MonitoringService(
                 ["parseSuccess"] = true
             });
 
-        UpdateActiveAdsSnapshot(account.Id, snapshot.ActiveAds);
+        UpdateActiveAdsSnapshot(account.Id, snapshot.ActiveAds, "ApplyStatsSnapshotAsync.after_update_memory", true);
         UpdateBlockedAdsSnapshot(account.Id, snapshot.BlockedAds);
         account.ActiveAdsCount = snapshot.ActiveAds.Count;
         // Если вкладку «С ошибками» не открывали — берём счётчик из вкладки активных (он там тоже виден).
         // Если открыли — точное число распарсенных карточек.
         account.BlockedCount = snapshot.BlockedAds.Count > 0 ? snapshot.BlockedAds.Count : snapshot.BlockedCount;
         account.DraftsCount = snapshot.DraftsCount;
-        account.AdsStatsUpdatedAt = DateTime.UtcNow;
+        // Частичный snapshot может быть полезен для UI и рестарта, но не должен считаться «свежим»:
+        // следующий цикл всё равно должен продолжить добор статистики по остальным суб-профилям.
+        account.AdsStatsUpdatedAt = markStatsFresh ? DateTime.UtcNow : null;
         account.ActiveAdsSnapshotJson = AvitoAdSnapshots.Serialize(snapshot.ActiveAds);
         account.BlockedAdsSnapshotJson = AvitoAdSnapshots.Serialize(snapshot.BlockedAds);
         await repository.SaveAccountAsync(account, ct).ConfigureAwait(false);
+        LogActiveAdsChange("ApplyStatsSnapshotAsync.after_save_account", account.Id, oldAdsCount, newAdsCount, true);
 
         ProfileStatsUpdated?.Invoke(this, new ProfileStatsUpdatedEventArgs
         {
@@ -1736,6 +1972,24 @@ public sealed class MonitoringService(
         }
 
         return AvitoAdSnapshots.Deserialize(account.ActiveAdsSnapshotJson, account.Id).Count;
+    }
+
+    private void SyncRestoredRuntimeStateIntoAccount(AvitoAccount account)
+    {
+        lock (_activeAdsSync)
+        {
+            if (_activeAdsByAccount.TryGetValue(account.Id, out var activeAds) && activeAds.Count > 0)
+            {
+                account.ActiveAdsSnapshotJson = AvitoAdSnapshots.Serialize(activeAds);
+                account.ActiveAdsCount = Math.Max(account.ActiveAdsCount, activeAds.Count);
+            }
+
+            if (_blockedAdsByAccount.TryGetValue(account.Id, out var blockedAds) && blockedAds.Count > 0)
+            {
+                account.BlockedAdsSnapshotJson = AvitoAdSnapshots.Serialize(blockedAds);
+                account.BlockedCount = Math.Max(account.BlockedCount, blockedAds.Count);
+            }
+        }
     }
 
     /// <summary>Mutable-контейнер с предыдущими счётчиками для инкрементальных snapshot-ов в одном цикле.</summary>

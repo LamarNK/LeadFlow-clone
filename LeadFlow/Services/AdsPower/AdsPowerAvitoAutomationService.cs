@@ -58,7 +58,9 @@ public sealed class AdsPowerAvitoAutomationService(
                     await page.GoToAsync(CandidatesPageUrl, new NavigationOptions
                     {
                         Timeout = 60_000,
-                        WaitUntil = [WaitUntilNavigation.Networkidle2]
+                        // DOMContentLoaded + WaitForFunction ниже достаточно; Networkidle2 держит сетевой стек
+                        // Puppeteer и провоцирует фоновые ошибки CDP (тела редиректов, смена контекста).
+                        WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
                     }).ConfigureAwait(false);
                 }
                 catch (Exception ex) when (IsRecoverableNavigationError(ex))
@@ -988,7 +990,8 @@ public sealed class AdsPowerAvitoAutomationService(
         ex is PuppeteerException &&
         (ex.Message.Contains("Execution Context was destroyed", StringComparison.OrdinalIgnoreCase) ||
          ex.Message.Contains("Target closed", StringComparison.OrdinalIgnoreCase) ||
-         ex.Message.Contains("frame got detached", StringComparison.OrdinalIgnoreCase));
+         ex.Message.Contains("frame got detached", StringComparison.OrdinalIgnoreCase) ||
+         ex.Message.Contains("Response body is unavailable for redirect responses", StringComparison.OrdinalIgnoreCase));
 
     private static bool LooksLikeAvitoMessengerChannelUrl(string? url)
     {

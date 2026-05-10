@@ -1,6 +1,8 @@
+using System.Diagnostics;
 using System.Reflection;
 using LeadFlow.Models;
 using LeadFlow.Services;
+using LeadFlow.Services.AdsPower;
 using LeadFlow.Services.Avito;
 using LeadFlow.Services.Bitrix;
 using LeadFlow.Tests.Support;
@@ -58,6 +60,244 @@ public sealed class MonitoringServiceTests
         Assert.Equal(0, source.CallCount);
         Assert.Equal(0, bitrix.CreateLeadCallCount);
         Assert.Contains(harness.Statuses, s => s.Item1 == MonitoringStatus.RequiresAuthorization);
+    }
+
+    [Fact]
+    public async Task StartAsync_SyncsPersistedAccountState_BeforeFirstCycleSave()
+    {
+        var settings = NewSettings();
+        var account = NewAccount();
+        account.ProfileProvider = AvitoProfileProvider.AdsPower;
+        account.AdsPowerProfileId = "ads-power-user";
+        account.AdsPowerApiBaseUrl = "http://127.0.0.1:50325";
+        account.Status = AvitoAccountStatus.Authorized;
+        account.ActiveAdsCount = 0;
+        account.BlockedCount = 0;
+        account.DraftsCount = 0;
+        account.ActiveAdsSnapshotJson = "[]";
+        account.BlockedAdsSnapshotJson = "[]";
+        settings.Avito.Accounts.Add(account);
+
+        var persisted = NewAccount();
+        persisted.Id = account.Id;
+        persisted.DisplayName = account.DisplayName;
+        persisted.ProfileProvider = AvitoProfileProvider.AdsPower;
+        persisted.AdsPowerProfileId = account.AdsPowerProfileId;
+        persisted.AdsPowerApiBaseUrl = account.AdsPowerApiBaseUrl;
+        persisted.Status = AvitoAccountStatus.Authorized;
+        persisted.ActiveAdsSnapshotJson = AvitoAdSnapshots.Serialize(
+        [
+            NewPersistedAd(account.Id, "9001"),
+            NewPersistedAd(account.Id, "9002")
+        ]);
+        persisted.BlockedAdsSnapshotJson = "[]";
+        persisted.ActiveAdsCount = 2;
+        persisted.BlockedCount = 0;
+        persisted.DraftsCount = 0;
+        persisted.AdsStatsUpdatedAt = DateTime.UtcNow;
+
+        var harness = new MonitoringHarness(new FakeAvitoResponseSource(), new FakeBitrixClient(), settings);
+        harness.Repository.AccountsImpl = () => [persisted];
+
+        await harness.Service.StartAsync(CancellationToken.None);
+
+        try
+        {
+            await WaitForAsync(
+                () => harness.Repository.SavedAccounts.Count > 0,
+                TimeSpan.FromSeconds(5));
+
+            var firstSaved = harness.Repository.SavedAccounts[0];
+            Assert.Equal(account.Id, firstSaved.Id);
+            Assert.Equal(2, firstSaved.ActiveAdsCount);
+            Assert.Contains("\"Id\":\"9001\"", firstSaved.ActiveAdsSnapshotJson, StringComparison.Ordinal);
+            Assert.Contains("\"Id\":\"9002\"", firstSaved.ActiveAdsSnapshotJson, StringComparison.Ordinal);
+        }
+        finally
+        {
+            await harness.Service.StopAsync();
+        }
+    }
+
+    [Fact]
+    public async Task ProcessAccount_AdsPowerSubProfiles_DoesNotClearPersistedAds_AfterFirstSubProfile()
+    {
+        var settings = NewSettings();
+        var firstSubProfileResponsesStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var allowFirstSubProfileResponsesToFinish = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var sourceCallCount = 0;
+        var source = new FakeAvitoResponseSource
+        {
+            AsyncImpl = async (_, _, _) =>
+            {
+                sourceCallCount++;
+                if (sourceCallCount == 1)
+                {
+                    firstSubProfileResponsesStarted.TrySetResult();
+                    await allowFirstSubProfileResponsesToFinish.Task;
+                }
+
+                return Array.Empty<CandidateResponse>();
+            }
+        };
+
+        var adsPower = new SequenceAdsPowerAvitoAutomationService(new Dictionary<string, string>
+        {
+            ["sub-1"] = BuildAdsTabHtml(activeCount: 0),
+            ["sub-2"] = BuildAdsTabHtml(activeCount: 1, adId: "2002")
+        });
+
+        var harness = new MonitoringHarness(
+            source,
+            new FakeBitrixClient(),
+            settings,
+            adsPowerService: adsPower);
+
+        var account = NewAccount();
+        account.ProfileProvider = AvitoProfileProvider.AdsPower;
+        account.AdsPowerProfileId = "ads-power-user";
+        account.AdsPowerApiBaseUrl = "http://127.0.0.1:50325";
+        account.SetSubProfiles(
+        [
+            new AvitoSubProfile { Id = "sub-1", Name = "Первый" },
+            new AvitoSubProfile { Id = "sub-2", Name = "Второй" }
+        ]);
+        account.ActiveAdsSnapshotJson = AvitoAdSnapshots.Serialize(
+        [
+            NewPersistedAd(account.Id, "1001"),
+            NewPersistedAd(account.Id, "1002")
+        ]);
+        account.ActiveAdsCount = 2;
+        account.AdsStatsUpdatedAt = DateTime.UtcNow.AddMinutes(-MonitoringTiming.ActiveAdsRefreshIntervalMinutes - 1);
+        harness.Service.RestorePersistedAdSnapshots([account]);
+
+        using var cts = new CancellationTokenSource();
+        var processTask = harness.Service.ProcessAccountAsync(account, settings, cts.Token);
+
+        await firstSubProfileResponsesStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Equal(["1001", "1002"], harness.Service.GetActiveAdsSnapshot().Select(static ad => ad.Id).OrderBy(static id => id));
+        Assert.Equal(2, account.ActiveAdsCount);
+
+        cts.Cancel();
+        allowFirstSubProfileResponsesToFinish.SetResult();
+        await processTask;
+
+        Assert.Equal(["1001", "1002"], harness.Service.GetActiveAdsSnapshot().Select(static ad => ad.Id).OrderBy(static id => id));
+        Assert.Equal(2, account.ActiveAdsCount);
+        Assert.Equal(["sub-1"], adsPower.SwitchCalls);
+        Assert.Equal(1, source.CallCount);
+    }
+
+    [Fact]
+    public async Task ProcessAccount_AdsPowerSubProfiles_AppliesPartialStats_WhenOldSnapshotEmpty()
+    {
+        var settings = NewSettings();
+        var adsPower = new SequenceAdsPowerAvitoAutomationService(new Dictionary<string, string>
+        {
+            ["sub-1"] = BuildAdsTabHtml(activeCount: 4, adId: "3001"),
+            ["sub-2"] = string.Empty
+        });
+
+        var harness = new MonitoringHarness(
+            new FakeAvitoResponseSource(),
+            new FakeBitrixClient(),
+            settings,
+            adsPowerService: adsPower);
+
+        var account = NewAccount();
+        account.ProfileProvider = AvitoProfileProvider.AdsPower;
+        account.AdsPowerProfileId = "ads-power-user";
+        account.AdsPowerApiBaseUrl = "http://127.0.0.1:50325";
+        account.SetSubProfiles(
+        [
+            new AvitoSubProfile { Id = "sub-1", Name = "Первый" },
+            new AvitoSubProfile { Id = "sub-2", Name = "Второй" }
+        ]);
+        account.ActiveAdsSnapshotJson = "[]";
+        account.ActiveAdsCount = 0;
+        account.AdsStatsUpdatedAt = DateTime.UtcNow.AddMinutes(-MonitoringTiming.ActiveAdsRefreshIntervalMinutes - 1);
+        harness.Service.RestorePersistedAdSnapshots([account]);
+
+        await harness.Service.ProcessAccountAsync(account, settings, CancellationToken.None);
+
+        Assert.Equal(["3001"], harness.Service.GetActiveAdsSnapshot().Select(static ad => ad.Id).OrderBy(static id => id));
+        Assert.Equal(1, account.ActiveAdsCount);
+        Assert.Null(account.AdsStatsUpdatedAt);
+        Assert.Equal(2, adsPower.SwitchCalls.Count);
+        Assert.Contains(
+            harness.Repository.SavedAccounts,
+            saved => saved.Id == account.Id && saved.ActiveAdsCount == 1);
+    }
+
+    [Fact]
+    public async Task ProcessAccount_AdsPowerSubProfiles_ProgressivelyAppliesStats_WhenOldSnapshotEmpty()
+    {
+        var settings = NewSettings();
+        var firstSubProfileResponsesStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var allowFirstSubProfileResponsesToFinish = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var sourceCallCount = 0;
+        var source = new FakeAvitoResponseSource
+        {
+            AsyncImpl = async (_, _, _) =>
+            {
+                sourceCallCount++;
+                if (sourceCallCount == 1)
+                {
+                    firstSubProfileResponsesStarted.TrySetResult();
+                    await allowFirstSubProfileResponsesToFinish.Task;
+                }
+
+                return Array.Empty<CandidateResponse>();
+            }
+        };
+
+        var adsPower = new SequenceAdsPowerAvitoAutomationService(new Dictionary<string, string>
+        {
+            ["sub-1"] = BuildAdsTabHtml(activeCount: 4, adId: "4001"),
+            ["sub-2"] = BuildAdsTabHtml(activeCount: 6, adId: "4002")
+        });
+
+        var harness = new MonitoringHarness(
+            source,
+            new FakeBitrixClient(),
+            settings,
+            adsPowerService: adsPower);
+
+        var account = NewAccount();
+        account.ProfileProvider = AvitoProfileProvider.AdsPower;
+        account.AdsPowerProfileId = "ads-power-user";
+        account.AdsPowerApiBaseUrl = "http://127.0.0.1:50325";
+        account.SetSubProfiles(
+        [
+            new AvitoSubProfile { Id = "sub-1", Name = "Первый" },
+            new AvitoSubProfile { Id = "sub-2", Name = "Второй" }
+        ]);
+        account.ActiveAdsSnapshotJson = "[]";
+        account.ActiveAdsCount = 0;
+        account.AdsStatsUpdatedAt = null;
+        harness.Service.RestorePersistedAdSnapshots([account]);
+
+        using var cts = new CancellationTokenSource();
+        var processTask = harness.Service.ProcessAccountAsync(account, settings, cts.Token);
+
+        await firstSubProfileResponsesStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Equal(["4001"], harness.Service.GetActiveAdsSnapshot().Select(static ad => ad.Id).OrderBy(static id => id));
+        Assert.Equal(1, account.ActiveAdsCount);
+        Assert.Null(account.AdsStatsUpdatedAt);
+        Assert.Contains(
+            harness.Repository.SavedAccounts,
+            saved => saved.Id == account.Id && saved.ActiveAdsCount == 1);
+
+        cts.Cancel();
+        allowFirstSubProfileResponsesToFinish.SetResult();
+        await processTask;
+
+        Assert.Equal(["4001"], harness.Service.GetActiveAdsSnapshot().Select(static ad => ad.Id).OrderBy(static id => id));
+        Assert.Equal(1, account.ActiveAdsCount);
+        Assert.Null(account.AdsStatsUpdatedAt);
+        Assert.Equal(["sub-1"], adsPower.SwitchCalls);
     }
 
     [Fact]
@@ -298,7 +538,8 @@ public sealed class MonitoringServiceTests
             FakeAvitoResponseSource source,
             FakeBitrixClient bitrix,
             AppSettings settings,
-            FakeDuplicateService? duplicate = null)
+            FakeDuplicateService? duplicate = null,
+            IAdsPowerAvitoAutomationService? adsPowerService = null)
         {
             Source = source;
             Bitrix = bitrix;
@@ -318,7 +559,7 @@ public sealed class MonitoringServiceTests
                 new StubBrowserSessionService(),
                 new NoOpBackgroundWebViewHostFactory(),
                 new StubWebPageAutomationService(),
-                new StubAdsPowerAvitoAutomationService());
+                adsPowerService ?? new StubAdsPowerAvitoAutomationService());
 
             Service.StatusChanged += (_, status) => Statuses.Add((status, Service.CurrentStatusMessage));
             Service.StatusMessageChanged += (_, message) => Statuses.Add((Service.CurrentStatus, message));
@@ -330,5 +571,115 @@ public sealed class MonitoringServiceTests
         public FakeMonitoringRepository Repository { get; }
         public MonitoringService Service { get; }
         public List<(MonitoringStatus, string)> Statuses { get; } = new();
+    }
+
+    private static AvitoAdStatus NewPersistedAd(Guid accountId, string id) => new()
+    {
+        AccountId = accountId,
+        Id = id,
+        Title = $"Persisted {id}",
+        Url = $"https://www.avito.ru/perm/vakansii/persisted_{id}"
+    };
+
+    private static string BuildAdsTabHtml(int activeCount, string? adId = null)
+    {
+        var cardHtml = string.IsNullOrWhiteSpace(adId)
+            ? string.Empty
+            : $$"""
+              <div data-marker="item-snippet/{{adId}}">
+                <a data-marker="view-link" href="//www.avito.ru/perm/vakansii/test_{{adId}}">
+                  <span class="styles-title-UJzSB">Тест {{adId}}</span>
+                </a>
+              </div>
+              """;
+
+        return $$"""
+               <div role="tablist" data-marker="profile-items-tab">
+                 <button data-marker="profile-items-tab/tab(active)">
+                   <span><span>Активные</span><span class="styles-module-counter-prLgf styles-module-counter_size-l-drhmu">{{activeCount}}</span></span>
+                 </button>
+                 <button data-marker="profile-items-tab/tab(rejected)">
+                   <span><span>С ошибками</span><span class="styles-module-counter-prLgf styles-module-counter_disabled-bJRBA">0</span></span>
+                 </button>
+                 <button data-marker="profile-items-tab/tab(drafts)">
+                   <span><span>Черновики</span><span class="styles-module-counter-prLgf styles-module-counter_disabled-bJRBA">0</span></span>
+                 </button>
+               </div>
+               {{cardHtml}}
+               """;
+    }
+
+    private static async Task WaitForAsync(Func<bool> predicate, TimeSpan timeout)
+    {
+        var sw = Stopwatch.StartNew();
+        while (sw.Elapsed < timeout)
+        {
+            if (predicate())
+            {
+                return;
+            }
+
+            await Task.Delay(50);
+        }
+
+        Assert.True(predicate(), $"Condition was not met within {timeout.TotalSeconds:F1}s.");
+    }
+
+    private sealed class SequenceAdsPowerAvitoAutomationService(
+        IReadOnlyDictionary<string, string> profileItemsHtmlBySubProfile) : IAdsPowerAvitoAutomationService
+    {
+        private string? _currentSubProfileId;
+
+        public List<string> SwitchCalls { get; } = [];
+
+        public Task<string> ExtractCandidatesJsonAsync(
+            AdsPowerConnectionOptions options,
+            string adsPowerUserId,
+            CancellationToken cancellationToken = default,
+            CandidatesMessengerEnrichmentHints? messengerEnrichmentHints = null) =>
+            throw new InvalidOperationException("В этих тестах JSON-кандидатов через AdsPower не используется.");
+
+        public Task<string> LoadProfileItemsHtmlAsync(
+            AdsPowerConnectionOptions options,
+            string adsPowerUserId,
+            CancellationToken cancellationToken = default)
+        {
+            if (_currentSubProfileId is null)
+            {
+                throw new InvalidOperationException("Суб-профиль ещё не выбран.");
+            }
+
+            return Task.FromResult(profileItemsHtmlBySubProfile[_currentSubProfileId]);
+        }
+
+        public Task<string> LoadBlockedItemsHtmlAsync(
+            AdsPowerConnectionOptions options,
+            string adsPowerUserId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(string.Empty);
+
+        public Task<string> LoadProfileSwitchHtmlAsync(
+            AdsPowerConnectionOptions options,
+            string adsPowerUserId,
+            CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("В этих тестах HTML переключателя суб-профилей не используется.");
+
+        public Task<bool> SwitchActiveProfileAsync(
+            AdsPowerConnectionOptions options,
+            string adsPowerUserId,
+            string subProfileId,
+            CancellationToken cancellationToken = default)
+        {
+            _currentSubProfileId = subProfileId;
+            SwitchCalls.Add(subProfileId);
+            return Task.FromResult(true);
+        }
+
+        public Task OpenUrlInRunningProfileAsync(
+            AdsPowerConnectionOptions options,
+            string adsPowerUserId,
+            string url,
+            CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("Открытие URL в AdsPower не требуется для этого теста.");
     }
 }
