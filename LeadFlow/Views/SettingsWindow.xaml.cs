@@ -51,7 +51,11 @@ public partial class SettingsWindow : Window
         _isClosingSaveInProgress = true;
         try
         {
-            await viewModel.SaveAsync();
+            if (viewModel.HasPendingChanges())
+            {
+                // SQLite/SQLCipher не блокирует UI-поток на время записи.
+                await viewModel.SaveAsync().ConfigureAwait(false);
+            }
         }
         finally
         {
@@ -59,7 +63,7 @@ public partial class SettingsWindow : Window
         }
 
         _allowClose = true;
-        _ = Dispatcher.BeginInvoke(Close, DispatcherPriority.Normal);
+        await Dispatcher.InvokeAsync(Close, DispatcherPriority.Normal);
     }
 
     private void OnClosed(object? sender, EventArgs e)

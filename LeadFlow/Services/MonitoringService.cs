@@ -42,6 +42,8 @@ public sealed class MonitoringService(
     private readonly Lock _activeAdsSync = new();
     private readonly Dictionary<Guid, IReadOnlyList<AvitoAdStatus>> _activeAdsByAccount = [];
     private readonly Dictionary<Guid, IReadOnlyList<AvitoAdStatus>> _blockedAdsByAccount = [];
+    private readonly Dictionary<Guid, string> _restoredActiveSnapshotJsonByAccount = [];
+    private readonly Dictionary<Guid, string> _restoredBlockedSnapshotJsonByAccount = [];
     private int _consecutiveMonitoringLoopFailures;
     private int _consecutiveQuietMonitoringCycles;
 
@@ -88,25 +90,43 @@ public sealed class MonitoringService(
     {
         lock (_activeAdsSync)
         {
+            var actualIds = accounts.Select(static account => account.Id).ToHashSet();
             foreach (var kv in _activeAdsByAccount.Keys.ToArray())
             {
-                if (accounts.All(a => a.Id != kv))
+                if (!actualIds.Contains(kv))
                 {
                     _activeAdsByAccount.Remove(kv);
                     _blockedAdsByAccount.Remove(kv);
+                    _restoredActiveSnapshotJsonByAccount.Remove(kv);
+                    _restoredBlockedSnapshotJsonByAccount.Remove(kv);
                 }
             }
 
             foreach (var account in accounts)
             {
-                _activeAdsByAccount[account.Id] = AvitoAdSnapshots
-                    .Deserialize(account.ActiveAdsSnapshotJson, account.Id)
-                    .Select(CloneAd)
-                    .ToList();
-                _blockedAdsByAccount[account.Id] = AvitoAdSnapshots
-                    .Deserialize(account.BlockedAdsSnapshotJson, account.Id)
-                    .Select(CloneAd)
-                    .ToList();
+                var activeJson = NormalizeSnapshotJson(account.ActiveAdsSnapshotJson);
+                if (!_activeAdsByAccount.ContainsKey(account.Id)
+                    || !_restoredActiveSnapshotJsonByAccount.TryGetValue(account.Id, out var cachedActiveJson)
+                    || !string.Equals(cachedActiveJson, activeJson, StringComparison.Ordinal))
+                {
+                    _activeAdsByAccount[account.Id] = AvitoAdSnapshots
+                        .Deserialize(activeJson, account.Id)
+                        .Select(CloneAd)
+                        .ToList();
+                    _restoredActiveSnapshotJsonByAccount[account.Id] = activeJson;
+                }
+
+                var blockedJson = NormalizeSnapshotJson(account.BlockedAdsSnapshotJson);
+                if (!_blockedAdsByAccount.ContainsKey(account.Id)
+                    || !_restoredBlockedSnapshotJsonByAccount.TryGetValue(account.Id, out var cachedBlockedJson)
+                    || !string.Equals(cachedBlockedJson, blockedJson, StringComparison.Ordinal))
+                {
+                    _blockedAdsByAccount[account.Id] = AvitoAdSnapshots
+                        .Deserialize(blockedJson, account.Id)
+                        .Select(CloneAd)
+                        .ToList();
+                    _restoredBlockedSnapshotJsonByAccount[account.Id] = blockedJson;
+                }
             }
         }
     }
@@ -176,10 +196,9 @@ public sealed class MonitoringService(
         IsActive = true;
         _consecutiveQuietMonitoringCycles = 0;
         UpdateStatus(MonitoringStatus.Running, "Запуск мониторинга: загружаем настройки.");
-        AppSettings settings;
         try
         {
-            settings = await settingsService.LoadAsync(_cts.Token);
+            await settingsService.LoadAsync(_cts.Token);
             // Синхронизация при старте отключена: проверка дублей выполняется через API для каждого отклика
             // await SyncBitrixLeadsAsync(settings, _cts.Token);
         }
@@ -194,7 +213,7 @@ public sealed class MonitoringService(
         catch (Exception ex)
         {
             _ = GlobalLogger.Instance.LogAsync(
-                $"Bitrix pre-sync failed.{Environment.NewLine}{ex}",
+                $"Не удалось загрузить настройки при запуске мониторинга.{Environment.NewLine}{ex}",
                 DeskLinkAuditLogLevel.Error);
             IsActive = false;
             _cts.Dispose();
@@ -207,7 +226,8 @@ public sealed class MonitoringService(
 
         try
         {
-            await SyncPersistedAccountRuntimeStateAsync(settings, _cts.Token).ConfigureAwait(false);
+            var persistedAccounts = await repository.GetAdSnapshotAccountsAsync(_cts.Token).ConfigureAwait(false);
+            RestorePersistedAdSnapshots(persistedAccounts);
             var totalAfterRestore = GetTotalActiveAdsInMemoryCount();
             LogActiveAdsChange("StartAsync.after_restore_persisted_snapshots", null, totalAfterRestore, totalAfterRestore, true);
         }
@@ -351,10 +371,8 @@ public sealed class MonitoringService(
 
     private async Task UpdateProfileStatsAsync(CancellationToken ct)
     {
-        var settings = await settingsService.LoadAsync(ct);
-        var enabledIds = settings.Avito.Accounts.Where(static a => a.IsEnabled).Select(static a => a.Id).ToHashSet();
         var accounts = (await repository.GetAccountsAsync(ct))
-            .Where(a => enabledIds.Contains(a.Id))
+            .Where(static account => account.IsEnabled)
             .ToList();
 
         foreach (var account in accounts)
@@ -484,8 +502,9 @@ public sealed class MonitoringService(
                 try
                 {
                     var settings = await settingsService.LoadAsync(cancellationToken);
-                    await SyncPersistedAccountRuntimeStateAsync(settings, cancellationToken).ConfigureAwait(false);
-                    var accounts = settings.Avito.Accounts.Where(x => x.IsEnabled).ToList();
+                    var accounts = (await repository.GetAccountsAsync(cancellationToken).ConfigureAwait(false)).ToList();
+                    RestorePersistedAdSnapshots(accounts);
+                    accounts = accounts.Where(static account => account.IsEnabled).ToList();
                     UpdateStatus(
                         MonitoringStatus.Running,
                         accounts.Count == 0
@@ -1694,12 +1713,8 @@ public sealed class MonitoringService(
         NextCycleCheckTimeChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    private async Task SyncPersistedAccountRuntimeStateAsync(AppSettings settings, CancellationToken cancellationToken)
-    {
-        var persistedAccounts = await repository.GetAccountsAsync(cancellationToken).ConfigureAwait(false);
-        AvitoAccountRuntimeStateSync.MergePersistedIntoAccounts(settings.Avito.Accounts, persistedAccounts);
-        RestorePersistedAdSnapshots(persistedAccounts);
-    }
+    private static string NormalizeSnapshotJson(string? json) =>
+        string.IsNullOrWhiteSpace(json) ? "[]" : json;
 
     private void UpdateStatus(MonitoringStatus status, string message)
     {

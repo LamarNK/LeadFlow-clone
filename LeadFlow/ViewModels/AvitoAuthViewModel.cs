@@ -248,7 +248,7 @@ public partial class AvitoAuthViewModel(
             _account.Status = AvitoAccountStatus.Authorized;
             _account.CookiesJson = await profileCookiesService.ReadCurrentProfileCookiesAsJsonAsync(_account, cancellationToken);
             _account.ImportCookiesOnNextStart = false;
-            await PersistAccountAsync(settings, cancellationToken);
+            await PersistAccountAsync(cancellationToken);
             _authorizationPersisted = true;
             AuthorizationStatus = $"Авторизация успешна. Профиль сохранён: {Session.ProfilePath}";
             return;
@@ -267,38 +267,18 @@ public partial class AvitoAuthViewModel(
 
         if (!persistOnSuccessOnly)
         {
-            await PersistAccountAsync(settings, cancellationToken);
+            await PersistAccountAsync(cancellationToken);
         }
     }
 
-    private async Task PersistAccountAsync(AppSettings settings, CancellationToken cancellationToken)
+    private async Task PersistAccountAsync(CancellationToken cancellationToken)
     {
         if (_account is null)
         {
             return;
         }
 
-        var existing = settings.Avito.Accounts.FirstOrDefault(x => x.Id == _account.Id);
-        if (existing is null)
-        {
-            settings.Avito.Accounts.Add(_account);
-        }
-        else if (!ReferenceEquals(existing, _account))
-        {
-            existing.DisplayName = _account.DisplayName;
-            existing.AvitoResponsesUrl = _account.AvitoResponsesUrl;
-            existing.BrowserProfilePath = _account.BrowserProfilePath;
-            existing.IsEnabled = _account.IsEnabled;
-            existing.Status = _account.Status;
-            existing.LastAuthCheckAt = _account.LastAuthCheckAt;
-            existing.LastMonitoringAt = _account.LastMonitoringAt;
-            existing.LastErrorMessage = _account.LastErrorMessage;
-            existing.CookiesJson = _account.CookiesJson;
-            existing.ImportCookiesOnNextStart = _account.ImportCookiesOnNextStart;
-        }
-
         await repository.SaveAccountAsync(_account, cancellationToken);
-        await settingsService.SaveAsync(settings, cancellationToken);
     }
 
     partial void OnSessionChanged(BrowserAccountSession? value)

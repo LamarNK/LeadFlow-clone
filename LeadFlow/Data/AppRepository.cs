@@ -45,6 +45,39 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         AccountPersisted?.Invoke(this, account);
     }
 
+    public async Task SaveAccountsAsync(IReadOnlyCollection<AvitoAccount> accounts, CancellationToken cancellationToken)
+    {
+        if (accounts.Count == 0)
+        {
+            return;
+        }
+
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var ids = accounts.Select(static account => account.Id).ToArray();
+        var existingById = await db.AvitoAccounts
+            .Where(x => ids.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, cancellationToken);
+
+        foreach (var account in accounts)
+        {
+            if (existingById.TryGetValue(account.Id, out var existing))
+            {
+                Map(account, existing);
+            }
+            else
+            {
+                db.AvitoAccounts.Add(ToEntity(account));
+            }
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+
+        foreach (var account in accounts)
+        {
+            AccountPersisted?.Invoke(this, account);
+        }
+    }
+
     public async Task DeleteAccountAsync(Guid accountId, CancellationToken cancellationToken)
     {
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
@@ -56,6 +89,26 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         }
     }
 
+    public async Task DeleteAccountsAsync(IReadOnlyCollection<Guid> accountIds, CancellationToken cancellationToken)
+    {
+        if (accountIds.Count == 0)
+        {
+            return;
+        }
+
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var existing = await db.AvitoAccounts
+            .Where(x => accountIds.Contains(x.Id))
+            .ToListAsync(cancellationToken);
+        if (existing.Count == 0)
+        {
+            return;
+        }
+
+        db.AvitoAccounts.RemoveRange(existing);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
     public async Task<IReadOnlyList<AvitoAccount>> GetAccountsAsync(CancellationToken cancellationToken)
     {
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
@@ -64,6 +117,99 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
             .OrderBy(x => x.DisplayName)
             .Select(x => ToModel(x))
             .ToListAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Список аккаунтов для окна настроек: без тяжёлых JSON-колонок (снимки объявлений, cookies, fingerprint overview).
+    /// </summary>
+    public async Task<IReadOnlyList<AvitoAccount>> GetAccountsForSettingsAsync(CancellationToken cancellationToken)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var rows = await db.AvitoAccounts
+            .AsNoTracking()
+            .OrderBy(x => x.DisplayName)
+            .Select(x => new SettingsAccountRow(
+                x.Id,
+                x.DisplayName,
+                x.AvitoResponsesUrl,
+                x.BrowserProfilePath,
+                x.IsEnabled,
+                x.Status,
+                x.LastAuthCheckAt,
+                x.LastMonitoringAt,
+                x.LastErrorMessage,
+                x.ActiveAdsCount,
+                x.BlockedCount,
+                x.DraftsCount,
+                x.AdsStatsUpdatedAt,
+                x.ProfileProvider,
+                x.AdsPowerProfileId,
+                x.AdsPowerProfileName,
+                x.AdsPowerApiBaseUrl,
+                x.AdsPowerApiKey,
+                x.AvitoProfileName,
+                x.SubProfilesJson))
+            .ToListAsync(cancellationToken);
+
+        return rows.Select(static row => row.ToModel()).ToList();
+    }
+
+    /// <summary>
+    /// Сохраняет изменения из окна настроек, не затирая тяжёлые поля (снимки, cookies, fingerprint), если аккаунт уже в БД.
+    /// </summary>
+    public async Task SaveSettingsSessionAccountsAsync(
+        IReadOnlyCollection<AvitoAccount> accounts,
+        CancellationToken cancellationToken)
+    {
+        if (accounts.Count == 0)
+        {
+            return;
+        }
+
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var ids = accounts.Select(static account => account.Id).ToArray();
+        var existingById = await db.AvitoAccounts
+            .Where(x => ids.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, cancellationToken);
+
+        foreach (var account in accounts)
+        {
+            if (existingById.TryGetValue(account.Id, out var existing))
+            {
+                MapSettingsSessionFields(account, existing);
+            }
+            else
+            {
+                db.AvitoAccounts.Add(ToEntity(account));
+            }
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+
+        // Не вызываем AccountPersisted: иначе Dashboard делает полный RefreshAsync со всеми ad-snapshots.
+        // Плитки на главном экране обновляет MainViewModel.RefreshSummaryAsync после закрытия настроек.
+    }
+
+    public async Task<IReadOnlyList<AvitoAccount>> GetAdSnapshotAccountsAsync(CancellationToken cancellationToken)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var rows = await db.AvitoAccounts
+            .AsNoTracking()
+            .OrderBy(x => x.DisplayName)
+            .Select(x => new AdSnapshotProjection
+            {
+                Id = x.Id,
+                ActiveAdsSnapshotJson = x.ActiveAdsSnapshotJson,
+                BlockedAdsSnapshotJson = x.BlockedAdsSnapshotJson
+            })
+            .ToListAsync(cancellationToken);
+
+        return rows.Select(static row => new AvitoAccount
+        {
+            Id = row.Id,
+            ActiveAdsSnapshotJson = string.IsNullOrWhiteSpace(row.ActiveAdsSnapshotJson) ? "[]" : row.ActiveAdsSnapshotJson,
+            BlockedAdsSnapshotJson = string.IsNullOrWhiteSpace(row.BlockedAdsSnapshotJson) ? "[]" : row.BlockedAdsSnapshotJson
+        }).ToList();
     }
 
     public async Task<AvitoAccount?> GetAccountByIdAsync(Guid accountId, CancellationToken cancellationToken)
@@ -741,6 +887,70 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         SubProfilesJson = string.IsNullOrWhiteSpace(model.SubProfilesJson) ? "[]" : model.SubProfilesJson
     };
 
+    private sealed class AdSnapshotProjection
+    {
+        public Guid Id { get; init; }
+        public string ActiveAdsSnapshotJson { get; init; } = "[]";
+        public string BlockedAdsSnapshotJson { get; init; } = "[]";
+    }
+
+    private sealed record SettingsAccountRow(
+        Guid Id,
+        string DisplayName,
+        string AvitoResponsesUrl,
+        string BrowserProfilePath,
+        bool IsEnabled,
+        string Status,
+        DateTime? LastAuthCheckAt,
+        DateTime? LastMonitoringAt,
+        string LastErrorMessage,
+        int ActiveAdsCount,
+        int BlockedCount,
+        int DraftsCount,
+        DateTime? AdsStatsUpdatedAt,
+        string ProfileProvider,
+        string? AdsPowerProfileId,
+        string? AdsPowerProfileName,
+        string? AdsPowerApiBaseUrl,
+        string? AdsPowerApiKey,
+        string? AvitoProfileName,
+        string SubProfilesJson)
+    {
+        public AvitoAccount ToModel() => new()
+        {
+            Id = Id,
+            DisplayName = DisplayName,
+            AvitoResponsesUrl = AvitoResponsesUrl,
+            BrowserProfilePath = BrowserProfilePath,
+            IsEnabled = IsEnabled,
+            Status = Enum.TryParse<AvitoAccountStatus>(Status, out var status)
+                ? status
+                : AvitoAccountStatus.NotConfigured,
+            LastAuthCheckAt = LastAuthCheckAt,
+            LastMonitoringAt = LastMonitoringAt,
+            LastErrorMessage = LastErrorMessage,
+            ActiveAdsCount = ActiveAdsCount,
+            BlockedCount = BlockedCount,
+            DraftsCount = DraftsCount,
+            AdsStatsUpdatedAt = AdsStatsUpdatedAt,
+            ProfileProvider = Enum.TryParse<AvitoProfileProvider>(ProfileProvider, out var provider)
+                ? provider
+                : AvitoProfileProvider.Local,
+            AdsPowerProfileId = AdsPowerProfileId,
+            AdsPowerProfileName = AdsPowerProfileName,
+            AdsPowerApiBaseUrl = AdsPowerApiBaseUrl,
+            AdsPowerApiKey = AdsPowerApiKey,
+            AvitoProfileName = AvitoProfileName,
+            SubProfilesJson = string.IsNullOrWhiteSpace(SubProfilesJson) ? "[]" : SubProfilesJson,
+            ActiveAdsSnapshotJson = "[]",
+            BlockedAdsSnapshotJson = "[]",
+            CookiesJson = string.Empty,
+            StartupTabsJson = "[]",
+            ProxyPresetsJson = "[]",
+            FingerprintOverviewJson = "{}"
+        };
+    }
+
     private static AvitoAccount ToModel(AvitoAccountEntity entity) => new()
     {
         Id = entity.Id,
@@ -806,6 +1016,30 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         AvitoProfileName = entity.AvitoProfileName,
         SubProfilesJson = string.IsNullOrWhiteSpace(entity.SubProfilesJson) ? "[]" : entity.SubProfilesJson
     };
+
+  /// <summary>Поля, которые можно менять из окна настроек, не трогая blobs в БД.</summary>
+    private static void MapSettingsSessionFields(AvitoAccount source, AvitoAccountEntity target)
+    {
+        target.DisplayName = source.DisplayName;
+        target.AvitoResponsesUrl = source.AvitoResponsesUrl;
+        target.BrowserProfilePath = source.BrowserProfilePath;
+        target.IsEnabled = source.IsEnabled;
+        target.Status = source.Status.ToString();
+        target.LastAuthCheckAt = source.LastAuthCheckAt;
+        target.LastMonitoringAt = source.LastMonitoringAt;
+        target.LastErrorMessage = source.LastErrorMessage;
+        target.ActiveAdsCount = source.ActiveAdsCount;
+        target.BlockedCount = source.BlockedCount;
+        target.DraftsCount = source.DraftsCount;
+        target.AdsStatsUpdatedAt = source.AdsStatsUpdatedAt;
+        target.ProfileProvider = source.ProfileProvider.ToString();
+        target.AdsPowerProfileId = source.AdsPowerProfileId;
+        target.AdsPowerProfileName = source.AdsPowerProfileName;
+        target.AdsPowerApiBaseUrl = source.AdsPowerApiBaseUrl;
+        target.AdsPowerApiKey = source.AdsPowerApiKey;
+        target.AvitoProfileName = source.AvitoProfileName;
+        target.SubProfilesJson = string.IsNullOrWhiteSpace(source.SubProfilesJson) ? "[]" : source.SubProfilesJson;
+    }
 
     private static void Map(AvitoAccount source, AvitoAccountEntity target)
     {

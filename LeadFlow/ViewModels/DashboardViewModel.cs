@@ -1,4 +1,8 @@
+using System.ComponentModel;
 using System.Globalization;
+using System.Windows;
+using System.Windows.Data;
+using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using LeadFlow;
@@ -6,9 +10,6 @@ using LeadFlow.Data;
 using LeadFlow.Models;
 using LeadFlow.Services;
 using System.Collections.ObjectModel;
-using System.ComponentModel;
-using System.Windows;
-using System.Windows.Threading;
 
 namespace LeadFlow.ViewModels;
 
@@ -27,6 +28,7 @@ public partial class DashboardViewModel : ObservableObject
     private readonly ActivityPoint[] _hourlyLocalSlots = new ActivityPoint[24];
     private readonly ActivityPoint[] _weeklyLocalSlots = new ActivityPoint[7];
     private readonly List<CandidateResponse> _responsesDuringDashboardRefresh = new();
+    private readonly DispatcherTimer _adsSearchDebounce = new() { Interval = TimeSpan.FromMilliseconds(320) };
     private int _dashboardRefreshDepth;
 
     [ObservableProperty]
@@ -82,6 +84,10 @@ public partial class DashboardViewModel : ObservableObject
     [ObservableProperty]
     private int activeAdsGridColumns = 2;
 
+    /// <summary>Ширина карточки объявления в сетке (высота — по контенту, через Measure с InfiniteSize).</summary>
+    [ObservableProperty]
+    private double activeAdsTileWidth = 320;
+
     [ObservableProperty]
     private AdsDashboardFilter selectedAdsFilter = AdsDashboardFilter.All;
 
@@ -97,8 +103,13 @@ public partial class DashboardViewModel : ObservableObject
     [ObservableProperty]
     private bool showStandardAdsEmpty;
 
-    /// <summary>Единая сетка объявлений с учётом фильтра, поиска и сортировки.</summary>
-    public ObservableCollection<DashboardAdDisplayItem> DisplayedAds { get; } = new();
+    [ObservableProperty]
+    private int displayedAdsCount;
+
+    /// <summary>Все объявления из снимков; фильтр/сортировка — через <see cref="DisplayedAdsView"/>.</summary>
+    public ObservableCollection<DashboardAdDisplayItem> AllAdDisplayItems { get; } = new();
+
+    public ICollectionView DisplayedAdsView { get; }
 
     public IReadOnlyList<AdsFilterTab> AdsFilterTabs { get; } =
     [
@@ -131,8 +142,6 @@ public partial class DashboardViewModel : ObservableObject
         new ChartSeriesTab(DashboardChartSeries.Errors, "Ошибки")
     ];
 
-    public int DisplayedAdsCount => DisplayedAds.Count;
-
     public bool HasDuplicatesAttention => Duplicates > 0;
 
     public bool HasActionRequiredAttention => ActionRequired > 0;
@@ -157,6 +166,13 @@ public partial class DashboardViewModel : ObservableObject
         _repository = repository;
         _monitoringService = monitoringService;
         _windowService = windowService;
+        DisplayedAdsView = CollectionViewSource.GetDefaultView(AllAdDisplayItems);
+        DisplayedAdsView.Filter = MatchesDisplayedAdFilter;
+        _adsSearchDebounce.Tick += (_, _) =>
+        {
+            _adsSearchDebounce.Stop();
+            RefreshDisplayedAdsView();
+        };
         _monitoringService.ProfileStatsUpdated += (_, _) =>
         {
             // Один раз пришло событие — обновляем оба списка вместе, чтобы счётчик «Заблокировано» в
@@ -179,14 +195,18 @@ public partial class DashboardViewModel : ObservableObject
 
         InitEmptyHourlySlots();
         InitEmptyWeeklySlots();
-        RebuildDisplayedAds();
+        RebuildAllAdDisplayItems();
     }
 
-    partial void OnSelectedAdsFilterChanged(AdsDashboardFilter value) => RebuildDisplayedAds();
+    partial void OnSelectedAdsFilterChanged(AdsDashboardFilter value) => RefreshDisplayedAdsView();
 
-    partial void OnAdsSearchQueryChanged(string value) => RebuildDisplayedAds();
+    partial void OnAdsSearchQueryChanged(string value)
+    {
+        _adsSearchDebounce.Stop();
+        _adsSearchDebounce.Start();
+    }
 
-    partial void OnSelectedAdsSortChanged(AdsSortOption value) => RebuildDisplayedAds();
+    partial void OnSelectedAdsSortChanged(AdsSortOption value) => RefreshDisplayedAdsView();
 
     partial void OnSelectedChartSeriesChanged(DashboardChartSeries value)
     {
@@ -211,135 +231,122 @@ public partial class DashboardViewModel : ObservableObject
                 SortByStatusAscending: true));
     }
 
-    /// <summary>Пересобирает <see cref="DisplayedAds"/> после смены фильтра, поиска или сортировки.</summary>
-    public void RebuildDisplayedAds()
+    /// <summary>Пересобирает источник после обновления снимков active/blocked (не при смене вкладки фильтра).</summary>
+    private void RebuildAllAdDisplayItems()
     {
-        var rows = new List<(AvitoAdStatus ad, DashboardAdKind kind)>(ActiveAds.Count + BlockedAds.Count);
-
-        switch (SelectedAdsFilter)
+        var items = new List<DashboardAdDisplayItem>(ActiveAds.Count + BlockedAds.Count);
+        foreach (var ad in ActiveAds)
         {
-            case AdsDashboardFilter.All:
-                foreach (var ad in ActiveAds)
-                {
-                    rows.Add((ad, DashboardAdKind.Active));
-                }
+            items.Add(new DashboardAdDisplayItem(DashboardAdKind.Active, ad));
+        }
 
-                foreach (var ad in BlockedAds)
-                {
-                    rows.Add((ad, DashboardAdKind.Blocked));
-                }
+        foreach (var ad in BlockedAds)
+        {
+            items.Add(new DashboardAdDisplayItem(DashboardAdKind.Blocked, ad));
+        }
 
-                break;
-            case AdsDashboardFilter.Active:
-                foreach (var ad in ActiveAds)
-                {
-                    rows.Add((ad, DashboardAdKind.Active));
-                }
+        // Нельзя менять ObservableCollection внутри DeferRefresh — CollectionView падает при старте.
+        AllAdDisplayItems.Clear();
+        foreach (var item in items)
+        {
+            AllAdDisplayItems.Add(item);
+        }
 
-                break;
-            case AdsDashboardFilter.Blocked:
-                foreach (var ad in BlockedAds)
-                {
-                    rows.Add((ad, DashboardAdKind.Blocked));
-                }
+        RefreshDisplayedAdsView();
+    }
 
-                break;
-            case AdsDashboardFilter.WithMessages:
-                foreach (var ad in ActiveAds.Where(static a => a.Contacts > 0))
-                {
-                    rows.Add((ad, DashboardAdKind.Active));
-                }
+    /// <summary>Только фильтр/сортировка/поиск — без Clear/Add тысяч карточек и без пересоздания визуального дерева.</summary>
+    private void RefreshDisplayedAdsView()
+    {
+        ApplyDisplayedAdsSort();
+        DisplayedAdsView.Refresh();
+        var count = DisplayedAdsView.Cast<object>().Count();
+        DisplayedAdsCount = count;
+        ShowStandardAdsEmpty = count == 0;
+    }
 
-                foreach (var ad in BlockedAds.Where(static a => a.Contacts > 0))
-                {
-                    rows.Add((ad, DashboardAdKind.Blocked));
-                }
+    private bool MatchesDisplayedAdFilter(object obj)
+    {
+        if (obj is not DashboardAdDisplayItem item)
+        {
+            return false;
+        }
 
-                break;
-            case AdsDashboardFilter.WithoutMessages:
-                foreach (var ad in ActiveAds.Where(static a => a.Contacts == 0))
-                {
-                    rows.Add((ad, DashboardAdKind.Active));
-                }
+        var matchesTab = SelectedAdsFilter switch
+        {
+            AdsDashboardFilter.All => true,
+            AdsDashboardFilter.Active => item.Kind == DashboardAdKind.Active,
+            AdsDashboardFilter.Blocked => item.Kind == DashboardAdKind.Blocked,
+            AdsDashboardFilter.WithMessages => item.Ad.Contacts > 0,
+            AdsDashboardFilter.WithoutMessages => item.Ad.Contacts == 0,
+            AdsDashboardFilter.Drafts => item.Kind == DashboardAdKind.Active && IsDraftStatus(item.Ad),
+            AdsDashboardFilter.WithIssues => item.Kind == DashboardAdKind.Blocked
+                || (item.Kind == DashboardAdKind.Active && IsProblemActiveAd(item.Ad)),
+            _ => true
+        };
 
-                foreach (var ad in BlockedAds.Where(static a => a.Contacts == 0))
-                {
-                    rows.Add((ad, DashboardAdKind.Blocked));
-                }
-
-                break;
-            case AdsDashboardFilter.Drafts:
-                foreach (var ad in ActiveAds.Where(static a => IsDraftStatus(a)))
-                {
-                    rows.Add((ad, DashboardAdKind.Active));
-                }
-
-                break;
-            case AdsDashboardFilter.WithIssues:
-                foreach (var ad in ActiveAds.Where(static a => IsProblemActiveAd(a)))
-                {
-                    rows.Add((ad, DashboardAdKind.Active));
-                }
-
-                foreach (var ad in BlockedAds)
-                {
-                    rows.Add((ad, DashboardAdKind.Blocked));
-                }
-
-                break;
+        if (!matchesTab)
+        {
+            return false;
         }
 
         var q = (AdsSearchQuery ?? string.Empty).Trim();
-        if (q.Length > 0)
+        if (q.Length == 0)
         {
-            rows = rows
-                .Where(t =>
-                    t.ad.Title.Contains(q, StringComparison.CurrentCultureIgnoreCase)
-                    || t.ad.City.Contains(q, StringComparison.CurrentCultureIgnoreCase)
-                    || t.ad.Id.Contains(q, StringComparison.OrdinalIgnoreCase)
-                    || t.ad.Status.Contains(q, StringComparison.CurrentCultureIgnoreCase))
-                .ToList();
+            return true;
         }
 
-        IEnumerable<(AvitoAdStatus ad, DashboardAdKind kind)> ordered = SelectedAdsSort switch
-        {
-            AdsSortOption.ByViews => rows
-                .OrderByDescending(t => t.ad.Views)
-                .ThenBy(t => t.ad.Title, StringComparer.CurrentCultureIgnoreCase),
-            AdsSortOption.ByViewsAscending => rows
-                .OrderBy(t => t.ad.Views)
-                .ThenBy(t => t.ad.Title, StringComparer.CurrentCultureIgnoreCase),
-            AdsSortOption.ByContacts => rows
-                .OrderByDescending(t => t.ad.Contacts)
-                .ThenBy(t => t.ad.Title, StringComparer.CurrentCultureIgnoreCase),
-            AdsSortOption.ByContactsAscending => rows
-                .OrderBy(t => t.ad.Contacts)
-                .ThenBy(t => t.ad.Title, StringComparer.CurrentCultureIgnoreCase),
-            AdsSortOption.ByStatus => rows
-                .OrderBy(t => t.ad.Status, StringComparer.CurrentCultureIgnoreCase)
-                .ThenBy(t => t.ad.Title, StringComparer.CurrentCultureIgnoreCase),
-            AdsSortOption.ByDeleteDate => rows
-                .OrderBy(t => string.IsNullOrEmpty(t.ad.DeleteDate) ? "\uFFFF" : t.ad.DeleteDate, StringComparer.Ordinal)
-                .ThenBy(t => t.ad.Title, StringComparer.CurrentCultureIgnoreCase),
-            AdsSortOption.ByNewestFirst => rows
-                .OrderBy(t => t.ad.DaysOnAvito)
-                .ThenByDescending(t => t.ad.Views)
-                .ThenBy(t => t.ad.Title, StringComparer.CurrentCultureIgnoreCase),
-            AdsSortOption.ByProblemsFirst => rows
-                .OrderByDescending(t => ProblemAttentionRank(t.kind, t.ad))
-                .ThenByDescending(t => t.ad.Contacts)
-                .ThenBy(t => t.ad.Title, StringComparer.CurrentCultureIgnoreCase),
-            _ => rows.OrderByDescending(t => t.ad.Views)
-        };
+        var ad = item.Ad;
+        return ad.Title.Contains(q, StringComparison.CurrentCultureIgnoreCase)
+               || ad.City.Contains(q, StringComparison.CurrentCultureIgnoreCase)
+               || ad.Id.Contains(q, StringComparison.OrdinalIgnoreCase)
+               || ad.Status.Contains(q, StringComparison.CurrentCultureIgnoreCase);
+    }
 
-        DisplayedAds.Clear();
-        foreach (var row in ordered)
+    private void ApplyDisplayedAdsSort()
+    {
+        DisplayedAdsView.SortDescriptions.Clear();
+
+        switch (SelectedAdsSort)
         {
-            DisplayedAds.Add(new DashboardAdDisplayItem(row.kind, row.ad));
+            case AdsSortOption.ByViews:
+                DisplayedAdsView.SortDescriptions.Add(new SortDescription(nameof(DashboardAdDisplayItem.Views), ListSortDirection.Descending));
+                DisplayedAdsView.SortDescriptions.Add(new SortDescription(nameof(DashboardAdDisplayItem.TitleSort), ListSortDirection.Ascending));
+                break;
+            case AdsSortOption.ByViewsAscending:
+                DisplayedAdsView.SortDescriptions.Add(new SortDescription(nameof(DashboardAdDisplayItem.Views), ListSortDirection.Ascending));
+                DisplayedAdsView.SortDescriptions.Add(new SortDescription(nameof(DashboardAdDisplayItem.TitleSort), ListSortDirection.Ascending));
+                break;
+            case AdsSortOption.ByContacts:
+                DisplayedAdsView.SortDescriptions.Add(new SortDescription(nameof(DashboardAdDisplayItem.Contacts), ListSortDirection.Descending));
+                DisplayedAdsView.SortDescriptions.Add(new SortDescription(nameof(DashboardAdDisplayItem.TitleSort), ListSortDirection.Ascending));
+                break;
+            case AdsSortOption.ByContactsAscending:
+                DisplayedAdsView.SortDescriptions.Add(new SortDescription(nameof(DashboardAdDisplayItem.Contacts), ListSortDirection.Ascending));
+                DisplayedAdsView.SortDescriptions.Add(new SortDescription(nameof(DashboardAdDisplayItem.TitleSort), ListSortDirection.Ascending));
+                break;
+            case AdsSortOption.ByStatus:
+                DisplayedAdsView.SortDescriptions.Add(new SortDescription(nameof(DashboardAdDisplayItem.StatusSort), ListSortDirection.Ascending));
+                DisplayedAdsView.SortDescriptions.Add(new SortDescription(nameof(DashboardAdDisplayItem.TitleSort), ListSortDirection.Ascending));
+                break;
+            case AdsSortOption.ByDeleteDate:
+                DisplayedAdsView.SortDescriptions.Add(new SortDescription(nameof(DashboardAdDisplayItem.DeleteDateSortKey), ListSortDirection.Ascending));
+                DisplayedAdsView.SortDescriptions.Add(new SortDescription(nameof(DashboardAdDisplayItem.TitleSort), ListSortDirection.Ascending));
+                break;
+            case AdsSortOption.ByNewestFirst:
+                DisplayedAdsView.SortDescriptions.Add(new SortDescription(nameof(DashboardAdDisplayItem.DaysOnAvitoSort), ListSortDirection.Ascending));
+                DisplayedAdsView.SortDescriptions.Add(new SortDescription(nameof(DashboardAdDisplayItem.Views), ListSortDirection.Descending));
+                DisplayedAdsView.SortDescriptions.Add(new SortDescription(nameof(DashboardAdDisplayItem.TitleSort), ListSortDirection.Ascending));
+                break;
+            case AdsSortOption.ByProblemsFirst:
+                DisplayedAdsView.SortDescriptions.Add(new SortDescription(nameof(DashboardAdDisplayItem.ProblemAttentionRankSort), ListSortDirection.Descending));
+                DisplayedAdsView.SortDescriptions.Add(new SortDescription(nameof(DashboardAdDisplayItem.Contacts), ListSortDirection.Descending));
+                DisplayedAdsView.SortDescriptions.Add(new SortDescription(nameof(DashboardAdDisplayItem.TitleSort), ListSortDirection.Ascending));
+                break;
+            default:
+                DisplayedAdsView.SortDescriptions.Add(new SortDescription(nameof(DashboardAdDisplayItem.Views), ListSortDirection.Descending));
+                break;
         }
-
-        ShowStandardAdsEmpty = DisplayedAds.Count == 0;
-        OnPropertyChanged(new PropertyChangedEventArgs(nameof(DisplayedAdsCount)));
     }
 
     private void InitEmptyHourlySlots()
@@ -396,6 +403,23 @@ public partial class DashboardViewModel : ObservableObject
         _accountPersistDebounce.Start();
     }
 
+    /// <summary>
+    /// Лёгкое обновление плиток и графиков без перечитывания JSON снимков объявлений (после настроек аккаунтов).
+    /// </summary>
+    public async Task RefreshSummaryAsync()
+    {
+        var stats = await _repository.GetDashboardStatsAsync(CancellationToken.None).ConfigureAwait(false);
+
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher is not null && !dispatcher.CheckAccess())
+        {
+            await dispatcher.InvokeAsync(() => ApplyStats(stats));
+            return;
+        }
+
+        ApplyStats(stats);
+    }
+
     [RelayCommand]
     public async Task RefreshAsync()
     {
@@ -408,7 +432,7 @@ public partial class DashboardViewModel : ObservableObject
 
         try
         {
-            var persistedAccounts = await _repository.GetAccountsAsync(CancellationToken.None);
+            var persistedAccounts = await _repository.GetAdSnapshotAccountsAsync(CancellationToken.None);
             _monitoringService.RestorePersistedAdSnapshots(persistedAccounts);
 
             var stats = await _repository.GetDashboardStatsAsync(CancellationToken.None);
@@ -478,15 +502,28 @@ public partial class DashboardViewModel : ObservableObject
     /// </summary>
     public void OnAdsSectionWidthChanged(double actualWidth)
     {
-        // Меньше колонок при той же ширине — карточки крупнее и читабельнее.
-        var next = actualWidth switch
-        {
-            >= 1020d => 3,
-            >= 640d => 2,
-            _ => 1
-        };
+        const double columnGap = 8d;
+        const double minTileWidth = 260d;
+        const int maxColumns = 3;
 
-        if (next == ActiveAdsGridColumns)
+        // До 3 колонок — сколько влезает при минимальной ширине карточки (не жёсткий порог 1020px).
+        var next = actualWidth <= 0
+            ? 1
+            : Math.Clamp(
+                (int)Math.Floor((actualWidth + columnGap) / (minTileWidth + columnGap)),
+                1,
+                maxColumns);
+
+        var columns = next;
+        var totalGap = columnGap * Math.Max(0, columns - 1);
+        var tileWidth = Math.Max(minTileWidth, (actualWidth - totalGap) / columns);
+        var tileWidthChanged = Math.Abs(ActiveAdsTileWidth - tileWidth) > 0.5;
+        if (tileWidthChanged)
+        {
+            ActiveAdsTileWidth = tileWidth;
+        }
+
+        if (next == ActiveAdsGridColumns && !tileWidthChanged)
         {
             return;
         }
@@ -513,8 +550,7 @@ public partial class DashboardViewModel : ObservableObject
             return;
         }
 
-        var account = (await _repository.GetAccountsAsync(CancellationToken.None))
-            .FirstOrDefault(x => x.Id == ad.AccountId);
+        var account = await _repository.GetAccountByIdAsync(ad.AccountId, CancellationToken.None);
         if (account is null)
         {
             return;
@@ -924,13 +960,13 @@ public partial class DashboardViewModel : ObservableObject
             dispatcher.Invoke(() =>
             {
                 UpdateCollection();
-                RebuildDisplayedAds();
+                RebuildAllAdDisplayItems();
             });
             return;
         }
 
         UpdateCollection();
-        RebuildDisplayedAds();
+        RebuildAllAdDisplayItems();
     }
 
     private int FindAdIndex(Guid accountId, string id, int startIndex)
@@ -1006,13 +1042,13 @@ public partial class DashboardViewModel : ObservableObject
             dispatcher.Invoke(() =>
             {
                 UpdateCollection();
-                RebuildDisplayedAds();
+                RebuildAllAdDisplayItems();
             });
             return;
         }
 
         UpdateCollection();
-        RebuildDisplayedAds();
+        RebuildAllAdDisplayItems();
     }
 
     private int FindBlockedAdIndex(Guid accountId, string id, int startIndex)

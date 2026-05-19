@@ -5,7 +5,6 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Threading;
 using Microsoft.Win32;
-using System.Windows.Data;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using LeadFlow;
@@ -31,6 +30,13 @@ public partial class SettingsViewModel(
     private readonly HashSet<string> _pendingProfileDeletions = new(StringComparer.OrdinalIgnoreCase);
     private AvitoAccount? _selectedAccountPropertySource;
     private readonly SemaphoreSlim _saveGate = new(1, 1);
+    private readonly HashSet<Guid> _dirtyAccountIds = [];
+    private readonly HashSet<Guid> _persistedAccountIds = [];
+    private bool _suspendDirtyTracking;
+    private bool _isHydratingAccounts;
+
+    /// <summary>Были ли реальные записи на диск за время открытого окна настроек.</summary>
+    public bool SessionPersistedChanges { get; private set; }
 
     public ObservableCollection<AvitoAccount> Accounts { get; } = [];
 
@@ -56,25 +62,78 @@ public partial class SettingsViewModel(
         repository.AccountPersisted -= OnAccountPersisted;
         repository.AccountPersisted += OnAccountPersisted;
 
+        var selectedAccountId = SelectedAccount?.Id;
         _settings = await settingsService.LoadAsync(CancellationToken.None);
         BitrixWebhookUrl = _settings.Bitrix.WebhookUrl ?? string.Empty;
-        var persistedAccounts = await repository.GetAccountsAsync(CancellationToken.None);
-        var persistedById = persistedAccounts.ToDictionary(a => a.Id);
+        var persistedAccounts = await repository.GetAccountsForSettingsAsync(CancellationToken.None);
 
         _pendingProfileDeletions.Clear();
-        Accounts.Clear();
-        foreach (var account in _settings.Avito.Accounts)
+        foreach (var account in Accounts.ToArray())
         {
-            account.AvitoResponsesUrl = FixedAvitoProfileUrl;
-            if (persistedById.TryGetValue(account.Id, out var fromDb))
-            {
-                account.MergePersistedSnapshotFrom(fromDb);
-            }
-
-            Accounts.Add(account);
+            DetachAccountDirtyTracking(account);
         }
 
-        SelectedAccount = Accounts.FirstOrDefault();
+        SessionPersistedChanges = false;
+        _isHydratingAccounts = true;
+        _suspendDirtyTracking = true;
+        try
+        {
+            Accounts.Clear();
+            foreach (var account in persistedAccounts)
+            {
+                account.AvitoResponsesUrl = FixedAvitoProfileUrl;
+                AttachAccountDirtyTracking(account);
+                Accounts.Add(account);
+            }
+
+            _dirtyAccountIds.Clear();
+            _persistedAccountIds.Clear();
+            _persistedAccountIds.UnionWith(persistedAccounts.Select(static account => account.Id));
+        }
+        finally
+        {
+            _suspendDirtyTracking = false;
+        }
+
+        SelectedAccount = selectedAccountId.HasValue
+            ? Accounts.FirstOrDefault(account => account.Id == selectedAccountId.Value) ?? Accounts.FirstOrDefault()
+            : Accounts.FirstOrDefault();
+
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher is not null)
+        {
+            _ = dispatcher.InvokeAsync(
+                () => _isHydratingAccounts = false,
+                DispatcherPriority.Loaded);
+        }
+        else
+        {
+            _isHydratingAccounts = false;
+        }
+    }
+
+    /// <summary>Есть ли несохранённые изменения (для закрытия окна без лишнего I/O).</summary>
+    public bool HasPendingChanges()
+    {
+        if (_dirtyAccountIds.Count > 0 || _pendingProfileDeletions.Count > 0)
+        {
+            return true;
+        }
+
+        if (_settings.Avito.Accounts.Count > 0)
+        {
+            return true;
+        }
+
+        var normalizedWebhookUrl = BitrixWebhookUrl?.Trim() ?? string.Empty;
+        if (!string.Equals(_settings.Bitrix.WebhookUrl, normalizedWebhookUrl, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        var currentIds = Accounts.Select(static account => account.Id).ToHashSet();
+        return currentIds.Count != _persistedAccountIds.Count
+               || currentIds.Any(id => !_persistedAccountIds.Contains(id));
     }
 
     [RelayCommand]
@@ -92,7 +151,9 @@ public partial class SettingsViewModel(
 
         var profile = profileService.GetProfile(account);
         account.BrowserProfilePath = profile.ProfilePath;
+        AttachAccountDirtyTracking(account);
         Accounts.Add(account);
+        _dirtyAccountIds.Add(account.Id);
         SelectedAccount = account;
         await SaveAsync();
     }
@@ -140,7 +201,9 @@ public partial class SettingsViewModel(
             BrowserProfilePath = string.Empty
         };
 
+        AttachAccountDirtyTracking(account);
         Accounts.Add(account);
+        _dirtyAccountIds.Add(account.Id);
         SelectedAccount = account;
         await SaveAsync();
     }
@@ -159,6 +222,7 @@ public partial class SettingsViewModel(
             _pendingProfileDeletions.Add(SelectedAccount.BrowserProfilePath);
         }
 
+        DetachAccountDirtyTracking(SelectedAccount);
         Accounts.Remove(SelectedAccount);
         SelectedAccount = Accounts.FirstOrDefault();
         await SaveAsync();
@@ -173,31 +237,21 @@ public partial class SettingsViewModel(
         }
 
         SelectedAccount.IsEnabled = !SelectedAccount.IsEnabled;
-        RefreshSelectedAccountState();
         await SaveAsync();
     }
 
     [RelayCommand]
     public async Task SaveAsync()
     {
+        if (!HasPendingChanges())
+        {
+            return;
+        }
+
         await _saveGate.WaitAsync();
         string[]? profileDirsToDelete = null;
         try
         {
-            _settings.Bitrix.WebhookUrl = BitrixWebhookUrl?.Trim() ?? string.Empty;
-
-            var persistedAccounts = await repository.GetAccountsAsync(CancellationToken.None);
-            var currentAccountIds = Accounts.Select(account => account.Id).ToHashSet();
-
-            foreach (var persistedAccount in persistedAccounts)
-            {
-                if (!currentAccountIds.Contains(persistedAccount.Id))
-                {
-                    await repository.DeleteAccountAsync(persistedAccount.Id, CancellationToken.None);
-                }
-            }
-
-            _settings.Avito.Accounts.Clear();
             foreach (var account in Accounts)
             {
                 account.AvitoResponsesUrl = FixedAvitoProfileUrl;
@@ -213,12 +267,55 @@ public partial class SettingsViewModel(
                 {
                     account.BrowserProfilePath = string.Empty;
                 }
-
-                _settings.Avito.Accounts.Add(account);
-                await repository.SaveAccountAsync(account, CancellationToken.None);
             }
 
-            await settingsService.SaveAsync(_settings, CancellationToken.None);
+            var normalizedWebhookUrl = BitrixWebhookUrl?.Trim() ?? string.Empty;
+            var settingsChanged = !string.Equals(_settings.Bitrix.WebhookUrl, normalizedWebhookUrl, StringComparison.Ordinal);
+            _settings.Bitrix.WebhookUrl = normalizedWebhookUrl;
+
+            var currentAccountIds = Accounts.Select(static account => account.Id).ToHashSet();
+            var removedAccountIds = _persistedAccountIds
+                .Where(id => !currentAccountIds.Contains(id))
+                .ToArray();
+            var accountsToPersist = Accounts
+                .Where(account => _dirtyAccountIds.Contains(account.Id) || !_persistedAccountIds.Contains(account.Id))
+                .ToList();
+            var compactLegacySettingsFile = _settings.Avito.Accounts.Count > 0;
+
+            if (removedAccountIds.Length > 0)
+            {
+                await repository.DeleteAccountsAsync(removedAccountIds, CancellationToken.None);
+                _persistedAccountIds.ExceptWith(removedAccountIds);
+            }
+
+            if (accountsToPersist.Count > 0)
+            {
+                await repository.SaveSettingsSessionAccountsAsync(accountsToPersist, CancellationToken.None);
+                foreach (var account in accountsToPersist)
+                {
+                    _persistedAccountIds.Add(account.Id);
+                    _dirtyAccountIds.Remove(account.Id);
+                }
+
+                SessionPersistedChanges = true;
+            }
+
+            if (settingsChanged || compactLegacySettingsFile)
+            {
+                await settingsService.SaveAsync(_settings, CancellationToken.None);
+                if (compactLegacySettingsFile)
+                {
+                    _settings.Avito.Accounts.Clear();
+                }
+
+                SessionPersistedChanges = true;
+            }
+
+            if (removedAccountIds.Length > 0)
+            {
+                SessionPersistedChanges = true;
+            }
+
             if (_pendingProfileDeletions.Count > 0)
             {
                 profileDirsToDelete = _pendingProfileDeletions.ToArray();
@@ -263,14 +360,21 @@ public partial class SettingsViewModel(
     }
 
     [RelayCommand(CanExecute = nameof(CanOpenSelectedAccountBrowserOrSettings))]
-    public Task OpenAccountSettingsAsync(Window? owner)
+    public async Task OpenAccountSettingsAsync(Window? owner)
     {
         if (owner is null || SelectedAccount is null)
         {
-            return Task.CompletedTask;
+            return;
         }
 
-        return windowService.ShowAccountSettingsAsync(owner, SelectedAccount, CancellationToken.None);
+        var fullAccount = await repository.GetAccountByIdAsync(SelectedAccount.Id, CancellationToken.None);
+        if (fullAccount is null)
+        {
+            return;
+        }
+
+        await windowService.ShowAccountSettingsAsync(owner, fullAccount, CancellationToken.None);
+        await LoadAsync();
     }
 
     /// <summary>Во время экспорта или импорта профиля нельзя открывать Avito и карточку настроек этого аккаунта.</summary>
@@ -451,7 +555,9 @@ public partial class SettingsViewModel(
                 CancellationToken.None);
 
             var newId = newAccount.Id;
+            AttachAccountDirtyTracking(newAccount);
             Accounts.Add(newAccount);
+            _dirtyAccountIds.Add(newId);
             await SaveAsync();
             await LoadAsync();
             SelectedAccount = Accounts.FirstOrDefault(a => a.Id == newId);
@@ -594,6 +700,11 @@ public partial class SettingsViewModel(
     public void DetachPersistenceListener()
     {
         repository.AccountPersisted -= OnAccountPersisted;
+        foreach (var account in Accounts.ToArray())
+        {
+            DetachAccountDirtyTracking(account);
+        }
+
         DetachSelectedAccountPropertyListener();
     }
 
@@ -613,12 +724,38 @@ public partial class SettingsViewModel(
                 return;
             }
 
-            local.MergePersistedSnapshotFrom(snapshot);
-            if (SelectedAccount?.Id == local.Id)
+            _suspendDirtyTracking = true;
+            try
             {
-                RefreshSelectedAccountState();
+                local.MergePersistedSnapshotFrom(snapshot);
+            }
+            finally
+            {
+                _suspendDirtyTracking = false;
             }
         });
+    }
+
+    private void AttachAccountDirtyTracking(AvitoAccount account)
+    {
+        account.PropertyChanged -= AccountOnPropertyChanged;
+        account.PropertyChanged += AccountOnPropertyChanged;
+    }
+
+    private void DetachAccountDirtyTracking(AvitoAccount account)
+    {
+        account.PropertyChanged -= AccountOnPropertyChanged;
+        _dirtyAccountIds.Remove(account.Id);
+    }
+
+    private void AccountOnPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (_suspendDirtyTracking || _isHydratingAccounts || sender is not AvitoAccount account)
+        {
+            return;
+        }
+
+        _dirtyAccountIds.Add(account.Id);
     }
 
     partial void OnSelectedAccountChanged(AvitoAccount? value)
@@ -667,39 +804,83 @@ public partial class SettingsViewModel(
 
         if (!dispatcher.CheckAccess())
         {
-            _ = dispatcher.BeginInvoke(RefreshSelectedAccountPresentation);
+            _ = dispatcher.BeginInvoke(() =>
+            {
+                RefreshSelectedAccountPresentation(e.PropertyName);
+                if (string.Equals(e.PropertyName, nameof(AvitoAccount.ProfileProvider), StringComparison.Ordinal))
+                {
+                    NotifyProfileArchiveAndAccountBrowserCommands();
+                }
+            });
             return;
         }
 
-        RefreshSelectedAccountPresentation();
+        RefreshSelectedAccountPresentation(e.PropertyName);
+        if (string.Equals(e.PropertyName, nameof(AvitoAccount.ProfileProvider), StringComparison.Ordinal))
+        {
+            NotifyProfileArchiveAndAccountBrowserCommands();
+        }
     }
 
-    private void RefreshSelectedAccountPresentation()
+    private void RefreshSelectedAccountPresentation(string? propertyName = null)
     {
-        CollectionViewSource.GetDefaultView(Accounts)?.Refresh();
-        OnPropertyChanged(nameof(SelectedAccountName));
-        OnPropertyChanged(nameof(SelectedAccountStatusText));
-        OnPropertyChanged(nameof(SelectedAccountStateHint));
-        OnPropertyChanged(nameof(SelectedAccountToggleText));
-        OnPropertyChanged(nameof(SelectedAccountAuthCheckText));
-        OnPropertyChanged(nameof(SelectedAccountMonitoringText));
-        OnPropertyChanged(nameof(SelectedAccountErrorText));
-        OnPropertyChanged(nameof(SelectedAccountAvitoProfileText));
-        OnPropertyChanged(nameof(HasAvitoProfileName));
-        OnPropertyChanged(nameof(SelectedAccountSubProfilesHeader));
-        OnPropertyChanged(nameof(HasSubProfiles));
-        OnPropertyChanged(nameof(SelectedAccountSubProfiles));
-        OnPropertyChanged(nameof(ShowAuthorizeButton));
+        if (string.IsNullOrEmpty(propertyName))
+        {
+            OnPropertyChanged(nameof(SelectedAccountName));
+            OnPropertyChanged(nameof(SelectedAccountStatusText));
+            OnPropertyChanged(nameof(SelectedAccountStateHint));
+            OnPropertyChanged(nameof(SelectedAccountToggleText));
+            OnPropertyChanged(nameof(SelectedAccountAuthCheckText));
+            OnPropertyChanged(nameof(SelectedAccountMonitoringText));
+            OnPropertyChanged(nameof(SelectedAccountErrorText));
+            OnPropertyChanged(nameof(SelectedAccountAvitoProfileText));
+            OnPropertyChanged(nameof(HasAvitoProfileName));
+            OnPropertyChanged(nameof(SelectedAccountSubProfilesHeader));
+            OnPropertyChanged(nameof(HasSubProfiles));
+            OnPropertyChanged(nameof(SelectedAccountSubProfiles));
+            OnPropertyChanged(nameof(ShowAuthorizeButton));
+            return;
+        }
+
+        switch (propertyName)
+        {
+            case nameof(AvitoAccount.DisplayName):
+                OnPropertyChanged(nameof(SelectedAccountName));
+                break;
+            case nameof(AvitoAccount.Status):
+                OnPropertyChanged(nameof(SelectedAccountStatusText));
+                OnPropertyChanged(nameof(ShowAuthorizeButton));
+                break;
+            case nameof(AvitoAccount.IsEnabled):
+                OnPropertyChanged(nameof(SelectedAccountStateHint));
+                OnPropertyChanged(nameof(SelectedAccountToggleText));
+                break;
+            case nameof(AvitoAccount.LastAuthCheckAt):
+                OnPropertyChanged(nameof(SelectedAccountAuthCheckText));
+                break;
+            case nameof(AvitoAccount.LastMonitoringAt):
+                OnPropertyChanged(nameof(SelectedAccountMonitoringText));
+                break;
+            case nameof(AvitoAccount.LastErrorMessage):
+                OnPropertyChanged(nameof(SelectedAccountErrorText));
+                break;
+            case nameof(AvitoAccount.AvitoProfileName):
+                OnPropertyChanged(nameof(SelectedAccountAvitoProfileText));
+                OnPropertyChanged(nameof(HasAvitoProfileName));
+                break;
+            case nameof(AvitoAccount.SubProfilesJson):
+            case nameof(AvitoAccount.SubProfiles):
+            case nameof(AvitoAccount.SubProfilesCount):
+            case nameof(AvitoAccount.HasSubProfiles):
+                OnPropertyChanged(nameof(SelectedAccountSubProfilesHeader));
+                OnPropertyChanged(nameof(HasSubProfiles));
+                OnPropertyChanged(nameof(SelectedAccountSubProfiles));
+                break;
+        }
     }
 
     private static string FormatDateTime(DateTime? value, string fallback) =>
         value.HasValue ? value.Value.ToLocalTimeFromStoredUtc().ToString("dd.MM.yyyy HH:mm") : fallback;
-
-    private void RefreshSelectedAccountState()
-    {
-        CollectionViewSource.GetDefaultView(Accounts)?.Refresh();
-        RefreshSelectedAccountPresentation();
-    }
 
     /// <summary>
     /// Удаление каталога профиля WebView2 может занять много времени; выполняется в фоне, чтобы не блокировать UI.

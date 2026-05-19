@@ -141,6 +141,48 @@ public sealed class DashboardAdDisplayItem
 
     public bool ShowAnyBadgeRow => ShowPrimaryStatusBadge || ShowMessageCountPill;
 
+    /// <summary>Ключи для <see cref="System.ComponentModel.ICollectionView"/> (сортировка без пересборки коллекции).</summary>
+    public int Views => Ad.Views;
+
+    public int Contacts => Ad.Contacts;
+
+    public string TitleSort => Ad.Title;
+
+    public string StatusSort => Ad.Status;
+
+    public string DeleteDateSortKey => string.IsNullOrEmpty(Ad.DeleteDate) ? "\uFFFF" : Ad.DeleteDate;
+
+    public int DaysOnAvitoSort => Ad.DaysOnAvito;
+
+    public int ProblemAttentionRankSort
+    {
+        get
+        {
+            if (Kind == DashboardAdKind.Blocked)
+            {
+                return 400;
+            }
+
+            if (IsDraftAd)
+            {
+                return 300;
+            }
+
+            if (Ad.Status.Contains("отклон", StringComparison.OrdinalIgnoreCase)
+                || Ad.Status.Contains("модерац", StringComparison.OrdinalIgnoreCase)
+                || Ad.Status.Contains("наруш", StringComparison.OrdinalIgnoreCase)
+                || Ad.Status.Contains("действ", StringComparison.OrdinalIgnoreCase)
+                || Ad.Status.Contains("требу", StringComparison.OrdinalIgnoreCase)
+                || Ad.Status.Contains("истёк", StringComparison.OrdinalIgnoreCase)
+                || Ad.Status.Contains("истек", StringComparison.OrdinalIgnoreCase))
+            {
+                return 200;
+            }
+
+            return Ad.Contacts > 0 ? 50 : 0;
+        }
+    }
+
     public string StatusBadgeCaption => PrimaryBadgeKind switch
     {
         DashboardAdBadgeKind.Blocked => "Заблокировано",

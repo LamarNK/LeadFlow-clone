@@ -178,6 +178,12 @@ public partial class App : System.Windows.Application
                 var repository = scope.ServiceProvider.GetRequiredService<AppRepository>();
                 await repository.InitializeAsync(settings, CancellationToken.None);
                 LogStartup("Repository initialized");
+                if (settings.Avito.Accounts.Count > 0)
+                {
+                    await settingsService.SaveAsync(settings, CancellationToken.None);
+                    settings.Avito.Accounts.Clear();
+                    LogStartup("Legacy accounts removed from encrypted settings file");
+                }
                 await repository.AddLogAsync(new Models.ProcessingLogItem
                 {
                     AccountId = Guid.Empty,

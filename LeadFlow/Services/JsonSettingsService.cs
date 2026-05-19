@@ -63,7 +63,8 @@ public sealed class JsonSettingsService(string? dataDirectoryOverride = null) : 
         NormalizeSettings(settings, _dataDirectoryPath);
         var path = GetSettingsPath();
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        var bytes = JsonSerializer.SerializeToUtf8Bytes(settings, SerializerOptions);
+        var storageSnapshot = CreateStorageSnapshot(settings);
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(storageSnapshot, SerializerOptions);
         await using var stream = File.Create(path);
         EncryptedSettingsSerializer.EncryptToStream(stream, bytes, SettingsEncryptionKeyHelper.GetDefaultKey(), userPassword: null);
         await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
@@ -104,6 +105,47 @@ public sealed class JsonSettingsService(string? dataDirectoryOverride = null) : 
         Bitrix = new BitrixSettings(),
         MonitoringSafety = new MonitoringSafetyOptions(),
         AvitoSelectors = new AvitoSelectorOptions(),
+        Avito = new AvitoSettings()
+    };
+
+    private static AppSettings CreateStorageSnapshot(AppSettings settings) => new()
+    {
+        DemoModeEnabled = settings.DemoModeEnabled,
+        DatabasePath = settings.DatabasePath,
+        DatabaseEncryptionKey = settings.DatabaseEncryptionKey,
+        DuplicateScope = settings.DuplicateScope,
+        MonitoringSafety = new MonitoringSafetyOptions
+        {
+            CheckIntervalSeconds = settings.MonitoringSafety.CheckIntervalSeconds,
+            StopOnCaptcha = settings.MonitoringSafety.StopOnCaptcha,
+            StopOnAuthRequired = settings.MonitoringSafety.StopOnAuthRequired,
+            AutoStartMonitoring = settings.MonitoringSafety.AutoStartMonitoring
+        },
+        Bitrix = new BitrixSettings
+        {
+            WebhookUrl = settings.Bitrix.WebhookUrl,
+            EntityType = settings.Bitrix.EntityType,
+            ResponsibleId = settings.Bitrix.ResponsibleId,
+            LeadSource = settings.Bitrix.LeadSource,
+            CheckDuplicatesInBitrix = settings.Bitrix.CheckDuplicatesInBitrix,
+            DealIdempotencyUfCode = settings.Bitrix.DealIdempotencyUfCode,
+            DealAgeUfCode = settings.Bitrix.DealAgeUfCode,
+            DealProfessionUfCode = settings.Bitrix.DealProfessionUfCode,
+            DealCityUfCode = settings.Bitrix.DealCityUfCode
+        },
+        AvitoSelectors = new AvitoSelectorOptions
+        {
+            ResponseListSelector = settings.AvitoSelectors.ResponseListSelector,
+            ResponseItemSelector = settings.AvitoSelectors.ResponseItemSelector,
+            FullNameSelector = settings.AvitoSelectors.FullNameSelector,
+            PhoneSelector = settings.AvitoSelectors.PhoneSelector,
+            CitySelector = settings.AvitoSelectors.CitySelector,
+            VacancySelector = settings.AvitoSelectors.VacancySelector,
+            AgeSelector = settings.AvitoSelectors.AgeSelector,
+            SourceLinkSelector = settings.AvitoSelectors.SourceLinkSelector,
+            ExtractionScript = settings.AvitoSelectors.ExtractionScript,
+            LastSuccessfulUseAt = settings.AvitoSelectors.LastSuccessfulUseAt
+        },
         Avito = new AvitoSettings()
     };
 }

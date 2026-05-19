@@ -96,26 +96,42 @@ public sealed partial class AvitoAccount : ObservableObject
         WriteIndented = false,
         PropertyNameCaseInsensitive = true
     };
+    private string? _cachedSubProfilesJson;
+    private IReadOnlyList<AvitoSubProfile> _cachedSubProfiles = Array.Empty<AvitoSubProfile>();
 
     /// <summary>Распарсенный список суб-профилей. Не наблюдаемое свойство — чтобы избежать рекурсивных уведомлений.</summary>
     public IReadOnlyList<AvitoSubProfile> SubProfiles
     {
         get
         {
-            if (string.IsNullOrWhiteSpace(SubProfilesJson))
+            var json = string.IsNullOrWhiteSpace(SubProfilesJson) ? "[]" : SubProfilesJson;
+            if (string.Equals(_cachedSubProfilesJson, json, StringComparison.Ordinal))
             {
-                return Array.Empty<AvitoSubProfile>();
+                return _cachedSubProfiles;
             }
 
+            IReadOnlyList<AvitoSubProfile> parsed;
             try
             {
-                return JsonSerializer.Deserialize<List<AvitoSubProfile>>(SubProfilesJson, SubProfilesJsonOptions)
-                       ?? new List<AvitoSubProfile>();
+                if (string.Equals(json, "[]", StringComparison.Ordinal))
+                {
+                    parsed = Array.Empty<AvitoSubProfile>();
+                }
+                else
+                {
+                    parsed = JsonSerializer.Deserialize<List<AvitoSubProfile>>(json, SubProfilesJsonOptions) is { Count: > 0 } list
+                        ? list
+                        : Array.Empty<AvitoSubProfile>();
+                }
             }
             catch
             {
-                return Array.Empty<AvitoSubProfile>();
+                parsed = Array.Empty<AvitoSubProfile>();
             }
+
+            _cachedSubProfilesJson = json;
+            _cachedSubProfiles = parsed;
+            return parsed;
         }
     }
 
@@ -150,15 +166,19 @@ public sealed partial class AvitoAccount : ObservableObject
             return;
         }
 
+        _cachedSubProfilesJson = serialized;
+        _cachedSubProfiles = profiles is { Count: > 0 } ? profiles.ToArray() : Array.Empty<AvitoSubProfile>();
         SubProfilesJson = serialized;
-        OnPropertyChanged(nameof(SubProfiles));
-        OnPropertyChanged(nameof(SubProfilesCount));
-        OnPropertyChanged(nameof(SubProfilesSummary));
-        OnPropertyChanged(nameof(HasSubProfiles));
     }
 
     partial void OnSubProfilesJsonChanged(string value)
     {
+        if (!string.Equals(_cachedSubProfilesJson, value, StringComparison.Ordinal))
+        {
+            _cachedSubProfilesJson = null;
+            _cachedSubProfiles = Array.Empty<AvitoSubProfile>();
+        }
+
         OnPropertyChanged(nameof(SubProfiles));
         OnPropertyChanged(nameof(SubProfilesCount));
         OnPropertyChanged(nameof(SubProfilesSummary));

@@ -4,6 +4,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:conv="clr-namespace:LeadFlow.Converters"
              xmlns:vm="clr-namespace:LeadFlow.ViewModels"
+             xmlns:vwp="clr-namespace:WpfToolkit.Controls;assembly=VirtualizingWrapPanel"
              HorizontalAlignment="Stretch"
              HorizontalContentAlignment="Stretch">
     <UserControl.Resources>
@@ -843,21 +844,39 @@
                                TextWrapping="Wrap"
                                Visibility="{Binding ShowStandardAdsEmpty, Converter={StaticResource BooleanToVisibilityConverter}}" />
 
-                    <ScrollViewer x:Name="AdsListScrollViewer"
-                                  Grid.Row="1"
-                                  MinHeight="200"
-                                  HorizontalScrollBarVisibility="Disabled"
-                                  VerticalScrollBarVisibility="Auto"
-                                  Padding="0,0,4,0"
-                                  PreviewMouseWheel="AdsListScrollViewer_OnPreviewMouseWheel">
-                        <ItemsControl ItemsSource="{Binding DisplayedAds}"
-                                      HorizontalContentAlignment="Stretch">
-                            <ItemsControl.ItemsPanel>
-                                <ItemsPanelTemplate>
-                                    <UniformGrid Columns="{Binding DataContext.ActiveAdsGridColumns, ElementName=DashboardRoot}" />
-                                </ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
-                            <ItemsControl.ItemTemplate>
+                    <ListBox x:Name="AdsListListBox"
+                             Grid.Row="1"
+                             MinHeight="200"
+                             Padding="0,0,4,0"
+                             Background="Transparent"
+                             BorderThickness="0"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto"
+                             VirtualizingPanel.IsVirtualizing="True"
+                             VirtualizingPanel.ScrollUnit="Pixel"
+                             VirtualizingStackPanel.VirtualizationMode="Recycling"
+                             PreviewMouseWheel="AdsListListBox_OnPreviewMouseWheel"
+                             SizeChanged="AdsListListBox_OnSizeChanged"
+                             ItemsSource="{Binding DisplayedAdsView}">
+                        <ListBox.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <vwp:VirtualizingWrapPanel SpacingMode="Uniform"
+                                                           StretchItems="False"
+                                                           IsGridLayoutEnabled="True" />
+                            </ItemsPanelTemplate>
+                        </ListBox.ItemsPanel>
+                        <ListBox.ItemContainerStyle>
+                            <Style TargetType="ListBoxItem">
+                                <Setter Property="Width" Value="{Binding DataContext.ActiveAdsTileWidth, ElementName=DashboardRoot}" />
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                <Setter Property="Padding" Value="0,0,0,8" />
+                                <Setter Property="Margin" Value="0" />
+                                <Setter Property="Background" Value="Transparent" />
+                                <Setter Property="BorderThickness" Value="0" />
+                                <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+                            </Style>
+                        </ListBox.ItemContainerStyle>
+                        <ListBox.ItemTemplate>
                                 <DataTemplate DataType="{x:Type vm:DashboardAdDisplayItem}">
                                     <Grid HorizontalAlignment="Stretch">
                                         <Grid.ColumnDefinitions>
@@ -1060,9 +1079,8 @@
                                         </Border>
                                     </Grid>
                                 </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </ScrollViewer>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
                 </Grid>
             </Grid>
         </Border>

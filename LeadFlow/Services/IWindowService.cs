@@ -5,7 +5,8 @@ namespace LeadFlow.Services;
 
 public interface IWindowService
 {
-    Task ShowSettingsAsync(Window owner, CancellationToken cancellationToken);
+    /// <returns>true, если при закрытии настроек были записаны изменения на диск.</returns>
+    Task<bool> ShowSettingsAsync(Window owner, CancellationToken cancellationToken);
     /// <summary>Немодальное окно с вкладками: новый аккаунт — новая вкладка (или фокус на уже открытом).</summary>
     Task ShowAvitoAuthAsync(Window owner, AvitoAccount account, CancellationToken cancellationToken);
     Task ShowAccountSettingsAsync(Window owner, AvitoAccount account, CancellationToken cancellationToken);

@@ -9,6 +9,7 @@ namespace LeadFlow.Data;
 public interface IMonitoringRepository
 {
     Task<IReadOnlyList<AvitoAccount>> GetAccountsAsync(CancellationToken cancellationToken);
+    Task<IReadOnlyList<AvitoAccount>> GetAdSnapshotAccountsAsync(CancellationToken cancellationToken);
     Task SaveAccountAsync(AvitoAccount account, CancellationToken cancellationToken);
     Task SaveCandidateAsync(CandidateResponse response, CancellationToken cancellationToken);
     Task AddLogAsync(ProcessingLogItem item, CancellationToken cancellationToken);

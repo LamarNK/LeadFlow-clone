@@ -291,8 +291,12 @@ public partial class MainViewModel : ObservableObject
             return;
         }
 
-        await _windowService.ShowSettingsAsync(owner, CancellationToken.None);
-        await RefreshAllAsync();
+        var settingsChanged = await _windowService.ShowSettingsAsync(owner, CancellationToken.None);
+        if (settingsChanged)
+        {
+            // Из настроек меняется только метаданные аккаунтов (IsEnabled и т.д.) — не тянем все ad-snapshots.
+            await Dashboard.RefreshSummaryAsync();
+        }
     }
 
     [RelayCommand]

@@ -54,14 +54,14 @@ public partial class DashboardView : UserControl
     private void UpdateAdsListScrollMaxHeight()
     {
         var w = _hostWindowForAdsScroll ?? Window.GetWindow(this);
-        if (w is null || w.ActualHeight < 80 || AdsListScrollViewer is null)
+        if (w is null || w.ActualHeight < 80 || AdsListListBox is null)
         {
             return;
         }
 
         // Шапка окна, блок «Сегодня», графики, «Требуют внимания», шапка Avito/фильтры и отступы.
         const double verticalReserve = 472;
-        AdsListScrollViewer.MaxHeight = Math.Max(200, w.ActualHeight - verticalReserve);
+        AdsListListBox.MaxHeight = Math.Max(200, w.ActualHeight - verticalReserve);
     }
 
     private void ChartActivityHost_OnLoaded(object sender, RoutedEventArgs e) =>
@@ -74,6 +74,9 @@ public partial class DashboardView : UserControl
         NotifyAdsGridColumns();
 
     private void AdsSectionHost_OnSizeChanged(object sender, SizeChangedEventArgs e) =>
+        NotifyAdsGridColumns();
+
+    private void AdsListListBox_OnSizeChanged(object sender, SizeChangedEventArgs e) =>
         NotifyAdsGridColumns();
 
     private void NotifyChartWidth()
@@ -99,7 +102,9 @@ public partial class DashboardView : UserControl
             return;
         }
 
-        var w = AdsSectionHost.ActualWidth;
+        var w = AdsListListBox.ActualWidth > 0
+            ? AdsListListBox.ActualWidth
+            : AdsSectionHost.ActualWidth;
         if (w <= 0)
         {
             return;
@@ -147,14 +152,20 @@ public partial class DashboardView : UserControl
     /// <summary>
     /// Колесо над карточками (Button) и вложенный ScrollViewer внутри внешнего ScrollViewer главного окна.
     /// </summary>
-    private void AdsListScrollViewer_OnPreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    private void AdsListListBox_OnPreviewMouseWheel(object sender, MouseWheelEventArgs e)
     {
-        if (sender is not ScrollViewer inner)
+        if (sender is not ListBox listBox)
         {
             return;
         }
 
-        var outer = FindAncestorScrollViewer(inner);
+        var inner = FindDescendantScrollViewer(listBox);
+        if (inner is null)
+        {
+            return;
+        }
+
+        var outer = FindAncestorScrollViewer(listBox);
 
         if (inner.ScrollableHeight >= 0.5)
         {

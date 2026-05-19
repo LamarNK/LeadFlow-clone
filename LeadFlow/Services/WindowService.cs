@@ -29,15 +29,15 @@ public sealed class WindowService(
         window.Owner = Application.Current?.MainWindow ?? fallbackOwner;
     }
 
-    public Task ShowSettingsAsync(Window owner, CancellationToken cancellationToken)
+    public async Task<bool> ShowSettingsAsync(Window owner, CancellationToken cancellationToken)
     {
         var window = ActivatorUtilities.CreateInstance<SettingsWindow>(serviceProvider);
         var viewModel = ActivatorUtilities.CreateInstance<SettingsViewModel>(serviceProvider);
         window.Owner = owner;
         window.DataContext = viewModel;
-        viewModel.LoadCommand.Execute(null);
+        await viewModel.LoadAsync().ConfigureAwait(true);
         window.ShowDialog();
-        return Task.CompletedTask;
+        return viewModel.SessionPersistedChanges;
     }
 
     public async Task ShowAvitoAuthAsync(Window owner, AvitoAccount account, CancellationToken cancellationToken)

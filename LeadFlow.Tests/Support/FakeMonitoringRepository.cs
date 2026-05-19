@@ -20,6 +20,9 @@ internal sealed class FakeMonitoringRepository : IMonitoringRepository
     public Task<IReadOnlyList<AvitoAccount>> GetAccountsAsync(CancellationToken cancellationToken) =>
         Task.FromResult(AccountsImpl());
 
+    public Task<IReadOnlyList<AvitoAccount>> GetAdSnapshotAccountsAsync(CancellationToken cancellationToken) =>
+        Task.FromResult(AccountsImpl());
+
     public Task SaveAccountAsync(AvitoAccount account, CancellationToken cancellationToken)
     {
         SavedAccounts.Add(account);
