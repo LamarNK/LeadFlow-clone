@@ -15,7 +15,7 @@ public interface IAdsPowerAvitoAutomationService
     /// <summary>
     /// Открывает в AdsPower-браузере страницу <c>/profile/pro/items</c> и возвращает её HTML
     /// в виде, пригодном для <see cref="LeadFlow.Services.Avito.AvitoParserService.ParseProfilePage(string, System.Guid?)"/>.
-    /// Браузер не закрывается — после извлечения только отсоединяемся по CDP.
+    /// После извлечения отсоединяемся по CDP и закрываем браузер AdsPower.
     /// </summary>
     Task<string> LoadProfileItemsHtmlAsync(
         AdsPowerConnectionOptions options,
@@ -48,7 +48,8 @@ public interface IAdsPowerAvitoAutomationService
         AdsPowerConnectionOptions options,
         string adsPowerUserId,
         string subProfileId,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        bool closeBrowserAfter = false);
 
     /// <summary>
     /// Подключается к уже запущенному профилю AdsPower и открывает URL в новой вкладке через CDP.
@@ -58,5 +59,14 @@ public interface IAdsPowerAvitoAutomationService
         AdsPowerConnectionOptions options,
         string adsPowerUserId,
         string url,
+        CancellationToken cancellationToken = default,
+        bool closeBrowserAfter = false);
+
+    /// <summary>
+    /// Закрывает браузер профиля AdsPower (один раз после полного прохода аккаунта в мониторинге).
+    /// </summary>
+    Task CloseBrowserAsync(
+        AdsPowerConnectionOptions options,
+        string adsPowerUserId,
         CancellationToken cancellationToken = default);
 }

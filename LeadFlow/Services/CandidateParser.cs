@@ -32,6 +32,7 @@ public sealed class CandidateParser : ICandidateParser
             LastName = response.LastName,
             SecondName = response.MiddleName,
             Phone = response.PhoneRaw,
+            Age = response.Age,
             City = response.City,
             Vacancy = response.Vacancy,
             Source = settings.LeadSource,

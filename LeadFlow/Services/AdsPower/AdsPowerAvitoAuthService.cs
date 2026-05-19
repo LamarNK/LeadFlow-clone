@@ -6,7 +6,7 @@ namespace LeadFlow.Services.AdsPower;
 
 /// <summary>
 /// Проверяет авторизацию Avito в внешнем браузере AdsPower через CDP (PuppeteerSharp.ConnectAsync).
-/// Браузер не закрывается — после извлечения данных вызываем <see cref="IBrowser.Disconnect"/>.
+/// После проверки отсоединяемся по CDP и закрываем браузер AdsPower.
 /// </summary>
 public sealed class AdsPowerAvitoAuthService(IAdsPowerApiClient adsPowerApiClient) : IAdsPowerAvitoAuthService
 {
@@ -106,6 +106,7 @@ public sealed class AdsPowerAvitoAuthService(IAdsPowerApiClient adsPowerApiClien
                     ["step"] = "no_ws_endpoint",
                     ["adsPower.userId"] = adsPowerUserId
                 });
+            await TryStopBrowserAsync(options, adsPowerUserId, cancellationToken).ConfigureAwait(false);
             return new AdsPowerAvitoAuthResult(
                 IsAuthorized: false,
                 ProfileName: null,
@@ -212,7 +213,7 @@ public sealed class AdsPowerAvitoAuthService(IAdsPowerApiClient adsPowerApiClien
                     browser.Disconnect();
                     Log(
                         DeskLinkAuditLogLevel.Info,
-                        "Disconnected from AdsPower browser (browser kept open).",
+                        "Disconnected from AdsPower browser via CDP.",
                         new Dictionary<string, object?>
                         {
                             ["step"] = "cdp_disconnected"
@@ -230,6 +231,8 @@ public sealed class AdsPowerAvitoAuthService(IAdsPowerApiClient adsPowerApiClien
                         });
                 }
             }
+
+            await TryStopBrowserAsync(options, adsPowerUserId, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -398,6 +401,31 @@ public sealed class AdsPowerAvitoAuthService(IAdsPowerApiClient adsPowerApiClien
                 HasLoginForm: false,
                 HasCaptcha: false,
                 ErrorMessage: $"Не удалось разобрать ответ скрипта: {jex.Message}");
+        }
+    }
+
+    private async Task TryStopBrowserAsync(
+        AdsPowerConnectionOptions options,
+        string adsPowerUserId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await adsPowerApiClient
+                .StopBrowserAsync(options, adsPowerUserId, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Log(
+                DeskLinkAuditLogLevel.Warning,
+                $"AdsPower browser/stop failed: {ex.Message}",
+                new Dictionary<string, object?>
+                {
+                    ["step"] = "browser_stop_failed",
+                    ["adsPower.userId"] = adsPowerUserId,
+                    ["error.type"] = ex.GetType().FullName
+                });
         }
     }
 

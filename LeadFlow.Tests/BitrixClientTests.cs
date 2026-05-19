@@ -209,6 +209,47 @@ public sealed class BitrixClientTests : IDisposable
     }
 
     [Fact]
+    public async Task CreateLead_DealRequest_IncludesConfiguredUserFields()
+    {
+        string? dealBody = null;
+        var (_, client) = BuildClientWithHandler((req, body) =>
+        {
+            if (req.RequestUri!.AbsolutePath.EndsWith("/crm.deal.add.json", StringComparison.Ordinal))
+            {
+                dealBody = body;
+            }
+
+            return req.RequestUri!.AbsolutePath switch
+            {
+                var p when p.EndsWith("/crm.contact.add.json", StringComparison.Ordinal)
+                    => Task.FromResult(StubHttpMessageHandler.Ok("""{"result":42}""")),
+                var p when p.EndsWith("/crm.deal.add.json", StringComparison.Ordinal)
+                    => Task.FromResult(StubHttpMessageHandler.Ok("""{"result":777}""")),
+                _ => Task.FromResult(StubHttpMessageHandler.Json(HttpStatusCode.NotFound, "{}"))
+            };
+        });
+
+        var response = NewResponse();
+        response.Age = 28;
+        response.City = "Пермь";
+        response.Vacancy = "Курьер";
+
+        var settings = NewSettings();
+        settings.Bitrix.DealAgeUfCode = "UF_CRM_AGE";
+        settings.Bitrix.DealProfessionUfCode = "UF_CRM_PROF";
+        settings.Bitrix.DealCityUfCode = "UF_CRM_CITY";
+
+        await client.CreateLeadAsync(response, settings, CancellationToken.None);
+
+        Assert.NotNull(dealBody);
+        using var doc = JsonDocument.Parse(dealBody!);
+        var fields = doc.RootElement.GetProperty("fields");
+        Assert.Equal(28, fields.GetProperty("UF_CRM_AGE").GetInt32());
+        Assert.Equal("Курьер", fields.GetProperty("UF_CRM_PROF").GetString());
+        Assert.Equal("Пермь", fields.GetProperty("UF_CRM_CITY").GetString());
+    }
+
+    [Fact]
     public async Task CreateLead_DealFails_DeletesOrphanContact_AndReturnsFailureWithoutContactId()
     {
         var (handler, client) = BuildClientWithHandler((req, _) =>
@@ -460,6 +501,7 @@ public sealed class BitrixClientTests : IDisposable
         LastName = "Иванов",
         MiddleName = "Иванович",
         PhoneRaw = "+7 900 000-00-00",
+        Age = 25,
         City = "Москва",
         Vacancy = "Продавец",
         AccountName = "TestAcc",

@@ -54,6 +54,30 @@ public sealed class AdsPowerApiClientTests
     }
 
     [Fact]
+    public async Task StopBrowserAsync_UsesBearerAuthorizationHeader_AndEncodesUserId()
+    {
+        HttpRequestMessage? capturedRequest = null;
+        var client = BuildClient((request, _) =>
+        {
+            capturedRequest = request;
+            return Task.FromResult(StubHttpMessageHandler.Ok("""{"code":0,"msg":"success"}"""));
+        });
+
+        await client.StopBrowserAsync(
+            new AdsPowerConnectionOptions("http://127.0.0.1:57610/", "secret-key"),
+            "user-1",
+            CancellationToken.None);
+
+        Assert.NotNull(capturedRequest);
+        Assert.Equal("Bearer", capturedRequest!.Headers.Authorization?.Scheme);
+        Assert.Equal("secret-key", capturedRequest.Headers.Authorization?.Parameter);
+        Assert.Equal("/api/v1/browser/stop", capturedRequest.RequestUri?.AbsolutePath);
+
+        var decodedQuery = Uri.UnescapeDataString(capturedRequest.RequestUri?.Query ?? string.Empty);
+        Assert.Contains("user_id=user-1", decodedQuery);
+    }
+
+    [Fact]
     public async Task StartBrowserAsync_ThrowsAdsPowerDailyOpenLimitExceededException_WhenApiReturnsDailyLimit()
     {
         var body = """{"code":-1,"msg":"Exceeding open daily limit, recovery after 7 hours"}""";

@@ -212,6 +212,74 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
         return new AdsPowerBrowserStartResult(webSocketDebuggerUrl, debugPort);
     }
 
+    public async Task StopBrowserAsync(
+        AdsPowerConnectionOptions options,
+        string adsPowerUserId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(adsPowerUserId);
+
+        var client = httpClientFactory.CreateClient();
+        var baseUrl = NormalizeBaseUrl(options.BaseUrl);
+        var url = $"{baseUrl}/api/v1/browser/stop?user_id={Uri.EscapeDataString(adsPowerUserId)}";
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        AddAuthorizationHeader(request, options.ApiKey);
+        Log(
+            $"AdsPower browser/stop request started for profile {adsPowerUserId}.",
+            DeskLinkAuditLogLevel.Info,
+            nameof(StopBrowserAsync),
+            CreateProperties(
+                baseUrl,
+                hasApiKey: !string.IsNullOrWhiteSpace(options.ApiKey),
+                userId: adsPowerUserId));
+
+        using var response = await client.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            Log(
+                $"AdsPower browser/stop failed with HTTP {(int)response.StatusCode}. Body: {Truncate(json, 500)}",
+                DeskLinkAuditLogLevel.Warning,
+                nameof(StopBrowserAsync),
+                CreateProperties(
+                    baseUrl,
+                    hasApiKey: !string.IsNullOrWhiteSpace(options.ApiKey),
+                    userId: adsPowerUserId,
+                    httpStatusCode: (int)response.StatusCode));
+            return;
+        }
+
+        using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(json) ? "{}" : json);
+        var root = doc.RootElement;
+        if (root.TryGetProperty("code", out var codeProp) && codeProp.ValueKind == JsonValueKind.Number)
+        {
+            var code = codeProp.GetInt32();
+            if (code != 0)
+            {
+                var msg = root.TryGetProperty("msg", out var m) ? m.GetString() : null;
+                Log(
+                    $"AdsPower browser/stop returned API code {code}: {msg ?? "ошибка"} (профиль мог быть уже закрыт).",
+                    DeskLinkAuditLogLevel.Warning,
+                    nameof(StopBrowserAsync),
+                    CreateProperties(
+                        baseUrl,
+                        hasApiKey: !string.IsNullOrWhiteSpace(options.ApiKey),
+                        userId: adsPowerUserId,
+                        apiCode: code));
+                return;
+            }
+        }
+
+        Log(
+            $"AdsPower browser/stop completed for profile {adsPowerUserId}.",
+            DeskLinkAuditLogLevel.Info,
+            nameof(StopBrowserAsync),
+            CreateProperties(
+                baseUrl,
+                hasApiKey: !string.IsNullOrWhiteSpace(options.ApiKey),
+                userId: adsPowerUserId));
+    }
+
     private static void AddAuthorizationHeader(HttpRequestMessage request, string? apiKey)
     {
         if (string.IsNullOrWhiteSpace(apiKey))

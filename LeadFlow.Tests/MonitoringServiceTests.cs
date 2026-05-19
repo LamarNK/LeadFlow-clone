@@ -668,18 +668,26 @@ public sealed class MonitoringServiceTests
             AdsPowerConnectionOptions options,
             string adsPowerUserId,
             string subProfileId,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            bool closeBrowserAfter = false)
         {
             _currentSubProfileId = subProfileId;
             SwitchCalls.Add(subProfileId);
             return Task.FromResult(true);
         }
 
+        public Task CloseBrowserAsync(
+            AdsPowerConnectionOptions options,
+            string adsPowerUserId,
+            CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+
         public Task OpenUrlInRunningProfileAsync(
             AdsPowerConnectionOptions options,
             string adsPowerUserId,
             string url,
-            CancellationToken cancellationToken = default) =>
+            CancellationToken cancellationToken = default,
+            bool closeBrowserAfter = false) =>
             throw new InvalidOperationException("Открытие URL в AdsPower не требуется для этого теста.");
     }
 }

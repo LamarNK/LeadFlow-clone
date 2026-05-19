@@ -233,6 +233,29 @@ public sealed class WindowService(
                     ["error.type"] = ex.GetType().FullName
                 });
         }
+        finally
+        {
+            try
+            {
+                await adsPowerAvitoAutomationService
+                    .CloseBrowserAsync(options, account.AdsPowerProfileId!, cancellationToken)
+                    .ConfigureAwait(true);
+            }
+            catch (Exception ex)
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"AdsPower: не удалось закрыть браузер после обновления суб-профилей {account.DisplayName}: {ex.Message}",
+                    DeskLinkAuditLogLevel.Warning,
+                    memberName: nameof(TryRefreshSubProfilesAsync),
+                    filePath: "WindowService.cs",
+                    properties: new Dictionary<string, object?>
+                    {
+                        ["step"] = "browser_stop_failed",
+                        ["account.id"] = account.Id,
+                        ["error.type"] = ex.GetType().FullName
+                    });
+            }
+        }
     }
 
     public Task ShowAccountSettingsAsync(Window owner, AvitoAccount account, CancellationToken cancellationToken)
@@ -328,7 +351,8 @@ public sealed class WindowService(
                             options,
                             account.AdsPowerProfileId!,
                             avitoSubProfileId.Trim(),
-                            cancellationToken)
+                            cancellationToken,
+                            closeBrowserAfter: false)
                         .ConfigureAwait(true);
                     if (!switched)
                     {

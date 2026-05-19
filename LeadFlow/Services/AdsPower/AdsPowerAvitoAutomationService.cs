@@ -8,9 +8,9 @@ using PuppeteerSharp;
 namespace LeadFlow.Services.AdsPower;
 
 /// <summary>
-/// CDP-операции в AdsPower-браузере для Avito: парсинг страниц <c>/profile/candidates</c>
-/// и <c>/profile/pro/items</c>. Браузер AdsPower никогда не закрываем — после работы
-/// вызываем <see cref="IBrowser.Disconnect"/>, чтобы пользователь продолжал работать в окне.
+/// CDP-операции в AdsPower-браузере для Avito. Между шагами (суб-профили, страницы) браузер
+/// не закрываем — один <c>user_id</c> = одна сессия. Закрытие — через
+/// <see cref="CloseBrowserAsync"/> после полного прохода аккаунта в мониторинге.
 /// </summary>
 public sealed class AdsPowerAvitoAutomationService(
     IAdsPowerApiClient adsPowerApiClient,
@@ -106,14 +106,8 @@ public sealed class AdsPowerAvitoAutomationService(
         }
         finally
         {
-            try
-            {
-                browser?.Disconnect();
-            }
-            catch
-            {
-                // Disconnect must never throw out of the finally — браузер AdsPower остаётся в покое.
-            }
+            await ReleaseAdsPowerSessionAsync(browser, options, adsPowerUserId, closeBrowser: false, cancellationToken)
+                .ConfigureAwait(false);
         }
     }
 
@@ -314,24 +308,8 @@ public sealed class AdsPowerAvitoAutomationService(
         }
         finally
         {
-            try
-            {
-                browser?.Disconnect();
-                _ = GlobalLogger.Instance.LogAsync(
-                    "AdsPower profile-items: CDP disconnected (browser kept alive).",
-                    DeskLinkAuditLogLevel.Info,
-                    memberName: nameof(LoadProfileItemsHtmlAsync),
-                    filePath: "AdsPowerAvitoAutomationService.cs",
-                    properties: new Dictionary<string, object?>
-                    {
-                        ["step"] = "cdp_disconnected",
-                        ["adsPower.userId"] = adsPowerUserId
-                    });
-            }
-            catch
-            {
-                // Disconnect must never throw out of the finally.
-            }
+            await ReleaseAdsPowerSessionAsync(browser, options, adsPowerUserId, closeBrowser: false, cancellationToken)
+                .ConfigureAwait(false);
         }
     }
 
@@ -480,7 +458,8 @@ public sealed class AdsPowerAvitoAutomationService(
         }
         finally
         {
-            try { browser?.Disconnect(); } catch { /* keep AdsPower window alive */ }
+            await ReleaseAdsPowerSessionAsync(browser, options, adsPowerUserId, closeBrowser: false, cancellationToken)
+                .ConfigureAwait(false);
         }
     }
 
@@ -592,7 +571,8 @@ public sealed class AdsPowerAvitoAutomationService(
         }
         finally
         {
-            try { browser?.Disconnect(); } catch { /* keep AdsPower window alive */ }
+            await ReleaseAdsPowerSessionAsync(browser, options, adsPowerUserId, closeBrowser: false, cancellationToken)
+                .ConfigureAwait(false);
         }
     }
 
@@ -600,7 +580,8 @@ public sealed class AdsPowerAvitoAutomationService(
         AdsPowerConnectionOptions options,
         string adsPowerUserId,
         string subProfileId,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool closeBrowserAfter = false)
     {
         if (string.IsNullOrWhiteSpace(subProfileId))
         {
@@ -667,7 +648,8 @@ public sealed class AdsPowerAvitoAutomationService(
         }
         finally
         {
-            try { browser?.Disconnect(); } catch { /* keep AdsPower window alive */ }
+            await ReleaseAdsPowerSessionAsync(browser, options, adsPowerUserId, closeBrowserAfter, cancellationToken)
+                .ConfigureAwait(false);
         }
     }
 
@@ -811,7 +793,8 @@ public sealed class AdsPowerAvitoAutomationService(
         AdsPowerConnectionOptions options,
         string adsPowerUserId,
         string url,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool closeBrowserAfter = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(adsPowerUserId);
         ArgumentException.ThrowIfNullOrWhiteSpace(url);
@@ -869,14 +852,57 @@ public sealed class AdsPowerAvitoAutomationService(
         }
         finally
         {
-            try
-            {
-                browser?.Disconnect();
-            }
-            catch
-            {
-                // keep AdsPower window alive
-            }
+            await ReleaseAdsPowerSessionAsync(browser, options, adsPowerUserId, closeBrowserAfter, cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
+    public Task CloseBrowserAsync(
+        AdsPowerConnectionOptions options,
+        string adsPowerUserId,
+        CancellationToken cancellationToken = default) =>
+        adsPowerApiClient.StopBrowserAsync(options, adsPowerUserId, cancellationToken);
+
+    private async Task ReleaseAdsPowerSessionAsync(
+        IBrowser? browser,
+        AdsPowerConnectionOptions options,
+        string adsPowerUserId,
+        bool closeBrowser,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            browser?.Disconnect();
+        }
+        catch
+        {
+            // Disconnect must never throw out of the finally.
+        }
+
+        if (!closeBrowser)
+        {
+            return;
+        }
+
+        try
+        {
+            await adsPowerApiClient
+                .StopBrowserAsync(options, adsPowerUserId, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"AdsPower browser/stop failed after automation for profile {adsPowerUserId}: {ex.Message}",
+                DeskLinkAuditLogLevel.Warning,
+                memberName: nameof(ReleaseAdsPowerSessionAsync),
+                filePath: "AdsPowerAvitoAutomationService.cs",
+                properties: new Dictionary<string, object?>
+                {
+                    ["adsPower.userId"] = adsPowerUserId,
+                    ["adsPower.baseUrl"] = options.BaseUrl,
+                    ["error.type"] = ex.GetType().FullName
+                });
         }
     }
 

@@ -886,6 +886,14 @@ public sealed class MonitoringService(
 
         if (subProfiles.Count == 0 || !hasAdsPowerCreds)
         {
+            AdsPowerConnectionOptions? adsPowerSessionOptions = hasAdsPowerCreds
+                ? new AdsPowerConnectionOptions(
+                    account.AdsPowerApiBaseUrl!,
+                    string.IsNullOrWhiteSpace(account.AdsPowerApiKey) ? null : account.AdsPowerApiKey)
+                : null;
+
+            try
+            {
             // Для AdsPower-аккаунтов без суб-профилей всё равно надо обновлять статистику объявлений
             // (раньше это делал _profileStatsTimer, теперь он скипает AdsPower, чтобы не было двойных переходов).
             if (hasAdsPowerCreds && IsAdsStatsStale(account))
@@ -969,12 +977,23 @@ public sealed class MonitoringService(
 
             await ProcessBatchInlineAsync(responses, account.DisplayName).ConfigureAwait(false);
             return (detectedTotal, budgetExhausted || responses.Count > maxPerCycle);
+            }
+            finally
+            {
+                if (adsPowerSessionOptions is not null)
+                {
+                    await TryCloseAdsPowerBrowserForAccountAsync(account, adsPowerSessionOptions, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+            }
         }
 
         var options = new AdsPowerConnectionOptions(
             account.AdsPowerApiBaseUrl!,
             string.IsNullOrWhiteSpace(account.AdsPowerApiKey) ? null : account.AdsPowerApiKey);
 
+        try
+        {
         // Раз в ActiveAdsRefreshIntervalMinutes на этом же переключении тянем ещё и объявления
         // (active + rejected вкладки). Это убирает отдельный «двойной» switch на тот же суб-профиль —
         // один заход = и активные, и заблокированные, и отклики.
@@ -1280,6 +1299,53 @@ public sealed class MonitoringService(
         }
 
         return (detectedTotal, budgetExhausted);
+        }
+        finally
+        {
+            await TryCloseAdsPowerBrowserForAccountAsync(account, options, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private async Task TryCloseAdsPowerBrowserForAccountAsync(
+        AvitoAccount account,
+        AdsPowerConnectionOptions options,
+        CancellationToken cancellationToken)
+    {
+        if (account.ProfileProvider != AvitoProfileProvider.AdsPower
+            || string.IsNullOrWhiteSpace(account.AdsPowerProfileId))
+        {
+            return;
+        }
+
+        try
+        {
+            await adsPowerAvitoAutomationService
+                .CloseBrowserAsync(options, account.AdsPowerProfileId!, cancellationToken)
+                .ConfigureAwait(false);
+
+            _ = GlobalLogger.Instance.LogAsync(
+                $"AdsPower: браузер профиля закрыт после полного прохода аккаунта {account.DisplayName}.",
+                DeskLinkAuditLogLevel.Info,
+                properties: new Dictionary<string, object?>
+                {
+                    ["accountId"] = account.Id,
+                    ["accountName"] = account.DisplayName,
+                    ["adsPower.userId"] = account.AdsPowerProfileId
+                });
+        }
+        catch (Exception ex)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"AdsPower: не удалось закрыть браузер после прохода аккаунта {account.DisplayName}: {ex.Message}",
+                DeskLinkAuditLogLevel.Warning,
+                properties: new Dictionary<string, object?>
+                {
+                    ["accountId"] = account.Id,
+                    ["accountName"] = account.DisplayName,
+                    ["adsPower.userId"] = account.AdsPowerProfileId,
+                    ["error.type"] = ex.GetType().FullName
+                });
+        }
     }
 
     internal async Task ProcessResponseAsync(CandidateResponse response, AppSettings settings, CancellationToken cancellationToken)

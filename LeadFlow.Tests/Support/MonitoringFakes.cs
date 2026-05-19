@@ -133,13 +133,21 @@ internal sealed class StubAdsPowerAvitoAutomationService : IAdsPowerAvitoAutomat
         AdsPowerConnectionOptions options,
         string adsPowerUserId,
         string subProfileId,
-        CancellationToken cancellationToken = default) =>
+        CancellationToken cancellationToken = default,
+        bool closeBrowserAfter = false) =>
         throw new InvalidOperationException("AdsPower CDP не должен вызываться в этих тестах.");
+
+    public Task CloseBrowserAsync(
+        AdsPowerConnectionOptions options,
+        string adsPowerUserId,
+        CancellationToken cancellationToken = default) =>
+        Task.CompletedTask;
 
     public Task OpenUrlInRunningProfileAsync(
         AdsPowerConnectionOptions options,
         string adsPowerUserId,
         string url,
-        CancellationToken cancellationToken = default) =>
+        CancellationToken cancellationToken = default,
+        bool closeBrowserAfter = false) =>
         throw new InvalidOperationException("AdsPower CDP не должен вызываться в этих тестах.");
 }

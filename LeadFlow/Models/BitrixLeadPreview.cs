@@ -7,6 +7,7 @@ public sealed class BitrixLeadPreview
     public string LastName { get; set; } = string.Empty;
     public string SecondName { get; set; } = string.Empty;
     public string Phone { get; set; } = string.Empty;
+    public int? Age { get; set; }
     public string City { get; set; } = string.Empty;
     public string Vacancy { get; set; } = string.Empty;
     public string Source { get; set; } = "Авито";

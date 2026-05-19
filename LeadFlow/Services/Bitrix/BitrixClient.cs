@@ -570,6 +570,30 @@ public sealed class BitrixClient(
         return null;
     }
 
+    private static void ApplyDealUserFields(
+        Dictionary<string, object?> fields,
+        BitrixLeadPreview preview,
+        BitrixSettings bitrix)
+    {
+        var ageCode = bitrix.DealAgeUfCode.Trim();
+        if (!string.IsNullOrEmpty(ageCode) && preview.Age is > 0 and <= 120)
+        {
+            fields[ageCode] = preview.Age.Value;
+        }
+
+        var professionCode = bitrix.DealProfessionUfCode.Trim();
+        if (!string.IsNullOrEmpty(professionCode) && !string.IsNullOrWhiteSpace(preview.Vacancy))
+        {
+            fields[professionCode] = preview.Vacancy.Trim();
+        }
+
+        var cityCode = bitrix.DealCityUfCode.Trim();
+        if (!string.IsNullOrEmpty(cityCode) && !string.IsNullOrWhiteSpace(preview.City))
+        {
+            fields[cityCode] = preview.City.Trim();
+        }
+    }
+
     private static async Task<string> PostDealAsync(
         HttpClient client,
         string webhookBase,
@@ -595,6 +619,8 @@ public sealed class BitrixClient(
         {
             fields[idempotencyUfCode] = idempotencyKey;
         }
+
+        ApplyDealUserFields(fields, preview, settings.Bitrix);
 
         var dealRequest = new { fields };
 
