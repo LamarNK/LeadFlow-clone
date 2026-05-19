@@ -15,8 +15,8 @@ public sealed class BitrixSettings
     /// </summary>
     public string DealIdempotencyUfCode { get; set; } = string.Empty;
 
-    /// <summary>REST-код UF поля «Возраст» у сделки (тип «число»). Пусто — не заполняется.</summary>
-    public string DealAgeUfCode { get; set; } = "UF_CRM_1777750747161";
+    /// <summary>REST-код UF поля «Возраст» у сделки (в карточке — строковое UF_CRM_1777753181424). Пусто — не заполняется.</summary>
+    public string DealAgeUfCode { get; set; } = "UF_CRM_1777753181424";
 
     /// <summary>REST-код UF поля «Профессия» у сделки (строка). Заполняется названием вакансии. Пусто — не заполняется.</summary>
     public string DealProfessionUfCode { get; set; } = "UF_CRM_1777753209215";

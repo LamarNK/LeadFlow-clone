@@ -244,7 +244,7 @@ public sealed class BitrixClientTests : IDisposable
         Assert.NotNull(dealBody);
         using var doc = JsonDocument.Parse(dealBody!);
         var fields = doc.RootElement.GetProperty("fields");
-        Assert.Equal(28, fields.GetProperty("UF_CRM_AGE").GetInt32());
+        Assert.Equal("28", fields.GetProperty("UF_CRM_AGE").GetString());
         Assert.Equal("Курьер", fields.GetProperty("UF_CRM_PROF").GetString());
         Assert.Equal("Пермь", fields.GetProperty("UF_CRM_CITY").GetString());
     }

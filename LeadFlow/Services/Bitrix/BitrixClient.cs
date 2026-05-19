@@ -578,7 +578,8 @@ public sealed class BitrixClient(
         var ageCode = bitrix.DealAgeUfCode.Trim();
         if (!string.IsNullOrEmpty(ageCode) && preview.Age is > 0 and <= 120)
         {
-            fields[ageCode] = preview.Age.Value;
+            // В портале на карточке отображается строковое UF «Возраст», не числовое UF_CRM_1777750747161.
+            fields[ageCode] = preview.Age.Value.ToString(CultureInfo.InvariantCulture);
         }
 
         var professionCode = bitrix.DealProfessionUfCode.Trim();
