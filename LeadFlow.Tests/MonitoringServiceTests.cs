@@ -664,6 +664,12 @@ public sealed class MonitoringServiceTests
             CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("В этих тестах HTML переключателя суб-профилей не используется.");
 
+        public Task<string> CaptureProfileSwitchHtmlInSessionAsync(
+            PuppeteerSharp.IPage page,
+            string adsPowerUserId,
+            CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("В этих тестах HTML переключателя суб-профилей не используется.");
+
         public Task<bool> SwitchActiveProfileAsync(
             AdsPowerConnectionOptions options,
             string adsPowerUserId,

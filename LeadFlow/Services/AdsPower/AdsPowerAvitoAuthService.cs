@@ -1,14 +1,18 @@
 using System.Text.Json;
 using LeadFlow.Logging.Audit;
+using LeadFlow.Models;
+using LeadFlow.Services.Avito;
 using PuppeteerSharp;
 
 namespace LeadFlow.Services.AdsPower;
 
 /// <summary>
 /// Проверяет авторизацию Avito в внешнем браузере AdsPower через CDP (PuppeteerSharp.ConnectAsync).
-/// После проверки отсоединяемся по CDP и закрываем браузер AdsPower.
+/// При успехе в той же сессии читает суб-профили; браузер закрываем только если вход/капча не требуются.
 /// </summary>
-public sealed class AdsPowerAvitoAuthService(IAdsPowerApiClient adsPowerApiClient) : IAdsPowerAvitoAuthService
+public sealed class AdsPowerAvitoAuthService(
+    IAdsPowerApiClient adsPowerApiClient,
+    IAdsPowerAvitoAutomationService adsPowerAvitoAutomationService) : IAdsPowerAvitoAuthService
 {
     /// <summary>
     /// Стабильная страница профиля. Avito не редиректит её для Pro-аккаунтов
@@ -117,6 +121,7 @@ public sealed class AdsPowerAvitoAuthService(IAdsPowerApiClient adsPowerApiClien
         }
 
         IBrowser? browser = null;
+        var keepBrowserOpen = false;
         try
         {
             var connectOptions = new ConnectOptions
@@ -170,20 +175,65 @@ public sealed class AdsPowerAvitoAuthService(IAdsPowerApiClient adsPowerApiClien
             }
 
             var parsed = ParseExtractionResult(rawJson, fallbackUrl: page.Url);
+            IReadOnlyList<AvitoSubProfile>? subProfiles = null;
+            var subProfilesParsed = false;
+
+            if (parsed.IsAuthorized)
+            {
+                try
+                {
+                    var switchHtml = await adsPowerAvitoAutomationService
+                        .CaptureProfileSwitchHtmlInSessionAsync(page, adsPowerUserId, cancellationToken)
+                        .ConfigureAwait(false);
+                    subProfiles = AvitoSubProfilesParser.Parse(switchHtml);
+                    subProfilesParsed = true;
+                    Log(
+                        DeskLinkAuditLogLevel.Info,
+                        $"Auth check: sub-profiles captured in same session, count={subProfiles.Count}.",
+                        new Dictionary<string, object?>
+                        {
+                            ["step"] = "sub_profiles_parsed",
+                            ["subProfiles.count"] = subProfiles.Count
+                        });
+                }
+                catch (Exception subEx)
+                {
+                    Log(
+                        DeskLinkAuditLogLevel.Warning,
+                        $"Auth check: sub-profiles capture failed in same session: {subEx.Message}",
+                        new Dictionary<string, object?>
+                        {
+                            ["step"] = "sub_profiles_failed",
+                            ["error.type"] = subEx.GetType().FullName
+                        });
+                }
+            }
+
+            keepBrowserOpen = ShouldKeepBrowserOpen(parsed);
+            var result = parsed with
+            {
+                SubProfiles = subProfiles,
+                SubProfilesParsed = subProfilesParsed,
+                KeepBrowserOpen = keepBrowserOpen
+            };
+
             Log(
                 DeskLinkAuditLogLevel.Info,
-                $"Auth check parsed. authorized={parsed.IsAuthorized}, hasLoginForm={parsed.HasLoginForm}, hasCaptcha={parsed.HasCaptcha}, profileName={parsed.ProfileName ?? "<null>"}",
+                $"Auth check parsed. authorized={result.IsAuthorized}, hasLoginForm={result.HasLoginForm}, hasCaptcha={result.HasCaptcha}, profileName={result.ProfileName ?? "<null>"}, keepBrowserOpen={keepBrowserOpen}, subProfilesParsed={subProfilesParsed}, subProfilesCount={subProfiles?.Count ?? 0}",
                 new Dictionary<string, object?>
                 {
                     ["step"] = "parsed",
-                    ["auth.isAuthorized"] = parsed.IsAuthorized,
-                    ["auth.hasLoginForm"] = parsed.HasLoginForm,
-                    ["auth.hasCaptcha"] = parsed.HasCaptcha,
-                    ["auth.profileName"] = parsed.ProfileName,
-                    ["auth.currentUrl"] = parsed.CurrentUrl
+                    ["auth.isAuthorized"] = result.IsAuthorized,
+                    ["auth.hasLoginForm"] = result.HasLoginForm,
+                    ["auth.hasCaptcha"] = result.HasCaptcha,
+                    ["auth.profileName"] = result.ProfileName,
+                    ["auth.currentUrl"] = result.CurrentUrl,
+                    ["auth.keepBrowserOpen"] = keepBrowserOpen,
+                    ["auth.subProfilesParsed"] = subProfilesParsed,
+                    ["auth.subProfilesCount"] = subProfiles?.Count ?? 0
                 });
 
-            return parsed;
+            return result;
         }
         catch (Exception ex)
         {
@@ -232,9 +282,28 @@ public sealed class AdsPowerAvitoAuthService(IAdsPowerApiClient adsPowerApiClien
                 }
             }
 
-            await TryStopBrowserAsync(options, adsPowerUserId, cancellationToken).ConfigureAwait(false);
+            if (!keepBrowserOpen)
+            {
+                await TryStopBrowserAsync(options, adsPowerUserId, cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                Log(
+                    DeskLinkAuditLogLevel.Info,
+                    "Auth check: browser left open for manual login or captcha.",
+                    new Dictionary<string, object?>
+                    {
+                        ["step"] = "browser_left_open",
+                        ["adsPower.userId"] = adsPowerUserId
+                    });
+            }
         }
     }
+
+    private static bool ShouldKeepBrowserOpen(AdsPowerAvitoAuthResult parsed) =>
+        parsed.HasLoginForm
+        || parsed.HasCaptcha
+        || (!parsed.IsAuthorized && string.IsNullOrWhiteSpace(parsed.ErrorMessage));
 
     private static async Task<IPage> GetOrCreateAvitoPageAsync(IBrowser browser)
     {

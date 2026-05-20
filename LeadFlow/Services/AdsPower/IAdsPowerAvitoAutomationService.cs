@@ -41,6 +41,15 @@ public interface IAdsPowerAvitoAutomationService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// В уже подключённой CDP-сессии открывает модалку «Выбор профиля» и возвращает её HTML
+    /// (без повторного browser/start).
+    /// </summary>
+    Task<string> CaptureProfileSwitchHtmlInSessionAsync(
+        PuppeteerSharp.IPage page,
+        string adsPowerUserId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Переключает активный суб-профиль: открывает модалку, кликает по карточке указанного профиля
     /// и ждёт исчезновения модалки. Возвращает <c>true</c>, если переключение подтверждено.
     /// </summary>

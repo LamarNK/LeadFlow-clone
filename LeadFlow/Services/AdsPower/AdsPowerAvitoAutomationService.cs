@@ -537,43 +537,55 @@ public sealed class AdsPowerAvitoAutomationService(
         {
             browser = await Puppeteer.ConnectAsync(connectOptions).ConfigureAwait(false);
             var page = await GetOrCreateAvitoPageAsync(browser, ProfileSwitchPageUrl).ConfigureAwait(false);
-
-            await EnsureSwitchModalAsync(page, cancellationToken).ConfigureAwait(false);
-            await AwaitProfileSwitchModalContentAsync(page, cancellationToken, nameof(LoadProfileSwitchHtmlAsync))
+            return await CaptureProfileSwitchHtmlInSessionAsync(page, adsPowerUserId, cancellationToken)
                 .ConfigureAwait(false);
-
-            var html = await EvaluateWithRetryAsync<string>(
-                page,
-                "(() => document.documentElement?.outerHTML || '')()",
-                cancellationToken).ConfigureAwait(false);
-
-            if (string.IsNullOrWhiteSpace(html))
-            {
-                throw new InvalidOperationException("AdsPower CDP: страница переключения профилей вернула пустой HTML.");
-            }
-
-            ThrowIfCaptcha(html, page.Url, nameof(LoadProfileSwitchHtmlAsync), adsPowerUserId);
-
-            _ = GlobalLogger.Instance.LogAsync(
-                $"AdsPower profile-switch: HTML captured ({html.Length} chars).",
-                DeskLinkAuditLogLevel.Info,
-                memberName: nameof(LoadProfileSwitchHtmlAsync),
-                filePath: "AdsPowerAvitoAutomationService.cs",
-                properties: new Dictionary<string, object?>
-                {
-                    ["step"] = "captured",
-                    ["adsPower.userId"] = adsPowerUserId,
-                    ["page.url"] = page.Url,
-                    ["html.length"] = html.Length
-                });
-
-            return html;
         }
         finally
         {
             await ReleaseAdsPowerSessionAsync(browser, options, adsPowerUserId, closeBrowser: false, cancellationToken)
                 .ConfigureAwait(false);
         }
+    }
+
+    public async Task<string> CaptureProfileSwitchHtmlInSessionAsync(
+        IPage page,
+        string adsPowerUserId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(page);
+        ArgumentException.ThrowIfNullOrWhiteSpace(adsPowerUserId);
+
+        await EnsureSwitchModalAsync(page, cancellationToken).ConfigureAwait(false);
+        await AwaitProfileSwitchModalContentAsync(page, cancellationToken, nameof(CaptureProfileSwitchHtmlInSessionAsync))
+            .ConfigureAwait(false);
+
+        var html = await EvaluateWithRetryAsync<string>(
+                page,
+                "(() => document.documentElement?.outerHTML || '')()",
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        if (string.IsNullOrWhiteSpace(html))
+        {
+            throw new InvalidOperationException("AdsPower CDP: страница переключения профилей вернула пустой HTML.");
+        }
+
+        ThrowIfCaptcha(html, page.Url, nameof(CaptureProfileSwitchHtmlInSessionAsync), adsPowerUserId);
+
+        _ = GlobalLogger.Instance.LogAsync(
+            $"AdsPower profile-switch: HTML captured ({html.Length} chars).",
+            DeskLinkAuditLogLevel.Info,
+            memberName: nameof(CaptureProfileSwitchHtmlInSessionAsync),
+            filePath: "AdsPowerAvitoAutomationService.cs",
+            properties: new Dictionary<string, object?>
+            {
+                ["step"] = "captured",
+                ["adsPower.userId"] = adsPowerUserId,
+                ["page.url"] = page.Url,
+                ["html.length"] = html.Length
+            });
+
+        return html;
     }
 
     public async Task<bool> SwitchActiveProfileAsync(

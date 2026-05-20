@@ -234,6 +234,12 @@ public sealed class AvitoResponseSourceTests
             CancellationToken cancellationToken = default) =>
             Task.FromResult("<html><body></body></html>");
 
+        public Task<string> CaptureProfileSwitchHtmlInSessionAsync(
+            PuppeteerSharp.IPage page,
+            string adsPowerUserId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult("<html><body></body></html>");
+
         public Task<bool> SwitchActiveProfileAsync(
             AdsPowerConnectionOptions options,
             string adsPowerUserId,

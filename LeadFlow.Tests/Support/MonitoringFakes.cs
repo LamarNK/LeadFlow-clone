@@ -129,6 +129,12 @@ internal sealed class StubAdsPowerAvitoAutomationService : IAdsPowerAvitoAutomat
         CancellationToken cancellationToken = default) =>
         throw new InvalidOperationException("AdsPower CDP не должен вызываться в этих тестах.");
 
+    public Task<string> CaptureProfileSwitchHtmlInSessionAsync(
+        PuppeteerSharp.IPage page,
+        string adsPowerUserId,
+        CancellationToken cancellationToken = default) =>
+        throw new InvalidOperationException("AdsPower CDP не должен вызываться в этих тестах.");
+
     public Task<bool> SwitchActiveProfileAsync(
         AdsPowerConnectionOptions options,
         string adsPowerUserId,

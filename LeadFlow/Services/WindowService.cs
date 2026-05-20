@@ -3,7 +3,6 @@ using LeadFlow.Data;
 using LeadFlow.Logging.Audit;
 using LeadFlow.Models;
 using LeadFlow.Services.AdsPower;
-using LeadFlow.Services.Avito;
 using LeadFlow.ViewModels;
 using LeadFlow.Views;
 using Microsoft.Extensions.DependencyInjection;
@@ -139,17 +138,35 @@ public sealed class WindowService(
                 ? "Авторизован. Имя профиля Avito не удалось распознать со страницы — это не мешает работе."
                 : string.Empty;
 
-            await TryRefreshSubProfilesAsync(account, options, cancellationToken).ConfigureAwait(true);
+            if (result.SubProfilesParsed)
+            {
+                account.SetSubProfiles(result.SubProfiles ?? Array.Empty<AvitoSubProfile>());
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"AdsPower sub-profiles saved for {account.DisplayName}: count={account.SubProfilesCount}.",
+                    DeskLinkAuditLogLevel.Info,
+                    memberName: nameof(CheckAdsPowerAvitoAuthorizationAsync),
+                    filePath: "WindowService.cs",
+                    properties: new Dictionary<string, object?>
+                    {
+                        ["step"] = "sub_profiles_saved",
+                        ["account.id"] = account.Id,
+                        ["subProfiles.count"] = account.SubProfilesCount
+                    });
+            }
         }
         else if (result.HasCaptcha)
         {
             account.Status = AvitoAccountStatus.RequiresManualAction;
-            account.LastErrorMessage = "Avito показал капчу — пройдите проверку в окне AdsPower и повторите.";
+            account.LastErrorMessage = result.KeepBrowserOpen
+                ? "Avito показал капчу — пройдите проверку в открытом окне AdsPower и нажмите «Авторизовать в Avito» снова."
+                : "Avito показал капчу — пройдите проверку в окне AdsPower и повторите.";
         }
         else if (result.HasLoginForm)
         {
             account.Status = AvitoAccountStatus.RequiresLogin;
-            account.LastErrorMessage = "Войдите в Avito в открывшемся окне AdsPower и нажмите «Авторизовать в Avito» снова.";
+            account.LastErrorMessage = result.KeepBrowserOpen
+                ? "Войдите в Avito в открытом окне AdsPower и нажмите «Авторизовать в Avito» снова."
+                : "Войдите в Avito в открывшемся окне AdsPower и нажмите «Авторизовать в Avito» снова.";
         }
         else
         {
@@ -179,83 +196,6 @@ public sealed class WindowService(
             });
 
         await repository.SaveAccountAsync(account, cancellationToken).ConfigureAwait(true);
-    }
-
-    /// <summary>
-    /// После успешной авторизации тянем список суб-профилей Avito Pro (модалка
-    /// <c>/profile/dashboard#profile/switch?withEntities=true</c>) и сохраняем в аккаунте.
-    /// Любые ошибки логируем, но авторизацию не валим — сабпрофилей может не быть в принципе.
-    /// </summary>
-    private async Task TryRefreshSubProfilesAsync(
-        AvitoAccount account,
-        AdsPowerConnectionOptions options,
-        CancellationToken cancellationToken)
-    {
-        if (string.IsNullOrWhiteSpace(account.AdsPowerProfileId))
-        {
-            return;
-        }
-
-        try
-        {
-            var html = await adsPowerAvitoAutomationService
-                .LoadProfileSwitchHtmlAsync(options, account.AdsPowerProfileId!, cancellationToken)
-                .ConfigureAwait(true);
-
-            var subProfiles = AvitoSubProfilesParser.Parse(html);
-            account.SetSubProfiles(subProfiles);
-
-            _ = GlobalLogger.Instance.LogAsync(
-                $"AdsPower sub-profiles parsed for {account.DisplayName}: count={subProfiles.Count}.",
-                DeskLinkAuditLogLevel.Info,
-                memberName: nameof(TryRefreshSubProfilesAsync),
-                filePath: "WindowService.cs",
-                properties: new Dictionary<string, object?>
-                {
-                    ["step"] = "parsed",
-                    ["account.id"] = account.Id,
-                    ["account.displayName"] = account.DisplayName,
-                    ["subProfiles.count"] = subProfiles.Count,
-                    ["subProfiles.items"] = subProfiles.Select(p => new { p.Id, p.Name, p.Category, p.IsCurrent }).ToArray()
-                });
-        }
-        catch (Exception ex)
-        {
-            _ = GlobalLogger.Instance.LogAsync(
-                $"AdsPower sub-profiles refresh failed for {account.DisplayName}: {ex.Message}",
-                DeskLinkAuditLogLevel.Warning,
-                memberName: nameof(TryRefreshSubProfilesAsync),
-                filePath: "WindowService.cs",
-                properties: new Dictionary<string, object?>
-                {
-                    ["step"] = "failed",
-                    ["account.id"] = account.Id,
-                    ["error.type"] = ex.GetType().FullName
-                });
-        }
-        finally
-        {
-            try
-            {
-                await adsPowerAvitoAutomationService
-                    .CloseBrowserAsync(options, account.AdsPowerProfileId!, cancellationToken)
-                    .ConfigureAwait(true);
-            }
-            catch (Exception ex)
-            {
-                _ = GlobalLogger.Instance.LogAsync(
-                    $"AdsPower: не удалось закрыть браузер после обновления суб-профилей {account.DisplayName}: {ex.Message}",
-                    DeskLinkAuditLogLevel.Warning,
-                    memberName: nameof(TryRefreshSubProfilesAsync),
-                    filePath: "WindowService.cs",
-                    properties: new Dictionary<string, object?>
-                    {
-                        ["step"] = "browser_stop_failed",
-                        ["account.id"] = account.Id,
-                        ["error.type"] = ex.GetType().FullName
-                    });
-            }
-        }
     }
 
     public Task ShowAccountSettingsAsync(Window owner, AvitoAccount account, CancellationToken cancellationToken)
