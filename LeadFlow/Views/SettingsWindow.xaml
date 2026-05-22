@@ -561,7 +561,8 @@
                                            Margin="0,2,0,6" />
                                 <ItemsControl Grid.Row="2"
                                               ItemsSource="{Binding SelectedAccountSubProfiles}"
-                                              VerticalAlignment="Stretch">
+                                              VerticalAlignment="Stretch"
+                                              PreviewMouseWheel="SubProfilesItemsControl_OnPreviewMouseWheel">
                                     <ItemsControl.Template>
                                         <ControlTemplate TargetType="ItemsControl">
                                             <ScrollViewer VerticalScrollBarVisibility="Auto"

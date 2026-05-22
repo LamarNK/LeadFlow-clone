@@ -192,15 +192,40 @@ public sealed class AvitoResponseSourceTests
 
         public Task<string> ExecuteScriptAsync(BrowserAccountSession session, string script, CancellationToken cancellationToken)
         {
-            if (script.Contains("readyState", StringComparison.Ordinal) && script.Contains("bodyLength", StringComparison.Ordinal))
-            {
-                return Task.FromResult("""{"readyState":"complete","bodyLength":200}""");
-            }
-
-            if (script.Contains("fnv1a32Hex", StringComparison.Ordinal))
+            if (script.Contains("domStatusCount: statusButtons.length", StringComparison.Ordinal))
             {
                 var next = _extraction.Count > 0 ? _extraction.Dequeue() : "";
                 return Task.FromResult(next);
+            }
+
+            if (script.Contains("hasFirewallText && hasCaptchaWidget", StringComparison.Ordinal))
+            {
+                return Task.FromResult("""{"blocked":false,"kind":"firewall","itemCount":0}""");
+            }
+
+            if (script.Contains("ready: document.readyState === \"complete\"", StringComparison.Ordinal))
+            {
+                return Task.FromResult("""{"readyState":"complete","bodyLength":200,"itemCount":1,"statusCount":1,"blocked":false,"ready":true}""");
+            }
+
+            if (script.Contains("scrollBy", StringComparison.Ordinal))
+            {
+                return Task.FromResult("""{"itemCount":1,"scrollTop":0,"scrollHeight":1000,"moved":false,"atEnd":true}""");
+            }
+
+            if (script.Contains("scrollTop = 0", StringComparison.Ordinal))
+            {
+                return Task.FromResult("""{"ok":true}""");
+            }
+
+            if (script.Contains("withPhone", StringComparison.Ordinal) && script.Contains("items.length", StringComparison.Ordinal))
+            {
+                return Task.FromResult("""{"ready":true,"items":1,"withPhone":1}""");
+            }
+
+            if (script.Contains("outerHTML", StringComparison.Ordinal))
+            {
+                return Task.FromResult(string.Empty);
             }
 
             return Task.FromResult("{}");

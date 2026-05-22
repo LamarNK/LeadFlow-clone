@@ -199,4 +199,136 @@ public partial class SettingsWindow : Window
 
         return null;
     }
+
+    /// <summary>
+    /// Вложенный ScrollViewer списка суб-профилей перехватывает колесо и не отдаёт его карточке аккаунта,
+    /// когда внутренний список уже прокручен до края.
+    /// </summary>
+    private void SubProfilesItemsControl_OnPreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (sender is not ItemsControl itemsControl)
+        {
+            return;
+        }
+
+        var inner = FindDescendantScrollViewer(itemsControl);
+        if (inner is null)
+        {
+            return;
+        }
+
+        var outer = FindAncestorScrollViewer(itemsControl);
+
+        if (inner.ScrollableHeight >= 0.5)
+        {
+            if (CanScrollVertically(inner, e.Delta))
+            {
+                ApplyMouseWheelScroll(inner, e);
+                e.Handled = true;
+                return;
+            }
+
+            if (outer is not null
+                && outer.ScrollableHeight >= 0.5
+                && CanScrollVertically(outer, e.Delta))
+            {
+                ApplyMouseWheelScroll(outer, e);
+                e.Handled = true;
+            }
+
+            return;
+        }
+
+        if (outer is not null
+            && outer.ScrollableHeight >= 0.5
+            && CanScrollVertically(outer, e.Delta))
+        {
+            ApplyMouseWheelScroll(outer, e);
+            e.Handled = true;
+        }
+    }
+
+    private static bool CanScrollVertically(ScrollViewer sv, int delta)
+    {
+        const double eps = 0.51;
+        if (sv.ScrollableHeight < 0.5)
+        {
+            return false;
+        }
+
+        if (delta > 0)
+        {
+            return sv.VerticalOffset > eps;
+        }
+
+        if (delta < 0)
+        {
+            return sv.VerticalOffset < sv.ScrollableHeight - eps;
+        }
+
+        return false;
+    }
+
+    private static void ApplyMouseWheelScroll(ScrollViewer scrollViewer, MouseWheelEventArgs e)
+    {
+        var lines = SystemParameters.WheelScrollLines;
+        if (lines == 0)
+        {
+            if (e.Delta > 0)
+            {
+                scrollViewer.PageUp();
+            }
+            else
+            {
+                scrollViewer.PageDown();
+            }
+        }
+        else
+        {
+            for (var i = 0; i < lines; i++)
+            {
+                if (e.Delta > 0)
+                {
+                    scrollViewer.LineUp();
+                }
+                else
+                {
+                    scrollViewer.LineDown();
+                }
+            }
+        }
+    }
+
+    private static ScrollViewer? FindAncestorScrollViewer(DependencyObject start)
+    {
+        for (var p = VisualTreeHelper.GetParent(start); p != null; p = VisualTreeHelper.GetParent(p))
+        {
+            if (p is ScrollViewer sv)
+            {
+                return sv;
+            }
+        }
+
+        return null;
+    }
+
+    private static ScrollViewer? FindDescendantScrollViewer(DependencyObject parent)
+    {
+        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, i);
+            if (child is ScrollViewer sv)
+            {
+                return sv;
+            }
+
+            var nested = FindDescendantScrollViewer(child);
+            if (nested is not null)
+            {
+                return nested;
+            }
+        }
+
+        return null;
+    }
 }

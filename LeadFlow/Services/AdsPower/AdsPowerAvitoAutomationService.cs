@@ -30,7 +30,7 @@ public sealed class AdsPowerAvitoAutomationService(
         CandidatesMessengerEnrichmentHints? messengerEnrichmentHints = null)
     {
         var start = await adsPowerApiClient
-            .StartBrowserAsync(options, adsPowerUserId, CandidatesPageUrl, cancellationToken)
+            .StartBrowserAsync(options, adsPowerUserId, openUrl: null, cancellationToken)
             .ConfigureAwait(false);
 
         if (string.IsNullOrWhiteSpace(start.WebSocketDebuggerUrl))
@@ -49,37 +49,54 @@ public sealed class AdsPowerAvitoAutomationService(
         try
         {
             browser = await Puppeteer.ConnectAsync(connectOptions).ConfigureAwait(false);
-            var page = await GetOrCreateAvitoPageAsync(browser, CandidatesPageUrl).ConfigureAwait(false);
+            var page = await AcquireAutomationPageAsync(
+                    browser,
+                    CandidatesPageUrl,
+                    nameof(ExtractCandidatesJsonAsync),
+                    cancellationToken)
+                .ConfigureAwait(false);
 
-            if (!IsOnUrl(page.Url, CandidatesPageUrl))
-            {
-                try
-                {
-                    await page.GoToAsync(CandidatesPageUrl, new NavigationOptions
+            // После переключения суб-профиля Avito часто оставляет старый список откликов в SPA.
+            // Нельзя пропускать переход, если URL уже /profile/candidates — иначе domItems не меняются между кабинетами.
+            await NavigateToCandidatesPageRefreshingAsync(page, cancellationToken).ConfigureAwait(false);
+
+            var executeScript = (string script, CancellationToken ct) =>
+                EvaluateWithRetryAsync<string>(page, script, ct);
+
+            await AvitoCandidatesPageWaiter
+                .WaitForCandidatesOrThrowFirewallAsync(
+                    executeScript,
+                    async ct =>
                     {
-                        Timeout = 60_000,
-                        // DOMContentLoaded + WaitForFunction ниже достаточно; Networkidle2 держит сетевой стек
-                        // Puppeteer и провоцирует фоновые ошибки CDP (тела редиректов, смена контекста).
-                        WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
-                    }).ConfigureAwait(false);
-                }
-                catch (Exception ex) when (IsRecoverableNavigationError(ex))
-                {
-                    await Task.Delay(1400, cancellationToken).ConfigureAwait(false);
-                }
-            }
+                        try
+                        {
+                            return await page.GetContentAsync().ConfigureAwait(false);
+                        }
+                        catch
+                        {
+                            return null;
+                        }
+                    },
+                    page.Url,
+                    cancellationToken)
+                .ConfigureAwait(false);
 
-            try
-            {
-                await page.WaitForFunctionAsync(
-                        "() => document.readyState === 'complete' && (document.body?.innerText ?? '').trim().length > 150",
-                        new WaitForFunctionOptions { Timeout = 30_000 })
-                    .ConfigureAwait(false);
-            }
-            catch (Exception ex) when (IsRecoverableNavigationError(ex))
-            {
-                await Task.Delay(1400, cancellationToken).ConfigureAwait(false);
-            }
+            await AvitoCandidatesListPreparer.PrepareAsync(
+                executeScript,
+                $"AdsPower:{adsPowerUserId}",
+                cancellationToken,
+                async ct =>
+                {
+                    try
+                    {
+                        return await page.GetContentAsync().ConfigureAwait(false);
+                    }
+                    catch
+                    {
+                        return null;
+                    }
+                },
+                page.Url).ConfigureAwait(false);
 
             var raw = await EvaluateWithRetryAsync<string>(page, ExtractionScript, cancellationToken).ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(raw))
@@ -130,7 +147,7 @@ public sealed class AdsPowerAvitoAutomationService(
             });
 
         var start = await adsPowerApiClient
-            .StartBrowserAsync(options, adsPowerUserId, ProfileItemsPageUrl, cancellationToken)
+            .StartBrowserAsync(options, adsPowerUserId, openUrl: null, cancellationToken)
             .ConfigureAwait(false);
 
         if (string.IsNullOrWhiteSpace(start.WebSocketDebuggerUrl))
@@ -160,9 +177,14 @@ public sealed class AdsPowerAvitoAutomationService(
                     ["adsPower.userId"] = adsPowerUserId
                 });
 
-            var page = await GetOrCreateAvitoPageAsync(browser, ProfileItemsPageUrl).ConfigureAwait(false);
+            var page = await AcquireAutomationPageAsync(
+                    browser,
+                    ProfileItemsPageUrl,
+                    nameof(LoadProfileItemsHtmlAsync),
+                    cancellationToken)
+                .ConfigureAwait(false);
 
-            if (!IsOnUrl(page.Url, ProfileItemsPageUrl))
+            if (!IsOnActiveProfileItemsPage(page.Url))
             {
                 try
                 {
@@ -332,7 +354,7 @@ public sealed class AdsPowerAvitoAutomationService(
             });
 
         var start = await adsPowerApiClient
-            .StartBrowserAsync(options, adsPowerUserId, ProfileBlockedItemsPageUrl, cancellationToken)
+            .StartBrowserAsync(options, adsPowerUserId, openUrl: null, cancellationToken)
             .ConfigureAwait(false);
 
         if (string.IsNullOrWhiteSpace(start.WebSocketDebuggerUrl))
@@ -351,7 +373,12 @@ public sealed class AdsPowerAvitoAutomationService(
         try
         {
             browser = await Puppeteer.ConnectAsync(connectOptions).ConfigureAwait(false);
-            var page = await GetOrCreateAvitoPageAsync(browser, ProfileBlockedItemsPageUrl).ConfigureAwait(false);
+            var page = await AcquireAutomationPageAsync(
+                    browser,
+                    ProfileBlockedItemsPageUrl,
+                    nameof(LoadBlockedItemsHtmlAsync),
+                    cancellationToken)
+                .ConfigureAwait(false);
 
             // Гарантируем, что мы на rejected-вкладке: даже если хеш/фильтр сбросились — переходим явно.
             if (!IsOnRejectedTab(page.Url))
@@ -517,7 +544,7 @@ public sealed class AdsPowerAvitoAutomationService(
             });
 
         var start = await adsPowerApiClient
-            .StartBrowserAsync(options, adsPowerUserId, ProfileSwitchPageUrl, cancellationToken)
+            .StartBrowserAsync(options, adsPowerUserId, openUrl: null, cancellationToken)
             .ConfigureAwait(false);
 
         if (string.IsNullOrWhiteSpace(start.WebSocketDebuggerUrl))
@@ -536,7 +563,12 @@ public sealed class AdsPowerAvitoAutomationService(
         try
         {
             browser = await Puppeteer.ConnectAsync(connectOptions).ConfigureAwait(false);
-            var page = await GetOrCreateAvitoPageAsync(browser, ProfileSwitchPageUrl).ConfigureAwait(false);
+            var page = await AcquireAutomationPageAsync(
+                    browser,
+                    ProfileSwitchPageUrl,
+                    nameof(LoadProfileSwitchHtmlAsync),
+                    cancellationToken)
+                .ConfigureAwait(false);
             return await CaptureProfileSwitchHtmlInSessionAsync(page, adsPowerUserId, cancellationToken)
                 .ConfigureAwait(false);
         }
@@ -632,7 +664,12 @@ public sealed class AdsPowerAvitoAutomationService(
         try
         {
             browser = await Puppeteer.ConnectAsync(connectOptions).ConfigureAwait(false);
-            var page = await GetOrCreateAvitoPageAsync(browser, ProfileSwitchPageUrl).ConfigureAwait(false);
+            var page = await AcquireAutomationPageAsync(
+                    browser,
+                    ProfileSwitchPageUrl,
+                    nameof(SwitchActiveProfileAsync),
+                    cancellationToken)
+                .ConfigureAwait(false);
 
             // Всегда dashboard#profile/switch — читаем модалку в актуальном контексте Avito.
             await EnsureSwitchModalAsync(page, cancellationToken).ConfigureAwait(false);
@@ -993,25 +1030,208 @@ public sealed class AdsPowerAvitoAutomationService(
         value.Replace("\\", "\\\\", StringComparison.Ordinal)
              .Replace("\"", "\\\"", StringComparison.Ordinal);
 
-    private static async Task<IPage> GetOrCreateAvitoPageAsync(IBrowser browser, string preferredUrl)
+    private static async Task NavigateToCandidatesPageRefreshingAsync(IPage page, CancellationToken cancellationToken)
     {
-        var pages = await browser.PagesAsync().ConfigureAwait(false);
-
-        var exact = pages.FirstOrDefault(p => IsOnUrl(p.Url, preferredUrl));
-        if (exact is not null)
+        var alreadyOnCandidates = IsOnUrl(page.Url, CandidatesPageUrl);
+        var navigationOptions = new NavigationOptions
         {
-            return exact;
+            Timeout = 60_000,
+            WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
+        };
+
+        try
+        {
+            if (alreadyOnCandidates)
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    "AdsPower candidates: forced reload (same URL — refresh list after sub-profile switch).",
+                    DeskLinkAuditLogLevel.Info,
+                    memberName: nameof(ExtractCandidatesJsonAsync),
+                    filePath: "AdsPowerAvitoAutomationService.cs",
+                    properties: new Dictionary<string, object?>
+                    {
+                        ["step"] = "candidates_reload",
+                        ["page.url"] = page.Url
+                    });
+
+                await page.ReloadAsync(navigationOptions.Timeout).ConfigureAwait(false);
+            }
+            else
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    "AdsPower candidates: navigating to responses page.",
+                    DeskLinkAuditLogLevel.Info,
+                    memberName: nameof(ExtractCandidatesJsonAsync),
+                    filePath: "AdsPowerAvitoAutomationService.cs",
+                    properties: new Dictionary<string, object?>
+                    {
+                        ["step"] = "candidates_goto",
+                        ["page.url"] = page.Url,
+                        ["avito.url"] = CandidatesPageUrl
+                    });
+
+                await page.GoToAsync(CandidatesPageUrl, navigationOptions).ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex) when (IsRecoverableNavigationError(ex))
+        {
+            await Task.Delay(1400, cancellationToken).ConfigureAwait(false);
         }
 
-        var avito = pages.FirstOrDefault(p => !string.IsNullOrEmpty(p.Url) &&
-            p.Url.Contains("avito.ru", StringComparison.OrdinalIgnoreCase));
-        if (avito is not null)
+        await Task.Delay(600, cancellationToken).ConfigureAwait(false);
+    }
+
+    private enum AvitoAutomationPageKind
+    {
+        Candidates,
+        ActiveItems,
+        BlockedItems,
+        ProfileSwitch,
+        Other
+    }
+
+    /// <summary>
+    /// Одна рабочая вкладка на сессию CDP: иначе при нескольких вкладках Avito автоматизация идёт в фоне,
+    /// а пользователь смотрит на другую (типично «Мои объявления»), и кажется, что парсинг не работает.
+    /// </summary>
+    private static async Task<IPage> AcquireAutomationPageAsync(
+        IBrowser browser,
+        string preferredUrl,
+        string callerMemberName,
+        CancellationToken cancellationToken)
+    {
+        var targetKind = ClassifyAutomationPageKind(preferredUrl);
+        var pages = (await browser.PagesAsync().ConfigureAwait(false)).ToList();
+
+        var worker =
+            pages.FirstOrDefault(p => PageMatchesAutomationKind(p.Url, targetKind))
+            ?? pages.FirstOrDefault(p => IsAvitoProfileAutomationTab(p.Url))
+            ?? pages.FirstOrDefault();
+
+        if (worker is null)
         {
-            return avito;
+            worker = await browser.NewPageAsync().ConfigureAwait(false);
+            pages = [worker];
         }
 
-        var any = pages.FirstOrDefault();
-        return any ?? await browser.NewPageAsync().ConfigureAwait(false);
+        var closed = 0;
+        foreach (var page in pages)
+        {
+            if (page == worker || !IsAvitoProfileAutomationTab(page.Url))
+            {
+                continue;
+            }
+
+            try
+            {
+                await page.CloseAsync().ConfigureAwait(false);
+                closed++;
+            }
+            catch (Exception ex)
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"AdsPower CDP: не удалось закрыть лишнюю вкладку Avito ({page.Url}): {ex.Message}",
+                    DeskLinkAuditLogLevel.Debug,
+                    memberName: callerMemberName,
+                    filePath: "AdsPowerAvitoAutomationService.cs",
+                    properties: new Dictionary<string, object?>
+                    {
+                        ["page.url"] = page.Url,
+                        ["error.type"] = ex.GetType().FullName
+                    });
+            }
+        }
+
+        try
+        {
+            await worker.BringToFrontAsync().ConfigureAwait(false);
+        }
+        catch
+        {
+            // Не критично для парсинга.
+        }
+
+        if (closed > 0 || pages.Count > 1)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                closed > 0
+                    ? $"AdsPower CDP: рабочая вкладка {worker.Url} (закрыто лишних вкладок кабинета: {closed})."
+                    : $"AdsPower CDP: рабочая вкладка {worker.Url} (всего вкладок в профиле: {pages.Count}).",
+                DeskLinkAuditLogLevel.Info,
+                memberName: callerMemberName,
+                filePath: "AdsPowerAvitoAutomationService.cs",
+                properties: new Dictionary<string, object?>
+                {
+                    ["automation.targetKind"] = targetKind.ToString(),
+                    ["automation.workerUrl"] = worker.Url,
+                    ["automation.tabsClosed"] = closed,
+                    ["automation.tabsBefore"] = pages.Count
+                });
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        return worker;
+    }
+
+    private static AvitoAutomationPageKind ClassifyAutomationPageKind(string preferredUrl)
+    {
+        if (preferredUrl.Contains("/profile/candidates", StringComparison.OrdinalIgnoreCase))
+        {
+            return AvitoAutomationPageKind.Candidates;
+        }
+
+        if (preferredUrl.Contains("rejected", StringComparison.OrdinalIgnoreCase))
+        {
+            return AvitoAutomationPageKind.BlockedItems;
+        }
+
+        if (preferredUrl.Contains("profile/switch", StringComparison.OrdinalIgnoreCase)
+            || preferredUrl.Contains("dashboard#profile", StringComparison.OrdinalIgnoreCase))
+        {
+            return AvitoAutomationPageKind.ProfileSwitch;
+        }
+
+        if (preferredUrl.Contains("/profile/pro/items", StringComparison.OrdinalIgnoreCase))
+        {
+            return AvitoAutomationPageKind.ActiveItems;
+        }
+
+        return AvitoAutomationPageKind.Other;
+    }
+
+    private static bool PageMatchesAutomationKind(string? url, AvitoAutomationPageKind kind) => kind switch
+    {
+        AvitoAutomationPageKind.Candidates =>
+            !string.IsNullOrEmpty(url) && url.Contains("/profile/candidates", StringComparison.OrdinalIgnoreCase),
+        AvitoAutomationPageKind.ActiveItems => IsOnActiveProfileItemsPage(url),
+        AvitoAutomationPageKind.BlockedItems => IsOnRejectedTab(url),
+        AvitoAutomationPageKind.ProfileSwitch =>
+            !string.IsNullOrEmpty(url) &&
+            (url.Contains("profile/switch", StringComparison.OrdinalIgnoreCase)
+             || url.Contains("dashboard#profile", StringComparison.OrdinalIgnoreCase)),
+        _ => false
+    };
+
+    private static bool IsAvitoProfileAutomationTab(string? url)
+    {
+        if (string.IsNullOrEmpty(url) || !url.Contains("avito.ru", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return url.Contains("/profile/", StringComparison.OrdinalIgnoreCase)
+            || url.Contains("dashboard#profile", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsOnActiveProfileItemsPage(string? url)
+    {
+        if (string.IsNullOrEmpty(url)
+            || !url.Contains("/profile/pro/items", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return !url.Contains("rejected", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsOnUrl(string? url, string target)
@@ -1250,13 +1470,24 @@ public sealed class AdsPowerAvitoAutomationService(
                 }
                 return null;
             };
-            for (const button of statusButtons) {
-                const root = button.closest?.("[data-marker='job-application/item']") ?? findCardRoot(button);
+            const addRoot = (root) => {
                 if (!root || seen.has(root)) {
-                    continue;
+                    return;
+                }
+                const name = root.querySelector?.("h3");
+                const phone = root.querySelector?.("[data-marker='job-application/phone']");
+                if (!name || !phone) {
+                    return;
                 }
                 seen.add(root);
                 roots.push(root);
+            };
+            for (const button of statusButtons) {
+                const root = button.closest?.("[data-marker='job-application/item']") ?? findCardRoot(button);
+                addRoot(root);
+            }
+            for (const item of document.querySelectorAll("[data-marker='job-application/item']")) {
+                addRoot(item);
             }
             const root = roots[idx];
             if (!root) {
@@ -1292,156 +1523,6 @@ public sealed class AdsPowerAvitoAutomationService(
         }
     }
 
-    private const string ExtractionScript =
-        """
-        JSON.stringify((() => {
-            const bodyText = document.body?.innerText ?? "";
-            // Текстовые маркеры + структурные (Avito firewall не пишет «капча» в видимом тексте,
-            // но всегда имеет div.firewall-container / форму js-firewall-form / встроенный hCaptcha/geetest).
-            const hasCaptcha =
-                /капч|captcha|подтвердите|проверочный код|Доступ\s+ограничен|проблема\s+с\s+IP/i.test(bodyText) ||
-                !!document.querySelector('.firewall-container, .js-firewall-form, .firewall-title, .h-captcha') ||
-                !!document.getElementById('h-captcha') ||
-                !!document.getElementById('geetest_captcha') ||
-                !!document.getElementById('inner-captcha');
-            const isVisible = (element) => {
-                if (!element) return false;
-                const style = window.getComputedStyle(element);
-                if (style.display === "none" || style.visibility === "hidden") return false;
-                const rect = element.getBoundingClientRect();
-                return rect.width > 0 && rect.height > 0;
-            };
-            const containsAuthText = (value) =>
-                /телефон или почта|пароль|забыли пароль|регистрац|войти|вход/i.test(value ?? "");
-            const loginCandidates = Array.from(document.querySelectorAll("input, button, a, h1, h2, h3, label, span, div"));
-            const hasLogin = loginCandidates.some((element) => {
-                if (!isVisible(element)) return false;
-                return containsAuthText(element.textContent) ||
-                    containsAuthText(element.getAttribute?.("placeholder")) ||
-                    containsAuthText(element.getAttribute?.("aria-label"));
-            });
-
-            const statusButtons = Array.from(document.querySelectorAll("[data-marker='job-application/response/status-select-button']"));
-            const roots = [];
-            const seen = new Set();
-            const findCardRoot = (element) => {
-                let current = element;
-                while (current) {
-                    const name = current.querySelector?.("h3");
-                    const phone = current.querySelector?.("[data-marker='job-application/phone']");
-                    if (name && phone) return current;
-                    current = current.parentElement;
-                }
-                return null;
-            };
-            for (const button of statusButtons) {
-                const root = button.closest?.("[data-marker='job-application/item']") ?? findCardRoot(button);
-                if (!root || seen.has(root)) continue;
-                seen.add(root);
-                roots.push(root);
-            }
-
-            const normalizeUrl = (href) => {
-                if (!href) return "";
-                const t = href.trim();
-                if (!t || t === "#") return "";
-                if (t.startsWith("//")) return `https:${t}`;
-                if (t.startsWith("/")) return `${window.location.origin}${t}`;
-                return t;
-            };
-            const resolveMessengerUrl = (root) => {
-                const pick = (href) => normalizeUrl(href ?? "");
-                const attrCandidates = ["href", "data-href", "data-url", "data-to", "data-link", "data-state", "onclick"];
-                const fromAttributes = (element) => {
-                    if (!element) {
-                        return "";
-                    }
-
-                    for (const attr of attrCandidates) {
-                        const raw = element.getAttribute?.(attr);
-                        if (!raw) {
-                            continue;
-                        }
-
-                        const direct = pick(raw);
-                        if (direct && /(messenger|chat|dialog)/i.test(direct)) {
-                            return direct;
-                        }
-
-                        const match = String(raw).match(/https?:\/\/[^"'\\\s]*(messenger|chat|dialog)[^"'\\\s]*/i);
-                        if (match?.[0]) {
-                            return pick(match[0]);
-                        }
-                    }
-
-                    return "";
-                };
-
-                const chatEl = root.querySelector("[data-marker='job-application/link/to-chat']");
-                if (chatEl) {
-                    const ownUrl = fromAttributes(chatEl);
-                    if (ownUrl) {
-                        return ownUrl;
-                    }
-
-                    const parentA = chatEl.closest("a");
-                    if (parentA) {
-                        const h = pick(parentA.getAttribute("href"));
-                        if (h && /(messenger|chat|dialog)/i.test(h)) {
-                            return h;
-                        }
-                    }
-
-                    const parentWithAttrs = chatEl.closest("[href],[data-href],[data-url],[data-to],[data-link],[data-state],[onclick]");
-                    const parentUrl = fromAttributes(parentWithAttrs);
-                    if (parentUrl) {
-                        return parentUrl;
-                    }
-                }
-
-                for (const element of root.querySelectorAll("[href],[data-href],[data-url],[data-to],[data-link],[data-state],[onclick]")) {
-                    if (element.closest?.("a[data-marker='job-application/link/to-resume']")) {
-                        continue;
-                    }
-
-                    const h = fromAttributes(element);
-                    if (h) {
-                        return h;
-                    }
-                }
-
-                return "";
-            };
-            const fnv1a32Hex = (text) => {
-                let h = 2166136261 >>> 0;
-                for (let i = 0; i < text.length; i++) {
-                    h ^= text.charCodeAt(i);
-                    h = Math.imul(h, 16777619) >>> 0;
-                }
-                return h.toString(16);
-            };
-
-            const candidates = roots.map((root) => {
-                const name = root.querySelector("h3")?.textContent?.trim() ?? "";
-                const phone = root.querySelector("[data-marker='job-application/phone']")?.textContent?.trim() ?? "";
-                const ageText = root.querySelector("p[data-marker='undefined/container'] span")?.textContent?.trim() ?? "";
-                const vacancyAnchor = root.querySelector("[data-marker='job-application/link/to-resume']");
-                let vacancyUrl = normalizeUrl(vacancyAnchor?.getAttribute("href") ?? "");
-                if (/\/profile\/candidates(?:[/?#]|$)/i.test(vacancyUrl)) vacancyUrl = "";
-                const vacancyLine = vacancyAnchor?.textContent?.replace(/\s+/g, " ").trim() ?? "";
-                const vacancyParts = vacancyLine.split("·").map((x) => x.trim()).filter(Boolean);
-                const vacancy = vacancyParts[0] ?? "";
-                const city = vacancyParts.length > 1 ? vacancyParts[1] : "";
-                const rawText = root.innerText?.replace(/\s+/g, " ").trim() ?? "";
-                const messengerUrl = resolveMessengerUrl(root);
-                const stablePayload = [name, phone, vacancy, city, vacancyUrl, messengerUrl]
-                    .map((x) => (x ?? "").trim().replace(/\s+/g, " "))
-                    .join("\u001f");
-                const sourceResponseId = messengerUrl || `avito:${fnv1a32Hex(stablePayload)}`;
-                return { fullName: name, phone, age: ageText, vacancy, city, vacancyUrl, messengerUrl, sourceResponseId, rawText };
-            }).filter((item) => item.fullName && item.phone);
-
-            return { url: window.location.href, hasCaptcha, hasLogin, candidates };
-        })())
-        """;
+    private static readonly string ExtractionScript =
+        AvitoCandidatesPageScripts.BuildExtractionScriptForPuppeteer();
 }

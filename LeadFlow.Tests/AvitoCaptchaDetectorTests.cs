@@ -31,7 +31,7 @@ public sealed class AvitoCaptchaDetectorTests
             """;
 
         Assert.True(AvitoCaptchaDetector.IsCaptchaHtml(html));
-        Assert.Equal("hCaptcha", AvitoCaptchaDetector.Classify(html));
+        Assert.Equal("firewall", AvitoCaptchaDetector.Classify(html));
     }
 
     [Fact]

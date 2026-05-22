@@ -1080,7 +1080,39 @@ public sealed class MonitoringService(
                     .SwitchActiveProfileAsync(options, account.AdsPowerProfileId!, sub.Id, cancellationToken)
                     .ConfigureAwait(false);
 
-                // 1️⃣ Объявления — только если кэш статистики устарел (раз в ActiveAdsRefreshIntervalMinutes).
+                // 1️⃣ Отклики — сразу после переключения суб-профиля (свежий список на /profile/candidates).
+                var batch = await avitoResponseSource
+                    .GetNewResponsesAsync(account, settings, cancellationToken)
+                    .ConfigureAwait(false);
+
+                foreach (var r in batch)
+                {
+                    r.AvitoSubProfileId = sub.Id;
+                }
+
+                var processedBeforeBatch = processedInCycle;
+                var freshInBatch = await ProcessBatchInlineAsync(batch, subLabel).ConfigureAwait(false);
+                var processedFromBatch = processedInCycle - processedBeforeBatch;
+                var deferredInBatch = Math.Max(0, batch.Count - processedFromBatch);
+
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"Суб-профиль «{sub.Name}» аккаунта {account.DisplayName}: новых для LeadFlow {batch.Count}, обработано сейчас {processedFromBatch} (лимит аккаунта {processedInCycle}/{maxPerCycle}), отложено на следующие циклы {deferredInBatch}.",
+                    deferredInBatch > 0 ? DeskLinkAuditLogLevel.Warning : DeskLinkAuditLogLevel.Info,
+                    properties: new Dictionary<string, object?>
+                    {
+                        ["accountId"] = account.Id,
+                        ["accountName"] = account.DisplayName,
+                        ["subProfile.id"] = sub.Id,
+                        ["subProfile.name"] = sub.Name,
+                        ["batchTotal"] = batch.Count,
+                        ["freshInBatch"] = freshInBatch,
+                        ["processedFromBatch"] = processedFromBatch,
+                        ["deferredInBatch"] = deferredInBatch,
+                        ["processedInCycle"] = processedInCycle,
+                        ["maxPerCycle"] = maxPerCycle
+                    });
+
+                // 2️⃣ Объявления — только если кэш статистики устарел (раз в ActiveAdsRefreshIntervalMinutes).
                 if (collectStats && statsAggregate is not null && statsPrev is not null)
                 {
                     try
@@ -1169,33 +1201,6 @@ public sealed class MonitoringService(
                             });
                     }
                 }
-
-                // 2️⃣ Отклики — всегда. Берём с того же суб-профиля, на который только что переключились.
-                var batch = await avitoResponseSource
-                    .GetNewResponsesAsync(account, settings, cancellationToken)
-                    .ConfigureAwait(false);
-
-                foreach (var r in batch)
-                {
-                    r.AvitoSubProfileId = sub.Id;
-                }
-
-                var freshInBatch = await ProcessBatchInlineAsync(batch, subLabel).ConfigureAwait(false);
-
-                _ = GlobalLogger.Instance.LogAsync(
-                    $"Суб-профиль «{sub.Name}» аккаунта {account.DisplayName}: получено откликов {batch.Count}, новых после дедупа {freshInBatch}, обработано в цикле {processedInCycle}/{maxPerCycle}.",
-                    DeskLinkAuditLogLevel.Info,
-                    properties: new Dictionary<string, object?>
-                    {
-                        ["accountId"] = account.Id,
-                        ["accountName"] = account.DisplayName,
-                        ["subProfile.id"] = sub.Id,
-                        ["subProfile.name"] = sub.Name,
-                        ["batchTotal"] = batch.Count,
-                        ["freshInBatch"] = freshInBatch,
-                        ["processedInCycle"] = processedInCycle,
-                        ["maxPerCycle"] = maxPerCycle
-                    });
             }
             catch (AvitoCaptchaDetectedException)
             {

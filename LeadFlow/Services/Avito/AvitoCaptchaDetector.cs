@@ -76,6 +76,14 @@ public static class AvitoCaptchaDetector
             return null;
         }
 
+        if (Regex.IsMatch(
+                html,
+                @"\bfirewall-container\b|\bjs-firewall-form\b|\bfirewall-title\b|Доступ\s+ограничен|проблема\s+с\s+IP",
+                RegexOptions.IgnoreCase))
+        {
+            return "firewall";
+        }
+
         if (Regex.IsMatch(html, @"\bh-captcha\b|hcaptcha\.com|data-hcaptcha-widget-id", RegexOptions.IgnoreCase))
         {
             return "hCaptcha";
@@ -89,11 +97,6 @@ public static class AvitoCaptchaDetector
         if (Regex.IsMatch(html, @"id=""inner-captcha""", RegexOptions.IgnoreCase))
         {
             return "image-captcha";
-        }
-
-        if (Regex.IsMatch(html, @"\bfirewall-container\b|\bjs-firewall-form\b|Доступ\s+ограничен|проблема\s+с\s+IP", RegexOptions.IgnoreCase))
-        {
-            return "firewall";
         }
 
         if (TextMarkers.IsMatch(html) && !HasNormalAvitoMarkers(html))
@@ -111,6 +114,7 @@ public static class AvitoCaptchaDetector
     private static bool HasNormalAvitoMarkers(string html) =>
         html.Contains("data-marker=\"item-snippet/", StringComparison.OrdinalIgnoreCase) ||
         html.Contains("data-marker=\"profile-items-tab", StringComparison.OrdinalIgnoreCase) ||
+        html.Contains("data-marker=\"job-application/item", StringComparison.OrdinalIgnoreCase) ||
         html.Contains("personal-items-root-element", StringComparison.OrdinalIgnoreCase) ||
         html.Contains("data-marker=\"component-profile-switch", StringComparison.OrdinalIgnoreCase);
 }

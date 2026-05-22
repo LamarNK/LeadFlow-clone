@@ -63,7 +63,16 @@ public sealed class AvitoResponseSource(
                 await WaitForCandidatesPageAsync(session, cancellationToken);
                 account.LastAuthCheckAt = DateTime.UtcNow;
 
-                var raw = await automationService.ExecuteScriptAsync(session, BuildExtractionScript(), cancellationToken);
+                var execute = (string script, CancellationToken ct) =>
+                    automationService.ExecuteScriptAsync(session, script, ct);
+                await AvitoCandidatesListPreparer.PrepareAsync(
+                    execute,
+                    account.DisplayName,
+                    cancellationToken,
+                    ct => FetchPageHtmlSnapshotAsync(execute, ct),
+                    CandidatesPageUrl).ConfigureAwait(false);
+
+                var raw = await automationService.ExecuteScriptAsync(session, AvitoCandidatesPageScripts.BuildExtractionScript(), cancellationToken);
                 if (string.IsNullOrWhiteSpace(raw))
                 {
                     _ = GlobalLogger.Instance.LogAsync(
@@ -148,7 +157,24 @@ public sealed class AvitoResponseSource(
         account.Status = AvitoAccountStatus.Authorized;
         account.LastErrorMessage = string.Empty;
         account.LastAuthCheckAt = DateTime.UtcNow;
+
+        var domItemCount = root.TryGetProperty("domItemCount", out var domItemsProp) ? domItemsProp.GetInt32() : 0;
+        var domStatusCount = root.TryGetProperty("domStatusCount", out var domStatusProp) ? domStatusProp.GetInt32() : 0;
+
         var candidates = AvitoCandidatesJsonParser.ParseCandidates(root, account);
+        var parsedCount = candidates.Count;
+        if (domItemCount > 0 && parsedCount < domItemCount)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Candidates extraction for {account.DisplayName}: DOM has {domItemCount} cards (status buttons {domStatusCount}), parsed {parsedCount} with name+phone. Possible incomplete scroll or phones not loaded yet.",
+                DeskLinkAuditLogLevel.Warning,
+                properties: new Dictionary<string, object?>
+                {
+                    ["candidates.domItemCount"] = domItemCount,
+                    ["candidates.domStatusCount"] = domStatusCount,
+                    ["candidates.parsedCount"] = parsedCount
+                });
+        }
 
         var existingIds = await repository.GetExistingSourceResponseIdsAsync(
             candidates.Select(x => x.SourceResponseId),
@@ -195,246 +221,49 @@ public sealed class AvitoResponseSource(
         }
 
         return deduped
-            .OrderByDescending(x => x.CreatedAt)
+            .OrderBy(x => phoneNormalizer.Normalize(x.PhoneRaw), StringComparer.Ordinal)
+            .ThenBy(x => x.FullName, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
 
     private async Task WaitForCandidatesPageAsync(BrowserAccountSession session, CancellationToken cancellationToken)
     {
-        for (var attempt = 0; attempt < 30; attempt++)
+        var execute = (string script, CancellationToken ct) =>
+            automationService.ExecuteScriptAsync(session, script, ct);
+
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            var raw = await automationService.ExecuteScriptAsync(
-                session,
-                "(() => ({ readyState: document.readyState, bodyLength: (document.body?.innerText ?? '').trim().length }))();",
-                cancellationToken);
-
-            if (!string.IsNullOrWhiteSpace(raw))
-            {
-                using var json = JsonDocument.Parse(raw);
-                var root = json.RootElement;
-                var readyState = root.TryGetProperty("readyState", out var readyStateProp) ? readyStateProp.GetString() : null;
-                var bodyLength = root.TryGetProperty("bodyLength", out var bodyLengthProp) ? bodyLengthProp.GetInt32() : 0;
-                if (string.Equals(readyState, "complete", StringComparison.OrdinalIgnoreCase) && bodyLength > 150)
-                {
-                    return;
-                }
-            }
-
-            await Task.Delay(1500, cancellationToken);
+            await AvitoCandidatesPageWaiter.WaitForCandidatesOrThrowFirewallAsync(
+                execute,
+                ct => FetchPageHtmlSnapshotAsync(execute, ct),
+                CandidatesPageUrl,
+                cancellationToken).ConfigureAwait(false);
         }
-
-        throw new TimeoutException("Таймаут загрузки страницы кандидатов Авито.");
+        catch (AvitoCaptchaDetectedException)
+        {
+            throw;
+        }
     }
 
-    private static string BuildExtractionScript() =>
-        """
-        (() => {
-            const bodyText = document.body?.innerText ?? "";
-            // Текстовые + структурные маркеры: Avito firewall («Доступ ограничен») в видимом тексте
-            // не содержит слова «капча», но имеет div.firewall-container и встроенный hCaptcha/geetest.
-            const hasCaptcha =
-                /капч|captcha|подтвердите|проверочный код|Доступ\s+ограничен|проблема\s+с\s+IP/i.test(bodyText) ||
-                !!document.querySelector('.firewall-container, .js-firewall-form, .firewall-title, .h-captcha') ||
-                !!document.getElementById('h-captcha') ||
-                !!document.getElementById('geetest_captcha') ||
-                !!document.getElementById('inner-captcha');
+    private static async Task<string?> FetchPageHtmlSnapshotAsync(
+        Func<string, CancellationToken, Task<string>> execute,
+        CancellationToken cancellationToken)
+    {
+        var raw = await execute(
+            "(() => (document.documentElement?.outerHTML ?? '').slice(0, 120000))()",
+            cancellationToken).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
 
-            const isVisible = (element) => {
-                if (!element) {
-                    return false;
-                }
-
-                const style = window.getComputedStyle(element);
-                if (style.display === "none" || style.visibility === "hidden") {
-                    return false;
-                }
-
-                const rect = element.getBoundingClientRect();
-                return rect.width > 0 && rect.height > 0;
-            };
-
-            const containsAuthText = (value) =>
-                /телефон или почта|пароль|забыли пароль|регистрац|войти|вход/i.test(value ?? "");
-
-            const loginCandidates = Array.from(document.querySelectorAll("input, button, a, h1, h2, h3, label, span, div"));
-            const hasLogin = loginCandidates.some((element) => {
-                if (!isVisible(element)) {
-                    return false;
-                }
-
-                return containsAuthText(element.textContent) ||
-                    containsAuthText(element.getAttribute?.("placeholder")) ||
-                    containsAuthText(element.getAttribute?.("aria-label"));
-            });
-
-            const statusButtons = Array.from(document.querySelectorAll("[data-marker='job-application/response/status-select-button']"));
-            const roots = [];
-            const seen = new Set();
-
-            const findCardRoot = (element) => {
-                let current = element;
-                while (current) {
-                    const name = current.querySelector?.("h3");
-                    const phone = current.querySelector?.("[data-marker='job-application/phone']");
-                    if (name && phone) {
-                        return current;
-                    }
-
-                    current = current.parentElement;
-                }
-
-                return null;
-            };
-
-            for (const button of statusButtons) {
-                const root = button.closest?.("[data-marker='job-application/item']") ?? findCardRoot(button);
-                if (!root || seen.has(root)) {
-                    continue;
-                }
-
-                seen.add(root);
-                roots.push(root);
-            }
-
-            const normalizeUrl = (href) => {
-                if (!href) {
-                    return "";
-                }
-
-                const t = href.trim();
-                if (!t || t === "#") {
-                    return "";
-                }
-
-                if (t.startsWith("//")) {
-                    return `https:${t}`;
-                }
-
-                if (t.startsWith("/")) {
-                    return `${window.location.origin}${t}`;
-                }
-
-                return t;
-            };
-
-            const resolveMessengerUrl = (root) => {
-                const pick = (href) => normalizeUrl(href ?? "");
-                const attrCandidates = ["href", "data-href", "data-url", "data-to", "data-link", "data-state", "onclick"];
-                const fromAttributes = (element) => {
-                    if (!element) {
-                        return "";
-                    }
-
-                    for (const attr of attrCandidates) {
-                        const raw = element.getAttribute?.(attr);
-                        if (!raw) {
-                            continue;
-                        }
-
-                        // Plain URL in attribute.
-                        const direct = pick(raw);
-                        if (direct && /(messenger|chat|dialog)/i.test(direct)) {
-                            return direct;
-                        }
-
-                        // URL embedded into JSON/text attributes.
-                        const match = String(raw).match(/https?:\/\/[^"'\\\s]*(messenger|chat|dialog)[^"'\\\s]*/i);
-                        if (match?.[0]) {
-                            return pick(match[0]);
-                        }
-                    }
-
-                    return "";
-                };
-
-                const chatEl = root.querySelector("[data-marker='job-application/link/to-chat']");
-                if (chatEl) {
-                    const ownUrl = fromAttributes(chatEl);
-                    if (ownUrl) {
-                        return ownUrl;
-                    }
-
-                    const parentA = chatEl.closest("a");
-                    if (parentA) {
-                        const h = pick(parentA.getAttribute("href"));
-                        if (h && /(messenger|chat|dialog)/i.test(h)) {
-                            return h;
-                        }
-                    }
-
-                    const parentWithAttrs = chatEl.closest("[href],[data-href],[data-url],[data-to],[data-link],[data-state],[onclick]");
-                    const parentUrl = fromAttributes(parentWithAttrs);
-                    if (parentUrl) {
-                        return parentUrl;
-                    }
-                }
-
-                for (const element of root.querySelectorAll("[href],[data-href],[data-url],[data-to],[data-link],[data-state],[onclick]")) {
-                    if (element.closest?.("a[data-marker='job-application/link/to-resume']")) {
-                        continue;
-                    }
-
-                    const h = fromAttributes(element);
-                    if (h) {
-                        return h;
-                    }
-                }
-
-                return "";
-            };
-
-            const fnv1a32Hex = (text) => {
-                let h = 2166136261 >>> 0;
-                for (let i = 0; i < text.length; i++) {
-                    h ^= text.charCodeAt(i);
-                    h = Math.imul(h, 16777619) >>> 0;
-                }
-                return h.toString(16);
-            };
-
-            const candidates = roots.map((root) => {
-                const name = root.querySelector("h3")?.textContent?.trim() ?? "";
-                const phone = root.querySelector("[data-marker='job-application/phone']")?.textContent?.trim() ?? "";
-                const ageText = root.querySelector("p[data-marker='undefined/container'] span")?.textContent?.trim() ?? "";
-                /* Вакансия: якорь «название · город», не «Резюме» (job-crm/response/cv-button). */
-                const vacancyListingAnchor = root.querySelector("[data-marker='job-application/link/to-resume']");
-                let vacancyUrl = normalizeUrl(vacancyListingAnchor?.getAttribute("href") ?? "");
-                if (/\/profile\/candidates(?:[/?#]|$)/i.test(vacancyUrl)) {
-                    vacancyUrl = "";
-                }
-                const vacancyLine = vacancyListingAnchor?.textContent?.replace(/\s+/g, " ").trim() ?? "";
-                const vacancyParts = vacancyLine.split("·").map((x) => x.trim()).filter(Boolean);
-                const vacancy = vacancyParts[0] ?? "";
-                const city = vacancyParts.length > 1 ? vacancyParts[1] : "";
-                const rawText = root.innerText?.replace(/\s+/g, " ").trim() ?? "";
-                const messengerUrl = resolveMessengerUrl(root);
-                const stablePayload = [name, phone, vacancy, city, vacancyUrl, messengerUrl]
-                    .map((x) => (x ?? "").trim().replace(/\s+/g, " "))
-                    .join("\u001f");
-                // vacancyUrl is often shared by multiple candidates for the same job;
-                // prefer a per-dialog link and fall back to a stable content hash.
-                const sourceResponseId = messengerUrl || `avito:${fnv1a32Hex(stablePayload)}`;
-
-                return {
-                    fullName: name,
-                    phone,
-                    age: ageText,
-                    vacancy,
-                    city,
-                    vacancyUrl,
-                    messengerUrl,
-                    sourceResponseId,
-                    rawText
-                };
-            }).filter((item) => item.fullName && item.phone);
-
-            return {
-                url: window.location.href,
-                hasCaptcha,
-                hasLogin,
-                candidates
-            };
-        })();
-        """;
+        try
+        {
+            return JsonSerializer.Deserialize<string>(raw) ?? raw;
+        }
+        catch
+        {
+            return raw.Trim().Trim('"');
+        }
+    }
 }
