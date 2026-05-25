@@ -185,10 +185,98 @@ public static class AvitoCandidatesPageScripts
         })();
         """;
 
+    /// <summary>Блокирует копирование в буфер на странице (клик «телефон» на Avito часто вызывает copy).</summary>
+    public static string BuildEnableClipboardGuardScript() =>
+        """
+        (() => {
+            if (window.__leadflowClipboardGuard) {
+                return JSON.stringify({ ok: true, already: true });
+            }
+
+            const guard = { orig: {} };
+            const clip = navigator.clipboard;
+            if (clip) {
+                if (typeof clip.writeText === "function") {
+                    guard.orig.writeText = clip.writeText.bind(clip);
+                    clip.writeText = async () => {};
+                }
+
+                if (typeof clip.write === "function") {
+                    guard.orig.write = clip.write.bind(clip);
+                    clip.write = async () => {};
+                }
+            }
+
+            guard.origExecCommand = document.execCommand.bind(document);
+            document.execCommand = function (cmd, ...args) {
+                if (String(cmd ?? "").toLowerCase() === "copy") {
+                    return true;
+                }
+
+                return guard.origExecCommand(cmd, ...args);
+            };
+
+            guard.copyHandler = (event) => {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+            };
+            document.addEventListener("copy", guard.copyHandler, true);
+            window.__leadflowClipboardGuard = guard;
+            return JSON.stringify({ ok: true });
+        })();
+        """;
+
+    public static string BuildDisableClipboardGuardScript() =>
+        """
+        (() => {
+            const guard = window.__leadflowClipboardGuard;
+            if (!guard) {
+                return JSON.stringify({ ok: true });
+            }
+
+            const clip = navigator.clipboard;
+            if (clip) {
+                if (guard.orig.writeText) {
+                    clip.writeText = guard.orig.writeText;
+                }
+
+                if (guard.orig.write) {
+                    clip.write = guard.orig.write;
+                }
+            }
+
+            if (guard.origExecCommand) {
+                document.execCommand = guard.origExecCommand;
+            }
+
+            if (guard.copyHandler) {
+                document.removeEventListener("copy", guard.copyHandler, true);
+            }
+
+            delete window.__leadflowClipboardGuard;
+            return JSON.stringify({ ok: true });
+        })();
+        """;
+
     /// <summary>Клик по кнопкам с замаскированным номером, чтобы Avito подставил полный телефон.</summary>
     public static string BuildRevealMaskedPhonesStepScript() =>
         """
         (() => {
+            const pickPhoneClickTarget = (btn) => {
+                const text = btn.querySelector(".styles-module-text");
+                if (text) {
+                    return text;
+                }
+
+                for (const span of btn.querySelectorAll("span")) {
+                    if (!span.className.includes("styles-module-icon")) {
+                        return span;
+                    }
+                }
+
+                return btn;
+            };
+
             const items = Array.from(document.querySelectorAll("[data-marker='job-application/item']"));
             let masked = 0;
             let clicked = 0;
@@ -209,8 +297,9 @@ public static class AvitoCandidatesPageScripts
                 } catch {
                 }
 
+                const target = pickPhoneClickTarget(btn);
                 try {
-                    btn.click();
+                    target.click();
                     clicked++;
                 } catch {
                 }

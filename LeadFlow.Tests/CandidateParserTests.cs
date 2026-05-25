@@ -52,7 +52,7 @@ public sealed class CandidateParserTests
 
         var preview = _sut.BuildPreview(response, settings);
 
-        Assert.Equal("Отклик Авито: Продавец — Иванов Иван Иванович", preview.Title);
+        Assert.Equal("Иванов Иван Иванович", preview.Title);
         Assert.Equal("Иван", preview.Name);
         Assert.Equal("Иванов", preview.LastName);
         Assert.Equal("Иванович", preview.SecondName);

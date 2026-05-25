@@ -430,7 +430,7 @@ public sealed class BitrixClientTests : IDisposable
                         """
                         {
                           "result": [
-                            {"ID":"1","TITLE":"Отклик Авито: Курьер — Иванов И","COMMENTS":"ФИО: Иванов И\nТелефон: +79000000001","DATE_CREATE":"2026-05-01T10:00:00+03:00","CONTACT_ID":"100"}
+                            {"ID":"1","TITLE":"Иванов И","COMMENTS":"ФИО: Иванов И\nТелефон: +79000000001","DATE_CREATE":"2026-05-01T10:00:00+03:00","CONTACT_ID":"100"}
                           ],
                           "next": 50
                         }
@@ -441,7 +441,7 @@ public sealed class BitrixClientTests : IDisposable
                     """
                     {
                       "result": [
-                        {"ID":"2","TITLE":"Отклик Авито: Кладовщик — Петров П","COMMENTS":"ФИО: Петров П\nГород: Москва","DATE_CREATE":"2026-05-02T10:00:00+03:00","CONTACT_ID":"200"}
+                        {"ID":"2","TITLE":"Петров П","COMMENTS":"ФИО: Петров П\nГород: Москва","DATE_CREATE":"2026-05-02T10:00:00+03:00","CONTACT_ID":"200"}
                       ]
                     }
                     """));

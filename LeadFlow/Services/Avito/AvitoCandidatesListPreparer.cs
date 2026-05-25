@@ -68,28 +68,37 @@ public static class AvitoCandidatesListPreparer
         var phoneRevealRounds = 0;
         var phoneClicksTotal = 0;
         PhonesReadyProbe? phonesProbe = null;
-        for (var i = 0; i < phoneRevealLimit; i++)
+
+        await TryEnableClipboardGuardAsync(executeScript, cancellationToken).ConfigureAwait(false);
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            phoneRevealRounds++;
-
-            var revealStep = await TryRevealMaskedPhonesAsync(executeScript, cancellationToken).ConfigureAwait(false);
-            if (revealStep?.Clicked > 0)
+            for (var i = 0; i < phoneRevealLimit; i++)
             {
-                phoneClicksTotal += revealStep.Clicked;
-                await Task.Delay(420, cancellationToken).ConfigureAwait(false);
-            }
+                cancellationToken.ThrowIfCancellationRequested();
+                phoneRevealRounds++;
 
-            phonesProbe = await TryParsePhonesReadyAsync(executeScript, cancellationToken).ConfigureAwait(false);
-            if (phonesProbe?.Ready == true || phonesProbe?.Items == 0)
-            {
-                break;
-            }
+                var revealStep = await TryRevealMaskedPhonesAsync(executeScript, cancellationToken).ConfigureAwait(false);
+                if (revealStep?.Clicked > 0)
+                {
+                    phoneClicksTotal += revealStep.Clicked;
+                    await Task.Delay(420, cancellationToken).ConfigureAwait(false);
+                }
 
-            if (revealStep?.Masked == 0)
-            {
-                await Task.Delay(280, cancellationToken).ConfigureAwait(false);
+                phonesProbe = await TryParsePhonesReadyAsync(executeScript, cancellationToken).ConfigureAwait(false);
+                if (phonesProbe?.Ready == true || phonesProbe?.Items == 0)
+                {
+                    break;
+                }
+
+                if (revealStep?.Masked == 0)
+                {
+                    await Task.Delay(280, cancellationToken).ConfigureAwait(false);
+                }
             }
+        }
+        finally
+        {
+            await TryDisableClipboardGuardAsync(executeScript, CancellationToken.None).ConfigureAwait(false);
         }
 
         phonesProbe ??= await TryParsePhonesReadyAsync(executeScript, cancellationToken).ConfigureAwait(false);
@@ -169,6 +178,29 @@ public static class AvitoCandidatesListPreparer
         catch
         {
             return null;
+        }
+    }
+
+    private static async Task TryEnableClipboardGuardAsync(
+        Func<string, CancellationToken, Task<string>> executeScript,
+        CancellationToken cancellationToken)
+    {
+        _ = await executeScript(AvitoCandidatesPageScripts.BuildEnableClipboardGuardScript(), cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static async Task TryDisableClipboardGuardAsync(
+        Func<string, CancellationToken, Task<string>> executeScript,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            _ = await executeScript(AvitoCandidatesPageScripts.BuildDisableClipboardGuardScript(), cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch
+        {
+            // Страница могла перезагрузиться; не прерываем подготовку списка.
         }
     }
 

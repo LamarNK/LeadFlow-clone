@@ -27,7 +27,7 @@ public sealed class CandidateParser : ICandidateParser
 
         return new BitrixLeadPreview
         {
-            Title = $"Отклик Авито: {response.Vacancy} — {response.FullName}",
+            Title = response.FullName,
             Name = response.FirstName,
             LastName = response.LastName,
             SecondName = response.MiddleName,
