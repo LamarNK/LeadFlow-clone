@@ -5,14 +5,14 @@ using LeadFlow.Logging.Audit;
 namespace LeadFlow.Services.Avito;
 
 /// <summary>
-/// Перед снятием JSON: прокрутка бесконечного списка откликов и ожидание телефонов на карточках.
+/// Перед снятием JSON: прокрутка бесконечного списка откликов и раскрытие телефонов (клик по кнопке с маской «**»).
 /// </summary>
 public static class AvitoCandidatesListPreparer
 {
     private const int MaxScrollRounds = 48;
     private const int StableRoundsRequired = 3;
-    private const int MaxPhoneWaitRounds = 24;
-    private const int MaxPhoneWaitRoundsWhenNoItems = 2;
+    private const int MaxPhoneRevealRounds = 32;
+    private const int MaxPhoneRevealRoundsWhenNoItems = 2;
 
     public static async Task<CandidatesListPrepareResult> PrepareAsync(
         Func<string, CancellationToken, Task<string>> executeScript,
@@ -64,32 +64,46 @@ public static class AvitoCandidatesListPreparer
         await Task.Delay(320, cancellationToken).ConfigureAwait(false);
 
         var domItems = lastCount < 0 ? 0 : lastCount;
-        var phoneWaitLimit = domItems == 0 ? MaxPhoneWaitRoundsWhenNoItems : MaxPhoneWaitRounds;
-        var phoneWaitRounds = 0;
+        var phoneRevealLimit = domItems == 0 ? MaxPhoneRevealRoundsWhenNoItems : MaxPhoneRevealRounds;
+        var phoneRevealRounds = 0;
+        var phoneClicksTotal = 0;
         PhonesReadyProbe? phonesProbe = null;
-        for (var i = 0; i < phoneWaitLimit; i++)
+        for (var i = 0; i < phoneRevealLimit; i++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            phoneWaitRounds++;
+            phoneRevealRounds++;
+
+            var revealStep = await TryRevealMaskedPhonesAsync(executeScript, cancellationToken).ConfigureAwait(false);
+            if (revealStep?.Clicked > 0)
+            {
+                phoneClicksTotal += revealStep.Clicked;
+                await Task.Delay(420, cancellationToken).ConfigureAwait(false);
+            }
+
             phonesProbe = await TryParsePhonesReadyAsync(executeScript, cancellationToken).ConfigureAwait(false);
             if (phonesProbe?.Ready == true || phonesProbe?.Items == 0)
             {
                 break;
             }
 
-            await Task.Delay(280, cancellationToken).ConfigureAwait(false);
+            if (revealStep?.Masked == 0)
+            {
+                await Task.Delay(280, cancellationToken).ConfigureAwait(false);
+            }
         }
 
         phonesProbe ??= await TryParsePhonesReadyAsync(executeScript, cancellationToken).ConfigureAwait(false);
         var result = new CandidatesListPrepareResult(
             scrollRounds,
-            phoneWaitRounds,
+            phoneRevealRounds,
             lastCount < 0 ? phonesProbe?.Items ?? 0 : lastCount,
             phonesProbe?.WithPhone ?? 0,
-            phonesProbe?.Ready == true);
+            phonesProbe?.Ready == true,
+            phonesProbe?.Masked ?? 0,
+            phoneClicksTotal);
 
         _ = GlobalLogger.Instance.LogAsync(
-            $"Candidates list prepared for {logContext}: scrollRounds={result.ScrollRounds}, domItems={result.DomItemCount}, phonesReady={result.PhonesReady} ({result.CardsWithPhone}/{result.DomItemCount}), phoneWaitRounds={result.PhoneWaitRounds}.",
+            $"Candidates list prepared for {logContext}: scrollRounds={result.ScrollRounds}, domItems={result.DomItemCount}, phonesReady={result.PhonesReady} ({result.CardsWithPhone}/{result.DomItemCount}), maskedLeft={result.MaskedPhonesLeft}, phoneRevealRounds={result.PhoneRevealRounds}, phoneClicks={result.PhoneRevealClicks}.",
             DeskLinkAuditLogLevel.Info,
             properties: new Dictionary<string, object?>
             {
@@ -97,7 +111,9 @@ public static class AvitoCandidatesListPreparer
                 ["candidates.prepare.domItemCount"] = result.DomItemCount,
                 ["candidates.prepare.cardsWithPhone"] = result.CardsWithPhone,
                 ["candidates.prepare.phonesReady"] = result.PhonesReady,
-                ["candidates.prepare.phoneWaitRounds"] = result.PhoneWaitRounds
+                ["candidates.prepare.maskedPhonesLeft"] = result.MaskedPhonesLeft,
+                ["candidates.prepare.phoneRevealRounds"] = result.PhoneRevealRounds,
+                ["candidates.prepare.phoneRevealClicks"] = result.PhoneRevealClicks
             });
 
         return result;
@@ -147,7 +163,34 @@ public static class AvitoCandidatesListPreparer
             return new PhonesReadyProbe(
                 root.TryGetProperty("ready", out var r) && r.GetBoolean(),
                 root.TryGetProperty("items", out var i) ? i.GetInt32() : 0,
-                root.TryGetProperty("withPhone", out var p) ? p.GetInt32() : 0);
+                root.TryGetProperty("withPhone", out var p) ? p.GetInt32() : 0,
+                root.TryGetProperty("masked", out var m) ? m.GetInt32() : 0);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static async Task<RevealPhonesStepProbe?> TryRevealMaskedPhonesAsync(
+        Func<string, CancellationToken, Task<string>> executeScript,
+        CancellationToken cancellationToken)
+    {
+        var raw = await executeScript(AvitoCandidatesPageScripts.BuildRevealMaskedPhonesStepScript(), cancellationToken)
+            .ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(UnwrapJsonString(raw));
+            var root = doc.RootElement;
+            return new RevealPhonesStepProbe(
+                root.TryGetProperty("items", out var i) ? i.GetInt32() : 0,
+                root.TryGetProperty("masked", out var m) ? m.GetInt32() : 0,
+                root.TryGetProperty("clicked", out var c) ? c.GetInt32() : 0);
         }
         catch
         {
@@ -176,12 +219,16 @@ public static class AvitoCandidatesListPreparer
 
     private sealed record ScrollStepProbe(int ItemCount, bool Moved, bool AtEnd);
 
-    private sealed record PhonesReadyProbe(bool Ready, int Items, int WithPhone);
+    private sealed record PhonesReadyProbe(bool Ready, int Items, int WithPhone, int Masked);
+
+    private sealed record RevealPhonesStepProbe(int Items, int Masked, int Clicked);
 }
 
 public sealed record CandidatesListPrepareResult(
     int ScrollRounds,
-    int PhoneWaitRounds,
+    int PhoneRevealRounds,
     int DomItemCount,
     int CardsWithPhone,
-    bool PhonesReady);
+    bool PhonesReady,
+    int MaskedPhonesLeft = 0,
+    int PhoneRevealClicks = 0);

@@ -142,20 +142,35 @@ public static class AvitoCandidatesPageScripts
         })();
         """;
 
-    /// <summary>Доля карточек с уже подставленным телефоном в кнопке.</summary>
+    /// <summary>Телефон раскрыт: в кнопке нет маски «**» и достаточно цифр для РФ-номера.</summary>
     public static string BuildPhonesReadyProbeScript() =>
         """
         (() => {
+            const isRevealedPhone = (raw) => {
+                const text = (raw ?? "").trim();
+                if (!text || /\*/.test(text)) {
+                    return false;
+                }
+
+                const digits = text.replace(/\D/g, "");
+                return digits.length >= 10;
+            };
+
             const items = Array.from(document.querySelectorAll("[data-marker='job-application/item']"));
             if (items.length === 0) {
-                return JSON.stringify({ ready: false, items: 0, withPhone: 0 });
+                return JSON.stringify({ ready: false, items: 0, withPhone: 0, masked: 0 });
             }
 
             let withPhone = 0;
+            let masked = 0;
             for (const item of items) {
                 const raw = item.querySelector("[data-marker='job-application/phone']")?.textContent ?? "";
-                const digits = raw.replace(/\D/g, "");
-                if (digits.length >= 10) {
+                if (/\*/.test(raw)) {
+                    masked++;
+                    continue;
+                }
+
+                if (isRevealedPhone(raw)) {
                     withPhone++;
                 }
             }
@@ -164,8 +179,44 @@ public static class AvitoCandidatesPageScripts
             return JSON.stringify({
                 ready: ratio >= 0.92 || (items.length <= 3 && withPhone === items.length),
                 items: items.length,
-                withPhone
+                withPhone,
+                masked
             });
+        })();
+        """;
+
+    /// <summary>Клик по кнопкам с замаскированным номером, чтобы Avito подставил полный телефон.</summary>
+    public static string BuildRevealMaskedPhonesStepScript() =>
+        """
+        (() => {
+            const items = Array.from(document.querySelectorAll("[data-marker='job-application/item']"));
+            let masked = 0;
+            let clicked = 0;
+            for (const item of items) {
+                const btn = item.querySelector("[data-marker='job-application/phone']");
+                if (!btn) {
+                    continue;
+                }
+
+                const raw = btn.textContent ?? "";
+                if (!/\*/.test(raw)) {
+                    continue;
+                }
+
+                masked++;
+                try {
+                    btn.scrollIntoView({ block: "center", inline: "nearest" });
+                } catch {
+                }
+
+                try {
+                    btn.click();
+                    clicked++;
+                } catch {
+                }
+            }
+
+            return JSON.stringify({ items: items.length, masked, clicked });
         })();
         """;
 
@@ -387,7 +438,17 @@ public static class AvitoCandidatesPageScripts
                     sourceResponseId,
                     rawText
                 };
-            }).filter((item) => item.fullName && item.phone);
+            }).filter((item) => {
+                if (!item.fullName || !item.phone) {
+                    return false;
+                }
+
+                if (/\*/.test(item.phone)) {
+                    return false;
+                }
+
+                return item.phone.replace(/\D/g, "").length >= 10;
+            });
 
             return {
                 url: window.location.href,
