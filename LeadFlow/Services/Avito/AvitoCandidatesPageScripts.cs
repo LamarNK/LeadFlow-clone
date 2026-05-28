@@ -156,6 +156,11 @@ public static class AvitoCandidatesPageScripts
                 return digits.length >= 10;
             };
 
+            const getPhoneRaw = (item) =>
+                item.querySelector("[data-marker='job-application/phone']")?.textContent ??
+                item.querySelector("[data-marker='job-application/call-button']")?.textContent ??
+                "";
+
             const items = Array.from(document.querySelectorAll("[data-marker='job-application/item']"));
             if (items.length === 0) {
                 return JSON.stringify({ ready: false, items: 0, withPhone: 0, masked: 0 });
@@ -164,7 +169,7 @@ public static class AvitoCandidatesPageScripts
             let withPhone = 0;
             let masked = 0;
             for (const item of items) {
-                const raw = item.querySelector("[data-marker='job-application/phone']")?.textContent ?? "";
+                const raw = getPhoneRaw(item);
                 if (/\*/.test(raw)) {
                     masked++;
                     continue;
@@ -277,11 +282,15 @@ public static class AvitoCandidatesPageScripts
                 return btn;
             };
 
+            const getPhoneButton = (item) =>
+                item.querySelector("[data-marker='job-application/phone']") ??
+                item.querySelector("[data-marker='job-application/call-button']");
+
             const items = Array.from(document.querySelectorAll("[data-marker='job-application/item']"));
             let masked = 0;
             let clicked = 0;
             for (const item of items) {
-                const btn = item.querySelector("[data-marker='job-application/phone']");
+                const btn = getPhoneButton(item);
                 if (!btn) {
                     continue;
                 }
@@ -361,12 +370,16 @@ public static class AvitoCandidatesPageScripts
             const statusButtons = Array.from(document.querySelectorAll("[data-marker='job-application/response/status-select-button']"));
             const roots = [];
             const seen = new Set();
+            const getNameNode = (root) => root?.querySelector("h3, h4");
+            const getPhoneNode = (root) =>
+                root?.querySelector("[data-marker='job-application/phone']") ??
+                root?.querySelector("[data-marker='job-application/call-button']");
 
             const findCardRoot = (element) => {
                 let current = element;
                 while (current) {
-                    const name = current.querySelector?.("h3");
-                    const phone = current.querySelector?.("[data-marker='job-application/phone']");
+                    const name = getNameNode(current);
+                    const phone = getPhoneNode(current);
                     if (name && phone) {
                         return current;
                     }
@@ -382,8 +395,8 @@ public static class AvitoCandidatesPageScripts
                     return;
                 }
 
-                const name = root.querySelector("h3");
-                const phone = root.querySelector("[data-marker='job-application/phone']");
+                const name = getNameNode(root);
+                const phone = getPhoneNode(root);
                 if (!name || !phone) {
                     return;
                 }
@@ -496,20 +509,55 @@ public static class AvitoCandidatesPageScripts
                 return h.toString(16);
             };
 
+            const parseVacancyAndCity = (root, vacancyListingAnchor) => {
+                const fromAnchor = (vacancyListingAnchor?.textContent ?? "").replace(/\s+/g, " ").trim();
+                if (fromAnchor) {
+                    const vacancyParts = fromAnchor.split("·").map((x) => x.trim()).filter(Boolean);
+                    return {
+                        vacancy: vacancyParts[0] ?? "",
+                        city: vacancyParts.length > 1 ? vacancyParts[1] : ""
+                    };
+                }
+
+                const lines = Array.from(root.querySelectorAll("p"))
+                    .map((x) => (x.textContent ?? "").replace(/\s+/g, " ").trim())
+                    .filter(Boolean);
+                for (const line of lines) {
+                    const match = line.match(/·\s*«([^»]+)»\s*·\s*([^·]+)/);
+                    if (match) {
+                        return {
+                            vacancy: (match[1] ?? "").trim(),
+                            city: (match[2] ?? "").trim()
+                        };
+                    }
+                }
+
+                return { vacancy: "", city: "" };
+            };
+
+            const parseAgeText = (root, rawText) => {
+                const oldAge = root.querySelector("p[data-marker='undefined/container'] span")?.textContent?.trim();
+                if (oldAge) {
+                    return oldAge;
+                }
+
+                const ageMatch = rawText.match(/(?:^|\s|·)(\d{1,2})\s*г(?:ода|од|лет)\b/i);
+                return ageMatch ? `${ageMatch[1]} лет` : "";
+            };
+
             const candidates = roots.map((root) => {
-                const name = root.querySelector("h3")?.textContent?.trim() ?? "";
-                const phone = root.querySelector("[data-marker='job-application/phone']")?.textContent?.trim() ?? "";
-                const ageText = root.querySelector("p[data-marker='undefined/container'] span")?.textContent?.trim() ?? "";
+                const name = getNameNode(root)?.textContent?.trim() ?? "";
+                const phone = getPhoneNode(root)?.textContent?.trim() ?? "";
                 const vacancyListingAnchor = root.querySelector("[data-marker='job-application/link/to-resume']");
                 let vacancyUrl = normalizeUrl(vacancyListingAnchor?.getAttribute("href") ?? "");
                 if (/\/profile\/candidates(?:[/?#]|$)/i.test(vacancyUrl)) {
                     vacancyUrl = "";
                 }
-                const vacancyLine = vacancyListingAnchor?.textContent?.replace(/\s+/g, " ").trim() ?? "";
-                const vacancyParts = vacancyLine.split("·").map((x) => x.trim()).filter(Boolean);
-                const vacancy = vacancyParts[0] ?? "";
-                const city = vacancyParts.length > 1 ? vacancyParts[1] : "";
                 const rawText = root.innerText?.replace(/\s+/g, " ").trim() ?? "";
+                const ageText = parseAgeText(root, rawText);
+                const vacancyAndCity = parseVacancyAndCity(root, vacancyListingAnchor);
+                const vacancy = vacancyAndCity.vacancy;
+                const city = vacancyAndCity.city;
                 const messengerUrl = resolveMessengerUrl(root);
                 const stablePayload = [name, phone, vacancy, city, vacancyUrl, messengerUrl]
                     .map((x) => (x ?? "").trim().replace(/\s+/g, " "))
