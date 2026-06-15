@@ -1076,9 +1076,42 @@ public sealed class MonitoringService(
                         ["collectStats"] = collectStats
                     });
 
-                await adsPowerAvitoAutomationService
-                    .SwitchActiveProfileAsync(options, account.AdsPowerProfileId!, sub.Id, cancellationToken)
+                var adsPowerProfileId = account.AdsPowerProfileId;
+                if (string.IsNullOrWhiteSpace(adsPowerProfileId))
+                {
+                    _ = GlobalLogger.Instance.LogAsync(
+                        $"Sub-profile \"{sub.Name}\" (id={sub.Id}) of account {account.DisplayName}: AdsPowerProfileId is empty, skipping.",
+                        DeskLinkAuditLogLevel.Warning,
+                        properties: new Dictionary<string, object?>
+                        {
+                            ["accountId"] = account.Id,
+                            ["accountName"] = account.DisplayName,
+                            ["subProfile.id"] = sub.Id,
+                            ["subProfile.name"] = sub.Name,
+                            ["step"] = "switch_skipped_no_ads_power_id"
+                        });
+                    continue;
+                }
+
+                var switched = await adsPowerAvitoAutomationService
+                    .SwitchActiveProfileAsync(options, adsPowerProfileId, sub.Id, cancellationToken)
                     .ConfigureAwait(false);
+
+                if (!switched)
+                {
+                    _ = GlobalLogger.Instance.LogAsync(
+                        $"Sub-profile \"{sub.Name}\" (id={sub.Id}) of account {account.DisplayName}: profile switch failed (modal did not close), skipping.",
+                        DeskLinkAuditLogLevel.Warning,
+                        properties: new Dictionary<string, object?>
+                        {
+                            ["accountId"] = account.Id,
+                            ["accountName"] = account.DisplayName,
+                            ["subProfile.id"] = sub.Id,
+                            ["subProfile.name"] = sub.Name,
+                            ["step"] = "switch_failed_modal_open"
+                        });
+                    continue;
+                }
 
                 // 1️⃣ Отклики — сразу после переключения суб-профиля (свежий список на /profile/candidates).
                 var batch = await avitoResponseSource

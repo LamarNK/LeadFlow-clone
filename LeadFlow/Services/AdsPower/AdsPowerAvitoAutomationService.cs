@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json.Nodes;
 using LeadFlow.Data;
 using LeadFlow.Logging.Audit;
@@ -788,12 +789,7 @@ public sealed class AdsPowerAvitoAutomationService(
         }
 
         var clicked = await page.EvaluateExpressionAsync<bool>(
-                $@"(() => {{
-                    const el = document.querySelector('[data-marker=""component-profile-switch/profile-{Escape(subProfileId)}""]');
-                    if (!el) return false;
-                    el.click();
-                    return true;
-                }})()")
+                BuildClickSubProfileJs(subProfileId))
             .ConfigureAwait(false);
 
         if (!clicked)
@@ -820,6 +816,100 @@ public sealed class AdsPowerAvitoAutomationService(
                     ["step"] = "modal_close_timeout",
                     ["avito.subProfileId"] = subProfileId
                 });
+
+            var modalClosed = false;
+            try
+            {
+                var modalStillOpen = await page.EvaluateExpressionAsync<bool>(
+                    "() => !!document.querySelector(\"[data-marker='component-profile-switch/root']\")").ConfigureAwait(false);
+                if (!modalStillOpen)
+                {
+                    modalClosed = true;
+                }
+                else
+                {
+                    for (var retry = 1; retry <= 3; retry++)
+                    {
+                        _ = GlobalLogger.Instance.LogAsync(
+                            $"AdsPower profile-switch: retry {retry}/3 click for subProfile {subProfileId}...",
+                            DeskLinkAuditLogLevel.Info,
+                            memberName: nameof(TryClickSubProfileCardAndWaitCloseAsync),
+                            filePath: "AdsPowerAvitoAutomationService.cs",
+                            properties: new Dictionary<string, object?>
+                            {
+                                ["step"] = "retry_click",
+                                ["retry"] = retry,
+                                ["avito.subProfileId"] = subProfileId
+                            });
+
+                        var elementClicked = await page.EvaluateExpressionAsync<bool>(
+                            BuildClickSubProfileJs(subProfileId)).ConfigureAwait(false);
+
+                        if (!elementClicked)
+                        {
+                            _ = GlobalLogger.Instance.LogAsync(
+                                $"AdsPower profile-switch: retry {retry}/3 — subProfile card element not found in DOM for {subProfileId}.",
+                                DeskLinkAuditLogLevel.Warning,
+                                memberName: nameof(TryClickSubProfileCardAndWaitCloseAsync),
+                                filePath: "AdsPowerAvitoAutomationService.cs",
+                                properties: new Dictionary<string, object?>
+                                {
+                                    ["step"] = "retry_element_not_found",
+                                    ["retry"] = retry,
+                                    ["avito.subProfileId"] = subProfileId
+                                });
+                            await Task.Delay(2000, cancellationToken).ConfigureAwait(false);
+                            continue;
+                        }
+
+                        try
+                        {
+                            await page.WaitForFunctionAsync(
+                                    "() => !document.querySelector(\"[data-marker='component-profile-switch/root']\") || !document.querySelector(\"[role='dialog']\")",
+                                    new WaitForFunctionOptions { Timeout = 15_000, PollingInterval = 400 })
+                                .ConfigureAwait(false);
+                            modalClosed = true;
+                            break;
+                        }
+                        catch
+                        {
+                            // still open after this retry, continue loop
+                        }
+                    }
+
+                    if (!modalClosed)
+                    {
+                        _ = GlobalLogger.Instance.LogAsync(
+                            $"AdsPower profile-switch: all retries failed for subProfile {subProfileId}, skipping.",
+                            DeskLinkAuditLogLevel.Warning,
+                            memberName: nameof(TryClickSubProfileCardAndWaitCloseAsync),
+                            filePath: "AdsPowerAvitoAutomationService.cs",
+                            properties: new Dictionary<string, object?>
+                            {
+                                ["step"] = "retry_failed",
+                                ["avito.subProfileId"] = subProfileId
+                            });
+                    }
+                }
+            }
+            catch (Exception innerEx)
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"AdsPower profile-switch: retry logic threw for subProfile {subProfileId}: {innerEx.Message}",
+                    DeskLinkAuditLogLevel.Error,
+                    memberName: nameof(TryClickSubProfileCardAndWaitCloseAsync),
+                    filePath: "AdsPowerAvitoAutomationService.cs",
+                    properties: new Dictionary<string, object?>
+                    {
+                        ["step"] = "retry_internal_error",
+                        ["avito.subProfileId"] = subProfileId
+                    });
+            }
+
+            if (!modalClosed)
+            {
+                return false;
+            }
         }
 
         await HumanDelay.AfterProfileSwitchAsync(cancellationToken).ConfigureAwait(false);
@@ -1026,9 +1116,34 @@ public sealed class AdsPowerAvitoAutomationService(
         await HumanDelay.AfterSwitchModalAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private static string Escape(string value) =>
-        value.Replace("\\", "\\\\", StringComparison.Ordinal)
-             .Replace("\"", "\\\"", StringComparison.Ordinal);
+    private static string Escape(string value)
+    {
+        var sb = new StringBuilder(value.Length);
+        foreach (var c in value)
+        {
+            switch (c)
+            {
+                case '\\': sb.Append("\\\\"); break;
+                case '"': sb.Append("\\\""); break;
+                case '\n': sb.Append("\\n"); break;
+                case '\r': sb.Append("\\r"); break;
+                case '\t': sb.Append("\\t"); break;
+                case '\0': sb.Append("\\0"); break;
+                case '\b': sb.Append("\\b"); break;
+                case '\f': sb.Append("\\f"); break;
+                default: sb.Append(c); break;
+            }
+        }
+        return sb.ToString();
+    }
+
+    private static string BuildClickSubProfileJs(string subProfileId) =>
+        $@"(() => {{
+            const el = document.querySelector('[data-marker=""component-profile-switch/profile-{Escape(subProfileId)}""]');
+            if (!el) return false;
+            el.click();
+            return true;
+        }})()";
 
     private static async Task NavigateToCandidatesPageRefreshingAsync(IPage page, CancellationToken cancellationToken)
     {
