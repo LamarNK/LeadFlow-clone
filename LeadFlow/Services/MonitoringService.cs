@@ -1055,6 +1055,7 @@ public sealed class MonitoringService(
 
             var sub = subProfiles[i];
             var subLabel = $"{sub.Name} {i + 1}/{subProfiles.Count}";
+            var skipProfile = false;
 
             try
             {
@@ -1090,6 +1091,13 @@ public sealed class MonitoringService(
                             ["subProfile.name"] = sub.Name,
                             ["step"] = "switch_skipped_no_ads_power_id"
                         });
+                    skipProfile = true;
+                }
+
+                if (skipProfile)
+                {
+                    if (i < subProfiles.Count - 1 && !cancellationToken.IsCancellationRequested && !budgetExhausted)
+                        await HumanDelay.BetweenSubProfilesAsync(cancellationToken).ConfigureAwait(false);
                     continue;
                 }
 
@@ -1110,6 +1118,13 @@ public sealed class MonitoringService(
                             ["subProfile.name"] = sub.Name,
                             ["step"] = "switch_failed_modal_open"
                         });
+                    skipProfile = true;
+                }
+
+                if (skipProfile)
+                {
+                    if (i < subProfiles.Count - 1 && !cancellationToken.IsCancellationRequested && !budgetExhausted)
+                        await HumanDelay.BetweenSubProfilesAsync(cancellationToken).ConfigureAwait(false);
                     continue;
                 }
 
@@ -1169,6 +1184,13 @@ public sealed class MonitoringService(
                                     ["parseSuccess"] = false,
                                     ["parseFailureReason"] = part.ParseFailureReason
                                 });
+                            skipProfile = true;
+                        }
+
+                        if (skipProfile)
+                        {
+                            if (i < subProfiles.Count - 1 && !cancellationToken.IsCancellationRequested && !budgetExhausted)
+                                await HumanDelay.BetweenSubProfilesAsync(cancellationToken).ConfigureAwait(false);
                             continue;
                         }
 
@@ -1182,6 +1204,11 @@ public sealed class MonitoringService(
                         statsAggregate.ItemSnippetMarkersFound += part.ItemSnippetMarkersFound;
                         statsAggregate.ActiveAds.AddRange(part.ActiveAds);
                         statsAggregate.BlockedAds.AddRange(part.BlockedAds);
+
+                        if (part.Balance.HasValue)
+                        {
+                            sub.Balance = part.Balance;
+                        }
 
                         _ = GlobalLogger.Instance.LogAsync(
                             $"Суб-профиль «{sub.Name}» (объявления): активных {part.ActiveAds.Count}, заблокированных {part.BlockedAds.Count}, drafts={part.DraftsCount}.",
@@ -1266,6 +1293,8 @@ public sealed class MonitoringService(
                 await HumanDelay.BetweenSubProfilesAsync(cancellationToken).ConfigureAwait(false);
             }
         }
+
+        account.SetSubProfiles(subProfiles);
 
         if (collectStats && statsPrev is not null && statsAggregate is { ParseSuccess: true })
         {
@@ -1830,6 +1859,23 @@ public sealed class MonitoringService(
         var part = avitoParser.ParseProfilePage(activeHtml, account.Id);
         part.ItemSnippetMarkersFound = CountItemSnippetMarkers(activeHtml);
         part.PageLoadedSuccessfully = true;
+        part.Balance = AvitoBalanceParser.ParseAdvanceBalance(activeHtml);
+        if (part.Balance is null &&
+            (activeHtml.Contains("osp-sidebar/tools/money", StringComparison.OrdinalIgnoreCase) ||
+             activeHtml.Contains("Аванс", StringComparison.OrdinalIgnoreCase)))
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Аккаунт {account.DisplayName}: не удалось распарсить баланс Avito из sidebar HTML.",
+                DeskLinkAuditLogLevel.Warning,
+                memberName: nameof(CollectProfileItemsAsync),
+                properties: new Dictionary<string, object?>
+                {
+                    ["accountId"] = account.Id,
+                    ["accountName"] = account.DisplayName,
+                    ["html.hasMoneyMarker"] = activeHtml.Contains("osp-sidebar/tools/money", StringComparison.OrdinalIgnoreCase),
+                    ["html.hasAdvanceText"] = activeHtml.Contains("Аванс", StringComparison.OrdinalIgnoreCase)
+                });
+        }
 
         if (part.BlockedCount > 0)
         {

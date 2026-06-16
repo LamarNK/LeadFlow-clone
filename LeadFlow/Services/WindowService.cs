@@ -538,6 +538,42 @@ public sealed class WindowService(
         return Task.CompletedTask;
     }
 
+    public async Task ShowBalanceDetailsAsync(Window owner, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        BalanceDetailsWindow? window;
+        bool created;
+        lock (_openWindows)
+        {
+            window = (BalanceDetailsWindow?)_openWindows.GetValueOrDefault(typeof(BalanceDetailsWindow));
+            if (window is not null)
+            {
+                created = false;
+            }
+            else
+            {
+                window = ActivatorUtilities.CreateInstance<BalanceDetailsWindow>(serviceProvider);
+                window.Owner = owner;
+                window.Closed += (_, _) => { lock (_openWindows) _openWindows.Remove(typeof(BalanceDetailsWindow)); };
+                _openWindows[typeof(BalanceDetailsWindow)] = window;
+                created = true;
+            }
+        }
+
+        if (window.DataContext is BalanceDetailsViewModel vm)
+        {
+            await vm.LoadAsync(cancellationToken);
+        }
+
+        if (created)
+        {
+            window.Show();
+        }
+
+        ActivateWindow(window);
+    }
+
     private void ShowOrActivateWindow<TWindow>(Window owner)
         where TWindow : Window
     {

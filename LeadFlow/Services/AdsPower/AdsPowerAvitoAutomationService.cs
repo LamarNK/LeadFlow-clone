@@ -1,3 +1,4 @@
+using System.Runtime.ExceptionServices;
 using System.Text;
 using System.Text.Json.Nodes;
 using LeadFlow.Data;
@@ -112,7 +113,7 @@ public sealed class AdsPowerAvitoAutomationService(
                 "AdsPower CDP candidates extraction completed.",
                 DeskLinkAuditLogLevel.Info,
                 memberName: nameof(ExtractCandidatesJsonAsync),
-                filePath: "AdsPowerAvitoAutomationService.cs",
+                
                 properties: new Dictionary<string, object?>
                 {
                     ["adsPower.userId"] = adsPowerUserId,
@@ -138,7 +139,7 @@ public sealed class AdsPowerAvitoAutomationService(
             $"AdsPower profile-items load started for user {adsPowerUserId}.",
             DeskLinkAuditLogLevel.Info,
             memberName: nameof(LoadProfileItemsHtmlAsync),
-            filePath: "AdsPowerAvitoAutomationService.cs",
+            
             properties: new Dictionary<string, object?>
             {
                 ["step"] = "start",
@@ -171,7 +172,7 @@ public sealed class AdsPowerAvitoAutomationService(
                 "AdsPower profile-items: connected via CDP.",
                 DeskLinkAuditLogLevel.Info,
                 memberName: nameof(LoadProfileItemsHtmlAsync),
-                filePath: "AdsPowerAvitoAutomationService.cs",
+                
                 properties: new Dictionary<string, object?>
                 {
                     ["step"] = "cdp_connected",
@@ -200,8 +201,7 @@ public sealed class AdsPowerAvitoAutomationService(
                     _ = GlobalLogger.Instance.LogAsync(
                         $"AdsPower profile-items navigation transient error, retrying after delay: {ex.Message}",
                         DeskLinkAuditLogLevel.Warning,
-                        memberName: nameof(LoadProfileItemsHtmlAsync),
-                        filePath: "AdsPowerAvitoAutomationService.cs");
+                        memberName: nameof(LoadProfileItemsHtmlAsync));
                     await Task.Delay(1400, cancellationToken).ConfigureAwait(false);
                 }
             }
@@ -217,7 +217,7 @@ public sealed class AdsPowerAvitoAutomationService(
                     "AdsPower profile-items: list shell selector ready.",
                     DeskLinkAuditLogLevel.Info,
                     memberName: nameof(LoadProfileItemsHtmlAsync),
-                    filePath: "AdsPowerAvitoAutomationService.cs",
+                    
                     properties: new Dictionary<string, object?>
                     {
                         ["step"] = "shell_ready",
@@ -230,7 +230,7 @@ public sealed class AdsPowerAvitoAutomationService(
                     $"AdsPower profile-items: shell selector wait timed out: {ex.Message}",
                     DeskLinkAuditLogLevel.Warning,
                     memberName: nameof(LoadProfileItemsHtmlAsync),
-                    filePath: "AdsPowerAvitoAutomationService.cs",
+                    
                     properties: new Dictionary<string, object?>
                     {
                         ["step"] = "shell_timeout",
@@ -277,7 +277,7 @@ public sealed class AdsPowerAvitoAutomationService(
                     "AdsPower profile-items: loader gone and items rendered.",
                     DeskLinkAuditLogLevel.Info,
                     memberName: nameof(LoadProfileItemsHtmlAsync),
-                    filePath: "AdsPowerAvitoAutomationService.cs",
+                    
                     properties: new Dictionary<string, object?>
                     {
                         ["step"] = "items_ready",
@@ -290,7 +290,7 @@ public sealed class AdsPowerAvitoAutomationService(
                     $"AdsPower profile-items: items wait timed out, capturing whatever is on the page: {ex.Message}",
                     DeskLinkAuditLogLevel.Warning,
                     memberName: nameof(LoadProfileItemsHtmlAsync),
-                    filePath: "AdsPowerAvitoAutomationService.cs",
+                    
                     properties: new Dictionary<string, object?>
                     {
                         ["step"] = "items_timeout",
@@ -318,7 +318,7 @@ public sealed class AdsPowerAvitoAutomationService(
                 $"AdsPower profile-items: HTML captured ({html.Length} chars).",
                 DeskLinkAuditLogLevel.Info,
                 memberName: nameof(LoadProfileItemsHtmlAsync),
-                filePath: "AdsPowerAvitoAutomationService.cs",
+                
                 properties: new Dictionary<string, object?>
                 {
                     ["step"] = "captured",
@@ -345,7 +345,7 @@ public sealed class AdsPowerAvitoAutomationService(
             $"AdsPower blocked-items load started for user {adsPowerUserId}.",
             DeskLinkAuditLogLevel.Info,
             memberName: nameof(LoadBlockedItemsHtmlAsync),
-            filePath: "AdsPowerAvitoAutomationService.cs",
+            
             properties: new Dictionary<string, object?>
             {
                 ["step"] = "start",
@@ -409,8 +409,7 @@ public sealed class AdsPowerAvitoAutomationService(
                 _ = GlobalLogger.Instance.LogAsync(
                     $"AdsPower blocked-items: shell wait timed out: {ex.Message}",
                     DeskLinkAuditLogLevel.Warning,
-                    memberName: nameof(LoadBlockedItemsHtmlAsync),
-                    filePath: "AdsPowerAvitoAutomationService.cs");
+                    memberName: nameof(LoadBlockedItemsHtmlAsync));
             }
 
             // Ждём: лоадер исчез + либо есть карточки, либо явный эмпти-стейт «нет … объявлений / можно создать».
@@ -447,7 +446,7 @@ public sealed class AdsPowerAvitoAutomationService(
                     $"AdsPower blocked-items: items wait timed out, capturing whatever is on the page: {ex.Message}",
                     DeskLinkAuditLogLevel.Warning,
                     memberName: nameof(LoadBlockedItemsHtmlAsync),
-                    filePath: "AdsPowerAvitoAutomationService.cs",
+                    
                     properties: new Dictionary<string, object?>
                     {
                         ["step"] = "items_timeout",
@@ -473,7 +472,7 @@ public sealed class AdsPowerAvitoAutomationService(
                 $"AdsPower blocked-items: HTML captured ({html.Length} chars).",
                 DeskLinkAuditLogLevel.Info,
                 memberName: nameof(LoadBlockedItemsHtmlAsync),
-                filePath: "AdsPowerAvitoAutomationService.cs",
+                
                 properties: new Dictionary<string, object?>
                 {
                     ["step"] = "captured",
@@ -514,7 +513,7 @@ public sealed class AdsPowerAvitoAutomationService(
             $"AdsPower {memberName}: обнаружена капча/firewall ({kind}) на {pageUrl ?? "<unknown>"}.",
             DeskLinkAuditLogLevel.Warning,
             memberName: memberName,
-            filePath: "AdsPowerAvitoAutomationService.cs",
+            
             properties: new Dictionary<string, object?>
             {
                 ["step"] = "captcha_detected",
@@ -535,7 +534,7 @@ public sealed class AdsPowerAvitoAutomationService(
             $"AdsPower profile-switch load started for user {adsPowerUserId}.",
             DeskLinkAuditLogLevel.Info,
             memberName: nameof(LoadProfileSwitchHtmlAsync),
-            filePath: "AdsPowerAvitoAutomationService.cs",
+            
             properties: new Dictionary<string, object?>
             {
                 ["step"] = "start",
@@ -609,7 +608,7 @@ public sealed class AdsPowerAvitoAutomationService(
             $"AdsPower profile-switch: HTML captured ({html.Length} chars).",
             DeskLinkAuditLogLevel.Info,
             memberName: nameof(CaptureProfileSwitchHtmlInSessionAsync),
-            filePath: "AdsPowerAvitoAutomationService.cs",
+            
             properties: new Dictionary<string, object?>
             {
                 ["step"] = "captured",
@@ -637,7 +636,7 @@ public sealed class AdsPowerAvitoAutomationService(
             $"AdsPower profile-switch click started: subProfile={subProfileId}.",
             DeskLinkAuditLogLevel.Info,
             memberName: nameof(SwitchActiveProfileAsync),
-            filePath: "AdsPowerAvitoAutomationService.cs",
+            
             properties: new Dictionary<string, object?>
             {
                 ["step"] = "start",
@@ -662,6 +661,9 @@ public sealed class AdsPowerAvitoAutomationService(
         };
 
         IBrowser? browser = null;
+        ExceptionDispatchInfo? originalEdi = null;
+        ExceptionDispatchInfo? cleanupEdi = null;
+        bool result = false;
         try
         {
             browser = await Puppeteer.ConnectAsync(connectOptions).ConfigureAwait(false);
@@ -684,23 +686,39 @@ public sealed class AdsPowerAvitoAutomationService(
                     $"AdsPower profile-switch: subProfile {subProfileId} already current — closed modal, no click.",
                     DeskLinkAuditLogLevel.Info,
                     memberName: nameof(SwitchActiveProfileAsync),
-                    filePath: "AdsPowerAvitoAutomationService.cs",
+                    
                     properties: new Dictionary<string, object?>
                     {
                         ["step"] = "already_current",
                         ["avito.subProfileId"] = subProfileId
                     });
-                return true;
+                result = true;
+                return result;
             }
 
-            return await TryClickSubProfileCardAndWaitCloseAsync(page, subProfileId, cancellationToken)
+            result = await TryClickSubProfileCardAndWaitCloseAsync(page, subProfileId, cancellationToken)
                 .ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            originalEdi = ExceptionDispatchInfo.Capture(ex);
         }
         finally
         {
-            await ReleaseAdsPowerSessionAsync(browser, options, adsPowerUserId, closeBrowserAfter, cancellationToken)
-                .ConfigureAwait(false);
+            try
+            {
+                await ReleaseAdsPowerSessionAsync(browser, options, adsPowerUserId, closeBrowserAfter, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                cleanupEdi = ExceptionDispatchInfo.Capture(ex);
+            }
         }
+
+        originalEdi?.Throw();
+        cleanupEdi?.Throw();
+        return result;
     }
 
     private static Task<bool> IsTargetSubProfileAlreadyCurrentAsync(IPage page, string subProfileId) =>
@@ -727,9 +745,12 @@ public sealed class AdsPowerAvitoAutomationService(
             {
                 await page.Keyboard.PressAsync("Escape").ConfigureAwait(false);
             }
-            catch
+            catch (Exception ex)
             {
-                // ignore
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"Dismiss profile-switch modal: Escape press failed: {ex.Message}",
+                    DeskLinkAuditLogLevel.Warning,
+                    memberName: nameof(DismissProfileSwitchModalAsync));
             }
 
             await Task.Delay(450, cancellationToken).ConfigureAwait(false);
@@ -755,9 +776,12 @@ public sealed class AdsPowerAvitoAutomationService(
         {
             await Task.Delay(1400, cancellationToken).ConfigureAwait(false);
         }
-        catch
+        catch (Exception ex)
         {
-            // ignore
+            _ = GlobalLogger.Instance.LogAsync(
+                $"DismissProfileSwitchModalAsync: navigation failed: {ex.Message}",
+                DeskLinkAuditLogLevel.Warning,
+                memberName: nameof(DismissProfileSwitchModalAsync));
         }
     }
 
@@ -770,7 +794,7 @@ public sealed class AdsPowerAvitoAutomationService(
         {
             await page.WaitForSelectorAsync(
                     $"[data-marker='component-profile-switch/profile-{Escape(subProfileId)}']",
-                    new WaitForSelectorOptions { Timeout = 20_000, Visible = true })
+                    new WaitForSelectorOptions { Timeout = 20_000 })
                 .ConfigureAwait(false);
         }
         catch (Exception ex)
@@ -779,7 +803,7 @@ public sealed class AdsPowerAvitoAutomationService(
                 $"AdsPower profile-switch: target card not found in time: {ex.Message}",
                 DeskLinkAuditLogLevel.Warning,
                 memberName: nameof(TryClickSubProfileCardAndWaitCloseAsync),
-                filePath: "AdsPowerAvitoAutomationService.cs",
+                
                 properties: new Dictionary<string, object?>
                 {
                     ["step"] = "card_timeout",
@@ -804,13 +828,13 @@ public sealed class AdsPowerAvitoAutomationService(
                     new WaitForFunctionOptions { Timeout = 30_000, PollingInterval = 650 })
                 .ConfigureAwait(false);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
             _ = GlobalLogger.Instance.LogAsync(
                 $"AdsPower profile-switch: modal-close wait timed out: {ex.Message}",
                 DeskLinkAuditLogLevel.Warning,
                 memberName: nameof(TryClickSubProfileCardAndWaitCloseAsync),
-                filePath: "AdsPowerAvitoAutomationService.cs",
+                
                 properties: new Dictionary<string, object?>
                 {
                     ["step"] = "modal_close_timeout",
@@ -834,7 +858,7 @@ public sealed class AdsPowerAvitoAutomationService(
                             $"AdsPower profile-switch: retry {retry}/3 click for subProfile {subProfileId}...",
                             DeskLinkAuditLogLevel.Info,
                             memberName: nameof(TryClickSubProfileCardAndWaitCloseAsync),
-                            filePath: "AdsPowerAvitoAutomationService.cs",
+                            
                             properties: new Dictionary<string, object?>
                             {
                                 ["step"] = "retry_click",
@@ -851,14 +875,13 @@ public sealed class AdsPowerAvitoAutomationService(
                                 $"AdsPower profile-switch: retry {retry}/3 — subProfile card element not found in DOM for {subProfileId}.",
                                 DeskLinkAuditLogLevel.Warning,
                                 memberName: nameof(TryClickSubProfileCardAndWaitCloseAsync),
-                                filePath: "AdsPowerAvitoAutomationService.cs",
                                 properties: new Dictionary<string, object?>
                                 {
                                     ["step"] = "retry_element_not_found",
                                     ["retry"] = retry,
                                     ["avito.subProfileId"] = subProfileId
                                 });
-                            await Task.Delay(2000, cancellationToken).ConfigureAwait(false);
+                            await Task.Delay(retry * 2000, cancellationToken).ConfigureAwait(false);
                             continue;
                         }
 
@@ -883,7 +906,7 @@ public sealed class AdsPowerAvitoAutomationService(
                             $"AdsPower profile-switch: all retries failed for subProfile {subProfileId}, skipping.",
                             DeskLinkAuditLogLevel.Warning,
                             memberName: nameof(TryClickSubProfileCardAndWaitCloseAsync),
-                            filePath: "AdsPowerAvitoAutomationService.cs",
+                            
                             properties: new Dictionary<string, object?>
                             {
                                 ["step"] = "retry_failed",
@@ -897,9 +920,8 @@ public sealed class AdsPowerAvitoAutomationService(
                 _ = GlobalLogger.Instance.LogAsync(
                     $"AdsPower profile-switch: retry logic threw for subProfile {subProfileId}: {innerEx.Message}",
                     DeskLinkAuditLogLevel.Error,
-                    memberName: nameof(TryClickSubProfileCardAndWaitCloseAsync),
-                    filePath: "AdsPowerAvitoAutomationService.cs",
-                    properties: new Dictionary<string, object?>
+                            memberName: nameof(TryClickSubProfileCardAndWaitCloseAsync),
+                            properties: new Dictionary<string, object?>
                     {
                         ["step"] = "retry_internal_error",
                         ["avito.subProfileId"] = subProfileId
@@ -918,7 +940,7 @@ public sealed class AdsPowerAvitoAutomationService(
             $"AdsPower profile-switch: subProfile {subProfileId} activated.",
             DeskLinkAuditLogLevel.Info,
             memberName: nameof(TryClickSubProfileCardAndWaitCloseAsync),
-            filePath: "AdsPowerAvitoAutomationService.cs",
+            
             properties: new Dictionary<string, object?>
             {
                 ["step"] = "switched",
@@ -981,7 +1003,7 @@ public sealed class AdsPowerAvitoAutomationService(
                 "AdsPower: URL открыт в новой вкладке через CDP.",
                 DeskLinkAuditLogLevel.Info,
                 memberName: nameof(OpenUrlInRunningProfileAsync),
-                filePath: "AdsPowerAvitoAutomationService.cs",
+                
                 properties: new Dictionary<string, object?>
                 {
                     ["adsPower.userId"] = adsPowerUserId,
@@ -1035,7 +1057,7 @@ public sealed class AdsPowerAvitoAutomationService(
                 $"AdsPower browser/stop failed after automation for profile {adsPowerUserId}: {ex.Message}",
                 DeskLinkAuditLogLevel.Warning,
                 memberName: nameof(ReleaseAdsPowerSessionAsync),
-                filePath: "AdsPowerAvitoAutomationService.cs",
+                
                 properties: new Dictionary<string, object?>
                 {
                     ["adsPower.userId"] = adsPowerUserId,
@@ -1051,17 +1073,24 @@ public sealed class AdsPowerAvitoAutomationService(
     /// </summary>
     private static async Task EnsureSwitchModalAsync(IPage page, CancellationToken cancellationToken)
     {
-        try
+        for (var i = 0; i <= 2; i++)
         {
-            await page.GoToAsync(ProfileSwitchPageUrl, new NavigationOptions
+            try
             {
-                Timeout = 60_000,
-                WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
-            }).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (IsRecoverableNavigationError(ex))
-        {
-            await Task.Delay(1400, cancellationToken).ConfigureAwait(false);
+                await page.GoToAsync(ProfileSwitchPageUrl, new NavigationOptions
+                {
+                    Timeout = 60_000,
+                    WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
+                }).ConfigureAwait(false);
+                return;
+            }
+            catch (Exception ex) when (IsRecoverableNavigationError(ex))
+            {
+                if (i < 2)
+                {
+                    await Task.Delay((i + 1) * 1400, cancellationToken).ConfigureAwait(false);
+                }
+            }
         }
     }
 
@@ -1084,7 +1113,7 @@ public sealed class AdsPowerAvitoAutomationService(
                 $"AdsPower profile-switch: modal selector wait timed out: {ex.Message}",
                 DeskLinkAuditLogLevel.Warning,
                 memberName: callerMemberName,
-                filePath: "AdsPowerAvitoAutomationService.cs",
+                
                 properties: new Dictionary<string, object?>
                 {
                     ["step"] = "modal_timeout",
@@ -1105,7 +1134,7 @@ public sealed class AdsPowerAvitoAutomationService(
                 $"AdsPower profile-switch: profile cards not detected in time: {ex.Message}",
                 DeskLinkAuditLogLevel.Warning,
                 memberName: callerMemberName,
-                filePath: "AdsPowerAvitoAutomationService.cs",
+                
                 properties: new Dictionary<string, object?>
                 {
                     ["step"] = "cards_timeout",
@@ -1131,6 +1160,8 @@ public sealed class AdsPowerAvitoAutomationService(
                 case '\0': sb.Append("\\0"); break;
                 case '\b': sb.Append("\\b"); break;
                 case '\f': sb.Append("\\f"); break;
+                case '\u2028': sb.Append("\\u2028"); break;
+                case '\u2029': sb.Append("\\u2029"); break;
                 default: sb.Append(c); break;
             }
         }
@@ -1162,7 +1193,7 @@ public sealed class AdsPowerAvitoAutomationService(
                     "AdsPower candidates: forced reload (same URL — refresh list after sub-profile switch).",
                     DeskLinkAuditLogLevel.Info,
                     memberName: nameof(ExtractCandidatesJsonAsync),
-                    filePath: "AdsPowerAvitoAutomationService.cs",
+                    
                     properties: new Dictionary<string, object?>
                     {
                         ["step"] = "candidates_reload",
@@ -1177,7 +1208,7 @@ public sealed class AdsPowerAvitoAutomationService(
                     "AdsPower candidates: navigating to responses page.",
                     DeskLinkAuditLogLevel.Info,
                     memberName: nameof(ExtractCandidatesJsonAsync),
-                    filePath: "AdsPowerAvitoAutomationService.cs",
+                    
                     properties: new Dictionary<string, object?>
                     {
                         ["step"] = "candidates_goto",
@@ -1248,7 +1279,7 @@ public sealed class AdsPowerAvitoAutomationService(
                     $"AdsPower CDP: не удалось закрыть лишнюю вкладку Avito ({page.Url}): {ex.Message}",
                     DeskLinkAuditLogLevel.Debug,
                     memberName: callerMemberName,
-                    filePath: "AdsPowerAvitoAutomationService.cs",
+                    
                     properties: new Dictionary<string, object?>
                     {
                         ["page.url"] = page.Url,
@@ -1274,7 +1305,7 @@ public sealed class AdsPowerAvitoAutomationService(
                     : $"AdsPower CDP: рабочая вкладка {worker.Url} (всего вкладок в профиле: {pages.Count}).",
                 DeskLinkAuditLogLevel.Info,
                 memberName: callerMemberName,
-                filePath: "AdsPowerAvitoAutomationService.cs",
+                
                 properties: new Dictionary<string, object?>
                 {
                     ["automation.targetKind"] = targetKind.ToString(),

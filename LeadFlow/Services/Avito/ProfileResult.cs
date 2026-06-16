@@ -41,4 +41,7 @@ public sealed class ProfileResult
 
     /// <summary>Заблокированные/«с ошибками» вакансии — парсятся отдельным проходом по вкладке rejected.</summary>
     public List<AvitoAdStatus> BlockedAds { get; set; } = new();
+
+    /// <summary>Баланс «Аванс» из боковой панели, если удалось распарсить.</summary>
+    public decimal? Balance { get; set; }
 }

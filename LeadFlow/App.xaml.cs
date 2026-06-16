@@ -136,6 +136,7 @@ public partial class App : System.Windows.Application
         builder.Services.AddSingleton<BitrixIntegrationViewModel>();
         builder.Services.AddSingleton<JournalViewModel>();
         builder.Services.AddSingleton<StatisticsHistoryViewModel>();
+        builder.Services.AddTransient<BalanceDetailsViewModel>();
         builder.Services.AddTransient<SettingsViewModel>();
         builder.Services.AddTransient<AccountSettingsViewModel>();
         builder.Services.AddTransient<AvitoAuthViewModel>();
@@ -150,6 +151,7 @@ public partial class App : System.Windows.Application
         builder.Services.AddTransient<BitrixIntegrationWindow>();
         builder.Services.AddTransient<JournalWindow>();
         builder.Services.AddTransient<StatisticsHistoryWindow>();
+        builder.Services.AddTransient<BalanceDetailsWindow>();
         builder.Services.AddTransient<SettingsWindow>();
         builder.Services.AddTransient<AccountSettingsWindow>();
         builder.Services.AddTransient<AvitoAuthWindow>();

@@ -17,4 +17,7 @@ public sealed class AvitoSubProfile
 
     /// <summary>True, если профиль сейчас выбран (ProfileCard-module-isCurrent).</summary>
     public bool IsCurrent { get; set; }
+
+    /// <summary>Баланс на Avito для этого субпрофиля (null — не указан, 0 — пустой).</summary>
+    public decimal? Balance { get; set; }
 }

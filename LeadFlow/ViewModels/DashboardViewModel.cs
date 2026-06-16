@@ -24,12 +24,14 @@ public partial class DashboardViewModel : ObservableObject
     private readonly AppRepository _repository;
     private readonly IMonitoringService _monitoringService;
     private readonly IWindowService _windowService;
+    private readonly Dispatcher _uiDispatcher;
 
     private readonly ActivityPoint[] _hourlyLocalSlots = new ActivityPoint[24];
     private readonly ActivityPoint[] _weeklyLocalSlots = new ActivityPoint[7];
     private readonly List<CandidateResponse> _responsesDuringDashboardRefresh = new();
     private readonly DispatcherTimer _adsSearchDebounce = new() { Interval = TimeSpan.FromMilliseconds(320) };
     private int _dashboardRefreshDepth;
+    private CancellationTokenSource _viewLifetimeCts = new();
 
     [ObservableProperty]
     private int newResponses;
@@ -74,6 +76,17 @@ public partial class DashboardViewModel : ObservableObject
 
     [ObservableProperty]
     private int totalActiveContacts;
+
+    [ObservableProperty]
+    private decimal totalBalance;
+
+    [ObservableProperty]
+    private bool hasBalances;
+
+    [ObservableProperty]
+    private int accountsWithBalanceCount;
+
+    public ObservableCollection<AccountBalanceItem> AccountBalances { get; } = new();
 
     [ObservableProperty]
     private int activityChartColumns = 24;
@@ -166,6 +179,7 @@ public partial class DashboardViewModel : ObservableObject
         _repository = repository;
         _monitoringService = monitoringService;
         _windowService = windowService;
+        _uiDispatcher = Application.Current?.Dispatcher ?? Dispatcher.CurrentDispatcher;
         DisplayedAdsView = CollectionViewSource.GetDefaultView(AllAdDisplayItems);
         DisplayedAdsView.Filter = MatchesDisplayedAdFilter;
         _adsSearchDebounce.Tick += (_, _) =>
@@ -410,14 +424,16 @@ public partial class DashboardViewModel : ObservableObject
     {
         var stats = await _repository.GetDashboardStatsAsync(CancellationToken.None).ConfigureAwait(false);
 
-        var dispatcher = Application.Current?.Dispatcher;
-        if (dispatcher is not null && !dispatcher.CheckAccess())
+        if (!_uiDispatcher.CheckAccess())
         {
-            await dispatcher.InvokeAsync(() => ApplyStats(stats));
-            return;
+            await _uiDispatcher.InvokeAsync(() => ApplyStats(stats));
+        }
+        else
+        {
+            ApplyStats(stats);
         }
 
-        ApplyStats(stats);
+        await RefreshBalancesAsync(GetViewLifetimeToken());
     }
 
     [RelayCommand]
@@ -462,6 +478,56 @@ public partial class DashboardViewModel : ObservableObject
 
         ApplyActiveAdsSnapshot();
         ApplyBlockedAdsSnapshot();
+
+        await RefreshBalancesAsync(GetViewLifetimeToken());
+    }
+
+    private async Task RefreshBalancesAsync(CancellationToken ct = default)
+    {
+        var items = await _repository.GetAccountBalancesAsync(ct);
+
+        if (!_uiDispatcher.CheckAccess())
+        {
+            await _uiDispatcher.InvokeAsync(() => ApplyBalanceItems(items));
+            return;
+        }
+
+        ApplyBalanceItems(items);
+    }
+
+    public void OnViewLoaded()
+    {
+        if (_viewLifetimeCts.IsCancellationRequested)
+        {
+            _viewLifetimeCts.Dispose();
+            _viewLifetimeCts = new CancellationTokenSource();
+        }
+    }
+
+    public void OnViewUnloaded()
+    {
+        if (!_viewLifetimeCts.IsCancellationRequested)
+        {
+            _viewLifetimeCts.Cancel();
+        }
+    }
+
+    private CancellationToken GetViewLifetimeToken()
+    {
+        return _viewLifetimeCts.Token;
+    }
+
+    private void ApplyBalanceItems(IReadOnlyList<AccountBalanceItem> items)
+    {
+        AccountBalances.Clear();
+        foreach (var item in items)
+        {
+            AccountBalances.Add(item);
+        }
+
+        TotalBalance = items.Where(a => a.HasBalance).Sum(a => a.TotalBalance);
+        HasBalances = items.Any(a => a.HasBalance);
+        AccountsWithBalanceCount = items.Count(a => a.HasBalance);
     }
 
     public void ApplyProcessedResponse(CandidateResponse response)
@@ -1094,4 +1160,13 @@ public partial class DashboardViewModel : ObservableObject
         DaysOnAvito = ad.DaysOnAvito,
         Url = ad.Url
     };
+
+    [RelayCommand]
+    private async Task OpenBalanceDetailsAsync()
+    {
+        var owner = Application.Current?.MainWindow;
+        if (owner is null) return;
+
+        await _windowService.ShowBalanceDetailsAsync(owner, CancellationToken.None);
+    }
 }

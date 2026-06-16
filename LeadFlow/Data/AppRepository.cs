@@ -219,6 +219,87 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         return entity is null ? null : ToModel(entity);
     }
 
+    public async Task<IReadOnlyList<AccountBalanceItem>> GetAccountBalancesAsync(CancellationToken cancellationToken)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var rows = await db.AvitoAccounts
+            .AsNoTracking()
+            .Where(x => x.IsEnabled)
+            .OrderBy(x => x.DisplayName)
+            .Select(x => new BalanceProjection
+            {
+                Id = x.Id,
+                DisplayName = x.DisplayName,
+                AvitoProfileName = x.AvitoProfileName,
+                SubProfilesJson = x.SubProfilesJson
+            })
+            .ToListAsync(cancellationToken);
+
+        var items = new List<AccountBalanceItem>(rows.Count);
+        foreach (var row in rows)
+        {
+            var accountName = string.IsNullOrWhiteSpace(row.DisplayName)
+                ? row.AvitoProfileName ?? "—"
+                : row.DisplayName;
+
+            var json = string.IsNullOrWhiteSpace(row.SubProfilesJson) ? "[]" : row.SubProfilesJson;
+            List<AvitoSubProfile>? profiles = null;
+            try
+            {
+                profiles = System.Text.Json.JsonSerializer.Deserialize<List<AvitoSubProfile>>(json);
+            }
+            catch (System.Text.Json.JsonException)
+            {
+                // ignore malformed JSON
+            }
+
+            var subProfiles = new List<SubProfileBalanceItem>();
+            if (profiles is { Count: > 0 })
+            {
+                foreach (var profile in profiles)
+                {
+                    subProfiles.Add(new SubProfileBalanceItem
+                    {
+                        AccountId = row.Id,
+                        AccountName = accountName,
+                        SubProfileName = string.IsNullOrWhiteSpace(profile.Name) ? profile.Id : profile.Name,
+                        Balance = profile.Balance
+                    });
+                }
+            }
+            else
+            {
+                subProfiles.Add(new SubProfileBalanceItem
+                {
+                    AccountId = row.Id,
+                    AccountName = accountName,
+                    SubProfileName = "—",
+                    Balance = null
+                });
+            }
+
+            subProfiles = subProfiles.OrderBy(s => s.Balance ?? decimal.MaxValue).ToList();
+
+            items.Add(new AccountBalanceItem
+            {
+                AccountId = row.Id,
+                AccountName = accountName,
+                TotalBalance = subProfiles.Sum(s => s.Balance ?? 0m),
+                SubProfiles = subProfiles
+            });
+        }
+
+        var ordered = items.OrderBy(a => a.TotalBalance).ThenBy(a => a.AccountName).ToList();
+        var maxBalance = ordered.Count > 0 ? ordered.Max(a => a.TotalBalance) : 1m;
+        if (maxBalance == 0m) maxBalance = 1m;
+        foreach (var a in ordered)
+        {
+            a.BarWidth = (double)(a.TotalBalance / maxBalance);
+        }
+
+        return ordered;
+    }
+
     public async Task SaveCandidateAsync(CandidateResponse response, CancellationToken cancellationToken)
     {
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
@@ -892,6 +973,14 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         public Guid Id { get; init; }
         public string ActiveAdsSnapshotJson { get; init; } = "[]";
         public string BlockedAdsSnapshotJson { get; init; } = "[]";
+    }
+
+    private sealed record BalanceProjection
+    {
+        public Guid Id { get; init; }
+        public string DisplayName { get; init; } = string.Empty;
+        public string? AvitoProfileName { get; init; }
+        public string SubProfilesJson { get; init; } = "[]";
     }
 
     private sealed record SettingsAccountRow(

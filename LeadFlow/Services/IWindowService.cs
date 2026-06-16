@@ -29,4 +29,5 @@ public interface IWindowService
     Task ShowBitrixIntegrationAsync(Window owner, CancellationToken cancellationToken);
     Task ShowJournalAsync(Window owner, CancellationToken cancellationToken);
     Task ShowStatisticsHistoryAsync(Window owner, CancellationToken cancellationToken);
+    Task ShowBalanceDetailsAsync(Window owner, CancellationToken cancellationToken);
 }

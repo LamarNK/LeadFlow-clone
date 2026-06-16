@@ -25,6 +25,11 @@ public partial class DashboardView : UserControl
 
     private void DashboardView_Loaded(object sender, RoutedEventArgs e)
     {
+        if (DataContext is DashboardViewModel vm)
+        {
+            vm.OnViewLoaded();
+        }
+
         _hostWindowForAdsScroll = Window.GetWindow(this);
         if (_hostWindowForAdsScroll is not null)
         {
@@ -36,6 +41,11 @@ public partial class DashboardView : UserControl
 
     private void DashboardView_Unloaded(object sender, RoutedEventArgs e)
     {
+        if (DataContext is DashboardViewModel vm)
+        {
+            vm.OnViewUnloaded();
+        }
+
         if (_hostWindowForAdsScroll is not null)
         {
             _hostWindowForAdsScroll.SizeChanged -= HostWindow_SizeChangedForAdsListMaxHeight;
