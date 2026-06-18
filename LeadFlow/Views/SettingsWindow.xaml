@@ -6,8 +6,10 @@
         PreviewDragOver="SettingsWindow_OnPreviewDragOver"
         DragLeave="SettingsWindow_OnDragLeave"
         PreviewKeyDown="SettingsWindow_OnPreviewKeyDown"
-        Width="1080"
-        Height="740"
+        Width="1120"
+        Height="780"
+        MinWidth="960"
+        MinHeight="640"
         WindowStartupLocation="CenterOwner"
         Background="{DynamicResource DashboardPageChromeBrush}">
     <Window.Resources>
@@ -55,6 +57,34 @@
             <Style x:Key="SettingsBitrixUrlTextBoxStyle" TargetType="TextBox" BasedOn="{StaticResource SearchTextBoxStyle}">
                 <Setter Property="MinHeight" Value="34" />
                 <Setter Property="Padding" Value="10,7" />
+            </Style>
+
+            <Style x:Key="SettingsSectionTitleStyle" TargetType="TextBlock">
+                <Setter Property="FontSize" Value="15" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+            </Style>
+
+            <Style x:Key="SettingsSectionHintStyle" TargetType="TextBlock">
+                <Setter Property="FontSize" Value="11" />
+                <Setter Property="Foreground" Value="{StaticResource SecondaryTextBrush}" />
+                <Setter Property="TextWrapping" Value="Wrap" />
+            </Style>
+
+            <Style x:Key="SettingsMetricTileStyle" TargetType="Border">
+                <Setter Property="Background" Value="#F8FAFC" />
+                <Setter Property="BorderBrush" Value="#E8EAED" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="CornerRadius" Value="10" />
+                <Setter Property="Padding" Value="10,8" />
+            </Style>
+
+            <Style x:Key="SettingsProviderChipStyle" TargetType="Border">
+                <Setter Property="CornerRadius" Value="6" />
+                <Setter Property="Padding" Value="6,2" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="Background" Value="#F1F5F9" />
+                <Setter Property="BorderBrush" Value="#E2E8F0" />
             </Style>
 
             <Style x:Key="AccountListBoxStyle" TargetType="ListBox">
@@ -218,30 +248,37 @@
         </ResourceDictionary>
     </Window.Resources>
 
-    <Grid Margin="12,10,12,12">
+    <Grid Margin="16,14,16,16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <!-- Header -->
+        <!-- Шапка: заголовок + закрытие без прокрутки вниз -->
         <Border Grid.Row="0"
                 Style="{StaticResource MinimalDashSurfaceStyle}"
-                Padding="16,12"
+                Padding="18,14"
                 Margin="0,0,0,12">
-            <StackPanel>
-                <TextBlock Text="Аккаунты Avito"
-                           FontSize="18"
-                           FontWeight="SemiBold"
-                           Foreground="{StaticResource TextBrush}" />
-                <TextBlock Margin="0,4,0,0"
-                           Text="Добавляйте аккаунты, при необходимости авторизуйтесь на Avito и включайте мониторинг; изменения сохраняются автоматически."
-                           FontSize="12"
-                           Foreground="{StaticResource SecondaryTextBrush}"
-                           TextWrapping="Wrap" />
-            </StackPanel>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="Настройки"
+                               Style="{StaticResource SettingsSectionTitleStyle}"
+                               FontSize="18" />
+                    <TextBlock Margin="0,4,0,0"
+                               Style="{StaticResource SettingsSectionHintStyle}"
+                               Text="Аккаунты Avito, Bitrix24 и параметры мониторинга. Изменения сохраняются при закрытии окна." />
+                </StackPanel>
+                <Button Grid.Column="1"
+                        Content="Закрыть"
+                        Style="{StaticResource SettingsCloseButtonStyle}"
+                        VerticalAlignment="Center"
+                        IsCancel="True" />
+            </Grid>
         </Border>
 
         <!-- Two columns -->
@@ -265,17 +302,81 @@
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
 
-                    <StackPanel Margin="0,0,0,8">
-                        <TextBlock Text="Список аккаунтов"
-                                   FontSize="13"
-                                   FontWeight="SemiBold"
-                                   Foreground="{StaticResource TextBrush}" />
-                        <TextBlock Margin="0,3,0,0"
-                                   Text="Каждый аккаунт работает через отдельный браузерный профиль и хранится независимо."
-                                   FontSize="11"
-                                   Foreground="{StaticResource SecondaryTextBrush}"
-                                   TextWrapping="Wrap" />
-                    </StackPanel>
+                    <Grid Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="Аккаунты"
+                                           Style="{StaticResource SettingsSectionTitleStyle}"
+                                           FontSize="14" />
+                                <Border Margin="8,0,0,0"
+                                        VerticalAlignment="Center"
+                                        Background="#F1F5F9"
+                                        BorderBrush="#E2E8F0"
+                                        BorderThickness="1"
+                                        CornerRadius="8"
+                                        Padding="8,2">
+                                    <TextBlock FontSize="11"
+                                               FontWeight="SemiBold"
+                                               Foreground="#64748B">
+                                        <Run Text="{Binding AccountsCount, Mode=OneWay}" />
+                                        <Run Text=" шт." />
+                                    </TextBlock>
+                                </Border>
+                            </StackPanel>
+                            <TextBlock Margin="0,3,0,0"
+                                       Style="{StaticResource SettingsSectionHintStyle}"
+                                       Text="Двойной клик — карточка аккаунта. Переключатель справа — участие в мониторинге." />
+                        </StackPanel>
+                        <Grid Grid.Column="1" VerticalAlignment="Top">
+                            <Button x:Name="AddAccountMenuButton"
+                                    Click="AddAccountMenuButton_OnClick"
+                                    Content="＋ Добавить"
+                                    Style="{StaticResource SettingsCardPrimaryButtonStyle}"
+                                    MinWidth="118"
+                                    Padding="12,7" />
+                            <Popup AllowsTransparency="True"
+                                   IsOpen="{Binding IsAddMenuOpen, Mode=TwoWay}"
+                                   Placement="Bottom"
+                                   PlacementTarget="{Binding ElementName=AddAccountMenuButton}"
+                                   StaysOpen="False">
+                                <Border Background="White"
+                                        BorderBrush="#E2E8F0"
+                                        BorderThickness="1"
+                                        CornerRadius="10"
+                                        Padding="4"
+                                        MinWidth="240"
+                                        DataContext="{Binding DataContext, ElementName=AddAccountMenuButton}">
+                                    <StackPanel>
+                                        <Button Command="{Binding AddLocalAccountCommand}"
+                                                Content="Новый локальный профиль"
+                                                Foreground="{StaticResource TextBrush}"
+                                                HorizontalContentAlignment="Left"
+                                                HorizontalAlignment="Stretch"
+                                                Padding="10,8"
+                                                Margin="0"
+                                                Background="Transparent"
+                                                BorderThickness="0"
+                                                Cursor="Hand" />
+                                        <Button Command="{Binding AddFromAdsPowerCommand}"
+                                                CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}"
+                                                Content="Из AdsPower (API)…"
+                                                Foreground="{StaticResource TextBrush}"
+                                                HorizontalContentAlignment="Left"
+                                                HorizontalAlignment="Stretch"
+                                                Padding="10,8"
+                                                Margin="0"
+                                                Background="Transparent"
+                                                BorderThickness="0"
+                                                Cursor="Hand" />
+                                    </StackPanel>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                    </Grid>
 
                     <ListBox Grid.Row="1"
                              AllowDrop="True"
@@ -308,21 +409,40 @@
                                                    FontWeight="SemiBold"
                                                    Foreground="{StaticResource TextBrush}"
                                                    TextTrimming="CharacterEllipsis" />
-                                        <TextBlock Margin="0,3,0,0"
-                                                   FontSize="11"
-                                                   Foreground="{StaticResource SecondaryTextBrush}"
-                                                   Text="AdsPower — внешний браузер">
-                                            <TextBlock.Style>
-                                                <Style TargetType="TextBlock">
-                                                    <Setter Property="Visibility" Value="Collapsed" />
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding ProfileProvider}" Value="{x:Static models:AvitoProfileProvider.AdsPower}">
-                                                            <Setter Property="Visibility" Value="Visible" />
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </TextBlock.Style>
-                                        </TextBlock>
+                                        <StackPanel Margin="0,4,0,0" Orientation="Horizontal">
+                                            <Border>
+                                                <Border.Style>
+                                                    <Style TargetType="Border" BasedOn="{StaticResource SettingsProviderChipStyle}">
+                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding ProfileProvider}" Value="{x:Static models:AvitoProfileProvider.AdsPower}">
+                                                                <Setter Property="Visibility" Value="Visible" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Border.Style>
+                                                <TextBlock FontSize="10"
+                                                           FontWeight="SemiBold"
+                                                           Foreground="#64748B"
+                                                           Text="AdsPower" />
+                                            </Border>
+                                            <Border>
+                                                <Border.Style>
+                                                    <Style TargetType="Border" BasedOn="{StaticResource SettingsProviderChipStyle}">
+                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding ProfileProvider}" Value="{x:Static models:AvitoProfileProvider.Local}">
+                                                                <Setter Property="Visibility" Value="Visible" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Border.Style>
+                                                <TextBlock FontSize="10"
+                                                           FontWeight="SemiBold"
+                                                           Foreground="#64748B"
+                                                           Text="Локальный" />
+                                            </Border>
+                                        </StackPanel>
                                     </StackPanel>
 
                                     <Border Grid.Column="1"
@@ -333,12 +453,19 @@
                                                    Text="{Binding Status}" />
                                     </Border>
 
-                                    <ToggleButton Grid.Column="2"
-                                                  IsChecked="{Binding IsEnabled, Mode=TwoWay}"
-                                                  Width="38" Height="20"
-                                                  VerticalAlignment="Top"
-                                                  HorizontalAlignment="Right"
-                                                  ToolTip="Мониторится">
+                                    <StackPanel Grid.Column="2"
+                                                VerticalAlignment="Top"
+                                                HorizontalAlignment="Right">
+                                        <TextBlock Text="В мониторинге"
+                                                   FontSize="9"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="#94A3B8"
+                                                   HorizontalAlignment="Center"
+                                                   Margin="0,0,0,3" />
+                                        <ToggleButton IsChecked="{Binding IsEnabled, Mode=TwoWay}"
+                                                      Width="38" Height="20"
+                                                      HorizontalAlignment="Center"
+                                                      ToolTip="Включить или выключить аккаунт в мониторинге">
                                         <ToggleButton.Template>
                                             <ControlTemplate TargetType="ToggleButton">
                                                 <Grid>
@@ -373,7 +500,8 @@
                                                 </ControlTemplate.Triggers>
                                             </ControlTemplate>
                                         </ToggleButton.Template>
-                                    </ToggleButton>
+                                        </ToggleButton>
+                                    </StackPanel>
 
                                     <Grid Grid.Row="1" Grid.ColumnSpan="3" Margin="0,8,0,0">
                                         <Grid.ColumnDefinitions>
@@ -441,10 +569,50 @@
             <Border Grid.Column="1"
                     Style="{StaticResource MinimalDashSurfaceStyle}"
                     Padding="0">
-                <ScrollViewer VerticalScrollBarVisibility="Auto"
-                              HorizontalScrollBarVisibility="Disabled"
-                              Padding="14,12"
-                              CanContentScroll="False">
+                <Grid>
+                    <!-- Пустое состояние: сразу понятно, что делать -->
+                    <StackPanel HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Margin="24"
+                                MaxWidth="320">
+                        <StackPanel.Style>
+                            <Style TargetType="StackPanel">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasSelectedAccount}" Value="False">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </StackPanel.Style>
+                        <TextBlock Text="Выберите аккаунт слева"
+                                   FontSize="16"
+                                   FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextBrush}"
+                                   HorizontalAlignment="Center" />
+                        <TextBlock Margin="0,8,0,16"
+                                   Style="{StaticResource SettingsSectionHintStyle}"
+                                   Text="Или нажмите «＋ Добавить», чтобы подключить новый профиль Avito."
+                                   TextAlignment="Center" />
+                        <Button Command="{Binding AddLocalAccountCommand}"
+                                Content="Добавить локальный профиль"
+                                Style="{StaticResource SettingsCardSecondaryButtonStyle}" />
+                    </StackPanel>
+
+                    <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled"
+                                  Padding="14,12"
+                                  CanContentScroll="False">
+                        <ScrollViewer.Style>
+                            <Style TargetType="ScrollViewer">
+                                <Setter Property="Visibility" Value="Visible" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasSelectedAccount}" Value="False">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </ScrollViewer.Style>
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
@@ -456,7 +624,7 @@
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
 
-                        <TextBlock Text="КАРТОЧКА АККАУНТА"
+                        <TextBlock Text="Выбранный аккаунт"
                                    FontSize="10"
                                    FontWeight="SemiBold"
                                    Foreground="{StaticResource SecondaryTextBrush}" />
@@ -497,41 +665,49 @@
                         <UniformGrid Grid.Row="2"
                                      Margin="0,14,0,0"
                                      Columns="2">
-                            <StackPanel Margin="0,0,12,10">
-                                <TextBlock Text="Проверка авторизации" Style="{StaticResource FilterToolbarLabelStyle}" FontSize="10" FontWeight="SemiBold" />
-                                <TextBlock Margin="0,3,0,0"
-                                           Text="{Binding SelectedAccountAuthCheckText}"
-                                           FontSize="13"
-                                           FontWeight="SemiBold"
-                                           Foreground="{StaticResource TextBrush}"
-                                           TextWrapping="Wrap" />
-                            </StackPanel>
-                            <StackPanel Margin="0,0,0,10">
-                                <TextBlock Text="Последний мониторинг" Style="{StaticResource FilterToolbarLabelStyle}" FontSize="10" FontWeight="SemiBold" />
-                                <TextBlock Margin="0,3,0,0"
-                                           Text="{Binding SelectedAccountMonitoringText}"
-                                           FontSize="13"
-                                           FontWeight="SemiBold"
-                                           Foreground="{StaticResource TextBrush}"
-                                           TextWrapping="Wrap" />
-                            </StackPanel>
-                            <StackPanel Margin="0,0,12,10">
-                                <TextBlock Text="Профиль Avito" Style="{StaticResource FilterToolbarLabelStyle}" FontSize="10" FontWeight="SemiBold" />
-                                <TextBlock Margin="0,3,0,0"
-                                           Text="{Binding FixedProfileUrl}"
-                                           FontSize="12"
-                                           Foreground="{StaticResource PrimaryBrush}"
-                                           TextWrapping="Wrap" />
-                            </StackPanel>
-                            <StackPanel Margin="0,0,0,10">
-                                <TextBlock Text="Состояние" Style="{StaticResource FilterToolbarLabelStyle}" FontSize="10" FontWeight="SemiBold" />
-                                <TextBlock Margin="0,3,0,0"
-                                           Text="{Binding SelectedAccountErrorText}"
-                                           FontSize="13"
-                                           FontWeight="SemiBold"
-                                           Foreground="{StaticResource TextBrush}"
-                                           TextWrapping="Wrap" />
-                            </StackPanel>
+                            <Border Margin="0,0,6,8" Style="{StaticResource SettingsMetricTileStyle}">
+                                <StackPanel>
+                                    <TextBlock Text="Проверка авторизации" FontSize="10" Foreground="{StaticResource SecondaryTextBrush}" />
+                                    <TextBlock Margin="0,4,0,0"
+                                               Text="{Binding SelectedAccountAuthCheckText}"
+                                               FontSize="12"
+                                               FontWeight="SemiBold"
+                                               Foreground="{StaticResource TextBrush}"
+                                               TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Border>
+                            <Border Margin="6,0,0,8" Style="{StaticResource SettingsMetricTileStyle}">
+                                <StackPanel>
+                                    <TextBlock Text="Последний мониторинг" FontSize="10" Foreground="{StaticResource SecondaryTextBrush}" />
+                                    <TextBlock Margin="0,4,0,0"
+                                               Text="{Binding SelectedAccountMonitoringText}"
+                                               FontSize="12"
+                                               FontWeight="SemiBold"
+                                               Foreground="{StaticResource TextBrush}"
+                                               TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Border>
+                            <Border Margin="0,0,6,0" Style="{StaticResource SettingsMetricTileStyle}">
+                                <StackPanel>
+                                    <TextBlock Text="Профиль Avito" FontSize="10" Foreground="{StaticResource SecondaryTextBrush}" />
+                                    <TextBlock Margin="0,4,0,0"
+                                               Text="{Binding FixedProfileUrl}"
+                                               FontSize="11"
+                                               Foreground="{StaticResource PrimaryBrush}"
+                                               TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Border>
+                            <Border Margin="6,0,0,0" Style="{StaticResource SettingsMetricTileStyle}">
+                                <StackPanel>
+                                    <TextBlock Text="Состояние" FontSize="10" Foreground="{StaticResource SecondaryTextBrush}" />
+                                    <TextBlock Margin="0,4,0,0"
+                                               Text="{Binding SelectedAccountErrorText}"
+                                               FontSize="12"
+                                               FontWeight="SemiBold"
+                                               Foreground="{StaticResource TextBrush}"
+                                               TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Border>
                         </UniformGrid>
 
                         <!-- AdsPower sub-profiles -->
@@ -611,103 +787,37 @@
                             </Grid>
                         </Border>
 
-                        <!-- Действия -->
-                        <Grid Grid.Row="4" Margin="0,14,0,0">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="8" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                            </Grid.RowDefinitions>
-
-                            <Grid Grid.Row="0" Grid.Column="0" Margin="0,0,0,8">
-                                <Button x:Name="AddAccountMenuButton"
-                                        Click="AddAccountMenuButton_OnClick"
-                                        Content="Добавить аккаунт ▾"
-                                        Style="{StaticResource SettingsCardPrimaryButtonStyle}" />
-                                <Popup AllowsTransparency="True"
-                                       IsOpen="{Binding IsAddMenuOpen, Mode=TwoWay}"
-                                       Placement="Bottom"
-                                       PlacementTarget="{Binding ElementName=AddAccountMenuButton}"
-                                       StaysOpen="False">
-                                    <Border Background="White"
-                                            BorderBrush="#E2E8F0"
-                                            BorderThickness="1"
-                                            CornerRadius="10"
-                                            Padding="4"
-                                            MinWidth="220"
-                                            DataContext="{Binding DataContext, ElementName=AddAccountMenuButton}">
-                                        <StackPanel>
-                                            <Button Command="{Binding AddLocalAccountCommand}"
-                                                    Content="Новый локальный профиль"
-                                                    Foreground="{StaticResource TextBrush}"
-                                                    HorizontalContentAlignment="Left"
-                                                    HorizontalAlignment="Stretch"
-                                                    Padding="10,8"
-                                                    Margin="0"
-                                                    Background="Transparent"
-                                                    BorderThickness="0"
-                                                    Cursor="Hand" />
-                                            <Button Command="{Binding AddFromAdsPowerCommand}"
-                                                    CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}"
-                                                    Content="Из AdsPower (API)…"
-                                                    Foreground="{StaticResource TextBrush}"
-                                                    HorizontalContentAlignment="Left"
-                                                    HorizontalAlignment="Stretch"
-                                                    Padding="10,8"
-                                                    Margin="0"
-                                                    Background="Transparent"
-                                                    BorderThickness="0"
-                                                    Cursor="Hand" />
-                                        </StackPanel>
-                                    </Border>
-                                </Popup>
-                            </Grid>
-
-                            <Button Grid.Row="0"
-                                    Grid.Column="2"
-                                    Margin="0,0,0,8"
-                                    Command="{Binding OpenAccountSettingsCommand}"
-                                    CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}"
-                                    Content="Настройки аккаунта"
-                                    Style="{StaticResource SettingsCardSecondaryButtonStyle}" />
-
-                            <Button Grid.Row="1"
-                                    Grid.Column="0"
-                                    Margin="0,0,0,8"
-                                    Command="{Binding OpenAvitoProfileCommand}"
-                                    CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}"
-                                    Content="Открыть окно Avito"
-                                    Style="{StaticResource SettingsCardSecondaryButtonStyle}" />
-
-                            <Button Grid.Row="1"
-                                    Grid.Column="2"
-                                    Margin="0,0,0,8"
-                                    Command="{Binding DeleteAccountCommand}"
-                                    Content="Удалить аккаунт"
-                                    Style="{StaticResource SettingsCardDangerButtonStyle}" />
-
-                            <Button Grid.Row="2"
-                                    Grid.Column="0"
-                                    Grid.ColumnSpan="3"
-                                    Command="{Binding AuthorizeCommand}"
+                        <!-- Действия: частые — сверху -->
+                        <StackPanel Grid.Row="4" Margin="0,16,0,0">
+                            <TextBlock Text="Действия"
+                                       FontSize="10"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource SecondaryTextBrush}"
+                                       Margin="0,0,0,8" />
+                            <Button Command="{Binding AuthorizeCommand}"
                                     CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}"
                                     Content="Авторизовать в Avito"
                                     Style="{StaticResource SettingsCardPrimaryButtonStyle}"
+                                    Margin="0,0,0,8"
                                     Visibility="{Binding ShowAuthorizeButton, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                        </Grid>
-
-                        <!-- Экспорт / импорт -->
-                        <Border Grid.Row="5"
-                                Margin="0,14,0,0"
-                                Padding="0,12,0,0"
-                                BorderBrush="#EEF2F6"
-                                BorderThickness="0,1,0,0">
-                            <Grid>
+                            <Grid Margin="0,0,0,8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="8" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Button Grid.Column="0"
+                                        Command="{Binding OpenAvitoProfileCommand}"
+                                        CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}"
+                                        Content="Открыть Avito"
+                                        Style="{StaticResource SettingsCardSecondaryButtonStyle}" />
+                                <Button Grid.Column="2"
+                                        Command="{Binding OpenAccountSettingsCommand}"
+                                        CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}"
+                                        Content="Настройки аккаунта"
+                                        Style="{StaticResource SettingsCardSecondaryButtonStyle}" />
+                            </Grid>
+                            <Grid Margin="0,0,0,8">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="8" />
@@ -716,59 +826,115 @@
                                 <Button Grid.Column="0"
                                         Command="{Binding ExportProfileArchiveCommand}"
                                         CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}"
-                                        Content="Экспорт"
+                                        Content="Экспорт профиля"
                                         Style="{StaticResource SettingsCardSecondaryButtonStyle}" />
                                 <Button Grid.Column="2"
                                         Command="{Binding ImportProfileArchiveCommand}"
                                         CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}"
-                                        Content="Импорт"
+                                        Content="Импорт профиля"
                                         Style="{StaticResource SettingsCardSecondaryButtonStyle}" />
                             </Grid>
-                        </Border>
+                            <Button Command="{Binding DeleteAccountCommand}"
+                                    Content="Удалить аккаунт"
+                                    Style="{StaticResource SettingsCardDangerButtonStyle}" />
+                        </StackPanel>
                     </Grid>
-                </ScrollViewer>
+                    </ScrollViewer>
+                </Grid>
             </Border>
         </Grid>
 
-        <!-- Bitrix24 -->
+        <!-- Общие настройки: всё в одном блоке, без прокрутки вниз -->
         <Border Grid.Row="2"
                 Style="{StaticResource MinimalDashSurfaceStyle}"
-                Padding="16,12"
+                Padding="18,14"
                 Margin="0,12,0,0">
             <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" MinWidth="220" />
-                    <ColumnDefinition Width="2*" MinWidth="320" />
-                </Grid.ColumnDefinitions>
-                <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                    <TextBlock Text="Bitrix24"
-                               FontSize="14"
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <TextBlock Text="Общие настройки"
+                           Style="{StaticResource SettingsSectionTitleStyle}"
+                           Margin="0,0,0,12" />
+                <Grid Grid.Row="1">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" MinWidth="280" />
+                        <ColumnDefinition Width="16" />
+                        <ColumnDefinition Width="280" MaxWidth="320" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Grid.Row="0"
+                               Grid.Column="0"
+                               Text="Bitrix24"
+                               FontSize="13"
                                FontWeight="SemiBold"
                                Foreground="{StaticResource TextBrush}" />
-                    <TextBlock Margin="0,3,0,0"
-                               Text="Входящий вебхук (CRM → Настройки → Разработчикам → Другое → Входящий вебхук). Без URL дубли в портале и отправка лидов не выполняются."
-                               FontSize="11"
-                               Foreground="{StaticResource SecondaryTextBrush}"
-                               TextWrapping="Wrap" />
-                </StackPanel>
-                <StackPanel Grid.Column="1" Margin="16,0,0,0" VerticalAlignment="Center">
-                    <TextBlock Text="URL вебхука"
-                               Style="{StaticResource FilterToolbarLabelStyle}"
+                    <TextBlock Grid.Row="0"
+                               Grid.Column="2"
+                               Text="Мониторинг"
+                               FontSize="13"
+                               FontWeight="SemiBold"
+                               Foreground="{StaticResource TextBrush}" />
+
+                    <TextBlock Grid.Row="1"
+                               Grid.Column="0"
+                               Margin="0,3,0,10"
+                               MinHeight="32"
+                               VerticalAlignment="Top"
+                               Style="{StaticResource SettingsSectionHintStyle}"
+                               Text="Входящий вебхук. Без URL отправка в CRM и проверка дублей в портале не работают." />
+                    <TextBlock Grid.Row="1"
+                               Grid.Column="2"
+                               Margin="0,3,0,10"
+                               MinHeight="32"
+                               VerticalAlignment="Top"
+                               Style="{StaticResource SettingsSectionHintStyle}"
+                               Text="Сколько аккаунтов проверять одновременно. Рекомендуется 3–5." />
+
+                    <TextBlock Grid.Row="2"
+                               Grid.Column="0"
+                               Text="URL вебхука"
                                FontSize="10"
-                               FontWeight="SemiBold" />
-                    <TextBox Margin="0,4,0,0"
+                               FontWeight="SemiBold"
+                               Foreground="{StaticResource SecondaryTextBrush}" />
+                    <TextBlock Grid.Row="2"
+                               Grid.Column="2"
+                               Text="Параллельных аккаунтов"
+                               FontSize="10"
+                               FontWeight="SemiBold"
+                               Foreground="{StaticResource SecondaryTextBrush}" />
+
+                    <TextBox Grid.Row="3"
+                             Grid.Column="0"
+                             Margin="0,4,0,0"
                              Text="{Binding BitrixWebhookUrl, UpdateSourceTrigger=PropertyChanged}"
                              Style="{StaticResource SettingsBitrixUrlTextBoxStyle}"
                              TextWrapping="NoWrap"
                              AcceptsReturn="False" />
-                </StackPanel>
+                    <TextBox Grid.Row="3"
+                             Grid.Column="2"
+                             Margin="0,4,0,0"
+                             MaxWidth="120"
+                             HorizontalAlignment="Left"
+                             Text="{Binding MaxConcurrentAccounts, UpdateSourceTrigger=PropertyChanged}"
+                             Style="{StaticResource SettingsBitrixUrlTextBoxStyle}"
+                             ToolTip="От 1 до 10. Значение 1 — как раньше, по одному аккаунту." />
+
+                    <Border Grid.Row="0"
+                            Grid.RowSpan="4"
+                            Grid.Column="1"
+                            Width="1"
+                            HorizontalAlignment="Center"
+                            Background="#EEF2F6" />
+                </Grid>
             </Grid>
         </Border>
-
-        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
-            <Button Content="Закрыть"
-                    Style="{StaticResource SettingsCloseButtonStyle}"
-                    IsCancel="True" />
-        </StackPanel>
     </Grid>
 </Window>

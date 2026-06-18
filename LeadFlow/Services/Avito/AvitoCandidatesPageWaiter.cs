@@ -7,8 +7,8 @@ namespace LeadFlow.Services.Avito;
 /// </summary>
 public static class AvitoCandidatesPageWaiter
 {
-    private const int MaxWaitMs = 25_000;
-    private const int PollMs = 400;
+    private const int MaxWaitMs = 50_000;
+    private const int PollMs = 500;
 
     public static async Task WaitForCandidatesOrThrowFirewallAsync(
         Func<string, CancellationToken, Task<string>> executeScript,

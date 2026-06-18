@@ -34,6 +34,22 @@ public sealed class JsonSettingsServiceNormalizationTests
         Assert.Equal("https://example.bitrix24.ru/rest/1/x/", settings.Bitrix.WebhookUrl);
     }
 
+    [Theory]
+    [InlineData(0, 1)]
+    [InlineData(1, 1)]
+    [InlineData(5, 5)]
+    [InlineData(10, 10)]
+    [InlineData(25, 10)]
+    public void Normalize_ClampsMaxConcurrentAccounts(int input, int expected)
+    {
+        var settings = NewSettings();
+        settings.MonitoringSafety.MaxConcurrentAccounts = input;
+
+        JsonSettingsService.NormalizeSettings(settings);
+
+        Assert.Equal(expected, settings.MonitoringSafety.MaxConcurrentAccounts);
+    }
+
     [Fact]
     public void Normalize_ForcesDemoModeOff()
     {

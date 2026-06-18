@@ -94,6 +94,7 @@ public sealed class JsonSettingsService(string? dataDirectoryOverride = null) : 
         settings.Bitrix.DealCityUfCode = settings.Bitrix.DealCityUfCode?.Trim() ?? string.Empty;
         settings.MonitoringSafety ??= new MonitoringSafetyOptions();
         settings.MonitoringSafety.CheckIntervalSeconds = Math.Clamp(settings.MonitoringSafety.CheckIntervalSeconds, 30, 3600);
+        settings.MonitoringSafety.MaxConcurrentAccounts = Math.Clamp(settings.MonitoringSafety.MaxConcurrentAccounts, 1, 10);
         settings.AvitoSelectors = new AvitoSelectorOptions();
         settings.Avito ??= new AvitoSettings();
     }
@@ -119,7 +120,8 @@ public sealed class JsonSettingsService(string? dataDirectoryOverride = null) : 
             CheckIntervalSeconds = settings.MonitoringSafety.CheckIntervalSeconds,
             StopOnCaptcha = settings.MonitoringSafety.StopOnCaptcha,
             StopOnAuthRequired = settings.MonitoringSafety.StopOnAuthRequired,
-            AutoStartMonitoring = settings.MonitoringSafety.AutoStartMonitoring
+            AutoStartMonitoring = settings.MonitoringSafety.AutoStartMonitoring,
+            MaxConcurrentAccounts = settings.MonitoringSafety.MaxConcurrentAccounts
         },
         Bitrix = new BitrixSettings
         {

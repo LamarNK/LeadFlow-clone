@@ -13,6 +13,66 @@ namespace LeadFlow.Tests;
 public sealed class MonitoringServiceTests
 {
     [Fact]
+    public async Task StartAsync_ParallelMode_RespectsMaxConcurrentAccounts()
+    {
+        var settings = NewSettings();
+        settings.MonitoringSafety.MaxConcurrentAccounts = 3;
+
+        var concurrent = 0;
+        var peakConcurrent = 0;
+        var sync = new object();
+
+        var source = new FakeAvitoResponseSource
+        {
+            AsyncImpl = async (_, _, ct) =>
+            {
+                lock (sync)
+                {
+                    concurrent++;
+                    peakConcurrent = Math.Max(peakConcurrent, concurrent);
+                }
+
+                try
+                {
+                    await Task.Delay(2000, ct);
+                    return Array.Empty<CandidateResponse>();
+                }
+                finally
+                {
+                    lock (sync)
+                    {
+                        concurrent--;
+                    }
+                }
+            }
+        };
+
+        var accounts = Enumerable.Range(0, 5)
+            .Select(i =>
+            {
+                var account = NewAccount();
+                account.DisplayName = $"Acc-{i}";
+                return account;
+            })
+            .ToList();
+
+        var harness = new MonitoringHarness(source, new FakeBitrixClient(), settings);
+        harness.Repository.AccountsImpl = () => accounts;
+
+        await harness.Service.StartAsync(CancellationToken.None);
+        try
+        {
+            await WaitForAsync(() => source.CallCount >= 5, TimeSpan.FromSeconds(20));
+            Assert.True(peakConcurrent <= 3);
+            Assert.True(peakConcurrent >= 2);
+        }
+        finally
+        {
+            await harness.Service.StopAsync();
+        }
+    }
+
+    [Fact]
     public async Task ProcessAccount_RespectsMaxResponsesPerCycle()
     {
         var settings = NewSettings();
@@ -282,6 +342,11 @@ public sealed class MonitoringServiceTests
         var processTask = harness.Service.ProcessAccountAsync(account, settings, cts.Token);
 
         await firstSubProfileResponsesStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        allowFirstSubProfileResponsesToFinish.SetResult();
+
+        await WaitForAsync(
+            () => harness.Service.GetActiveAdsSnapshot().Any(static ad => ad.Id == "4001"),
+            TimeSpan.FromSeconds(10));
 
         Assert.Equal(["4001"], harness.Service.GetActiveAdsSnapshot().Select(static ad => ad.Id).OrderBy(static id => id));
         Assert.Equal(1, account.ActiveAdsCount);
@@ -291,8 +356,14 @@ public sealed class MonitoringServiceTests
             saved => saved.Id == account.Id && saved.ActiveAdsCount == 1);
 
         cts.Cancel();
-        allowFirstSubProfileResponsesToFinish.SetResult();
-        await processTask;
+        try
+        {
+            await processTask;
+        }
+        catch (OperationCanceledException)
+        {
+            // Ожидаемо: отмена во время паузы перед вторым суб-профилем.
+        }
 
         Assert.Equal(["4001"], harness.Service.GetActiveAdsSnapshot().Select(static ad => ad.Id).OrderBy(static id => id));
         Assert.Equal(1, account.ActiveAdsCount);

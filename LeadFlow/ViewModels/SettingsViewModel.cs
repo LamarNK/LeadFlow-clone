@@ -40,6 +40,10 @@ public partial class SettingsViewModel(
 
     public ObservableCollection<AvitoAccount> Accounts { get; } = [];
 
+    public int AccountsCount => Accounts.Count;
+
+    public bool HasSelectedAccount => SelectedAccount is not null;
+
     [ObservableProperty]
     private AvitoAccount? selectedAccount;
 
@@ -56,6 +60,10 @@ public partial class SettingsViewModel(
     [ObservableProperty]
     private string bitrixWebhookUrl = string.Empty;
 
+    /// <summary>Сколько аккаунтов Авито обрабатывать параллельно в мониторинге (1…10).</summary>
+    [ObservableProperty]
+    private int maxConcurrentAccounts = 1;
+
     [RelayCommand]
     public async Task LoadAsync()
     {
@@ -65,6 +73,7 @@ public partial class SettingsViewModel(
         var selectedAccountId = SelectedAccount?.Id;
         _settings = await settingsService.LoadAsync(CancellationToken.None);
         BitrixWebhookUrl = _settings.Bitrix.WebhookUrl ?? string.Empty;
+        MaxConcurrentAccounts = _settings.MonitoringSafety.MaxConcurrentAccounts;
         var persistedAccounts = await repository.GetAccountsForSettingsAsync(CancellationToken.None);
 
         _pendingProfileDeletions.Clear();
@@ -85,6 +94,8 @@ public partial class SettingsViewModel(
                 AttachAccountDirtyTracking(account);
                 Accounts.Add(account);
             }
+
+            OnPropertyChanged(nameof(AccountsCount));
 
             _dirtyAccountIds.Clear();
             _persistedAccountIds.Clear();
@@ -131,6 +142,11 @@ public partial class SettingsViewModel(
             return true;
         }
 
+        if (_settings.MonitoringSafety.MaxConcurrentAccounts != Math.Clamp(MaxConcurrentAccounts, 1, 10))
+        {
+            return true;
+        }
+
         var currentIds = Accounts.Select(static account => account.Id).ToHashSet();
         return currentIds.Count != _persistedAccountIds.Count
                || currentIds.Any(id => !_persistedAccountIds.Contains(id));
@@ -153,6 +169,7 @@ public partial class SettingsViewModel(
         account.BrowserProfilePath = profile.ProfilePath;
         AttachAccountDirtyTracking(account);
         Accounts.Add(account);
+        OnPropertyChanged(nameof(AccountsCount));
         _dirtyAccountIds.Add(account.Id);
         SelectedAccount = account;
         await SaveAsync();
@@ -203,6 +220,7 @@ public partial class SettingsViewModel(
 
         AttachAccountDirtyTracking(account);
         Accounts.Add(account);
+        OnPropertyChanged(nameof(AccountsCount));
         _dirtyAccountIds.Add(account.Id);
         SelectedAccount = account;
         await SaveAsync();
@@ -224,6 +242,7 @@ public partial class SettingsViewModel(
 
         DetachAccountDirtyTracking(SelectedAccount);
         Accounts.Remove(SelectedAccount);
+        OnPropertyChanged(nameof(AccountsCount));
         SelectedAccount = Accounts.FirstOrDefault();
         await SaveAsync();
     }
@@ -270,8 +289,13 @@ public partial class SettingsViewModel(
             }
 
             var normalizedWebhookUrl = BitrixWebhookUrl?.Trim() ?? string.Empty;
-            var settingsChanged = !string.Equals(_settings.Bitrix.WebhookUrl, normalizedWebhookUrl, StringComparison.Ordinal);
+            var normalizedMaxConcurrent = Math.Clamp(MaxConcurrentAccounts, 1, 10);
+            var settingsChanged =
+                !string.Equals(_settings.Bitrix.WebhookUrl, normalizedWebhookUrl, StringComparison.Ordinal)
+                || _settings.MonitoringSafety.MaxConcurrentAccounts != normalizedMaxConcurrent;
             _settings.Bitrix.WebhookUrl = normalizedWebhookUrl;
+            _settings.MonitoringSafety.MaxConcurrentAccounts = normalizedMaxConcurrent;
+            MaxConcurrentAccounts = normalizedMaxConcurrent;
 
             var currentAccountIds = Accounts.Select(static account => account.Id).ToHashSet();
             var removedAccountIds = _persistedAccountIds
@@ -557,6 +581,7 @@ public partial class SettingsViewModel(
             var newId = newAccount.Id;
             AttachAccountDirtyTracking(newAccount);
             Accounts.Add(newAccount);
+            OnPropertyChanged(nameof(AccountsCount));
             _dirtyAccountIds.Add(newId);
             await SaveAsync();
             await LoadAsync();
@@ -767,6 +792,7 @@ public partial class SettingsViewModel(
             _selectedAccountPropertySource = value;
         }
 
+        OnPropertyChanged(nameof(HasSelectedAccount));
         RefreshSelectedAccountPresentation();
         NotifyProfileArchiveAndAccountBrowserCommands();
     }

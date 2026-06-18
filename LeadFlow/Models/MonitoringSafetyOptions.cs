@@ -8,4 +8,7 @@ public sealed class MonitoringSafetyOptions
     public bool StopOnCaptcha { get; set; } = true;
     public bool StopOnAuthRequired { get; set; } = true;
     public bool AutoStartMonitoring { get; set; }
+
+    /// <summary>Сколько аккаунтов Авито обрабатывать параллельно в одном цикле мониторинга (1…10).</summary>
+    public int MaxConcurrentAccounts { get; set; } = 1;
 }

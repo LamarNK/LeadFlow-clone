@@ -24,7 +24,7 @@ public static class MonitoringTiming
     /// <summary>Насколько сильно исторический слот (день недели + час) может поднять «активность» при расчёте паузы (0…1).</summary>
     public const double CycleHistoricalHeatActivityBoostCap = 0.55;
 
-    public const int DelayBetweenAccountsSeconds = 30;
+    public const int DelayBetweenAccountsSeconds = 15;
     public const int DelayBetweenResponsesSeconds = 8;
     public const int MaxResponsesPerAccountPerCycle = 10;
     public const int ActiveAdsRefreshIntervalMinutes = 75;
@@ -38,18 +38,18 @@ public static class MonitoringTiming
     public const int HumanDelayBetweenResponsesMaxSeconds = 14;
 
     /// <summary>После переключения суб-профиля и до того, как тянуть с него данные.</summary>
-    public const int HumanDelayAfterProfileSwitchMinMs = 3500;
-    public const int HumanDelayAfterProfileSwitchMaxMs = 9000;
+    public const int HumanDelayAfterProfileSwitchMinMs = 6000;
+    public const int HumanDelayAfterProfileSwitchMaxMs = 15000;
 
     /// <summary>После загрузки страницы /profile/pro/items до снятия HTML — даём «дочитать» SPA + лёгкий jitter.</summary>
-    public const int HumanDelayAfterItemsRenderMinMs = 3000;
-    public const int HumanDelayAfterItemsRenderMaxMs = 6500;
+    public const int HumanDelayAfterItemsRenderMinMs = 5000;
+    public const int HumanDelayAfterItemsRenderMaxMs = 10000;
 
     /// <summary>После загрузки модалки переключения профилей.</summary>
     public const int HumanDelayAfterSwitchModalMinMs = 800;
     public const int HumanDelayAfterSwitchModalMaxMs = 2200;
 
     /// <summary>Пауза между суб-профилями на одном аккаунте — крупнее, имитируем «походили по кабинету».</summary>
-    public const int HumanDelayBetweenSubProfilesMinMs = 5000;
-    public const int HumanDelayBetweenSubProfilesMaxMs = 12000;
+    public const int HumanDelayBetweenSubProfilesMinMs = 8000;
+    public const int HumanDelayBetweenSubProfilesMaxMs = 18000;
 }

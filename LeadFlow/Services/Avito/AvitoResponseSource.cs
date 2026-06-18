@@ -5,6 +5,7 @@ using LeadFlow.Models;
 using LeadFlow.Services.AdsPower;
 using LeadFlow.Services.Browser;
 using LeadFlow.Services;
+using PuppeteerSharp;
 
 namespace LeadFlow.Services.Avito;
 
@@ -32,11 +33,61 @@ public sealed class AvitoResponseSource(
                 account.AdsPowerApiBaseUrl,
                 string.IsNullOrWhiteSpace(account.AdsPowerApiKey) ? null : account.AdsPowerApiKey);
             var messengerHints = new CandidatesMessengerEnrichmentHints(account.Id, settings.DuplicateScope);
-            var rawAdsPower = await adsPowerAvitoAutomationService
-                .ExtractCandidatesJsonAsync(options, account.AdsPowerProfileId, cancellationToken, messengerHints)
-                .ConfigureAwait(false);
-            return await ParseResponsesFromRawExtractionAsync(account, settings, rawAdsPower, cancellationToken)
-                .ConfigureAwait(false);
+
+            const int adsPowerMaxAttempts = 3;
+            for (var attempt = 1; attempt <= adsPowerMaxAttempts; attempt++)
+            {
+                if (attempt > 1)
+                {
+                    var pause = attempt == 2 ? TimeSpan.FromSeconds(5) : TimeSpan.FromSeconds(12);
+                    _ = GlobalLogger.Instance.LogAsync(
+                        $"AdsPower candidates fetch retry {attempt}/{adsPowerMaxAttempts} for {account.DisplayName} after {pause.TotalSeconds:F0} s.",
+                        DeskLinkAuditLogLevel.Info);
+                    await Task.Delay(pause, cancellationToken).ConfigureAwait(false);
+                }
+
+                try
+                {
+                    var rawAdsPower = await adsPowerAvitoAutomationService
+                        .ExtractCandidatesJsonAsync(options, account.AdsPowerProfileId, cancellationToken, messengerHints)
+                        .ConfigureAwait(false);
+                    return await ParseResponsesFromRawExtractionAsync(account, settings, rawAdsPower, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (AvitoCaptchaDetectedException)
+                {
+                    throw;
+                }
+                catch (TimeoutException ex)
+                {
+                    _ = GlobalLogger.Instance.LogAsync(
+                        $"AdsPower timeout waiting for candidates page for {account.DisplayName} (attempt {attempt}/{adsPowerMaxAttempts}): {ex.Message}",
+                        DeskLinkAuditLogLevel.Warning);
+                    if (attempt == adsPowerMaxAttempts)
+                    {
+                        account.LastErrorMessage = "Таймаут загрузки страницы кандидатов AdsPower после нескольких попыток";
+                        throw;
+                    }
+                }
+                catch (Exception ex) when (IsAdsPowerTransientCandidatesError(ex))
+                {
+                    _ = GlobalLogger.Instance.LogAsync(
+                        $"AdsPower transient error on candidates page for {account.DisplayName} (attempt {attempt}/{adsPowerMaxAttempts}): {ex.Message}",
+                        DeskLinkAuditLogLevel.Warning);
+                    if (attempt == adsPowerMaxAttempts)
+                    {
+                        account.LastErrorMessage = "Не удалось получить отклики AdsPower после нескольких попыток";
+                        throw;
+                    }
+                }
+            }
+
+            account.LastErrorMessage = "Не удалось получить отклики со страницы кандидатов AdsPower после нескольких попыток";
+            return [];
         }
 
         var session = await browserSessionService.CreateSessionAsync(account, cancellationToken);
@@ -244,6 +295,9 @@ public sealed class AvitoResponseSource(
             throw;
         }
     }
+
+    private static bool IsAdsPowerTransientCandidatesError(Exception ex) =>
+        ex is PuppeteerException or TimeoutException;
 
     private static async Task<string?> FetchPageHtmlSnapshotAsync(
         Func<string, CancellationToken, Task<string>> execute,

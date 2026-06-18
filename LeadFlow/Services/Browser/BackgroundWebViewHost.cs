@@ -6,9 +6,8 @@ namespace LeadFlow.Services.Browser;
 
 public sealed class BackgroundWebViewHost : IBackgroundWebViewHost
 {
-    private static readonly SemaphoreSlim HostSemaphore = new(1, 1);
-    private static readonly TimeSpan RecreateCooldown = TimeSpan.FromSeconds(4);
-    private static DateTime _lastDisposedAtUtc = DateTime.MinValue;
+    private const int MaxConcurrentHosts = 10;
+    private static readonly SemaphoreSlim HostSemaphore = new(MaxConcurrentHosts, MaxConcurrentHosts);
     private readonly Window _window;
     private bool _ownsSemaphore;
 
@@ -36,15 +35,6 @@ public sealed class BackgroundWebViewHost : IBackgroundWebViewHost
         await HostSemaphore.WaitAsync(cancellationToken);
         try
         {
-            var cooldownDelay = (_lastDisposedAtUtc + RecreateCooldown) - DateTime.UtcNow;
-            if (cooldownDelay > TimeSpan.Zero)
-            {
-                await GlobalLogger.Instance.LogAsync(
-                    $"Waiting {cooldownDelay.TotalMilliseconds:F0} ms before creating the next background WebView2 host.",
-                    DeskLinkAuditLogLevel.Debug);
-                await Task.Delay(cooldownDelay, cancellationToken);
-            }
-
             await GlobalLogger.Instance.LogAsync(
                 "Creating background WebView2 host.",
                 DeskLinkAuditLogLevel.Debug);
@@ -101,7 +91,6 @@ public sealed class BackgroundWebViewHost : IBackgroundWebViewHost
         {
             if (_ownsSemaphore)
             {
-                _lastDisposedAtUtc = DateTime.UtcNow;
                 _ownsSemaphore = false;
                 HostSemaphore.Release();
             }

@@ -86,7 +86,25 @@ public partial class DashboardViewModel : ObservableObject
     [ObservableProperty]
     private int accountsWithBalanceCount;
 
+    [ObservableProperty]
+    private int totalSubProfileCount;
+
+    [ObservableProperty]
+    private int balanceHiddenAccountCount;
+
+    [ObservableProperty]
+    private string balanceSummaryLine = "";
+
+    [ObservableProperty]
+    private string balancePreviewHint = "";
+
+    [ObservableProperty]
+    private int lowBalanceAccountCount;
+
     public ObservableCollection<AccountBalanceItem> AccountBalances { get; } = new();
+
+    /// <summary>Компактное превью на Dashboard (самые «тонкие» аккаунты первыми).</summary>
+    public ObservableCollection<AccountBalanceItem> BalancePreviewAccounts { get; } = new();
 
     [ObservableProperty]
     private int activityChartColumns = 24;
@@ -520,14 +538,33 @@ public partial class DashboardViewModel : ObservableObject
     private void ApplyBalanceItems(IReadOnlyList<AccountBalanceItem> items)
     {
         AccountBalances.Clear();
+        BalancePreviewAccounts.Clear();
         foreach (var item in items)
         {
             AccountBalances.Add(item);
         }
 
+        foreach (var item in items.Take(BalanceDisplayRules.DashboardPreviewAccountLimit))
+        {
+            BalancePreviewAccounts.Add(item);
+        }
+
         TotalBalance = items.Where(a => a.HasBalance).Sum(a => a.TotalBalance);
         HasBalances = items.Any(a => a.HasBalance);
         AccountsWithBalanceCount = items.Count(a => a.HasBalance);
+        TotalSubProfileCount = items.Sum(a => a.SubProfileCount);
+        LowBalanceAccountCount = items.Count(a => a.HasLowBalance);
+        BalanceHiddenAccountCount = Math.Max(0, items.Count - BalancePreviewAccounts.Count);
+
+        BalanceSummaryLine = items.Count > 0
+            ? $"{AccountsWithBalanceCount} акк. · {TotalSubProfileCount} субпроф."
+            : string.Empty;
+
+        BalancePreviewHint = BalanceHiddenAccountCount > 0
+            ? $"Показано {BalancePreviewAccounts.Count} из {items.Count} (сначала с наименьшим балансом)"
+            : items.Count > 0
+                ? "Все аккаунты"
+                : string.Empty;
     }
 
     public void ApplyProcessedResponse(CandidateResponse response)

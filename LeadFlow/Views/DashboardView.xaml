@@ -576,79 +576,130 @@
                     <Border Style="{StaticResource MinimalAnalyticsRailCardStyle}"
                             Padding="12,8">
                         <StackPanel>
-                            <TextBlock Text="Балансы"
-                                       FontSize="11"
-                                       FontWeight="SemiBold"
-                                       Foreground="{StaticResource TextBrush}" />
+                            <Grid Margin="0,0,0,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Балансы"
+                                           FontSize="11"
+                                           FontWeight="SemiBold"
+                                           Foreground="{StaticResource TextBrush}"
+                                           VerticalAlignment="Center" />
+                                <Button Grid.Column="1"
+                                        Command="{Binding OpenBalanceDetailsCommand}"
+                                        Content="Сводка"
+                                        Padding="8,3"
+                                        FontSize="10"
+                                        MinHeight="24"
+                                        Style="{StaticResource MinimalSegmentedOutlineButtonStyle}" />
+                            </Grid>
                             <TextBlock Text="{Binding TotalBalance, StringFormat={}{0:N2} ₽}"
                                        FontSize="18"
                                        FontWeight="Bold"
-                                       Foreground="#059669"
-                                       Margin="0,0,0,4" />
+                                       Foreground="#059669" />
+                            <TextBlock Text="{Binding BalanceSummaryLine}"
+                                       FontSize="10"
+                                       Foreground="{StaticResource SecondaryTextBrush}"
+                                       Margin="0,2,0,0" />
+                            <TextBlock FontSize="10"
+                                       Foreground="#C2410C"
+                                       Margin="0,2,0,6"
+                                       Visibility="{Binding LowBalanceAccountCount, Converter={StaticResource ZeroToCollapsedConverter}}">
+                                <Run Text="Низкий баланс (&lt;5 000 ₽): " />
+                                <Run Text="{Binding LowBalanceAccountCount, Mode=OneWay}" FontWeight="SemiBold" />
+                                <Run Text=" акк." />
+                            </TextBlock>
                             <ScrollViewer VerticalScrollBarVisibility="Auto"
-                                          MaxHeight="200">
-                                <ItemsControl ItemsSource="{Binding AccountBalances}">
+                                          MaxHeight="168">
+                                <ItemsControl ItemsSource="{Binding BalancePreviewAccounts}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
-                                            <Grid Margin="0,0,0,3"
-                                                  Cursor="Hand">
-                                                <Grid.InputBindings>
+                                            <Border Margin="0,0,0,6"
+                                                    Padding="0,0,0,4"
+                                                    BorderBrush="#EEF2F6"
+                                                    BorderThickness="0,0,0,1"
+                                                    Cursor="Hand">
+                                                <Border.InputBindings>
                                                     <MouseBinding Command="{Binding DataContext.OpenBalanceDetailsCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                                                   MouseAction="LeftClick" />
-                                                </Grid.InputBindings>
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="*" />
-                                                    <ColumnDefinition Width="Auto" />
-                                                </Grid.ColumnDefinitions>
-                                                <Grid.RowDefinitions>
-                                                    <RowDefinition Height="Auto" />
-                                                    <RowDefinition Height="Auto" />
-                                                    <RowDefinition Height="Auto" />
-                                                </Grid.RowDefinitions>
-                                                <TextBlock Grid.Row="0" Grid.Column="0"
-                                                           Text="{Binding AccountName}"
-                                                           FontSize="10"
-                                                           FontWeight="SemiBold"
-                                                           Foreground="{StaticResource TextBrush}"
-                                                           TextTrimming="CharacterEllipsis" />
-                                                <TextBlock Grid.Row="0" Grid.Column="1"
-                                                           Text="{Binding TotalBalanceDisplay}"
-                                                           FontSize="11"
-                                                           FontWeight="Bold"
-                                                           Foreground="#059669" />
-                                                <Border Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
-                                                        Height="3"
-                                                        CornerRadius="2"
-                                                        Background="#E2E8F0"
-                                                        Margin="0,2,0,0">
-                                                    <Border Width="{Binding BarWidth, Converter={x:Static conv:FactorToWidthConverter.Instance}, ConverterParameter=200}"
-                                                            Background="#059669"
+                                                </Border.InputBindings>
+                                                <Grid>
+                                                    <Grid.RowDefinitions>
+                                                        <RowDefinition Height="Auto" />
+                                                        <RowDefinition Height="Auto" />
+                                                        <RowDefinition Height="Auto" />
+                                                    </Grid.RowDefinitions>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Grid.Row="0" Grid.Column="0"
+                                                               Text="{Binding AccountName}"
+                                                               FontSize="10"
+                                                               FontWeight="SemiBold"
+                                                               Foreground="{StaticResource TextBrush}"
+                                                               TextTrimming="CharacterEllipsis" />
+                                                    <TextBlock Grid.Row="0" Grid.Column="1"
+                                                               Text="{Binding TotalBalanceDisplay}"
+                                                               FontSize="11"
+                                                               FontWeight="Bold">
+                                                        <TextBlock.Style>
+                                                            <Style TargetType="TextBlock">
+                                                                <Setter Property="Foreground" Value="#059669" />
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding HasLowBalance}" Value="True">
+                                                                        <Setter Property="Foreground" Value="#C2410C" />
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBlock.Style>
+                                                    </TextBlock>
+                                                    <Border Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
+                                                            Height="3"
                                                             CornerRadius="2"
-                                                            HorizontalAlignment="Left"
-                                                            SnapsToDevicePixels="True" />
-                                                </Border>
-                                                <ItemsControl Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2"
-                                                              Margin="0,1,0,0"
-                                                              ItemsSource="{Binding SubProfiles}">
-                                                    <ItemsControl.ItemsPanel>
-                                                        <ItemsPanelTemplate>
-                                                            <WrapPanel Orientation="Horizontal" />
-                                                        </ItemsPanelTemplate>
-                                                    </ItemsControl.ItemsPanel>
-                                                    <ItemsControl.ItemTemplate>
-                                                        <DataTemplate>
-                                                            <TextBlock Text="{Binding SubProfileLine}"
-                                                                       Margin="0,0,6,0"
-                                                                       FontSize="10"
-                                                                       Foreground="{StaticResource SecondaryTextBrush}" />
-                                                        </DataTemplate>
-                                                    </ItemsControl.ItemTemplate>
-                                                </ItemsControl>
-                                            </Grid>
+                                                            Background="#E2E8F0"
+                                                            Margin="0,3,0,0">
+                                                        <Border Width="{Binding BarWidth, Converter={x:Static conv:FactorToWidthConverter.Instance}, ConverterParameter=200}"
+                                                                CornerRadius="2"
+                                                                HorizontalAlignment="Left"
+                                                                SnapsToDevicePixels="True">
+                                                            <Border.Style>
+                                                                <Style TargetType="Border">
+                                                                    <Setter Property="Background" Value="#059669" />
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding HasLowBalance}" Value="True">
+                                                                            <Setter Property="Background" Value="#F97316" />
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </Border.Style>
+                                                        </Border>
+                                                    </Border>
+                                                    <TextBlock Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2"
+                                                               Margin="0,3,0,0"
+                                                               Text="{Binding CompactSubProfileSummary}"
+                                                               FontSize="10"
+                                                               Foreground="{StaticResource SecondaryTextBrush}"
+                                                               TextTrimming="CharacterEllipsis"
+                                                               TextWrapping="NoWrap" />
+                                                </Grid>
+                                            </Border>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
                             </ScrollViewer>
+                            <Button Margin="0,6,0,0"
+                                    Command="{Binding OpenBalanceDetailsCommand}"
+                                    Content="{Binding BalancePreviewHint}"
+                                    FontSize="10"
+                                    Padding="0,4"
+                                    HorizontalContentAlignment="Left"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    Foreground="{StaticResource PrimaryBrush}"
+                                    Cursor="Hand"
+                                    Visibility="{Binding HasBalances, Converter={StaticResource BooleanToVisibilityConverter}}" />
                         </StackPanel>
                     </Border>
                 </StackPanel>

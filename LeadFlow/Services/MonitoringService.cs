@@ -46,6 +46,9 @@ public sealed class MonitoringService(
     private readonly Dictionary<Guid, string> _restoredBlockedSnapshotJsonByAccount = [];
     private int _consecutiveMonitoringLoopFailures;
     private int _consecutiveQuietMonitoringCycles;
+    private readonly Lock _statusSync = new();
+    private int _accountsInFlight;
+    private readonly HashSet<string> _activeAccountNames = new(StringComparer.Ordinal);
 
     public event EventHandler<MonitoringStatus>? StatusChanged;
     public event EventHandler<string>? StatusMessageChanged;
@@ -371,11 +374,20 @@ public sealed class MonitoringService(
 
     private async Task UpdateProfileStatsAsync(CancellationToken ct)
     {
+        var settings = await settingsService.LoadAsync(ct).ConfigureAwait(false);
         var accounts = (await repository.GetAccountsAsync(ct))
             .Where(static account => account.IsEnabled)
             .ToList();
+        var parallelism = Math.Clamp(settings.MonitoringSafety.MaxConcurrentAccounts, 1, 10);
 
-        foreach (var account in accounts)
+        await Parallel.ForEachAsync(
+            accounts,
+            new ParallelOptions
+            {
+                MaxDegreeOfParallelism = parallelism,
+                CancellationToken = ct
+            },
+            async (account, token) =>
         {
             try
             {
@@ -396,12 +408,12 @@ public sealed class MonitoringService(
                             ["accountName"] = account.DisplayName,
                             ["profileProvider"] = account.ProfileProvider.ToString()
                         });
-                    continue;
+                    return;
                 }
 
                 var prev = new StatsPreviousCounts(account.ActiveAdsCount, account.BlockedCount, account.DraftsCount);
 
-                var html = await LoadProfilePageHtmlAsync(account, ct);
+                var html = await LoadProfilePageHtmlAsync(account, token);
                 LogActiveAdsChange("UpdateProfileStatsAsync.before_parse_local", account.Id, memBefore, memBefore, true);
                 var profileData = avitoParser.ParseProfilePage(html, account.Id);
                 profileData.ItemSnippetMarkersFound = CountItemSnippetMarkers(html);
@@ -412,7 +424,7 @@ public sealed class MonitoringService(
                     memBefore,
                     profileData.ActiveAds.Count,
                     profileData.ParseSuccess);
-                await ApplyStatsSnapshotAsync(account, profileData, prev, ct).ConfigureAwait(false);
+                await ApplyStatsSnapshotAsync(account, profileData, prev, token).ConfigureAwait(false);
 
                 await GlobalLogger.Instance.LogAsync(
                     () => $"Парсинг активных объявлений завершён для аккаунта {account.DisplayName} ({account.ProfileProvider}): на вкладке «Активные»={profileData.ActiveCount}, вакансий (раздел /rabota/)={profileData.ActiveAds.Count}, blocked={profileData.BlockedCount}, drafts={profileData.DraftsCount}.",
@@ -469,12 +481,12 @@ public sealed class MonitoringService(
             {
                 LogActiveAdsChange("UpdateProfileStatsAsync.catch_captcha", account.Id, GetPersistedOrMemoryActiveAdCount(account), GetPersistedOrMemoryActiveAdCount(account), false);
                 // Снимок объявлений не сбрасываем — в UI остаётся последний успешный парсинг этого аккаунта.
-                await HandleCaptchaForAccountAsync(account, captchaEx, ct).ConfigureAwait(false);
+                await HandleCaptchaForAccountAsync(account, captchaEx, token).ConfigureAwait(false);
             }
             catch (AdsPowerDailyOpenLimitExceededException limitEx)
             {
                 LogActiveAdsChange("UpdateProfileStatsAsync.catch_ads_power_limit", account.Id, GetPersistedOrMemoryActiveAdCount(account), GetPersistedOrMemoryActiveAdCount(account), false);
-                await HandleAdsPowerDailyOpenLimitForAccountAsync(account, limitEx, ct).ConfigureAwait(false);
+                await HandleAdsPowerDailyOpenLimitForAccountAsync(account, limitEx, token).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -490,7 +502,7 @@ public sealed class MonitoringService(
                         ["error.type"] = ex.GetType().FullName
                     });
             }
-        }
+        }).ConfigureAwait(false);
     }
 
     private async Task RunAsync(CancellationToken cancellationToken)
@@ -517,22 +529,68 @@ public sealed class MonitoringService(
                     var newResponsesThisCycle = 0;
                     var accountsPolled = 0;
                     var hadUndischargedBacklog = false;
-                    foreach (var account in accounts)
+                    var parallelism = Math.Clamp(settings.MonitoringSafety.MaxConcurrentAccounts, 1, 10);
+                    var launchSlot = 0;
+
+                    if (parallelism == 1)
                     {
-                        if (cancellationToken.IsCancellationRequested)
+                        foreach (var account in accounts)
                         {
-                            break;
-                        }
+                            if (cancellationToken.IsCancellationRequested)
+                            {
+                                break;
+                            }
 
-                        var (newCount, polled, backlog) = await ProcessAccountAsync(account, settings, cancellationToken);
-                        if (polled)
-                        {
-                            accountsPolled++;
-                            newResponsesThisCycle += newCount;
-                            hadUndischargedBacklog |= backlog;
-                        }
+                            var (newCount, polled, backlog) = await ProcessAccountAsync(account, settings, cancellationToken)
+                                .ConfigureAwait(false);
+                            if (polled)
+                            {
+                                accountsPolled++;
+                                newResponsesThisCycle += newCount;
+                                hadUndischargedBacklog |= backlog;
+                            }
 
-                        await Task.Delay(TimeSpan.FromSeconds(MonitoringTiming.DelayBetweenAccountsSeconds), cancellationToken);
+                            await Task.Delay(TimeSpan.FromSeconds(MonitoringTiming.DelayBetweenAccountsSeconds), cancellationToken)
+                                .ConfigureAwait(false);
+                        }
+                    }
+                    else
+                    {
+                        await Parallel.ForEachAsync(
+                            accounts,
+                            new ParallelOptions
+                            {
+                                MaxDegreeOfParallelism = parallelism,
+                                CancellationToken = cancellationToken
+                            },
+                            async (account, ct) =>
+                            {
+                                var slot = Interlocked.Increment(ref launchSlot) - 1;
+                                if (slot > 0)
+                                {
+                                    await Task.Delay(TimeSpan.FromMilliseconds(slot * 500), ct).ConfigureAwait(false);
+                                }
+
+                                BeginParallelAccount(account, accounts.Count);
+                                try
+                                {
+                                    var (newCount, polled, backlog) = await ProcessAccountAsync(account, settings, ct)
+                                        .ConfigureAwait(false);
+                                    if (polled)
+                                    {
+                                        Interlocked.Increment(ref accountsPolled);
+                                        Interlocked.Add(ref newResponsesThisCycle, newCount);
+                                        if (backlog)
+                                        {
+                                            Volatile.Write(ref hadUndischargedBacklog, true);
+                                        }
+                                    }
+                                }
+                                finally
+                                {
+                                    EndParallelAccount(account);
+                                }
+                            }).ConfigureAwait(false);
                     }
 
                     cycleSw.Stop();
@@ -1056,6 +1114,7 @@ public sealed class MonitoringService(
             var sub = subProfiles[i];
             var subLabel = $"{sub.Name} {i + 1}/{subProfiles.Count}";
             var skipProfile = false;
+            var subProfileTimedOut = false;
 
             try
             {
@@ -1273,6 +1332,14 @@ public sealed class MonitoringService(
             }
             catch (Exception ex)
             {
+                subProfileTimedOut = ex is TimeoutException || ex.InnerException is TimeoutException;
+                if (subProfileTimedOut)
+                {
+                    UpdateStatus(
+                        MonitoringStatus.Running,
+                        $"Аккаунт \"{account.DisplayName}\": суб-профиль «{sub.Name}» — таймаут загрузки, пропуск.");
+                }
+
                 _ = GlobalLogger.Instance.LogAsync(
                     $"Не удалось обработать суб-профиль «{sub.Name}» (id={sub.Id}, отклики, стрим) аккаунта {account.DisplayName}: {ex.Message}",
                     DeskLinkAuditLogLevel.Warning,
@@ -1282,7 +1349,8 @@ public sealed class MonitoringService(
                         ["accountName"] = account.DisplayName,
                         ["subProfile.id"] = sub.Id,
                         ["subProfile.name"] = sub.Name,
-                        ["error.type"] = ex.GetType().FullName
+                        ["error.type"] = ex.GetType().FullName,
+                        ["isTimeout"] = subProfileTimedOut
                     });
             }
 
@@ -1291,6 +1359,10 @@ public sealed class MonitoringService(
             if (i < subProfiles.Count - 1 && !cancellationToken.IsCancellationRequested && !budgetExhausted)
             {
                 await HumanDelay.BetweenSubProfilesAsync(cancellationToken).ConfigureAwait(false);
+                if (subProfileTimedOut)
+                {
+                    await HumanDelay.BetweenSubProfilesAsync(cancellationToken).ConfigureAwait(false);
+                }
             }
         }
 
@@ -1785,10 +1857,44 @@ public sealed class MonitoringService(
 
     private void UpdateStatus(MonitoringStatus status, string message)
     {
-        CurrentStatus = status;
-        CurrentStatusMessage = message;
-        StatusChanged?.Invoke(this, status);
-        StatusMessageChanged?.Invoke(this, message);
+        lock (_statusSync)
+        {
+            CurrentStatus = status;
+            CurrentStatusMessage = message;
+            StatusChanged?.Invoke(this, status);
+            StatusMessageChanged?.Invoke(this, message);
+        }
+    }
+
+    private void BeginParallelAccount(AvitoAccount account, int totalAccounts)
+    {
+        lock (_statusSync)
+        {
+            _accountsInFlight++;
+            _activeAccountNames.Add(account.DisplayName);
+            CurrentStatus = MonitoringStatus.Running;
+            CurrentStatusMessage = FormatParallelAccountsStatus(totalAccounts);
+            StatusChanged?.Invoke(this, MonitoringStatus.Running);
+            StatusMessageChanged?.Invoke(this, CurrentStatusMessage);
+        }
+    }
+
+    private void EndParallelAccount(AvitoAccount account)
+    {
+        lock (_statusSync)
+        {
+            _accountsInFlight = Math.Max(0, _accountsInFlight - 1);
+            _activeAccountNames.Remove(account.DisplayName);
+        }
+    }
+
+    private string FormatParallelAccountsStatus(int totalAccounts)
+    {
+        var names = _activeAccountNames.Count == 0
+            ? "—"
+            : string.Join(", ", _activeAccountNames.Take(3).Select(static n => $"«{n}»"));
+        var suffix = _activeAccountNames.Count > 3 ? "…" : string.Empty;
+        return $"Параллельно {_accountsInFlight}/{totalAccounts}: {names}{suffix}";
     }
 
     private static string FormatDelay(TimeSpan delay)

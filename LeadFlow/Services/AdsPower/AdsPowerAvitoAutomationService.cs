@@ -1221,10 +1221,10 @@ public sealed class AdsPowerAvitoAutomationService(
         }
         catch (Exception ex) when (IsRecoverableNavigationError(ex))
         {
-            await Task.Delay(1400, cancellationToken).ConfigureAwait(false);
+            await Task.Delay(3000, cancellationToken).ConfigureAwait(false);
         }
 
-        await Task.Delay(600, cancellationToken).ConfigureAwait(false);
+        await Task.Delay(2500, cancellationToken).ConfigureAwait(false);
     }
 
     private enum AvitoAutomationPageKind

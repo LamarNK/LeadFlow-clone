@@ -13,5 +13,7 @@ public sealed class SubProfileBalanceItem
 
     public bool HasBalance => Balance.HasValue;
 
+    public bool IsLowBalance => Balance is decimal b && b < BalanceDisplayRules.LowBalanceThresholdRub;
+
     public string SubProfileLine => $"{SubProfileName}={BalanceDisplay}";
 }
