@@ -59,6 +59,32 @@ public sealed class AvitoCandidatesPageWaiterTests
     }
 
     [Fact]
+    public async Task AcceptsStableEmptyListWhenBaselineSignatureMatches()
+    {
+        var poll = 0;
+        var probes = new[]
+        {
+            ProbeJson("0|", loading: false, contentReady: true),
+            ProbeJson("0|", loading: false, contentReady: true),
+            ProbeJson("0|", loading: false, contentReady: true),
+        };
+
+        await AvitoCandidatesPageWaiter.WaitForCandidatesOrThrowFirewallAsync(
+            (_, _) =>
+            {
+                var idx = Math.Min(poll, probes.Length - 1);
+                poll++;
+                return Task.FromResult(probes[idx]);
+            },
+            null,
+            "https://www.avito.ru/profile/candidates",
+            CancellationToken.None,
+            baselineListSignature: "0|");
+
+        Assert.True(poll >= 3);
+    }
+
+    [Fact]
     public async Task KeepsPollingWhileBaselineSignatureIsUnchanged()
     {
         var same = ProbeJson("1|Старый@", loading: false);

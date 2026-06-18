@@ -1388,10 +1388,6 @@ public sealed class MonitoringService(
             if (i < subProfiles.Count - 1 && !cancellationToken.IsCancellationRequested && !budgetExhausted)
             {
                 await HumanDelay.BetweenSubProfilesAsync(cancellationToken).ConfigureAwait(false);
-                if (subProfileTimedOut)
-                {
-                    await HumanDelay.BetweenSubProfilesAsync(cancellationToken).ConfigureAwait(false);
-                }
             }
         }
 

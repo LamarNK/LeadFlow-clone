@@ -133,8 +133,11 @@ public sealed partial class AdsPowerAvitoAutomationService
             }
         }
 
-        await WaitForProfileItemsShellAsync(page, nameof(WarmUpSessionPageAsync), cancellationToken)
-            .ConfigureAwait(false);
+        if (IsOnActiveProfileItemsPage(page.Url))
+        {
+            await WaitForProfileItemsShellAsync(page, nameof(WarmUpSessionPageAsync), cancellationToken)
+                .ConfigureAwait(false);
+        }
 
         _ = GlobalLogger.Instance.LogAsync(
             $"AdsPower session warmup completed for user {adsPowerUserId}.",
@@ -185,9 +188,30 @@ public sealed partial class AdsPowerAvitoAutomationService
             // не критично
         }
 
-        await EnsureSwitchModalAsync(page, cancellationToken).ConfigureAwait(false);
-        await AwaitProfileSwitchModalContentAsync(page, cancellationToken, nameof(SwitchSubProfileOnPageAsync))
+        if (IsOnUrl(page.Url, CandidatesPageUrl))
+        {
+            await NavigateAwayFromCandidatesForSwitchAsync(page, cancellationToken, nameof(SwitchSubProfileOnPageAsync))
+                .ConfigureAwait(false);
+        }
+
+        await EnsureSwitchModalAsync(page, cancellationToken, nameof(SwitchSubProfileOnPageAsync))
             .ConfigureAwait(false);
+        if (!await AwaitProfileSwitchModalContentAsync(page, cancellationToken, nameof(SwitchSubProfileOnPageAsync))
+                .ConfigureAwait(false))
+        {
+            await DismissProfileSwitchModalAsync(page, cancellationToken).ConfigureAwait(false);
+            _ = GlobalLogger.Instance.LogAsync(
+                $"AdsPower profile-switch (session): modal not ready for subProfile {subProfileId}, skipping.",
+                DeskLinkAuditLogLevel.Warning,
+                memberName: nameof(SwitchSubProfileOnPageAsync),
+                properties: new Dictionary<string, object?>
+                {
+                    ["step"] = "switch_modal_not_ready",
+                    ["avito.subProfileId"] = subProfileId,
+                    ["page.url"] = page.Url
+                });
+            return false;
+        }
 
         if (await IsTargetSubProfileAlreadyCurrentAsync(page, subProfileId).ConfigureAwait(false))
         {
@@ -204,8 +228,14 @@ public sealed partial class AdsPowerAvitoAutomationService
             return true;
         }
 
-        return await TryClickSubProfileCardAndWaitCloseAsync(page, subProfileId, cancellationToken)
+        var switched = await TryClickSubProfileCardAndWaitCloseAsync(page, subProfileId, cancellationToken)
             .ConfigureAwait(false);
+        if (!switched)
+        {
+            await DismissProfileSwitchModalAsync(page, cancellationToken).ConfigureAwait(false);
+        }
+
+        return switched;
     }
 
     private async Task<bool> VerifyActiveSubProfileOnPageAsync(
@@ -219,9 +249,20 @@ public sealed partial class AdsPowerAvitoAutomationService
         }
 
         var sw = Stopwatch.StartNew();
-        await EnsureSwitchModalAsync(page, cancellationToken).ConfigureAwait(false);
-        await AwaitProfileSwitchModalContentAsync(page, cancellationToken, nameof(VerifyActiveSubProfileOnPageAsync))
+        if (IsOnUrl(page.Url, CandidatesPageUrl))
+        {
+            await NavigateAwayFromCandidatesForSwitchAsync(page, cancellationToken, nameof(VerifyActiveSubProfileOnPageAsync))
+                .ConfigureAwait(false);
+        }
+
+        await EnsureSwitchModalAsync(page, cancellationToken, nameof(VerifyActiveSubProfileOnPageAsync))
             .ConfigureAwait(false);
+        if (!await AwaitProfileSwitchModalContentAsync(page, cancellationToken, nameof(VerifyActiveSubProfileOnPageAsync))
+                .ConfigureAwait(false))
+        {
+            await DismissProfileSwitchModalAsync(page, cancellationToken).ConfigureAwait(false);
+            return false;
+        }
 
         var maxWaitMs = MonitoringTiming.VerifySubProfileMaxWaitMs;
         var pollMs = MonitoringTiming.VerifySubProfilePollMs;

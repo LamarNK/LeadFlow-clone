@@ -1,4 +1,5 @@
 using System.Text.Json;
+using LeadFlow.Logging.Audit;
 using LeadFlow.Services;
 
 namespace LeadFlow.Services.Avito;
@@ -19,6 +20,7 @@ public static class AvitoCandidatesPageWaiter
         var maxWaitMs = MonitoringTiming.CandidatesPageMaxWaitMs;
         var pollMs = MonitoringTiming.CandidatesPagePollMs;
         var stableRequired = MonitoringTiming.CandidatesPageStablePollsRequired;
+        var baselineGraceMs = MonitoringTiming.CandidatesBaselineStaleAcceptGraceMs;
 
         string? lastStableSignature = null;
         var stablePolls = 0;
@@ -55,16 +57,6 @@ public static class AvitoCandidatesPageWaiter
                 continue;
             }
 
-            if (!string.IsNullOrEmpty(baselineListSignature)
-                && string.Equals(probe.ListSignature, baselineListSignature, StringComparison.Ordinal)
-                && !probe.EmptyConfirmed)
-            {
-                stablePolls = 0;
-                lastStableSignature = null;
-                await Task.Delay(pollMs, cancellationToken).ConfigureAwait(false);
-                continue;
-            }
-
             if (string.Equals(probe.ListSignature, lastStableSignature, StringComparison.Ordinal))
             {
                 stablePolls++;
@@ -73,6 +65,22 @@ public static class AvitoCandidatesPageWaiter
             {
                 stablePolls = 1;
                 lastStableSignature = probe.ListSignature;
+            }
+
+            var baselineMatches = !string.IsNullOrEmpty(baselineListSignature)
+                                  && string.Equals(probe.ListSignature, baselineListSignature, StringComparison.Ordinal)
+                                  && !probe.EmptyConfirmed;
+
+            if (baselineMatches)
+            {
+                var stableEmpty = probe.ItemCount == 0 && probe.StatusCount == 0;
+                if ((stableEmpty || elapsed >= baselineGraceMs) && stablePolls >= stableRequired)
+                {
+                    return;
+                }
+
+                await Task.Delay(pollMs, cancellationToken).ConfigureAwait(false);
+                continue;
             }
 
             if (stablePolls >= stableRequired)
@@ -87,11 +95,30 @@ public static class AvitoCandidatesPageWaiter
             .ConfigureAwait(false);
 
         var finalProbe = await TryParseReadyProbeAsync(executeScript, cancellationToken).ConfigureAwait(false);
-        if (finalProbe is not { ContentReady: true, Blocked: false }
-            || (!string.IsNullOrEmpty(baselineListSignature)
-                && string.Equals(finalProbe.ListSignature, baselineListSignature, StringComparison.Ordinal)
-                && !finalProbe.EmptyConfirmed))
+        var baselineBlocksAccept = !string.IsNullOrEmpty(baselineListSignature)
+                                   && finalProbe is not null
+                                   && string.Equals(finalProbe.ListSignature, baselineListSignature, StringComparison.Ordinal)
+                                   && !finalProbe.EmptyConfirmed
+                                   && !(finalProbe.ItemCount == 0 && finalProbe.StatusCount == 0);
+
+        if (finalProbe is not { ContentReady: true, Blocked: false } || baselineBlocksAccept)
         {
+            _ = GlobalLogger.Instance.LogAsync(
+                "Candidates page waiter timed out.",
+                DeskLinkAuditLogLevel.Warning,
+                memberName: nameof(AvitoCandidatesPageWaiter),
+                properties: new Dictionary<string, object?>
+                {
+                    ["step"] = "candidates_wait_timeout",
+                    ["candidates.baselineSignature"] = baselineListSignature ?? "<none>",
+                    ["candidates.finalSignature"] = finalProbe?.ListSignature ?? "<none>",
+                    ["candidates.itemCount"] = finalProbe?.ItemCount,
+                    ["candidates.statusCount"] = finalProbe?.StatusCount,
+                    ["candidates.contentReady"] = finalProbe?.ContentReady,
+                    ["candidates.emptyConfirmed"] = finalProbe?.EmptyConfirmed,
+                    ["candidates.waitMs"] = maxWaitMs
+                });
+
             throw new TimeoutException("Таймаут загрузки страницы кандидатов Авито (список откликов не стабилизировался).");
         }
     }
@@ -138,7 +165,9 @@ public static class AvitoCandidatesPageWaiter
                 listSignature,
                 contentReady,
                 emptyConfirmed,
-                blocked);
+                blocked,
+                itemCount,
+                statusCount);
         }
         catch
         {
@@ -168,5 +197,7 @@ public static class AvitoCandidatesPageWaiter
         string ListSignature,
         bool ContentReady,
         bool EmptyConfirmed,
-        bool Blocked);
+        bool Blocked,
+        int ItemCount,
+        int StatusCount);
 }

@@ -65,11 +65,16 @@ public static class AvitoCandidatesPageScripts
                 statusCount === 0 &&
                 (hasFirewallDom || /Доступ\s+ограничен|проблема\s+с\s+IP/i.test(title));
 
-            const loading = !!(
-                document.querySelector(
-                    "[class*='spinner' i], [class*='Skeleton' i], [class*='skeleton' i], [class*='loader' i], [data-marker*='loader']"
+            const hasListData = itemCount > 0 || statusCount > 0;
+            const listRoot =
+                document.querySelector("[data-marker='job-applications/list']") ||
+                document.querySelector("main") ||
+                document.body;
+            const loading = !hasListData && !!(
+                listRoot.querySelector(
+                    "[data-marker*='job-application'][data-marker*='loader'], [data-marker='job-applications/loader']"
                 ) ||
-                document.querySelector("[aria-busy='true']")
+                listRoot.querySelector("[class*='spinner' i], [class*='loader' i]")
             );
 
             const items = Array.from(document.querySelectorAll("[data-marker='job-application/item']")).slice(0, 3);
@@ -91,9 +96,8 @@ public static class AvitoCandidatesPageScripts
                 );
 
             const contentReady =
-                !loading &&
                 document.readyState === "complete" &&
-                (itemCount > 0 || statusCount > 0 || emptyConfirmed);
+                (hasListData || emptyConfirmed || (!loading && itemCount === 0 && statusCount === 0));
 
             return JSON.stringify({
                 readyState: document.readyState,

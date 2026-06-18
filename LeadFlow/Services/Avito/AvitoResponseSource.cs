@@ -198,8 +198,18 @@ public sealed class AvitoResponseSource(
         string raw,
         CancellationToken cancellationToken)
     {
-        using var json = JsonDocument.Parse(raw);
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            throw new JsonException("Пустой ответ скрипта извлечения откликов.");
+        }
+
+        using var json = JsonDocument.Parse(raw.Trim());
         var root = json.RootElement;
+        if (root.ValueKind != JsonValueKind.Object)
+        {
+            throw new JsonException(
+                $"Ожидался JSON-объект откликов, получено {root.ValueKind} (длина {raw.Length}).");
+        }
         var hasCaptcha = root.TryGetProperty("hasCaptcha", out var captchaProp) && captchaProp.GetBoolean();
         var hasLogin = root.TryGetProperty("hasLogin", out var loginProp) && loginProp.GetBoolean();
         var pageUrl = root.TryGetProperty("url", out var urlProp) ? urlProp.GetString() : null;

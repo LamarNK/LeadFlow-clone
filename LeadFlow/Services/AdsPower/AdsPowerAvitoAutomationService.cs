@@ -22,6 +22,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
     private const string CandidatesPageUrl = "https://www.avito.ru/profile/candidates";
     private const string ProfileItemsPageUrl = "https://www.avito.ru/profile/pro/items";
     private const string ProfileBlockedItemsPageUrl = "https://www.avito.ru/profile/pro/items?filters=%7B%22tabs%22%3A%22rejected%22%7D";
+    private const string ProfileDashboardPageUrl = "https://www.avito.ru/profile/dashboard";
     /// <summary>Модалка «Выбор профиля» через дашборд — надёжнее, чем с <c>/profile/pro/items</c>.</summary>
     private const string ProfileSwitchPageUrl = "https://www.avito.ru/profile/dashboard#profile/switch?withEntities=true";
 
@@ -596,9 +597,19 @@ public sealed partial class AdsPowerAvitoAutomationService(
         ArgumentNullException.ThrowIfNull(page);
         ArgumentException.ThrowIfNullOrWhiteSpace(adsPowerUserId);
 
-        await EnsureSwitchModalAsync(page, cancellationToken).ConfigureAwait(false);
-        await AwaitProfileSwitchModalContentAsync(page, cancellationToken, nameof(CaptureProfileSwitchHtmlInSessionAsync))
+        if (IsOnUrl(page.Url, CandidatesPageUrl))
+        {
+            await NavigateAwayFromCandidatesForSwitchAsync(page, cancellationToken, nameof(CaptureProfileSwitchHtmlInSessionAsync))
+                .ConfigureAwait(false);
+        }
+
+        await EnsureSwitchModalAsync(page, cancellationToken, nameof(CaptureProfileSwitchHtmlInSessionAsync))
             .ConfigureAwait(false);
+        if (!await AwaitProfileSwitchModalContentAsync(page, cancellationToken, nameof(CaptureProfileSwitchHtmlInSessionAsync))
+                .ConfigureAwait(false))
+        {
+            throw new InvalidOperationException("AdsPower CDP: модалка переключения профилей не загрузилась.");
+        }
 
         var html = await EvaluateWithRetryAsync<string>(
                 page,
@@ -683,10 +694,20 @@ public sealed partial class AdsPowerAvitoAutomationService(
                     cancellationToken)
                 .ConfigureAwait(false);
 
-            // Всегда dashboard#profile/switch — читаем модалку в актуальном контексте Avito.
-            await EnsureSwitchModalAsync(page, cancellationToken).ConfigureAwait(false);
-            await AwaitProfileSwitchModalContentAsync(page, cancellationToken, nameof(SwitchActiveProfileAsync))
+            if (IsOnUrl(page.Url, CandidatesPageUrl))
+            {
+                await NavigateAwayFromCandidatesForSwitchAsync(page, cancellationToken, nameof(SwitchActiveProfileAsync))
+                    .ConfigureAwait(false);
+            }
+
+            await EnsureSwitchModalAsync(page, cancellationToken, nameof(SwitchActiveProfileAsync))
                 .ConfigureAwait(false);
+            if (!await AwaitProfileSwitchModalContentAsync(page, cancellationToken, nameof(SwitchActiveProfileAsync))
+                    .ConfigureAwait(false))
+            {
+                await DismissProfileSwitchModalAsync(page, cancellationToken).ConfigureAwait(false);
+                return false;
+            }
 
             if (await IsTargetSubProfileAlreadyCurrentAsync(page, subProfileId).ConfigureAwait(false))
             {
@@ -818,6 +839,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
                     ["step"] = "card_timeout",
                     ["avito.subProfileId"] = subProfileId
                 });
+            await DismissProfileSwitchModalAsync(page, cancellationToken).ConfigureAwait(false);
             return false;
         }
 
@@ -827,6 +849,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
 
         if (!clicked)
         {
+            await DismissProfileSwitchModalAsync(page, cancellationToken).ConfigureAwait(false);
             return false;
         }
 
@@ -1080,41 +1103,162 @@ public sealed partial class AdsPowerAvitoAutomationService(
     /// Всегда открывает модалку «Выбор профиля» через <c>/profile/dashboard#profile/switch?withEntities=true</c>,
     /// чтобы прочитать актуальный <c>isCurrent</c>, а не состояние с другой страницы Avito.
     /// </summary>
-    private static async Task EnsureSwitchModalAsync(IPage page, CancellationToken cancellationToken)
+    private static async Task EnsureSwitchModalAsync(
+        IPage page,
+        CancellationToken cancellationToken,
+        string callerMemberName = nameof(EnsureSwitchModalAsync))
     {
+        if (IsOnProfileSwitchPage(page.Url))
+        {
+            await BounceToDashboardBeforeSwitchAsync(page, cancellationToken, callerMemberName)
+                .ConfigureAwait(false);
+        }
+
         for (var i = 0; i <= 2; i++)
         {
             try
             {
                 await page.GoToAsync(ProfileSwitchPageUrl, new NavigationOptions
                 {
-                    Timeout = 60_000,
+                    Timeout = 45_000,
                     WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
                 }).ConfigureAwait(false);
+
+                _ = GlobalLogger.Instance.LogAsync(
+                    "AdsPower profile-switch: switch page navigation completed.",
+                    DeskLinkAuditLogLevel.Info,
+                    memberName: callerMemberName,
+                    properties: new Dictionary<string, object?>
+                    {
+                        ["step"] = "switch_nav_ok",
+                        ["page.url"] = page.Url,
+                        ["attempt"] = i + 1
+                    });
                 return;
             }
             catch (Exception ex) when (IsRecoverableNavigationError(ex))
             {
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"AdsPower profile-switch: navigation retry {i + 1}/3: {ex.Message}",
+                    DeskLinkAuditLogLevel.Warning,
+                    memberName: callerMemberName,
+                    properties: new Dictionary<string, object?>
+                    {
+                        ["step"] = "switch_nav_retry",
+                        ["page.url"] = page.Url,
+                        ["attempt"] = i + 1
+                    });
+
                 if (i < 2)
                 {
                     await Task.Delay((i + 1) * 1400, cancellationToken).ConfigureAwait(false);
                 }
             }
         }
+
+        throw new TimeoutException(
+            "Не удалось открыть страницу переключения суб-профилей Avito (навигация на dashboard#profile/switch).");
     }
 
-    /// <summary>Ждём корень модалки и карточки профилей перед чтением <c>isCurrent</c> или кликом.</summary>
-    private static async Task AwaitProfileSwitchModalContentAsync(
+    private static bool IsOnProfileSwitchPage(string? url) =>
+        !string.IsNullOrEmpty(url)
+        && (url.Contains("profile/switch", StringComparison.OrdinalIgnoreCase)
+            || url.Contains("dashboard#profile", StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// SPA Avito не переоткрывает модалку при повторном GoTo на тот же hash — сначала уходим на чистый dashboard.
+    /// </summary>
+    private static async Task BounceToDashboardBeforeSwitchAsync(
         IPage page,
         CancellationToken cancellationToken,
         string callerMemberName)
     {
+        _ = GlobalLogger.Instance.LogAsync(
+            "AdsPower profile-switch: bounce to dashboard before reopening switch modal.",
+            DeskLinkAuditLogLevel.Info,
+            memberName: callerMemberName,
+            properties: new Dictionary<string, object?>
+            {
+                ["step"] = "switch_dashboard_bounce",
+                ["page.url"] = page.Url
+            });
+
+        try
+        {
+            await page.GoToAsync(ProfileDashboardPageUrl, new NavigationOptions
+            {
+                Timeout = 45_000,
+                WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
+            }).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (IsRecoverableNavigationError(ex))
+        {
+            await Task.Delay(1400, cancellationToken).ConfigureAwait(false);
+            await page.GoToAsync(ProfileDashboardPageUrl, new NavigationOptions
+            {
+                Timeout = 45_000,
+                WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
+            }).ConfigureAwait(false);
+        }
+
+        await Task.Delay(500, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Ждём корень модалки и карточки профилей перед чтением <c>isCurrent</c> или кликом.</summary>
+    private static async Task<bool> AwaitProfileSwitchModalContentAsync(
+        IPage page,
+        CancellationToken cancellationToken,
+        string callerMemberName)
+    {
+        if (await TryAwaitProfileSwitchModalContentOnceAsync(page, cancellationToken, callerMemberName)
+                .ConfigureAwait(false))
+        {
+            return true;
+        }
+
+        _ = GlobalLogger.Instance.LogAsync(
+            "AdsPower profile-switch: modal/cards not ready — retry via dashboard bounce.",
+            DeskLinkAuditLogLevel.Warning,
+            memberName: callerMemberName,
+            properties: new Dictionary<string, object?>
+            {
+                ["step"] = "switch_modal_retry",
+                ["page.url"] = page.Url
+            });
+
+        await BounceToDashboardBeforeSwitchAsync(page, cancellationToken, callerMemberName)
+            .ConfigureAwait(false);
+
+        try
+        {
+            await page.GoToAsync(ProfileSwitchPageUrl, new NavigationOptions
+            {
+                Timeout = 45_000,
+                WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
+            }).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (IsRecoverableNavigationError(ex))
+        {
+            await Task.Delay(1400, cancellationToken).ConfigureAwait(false);
+        }
+
+        return await TryAwaitProfileSwitchModalContentOnceAsync(page, cancellationToken, callerMemberName)
+            .ConfigureAwait(false);
+    }
+
+    private static async Task<bool> TryAwaitProfileSwitchModalContentOnceAsync(
+        IPage page,
+        CancellationToken cancellationToken,
+        string callerMemberName)
+    {
+        var modalReady = false;
         try
         {
             await page.WaitForSelectorAsync(
                     "[data-marker='component-profile-switch/root']",
-                    new WaitForSelectorOptions { Timeout = 30_000 })
+                    new WaitForSelectorOptions { Timeout = 18_000 })
                 .ConfigureAwait(false);
+            modalReady = true;
         }
         catch (Exception ex)
         {
@@ -1122,7 +1266,6 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 $"AdsPower profile-switch: modal selector wait timed out: {ex.Message}",
                 DeskLinkAuditLogLevel.Warning,
                 memberName: callerMemberName,
-                
                 properties: new Dictionary<string, object?>
                 {
                     ["step"] = "modal_timeout",
@@ -1130,11 +1273,16 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 });
         }
 
+        if (!modalReady)
+        {
+            return false;
+        }
+
         try
         {
             await page.WaitForFunctionAsync(
                     "() => !!document.querySelector(\"[data-marker^='component-profile-switch/profile-']\")",
-                    new WaitForFunctionOptions { Timeout = 20_000, PollingInterval = 650 })
+                    new WaitForFunctionOptions { Timeout = 12_000, PollingInterval = 650 })
                 .ConfigureAwait(false);
         }
         catch (Exception ex)
@@ -1143,15 +1291,16 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 $"AdsPower profile-switch: profile cards not detected in time: {ex.Message}",
                 DeskLinkAuditLogLevel.Warning,
                 memberName: callerMemberName,
-                
                 properties: new Dictionary<string, object?>
                 {
                     ["step"] = "cards_timeout",
                     ["page.url"] = page.Url
                 });
+            return false;
         }
 
         await HumanDelay.AfterSwitchModalAsync(cancellationToken).ConfigureAwait(false);
+        return true;
     }
 
     private static string Escape(string value)
@@ -1194,43 +1343,64 @@ public sealed partial class AdsPowerAvitoAutomationService(
             WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
         };
 
+        _ = GlobalLogger.Instance.LogAsync(
+            alreadyOnCandidates
+                ? "AdsPower candidates: hard navigation (refresh list after sub-profile switch)."
+                : "AdsPower candidates: navigating to responses page.",
+            DeskLinkAuditLogLevel.Info,
+            memberName: nameof(ExtractCandidatesJsonAsync),
+            properties: new Dictionary<string, object?>
+            {
+                ["step"] = alreadyOnCandidates ? "candidates_hard_nav" : "candidates_goto",
+                ["page.url"] = page.Url,
+                ["avito.url"] = CandidatesPageUrl
+            });
+
         try
         {
-            if (alreadyOnCandidates)
-            {
-                _ = GlobalLogger.Instance.LogAsync(
-                    "AdsPower candidates: forced reload (same URL — refresh list after sub-profile switch).",
-                    DeskLinkAuditLogLevel.Info,
-                    memberName: nameof(ExtractCandidatesJsonAsync),
-                    
-                    properties: new Dictionary<string, object?>
-                    {
-                        ["step"] = "candidates_reload",
-                        ["page.url"] = page.Url
-                    });
-
-                await page.ReloadAsync(navigationOptions.Timeout).ConfigureAwait(false);
-            }
-            else
-            {
-                _ = GlobalLogger.Instance.LogAsync(
-                    "AdsPower candidates: navigating to responses page.",
-                    DeskLinkAuditLogLevel.Info,
-                    memberName: nameof(ExtractCandidatesJsonAsync),
-                    
-                    properties: new Dictionary<string, object?>
-                    {
-                        ["step"] = "candidates_goto",
-                        ["page.url"] = page.Url,
-                        ["avito.url"] = CandidatesPageUrl
-                    });
-
-                await page.GoToAsync(CandidatesPageUrl, navigationOptions).ConfigureAwait(false);
-            }
+            await page.GoToAsync(CandidatesPageUrl, navigationOptions).ConfigureAwait(false);
         }
         catch (Exception ex) when (IsRecoverableNavigationError(ex))
         {
             await Task.Delay(3000, cancellationToken).ConfigureAwait(false);
+            await page.GoToAsync(CandidatesPageUrl, navigationOptions).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Со страницы откликов SPA часто зависает прямой переход на модалку switch — сначала уходим на «Мои объявления».
+    /// </summary>
+    private static async Task NavigateAwayFromCandidatesForSwitchAsync(
+        IPage page,
+        CancellationToken cancellationToken,
+        string callerMemberName)
+    {
+        _ = GlobalLogger.Instance.LogAsync(
+            "AdsPower profile-switch: leaving candidates page before opening switch modal.",
+            DeskLinkAuditLogLevel.Info,
+            memberName: callerMemberName,
+            properties: new Dictionary<string, object?>
+            {
+                ["step"] = "switch_leave_candidates",
+                ["page.url"] = page.Url
+            });
+
+        try
+        {
+            await page.GoToAsync(ProfileItemsPageUrl, new NavigationOptions
+            {
+                Timeout = 45_000,
+                WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
+            }).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (IsRecoverableNavigationError(ex))
+        {
+            await Task.Delay(1400, cancellationToken).ConfigureAwait(false);
+            await page.GoToAsync(ProfileItemsPageUrl, new NavigationOptions
+            {
+                Timeout = 45_000,
+                WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
+            }).ConfigureAwait(false);
         }
     }
 
