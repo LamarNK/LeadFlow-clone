@@ -286,5 +286,11 @@ public sealed class AvitoResponseSourceTests
             CancellationToken cancellationToken = default,
             bool closeBrowserAfter = false) =>
             Task.CompletedTask;
+
+        public Task<IAdsPowerAccountSession> OpenAccountSessionAsync(
+            AdsPowerConnectionOptions options,
+            string adsPowerUserId,
+            CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("Account session не используется в этих тестах.");
     }
 }

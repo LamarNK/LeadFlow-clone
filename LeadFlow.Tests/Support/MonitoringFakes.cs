@@ -55,6 +55,18 @@ internal sealed class FakeAvitoResponseSource : IAvitoResponseSource
             ? AsyncImpl(account, settings, cancellationToken)
             : Task.FromResult(Impl(account, settings));
     }
+
+    public Task<IReadOnlyList<CandidateResponse>> ParseCandidatesFromRawAsync(
+        AvitoAccount account,
+        AppSettings settings,
+        string rawExtractionJson,
+        CancellationToken cancellationToken)
+    {
+        CallCount++;
+        return AsyncImpl is not null
+            ? AsyncImpl(account, settings, cancellationToken)
+            : Task.FromResult(Impl(account, settings));
+    }
 }
 
 internal sealed class StubBrowserSessionService : IBrowserSessionService
@@ -155,5 +167,11 @@ internal sealed class StubAdsPowerAvitoAutomationService : IAdsPowerAvitoAutomat
         string url,
         CancellationToken cancellationToken = default,
         bool closeBrowserAfter = false) =>
+        throw new InvalidOperationException("AdsPower CDP не должен вызываться в этих тестах.");
+
+    public Task<IAdsPowerAccountSession> OpenAccountSessionAsync(
+        AdsPowerConnectionOptions options,
+        string adsPowerUserId,
+        CancellationToken cancellationToken = default) =>
         throw new InvalidOperationException("AdsPower CDP не должен вызываться в этих тестах.");
 }

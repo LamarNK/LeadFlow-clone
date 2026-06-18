@@ -19,6 +19,13 @@ public sealed class AvitoResponseSource(
 {
     public const string CandidatesPageUrl = "https://www.avito.ru/profile/candidates";
 
+    public Task<IReadOnlyList<CandidateResponse>> ParseCandidatesFromRawAsync(
+        AvitoAccount account,
+        AppSettings settings,
+        string rawExtractionJson,
+        CancellationToken cancellationToken) =>
+        ParseResponsesFromRawExtractionAsync(account, settings, rawExtractionJson, cancellationToken);
+
     public async Task<IReadOnlyList<CandidateResponse>> GetNewResponsesAsync(AvitoAccount account, AppSettings settings, CancellationToken cancellationToken)
     {
         if (account.ProfileProvider == AvitoProfileProvider.AdsPower && !settings.DemoModeEnabled)
@@ -110,8 +117,20 @@ public sealed class AvitoResponseSource(
 
             try
             {
+                var executeForBaseline = (string script, CancellationToken ct) =>
+                    automationService.ExecuteScriptAsync(session, script, ct);
+
+                string? staleListSignature = null;
+                if (!string.IsNullOrWhiteSpace(session.CurrentUrl)
+                    && session.CurrentUrl.Contains("/profile/candidates", StringComparison.OrdinalIgnoreCase))
+                {
+                    staleListSignature = await AvitoCandidatesPageWaiter
+                        .TryCaptureListSignatureAsync(executeForBaseline, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+
                 await automationService.NavigateAsync(session, CandidatesPageUrl, cancellationToken);
-                await WaitForCandidatesPageAsync(session, cancellationToken);
+                await WaitForCandidatesPageAsync(session, cancellationToken, staleListSignature);
                 account.LastAuthCheckAt = DateTime.UtcNow;
 
                 var execute = (string script, CancellationToken ct) =>
@@ -277,7 +296,10 @@ public sealed class AvitoResponseSource(
             .ToList();
     }
 
-    private async Task WaitForCandidatesPageAsync(BrowserAccountSession session, CancellationToken cancellationToken)
+    private async Task WaitForCandidatesPageAsync(
+        BrowserAccountSession session,
+        CancellationToken cancellationToken,
+        string? baselineListSignature = null)
     {
         var execute = (string script, CancellationToken ct) =>
             automationService.ExecuteScriptAsync(session, script, ct);
@@ -288,7 +310,8 @@ public sealed class AvitoResponseSource(
                 execute,
                 ct => FetchPageHtmlSnapshotAsync(execute, ct),
                 CandidatesPageUrl,
-                cancellationToken).ConfigureAwait(false);
+                cancellationToken,
+                baselineListSignature).ConfigureAwait(false);
         }
         catch (AvitoCaptchaDetectedException)
         {

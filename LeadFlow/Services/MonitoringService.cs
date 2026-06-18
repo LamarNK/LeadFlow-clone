@@ -1104,14 +1104,21 @@ public sealed class MonitoringService(
                 });
         }
 
-        for (var i = 0; i < subProfiles.Count; i++)
+        var adsPowerProfileId = account.AdsPowerProfileId!;
+        await using var adsPowerSession = await adsPowerAvitoAutomationService
+            .OpenAccountSessionAsync(options, adsPowerProfileId, cancellationToken)
+            .ConfigureAwait(false);
+
+        var messengerHints = new CandidatesMessengerEnrichmentHints(account.Id, settings.DuplicateScope);
+        var deferredSubIds = new HashSet<string>(StringComparer.Ordinal);
+
+        async Task ProcessSubProfilePassAsync(AvitoSubProfile sub, int i, bool deferredRetry)
         {
             if (cancellationToken.IsCancellationRequested || budgetExhausted)
             {
-                break;
+                return;
             }
 
-            var sub = subProfiles[i];
             var subLabel = $"{sub.Name} {i + 1}/{subProfiles.Count}";
             var skipProfile = false;
             var subProfileTimedOut = false;
@@ -1120,10 +1127,14 @@ public sealed class MonitoringService(
             {
                 UpdateStatus(
                     MonitoringStatus.Running,
-                    $"Аккаунт \"{account.DisplayName}\": переключаемся на суб-профиль «{sub.Name}» ({i + 1}/{subProfiles.Count}).");
+                    deferredRetry
+                        ? $"Аккаунт \"{account.DisplayName}\": повтор суб-профиля «{sub.Name}» ({i + 1}/{subProfiles.Count})."
+                        : $"Аккаунт \"{account.DisplayName}\": переключаемся на суб-профиль «{sub.Name}» ({i + 1}/{subProfiles.Count}).");
 
                 _ = GlobalLogger.Instance.LogAsync(
-                    $"Avito Pro переключаем суб-профиль {i + 1}/{subProfiles.Count} (отклики{(collectStats ? "+объявления" : string.Empty)}, стрим) для {account.DisplayName}: {sub.Name} (id={sub.Id}).",
+                    deferredRetry
+                        ? $"Avito Pro повтор суб-профиля {i + 1}/{subProfiles.Count} (отклики{(collectStats ? "+объявления" : string.Empty)}, стрим) для {account.DisplayName}: {sub.Name} (id={sub.Id})."
+                        : $"Avito Pro переключаем суб-профиль {i + 1}/{subProfiles.Count} (отклики{(collectStats ? "+объявления" : string.Empty)}, стрим) для {account.DisplayName}: {sub.Name} (id={sub.Id}).",
                     DeskLinkAuditLogLevel.Info,
                     properties: new Dictionary<string, object?>
                     {
@@ -1133,35 +1144,13 @@ public sealed class MonitoringService(
                         ["subProfile.name"] = sub.Name,
                         ["subProfile.index"] = i + 1,
                         ["subProfile.total"] = subProfiles.Count,
-                        ["collectStats"] = collectStats
+                        ["collectStats"] = collectStats,
+                        ["deferredRetry"] = deferredRetry,
+                        ["step"] = deferredRetry ? "subprofile_deferred_retry" : "subprofile_start"
                     });
 
-                var adsPowerProfileId = account.AdsPowerProfileId;
-                if (string.IsNullOrWhiteSpace(adsPowerProfileId))
-                {
-                    _ = GlobalLogger.Instance.LogAsync(
-                        $"Sub-profile \"{sub.Name}\" (id={sub.Id}) of account {account.DisplayName}: AdsPowerProfileId is empty, skipping.",
-                        DeskLinkAuditLogLevel.Warning,
-                        properties: new Dictionary<string, object?>
-                        {
-                            ["accountId"] = account.Id,
-                            ["accountName"] = account.DisplayName,
-                            ["subProfile.id"] = sub.Id,
-                            ["subProfile.name"] = sub.Name,
-                            ["step"] = "switch_skipped_no_ads_power_id"
-                        });
-                    skipProfile = true;
-                }
-
-                if (skipProfile)
-                {
-                    if (i < subProfiles.Count - 1 && !cancellationToken.IsCancellationRequested && !budgetExhausted)
-                        await HumanDelay.BetweenSubProfilesAsync(cancellationToken).ConfigureAwait(false);
-                    continue;
-                }
-
-                var switched = await adsPowerAvitoAutomationService
-                    .SwitchActiveProfileAsync(options, adsPowerProfileId, sub.Id, cancellationToken)
+                var switched = await adsPowerSession
+                    .SwitchSubProfileAsync(sub.Id, cancellationToken)
                     .ConfigureAwait(false);
 
                 if (!switched)
@@ -1175,27 +1164,93 @@ public sealed class MonitoringService(
                             ["accountName"] = account.DisplayName,
                             ["subProfile.id"] = sub.Id,
                             ["subProfile.name"] = sub.Name,
-                            ["step"] = "switch_failed_modal_open"
+                            ["step"] = "switch_failed_modal_open",
+                            ["deferredRetry"] = deferredRetry
                         });
+                    if (!deferredRetry)
+                    {
+                        deferredSubIds.Add(sub.Id);
+                    }
+
                     skipProfile = true;
+                }
+
+                if (!skipProfile)
+                {
+                    var verified = await adsPowerSession
+                        .VerifyActiveSubProfileAsync(sub.Id, cancellationToken)
+                        .ConfigureAwait(false);
+
+                    if (!verified)
+                    {
+                        _ = GlobalLogger.Instance.LogAsync(
+                            $"Sub-profile \"{sub.Name}\" (id={sub.Id}) of account {account.DisplayName}: active sub-profile not confirmed after switch, skipping.",
+                            DeskLinkAuditLogLevel.Warning,
+                            properties: new Dictionary<string, object?>
+                            {
+                                ["accountId"] = account.Id,
+                                ["accountName"] = account.DisplayName,
+                                ["subProfile.id"] = sub.Id,
+                                ["subProfile.name"] = sub.Name,
+                                ["step"] = "verify_failed",
+                                ["deferredRetry"] = deferredRetry
+                            });
+                        if (!deferredRetry)
+                        {
+                            deferredSubIds.Add(sub.Id);
+                        }
+
+                        skipProfile = true;
+                    }
                 }
 
                 if (skipProfile)
                 {
                     if (i < subProfiles.Count - 1 && !cancellationToken.IsCancellationRequested && !budgetExhausted)
                         await HumanDelay.BetweenSubProfilesAsync(cancellationToken).ConfigureAwait(false);
-                    continue;
+                    return;
                 }
 
-                // 1️⃣ Отклики — сразу после переключения суб-профиля (свежий список на /profile/candidates).
-                var batch = await avitoResponseSource
-                    .GetNewResponsesAsync(account, settings, cancellationToken)
-                    .ConfigureAwait(false);
+                IReadOnlyList<CandidateResponse> batch;
+                try
+                {
+                    var rawJson = await adsPowerSession
+                        .ExtractCandidatesJsonAsync(messengerHints, cancellationToken)
+                        .ConfigureAwait(false);
+                    batch = await avitoResponseSource
+                        .ParseCandidatesFromRawAsync(account, settings, rawJson, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                catch (TimeoutException) when (!cancellationToken.IsCancellationRequested)
+                {
+                    _ = GlobalLogger.Instance.LogAsync(
+                        $"Суб-профиль «{sub.Name}» аккаунта {account.DisplayName}: таймаут загрузки откликов, повторная попытка.",
+                        DeskLinkAuditLogLevel.Warning,
+                        properties: new Dictionary<string, object?>
+                        {
+                            ["accountId"] = account.Id,
+                            ["accountName"] = account.DisplayName,
+                            ["subProfile.id"] = sub.Id,
+                            ["subProfile.name"] = sub.Name,
+                            ["step"] = "candidates_timeout_retry",
+                            ["deferredRetry"] = deferredRetry
+                        });
+
+                    await HumanDelay.BetweenSubProfilesAsync(cancellationToken).ConfigureAwait(false);
+                    var rawJson = await adsPowerSession
+                        .ExtractCandidatesJsonAsync(messengerHints, cancellationToken)
+                        .ConfigureAwait(false);
+                    batch = await avitoResponseSource
+                        .ParseCandidatesFromRawAsync(account, settings, rawJson, cancellationToken)
+                        .ConfigureAwait(false);
+                }
 
                 foreach (var r in batch)
                 {
                     r.AvitoSubProfileId = sub.Id;
                 }
+
+                deferredSubIds.Remove(sub.Id);
 
                 var processedBeforeBatch = processedInCycle;
                 var freshInBatch = await ProcessBatchInlineAsync(batch, subLabel).ConfigureAwait(false);
@@ -1216,10 +1271,10 @@ public sealed class MonitoringService(
                         ["processedFromBatch"] = processedFromBatch,
                         ["deferredInBatch"] = deferredInBatch,
                         ["processedInCycle"] = processedInCycle,
-                        ["maxPerCycle"] = maxPerCycle
+                        ["maxPerCycle"] = maxPerCycle,
+                        ["deferredRetry"] = deferredRetry
                     });
 
-                // 2️⃣ Объявления — только если кэш статистики устарел (раз в ActiveAdsRefreshIntervalMinutes).
                 if (collectStats && statsAggregate is not null && statsPrev is not null)
                 {
                     try
@@ -1228,7 +1283,8 @@ public sealed class MonitoringService(
                             MonitoringStatus.Running,
                             $"Аккаунт \"{account.DisplayName}\": собираем объявления — суб-профиль «{sub.Name}» ({i + 1}/{subProfiles.Count}).");
 
-                        var part = await CollectProfileItemsAsync(account, options, cancellationToken).ConfigureAwait(false);
+                        var part = await CollectProfileItemsFromSessionAsync(account, adsPowerSession, cancellationToken)
+                            .ConfigureAwait(false);
                         if (!part.ParseSuccess)
                         {
                             _ = GlobalLogger.Instance.LogAsync(
@@ -1241,7 +1297,8 @@ public sealed class MonitoringService(
                                     ["subProfile.id"] = sub.Id,
                                     ["subProfile.name"] = sub.Name,
                                     ["parseSuccess"] = false,
-                                    ["parseFailureReason"] = part.ParseFailureReason
+                                    ["parseFailureReason"] = part.ParseFailureReason,
+                                    ["deferredRetry"] = deferredRetry
                                 });
                             skipProfile = true;
                         }
@@ -1250,7 +1307,7 @@ public sealed class MonitoringService(
                         {
                             if (i < subProfiles.Count - 1 && !cancellationToken.IsCancellationRequested && !budgetExhausted)
                                 await HumanDelay.BetweenSubProfilesAsync(cancellationToken).ConfigureAwait(false);
-                            continue;
+                            return;
                         }
 
                         subProfileStatsSuccesses++;
@@ -1279,12 +1336,10 @@ public sealed class MonitoringService(
                                 ["subProfile.id"] = sub.Id,
                                 ["subProfile.name"] = sub.Name,
                                 ["activeAds"] = part.ActiveAds.Count,
-                                ["blockedAds"] = part.BlockedAds.Count
+                                ["blockedAds"] = part.BlockedAds.Count,
+                                ["deferredRetry"] = deferredRetry
                             });
 
-                        // Если при старте аккаунт был пустым, показываем накопленный результат сразу по мере
-                        // прохода суб-профилей. Но не считаем статистику «свежей» до полного успешного прохода,
-                        // чтобы следующий цикл продолжал добирать остальные кабинеты.
                         if (hadEmptySnapshotAtCycleStart)
                         {
                             await ApplyStatsSnapshotAsync(
@@ -1298,7 +1353,6 @@ public sealed class MonitoringService(
                     }
                     catch (AvitoCaptchaDetectedException)
                     {
-                        // Не глушим: пробрасываем в верхний catch, который завершит обход аккаунта.
                         throw;
                     }
                     catch (AdsPowerDailyOpenLimitExceededException)
@@ -1316,14 +1370,14 @@ public sealed class MonitoringService(
                                 ["accountName"] = account.DisplayName,
                                 ["subProfile.id"] = sub.Id,
                                 ["subProfile.name"] = sub.Name,
-                                ["error.type"] = statsEx.GetType().FullName
+                                ["error.type"] = statsEx.GetType().FullName,
+                                ["deferredRetry"] = deferredRetry
                             });
                     }
                 }
             }
             catch (AvitoCaptchaDetectedException)
             {
-                // Капча/firewall — выбрасываем наверх, остальные суб-профили этого аккаунта не трогаем.
                 throw;
             }
             catch (AdsPowerDailyOpenLimitExceededException)
@@ -1333,6 +1387,11 @@ public sealed class MonitoringService(
             catch (Exception ex)
             {
                 subProfileTimedOut = ex is TimeoutException || ex.InnerException is TimeoutException;
+                if (subProfileTimedOut && !deferredRetry)
+                {
+                    deferredSubIds.Add(sub.Id);
+                }
+
                 if (subProfileTimedOut)
                 {
                     UpdateStatus(
@@ -1350,12 +1409,11 @@ public sealed class MonitoringService(
                         ["subProfile.id"] = sub.Id,
                         ["subProfile.name"] = sub.Name,
                         ["error.type"] = ex.GetType().FullName,
-                        ["isTimeout"] = subProfileTimedOut
+                        ["isTimeout"] = subProfileTimedOut,
+                        ["deferredRetry"] = deferredRetry
                     });
             }
 
-            // Рандомная пауза между суб-профилями: «человек посмотрел один кабинет, переключился на следующий».
-            // Не делаем после последнего, чтобы не задерживать общий цикл мониторинга зря.
             if (i < subProfiles.Count - 1 && !cancellationToken.IsCancellationRequested && !budgetExhausted)
             {
                 await HumanDelay.BetweenSubProfilesAsync(cancellationToken).ConfigureAwait(false);
@@ -1363,6 +1421,48 @@ public sealed class MonitoringService(
                 {
                     await HumanDelay.BetweenSubProfilesAsync(cancellationToken).ConfigureAwait(false);
                 }
+            }
+        }
+
+        for (var i = 0; i < subProfiles.Count; i++)
+        {
+            if (cancellationToken.IsCancellationRequested || budgetExhausted)
+            {
+                break;
+            }
+
+            await ProcessSubProfilePassAsync(subProfiles[i], i, deferredRetry: false).ConfigureAwait(false);
+        }
+
+        if (deferredSubIds.Count > 0 && !cancellationToken.IsCancellationRequested && !budgetExhausted)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Аккаунт \"{account.DisplayName}\": второй проход для {deferredSubIds.Count} отложенных суб-профилей.",
+                DeskLinkAuditLogLevel.Info,
+                properties: new Dictionary<string, object?>
+                {
+                    ["accountId"] = account.Id,
+                    ["accountName"] = account.DisplayName,
+                    ["deferredSubProfileCount"] = deferredSubIds.Count,
+                    ["deferredSubProfileIds"] = string.Join(",", deferredSubIds),
+                    ["step"] = "deferred_subprofiles_second_pass"
+                });
+
+            await HumanDelay.BetweenSubProfilesAsync(cancellationToken).ConfigureAwait(false);
+
+            foreach (var (sub, index) in subProfiles.Select((s, idx) => (Sub: s, Index: idx)))
+            {
+                if (cancellationToken.IsCancellationRequested || budgetExhausted)
+                {
+                    break;
+                }
+
+                if (!deferredSubIds.Contains(sub.Id))
+                {
+                    continue;
+                }
+
+                await ProcessSubProfilePassAsync(sub, index, deferredRetry: true).ConfigureAwait(false);
             }
         }
 
@@ -2019,6 +2119,99 @@ public sealed class MonitoringService(
             catch (AvitoCaptchaDetectedException)
             {
                 // Капча на вкладке «С ошибками» — пробрасываем наверх.
+                throw;
+            }
+            catch (AdsPowerDailyOpenLimitExceededException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"Не удалось загрузить вкладку «С ошибками» для аккаунта {account.DisplayName}: {ex.Message}",
+                    DeskLinkAuditLogLevel.Warning,
+                    properties: new Dictionary<string, object?>
+                    {
+                        ["accountId"] = account.Id,
+                        ["accountName"] = account.DisplayName,
+                        ["error.type"] = ex.GetType().FullName
+                    });
+            }
+        }
+
+        return part;
+    }
+
+    private async Task<ProfileResult> CollectProfileItemsFromSessionAsync(
+        AvitoAccount account,
+        IAdsPowerAccountSession session,
+        CancellationToken cancellationToken)
+    {
+        var activeHtml = await session.LoadProfileItemsHtmlAsync(cancellationToken).ConfigureAwait(false);
+
+        if (string.IsNullOrWhiteSpace(activeHtml))
+        {
+            return new ProfileResult
+            {
+                ParseSuccess = false,
+                ParseFailureReason = "empty_active_items_html",
+                ActiveAds = [],
+                BlockedAds = []
+            };
+        }
+
+        var part = avitoParser.ParseProfilePage(activeHtml, account.Id);
+        part.ItemSnippetMarkersFound = CountItemSnippetMarkers(activeHtml);
+        part.PageLoadedSuccessfully = true;
+        part.Balance = AvitoBalanceParser.ParseAdvanceBalance(activeHtml);
+        if (part.Balance is null &&
+            (activeHtml.Contains("osp-sidebar/tools/money", StringComparison.OrdinalIgnoreCase) ||
+             activeHtml.Contains("Аванс", StringComparison.OrdinalIgnoreCase)))
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Аккаунт {account.DisplayName}: не удалось распарсить баланс Avito из sidebar HTML.",
+                DeskLinkAuditLogLevel.Warning,
+                memberName: nameof(CollectProfileItemsFromSessionAsync),
+                properties: new Dictionary<string, object?>
+                {
+                    ["accountId"] = account.Id,
+                    ["accountName"] = account.DisplayName,
+                    ["html.hasMoneyMarker"] = activeHtml.Contains("osp-sidebar/tools/money", StringComparison.OrdinalIgnoreCase),
+                    ["html.hasAdvanceText"] = activeHtml.Contains("Аванс", StringComparison.OrdinalIgnoreCase)
+                });
+        }
+
+        if (part.BlockedCount > 0)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Аккаунт {account.DisplayName}: вкладка «С ошибками» показывает {part.BlockedCount} — открываем для разбора.",
+                DeskLinkAuditLogLevel.Info,
+                properties: new Dictionary<string, object?>
+                {
+                    ["accountId"] = account.Id,
+                    ["accountName"] = account.DisplayName,
+                    ["blockedCount"] = part.BlockedCount
+                });
+
+            try
+            {
+                var blockedHtml = await session.LoadBlockedItemsHtmlAsync(cancellationToken).ConfigureAwait(false);
+                var blocked = avitoParser.ParseBlockedTabPage(blockedHtml, account.Id);
+                part.BlockedAds.AddRange(blocked);
+
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"Аккаунт {account.DisplayName}: распарсено заблокированных {blocked.Count} (счётчик показывал {part.BlockedCount}).",
+                    DeskLinkAuditLogLevel.Info,
+                    properties: new Dictionary<string, object?>
+                    {
+                        ["accountId"] = account.Id,
+                        ["accountName"] = account.DisplayName,
+                        ["blockedCounter"] = part.BlockedCount,
+                        ["blockedParsed"] = blocked.Count
+                    });
+            }
+            catch (AvitoCaptchaDetectedException)
+            {
                 throw;
             }
             catch (AdsPowerDailyOpenLimitExceededException)

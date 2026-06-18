@@ -699,6 +699,7 @@ public sealed class MonitoringServiceTests
     private sealed class SequenceAdsPowerAvitoAutomationService(
         IReadOnlyDictionary<string, string> profileItemsHtmlBySubProfile) : IAdsPowerAvitoAutomationService
     {
+        private readonly IReadOnlyDictionary<string, string> _profileItemsHtmlBySubProfile = profileItemsHtmlBySubProfile;
         private string? _currentSubProfileId;
 
         public List<string> SwitchCalls { get; } = [];
@@ -720,7 +721,7 @@ public sealed class MonitoringServiceTests
                 throw new InvalidOperationException("Суб-профиль ещё не выбран.");
             }
 
-            return Task.FromResult(profileItemsHtmlBySubProfile[_currentSubProfileId]);
+            return Task.FromResult(_profileItemsHtmlBySubProfile[_currentSubProfileId]);
         }
 
         public Task<string> LoadBlockedItemsHtmlAsync(
@@ -766,5 +767,48 @@ public sealed class MonitoringServiceTests
             CancellationToken cancellationToken = default,
             bool closeBrowserAfter = false) =>
             throw new InvalidOperationException("Открытие URL в AdsPower не требуется для этого теста.");
+
+        public Task<IAdsPowerAccountSession> OpenAccountSessionAsync(
+            AdsPowerConnectionOptions options,
+            string adsPowerUserId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<IAdsPowerAccountSession>(new SequenceSession(this, adsPowerUserId));
+
+        private sealed class SequenceSession(
+            SequenceAdsPowerAvitoAutomationService owner,
+            string adsPowerUserId) : IAdsPowerAccountSession
+        {
+            public string AdsPowerUserId { get; } = adsPowerUserId;
+
+            public Task<bool> SwitchSubProfileAsync(string subProfileId, CancellationToken cancellationToken = default)
+            {
+                owner._currentSubProfileId = subProfileId;
+                owner.SwitchCalls.Add(subProfileId);
+                return Task.FromResult(true);
+            }
+
+            public Task<bool> VerifyActiveSubProfileAsync(string subProfileId, CancellationToken cancellationToken = default) =>
+                Task.FromResult(true);
+
+            public Task<string> ExtractCandidatesJsonAsync(
+                CandidatesMessengerEnrichmentHints? messengerEnrichmentHints = null,
+                CancellationToken cancellationToken = default) =>
+                Task.FromResult("""{"hasCaptcha":false,"hasLogin":false,"candidates":[]}""");
+
+            public Task<string> LoadProfileItemsHtmlAsync(CancellationToken cancellationToken = default)
+            {
+                if (owner._currentSubProfileId is null)
+                {
+                    throw new InvalidOperationException("Суб-профиль ещё не выбран.");
+                }
+
+                return Task.FromResult(owner._profileItemsHtmlBySubProfile[owner._currentSubProfileId]);
+            }
+
+            public Task<string> LoadBlockedItemsHtmlAsync(CancellationToken cancellationToken = default) =>
+                Task.FromResult(string.Empty);
+
+            public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        }
     }
 }

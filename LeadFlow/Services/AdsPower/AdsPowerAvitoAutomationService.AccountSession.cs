@@ -1,0 +1,521 @@
+using System.Diagnostics;
+using LeadFlow.Logging.Audit;
+using LeadFlow.Services;
+using LeadFlow.Services.Avito;
+using PuppeteerSharp;
+
+namespace LeadFlow.Services.AdsPower;
+
+public sealed partial class AdsPowerAvitoAutomationService
+{
+    public async Task<IAdsPowerAccountSession> OpenAccountSessionAsync(
+        AdsPowerConnectionOptions options,
+        string adsPowerUserId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(adsPowerUserId);
+
+        var start = await adsPowerApiClient
+            .StartBrowserAsync(options, adsPowerUserId, openUrl: null, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (string.IsNullOrWhiteSpace(start.WebSocketDebuggerUrl))
+        {
+            throw new InvalidOperationException(
+                "AdsPower не вернул ws.puppeteer endpoint. Проверьте Local API и версию клиента AdsPower.");
+        }
+
+        var browser = await Puppeteer.ConnectAsync(new ConnectOptions
+        {
+            BrowserWSEndpoint = start.WebSocketDebuggerUrl,
+            DefaultViewport = null
+        }).ConfigureAwait(false);
+
+        IPage page;
+        try
+        {
+            page = await AcquireAutomationPageAsync(
+                    browser,
+                    ProfileItemsPageUrl,
+                    nameof(OpenAccountSessionAsync),
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch
+        {
+            try
+            {
+                browser.Disconnect();
+            }
+            catch
+            {
+                // ignore cleanup errors
+            }
+
+            throw;
+        }
+
+        _ = GlobalLogger.Instance.LogAsync(
+            $"AdsPower account session opened for user {adsPowerUserId}.",
+            DeskLinkAuditLogLevel.Info,
+            memberName: nameof(OpenAccountSessionAsync),
+            properties: new Dictionary<string, object?>
+            {
+                ["step"] = "session_opened",
+                ["adsPower.userId"] = adsPowerUserId,
+                ["page.url"] = page.Url
+            });
+
+        return new AccountSession(this, browser, page, options, adsPowerUserId);
+    }
+
+    private async Task<bool> SwitchSubProfileOnPageAsync(
+        IPage page,
+        string subProfileId,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(subProfileId))
+        {
+            return false;
+        }
+
+        _ = GlobalLogger.Instance.LogAsync(
+            $"AdsPower profile-switch click started (session): subProfile={subProfileId}.",
+            DeskLinkAuditLogLevel.Info,
+            memberName: nameof(SwitchSubProfileOnPageAsync),
+            properties: new Dictionary<string, object?>
+            {
+                ["step"] = "start",
+                ["avito.subProfileId"] = subProfileId
+            });
+
+        await EnsureSwitchModalAsync(page, cancellationToken).ConfigureAwait(false);
+        await AwaitProfileSwitchModalContentAsync(page, cancellationToken, nameof(SwitchSubProfileOnPageAsync))
+            .ConfigureAwait(false);
+
+        if (await IsTargetSubProfileAlreadyCurrentAsync(page, subProfileId).ConfigureAwait(false))
+        {
+            await DismissProfileSwitchModalAsync(page, cancellationToken).ConfigureAwait(false);
+            _ = GlobalLogger.Instance.LogAsync(
+                $"AdsPower profile-switch (session): subProfile {subProfileId} already current.",
+                DeskLinkAuditLogLevel.Info,
+                memberName: nameof(SwitchSubProfileOnPageAsync),
+                properties: new Dictionary<string, object?>
+                {
+                    ["step"] = "already_current",
+                    ["avito.subProfileId"] = subProfileId
+                });
+            return true;
+        }
+
+        return await TryClickSubProfileCardAndWaitCloseAsync(page, subProfileId, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async Task<bool> VerifyActiveSubProfileOnPageAsync(
+        IPage page,
+        string subProfileId,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(subProfileId))
+        {
+            return false;
+        }
+
+        var sw = Stopwatch.StartNew();
+        await EnsureSwitchModalAsync(page, cancellationToken).ConfigureAwait(false);
+        await AwaitProfileSwitchModalContentAsync(page, cancellationToken, nameof(VerifyActiveSubProfileOnPageAsync))
+            .ConfigureAwait(false);
+
+        var maxWaitMs = MonitoringTiming.VerifySubProfileMaxWaitMs;
+        var pollMs = MonitoringTiming.VerifySubProfilePollMs;
+
+        for (var elapsed = 0; elapsed < maxWaitMs; elapsed += pollMs)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (await IsTargetSubProfileAlreadyCurrentAsync(page, subProfileId).ConfigureAwait(false))
+            {
+                await DismissProfileSwitchModalAsync(page, cancellationToken).ConfigureAwait(false);
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"AdsPower profile-switch verify OK for subProfile {subProfileId} ({sw.ElapsedMilliseconds} ms).",
+                    DeskLinkAuditLogLevel.Info,
+                    memberName: nameof(VerifyActiveSubProfileOnPageAsync),
+                    properties: new Dictionary<string, object?>
+                    {
+                        ["step"] = "verify_ok",
+                        ["avito.subProfileId"] = subProfileId,
+                        ["verify.waitMs"] = sw.ElapsedMilliseconds
+                    });
+                return true;
+            }
+
+            await Task.Delay(pollMs, cancellationToken).ConfigureAwait(false);
+        }
+
+        await DismissProfileSwitchModalAsync(page, cancellationToken).ConfigureAwait(false);
+        _ = GlobalLogger.Instance.LogAsync(
+            $"AdsPower profile-switch verify timed out for subProfile {subProfileId} ({sw.ElapsedMilliseconds} ms).",
+            DeskLinkAuditLogLevel.Warning,
+            memberName: nameof(VerifyActiveSubProfileOnPageAsync),
+            properties: new Dictionary<string, object?>
+            {
+                ["step"] = "verify_timeout",
+                ["avito.subProfileId"] = subProfileId,
+                ["verify.waitMs"] = sw.ElapsedMilliseconds
+            });
+        return false;
+    }
+
+    private async Task<string> ExtractCandidatesJsonOnPageAsync(
+        IPage page,
+        string adsPowerUserId,
+        CandidatesMessengerEnrichmentHints? messengerEnrichmentHints,
+        CancellationToken cancellationToken)
+    {
+        var executeScript = (string script, CancellationToken ct) =>
+            EvaluateWithRetryAsync<string>(page, script, ct);
+
+        string? staleListSignature = null;
+        if (IsOnUrl(page.Url, CandidatesPageUrl))
+        {
+            staleListSignature = await AvitoCandidatesPageWaiter
+                .TryCaptureListSignatureAsync(executeScript, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        await NavigateToCandidatesPageRefreshingAsync(page, cancellationToken).ConfigureAwait(false);
+
+        var waitSw = Stopwatch.StartNew();
+        await AvitoCandidatesPageWaiter
+            .WaitForCandidatesOrThrowFirewallAsync(
+                executeScript,
+                async ct =>
+                {
+                    try
+                    {
+                        return await page.GetContentAsync().ConfigureAwait(false);
+                    }
+                    catch
+                    {
+                        return null;
+                    }
+                },
+                page.Url,
+                cancellationToken,
+                staleListSignature)
+            .ConfigureAwait(false);
+
+        var finalSignature = await AvitoCandidatesPageWaiter
+            .TryCaptureListSignatureAsync(executeScript, cancellationToken)
+            .ConfigureAwait(false);
+
+        _ = GlobalLogger.Instance.LogAsync(
+            "AdsPower CDP candidates page stable (session).",
+            DeskLinkAuditLogLevel.Info,
+            memberName: nameof(ExtractCandidatesJsonOnPageAsync),
+            properties: new Dictionary<string, object?>
+            {
+                ["step"] = "candidates_stable",
+                ["adsPower.userId"] = adsPowerUserId,
+                ["page.url"] = page.Url,
+                ["candidates.baselineSignature"] = staleListSignature ?? "<none>",
+                ["candidates.finalSignature"] = finalSignature ?? "<none>",
+                ["candidates.waitMs"] = waitSw.ElapsedMilliseconds
+            });
+
+        await AvitoCandidatesListPreparer.PrepareAsync(
+            executeScript,
+            $"AdsPower:{adsPowerUserId}",
+            cancellationToken,
+            async ct =>
+            {
+                try
+                {
+                    return await page.GetContentAsync().ConfigureAwait(false);
+                }
+                catch
+                {
+                    return null;
+                }
+            },
+            page.Url).ConfigureAwait(false);
+
+        var raw = await EvaluateWithRetryAsync<string>(page, ExtractionScript, cancellationToken).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            throw new InvalidOperationException("AdsPower CDP: скрипт извлечения вернул пустой результат.");
+        }
+
+        raw = await TryEnrichCandidatesJsonMessengerUrlsAsync(page, raw, messengerEnrichmentHints, cancellationToken)
+            .ConfigureAwait(false);
+
+        return raw;
+    }
+
+    private async Task<string> LoadProfileItemsHtmlOnPageAsync(
+        IPage page,
+        string adsPowerUserId,
+        CancellationToken cancellationToken)
+    {
+        if (!IsOnActiveProfileItemsPage(page.Url))
+        {
+            try
+            {
+                await page.GoToAsync(ProfileItemsPageUrl, new NavigationOptions
+                {
+                    Timeout = 60_000,
+                    WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
+                }).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (IsRecoverableNavigationError(ex))
+            {
+                await Task.Delay(1400, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        await WaitForProfileItemsShellAsync(page, nameof(LoadProfileItemsHtmlOnPageAsync), cancellationToken)
+            .ConfigureAwait(false);
+        await WaitForProfileItemsReadyAsync(page, nameof(LoadProfileItemsHtmlOnPageAsync), cancellationToken)
+            .ConfigureAwait(false);
+        await HumanDelay.AfterItemsRenderAsync(cancellationToken).ConfigureAwait(false);
+
+        var html = await EvaluateWithRetryAsync<string>(
+                page,
+                "(() => document.documentElement?.outerHTML || '')()",
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        if (string.IsNullOrWhiteSpace(html))
+        {
+            throw new InvalidOperationException("AdsPower CDP: страница объявлений Avito вернула пустой HTML.");
+        }
+
+        ThrowIfCaptcha(html, page.Url, nameof(LoadProfileItemsHtmlOnPageAsync), adsPowerUserId);
+        return html;
+    }
+
+    private async Task<string> LoadBlockedItemsHtmlOnPageAsync(
+        IPage page,
+        string adsPowerUserId,
+        CancellationToken cancellationToken)
+    {
+        if (!IsOnRejectedTab(page.Url))
+        {
+            try
+            {
+                await page.GoToAsync(ProfileBlockedItemsPageUrl, new NavigationOptions
+                {
+                    Timeout = 60_000,
+                    WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
+                }).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (IsRecoverableNavigationError(ex))
+            {
+                await Task.Delay(1400, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        await WaitForBlockedItemsShellAsync(page, cancellationToken).ConfigureAwait(false);
+        await WaitForBlockedItemsReadyAsync(page, cancellationToken).ConfigureAwait(false);
+        await HumanDelay.AfterItemsRenderAsync(cancellationToken).ConfigureAwait(false);
+
+        var html = await EvaluateWithRetryAsync<string>(
+                page,
+                "(() => document.documentElement?.outerHTML || '')()",
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        if (string.IsNullOrWhiteSpace(html))
+        {
+            throw new InvalidOperationException("AdsPower CDP: вкладка «С ошибками» вернула пустой HTML.");
+        }
+
+        ThrowIfCaptcha(html, page.Url, nameof(LoadBlockedItemsHtmlOnPageAsync), adsPowerUserId);
+        return html;
+    }
+
+    private static async Task WaitForProfileItemsShellAsync(
+        IPage page,
+        string callerMemberName,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await page.WaitForSelectorAsync(
+                    "[data-marker='sorting-control'], [data-marker^='item-snippet/']",
+                    new WaitForSelectorOptions { Timeout = 30_000 })
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"AdsPower profile-items: shell selector wait timed out: {ex.Message}",
+                DeskLinkAuditLogLevel.Warning,
+                memberName: callerMemberName,
+                properties: new Dictionary<string, object?>
+                {
+                    ["step"] = "shell_timeout",
+                    ["page.url"] = page.Url
+                });
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+    }
+
+    private static async Task WaitForProfileItemsReadyAsync(
+        IPage page,
+        string callerMemberName,
+        CancellationToken cancellationToken)
+    {
+        const string itemsReadyExpression = """
+            (() => {
+                const root = document.querySelector('#personal-items-root-element') || document.body;
+                const hasLoader = !!root.querySelector("[class*='styles-loader'], [class*='style-loader']");
+                if (hasLoader) return false;
+                const hasItems = !!document.querySelector("[data-marker^='item-snippet/']");
+                if (hasItems) return true;
+                const hasAddItemEmpty = !!root.querySelector("[data-marker='additem']");
+                const hasEmptyStateImg = !!root.querySelector("img[src*='emptystate_personal_items']");
+                if (hasAddItemEmpty || hasEmptyStateImg) return true;
+                const text = (root.innerText || '').toLowerCase();
+                const looksEmpty =
+                    /активн[а-я]*\s+объявлен[а-я]*\s+нет/.test(text) ||
+                    /нет\s+(активных\s+)?объявлен/.test(text) ||
+                    /у\s+вас\s+нет\s+активных/.test(text) ||
+                    /объявлен[а-я]*\s+не\s+найден/.test(text) ||
+                    /пока\s+пусто/.test(text) ||
+                    /можно\s+создать\s+новое/.test(text);
+                return looksEmpty;
+            })
+            """;
+
+        try
+        {
+            await page.WaitForFunctionAsync(
+                    itemsReadyExpression,
+                    new WaitForFunctionOptions { Timeout = 60_000, PollingInterval = 750 })
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"AdsPower profile-items: items wait timed out, capturing whatever is on the page: {ex.Message}",
+                DeskLinkAuditLogLevel.Warning,
+                memberName: callerMemberName,
+                properties: new Dictionary<string, object?>
+                {
+                    ["step"] = "items_timeout",
+                    ["page.url"] = page.Url
+                });
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+    }
+
+    private static async Task WaitForBlockedItemsShellAsync(IPage page, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await page.WaitForSelectorAsync(
+                    "[data-marker='profile-items-tab/tab(rejected)'], [data-marker^='item-snippet/']",
+                    new WaitForSelectorOptions { Timeout = 30_000 })
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"AdsPower blocked-items: shell wait timed out: {ex.Message}",
+                DeskLinkAuditLogLevel.Warning,
+                memberName: nameof(LoadBlockedItemsHtmlOnPageAsync));
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+    }
+
+    private static async Task WaitForBlockedItemsReadyAsync(IPage page, CancellationToken cancellationToken)
+    {
+        const string blockedReadyExpression = """
+            (() => {
+                const root = document.querySelector('#personal-items-root-element') || document.body;
+                const hasLoader = !!root.querySelector("[class*='styles-loader'], [class*='style-loader']");
+                if (hasLoader) return false;
+                const hasItems = !!document.querySelector("[data-marker^='item-snippet/']");
+                if (hasItems) return true;
+                const hasAddItemEmpty = !!root.querySelector("[data-marker='additem']");
+                const hasEmptyStateImg = !!root.querySelector("img[src*='emptystate_personal_items']");
+                if (hasAddItemEmpty || hasEmptyStateImg) return true;
+                const text = (root.innerText || '').toLowerCase();
+                const looksEmpty =
+                    /объявлен[а-я]*\s+с\s+ошибк/.test(text) ||
+                    /нет\s+объявлен/.test(text) ||
+                    /объявлен[а-я]*\s+нет/.test(text) ||
+                    /пока\s+пусто/.test(text);
+                return looksEmpty;
+            })
+            """;
+
+        try
+        {
+            await page.WaitForFunctionAsync(
+                    blockedReadyExpression,
+                    new WaitForFunctionOptions { Timeout = 60_000, PollingInterval = 750 })
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"AdsPower blocked-items: items wait timed out, capturing whatever is on the page: {ex.Message}",
+                DeskLinkAuditLogLevel.Warning,
+                memberName: nameof(LoadBlockedItemsHtmlOnPageAsync),
+                properties: new Dictionary<string, object?>
+                {
+                    ["step"] = "items_timeout",
+                    ["page.url"] = page.Url
+                });
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+    }
+
+    private sealed class AccountSession(
+        AdsPowerAvitoAutomationService owner,
+        IBrowser browser,
+        IPage page,
+        AdsPowerConnectionOptions options,
+        string adsPowerUserId) : IAdsPowerAccountSession
+    {
+        public string AdsPowerUserId { get; } = adsPowerUserId;
+
+        public Task<bool> SwitchSubProfileAsync(string subProfileId, CancellationToken cancellationToken = default) =>
+            owner.SwitchSubProfileOnPageAsync(page, subProfileId, cancellationToken);
+
+        public Task<bool> VerifyActiveSubProfileAsync(string subProfileId, CancellationToken cancellationToken = default) =>
+            owner.VerifyActiveSubProfileOnPageAsync(page, subProfileId, cancellationToken);
+
+        public Task<string> ExtractCandidatesJsonAsync(
+            CandidatesMessengerEnrichmentHints? messengerEnrichmentHints = null,
+            CancellationToken cancellationToken = default) =>
+            owner.ExtractCandidatesJsonOnPageAsync(page, AdsPowerUserId, messengerEnrichmentHints, cancellationToken);
+
+        public Task<string> LoadProfileItemsHtmlAsync(CancellationToken cancellationToken = default) =>
+            owner.LoadProfileItemsHtmlOnPageAsync(page, AdsPowerUserId, cancellationToken);
+
+        public Task<string> LoadBlockedItemsHtmlAsync(CancellationToken cancellationToken = default) =>
+            owner.LoadBlockedItemsHtmlOnPageAsync(page, AdsPowerUserId, cancellationToken);
+
+        public async ValueTask DisposeAsync()
+        {
+            try
+            {
+                browser.Disconnect();
+            }
+            catch
+            {
+                // Disconnect must never throw out of Dispose.
+            }
+
+            await Task.CompletedTask;
+        }
+    }
+}

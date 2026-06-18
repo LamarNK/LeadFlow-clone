@@ -14,7 +14,7 @@ namespace LeadFlow.Services.AdsPower;
 /// не закрываем — один <c>user_id</c> = одна сессия. Закрытие — через
 /// <see cref="CloseBrowserAsync"/> после полного прохода аккаунта в мониторинге.
 /// </summary>
-public sealed class AdsPowerAvitoAutomationService(
+public sealed partial class AdsPowerAvitoAutomationService(
     IAdsPowerApiClient adsPowerApiClient,
     ICandidateDuplicateRepository duplicateRepository,
     IPhoneNormalizer phoneNormalizer) : IAdsPowerAvitoAutomationService
@@ -58,12 +58,20 @@ public sealed class AdsPowerAvitoAutomationService(
                     cancellationToken)
                 .ConfigureAwait(false);
 
-            // После переключения суб-профиля Avito часто оставляет старый список откликов в SPA.
-            // Нельзя пропускать переход, если URL уже /profile/candidates — иначе domItems не меняются между кабинетами.
-            await NavigateToCandidatesPageRefreshingAsync(page, cancellationToken).ConfigureAwait(false);
-
             var executeScript = (string script, CancellationToken ct) =>
                 EvaluateWithRetryAsync<string>(page, script, ct);
+
+            // После переключения суб-профиля Avito часто оставляет старый список откликов в SPA.
+            // Снимаем сигнатуру до reload и ждём, пока DOM стабилизируется с новым содержимым.
+            string? staleListSignature = null;
+            if (IsOnUrl(page.Url, CandidatesPageUrl))
+            {
+                staleListSignature = await AvitoCandidatesPageWaiter
+                    .TryCaptureListSignatureAsync(executeScript, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            await NavigateToCandidatesPageRefreshingAsync(page, cancellationToken).ConfigureAwait(false);
 
             await AvitoCandidatesPageWaiter
                 .WaitForCandidatesOrThrowFirewallAsync(
@@ -80,7 +88,8 @@ public sealed class AdsPowerAvitoAutomationService(
                         }
                     },
                     page.Url,
-                    cancellationToken)
+                    cancellationToken,
+                    staleListSignature)
                 .ConfigureAwait(false);
 
             await AvitoCandidatesListPreparer.PrepareAsync(
@@ -1223,8 +1232,6 @@ public sealed class AdsPowerAvitoAutomationService(
         {
             await Task.Delay(3000, cancellationToken).ConfigureAwait(false);
         }
-
-        await Task.Delay(2500, cancellationToken).ConfigureAwait(false);
     }
 
     private enum AvitoAutomationPageKind

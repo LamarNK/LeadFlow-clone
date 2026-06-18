@@ -72,6 +72,15 @@ public interface IAdsPowerAvitoAutomationService
         bool closeBrowserAfter = false);
 
     /// <summary>
+    /// Одна CDP-сессия на полный проход аккаунта: switch → отклики → объявления без повторных browser/start.
+    /// Браузер закрывается отдельно через <see cref="CloseBrowserAsync"/> после цикла мониторинга.
+    /// </summary>
+    Task<IAdsPowerAccountSession> OpenAccountSessionAsync(
+        AdsPowerConnectionOptions options,
+        string adsPowerUserId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Закрывает браузер профиля AdsPower (один раз после полного прохода аккаунта в мониторинге).
     /// </summary>
     Task CloseBrowserAsync(

@@ -48,11 +48,14 @@ public static class AvitoCandidatesPageScripts
         })();
         """;
 
-    /// <summary>Проверка готовности: complete и есть карточки откликов (не «просто длинный body» firewall-страницы).</summary>
+    /// <summary>
+    /// Снимок готовности списка: complete, нет loader, сигнатура первых карточек (для стабильности после reload / смены суб-профиля).
+    /// </summary>
     public static string BuildWaitForReadyProbeScript() =>
         """
         (() => {
-            const bodyLength = (document.body?.innerText ?? "").trim().length;
+            const bodyText = (document.body?.innerText ?? "").trim();
+            const bodyLength = bodyText.length;
             const itemCount = document.querySelectorAll("[data-marker='job-application/item']").length;
             const statusCount = document.querySelectorAll("[data-marker='job-application/response/status-select-button']").length;
             const title = (document.title ?? "").trim();
@@ -61,13 +64,48 @@ public static class AvitoCandidatesPageScripts
                 itemCount === 0 &&
                 statusCount === 0 &&
                 (hasFirewallDom || /Доступ\s+ограничен|проблема\s+с\s+IP/i.test(title));
+
+            const loading = !!(
+                document.querySelector(
+                    "[class*='spinner' i], [class*='Skeleton' i], [class*='skeleton' i], [class*='loader' i], [data-marker*='loader']"
+                ) ||
+                document.querySelector("[aria-busy='true']")
+            );
+
+            const items = Array.from(document.querySelectorAll("[data-marker='job-application/item']")).slice(0, 3);
+            const signatureParts = items.map((el) => {
+                const name = (el.querySelector("h3, h4")?.textContent ?? "").trim();
+                const status =
+                    (el.querySelector("[data-marker='job-application/response/status-select-button']")?.textContent ?? "").trim();
+                return `${name}@${status}`;
+            });
+            const listSignature = `${itemCount}|${signatureParts.join(";")}`;
+
+            const emptyConfirmed =
+                itemCount === 0 &&
+                statusCount === 0 &&
+                !loading &&
+                (
+                    /нет\s+отклик|откликов\s+нет|пока\s+нет|ничего\s+не\s+найдено/i.test(bodyText) ||
+                    !!document.querySelector("[data-marker*='empty'], [class*='empty-state' i]")
+                );
+
+            const contentReady =
+                !loading &&
+                document.readyState === "complete" &&
+                (itemCount > 0 || statusCount > 0 || emptyConfirmed);
+
             return JSON.stringify({
                 readyState: document.readyState,
                 bodyLength,
                 itemCount,
                 statusCount,
+                loading,
+                listSignature,
+                emptyConfirmed,
                 blocked,
-                ready: document.readyState === "complete" && (itemCount > 0 || statusCount > 0)
+                contentReady,
+                ready: contentReady
             });
         })();
         """;

@@ -52,4 +52,21 @@ public static class MonitoringTiming
     /// <summary>Пауза между суб-профилями на одном аккаунте — крупнее, имитируем «походили по кабинету».</summary>
     public const int HumanDelayBetweenSubProfilesMinMs = 8000;
     public const int HumanDelayBetweenSubProfilesMaxMs = 18000;
+
+    // ---- Ожидание готовности страницы откликов (сигналы DOM, не только таймер) ----
+
+    /// <summary>Максимум ожидания списка откликов после перехода / reload (мс).</summary>
+    public const int CandidatesPageMaxWaitMs = 60_000;
+
+    /// <summary>Интервал опроса DOM при ожидании откликов (мс).</summary>
+    public const int CandidatesPagePollMs = 500;
+
+    /// <summary>Сколько подряд одинаковых снимков списка нужно, чтобы считать страницу стабильной.</summary>
+    public const int CandidatesPageStablePollsRequired = 3;
+
+    /// <summary>Максимум ожидания подтверждения активного суб-профиля после switch (мс).</summary>
+    public const int VerifySubProfileMaxWaitMs = 20_000;
+
+    /// <summary>Интервал опроса активного суб-профиля (мс).</summary>
+    public const int VerifySubProfilePollMs = 650;
 }
