@@ -31,6 +31,9 @@ public sealed partial class AdsPowerAvitoAutomationService
             DefaultViewport = null
         }).ConfigureAwait(false);
 
+        // AdsPower открывает 2+ вкладки; Avito на второй подгружается с задержкой — не цепляемся к «:».
+        await Task.Delay(2000, cancellationToken).ConfigureAwait(false);
+
         IPage page;
         try
         {
@@ -40,6 +43,32 @@ public sealed partial class AdsPowerAvitoAutomationService
                     nameof(OpenAccountSessionAsync),
                     cancellationToken)
                 .ConfigureAwait(false);
+
+            for (var attempt = 1;
+                 attempt <= 4 && !IsAvitoProfileAutomationTab(page.Url);
+                 attempt++)
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"AdsPower session warmup: Avito tab not ready (attempt {attempt}/4), url={page.Url ?? "<null>"}.",
+                    DeskLinkAuditLogLevel.Info,
+                    memberName: nameof(OpenAccountSessionAsync),
+                    properties: new Dictionary<string, object?>
+                    {
+                        ["step"] = "session_warmup_retry",
+                        ["attempt"] = attempt,
+                        ["page.url"] = page.Url
+                    });
+
+                await Task.Delay(1500, cancellationToken).ConfigureAwait(false);
+                page = await AcquireAutomationPageAsync(
+                        browser,
+                        ProfileItemsPageUrl,
+                        nameof(OpenAccountSessionAsync),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            page = await WarmUpSessionPageAsync(page, adsPowerUserId, cancellationToken).ConfigureAwait(false);
         }
         catch
         {
@@ -69,6 +98,58 @@ public sealed partial class AdsPowerAvitoAutomationService
         return new AccountSession(this, browser, page, options, adsPowerUserId);
     }
 
+    private async Task<IPage> WarmUpSessionPageAsync(
+        IPage page,
+        string adsPowerUserId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await page.BringToFrontAsync().ConfigureAwait(false);
+        }
+        catch
+        {
+            // не критично
+        }
+
+        if (!IsAvitoProfileAutomationTab(page.Url))
+        {
+            try
+            {
+                await page.GoToAsync(ProfileItemsPageUrl, new NavigationOptions
+                {
+                    Timeout = 90_000,
+                    WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
+                }).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (IsRecoverableNavigationError(ex))
+            {
+                await Task.Delay(2000, cancellationToken).ConfigureAwait(false);
+                await page.GoToAsync(ProfileItemsPageUrl, new NavigationOptions
+                {
+                    Timeout = 90_000,
+                    WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
+                }).ConfigureAwait(false);
+            }
+        }
+
+        await WaitForProfileItemsShellAsync(page, nameof(WarmUpSessionPageAsync), cancellationToken)
+            .ConfigureAwait(false);
+
+        _ = GlobalLogger.Instance.LogAsync(
+            $"AdsPower session warmup completed for user {adsPowerUserId}.",
+            DeskLinkAuditLogLevel.Info,
+            memberName: nameof(WarmUpSessionPageAsync),
+            properties: new Dictionary<string, object?>
+            {
+                ["step"] = "session_warmup_done",
+                ["adsPower.userId"] = adsPowerUserId,
+                ["page.url"] = page.Url
+            });
+
+        return page;
+    }
+
     private async Task<bool> SwitchSubProfileOnPageAsync(
         IPage page,
         string subProfileId,
@@ -86,8 +167,23 @@ public sealed partial class AdsPowerAvitoAutomationService
             properties: new Dictionary<string, object?>
             {
                 ["step"] = "start",
-                ["avito.subProfileId"] = subProfileId
+                ["avito.subProfileId"] = subProfileId,
+                ["page.url"] = page.Url
             });
+
+        if (!IsAvitoProfileAutomationTab(page.Url))
+        {
+            page = await WarmUpSessionPageAsync(page, "session", cancellationToken).ConfigureAwait(false);
+        }
+
+        try
+        {
+            await page.BringToFrontAsync().ConfigureAwait(false);
+        }
+        catch
+        {
+            // не критично
+        }
 
         await EnsureSwitchModalAsync(page, cancellationToken).ConfigureAwait(false);
         await AwaitProfileSwitchModalContentAsync(page, cancellationToken, nameof(SwitchSubProfileOnPageAsync))

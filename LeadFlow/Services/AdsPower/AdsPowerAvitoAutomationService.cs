@@ -1259,9 +1259,10 @@ public sealed partial class AdsPowerAvitoAutomationService(
         var worker =
             pages.FirstOrDefault(p => PageMatchesAutomationKind(p.Url, targetKind))
             ?? pages.FirstOrDefault(p => IsAvitoProfileAutomationTab(p.Url))
-            ?? pages.FirstOrDefault();
+            ?? pages.FirstOrDefault(p => IsUsableWorkerPageUrl(p.Url) && IsAvitoProfileAutomationTab(p.Url))
+            ?? pages.FirstOrDefault(p => IsUsableWorkerPageUrl(p.Url));
 
-        if (worker is null)
+        if (worker is null || !IsUsableWorkerPageUrl(worker.Url))
         {
             worker = await browser.NewPageAsync().ConfigureAwait(false);
             pages = [worker];
@@ -1367,13 +1368,35 @@ public sealed partial class AdsPowerAvitoAutomationService(
 
     private static bool IsAvitoProfileAutomationTab(string? url)
     {
-        if (string.IsNullOrEmpty(url) || !url.Contains("avito.ru", StringComparison.OrdinalIgnoreCase))
+        if (!IsUsableWorkerPageUrl(url) || !url!.Contains("avito.ru", StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }
 
         return url.Contains("/profile/", StringComparison.OrdinalIgnoreCase)
             || url.Contains("dashboard#profile", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// AdsPower при старте часто отдаёт вкладку с URL «:» / about:blank — CDP на ней не рендерит Avito SPA.
+    /// </summary>
+    private static bool IsUsableWorkerPageUrl(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return false;
+        }
+
+        var t = url.Trim();
+        if (t.Length <= 1
+            || string.Equals(t, "about:blank", StringComparison.OrdinalIgnoreCase)
+            || t.StartsWith("chrome://", StringComparison.OrdinalIgnoreCase)
+            || t.StartsWith("devtools://", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return true;
     }
 
     private static bool IsOnActiveProfileItemsPage(string? url)

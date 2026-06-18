@@ -1175,35 +1175,6 @@ public sealed class MonitoringService(
                     skipProfile = true;
                 }
 
-                if (!skipProfile)
-                {
-                    var verified = await adsPowerSession
-                        .VerifyActiveSubProfileAsync(sub.Id, cancellationToken)
-                        .ConfigureAwait(false);
-
-                    if (!verified)
-                    {
-                        _ = GlobalLogger.Instance.LogAsync(
-                            $"Sub-profile \"{sub.Name}\" (id={sub.Id}) of account {account.DisplayName}: active sub-profile not confirmed after switch, skipping.",
-                            DeskLinkAuditLogLevel.Warning,
-                            properties: new Dictionary<string, object?>
-                            {
-                                ["accountId"] = account.Id,
-                                ["accountName"] = account.DisplayName,
-                                ["subProfile.id"] = sub.Id,
-                                ["subProfile.name"] = sub.Name,
-                                ["step"] = "verify_failed",
-                                ["deferredRetry"] = deferredRetry
-                            });
-                        if (!deferredRetry)
-                        {
-                            deferredSubIds.Add(sub.Id);
-                        }
-
-                        skipProfile = true;
-                    }
-                }
-
                 if (skipProfile)
                 {
                     if (i < subProfiles.Count - 1 && !cancellationToken.IsCancellationRequested && !budgetExhausted)
