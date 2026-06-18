@@ -154,7 +154,8 @@
                     <StackPanel Grid.Column="2"
                                 HorizontalAlignment="Right"
                                 VerticalAlignment="Center"
-                                Orientation="Horizontal">
+                                Orientation="Horizontal"
+                                Margin="0,0,16,0">
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                             <Button Style="{StaticResource MinimalShellNavButtonStyle}"
                                     Command="{Binding OpenMonitoringCommand}"
