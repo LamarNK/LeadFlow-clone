@@ -60,7 +60,8 @@ internal sealed class FakeAvitoResponseSource : IAvitoResponseSource
         AvitoAccount account,
         AppSettings settings,
         string rawExtractionJson,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        AvitoSubProfile? activeSubProfile = null)
     {
         CallCount++;
         return AsyncImpl is not null

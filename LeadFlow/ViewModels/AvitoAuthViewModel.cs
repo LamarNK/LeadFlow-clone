@@ -246,6 +246,7 @@ public partial class AvitoAuthViewModel(
             }
 
             _account.Status = AvitoAccountStatus.Authorized;
+            AccountIssueTracker.ClearAllSubProfileIssues(_account);
             _account.CookiesJson = await profileCookiesService.ReadCurrentProfileCookiesAsJsonAsync(_account, cancellationToken);
             _account.ImportCookiesOnNextStart = false;
             await PersistAccountAsync(cancellationToken);

@@ -409,6 +409,35 @@
                                                    FontWeight="SemiBold"
                                                    Foreground="{StaticResource TextBrush}"
                                                    TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Margin="0,3,0,0"
+                                                   FontSize="11"
+                                                   Foreground="#B45309"
+                                                   TextWrapping="Wrap"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   MaxHeight="40"
+                                                   Text="{Binding SubProfileIssuesSummary}"
+                                                   Visibility="{Binding HasSubProfileIssues, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                        <TextBlock Margin="0,3,0,0"
+                                                   FontSize="11"
+                                                   Foreground="#B45309"
+                                                   TextWrapping="Wrap"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   MaxHeight="40"
+                                                   Text="{Binding LastErrorMessage}">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding HasSubProfileIssues}" Value="False">
+                                                            <Setter Property="Visibility" Value="Visible" />
+                                                        </DataTrigger>
+                                                        <Trigger Property="Text" Value="">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                        </Trigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
                                         <StackPanel Margin="0,4,0,0" Orientation="Horizontal">
                                             <Border>
                                                 <Border.Style>
@@ -767,19 +796,38 @@
                                                         <Run Text=" · id " Foreground="#94A3B8" />
                                                         <Run Text="{Binding Id, Mode=OneWay}" Foreground="#94A3B8" />
                                                     </TextBlock>
+                                                    <TextBlock Margin="0,3,0,0"
+                                                               FontSize="11"
+                                                               Foreground="#B91C1C"
+                                                               TextWrapping="Wrap"
+                                                               Text="{Binding LastIssueMessage}"
+                                                               Visibility="{Binding HasIssue, Converter={StaticResource BooleanToVisibilityConverter}}" />
                                                 </StackPanel>
-                                                <Border Grid.Column="1"
-                                                        CornerRadius="6"
-                                                        Padding="6,2"
-                                                        Background="#ECFDF5"
-                                                        BorderBrush="#BBF7D0"
-                                                        BorderThickness="1"
-                                                        Visibility="{Binding IsCurrent, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                    <TextBlock Text="активный"
-                                                               FontSize="10"
-                                                               FontWeight="SemiBold"
-                                                               Foreground="#15803D" />
-                                                </Border>
+                                                <StackPanel Grid.Column="1" Orientation="Vertical" VerticalAlignment="Top">
+                                                    <Border Margin="0,0,0,4"
+                                                            CornerRadius="6"
+                                                            Padding="6,2"
+                                                            Background="#FEF2F2"
+                                                            BorderBrush="#FECACA"
+                                                            BorderThickness="1"
+                                                            Visibility="{Binding HasIssue, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                        <TextBlock Text="{Binding IssueKindLabel}"
+                                                                   FontSize="10"
+                                                                   FontWeight="SemiBold"
+                                                                   Foreground="#B91C1C" />
+                                                    </Border>
+                                                    <Border CornerRadius="6"
+                                                            Padding="6,2"
+                                                            Background="#ECFDF5"
+                                                            BorderBrush="#BBF7D0"
+                                                            BorderThickness="1"
+                                                            Visibility="{Binding IsCurrent, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                        <TextBlock Text="активный"
+                                                                   FontSize="10"
+                                                                   FontWeight="SemiBold"
+                                                                   Foreground="#15803D" />
+                                                    </Border>
+                                                </StackPanel>
                                             </Grid>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>

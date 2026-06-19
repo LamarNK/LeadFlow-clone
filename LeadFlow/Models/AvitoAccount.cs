@@ -154,6 +154,21 @@ public sealed partial class AvitoAccount : ObservableObject
 
     public bool HasSubProfiles => SubProfiles.Count > 0;
 
+    public bool HasSubProfileIssues => SubProfiles.Any(static s => s.HasIssue);
+
+    public string SubProfileIssuesSummary
+    {
+        get
+        {
+            var lines = SubProfiles
+                .Where(static s => s.HasIssue)
+                .Select(static s => s.IssueSummaryLine)
+                .Where(static line => !string.IsNullOrWhiteSpace(line))
+                .ToList();
+            return lines.Count == 0 ? string.Empty : string.Join(Environment.NewLine, lines);
+        }
+    }
+
     /// <summary>Сохраняет распарсенный список и обновляет JSON-представление + наблюдатели.</summary>
     public void SetSubProfiles(IReadOnlyList<AvitoSubProfile> profiles)
     {
@@ -183,6 +198,8 @@ public sealed partial class AvitoAccount : ObservableObject
         OnPropertyChanged(nameof(SubProfilesCount));
         OnPropertyChanged(nameof(SubProfilesSummary));
         OnPropertyChanged(nameof(HasSubProfiles));
+        OnPropertyChanged(nameof(HasSubProfileIssues));
+        OnPropertyChanged(nameof(SubProfileIssuesSummary));
     }
 
     /// <summary>

@@ -128,6 +128,7 @@ public sealed class WindowService(
         if (result.IsAuthorized)
         {
             account.Status = AvitoAccountStatus.Authorized;
+            AccountIssueTracker.ClearAllSubProfileIssues(account);
             // Сохраняем имя только если удалось распарсить — иначе оставляем то, что уже было.
             if (!string.IsNullOrWhiteSpace(result.ProfileName))
             {
@@ -157,23 +158,38 @@ public sealed class WindowService(
         else if (result.HasCaptcha)
         {
             account.Status = AvitoAccountStatus.RequiresManualAction;
-            account.LastErrorMessage = result.KeepBrowserOpen
-                ? "Avito показал капчу — пройдите проверку в открытом окне AdsPower и нажмите «Авторизовать в Avito» снова."
-                : "Avito показал капчу — пройдите проверку в окне AdsPower и повторите.";
+            var captchaDetail = result.KeepBrowserOpen
+                ? "пройдите капчу в открытом окне AdsPower и нажмите «Авторизовать в Avito» снова."
+                : "пройдите капчу в окне AdsPower и повторите проверку.";
+            account.LastErrorMessage = AccountIssueFormatting.FormatIssue(
+                account,
+                null,
+                AvitoSubProfileIssueKind.Captcha,
+                captchaDetail);
         }
         else if (result.HasLoginForm)
         {
             account.Status = AvitoAccountStatus.RequiresLogin;
-            account.LastErrorMessage = result.KeepBrowserOpen
-                ? "Войдите в Avito в открытом окне AdsPower и нажмите «Авторизовать в Avito» снова."
-                : "Войдите в Avito в открывшемся окне AdsPower и нажмите «Авторизовать в Avito» снова.";
+            var loginDetail = result.KeepBrowserOpen
+                ? "войдите в Avito в открытом окне AdsPower и нажмите «Авторизовать в Avito» снова."
+                : "войдите в Avito в открывшемся окне AdsPower и нажмите «Авторизовать в Avito» снова.";
+            account.LastErrorMessage = AccountIssueFormatting.FormatIssue(
+                account,
+                null,
+                AvitoSubProfileIssueKind.AuthRequired,
+                loginDetail);
         }
         else
         {
             account.Status = AvitoAccountStatus.RequiresLogin;
-            account.LastErrorMessage = string.IsNullOrWhiteSpace(result.ErrorMessage)
-                ? "Не удалось определить состояние авторизации Avito."
+            var detail = string.IsNullOrWhiteSpace(result.ErrorMessage)
+                ? "не удалось определить состояние авторизации Avito."
                 : result.ErrorMessage!;
+            account.LastErrorMessage = AccountIssueFormatting.FormatIssue(
+                account,
+                null,
+                AvitoSubProfileIssueKind.AuthRequired,
+                detail);
         }
 
         _ = GlobalLogger.Instance.LogAsync(

@@ -13,5 +13,6 @@ public interface IAvitoResponseSource
         AvitoAccount account,
         AppSettings settings,
         string rawExtractionJson,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        AvitoSubProfile? activeSubProfile = null);
 }

@@ -20,4 +20,23 @@ public sealed class AvitoSubProfile
 
     /// <summary>Баланс на Avito для этого субпрофиля (null — не указан, 0 — пустой).</summary>
     public decimal? Balance { get; set; }
+
+    /// <summary>Тип последней проблемы (<see cref="AvitoSubProfileIssueKind"/>); пусто — всё в порядке.</summary>
+    public string LastIssueKind { get; set; } = string.Empty;
+
+    /// <summary>Краткое описание последней проблемы для UI.</summary>
+    public string LastIssueMessage { get; set; } = string.Empty;
+
+    /// <summary>Когда зафиксирована последняя проблема (UTC).</summary>
+    public DateTime? LastIssueAt { get; set; }
+
+    public bool HasIssue => !string.IsNullOrWhiteSpace(LastIssueKind);
+
+    public string IssueKindLabel => AvitoSubProfileIssueKind.ToDisplayLabel(LastIssueKind);
+
+    public string IssueSummaryLine => HasIssue
+        ? $"«{DisplayName}» — {IssueKindLabel}: {LastIssueMessage}"
+        : string.Empty;
+
+    public string DisplayName => string.IsNullOrWhiteSpace(Name) ? Id : Name;
 }

@@ -2,9 +2,9 @@ using System.Text.Json;
 using LeadFlow.Data;
 using LeadFlow.Logging.Audit;
 using LeadFlow.Models;
+using LeadFlow.Services;
 using LeadFlow.Services.AdsPower;
 using LeadFlow.Services.Browser;
-using LeadFlow.Services;
 using PuppeteerSharp;
 
 namespace LeadFlow.Services.Avito;
@@ -23,8 +23,9 @@ public sealed class AvitoResponseSource(
         AvitoAccount account,
         AppSettings settings,
         string rawExtractionJson,
-        CancellationToken cancellationToken) =>
-        ParseResponsesFromRawExtractionAsync(account, settings, rawExtractionJson, cancellationToken);
+        CancellationToken cancellationToken,
+        AvitoSubProfile? activeSubProfile = null) =>
+        ParseResponsesFromRawExtractionAsync(account, settings, rawExtractionJson, cancellationToken, activeSubProfile);
 
     public async Task<IReadOnlyList<CandidateResponse>> GetNewResponsesAsync(AvitoAccount account, AppSettings settings, CancellationToken cancellationToken)
     {
@@ -196,7 +197,8 @@ public sealed class AvitoResponseSource(
         AvitoAccount account,
         AppSettings settings,
         string raw,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        AvitoSubProfile? activeSubProfile = null)
     {
         if (string.IsNullOrWhiteSpace(raw))
         {
@@ -220,8 +222,7 @@ public sealed class AvitoResponseSource(
             // RequiresManualAction и СРАЗУ выйдет из обхода аккаунта (без перебора оставшихся суб-профилей).
             // Кладём базовый статус сразу — на случай, если кто-то проигнорирует исключение.
             account.Status = AvitoAccountStatus.RequiresManualAction;
-            account.LastErrorMessage = "На странице кандидатов требуется ручное действие";
-            // Дополнительно строим короткий fingerprint HTML, если он есть — пригодится для классификации.
+            // Сообщение с суб-профилем выставит MonitoringService при перехвате исключения.
             var rawHtml = root.TryGetProperty("html", out var htmlProp) ? htmlProp.GetString() : null;
             var kind = AvitoCaptchaDetector.Classify(rawHtml) ?? "captcha";
             throw new AvitoCaptchaDetectedException(kind, pageUrl, rawHtml);
@@ -230,12 +231,32 @@ public sealed class AvitoResponseSource(
         if (hasLogin)
         {
             account.Status = AvitoAccountStatus.RequiresLogin;
-            account.LastErrorMessage = "Для страницы кандидатов требуется повторная авторизация";
+            var loginDetail = "требуется повторная авторизация на странице откликов.";
+            if (activeSubProfile is not null)
+            {
+                AccountIssueTracker.ApplySubProfileIssue(
+                    account,
+                    activeSubProfile,
+                    AvitoSubProfileIssueKind.AuthRequired,
+                    loginDetail);
+            }
+            else
+            {
+                account.LastErrorMessage = AccountIssueFormatting.FormatIssue(
+                    account,
+                    null,
+                    AvitoSubProfileIssueKind.AuthRequired,
+                    loginDetail);
+            }
+
             return [];
         }
 
         account.Status = AvitoAccountStatus.Authorized;
-        account.LastErrorMessage = string.Empty;
+        if (!account.HasSubProfileIssues)
+        {
+            account.LastErrorMessage = string.Empty;
+        }
         account.LastAuthCheckAt = DateTime.UtcNow;
 
         var domItemCount = root.TryGetProperty("domItemCount", out var domItemsProp) ? domItemsProp.GetInt32() : 0;
@@ -330,7 +351,7 @@ public sealed class AvitoResponseSource(
     }
 
     private static bool IsAdsPowerTransientCandidatesError(Exception ex) =>
-        ex is PuppeteerException or TimeoutException;
+        ex is PuppeteerException or TimeoutException or AdsPowerRateLimitExceededException;
 
     private static async Task<string?> FetchPageHtmlSnapshotAsync(
         Func<string, CancellationToken, Task<string>> execute,

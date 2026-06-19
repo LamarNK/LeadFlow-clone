@@ -25,6 +25,9 @@ public static class MonitoringTiming
     public const double CycleHistoricalHeatActivityBoostCap = 0.55;
 
     public const int DelayBetweenAccountsSeconds = 15;
+
+    /// <summary>Сдвиг старта параллельных аккаунтов (мс), чтобы не бить в AdsPower Local API пачкой browser/start.</summary>
+    public const int ParallelAccountLaunchStaggerMs = 2000;
     public const int DelayBetweenResponsesSeconds = 8;
     public const int MaxResponsesPerAccountPerCycle = 10;
     public const int ActiveAdsRefreshIntervalMinutes = 75;

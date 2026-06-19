@@ -708,9 +708,26 @@ public partial class SettingsViewModel(
     public IReadOnlyList<AvitoSubProfile> SelectedAccountSubProfiles =>
         SelectedAccount?.SubProfiles ?? Array.Empty<AvitoSubProfile>();
 
-    public string SelectedAccountErrorText => string.IsNullOrWhiteSpace(SelectedAccount?.LastErrorMessage)
-        ? "Ошибок не зафиксировано"
-        : SelectedAccount!.LastErrorMessage;
+    public string SelectedAccountErrorText
+    {
+        get
+        {
+            var account = SelectedAccount;
+            if (account is null)
+            {
+                return "Ошибок не зафиксировано";
+            }
+
+            if (account.HasSubProfileIssues)
+            {
+                return account.SubProfileIssuesSummary;
+            }
+
+            return string.IsNullOrWhiteSpace(account.LastErrorMessage)
+                ? "Ошибок не зафиксировано"
+                : account.LastErrorMessage;
+        }
+    }
 
     /// <summary>
     /// Кнопка входа в Avito нужна только пока аккаунт не в рабочем авторизованном состоянии.
@@ -898,9 +915,12 @@ public partial class SettingsViewModel(
             case nameof(AvitoAccount.SubProfiles):
             case nameof(AvitoAccount.SubProfilesCount):
             case nameof(AvitoAccount.HasSubProfiles):
+            case nameof(AvitoAccount.HasSubProfileIssues):
+            case nameof(AvitoAccount.SubProfileIssuesSummary):
                 OnPropertyChanged(nameof(SelectedAccountSubProfilesHeader));
                 OnPropertyChanged(nameof(HasSubProfiles));
                 OnPropertyChanged(nameof(SelectedAccountSubProfiles));
+                OnPropertyChanged(nameof(SelectedAccountErrorText));
                 break;
         }
     }
