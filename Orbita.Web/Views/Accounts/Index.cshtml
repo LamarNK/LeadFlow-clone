@@ -1,0 +1,26 @@
+@model AccountsIndexViewModel
+@{
+    ViewData["Title"] = "Аккаунты";
+}
+<partial name="_PageHeader" model="Model.Header" />
+<div class="orbita-main">
+    <div class="card">
+        <div class="card-body card-body-table">
+            <table class="data-table">
+                <thead><tr><th>Аккаунт</th><th>Воркер</th><th>Статус</th><th>Объявления</th><th>Ошибка</th></tr></thead>
+                <tbody>
+                @foreach (var r in Model.Rows)
+                {
+                    <tr>
+                        <td>@r.AccountName</td>
+                        <td>@r.WorkerName</td>
+                        <td>@r.Status</td>
+                        <td>@r.ActiveAds актив. / @r.Blocked заблок.</td>
+                        <td class="muted">@(r.LastError ?? "—")</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

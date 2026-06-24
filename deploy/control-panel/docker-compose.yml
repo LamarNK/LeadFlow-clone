@@ -1,0 +1,44 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: orbita
+      POSTGRES_USER: orbita
+      POSTGRES_PASSWORD: orbita
+    ports:
+      - "5432:5432"
+    volumes:
+      - orbita_pg:/var/lib/postgresql/data
+
+  api:
+    build:
+      context: ../..
+      dockerfile: deploy/control-panel/Dockerfile.api
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__Default: Host=postgres;Port=5432;Database=orbita;Username=orbita;Password=orbita
+      RegistrationSecret: ${REGISTRATION_SECRET:-change-me-in-production}
+      Jwt__Key: ${JWT_KEY:-OrbitaProdSigningKey_ChangeMe_32chars!!}
+      Admin__Email: ${ADMIN_EMAIL:-admin@orbita.local}
+      Admin__Password: ${ADMIN_PASSWORD:-OrbitaAdmin1!}
+      Cors__Origins__0: http://localhost:8081
+      Cors__Origins__1: http://web:8080
+    depends_on:
+      - postgres
+    ports:
+      - "8080:8080"
+
+  web:
+    build:
+      context: ../..
+      dockerfile: deploy/control-panel/Dockerfile.web
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+      OrbitaApi__BaseUrl: http://api:8080
+    depends_on:
+      - api
+    ports:
+      - "8081:8080"
+
+volumes:
+  orbita_pg:

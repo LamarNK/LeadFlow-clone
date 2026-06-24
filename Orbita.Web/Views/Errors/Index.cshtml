@@ -1,0 +1,8 @@
+@model EventsIndexViewModel
+@{
+    ViewData["Title"] = "Ошибки";
+}
+<partial name="_PageHeader" model="Model.Header" />
+<div class="orbita-main">
+    <div class="card"><div class="card-body"><partial name="_EventList" model="Model.Events" /></div></div>
+</div>

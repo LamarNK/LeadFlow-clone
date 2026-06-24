@@ -1,0 +1,35 @@
+@model WorkersIndexViewModel
+@{
+    ViewData["Title"] = "Воркеры";
+}
+<partial name="_PageHeader" model="Model.Header" />
+<div class="orbita-main">
+    <div class="card">
+        <div class="card-body card-body-table">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Воркер</th><th>Статус</th><th>Мониторинг</th><th>Аккаунтов</th><th>Откликов</th><th>Ошибок</th><th>Последний контакт</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var w in Model.Workers)
+                {
+                    <tr>
+                        <td>
+                            <a href="@Url.Action("Details", new { id = w.Id })">@w.DisplayName</a>
+                            <div class="muted small">@w.MachineName</div>
+                        </td>
+                        <td><span class="status-dot @(w.IsOnline ? "" : "offline")">@(w.IsOnline ? "Онлайн" : "Офлайн")</span></td>
+                        <td>@w.MonitoringStatus</td>
+                        <td>@w.AccountCount</td>
+                        <td>@w.TotalToday</td>
+                        <td>@w.Errors</td>
+                        <td>@(w.LastSeenAtUtc?.ToLocalTime().ToString("g") ?? "—")</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

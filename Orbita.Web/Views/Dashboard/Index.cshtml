@@ -1,0 +1,117 @@
+@model DashboardViewModel
+@{
+    ViewData["Title"] = "Панель управления";
+}
+<partial name="_PageHeader" model="Model.Header" />
+<div class="orbita-main">
+    @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+    {
+        <p class="error-text">@Model.ErrorMessage</p>
+    }
+    else if (Model.Summary is not null)
+    {
+        var s = Model.Summary;
+        <div class="kpi-row">
+            <div class="kpi-card">
+                <div class="kpi-card-top"><span class="kpi-card-label">Откликов всего</span><span class="kpi-icon kpi-icon-blue"><i class="fa fa-comments"></i></span></div>
+                <div class="kpi-value">@s.TotalToday</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-card-top"><span class="kpi-card-label">Дублей</span><span class="kpi-icon kpi-icon-green"><i class="fa fa-copy"></i></span></div>
+                <div class="kpi-value">@s.Duplicates</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-card-top"><span class="kpi-card-label">Ошибок</span><span class="kpi-icon kpi-icon-orange"><i class="fa fa-exclamation-triangle"></i></span></div>
+                <div class="kpi-value">@s.Errors</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-card-top"><span class="kpi-card-label">Аккаунтов активно</span><span class="kpi-icon kpi-icon-purple"><i class="fa fa-users"></i></span></div>
+                <div class="kpi-value">@s.ConnectedAccounts</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-card-top"><span class="kpi-card-label">Воркеров онлайн</span><span class="kpi-icon kpi-icon-blue"><i class="fa fa-server"></i></span></div>
+                <div class="kpi-value">@s.OnlineWorkers/@s.TotalWorkers</div>
+            </div>
+        </div>
+
+        <div class="dashboard-grid">
+            <div class="card">
+                <div class="card-header"><h2>Воркеры</h2></div>
+                <div class="card-body card-body-table">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Воркер</th><th>Статус</th><th>Аккаунтов</th><th>Откликов</th><th>Дублей</th><th>Ошибок</th><th>Последняя активность</th><th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        @foreach (var w in Model.Workers.Take(5))
+                        {
+                            <tr>
+                                <td><a href="@Url.Action("Details", "Workers", new { id = w.Id })">@w.DisplayName</a></td>
+                                <td><span class="status-dot @(w.IsOnline ? "" : "offline")">@(w.IsOnline ? "Онлайн" : "Офлайн")</span></td>
+                                <td>@w.AccountCount</td>
+                                <td>@w.TotalToday</td>
+                                <td>—</td>
+                                <td>@w.Errors</td>
+                                <td>@(w.LastSeenAtUtc?.ToLocalTime().ToString("HH:mm") ?? "—")</td>
+                                <td class="cell-menu"><i class="fa fa-ellipsis-v muted"></i></td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                    <a class="link-btn" href="@Url.Action("Index", "Workers")">Показать все воркеры</a>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-header">
+                    <h2>Отклики по времени</h2>
+                    <select class="chart-select"><option>Сегодня</option></select>
+                </div>
+                <div class="card-body">
+                    @{
+                        var max = Math.Max(1, s.HourlyActivity.Max(p => p.NewCount));
+                    }
+                    <div class="line-chart">
+                        @foreach (var point in s.HourlyActivity)
+                        {
+                            var h = Math.Max(4, (int)Math.Round(point.NewCount * 180.0 / max));
+                            <div class="line-chart-bar" style="height:@(h)px" title="@($"{point.Label}: {point.NewCount}")"></div>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="dashboard-grid-bottom">
+            <div class="card">
+                <div class="card-header"><h2>Последние события</h2></div>
+                <div class="card-body">
+                    <partial name="_EventList" model="Model.Events.Take(5).ToList()" />
+                    <a class="link-btn" href="@Url.Action("Index", "Events")">Показать все события</a>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-header"><h2>Состояние аккаунтов</h2></div>
+                <div class="card-body">
+                    @{
+                        var stats = Model.AccountStats;
+                        var total = Math.Max(1, stats.Total);
+                        var activePct = stats.Active * 100 / total;
+                        var attentionPct = stats.NeedAttention * 100 / total;
+                    }
+                    <div class="donut-wrap">
+                        <div class="donut" style="background: conic-gradient(#16a34a 0% @(activePct)%, #f59e0b @(activePct)% @(activePct + attentionPct)%, #e2e8f0 @(activePct + attentionPct)% 100%)">
+                            <div class="donut-center"><span class="num">@stats.Total</span><span class="lbl">Всего</span></div>
+                        </div>
+                        <div class="donut-legend">
+                            <div class="legend-item"><span class="legend-dot" style="background:#16a34a"></span> Активны @stats.Active</div>
+                            <div class="legend-item"><span class="legend-dot" style="background:#f59e0b"></span> Требуют внимания @stats.NeedAttention</div>
+                            <div class="legend-item"><span class="legend-dot" style="background:#94a3b8"></span> Неактивны @stats.Inactive</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>

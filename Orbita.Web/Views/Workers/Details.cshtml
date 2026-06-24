@@ -1,0 +1,45 @@
+@model WorkerDetailsViewModel
+@{
+    ViewData["Title"] = Model.Worker?.DisplayName ?? "Воркер";
+}
+<partial name="_PageHeader" model="Model.Header" />
+<div class="orbita-main">
+    @if (Model.Worker is not null)
+    {
+        <p class="status-line"><span class="status-dot @(Model.Worker.IsOnline ? "" : "offline")">@(Model.Worker.IsOnline ? "Онлайн" : "Офлайн")</span></p>
+        @if (Model.Worker.LatestStats is not null)
+        {
+            var st = Model.Worker.LatestStats;
+            <div class="kpi-row">
+                <div class="kpi-card"><div class="kpi-card-label">Отклики</div><div class="kpi-value">@st.TotalToday</div></div>
+                <div class="kpi-card"><div class="kpi-card-label">CRM</div><div class="kpi-value">@st.SentToCrm</div></div>
+                <div class="kpi-card"><div class="kpi-card-label">Дубли</div><div class="kpi-value">@st.Duplicates</div></div>
+                <div class="kpi-card"><div class="kpi-card-label">Ошибки</div><div class="kpi-value">@st.Errors</div></div>
+                <div class="kpi-card"><div class="kpi-card-label">Аккаунты</div><div class="kpi-value">@st.ConnectedAccounts</div></div>
+            </div>
+        }
+        <div class="card">
+            <div class="card-header"><h2>Аккаунты</h2></div>
+            <div class="card-body card-body-table">
+                <table class="data-table">
+                    <thead><tr><th>Имя</th><th>Статус</th><th>Объявления</th><th>Баланс / ошибка</th></tr></thead>
+                    <tbody>
+                    @foreach (var a in Model.Accounts)
+                    {
+                        var balance = Model.Worker.Balances.FirstOrDefault(b => b.AccountId == a.AccountId);
+                        <tr>
+                            <td>@a.DisplayName</td>
+                            <td>@a.Status</td>
+                            <td>@a.ActiveAdsCount актив. / @a.BlockedCount заблок.</td>
+                            <td>
+                                @if (balance is not null) { <div>@balance.TotalBalance.ToString("N2") ₽</div> }
+                                <span class="muted small">@(a.LastErrorMessage ?? "—")</span>
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+</div>

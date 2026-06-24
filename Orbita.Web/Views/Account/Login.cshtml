@@ -1,0 +1,98 @@
+@model LoginViewModel
+@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+@{
+    Layout = null;
+    ViewData["Title"] = "Вход";
+}
+<!DOCTYPE html>
+<html lang="ru" class="auth-html">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Орбита — Вход</title>
+    <link rel="stylesheet" href="~/lib/font-awesome/css/font-awesome.min.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/auth.css" asp-append-version="true" />
+</head>
+<body class="auth-body">
+<div class="auth-bg" aria-hidden="true">
+    <img class="auth-bg-img" src="~/images/auth-bg.jpg" alt="" asp-append-version="true" />
+    <canvas class="auth-dots" id="authDots"></canvas>
+</div>
+<div class="auth-page">
+    <div class="auth-card">
+        <header class="auth-brand">
+            <img class="auth-logo" src="~/images/logo.png" alt="" asp-append-version="true" />
+            <div class="auth-brand-text">
+                <h1 class="auth-title">Орбита</h1>
+                <p class="auth-subtitle">Панель управления</p>
+            </div>
+        </header>
+
+        <form class="auth-form" asp-action="Login" method="post" novalidate>
+            @Html.AntiForgeryToken()
+
+            @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+            {
+                <div class="auth-error-block">@Model.ErrorMessage</div>
+            }
+            else if (!ViewData.ModelState.IsValid && ViewData.ModelState.ErrorCount > 0)
+            {
+                <div class="auth-error-block" asp-validation-summary="All"></div>
+            }
+
+            <div class="auth-field">
+                <label for="Email">Email</label>
+                <div class="auth-input-wrap">
+                    <i class="fa fa-envelope" aria-hidden="true"></i>
+                    <input asp-for="Email"
+                           id="Email"
+                           class="auth-input"
+                           type="email"
+                           autocomplete="username"
+                           placeholder="Введите email" />
+                </div>
+                <span asp-validation-for="Email" class="auth-field-error"></span>
+            </div>
+
+            <div class="auth-field">
+                <label for="passwordInput">Пароль</label>
+                <div class="auth-input-wrap auth-input-wrap--password">
+                    <i class="fa fa-lock" aria-hidden="true"></i>
+                    <input asp-for="Password"
+                           id="passwordInput"
+                           class="auth-input"
+                           type="password"
+                           autocomplete="current-password"
+                           placeholder="Введите пароль" />
+                    <button type="button"
+                            class="auth-toggle-pwd"
+                            data-toggle-password="passwordInput"
+                            aria-label="Показать пароль">
+                        <i class="fa fa-eye" aria-hidden="true"></i>
+                    </button>
+                </div>
+                <span asp-validation-for="Password" class="auth-field-error"></span>
+            </div>
+
+            <div class="auth-row">
+                <label class="auth-remember">
+                    <input asp-for="RememberMe" type="checkbox" />
+                    <span>Запомнить меня</span>
+                </label>
+                <a class="auth-forgot" href="#" tabindex="-1">Забыли пароль?</a>
+            </div>
+
+            <button class="auth-submit" type="submit">Войти</button>
+        </form>
+
+        <div class="auth-divider"><span>или</span></div>
+
+        <p class="auth-footer">
+            Нет аккаунта? <a href="#">Обратитесь к администратору</a>
+        </p>
+    </div>
+</div>
+<script src="~/js/orbita.js" asp-append-version="true"></script>
+<script src="~/js/auth-dots.js" asp-append-version="true"></script>
+</body>
+</html>

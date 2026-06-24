@@ -1,0 +1,47 @@
+@inject Orbita.Web.Services.ThemeService Theme
+<!DOCTYPE html>
+<html lang="ru" data-theme="@Theme.Theme">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewData["Title"] — Орбита</title>
+    <link rel="stylesheet" href="~/lib/font-awesome/css/font-awesome.min.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/orbita.css" asp-append-version="true" />
+</head>
+<body>
+<div class="orbita-app">
+    <aside class="orbita-sidebar">
+        <div class="orbita-sidebar-brand">
+            <img src="~/images/logo.png" alt="Орбита" asp-append-version="true" />
+            <span>Орбита</span>
+        </div>
+        <nav class="orbita-nav">
+            @{
+                var ctrl = ViewContext.RouteData.Values["controller"]?.ToString();
+            }
+            <a class="nav-item @(ctrl == "Dashboard" ? "active" : "")" href="@Url.Action("Index", "Dashboard")"><i class="fa fa-th-large"></i> Панель управления</a>
+            <a class="nav-item @(ctrl == "Workers" ? "active" : "")" href="@Url.Action("Index", "Workers")"><i class="fa fa-server"></i> Воркеры</a>
+            <a class="nav-item @(ctrl == "Accounts" ? "active" : "")" href="@Url.Action("Index", "Accounts")"><i class="fa fa-user"></i> Аккаунты</a>
+            <a class="nav-item @(ctrl == "Events" ? "active" : "")" href="@Url.Action("Index", "Events")"><i class="fa fa-list-alt"></i> События</a>
+            <a class="nav-item @(ctrl == "Errors" ? "active" : "")" href="@Url.Action("Index", "Errors")"><i class="fa fa-exclamation-triangle"></i> Ошибки</a>
+            <a class="nav-item @(ctrl == "Settings" ? "active" : "")" href="@Url.Action("Index", "Settings")"><i class="fa fa-cog"></i> Настройки</a>
+        </nav>
+        <div class="orbita-sidebar-footer">
+            <form asp-controller="Settings" asp-action="ToggleTheme" method="post" class="theme-form">
+                @Html.AntiForgeryToken()
+                <button type="submit" class="sidebar-btn"><i class="fa @(Theme.IsLight ? "fa-moon-o" : "fa-sun-o")"></i> @(Theme.IsLight ? "Тёмная тема" : "Светлая тема")</button>
+            </form>
+            <form asp-controller="Account" asp-action="Logout" method="post" class="logout-form">
+                @Html.AntiForgeryToken()
+                <button type="submit" class="sidebar-btn"><i class="fa fa-sign-out"></i> Выйти</button>
+            </form>
+        </div>
+    </aside>
+    <div class="orbita-content">
+        @RenderBody()
+    </div>
+</div>
+<script src="~/js/orbita.js" asp-append-version="true"></script>
+@await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

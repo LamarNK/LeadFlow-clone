@@ -7,4 +7,9 @@
   <Project Path="LeadFlow/LeadFlow.csproj">
     <Platform Solution="*|x64" Project="x64" />
   </Project>
+  <Project Path="Orbita.Contracts/Orbita.Contracts.csproj" />
+  <Project Path="Orbita.Api/Orbita.Api.csproj" />
+  <Project Path="Orbita.Web/Orbita.Web.csproj" />
+  <Project Path="Orbita.Tests/Orbita.Tests.csproj" />
+  <Project Path="tools/OrbitaMockWorker/OrbitaMockWorker.csproj" />
 </Solution>

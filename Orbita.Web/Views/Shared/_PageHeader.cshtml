@@ -1,0 +1,27 @@
+@model PageHeaderViewModel
+<div class="orbita-topbar">
+    <div>
+        <h1>@Model.Title</h1>
+        @if (!string.IsNullOrWhiteSpace(Model.Subtitle))
+        {
+            <p class="orbita-topbar-sub">@Model.Subtitle</p>
+        }
+    </div>
+    <div class="orbita-topbar-right">
+        @if (Model.ShowRefresh)
+        {
+            <span class="orbita-updated">
+                <i class="fa fa-clock-o"></i> Обновлено: @Model.UpdatedAt.ToString("HH:mm:ss")
+                <a href="@Context.Request.Path" class="orbita-refresh-btn" title="Обновить"><i class="fa fa-refresh"></i></a>
+            </span>
+        }
+        <div class="orbita-user">
+            <div class="orbita-user-avatar">@Model.UserInitial</div>
+            <span>Администратор</span>
+        </div>
+        @if (Model.ShowDateRange)
+        {
+            <div class="orbita-date-range"><i class="fa fa-calendar"></i> @Model.DateRangeLabel</div>
+        }
+    </div>
+</div>

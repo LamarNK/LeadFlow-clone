@@ -1,0 +1,352 @@
+/* Орбита — страница авторизации (1:1 с макетом) */
+
+html.auth-html,
+html.auth-html body.auth-body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    overflow: hidden;
+    font-family: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    -webkit-font-smoothing: antialiased;
+}
+
+/* Фон на весь экран, не внутри карточки/флекса */
+.auth-bg {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    height: 100dvh;
+    z-index: 0;
+    overflow: hidden;
+    background: #000;
+    pointer-events: none;
+}
+
+.auth-bg-img {
+    position: absolute;
+    inset: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center 72%;
+    z-index: 0;
+}
+
+.auth-dots {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 3;
+    pointer-events: none;
+}
+
+.auth-bg::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    background: rgba(0, 0, 0, 0.1);
+    pointer-events: none;
+}
+
+.auth-page {
+    position: relative;
+    z-index: 1;
+    box-sizing: border-box;
+    height: 100vh;
+    height: 100dvh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px 20px;
+    overflow: hidden;
+}
+
+.auth-card {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    max-width: 400px;
+    background: rgba(26, 32, 48, 0.94);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 14px;
+    box-shadow:
+        0 24px 48px rgba(0, 0, 0, 0.45),
+        0 0 0 1px rgba(0, 0, 0, 0.2);
+    padding: 36px 32px 32px;
+    color: #e8edf5;
+}
+
+/* --- Брендинг --- */
+.auth-brand {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-bottom: 32px;
+    padding-bottom: 28px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.auth-logo {
+    display: block;
+    width: auto;
+    height: 120px;
+    max-width: 100%;
+    margin-bottom: 20px;
+    object-fit: contain;
+    filter: drop-shadow(0 6px 20px rgba(59, 130, 246, 0.3));
+}
+
+.auth-brand-text {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+}
+
+.auth-title {
+    margin: 0;
+    font-size: 28px;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: 0.03em;
+    color: #ffffff;
+    text-shadow: 0 1px 12px rgba(59, 130, 246, 0.2);
+}
+
+.auth-subtitle {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 400;
+    line-height: 1;
+    letter-spacing: 0.02em;
+    color: #7b8ba3;
+}
+
+/* --- Поля --- */
+.auth-form {
+    margin: 0;
+}
+
+.auth-field {
+    margin-bottom: 18px;
+}
+
+.auth-field label {
+    display: block;
+    margin-bottom: 8px;
+    font-size: 13px;
+    font-weight: 400;
+    color: #c8d0dc;
+}
+
+.auth-input-wrap {
+    position: relative;
+    display: block;
+}
+
+.auth-input-wrap > .fa {
+    position: absolute;
+    left: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 15px;
+    color: #5c6b82;
+    pointer-events: none;
+    z-index: 1;
+}
+
+.auth-input {
+    display: block;
+    width: 100%;
+    height: 44px;
+    padding: 0 14px 0 42px;
+    border: 1px solid #2d3748;
+    border-radius: 8px;
+    background: #0f1524;
+    color: #f0f4fa;
+    font-size: 14px;
+    font-family: inherit;
+    line-height: 44px;
+    box-sizing: border-box;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.auth-input::placeholder {
+    color: #5c6b82;
+    opacity: 1;
+}
+
+.auth-input:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.18);
+}
+
+.auth-input-wrap--password .auth-input {
+    padding-right: 42px;
+}
+
+.auth-toggle-pwd {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: #5c6b82;
+    font-size: 15px;
+    line-height: 28px;
+    text-align: center;
+    cursor: pointer;
+    z-index: 1;
+}
+
+.auth-toggle-pwd:hover {
+    color: #8b95a8;
+}
+
+/* --- Запомнить / Забыли --- */
+.auth-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 22px;
+    gap: 12px;
+}
+
+.auth-remember {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    font-size: 13px;
+    font-weight: 400;
+    color: #8b95a8;
+    cursor: pointer;
+    user-select: none;
+}
+
+.auth-remember input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    accent-color: #3b82f6;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.auth-forgot {
+    font-size: 13px;
+    font-weight: 400;
+    color: #4d9fff;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.auth-forgot:hover {
+    color: #6eb0ff;
+    text-decoration: underline;
+}
+
+/* --- Кнопка --- */
+.auth-submit {
+    display: block;
+    width: 100%;
+    height: 44px;
+    padding: 0 16px;
+    border: 0;
+    border-radius: 8px;
+    background: #3b82f6;
+    color: #ffffff;
+    font-size: 15px;
+    font-weight: 600;
+    font-family: inherit;
+    line-height: 44px;
+    text-align: center;
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+
+.auth-submit:hover {
+    background: #2563eb;
+}
+
+.auth-submit:active {
+    background: #1d4ed8;
+}
+
+.auth-submit:disabled {
+    opacity: 0.65;
+    cursor: wait;
+}
+
+/* --- Разделитель --- */
+.auth-divider {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin: 22px 0 18px;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: #2d3748;
+}
+
+.auth-divider span {
+    font-size: 13px;
+    font-weight: 400;
+    color: #6b7789;
+    flex-shrink: 0;
+}
+
+/* --- Футер --- */
+.auth-footer {
+    margin: 0;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 400;
+    line-height: 1.5;
+    color: #8b95a8;
+}
+
+.auth-footer a {
+    color: #4d9fff;
+    text-decoration: none;
+}
+
+.auth-footer a:hover {
+    color: #6eb0ff;
+    text-decoration: underline;
+}
+
+/* --- Ошибки --- */
+.auth-error-block {
+    margin-bottom: 14px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: rgba(239, 68, 68, 0.12);
+    border: 1px solid rgba(239, 68, 68, 0.25);
+    font-size: 13px;
+    color: #fca5a5;
+    line-height: 1.4;
+}
+
+.auth-field-error {
+    display: block;
+    margin-top: 6px;
+    font-size: 12px;
+    color: #f87171;
+}

@@ -1,0 +1,24 @@
+@model IReadOnlyList<Orbita.Contracts.WorkerEventListItem>
+@if (Model.Count == 0)
+{
+    <p class="muted">Событий пока нет.</p>
+}
+else
+{
+    <div class="event-list">
+        @foreach (var evt in Model)
+        {
+            var cls = evt.Level.Equals("Error", StringComparison.OrdinalIgnoreCase) ? "error"
+                : evt.Level.Equals("Warning", StringComparison.OrdinalIgnoreCase) ? "warning" : "success";
+            var icon = evt.Level.Equals("Error", StringComparison.OrdinalIgnoreCase) ? "fa-times"
+                : evt.Level.Equals("Warning", StringComparison.OrdinalIgnoreCase) ? "fa-exclamation" : "fa-check";
+            <div class="event-row">
+                <div class="event-icon @cls"><i class="fa @icon"></i></div>
+                <div class="event-text">
+                    <strong>@evt.Message</strong>
+                    <div class="event-meta">@evt.WorkerDisplayName · @evt.CreatedAtUtc.ToLocalTime().ToString("HH:mm")</div>
+                </div>
+            </div>
+        }
+    </div>
+}
