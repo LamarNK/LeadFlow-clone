@@ -1,8 +1,10 @@
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Orbita.Logging.Audit;
 using Orbita.Web.Middleware;
 using Orbita.Web.Services;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.AddOrbitaLogging("Orbita.Web");
 
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddControllersWithViews();
@@ -31,6 +33,7 @@ builder.Services.AddHttpClient<OrbitaApiClient>(client =>
 });
 
 var app = builder.Build();
+app.UseOrbitaLogging();
 
 if (!app.Environment.IsDevelopment())
 {

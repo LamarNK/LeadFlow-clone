@@ -8,8 +8,10 @@ using Orbita.Api.Auth;
 using Orbita.Api.Data;
 using Orbita.Api.Services;
 using Orbita.Contracts;
+using Orbita.Logging.Audit;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.AddOrbitaLogging("Orbita.Api");
 
 builder.Services.AddDbContext<OrbitaDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("Default")));
@@ -73,6 +75,7 @@ builder.Services.AddScoped<TelemetryService>();
 builder.Services.AddScoped<DashboardQueryService>();
 
 var app = builder.Build();
+app.UseOrbitaLogging();
 
 await SeedAsync(app);
 
@@ -149,16 +152,27 @@ app.MapPost("/api/v1/auth/login", async (
     var user = await users.FindByEmailAsync(request.Email);
     if (user is null)
     {
+        await GlobalLogger.Instance.LogAsync(
+            $"Login failed: user not found ({request.Email}).",
+            DeskLinkAuditLogLevel.Warning,
+            errorKey: "auth.login.user_not_found");
         return Results.Unauthorized();
     }
 
     var result = await signIn.CheckPasswordSignInAsync(user, request.Password, lockoutOnFailure: false);
     if (!result.Succeeded)
     {
+        await GlobalLogger.Instance.LogAsync(
+            $"Login failed: invalid password ({request.Email}).",
+            DeskLinkAuditLogLevel.Warning,
+            errorKey: "auth.login.invalid_password");
         return Results.Unauthorized();
     }
 
     var token = JwtTokenFactory.CreateToken(user, config);
+    await GlobalLogger.Instance.LogAsync(
+        $"Login succeeded ({request.Email}).",
+        DeskLinkAuditLogLevel.Info);
     return Results.Ok(new LoginResponse(token, user.Email ?? request.Email));
 });
 
@@ -189,6 +203,10 @@ static async Task SeedAsync(WebApplication app)
             Email = email,
             EmailConfirmed = true
         }, password);
+
+        await GlobalLogger.Instance.LogAsync(
+            $"Admin user seeded ({email}).",
+            DeskLinkAuditLogLevel.Info);
     }
 }
 

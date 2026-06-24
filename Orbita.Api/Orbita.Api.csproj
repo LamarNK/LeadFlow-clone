@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Orbita.Contracts\Orbita.Contracts.csproj" />
+    <ProjectReference Include="..\Orbita.Logging\Orbita.Logging.csproj" />
   </ItemGroup>
 
 </Project>
