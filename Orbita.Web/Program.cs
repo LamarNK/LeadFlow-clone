@@ -1,10 +1,14 @@
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Orbita.Logging.Audit;
 using Orbita.Web.Middleware;
+using Orbita.Web.Options;
 using Orbita.Web.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.AddOrbitaLogging("Orbita.Web");
+
+builder.Services.Configure<DesignPreviewOptions>(
+    builder.Configuration.GetSection(DesignPreviewOptions.SectionName));
 
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddControllersWithViews();
@@ -15,6 +19,7 @@ builder.Services.AddSingleton<ThemeService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<IWorkersService, WorkersService>();
 builder.Services.AddScoped<IEventsService, EventsService>();
+builder.Services.AddScoped<IErrorsService, ErrorsService>();
 builder.Services.AddScoped<IAccountsService, AccountsService>();
 
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)

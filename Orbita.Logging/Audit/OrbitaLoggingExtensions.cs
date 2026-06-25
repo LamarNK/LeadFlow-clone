@@ -7,6 +7,8 @@ namespace Orbita.Logging.Audit;
 
 public static class OrbitaLoggingExtensions
 {
+    private static ILoggerFactory? _consoleLoggerFactory;
+
     public static WebApplicationBuilder AddOrbitaLogging(this WebApplicationBuilder builder, string serviceName)
     {
         Environment.SetEnvironmentVariable("LOG_SERVICE_NAME", serviceName);
@@ -21,8 +23,13 @@ public static class OrbitaLoggingExtensions
 
     public static WebApplication UseOrbitaLogging(this WebApplication app)
     {
-        var logger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Orbita");
-        GlobalLogger.ConfigureAppLogger(logger);
+        // Только Console — иначе GlobalLogger → ILogger → GlobalLoggerProvider → бесконечная рекурсия.
+        _consoleLoggerFactory ??= LoggerFactory.Create(static builder =>
+        {
+            builder.AddConsole();
+            builder.SetMinimumLevel(LogLevel.Debug);
+        });
+        GlobalLogger.ConfigureAppLogger(_consoleLoggerFactory.CreateLogger("Orbita"));
 
         app.UseMiddleware<CorrelationIdMiddleware>();
 

@@ -8,9 +8,9 @@ namespace Orbita.Web.Controllers;
 public sealed class WorkersController(IWorkersService workers) : Controller
 {
     [HttpGet]
-    public async Task<IActionResult> Index(CancellationToken ct)
+    public async Task<IActionResult> Index(string? q, int page = 1, CancellationToken ct = default)
     {
-        var model = await workers.GetIndexAsync(ct);
+        var model = await workers.GetIndexAsync(q, page, ct);
         return View(model);
     }
 

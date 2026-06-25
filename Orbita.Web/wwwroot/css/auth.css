@@ -332,6 +332,24 @@ html.auth-html body.auth-body {
     text-decoration: underline;
 }
 
+/* --- Режим просмотра --- */
+.auth-preview-hint {
+    margin: 0 0 16px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: rgba(59, 130, 246, 0.1);
+    border: 1px solid rgba(59, 130, 246, 0.22);
+    font-size: 12px;
+    line-height: 1.45;
+    color: #9db8e8;
+    text-align: center;
+}
+
+.auth-preview-hint strong {
+    color: #c8daf8;
+    font-weight: 600;
+}
+
 /* --- Ошибки --- */
 .auth-error-block {
     margin-bottom: 14px;

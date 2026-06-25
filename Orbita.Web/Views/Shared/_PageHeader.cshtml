@@ -1,27 +1,67 @@
+@using System.Security.Claims
 @model PageHeaderViewModel
+@{
+    var userDisplayName = User.Identity?.Name ?? Model.UserDisplayName;
+    var userEmail = User.FindFirst(ClaimTypes.Email)?.Value ?? Model.UserEmail;
+    var userInitial = !string.IsNullOrWhiteSpace(userDisplayName)
+        ? char.ToUpperInvariant(userDisplayName.Trim()[0]).ToString()
+        : Model.UserInitial;
+}
 <div class="orbita-topbar">
-    <div>
+    <div class="orbita-topbar-left">
         <h1>@Model.Title</h1>
         @if (!string.IsNullOrWhiteSpace(Model.Subtitle))
         {
             <p class="orbita-topbar-sub">@Model.Subtitle</p>
         }
     </div>
-    <div class="orbita-topbar-right">
+    <div class="orbita-topbar-actions">
         @if (Model.ShowRefresh)
         {
-            <span class="orbita-updated">
-                <i class="fa fa-clock-o"></i> Обновлено: @Model.UpdatedAt.ToString("HH:mm:ss")
-                <a href="@Context.Request.Path" class="orbita-refresh-btn" title="Обновить"><i class="fa fa-refresh"></i></a>
-            </span>
+            <div class="orbita-updated-block">
+                <a href="@Context.Request.Path"
+                   class="orbita-refresh-btn"
+                   title="Обновить"
+                   data-orbita-refresh>
+                    <i class="fa-solid fa-rotate-right" aria-hidden="true"></i>
+                </a>
+                <span class="orbita-updated-text">
+                    Обновлено:
+                    <time class="orbita-updated-time"
+                          datetime="@Model.UpdatedAt.ToString("o")"
+                          data-orbita-updated-at>@Model.UpdatedAt.ToString("HH:mm:ss")</time>
+                </span>
+            </div>
         }
-        <div class="orbita-user">
-            <div class="orbita-user-avatar">@Model.UserInitial</div>
-            <span>Администратор</span>
-        </div>
+        @if (Model.ShowRefresh && Model.ShowDateRange)
+        {
+            <span class="orbita-topbar-sep" aria-hidden="true"></span>
+        }
         @if (Model.ShowDateRange)
         {
-            <div class="orbita-date-range"><i class="fa fa-calendar"></i> @Model.DateRangeLabel</div>
+            <button type="button" class="orbita-period-picker" aria-label="Выбор периода">
+                <i class="fa-regular fa-calendar orbita-period-icon" aria-hidden="true"></i>
+                <span class="orbita-period-label">@Model.DateRangeLabel</span>
+                <i class="fa-solid fa-chevron-down orbita-period-caret" aria-hidden="true"></i>
+            </button>
         }
+        @if ((Model.ShowRefresh || Model.ShowDateRange))
+        {
+            <span class="orbita-topbar-sep" aria-hidden="true"></span>
+        }
+        <div class="orbita-user-menu" data-orbita-user-menu>
+            <button type="button" class="orbita-user-trigger" aria-expanded="false" aria-haspopup="true">
+                <span class="orbita-user-avatar">@userInitial</span>
+                <span class="orbita-user-name">@userDisplayName</span>
+                <i class="fa-solid fa-chevron-down orbita-user-caret" aria-hidden="true"></i>
+            </button>
+            <div class="orbita-user-dropdown" hidden>
+                <span class="orbita-user-dropdown-email">@userEmail</span>
+                <form asp-controller="Account" asp-action="Logout" method="post" class="orbita-user-logout-form">
+                    @Html.AntiForgeryToken()
+                    <button type="submit" class="orbita-user-dropdown-item">Выйти</button>
+                </form>
+            </div>
+        </div>
     </div>
 </div>

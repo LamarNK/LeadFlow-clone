@@ -1,11 +1,20 @@
+using Microsoft.Extensions.Options;
 using Orbita.Web.Models.ViewModels;
+using Orbita.Web.Options;
 
 namespace Orbita.Web.Services;
 
-public sealed class AccountsService(OrbitaApiClient api) : IAccountsService
+public sealed class AccountsService(OrbitaApiClient api, IOptions<DesignPreviewOptions> previewOptions) : IAccountsService
 {
-    public async Task<AccountsIndexViewModel> GetIndexAsync(CancellationToken ct = default)
+    public async Task<AccountsIndexViewModel> GetIndexAsync(
+        string? searchQuery = null,
+        string? tab = null,
+        int page = 1,
+        CancellationToken ct = default)
     {
+        if (previewOptions.Value.Enabled)
+            return DesignPreviewData.BuildAccountsIndexViewModel(searchQuery, tab, page, AccountsIndexBuilder.DefaultPageSize);
+
         var rows = new List<AccountRowViewModel>();
         var workers = await api.GetWorkersAsync(ct) ?? [];
 
@@ -14,20 +23,14 @@ public sealed class AccountsService(OrbitaApiClient api) : IAccountsService
             var accounts = await api.GetWorkerAccountsAsync(worker.Id, ct);
             if (accounts is null) continue;
 
+            var workerDetail = await api.GetWorkerAsync(worker.Id, ct);
             foreach (var account in accounts)
             {
-                rows.Add(new AccountRowViewModel
-                {
-                    AccountName = account.DisplayName,
-                    WorkerName = worker.DisplayName,
-                    Status = account.Status,
-                    ActiveAds = account.ActiveAdsCount,
-                    Blocked = account.BlockedCount,
-                    LastError = account.LastErrorMessage
-                });
+                var balance = workerDetail?.Balances.FirstOrDefault(b => b.AccountId == account.AccountId)?.TotalBalance ?? 0;
+                rows.Add(AccountsIndexBuilder.MapAccount(account, worker.Id, worker.DisplayName, balance));
             }
         }
 
-        return new AccountsIndexViewModel { Rows = rows };
+        return AccountsIndexBuilder.Build(rows, searchQuery, tab, page);
     }
 }

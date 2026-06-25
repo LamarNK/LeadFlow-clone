@@ -10,7 +10,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Орбита — Вход</title>
-    <link rel="stylesheet" href="~/lib/font-awesome/css/font-awesome.min.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/lib/fontawesome/css/all.min.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/auth.css" asp-append-version="true" />
 </head>
 <body class="auth-body">
@@ -43,7 +43,7 @@
             <div class="auth-field">
                 <label for="Email">Email</label>
                 <div class="auth-input-wrap">
-                    <i class="fa fa-envelope" aria-hidden="true"></i>
+                    <i class="fa-solid fa-envelope" aria-hidden="true"></i>
                     <input asp-for="Email"
                            id="Email"
                            class="auth-input"
@@ -57,7 +57,7 @@
             <div class="auth-field">
                 <label for="passwordInput">Пароль</label>
                 <div class="auth-input-wrap auth-input-wrap--password">
-                    <i class="fa fa-lock" aria-hidden="true"></i>
+                    <i class="fa-solid fa-lock" aria-hidden="true"></i>
                     <input asp-for="Password"
                            id="passwordInput"
                            class="auth-input"
@@ -68,7 +68,7 @@
                             class="auth-toggle-pwd"
                             data-toggle-password="passwordInput"
                             aria-label="Показать пароль">
-                        <i class="fa fa-eye" aria-hidden="true"></i>
+                        <i class="fa-regular fa-eye" aria-hidden="true"></i>
                     </button>
                 </div>
                 <span asp-validation-for="Password" class="auth-field-error"></span>
@@ -84,6 +84,11 @@
 
             <button class="auth-submit" type="submit">Войти</button>
         </form>
+
+        @if (Model.DesignPreviewEnabled)
+        {
+            <p class="auth-preview-hint">Режим просмотра дизайна — PostgreSQL и API не нужны. Пароль: <strong>OrbitaAdmin1!</strong></p>
+        }
 
         <div class="auth-divider"><span>или</span></div>
 

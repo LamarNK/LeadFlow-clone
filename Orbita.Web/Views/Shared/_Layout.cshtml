@@ -1,43 +1,66 @@
+@using Microsoft.Extensions.Options
+@using Orbita.Web.Options
 @inject Orbita.Web.Services.ThemeService Theme
+@inject IOptions<DesignPreviewOptions> PreviewOptions
 <!DOCTYPE html>
 <html lang="ru" data-theme="@Theme.Theme">
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>@ViewData["Title"] — Орбита</title>
-    <link rel="stylesheet" href="~/lib/font-awesome/css/font-awesome.min.css" asp-append-version="true" />
+    <script>
+        try {
+            if (localStorage.getItem('orbita-sidebar-collapsed') === '1') {
+                document.documentElement.classList.add('sidebar-collapsed');
+            }
+        } catch (e) { }
+    </script>
+    <link rel="stylesheet" href="~/lib/fontawesome/css/all.min.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/orbita.css" asp-append-version="true" />
 </head>
 <body>
 <div class="orbita-app">
     <aside class="orbita-sidebar">
-        <div class="orbita-sidebar-brand">
-            <img src="~/images/logo.png" alt="Орбита" asp-append-version="true" />
-            <span>Орбита</span>
+        <div class="orbita-sidebar-header">
+            <div class="orbita-sidebar-brand">
+                <img src="~/images/logo.png" alt="" asp-append-version="true" />
+                <span>Орбита</span>
+            </div>
+            <button type="button"
+                    class="orbita-sidebar-toggle"
+                    data-orbita-sidebar-toggle
+                    aria-label="Свернуть меню"
+                    aria-expanded="true">
+                <i class="fa-solid fa-bars" aria-hidden="true"></i>
+            </button>
         </div>
         <nav class="orbita-nav">
             @{
                 var ctrl = ViewContext.RouteData.Values["controller"]?.ToString();
             }
-            <a class="nav-item @(ctrl == "Dashboard" ? "active" : "")" href="@Url.Action("Index", "Dashboard")"><i class="fa fa-th-large"></i> Панель управления</a>
-            <a class="nav-item @(ctrl == "Workers" ? "active" : "")" href="@Url.Action("Index", "Workers")"><i class="fa fa-server"></i> Воркеры</a>
-            <a class="nav-item @(ctrl == "Accounts" ? "active" : "")" href="@Url.Action("Index", "Accounts")"><i class="fa fa-user"></i> Аккаунты</a>
-            <a class="nav-item @(ctrl == "Events" ? "active" : "")" href="@Url.Action("Index", "Events")"><i class="fa fa-list-alt"></i> События</a>
-            <a class="nav-item @(ctrl == "Errors" ? "active" : "")" href="@Url.Action("Index", "Errors")"><i class="fa fa-exclamation-triangle"></i> Ошибки</a>
-            <a class="nav-item @(ctrl == "Settings" ? "active" : "")" href="@Url.Action("Index", "Settings")"><i class="fa fa-cog"></i> Настройки</a>
+            <a class="nav-item @(ctrl == "Dashboard" ? "active" : "")" href="@Url.Action("Index", "Dashboard")" title="Панель управления"><i class="fa-solid fa-house" aria-hidden="true"></i><span class="nav-item-label">Панель управления</span></a>
+            <a class="nav-item @(ctrl == "Workers" ? "active" : "")" href="@Url.Action("Index", "Workers")" title="Воркеры"><i class="fa-solid fa-server" aria-hidden="true"></i><span class="nav-item-label">Воркеры</span></a>
+            <a class="nav-item @(ctrl == "Accounts" ? "active" : "")" href="@Url.Action("Index", "Accounts")" title="Аккаунты"><i class="fa-solid fa-users" aria-hidden="true"></i><span class="nav-item-label">Аккаунты</span></a>
+            <a class="nav-item @(ctrl == "Events" ? "active" : "")" href="@Url.Action("Index", "Events")" title="События"><i class="fa-regular fa-clipboard" aria-hidden="true"></i><span class="nav-item-label">События</span></a>
+            <a class="nav-item @(ctrl == "Errors" ? "active" : "")" href="@Url.Action("Index", "Errors")" title="Ошибки"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i><span class="nav-item-label">Ошибки</span></a>
+            <a class="nav-item @(ctrl == "Settings" ? "active" : "")" href="@Url.Action("Index", "Settings")" title="Настройки"><i class="fa-solid fa-gear" aria-hidden="true"></i><span class="nav-item-label">Настройки</span></a>
         </nav>
         <div class="orbita-sidebar-footer">
             <form asp-controller="Settings" asp-action="ToggleTheme" method="post" class="theme-form">
                 @Html.AntiForgeryToken()
-                <button type="submit" class="sidebar-btn"><i class="fa @(Theme.IsLight ? "fa-moon-o" : "fa-sun-o")"></i> @(Theme.IsLight ? "Тёмная тема" : "Светлая тема")</button>
+                <button type="submit" class="sidebar-btn sidebar-btn--theme" title="@(Theme.IsLight ? "Тёмная тема" : "Светлая тема")"><i class="@(Theme.IsLight ? "fa-regular fa-moon" : "fa-regular fa-sun")" aria-hidden="true"></i><span class="sidebar-btn-label">@(Theme.IsLight ? "Тёмная тема" : "Светлая тема")</span></button>
             </form>
             <form asp-controller="Account" asp-action="Logout" method="post" class="logout-form">
                 @Html.AntiForgeryToken()
-                <button type="submit" class="sidebar-btn"><i class="fa fa-sign-out"></i> Выйти</button>
+                <button type="submit" class="sidebar-btn sidebar-btn--logout" title="Выйти"><i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i><span class="sidebar-btn-label">Выйти</span></button>
             </form>
         </div>
     </aside>
     <div class="orbita-content">
+        @if (PreviewOptions.Value.Enabled)
+        {
+            <div class="orbita-preview-banner">Режим просмотра дизайна — демо-данные, без БД и API</div>
+        }
         @RenderBody()
     </div>
 </div>

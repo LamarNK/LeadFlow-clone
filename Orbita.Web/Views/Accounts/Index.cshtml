@@ -1,26 +1,201 @@
 @model AccountsIndexViewModel
 @{
     ViewData["Title"] = "Аккаунты";
+    var pagination = Model.Pagination;
 }
-<partial name="_PageHeader" model="Model.Header" />
-<div class="orbita-main">
-    <div class="card">
-        <div class="card-body card-body-table">
-            <table class="data-table">
-                <thead><tr><th>Аккаунт</th><th>Воркер</th><th>Статус</th><th>Объявления</th><th>Ошибка</th></tr></thead>
-                <tbody>
-                @foreach (var r in Model.Rows)
-                {
+<div class="orbita-main accounts-page">
+    <nav class="orbita-breadcrumbs orbita-breadcrumbs--accounts" aria-label="Навигация">
+        @for (var i = 0; i < Model.Breadcrumbs.Count; i++)
+        {
+            var crumb = Model.Breadcrumbs[i];
+            if (i > 0)
+            {
+                <span class="orbita-breadcrumbs-sep" aria-hidden="true">&gt;</span>
+            }
+            if (crumb.IsActive || string.IsNullOrEmpty(crumb.Url))
+            {
+                <span class="orbita-breadcrumbs-current">@crumb.Label</span>
+            }
+            else
+            {
+                <a class="orbita-breadcrumbs-link" href="@crumb.Url">@crumb.Label</a>
+            }
+        }
+    </nav>
+
+    <h1 class="accounts-page-title">Аккаунты</h1>
+
+    <div class="kpi-row accounts-kpi-row">
+        @{ var kpiIdx = 0; }
+        @foreach (var kpi in Model.KpiCards)
+        {
+            <article class="kpi-card kpi-card--stat" style="--kpi-index: @kpiIdx">
+                <header class="kpi-card-head">
+                    <div class="kpi-icon-box kpi-icon-box--@kpi.IconTone">
+                        <i class="@kpi.IconClass" aria-hidden="true"></i>
+                    </div>
+                    <span class="kpi-card-label">@kpi.Label</span>
+                </header>
+                <div class="kpi-card-metric">
+                    <span class="kpi-value"
+                          data-kpi-count="@kpi.CountValue.ToString(System.Globalization.CultureInfo.InvariantCulture)">0</span>
+                    <span class="kpi-delta-pill kpi-delta-@kpi.DeltaTone">@kpi.Delta</span>
+                </div>
+            </article>
+            kpiIdx++;
+        }
+    </div>
+
+    <div class="accounts-control-bar">
+        <nav class="accounts-tabs" aria-label="Фильтр аккаунтов">
+            @foreach (var tab in Model.Tabs)
+            {
+                var isActive = tab.Id == Model.ActiveTab;
+                <a class="accounts-tab @(isActive ? "accounts-tab--active" : "")"
+                   href="@Url.Action("Index", new { tab = tab.Id, q = Model.SearchQuery, page = 1 })"
+                   aria-current="@(isActive ? "page" : null)">@tab.Label</a>
+            }
+        </nav>
+        <div class="accounts-toolbar">
+            <form class="accounts-search" method="get" asp-action="Index" role="search">
+                <input type="hidden" name="tab" value="@Model.ActiveTab" />
+                <i class="fa-solid fa-magnifying-glass accounts-search-icon" aria-hidden="true"></i>
+                <input type="search"
+                       name="q"
+                       value="@Model.SearchQuery"
+                       placeholder="Поиск по аккаунтам..."
+                       aria-label="Поиск по аккаунтам" />
+            </form>
+            <button type="button" class="accounts-filter-btn" aria-label="Фильтры">
+                <i class="fa-solid fa-filter" aria-hidden="true"></i>
+            </button>
+            <button type="button" class="accounts-add-btn">
+                <i class="fa-solid fa-plus" aria-hidden="true"></i>
+                <span>Добавить аккаунт</span>
+            </button>
+        </div>
+    </div>
+
+    <div class="card card--accounts-table">
+        <div class="card-body card-body-table accounts-table-wrap">
+            <table class="data-table data-table--accounts-list">
+                <thead>
                     <tr>
-                        <td>@r.AccountName</td>
-                        <td>@r.WorkerName</td>
-                        <td>@r.Status</td>
-                        <td>@r.ActiveAds актив. / @r.Blocked заблок.</td>
-                        <td class="muted">@(r.LastError ?? "—")</td>
+                        <th>Аккаунт</th>
+                        <th>Воркер</th>
+                        <th>Статус</th>
+                        <th class="cell-num">Баланс</th>
+                        <th class="cell-num">Откликов</th>
+                        <th class="cell-num">Уникальных</th>
+                        <th class="cell-num">Ошибок</th>
+                        <th>Последняя активность</th>
+                        <th aria-hidden="true">Действия</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var account in Model.Accounts)
+                {
+                    var workerUrl = Url.Action("Details", "Workers", new { id = account.WorkerId });
+                    var accountUrl = Url.Action("Index", "Accounts", new { q = account.AccountName });
+                    <tr class="accounts-row" data-href="@accountUrl">
+                        <td class="cell-account">
+                            <a href="@accountUrl">@account.AccountName</a>
+                        </td>
+                        <td class="cell-worker">
+                            <a href="@workerUrl">@account.WorkerName</a>
+                        </td>
+                        <td>
+                            <span class="account-status account-status--@account.StatusTone">
+                                <i class="fa-solid fa-circle account-status-dot" aria-hidden="true"></i>
+                                @account.StatusLabel
+                            </span>
+                        </td>
+                        <td class="cell-num">@account.Balance.ToString("N0") ₽</td>
+                        <td class="cell-num">@account.Responses</td>
+                        <td class="cell-num">@account.UniqueResponses</td>
+                        <td class="cell-num">@account.Errors</td>
+                        <td>@(account.LastActivityLocal?.ToString("HH:mm:ss") ?? "—")</td>
+                        <td class="data-table-menu">
+                            <div class="row-menu" data-row-menu>
+                                <button type="button" class="row-menu-btn" aria-label="Действия" aria-expanded="false" aria-haspopup="true">
+                                    <i class="fa-solid fa-ellipsis-vertical" aria-hidden="true"></i>
+                                </button>
+                                <div class="row-menu-dropdown row-menu-dropdown--accounts" hidden>
+                                    <button type="button" class="row-menu-item">
+                                        <i class="fa-regular fa-eye" aria-hidden="true"></i>
+                                        Просмотр
+                                    </button>
+                                    <button type="button" class="row-menu-item">
+                                        <i class="fa-regular fa-pen-to-square" aria-hidden="true"></i>
+                                        Редактировать
+                                    </button>
+                                    <button type="button" class="row-menu-item">
+                                        <i class="fa-solid fa-wallet" aria-hidden="true"></i>
+                                        Пополнить баланс
+                                    </button>
+                                    <button type="button" class="row-menu-item">
+                                        <i class="fa-regular fa-clock" aria-hidden="true"></i>
+                                        История откликов
+                                    </button>
+                                    <button type="button" class="row-menu-item row-menu-item--danger">
+                                        <i class="fa-solid fa-ban" aria-hidden="true"></i>
+                                        Заблокировать
+                                    </button>
+                                    <button type="button" class="row-menu-item row-menu-item--danger">
+                                        <i class="fa-regular fa-trash-can" aria-hidden="true"></i>
+                                        Удалить
+                                    </button>
+                                </div>
+                            </div>
+                        </td>
                     </tr>
                 }
                 </tbody>
             </table>
+
+            <div class="accounts-pagination">
+                <span class="accounts-pagination-info">
+                    @if (pagination.TotalItems == 0)
+                    {
+                        @:Показано 0 из 0
+                    }
+                    else
+                    {
+                        @:Показано @pagination.RangeStart–@pagination.RangeEnd из @pagination.TotalItems
+                    }
+                </span>
+                <div class="accounts-pagination-controls">
+                    @{
+                        var prevPage = pagination.Page > 1 ? pagination.Page - 1 : (int?)null;
+                        var nextPage = pagination.Page < pagination.TotalPages ? pagination.Page + 1 : (int?)null;
+                    }
+                    @if (prevPage is not null)
+                    {
+                        <a class="accounts-page-btn"
+                           href="@Url.Action("Index", new { q = Model.SearchQuery, tab = Model.ActiveTab, page = prevPage })"
+                           aria-label="Предыдущая страница">&lt;</a>
+                    }
+                    else
+                    {
+                        <span class="accounts-page-btn accounts-page-btn--disabled" aria-hidden="true">&lt;</span>
+                    }
+                    <span class="accounts-page-btn accounts-page-btn--active" aria-current="page">@pagination.Page</span>
+                    @if (nextPage is not null)
+                    {
+                        <a class="accounts-page-btn"
+                           href="@Url.Action("Index", new { q = Model.SearchQuery, tab = Model.ActiveTab, page = nextPage })"
+                           aria-label="Следующая страница">&gt;</a>
+                    }
+                    else
+                    {
+                        <span class="accounts-page-btn accounts-page-btn--disabled" aria-hidden="true">&gt;</span>
+                    }
+                </div>
+            </div>
         </div>
     </div>
 </div>
+
+@section Scripts {
+    <script src="~/js/orbita-accounts.js" asp-append-version="true"></script>
+}

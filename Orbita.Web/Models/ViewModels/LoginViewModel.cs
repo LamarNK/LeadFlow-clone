@@ -15,4 +15,6 @@ public sealed class LoginViewModel
     public bool RememberMe { get; set; }
 
     public string? ErrorMessage { get; set; }
+
+    public bool DesignPreviewEnabled { get; set; }
 }

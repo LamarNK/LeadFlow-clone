@@ -1,3 +1,4 @@
+using System.Threading;
 using Microsoft.Extensions.Logging;
 
 namespace Orbita.Logging.Audit;
@@ -14,6 +15,7 @@ public static class GlobalLoggerLoggingBuilderExtensions
 public sealed class GlobalLoggerProvider : ILoggerProvider
 {
     internal static bool TestNextBridgeLogThrows { get; set; }
+    private static readonly AsyncLocal<int> BridgeDepth = new();
 
     public ILogger CreateLogger(string categoryName) => new GlobalLoggerBridge(categoryName);
     public void Dispose() { }
@@ -45,6 +47,13 @@ public sealed class GlobalLoggerProvider : ILoggerProvider
                 message = string.IsNullOrWhiteSpace(message) ? exception.ToString() : $"{message}{Environment.NewLine}{exception}";
 
             var level = MapLevel(logLevel);
+
+            if (BridgeDepth.Value > 0)
+            {
+                return;
+            }
+
+            BridgeDepth.Value++;
             try
             {
                 if (TestNextBridgeLogThrows)
@@ -70,6 +79,10 @@ public sealed class GlobalLoggerProvider : ILoggerProvider
             catch
             {
                 // Не пробрасываем исключения из логгера в бизнес-поток.
+            }
+            finally
+            {
+                BridgeDepth.Value--;
             }
         }
 

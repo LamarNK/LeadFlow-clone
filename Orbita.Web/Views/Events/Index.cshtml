@@ -1,8 +1,266 @@
 @model EventsIndexViewModel
 @{
     ViewData["Title"] = "События";
+    var pagination = Model.Pagination;
+    var formAction = Url.Action("Index", "Events");
 }
-<partial name="_PageHeader" model="Model.Header" />
-<div class="orbita-main">
-    <div class="card"><div class="card-body"><partial name="_EventList" model="Model.Events" /></div></div>
+<div class="orbita-main events-page">
+    <nav class="orbita-breadcrumbs orbita-breadcrumbs--events" aria-label="Навигация">
+        @for (var i = 0; i < Model.Breadcrumbs.Count; i++)
+        {
+            var crumb = Model.Breadcrumbs[i];
+            if (i > 0)
+            {
+                <span class="orbita-breadcrumbs-sep" aria-hidden="true">&gt;</span>
+            }
+            if (crumb.IsActive || string.IsNullOrEmpty(crumb.Url))
+            {
+                <span class="orbita-breadcrumbs-current">@crumb.Label</span>
+            }
+            else
+            {
+                <a class="orbita-breadcrumbs-link" href="@crumb.Url">@crumb.Label</a>
+            }
+        }
+    </nav>
+
+    <h1 class="events-page-title">События</h1>
+
+    <div class="kpi-row events-kpi-row">
+        @{ var kpiIdx = 0; }
+        @foreach (var kpi in Model.KpiCards)
+        {
+            <article class="kpi-card kpi-card--stat" style="--kpi-index: @kpiIdx">
+                <header class="kpi-card-head">
+                    <div class="kpi-icon-box kpi-icon-box--@kpi.IconTone">
+                        <i class="@kpi.IconClass" aria-hidden="true"></i>
+                    </div>
+                    <span class="kpi-card-label">@kpi.Label</span>
+                </header>
+                <div class="kpi-card-metric">
+                    <span class="kpi-value"
+                          data-kpi-count="@kpi.CountValue.ToString(System.Globalization.CultureInfo.InvariantCulture)">0</span>
+                    <span class="kpi-delta-pill kpi-delta-@kpi.DeltaTone">@kpi.Delta</span>
+                </div>
+            </article>
+            kpiIdx++;
+        }
+    </div>
+
+    <div class="card card--events-filters">
+        <form class="events-filters" method="get" action="@formAction">
+            <div class="events-filters-row">
+                <label class="events-filter-field">
+                    <span class="events-filter-label">Тип события</span>
+                    <select name="type" class="events-select" aria-label="Тип события">
+                        @foreach (var opt in Model.EventTypes)
+                        {
+                            if (opt.Value == (Model.Filters.Type ?? ""))
+                            {
+                                <option value="@opt.Value" selected>@opt.Label</option>
+                            }
+                            else
+                            {
+                                <option value="@opt.Value">@opt.Label</option>
+                            }
+                        }
+                    </select>
+                </label>
+                <label class="events-filter-field">
+                    <span class="events-filter-label">Воркер</span>
+                    <select name="workerId" class="events-select" aria-label="Воркер">
+                        @foreach (var opt in Model.Workers)
+                        {
+                            if (opt.Value == (Model.Filters.WorkerId?.ToString() ?? ""))
+                            {
+                                <option value="@opt.Value" selected>@opt.Label</option>
+                            }
+                            else
+                            {
+                                <option value="@opt.Value">@opt.Label</option>
+                            }
+                        }
+                    </select>
+                </label>
+                <label class="events-filter-field">
+                    <span class="events-filter-label">Аккаунт</span>
+                    <select name="account" class="events-select" aria-label="Аккаунт">
+                        @foreach (var opt in Model.Accounts)
+                        {
+                            if (opt.Value == (Model.Filters.Account ?? ""))
+                            {
+                                <option value="@opt.Value" selected>@opt.Label</option>
+                            }
+                            else
+                            {
+                                <option value="@opt.Value">@opt.Label</option>
+                            }
+                        }
+                    </select>
+                </label>
+                <label class="events-filter-field">
+                    <span class="events-filter-label">Уровень</span>
+                    <select name="level" class="events-select" aria-label="Уровень">
+                        @foreach (var opt in Model.Levels)
+                        {
+                            if (opt.Value == (Model.Filters.Level ?? ""))
+                            {
+                                <option value="@opt.Value" selected>@opt.Label</option>
+                            }
+                            else
+                            {
+                                <option value="@opt.Value">@opt.Label</option>
+                            }
+                        }
+                    </select>
+                </label>
+            </div>
+            <div class="events-filters-actions">
+                <div class="events-search">
+                    <i class="fa-solid fa-magnifying-glass events-search-icon" aria-hidden="true"></i>
+                    <input type="search"
+                           name="q"
+                           value="@Model.Filters.SearchQuery"
+                           placeholder="Поиск по событиям..."
+                           aria-label="Поиск по событиям" />
+                </div>
+                <button type="button" class="events-filter-btn" aria-label="Фильтры">
+                    <i class="fa-solid fa-filter" aria-hidden="true"></i>
+                </button>
+                <a class="events-reset-btn" href="@formAction">
+                    <i class="fa-solid fa-rotate-right" aria-hidden="true"></i>
+                    <span>Сбросить фильтры</span>
+                </a>
+            </div>
+        </form>
+    </div>
+
+    <div class="card card--events-table">
+        <div class="card-body card-body-table events-table-wrap">
+            <table class="data-table data-table--events">
+                <thead>
+                    <tr>
+                        <th>Время</th>
+                        <th>Тип события</th>
+                        <th>Уровень</th>
+                        <th>Аккаунт</th>
+                        <th>Воркер</th>
+                        <th>Описание</th>
+                        <th aria-hidden="true">Действия</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var evt in Model.Events)
+                {
+                    var workerUrl = Url.Action("Details", "Workers", new { id = evt.WorkerId });
+                    var accountUrl = string.IsNullOrWhiteSpace(evt.AccountName)
+                        ? null
+                        : Url.Action("Index", "Accounts", new { q = evt.AccountName });
+                    <tr class="events-row" data-copy="@evt.CopyText">
+                        <td class="events-time">@evt.OccurredAtLocal.ToString("dd.MM.yyyy HH:mm:ss")</td>
+                        <td>
+                            <span class="event-type event-type--@evt.EventTypeTone">
+                                <i class="@evt.EventTypeIcon event-type-icon" aria-hidden="true"></i>
+                                <span>@evt.EventTypeLabel</span>
+                            </span>
+                        </td>
+                        <td>
+                            <span class="event-level-badge event-level-badge--@evt.Level">@evt.LevelLabel</span>
+                        </td>
+                        <td class="cell-link">
+                            @if (accountUrl is not null)
+                            {
+                                <a href="@accountUrl">@evt.AccountName</a>
+                            }
+                            else
+                            {
+                                <span class="events-muted">—</span>
+                            }
+                        </td>
+                        <td class="cell-link">
+                            <a href="@workerUrl">@evt.WorkerName</a>
+                        </td>
+                        <td class="events-desc" title="@evt.Description">@evt.Description</td>
+                        <td class="data-table-menu">
+                            <div class="row-menu" data-row-menu>
+                                <button type="button" class="row-menu-btn" aria-label="Действия" aria-expanded="false" aria-haspopup="true">
+                                    <i class="fa-solid fa-ellipsis-vertical" aria-hidden="true"></i>
+                                </button>
+                                <div class="row-menu-dropdown row-menu-dropdown--events" hidden>
+                                    <button type="button" class="row-menu-item">
+                                        <i class="fa-regular fa-eye" aria-hidden="true"></i>
+                                        Просмотреть детали
+                                    </button>
+                                    <button type="button" class="row-menu-item">
+                                        <i class="fa-regular fa-file-lines" aria-hidden="true"></i>
+                                        Открыть лог
+                                    </button>
+                                    @if (accountUrl is not null)
+                                    {
+                                        <a class="row-menu-item" href="@accountUrl">
+                                            <i class="fa-regular fa-user" aria-hidden="true"></i>
+                                            Перейти к аккаунту
+                                        </a>
+                                    }
+                                    <a class="row-menu-item" href="@workerUrl">
+                                        <i class="fa-solid fa-server" aria-hidden="true"></i>
+                                        Перейти к воркеру
+                                    </a>
+                                    <button type="button" class="row-menu-item" data-copy-event>
+                                        <i class="fa-regular fa-copy" aria-hidden="true"></i>
+                                        Копировать сообщение
+                                    </button>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+
+            <div class="events-pagination">
+                <span class="events-pagination-info">
+                    @if (pagination.TotalItems == 0)
+                    {
+                        @:Показано 0 из 0
+                    }
+                    else
+                    {
+                        @:Показано @pagination.RangeStart–@pagination.RangeEnd из @pagination.TotalItems
+                    }
+                </span>
+                <div class="events-pagination-controls">
+                    @{
+                        var prevPage = pagination.Page > 1 ? pagination.Page - 1 : (int?)null;
+                        var nextPage = pagination.Page < pagination.TotalPages ? pagination.Page + 1 : (int?)null;
+                    }
+                    @if (prevPage is not null)
+                    {
+                        <a class="events-page-btn"
+                           href="@Url.Action("Index", "Events", new { q = Model.Filters.SearchQuery, type = Model.Filters.Type, workerId = Model.Filters.WorkerId, account = Model.Filters.Account, level = Model.Filters.Level, page = prevPage })"
+                           aria-label="Предыдущая страница">&lt;</a>
+                    }
+                    else
+                    {
+                        <span class="events-page-btn events-page-btn--disabled" aria-hidden="true">&lt;</span>
+                    }
+                    <span class="events-page-btn events-page-btn--active" aria-current="page">@pagination.Page</span>
+                    @if (nextPage is not null)
+                    {
+                        <a class="events-page-btn"
+                           href="@Url.Action("Index", "Events", new { q = Model.Filters.SearchQuery, type = Model.Filters.Type, workerId = Model.Filters.WorkerId, account = Model.Filters.Account, level = Model.Filters.Level, page = nextPage })"
+                           aria-label="Следующая страница">&gt;</a>
+                    }
+                    else
+                    {
+                        <span class="events-page-btn events-page-btn--disabled" aria-hidden="true">&gt;</span>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
+
+@section Scripts {
+    <script src="~/js/orbita-events.js" asp-append-version="true"></script>
+}

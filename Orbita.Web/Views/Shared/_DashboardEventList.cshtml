@@ -1,0 +1,35 @@
+@model IReadOnlyList<Orbita.Web.Models.ViewModels.DashboardEventRowViewModel>
+@if (Model.Count == 0)
+{
+    <p class="dash-event-empty">Событий пока нет.</p>
+}
+else
+{
+    <div class="dash-event-list">
+        @foreach (var evt in Model)
+        {
+            var icon = evt.Level switch
+            {
+                "error" => "fa-regular fa-circle-xmark",
+                "warning" => "fa-solid fa-triangle-exclamation",
+                _ => "fa-regular fa-circle-check"
+            };
+            <div class="dash-event-row">
+                <div class="dash-event-icon dash-event-icon--@evt.Level">
+                    <i class="@icon" aria-hidden="true"></i>
+                </div>
+                <div class="dash-event-body">
+                    <div class="dash-event-title">@evt.Message</div>
+                    @if (!string.IsNullOrWhiteSpace(evt.Subtitle))
+                    {
+                        <div class="dash-event-subtitle">@evt.Subtitle</div>
+                    }
+                </div>
+                <div class="dash-event-side">
+                    <div class="dash-event-time">@evt.Time</div>
+                    <div class="dash-event-worker">@evt.WorkerName</div>
+                </div>
+            </div>
+        }
+    </div>
+}

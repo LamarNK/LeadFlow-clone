@@ -1,16 +1,29 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 using Orbita.Logging.Audit;
 using Orbita.Web.Models.ViewModels;
+using Orbita.Web.Options;
 using Orbita.Web.Services;
 
 namespace Orbita.Web.Controllers;
 
-public sealed class AccountController(OrbitaApiClient api, OrbitaAuthService auth) : Controller
+public sealed class AccountController(
+    OrbitaApiClient api,
+    OrbitaAuthService auth,
+    IOptions<DesignPreviewOptions> previewOptions) : Controller
 {
     [AllowAnonymous]
     [HttpGet]
-    public IActionResult Login() => View(new LoginViewModel { Email = "admin@orbita.local" });
+    public IActionResult Login()
+    {
+        var preview = previewOptions.Value;
+        return View(new LoginViewModel
+        {
+            Email = preview.Enabled ? preview.Email : "admin@orbita.local",
+            DesignPreviewEnabled = preview.Enabled
+        });
+    }
 
     [AllowAnonymous]
     [HttpPost]
@@ -33,7 +46,9 @@ public sealed class AccountController(OrbitaApiClient api, OrbitaAuthService aut
                 $"Login API unreachable: {ex.Message}",
                 DeskLinkAuditLogLevel.Error,
                 errorKey: "auth.login.api_unreachable");
-            model.ErrorMessage = "API недоступен. Запустите PostgreSQL и Orbita.Api (https://localhost:7291).";
+            model.ErrorMessage = previewOptions.Value.Enabled
+                ? "Не удалось войти в режиме просмотра. Проверьте email и пароль из appsettings."
+                : "API недоступен. Запустите PostgreSQL и Orbita.Api (https://localhost:7291).";
             return View(model);
         }
 
@@ -50,7 +65,16 @@ public sealed class AccountController(OrbitaApiClient api, OrbitaAuthService aut
         await GlobalLogger.Instance.LogAsync(
             $"Login succeeded in panel ({result.Email}).",
             DeskLinkAuditLogLevel.Info);
-        await auth.SignInAsync(result.Token, result.Email, ct);
+
+        if (string.Equals(result.Token, "design-preview", StringComparison.Ordinal))
+        {
+            await auth.SignInPreviewAsync(result.Email, previewOptions.Value.DisplayName, ct);
+        }
+        else
+        {
+            await auth.SignInAsync(result.Token, result.Email, ct);
+        }
+
         return RedirectToAction("Index", "Dashboard");
     }
 

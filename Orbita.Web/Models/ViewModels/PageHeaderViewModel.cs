@@ -7,6 +7,12 @@ public sealed class PageHeaderViewModel
     public DateTime UpdatedAt { get; init; } = DateTime.Now;
     public bool ShowRefresh { get; init; }
     public bool ShowDateRange { get; init; }
-    public string DateRangeLabel { get; init; } = $"{DateTime.Today:dd.MM.yyyy} – {DateTime.Today:dd.MM.yyyy}";
+    public string DateRangeLabel { get; init; } =
+        $"{DateTime.Today:dd.MM.yyyy} — {DateTime.Today:dd.MM.yyyy}";
+
     public string UserInitial { get; init; } = "А";
+
+    public string UserDisplayName { get; init; } = "Администратор";
+
+    public string UserEmail { get; init; } = "admin@orbita.local";
 }

@@ -1,45 +1,201 @@
 @model WorkerDetailsViewModel
+@using System.Text.Json
 @{
-    ViewData["Title"] = Model.Worker?.DisplayName ?? "Воркер";
+    ViewData["Title"] = Model.DisplayName;
+    var chartJson = JsonSerializer.Serialize(Model.ActivityChart, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
 }
-<partial name="_PageHeader" model="Model.Header" />
-<div class="orbita-main">
-    @if (Model.Worker is not null)
-    {
-        <p class="status-line"><span class="status-dot @(Model.Worker.IsOnline ? "" : "offline")">@(Model.Worker.IsOnline ? "Онлайн" : "Офлайн")</span></p>
-        @if (Model.Worker.LatestStats is not null)
+<div class="orbita-main worker-detail-page">
+    <nav class="orbita-breadcrumbs" aria-label="Навигация">
+        @for (var i = 0; i < Model.Breadcrumbs.Count; i++)
         {
-            var st = Model.Worker.LatestStats;
-            <div class="kpi-row">
-                <div class="kpi-card"><div class="kpi-card-label">Отклики</div><div class="kpi-value">@st.TotalToday</div></div>
-                <div class="kpi-card"><div class="kpi-card-label">CRM</div><div class="kpi-value">@st.SentToCrm</div></div>
-                <div class="kpi-card"><div class="kpi-card-label">Дубли</div><div class="kpi-value">@st.Duplicates</div></div>
-                <div class="kpi-card"><div class="kpi-card-label">Ошибки</div><div class="kpi-value">@st.Errors</div></div>
-                <div class="kpi-card"><div class="kpi-card-label">Аккаунты</div><div class="kpi-value">@st.ConnectedAccounts</div></div>
-            </div>
+            var crumb = Model.Breadcrumbs[i];
+            if (i > 0)
+            {
+                <span class="orbita-breadcrumbs-sep" aria-hidden="true">&gt;</span>
+            }
+            if (crumb.IsActive || string.IsNullOrEmpty(crumb.Url))
+            {
+                <span class="orbita-breadcrumbs-current">@crumb.Label</span>
+            }
+            else
+            {
+                <a class="orbita-breadcrumbs-link" href="@crumb.Url">@crumb.Label</a>
+            }
         }
-        <div class="card">
-            <div class="card-header"><h2>Аккаунты</h2></div>
-            <div class="card-body card-body-table">
-                <table class="data-table">
-                    <thead><tr><th>Имя</th><th>Статус</th><th>Объявления</th><th>Баланс / ошибка</th></tr></thead>
-                    <tbody>
-                    @foreach (var a in Model.Accounts)
+    </nav>
+
+    <div class="worker-detail-head">
+        <div class="worker-detail-title-block">
+            <div class="worker-detail-title-row">
+                <h1 class="worker-detail-title">@Model.DisplayName</h1>
+                <span class="status-dot @(Model.IsOnline ? "" : "offline")">
+                    <i class="fa-solid fa-circle status-dot-icon" aria-hidden="true"></i>
+                    @(Model.IsOnline ? "Онлайн" : "Оффлайн")
+                </span>
+            </div>
+            <p class="worker-detail-sub">
+                Последняя активность:
+                <time datetime="@(Model.LastActivityLocal?.ToString("o") ?? "")">
+                    @(Model.LastActivityLocal?.ToString("HH:mm:ss") ?? "—")
+                </time>
+            </p>
+        </div>
+        <div class="worker-detail-toolbar">
+            <a href="@Context.Request.Path"
+               class="worker-refresh-btn"
+               title="Обновить данные"
+               data-orbita-refresh>
+                <i class="fa-solid fa-rotate-right" aria-hidden="true"></i>
+                <span>Обновить данные</span>
+            </a>
+        </div>
+    </div>
+
+    <div class="kpi-row worker-detail-kpi-row">
+        @{ var kpiIdx = 0; }
+        @foreach (var kpi in Model.KpiCards)
+        {
+            <article class="kpi-card kpi-card--stat" style="--kpi-index: @kpiIdx">
+                <header class="kpi-card-head">
+                    <div class="kpi-icon-box kpi-icon-box--@kpi.IconTone">
+                        <i class="@kpi.IconClass" aria-hidden="true"></i>
+                    </div>
+                    <span class="kpi-card-label">@kpi.Label</span>
+                </header>
+                <div class="kpi-card-metric">
+                    @if (kpi.Label == "Время работы")
                     {
-                        var balance = Model.Worker.Balances.FirstOrDefault(b => b.AccountId == a.AccountId);
-                        <tr>
-                            <td>@a.DisplayName</td>
-                            <td>@a.Status</td>
-                            <td>@a.ActiveAdsCount актив. / @a.BlockedCount заблок.</td>
-                            <td>
-                                @if (balance is not null) { <div>@balance.TotalBalance.ToString("N2") ₽</div> }
-                                <span class="muted small">@(a.LastErrorMessage ?? "—")</span>
-                            </td>
-                        </tr>
+                        <span class="kpi-value kpi-value--text">@kpi.Value</span>
                     }
-                    </tbody>
-                </table>
+                    else
+                    {
+                        <span class="kpi-value"
+                              data-kpi-count="@kpi.CountValue.ToString(System.Globalization.CultureInfo.InvariantCulture)"
+                              data-kpi-suffix="@(kpi.ValueSuffix ?? "")">0@(kpi.ValueSuffix)</span>
+                    }
+                    <span class="kpi-delta-pill kpi-delta-@kpi.DeltaTone">@kpi.Delta</span>
+                </div>
+            </article>
+            kpiIdx++;
+        }
+    </div>
+
+    <div class="worker-detail-grid-main">
+        <div class="card card--worker-info">
+            <div class="card-header">
+                <h2>Общая информация</h2>
+            </div>
+            <div class="card-body">
+                <dl class="worker-info-list">
+                    @foreach (var item in Model.InfoItems)
+                    {
+                        <div class="worker-info-row">
+                            <dt class="worker-info-label">@item.Label</dt>
+                            <dd class="worker-info-value">@item.Value</dd>
+                        </div>
+                    }
+                </dl>
             </div>
         </div>
-    }
+        <div class="card card--worker-activity">
+            <div class="card-header">
+                <h2>Активность за сегодня</h2>
+            </div>
+            <div class="card-body">
+                <div class="chart-canvas-wrap chart-canvas-wrap--hourly">
+                    <canvas id="chart-worker-activity" aria-label="Активность за сегодня"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="worker-detail-grid-bottom">
+        <div class="card card--worker-events">
+            <div class="card-header">
+                <h2>Последние события</h2>
+            </div>
+            <div class="card-body">
+                <partial name="_WorkerEventList" model="Model.Events" />
+                <a class="card-footer-btn" href="@Url.Action("Index", "Events")">Показать все события</a>
+            </div>
+        </div>
+        <div class="card card--worker-stats">
+            <div class="card-header">
+                <h2>Статистика за период</h2>
+            </div>
+            <div class="card-body">
+                <dl class="worker-stats-list">
+                    @foreach (var stat in Model.PeriodStats)
+                    {
+                        <div class="worker-stats-row">
+                            <dt class="worker-stats-label">@stat.Label</dt>
+                            <dd class="worker-stats-value">@stat.Value</dd>
+                        </div>
+                    }
+                </dl>
+            </div>
+        </div>
+    </div>
+
+    <div class="card card--worker-accounts">
+        <div class="card-header">
+            <h2>Аккаунты воркера</h2>
+        </div>
+        <div class="card-body card-body-table worker-accounts-wrap">
+            <table class="data-table data-table--accounts">
+                <thead>
+                    <tr>
+                        <th>Аккаунт</th>
+                        <th>Статус</th>
+                        <th>Баланс</th>
+                        <th>Откликов</th>
+                        <th>Последняя активность</th>
+                        <th>Ошибок</th>
+                        <th aria-hidden="true">Действия</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var account in Model.Accounts)
+                {
+                    var accountUrl = Url.Action("Index", "Accounts");
+                    <tr class="worker-account-row" data-href="@accountUrl">
+                        <td class="cell-name">
+                            <a href="@accountUrl">@account.DisplayName</a>
+                        </td>
+                        <td>
+                            <span class="account-status account-status--@account.StatusTone">
+                                <i class="fa-solid fa-circle account-status-dot" aria-hidden="true"></i>
+                                @account.StatusLabel
+                            </span>
+                        </td>
+                        <td>@account.BalanceText</td>
+                        <td>@account.Responses</td>
+                        <td>@(account.LastActivityLocal?.ToString("HH:mm:ss") ?? "—")</td>
+                        <td>@account.Errors</td>
+                        <td class="data-table-menu">
+                            <div class="row-menu" data-row-menu>
+                                <button type="button" class="row-menu-btn" aria-label="Действия" aria-expanded="false" aria-haspopup="true">
+                                    <i class="fa-solid fa-ellipsis-vertical" aria-hidden="true"></i>
+                                </button>
+                                <div class="row-menu-dropdown" hidden>
+                                    <a class="row-menu-item" href="@accountUrl">Открыть</a>
+                                    <button type="button" class="row-menu-item">Перезапустить</button>
+                                    <button type="button" class="row-menu-item">Просмотреть логи</button>
+                                    <button type="button" class="row-menu-item">Настройки</button>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script id="worker-charts-data" type="application/json">@Html.Raw(chartJson)</script>
 </div>
+
+@section Scripts {
+    <script src="~/lib/chart.js/dist/chart.umd.js" asp-append-version="true"></script>
+    <script src="~/js/orbita-worker.js" asp-append-version="true"></script>
+}

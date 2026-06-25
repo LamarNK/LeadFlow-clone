@@ -1,23 +1,74 @@
-using Orbita.Contracts;
-
 namespace Orbita.Web.Models.ViewModels;
 
 public sealed class DashboardViewModel
 {
-    public PageHeaderViewModel Header { get; init; } = new() { Title = "Панель управления", Subtitle = "Общая сводка по всем воркерам", ShowRefresh = true, ShowDateRange = true };
-    public GlobalDashboardSummary? Summary { get; init; }
-    public IReadOnlyList<WorkerListItem> Workers { get; init; } = [];
-    public IReadOnlyList<WorkerEventListItem> Events { get; init; } = [];
+    public PageHeaderViewModel Header { get; init; } = new()
+    {
+        Title = "Панель управления",
+        Subtitle = "Общая сводка по всем воркерам",
+        ShowRefresh = true,
+        ShowDateRange = true
+    };
+
+    public IReadOnlyList<DashboardKpiCardViewModel> KpiCards { get; init; } = [];
+    public IReadOnlyList<DashboardWorkerRowViewModel> Workers { get; init; } = [];
+    public IReadOnlyList<DashboardChartPointViewModel> HourlyChart { get; init; } = [];
+    public IReadOnlyList<DashboardEventRowViewModel> Events { get; init; } = [];
     public AccountStatsViewModel AccountStats { get; init; } = AccountStatsViewModel.Empty;
+    public DashboardChartsViewModel Charts { get; init; } = new();
     public string? ErrorMessage { get; init; }
+}
+
+public sealed class DashboardKpiCardViewModel
+{
+    public string Label { get; init; } = string.Empty;
+    public string Value { get; init; } = string.Empty;
+    public double CountValue { get; init; }
+    public string? ValueSuffix { get; init; }
+    public string Delta { get; init; } = string.Empty;
+    public string DeltaTone { get; init; } = "neutral";
+    public string IconClass { get; init; } = "fa-solid fa-circle";
+    public string IconTone { get; init; } = "blue";
+    public IReadOnlyList<int> Sparkline { get; init; } = [];
+    public string SparkColor { get; init; } = "#2563eb";
+}
+
+public sealed class DashboardWorkerRowViewModel
+{
+    public Guid Id { get; init; }
+    public string DisplayName { get; init; } = string.Empty;
+    public bool IsOnline { get; init; }
+    public int ActiveAccounts { get; init; }
+    public int TotalAccounts { get; init; }
+    public int Responses { get; init; }
+    public int Duplicates { get; init; }
+    public int Errors { get; init; }
+    public DateTime? LastActivityLocal { get; init; }
+}
+
+public sealed class DashboardChartPointViewModel
+{
+    public string Label { get; init; } = string.Empty;
+    public int Value { get; init; }
+    public bool ShowAxisLabel { get; init; }
+}
+
+public sealed class DashboardEventRowViewModel
+{
+    public string Message { get; init; } = string.Empty;
+    public string Subtitle { get; init; } = string.Empty;
+    public string Time { get; init; } = string.Empty;
+    public string WorkerName { get; init; } = string.Empty;
+    public string Level { get; init; } = "success";
 }
 
 public sealed class AccountStatsViewModel
 {
     public int Total { get; init; }
     public int Active { get; init; }
-    public int NeedAttention { get; init; }
     public int Inactive { get; init; }
+    public int Blocked { get; init; }
+    public int Errors { get; init; }
 
     public static AccountStatsViewModel Empty { get; } = new();
 }

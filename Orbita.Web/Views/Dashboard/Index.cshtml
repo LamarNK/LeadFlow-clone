@@ -1,6 +1,8 @@
 @model DashboardViewModel
+@using System.Text.Json
 @{
     ViewData["Title"] = "Панель управления";
+    var chartsJson = JsonSerializer.Serialize(Model.Charts, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
 }
 <partial name="_PageHeader" model="Model.Header" />
 <div class="orbita-main">
@@ -8,110 +10,179 @@
     {
         <p class="error-text">@Model.ErrorMessage</p>
     }
-    else if (Model.Summary is not null)
+    else
     {
-        var s = Model.Summary;
         <div class="kpi-row">
-            <div class="kpi-card">
-                <div class="kpi-card-top"><span class="kpi-card-label">Откликов всего</span><span class="kpi-icon kpi-icon-blue"><i class="fa fa-comments"></i></span></div>
-                <div class="kpi-value">@s.TotalToday</div>
-            </div>
-            <div class="kpi-card">
-                <div class="kpi-card-top"><span class="kpi-card-label">Дублей</span><span class="kpi-icon kpi-icon-green"><i class="fa fa-copy"></i></span></div>
-                <div class="kpi-value">@s.Duplicates</div>
-            </div>
-            <div class="kpi-card">
-                <div class="kpi-card-top"><span class="kpi-card-label">Ошибок</span><span class="kpi-icon kpi-icon-orange"><i class="fa fa-exclamation-triangle"></i></span></div>
-                <div class="kpi-value">@s.Errors</div>
-            </div>
-            <div class="kpi-card">
-                <div class="kpi-card-top"><span class="kpi-card-label">Аккаунтов активно</span><span class="kpi-icon kpi-icon-purple"><i class="fa fa-users"></i></span></div>
-                <div class="kpi-value">@s.ConnectedAccounts</div>
-            </div>
-            <div class="kpi-card">
-                <div class="kpi-card-top"><span class="kpi-card-label">Воркеров онлайн</span><span class="kpi-icon kpi-icon-blue"><i class="fa fa-server"></i></span></div>
-                <div class="kpi-value">@s.OnlineWorkers/@s.TotalWorkers</div>
-            </div>
+            @{ var sparkIdx = 0; }
+            @foreach (var kpi in Model.KpiCards)
+            {
+                <article class="kpi-card" style="--kpi-index: @sparkIdx">
+                    <header class="kpi-card-head">
+                        <div class="kpi-icon-box kpi-icon-box--@kpi.IconTone">
+                            <i class="@kpi.IconClass" aria-hidden="true"></i>
+                        </div>
+                        <span class="kpi-card-label">@kpi.Label</span>
+                    </header>
+                    <div class="kpi-card-metric">
+                        <span class="kpi-value"
+                              data-kpi-count="@kpi.CountValue.ToString(System.Globalization.CultureInfo.InvariantCulture)"
+                              data-kpi-suffix="@(kpi.ValueSuffix ?? "")">0@(kpi.ValueSuffix)</span>
+                        <span class="kpi-delta-pill kpi-delta-@kpi.DeltaTone">@kpi.Delta</span>
+                    </div>
+                    <div class="kpi-sparkline-wrap">
+                        <canvas data-sparkline-index="@sparkIdx" aria-hidden="true"></canvas>
+                    </div>
+                </article>
+                sparkIdx++;
+            }
         </div>
 
         <div class="dashboard-grid">
-            <div class="card">
-                <div class="card-header"><h2>Воркеры</h2></div>
-                <div class="card-body card-body-table">
+            <div class="card card--dashboard-workers">
+                <div class="card-header">
+                    <h2>Воркеры</h2>
+                </div>
+                <div class="card-body">
                     <table class="data-table">
                         <thead>
                             <tr>
-                                <th>Воркер</th><th>Статус</th><th>Аккаунтов</th><th>Откликов</th><th>Дублей</th><th>Ошибок</th><th>Последняя активность</th><th></th>
+                                <th>Воркер</th>
+                                <th>Статус</th>
+                                <th>Аккаунтов</th>
+                                <th>Откликов</th>
+                                <th>Дублей</th>
+                                <th>Ошибок</th>
+                                <th>Последняя активность</th>
+                                <th aria-hidden="true"></th>
                             </tr>
                         </thead>
                         <tbody>
-                        @foreach (var w in Model.Workers.Take(5))
+                        @foreach (var w in Model.Workers)
                         {
                             <tr>
-                                <td><a href="@Url.Action("Details", "Workers", new { id = w.Id })">@w.DisplayName</a></td>
-                                <td><span class="status-dot @(w.IsOnline ? "" : "offline")">@(w.IsOnline ? "Онлайн" : "Офлайн")</span></td>
-                                <td>@w.AccountCount</td>
-                                <td>@w.TotalToday</td>
-                                <td>—</td>
+                                <td class="cell-name"><a href="@Url.Action("Details", "Workers", new { id = w.Id })">@w.DisplayName</a></td>
+                                <td>
+                                    <span class="status-dot @(w.IsOnline ? "" : "offline")">
+                                        <i class="fa-solid fa-circle status-dot-icon" aria-hidden="true"></i>
+                                        @(w.IsOnline ? "Онлайн" : "Оффлайн")
+                                    </span>
+                                </td>
+                                <td>@w.ActiveAccounts / @w.TotalAccounts</td>
+                                <td>@w.Responses</td>
+                                <td>@w.Duplicates</td>
                                 <td>@w.Errors</td>
-                                <td>@(w.LastSeenAtUtc?.ToLocalTime().ToString("HH:mm") ?? "—")</td>
-                                <td class="cell-menu"><i class="fa fa-ellipsis-v muted"></i></td>
+                                <td>@(w.LastActivityLocal?.ToString("HH:mm:ss") ?? "—")</td>
+                                <td class="data-table-menu">
+                                    <button type="button" class="row-menu-btn" aria-label="Действия">
+                                        <i class="fa-solid fa-ellipsis-vertical" aria-hidden="true"></i>
+                                    </button>
+                                </td>
                             </tr>
                         }
                         </tbody>
                     </table>
-                    <a class="link-btn" href="@Url.Action("Index", "Workers")">Показать все воркеры</a>
+                    <a class="card-footer-btn" href="@Url.Action("Index", "Workers")">Показать все воркеры</a>
                 </div>
             </div>
-            <div class="card">
+            <div class="card card--chart-hourly">
                 <div class="card-header">
                     <h2>Отклики по времени</h2>
-                    <select class="chart-select"><option>Сегодня</option></select>
+                    <div class="chart-period-select-wrap">
+                        <select class="chart-period-select" aria-label="Период">
+                            <option>Сегодня</option>
+                        </select>
+                        <i class="fa-solid fa-chevron-down chart-period-caret" aria-hidden="true"></i>
+                    </div>
                 </div>
                 <div class="card-body">
-                    @{
-                        var max = Math.Max(1, s.HourlyActivity.Max(p => p.NewCount));
-                    }
-                    <div class="line-chart">
-                        @foreach (var point in s.HourlyActivity)
-                        {
-                            var h = Math.Max(4, (int)Math.Round(point.NewCount * 180.0 / max));
-                            <div class="line-chart-bar" style="height:@(h)px" title="@($"{point.Label}: {point.NewCount}")"></div>
-                        }
+                    <div class="chart-canvas-wrap chart-canvas-wrap--hourly">
+                        <canvas id="chart-hourly-responses" aria-label="Отклики по времени"></canvas>
                     </div>
                 </div>
             </div>
         </div>
 
         <div class="dashboard-grid-bottom">
-            <div class="card">
-                <div class="card-header"><h2>Последние события</h2></div>
+            <div class="card card--dashboard-events">
+                <div class="card-header">
+                    <h2>Последние события</h2>
+                </div>
                 <div class="card-body">
-                    <partial name="_EventList" model="Model.Events.Take(5).ToList()" />
-                    <a class="link-btn" href="@Url.Action("Index", "Events")">Показать все события</a>
+                    <partial name="_DashboardEventList" model="Model.Events" />
+                    <a class="card-footer-btn" href="@Url.Action("Index", "Events")">Показать все события</a>
                 </div>
             </div>
-            <div class="card">
-                <div class="card-header"><h2>Состояние аккаунтов</h2></div>
-                <div class="card-body">
-                    @{
-                        var stats = Model.AccountStats;
-                        var total = Math.Max(1, stats.Total);
-                        var activePct = stats.Active * 100 / total;
-                        var attentionPct = stats.NeedAttention * 100 / total;
-                    }
-                    <div class="donut-wrap">
-                        <div class="donut" style="background: conic-gradient(#16a34a 0% @(activePct)%, #f59e0b @(activePct)% @(activePct + attentionPct)%, #e2e8f0 @(activePct + attentionPct)% 100%)">
-                            <div class="donut-center"><span class="num">@stats.Total</span><span class="lbl">Всего</span></div>
+            <div class="card card--account-stats">
+                <div class="card-header">
+                    <h2>Состояние аккаунтов</h2>
+                </div>
+                @{
+                    var stats = Model.AccountStats;
+                    var total = Math.Max(1, stats.Total);
+                }
+                <div class="account-stats-widget">
+                    <div class="account-stats-chart">
+                        <div class="account-stats-donut">
+                            <div class="chart-canvas-wrap chart-canvas-wrap--account-donut">
+                                <canvas id="chart-account-status" aria-label="Состояние аккаунтов"></canvas>
+                            </div>
+                            <div class="account-stats-center">
+                                <span class="account-stats-total-num">@stats.Total</span>
+                                <span class="account-stats-total-lbl">Всего</span>
+                            </div>
                         </div>
-                        <div class="donut-legend">
-                            <div class="legend-item"><span class="legend-dot" style="background:#16a34a"></span> Активны @stats.Active</div>
-                            <div class="legend-item"><span class="legend-dot" style="background:#f59e0b"></span> Требуют внимания @stats.NeedAttention</div>
-                            <div class="legend-item"><span class="legend-dot" style="background:#94a3b8"></span> Неактивны @stats.Inactive</div>
+                    </div>
+                    <div class="account-stats-legend">
+                        <div class="account-stats-list">
+                            <div class="account-stats-row">
+                                <span class="account-stats-label">
+                                    <span class="account-stats-dot" style="background:#22c55e"></span>
+                                    Активны
+                                </span>
+                                <span class="account-stats-value">@stats.Active (@FmtPct(stats.Active, total))</span>
+                            </div>
+                            <div class="account-stats-row">
+                                <span class="account-stats-label">
+                                    <span class="account-stats-dot" style="background:#94a3b8"></span>
+                                    Неактивны
+                                </span>
+                                <span class="account-stats-value">@stats.Inactive (@FmtPct(stats.Inactive, total))</span>
+                            </div>
+                            <div class="account-stats-row">
+                                <span class="account-stats-label">
+                                    <span class="account-stats-dot" style="background:#ef4444"></span>
+                                    Заблокированы
+                                </span>
+                                <span class="account-stats-value">@stats.Blocked (@FmtPct(stats.Blocked, total))</span>
+                            </div>
+                            <div class="account-stats-row">
+                                <span class="account-stats-label">
+                                    <span class="account-stats-dot" style="background:#f59e0b"></span>
+                                    Ошибки
+                                </span>
+                                <span class="account-stats-value">@stats.Errors (@FmtPct(stats.Errors, total))</span>
+                            </div>
+                        </div>
+                        <div class="account-stats-footer">
+                            <div class="account-stats-row account-stats-row--summary">
+                                <span class="account-stats-summary-label">Всего</span>
+                                <span class="account-stats-summary-value">@stats.Total</span>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
+
+        <script id="dashboard-charts-data" type="application/json">@Html.Raw(chartsJson)</script>
     }
 </div>
+
+@section Scripts {
+    <script src="~/lib/chart.js/dist/chart.umd.js" asp-append-version="true"></script>
+    <script src="~/js/orbita-dashboard.js" asp-append-version="true"></script>
+}
+
+@functions {
+    private static string FmtPct(int value, int total) => $"{value * 100 / total}%";
+}

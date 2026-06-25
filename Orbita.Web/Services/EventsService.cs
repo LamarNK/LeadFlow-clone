@@ -1,26 +1,45 @@
+using Microsoft.Extensions.Options;
 using Orbita.Web.Models.ViewModels;
+using Orbita.Web.Options;
 
 namespace Orbita.Web.Services;
 
-public sealed class EventsService(OrbitaApiClient api) : IEventsService
+public sealed class EventsService(OrbitaApiClient api, IOptions<DesignPreviewOptions> previewOptions) : IEventsService
 {
-    public async Task<EventsIndexViewModel> GetIndexAsync(bool errorsOnly = false, CancellationToken ct = default)
+    public Task<EventsIndexViewModel> GetIndexAsync(
+        string? q = null,
+        string? type = null,
+        Guid? workerId = null,
+        string? account = null,
+        string? level = null,
+        int page = 1,
+        CancellationToken ct = default)
     {
-        var all = await api.GetEventsAsync(limit: errorsOnly ? 200 : 100, ct: ct) ?? [];
-        var events = errorsOnly
-            ? all.Where(e => e.Level is "Error" or "Warning").ToList()
-            : all;
-
-        return new EventsIndexViewModel
+        var filters = new EventsFilterViewModel
         {
-            Header = new PageHeaderViewModel
-            {
-                Title = errorsOnly ? "Ошибки" : "События",
-                Subtitle = errorsOnly ? "События с уровнем Error и Warning" : "Последние события по всем воркерам",
-                ShowRefresh = true,
-                UpdatedAt = DateTime.Now
-            },
-            Events = events
+            SearchQuery = q,
+            Type = type,
+            WorkerId = workerId,
+            Account = account,
+            Level = level
         };
+
+        if (previewOptions.Value.Enabled)
+            return Task.FromResult(DesignPreviewData.BuildEventsIndexViewModel(filters, page, EventsIndexBuilder.DefaultPageSize));
+
+        return GetFromApiAsync(filters, page, ct);
+    }
+
+    private async Task<EventsIndexViewModel> GetFromApiAsync(
+        EventsFilterViewModel filters,
+        int page,
+        CancellationToken ct)
+    {
+        var items = await api.GetEventsAsync(limit: 500, ct: ct) ?? [];
+        var rows = items
+            .Select(e => EventsIndexBuilder.MapEvent(e, e.AccountId?.ToString()[..8]))
+            .ToList();
+
+        return EventsIndexBuilder.Build(rows, filters, page);
     }
 }

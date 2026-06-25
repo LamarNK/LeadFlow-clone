@@ -8,9 +8,9 @@ namespace Orbita.Web.Controllers;
 public sealed class AccountsController(IAccountsService accounts) : Controller
 {
     [HttpGet]
-    public async Task<IActionResult> Index(CancellationToken ct)
+    public async Task<IActionResult> Index(string? q, string? tab, int page = 1, CancellationToken ct = default)
     {
-        var model = await accounts.GetIndexAsync(ct);
+        var model = await accounts.GetIndexAsync(q, tab, page, ct);
         return View(model);
     }
 }

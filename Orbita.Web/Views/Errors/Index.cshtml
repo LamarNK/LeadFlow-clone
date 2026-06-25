@@ -1,8 +1,268 @@
-@model EventsIndexViewModel
+@model ErrorsIndexViewModel
 @{
     ViewData["Title"] = "Ошибки";
+    var pagination = Model.Pagination;
 }
-<partial name="_PageHeader" model="Model.Header" />
-<div class="orbita-main">
-    <div class="card"><div class="card-body"><partial name="_EventList" model="Model.Events" /></div></div>
+<div class="orbita-main errors-page">
+    <nav class="orbita-breadcrumbs orbita-breadcrumbs--errors" aria-label="Навигация">
+        @for (var i = 0; i < Model.Breadcrumbs.Count; i++)
+        {
+            var crumb = Model.Breadcrumbs[i];
+            if (i > 0)
+            {
+                <span class="orbita-breadcrumbs-sep" aria-hidden="true">&gt;</span>
+            }
+            if (crumb.IsActive || string.IsNullOrEmpty(crumb.Url))
+            {
+                <span class="orbita-breadcrumbs-current">@crumb.Label</span>
+            }
+            else
+            {
+                <a class="orbita-breadcrumbs-link" href="@crumb.Url">@crumb.Label</a>
+            }
+        }
+    </nav>
+
+    <h1 class="errors-page-title">Ошибки</h1>
+
+    <div class="kpi-row errors-kpi-row">
+        @{ var kpiIdx = 0; }
+        @foreach (var kpi in Model.KpiCards)
+        {
+            <article class="kpi-card kpi-card--stat" style="--kpi-index: @kpiIdx">
+                <header class="kpi-card-head">
+                    <div class="kpi-icon-box kpi-icon-box--@kpi.IconTone">
+                        <i class="@kpi.IconClass" aria-hidden="true"></i>
+                    </div>
+                    <span class="kpi-card-label">@kpi.Label</span>
+                </header>
+                <div class="kpi-card-metric">
+                    <span class="kpi-value"
+                          data-kpi-count="@kpi.CountValue.ToString(System.Globalization.CultureInfo.InvariantCulture)">0</span>
+                    <span class="kpi-delta-pill kpi-delta-@kpi.DeltaTone">@kpi.Delta</span>
+                </div>
+            </article>
+            kpiIdx++;
+        }
+    </div>
+
+    <div class="card card--errors-filters">
+        <form class="errors-filters" method="get" asp-action="Index">
+            <div class="errors-filters-row">
+                <label class="errors-filter-field">
+                    <span class="errors-filter-label">Уровень</span>
+                    <select name="severity" class="errors-select" aria-label="Уровень">
+                        @foreach (var opt in Model.SeverityOptions)
+                        {
+                            if (opt.Value == (Model.Filters.Severity ?? ""))
+                            {
+                                <option value="@opt.Value" selected>@opt.Label</option>
+                            }
+                            else
+                            {
+                                <option value="@opt.Value">@opt.Label</option>
+                            }
+                        }
+                    </select>
+                </label>
+                <label class="errors-filter-field">
+                    <span class="errors-filter-label">Тип ошибки</span>
+                    <select name="type" class="errors-select" aria-label="Тип ошибки">
+                        @foreach (var opt in Model.ErrorTypes)
+                        {
+                            if (opt.Value == (Model.Filters.Type ?? ""))
+                            {
+                                <option value="@opt.Value" selected>@opt.Label</option>
+                            }
+                            else
+                            {
+                                <option value="@opt.Value">@opt.Label</option>
+                            }
+                        }
+                    </select>
+                </label>
+                <label class="errors-filter-field">
+                    <span class="errors-filter-label">Воркер</span>
+                    <select name="workerId" class="errors-select" aria-label="Воркер">
+                        @foreach (var opt in Model.Workers)
+                        {
+                            if (opt.Value == (Model.Filters.WorkerId?.ToString() ?? ""))
+                            {
+                                <option value="@opt.Value" selected>@opt.Label</option>
+                            }
+                            else
+                            {
+                                <option value="@opt.Value">@opt.Label</option>
+                            }
+                        }
+                    </select>
+                </label>
+                <label class="errors-filter-field">
+                    <span class="errors-filter-label">Аккаунт</span>
+                    <select name="account" class="errors-select" aria-label="Аккаунт">
+                        @foreach (var opt in Model.Accounts)
+                        {
+                            if (opt.Value == (Model.Filters.Account ?? ""))
+                            {
+                                <option value="@opt.Value" selected>@opt.Label</option>
+                            }
+                            else
+                            {
+                                <option value="@opt.Value">@opt.Label</option>
+                            }
+                        }
+                    </select>
+                </label>
+            </div>
+            <div class="errors-filters-actions">
+                <div class="errors-search">
+                    <i class="fa-solid fa-magnifying-glass errors-search-icon" aria-hidden="true"></i>
+                    <input type="search"
+                           name="q"
+                           value="@Model.Filters.SearchQuery"
+                           placeholder="Поиск по ошибкам..."
+                           aria-label="Поиск по ошибкам" />
+                </div>
+                <button type="button" class="errors-filter-btn" aria-label="Фильтры">
+                    <i class="fa-solid fa-filter" aria-hidden="true"></i>
+                </button>
+                <a class="errors-reset-btn" href="@Url.Action("Index")">
+                    <i class="fa-solid fa-rotate-right" aria-hidden="true"></i>
+                    <span>Сбросить фильтры</span>
+                </a>
+            </div>
+        </form>
+    </div>
+
+    <div class="card card--errors-table">
+        <div class="card-body card-body-table errors-table-wrap">
+            <table class="data-table data-table--errors">
+                <thead>
+                    <tr>
+                        <th>Время</th>
+                        <th>Уровень</th>
+                        <th>Тип ошибки</th>
+                        <th>Сообщение</th>
+                        <th>Аккаунт</th>
+                        <th>Воркер</th>
+                        <th class="cell-num">Повторений</th>
+                        <th>Последнее появление</th>
+                        <th aria-hidden="true">Действия</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var error in Model.Errors)
+                {
+                    var workerUrl = Url.Action("Details", "Workers", new { id = error.WorkerId });
+                    var accountUrl = string.IsNullOrWhiteSpace(error.AccountName)
+                        ? null
+                        : Url.Action("Index", "Accounts", new { q = error.AccountName });
+                    <tr class="errors-row" data-copy="@error.CopyText">
+                        <td class="errors-time">@error.OccurredAtLocal.ToString("dd.MM.yyyy HH:mm:ss")</td>
+                        <td>
+                            <span class="error-severity-badge error-severity-badge--@error.Severity">@error.SeverityLabel</span>
+                        </td>
+                        <td class="errors-type">@error.ErrorTypeLabel</td>
+                        <td class="errors-message" title="@error.Message">@error.Message</td>
+                        <td class="cell-link">
+                            @if (accountUrl is not null)
+                            {
+                                <a href="@accountUrl">@error.AccountName</a>
+                            }
+                            else
+                            {
+                                <span class="errors-muted">—</span>
+                            }
+                        </td>
+                        <td class="cell-link">
+                            <a href="@workerUrl">@error.WorkerName</a>
+                        </td>
+                        <td class="cell-num @(error.OccurrenceCount > 10 ? "errors-count-high" : "")">@error.OccurrenceCount</td>
+                        <td class="errors-last-seen">@error.LastSeenLocal.ToString("HH:mm:ss")</td>
+                        <td class="data-table-menu">
+                            <div class="row-menu" data-row-menu>
+                                <button type="button" class="row-menu-btn" aria-label="Действия" aria-expanded="false" aria-haspopup="true">
+                                    <i class="fa-solid fa-ellipsis-vertical" aria-hidden="true"></i>
+                                </button>
+                                <div class="row-menu-dropdown row-menu-dropdown--errors" hidden>
+                                    <button type="button" class="row-menu-item">
+                                        <i class="fa-regular fa-eye" aria-hidden="true"></i>
+                                        Просмотреть детали
+                                    </button>
+                                    <button type="button" class="row-menu-item">
+                                        <i class="fa-regular fa-file-lines" aria-hidden="true"></i>
+                                        Открыть лог
+                                    </button>
+                                    @if (accountUrl is not null)
+                                    {
+                                        <a class="row-menu-item" href="@accountUrl">
+                                            <i class="fa-regular fa-user" aria-hidden="true"></i>
+                                            Перейти к аккаунту
+                                        </a>
+                                    }
+                                    <a class="row-menu-item" href="@workerUrl">
+                                        <i class="fa-solid fa-server" aria-hidden="true"></i>
+                                        Перейти к воркеру
+                                    </a>
+                                    <button type="button" class="row-menu-item" data-copy-error>
+                                        <i class="fa-regular fa-copy" aria-hidden="true"></i>
+                                        Копировать текст ошибки
+                                    </button>
+                                    <button type="button" class="row-menu-item">
+                                        <i class="fa-regular fa-circle-check" aria-hidden="true"></i>
+                                        Отметить как обработанную
+                                    </button>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+
+            <div class="errors-pagination">
+                <span class="errors-pagination-info">
+                    @if (pagination.TotalItems == 0)
+                    {
+                        @:Показано 0 из 0
+                    }
+                    else
+                    {
+                        @:Показано @pagination.RangeStart–@pagination.RangeEnd из @pagination.TotalItems
+                    }
+                </span>
+                <div class="errors-pagination-controls">
+                    @{
+                        var prevPage = pagination.Page > 1 ? pagination.Page - 1 : (int?)null;
+                        var nextPage = pagination.Page < pagination.TotalPages ? pagination.Page + 1 : (int?)null;
+                    }
+                    @if (prevPage is not null)
+                    {
+                        <a class="errors-page-btn"
+                           href="@Url.Action("Index", new { q = Model.Filters.SearchQuery, severity = Model.Filters.Severity, type = Model.Filters.Type, workerId = Model.Filters.WorkerId, account = Model.Filters.Account, page = prevPage })"
+                           aria-label="Предыдущая страница">&lt;</a>
+                    }
+                    else
+                    {
+                        <span class="errors-page-btn errors-page-btn--disabled" aria-hidden="true">&lt;</span>
+                    }
+                    <span class="errors-page-btn errors-page-btn--active" aria-current="page">@pagination.Page</span>
+                    @if (nextPage is not null)
+                    {
+                        <a class="errors-page-btn"
+                           href="@Url.Action("Index", new { q = Model.Filters.SearchQuery, severity = Model.Filters.Severity, type = Model.Filters.Type, workerId = Model.Filters.WorkerId, account = Model.Filters.Account, page = nextPage })"
+                           aria-label="Следующая страница">&gt;</a>
+                    }
+                    else
+                    {
+                        <span class="errors-page-btn errors-page-btn--disabled" aria-hidden="true">&gt;</span>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
+
+@section Scripts {
+    <script src="~/js/orbita-errors.js" asp-append-version="true"></script>
+}

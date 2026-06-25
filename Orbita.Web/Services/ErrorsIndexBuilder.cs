@@ -1,0 +1,299 @@
+using Orbita.Contracts;
+using Orbita.Web.Models.ViewModels;
+
+namespace Orbita.Web.Services;
+
+internal static class ErrorsIndexBuilder
+{
+    public const int DefaultPageSize = 10;
+
+    public static readonly EventFilterOptionViewModel[] SeverityOptions =
+    [
+        new() { Value = "", Label = "Все уровни" },
+        new() { Value = "critical", Label = "Критический" },
+        new() { Value = "high", Label = "Высокий" },
+        new() { Value = "medium", Label = "Средний" },
+        new() { Value = "low", Label = "Низкий" }
+    ];
+
+    public static readonly EventFilterOptionViewModel[] ErrorTypeOptions =
+    [
+        new() { Value = "", Label = "Все типы" },
+        new() { Value = "auth", Label = "Авторизация" },
+        new() { Value = "bitrix", Label = "Отправка в Bitrix24" },
+        new() { Value = "network", Label = "Сеть" },
+        new() { Value = "balance", Label = "Баланс" },
+        new() { Value = "blocked", Label = "Блокировка аккаунта" },
+        new() { Value = "parsing", Label = "Парсинг" },
+        new() { Value = "postgres", Label = "PostgreSQL" },
+        new() { Value = "api", Label = "API" },
+        new() { Value = "unknown", Label = "Неизвестная" }
+    ];
+
+    public static ErrorsIndexViewModel Build(
+        IReadOnlyList<ErrorRowViewModel> allRows,
+        ErrorsFilterViewModel filters,
+        int page,
+        int pageSize = DefaultPageSize)
+    {
+        page = Math.Max(1, page);
+        var filtered = FilterRows(allRows, filters);
+        var total = filtered.Count;
+        var paged = filtered
+            .OrderByDescending(e => e.LastSeenLocal)
+            .ThenByDescending(e => e.OccurrenceCount)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToList();
+
+        var summary = Summarize(allRows);
+
+        return new ErrorsIndexViewModel
+        {
+            Filters = filters,
+            SeverityOptions = SeverityOptions,
+            ErrorTypes = ErrorTypeOptions,
+            Workers = BuildWorkerOptions(allRows),
+            Accounts = BuildAccountOptions(allRows),
+            KpiCards = BuildKpiCards(summary),
+            Errors = paged,
+            Pagination = new PaginationViewModel
+            {
+                Page = page,
+                PageSize = pageSize,
+                TotalItems = total
+            }
+        };
+    }
+
+    public static ErrorRowViewModel MapEvent(WorkerEventListItem item, string? accountName = null)
+    {
+        var text = $"{item.Message} {item.Details}";
+        var errorType = InferErrorType(text);
+        var severity = InferSeverity(item.Level, text);
+        var occurredAt = item.CreatedAtUtc.ToLocalTime();
+
+        return new ErrorRowViewModel
+        {
+            Id = item.Id,
+            OccurredAtLocal = occurredAt,
+            Severity = severity,
+            SeverityLabel = SeverityLabel(severity),
+            ErrorType = errorType,
+            ErrorTypeLabel = ErrorTypeLabel(errorType),
+            Message = BuildMessage(item.Message, item.Details),
+            CopyText = BuildMessage(item.Message, item.Details),
+            AccountName = accountName,
+            AccountId = item.AccountId,
+            WorkerId = item.WorkerId,
+            WorkerName = FormatWorkerName(item.WorkerDisplayName),
+            OccurrenceCount = 1,
+            LastSeenLocal = occurredAt
+        };
+    }
+
+    private static IReadOnlyList<ErrorRowViewModel> FilterRows(
+        IReadOnlyList<ErrorRowViewModel> rows,
+        ErrorsFilterViewModel filters)
+    {
+        IEnumerable<ErrorRowViewModel> query = rows;
+
+        if (!string.IsNullOrWhiteSpace(filters.SearchQuery))
+        {
+            var q = filters.SearchQuery.Trim();
+            query = query.Where(e =>
+                e.Message.Contains(q, StringComparison.OrdinalIgnoreCase)
+                || e.ErrorTypeLabel.Contains(q, StringComparison.OrdinalIgnoreCase)
+                || (e.AccountName?.Contains(q, StringComparison.OrdinalIgnoreCase) ?? false)
+                || e.WorkerName.Contains(q, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (!string.IsNullOrWhiteSpace(filters.Severity))
+            query = query.Where(e => e.Severity == filters.Severity);
+
+        if (!string.IsNullOrWhiteSpace(filters.Type))
+            query = query.Where(e => e.ErrorType == filters.Type);
+
+        if (filters.WorkerId.HasValue)
+            query = query.Where(e => e.WorkerId == filters.WorkerId.Value);
+
+        if (!string.IsNullOrWhiteSpace(filters.Account))
+            query = query.Where(e => e.AccountName == filters.Account);
+
+        return query.ToList();
+    }
+
+    private static ErrorsSummaryViewModel Summarize(IReadOnlyList<ErrorRowViewModel> rows) => new()
+    {
+        Total = rows.Count,
+        Critical = rows.Count(e => e.Severity == "critical"),
+        High = rows.Count(e => e.Severity == "high"),
+        Medium = rows.Count(e => e.Severity == "medium"),
+        Low = rows.Count(e => e.Severity == "low")
+    };
+
+    private static IReadOnlyList<DashboardKpiCardViewModel> BuildKpiCards(ErrorsSummaryViewModel summary)
+    {
+        var total = Math.Max(1, summary.Total);
+        string Pct(int value) => $"{value * 100.0 / total:0.#}%";
+
+        return
+        [
+            new()
+            {
+                Label = "Всего ошибок",
+                Value = summary.Total.ToString(),
+                CountValue = summary.Total,
+                Delta = "За период",
+                DeltaTone = "neutral",
+                IconClass = "fa-regular fa-circle-xmark",
+                IconTone = "orange"
+            },
+            new()
+            {
+                Label = "Критические",
+                Value = summary.Critical.ToString(),
+                CountValue = summary.Critical,
+                Delta = Pct(summary.Critical),
+                DeltaTone = "bad",
+                IconClass = "fa-solid fa-bolt",
+                IconTone = "orange"
+            },
+            new()
+            {
+                Label = "Высокий уровень",
+                Value = summary.High.ToString(),
+                CountValue = summary.High,
+                Delta = Pct(summary.High),
+                DeltaTone = "bad",
+                IconClass = "fa-solid fa-triangle-exclamation",
+                IconTone = "orange"
+            },
+            new()
+            {
+                Label = "Средний уровень",
+                Value = summary.Medium.ToString(),
+                CountValue = summary.Medium,
+                Delta = Pct(summary.Medium),
+                DeltaTone = "neutral",
+                IconClass = "fa-solid fa-circle-exclamation",
+                IconTone = "blue"
+            },
+            new()
+            {
+                Label = "Низкий уровень",
+                Value = summary.Low.ToString(),
+                CountValue = summary.Low,
+                Delta = Pct(summary.Low),
+                DeltaTone = "neutral",
+                IconClass = "fa-solid fa-circle-info",
+                IconTone = "blue"
+            }
+        ];
+    }
+
+    private static IReadOnlyList<EventFilterOptionViewModel> BuildWorkerOptions(IReadOnlyList<ErrorRowViewModel> rows)
+    {
+        var options = new List<EventFilterOptionViewModel> { new() { Value = "", Label = "Все воркеры" } };
+        options.AddRange(rows
+            .GroupBy(e => e.WorkerId)
+            .Select(g => g.First())
+            .OrderBy(e => e.WorkerName)
+            .Select(e => new EventFilterOptionViewModel
+            {
+                Value = e.WorkerId.ToString(),
+                Label = e.WorkerName
+            }));
+        return options;
+    }
+
+    private static IReadOnlyList<EventFilterOptionViewModel> BuildAccountOptions(IReadOnlyList<ErrorRowViewModel> rows)
+    {
+        var options = new List<EventFilterOptionViewModel> { new() { Value = "", Label = "Все аккаунты" } };
+        options.AddRange(rows
+            .Where(e => !string.IsNullOrWhiteSpace(e.AccountName))
+            .Select(e => e.AccountName!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(a => a, StringComparer.OrdinalIgnoreCase)
+            .Select(a => new EventFilterOptionViewModel { Value = a, Label = a }));
+        return options;
+    }
+
+    public static string InferErrorType(string text)
+    {
+        var lower = text.ToLowerInvariant();
+        if (lower.Contains("авториз") || lower.Contains("логин") || lower.Contains("парол"))
+            return "auth";
+        if (lower.Contains("bitrix") || lower.Contains("crm"))
+            return "bitrix";
+        if (lower.Contains("postgres") || lower.Contains("база данных"))
+            return "postgres";
+        if (lower.Contains("сеть") || lower.Contains("таймаут") || lower.Contains("http") || lower.Contains("подключ"))
+            return "network";
+        if (lower.Contains("баланс"))
+            return "balance";
+        if (lower.Contains("блок") || lower.Contains("заблок"))
+            return "blocked";
+        if (lower.Contains("парс") || lower.Contains("parse"))
+            return "parsing";
+        if (lower.Contains("api"))
+            return "api";
+        return "unknown";
+    }
+
+    public static string ErrorTypeLabel(string type) => type switch
+    {
+        "auth" => "Ошибка авторизации",
+        "bitrix" => "Ошибка отправки",
+        "network" => "Ошибка сети",
+        "balance" => "Ошибка баланса",
+        "blocked" => "Блокировка аккаунта",
+        "parsing" => "Ошибка парсинга",
+        "postgres" => "Ошибка PostgreSQL",
+        "api" => "Ошибка API",
+        _ => "Неизвестная ошибка"
+    };
+
+    public static string InferSeverity(string level, string text)
+    {
+        var lower = text.ToLowerInvariant();
+        if (lower.Contains("postgres") || lower.Contains("критич") || lower.Contains("недоступ"))
+            return "critical";
+        if (level.Equals("Error", StringComparison.OrdinalIgnoreCase)
+            && (lower.Contains("bitrix") || lower.Contains("авториз") || lower.Contains("блок")))
+            return "high";
+        if (level.Equals("Error", StringComparison.OrdinalIgnoreCase))
+            return "medium";
+        if (level.Equals("Warning", StringComparison.OrdinalIgnoreCase))
+            return "medium";
+        return "low";
+    }
+
+    public static string SeverityLabel(string severity) => severity switch
+    {
+        "critical" => "Критический",
+        "high" => "Высокий",
+        "medium" => "Средний",
+        _ => "Низкий"
+    };
+
+    private static string BuildMessage(string message, string? details)
+    {
+        if (string.IsNullOrWhiteSpace(details))
+            return message;
+        if (message.Contains(details, StringComparison.OrdinalIgnoreCase))
+            return message;
+        return $"{message} — {details}";
+    }
+
+    private static string FormatWorkerName(string workerDisplayName)
+    {
+        if (workerDisplayName.StartsWith("VDS-", StringComparison.OrdinalIgnoreCase))
+        {
+            var hash = Math.Abs(workerDisplayName.GetHashCode());
+            return $"Worker #{(hash % 12) + 1}";
+        }
+
+        return workerDisplayName;
+    }
+}
