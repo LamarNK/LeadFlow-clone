@@ -12,7 +12,9 @@ set "REPO=%ROOT%.."
 set "MENU_SCRIPT=%ROOT%scripts\publish-menu.ps1"
 set "DEPLOY_CONTEXT_SCRIPT=%ROOT%scripts\deploy-context.ps1"
 set "REMOTE_BUILD_SCRIPT=%ROOT%deploy-remote-build.sh"
+set "REMOTE_COMPOSE_SCRIPT=%ROOT%deploy-remote-compose.sh"
 set "CONFIG_SCRIPT=%ROOT%deploy-config-remote.sh"
+set "COMPOSE_FILE=%REPO%deploy\control-panel\docker-compose.images.yml"
 set "TMP_ROOT=%ROOT%tmp\deploy"
 set "STATE_ROOT=%ROOT%state"
 
@@ -38,6 +40,16 @@ if not exist "%DEPLOY_CONTEXT_SCRIPT%" (
 
 if not exist "%REMOTE_BUILD_SCRIPT%" (
     echo Remote build helper not found: %REMOTE_BUILD_SCRIPT%
+    exit /b 1
+)
+
+if not exist "%REMOTE_COMPOSE_SCRIPT%" (
+    echo Remote compose helper not found: %REMOTE_COMPOSE_SCRIPT%
+    exit /b 1
+)
+
+if not exist "%COMPOSE_FILE%" (
+    echo Compose file not found: %COMPOSE_FILE%
     exit /b 1
 )
 
@@ -188,6 +200,11 @@ if /i "%TARGET%"=="config" (
 call :configure_target "%TARGET%"
 if errorlevel 1 exit /b 1
 
+if /i not "%TARGET%"=="notifybot" (
+    call :sync_compose_always
+    if errorlevel 1 exit /b 1
+)
+
 set "TARGET_ROOT=%TMP_ROOT%\%TARGET%"
 set "STAGE_DIR=%TARGET_ROOT%\stage"
 set "ARCHIVE=%TMP_ROOT%\leadflow-%TARGET%-context.tar.gz"
@@ -214,7 +231,14 @@ if exist "%PLAN_FILE%.mode" (
 )
 
 if /i "!DEPLOY_MODE!"=="SKIP" (
-    echo == %TARGET% unchanged; upload skipped ==
+    echo == %TARGET% unchanged; image rebuild skipped ==
+    if /i not "%TARGET%"=="notifybot" (
+        echo == Recreating %COMPOSE_SERVICE% with current compose ==
+        scp %SCP_ARGS% "%REMOTE_COMPOSE_SCRIPT%" "%SERVER%:/tmp/deploy-remote-compose.sh"
+        if errorlevel 1 exit /b 1
+        ssh %SSH_ARGS% %SERVER% "sed -i 's/\r$//' /tmp/deploy-remote-compose.sh && chmod +x /tmp/deploy-remote-compose.sh && bash /tmp/deploy-remote-compose.sh %COMPOSE_SERVICE% %REMOTE_DIR%"
+        if errorlevel 1 exit /b 1
+    )
     if exist "%TARGET_ROOT%" rmdir /s /q "%TARGET_ROOT%"
     exit /b 0
 )
@@ -269,7 +293,9 @@ if exist "%PLAN_FILE%.mode" (
 )
 
 if /i "!DEPLOY_MODE!"=="SKIP" (
-    echo == Config unchanged; upload skipped ==
+    echo == Config unchanged; full upload skipped ==
+    call :sync_compose_always
+    if errorlevel 1 exit /b 1
     if exist "%STAGE_DIR%" rmdir /s /q "%STAGE_DIR%"
     exit /b 0
 )
@@ -327,14 +353,14 @@ if /i "%~1"=="orbita-api" (
     set "DOCKERFILE=deploy/control-panel/Dockerfile.api"
     set "IMAGE_TAG=orbita-api:prod"
     set "COMPOSE_SERVICE=api"
-    set "CONTEXT_ITEMS=Orbita.Contracts Orbita.Logging Orbita.Api deploy\control-panel\Dockerfile.api"
+    set "CONTEXT_ITEMS=Orbita.Contracts Orbita.Logging Orbita.Api deploy\control-panel\Dockerfile.api deploy\control-panel\docker-compose.images.yml"
 )
 
 if /i "%~1"=="orbita-web" (
     set "DOCKERFILE=deploy/control-panel/Dockerfile.web"
     set "IMAGE_TAG=orbita-web:prod"
     set "COMPOSE_SERVICE=web"
-    set "CONTEXT_ITEMS=Orbita.Contracts Orbita.Logging Orbita.Web deploy\control-panel\Dockerfile.web"
+    set "CONTEXT_ITEMS=Orbita.Contracts Orbita.Logging Orbita.Web deploy\control-panel\Dockerfile.web deploy\control-panel\docker-compose.images.yml"
 )
 
 if /i "%~1"=="notifybot" (
@@ -349,6 +375,12 @@ if not defined DOCKERFILE (
     exit /b 1
 )
 
+exit /b 0
+
+:sync_compose_always
+echo == Syncing docker-compose.images.yml to %REMOTE_DIR% ==
+scp %SCP_ARGS% "%COMPOSE_FILE%" "%SERVER%:%REMOTE_DIR%/docker-compose.images.yml"
+if errorlevel 1 exit /b 1
 exit /b 0
 
 :sync_secrets

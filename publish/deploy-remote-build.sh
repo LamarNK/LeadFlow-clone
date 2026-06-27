@@ -53,6 +53,12 @@ if [[ ! -f "$dockerfile_rel" ]]; then
 fi
 
 docker build -f "$dockerfile_rel" -t "$image_tag" .
+compose_src="$cache_dir/deploy/control-panel/docker-compose.images.yml"
+if [[ -f "$compose_src" ]]; then
+  cp "$compose_src" "$remote_dir/docker-compose.images.yml"
+  echo "Updated docker-compose.images.yml in $remote_dir"
+fi
+
 cd "$remote_dir"
 
 if [[ ! -f "docker-compose.images.yml" ]]; then
@@ -66,9 +72,9 @@ if [[ ! -f ".env" ]]; then
 fi
 
 if [[ "$service" == "notifybot-api" ]]; then
-  docker compose -f docker-compose.images.yml --env-file .env up -d notifybot-postgres notifybot-api
+  docker compose -f docker-compose.images.yml --env-file .env up -d --force-recreate notifybot-postgres notifybot-api
 else
-  docker compose -f docker-compose.images.yml --env-file .env up -d "$service"
+  docker compose -f docker-compose.images.yml --env-file .env up -d --force-recreate "$service"
 fi
 
 docker compose -f docker-compose.images.yml ps
