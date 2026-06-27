@@ -1,0 +1,25 @@
+{
+	email admin@orbitsu.ru
+	acme_ca https://acme-v02.api.letsencrypt.org/directory
+}
+
+orbitsu.ru, www.orbitsu.ru {
+	reverse_proxy 127.0.0.1:8081
+}
+
+api.orbitsu.ru {
+	reverse_proxy 127.0.0.1:8082
+}
+
+notify.orbitsu.ru {
+	reverse_proxy 127.0.0.1:8083
+}
+
+# Fallback по IP, пока DNS не распространился
+http://163.5.153.207 {
+	reverse_proxy 127.0.0.1:8081
+}
+
+:8080 {
+	reverse_proxy 127.0.0.1:8082
+}

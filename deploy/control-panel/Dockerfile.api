@@ -1,6 +1,7 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 COPY Orbita.Contracts/ Orbita.Contracts/
+COPY Orbita.Logging/ Orbita.Logging/
 COPY Orbita.Api/ Orbita.Api/
 RUN dotnet restore Orbita.Api/Orbita.Api.csproj
 RUN dotnet publish Orbita.Api/Orbita.Api.csproj -c Release -o /app/publish /p:UseAppHost=false

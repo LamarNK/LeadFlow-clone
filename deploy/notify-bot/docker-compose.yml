@@ -1,0 +1,35 @@
+# Локальная разработка NotifyBot.
+# Production на VPS Orbita: deploy/control-panel/docker-compose.images.yml + NOTIFYBOT.md
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: notifybot
+      POSTGRES_USER: notifybot
+      POSTGRES_PASSWORD: notifybot
+    ports:
+      - "5433:5432"
+    volumes:
+      - notifybot_pg:/var/lib/postgresql/data
+
+  api:
+    build:
+      context: ../..
+      dockerfile: deploy/notify-bot/Dockerfile
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__Default: Host=postgres;Port=5432;Database=notifybot;Username=notifybot;Password=notifybot
+      Telegram__BotToken: ${TELEGRAM_BOT_TOKEN:-YOUR_BOT_TOKEN}
+      Telegram__WebhookUrl: ${TELEGRAM_WEBHOOK_URL:-}
+      Telegram__AdminUsernames__0: andreypakin
+      Telegram__AdminUsernames__1: LamarrNK
+      Plusofon__Secret: ${PLUSOFON_SECRET:-your-plusofon-secret}
+      Plusofon__WebhookValidation: ${PLUSOFON_WEBHOOK_VALIDATION:-true}
+    depends_on:
+      - postgres
+    ports:
+      - "8090:8080"
+
+volumes:
+  notifybot_pg:

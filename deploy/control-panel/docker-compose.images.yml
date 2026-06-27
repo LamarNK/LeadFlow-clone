@@ -1,0 +1,95 @@
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: orbita
+      POSTGRES_USER: orbita
+      POSTGRES_PASSWORD: orbita
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - orbita_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U orbita -d orbita"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    image: orbita-api:prod
+    restart: unless-stopped
+    working_dir: /app
+    entrypoint: ["dotnet"]
+    command: ["Orbita.Api.dll"]
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__Default: Host=postgres;Port=5432;Database=orbita;Username=orbita;Password=orbita
+      RegistrationSecret: ${REGISTRATION_SECRET}
+      Jwt__Key: ${JWT_KEY}
+      Admin__Email: ${ADMIN_EMAIL}
+      Admin__Password: ${ADMIN_PASSWORD}
+      Cors__Origins__0: ${CORS_ORIGIN_0:-https://orbitsu.ru}
+      Cors__Origins__1: ${CORS_ORIGIN_1:-https://www.orbitsu.ru}
+      Cors__Origins__2: ${CORS_ORIGIN_2:-http://163.5.153.207}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8082:8080"
+
+  web:
+    image: orbita-web:prod
+    restart: unless-stopped
+    working_dir: /app
+    entrypoint: ["dotnet"]
+    command: ["Orbita.Web.dll"]
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+      OrbitaApi__BaseUrl: http://api:8080
+    depends_on:
+      - api
+    ports:
+      - "127.0.0.1:8081:8080"
+
+  notifybot-postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: notifybot
+      POSTGRES_USER: notifybot
+      POSTGRES_PASSWORD: ${NOTIFYBOT_DB_PASSWORD:-notifybot}
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - notifybot_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U notifybot -d notifybot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  notifybot-api:
+    image: notifybot-api:prod
+    restart: unless-stopped
+    working_dir: /app
+    entrypoint: ["dotnet"]
+    command: ["NotifyBot.Api.dll"]
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__Default: Host=notifybot-postgres;Port=5432;Database=notifybot;Username=notifybot;Password=${NOTIFYBOT_DB_PASSWORD:-notifybot}
+      Telegram__BotToken: ${TELEGRAM_BOT_TOKEN}
+      Telegram__WebhookUrl: ${TELEGRAM_WEBHOOK_URL:-https://notify.orbitsu.ru/api/webhooks/telegram}
+      Telegram__AdminUsernames__0: andreypakin
+      Telegram__AdminUsernames__1: LamarrNK
+      Plusofon__Secret: ${PLUSOFON_SECRET}
+      Plusofon__WebhookValidation: ${PLUSOFON_WEBHOOK_VALIDATION:-true}
+    depends_on:
+      notifybot-postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8083:8080"
+
+volumes:
+  orbita_pg:
+  notifybot_pg:

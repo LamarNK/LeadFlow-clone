@@ -1,0 +1,57 @@
+# Orbita Server Compose (for VPS at 163.5.153.207)
+# Run from /opt/orbita on the server:
+#   docker compose -f docker-compose.server.yml --env-file .env up -d --build
+
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: orbita
+      POSTGRES_USER: orbita
+      POSTGRES_PASSWORD: orbita
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - orbita_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U orbita -d orbita"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ./src
+      dockerfile: deploy/control-panel/Dockerfile.api
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__Default: Host=postgres;Port=5432;Database=orbita;Username=orbita;Password=orbita
+      RegistrationSecret: ${REGISTRATION_SECRET}
+      Jwt__Key: ${JWT_KEY}
+      Admin__Email: ${ADMIN_EMAIL}
+      Admin__Password: ${ADMIN_PASSWORD}
+      Cors__Origins__0: ${CORS_ORIGIN_0:-http://163.5.153.207}
+      Cors__Origins__1: ${CORS_ORIGIN_1:-http://localhost}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+
+  web:
+    build:
+      context: ./src
+      dockerfile: deploy/control-panel/Dockerfile.web
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+      OrbitaApi__BaseUrl: http://api:8080
+    depends_on:
+      - api
+    ports:
+      - "80:8080"
+
+volumes:
+  orbita_pg:

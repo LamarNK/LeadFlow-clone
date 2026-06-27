@@ -13,4 +13,9 @@
   <Project Path="Orbita.Web/Orbita.Web.csproj" />
   <Project Path="Orbita.Tests/Orbita.Tests.csproj" />
   <Project Path="tools/OrbitaMockWorker/OrbitaMockWorker.csproj" />
+  <Project Path="src/NotifyBot.Domain/NotifyBot.Domain.csproj" />
+  <Project Path="src/NotifyBot.Application/NotifyBot.Application.csproj" />
+  <Project Path="src/NotifyBot.Infrastructure/NotifyBot.Infrastructure.csproj" />
+  <Project Path="src/NotifyBot.Api/NotifyBot.Api.csproj" />
+  <Project Path="NotifyBot.Tests/NotifyBot.Tests.csproj" />
 </Solution>

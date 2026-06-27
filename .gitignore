@@ -377,3 +377,4 @@ Desktop.ini
 
 # Локальные копии настроек с секретами (если появятся)
 **/appsettings.Development.Local.json
+deploy/**/.env
