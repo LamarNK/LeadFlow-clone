@@ -12,6 +12,7 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
     public DbSet<WorkerAccountEntity> WorkerAccounts => Set<WorkerAccountEntity>();
     public DbSet<WorkerEventEntity> WorkerEvents => Set<WorkerEventEntity>();
     public DbSet<PanelAuditLogEntity> PanelAuditLogs => Set<PanelAuditLogEntity>();
+    public DbSet<PanelUserBitrixSettingsEntity> PanelUserBitrixSettings => Set<PanelUserBitrixSettingsEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -48,6 +49,16 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.Property(x => x.Level).HasMaxLength(32);
             entity.Property(x => x.Message).HasMaxLength(2000);
             entity.HasOne(x => x.Worker).WithMany(x => x.Events).HasForeignKey(x => x.WorkerId);
+        });
+
+        modelBuilder.Entity<PanelUserBitrixSettingsEntity>(entity =>
+        {
+            entity.HasKey(x => x.UserId);
+            entity.Property(x => x.WebhookUrlProtected).HasMaxLength(2048);
+            entity.Property(x => x.PortalHost).HasMaxLength(256);
+            entity.Property(x => x.ValidationStatus).HasMaxLength(32);
+            entity.Property(x => x.ValidationMessage).HasMaxLength(2000);
+            entity.Property(x => x.UpdatedByUserId).HasMaxLength(128);
         });
 
         modelBuilder.Entity<PanelAuditLogEntity>(entity =>

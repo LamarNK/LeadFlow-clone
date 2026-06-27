@@ -1,0 +1,27 @@
+namespace Orbita.Web.Models.ViewModels;
+
+public sealed record MySettingsIndexViewModel
+{
+    public required string ActiveTab { get; init; }
+    public required IReadOnlyList<SettingsTabViewModel> Tabs { get; init; }
+    public ProfileSettingsViewModel? Profile { get; init; }
+    public BitrixSettingsViewModel? Bitrix { get; init; }
+    public string? StatusMessage { get; init; }
+    public string? ErrorMessage { get; init; }
+}
+
+public sealed class BitrixSettingsViewModel
+{
+    public string? MaskedWebhookUrl { get; init; }
+    public string? PortalHost { get; init; }
+    public required string ValidationStatus { get; init; }
+    public string? ValidationMessage { get; init; }
+    public DateTime? LastValidatedAtUtc { get; init; }
+    public string ValidationStatusLabel { get; init; } = string.Empty;
+    public string ValidationStatusTone { get; init; } = "neutral";
+}
+
+public sealed class SaveBitrixIntegrationFormModel
+{
+    public string WebhookUrl { get; set; } = string.Empty;
+}

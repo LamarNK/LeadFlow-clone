@@ -1,3 +1,5 @@
+using Orbita.Contracts;
+
 namespace Orbita.Api.Data;
 
 public sealed class WorkerEntity
@@ -61,6 +63,18 @@ public sealed class WorkerEventEntity
     public DateTime CreatedAtUtc { get; set; }
 
     public WorkerEntity Worker { get; set; } = null!;
+}
+
+public sealed class PanelUserBitrixSettingsEntity
+{
+    public string UserId { get; set; } = string.Empty;
+    public string WebhookUrlProtected { get; set; } = string.Empty;
+    public string? PortalHost { get; set; }
+    public string ValidationStatus { get; set; } = BitrixValidationStatuses.NotConfigured;
+    public string? ValidationMessage { get; set; }
+    public DateTime? LastValidatedAtUtc { get; set; }
+    public DateTime UpdatedAtUtc { get; set; }
+    public string? UpdatedByUserId { get; set; }
 }
 
 public sealed class PanelAuditLogEntity

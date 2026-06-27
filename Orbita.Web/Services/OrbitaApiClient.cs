@@ -301,6 +301,99 @@ public sealed class OrbitaApiClient(HttpClient http, AuthSession session, IOptio
             ? Task.FromResult<PanelProfileDto?>(DesignPreviewData.PanelProfile)
             : GetAsync<PanelProfileDto>("api/v1/panel/me", ct);
 
+    public Task<BitrixIntegrationDto?> GetMyBitrixIntegrationAsync(CancellationToken ct = default) =>
+        _preview.Enabled
+            ? Task.FromResult<BitrixIntegrationDto?>(DesignPreviewData.MyBitrixIntegration)
+            : GetAsync<BitrixIntegrationDto>("api/v1/panel/me/integrations/bitrix", ct);
+
+    public async Task<(BitrixIntegrationDto? Integration, string? Error)> SaveMyBitrixIntegrationAsync(
+        string webhookUrl,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return (DesignPreviewData.MyBitrixIntegration, null);
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Put, "api/v1/panel/me/integrations/bitrix");
+        ApplyAuth(request);
+        request.Content = JsonContent.Create(new SaveBitrixIntegrationRequest(webhookUrl));
+        var response = await http.SendAsync(request, ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            return (null, await ReadApiErrorAsync(response, ct));
+        }
+
+        var integration = await response.Content.ReadFromJsonAsync<BitrixIntegrationDto>(ct);
+        return integration is null ? (null, "Не удалось прочитать ответ API.") : (integration, null);
+    }
+
+    public async Task<(BitrixWebhookValidationDto? Validation, string? Error)> ValidateMyBitrixIntegrationAsync(
+        string? webhookUrl,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return (DesignPreviewData.BitrixValidationOk, null);
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/panel/me/integrations/bitrix/validate");
+        ApplyAuth(request);
+        request.Content = JsonContent.Create(new ValidateBitrixIntegrationRequest(webhookUrl));
+        var response = await http.SendAsync(request, ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            return (null, await ReadApiErrorAsync(response, ct));
+        }
+
+        var validation = await response.Content.ReadFromJsonAsync<BitrixWebhookValidationDto>(ct);
+        return validation is null ? (null, "Не удалось прочитать ответ API.") : (validation, null);
+    }
+
+    public Task<IReadOnlyList<BitrixIntegrationListItemDto>?> GetAdminBitrixIntegrationsAsync(CancellationToken ct = default) =>
+        _preview.Enabled
+            ? Task.FromResult<IReadOnlyList<BitrixIntegrationListItemDto>?>(DesignPreviewData.BitrixIntegrations)
+            : GetAsync<IReadOnlyList<BitrixIntegrationListItemDto>>("api/v1/admin/integrations/bitrix", ct);
+
+    public Task<BitrixIntegrationDto?> GetAdminUserBitrixIntegrationAsync(string userId, CancellationToken ct = default) =>
+        GetAsync<BitrixIntegrationDto>($"api/v1/admin/users/{userId}/integrations/bitrix", ct);
+
+    public async Task<(BitrixIntegrationDto? Integration, string? Error)> SaveAdminUserBitrixIntegrationAsync(
+        string userId,
+        string webhookUrl,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Put, $"api/v1/admin/users/{userId}/integrations/bitrix");
+        ApplyAuth(request);
+        request.Content = JsonContent.Create(new SaveBitrixIntegrationRequest(webhookUrl));
+        var response = await http.SendAsync(request, ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            return (null, await ReadApiErrorAsync(response, ct));
+        }
+
+        var integration = await response.Content.ReadFromJsonAsync<BitrixIntegrationDto>(ct);
+        return integration is null ? (null, "Не удалось прочитать ответ API.") : (integration, null);
+    }
+
+    public async Task<(BitrixWebhookValidationDto? Validation, string? Error)> ValidateAdminUserBitrixIntegrationAsync(
+        string userId,
+        string? webhookUrl,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"api/v1/admin/users/{userId}/integrations/bitrix/validate");
+        ApplyAuth(request);
+        request.Content = JsonContent.Create(new ValidateBitrixIntegrationRequest(webhookUrl));
+        var response = await http.SendAsync(request, ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            return (null, await ReadApiErrorAsync(response, ct));
+        }
+
+        var validation = await response.Content.ReadFromJsonAsync<BitrixWebhookValidationDto>(ct);
+        return validation is null ? (null, "Не удалось прочитать ответ API.") : (validation, null);
+    }
+
     public async Task<(bool Success, string? Error)> ChangeOwnPasswordAsync(
         string currentPassword,
         string newPassword,

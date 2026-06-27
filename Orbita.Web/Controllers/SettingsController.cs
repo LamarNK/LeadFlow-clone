@@ -18,11 +18,12 @@ public sealed class SettingsController(
         string? level,
         string? service,
         string? action,
+        string? userId,
         DateTime? date,
         int page = 1,
         CancellationToken ct = default)
     {
-        var model = await settings.GetIndexAsync(tab, q, level, service, date, action, page, ct);
+        var model = await settings.GetIndexAsync(tab, q, level, service, date, action, userId, page, ct);
         model = model with
         {
             StatusMessage = TempData["SettingsStatus"] as string ?? model.StatusMessage,
@@ -160,19 +161,31 @@ public sealed class SettingsController(
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> ChangeOwnPassword(ChangeOwnPasswordFormModel model, CancellationToken ct = default)
+    public async Task<IActionResult> SaveUserBitrix(SaveAdminBitrixIntegrationFormModel model, CancellationToken ct = default)
     {
-        if (!string.Equals(model.NewPassword, model.ConfirmPassword, StringComparison.Ordinal))
+        var (success, error) = await settings.SaveUserBitrixAsync(model.UserId, model.WebhookUrl, ct);
+        TempData[success ? "SettingsStatus" : "SettingsError"] = success
+            ? "Вебхук пользователя сохранён и проверен."
+            : error;
+        return RedirectToAction(nameof(Index), new { tab = "integrations", userId = model.UserId });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ValidateUserBitrix(
+        string userId,
+        string? webhookUrl,
+        [FromServices] OrbitaApiClient api,
+        CancellationToken ct = default)
+    {
+        webhookUrl = string.IsNullOrWhiteSpace(webhookUrl) ? null : webhookUrl.Trim();
+        var (validation, error) = await api.ValidateAdminUserBitrixIntegrationAsync(userId, webhookUrl, ct);
+        if (validation is null)
         {
-            TempData["SettingsError"] = "Новый пароль и подтверждение не совпадают.";
-            return RedirectToAction(nameof(Index), new { tab = "profile" });
+            return BadRequest(new { error });
         }
 
-        var (success, error) = await settings.ChangeOwnPasswordAsync(model.CurrentPassword, model.NewPassword, ct);
-        TempData[success ? "SettingsStatus" : "SettingsError"] = success
-            ? "Пароль изменён. Войдите снова на других устройствах при необходимости."
-            : error;
-        return RedirectToAction(nameof(Index), new { tab = "profile" });
+        return Json(validation);
     }
 
     [HttpPost]

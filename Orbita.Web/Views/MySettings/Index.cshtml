@@ -1,0 +1,168 @@
+@model MySettingsIndexViewModel
+@{
+    ViewData["Title"] = "Настройки";
+    var profile = Model.Profile;
+    var bitrix = Model.Bitrix;
+}
+<div class="orbita-main settings-page">
+    <h1 class="settings-page-title">Настройки</h1>
+    <p class="settings-page-subtitle">Профиль и интеграция с Bitrix24</p>
+
+    @if (!string.IsNullOrWhiteSpace(Model.StatusMessage))
+    {
+        <div class="settings-alert settings-alert--success" role="status">@Model.StatusMessage</div>
+    }
+    @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+    {
+        <div class="settings-alert settings-alert--error" role="alert">@Model.ErrorMessage</div>
+    }
+
+    <div class="settings-control-bar">
+        <nav class="settings-tabs" aria-label="Разделы настроек">
+            @foreach (var tab in Model.Tabs)
+            {
+                var isActive = tab.Id == Model.ActiveTab;
+                <a class="settings-tab @(isActive ? "settings-tab--active" : "")"
+                   href="@Url.Action("Index", new { tab = tab.Id })"
+                   aria-current="@(isActive ? "page" : null)">@tab.Label</a>
+            }
+        </nav>
+    </div>
+
+    @if (Model.ActiveTab == "profile" && profile is not null)
+    {
+        <div class="settings-grid settings-grid--profile">
+            <div class="card card--settings-profile-self">
+                <div class="card-header settings-card-header">
+                    <div>
+                        <h2 class="settings-card-title">Мой профиль</h2>
+                        <p class="settings-card-subtitle">Учётная запись в панели Орбита</p>
+                    </div>
+                </div>
+                <div class="card-body settings-profile-self-body">
+                    <div class="settings-profile-self-row">
+                        <span class="settings-field-label">Email</span>
+                        <span class="settings-profile-self-value">@profile.Email</span>
+                    </div>
+                    <div class="settings-profile-self-row">
+                        <span class="settings-field-label">Роль</span>
+                        <span class="settings-role-pill">@profile.RoleLabel</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card card--settings-change-password">
+                <div class="card-header settings-card-header">
+                    <h2 class="settings-card-title">Сменить пароль</h2>
+                </div>
+                <div class="card-body">
+                    @if (profile.PasswordPolicy is not null)
+                    {
+                        <p class="settings-password-policy">Требования: @profile.PasswordPolicy.Summary</p>
+                    }
+                    <form asp-action="ChangeOwnPassword" method="post" class="settings-create-form">
+                        @Html.AntiForgeryToken()
+                        <label class="settings-field">
+                            <span class="settings-field-label">Текущий пароль</span>
+                            <input type="password" name="CurrentPassword" required autocomplete="current-password" />
+                        </label>
+                        <label class="settings-field">
+                            <span class="settings-field-label">Новый пароль</span>
+                            <input type="password"
+                                   name="NewPassword"
+                                   required
+                                   minlength="@(profile.PasswordPolicy?.RequiredLength ?? 8)"
+                                   autocomplete="new-password" />
+                        </label>
+                        <label class="settings-field">
+                            <span class="settings-field-label">Подтверждение</span>
+                            <input type="password"
+                                   name="ConfirmPassword"
+                                   required
+                                   minlength="@(profile.PasswordPolicy?.RequiredLength ?? 8)"
+                                   autocomplete="new-password" />
+                        </label>
+                        <button type="submit" class="settings-primary-btn">
+                            <i class="fa-solid fa-key" aria-hidden="true"></i>
+                            <span>Обновить пароль</span>
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    }
+    else if (Model.ActiveTab == "bitrix" && bitrix is not null)
+    {
+        <div class="settings-grid settings-grid--bitrix">
+            <div class="card card--settings-bitrix">
+                <div class="card-header settings-card-header">
+                    <div>
+                        <h2 class="settings-card-title">Интеграция с Bitrix24</h2>
+                        <p class="settings-card-subtitle">Входящий вебхук для отправки контактов и проверки дублей в CRM</p>
+                    </div>
+                    <span class="settings-bitrix-status settings-bitrix-status--@bitrix.ValidationStatusTone">
+                        @bitrix.ValidationStatusLabel
+                    </span>
+                </div>
+                <div class="card-body">
+                    @if (!string.IsNullOrWhiteSpace(bitrix.MaskedWebhookUrl))
+                    {
+                        <p class="settings-bitrix-current">Текущий вебхук: <code>@bitrix.MaskedWebhookUrl</code></p>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(bitrix.ValidationMessage))
+                    {
+                        <p class="settings-bitrix-message">@bitrix.ValidationMessage</p>
+                    }
+                    @if (bitrix.LastValidatedAtUtc is not null)
+                    {
+                        <p class="settings-bitrix-checked">Последняя проверка: <span data-orbita-utc="@bitrix.LastValidatedAtUtc.Value.ToString("O")"></span></p>
+                    }
+
+                    <form asp-action="SaveBitrix"
+                          method="post"
+                          class="settings-create-form settings-bitrix-form"
+                          data-bitrix-settings-form
+                          data-bitrix-validate-url="@Url.Action("ValidateBitrix")">
+                        @Html.AntiForgeryToken()
+                        <label class="settings-field">
+                            <span class="settings-field-label">URL вебхука</span>
+                            <input type="url"
+                                   name="WebhookUrl"
+                                   placeholder="https://ваш-портал.bitrix24.ru/rest/1/xxxxxxxx/"
+                                   autocomplete="off"
+                                   spellcheck="false"
+                                   data-bitrix-webhook-input />
+                        </label>
+                        <p class="settings-bitrix-hint">Без URL отправка в CRM и проверка дублей в портале не работают.</p>
+                        <div class="settings-bitrix-actions">
+                            <button type="button" class="settings-secondary-btn" data-bitrix-validate-btn>
+                                <i class="fa-solid fa-plug-circle-check" aria-hidden="true"></i>
+                                <span>Проверить</span>
+                            </button>
+                            <button type="submit" class="settings-primary-btn">
+                                <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>
+                                <span>Сохранить</span>
+                            </button>
+                        </div>
+                    </form>
+
+                    <div class="settings-bitrix-validation" data-bitrix-validation-results hidden></div>
+
+                    <details class="settings-bitrix-instructions">
+                        <summary>Как получить вебхук и какие права выдать</summary>
+                        <ol>
+                            <li>Откройте Bitrix24 → <strong>Приложения</strong> → <strong>Вебхуки</strong> → <strong>Добавить вебхук</strong> → <strong>Входящий вебхук</strong>.</li>
+                            <li>Выдайте право <strong>CRM</strong> (<code>crm</code>) — контакты, сделки, поиск дублей.</li>
+                            <li>Скопируйте полный URL вида <code>https://ваш-портал.bitrix24.ru/rest/1/xxxxxxxx/</code>.</li>
+                            <li>Вставьте URL выше и нажмите <strong>Проверить</strong>, затем <strong>Сохранить</strong>.</li>
+                        </ol>
+                    </details>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@section Scripts {
+    <script src="~/js/orbita-bitrix-settings.js" asp-append-version="true"></script>
+}

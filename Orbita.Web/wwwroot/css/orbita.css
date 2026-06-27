@@ -3875,9 +3875,148 @@ html.sidebar-collapsed .logout-form {
 [data-theme="dark"] .settings-alert--error { color: #fca5a5; }
 [data-theme="dark"] .settings-alert--api-key { color: #93c5fd; }
 
+.settings-grid--bitrix,
+.settings-grid--integrations {
+    display: grid;
+    gap: 20px;
+}
+
+.settings-grid--integrations {
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+}
+
+.settings-bitrix-status {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.settings-bitrix-status--success { background: #ecfdf3; color: #027a48; }
+.settings-bitrix-status--warning { background: #fffaeb; color: #b54708; }
+.settings-bitrix-status--error { background: #fef3f2; color: #b42318; }
+.settings-bitrix-status--neutral { background: #f2f4f7; color: #475467; }
+
+.settings-bitrix-current,
+.settings-bitrix-message,
+.settings-bitrix-checked,
+.settings-bitrix-hint {
+    margin: 0 0 12px;
+    font-size: 13px;
+    color: #667085;
+}
+
+.settings-bitrix-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.settings-bitrix-instructions {
+    margin-top: 16px;
+    font-size: 13px;
+    color: #475467;
+}
+
+.settings-bitrix-instructions summary {
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.settings-bitrix-instructions ol {
+    margin: 10px 0 0;
+    padding-left: 20px;
+}
+
+.settings-bitrix-validation {
+    margin-top: 14px;
+}
+
+.settings-bitrix-validation-summary {
+    padding: 10px 12px;
+    border-radius: 8px;
+    font-size: 13px;
+    margin-bottom: 10px;
+}
+
+.settings-bitrix-validation-summary--success { background: #ecfdf3; color: #027a48; }
+.settings-bitrix-validation-summary--warning { background: #fffaeb; color: #b54708; }
+.settings-bitrix-validation-summary--error { background: #fef3f2; color: #b42318; }
+
+.settings-bitrix-step-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 8px;
+}
+
+.settings-bitrix-validation-caption {
+    margin: 12px 0 8px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #475467;
+}
+
+.settings-bitrix-validation-loading {
+    margin: 0;
+    font-size: 13px;
+    color: #667085;
+}
+
+.settings-bitrix-step {
+    display: block;
+    font-size: 13px;
+    padding: 10px 12px;
+    border: 1px solid #eaecf0;
+    border-radius: 8px;
+}
+
+.settings-bitrix-step-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 6px;
+}
+
+.settings-bitrix-step-name {
+    font-weight: 600;
+    color: #344054;
+}
+
+.settings-bitrix-step-message {
+    margin: 0;
+    color: #475467;
+    line-height: 1.45;
+}
+
+.settings-bitrix-step-hint {
+    margin: 8px 0 0;
+    padding: 8px 10px;
+    border-radius: 6px;
+    background: #f9fafb;
+    color: #344054;
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.settings-bitrix-step--success { border-color: #abefc6; }
+.settings-bitrix-step--warning { border-color: #fedf89; }
+.settings-bitrix-step--error { border-color: #fecdca; }
+
+[data-theme="dark"] .settings-bitrix-status--success { background: #052e1c; color: #6ee7a8; }
+[data-theme="dark"] .settings-bitrix-status--warning { background: #3b2f13; color: #fcd34d; }
+[data-theme="dark"] .settings-bitrix-status--error { background: #3f1d1d; color: #fca5a5; }
+[data-theme="dark"] .settings-bitrix-status--neutral { background: #1f2937; color: #cbd5e1; }
+
 @media (max-width: 1100px) {
     .settings-grid--users,
-    .settings-grid--profile { grid-template-columns: 1fr; }
+    .settings-grid--profile,
+    .settings-grid--integrations { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 700px) {

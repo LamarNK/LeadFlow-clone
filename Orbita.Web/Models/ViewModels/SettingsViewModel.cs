@@ -1,3 +1,5 @@
+using Orbita.Contracts;
+
 namespace Orbita.Web.Models.ViewModels;
 
 public sealed record SettingsIndexViewModel
@@ -11,6 +13,7 @@ public sealed record SettingsIndexViewModel
     public PanelAuditViewModel? Audit { get; init; }
     public ProfileSettingsViewModel? Profile { get; init; }
     public ServiceLogsViewModel? Logs { get; init; }
+    public BitrixIntegrationsSettingsViewModel? Integrations { get; init; }
     public string? StatusMessage { get; init; }
     public string? ErrorMessage { get; init; }
 }
@@ -30,6 +33,9 @@ public sealed class PanelUserRowViewModel
     public required string ProfileId { get; init; }
     public bool IsCurrentUser { get; init; }
     public bool IsLocked { get; init; }
+    public string BitrixStatus { get; init; } = BitrixValidationStatuses.NotConfigured;
+    public string BitrixStatusLabel { get; init; } = "Не настроено";
+    public string BitrixStatusTone { get; init; } = "neutral";
 }
 
 public sealed class AccessProfileRowViewModel
@@ -160,6 +166,44 @@ public sealed class RenameAdminWorkerFormModel
 {
     public Guid WorkerId { get; set; }
     public string DisplayName { get; set; } = string.Empty;
+}
+
+public sealed class BitrixIntegrationsSettingsViewModel
+{
+    public IReadOnlyList<BitrixIntegrationRowViewModel> Rows { get; init; } = [];
+    public BitrixIntegrationEditViewModel? Edit { get; init; }
+}
+
+public sealed class BitrixIntegrationRowViewModel
+{
+    public required string UserId { get; init; }
+    public required string Email { get; init; }
+    public required string RoleLabel { get; init; }
+    public string? PortalHost { get; init; }
+    public required string ValidationStatus { get; init; }
+    public required string ValidationStatusLabel { get; init; }
+    public required string ValidationStatusTone { get; init; }
+    public string? ValidationMessage { get; init; }
+    public DateTime? LastValidatedAtUtc { get; init; }
+}
+
+public sealed class BitrixIntegrationEditViewModel
+{
+    public required string UserId { get; init; }
+    public required string Email { get; init; }
+    public string? MaskedWebhookUrl { get; init; }
+    public string? PortalHost { get; init; }
+    public required string ValidationStatus { get; init; }
+    public required string ValidationStatusLabel { get; init; }
+    public required string ValidationStatusTone { get; init; }
+    public string? ValidationMessage { get; init; }
+    public DateTime? LastValidatedAtUtc { get; init; }
+}
+
+public sealed class SaveAdminBitrixIntegrationFormModel
+{
+    public string UserId { get; set; } = string.Empty;
+    public string WebhookUrl { get; set; } = string.Empty;
 }
 
 public sealed class ChangeOwnPasswordFormModel

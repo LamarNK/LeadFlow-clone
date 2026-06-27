@@ -33,6 +33,7 @@ builder.Services.AddScoped<IEventsService, EventsService>();
 builder.Services.AddScoped<IErrorsService, ErrorsService>();
 builder.Services.AddScoped<IAccountsService, AccountsService>();
 builder.Services.AddScoped<ISettingsService, SettingsService>();
+builder.Services.AddScoped<IMySettingsService, MySettingsService>();
 
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>

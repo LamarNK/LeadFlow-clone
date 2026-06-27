@@ -883,6 +883,34 @@ internal static class DesignPreviewData
     public static PasswordPolicyDto PasswordPolicy =>
         new(8, true, false, false, false, 1);
 
+    public static BitrixIntegrationDto MyBitrixIntegration =>
+        new(
+            "preview-operator",
+            "https://demo.bitrix24.ru/rest/1/***/",
+            "demo.bitrix24.ru",
+            BitrixValidationStatuses.Ok,
+            "Вебхук настроен корректно.",
+            Now.AddHours(-2),
+            Now.AddHours(-2));
+
+    public static BitrixWebhookValidationDto BitrixValidationOk =>
+        new(
+            BitrixValidationStatuses.Ok,
+            "Всё в порядке: вебхук рабочий, CRM доступна, контакты и проверка дублей будут работать.",
+            [
+                new("format", "Ссылка на вебхук", BitrixValidationStepStatuses.Ok, "Ссылка выглядит правильно."),
+                new("connectivity", "Связь с Bitrix24", BitrixValidationStepStatuses.Ok, "Портал отвечает."),
+                new("scope", "Право CRM", BitrixValidationStepStatuses.Ok, "Право CRM включено."),
+                new("crm_read", "Доступ к контактам", BitrixValidationStepStatuses.Ok, "Контакты в CRM читаются."),
+                new("duplicate_check", "Проверка дублей", BitrixValidationStepStatuses.Ok, "Поиск дублей работает.")
+            ]);
+
+    public static IReadOnlyList<BitrixIntegrationListItemDto> BitrixIntegrations =>
+    [
+        new("preview-admin", "admin@orbita.local", PanelRoles.Admin, null, BitrixValidationStatuses.NotConfigured, null, null),
+        new("preview-operator", "operator@orbita.local", PanelRoles.Operator, "demo.bitrix24.ru", BitrixValidationStatuses.Ok, "Вебхук настроен корректно.", Now.AddHours(-2))
+    ];
+
     public static WorkerRegistrationInfoDto WorkerRegistrationInfo =>
         new(true, "****demo", "config");
 

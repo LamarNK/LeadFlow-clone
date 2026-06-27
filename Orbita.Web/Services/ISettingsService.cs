@@ -11,7 +11,13 @@ public interface ISettingsService
         string? service,
         DateTime? date,
         string? action,
+        string? userId = null,
         int page = 1,
+        CancellationToken ct = default);
+
+    Task<(bool Success, string? Error)> SaveUserBitrixAsync(
+        string userId,
+        string webhookUrl,
         CancellationToken ct = default);
 
     Task<(bool Success, string? Error)> CreateUserAsync(string email, string password, string role, CancellationToken ct = default);

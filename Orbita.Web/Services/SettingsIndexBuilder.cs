@@ -15,7 +15,7 @@ internal static class SettingsIndexBuilder
         new() { Id = "workers", Label = "Воркеры" },
         new() { Id = "audit", Label = "Аудит" },
         new() { Id = "logs", Label = "Логи сервиса" },
-        new() { Id = "profile", Label = "Мой профиль" }
+        new() { Id = "integrations", Label = "Интеграции Bitrix" }
     ];
 
     public static readonly IReadOnlyList<EventFilterOptionViewModel> ProfileOptions =
@@ -30,25 +30,50 @@ internal static class SettingsIndexBuilder
             "admin",
             "Администратор",
             "Полный доступ к панели, настройкам и управлению пользователями.",
-            ["Панель управления", "Воркеры", "Аккаунты", "События", "Ошибки", "Настройки"]),
+            ["Панель управления", "Воркеры", "Аккаунты", "События", "Ошибки", "Настройки", "Администрирование", "Интеграции Bitrix"]),
         new(
             "operator",
             "Оператор",
-            "Просмотр мониторинга без доступа к настройкам и управлению пользователями.",
-            ["Панель управления", "Воркеры", "Аккаунты", "События", "Ошибки"])
+            "Просмотр мониторинга и личные настройки (профиль, Bitrix24).",
+            ["Панель управления", "Воркеры", "Аккаунты", "События", "Ошибки", "Настройки"])
     ];
 
     public static SettingsIndexViewModel BuildUsersTab(
         IReadOnlyList<PanelUserDto> users,
+        IReadOnlyList<BitrixIntegrationListItemDto> integrations,
         string? currentUserId,
         string? statusMessage = null,
         string? errorMessage = null) =>
-        Build(users, "users", currentUserId, statusMessage, errorMessage);
+        Build(users, integrations, "users", currentUserId, statusMessage, errorMessage);
 
     public static SettingsIndexViewModel BuildProfilesTab(
         IReadOnlyList<PanelUserDto> users,
+        IReadOnlyList<BitrixIntegrationListItemDto> integrations,
         string? currentUserId = null) =>
-        Build(users, "profiles", currentUserId);
+        Build(users, integrations, "profiles", currentUserId);
+
+    public static SettingsIndexViewModel BuildIntegrationsTab(
+        IReadOnlyList<BitrixIntegrationListItemDto> integrations,
+        string? editUserId = null,
+        BitrixIntegrationDto? editIntegration = null)
+    {
+        var editItem = editUserId is null
+            ? null
+            : integrations.FirstOrDefault(x => x.UserId == editUserId);
+        return new()
+        {
+            ActiveTab = "integrations",
+            Tabs = Tabs,
+            ProfileOptions = ProfileOptions,
+            Integrations = new BitrixIntegrationsSettingsViewModel
+            {
+                Rows = integrations.Select(MapIntegrationRow).ToList(),
+                Edit = editUserId is null || editIntegration is null || editItem is null
+                    ? null
+                    : MapIntegrationEdit(editItem.Email, editIntegration)
+            }
+        };
+    }
 
     public static SettingsIndexViewModel BuildWorkersTab(
         IReadOnlyList<AdminWorkerListItemDto> workers,
@@ -145,6 +170,7 @@ internal static class SettingsIndexBuilder
 
     private static SettingsIndexViewModel Build(
         IReadOnlyList<PanelUserDto> users,
+        IReadOnlyList<BitrixIntegrationListItemDto> integrations,
         string activeTab,
         string? currentUserId,
         string? statusMessage = null,
@@ -153,16 +179,21 @@ internal static class SettingsIndexBuilder
         {
             ActiveTab = activeTab,
             Tabs = Tabs,
-            Users = users.Select(u => MapUser(u, currentUserId)).ToList(),
+            Users = users.Select(u => MapUser(u, integrations, currentUserId)).ToList(),
             Profiles = BuildProfiles(users),
             ProfileOptions = ProfileOptions,
             StatusMessage = statusMessage,
             ErrorMessage = errorMessage
         };
 
-    private static PanelUserRowViewModel MapUser(PanelUserDto user, string? currentUserId)
+    private static PanelUserRowViewModel MapUser(
+        PanelUserDto user,
+        IReadOnlyList<BitrixIntegrationListItemDto> integrations,
+        string? currentUserId)
     {
         var role = PanelRoles.Normalize(user.Role);
+        var integration = integrations.FirstOrDefault(x => x.UserId == user.Id);
+        var (bitrixLabel, bitrixTone) = MapValidationStatus(integration?.ValidationStatus);
         return new PanelUserRowViewModel
         {
             Id = user.Id,
@@ -171,7 +202,44 @@ internal static class SettingsIndexBuilder
             RoleLabel = RoleLabel(role),
             ProfileId = PanelRoles.ProfileIdForRole(role),
             IsCurrentUser = string.Equals(user.Id, currentUserId, StringComparison.Ordinal),
-            IsLocked = user.IsLocked
+            IsLocked = user.IsLocked,
+            BitrixStatus = integration?.ValidationStatus ?? BitrixValidationStatuses.NotConfigured,
+            BitrixStatusLabel = bitrixLabel,
+            BitrixStatusTone = bitrixTone
+        };
+    }
+
+    private static BitrixIntegrationRowViewModel MapIntegrationRow(BitrixIntegrationListItemDto item)
+    {
+        var (label, tone) = MapValidationStatus(item.ValidationStatus);
+        return new BitrixIntegrationRowViewModel
+        {
+            UserId = item.UserId,
+            Email = item.Email,
+            RoleLabel = RoleLabel(PanelRoles.Normalize(item.Role)),
+            PortalHost = item.PortalHost,
+            ValidationStatus = item.ValidationStatus,
+            ValidationStatusLabel = label,
+            ValidationStatusTone = tone,
+            ValidationMessage = item.ValidationMessage,
+            LastValidatedAtUtc = item.LastValidatedAtUtc
+        };
+    }
+
+    private static BitrixIntegrationEditViewModel MapIntegrationEdit(string email, BitrixIntegrationDto integration)
+    {
+        var (label, tone) = MapValidationStatus(integration.ValidationStatus);
+        return new BitrixIntegrationEditViewModel
+        {
+            UserId = integration.UserId,
+            Email = email,
+            MaskedWebhookUrl = integration.MaskedWebhookUrl,
+            PortalHost = integration.PortalHost,
+            ValidationStatus = integration.ValidationStatus,
+            ValidationStatusLabel = label,
+            ValidationStatusTone = tone,
+            ValidationMessage = integration.ValidationMessage,
+            LastValidatedAtUtc = integration.LastValidatedAtUtc
         };
     }
 
@@ -302,7 +370,9 @@ internal static class SettingsIndexBuilder
         new() { Value = PanelAuditActions.WorkerRenamed, Label = AuditActionLabel(PanelAuditActions.WorkerRenamed) },
         new() { Value = PanelAuditActions.WorkerDisabled, Label = AuditActionLabel(PanelAuditActions.WorkerDisabled) },
         new() { Value = PanelAuditActions.WorkerEnabled, Label = AuditActionLabel(PanelAuditActions.WorkerEnabled) },
-        new() { Value = PanelAuditActions.WorkerKeyRotated, Label = AuditActionLabel(PanelAuditActions.WorkerKeyRotated) }
+        new() { Value = PanelAuditActions.WorkerKeyRotated, Label = AuditActionLabel(PanelAuditActions.WorkerKeyRotated) },
+        new() { Value = PanelAuditActions.BitrixWebhookUpdated, Label = AuditActionLabel(PanelAuditActions.BitrixWebhookUpdated) },
+        new() { Value = PanelAuditActions.BitrixWebhookValidated, Label = AuditActionLabel(PanelAuditActions.BitrixWebhookValidated) }
     ];
 
     private static ServiceLogRowViewModel MapLogRow(ServiceLogEntryDto entry)
@@ -345,7 +415,18 @@ internal static class SettingsIndexBuilder
             PanelAuditActions.WorkerDisabled => "Воркер отключён",
             PanelAuditActions.WorkerEnabled => "Воркер включён",
             PanelAuditActions.WorkerKeyRotated => "API-ключ перевыпущен",
+            PanelAuditActions.BitrixWebhookUpdated => "Вебхук Bitrix обновлён",
+            PanelAuditActions.BitrixWebhookValidated => "Вебхук Bitrix проверен",
             _ => action
+        };
+
+    private static (string Label, string Tone) MapValidationStatus(string? status) =>
+        status switch
+        {
+            BitrixValidationStatuses.Ok => ("Подключено", "success"),
+            BitrixValidationStatuses.Warning => ("Ограничения", "warning"),
+            BitrixValidationStatuses.Error => ("Ошибка", "error"),
+            _ => ("Не настроено", "neutral")
         };
 
     private static string RoleLabel(string role) =>

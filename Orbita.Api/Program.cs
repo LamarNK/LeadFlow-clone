@@ -120,6 +120,14 @@ builder.Services.AddScoped<PanelUserService>();
 builder.Services.AddScoped<WorkerAdminService>();
 builder.Services.AddScoped<PasswordPolicyService>();
 builder.Services.AddScoped<ServiceLogsQueryService>();
+builder.Services.AddScoped<WebhookSecretProtector>();
+builder.Services.AddScoped<BitrixWebhookValidator>();
+builder.Services.AddScoped<PanelBitrixIntegrationService>();
+builder.Services.AddDataProtection();
+builder.Services.AddHttpClient(nameof(BitrixWebhookValidator), client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(10);
+});
 
 var app = builder.Build();
 app.UseOrbitaLogging();
@@ -370,6 +378,73 @@ admin.MapPost("/users/{id}/revoke-sessions", async (
         : Results.BadRequest(new { error });
 });
 
+admin.MapGet("/integrations/bitrix", async (
+    PanelBitrixIntegrationService integrations,
+    CancellationToken ct) =>
+    Results.Ok(await integrations.ListAllAsync(ct)));
+
+admin.MapGet("/users/{userId}/integrations/bitrix", async (
+    string userId,
+    PanelBitrixIntegrationService integrations,
+    CancellationToken ct) =>
+{
+    var integration = await integrations.GetForUserAsync(userId, ct);
+    return integration is null ? Results.NotFound() : Results.Ok(integration);
+});
+
+admin.MapPut("/users/{userId}/integrations/bitrix", async (
+    string userId,
+    SaveBitrixIntegrationRequest request,
+    PanelBitrixIntegrationService integrations,
+    ClaimsPrincipal principal,
+    HttpContext http,
+    CancellationToken ct) =>
+{
+    var actor = GetActor(principal, http);
+    var actorUserId = principal.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+    var (integration, error) = await integrations.SaveAsync(
+        userId,
+        request.WebhookUrl,
+        actorUserId,
+        actor.Email,
+        actor.IpAddress,
+        ct);
+    if (error is not null)
+    {
+        return error.Contains("не найден", StringComparison.OrdinalIgnoreCase)
+            ? Results.NotFound(new { error })
+            : Results.BadRequest(new { error });
+    }
+
+    return Results.Ok(integration);
+});
+
+admin.MapPost("/users/{userId}/integrations/bitrix/validate", async (
+    string userId,
+    ValidateBitrixIntegrationRequest request,
+    PanelBitrixIntegrationService integrations,
+    ClaimsPrincipal principal,
+    HttpContext http,
+    CancellationToken ct) =>
+{
+    var actor = GetActor(principal, http);
+    var actorUserId = principal.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+    var (validation, error) = await integrations.ValidateAsync(
+        userId,
+        request.WebhookUrl,
+        actorUserId,
+        actor.Email,
+        actor.IpAddress,
+        persistResult: string.IsNullOrWhiteSpace(request.WebhookUrl),
+        ct);
+    if (error is not null)
+    {
+        return Results.BadRequest(new { error });
+    }
+
+    return Results.Ok(validation);
+});
+
 admin.MapGet("/workers", async (WorkerAdminService workers, CancellationToken ct) =>
     Results.Ok(await workers.ListAsync(ct)));
 
@@ -585,6 +660,79 @@ panel.MapPost("/me/password", async (
 
 panel.MapGet("/security/policy", (PasswordPolicyService policy) =>
     Results.Ok(policy.GetPolicy()));
+
+panel.MapGet("/me/integrations/bitrix", async (
+    PanelBitrixIntegrationService integrations,
+    ClaimsPrincipal principal,
+    CancellationToken ct) =>
+{
+    var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+    if (string.IsNullOrWhiteSpace(userId))
+    {
+        return Results.Unauthorized();
+    }
+
+    return Results.Ok(await integrations.GetForUserAsync(userId, ct));
+});
+
+panel.MapPut("/me/integrations/bitrix", async (
+    SaveBitrixIntegrationRequest request,
+    PanelBitrixIntegrationService integrations,
+    ClaimsPrincipal principal,
+    HttpContext http,
+    CancellationToken ct) =>
+{
+    var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+    if (string.IsNullOrWhiteSpace(userId))
+    {
+        return Results.Unauthorized();
+    }
+
+    var actor = GetActor(principal, http);
+    var (integration, error) = await integrations.SaveAsync(
+        userId,
+        request.WebhookUrl,
+        userId,
+        actor.Email,
+        actor.IpAddress,
+        ct);
+    if (error is not null)
+    {
+        return Results.BadRequest(new { error });
+    }
+
+    return Results.Ok(integration);
+});
+
+panel.MapPost("/me/integrations/bitrix/validate", async (
+    ValidateBitrixIntegrationRequest request,
+    PanelBitrixIntegrationService integrations,
+    ClaimsPrincipal principal,
+    HttpContext http,
+    CancellationToken ct) =>
+{
+    var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+    if (string.IsNullOrWhiteSpace(userId))
+    {
+        return Results.Unauthorized();
+    }
+
+    var actor = GetActor(principal, http);
+    var (validation, error) = await integrations.ValidateAsync(
+        userId,
+        request.WebhookUrl,
+        userId,
+        actor.Email,
+        actor.IpAddress,
+        persistResult: string.IsNullOrWhiteSpace(request.WebhookUrl),
+        ct);
+    if (error is not null)
+    {
+        return Results.BadRequest(new { error });
+    }
+
+    return Results.Ok(validation);
+});
 
 app.MapPost("/api/v1/auth/login", async (
     LoginRequest request,

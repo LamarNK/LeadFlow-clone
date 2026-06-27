@@ -18,6 +18,7 @@ public sealed class SettingsService(
         string? service,
         DateTime? date,
         string? action,
+        string? userId = null,
         int page = 1,
         CancellationToken ct = default)
     {
@@ -28,6 +29,7 @@ public sealed class SettingsService(
         if (previewOptions.Value.Enabled)
         {
             var previewUsers = DesignPreviewData.PanelUsers;
+            var previewIntegrations = DesignPreviewData.BitrixIntegrations;
             return activeTab switch
             {
                 "logs" => SettingsIndexBuilder.BuildLogsTab(
@@ -36,7 +38,7 @@ public sealed class SettingsService(
                     service,
                     date,
                     DesignPreviewData.BuildServiceLogsPage(q, level, service, date, page)),
-                "profiles" => SettingsIndexBuilder.BuildProfilesTab(previewUsers, currentUserId),
+                "profiles" => SettingsIndexBuilder.BuildProfilesTab(previewUsers, previewIntegrations, currentUserId),
                 "workers" => SettingsIndexBuilder.BuildWorkersTab(
                     DesignPreviewData.AdminWorkers,
                     DesignPreviewData.WorkerRegistrationInfo),
@@ -45,28 +47,49 @@ public sealed class SettingsService(
                     action,
                     date,
                     DesignPreviewData.BuildPanelAuditPage(q, action, date, page)),
-                "profile" => SettingsIndexBuilder.BuildProfileTab(
-                    DesignPreviewData.PanelProfile,
-                    DesignPreviewData.PasswordPolicy),
-                _ => SettingsIndexBuilder.BuildUsersTab(previewUsers, currentUserId ?? "preview-admin")
+                "integrations" => SettingsIndexBuilder.BuildIntegrationsTab(
+                    previewIntegrations,
+                    userId,
+                    string.IsNullOrWhiteSpace(userId) ? null : DesignPreviewData.MyBitrixIntegration),
+                _ => SettingsIndexBuilder.BuildUsersTab(
+                    previewUsers,
+                    previewIntegrations,
+                    currentUserId ?? "preview-admin")
             };
         }
 
+        var integrations = await api.GetAdminBitrixIntegrationsAsync(ct) ?? [];
         return activeTab switch
         {
             "logs" => await BuildLogsTabAsync(q, level, service, date, page, ct),
             "profiles" => SettingsIndexBuilder.BuildProfilesTab(
                 await api.GetPanelUsersAsync(ct) ?? [],
+                integrations,
                 currentUserId),
             "workers" => SettingsIndexBuilder.BuildWorkersTab(
                 await api.GetAdminWorkersAsync(ct) ?? [],
                 await api.GetWorkerRegistrationInfoAsync(ct)),
             "audit" => await BuildAuditTabAsync(q, action, date, page, ct),
-            "profile" => await BuildProfileTabAsync(ct),
+            "integrations" => await BuildIntegrationsTabAsync(userId, integrations, ct),
             _ => SettingsIndexBuilder.BuildUsersTab(
                 await api.GetPanelUsersAsync(ct) ?? [],
+                integrations,
                 currentUserId)
         };
+    }
+
+    public async Task<(bool Success, string? Error)> SaveUserBitrixAsync(
+        string userId,
+        string webhookUrl,
+        CancellationToken ct = default)
+    {
+        if (previewOptions.Value.Enabled)
+        {
+            return (true, null);
+        }
+
+        var (integration, error) = await api.SaveAdminUserBitrixIntegrationAsync(userId, webhookUrl, ct);
+        return integration is not null ? (true, null) : (false, error);
     }
 
     public Task<(bool Success, string? Error)> CreateUserAsync(
@@ -189,12 +212,18 @@ public sealed class SettingsService(
         return SettingsIndexBuilder.BuildAuditTab(q, action, date, pageDto);
     }
 
-    private async Task<SettingsIndexViewModel> BuildProfileTabAsync(CancellationToken ct)
+    private async Task<SettingsIndexViewModel> BuildIntegrationsTabAsync(
+        string? userId,
+        IReadOnlyList<BitrixIntegrationListItemDto> integrations,
+        CancellationToken ct)
     {
-        var profile = await api.GetPanelProfileAsync(ct)
-                      ?? new PanelProfileDto("—", PanelRoles.Admin);
-        var policy = await api.GetPasswordPolicyAsync(ct);
-        return SettingsIndexBuilder.BuildProfileTab(profile, policy);
+        BitrixIntegrationDto? editIntegration = null;
+        if (!string.IsNullOrWhiteSpace(userId))
+        {
+            editIntegration = await api.GetAdminUserBitrixIntegrationAsync(userId, ct);
+        }
+
+        return SettingsIndexBuilder.BuildIntegrationsTab(integrations, userId, editIntegration);
     }
 
     private static string NormalizeTab(string? tab) =>
@@ -204,7 +233,7 @@ public sealed class SettingsService(
             "workers" => "workers",
             "audit" => "audit",
             "logs" => "logs",
-            "profile" => "profile",
+            "integrations" => "integrations",
             _ => "users"
         };
 }

@@ -1,18 +1,19 @@
 @model SettingsIndexViewModel
 @using Orbita.Contracts
 @{
-    ViewData["Title"] = "Настройки";
+    ViewData["Title"] = "Администрирование";
+    var integrations = Model.Integrations;
     var logs = Model.Logs;
     var audit = Model.Audit;
     var workers = Model.Workers;
-    var profile = Model.Profile;
+
     var logsPagination = logs?.Pagination;
     var auditPagination = audit?.Pagination;
     var rotatedApiKey = ViewBag.RotatedWorkerApiKey as string;
 }
 <div class="orbita-main settings-page">
-    <h1 class="settings-page-title">Настройки</h1>
-    <p class="settings-page-subtitle">Пользователи, воркеры, аудит, логи и безопасность панели</p>
+    <h1 class="settings-page-title">Администрирование</h1>
+    <p class="settings-page-subtitle">Пользователи, воркеры, интеграции Bitrix, аудит и логи</p>
 
     @if (!string.IsNullOrWhiteSpace(Model.StatusMessage))
     {
@@ -51,6 +52,7 @@
                         <tr>
                             <th>Email</th>
                             <th>Профиль</th>
+                            <th>Bitrix24</th>
                             <th class="data-table-actions-col">Действия</th>
                         </tr>
                         </thead>
@@ -95,6 +97,12 @@
                                             <button type="submit" class="settings-link-btn">Сохранить</button>
                                         </form>
                                     }
+                                </td>
+                                <td>
+                                    <a class="settings-bitrix-status settings-bitrix-status--@user.BitrixStatusTone"
+                                       href="@Url.Action("Index", new { tab = "integrations", userId = user.Id })">
+                                        @user.BitrixStatusLabel
+                                    </a>
                                 </td>
                                 <td class="data-table-menu">
                                     @if (!user.IsCurrentUser)
@@ -623,66 +631,120 @@
             </div>
         </div>
     }
-    else if (Model.ActiveTab == "profile" && profile is not null)
+    else if (Model.ActiveTab == "integrations" && integrations is not null)
     {
-        <div class="settings-grid settings-grid--profile">
-            <div class="card card--settings-profile-self">
+        <div class="settings-grid settings-grid--integrations">
+            <div class="card card--settings-integrations-list">
                 <div class="card-header settings-card-header">
                     <div>
-                        <h2 class="settings-card-title">Мой профиль</h2>
-                        <p class="settings-card-subtitle">Учётная запись текущего администратора</p>
+                        <h2 class="settings-card-title">Интеграции Bitrix24</h2>
+                        <p class="settings-card-subtitle">Вебхуки пользователей панели</p>
                     </div>
                 </div>
-                <div class="card-body settings-profile-self-body">
-                    <div class="settings-profile-self-row">
-                        <span class="settings-field-label">Email</span>
-                        <span class="settings-profile-self-value">@profile.Email</span>
-                    </div>
-                    <div class="settings-profile-self-row">
-                        <span class="settings-field-label">Роль</span>
-                        <span class="settings-role-pill">@profile.RoleLabel</span>
-                    </div>
+                <div class="card-body card-body-table settings-table-wrap">
+                    <table class="data-table data-table--settings-integrations">
+                        <thead>
+                        <tr>
+                            <th>Email</th>
+                            <th>Роль</th>
+                            <th>Портал</th>
+                            <th>Статус</th>
+                            <th>Проверка</th>
+                            <th></th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        @foreach (var row in integrations.Rows)
+                        {
+                            <tr>
+                                <td>@row.Email</td>
+                                <td><span class="settings-role-pill">@row.RoleLabel</span></td>
+                                <td>@(row.PortalHost ?? "—")</td>
+                                <td>
+                                    <span class="settings-bitrix-status settings-bitrix-status--@row.ValidationStatusTone">@row.ValidationStatusLabel</span>
+                                </td>
+                                <td>
+                                    @if (row.LastValidatedAtUtc is not null)
+                                    {
+                                        <span data-orbita-utc="@row.LastValidatedAtUtc.Value.ToString("O")"></span>
+                                    }
+                                    else
+                                    {
+                                        <span>—</span>
+                                    }
+                                </td>
+                                <td>
+                                    <a class="settings-link-btn" href="@Url.Action("Index", new { tab = "integrations", userId = row.UserId })">Настроить</a>
+                                </td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
                 </div>
             </div>
 
-            <div class="card card--settings-change-password">
-                <div class="card-header settings-card-header">
-                    <h2 class="settings-card-title">Сменить пароль</h2>
+            @if (integrations.Edit is not null)
+            {
+                var edit = integrations.Edit;
+                <div class="card card--settings-bitrix">
+                    <div class="card-header settings-card-header">
+                        <div>
+                            <h2 class="settings-card-title">@edit.Email</h2>
+                            <p class="settings-card-subtitle">Настройка вебхука Bitrix24</p>
+                        </div>
+                        <span class="settings-bitrix-status settings-bitrix-status--@edit.ValidationStatusTone">@edit.ValidationStatusLabel</span>
+                    </div>
+                    <div class="card-body">
+                        @if (!string.IsNullOrWhiteSpace(edit.MaskedWebhookUrl))
+                        {
+                            <p class="settings-bitrix-current">Текущий вебхук: <code>@edit.MaskedWebhookUrl</code></p>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(edit.ValidationMessage))
+                        {
+                            <p class="settings-bitrix-message">@edit.ValidationMessage</p>
+                        }
+
+                        <form asp-action="SaveUserBitrix"
+                              method="post"
+                              class="settings-create-form settings-bitrix-form"
+                              data-bitrix-settings-form
+                              data-bitrix-validate-url="@Url.Action("ValidateUserBitrix", new { userId = edit.UserId })">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="UserId" value="@edit.UserId" />
+                            <label class="settings-field">
+                                <span class="settings-field-label">URL вебхука</span>
+                                <input type="url"
+                                       name="WebhookUrl"
+                                       placeholder="https://ваш-портал.bitrix24.ru/rest/1/xxxxxxxx/"
+                                       autocomplete="off"
+                                       spellcheck="false"
+                                       data-bitrix-webhook-input />
+                            </label>
+                            <div class="settings-bitrix-actions">
+                                <button type="button" class="settings-secondary-btn" data-bitrix-validate-btn>
+                                    <i class="fa-solid fa-plug-circle-check" aria-hidden="true"></i>
+                                    <span>Проверить</span>
+                                </button>
+                                <button type="submit" class="settings-primary-btn">
+                                    <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>
+                                    <span>Сохранить</span>
+                                </button>
+                            </div>
+                        </form>
+
+                        <div class="settings-bitrix-validation" data-bitrix-validation-results hidden></div>
+
+                        <details class="settings-bitrix-instructions">
+                            <summary>Как получить вебхук и какие права выдать</summary>
+                            <ol>
+                                <li>Bitrix24 → <strong>Приложения</strong> → <strong>Вебхуки</strong> → <strong>Входящий вебхук</strong>.</li>
+                                <li>Право: <strong>CRM</strong> (<code>crm</code>).</li>
+                                <li>Скопируйте полный URL и проверьте перед сохранением.</li>
+                            </ol>
+                        </details>
+                    </div>
                 </div>
-                <div class="card-body">
-                    @if (profile.PasswordPolicy is not null)
-                    {
-                        <p class="settings-password-policy">Требования: @profile.PasswordPolicy.Summary</p>
-                    }
-                    <form asp-action="ChangeOwnPassword" method="post" class="settings-create-form">
-                        @Html.AntiForgeryToken()
-                        <label class="settings-field">
-                            <span class="settings-field-label">Текущий пароль</span>
-                            <input type="password" name="CurrentPassword" required autocomplete="current-password" />
-                        </label>
-                        <label class="settings-field">
-                            <span class="settings-field-label">Новый пароль</span>
-                            <input type="password"
-                                   name="NewPassword"
-                                   required
-                                   minlength="@(profile.PasswordPolicy?.RequiredLength ?? 8)"
-                                   autocomplete="new-password" />
-                        </label>
-                        <label class="settings-field">
-                            <span class="settings-field-label">Подтверждение</span>
-                            <input type="password"
-                                   name="ConfirmPassword"
-                                   required
-                                   minlength="@(profile.PasswordPolicy?.RequiredLength ?? 8)"
-                                   autocomplete="new-password" />
-                        </label>
-                        <button type="submit" class="settings-primary-btn">
-                            <i class="fa-solid fa-key" aria-hidden="true"></i>
-                            <span>Обновить пароль</span>
-                        </button>
-                    </form>
-                </div>
-            </div>
+            }
         </div>
     }
 
@@ -706,4 +768,8 @@
 
 @section Scripts {
     <script src="~/js/orbita-settings.js" asp-append-version="true"></script>
+    @if (Model.ActiveTab == "integrations")
+    {
+        <script src="~/js/orbita-bitrix-settings.js" asp-append-version="true"></script>
+    }
 }

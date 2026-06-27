@@ -100,4 +100,6 @@ public static class PanelAuditActions
     public const string WorkerDisabled = "worker.disabled";
     public const string WorkerEnabled = "worker.enabled";
     public const string WorkerKeyRotated = "worker.key_rotated";
+    public const string BitrixWebhookUpdated = "bitrix.webhook_updated";
+    public const string BitrixWebhookValidated = "bitrix.webhook_validated";
 }
