@@ -1,0 +1,13 @@
+LeadFlow — комплект для Windows x64
+=====================================
+
+Папки:
+  LeadFlow       — приложение (запуск: LeadFlow\LeadFlow.exe)
+  Документация   — README и руководство пользователя
+
+Нужно на компьютере:
+  • Windows 64-bit
+  • .NET 10 Desktop Runtime (если приложение не стартует — установите с https://dotnet.microsoft.com/download/dotnet/10.0)
+  • WebView2 Runtime (обычно уже есть в Windows / Edge)
+
+После распаковки ZIP откройте папку LeadFlow и запустите LeadFlow.exe.

@@ -176,8 +176,8 @@ DocProject/Help/*.hhp
 DocProject/Help/Html2
 DocProject/Help/html
 
-# Click-Once directory
-publish/
+# Click-Once directory (VS publish output, not repo publish/)
+**/App.publish/
 
 # Publish Web Output
 *.[Pp]ublish.xml
@@ -364,6 +364,16 @@ FodyWeavers.xsd
 
 # LeadFlow — локальные пакеты / publish в dist (не коммитить)
 dist/
+
+# publish/ — скрипты в git, артефакты и секреты локально
+publish/out/
+publish/tmp/
+publish/win-x64-release/
+publish/tools/
+publish/state/
+publish/secrets/*
+!publish/secrets/.gitignore
+publish/scripts/..tmp/
 
 # JetBrains Rider
 .idea/
