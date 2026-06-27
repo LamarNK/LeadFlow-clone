@@ -1,0 +1,44 @@
+namespace Orbita.Contracts;
+
+public sealed record OfficeDto(
+    Guid Id,
+    string Name,
+    bool IsEnabled,
+    DateTime CreatedAtUtc,
+    int WorkerCount,
+    int UserCount);
+
+public sealed record OfficeDetailDto(
+    Guid Id,
+    string Name,
+    bool IsEnabled,
+    DateTime CreatedAtUtc,
+    bool RegistrationConfigured,
+    string MaskedRegistrationSecret);
+
+public sealed record CreateOfficeRequest(string Name);
+
+public sealed record UpdateOfficeRequest(string Name, bool IsEnabled);
+
+public sealed record RotateOfficeRegistrationSecretResponse(
+    Guid OfficeId,
+    string RegistrationSecret);
+
+public sealed record OfficeRegistrationInfoDto(
+    Guid OfficeId,
+    string OfficeName,
+    bool IsConfigured,
+    string MaskedSecret);
+
+public static class OfficeClaims
+{
+    public const string OfficeId = "office_id";
+}
+
+public static class PanelAuditOfficeActions
+{
+    public const string OfficeCreated = "office.created";
+    public const string OfficeUpdated = "office.updated";
+    public const string OfficeRegistrationRotated = "office.registration_rotated";
+    public const string UserOfficeUpdated = "user.office_updated";
+}

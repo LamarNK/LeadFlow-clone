@@ -128,6 +128,13 @@
 
         var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
         var labels = chartData.labels || [];
+        var values = chartData.values || [];
+        var maxValue = values.reduce(function (max, value) {
+            return Math.max(max, value);
+        }, 0);
+        if (maxValue <= 0) return;
+
+        var yMax = Math.max(10, Math.ceil(maxValue / 10) * 10);
         var lineColor = '#2563eb';
 
         new Chart(canvas, {
@@ -136,7 +143,7 @@
                 labels: labels,
                 datasets: [{
                     label: 'Отклики',
-                    data: chartData.values,
+                    data: values,
                     borderColor: lineColor,
                     backgroundColor: 'transparent',
                     fill: false,
@@ -186,7 +193,7 @@
                     },
                     y: {
                         min: 0,
-                        max: 100,
+                        max: yMax,
                         grid: { color: '#f2f4f7', lineWidth: 1 },
                         border: { display: false },
                         ticks: {
@@ -202,8 +209,45 @@
         });
     }
 
+    function initParallelismSlider() {
+        var slider = document.getElementById('maxConcurrentAccounts');
+        var output = document.getElementById('maxConcurrentAccountsOut');
+        if (!slider || !output) return;
+        slider.addEventListener('input', function () {
+            output.textContent = slider.value;
+        });
+    }
+
+    function initCopyButtons() {
+        document.querySelectorAll('[data-worker-copy]').forEach(function (button) {
+            button.addEventListener('click', async function () {
+                var targetId = button.getAttribute('data-copy-target');
+                var copyText = button.getAttribute('data-copy-text');
+                var text = copyText || '';
+                if (!text && targetId) {
+                    var target = document.getElementById(targetId);
+                    text = target ? (target.value || target.textContent || '').trim() : '';
+                }
+                if (!text) return;
+
+                try {
+                    await navigator.clipboard.writeText(text);
+                    var original = button.textContent;
+                    button.textContent = 'Скопировано';
+                    window.setTimeout(function () {
+                        button.textContent = original;
+                    }, 1500);
+                } catch (err) {
+                    window.prompt('Скопируйте текст:', text);
+                }
+            });
+        });
+    }
+
     initKpiCounters();
     initRowMenus();
     initAccountRowNavigation();
     initActivityChart();
+    initParallelismSlider();
+    initCopyButtons();
 })();

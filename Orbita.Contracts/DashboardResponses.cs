@@ -1,4 +1,4 @@
-namespace Orbita.Contracts;
+﻿namespace Orbita.Contracts;
 
 public sealed record GlobalDashboardSummary(
     int TotalWorkers,
@@ -31,7 +31,11 @@ public sealed record WorkerListItem(
     DateTime? LastSeenAtUtc,
     int AccountCount,
     int TotalToday,
-    int Errors);
+    int Errors,
+    bool UpdateAvailable = false,
+    string? LatestReleaseVersion = null,
+    Guid OfficeId = default,
+    string OfficeName = "");
 
 public sealed record WorkerDetail(
     Guid Id,
@@ -45,7 +49,16 @@ public sealed record WorkerDetail(
     DateTime? LastSeenAtUtc,
     DateTime? NextCycleCheckAtUtc,
     DashboardStatsDto? LatestStats,
-    IReadOnlyList<WorkerBalanceDto> Balances);
+    IReadOnlyList<WorkerBalanceDto> Balances,
+    int MaxConcurrentAccounts = 1,
+    double? LastCpuPercent = null,
+    double? LastRamPercent = null,
+    long? LastRamUsedMb = null,
+    long? LastRamTotalMb = null,
+    string? IpAddress = null,
+    string? OperatingSystem = null,
+    DateTime? StartedAtUtc = null,
+    string? AgentVersion = null);
 
 public sealed record WorkerEventListItem(
     Guid Id,

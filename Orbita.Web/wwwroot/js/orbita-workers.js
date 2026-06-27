@@ -78,7 +78,35 @@
         });
     }
 
+    function initAddWorkerModal() {
+        var modal = document.getElementById('workersAddModal');
+        if (!modal) return;
+
+        function openModal() {
+            modal.removeAttribute('hidden');
+            var input = modal.querySelector('#workerDisplayName');
+            if (input) input.focus();
+        }
+
+        function closeModal() {
+            modal.setAttribute('hidden', '');
+        }
+
+        document.querySelectorAll('[data-workers-add-open]').forEach(function (btn) {
+            btn.addEventListener('click', openModal);
+        });
+
+        modal.querySelectorAll('[data-workers-add-close]').forEach(function (el) {
+            el.addEventListener('click', closeModal);
+        });
+
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape' && !modal.hasAttribute('hidden')) closeModal();
+        });
+    }
+
     initKpiCounters();
     initRowMenus();
     initRowNavigation();
+    initAddWorkerModal();
 })();

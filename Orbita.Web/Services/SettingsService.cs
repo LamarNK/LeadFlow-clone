@@ -30,6 +30,7 @@ public sealed class SettingsService(
         {
             var previewUsers = DesignPreviewData.PanelUsers;
             var previewIntegrations = DesignPreviewData.BitrixIntegrations;
+            var previewOffices = DesignPreviewData.Offices;
             return activeTab switch
             {
                 "logs" => SettingsIndexBuilder.BuildLogsTab(
@@ -38,9 +39,11 @@ public sealed class SettingsService(
                     service,
                     date,
                     DesignPreviewData.BuildServiceLogsPage(q, level, service, date, page)),
-                "profiles" => SettingsIndexBuilder.BuildProfilesTab(previewUsers, previewIntegrations, currentUserId),
+                "offices" => SettingsIndexBuilder.BuildOfficesTab(previewOffices),
+                "profiles" => SettingsIndexBuilder.BuildProfilesTab(previewUsers, previewIntegrations, previewOffices, currentUserId),
                 "workers" => SettingsIndexBuilder.BuildWorkersTab(
                     DesignPreviewData.AdminWorkers,
+                    previewOffices,
                     DesignPreviewData.WorkerRegistrationInfo),
                 "audit" => SettingsIndexBuilder.BuildAuditTab(
                     q,
@@ -51,29 +54,37 @@ public sealed class SettingsService(
                     previewIntegrations,
                     userId,
                     string.IsNullOrWhiteSpace(userId) ? null : DesignPreviewData.MyBitrixIntegration),
+                "worker-releases" => SettingsIndexBuilder.BuildWorkerReleasesTab(DesignPreviewData.WorkerReleases),
                 _ => SettingsIndexBuilder.BuildUsersTab(
                     previewUsers,
                     previewIntegrations,
+                    previewOffices,
                     currentUserId ?? "preview-admin")
             };
         }
 
         var integrations = await api.GetAdminBitrixIntegrationsAsync(ct) ?? [];
+        var offices = await api.GetOfficesAsync(ct) ?? [];
         return activeTab switch
         {
             "logs" => await BuildLogsTabAsync(q, level, service, date, page, ct),
+            "offices" => await BuildOfficesTabAsync(tab, userId, ct),
             "profiles" => SettingsIndexBuilder.BuildProfilesTab(
                 await api.GetPanelUsersAsync(ct) ?? [],
                 integrations,
+                offices,
                 currentUserId),
             "workers" => SettingsIndexBuilder.BuildWorkersTab(
                 await api.GetAdminWorkersAsync(ct) ?? [],
+                offices,
                 await api.GetWorkerRegistrationInfoAsync(ct)),
             "audit" => await BuildAuditTabAsync(q, action, date, page, ct),
             "integrations" => await BuildIntegrationsTabAsync(userId, integrations, ct),
+            "worker-releases" => await BuildWorkerReleasesTabAsync(ct),
             _ => SettingsIndexBuilder.BuildUsersTab(
                 await api.GetPanelUsersAsync(ct) ?? [],
                 integrations,
+                offices,
                 currentUserId)
         };
     }
@@ -96,10 +107,60 @@ public sealed class SettingsService(
         string email,
         string password,
         string role,
+        Guid? officeId = null,
         CancellationToken ct = default) =>
         previewOptions.Value.Enabled
             ? Task.FromResult<(bool, string?)>((true, null))
-            : api.CreatePanelUserAsync(email, password, role, ct);
+            : api.CreatePanelUserAsync(email, password, role, officeId, ct);
+
+    public Task<(bool Success, string? Error)> UpdateUserOfficeAsync(
+        string userId,
+        Guid? officeId,
+        CancellationToken ct = default) =>
+        previewOptions.Value.Enabled
+            ? Task.FromResult<(bool, string?)>((true, null))
+            : api.UpdatePanelUserOfficeAsync(userId, officeId, ct);
+
+    public async Task<(bool Success, string? Error, string? RegistrationSecret)> CreateOfficeAsync(
+        string name,
+        CancellationToken ct = default)
+    {
+        if (previewOptions.Value.Enabled)
+        {
+            return (true, null, "preview-office-secret");
+        }
+
+        var (office, error) = await api.CreateOfficeAsync(name, ct);
+        return office is null ? (false, error, null) : (true, null, null);
+    }
+
+    public async Task<(bool Success, string? Error)> UpdateOfficeAsync(
+        Guid officeId,
+        string name,
+        bool isEnabled,
+        CancellationToken ct = default)
+    {
+        if (previewOptions.Value.Enabled)
+        {
+            return (true, null);
+        }
+
+        var (office, error) = await api.UpdateOfficeAsync(officeId, name, isEnabled, ct);
+        return office is not null ? (true, null) : (false, error);
+    }
+
+    public async Task<(bool Success, string? Error, string? RegistrationSecret)> RotateOfficeRegistrationSecretAsync(
+        Guid officeId,
+        CancellationToken ct = default)
+    {
+        if (previewOptions.Value.Enabled)
+        {
+            return (true, null, "preview-rotated-secret");
+        }
+
+        var (result, error) = await api.RotateOfficeRegistrationSecretAsync(officeId, ct);
+        return result is null ? (false, error, null) : (true, null, result.RegistrationSecret);
+    }
 
     public Task<(bool Success, string? Error)> DeleteUserAsync(string userId, CancellationToken ct = default) =>
         previewOptions.Value.Enabled
@@ -166,6 +227,58 @@ public sealed class SettingsService(
         return result is null ? (null, error) : (result.ApiKey, null);
     }
 
+    public async Task<(bool Success, string? Error)> UploadWorkerReleaseAsync(
+        IFormFile packageFile,
+        string? version,
+        string? releaseNotes,
+        CancellationToken ct = default)
+    {
+        if (previewOptions.Value.Enabled)
+        {
+            return (true, null);
+        }
+
+        var tempPath = Path.Combine(Path.GetTempPath(), $"orbita-web-upload-{Guid.NewGuid():N}.msi");
+        try
+        {
+            await using (var output = File.Create(tempPath))
+            {
+                await packageFile.CopyToAsync(output, ct);
+            }
+
+            await using var uploadStream = File.OpenRead(tempPath);
+            var (release, error) = await api.UploadWorkerReleaseAsync(
+                uploadStream,
+                packageFile.Length,
+                packageFile.FileName,
+                version,
+                releaseNotes,
+                ct);
+            return release is null ? (false, error) : (true, null);
+        }
+        finally
+        {
+            if (File.Exists(tempPath))
+            {
+                File.Delete(tempPath);
+            }
+        }
+    }
+
+    public Task<(bool Success, string? Error)> SetWorkerReleaseLatestAsync(
+        string version,
+        CancellationToken ct = default) =>
+        previewOptions.Value.Enabled
+            ? Task.FromResult<(bool, string?)>((true, null))
+            : api.SetWorkerReleaseLatestAsync(version, ct);
+
+    public Task<(bool Success, string? Error)> DeleteWorkerReleaseAsync(
+        string version,
+        CancellationToken ct = default) =>
+        previewOptions.Value.Enabled
+            ? Task.FromResult<(bool, string?)>((true, null))
+            : api.DeleteWorkerReleaseAsync(version, ct);
+
     public Task<(bool Success, string? Error)> ChangeOwnPasswordAsync(
         string currentPassword,
         string newPassword,
@@ -226,11 +339,35 @@ public sealed class SettingsService(
         return SettingsIndexBuilder.BuildIntegrationsTab(integrations, userId, editIntegration);
     }
 
+    private async Task<SettingsIndexViewModel> BuildWorkerReleasesTabAsync(CancellationToken ct)
+    {
+        var releases = await api.GetWorkerReleasesAsync(ct)
+            ?? new WorkerReleaseListResponse(null, []);
+        return SettingsIndexBuilder.BuildWorkerReleasesTab(releases);
+    }
+
+    private async Task<SettingsIndexViewModel> BuildOfficesTabAsync(
+        string? tab,
+        string? officeId,
+        CancellationToken ct)
+    {
+        var offices = await api.GetOfficesAsync(ct) ?? [];
+        OfficeDetailDto? selected = null;
+        if (Guid.TryParse(officeId, out var parsedOfficeId))
+        {
+            selected = await api.GetOfficeAsync(parsedOfficeId, ct);
+        }
+
+        return SettingsIndexBuilder.BuildOfficesTab(offices, selected);
+    }
+
     private static string NormalizeTab(string? tab) =>
         tab?.Trim().ToLowerInvariant() switch
         {
+            "offices" => "offices",
             "profiles" => "profiles",
             "workers" => "workers",
+            "worker-releases" => "worker-releases",
             "audit" => "audit",
             "logs" => "logs",
             "integrations" => "integrations",

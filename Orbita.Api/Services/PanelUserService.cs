@@ -1,11 +1,15 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Orbita.Api.Data;
 using Orbita.Contracts;
 using Orbita.Logging.Audit;
 
 namespace Orbita.Api.Services;
 
-public sealed class PanelUserService(UserManager<IdentityUser> users, PanelAuditService audit)
+public sealed class PanelUserService(
+    UserManager<IdentityUser> users,
+    PanelAuditService audit,
+    OrbitaDbContext db)
 {
     public async Task<IReadOnlyList<PanelUserDto>> ListAsync(CancellationToken ct = default)
     {
@@ -29,13 +33,15 @@ public sealed class PanelUserService(UserManager<IdentityUser> users, PanelAudit
         var roles = await users.GetRolesAsync(user);
         var role = roles.FirstOrDefault(r => PanelRoles.All.Contains(r, StringComparer.OrdinalIgnoreCase))
                    ?? PanelRoles.Operator;
-        return new PanelProfileDto(user.Email ?? user.UserName ?? string.Empty, role);
+        var (officeId, officeName) = await GetOfficeInfoAsync(userId, role, ct);
+        return new PanelProfileDto(user.Email ?? user.UserName ?? string.Empty, role, officeId, officeName);
     }
 
     public async Task<(PanelUserDto? User, string? Error)> CreateAsync(
         string email,
         string password,
         string? role,
+        Guid? officeId,
         AuditActor actor,
         CancellationToken ct = default)
     {
@@ -48,6 +54,13 @@ public sealed class PanelUserService(UserManager<IdentityUser> users, PanelAudit
         if (await users.FindByEmailAsync(normalizedEmail) is not null)
         {
             return (null, "Пользователь с таким email уже существует.");
+        }
+
+        var normalizedRole = PanelRoles.Normalize(role);
+        var officeError = await ValidateOfficeAssignmentAsync(normalizedRole, officeId, ct);
+        if (officeError is not null)
+        {
+            return (null, officeError);
         }
 
         var user = new IdentityUser
@@ -63,7 +76,6 @@ public sealed class PanelUserService(UserManager<IdentityUser> users, PanelAudit
             return (null, string.Join("; ", createResult.Errors.Select(e => e.Description)));
         }
 
-        var normalizedRole = PanelRoles.Normalize(role);
         var assignError = await ApplyRoleAsync(user, normalizedRole);
         if (assignError is not null)
         {
@@ -71,13 +83,20 @@ public sealed class PanelUserService(UserManager<IdentityUser> users, PanelAudit
             return (null, assignError);
         }
 
+        db.PanelUserProfiles.Add(new PanelUserProfileEntity
+        {
+            UserId = user.Id,
+            OfficeId = normalizedRole == PanelRoles.Admin ? null : officeId
+        });
+        await db.SaveChangesAsync(ct);
+
         await audit.LogAsync(
             actor.UserId,
             actor.Email,
             PanelAuditActions.UserCreated,
             "user",
             user.Id,
-            $"role={normalizedRole}",
+            $"role={normalizedRole};office={officeId}",
             actor.IpAddress,
             ct);
 
@@ -116,6 +135,13 @@ public sealed class PanelUserService(UserManager<IdentityUser> users, PanelAudit
         }
 
         var email = user.Email ?? user.UserName ?? id;
+        var profile = await db.PanelUserProfiles.FirstOrDefaultAsync(x => x.UserId == id, ct);
+        if (profile is not null)
+        {
+            db.PanelUserProfiles.Remove(profile);
+            await db.SaveChangesAsync(ct);
+        }
+
         var deleteResult = await users.DeleteAsync(user);
         if (!deleteResult.Succeeded)
         {
@@ -268,6 +294,38 @@ public sealed class PanelUserService(UserManager<IdentityUser> users, PanelAudit
             return (null, assignError);
         }
 
+        var profile = await db.PanelUserProfiles.FirstOrDefaultAsync(x => x.UserId == id, ct);
+        if (normalizedRole == PanelRoles.Admin)
+        {
+            if (profile is null)
+            {
+                db.PanelUserProfiles.Add(new PanelUserProfileEntity { UserId = id, OfficeId = null });
+            }
+            else
+            {
+                profile.OfficeId = null;
+            }
+        }
+        else if (profile?.OfficeId is null)
+        {
+            var defaultOffice = await db.Offices.OrderBy(x => x.CreatedAtUtc).FirstOrDefaultAsync(ct);
+            if (defaultOffice is null)
+            {
+                return (null, "Сначала создайте офис и назначьте его оператору.");
+            }
+
+            if (profile is null)
+            {
+                db.PanelUserProfiles.Add(new PanelUserProfileEntity { UserId = id, OfficeId = defaultOffice.Id });
+            }
+            else
+            {
+                profile.OfficeId = defaultOffice.Id;
+            }
+        }
+
+        await db.SaveChangesAsync(ct);
+
         await audit.LogAsync(
             actor.UserId,
             actor.Email,
@@ -281,6 +339,56 @@ public sealed class PanelUserService(UserManager<IdentityUser> users, PanelAudit
         await GlobalLogger.Instance.LogAsync(
             $"Panel user role updated ({user.Email}, role={normalizedRole}).",
             DeskLinkAuditLogLevel.Info);
+
+        return (await MapAsync(user, ct), null);
+    }
+
+    public async Task<(PanelUserDto? User, string? Error)> SetOfficeAsync(
+        string id,
+        Guid? officeId,
+        AuditActor actor,
+        CancellationToken ct = default)
+    {
+        var user = await users.FindByIdAsync(id);
+        if (user is null)
+        {
+            return (null, "Пользователь не найден.");
+        }
+
+        if (await IsAdminAsync(user))
+        {
+            return (null, "Администратор не привязан к офису.");
+        }
+
+        var officeError = await ValidateOfficeAssignmentAsync(PanelRoles.Operator, officeId, ct);
+        if (officeError is not null)
+        {
+            return (null, officeError);
+        }
+
+        var profile = await db.PanelUserProfiles.FirstOrDefaultAsync(x => x.UserId == id, ct);
+        if (profile is null)
+        {
+            profile = new PanelUserProfileEntity { UserId = id, OfficeId = officeId };
+            db.PanelUserProfiles.Add(profile);
+        }
+        else
+        {
+            profile.OfficeId = officeId;
+        }
+
+        await db.SaveChangesAsync(ct);
+        await users.UpdateSecurityStampAsync(user);
+
+        await audit.LogAsync(
+            actor.UserId,
+            actor.Email,
+            PanelAuditOfficeActions.UserOfficeUpdated,
+            "user",
+            id,
+            $"office={officeId}",
+            actor.IpAddress,
+            ct);
 
         return (await MapAsync(user, ct), null);
     }
@@ -403,6 +511,33 @@ public sealed class PanelUserService(UserManager<IdentityUser> users, PanelAudit
         return null;
     }
 
+    public async Task<Guid?> GetOfficeIdForUserAsync(string userId, CancellationToken ct = default) =>
+        await db.PanelUserProfiles
+            .AsNoTracking()
+            .Where(x => x.UserId == userId)
+            .Select(x => x.OfficeId)
+            .FirstOrDefaultAsync(ct);
+
+    private async Task<string?> ValidateOfficeAssignmentAsync(string role, Guid? officeId, CancellationToken ct)
+    {
+        if (role == PanelRoles.Admin)
+        {
+            return officeId is not null ? "Администратор не привязан к офису." : null;
+        }
+
+        if (officeId is not Guid resolvedOfficeId)
+        {
+            return "Для оператора нужно выбрать офис.";
+        }
+
+        if (!await db.Offices.AnyAsync(x => x.Id == resolvedOfficeId && x.IsEnabled, ct))
+        {
+            return "Офис не найден или отключён.";
+        }
+
+        return null;
+    }
+
     private async Task<string?> ApplyRoleAsync(IdentityUser user, string role)
     {
         foreach (var existingRole in PanelRoles.All)
@@ -428,16 +563,37 @@ public sealed class PanelUserService(UserManager<IdentityUser> users, PanelAudit
 
     private async Task<PanelUserDto> MapAsync(IdentityUser user, CancellationToken ct)
     {
-        _ = ct;
         var roles = await users.GetRolesAsync(user);
         var role = roles.FirstOrDefault(r => PanelRoles.All.Contains(r, StringComparer.OrdinalIgnoreCase))
                    ?? PanelRoles.Operator;
+        var (officeId, officeName) = await GetOfficeInfoAsync(user.Id, role, ct);
         return new PanelUserDto(
             user.Id,
             user.Email ?? user.UserName ?? string.Empty,
             user.EmailConfirmed,
             role,
-            IsLocked(user));
+            IsLocked(user),
+            officeId,
+            officeName);
+    }
+
+    private async Task<(Guid? OfficeId, string? OfficeName)> GetOfficeInfoAsync(
+        string userId,
+        string role,
+        CancellationToken ct)
+    {
+        if (role == PanelRoles.Admin)
+        {
+            return (null, null);
+        }
+
+        return await db.PanelUserProfiles
+            .AsNoTracking()
+            .Where(x => x.UserId == userId)
+            .Select(x => new ValueTuple<Guid?, string?>(
+                x.OfficeId,
+                x.Office != null ? x.Office.Name : null))
+            .FirstOrDefaultAsync(ct);
     }
 
     private static bool IsLocked(IdentityUser user) =>

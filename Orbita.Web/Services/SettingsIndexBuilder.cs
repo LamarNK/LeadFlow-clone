@@ -10,9 +10,11 @@ internal static class SettingsIndexBuilder
 
     public static readonly IReadOnlyList<SettingsTabViewModel> Tabs =
     [
+        new() { Id = "offices", Label = "Офисы" },
         new() { Id = "users", Label = "Пользователи" },
         new() { Id = "profiles", Label = "Профили" },
         new() { Id = "workers", Label = "Воркеры" },
+        new() { Id = "worker-releases", Label = "Обновления воркера" },
         new() { Id = "audit", Label = "Аудит" },
         new() { Id = "logs", Label = "Логи сервиса" },
         new() { Id = "integrations", Label = "Интеграции Bitrix" }
@@ -38,19 +40,45 @@ internal static class SettingsIndexBuilder
             ["Панель управления", "Воркеры", "Аккаунты", "События", "Ошибки", "Настройки"])
     ];
 
+    public static SettingsIndexViewModel BuildOfficesTab(
+        IReadOnlyList<OfficeDto> offices,
+        OfficeDetailDto? selected = null,
+        string? statusMessage = null,
+        string? errorMessage = null) =>
+        new()
+        {
+            ActiveTab = "offices",
+            Tabs = Tabs,
+            ProfileOptions = ProfileOptions,
+            OfficeOptions = offices.Select(o => new EventFilterOptionViewModel
+            {
+                Value = o.Id.ToString(),
+                Label = o.Name
+            }).ToList(),
+            Offices = new OfficesSettingsViewModel
+            {
+                Rows = offices.Select(MapOffice).ToList(),
+                Selected = selected is null ? null : MapOfficeDetail(selected)
+            },
+            StatusMessage = statusMessage,
+            ErrorMessage = errorMessage
+        };
+
     public static SettingsIndexViewModel BuildUsersTab(
         IReadOnlyList<PanelUserDto> users,
         IReadOnlyList<BitrixIntegrationListItemDto> integrations,
+        IReadOnlyList<OfficeDto> offices,
         string? currentUserId,
         string? statusMessage = null,
         string? errorMessage = null) =>
-        Build(users, integrations, "users", currentUserId, statusMessage, errorMessage);
+        Build(users, integrations, offices, "users", currentUserId, statusMessage, errorMessage);
 
     public static SettingsIndexViewModel BuildProfilesTab(
         IReadOnlyList<PanelUserDto> users,
         IReadOnlyList<BitrixIntegrationListItemDto> integrations,
+        IReadOnlyList<OfficeDto> offices,
         string? currentUserId = null) =>
-        Build(users, integrations, "profiles", currentUserId);
+        Build(users, integrations, offices, "profiles", currentUserId);
 
     public static SettingsIndexViewModel BuildIntegrationsTab(
         IReadOnlyList<BitrixIntegrationListItemDto> integrations,
@@ -75,14 +103,33 @@ internal static class SettingsIndexBuilder
         };
     }
 
+    public static SettingsIndexViewModel BuildWorkerReleasesTab(WorkerReleaseListResponse releases) =>
+        new()
+        {
+            ActiveTab = "worker-releases",
+            Tabs = Tabs,
+            ProfileOptions = ProfileOptions,
+            WorkerReleases = new WorkerReleasesSettingsViewModel
+            {
+                Latest = releases.Latest is null ? null : MapRelease(releases.Latest),
+                Versions = releases.Versions.Select(MapRelease).ToList()
+            }
+        };
+
     public static SettingsIndexViewModel BuildWorkersTab(
         IReadOnlyList<AdminWorkerListItemDto> workers,
+        IReadOnlyList<OfficeDto> offices,
         WorkerRegistrationInfoDto? registration) =>
         new()
         {
             ActiveTab = "workers",
             Tabs = Tabs,
             ProfileOptions = ProfileOptions,
+            OfficeOptions = offices.Select(o => new EventFilterOptionViewModel
+            {
+                Value = o.Id.ToString(),
+                Label = o.Name
+            }).ToList(),
             Workers = new WorkersSettingsViewModel
             {
                 Rows = workers.Select(MapWorker).ToList(),
@@ -171,6 +218,7 @@ internal static class SettingsIndexBuilder
     private static SettingsIndexViewModel Build(
         IReadOnlyList<PanelUserDto> users,
         IReadOnlyList<BitrixIntegrationListItemDto> integrations,
+        IReadOnlyList<OfficeDto> offices,
         string activeTab,
         string? currentUserId,
         string? statusMessage = null,
@@ -182,6 +230,11 @@ internal static class SettingsIndexBuilder
             Users = users.Select(u => MapUser(u, integrations, currentUserId)).ToList(),
             Profiles = BuildProfiles(users),
             ProfileOptions = ProfileOptions,
+            OfficeOptions = offices.Select(o => new EventFilterOptionViewModel
+            {
+                Value = o.Id.ToString(),
+                Label = o.Name
+            }).ToList(),
             StatusMessage = statusMessage,
             ErrorMessage = errorMessage
         };
@@ -205,9 +258,32 @@ internal static class SettingsIndexBuilder
             IsLocked = user.IsLocked,
             BitrixStatus = integration?.ValidationStatus ?? BitrixValidationStatuses.NotConfigured,
             BitrixStatusLabel = bitrixLabel,
-            BitrixStatusTone = bitrixTone
+            BitrixStatusTone = bitrixTone,
+            OfficeId = user.OfficeId,
+            OfficeName = user.OfficeName
         };
     }
+
+    private static OfficeRowViewModel MapOffice(OfficeDto office) =>
+        new()
+        {
+            Id = office.Id,
+            Name = office.Name,
+            IsEnabled = office.IsEnabled,
+            WorkerCount = office.WorkerCount,
+            UserCount = office.UserCount,
+            CreatedAtUtc = office.CreatedAtUtc
+        };
+
+    private static OfficeDetailViewModel MapOfficeDetail(OfficeDetailDto office) =>
+        new()
+        {
+            Id = office.Id,
+            Name = office.Name,
+            IsEnabled = office.IsEnabled,
+            RegistrationConfigured = office.RegistrationConfigured,
+            MaskedRegistrationSecret = office.MaskedRegistrationSecret
+        };
 
     private static BitrixIntegrationRowViewModel MapIntegrationRow(BitrixIntegrationListItemDto item)
     {
@@ -253,8 +329,41 @@ internal static class SettingsIndexBuilder
             IsEnabled = worker.IsEnabled,
             IsOnline = worker.IsOnline,
             LastSeenAtUtc = worker.LastSeenAtUtc,
-            ApiKeyRotatedAtUtc = worker.ApiKeyRotatedAtUtc
+            ApiKeyRotatedAtUtc = worker.ApiKeyRotatedAtUtc,
+            UpdateAvailable = worker.UpdateAvailable,
+            LatestReleaseVersion = worker.LatestReleaseVersion,
+            OfficeId = worker.OfficeId,
+            OfficeName = worker.OfficeName
         };
+
+    private static WorkerReleaseInfoViewModel MapRelease(WorkerReleaseInfoDto release) =>
+        new()
+        {
+            Version = release.Version,
+            ReleaseNotes = release.ReleaseNotes,
+            FileSize = release.FileSize,
+            Sha256 = release.Sha256,
+            IsLatest = release.IsLatest,
+            UploadedAtUtc = release.UploadedAtUtc,
+            FileSizeLabel = FormatFileSize(release.FileSize)
+        };
+
+    private static string FormatFileSize(long bytes)
+    {
+        if (bytes < 1024)
+        {
+            return $"{bytes} B";
+        }
+
+        var kb = bytes / 1024d;
+        if (kb < 1024)
+        {
+            return $"{kb:0.#} KB";
+        }
+
+        var mb = kb / 1024d;
+        return $"{mb:0.#} MB";
+    }
 
     private static PanelAuditRowViewModel MapAuditRow(PanelAuditEntryDto entry) =>
         new()

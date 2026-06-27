@@ -10,6 +10,8 @@
     var logsPagination = logs?.Pagination;
     var auditPagination = audit?.Pagination;
     var rotatedApiKey = ViewBag.RotatedWorkerApiKey as string;
+    var rotatedOfficeSecret = ViewBag.RotatedOfficeRegistrationSecret as string;
+    var officesTab = Model.Offices;
 }
 <div class="orbita-main settings-page">
     <h1 class="settings-page-title">Администрирование</h1>
@@ -36,7 +38,114 @@
         </nav>
     </div>
 
-    @if (Model.ActiveTab == "users")
+    @if (Model.ActiveTab == "offices" && officesTab is not null)
+    {
+        @if (!string.IsNullOrWhiteSpace(rotatedOfficeSecret))
+        {
+            <div class="settings-alert settings-alert--api-key" role="status">
+                <span class="settings-api-key-label">Новый секрет регистрации офиса:</span>
+                <code class="settings-api-key-value" id="rotatedOfficeSecret">@rotatedOfficeSecret</code>
+                <button type="button" class="settings-link-btn" data-settings-copy-api-key data-copy-target="rotatedOfficeSecret">Копировать</button>
+            </div>
+        }
+
+        <div class="settings-grid settings-grid--users">
+            <div class="card card--settings-users">
+                <div class="card-header settings-card-header">
+                    <div>
+                        <h2 class="settings-card-title">Офисы</h2>
+                        <p class="settings-card-subtitle">Изоляция данных: воркеры, мониторинг и события внутри офиса</p>
+                    </div>
+                </div>
+                <div class="card-body card-body-table settings-table-wrap">
+                    <table class="data-table data-table--settings-users">
+                        <thead>
+                        <tr>
+                            <th>Название</th>
+                            <th>Воркеры</th>
+                            <th>Операторы</th>
+                            <th>Статус</th>
+                            <th class="data-table-actions-col">Действия</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        @foreach (var office in officesTab.Rows)
+                        {
+                            <tr>
+                                <td>
+                                    <a href="@Url.Action("Index", new { tab = "offices", userId = office.Id })">@office.Name</a>
+                                </td>
+                                <td>@office.WorkerCount</td>
+                                <td>@office.UserCount</td>
+                                <td>@(office.IsEnabled ? "Активен" : "Отключён")</td>
+                                <td>
+                                    <a class="settings-link-btn" href="@Url.Action("Index", new { tab = "offices", userId = office.Id })">Настроить</a>
+                                </td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="card card--settings-create">
+                <div class="card-header settings-card-header">
+                    <h2 class="settings-card-title">Добавить офис</h2>
+                </div>
+                <div class="card-body">
+                    <form asp-action="CreateOffice" method="post" class="settings-create-form">
+                        @Html.AntiForgeryToken()
+                        <label class="settings-field">
+                            <span class="settings-field-label">Название</span>
+                            <input type="text" name="Name" required maxlength="200" placeholder="Москва" />
+                        </label>
+                        <button type="submit" class="settings-primary-btn">
+                            <i class="fa-solid fa-building" aria-hidden="true"></i>
+                            <span>Создать</span>
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        @if (officesTab.Selected is not null)
+        {
+            var selected = officesTab.Selected;
+            <div class="card card--settings-registration">
+                <div class="card-body settings-registration-body">
+                    <div>
+                        <h2 class="settings-card-title">@selected.Name</h2>
+                        <p class="settings-card-subtitle">Секрет регистрации воркеров для этого офиса</p>
+                    </div>
+                    <form asp-action="UpdateOffice" method="post" class="settings-create-form">
+                        @Html.AntiForgeryToken()
+                        <input type="hidden" name="OfficeId" value="@selected.Id" />
+                        <label class="settings-field">
+                            <span class="settings-field-label">Название</span>
+                            <input type="text" name="Name" value="@selected.Name" required maxlength="200" />
+                        </label>
+                        <label class="settings-field settings-field--checkbox">
+                            <input type="checkbox" name="IsEnabled" value="true" @(selected.IsEnabled ? "checked" : null) />
+                            <span>Офис активен</span>
+                        </label>
+                        <button type="submit" class="settings-primary-btn">Сохранить</button>
+                    </form>
+                    <div class="settings-registration-meta">
+                        <span class="settings-registration-status @(selected.RegistrationConfigured ? "settings-registration-status--ok" : "settings-registration-status--warn")">
+                            @(selected.RegistrationConfigured ? "Настроен" : "Не настроен")
+                        </span>
+                        <span class="settings-registration-secret">@selected.MaskedRegistrationSecret</span>
+                    </div>
+                    <form asp-action="RotateOfficeRegistrationSecret" method="post">
+                        @Html.AntiForgeryToken()
+                        <input type="hidden" name="officeId" value="@selected.Id" />
+                        <button type="submit" class="settings-link-btn">Перевыпустить секрет</button>
+                    </form>
+                </div>
+            </div>
+        }
+    }
+    else if (Model.ActiveTab == "users")
     {
         <div class="settings-grid settings-grid--users">
             <div class="card card--settings-users">
@@ -52,6 +161,7 @@
                         <tr>
                             <th>Email</th>
                             <th>Профиль</th>
+                            <th>Офис</th>
                             <th>Bitrix24</th>
                             <th class="data-table-actions-col">Действия</th>
                         </tr>
@@ -85,6 +195,37 @@
                                                 @foreach (var opt in Model.ProfileOptions)
                                                 {
                                                     if (opt.Value == user.Role)
+                                                    {
+                                                        <option value="@opt.Value" selected>@opt.Label</option>
+                                                    }
+                                                    else
+                                                    {
+                                                        <option value="@opt.Value">@opt.Label</option>
+                                                    }
+                                                }
+                                            </select>
+                                            <button type="submit" class="settings-link-btn">Сохранить</button>
+                                        </form>
+                                    }
+                                </td>
+                                <td>
+                                    @if (user.Role == PanelRoles.Admin)
+                                    {
+                                        <span class="settings-role-pill">Все офисы</span>
+                                    }
+                                    else if (user.IsCurrentUser)
+                                    {
+                                        <span>@(user.OfficeName ?? "—")</span>
+                                    }
+                                    else
+                                    {
+                                        <form asp-action="UpdateUserOffice" method="post" class="settings-role-form">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="UserId" value="@user.Id" />
+                                            <select name="OfficeId" class="settings-select settings-select--inline" aria-label="Офис @user.Email">
+                                                @foreach (var opt in Model.OfficeOptions)
+                                                {
+                                                    if (Guid.TryParse(opt.Value, out var officeGuid) && officeGuid == user.OfficeId)
                                                     {
                                                         <option value="@opt.Value" selected>@opt.Label</option>
                                                     }
@@ -174,6 +315,15 @@
                             <input type="password" name="Password" required minlength="8" placeholder="Минимум 8 символов" autocomplete="new-password" />
                         </label>
                         <label class="settings-field">
+                            <span class="settings-field-label">Офис</span>
+                            <select name="OfficeId" class="settings-select" aria-label="Офис нового пользователя">
+                                @foreach (var opt in Model.OfficeOptions)
+                                {
+                                    <option value="@opt.Value">@opt.Label</option>
+                                }
+                            </select>
+                        </label>
+                        <label class="settings-field">
                             <span class="settings-field-label">Профиль</span>
                             <select name="Role" class="settings-select" aria-label="Профиль нового пользователя">
                                 @foreach (var opt in Model.ProfileOptions)
@@ -214,8 +364,8 @@
             <div class="card card--settings-registration">
                 <div class="card-body settings-registration-body">
                     <div>
-                        <h2 class="settings-card-title">Registration secret</h2>
-                        <p class="settings-card-subtitle">Статус секрета регистрации воркеров (только чтение)</p>
+                        <h2 class="settings-card-title">Legacy registration secret</h2>
+                        <p class="settings-card-subtitle">Устаревший глобальный секрет из config. Для новых воркеров используйте секрет офиса (вкладка «Офисы»).</p>
                     </div>
                     <div class="settings-registration-meta">
                         <span class="settings-registration-status @(workers.Registration.IsConfigured ? "settings-registration-status--ok" : "settings-registration-status--warn")">
@@ -240,6 +390,7 @@
                     <thead>
                     <tr>
                         <th>Имя</th>
+                        <th>Офис</th>
                         <th>Машина</th>
                         <th>Версия</th>
                         <th>Статус</th>
@@ -260,8 +411,15 @@
                                     <button type="submit" class="settings-link-btn">Сохранить</button>
                                 </form>
                             </td>
+                            <td>@worker.OfficeName</td>
                             <td>@worker.MachineName</td>
-                            <td>@worker.AppVersion</td>
+                            <td>
+                                <span class="@(worker.UpdateAvailable ? "settings-version--outdated" : null)">@worker.AppVersion</span>
+                                @if (worker.UpdateAvailable)
+                                {
+                                    <span class="settings-update-badge" title="Доступна версия @(worker.LatestReleaseVersion)">↑</span>
+                                }
+                            </td>
                             <td>
                                 @if (!worker.IsEnabled)
                                 {
@@ -306,6 +464,110 @@
                                             <button type="submit" class="row-menu-item">Перевыпустить API-ключ</button>
                                         </form>
                                     </div>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+    else if (Model.ActiveTab == "worker-releases" && Model.WorkerReleases is not null)
+    {
+        var releases = Model.WorkerReleases;
+        <div class="card card--settings-worker-releases">
+            <div class="card-header settings-card-header">
+                <div>
+                    <h2 class="settings-card-title">Обновления воркера</h2>
+                    <p class="settings-card-subtitle">Перетащите MSI вида Orbita.Worker.Setup-1.0.0.1.msi — версия определится автоматически</p>
+                </div>
+            </div>
+            <div class="card-body settings-worker-releases-body">
+                <form asp-action="UploadWorkerRelease" method="post" enctype="multipart/form-data" class="settings-release-upload-form" data-worker-release-upload>
+                    @Html.AntiForgeryToken()
+                    <input type="file" name="packageFile" accept=".msi" class="settings-release-file-input" required hidden />
+                    <div class="settings-release-dropzone" data-worker-release-dropzone tabindex="0" role="button" aria-label="Перетащите MSI или выберите файл">
+                        <div class="settings-release-dropzone-icon" aria-hidden="true">
+                            <i class="fa-solid fa-cloud-arrow-up"></i>
+                        </div>
+                        <p class="settings-release-dropzone-title">Перетащите MSI сюда</p>
+                        <p class="settings-release-dropzone-hint">или нажмите, чтобы выбрать файл</p>
+                        <p class="settings-release-dropzone-file" data-worker-release-file-name hidden></p>
+                        <p class="settings-release-dropzone-error" data-worker-release-file-error hidden></p>
+                    </div>
+                    <div class="settings-release-upload-grid">
+                        <label class="settings-filter-field">
+                            <span class="settings-filter-label">Версия</span>
+                            <input type="text"
+                                   name="version"
+                                   class="settings-input settings-input--readonly"
+                                   data-worker-release-version
+                                   placeholder="Определится из имени файла"
+                                   readonly />
+                        </label>
+                        <label class="settings-filter-field settings-filter-field--wide">
+                            <span class="settings-filter-label">Заметки к релизу</span>
+                            <input type="text" name="releaseNotes" class="settings-input" placeholder="Исправления и изменения" />
+                        </label>
+                    </div>
+                    <button type="submit" class="settings-primary-btn" data-worker-release-submit disabled>Загрузить релиз</button>
+                </form>
+            </div>
+        </div>
+
+        <div class="card card--settings-worker-releases-list">
+            <div class="card-body card-body-table settings-table-wrap">
+                <table class="data-table data-table--settings-releases">
+                    <thead>
+                    <tr>
+                        <th>Версия</th>
+                        <th>Размер</th>
+                        <th>SHA256</th>
+                        <th>Загружен</th>
+                        <th>Статус</th>
+                        <th class="data-table-actions-col">Действия</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var release in releases.Versions)
+                    {
+                        <tr>
+                            <td>
+                                <strong>@release.Version</strong>
+                                @if (!string.IsNullOrWhiteSpace(release.ReleaseNotes))
+                                {
+                                    <div class="settings-release-notes">@release.ReleaseNotes</div>
+                                }
+                            </td>
+                            <td>@release.FileSizeLabel</td>
+                            <td class="settings-release-sha"><code>@release.Sha256[..Math.Min(12, release.Sha256.Length)]…</code></td>
+                            <td class="settings-log-time"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(release.UploadedAtUtc, "datetime"))" /></td>
+                            <td>
+                                @if (release.IsLatest)
+                                {
+                                    <span class="settings-status-pill settings-status-pill--online">Актуальная</span>
+                                }
+                                else
+                                {
+                                    <span class="settings-status-pill settings-status-pill--offline">Архив</span>
+                                }
+                            </td>
+                            <td>
+                                <div class="settings-release-actions">
+                                    @if (!release.IsLatest)
+                                    {
+                                        <form asp-action="SetWorkerReleaseLatest" method="post" class="settings-inline-form">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="version" value="@release.Version" />
+                                            <button type="submit" class="settings-link-btn">Сделать актуальной</button>
+                                        </form>
+                                    }
+                                    <form asp-action="DeleteWorkerRelease" method="post" class="settings-inline-form" onsubmit="return confirm('Удалить версию @release.Version?');">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="version" value="@release.Version" />
+                                        <button type="submit" class="settings-link-btn settings-link-btn--danger">Удалить</button>
+                                    </form>
                                 </div>
                             </td>
                         </tr>
@@ -771,5 +1033,9 @@
     @if (Model.ActiveTab == "integrations")
     {
         <script src="~/js/orbita-bitrix-settings.js" asp-append-version="true"></script>
+    }
+    @if (Model.ActiveTab == "worker-releases")
+    {
+        <script src="~/js/orbita-worker-releases.js" asp-append-version="true"></script>
     }
 }

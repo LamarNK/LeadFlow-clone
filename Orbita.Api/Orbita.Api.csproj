@@ -23,4 +23,8 @@
     <ProjectReference Include="..\Orbita.Logging\Orbita.Logging.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Orbita.Tests" />
+  </ItemGroup>
+
 </Project>

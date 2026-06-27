@@ -20,6 +20,7 @@ public sealed class LineChartViewModel
 {
     public IReadOnlyList<string> Labels { get; init; } = [];
     public IReadOnlyList<int> Values { get; init; } = [];
+    public bool HasData => Values.Count > 0 && Values.Any(v => v > 0);
 }
 
 public sealed class DonutChartViewModel

@@ -45,7 +45,7 @@ internal static class DashboardChartsBuilder
         int axisEvery = 4)
     {
         if (hourly.Count == 0)
-            return HourlyResponsesGenerator.BuildDailyPoints();
+            return HourlyResponsesGenerator.BuildEmptyDailyPoints();
 
         var points = hourly.Select((p, i) => new DashboardChartPointViewModel
         {
@@ -99,7 +99,7 @@ internal static class DashboardChartsBuilder
 
         var hourlyValues = hourlyChart.Count > 0
             ? hourlyChart.Select(p => p.Value).ToList()
-            : HourlyResponsesGenerator.DailyValues.ToList();
+            : [];
 
         var resampled = ResampleValues(hourlyValues, count);
         if (kpiLabel == "Откликов всего")

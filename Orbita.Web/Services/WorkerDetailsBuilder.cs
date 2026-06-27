@@ -36,7 +36,7 @@ internal static class WorkerDetailsBuilder
 
         var hourly = stats?.HourlyActivity.Count > 0
             ? DashboardChartsBuilder.FromHourlyActivity(stats.HourlyActivity)
-            : HourlyResponsesGenerator.BuildDailyPoints();
+            : HourlyResponsesGenerator.BuildEmptyDailyPoints();
 
         return new WorkerDetailsViewModel
         {
@@ -59,7 +59,12 @@ internal static class WorkerDetailsBuilder
             },
             Events = events,
             PeriodStats = BuildPeriodStats(stats, responses, duplicates, errors),
-            Accounts = accounts
+            Accounts = accounts,
+            MaxConcurrentAccounts = worker.MaxConcurrentAccounts,
+            CpuPercent = worker.LastCpuPercent,
+            RamPercent = worker.LastRamPercent,
+            RamUsedMb = worker.LastRamUsedMb,
+            RamTotalMb = worker.LastRamTotalMb
         };
     }
 
@@ -74,6 +79,8 @@ internal static class WorkerDetailsBuilder
         {
             Id = account.AccountId,
             DisplayName = account.DisplayName,
+            IsEnabledInPanel = account.IsEnabledInPanel,
+            AdsPowerProfileId = account.AdsPowerProfileId,
             StatusLabel = label,
             StatusTone = tone,
             BalanceText = balance is null ? "—" : $"{balance.TotalBalance:N0} ₽",
@@ -184,10 +191,7 @@ internal static class WorkerDetailsBuilder
             new() { Label = "Всего откликов", Value = responses.ToString() },
             new() { Label = "Уникальных откликов", Value = unique.ToString() },
             new() { Label = "Дублей", Value = duplicates.ToString() },
-            new() { Label = "Ошибок", Value = errors.ToString() },
-            new() { Label = "Успешных авторизаций", Value = (stats?.RequiresAuthorization == 0 ? Math.Max(1, unique / 40) : 0).ToString() },
-            new() { Label = "Обновлений баланса", Value = (((stats?.ConnectedAccounts ?? 0) * 2) + 6).ToString() },
-            new() { Label = "Среднее время обработки", Value = "4.2 сек" }
+            new() { Label = "Ошибок", Value = errors.ToString() }
         ];
     }
 

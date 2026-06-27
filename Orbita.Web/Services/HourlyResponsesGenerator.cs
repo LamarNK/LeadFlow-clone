@@ -28,5 +28,17 @@ internal static class HourlyResponsesGenerator
         return points;
     }
 
+    public static IReadOnlyList<DashboardChartPointViewModel> BuildEmptyDailyPoints()
+    {
+        return Enumerable.Range(0, 24)
+            .Select(i => new DashboardChartPointViewModel
+            {
+                Label = $"{i:00}:00",
+                Value = 0,
+                ShowAxisLabel = i % 4 == 0
+            })
+            .ToList();
+    }
+
     public static IReadOnlyList<int> DailyValues => DailyProfile;
 }

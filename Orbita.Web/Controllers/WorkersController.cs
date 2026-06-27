@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Orbita.Contracts;
 using Orbita.Web.Services;
 
 namespace Orbita.Web.Controllers;
@@ -15,9 +16,70 @@ public sealed class WorkersController(IWorkersService workers) : Controller
     }
 
     [HttpGet]
+    public async Task<IActionResult> DownloadLatest(CancellationToken ct)
+    {
+        var (stream, fileName, error) = await workers.OpenLatestWorkerReleaseDownloadAsync(ct);
+        if (stream is null || fileName is null)
+        {
+            TempData["WorkersError"] = error ?? "Релиз воркера не найден.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        return File(stream, "application/octet-stream", fileName);
+    }
+
+    [HttpGet]
     public async Task<IActionResult> Details(Guid id, CancellationToken ct)
     {
         var model = await workers.GetDetailsAsync(id, ct);
         return model is null ? NotFound() : View(model);
+    }
+
+    [HttpPost]
+    [Authorize(Roles = PanelRoles.Admin)]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Create(string displayName, Guid? officeId, CancellationToken ct)
+    {
+        var (result, error) = await workers.CreateWorkerAsync(displayName, officeId, ct);
+        if (error is not null || result is null)
+        {
+            TempData["WorkersError"] = error ?? "Не удалось создать воркер.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        TempData["CreatedWorkerApiKey"] = result.ApiKey;
+        TempData["CreatedWorkerInstallCommand"] = result.InstallCommand;
+        TempData["CreatedWorkerName"] = result.DisplayName;
+        return RedirectToAction(nameof(Details), new { id = result.WorkerId });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> UpdateSettings(Guid workerId, int maxConcurrentAccounts, CancellationToken ct)
+    {
+        var (success, error) = await workers.UpdateWorkerSettingsAsync(workerId, maxConcurrentAccounts, ct);
+        if (!success)
+        {
+            TempData["WorkersError"] = error;
+        }
+
+        return RedirectToAction(nameof(Details), new { id = workerId });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> UpdateAccount(
+        Guid workerId,
+        Guid accountId,
+        bool isEnabledInPanel,
+        CancellationToken ct)
+    {
+        var (success, error) = await workers.UpdateWorkerAccountAsync(workerId, accountId, isEnabledInPanel, ct);
+        if (!success)
+        {
+            TempData["WorkersError"] = error;
+        }
+
+        return RedirectToAction(nameof(Details), new { id = workerId });
     }
 }

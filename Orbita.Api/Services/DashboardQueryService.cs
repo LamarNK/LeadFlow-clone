@@ -1,22 +1,32 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Orbita.Api.Data;
+using Orbita.Api.Helpers;
 using Orbita.Contracts;
 
 namespace Orbita.Api.Services;
 
-public sealed class DashboardQueryService(OrbitaDbContext db)
+public sealed class DashboardQueryService(
+    OrbitaDbContext db,
+    WorkerReleaseService releases,
+    OfficeScopeService officeScope)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
-    public async Task<GlobalDashboardSummary> GetGlobalSummaryAsync(CancellationToken ct)
+    public async Task<GlobalDashboardSummary> GetGlobalSummaryAsync(
+        OfficeScope scope,
+        Guid? officeFilter = null,
+        CancellationToken ct = default)
     {
         var nowUtc = DateTime.UtcNow;
-        var workers = await db.Workers.AsNoTracking().ToListAsync(ct);
+        var workersQuery = officeScope.ApplyWorkerFilter(db.Workers.AsNoTracking(), scope, officeFilter);
+        var workers = await workersQuery.ToListAsync(ct);
+        var workerIds = workers.Select(w => w.Id).ToHashSet();
         var onlineWorkers = workers.Count(w => WorkerOnlineRules.IsOnline(w.LastSeenAtUtc, nowUtc));
 
         var latestSnapshots = await db.WorkerSnapshots
             .AsNoTracking()
+            .Where(x => workerIds.Contains(x.WorkerId))
             .GroupBy(x => x.WorkerId)
             .Select(g => g.OrderByDescending(x => x.CapturedAtUtc).First())
             .ToListAsync(ct);
@@ -52,21 +62,47 @@ public sealed class DashboardQueryService(OrbitaDbContext db)
             AggregatedAtUtc: nowUtc);
     }
 
-    public async Task<IReadOnlyList<WorkerListItem>> GetWorkersAsync(CancellationToken ct)
+    public async Task<IReadOnlyList<WorkerListItem>> GetWorkersAsync(
+        OfficeScope scope,
+        Guid? officeFilter = null,
+        CancellationToken ct = default)
     {
         var nowUtc = DateTime.UtcNow;
-        var workers = await db.Workers.AsNoTracking().OrderBy(x => x.DisplayName).ToListAsync(ct);
+        var workers = await officeScope
+            .ApplyWorkerFilter(db.Workers.AsNoTracking(), scope, officeFilter)
+            .OrderBy(x => x.DisplayName)
+            .Select(w => new
+            {
+                w.Id,
+                w.DisplayName,
+                w.MachineName,
+                w.AppVersion,
+                w.MonitoringStatus,
+                w.MonitoringStatusMessage,
+                w.IsMonitoringActive,
+                w.LastSeenAtUtc,
+                w.OfficeId,
+                OfficeName = w.Office.Name
+            })
+            .ToListAsync(ct);
+
+        var workerIds = workers.Select(w => w.Id).ToList();
         var accountCounts = await db.WorkerAccounts
             .AsNoTracking()
+            .Where(x => workerIds.Contains(x.WorkerId))
             .GroupBy(x => x.WorkerId)
             .Select(g => new { WorkerId = g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.WorkerId, x => x.Count, ct);
 
         var latestStats = await db.WorkerSnapshots
             .AsNoTracking()
+            .Where(x => workerIds.Contains(x.WorkerId))
             .GroupBy(x => x.WorkerId)
             .Select(g => g.OrderByDescending(x => x.CapturedAtUtc).First())
             .ToDictionaryAsync(x => x.WorkerId, x => x.StatsJson, ct);
+
+        var latestRelease = await releases.GetLatestAsync(ct);
+        var latestReleaseVersion = latestRelease?.Version;
 
         return workers.Select(w =>
         {
@@ -76,6 +112,7 @@ public sealed class DashboardQueryService(OrbitaDbContext db)
                 stats = JsonSerializer.Deserialize<DashboardStatsDto>(json, JsonOptions);
             }
 
+            var updateAvailable = AppVersionHelper.IsNewer(latestReleaseVersion, w.AppVersion);
             return new WorkerListItem(
                 w.Id,
                 w.DisplayName,
@@ -88,12 +125,24 @@ public sealed class DashboardQueryService(OrbitaDbContext db)
                 w.LastSeenAtUtc,
                 accountCounts.GetValueOrDefault(w.Id),
                 stats?.TotalToday ?? 0,
-                stats?.Errors ?? 0);
+                stats?.Errors ?? 0,
+                updateAvailable,
+                latestReleaseVersion,
+                w.OfficeId,
+                w.OfficeName);
         }).ToList();
     }
 
-    public async Task<WorkerDetail?> GetWorkerDetailAsync(Guid workerId, CancellationToken ct)
+    public async Task<WorkerDetail?> GetWorkerDetailAsync(
+        Guid workerId,
+        OfficeScope scope,
+        CancellationToken ct = default)
     {
+        if (!await officeScope.CanAccessWorkerAsync(scope, workerId, ct))
+        {
+            return null;
+        }
+
         var nowUtc = DateTime.UtcNow;
         var worker = await db.Workers.AsNoTracking().FirstOrDefaultAsync(x => x.Id == workerId, ct);
         if (worker is null)
@@ -127,11 +176,28 @@ public sealed class DashboardQueryService(OrbitaDbContext db)
             worker.LastSeenAtUtc,
             worker.NextCycleCheckAtUtc,
             stats,
-            balances);
+            balances,
+            worker.MaxConcurrentAccounts,
+            worker.LastCpuPercent,
+            worker.LastRamPercent,
+            worker.LastRamUsedMb,
+            worker.LastRamTotalMb,
+            worker.IpAddress,
+            worker.OperatingSystem,
+            worker.StartedAtUtc,
+            worker.AgentVersion);
     }
 
-    public async Task<IReadOnlyList<WorkerAccountDto>> GetWorkerAccountsAsync(Guid workerId, CancellationToken ct)
+    public async Task<IReadOnlyList<WorkerAccountDto>> GetWorkerAccountsAsync(
+        Guid workerId,
+        OfficeScope scope,
+        CancellationToken ct = default)
     {
+        if (!await officeScope.CanAccessWorkerAsync(scope, workerId, ct))
+        {
+            return [];
+        }
+
         return await db.WorkerAccounts
             .AsNoTracking()
             .Where(x => x.WorkerId == workerId)
@@ -140,18 +206,33 @@ public sealed class DashboardQueryService(OrbitaDbContext db)
                 x.AccountId,
                 x.DisplayName,
                 x.Status,
-                x.IsEnabled,
+                x.IsEnabledInPanel,
                 x.ActiveAdsCount,
                 x.BlockedCount,
                 x.DraftsCount,
                 x.LastErrorMessage,
-                x.LastMonitoringAt))
+                x.LastMonitoringAt,
+                x.IsEnabledInPanel,
+                x.AdsPowerProfileId))
             .ToListAsync(ct);
     }
 
-    public async Task<IReadOnlyList<WorkerEventListItem>> GetWorkerEventsAsync(Guid? workerId, int limit, CancellationToken ct)
+    public async Task<IReadOnlyList<WorkerEventListItem>> GetWorkerEventsAsync(
+        OfficeScope scope,
+        Guid? workerId,
+        Guid? officeFilter,
+        int limit,
+        CancellationToken ct = default)
     {
-        var query = db.WorkerEvents.AsNoTracking();
+        if (workerId.HasValue && !await officeScope.CanAccessWorkerAsync(scope, workerId.Value, ct))
+        {
+            return [];
+        }
+
+        var workersQuery = officeScope.ApplyWorkerFilter(db.Workers.AsNoTracking(), scope, officeFilter);
+        var allowedWorkerIds = await workersQuery.Select(x => x.Id).ToListAsync(ct);
+
+        var query = db.WorkerEvents.AsNoTracking().Where(x => allowedWorkerIds.Contains(x.WorkerId));
         if (workerId.HasValue)
         {
             query = query.Where(x => x.WorkerId == workerId.Value);

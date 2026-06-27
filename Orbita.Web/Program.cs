@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.Http.Features;
 using Orbita.Logging.Audit;
 using Orbita.Web.Authorization;
 using Orbita.Web.Middleware;
@@ -8,6 +9,23 @@ using Orbita.Web.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.AddOrbitaLogging("Orbita.Web");
+
+const long defaultMaxUploadBytes = 536_870_912;
+var maxUploadBytes = builder.Configuration.GetValue<long?>("WorkerReleases:MaxUploadBytes") ?? defaultMaxUploadBytes;
+
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.Limits.MaxRequestBodySize = maxUploadBytes;
+    options.Limits.MinRequestBodyDataRate = null;
+    options.Limits.MinResponseDataRate = null;
+});
+
+builder.Services.Configure<FormOptions>(options =>
+{
+    options.MultipartBodyLengthLimit = maxUploadBytes;
+    options.ValueLengthLimit = int.MaxValue;
+    options.MultipartHeadersLengthLimit = int.MaxValue;
+});
 
 var dataProtectionPath = builder.Configuration["DataProtection:KeysPath"];
 if (!string.IsNullOrWhiteSpace(dataProtectionPath))
@@ -51,6 +69,7 @@ builder.Services.AddHttpClient<OrbitaApiClient>(client =>
 {
     var baseUrl = builder.Configuration["OrbitaApi:BaseUrl"] ?? "https://localhost:7291";
     client.BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/");
+    client.Timeout = TimeSpan.FromMinutes(30);
 });
 
 var app = builder.Build();
@@ -58,7 +77,16 @@ app.UseOrbitaLogging();
 
 if (!app.Environment.IsDevelopment())
 {
-    app.UseExceptionHandler("/Home/Error");
+    app.UseExceptionHandler(new ExceptionHandlerOptions
+    {
+        AllowStatusCode404Response = true,
+        ExceptionHandler = async context =>
+        {
+            context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+            context.Response.ContentType = "text/plain; charset=utf-8";
+            await context.Response.WriteAsync("Внутренняя ошибка сервера.");
+        }
+    });
     app.UseHsts();
 }
 

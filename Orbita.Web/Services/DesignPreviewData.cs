@@ -80,7 +80,10 @@ internal static class DesignPreviewData
                 new() { Label = "Ошибок", Value = rows.Sum(w => w.Errors).ToString(), CountValue = rows.Sum(w => w.Errors), IconClass = "fa-solid fa-triangle-exclamation", IconTone = "orange" }
             ],
             Workers = paged,
-            Pagination = new PaginationViewModel { Page = page, PageSize = pageSize, TotalItems = total }
+            Pagination = new PaginationViewModel { Page = page, PageSize = pageSize, TotalItems = total },
+            HasWorkerRelease = true,
+            LatestWorkerReleaseVersion = "1.0.0.2",
+            LatestWorkerDownloadUrl = "/Workers/DownloadLatest"
         };
     }
 
@@ -97,7 +100,11 @@ internal static class DesignPreviewData
             w.LastActivityUtc?.ToUniversalTime(),
             w.TotalAccounts,
             w.Responses,
-            w.Errors)).ToList();
+            w.Errors,
+            w.UpdateAvailable,
+            w.LatestReleaseVersion,
+            PreviewOfficeId,
+            "Основной")).ToList();
 
     private static IReadOnlyList<WorkerRowViewModel> BuildWorkerRows()
     {
@@ -125,6 +132,8 @@ internal static class DesignPreviewData
             Id = PreviewWorkerIds[i],
             DisplayName = $"Worker #{i + 1}",
             IsOnline = online[i],
+            UpdateAvailable = i < 3,
+            LatestReleaseVersion = "1.0.0.2",
             ActiveAccounts = accounts[i].Active,
             TotalAccounts = accounts[i].Total,
             Responses = responses[i],
@@ -871,14 +880,21 @@ internal static class DesignPreviewData
         return rows;
     }
 
+    public static readonly Guid PreviewOfficeId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+
     public static IReadOnlyList<PanelUserDto> PanelUsers =>
     [
         new("preview-admin", "admin@orbita.local", true, PanelRoles.Admin, false),
-        new("preview-operator", "operator@orbita.local", true, PanelRoles.Operator, true)
+        new("preview-operator", "operator@orbita.local", true, PanelRoles.Operator, true, PreviewOfficeId, "Основной")
     ];
 
     public static PanelProfileDto PanelProfile =>
         new("admin@orbita.local", PanelRoles.Admin);
+
+    public static IReadOnlyList<OfficeDto> Offices =>
+    [
+        new(PreviewOfficeId, "Основной", true, Now.AddDays(-30), 3, 1)
+    ];
 
     public static PasswordPolicyDto PasswordPolicy =>
         new(8, true, false, false, false, 1);
@@ -914,11 +930,19 @@ internal static class DesignPreviewData
     public static WorkerRegistrationInfoDto WorkerRegistrationInfo =>
         new(true, "****demo", "config");
 
+    public static WorkerReleaseListResponse WorkerReleases =>
+        new(
+            new WorkerReleaseInfoDto("1.0.0.2", "Исправления стабильности", 52_428_800, "demo-sha256", true, Now.AddHours(-1)),
+            [
+                new WorkerReleaseInfoDto("1.0.0.2", "Исправления стабильности", 52_428_800, "demo-sha256", true, Now.AddHours(-1)),
+                new WorkerReleaseInfoDto("1.0.0.1", null, 51_200_000, "demo-sha256-old", false, Now.AddDays(-2))
+            ]);
+
     public static IReadOnlyList<AdminWorkerListItemDto> AdminWorkers =>
     [
-        new(WorkerMoscowId, "Москва-01", "WIN-M01", "1.0.0", true, true, Now.AddMinutes(-2), Now.AddDays(-14), Now.AddDays(-3)),
-        new(WorkerSpbId, "СПб-02", "WIN-SPB02", "1.0.0", true, false, Now.AddHours(-2), Now.AddDays(-10), null),
-        new(WorkerKazanId, "Казань-03", "WIN-KZN03", "0.9.5", false, false, Now.AddDays(-1), Now.AddDays(-30), Now.AddDays(-7))
+        new(WorkerMoscowId, "Москва-01", "WIN-M01", "1.0.0.1", true, true, Now.AddMinutes(-2), Now.AddDays(-14), Now.AddDays(-3), true, "1.0.0.2", PreviewOfficeId, "Основной"),
+        new(WorkerSpbId, "СПб-02", "WIN-SPB02", "1.0.0.2", true, false, Now.AddHours(-2), Now.AddDays(-10), null, false, "1.0.0.2", PreviewOfficeId, "Основной"),
+        new(WorkerKazanId, "Казань-03", "WIN-KZN03", "0.9.5", false, false, Now.AddDays(-1), Now.AddDays(-30), Now.AddDays(-7), true, "1.0.0.2", PreviewOfficeId, "Основной")
     ];
 
     public static PanelAuditPageDto BuildPanelAuditPage(

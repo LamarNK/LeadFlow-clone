@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
 using Orbita.Web.Authorization;
 using Orbita.Web.Models.ViewModels;
@@ -30,6 +31,7 @@ public sealed class SettingsController(
             ErrorMessage = TempData["SettingsError"] as string ?? model.ErrorMessage
         };
         ViewBag.RotatedWorkerApiKey = TempData["RotatedWorkerApiKey"] as string;
+        ViewBag.RotatedOfficeRegistrationSecret = TempData["RotatedOfficeRegistrationSecret"] as string;
         return View(model);
     }
 
@@ -37,7 +39,7 @@ public sealed class SettingsController(
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> CreateUser(CreatePanelUserFormModel model, CancellationToken ct = default)
     {
-        var (success, error) = await settings.CreateUserAsync(model.Email, model.Password, model.Role, ct);
+        var (success, error) = await settings.CreateUserAsync(model.Email, model.Password, model.Role, model.OfficeId, ct);
         TempData[success ? "SettingsStatus" : "SettingsError"] = success
             ? "Пользователь добавлен."
             : error;
@@ -64,6 +66,55 @@ public sealed class SettingsController(
             ? "Пароль обновлён."
             : error;
         return RedirectToAction(nameof(Index), new { tab = "users" });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> UpdateUserOffice(UpdatePanelUserOfficeFormModel model, CancellationToken ct = default)
+    {
+        var (success, error) = await settings.UpdateUserOfficeAsync(model.UserId, model.OfficeId, ct);
+        TempData[success ? "SettingsStatus" : "SettingsError"] = success
+            ? "Офис пользователя обновлён."
+            : error;
+        return RedirectToAction(nameof(Index), new { tab = "users" });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> CreateOffice(CreateOfficeFormModel model, CancellationToken ct = default)
+    {
+        var (success, error, _) = await settings.CreateOfficeAsync(model.Name, ct);
+        TempData[success ? "SettingsStatus" : "SettingsError"] = success
+            ? "Офис создан. Секрет регистрации сгенерирован — перевыпустите его в карточке офиса при необходимости."
+            : error;
+        return RedirectToAction(nameof(Index), new { tab = "offices" });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> UpdateOffice(UpdateOfficeFormModel model, CancellationToken ct = default)
+    {
+        var (success, error) = await settings.UpdateOfficeAsync(model.OfficeId, model.Name, model.IsEnabled, ct);
+        TempData[success ? "SettingsStatus" : "SettingsError"] = success
+            ? "Офис обновлён."
+            : error;
+        return RedirectToAction(nameof(Index), new { tab = "offices", userId = model.OfficeId });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> RotateOfficeRegistrationSecret(Guid officeId, CancellationToken ct = default)
+    {
+        var (success, error, secret) = await settings.RotateOfficeRegistrationSecretAsync(officeId, ct);
+        if (!success || secret is null)
+        {
+            TempData["SettingsError"] = error;
+            return RedirectToAction(nameof(Index), new { tab = "offices", userId = officeId });
+        }
+
+        TempData["SettingsStatus"] = "Секрет регистрации перевыпущен. Скопируйте его сейчас — повторно он не будет показан.";
+        TempData["RotatedOfficeRegistrationSecret"] = secret;
+        return RedirectToAction(nameof(Index), new { tab = "offices", userId = officeId });
     }
 
     [HttpPost]
@@ -141,6 +192,63 @@ public sealed class SettingsController(
             ? "Воркер отключён."
             : error;
         return RedirectToAction(nameof(Index), new { tab = "workers" });
+    }
+
+    [HttpPost]
+    [RequestSizeLimit(536_870_912)]
+    [RequestFormLimits(MultipartBodyLengthLimit = 536_870_912)]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> UploadWorkerRelease(
+        IFormFile? packageFile,
+        string? version,
+        string? releaseNotes,
+        CancellationToken ct = default)
+    {
+        if (packageFile is null || packageFile.Length == 0)
+        {
+            TempData["SettingsError"] = ModelState.ErrorCount > 0
+                ? "Не удалось принять файл. Проверьте размер MSI (до 512 МБ)."
+                : "Выберите MSI-файл.";
+            return RedirectToAction(nameof(Index), new { tab = "worker-releases" });
+        }
+
+        if (string.IsNullOrWhiteSpace(version))
+        {
+            TempData["SettingsError"] = "Укажите версию или используйте имя Orbita.Worker.Setup-1.0.0.1.msi.";
+            return RedirectToAction(nameof(Index), new { tab = "worker-releases" });
+        }
+
+        var (success, error) = await settings.UploadWorkerReleaseAsync(
+            packageFile,
+            version,
+            releaseNotes,
+            ct);
+        TempData[success ? "SettingsStatus" : "SettingsError"] = success
+            ? "Релиз воркера загружен."
+            : error ?? "Не удалось загрузить релиз.";
+        return RedirectToAction(nameof(Index), new { tab = "worker-releases" });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SetWorkerReleaseLatest(string version, CancellationToken ct = default)
+    {
+        var (success, error) = await settings.SetWorkerReleaseLatestAsync(version, ct);
+        TempData[success ? "SettingsStatus" : "SettingsError"] = success
+            ? $"Версия {version} назначена актуальной."
+            : error;
+        return RedirectToAction(nameof(Index), new { tab = "worker-releases" });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> DeleteWorkerRelease(string version, CancellationToken ct = default)
+    {
+        var (success, error) = await settings.DeleteWorkerReleaseAsync(version, ct);
+        TempData[success ? "SettingsStatus" : "SettingsError"] = success
+            ? $"Версия {version} удалена."
+            : error;
+        return RedirectToAction(nameof(Index), new { tab = "worker-releases" });
     }
 
     [HttpPost]

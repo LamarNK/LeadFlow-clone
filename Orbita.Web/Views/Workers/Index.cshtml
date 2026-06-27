@@ -1,7 +1,9 @@
 @model WorkersIndexViewModel
+@using Orbita.Contracts
 @{
     ViewData["Title"] = "Все воркеры";
     var pagination = Model.Pagination;
+    var workersError = TempData["WorkersError"] as string;
 }
 <div class="orbita-main workers-page">
     <nav class="orbita-breadcrumbs" aria-label="Навигация">
@@ -37,10 +39,20 @@
             <button type="button" class="workers-filter-btn" aria-label="Фильтры">
                 <i class="fa-solid fa-filter" aria-hidden="true"></i>
             </button>
-            <button type="button" class="workers-add-btn">
-                <i class="fa-solid fa-plus" aria-hidden="true"></i>
-                <span>Добавить воркер</span>
-            </button>
+            @if (Model.HasWorkerRelease && !string.IsNullOrWhiteSpace(Model.LatestWorkerDownloadUrl))
+            {
+                <a class="workers-download-btn" href="@Model.LatestWorkerDownloadUrl">
+                    <i class="fa-solid fa-download" aria-hidden="true"></i>
+                    <span>Скачать воркер v@(Model.LatestWorkerReleaseVersion)</span>
+                </a>
+            }
+            @if (User.IsInRole(PanelRoles.Admin))
+            {
+                <button type="button" class="workers-add-btn" data-workers-add-open>
+                    <i class="fa-solid fa-plus" aria-hidden="true"></i>
+                    <span>Добавить воркер</span>
+                </button>
+            }
         </div>
     </div>
 
@@ -86,6 +98,10 @@
                     <tr class="workers-row" data-href="@detailsUrl">
                         <td class="cell-name">
                             <a href="@detailsUrl">@w.DisplayName</a>
+                            @if (w.UpdateAvailable)
+                            {
+                                <span class="workers-update-badge" title="Доступна версия @(w.LatestReleaseVersion)">Обновление</span>
+                            }
                         </td>
                         <td>
                             <span class="status-dot @(w.IsOnline ? "" : "offline")">
@@ -158,6 +174,46 @@
         </div>
     </div>
 </div>
+
+@if (!string.IsNullOrWhiteSpace(workersError))
+{
+    <div class="settings-alert settings-alert--warn" role="alert">@workersError</div>
+}
+
+@if (User.IsInRole(PanelRoles.Admin))
+{
+    <div class="workers-modal" id="workersAddModal" hidden>
+        <div class="workers-modal-backdrop" data-workers-add-close></div>
+        <div class="workers-modal-dialog" role="dialog" aria-labelledby="workersAddTitle" aria-modal="true">
+            <header class="workers-modal-head">
+                <h2 id="workersAddTitle">Добавить воркер</h2>
+                <button type="button" class="workers-modal-close" data-workers-add-close aria-label="Закрыть">
+                    <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                </button>
+            </header>
+            <form asp-action="Create" method="post" class="workers-modal-body">
+                @Html.AntiForgeryToken()
+                <p class="workers-modal-hint">Укажите имя VDS. API-ключ и команду установки будут показаны один раз после создания.</p>
+                <label class="workers-modal-label" for="workerDisplayName">Имя воркера</label>
+                <input type="text" id="workerDisplayName" name="displayName" class="workers-modal-input" placeholder="VDS #1" required maxlength="200" />
+                @if (Model.CanSelectOffice && Model.OfficeOptions.Count > 0)
+                {
+                    <label class="workers-modal-label" for="workerOfficeId">Офис</label>
+                    <select id="workerOfficeId" name="officeId" class="workers-modal-input" required>
+                        @foreach (var opt in Model.OfficeOptions)
+                        {
+                            <option value="@opt.Value">@opt.Label</option>
+                        }
+                    </select>
+                }
+                <footer class="workers-modal-footer">
+                    <button type="button" class="workers-modal-btn workers-modal-btn--ghost" data-workers-add-close>Отмена</button>
+                    <button type="submit" class="workers-modal-btn workers-modal-btn--primary">Создать</button>
+                </footer>
+            </form>
+        </div>
+    </div>
+}
 
 @section Scripts {
     <script src="~/js/orbita-workers.js" asp-append-version="true"></script>

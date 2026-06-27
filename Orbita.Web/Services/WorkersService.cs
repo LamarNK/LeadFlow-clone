@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.Extensions.Options;
 using Orbita.Contracts;
 using Orbita.Web.Models.ViewModels;
@@ -5,7 +6,10 @@ using Orbita.Web.Options;
 
 namespace Orbita.Web.Services;
 
-public sealed class WorkersService(OrbitaApiClient api, IOptions<DesignPreviewOptions> previewOptions) : IWorkersService
+public sealed class WorkersService(
+    OrbitaApiClient api,
+    IHttpContextAccessor httpContextAccessor,
+    IOptions<DesignPreviewOptions> previewOptions) : IWorkersService
 {
     private const int DefaultPageSize = 12;
 
@@ -20,6 +24,9 @@ public sealed class WorkersService(OrbitaApiClient api, IOptions<DesignPreviewOp
             return DesignPreviewData.BuildWorkersIndexViewModel(searchQuery, page, DefaultPageSize);
 
         var workers = await api.GetWorkersAsync(ct) ?? [];
+        var latestRelease = await api.GetLatestWorkerReleaseAsync(ct);
+        var isAdmin = httpContextAccessor.HttpContext?.User.IsInRole(PanelRoles.Admin) == true;
+        var offices = isAdmin ? await api.GetOfficesAsync(ct) ?? [] : [];
         var rows = workers.Select(MapRow).ToList();
 
         if (!string.IsNullOrWhiteSpace(searchQuery))
@@ -30,7 +37,14 @@ public sealed class WorkersService(OrbitaApiClient api, IOptions<DesignPreviewOp
                 .ToList();
         }
 
-        return BuildIndexViewModel(rows, searchQuery, page, DefaultPageSize);
+        return BuildIndexViewModel(
+            rows,
+            searchQuery,
+            page,
+            DefaultPageSize,
+            latestRelease,
+            isAdmin,
+            offices);
     }
 
     public async Task<WorkerDetailsViewModel?> GetDetailsAsync(Guid id, CancellationToken ct = default)
@@ -72,17 +86,77 @@ public sealed class WorkersService(OrbitaApiClient api, IOptions<DesignPreviewOp
             workerEvents,
             new WorkerExtraInfoViewModel
             {
+                IpAddress = string.IsNullOrWhiteSpace(apiWorker.IpAddress) ? "—" : apiWorker.IpAddress,
+                StartedAtUtc = apiWorker.StartedAtUtc,
                 LeadFlowVersion = apiWorker.AppVersion,
-                AgentVersion = apiWorker.AppVersion,
+                AgentVersion = string.IsNullOrWhiteSpace(apiWorker.AgentVersion)
+                    ? apiWorker.AppVersion
+                    : apiWorker.AgentVersion,
+                OperatingSystem = string.IsNullOrWhiteSpace(apiWorker.OperatingSystem) ? "—" : apiWorker.OperatingSystem,
                 ConnectionCheck = apiWorker.IsOnline ? "Успешно" : "Нет связи"
             });
     }
+
+    public async Task<(CreateWorkerResultViewModel? Result, string? Error)> CreateWorkerAsync(
+        string displayName,
+        Guid? officeId = null,
+        CancellationToken ct = default)
+    {
+        if (previewOptions.Value.Enabled)
+        {
+            return (new CreateWorkerResultViewModel
+            {
+                WorkerId = Guid.NewGuid(),
+                DisplayName = displayName,
+                ApiKey = "preview-api-key",
+                InstallCommand = "Запустите Orbita.Worker.Setup-Release.msi, затем вставьте API-ключ в мастере настройки."
+            }, null);
+        }
+
+        var (result, error) = await api.CreateWorkerAsync(displayName, officeId, ct);
+        if (error is not null || result is null)
+        {
+            return (null, error ?? "Не удалось создать воркер.");
+        }
+
+        var latestRelease = await api.GetLatestWorkerReleaseAsync(ct);
+        var msiName = latestRelease?.DownloadFileName ?? "Orbita.Worker.Setup.msi";
+        return (new CreateWorkerResultViewModel
+        {
+            WorkerId = result.WorkerId,
+            DisplayName = result.DisplayName,
+            ApiKey = result.ApiKey,
+            InstallCommand = $"Скачайте и установите {msiName} на VDS, затем в мастере настройки вставьте API-ключ: {result.ApiKey}"
+        }, null);
+    }
+
+    public Task<(bool Success, string? Error)> UpdateWorkerSettingsAsync(
+        Guid workerId,
+        int maxConcurrentAccounts,
+        CancellationToken ct = default) =>
+        api.UpdateWorkerSettingsAsync(workerId, maxConcurrentAccounts, ct);
+
+    public Task<(bool Success, string? Error)> UpdateWorkerAccountAsync(
+        Guid workerId,
+        Guid accountId,
+        bool isEnabled,
+        CancellationToken ct = default) =>
+        api.UpdateWorkerAccountAsync(workerId, accountId, isEnabled, ct);
+
+    public Task<(Stream? Stream, string? FileName, string? Error)> OpenLatestWorkerReleaseDownloadAsync(
+        CancellationToken ct = default) =>
+        previewOptions.Value.Enabled
+            ? Task.FromResult<(Stream?, string?, string?)>((null, null, "Режим предпросмотра."))
+            : api.OpenLatestWorkerReleaseDownloadAsync(ct);
 
     private static WorkersIndexViewModel BuildIndexViewModel(
         IReadOnlyList<WorkerRowViewModel> allRows,
         string? searchQuery,
         int page,
-        int pageSize)
+        int pageSize,
+        WorkerReleaseLatestDto? latestRelease = null,
+        bool canSelectOffice = false,
+        IReadOnlyList<OfficeDto>? offices = null)
     {
         var total = allRows.Count;
         var paged = allRows
@@ -147,7 +221,14 @@ public sealed class WorkersService(OrbitaApiClient api, IOptions<DesignPreviewOp
                 Page = page,
                 PageSize = pageSize,
                 TotalItems = total
-            }
+            },
+            HasWorkerRelease = latestRelease is not null,
+            LatestWorkerReleaseVersion = latestRelease?.Version,
+            LatestWorkerDownloadUrl = latestRelease is null ? null : "/Workers/DownloadLatest",
+            CanSelectOffice = canSelectOffice,
+            OfficeOptions = (offices ?? [])
+                .Select(o => new EventFilterOptionViewModel { Value = o.Id.ToString(), Label = o.Name })
+                .ToList()
         };
     }
 
@@ -161,6 +242,9 @@ public sealed class WorkersService(OrbitaApiClient api, IOptions<DesignPreviewOp
         Responses = w.TotalToday,
         Duplicates = 0,
         Errors = w.Errors,
-        LastActivityUtc = w.LastSeenAtUtc
+        LastActivityUtc = w.LastSeenAtUtc,
+        UpdateAvailable = w.UpdateAvailable,
+        LatestReleaseVersion = w.LatestReleaseVersion,
+        OfficeName = w.OfficeName
     };
 }

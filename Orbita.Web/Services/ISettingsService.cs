@@ -20,7 +20,31 @@ public interface ISettingsService
         string webhookUrl,
         CancellationToken ct = default);
 
-    Task<(bool Success, string? Error)> CreateUserAsync(string email, string password, string role, CancellationToken ct = default);
+    Task<(bool Success, string? Error)> CreateUserAsync(
+        string email,
+        string password,
+        string role,
+        Guid? officeId = null,
+        CancellationToken ct = default);
+
+    Task<(bool Success, string? Error)> UpdateUserOfficeAsync(
+        string userId,
+        Guid? officeId,
+        CancellationToken ct = default);
+
+    Task<(bool Success, string? Error, string? RegistrationSecret)> CreateOfficeAsync(
+        string name,
+        CancellationToken ct = default);
+
+    Task<(bool Success, string? Error)> UpdateOfficeAsync(
+        Guid officeId,
+        string name,
+        bool isEnabled,
+        CancellationToken ct = default);
+
+    Task<(bool Success, string? Error, string? RegistrationSecret)> RotateOfficeRegistrationSecretAsync(
+        Guid officeId,
+        CancellationToken ct = default);
 
     Task<(bool Success, string? Error)> DeleteUserAsync(string userId, CancellationToken ct = default);
 
@@ -39,6 +63,16 @@ public interface ISettingsService
     Task<(bool Success, string? Error)> SetWorkerEnabledAsync(Guid workerId, bool enabled, CancellationToken ct = default);
 
     Task<(string? ApiKey, string? Error)> RotateWorkerApiKeyAsync(Guid workerId, CancellationToken ct = default);
+
+    Task<(bool Success, string? Error)> UploadWorkerReleaseAsync(
+        IFormFile packageFile,
+        string? version,
+        string? releaseNotes,
+        CancellationToken ct = default);
+
+    Task<(bool Success, string? Error)> SetWorkerReleaseLatestAsync(string version, CancellationToken ct = default);
+
+    Task<(bool Success, string? Error)> DeleteWorkerReleaseAsync(string version, CancellationToken ct = default);
 
     Task<(bool Success, string? Error)> ChangeOwnPasswordAsync(
         string currentPassword,

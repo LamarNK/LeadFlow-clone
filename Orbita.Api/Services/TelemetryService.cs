@@ -5,21 +5,30 @@ using Orbita.Contracts;
 
 namespace Orbita.Api.Services;
 
-public sealed class TelemetryService(OrbitaDbContext db)
+public sealed class TelemetryService(OrbitaDbContext db, OfficeAdminService offices)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
-    public async Task<WorkerRegisterResponse?> RegisterAsync(WorkerRegisterRequest request, string registrationSecret, CancellationToken ct)
+    public async Task<WorkerRegisterResponse?> RegisterAsync(
+        WorkerRegisterRequest request,
+        string? legacyRegistrationSecret,
+        CancellationToken ct)
     {
-        if (!string.Equals(request.RegistrationSecret, registrationSecret, StringComparison.Ordinal))
+        var office = await offices.FindByRegistrationSecretAsync(request.RegistrationSecret, ct);
+        if (office is null
+            && (string.IsNullOrWhiteSpace(legacyRegistrationSecret)
+                || !string.Equals(request.RegistrationSecret, legacyRegistrationSecret, StringComparison.Ordinal)))
         {
             return null;
         }
+
+        office ??= await offices.EnsureDefaultOfficeAsync(legacyRegistrationSecret, ct);
 
         var apiKey = ApiKeyService.GenerateApiKey();
         var worker = new WorkerEntity
         {
             Id = Guid.NewGuid(),
+            OfficeId = office.Id,
             DisplayName = request.DisplayName.Trim(),
             MachineName = request.MachineName.Trim(),
             AppVersion = request.AppVersion.Trim(),
@@ -33,7 +42,7 @@ public sealed class TelemetryService(OrbitaDbContext db)
         return new WorkerRegisterResponse(worker.Id, apiKey);
     }
 
-    public async Task<bool> HeartbeatAsync(WorkerHeartbeatRequest request, CancellationToken ct)
+    public async Task<bool> HeartbeatAsync(WorkerHeartbeatRequest request, string? clientIpAddress, CancellationToken ct)
     {
         var worker = await db.Workers.FindAsync([request.WorkerId], ct);
         if (worker is null)
@@ -49,6 +58,45 @@ public sealed class TelemetryService(OrbitaDbContext db)
         worker.IsMonitoringActive = request.IsMonitoringActive;
         worker.NextCycleCheckAtUtc = request.NextCycleCheckAtUtc;
         worker.LastSeenAtUtc = DateTime.UtcNow;
+
+        var ipAddress = !string.IsNullOrWhiteSpace(clientIpAddress)
+            ? clientIpAddress.Trim()
+            : request.PublicIpAddress?.Trim();
+        if (!string.IsNullOrWhiteSpace(ipAddress))
+        {
+            worker.IpAddress = ipAddress;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.OperatingSystem))
+        {
+            worker.OperatingSystem = request.OperatingSystem.Trim();
+        }
+
+        if (request.StartedAtUtc is not null)
+        {
+            worker.StartedAtUtc = request.StartedAtUtc;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.AgentVersion))
+        {
+            worker.AgentVersion = request.AgentVersion.Trim();
+        }
+        if (request.SystemMetrics is not null)
+        {
+            worker.LastCpuPercent = request.SystemMetrics.CpuPercent;
+            worker.LastRamPercent = request.SystemMetrics.RamPercent;
+            worker.LastRamUsedMb = request.SystemMetrics.RamUsedMb;
+            worker.LastRamTotalMb = request.SystemMetrics.RamTotalMb;
+        }
+
+        if (request.LastUpdateResult is not null)
+        {
+            worker.LastUpdateVersion = request.LastUpdateResult.Version;
+            worker.LastUpdateSuccess = request.LastUpdateResult.Success;
+            worker.LastUpdateMessage = request.LastUpdateResult.Message;
+            worker.LastUpdateAtUtc = request.LastUpdateResult.CompletedAtUtc;
+        }
+
         await db.SaveChangesAsync(ct);
         return true;
     }

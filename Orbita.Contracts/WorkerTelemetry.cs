@@ -1,4 +1,4 @@
-namespace Orbita.Contracts;
+﻿namespace Orbita.Contracts;
 
 public sealed record WorkerRegisterRequest(
     string RegistrationSecret,
@@ -18,7 +18,13 @@ public sealed record WorkerHeartbeatRequest(
     string MonitoringStatus,
     string? MonitoringStatusMessage,
     bool IsMonitoringActive,
-    DateTime? NextCycleCheckAtUtc);
+    DateTime? NextCycleCheckAtUtc,
+    WorkerSystemMetricsDto? SystemMetrics = null,
+    WorkerUpdateResultDto? LastUpdateResult = null,
+    string? OperatingSystem = null,
+    DateTime? StartedAtUtc = null,
+    string? PublicIpAddress = null,
+    string? AgentVersion = null);
 
 public sealed record WorkerSnapshotRequest(
     Guid WorkerId,
@@ -63,7 +69,9 @@ public sealed record WorkerAccountDto(
     int BlockedCount,
     int DraftsCount,
     string? LastErrorMessage,
-    DateTime? LastMonitoringAt);
+    DateTime? LastMonitoringAt,
+    bool IsEnabledInPanel = false,
+    string AdsPowerProfileId = "");
 
 public sealed record WorkerBalanceDto(
     Guid AccountId,

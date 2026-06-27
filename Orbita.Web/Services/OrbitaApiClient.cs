@@ -140,15 +140,72 @@ public sealed class OrbitaApiClient(HttpClient http, AuthSession session, IOptio
         return GetAsync<ServiceLogsPageDto>(url, ct);
     }
 
+    public Task<IReadOnlyList<OfficeDto>?> GetOfficesAsync(CancellationToken ct = default) =>
+        GetAsync<IReadOnlyList<OfficeDto>>("api/v1/admin/offices", ct);
+
+    public Task<OfficeDetailDto?> GetOfficeAsync(Guid id, CancellationToken ct = default) =>
+        GetAsync<OfficeDetailDto>($"api/v1/admin/offices/{id}", ct);
+
+    public async Task<(OfficeDetailDto? Office, string? Error)> CreateOfficeAsync(string name, CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/admin/offices");
+        ApplyAuth(request);
+        request.Content = JsonContent.Create(new CreateOfficeRequest(name));
+        var response = await http.SendAsync(request, ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            return (null, await ReadApiErrorAsync(response, ct));
+        }
+
+        var office = await response.Content.ReadFromJsonAsync<OfficeDetailDto>(ct);
+        return office is null ? (null, "Не удалось прочитать ответ API.") : (office, null);
+    }
+
+    public async Task<(OfficeDetailDto? Office, string? Error)> UpdateOfficeAsync(
+        Guid id,
+        string name,
+        bool isEnabled,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Put, $"api/v1/admin/offices/{id}");
+        ApplyAuth(request);
+        request.Content = JsonContent.Create(new UpdateOfficeRequest(name, isEnabled));
+        var response = await http.SendAsync(request, ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            return (null, await ReadApiErrorAsync(response, ct));
+        }
+
+        var office = await response.Content.ReadFromJsonAsync<OfficeDetailDto>(ct);
+        return office is null ? (null, "Не удалось прочитать ответ API.") : (office, null);
+    }
+
+    public async Task<(RotateOfficeRegistrationSecretResponse? Result, string? Error)> RotateOfficeRegistrationSecretAsync(
+        Guid id,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"api/v1/admin/offices/{id}/rotate-registration-secret");
+        ApplyAuth(request);
+        var response = await http.SendAsync(request, ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            return (null, await ReadApiErrorAsync(response, ct));
+        }
+
+        var result = await response.Content.ReadFromJsonAsync<RotateOfficeRegistrationSecretResponse>(ct);
+        return result is null ? (null, "Не удалось прочитать ответ API.") : (result, null);
+    }
+
     public async Task<(bool Success, string? Error)> CreatePanelUserAsync(
         string email,
         string password,
         string role,
+        Guid? officeId = null,
         CancellationToken ct = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/admin/users");
         ApplyAuth(request);
-        request.Content = JsonContent.Create(new CreatePanelUserRequest(email, password, role));
+        request.Content = JsonContent.Create(new CreatePanelUserRequest(email, password, role, officeId));
         var response = await http.SendAsync(request, ct);
         if (response.IsSuccessStatusCode)
         {
@@ -239,6 +296,70 @@ public sealed class OrbitaApiClient(HttpClient http, AuthSession session, IOptio
         bool enabled,
         CancellationToken ct = default) =>
         await PostAdminActionAsync($"api/v1/admin/workers/{workerId}/{(enabled ? "enable" : "disable")}", ct);
+
+    public async Task<(bool Success, string? Error)> UpdatePanelUserOfficeAsync(
+        string userId,
+        Guid? officeId,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Put, $"api/v1/admin/users/{userId}/office");
+        ApplyAuth(request);
+        request.Content = JsonContent.Create(new UpdatePanelUserOfficeRequest(officeId));
+        var response = await http.SendAsync(request, ct);
+        return response.IsSuccessStatusCode
+            ? (true, null)
+            : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(CreateWorkerResponse? Result, string? Error)> CreateWorkerAsync(
+        string displayName,
+        Guid? officeId = null,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/admin/workers/create");
+        ApplyAuth(request);
+        request.Content = JsonContent.Create(new CreateWorkerRequest(displayName, officeId));
+        var response = await http.SendAsync(request, ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            return (null, await ReadApiErrorAsync(response, ct));
+        }
+
+        var result = await response.Content.ReadFromJsonAsync<CreateWorkerResponse>(ct);
+        return result is null ? (null, "Не удалось прочитать ответ API.") : (result, null);
+    }
+
+    public Task<WorkerConfigDto?> GetWorkerConfigAsync(Guid workerId, CancellationToken ct = default) =>
+        GetAsync<WorkerConfigDto>($"api/v1/workers/{workerId}/config", ct);
+
+    public async Task<(bool Success, string? Error)> UpdateWorkerSettingsAsync(
+        Guid workerId,
+        int maxConcurrentAccounts,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Patch, $"api/v1/workers/{workerId}/settings");
+        ApplyAuth(request);
+        request.Content = JsonContent.Create(new UpdateWorkerSettingsRequest(maxConcurrentAccounts));
+        var response = await http.SendAsync(request, ct);
+        return response.IsSuccessStatusCode
+            ? (true, null)
+            : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(bool Success, string? Error)> UpdateWorkerAccountAsync(
+        Guid workerId,
+        Guid accountId,
+        bool isEnabledInPanel,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Patch, $"api/v1/workers/{workerId}/accounts/{accountId}");
+        ApplyAuth(request);
+        request.Content = JsonContent.Create(new UpdateWorkerAccountRequest(isEnabledInPanel));
+        var response = await http.SendAsync(request, ct);
+        return response.IsSuccessStatusCode
+            ? (true, null)
+            : (false, await ReadApiErrorAsync(response, ct));
+    }
 
     public async Task<(RotateWorkerApiKeyResponse? Result, string? Error)> RotateWorkerApiKeyAsync(
         Guid workerId,
@@ -411,6 +532,108 @@ public sealed class OrbitaApiClient(HttpClient http, AuthSession session, IOptio
         return response.IsSuccessStatusCode
             ? (true, null)
             : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public Task<WorkerReleaseListResponse?> GetWorkerReleasesAsync(CancellationToken ct = default) =>
+        GetAsync<WorkerReleaseListResponse>("api/v1/admin/worker-releases", ct);
+
+    public Task<WorkerReleaseLatestDto?> GetLatestWorkerReleaseAsync(CancellationToken ct = default) =>
+        GetAsync<WorkerReleaseLatestDto>("api/v1/worker-releases/latest", ct);
+
+    public async Task<(WorkerReleaseInfoDto? Release, string? Error)> UploadWorkerReleaseAsync(
+        Stream packageStream,
+        long fileLength,
+        string fileName,
+        string? version,
+        string? releaseNotes,
+        CancellationToken ct = default)
+    {
+        using var content = new MultipartFormDataContent();
+        var fileContent = new StreamContent(packageStream);
+        fileContent.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+        fileContent.Headers.ContentLength = fileLength;
+        content.Add(fileContent, "packageFile", fileName);
+        if (!string.IsNullOrWhiteSpace(version))
+        {
+            content.Add(new StringContent(version.Trim()), "version");
+        }
+
+        if (!string.IsNullOrWhiteSpace(releaseNotes))
+        {
+            content.Add(new StringContent(releaseNotes.Trim()), "releaseNotes");
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/admin/worker-releases/upload");
+        ApplyAuth(request);
+        request.Content = content;
+        var response = await http.SendAsync(request, ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            return (null, await ReadApiErrorAsync(response, ct));
+        }
+
+        var release = await response.Content.ReadFromJsonAsync<WorkerReleaseInfoDto>(ct);
+        return release is null ? (null, "Не удалось прочитать ответ API.") : (release, null);
+    }
+
+    public async Task<(bool Success, string? Error)> SetWorkerReleaseLatestAsync(
+        string version,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/admin/worker-releases/set-latest");
+        ApplyAuth(request);
+        request.Content = JsonContent.Create(new SetWorkerReleaseLatestRequest(version));
+        var response = await http.SendAsync(request, ct);
+        return response.IsSuccessStatusCode
+            ? (true, null)
+            : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(bool Success, string? Error)> DeleteWorkerReleaseAsync(
+        string version,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/admin/worker-releases/delete");
+        ApplyAuth(request);
+        request.Content = JsonContent.Create(new DeleteWorkerReleaseRequest(version));
+        var response = await http.SendAsync(request, ct);
+        return response.IsSuccessStatusCode
+            ? (true, null)
+            : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(Stream? Stream, string? FileName, string? Error)> OpenLatestWorkerReleaseDownloadAsync(
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, "api/v1/public/worker-releases/latest/download");
+        var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            return (null, null, await ReadApiErrorAsync(response, ct));
+        }
+
+        var stream = await response.Content.ReadAsStreamAsync(ct);
+        var fileName = response.Content.Headers.ContentDisposition?.FileName?.Trim('"')
+            ?? "Orbita.Worker.Setup.msi";
+        return (stream, fileName, null);
+    }
+
+    public async Task<(Stream? Stream, string? FileName, string? Error)> OpenWorkerReleaseDownloadAsync(
+        string version,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"api/v1/admin/worker-releases/{Uri.EscapeDataString(version)}/download");
+        ApplyAuth(request);
+        var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            return (null, null, await ReadApiErrorAsync(response, ct));
+        }
+
+        var stream = await response.Content.ReadAsStreamAsync(ct);
+        var fileName = response.Content.Headers.ContentDisposition?.FileName?.Trim('"')
+            ?? $"Orbita.Worker.Setup-{version}.msi";
+        return (stream, fileName, null);
     }
 
     private async Task<(bool Success, string? Error)> PostAdminActionAsync(string url, CancellationToken ct)

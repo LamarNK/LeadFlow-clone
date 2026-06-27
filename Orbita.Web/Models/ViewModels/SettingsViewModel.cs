@@ -14,6 +14,9 @@ public sealed record SettingsIndexViewModel
     public ProfileSettingsViewModel? Profile { get; init; }
     public ServiceLogsViewModel? Logs { get; init; }
     public BitrixIntegrationsSettingsViewModel? Integrations { get; init; }
+    public WorkerReleasesSettingsViewModel? WorkerReleases { get; init; }
+    public OfficesSettingsViewModel? Offices { get; init; }
+    public IReadOnlyList<EventFilterOptionViewModel> OfficeOptions { get; init; } = [];
     public string? StatusMessage { get; init; }
     public string? ErrorMessage { get; init; }
 }
@@ -36,6 +39,51 @@ public sealed class PanelUserRowViewModel
     public string BitrixStatus { get; init; } = BitrixValidationStatuses.NotConfigured;
     public string BitrixStatusLabel { get; init; } = "Не настроено";
     public string BitrixStatusTone { get; init; } = "neutral";
+    public Guid? OfficeId { get; init; }
+    public string? OfficeName { get; init; }
+}
+
+public sealed class OfficesSettingsViewModel
+{
+    public IReadOnlyList<OfficeRowViewModel> Rows { get; init; } = [];
+    public OfficeDetailViewModel? Selected { get; init; }
+}
+
+public sealed class OfficeRowViewModel
+{
+    public required Guid Id { get; init; }
+    public required string Name { get; init; }
+    public bool IsEnabled { get; init; }
+    public int WorkerCount { get; init; }
+    public int UserCount { get; init; }
+    public DateTime CreatedAtUtc { get; init; }
+}
+
+public sealed class OfficeDetailViewModel
+{
+    public required Guid Id { get; init; }
+    public required string Name { get; init; }
+    public bool IsEnabled { get; init; }
+    public bool RegistrationConfigured { get; init; }
+    public required string MaskedRegistrationSecret { get; init; }
+}
+
+public sealed class CreateOfficeFormModel
+{
+    public string Name { get; set; } = string.Empty;
+}
+
+public sealed class UpdateOfficeFormModel
+{
+    public Guid OfficeId { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public bool IsEnabled { get; set; } = true;
+}
+
+public sealed class UpdatePanelUserOfficeFormModel
+{
+    public string UserId { get; set; } = string.Empty;
+    public Guid? OfficeId { get; set; }
 }
 
 public sealed class AccessProfileRowViewModel
@@ -70,6 +118,27 @@ public sealed class AdminWorkerRowViewModel
     public bool IsOnline { get; init; }
     public DateTime? LastSeenAtUtc { get; init; }
     public DateTime? ApiKeyRotatedAtUtc { get; init; }
+    public bool UpdateAvailable { get; init; }
+    public string? LatestReleaseVersion { get; init; }
+    public Guid OfficeId { get; init; }
+    public string OfficeName { get; init; } = string.Empty;
+}
+
+public sealed class WorkerReleasesSettingsViewModel
+{
+    public WorkerReleaseInfoViewModel? Latest { get; init; }
+    public IReadOnlyList<WorkerReleaseInfoViewModel> Versions { get; init; } = [];
+}
+
+public sealed class WorkerReleaseInfoViewModel
+{
+    public required string Version { get; init; }
+    public string? ReleaseNotes { get; init; }
+    public long FileSize { get; init; }
+    public string Sha256 { get; init; } = string.Empty;
+    public bool IsLatest { get; init; }
+    public DateTime UploadedAtUtc { get; init; }
+    public string FileSizeLabel { get; init; } = string.Empty;
 }
 
 public sealed class WorkerRegistrationViewModel
@@ -148,6 +217,7 @@ public sealed class CreatePanelUserFormModel
     public string Email { get; set; } = string.Empty;
     public string Password { get; set; } = string.Empty;
     public string Role { get; set; } = Orbita.Contracts.PanelRoles.Operator;
+    public Guid? OfficeId { get; set; }
 }
 
 public sealed class ResetPanelUserPasswordFormModel

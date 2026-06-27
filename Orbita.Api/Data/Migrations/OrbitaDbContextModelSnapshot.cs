@@ -218,6 +218,155 @@ namespace Orbita.Api.Data.Migrations
                     b.ToTable("AspNetUserTokens", (string)null);
                 });
 
+            modelBuilder.Entity("Orbita.Api.Data.CandidateResponseEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("AccountId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("AccountName")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int?>("Age")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("AvitoSubProfileId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("BitrixContactId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("BitrixEntityId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("BitrixEntityType")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("City")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ErrorMessage")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("FirstName")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("FullName")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("LastName")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("MessengerUrl")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("MiddleName")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("PhoneNormalized")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("PhoneRaw")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("ProcessedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("RawText")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("SourceResponseId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("SourceUrl")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Vacancy")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("VacancyUrl")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("WorkerId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("PhoneNormalized");
+
+                    b.HasIndex("WorkerId");
+
+                    b.HasIndex("AccountId", "SourceResponseId", "PhoneNormalized")
+                        .IsUnique();
+
+                    b.ToTable("CandidateResponses");
+                });
+
+            modelBuilder.Entity("Orbita.Api.Data.OfficeEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsEnabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("RegistrationSecretHash")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("Offices");
+                });
+
             modelBuilder.Entity("Orbita.Api.Data.PanelAuditLogEntity", b =>
                 {
                     b.Property<long>("Id")
@@ -304,6 +453,21 @@ namespace Orbita.Api.Data.Migrations
                     b.ToTable("PanelUserBitrixSettings");
                 });
 
+            modelBuilder.Entity("Orbita.Api.Data.PanelUserProfileEntity", b =>
+                {
+                    b.Property<string>("UserId")
+                        .HasColumnType("text");
+
+                    b.Property<Guid?>("OfficeId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("UserId");
+
+                    b.HasIndex("OfficeId");
+
+                    b.ToTable("PanelUserProfiles");
+                });
+
             modelBuilder.Entity("Orbita.Api.Data.WorkerAccountEntity", b =>
                 {
                     b.Property<Guid>("WorkerId")
@@ -314,6 +478,11 @@ namespace Orbita.Api.Data.Migrations
 
                     b.Property<int>("ActiveAdsCount")
                         .HasColumnType("integer");
+
+                    b.Property<string>("AdsPowerProfileId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
 
                     b.Property<int>("BlockedCount")
                         .HasColumnType("integer");
@@ -326,6 +495,9 @@ namespace Orbita.Api.Data.Migrations
                         .HasColumnType("integer");
 
                     b.Property<bool>("IsEnabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsEnabledInPanel")
                         .HasColumnType("boolean");
 
                     b.Property<string>("LastErrorMessage")
@@ -355,6 +527,18 @@ namespace Orbita.Api.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<string>("AdsPowerApiBaseUrl")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<string>("AdsPowerApiKey")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<string>("AgentVersion")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
                     b.Property<string>("ApiKeyHash")
                         .IsRequired()
                         .HasMaxLength(512)
@@ -376,19 +560,52 @@ namespace Orbita.Api.Data.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
+                    b.Property<string>("IpAddress")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
                     b.Property<bool>("IsEnabled")
                         .HasColumnType("boolean");
 
                     b.Property<bool>("IsMonitoringActive")
                         .HasColumnType("boolean");
 
+                    b.Property<double?>("LastCpuPercent")
+                        .HasColumnType("double precision");
+
+                    b.Property<double?>("LastRamPercent")
+                        .HasColumnType("double precision");
+
+                    b.Property<long?>("LastRamTotalMb")
+                        .HasColumnType("bigint");
+
+                    b.Property<long?>("LastRamUsedMb")
+                        .HasColumnType("bigint");
+
                     b.Property<DateTime?>("LastSeenAtUtc")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("LastUpdateAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("LastUpdateMessage")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<bool?>("LastUpdateSuccess")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("LastUpdateVersion")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
 
                     b.Property<string>("MachineName")
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
+
+                    b.Property<int>("MaxConcurrentAccounts")
+                        .HasColumnType("integer");
 
                     b.Property<string>("MonitoringStatus")
                         .IsRequired()
@@ -401,9 +618,21 @@ namespace Orbita.Api.Data.Migrations
                     b.Property<DateTime?>("NextCycleCheckAtUtc")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<Guid>("OfficeId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("OperatingSystem")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<DateTime?>("StartedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
                     b.HasKey("Id");
 
                     b.HasIndex("LastSeenAtUtc");
+
+                    b.HasIndex("OfficeId");
 
                     b.ToTable("Workers");
                 });
@@ -521,6 +750,27 @@ namespace Orbita.Api.Data.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Orbita.Api.Data.CandidateResponseEntity", b =>
+                {
+                    b.HasOne("Orbita.Api.Data.WorkerEntity", "Worker")
+                        .WithMany()
+                        .HasForeignKey("WorkerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Worker");
+                });
+
+            modelBuilder.Entity("Orbita.Api.Data.PanelUserProfileEntity", b =>
+                {
+                    b.HasOne("Orbita.Api.Data.OfficeEntity", "Office")
+                        .WithMany("UserProfiles")
+                        .HasForeignKey("OfficeId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Office");
+                });
+
             modelBuilder.Entity("Orbita.Api.Data.WorkerAccountEntity", b =>
                 {
                     b.HasOne("Orbita.Api.Data.WorkerEntity", "Worker")
@@ -530,6 +780,17 @@ namespace Orbita.Api.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Worker");
+                });
+
+            modelBuilder.Entity("Orbita.Api.Data.WorkerEntity", b =>
+                {
+                    b.HasOne("Orbita.Api.Data.OfficeEntity", "Office")
+                        .WithMany("Workers")
+                        .HasForeignKey("OfficeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Office");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.WorkerEventEntity", b =>
@@ -552,6 +813,13 @@ namespace Orbita.Api.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Worker");
+                });
+
+            modelBuilder.Entity("Orbita.Api.Data.OfficeEntity", b =>
+                {
+                    b.Navigation("UserProfiles");
+
+                    b.Navigation("Workers");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.WorkerEntity", b =>

@@ -1,33 +1,19 @@
 using Microsoft.EntityFrameworkCore;
 using Orbita.Api.Data;
+using Orbita.Api.Helpers;
 using Orbita.Contracts;
 
 namespace Orbita.Api.Services;
 
-public sealed class WorkerAdminService(OrbitaDbContext db, IConfiguration configuration)
+public sealed class WorkerAdminService(
+    OrbitaDbContext db,
+    IConfiguration configuration,
+    WorkerReleaseService releases)
 {
-    public async Task<IReadOnlyList<AdminWorkerListItemDto>> ListAsync(CancellationToken ct = default)
-    {
-        var now = DateTime.UtcNow;
-        return await db.Workers
-            .AsNoTracking()
-            .OrderBy(x => x.DisplayName)
-            .Select(x => new AdminWorkerListItemDto(
-                x.Id,
-                x.DisplayName,
-                x.MachineName,
-                x.AppVersion,
-                x.IsEnabled,
-                x.LastSeenAtUtc.HasValue && now - x.LastSeenAtUtc.Value <= WorkerOnlineRules.OnlineThreshold,
-                x.LastSeenAtUtc,
-                x.CreatedAtUtc,
-                x.ApiKeyRotatedAtUtc))
-            .ToListAsync(ct);
-    }
-
-    public async Task<(AdminWorkerListItemDto? Worker, string? Error)> RenameAsync(
-        Guid id,
+    public async Task<(CreateWorkerResponse? Result, string? Error)> CreateAsync(
         string displayName,
+        Guid? officeId,
+        OfficeScope scope,
         CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(displayName))
@@ -35,8 +21,71 @@ public sealed class WorkerAdminService(OrbitaDbContext db, IConfiguration config
             return (null, "Имя воркера обязательно.");
         }
 
-        var worker = await db.Workers.FindAsync([id], ct);
-        if (worker is null)
+        var resolvedOfficeId = await ResolveOfficeIdForCreateAsync(officeId, scope, ct);
+        if (resolvedOfficeId is null)
+        {
+            return (null, "Укажите офис для воркера.");
+        }
+
+        if (!await db.Offices.AnyAsync(x => x.Id == resolvedOfficeId && x.IsEnabled, ct))
+        {
+            return (null, "Офис не найден или отключён.");
+        }
+
+        var apiKey = ApiKeyService.GenerateApiKey();
+        var worker = new WorkerEntity
+        {
+            Id = Guid.NewGuid(),
+            OfficeId = resolvedOfficeId.Value,
+            DisplayName = displayName.Trim(),
+            MachineName = string.Empty,
+            AppVersion = string.Empty,
+            ApiKeyHash = ApiKeyService.HashApiKey(apiKey),
+            CreatedAtUtc = DateTime.UtcNow,
+            LastSeenAtUtc = null,
+            MaxConcurrentAccounts = 1
+        };
+
+        db.Workers.Add(worker);
+        await db.SaveChangesAsync(ct);
+        return (new CreateWorkerResponse(worker.Id, apiKey, worker.DisplayName), null);
+    }
+
+    public async Task<IReadOnlyList<AdminWorkerListItemDto>> ListAsync(
+        OfficeScope scope,
+        Guid? officeFilter = null,
+        CancellationToken ct = default)
+    {
+        var now = DateTime.UtcNow;
+        var latestRelease = await releases.GetLatestAsync(ct);
+        var latestReleaseVersion = latestRelease?.Version;
+        var workers = await db.Workers
+            .AsNoTracking()
+            .Include(x => x.Office)
+            .OrderBy(x => x.DisplayName)
+            .ToListAsync(ct);
+
+        return workers
+            .Where(x => scope.IsGlobalAdmin
+                ? officeFilter is null || x.OfficeId == officeFilter
+                : x.OfficeId == scope.OfficeId)
+            .Select(x => Map(x, now, latestReleaseVersion))
+            .ToList();
+    }
+
+    public async Task<(AdminWorkerListItemDto? Worker, string? Error)> RenameAsync(
+        Guid id,
+        string displayName,
+        OfficeScope scope,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(displayName))
+        {
+            return (null, "Имя воркера обязательно.");
+        }
+
+        var worker = await db.Workers.Include(x => x.Office).FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (worker is null || !scope.CanAccessOffice(worker.OfficeId))
         {
             return (null, "Воркер не найден.");
         }
@@ -49,10 +98,11 @@ public sealed class WorkerAdminService(OrbitaDbContext db, IConfiguration config
     public async Task<(AdminWorkerListItemDto? Worker, string? Error)> SetEnabledAsync(
         Guid id,
         bool enabled,
+        OfficeScope scope,
         CancellationToken ct = default)
     {
-        var worker = await db.Workers.FindAsync([id], ct);
-        if (worker is null)
+        var worker = await db.Workers.Include(x => x.Office).FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (worker is null || !scope.CanAccessOffice(worker.OfficeId))
         {
             return (null, "Воркер не найден.");
         }
@@ -64,10 +114,11 @@ public sealed class WorkerAdminService(OrbitaDbContext db, IConfiguration config
 
     public async Task<(RotateWorkerApiKeyResponse? Result, string? Error)> RotateApiKeyAsync(
         Guid id,
+        OfficeScope scope,
         CancellationToken ct = default)
     {
         var worker = await db.Workers.FindAsync([id], ct);
-        if (worker is null)
+        if (worker is null || !scope.CanAccessOffice(worker.OfficeId))
         {
             return (null, "Воркер не найден.");
         }
@@ -86,12 +137,26 @@ public sealed class WorkerAdminService(OrbitaDbContext db, IConfiguration config
         return new WorkerRegistrationInfoDto(
             isConfigured,
             MaskSecret(secret),
-            "config");
+            "legacy-config");
     }
 
-    private static AdminWorkerListItemDto Map(WorkerEntity worker)
+    private async Task<Guid?> ResolveOfficeIdForCreateAsync(Guid? officeId, OfficeScope scope, CancellationToken ct)
     {
-        var now = DateTime.UtcNow;
+        if (scope.IsGlobalAdmin)
+        {
+            return officeId;
+        }
+
+        return scope.OfficeId;
+    }
+
+    private static AdminWorkerListItemDto Map(
+        WorkerEntity worker,
+        DateTime? nowUtc = null,
+        string? latestReleaseVersion = null)
+    {
+        var now = nowUtc ?? DateTime.UtcNow;
+        var updateAvailable = AppVersionHelper.IsNewer(latestReleaseVersion, worker.AppVersion);
         return new AdminWorkerListItemDto(
             worker.Id,
             worker.DisplayName,
@@ -101,7 +166,11 @@ public sealed class WorkerAdminService(OrbitaDbContext db, IConfiguration config
             WorkerOnlineRules.IsOnline(worker.LastSeenAtUtc, now),
             worker.LastSeenAtUtc,
             worker.CreatedAtUtc,
-            worker.ApiKeyRotatedAtUtc);
+            worker.ApiKeyRotatedAtUtc,
+            updateAvailable,
+            latestReleaseVersion,
+            worker.OfficeId,
+            worker.Office?.Name ?? string.Empty);
     }
 
     private static string MaskSecret(string secret)

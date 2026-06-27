@@ -5,9 +5,13 @@ public sealed record PanelUserDto(
     string Email,
     bool EmailConfirmed,
     string Role,
-    bool IsLocked);
+    bool IsLocked,
+    Guid? OfficeId = null,
+    string? OfficeName = null);
 
-public sealed record CreatePanelUserRequest(string Email, string Password, string Role);
+public sealed record CreatePanelUserRequest(string Email, string Password, string Role, Guid? OfficeId = null);
+
+public sealed record UpdatePanelUserOfficeRequest(Guid? OfficeId);
 
 public sealed record ResetPanelUserPasswordRequest(string Password);
 
@@ -45,7 +49,11 @@ public sealed record AdminWorkerListItemDto(
     bool IsOnline,
     DateTime? LastSeenAtUtc,
     DateTime CreatedAtUtc,
-    DateTime? ApiKeyRotatedAtUtc);
+    DateTime? ApiKeyRotatedAtUtc,
+    bool UpdateAvailable = false,
+    string? LatestReleaseVersion = null,
+    Guid OfficeId = default,
+    string OfficeName = "");
 
 public sealed record UpdateAdminWorkerRequest(string DisplayName);
 
@@ -82,7 +90,9 @@ public sealed record PasswordPolicyDto(
 
 public sealed record PanelProfileDto(
     string Email,
-    string Role);
+    string Role,
+    Guid? OfficeId = null,
+    string? OfficeName = null);
 
 public static class PanelAuditActions
 {
@@ -100,6 +110,7 @@ public static class PanelAuditActions
     public const string WorkerDisabled = "worker.disabled";
     public const string WorkerEnabled = "worker.enabled";
     public const string WorkerKeyRotated = "worker.key_rotated";
+    public const string WorkerCreated = "worker.created";
     public const string BitrixWebhookUpdated = "bitrix.webhook_updated";
     public const string BitrixWebhookValidated = "bitrix.webhook_validated";
 }

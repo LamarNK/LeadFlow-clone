@@ -14,6 +14,11 @@ public sealed class WorkersIndexViewModel
     public IReadOnlyList<WorkerRowViewModel> Workers { get; init; } = [];
     public PaginationViewModel Pagination { get; init; } = new();
     public string? SearchQuery { get; init; }
+    public bool HasWorkerRelease { get; init; }
+    public string? LatestWorkerReleaseVersion { get; init; }
+    public string? LatestWorkerDownloadUrl { get; init; }
+    public IReadOnlyList<EventFilterOptionViewModel> OfficeOptions { get; init; } = [];
+    public bool CanSelectOffice { get; init; }
 }
 
 public sealed class BreadcrumbItemViewModel
@@ -43,6 +48,9 @@ public sealed class WorkerRowViewModel
     public int Duplicates { get; init; }
     public int Errors { get; init; }
     public DateTime? LastActivityUtc { get; init; }
+    public bool UpdateAvailable { get; init; }
+    public string? LatestReleaseVersion { get; init; }
+    public string OfficeName { get; init; } = string.Empty;
 }
 
 public sealed class PaginationViewModel
@@ -58,9 +66,22 @@ public sealed class PaginationViewModel
     public int RangeEnd => TotalItems == 0 ? 0 : Math.Min(Page * PageSize, TotalItems);
 }
 
+public sealed class CreateWorkerResultViewModel
+{
+    public Guid WorkerId { get; init; }
+    public string ApiKey { get; init; } = string.Empty;
+    public string DisplayName { get; init; } = string.Empty;
+    public string InstallCommand { get; init; } = string.Empty;
+}
+
 public sealed class WorkerDetailsViewModel
 {
     public Guid WorkerId { get; init; }
+    public int MaxConcurrentAccounts { get; init; } = 1;
+    public double? CpuPercent { get; init; }
+    public double? RamPercent { get; init; }
+    public long? RamUsedMb { get; init; }
+    public long? RamTotalMb { get; init; }
     public IReadOnlyList<BreadcrumbItemViewModel> Breadcrumbs { get; init; } = [];
     public string DisplayName { get; init; } = string.Empty;
     public bool IsOnline { get; init; }
@@ -91,6 +112,8 @@ public sealed class WorkerAccountRowViewModel
 {
     public Guid Id { get; init; }
     public string DisplayName { get; init; } = string.Empty;
+    public bool IsEnabledInPanel { get; init; }
+    public string AdsPowerProfileId { get; init; } = string.Empty;
     public string StatusLabel { get; init; } = string.Empty;
     public string StatusTone { get; init; } = "success";
     public string BalanceText { get; init; } = "—";
