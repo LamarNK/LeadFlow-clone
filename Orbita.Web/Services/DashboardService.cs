@@ -33,7 +33,7 @@ public sealed class DashboardService(OrbitaApiClient api, IOptions<DesignPreview
                 Subtitle = "Общая сводка по всем воркерам",
                 ShowRefresh = true,
                 ShowDateRange = true,
-                UpdatedAt = DateTime.Now
+                UpdatedAtUtc = DateTime.UtcNow
             },
             KpiCards = kpiCards,
             Workers = workers.Select(w => new DashboardWorkerRowViewModel
@@ -46,14 +46,14 @@ public sealed class DashboardService(OrbitaApiClient api, IOptions<DesignPreview
                 Responses = w.TotalToday,
                 Duplicates = 0,
                 Errors = w.Errors,
-                LastActivityLocal = w.LastSeenAtUtc?.ToLocalTime()
+                LastActivityUtc = w.LastSeenAtUtc
             }).ToList(),
             HourlyChart = hourlyChart,
             Events = events.Select(e => new DashboardEventRowViewModel
             {
                 Message = e.Message,
                 Subtitle = !string.IsNullOrWhiteSpace(e.Details) ? e.Details : e.AccountId.HasValue ? "Аккаунт" : string.Empty,
-                Time = e.CreatedAtUtc.ToLocalTime().ToString("HH:mm:ss"),
+                TimeUtc = e.CreatedAtUtc,
                 WorkerName = e.WorkerDisplayName,
                 Level = e.Level.Equals("Error", StringComparison.OrdinalIgnoreCase) ? "error"
                     : e.Level.Equals("Warning", StringComparison.OrdinalIgnoreCase) ? "warning" : "success"

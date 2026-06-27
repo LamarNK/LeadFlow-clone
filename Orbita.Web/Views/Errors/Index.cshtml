@@ -158,7 +158,7 @@
                         ? null
                         : Url.Action("Index", "Accounts", new { q = error.AccountName });
                     <tr class="errors-row" data-copy="@error.CopyText">
-                        <td class="errors-time">@error.OccurredAtLocal.ToString("dd.MM.yyyy HH:mm:ss")</td>
+                        <td class="errors-time"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(error.OccurredAtUtc, "datetime-seconds"))" /></td>
                         <td>
                             <span class="error-severity-badge error-severity-badge--@error.Severity">@error.SeverityLabel</span>
                         </td>
@@ -178,7 +178,7 @@
                             <a href="@workerUrl">@error.WorkerName</a>
                         </td>
                         <td class="cell-num @(error.OccurrenceCount > 10 ? "errors-count-high" : "")">@error.OccurrenceCount</td>
-                        <td class="errors-last-seen">@error.LastSeenLocal.ToString("HH:mm:ss")</td>
+                        <td class="errors-last-seen"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(error.LastSeenUtc, "time"))" /></td>
                         <td class="data-table-menu">
                             <div class="row-menu" data-row-menu>
                                 <button type="button" class="row-menu-btn" aria-label="Действия" aria-expanded="false" aria-haspopup="true">

@@ -32,11 +32,14 @@ services:
       Cors__Origins__0: ${CORS_ORIGIN_0:-https://orbitsu.ru}
       Cors__Origins__1: ${CORS_ORIGIN_1:-https://www.orbitsu.ru}
       Cors__Origins__2: ${CORS_ORIGIN_2:-http://163.5.153.207}
+      Logs__SharedRoot: /app/Data/logs
     depends_on:
       postgres:
         condition: service_healthy
     ports:
       - "127.0.0.1:8082:8080"
+    volumes:
+      - orbita_logs:/app/Data/logs
 
   web:
     image: orbita-web:prod
@@ -47,10 +50,16 @@ services:
     environment:
       ASPNETCORE_URLS: http://+:8080
       OrbitaApi__BaseUrl: http://api:8080
+      Jwt__Key: ${JWT_KEY}
+      DataProtection__KeysPath: /app/Data/dataprotection
+      Logs__SharedRoot: /app/Data/logs
     depends_on:
       - api
     ports:
       - "127.0.0.1:8081:8080"
+    volumes:
+      - orbita_dataprotection:/app/Data/dataprotection
+      - orbita_logs:/app/Data/logs
 
   notifybot-postgres:
     image: postgres:16
@@ -92,4 +101,6 @@ services:
 
 volumes:
   orbita_pg:
+  orbita_logs:
+  orbita_dataprotection:
   notifybot_pg:

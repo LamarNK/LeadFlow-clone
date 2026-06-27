@@ -43,7 +43,7 @@ public sealed class DashboardWorkerRowViewModel
     public int Responses { get; init; }
     public int Duplicates { get; init; }
     public int Errors { get; init; }
-    public DateTime? LastActivityLocal { get; init; }
+    public DateTime? LastActivityUtc { get; init; }
 }
 
 public sealed class DashboardChartPointViewModel
@@ -57,7 +57,7 @@ public sealed class DashboardEventRowViewModel
 {
     public string Message { get; init; } = string.Empty;
     public string Subtitle { get; init; } = string.Empty;
-    public string Time { get; init; } = string.Empty;
+    public DateTime TimeUtc { get; init; }
     public string WorkerName { get; init; } = string.Empty;
     public string Level { get; init; } = "success";
 }

@@ -13,6 +13,8 @@ public sealed class WorkerEntity
     public DateTime? NextCycleCheckAtUtc { get; set; }
     public DateTime? LastSeenAtUtc { get; set; }
     public DateTime CreatedAtUtc { get; set; }
+    public bool IsEnabled { get; set; } = true;
+    public DateTime? ApiKeyRotatedAtUtc { get; set; }
 
     public ICollection<WorkerSnapshotEntity> Snapshots { get; set; } = [];
     public ICollection<WorkerAccountEntity> Accounts { get; set; } = [];
@@ -59,4 +61,17 @@ public sealed class WorkerEventEntity
     public DateTime CreatedAtUtc { get; set; }
 
     public WorkerEntity Worker { get; set; } = null!;
+}
+
+public sealed class PanelAuditLogEntity
+{
+    public long Id { get; set; }
+    public DateTime TimestampUtc { get; set; }
+    public string? ActorUserId { get; set; }
+    public string? ActorEmail { get; set; }
+    public string Action { get; set; } = string.Empty;
+    public string? TargetType { get; set; }
+    public string? TargetId { get; set; }
+    public string? Details { get; set; }
+    public string? IpAddress { get; set; }
 }

@@ -69,7 +69,7 @@ internal static class AccountsIndexBuilder
             Responses = responses,
             UniqueResponses = unique,
             Errors = errors,
-            LastActivityLocal = account.LastMonitoringAt?.ToLocalTime()
+            LastActivityUtc = account.LastMonitoringAt
         };
     }
 

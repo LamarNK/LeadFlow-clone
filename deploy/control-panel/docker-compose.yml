@@ -23,10 +23,14 @@ services:
       Admin__Password: ${ADMIN_PASSWORD:-OrbitaAdmin1!}
       Cors__Origins__0: http://localhost:8081
       Cors__Origins__1: http://web:8080
+      LOG_SERVICE_NAME: Orbita.Api
+      Logs__SharedRoot: /app/Data/logs
     depends_on:
       - postgres
     ports:
       - "8080:8080"
+    volumes:
+      - orbita_logs:/app/Data/logs
 
   web:
     build:
@@ -35,10 +39,19 @@ services:
     environment:
       ASPNETCORE_URLS: http://+:8080
       OrbitaApi__BaseUrl: http://api:8080
+      Jwt__Key: ${JWT_KEY:-OrbitaProdSigningKey_ChangeMe_32chars!!}
+      DataProtection__KeysPath: /app/Data/dataprotection
+      LOG_SERVICE_NAME: Orbita.Web
+      Logs__SharedRoot: /app/Data/logs
     depends_on:
       - api
     ports:
       - "8081:8080"
+    volumes:
+      - orbita_logs:/app/Data/logs
+      - orbita_dataprotection:/app/Data/dataprotection
 
 volumes:
   orbita_pg:
+  orbita_logs:
+  orbita_dataprotection:

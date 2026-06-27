@@ -28,8 +28,8 @@
                 <span class="orbita-updated-text">
                     Обновлено:
                     <time class="orbita-updated-time"
-                          datetime="@Model.UpdatedAt.ToString("o")"
-                          data-orbita-updated-at>@Model.UpdatedAt.ToString("HH:mm:ss")</time>
+                          data-orbita-utc="@OrbitaTime.ToIsoUtc(Model.UpdatedAtUtc)"
+                          data-orbita-format="time"></time>
                 </span>
             </div>
         }

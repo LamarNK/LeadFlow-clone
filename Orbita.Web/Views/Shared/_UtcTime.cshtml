@@ -1,0 +1,14 @@
+@using Orbita.Web.Formatting
+@model UtcTimeDisplayModel
+@if (Model.Utc is null)
+{
+    @:—
+}
+else
+{
+    var iso = OrbitaTime.ToIsoUtc(Model.Utc.Value);
+    <time datetime="@iso"
+          class="@Model.CssClass"
+          data-orbita-utc="@iso"
+          data-orbita-format="@Model.Format"></time>
+}

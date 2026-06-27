@@ -94,7 +94,7 @@ internal static class DesignPreviewData
             w.IsOnline ? null : "Нет heartbeat",
             w.IsOnline,
             w.IsOnline,
-            w.LastActivityLocal?.ToUniversalTime(),
+            w.LastActivityUtc?.ToUniversalTime(),
             w.TotalAccounts,
             w.Responses,
             w.Errors)).ToList();
@@ -130,13 +130,13 @@ internal static class DesignPreviewData
             Responses = responses[i],
             Duplicates = duplicates[i],
             Errors = errors[i],
-            LastActivityLocal = times[i]?.ToLocalTime()
+            LastActivityUtc = times[i]
         }).ToList();
     }
 
     public static DashboardViewModel BuildDashboardViewModel()
     {
-        var updatedAt = DateTime.Now;
+        var updatedAt = Now;
         var kpiCards = (IReadOnlyList<DashboardKpiCardViewModel>)
         [
             new()
@@ -220,7 +220,7 @@ internal static class DesignPreviewData
                 Subtitle = "Общая сводка по всем воркерам",
                 ShowRefresh = true,
                 ShowDateRange = true,
-                UpdatedAt = updatedAt,
+                UpdatedAtUtc = updatedAt,
                 DateRangeLabel = $"{DateTime.Today:dd.MM.yyyy} — {DateTime.Today:dd.MM.yyyy}"
             },
             KpiCards = kpiCards,
@@ -236,7 +236,7 @@ internal static class DesignPreviewData
                     Responses = 432,
                     Duplicates = 98,
                     Errors = 5,
-                    LastActivityLocal = updatedAt.AddSeconds(-12)
+                    LastActivityUtc = updatedAt.AddSeconds(-12)
                 },
                 new()
                 {
@@ -248,7 +248,7 @@ internal static class DesignPreviewData
                     Responses = 401,
                     Duplicates = 87,
                     Errors = 8,
-                    LastActivityLocal = updatedAt.AddSeconds(-8)
+                    LastActivityUtc = updatedAt.AddSeconds(-8)
                 },
                 new()
                 {
@@ -260,17 +260,17 @@ internal static class DesignPreviewData
                     Responses = 401,
                     Duplicates = 71,
                     Errors = 5,
-                    LastActivityLocal = updatedAt.AddSeconds(-15)
+                    LastActivityUtc = updatedAt.AddSeconds(-15)
                 }
             ],
             HourlyChart = hourlyChart,
             Events =
             [
-                new() { Message = "Новый отклик по объявлению 12345678", Subtitle = "Аккаунт: user_01", Time = "10:24:18", WorkerName = "Worker #1", Level = "success" },
-                new() { Message = "Найден дубликат отклика", Subtitle = "Аккаунт: user_07", Time = "10:23:45", WorkerName = "Worker #2", Level = "warning" },
-                new() { Message = "Ошибка при отправке в Bitrix24", Subtitle = "Аккаунт: user_03", Time = "10:23:12", WorkerName = "Worker #1", Level = "error" },
-                new() { Message = "Баланс обновлен", Subtitle = "Аккаунт: user_05", Time = "10:22:59", WorkerName = "Worker #3", Level = "success" },
-                new() { Message = "Аккаунт успешно авторизован", Subtitle = "Аккаунт: user_08", Time = "10:22:31", WorkerName = "Worker #2", Level = "success" }
+                new() { Message = "Новый отклик по объявлению 12345678", Subtitle = "Аккаунт: user_01", TimeUtc = updatedAt.AddSeconds(-42), WorkerName = "Worker #1", Level = "success" },
+                new() { Message = "Найден дубликат отклика", Subtitle = "Аккаунт: user_07", TimeUtc = updatedAt.AddSeconds(-75), WorkerName = "Worker #2", Level = "warning" },
+                new() { Message = "Ошибка при отправке в Bitrix24", Subtitle = "Аккаунт: user_03", TimeUtc = updatedAt.AddSeconds(-108), WorkerName = "Worker #1", Level = "error" },
+                new() { Message = "Баланс обновлен", Subtitle = "Аккаунт: user_05", TimeUtc = updatedAt.AddSeconds(-121), WorkerName = "Worker #3", Level = "success" },
+                new() { Message = "Аккаунт успешно авторизован", Subtitle = "Аккаунт: user_08", TimeUtc = updatedAt.AddSeconds(-149), WorkerName = "Worker #2", Level = "success" }
             ],
             AccountStats = accountStats,
             Charts = DashboardChartsBuilder.FromPresentation(kpiCards, hourlyChart, accountStats)
@@ -323,7 +323,7 @@ internal static class DesignPreviewData
             row.IsOnline ? null : "Нет heartbeat",
             row.IsOnline,
             row.IsOnline,
-            row.LastActivityLocal?.ToUniversalTime(),
+            row.LastActivityUtc?.ToUniversalTime(),
             row.IsOnline ? Now.AddMinutes(5) : null,
             new DashboardStatsDto(
                 6, row.Responses, row.Responses - row.Duplicates, row.Duplicates, row.Errors,
@@ -376,11 +376,11 @@ internal static class DesignPreviewData
         if (index < 0) index = 0;
 
         var row = BuildWorkerRows().FirstOrDefault(w => w.Id == workerId);
-        var startedAt = DateTime.Now.AddDays(-2).AddHours(-14).AddMinutes(-index * 17);
+        var startedAt = Now.AddDays(-2).AddHours(-14).AddMinutes(-index * 17);
         return new WorkerExtraInfoViewModel
         {
             IpAddress = $"185.22.{174 + index}.{101 + index}",
-            StartedAtLocal = startedAt,
+            StartedAtUtc = startedAt,
             LeadFlowVersion = "2.4.1",
             AgentVersion = "1.8.3",
             OperatingSystem = index % 3 == 0 ? "Windows Server 2022" : index % 3 == 1 ? "Windows Server 2019" : "Ubuntu 22.04 LTS",
@@ -420,7 +420,7 @@ internal static class DesignPreviewData
                 StatusTone = tones[i - 1],
                 BalanceText = $"{balances[i - 1]:N0} ₽",
                 Responses = responses[i - 1],
-                LastActivityLocal = DateTime.Now.AddMinutes(-(i * 3 + 1)),
+                LastActivityUtc = Now.AddMinutes(-(i * 3 + 1)),
                 Errors = errors[i - 1]
             }).ToList();
         }
@@ -442,16 +442,16 @@ internal static class DesignPreviewData
         {
             return
             [
-                new() { Message = "Новый отклик", Subtitle = "Аккаунт user_01", Time = "11:21", Level = "success" },
-                new() { Message = "Отклик отправлен в CRM", Subtitle = "Аккаунт user_02", Time = "11:19", Level = "success" },
-                new() { Message = "Дубликат отклика пропущен", Subtitle = "Аккаунт user_07", Time = "11:17", Level = "warning" },
-                new() { Message = "Баланс обновлён", Subtitle = "Аккаунт user_05", Time = "11:14", Level = "success" },
-                new() { Message = "Ошибка авторизации", Subtitle = "Аккаунт user_03", Time = "11:11", Level = "error" },
-                new() { Message = "Мониторинг завершён", Subtitle = "10 аккаунтов", Time = "11:08", Level = "success" },
-                new() { Message = "Новый отклик", Subtitle = "Аккаунт user_08", Time = "11:05", Level = "success" },
-                new() { Message = "Объявление разблокировано", Subtitle = "Аккаунт user_04", Time = "10:58", Level = "success" },
-                new() { Message = "Требуется авторизация", Subtitle = "Аккаунт user_03", Time = "10:52", Level = "warning" },
-                new() { Message = "Heartbeat получен", Subtitle = "Агент LeadFlow", Time = "10:48", Level = "success" }
+                new() { Message = "Новый отклик", Subtitle = "Аккаунт user_01", TimeUtc = Now.AddMinutes(-3), Level = "success" },
+                new() { Message = "Отклик отправлен в CRM", Subtitle = "Аккаунт user_02", TimeUtc = Now.AddMinutes(-5), Level = "success" },
+                new() { Message = "Дубликат отклика пропущен", Subtitle = "Аккаунт user_07", TimeUtc = Now.AddMinutes(-7), Level = "warning" },
+                new() { Message = "Баланс обновлён", Subtitle = "Аккаунт user_05", TimeUtc = Now.AddMinutes(-10), Level = "success" },
+                new() { Message = "Ошибка авторизации", Subtitle = "Аккаунт user_03", TimeUtc = Now.AddMinutes(-13), Level = "error" },
+                new() { Message = "Мониторинг завершён", Subtitle = "10 аккаунтов", TimeUtc = Now.AddMinutes(-16), Level = "success" },
+                new() { Message = "Новый отклик", Subtitle = "Аккаунт user_08", TimeUtc = Now.AddMinutes(-19), Level = "success" },
+                new() { Message = "Объявление разблокировано", Subtitle = "Аккаунт user_04", TimeUtc = Now.AddMinutes(-26), Level = "success" },
+                new() { Message = "Требуется авторизация", Subtitle = "Аккаунт user_03", TimeUtc = Now.AddMinutes(-32), Level = "warning" },
+                new() { Message = "Heartbeat получен", Subtitle = "Агент LeadFlow", TimeUtc = Now.AddMinutes(-36), Level = "success" }
             ];
         }
 
@@ -463,7 +463,7 @@ internal static class DesignPreviewData
             {
                 Message = e.Message,
                 Subtitle = e.AccountId.HasValue ? $"Аккаунт {e.AccountId.Value.ToString()[..8]}" : (e.Details ?? string.Empty),
-                Time = e.CreatedAtUtc.ToLocalTime().ToString("HH:mm"),
+                TimeUtc = e.CreatedAtUtc,
                 Level = e.Level.Equals("Error", StringComparison.OrdinalIgnoreCase) ? "error"
                     : e.Level.Equals("Warning", StringComparison.OrdinalIgnoreCase) ? "warning" : "success"
             })
@@ -610,8 +610,8 @@ internal static class DesignPreviewData
             var message = messages[i % messages.Length];
             var firstSeenMinutes = 180 + i * 7 + rng.Next(0, 20);
             var lastSeenMinutes = rng.Next(1, Math.Max(2, firstSeenMinutes / 3));
-            var occurredAt = DateTime.Now.AddMinutes(-firstSeenMinutes);
-            var lastSeen = DateTime.Now.AddMinutes(-lastSeenMinutes);
+            var occurredAt = Now.AddMinutes(-firstSeenMinutes);
+            var lastSeen = Now.AddMinutes(-lastSeenMinutes);
             var occurrences = severity switch
             {
                 "critical" => rng.Next(12, 150),
@@ -623,7 +623,7 @@ internal static class DesignPreviewData
             rows.Add(new ErrorRowViewModel
             {
                 Id = Guid.Parse($"55555555-5555-5555-5555-{(i + 1):D12}"),
-                OccurredAtLocal = occurredAt,
+                OccurredAtUtc = occurredAt,
                 Severity = severity,
                 SeverityLabel = ErrorsIndexBuilder.SeverityLabel(severity),
                 ErrorType = errorType,
@@ -635,7 +635,7 @@ internal static class DesignPreviewData
                 WorkerId = workerId,
                 WorkerName = workerName,
                 OccurrenceCount = occurrences,
-                LastSeenLocal = lastSeen
+                LastSeenUtc = lastSeen
             });
         }
 
@@ -710,7 +710,7 @@ internal static class DesignPreviewData
             var accountName = $"user_{(i % 120) + 1:D2}";
             var accountId = Guid.Parse($"33333333-3333-3333-3333-{(i % 120) + 1:D12}");
             var minutesAgo = i * 3 + rng.Next(0, 5);
-            var occurredAt = DateTime.Now.AddMinutes(-minutesAgo);
+            var occurredAt = Now.AddMinutes(-minutesAgo);
 
             string message;
             string? details = null;
@@ -773,7 +773,7 @@ internal static class DesignPreviewData
             rows.Add(new EventRowViewModel
             {
                 Id = Guid.Parse($"44444444-4444-4444-4444-{(i + 1):D12}"),
-                OccurredAtLocal = occurredAt,
+                OccurredAtUtc = occurredAt,
                 EventType = type,
                 EventTypeLabel = typeLabel,
                 EventTypeIcon = typeIcon,
@@ -847,9 +847,9 @@ internal static class DesignPreviewData
             var lastActivity = tone switch
             {
                 "inactive" => (DateTime?)null,
-                "blocked" => Now.AddDays(-rng.Next(2, 14)).ToLocalTime(),
-                "error" => Now.AddMinutes(-rng.Next(30, 240)).ToLocalTime(),
-                _ => Now.AddMinutes(-rng.Next(1, 180)).ToLocalTime()
+                "blocked" => Now.AddDays(-rng.Next(2, 14)),
+                "error" => Now.AddMinutes(-rng.Next(30, 240)),
+                _ => Now.AddMinutes(-rng.Next(1, 180))
             };
 
             rows.Add(new AccountRowViewModel
@@ -864,10 +864,108 @@ internal static class DesignPreviewData
                 Responses = responses,
                 UniqueResponses = unique,
                 Errors = errors,
-                LastActivityLocal = lastActivity
+                LastActivityUtc = lastActivity
             });
         }
 
         return rows;
+    }
+
+    public static IReadOnlyList<PanelUserDto> PanelUsers =>
+    [
+        new("preview-admin", "admin@orbita.local", true, PanelRoles.Admin, false),
+        new("preview-operator", "operator@orbita.local", true, PanelRoles.Operator, true)
+    ];
+
+    public static PanelProfileDto PanelProfile =>
+        new("admin@orbita.local", PanelRoles.Admin);
+
+    public static PasswordPolicyDto PasswordPolicy =>
+        new(8, true, false, false, false, 1);
+
+    public static WorkerRegistrationInfoDto WorkerRegistrationInfo =>
+        new(true, "****demo", "config");
+
+    public static IReadOnlyList<AdminWorkerListItemDto> AdminWorkers =>
+    [
+        new(WorkerMoscowId, "Москва-01", "WIN-M01", "1.0.0", true, true, Now.AddMinutes(-2), Now.AddDays(-14), Now.AddDays(-3)),
+        new(WorkerSpbId, "СПб-02", "WIN-SPB02", "1.0.0", true, false, Now.AddHours(-2), Now.AddDays(-10), null),
+        new(WorkerKazanId, "Казань-03", "WIN-KZN03", "0.9.5", false, false, Now.AddDays(-1), Now.AddDays(-30), Now.AddDays(-7))
+    ];
+
+    public static PanelAuditPageDto BuildPanelAuditPage(
+        string? q,
+        string? action,
+        DateTime? date,
+        int page,
+        int pageSize = 50)
+    {
+        IEnumerable<PanelAuditEntryDto> rows =
+        [
+            new(1, Now.AddMinutes(-5), "admin@orbita.local", PanelAuditActions.LoginSucceeded, "user", "preview-admin", null, "127.0.0.1"),
+            new(2, Now.AddMinutes(-18), "admin@orbita.local", PanelAuditActions.WorkerKeyRotated, "worker", WorkerMoscowId.ToString(), null, "127.0.0.1"),
+            new(3, Now.AddHours(-1), "admin@orbita.local", PanelAuditActions.UserLocked, "user", "preview-operator", "operator@orbita.local", "127.0.0.1"),
+            new(4, Now.AddHours(-3), null, PanelAuditActions.LoginFailed, "user", null, "invalid_password", "10.0.0.5")
+        ];
+
+        if (!string.IsNullOrWhiteSpace(action))
+        {
+            rows = rows.Where(r => string.Equals(r.Action, action, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var query = q.Trim();
+            rows = rows.Where(r =>
+                (r.ActorEmail?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false)
+                || (r.Details?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false)
+                || r.Action.Contains(query, StringComparison.OrdinalIgnoreCase));
+        }
+
+        var items = rows.ToList();
+        var total = items.Count;
+        var paged = items.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+        return new PanelAuditPageDto(paged, total, page, pageSize);
+    }
+
+    public static ServiceLogsPageDto BuildServiceLogsPage(
+        string? q,
+        string? level,
+        string? service,
+        DateTime? date,
+        int page,
+        int pageSize = 50)
+    {
+        IEnumerable<ServiceLogEntryDto> rows =
+        [
+            new(Now.AddMinutes(-3), "Info", "Orbita.Web", "[SettingsService.GetIndexAsync]", "Settings page opened (users tab). Session validated, cached profile loaded, rendering 12 panel users with 2 pending role updates.", null, false),
+            new(Now.AddMinutes(-12), "Warning", "Orbita.Api", "[Program.Login]", "Login failed: invalid password for demo@orbita.local from 192.168.1.44. Attempt 3 of 5 before temporary lockout.", null, false),
+            new(Now.AddMinutes(-28), "Error", "Orbita.Api", "[TelemetryService.HeartbeatAsync]", "Worker heartbeat timeout for WIN-W03 after 30s. LastSeenAtUtc=2026-06-27T08:41:12Z, expected interval=15s. Scheduling retry 2/3 and marking worker as offline in dashboard cache.", "trace-demo-001", false),
+            new(Now.AddMinutes(-45), "Error", "Orbita.Api", "[WorkerAdminService.RotateKeyAsync]", "Failed to rotate worker API key: database connection timeout after 30s.\nWorkerId=8f2c1a9b-4d3e-4f5a-9b0c-1d2e3f4a5b6c\nMachine=WIN-W03\nRetry scheduled in 60s.\nSystem.TimeoutException: Timeout during reading from stream\n   at Npgsql.Internal.NpgsqlConnector.ReadMessageLong(...)\n   at Orbita.Api.Services.WorkerAdminService.RotateKeyAsync(...)", "trace-demo-002", false),
+            new(Now.AddHours(-1), "Info", "Orbita.Web", "[DashboardService.GetIndexAsync]", "Dashboard summary loaded: 4 workers online, 128 active leads, 3 errors in the last hour.", null, false),
+            new(Now.AddHours(-2), "Debug", "Orbita.Api", "[ServiceLogsQueryService.SearchAsync]", "Service logs query completed in 42ms. Filters: level=(all), service=(all), date=today, q=(empty), page=1, pageSize=50, total=6.", null, false)
+        ];
+
+        if (!string.IsNullOrWhiteSpace(level))
+        {
+            rows = rows.Where(r => string.Equals(r.Level, level, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (!string.IsNullOrWhiteSpace(service))
+        {
+            rows = rows.Where(r => string.Equals(r.Service, service, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            rows = rows.Where(r =>
+                r.Message.Contains(q, StringComparison.OrdinalIgnoreCase)
+                || r.Source.Contains(q, StringComparison.OrdinalIgnoreCase)
+                || (r.TraceId?.Contains(q, StringComparison.OrdinalIgnoreCase) ?? false));
+        }
+
+        var list = rows.ToList();
+        var items = list.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+        return new ServiceLogsPageDto(items, list.Count, page, pageSize);
     }
 }

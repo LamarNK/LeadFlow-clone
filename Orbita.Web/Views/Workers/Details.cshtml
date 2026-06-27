@@ -35,9 +35,7 @@
             </div>
             <p class="worker-detail-sub">
                 Последняя активность:
-                <time datetime="@(Model.LastActivityLocal?.ToString("o") ?? "")">
-                    @(Model.LastActivityLocal?.ToString("HH:mm:ss") ?? "—")
-                </time>
+                <partial name="_UtcTime" model="@(new UtcTimeDisplayModel(Model.LastActivityUtc, "time"))" />
             </p>
         </div>
         <div class="worker-detail-toolbar">
@@ -91,7 +89,16 @@
                     {
                         <div class="worker-info-row">
                             <dt class="worker-info-label">@item.Label</dt>
-                            <dd class="worker-info-value">@item.Value</dd>
+                            <dd class="worker-info-value">
+                                @if (item.TimeValue is not null)
+                                {
+                                    <partial name="_UtcTime" model="item.TimeValue" />
+                                }
+                                else
+                                {
+                                    @item.Value
+                                }
+                            </dd>
                         </div>
                     }
                 </dl>
@@ -170,7 +177,7 @@
                         </td>
                         <td>@account.BalanceText</td>
                         <td>@account.Responses</td>
-                        <td>@(account.LastActivityLocal?.ToString("HH:mm:ss") ?? "—")</td>
+                        <td><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(account.LastActivityUtc, "time"))" /></td>
                         <td>@account.Errors</td>
                         <td class="data-table-menu">
                             <div class="row-menu" data-row-menu>

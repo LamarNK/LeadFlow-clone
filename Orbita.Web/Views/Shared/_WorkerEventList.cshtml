@@ -26,7 +26,7 @@ else
                     }
                 </div>
                 <div class="dash-event-side">
-                    <div class="dash-event-time">@evt.Time</div>
+                    <div class="dash-event-time"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(evt.TimeUtc, "time-short"))" /></div>
                 </div>
             </div>
         }

@@ -37,7 +37,7 @@ public sealed class EventFilterOptionViewModel
 public sealed class EventRowViewModel
 {
     public Guid Id { get; init; }
-    public DateTime OccurredAtLocal { get; init; }
+    public DateTime OccurredAtUtc { get; init; }
     public string EventType { get; init; } = string.Empty;
     public string EventTypeLabel { get; init; } = string.Empty;
     public string EventTypeIcon { get; init; } = "fa-regular fa-circle";

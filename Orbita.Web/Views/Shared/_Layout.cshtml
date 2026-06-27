@@ -1,4 +1,5 @@
 @using Microsoft.Extensions.Options
+@using Orbita.Web.Authorization
 @using Orbita.Web.Options
 @inject Orbita.Web.Services.ThemeService Theme
 @inject IOptions<DesignPreviewOptions> PreviewOptions
@@ -47,7 +48,10 @@
             <a class="nav-item @(ctrl == "Accounts" ? "active" : "")" href="@Url.Action("Index", "Accounts")" title="Аккаунты"><i class="fa-solid fa-users" aria-hidden="true"></i><span class="nav-item-label">Аккаунты</span></a>
             <a class="nav-item @(ctrl == "Events" ? "active" : "")" href="@Url.Action("Index", "Events")" title="События"><i class="fa-regular fa-clipboard" aria-hidden="true"></i><span class="nav-item-label">События</span></a>
             <a class="nav-item @(ctrl == "Errors" ? "active" : "")" href="@Url.Action("Index", "Errors")" title="Ошибки"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i><span class="nav-item-label">Ошибки</span></a>
-            <a class="nav-item @(ctrl == "Settings" ? "active" : "")" href="@Url.Action("Index", "Settings")" title="Настройки"><i class="fa-solid fa-gear" aria-hidden="true"></i><span class="nav-item-label">Настройки</span></a>
+            @if (User.IsInRole(OrbitaRoles.Admin))
+            {
+                <a class="nav-item @(ctrl == "Settings" ? "active" : "")" href="@Url.Action("Index", "Settings")" title="Настройки"><i class="fa-solid fa-gear" aria-hidden="true"></i><span class="nav-item-label">Настройки</span></a>
+            }
         </nav>
         <div class="orbita-sidebar-footer">
             <form asp-controller="Settings" asp-action="ToggleTheme" method="post" class="theme-form">
@@ -68,6 +72,7 @@
         @RenderBody()
     </div>
 </div>
+<script src="~/js/orbita-time.js" asp-append-version="true"></script>
 <script src="~/js/orbita.js" asp-append-version="true"></script>
 @await RenderSectionAsync("Scripts", required: false)
 </body>

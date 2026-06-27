@@ -71,7 +71,7 @@
                                 <td>@w.Responses</td>
                                 <td>@w.Duplicates</td>
                                 <td>@w.Errors</td>
-                                <td>@(w.LastActivityLocal?.ToString("HH:mm:ss") ?? "—")</td>
+                                <td><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(w.LastActivityUtc, "time"))" /></td>
                                 <td class="data-table-menu">
                                     <button type="button" class="row-menu-btn" aria-label="Действия">
                                         <i class="fa-solid fa-ellipsis-vertical" aria-hidden="true"></i>

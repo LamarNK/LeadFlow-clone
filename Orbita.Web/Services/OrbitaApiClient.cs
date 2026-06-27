@@ -95,6 +95,241 @@ public sealed class OrbitaApiClient(HttpClient http, AuthSession session, IOptio
         return await response.Content.ReadFromJsonAsync<T>(ct);
     }
 
+    public Task<IReadOnlyList<PanelUserDto>?> GetPanelUsersAsync(CancellationToken ct = default) =>
+        GetAsync<IReadOnlyList<PanelUserDto>>("api/v1/admin/users", ct);
+
+    public Task<ServiceLogsPageDto?> GetServiceLogsAsync(
+        string? q,
+        string? level,
+        string? service,
+        DateTime? date,
+        int page,
+        int pageSize,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return Task.FromResult<ServiceLogsPageDto?>(
+                DesignPreviewData.BuildServiceLogsPage(q, level, service, date, page, pageSize));
+        }
+
+        var query = new List<string>();
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            query.Add($"q={Uri.EscapeDataString(q)}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(level))
+        {
+            query.Add($"level={Uri.EscapeDataString(level)}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(service))
+        {
+            query.Add($"service={Uri.EscapeDataString(service)}");
+        }
+
+        if (date.HasValue)
+        {
+            query.Add($"date={date.Value:yyyy-MM-dd}");
+        }
+
+        query.Add($"page={page}");
+        query.Add($"pageSize={pageSize}");
+        var url = "api/v1/admin/logs?" + string.Join("&", query);
+        return GetAsync<ServiceLogsPageDto>(url, ct);
+    }
+
+    public async Task<(bool Success, string? Error)> CreatePanelUserAsync(
+        string email,
+        string password,
+        string role,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/admin/users");
+        ApplyAuth(request);
+        request.Content = JsonContent.Create(new CreatePanelUserRequest(email, password, role));
+        var response = await http.SendAsync(request, ct);
+        if (response.IsSuccessStatusCode)
+        {
+            return (true, null);
+        }
+
+        return (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(bool Success, string? Error)> DeletePanelUserAsync(string userId, CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Delete, $"api/v1/admin/users/{userId}");
+        ApplyAuth(request);
+        var response = await http.SendAsync(request, ct);
+        if (response.IsSuccessStatusCode)
+        {
+            return (true, null);
+        }
+
+        return (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(bool Success, string? Error)> ResetPanelUserPasswordAsync(
+        string userId,
+        string password,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"api/v1/admin/users/{userId}/password");
+        ApplyAuth(request);
+        request.Content = JsonContent.Create(new ResetPanelUserPasswordRequest(password));
+        var response = await http.SendAsync(request, ct);
+        if (response.IsSuccessStatusCode)
+        {
+            return (true, null);
+        }
+
+        return (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(bool Success, string? Error)> UpdatePanelUserRoleAsync(
+        string userId,
+        string role,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Put, $"api/v1/admin/users/{userId}/role");
+        ApplyAuth(request);
+        request.Content = JsonContent.Create(new UpdatePanelUserRoleRequest(role));
+        var response = await http.SendAsync(request, ct);
+        if (response.IsSuccessStatusCode)
+        {
+            return (true, null);
+        }
+
+        return (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(bool Success, string? Error)> LockPanelUserAsync(string userId, CancellationToken ct = default) =>
+        await PostAdminActionAsync($"api/v1/admin/users/{userId}/lock", ct);
+
+    public async Task<(bool Success, string? Error)> UnlockPanelUserAsync(string userId, CancellationToken ct = default) =>
+        await PostAdminActionAsync($"api/v1/admin/users/{userId}/unlock", ct);
+
+    public async Task<(bool Success, string? Error)> RevokePanelUserSessionsAsync(string userId, CancellationToken ct = default) =>
+        await PostAdminActionAsync($"api/v1/admin/users/{userId}/revoke-sessions", ct);
+
+    public Task<IReadOnlyList<AdminWorkerListItemDto>?> GetAdminWorkersAsync(CancellationToken ct = default) =>
+        GetAsync<IReadOnlyList<AdminWorkerListItemDto>>("api/v1/admin/workers", ct);
+
+    public Task<WorkerRegistrationInfoDto?> GetWorkerRegistrationInfoAsync(CancellationToken ct = default) =>
+        GetAsync<WorkerRegistrationInfoDto>("api/v1/admin/workers/registration", ct);
+
+    public async Task<(bool Success, string? Error)> RenameAdminWorkerAsync(
+        Guid workerId,
+        string displayName,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Put, $"api/v1/admin/workers/{workerId}");
+        ApplyAuth(request);
+        request.Content = JsonContent.Create(new UpdateAdminWorkerRequest(displayName));
+        var response = await http.SendAsync(request, ct);
+        return response.IsSuccessStatusCode
+            ? (true, null)
+            : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(bool Success, string? Error)> SetAdminWorkerEnabledAsync(
+        Guid workerId,
+        bool enabled,
+        CancellationToken ct = default) =>
+        await PostAdminActionAsync($"api/v1/admin/workers/{workerId}/{(enabled ? "enable" : "disable")}", ct);
+
+    public async Task<(RotateWorkerApiKeyResponse? Result, string? Error)> RotateWorkerApiKeyAsync(
+        Guid workerId,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"api/v1/admin/workers/{workerId}/rotate-key");
+        ApplyAuth(request);
+        var response = await http.SendAsync(request, ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            return (null, await ReadApiErrorAsync(response, ct));
+        }
+
+        var result = await response.Content.ReadFromJsonAsync<RotateWorkerApiKeyResponse>(ct);
+        return result is null ? (null, "Не удалось прочитать ответ API.") : (result, null);
+    }
+
+    public Task<PanelAuditPageDto?> GetPanelAuditAsync(
+        string? q,
+        string? action,
+        DateTime? date,
+        int page,
+        int pageSize,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return Task.FromResult<PanelAuditPageDto?>(
+                DesignPreviewData.BuildPanelAuditPage(q, action, date, page, pageSize));
+        }
+
+        var query = new List<string>();
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            query.Add($"q={Uri.EscapeDataString(q)}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(action))
+        {
+            query.Add($"action={Uri.EscapeDataString(action)}");
+        }
+
+        if (date.HasValue)
+        {
+            query.Add($"date={date.Value:yyyy-MM-dd}");
+        }
+
+        query.Add($"page={page}");
+        query.Add($"pageSize={pageSize}");
+        return GetAsync<PanelAuditPageDto>("api/v1/admin/audit?" + string.Join("&", query), ct);
+    }
+
+    public Task<PasswordPolicyDto?> GetPasswordPolicyAsync(CancellationToken ct = default) =>
+        _preview.Enabled
+            ? Task.FromResult<PasswordPolicyDto?>(DesignPreviewData.PasswordPolicy)
+            : GetAsync<PasswordPolicyDto>("api/v1/panel/security/policy", ct);
+
+    public Task<PanelProfileDto?> GetPanelProfileAsync(CancellationToken ct = default) =>
+        _preview.Enabled
+            ? Task.FromResult<PanelProfileDto?>(DesignPreviewData.PanelProfile)
+            : GetAsync<PanelProfileDto>("api/v1/panel/me", ct);
+
+    public async Task<(bool Success, string? Error)> ChangeOwnPasswordAsync(
+        string currentPassword,
+        string newPassword,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return (true, null);
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/panel/me/password");
+        ApplyAuth(request);
+        request.Content = JsonContent.Create(new ChangeOwnPasswordRequest(currentPassword, newPassword));
+        var response = await http.SendAsync(request, ct);
+        return response.IsSuccessStatusCode
+            ? (true, null)
+            : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    private async Task<(bool Success, string? Error)> PostAdminActionAsync(string url, CancellationToken ct)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, url);
+        ApplyAuth(request);
+        var response = await http.SendAsync(request, ct);
+        return response.IsSuccessStatusCode
+            ? (true, null)
+            : (false, await ReadApiErrorAsync(response, ct));
+    }
+
     private void ApplyAuth(HttpRequestMessage request)
     {
         if (!string.IsNullOrWhiteSpace(session.Token))
@@ -103,6 +338,25 @@ public sealed class OrbitaApiClient(HttpClient http, AuthSession session, IOptio
         }
     }
 
+    private static async Task<string?> ReadApiErrorAsync(HttpResponseMessage response, CancellationToken ct)
+    {
+        try
+        {
+            var payload = await response.Content.ReadFromJsonAsync<ApiErrorResponse>(ct);
+            if (!string.IsNullOrWhiteSpace(payload?.Error))
+            {
+                return payload.Error;
+            }
+        }
+        catch
+        {
+            // ignore parse errors
+        }
+
+        return "Не удалось выполнить операцию.";
+    }
+
+    private sealed record ApiErrorResponse(string? Error);
 }
 
 public sealed record LoginResponse(string Token, string Email);

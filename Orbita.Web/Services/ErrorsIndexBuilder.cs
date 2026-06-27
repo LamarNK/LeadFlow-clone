@@ -40,7 +40,7 @@ internal static class ErrorsIndexBuilder
         var filtered = FilterRows(allRows, filters);
         var total = filtered.Count;
         var paged = filtered
-            .OrderByDescending(e => e.LastSeenLocal)
+            .OrderByDescending(e => e.LastSeenUtc)
             .ThenByDescending(e => e.OccurrenceCount)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
@@ -71,12 +71,12 @@ internal static class ErrorsIndexBuilder
         var text = $"{item.Message} {item.Details}";
         var errorType = InferErrorType(text);
         var severity = InferSeverity(item.Level, text);
-        var occurredAt = item.CreatedAtUtc.ToLocalTime();
+        var occurredAt = item.CreatedAtUtc;
 
         return new ErrorRowViewModel
         {
             Id = item.Id,
-            OccurredAtLocal = occurredAt,
+            OccurredAtUtc = occurredAt,
             Severity = severity,
             SeverityLabel = SeverityLabel(severity),
             ErrorType = errorType,
@@ -88,7 +88,7 @@ internal static class ErrorsIndexBuilder
             WorkerId = item.WorkerId,
             WorkerName = FormatWorkerName(item.WorkerDisplayName),
             OccurrenceCount = 1,
-            LastSeenLocal = occurredAt
+            LastSeenUtc = occurredAt
         };
     }
 

@@ -10,9 +10,11 @@ pushd "%ROOT%" >nul || (
 
 set "REPO=%ROOT%.."
 set "MENU_SCRIPT=%ROOT%scripts\publish-menu.ps1"
+set "DEPLOY_CONTEXT_SCRIPT=%ROOT%scripts\deploy-context.ps1"
 set "REMOTE_BUILD_SCRIPT=%ROOT%deploy-remote-build.sh"
 set "CONFIG_SCRIPT=%ROOT%deploy-config-remote.sh"
 set "TMP_ROOT=%ROOT%tmp\deploy"
+set "STATE_ROOT=%ROOT%state"
 
 if not defined LEADFLOW_SERVER if defined ORBITA_SERVER set "LEADFLOW_SERVER=%ORBITA_SERVER%"
 if not defined LEADFLOW_SERVER set "LEADFLOW_SERVER=root@163.5.153.207"
@@ -26,6 +28,11 @@ set "SKIP_SECRETS_SYNC=%LEADFLOW_SKIP_SECRETS_SYNC%"
 
 if not exist "%MENU_SCRIPT%" (
     echo Publish menu script not found: %MENU_SCRIPT%
+    exit /b 1
+)
+
+if not exist "%DEPLOY_CONTEXT_SCRIPT%" (
+    echo Deploy context helper not found: %DEPLOY_CONTEXT_SCRIPT%
     exit /b 1
 )
 
@@ -73,6 +80,11 @@ if not defined choice goto menu
 if /i "!choice!"=="0" goto done
 
 call :run_selection "!choice!"
+set "SELECTION_ERROR=!ERRORLEVEL!"
+if !SELECTION_ERROR! neq 0 (
+    echo.
+    echo Publish failed with error code !SELECTION_ERROR!.
+)
 call :pause_prompt
 goto menu
 
@@ -107,7 +119,16 @@ if /i "%~1"=="--target" (
     exit /b 0
 )
 
-set "CLI_TARGETS=%~1"
+:cli_collect
+if "%~1"=="" goto cli_collect_done
+if defined CLI_TARGETS (
+    set "CLI_TARGETS=!CLI_TARGETS!,%~1"
+) else (
+    set "CLI_TARGETS=%~1"
+)
+shift
+goto cli_collect
+:cli_collect_done
 exit /b 0
 
 :run_selection
@@ -140,11 +161,17 @@ if /i "!selection!"=="all" (
 
 set "selection=!selection:,= !"
 set "selection=!selection:;= !"
+echo.
+echo [publish] targets:!selection!
 for %%T in (!selection!) do (
-    echo.
-    echo [publish] %%T
-    call :publish_target %%T
-    if errorlevel 1 exit /b 1
+    if "%%T"=="" (
+        rem Skip empty tokens from duplicate separators.
+    ) else (
+        echo.
+        echo [publish] %%T
+        call :publish_target %%T
+        if errorlevel 1 exit /b 1
+    )
 )
 
 exit /b 0
@@ -154,7 +181,8 @@ set "TARGET=%~1"
 
 if /i "%TARGET%"=="config" (
     call :publish_config
-    exit /b %ERRORLEVEL%
+    if errorlevel 1 exit /b 1
+    exit /b 0
 )
 
 call :configure_target "%TARGET%"
@@ -168,13 +196,31 @@ if exist "%TARGET_ROOT%" rmdir /s /q "%TARGET_ROOT%"
 if exist "%ARCHIVE%" del /f /q "%ARCHIVE%"
 mkdir "%STAGE_DIR%" || exit /b 1
 
-echo == Packing %TARGET% build context ==
+echo == Staging %TARGET% build context ==
 for %%P in (!CONTEXT_ITEMS!) do (
     call :copy_context_path "%%P"
     if errorlevel 1 exit /b 1
 )
 
-tar -czf "%ARCHIVE%" -C "%STAGE_DIR%" .
+set "PLAN_FILE=%TARGET_ROOT%\deploy-plan.json"
+set "DEPLOY_MODE=full"
+
+echo == Checking %TARGET% changes ==
+powershell -NoProfile -ExecutionPolicy Bypass -File "%DEPLOY_CONTEXT_SCRIPT%" -Action plan -Target "%TARGET%" -StageDir "%STAGE_DIR%" -StateDir "%STATE_ROOT%" -PlanPath "%PLAN_FILE%"
+if errorlevel 1 exit /b 1
+
+if exist "%PLAN_FILE%.mode" (
+    set /p "DEPLOY_MODE="<"%PLAN_FILE%.mode"
+)
+
+if /i "!DEPLOY_MODE!"=="SKIP" (
+    echo == %TARGET% unchanged; upload skipped ==
+    if exist "%TARGET_ROOT%" rmdir /s /q "%TARGET_ROOT%"
+    exit /b 0
+)
+
+echo == Packing %TARGET% build context ==
+powershell -NoProfile -ExecutionPolicy Bypass -File "%DEPLOY_CONTEXT_SCRIPT%" -Action pack -Target "%TARGET%" -StageDir "%STAGE_DIR%" -StateDir "%STATE_ROOT%" -ArchivePath "%ARCHIVE%" -PlanPath "%PLAN_FILE%"
 if errorlevel 1 exit /b 1
 
 echo == Uploading %TARGET% ==
@@ -185,7 +231,10 @@ scp %SCP_ARGS% "%REMOTE_BUILD_SCRIPT%" "%SERVER%:/tmp/deploy-remote-build.sh"
 if errorlevel 1 exit /b 1
 
 echo == Building and deploying %TARGET% on %SERVER% ==
-ssh %SSH_ARGS% %SERVER% "sed -i 's/\r$//' /tmp/deploy-remote-build.sh && chmod +x /tmp/deploy-remote-build.sh && bash /tmp/deploy-remote-build.sh /tmp/leadflow-%TARGET%-context.tar.gz %DOCKERFILE% %IMAGE_TAG% %COMPOSE_SERVICE% %REMOTE_DIR%"
+ssh %SSH_ARGS% %SERVER% "sed -i 's/\r$//' /tmp/deploy-remote-build.sh && chmod +x /tmp/deploy-remote-build.sh && bash /tmp/deploy-remote-build.sh /tmp/leadflow-%TARGET%-context.tar.gz %DOCKERFILE% %IMAGE_TAG% %COMPOSE_SERVICE% %REMOTE_DIR% !DEPLOY_MODE!"
+if errorlevel 1 exit /b 1
+
+powershell -NoProfile -ExecutionPolicy Bypass -File "%DEPLOY_CONTEXT_SCRIPT%" -Action save -Target "%TARGET%" -StageDir "%STAGE_DIR%" -StateDir "%STATE_ROOT%"
 if errorlevel 1 exit /b 1
 
 if exist "%TARGET_ROOT%" rmdir /s /q "%TARGET_ROOT%"
@@ -197,6 +246,8 @@ exit /b 0
 :publish_config
 set "STAGE_DIR=%TMP_ROOT%\config"
 set "REMOTE_STAGING=/tmp/leadflow-orbita-config"
+set "PLAN_FILE=%STAGE_DIR%\deploy-plan.json"
+set "DEPLOY_MODE=full"
 
 if exist "%STAGE_DIR%" rmdir /s /q "%STAGE_DIR%"
 mkdir "%STAGE_DIR%" || exit /b 1
@@ -207,6 +258,20 @@ for %%F in (docker-compose.images.yml Caddyfile backup-db.sh) do (
         exit /b 1
     )
     copy /y "%REPO%deploy\control-panel\%%F" "%STAGE_DIR%\%%F" >nul
+)
+
+echo == Checking config changes ==
+powershell -NoProfile -ExecutionPolicy Bypass -File "%DEPLOY_CONTEXT_SCRIPT%" -Action plan -Target "config" -StageDir "%STAGE_DIR%" -StateDir "%STATE_ROOT%" -PlanPath "%PLAN_FILE%"
+if errorlevel 1 exit /b 1
+
+if exist "%PLAN_FILE%.mode" (
+    set /p "DEPLOY_MODE="<"%PLAN_FILE%.mode"
+)
+
+if /i "!DEPLOY_MODE!"=="SKIP" (
+    echo == Config unchanged; upload skipped ==
+    if exist "%STAGE_DIR%" rmdir /s /q "%STAGE_DIR%"
+    exit /b 0
 )
 
 echo == Uploading server config ==
@@ -222,6 +287,9 @@ scp %SCP_ARGS% "%CONFIG_SCRIPT%" "%SERVER%:/tmp/deploy-config-remote.sh"
 if errorlevel 1 exit /b 1
 
 ssh %SSH_ARGS% %SERVER% "sed -i 's/\r$//' /tmp/deploy-config-remote.sh && chmod +x /tmp/deploy-config-remote.sh && bash /tmp/deploy-config-remote.sh %REMOTE_DIR% %REMOTE_STAGING%"
+if errorlevel 1 exit /b 1
+
+powershell -NoProfile -ExecutionPolicy Bypass -File "%DEPLOY_CONTEXT_SCRIPT%" -Action save -Target "config" -StageDir "%STAGE_DIR%" -StateDir "%STATE_ROOT%"
 if errorlevel 1 exit /b 1
 
 if exist "%STAGE_DIR%" rmdir /s /q "%STAGE_DIR%"
@@ -241,7 +309,8 @@ if not exist "%SRC%" (
 
 for %%D in ("%DST%") do mkdir "%%~dpD" >nul 2>&1
 if exist "%SRC%\*" (
-    xcopy "%SRC%" "%DST%\" /E /I /Y >nul
+    robocopy "%SRC%" "%DST%" /E /XD bin obj .vs .git node_modules .idea /XF *.user *.suo /NFL /NDL /NJH /NJS /NC /NS >nul
+    if errorlevel 8 exit /b 1
 ) else (
     copy /y "%SRC%" "%DST%" >nul
 )

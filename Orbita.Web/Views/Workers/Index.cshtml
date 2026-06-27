@@ -97,7 +97,7 @@
                         <td>@w.Responses</td>
                         <td>@w.Duplicates</td>
                         <td>@w.Errors</td>
-                        <td>@(w.LastActivityLocal?.ToString("HH:mm:ss") ?? "—")</td>
+                        <td><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(w.LastActivityUtc, "time"))" /></td>
                         <td class="data-table-menu">
                             <div class="row-menu" data-row-menu>
                                 <button type="button" class="row-menu-btn" aria-label="Действия" aria-expanded="false" aria-haspopup="true">

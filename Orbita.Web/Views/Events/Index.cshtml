@@ -157,7 +157,7 @@
                         ? null
                         : Url.Action("Index", "Accounts", new { q = evt.AccountName });
                     <tr class="events-row" data-copy="@evt.CopyText">
-                        <td class="events-time">@evt.OccurredAtLocal.ToString("dd.MM.yyyy HH:mm:ss")</td>
+                        <td class="events-time"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(evt.OccurredAtUtc, "datetime-seconds"))" /></td>
                         <td>
                             <span class="event-type event-type--@evt.EventTypeTone">
                                 <i class="@evt.EventTypeIcon event-type-icon" aria-hidden="true"></i>

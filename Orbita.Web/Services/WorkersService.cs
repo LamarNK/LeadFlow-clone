@@ -52,7 +52,7 @@ public sealed class WorkersService(OrbitaApiClient api, IOptions<DesignPreviewOp
                 Subtitle = !string.IsNullOrWhiteSpace(e.Details)
                     ? e.Details
                     : e.AccountId.HasValue ? "Аккаунт" : string.Empty,
-                Time = e.CreatedAtUtc.ToLocalTime().ToString("HH:mm"),
+                TimeUtc = e.CreatedAtUtc,
                 Level = e.Level.Equals("Error", StringComparison.OrdinalIgnoreCase) ? "error"
                     : e.Level.Equals("Warning", StringComparison.OrdinalIgnoreCase) ? "warning" : "success"
             })
@@ -161,6 +161,6 @@ public sealed class WorkersService(OrbitaApiClient api, IOptions<DesignPreviewOp
         Responses = w.TotalToday,
         Duplicates = 0,
         Errors = w.Errors,
-        LastActivityLocal = w.LastSeenAtUtc?.ToLocalTime()
+        LastActivityUtc = w.LastSeenAtUtc
     };
 }

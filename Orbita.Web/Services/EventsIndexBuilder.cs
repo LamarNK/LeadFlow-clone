@@ -42,7 +42,7 @@ internal static class EventsIndexBuilder
         var filtered = FilterRows(allRows, filters);
         var total = filtered.Count;
         var paged = filtered
-            .OrderByDescending(e => e.OccurredAtLocal)
+            .OrderByDescending(e => e.OccurredAtUtc)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToList();
@@ -77,7 +77,7 @@ internal static class EventsIndexBuilder
         return new EventRowViewModel
         {
             Id = item.Id,
-            OccurredAtLocal = item.CreatedAtUtc.ToLocalTime(),
+            OccurredAtUtc = item.CreatedAtUtc,
             EventType = type,
             EventTypeLabel = typeLabel,
             EventTypeIcon = typeIcon,

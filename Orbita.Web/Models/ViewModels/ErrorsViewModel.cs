@@ -30,7 +30,7 @@ public sealed record ErrorsFilterViewModel
 public sealed class ErrorRowViewModel
 {
     public Guid Id { get; init; }
-    public DateTime OccurredAtLocal { get; init; }
+    public DateTime OccurredAtUtc { get; init; }
     public string Severity { get; init; } = "medium";
     public string SeverityLabel { get; init; } = string.Empty;
     public string ErrorType { get; init; } = string.Empty;
@@ -42,7 +42,7 @@ public sealed class ErrorRowViewModel
     public Guid WorkerId { get; init; }
     public string WorkerName { get; init; } = string.Empty;
     public int OccurrenceCount { get; init; }
-    public DateTime LastSeenLocal { get; init; }
+    public DateTime LastSeenUtc { get; init; }
 }
 
 public sealed class ErrorsSummaryViewModel

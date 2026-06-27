@@ -16,7 +16,7 @@ else
                 <div class="event-icon @cls"><i class="@icon" aria-hidden="true"></i></div>
                 <div class="event-text">
                     <strong>@evt.Message</strong>
-                    <div class="event-meta">@evt.WorkerDisplayName · @evt.CreatedAtUtc.ToLocalTime().ToString("HH:mm")</div>
+                    <div class="event-meta">@evt.WorkerDisplayName · <partial name="_UtcTime" model="@(new UtcTimeDisplayModel(evt.CreatedAtUtc, "time-short"))" /></div>
                 </div>
             </div>
         }

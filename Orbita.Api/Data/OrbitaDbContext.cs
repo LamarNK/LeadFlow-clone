@@ -11,6 +11,7 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
     public DbSet<WorkerSnapshotEntity> WorkerSnapshots => Set<WorkerSnapshotEntity>();
     public DbSet<WorkerAccountEntity> WorkerAccounts => Set<WorkerAccountEntity>();
     public DbSet<WorkerEventEntity> WorkerEvents => Set<WorkerEventEntity>();
+    public DbSet<PanelAuditLogEntity> PanelAuditLogs => Set<PanelAuditLogEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -47,6 +48,19 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.Property(x => x.Level).HasMaxLength(32);
             entity.Property(x => x.Message).HasMaxLength(2000);
             entity.HasOne(x => x.Worker).WithMany(x => x.Events).HasForeignKey(x => x.WorkerId);
+        });
+
+        modelBuilder.Entity<PanelAuditLogEntity>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => x.TimestampUtc);
+            entity.HasIndex(x => x.Action);
+            entity.Property(x => x.Action).HasMaxLength(64);
+            entity.Property(x => x.ActorEmail).HasMaxLength(256);
+            entity.Property(x => x.TargetType).HasMaxLength(64);
+            entity.Property(x => x.TargetId).HasMaxLength(128);
+            entity.Property(x => x.Details).HasMaxLength(2000);
+            entity.Property(x => x.IpAddress).HasMaxLength(64);
         });
     }
 }

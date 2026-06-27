@@ -6,6 +6,7 @@ dockerfile_rel="${2:?dockerfile path is required}"
 image_tag="${3:?image tag is required}"
 service="${4:?compose service is required}"
 remote_dir="${5:-/opt/orbita}"
+deploy_mode="${6:-full}"
 
 if [[ ! -f "$context_archive" ]]; then
   echo "Context archive not found: $context_archive"
@@ -17,10 +18,34 @@ if [[ ! -d "$remote_dir" ]]; then
   exit 1
 fi
 
-workdir="/tmp/leadflow-build-$$"
-mkdir -p "$workdir"
-tar -xzf "$context_archive" -C "$workdir"
-cd "$workdir"
+cache_dir="$remote_dir/.build-cache/$service"
+extract_dir="/tmp/leadflow-extract-$$"
+mkdir -p "$cache_dir" "$extract_dir"
+
+if [[ "$deploy_mode" == "full" ]]; then
+  rm -rf "$cache_dir"
+  mkdir -p "$cache_dir"
+  tar -xzf "$context_archive" -C "$cache_dir"
+else
+  tar -xzf "$context_archive" -C "$extract_dir"
+
+  if [[ -f "$extract_dir/deleted.txt" ]]; then
+    while IFS= read -r rel || [[ -n "$rel" ]]; do
+      [[ -z "$rel" ]] && continue
+      rm -rf "$cache_dir/$rel"
+    done < "$extract_dir/deleted.txt"
+    rm -f "$extract_dir/deleted.txt"
+  fi
+
+  (
+    cd "$extract_dir"
+    tar -cf - . | tar -xf - -C "$cache_dir"
+  )
+fi
+
+rm -rf "$extract_dir" "$context_archive"
+
+cd "$cache_dir"
 
 if [[ ! -f "$dockerfile_rel" ]]; then
   echo "Dockerfile not found in context: $dockerfile_rel"
@@ -47,5 +72,4 @@ else
 fi
 
 docker compose -f docker-compose.images.yml ps
-rm -rf "$workdir" "$context_archive"
-echo "Built and deployed $image_tag ($service)"
+echo "Built and deployed $image_tag ($service) using $deploy_mode context"

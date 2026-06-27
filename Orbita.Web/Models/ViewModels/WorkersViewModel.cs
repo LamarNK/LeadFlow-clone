@@ -42,7 +42,7 @@ public sealed class WorkerRowViewModel
     public int Responses { get; init; }
     public int Duplicates { get; init; }
     public int Errors { get; init; }
-    public DateTime? LastActivityLocal { get; init; }
+    public DateTime? LastActivityUtc { get; init; }
 }
 
 public sealed class PaginationViewModel
@@ -64,8 +64,8 @@ public sealed class WorkerDetailsViewModel
     public IReadOnlyList<BreadcrumbItemViewModel> Breadcrumbs { get; init; } = [];
     public string DisplayName { get; init; } = string.Empty;
     public bool IsOnline { get; init; }
-    public DateTime? LastActivityLocal { get; init; }
-    public DateTime UpdatedAt { get; init; } = DateTime.Now;
+    public DateTime? LastActivityUtc { get; init; }
+    public DateTime UpdatedAtUtc { get; init; } = DateTime.UtcNow;
     public IReadOnlyList<DashboardKpiCardViewModel> KpiCards { get; init; } = [];
     public IReadOnlyList<WorkerInfoItemViewModel> InfoItems { get; init; } = [];
     public LineChartViewModel ActivityChart { get; init; } = new();
@@ -78,6 +78,7 @@ public sealed class WorkerInfoItemViewModel
 {
     public string Label { get; init; } = string.Empty;
     public string Value { get; init; } = string.Empty;
+    public UtcTimeDisplayModel? TimeValue { get; init; }
 }
 
 public sealed class WorkerPeriodStatViewModel
@@ -94,14 +95,14 @@ public sealed class WorkerAccountRowViewModel
     public string StatusTone { get; init; } = "success";
     public string BalanceText { get; init; } = "—";
     public int Responses { get; init; }
-    public DateTime? LastActivityLocal { get; init; }
+    public DateTime? LastActivityUtc { get; init; }
     public int Errors { get; init; }
 }
 
 public sealed class WorkerExtraInfoViewModel
 {
     public string IpAddress { get; init; } = "—";
-    public DateTime? StartedAtLocal { get; init; }
+    public DateTime? StartedAtUtc { get; init; }
     public string LeadFlowVersion { get; init; } = "—";
     public string AgentVersion { get; init; } = "—";
     public string OperatingSystem { get; init; } = "—";

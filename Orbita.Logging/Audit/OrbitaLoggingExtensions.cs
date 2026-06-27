@@ -15,7 +15,6 @@ public static class OrbitaLoggingExtensions
 
         builder.Logging.ClearProviders();
         builder.Logging.AddConsole();
-        builder.Logging.AddGlobalLoggerProvider();
         builder.Logging.SetMinimumLevel(LogLevel.Debug);
 
         return builder;
@@ -23,7 +22,7 @@ public static class OrbitaLoggingExtensions
 
     public static WebApplication UseOrbitaLogging(this WebApplication app)
     {
-        // Только Console — иначе GlobalLogger → ILogger → GlobalLoggerProvider → бесконечная рекурсия.
+        // Только Console: файлы панели пишутся напрямую через GlobalLogger.Instance.
         _consoleLoggerFactory ??= LoggerFactory.Create(static builder =>
         {
             builder.AddConsole();
@@ -32,6 +31,7 @@ public static class OrbitaLoggingExtensions
         GlobalLogger.ConfigureAppLogger(_consoleLoggerFactory.CreateLogger("Orbita"));
 
         app.UseMiddleware<CorrelationIdMiddleware>();
+        app.UseMiddleware<RequestDiagnosticsMiddleware>();
 
         app.Lifetime.ApplicationStarted.Register(() =>
         {

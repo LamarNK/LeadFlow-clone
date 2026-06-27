@@ -14,8 +14,8 @@ internal static class WorkerDetailsBuilder
     {
         extra ??= new WorkerExtraInfoViewModel();
         var stats = worker.LatestStats;
-        var lastActivity = worker.LastSeenAtUtc?.ToLocalTime()
-            ?? summary?.LastActivityLocal;
+        var lastActivity = worker.LastSeenAtUtc
+            ?? summary?.LastActivityUtc;
         var activeAccounts = accounts.Count(a => a.StatusTone == "success");
         var totalAccounts = accounts.Count > 0
             ? accounts.Count
@@ -29,7 +29,7 @@ internal static class WorkerDetailsBuilder
         var responses = summary?.Responses ?? stats?.TotalToday ?? 0;
         var duplicates = summary?.Duplicates ?? stats?.Duplicates ?? 0;
         var errors = summary?.Errors ?? stats?.Errors ?? 0;
-        var uptime = FormatUptime(extra.StartedAtLocal);
+        var uptime = FormatUptime(extra.StartedAtUtc);
         var activePct = totalAccounts == 0
             ? 0
             : activeAccounts * 100 / totalAccounts;
@@ -48,8 +48,8 @@ internal static class WorkerDetailsBuilder
             ],
             DisplayName = worker.DisplayName,
             IsOnline = worker.IsOnline,
-            LastActivityLocal = lastActivity,
-            UpdatedAt = DateTime.Now,
+            LastActivityUtc = lastActivity,
+            UpdatedAtUtc = DateTime.UtcNow,
             KpiCards = BuildKpiCards(activeAccounts, totalAccounts, activePct, responses, duplicates, errors, uptime),
             InfoItems = BuildInfoItems(worker, extra, lastActivity, uptime),
             ActivityChart = new LineChartViewModel
@@ -78,7 +78,7 @@ internal static class WorkerDetailsBuilder
             StatusTone = tone,
             BalanceText = balance is null ? "—" : $"{balance.TotalBalance:N0} ₽",
             Responses = responses,
-            LastActivityLocal = account.LastMonitoringAt?.ToLocalTime(),
+            LastActivityUtc = account.LastMonitoringAt,
             Errors = errors
         };
     }
@@ -155,12 +155,20 @@ internal static class WorkerDetailsBuilder
         new() { Label = "ID воркера", Value = worker.Id.ToString() },
         new() { Label = "Имя сервера", Value = worker.MachineName },
         new() { Label = "IP-адрес", Value = extra.IpAddress },
-        new() { Label = "Дата запуска", Value = extra.StartedAtLocal?.ToString("dd.MM.yyyy HH:mm") ?? "—" },
+        new()
+        {
+            Label = "Дата запуска",
+            TimeValue = new UtcTimeDisplayModel(extra.StartedAtUtc, "datetime")
+        },
         new() { Label = "Время работы", Value = uptime },
         new() { Label = "Версия LeadFlow", Value = extra.LeadFlowVersion },
         new() { Label = "Версия агента", Value = extra.AgentVersion },
         new() { Label = "Операционная система", Value = extra.OperatingSystem },
-        new() { Label = "Последняя активность", Value = lastActivity?.ToString("HH:mm:ss") ?? "—" },
+        new()
+        {
+            Label = "Последняя активность",
+            TimeValue = new UtcTimeDisplayModel(lastActivity, "time")
+        },
         new() { Label = "Проверка соединения", Value = extra.ConnectionCheck }
     ];
 
@@ -197,12 +205,12 @@ internal static class WorkerDetailsBuilder
         };
     }
 
-    private static string FormatUptime(DateTime? startedAtLocal)
+    private static string FormatUptime(DateTime? startedAtUtc)
     {
-        if (startedAtLocal is null)
+        if (startedAtUtc is null)
             return "—";
 
-        var span = DateTime.Now - startedAtLocal.Value;
+        var span = DateTime.UtcNow - startedAtUtc.Value;
         if (span.TotalDays >= 1)
             return $"{(int)span.TotalDays}д {span.Hours}ч";
 

@@ -34,7 +34,7 @@ public sealed class AccountRowViewModel
     public int Responses { get; init; }
     public int UniqueResponses { get; init; }
     public int Errors { get; init; }
-    public DateTime? LastActivityLocal { get; init; }
+    public DateTime? LastActivityUtc { get; init; }
 }
 
 public sealed class AccountsSummaryViewModel

@@ -396,6 +396,16 @@ public class Logger
             prefixCache[prefixKey] = prefix;
         }
 
+        await WriteLogAsync(message, level, prefix, errorKey, properties);
+    }
+
+    private async Task WriteLogAsync(
+        string message,
+        DeskLinkAuditLogLevel level,
+        string prefix,
+        string? errorKey,
+        Dictionary<string, object?>? properties)
+    {
         var activity = Activity.Current;
         string? correlationId = TruncateUtf8(CorrelationContext.Current, MaxTraceIdBytes);
         string? otelTraceId = TruncateUtf8(activity?.TraceId.ToString(), MaxTraceIdBytes);

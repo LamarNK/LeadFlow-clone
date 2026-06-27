@@ -4,7 +4,7 @@ public sealed class PageHeaderViewModel
 {
     public string Title { get; init; } = string.Empty;
     public string? Subtitle { get; init; }
-    public DateTime UpdatedAt { get; init; } = DateTime.Now;
+    public DateTime UpdatedAtUtc { get; init; } = DateTime.UtcNow;
     public bool ShowRefresh { get; init; }
     public bool ShowDateRange { get; init; }
     public string DateRangeLabel { get; init; } =

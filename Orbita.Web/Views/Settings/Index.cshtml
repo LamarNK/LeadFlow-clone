@@ -1,8 +1,709 @@
+@model SettingsIndexViewModel
+@using Orbita.Contracts
 @{
     ViewData["Title"] = "Настройки";
-    var header = new PageHeaderViewModel { Title = "Настройки", Subtitle = "Параметры панели" };
+    var logs = Model.Logs;
+    var audit = Model.Audit;
+    var workers = Model.Workers;
+    var profile = Model.Profile;
+    var logsPagination = logs?.Pagination;
+    var auditPagination = audit?.Pagination;
+    var rotatedApiKey = ViewBag.RotatedWorkerApiKey as string;
 }
-<partial name="_PageHeader" model="header" />
-<div class="orbita-main">
-    <div class="card"><div class="card-body page-placeholder"><p>Раздел настроек в разработке.</p></div></div>
+<div class="orbita-main settings-page">
+    <h1 class="settings-page-title">Настройки</h1>
+    <p class="settings-page-subtitle">Пользователи, воркеры, аудит, логи и безопасность панели</p>
+
+    @if (!string.IsNullOrWhiteSpace(Model.StatusMessage))
+    {
+        <div class="settings-alert settings-alert--success" role="status">@Model.StatusMessage</div>
+    }
+    @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+    {
+        <div class="settings-alert settings-alert--error" role="alert">@Model.ErrorMessage</div>
+    }
+
+    <div class="settings-control-bar">
+        <nav class="settings-tabs" aria-label="Разделы настроек">
+            @foreach (var tab in Model.Tabs)
+            {
+                var isActive = tab.Id == Model.ActiveTab;
+                <a class="settings-tab @(isActive ? "settings-tab--active" : "")"
+                   href="@Url.Action("Index", new { tab = tab.Id })"
+                   aria-current="@(isActive ? "page" : null)">@tab.Label</a>
+            }
+        </nav>
+    </div>
+
+    @if (Model.ActiveTab == "users")
+    {
+        <div class="settings-grid settings-grid--users">
+            <div class="card card--settings-users">
+                <div class="card-header settings-card-header">
+                    <div>
+                        <h2 class="settings-card-title">Пользователи панели</h2>
+                        <p class="settings-card-subtitle">Учётные записи с доступом к Орбите</p>
+                    </div>
+                </div>
+                <div class="card-body card-body-table settings-table-wrap">
+                    <table class="data-table data-table--settings-users">
+                        <thead>
+                        <tr>
+                            <th>Email</th>
+                            <th>Профиль</th>
+                            <th class="data-table-actions-col">Действия</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        @foreach (var user in Model.Users)
+                        {
+                            <tr>
+                                <td>
+                                    <span class="settings-user-email">@user.Email</span>
+                                    @if (user.IsCurrentUser)
+                                    {
+                                        <span class="settings-user-badge">Вы</span>
+                                    }
+                                    @if (user.IsLocked)
+                                    {
+                                        <span class="settings-user-badge settings-user-badge--locked">Заблокирован</span>
+                                    }
+                                </td>
+                                <td>
+                                    @if (user.IsCurrentUser)
+                                    {
+                                        <span class="settings-role-pill">@user.RoleLabel</span>
+                                    }
+                                    else
+                                    {
+                                        <form asp-action="UpdateUserRole" method="post" class="settings-role-form">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="UserId" value="@user.Id" />
+                                            <select name="Role" class="settings-select settings-select--inline" aria-label="Профиль @user.Email">
+                                                @foreach (var opt in Model.ProfileOptions)
+                                                {
+                                                    if (opt.Value == user.Role)
+                                                    {
+                                                        <option value="@opt.Value" selected>@opt.Label</option>
+                                                    }
+                                                    else
+                                                    {
+                                                        <option value="@opt.Value">@opt.Label</option>
+                                                    }
+                                                }
+                                            </select>
+                                            <button type="submit" class="settings-link-btn">Сохранить</button>
+                                        </form>
+                                    }
+                                </td>
+                                <td class="data-table-menu">
+                                    @if (!user.IsCurrentUser)
+                                    {
+                                        <div class="row-menu" data-row-menu>
+                                            <button type="button" class="row-menu-btn" aria-label="Действия" aria-expanded="false" aria-haspopup="true">
+                                                <i class="fa-solid fa-ellipsis-vertical" aria-hidden="true"></i>
+                                            </button>
+                                            <div class="row-menu-dropdown" hidden>
+                                                <button type="button"
+                                                        class="row-menu-item"
+                                                        data-settings-reset-password
+                                                        data-user-id="@user.Id"
+                                                        data-user-email="@user.Email">
+                                                    Сменить пароль
+                                                </button>
+                                                @if (user.IsLocked)
+                                                {
+                                                    <form asp-action="UnlockUser" method="post" class="settings-inline-form">
+                                                        @Html.AntiForgeryToken()
+                                                        <input type="hidden" name="userId" value="@user.Id" />
+                                                        <button type="submit" class="row-menu-item">Разблокировать</button>
+                                                    </form>
+                                                }
+                                                else
+                                                {
+                                                    <form asp-action="LockUser" method="post" class="settings-inline-form">
+                                                        @Html.AntiForgeryToken()
+                                                        <input type="hidden" name="userId" value="@user.Id" />
+                                                        <button type="submit" class="row-menu-item">Заблокировать</button>
+                                                    </form>
+                                                }
+                                                <form asp-action="RevokeUserSessions" method="post" class="settings-inline-form">
+                                                    @Html.AntiForgeryToken()
+                                                    <input type="hidden" name="userId" value="@user.Id" />
+                                                    <button type="submit" class="row-menu-item">Завершить сессии</button>
+                                                </form>
+                                                <form asp-action="DeleteUser" method="post" class="settings-inline-form">
+                                                    @Html.AntiForgeryToken()
+                                                    <input type="hidden" name="userId" value="@user.Id" />
+                                                    <button type="submit" class="row-menu-item row-menu-item--danger">
+                                                        Удалить
+                                                    </button>
+                                                </form>
+                                            </div>
+                                        </div>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="card card--settings-create">
+                <div class="card-header settings-card-header">
+                    <h2 class="settings-card-title">Добавить пользователя</h2>
+                </div>
+                <div class="card-body">
+                    <form asp-action="CreateUser" method="post" class="settings-create-form">
+                        @Html.AntiForgeryToken()
+                        <label class="settings-field">
+                            <span class="settings-field-label">Email</span>
+                            <input type="email" name="Email" required placeholder="user@example.com" autocomplete="username" />
+                        </label>
+                        <label class="settings-field">
+                            <span class="settings-field-label">Пароль</span>
+                            <input type="password" name="Password" required minlength="8" placeholder="Минимум 8 символов" autocomplete="new-password" />
+                        </label>
+                        <label class="settings-field">
+                            <span class="settings-field-label">Профиль</span>
+                            <select name="Role" class="settings-select" aria-label="Профиль нового пользователя">
+                                @foreach (var opt in Model.ProfileOptions)
+                                {
+                                    if (opt.Value == PanelRoles.Operator)
+                                    {
+                                        <option value="@opt.Value" selected>@opt.Label</option>
+                                    }
+                                    else
+                                    {
+                                        <option value="@opt.Value">@opt.Label</option>
+                                    }
+                                }
+                            </select>
+                        </label>
+                        <button type="submit" class="settings-primary-btn">
+                            <i class="fa-solid fa-user-plus" aria-hidden="true"></i>
+                            <span>Добавить</span>
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    }
+    else if (Model.ActiveTab == "workers" && workers is not null)
+    {
+        @if (!string.IsNullOrWhiteSpace(rotatedApiKey))
+        {
+            <div class="settings-alert settings-alert--api-key" role="status">
+                <span class="settings-api-key-label">Новый API-ключ воркера:</span>
+                <code class="settings-api-key-value" id="rotatedWorkerApiKey">@rotatedApiKey</code>
+                <button type="button" class="settings-link-btn" data-settings-copy-api-key data-copy-target="rotatedWorkerApiKey">Копировать</button>
+            </div>
+        }
+
+        @if (workers.Registration is not null)
+        {
+            <div class="card card--settings-registration">
+                <div class="card-body settings-registration-body">
+                    <div>
+                        <h2 class="settings-card-title">Registration secret</h2>
+                        <p class="settings-card-subtitle">Статус секрета регистрации воркеров (только чтение)</p>
+                    </div>
+                    <div class="settings-registration-meta">
+                        <span class="settings-registration-status @(workers.Registration.IsConfigured ? "settings-registration-status--ok" : "settings-registration-status--warn")">
+                            @(workers.Registration.IsConfigured ? "Настроен" : "Не настроен")
+                        </span>
+                        <span class="settings-registration-secret">@workers.Registration.MaskedSecret</span>
+                        <span class="settings-registration-source">Источник: @workers.Registration.Source</span>
+                    </div>
+                </div>
+            </div>
+        }
+
+        <div class="card card--settings-workers">
+            <div class="card-header settings-card-header">
+                <div>
+                    <h2 class="settings-card-title">Воркеры</h2>
+                    <p class="settings-card-subtitle">Переименование, отключение и перевыпуск API-ключей</p>
+                </div>
+            </div>
+            <div class="card-body card-body-table settings-table-wrap">
+                <table class="data-table data-table--settings-workers">
+                    <thead>
+                    <tr>
+                        <th>Имя</th>
+                        <th>Машина</th>
+                        <th>Версия</th>
+                        <th>Статус</th>
+                        <th>Последний контакт</th>
+                        <th>Ключ</th>
+                        <th class="data-table-actions-col">Действия</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var worker in workers.Rows)
+                    {
+                        <tr class="@(!worker.IsEnabled ? "settings-worker-row--disabled" : null)">
+                            <td>
+                                <form asp-action="RenameWorker" method="post" class="settings-worker-rename-form">
+                                    @Html.AntiForgeryToken()
+                                    <input type="hidden" name="WorkerId" value="@worker.Id" />
+                                    <input type="text" name="DisplayName" value="@worker.DisplayName" class="settings-worker-name-input" required />
+                                    <button type="submit" class="settings-link-btn">Сохранить</button>
+                                </form>
+                            </td>
+                            <td>@worker.MachineName</td>
+                            <td>@worker.AppVersion</td>
+                            <td>
+                                @if (!worker.IsEnabled)
+                                {
+                                    <span class="settings-status-pill settings-status-pill--disabled">Отключён</span>
+                                }
+                                else if (worker.IsOnline)
+                                {
+                                    <span class="settings-status-pill settings-status-pill--online">Онлайн</span>
+                                }
+                                else
+                                {
+                                    <span class="settings-status-pill settings-status-pill--offline">Офлайн</span>
+                                }
+                            </td>
+                            <td class="settings-log-time"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(worker.LastSeenAtUtc, "datetime"))" /></td>
+                            <td class="settings-log-time"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(worker.ApiKeyRotatedAtUtc, "datetime"))" /></td>
+                            <td class="data-table-menu">
+                                <div class="row-menu" data-row-menu>
+                                    <button type="button" class="row-menu-btn" aria-label="Действия" aria-expanded="false" aria-haspopup="true">
+                                        <i class="fa-solid fa-ellipsis-vertical" aria-hidden="true"></i>
+                                    </button>
+                                    <div class="row-menu-dropdown" hidden>
+                                        @if (worker.IsEnabled)
+                                        {
+                                            <form asp-action="DisableWorker" method="post" class="settings-inline-form">
+                                                @Html.AntiForgeryToken()
+                                                <input type="hidden" name="workerId" value="@worker.Id" />
+                                                <button type="submit" class="row-menu-item">Отключить</button>
+                                            </form>
+                                        }
+                                        else
+                                        {
+                                            <form asp-action="EnableWorker" method="post" class="settings-inline-form">
+                                                @Html.AntiForgeryToken()
+                                                <input type="hidden" name="workerId" value="@worker.Id" />
+                                                <button type="submit" class="row-menu-item">Включить</button>
+                                            </form>
+                                        }
+                                        <form asp-action="RotateWorkerKey" method="post" class="settings-inline-form">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="workerId" value="@worker.Id" />
+                                            <button type="submit" class="row-menu-item">Перевыпустить API-ключ</button>
+                                        </form>
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+    else if (Model.ActiveTab == "audit" && audit is not null)
+    {
+        <div class="card card--settings-logs-filters">
+            <form class="settings-logs-filters" method="get" asp-action="Index">
+                <input type="hidden" name="tab" value="audit" />
+                <div class="settings-logs-filters-row">
+                    <label class="settings-filter-field">
+                        <span class="settings-filter-label">Действие</span>
+                        <select name="action" class="settings-select" aria-label="Действие">
+                            @foreach (var opt in audit.ActionOptions)
+                            {
+                                if (opt.Value == (audit.Action ?? ""))
+                                {
+                                    <option value="@opt.Value" selected>@opt.Label</option>
+                                }
+                                else
+                                {
+                                    <option value="@opt.Value">@opt.Label</option>
+                                }
+                            }
+                        </select>
+                    </label>
+                    <label class="settings-filter-field">
+                        <span class="settings-filter-label">Дата</span>
+                        <input type="date"
+                               name="date"
+                               class="settings-date-input"
+                               value="@audit.Date?.ToString("yyyy-MM-dd")"
+                               aria-label="Дата" />
+                    </label>
+                    <label class="settings-filter-field settings-filter-field--grow">
+                        <span class="settings-filter-label">Поиск</span>
+                        <input type="search"
+                               name="q"
+                               class="settings-search-input"
+                               value="@audit.SearchQuery"
+                               placeholder="Email, действие, объект..."
+                               aria-label="Поиск по аудиту" />
+                    </label>
+                    <button type="submit" class="settings-primary-btn settings-primary-btn--compact">
+                        <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                        <span>Найти</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <div class="card card--settings-logs-table">
+            <div class="card-body card-body-table settings-table-wrap">
+                <table class="data-table data-table--settings-audit">
+                    <thead>
+                    <tr>
+                        <th>Время</th>
+                        <th>Актор</th>
+                        <th>Действие</th>
+                        <th>Объект</th>
+                        <th>Детали</th>
+                        <th>IP</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    @if (audit.Rows.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="6" class="settings-empty-cell">Записей аудита не найдено.</td>
+                        </tr>
+                    }
+                    else
+                    {
+                        @foreach (var row in audit.Rows)
+                        {
+                            <tr>
+                                <td class="settings-log-time"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(row.TimestampUtc, "datetime-seconds"))" /></td>
+                                <td>@(row.ActorEmail ?? "—")</td>
+                                <td>
+                                    <span class="settings-audit-action">@row.ActionLabel</span>
+                                    <span class="settings-log-trace">@row.Action</span>
+                                </td>
+                                <td class="settings-log-source">
+                                    @if (!string.IsNullOrWhiteSpace(row.TargetType))
+                                    {
+                                        <span>@row.TargetType</span>
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(row.TargetId))
+                                    {
+                                        <span class="settings-log-trace">@row.TargetId</span>
+                                    }
+                                </td>
+                                <td class="settings-log-message">@(row.Details ?? "—")</td>
+                                <td class="settings-log-time">@(row.IpAddress ?? "—")</td>
+                            </tr>
+                        }
+                    }
+                    </tbody>
+                </table>
+
+                @if (auditPagination is not null && auditPagination.TotalItems > 0)
+                {
+                    <div class="settings-pagination">
+                        <span class="settings-pagination-info">
+                            Показано @auditPagination.RangeStart–@auditPagination.RangeEnd из @auditPagination.TotalItems
+                        </span>
+                        <div class="settings-pagination-controls">
+                            @{
+                                var auditPrevPage = auditPagination.Page > 1 ? auditPagination.Page - 1 : (int?)null;
+                                var auditNextPage = auditPagination.Page < auditPagination.TotalPages ? auditPagination.Page + 1 : (int?)null;
+                            }
+                            @if (auditPrevPage is not null)
+                            {
+                                <a class="settings-page-btn"
+                                   href="@Url.Action("Index", new { tab = "audit", q = audit.SearchQuery, action = audit.Action, date = audit.Date?.ToString("yyyy-MM-dd"), page = auditPrevPage })"
+                                   aria-label="Предыдущая страница">&lt;</a>
+                            }
+                            else
+                            {
+                                <span class="settings-page-btn settings-page-btn--disabled" aria-hidden="true">&lt;</span>
+                            }
+                            <span class="settings-page-btn settings-page-btn--active" aria-current="page">@auditPagination.Page</span>
+                            @if (auditNextPage is not null)
+                            {
+                                <a class="settings-page-btn"
+                                   href="@Url.Action("Index", new { tab = "audit", q = audit.SearchQuery, action = audit.Action, date = audit.Date?.ToString("yyyy-MM-dd"), page = auditNextPage })"
+                                   aria-label="Следующая страница">&gt;</a>
+                            }
+                            else
+                            {
+                                <span class="settings-page-btn settings-page-btn--disabled" aria-hidden="true">&gt;</span>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+    else if (Model.ActiveTab == "profiles")
+    {
+        <div class="settings-profiles-grid">
+            @foreach (var accessProfile in Model.Profiles)
+            {
+                <article class="card card--settings-profile">
+                    <div class="card-body">
+                        <div class="settings-profile-head">
+                            <div class="settings-profile-icon">
+                                <i class="fa-solid fa-shield-halved" aria-hidden="true"></i>
+                            </div>
+                            <div>
+                                <h2 class="settings-profile-name">@accessProfile.Name</h2>
+                                <p class="settings-profile-description">@accessProfile.Description</p>
+                            </div>
+                        </div>
+                        <div class="settings-profile-meta">
+                            <span class="settings-profile-count">@accessProfile.UsersCount пользователей</span>
+                        </div>
+                        <div class="settings-profile-permissions">
+                            <span class="settings-profile-permissions-label">Доступ</span>
+                            <p>@accessProfile.PermissionsLabel</p>
+                        </div>
+                        <div class="settings-profile-members">
+                            <span class="settings-profile-permissions-label">Пользователи</span>
+                            @if (accessProfile.Members.Count == 0)
+                            {
+                                <p class="settings-profile-empty">Нет назначенных пользователей</p>
+                            }
+                            else
+                            {
+                                <ul class="settings-profile-member-list">
+                                    @foreach (var member in accessProfile.Members)
+                                    {
+                                        <li>@member.Email</li>
+                                    }
+                                </ul>
+                            }
+                        </div>
+                    </div>
+                </article>
+            }
+        </div>
+    }
+    else if (Model.ActiveTab == "logs" && logs is not null)
+    {
+        <div class="card card--settings-logs-filters">
+            <form class="settings-logs-filters" method="get" asp-action="Index">
+                <input type="hidden" name="tab" value="logs" />
+                <div class="settings-logs-filters-row">
+                    <label class="settings-filter-field">
+                        <span class="settings-filter-label">Уровень</span>
+                        <select name="level" class="settings-select" aria-label="Уровень">
+                            @foreach (var opt in logs.LevelOptions)
+                            {
+                                if (opt.Value == (logs.Level ?? ""))
+                                {
+                                    <option value="@opt.Value" selected>@opt.Label</option>
+                                }
+                                else
+                                {
+                                    <option value="@opt.Value">@opt.Label</option>
+                                }
+                            }
+                        </select>
+                    </label>
+                    <label class="settings-filter-field">
+                        <span class="settings-filter-label">Сервис</span>
+                        <select name="service" class="settings-select" aria-label="Сервис">
+                            @foreach (var opt in logs.ServiceOptions)
+                            {
+                                if (opt.Value == (logs.Service ?? ""))
+                                {
+                                    <option value="@opt.Value" selected>@opt.Label</option>
+                                }
+                                else
+                                {
+                                    <option value="@opt.Value">@opt.Label</option>
+                                }
+                            }
+                        </select>
+                    </label>
+                    <label class="settings-filter-field">
+                        <span class="settings-filter-label">Дата</span>
+                        <input type="date"
+                               name="date"
+                               class="settings-date-input"
+                               value="@logs.Date?.ToString("yyyy-MM-dd")"
+                               aria-label="Дата" />
+                    </label>
+                    <label class="settings-filter-field settings-filter-field--grow">
+                        <span class="settings-filter-label">Поиск</span>
+                        <input type="search"
+                               name="q"
+                               class="settings-search-input"
+                               value="@logs.SearchQuery"
+                               placeholder="Сообщение, источник, trace id..."
+                               aria-label="Поиск по логам" />
+                    </label>
+                    <button type="submit" class="settings-primary-btn settings-primary-btn--compact">
+                        <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                        <span>Найти</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <div class="card card--settings-logs-table">
+            <div class="card-body service-logs-panel">
+                @if (logs.Rows.Count == 0)
+                {
+                    <div class="service-logs-empty">Записей не найдено за выбранные условия.</div>
+                }
+                else
+                {
+                    <div class="service-logs-feed" role="log" aria-label="Логи сервиса">
+                        @foreach (var row in logs.Rows)
+                        {
+                            <article class="service-log-entry service-log-entry--@row.LevelTone @(row.IsTampered ? "service-log-entry--tampered" : null)">
+                                <div class="service-log-entry__body">
+                                    <div class="service-log-entry__head">
+                                        <partial name="_UtcTime" model="@(new UtcTimeDisplayModel(row.TimestampUtc, "datetime-seconds", "service-log-entry__time"))" />
+                                        <span class="event-level-badge event-level-badge--@row.LevelTone">@row.Level</span>
+                                        <span class="service-log-entry__tag">@row.Service</span>
+                                        <code class="service-log-entry__source" title="@row.Source">@row.Source</code>
+                                        @if (!string.IsNullOrWhiteSpace(row.TraceId))
+                                        {
+                                            <button type="button"
+                                                    class="service-log-entry__trace"
+                                                    data-service-log-copy
+                                                    data-copy-text="@row.TraceId"
+                                                    title="Скопировать trace id">
+                                                <i class="fa-solid fa-fingerprint" aria-hidden="true"></i>
+                                                <span>@row.TraceId</span>
+                                            </button>
+                                        }
+                                    </div>
+                                    <div class="service-log-entry__message" data-service-log-message>@row.Message</div>
+                                </div>
+                            </article>
+                        }
+                    </div>
+                }
+
+                @if (logsPagination is not null && logsPagination.TotalItems > 0)
+                {
+                    <div class="settings-pagination">
+                        <span class="settings-pagination-info">
+                            Показано @logsPagination.RangeStart–@logsPagination.RangeEnd из @logsPagination.TotalItems
+                        </span>
+                        <div class="settings-pagination-controls">
+                            @{
+                                var prevPage = logsPagination.Page > 1 ? logsPagination.Page - 1 : (int?)null;
+                                var nextPage = logsPagination.Page < logsPagination.TotalPages ? logsPagination.Page + 1 : (int?)null;
+                            }
+                            @if (prevPage is not null)
+                            {
+                                <a class="settings-page-btn"
+                                   href="@Url.Action("Index", new { tab = "logs", q = logs.SearchQuery, level = logs.Level, service = logs.Service, date = logs.Date?.ToString("yyyy-MM-dd"), page = prevPage })"
+                                   aria-label="Предыдущая страница">&lt;</a>
+                            }
+                            else
+                            {
+                                <span class="settings-page-btn settings-page-btn--disabled" aria-hidden="true">&lt;</span>
+                            }
+                            <span class="settings-page-btn settings-page-btn--active" aria-current="page">@logsPagination.Page</span>
+                            @if (nextPage is not null)
+                            {
+                                <a class="settings-page-btn"
+                                   href="@Url.Action("Index", new { tab = "logs", q = logs.SearchQuery, level = logs.Level, service = logs.Service, date = logs.Date?.ToString("yyyy-MM-dd"), page = nextPage })"
+                                   aria-label="Следующая страница">&gt;</a>
+                            }
+                            else
+                            {
+                                <span class="settings-page-btn settings-page-btn--disabled" aria-hidden="true">&gt;</span>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+    else if (Model.ActiveTab == "profile" && profile is not null)
+    {
+        <div class="settings-grid settings-grid--profile">
+            <div class="card card--settings-profile-self">
+                <div class="card-header settings-card-header">
+                    <div>
+                        <h2 class="settings-card-title">Мой профиль</h2>
+                        <p class="settings-card-subtitle">Учётная запись текущего администратора</p>
+                    </div>
+                </div>
+                <div class="card-body settings-profile-self-body">
+                    <div class="settings-profile-self-row">
+                        <span class="settings-field-label">Email</span>
+                        <span class="settings-profile-self-value">@profile.Email</span>
+                    </div>
+                    <div class="settings-profile-self-row">
+                        <span class="settings-field-label">Роль</span>
+                        <span class="settings-role-pill">@profile.RoleLabel</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card card--settings-change-password">
+                <div class="card-header settings-card-header">
+                    <h2 class="settings-card-title">Сменить пароль</h2>
+                </div>
+                <div class="card-body">
+                    @if (profile.PasswordPolicy is not null)
+                    {
+                        <p class="settings-password-policy">Требования: @profile.PasswordPolicy.Summary</p>
+                    }
+                    <form asp-action="ChangeOwnPassword" method="post" class="settings-create-form">
+                        @Html.AntiForgeryToken()
+                        <label class="settings-field">
+                            <span class="settings-field-label">Текущий пароль</span>
+                            <input type="password" name="CurrentPassword" required autocomplete="current-password" />
+                        </label>
+                        <label class="settings-field">
+                            <span class="settings-field-label">Новый пароль</span>
+                            <input type="password"
+                                   name="NewPassword"
+                                   required
+                                   minlength="@(profile.PasswordPolicy?.RequiredLength ?? 8)"
+                                   autocomplete="new-password" />
+                        </label>
+                        <label class="settings-field">
+                            <span class="settings-field-label">Подтверждение</span>
+                            <input type="password"
+                                   name="ConfirmPassword"
+                                   required
+                                   minlength="@(profile.PasswordPolicy?.RequiredLength ?? 8)"
+                                   autocomplete="new-password" />
+                        </label>
+                        <button type="submit" class="settings-primary-btn">
+                            <i class="fa-solid fa-key" aria-hidden="true"></i>
+                            <span>Обновить пароль</span>
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    }
+
+    <dialog class="settings-dialog" id="resetPasswordDialog">
+        <form asp-action="ResetPassword" method="post" class="settings-dialog-form">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="UserId" id="resetPasswordUserId" />
+            <h2 class="settings-dialog-title">Сменить пароль</h2>
+            <p class="settings-dialog-subtitle" id="resetPasswordUserEmail"></p>
+            <label class="settings-field">
+                <span class="settings-field-label">Новый пароль</span>
+                <input type="password" name="Password" required minlength="8" autocomplete="new-password" />
+            </label>
+            <div class="settings-dialog-actions">
+                <button type="button" class="settings-secondary-btn" data-settings-dialog-close>Отмена</button>
+                <button type="submit" class="settings-primary-btn">Сохранить</button>
+            </div>
+        </form>
+    </dialog>
 </div>
+
+@section Scripts {
+    <script src="~/js/orbita-settings.js" asp-append-version="true"></script>
+}

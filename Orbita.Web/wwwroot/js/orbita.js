@@ -13,33 +13,10 @@
         });
     });
 
-    function pad2(n) {
-        return n < 10 ? '0' + n : String(n);
-    }
-
-    function formatTime(date) {
-        return pad2(date.getHours()) + ':' + pad2(date.getMinutes()) + ':' + pad2(date.getSeconds());
-    }
-
     function initUpdatedClock() {
-        var timeEl = document.querySelector('[data-orbita-updated-at]');
-        if (!timeEl) return;
-
-        function tick() {
-            var now = new Date();
-            timeEl.textContent = formatTime(now);
-            timeEl.setAttribute('datetime', now.toISOString());
+        if (window.OrbitaTime) {
+            window.OrbitaTime.localizeAll();
         }
-
-        var refreshBtn = document.querySelector('[data-orbita-refresh]');
-        if (refreshBtn) {
-            refreshBtn.addEventListener('click', function () {
-                tick();
-            });
-        }
-
-        tick();
-        setInterval(tick, 1000);
     }
 
     function initUserMenu() {

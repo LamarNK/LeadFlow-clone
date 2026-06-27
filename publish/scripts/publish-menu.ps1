@@ -36,7 +36,8 @@ function Draw-Menu {
     Write-Host "  LeadFlow server publish" -ForegroundColor Cyan
     Write-Host "  Orbita + NotifyBot" -ForegroundColor Cyan
     Write-Host "========================================" -ForegroundColor DarkGray
-    Write-Host "  Up/Down: move   Space: toggle target   Enter: deploy   Esc: exit" -ForegroundColor DarkGray
+    Write-Host "  Up/Down: move   Space: toggle target   Enter: deploy selected (or current)" -ForegroundColor DarkGray
+    Write-Host "  Esc: exit without deploy" -ForegroundColor DarkGray
     Write-Host ""
 
     for ($i = 0; $i -lt $items.Count; $i++) {
@@ -60,7 +61,7 @@ function Draw-Menu {
 
 function Save-Result {
     param([string]$Value)
-    Set-Content -LiteralPath $ResultPath -Value $Value -Encoding Ascii
+    Set-Content -LiteralPath $ResultPath -Value $Value -Encoding Ascii -NoNewline
 }
 
 while ($true) {
@@ -82,21 +83,17 @@ while ($true) {
             }
         }
         13 {
-            $item = $items[$currentIndex]
-
-            if ($item.Type -eq "all" -or $item.Type -eq "exit") {
-                Save-Result -Value $item.Value
-                return
-            }
-
             if ($selected.Count -gt 0) {
-                $ordered = $items |
-                    Where-Object { $_.Type -eq "target" -and $selected.Contains($_.Value) } |
-                    ForEach-Object { $_.Value }
+                $ordered = @(
+                    $items |
+                        Where-Object { $_.Type -eq "target" -and $selected.Contains($_.Value) } |
+                        ForEach-Object { $_.Value }
+                )
                 Save-Result -Value ($ordered -join ",")
                 return
             }
 
+            $item = $items[$currentIndex]
             Save-Result -Value $item.Value
             return
         }

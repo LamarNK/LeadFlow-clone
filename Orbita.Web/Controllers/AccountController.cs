@@ -83,7 +83,12 @@ public sealed class AccountController(
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Logout(CancellationToken ct)
     {
+        var email = User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value
+            ?? User.Identity?.Name;
         await auth.SignOutAsync(ct);
+        await GlobalLogger.Instance.LogAsync(
+            $"Panel logout{(string.IsNullOrWhiteSpace(email) ? "" : $" ({email})")}.",
+            DeskLinkAuditLogLevel.Info);
         return RedirectToAction(nameof(Login));
     }
 }
