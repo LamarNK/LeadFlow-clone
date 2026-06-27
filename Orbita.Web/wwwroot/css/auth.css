@@ -1,4 +1,4 @@
-/* Орбита — страница авторизации (1:1 с макетом) */
+/* Орбита — страница авторизации */
 
 html.auth-html,
 html.auth-html body.auth-body {
@@ -10,7 +10,6 @@ html.auth-html body.auth-body {
     -webkit-font-smoothing: antialiased;
 }
 
-/* Фон на весь экран, не внутри карточки/флекса */
 .auth-bg {
     position: fixed;
     top: 0;
@@ -49,7 +48,7 @@ html.auth-html body.auth-body {
     position: absolute;
     inset: 0;
     z-index: 2;
-    background: rgba(0, 0, 0, 0.1);
+    background: rgba(0, 0, 0, 0.18);
     pointer-events: none;
 }
 
@@ -70,35 +69,51 @@ html.auth-html body.auth-body {
     position: relative;
     z-index: 1;
     width: 100%;
-    max-width: 400px;
-    background: rgba(26, 32, 48, 0.94);
-    border: 1px solid rgba(255, 255, 255, 0.07);
-    border-radius: 14px;
-    box-shadow:
-        0 24px 48px rgba(0, 0, 0, 0.45),
-        0 0 0 1px rgba(0, 0, 0, 0.2);
+    max-width: 420px;
     padding: 36px 32px 32px;
     color: #e8edf5;
+    background:
+        linear-gradient(180deg, rgba(22, 30, 48, 0.88) 0%, rgba(14, 20, 34, 0.94) 100%);
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 16px;
+    backdrop-filter: blur(20px) saturate(1.15);
+    -webkit-backdrop-filter: blur(20px) saturate(1.15);
+    box-shadow:
+        0 24px 48px rgba(0, 0, 0, 0.45),
+        0 0 0 1px rgba(0, 0, 0, 0.15);
+}
+
+.auth-card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background-image: radial-gradient(rgba(255, 255, 255, 0.035) 0.6px, transparent 0.6px);
+    background-size: 3px 3px;
+    opacity: 0.45;
+    pointer-events: none;
 }
 
 /* --- Брендинг --- */
 .auth-brand {
+    position: relative;
+    z-index: 1;
     display: flex;
     flex-direction: column;
     align-items: center;
     margin-bottom: 32px;
     padding-bottom: 28px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
 }
 
 .auth-logo {
     display: block;
     width: auto;
-    height: 120px;
+    height: 112px;
     max-width: 100%;
     margin-bottom: 20px;
     object-fit: contain;
-    filter: drop-shadow(0 6px 20px rgba(59, 130, 246, 0.3));
+    filter: drop-shadow(0 6px 24px rgba(59, 130, 246, 0.32));
 }
 
 .auth-brand-text {
@@ -129,6 +144,8 @@ html.auth-html body.auth-body {
 
 /* --- Поля --- */
 .auth-form {
+    position: relative;
+    z-index: 1;
     margin: 0;
 }
 
@@ -146,15 +163,23 @@ html.auth-html body.auth-body {
 
 .auth-input-wrap {
     position: relative;
-    display: block;
+    display: flex;
+    align-items: center;
+    height: 44px;
 }
 
-.auth-input-wrap > .fa {
+.auth-input-wrap > i {
     position: absolute;
     left: 14px;
     top: 50%;
     transform: translateY(-50%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
     font-size: 15px;
+    line-height: 1;
     color: #5c6b82;
     pointer-events: none;
     z-index: 1;
@@ -165,15 +190,15 @@ html.auth-html body.auth-body {
     width: 100%;
     height: 44px;
     padding: 0 14px 0 42px;
-    border: 1px solid #2d3748;
-    border-radius: 8px;
-    background: #0f1524;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    background: rgba(8, 12, 22, 0.65);
     color: #f0f4fa;
     font-size: 14px;
     font-family: inherit;
     line-height: 44px;
     box-sizing: border-box;
-    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
 }
 
 .auth-input::placeholder {
@@ -183,8 +208,9 @@ html.auth-html body.auth-body {
 
 .auth-input:focus {
     outline: none;
-    border-color: #3b82f6;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.18);
+    border-color: rgba(59, 130, 246, 0.65);
+    background: rgba(8, 12, 22, 0.85);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
 }
 
 .auth-input-wrap--password .auth-input {
@@ -193,9 +219,12 @@ html.auth-html body.auth-body {
 
 .auth-toggle-pwd {
     position: absolute;
-    right: 12px;
+    right: 10px;
     top: 50%;
     transform: translateY(-50%);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     width: 28px;
     height: 28px;
     padding: 0;
@@ -204,10 +233,14 @@ html.auth-html body.auth-body {
     background: transparent;
     color: #5c6b82;
     font-size: 15px;
-    line-height: 28px;
-    text-align: center;
+    line-height: 1;
     cursor: pointer;
     z-index: 1;
+}
+
+.auth-toggle-pwd > i {
+    display: block;
+    line-height: 1;
 }
 
 .auth-toggle-pwd:hover {
@@ -261,27 +294,30 @@ html.auth-html body.auth-body {
 .auth-submit {
     display: block;
     width: 100%;
-    height: 44px;
+    height: 46px;
     padding: 0 16px;
     border: 0;
-    border-radius: 8px;
-    background: #3b82f6;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
     color: #ffffff;
     font-size: 15px;
     font-weight: 600;
     font-family: inherit;
-    line-height: 44px;
+    line-height: 46px;
     text-align: center;
     cursor: pointer;
-    transition: background 0.15s ease;
+    box-shadow: 0 4px 16px rgba(37, 99, 235, 0.35);
+    transition: background 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease;
 }
 
 .auth-submit:hover {
-    background: #2563eb;
+    background: linear-gradient(135deg, #4d8ff7 0%, #2563eb 100%);
+    box-shadow: 0 6px 20px rgba(37, 99, 235, 0.45);
 }
 
 .auth-submit:active {
-    background: #1d4ed8;
+    transform: translateY(1px);
+    box-shadow: 0 2px 10px rgba(37, 99, 235, 0.3);
 }
 
 .auth-submit:disabled {
@@ -291,6 +327,8 @@ html.auth-html body.auth-body {
 
 /* --- Разделитель --- */
 .auth-divider {
+    position: relative;
+    z-index: 1;
     display: flex;
     align-items: center;
     gap: 14px;
@@ -302,7 +340,7 @@ html.auth-html body.auth-body {
     content: "";
     flex: 1;
     height: 1px;
-    background: #2d3748;
+    background: rgba(255, 255, 255, 0.08);
 }
 
 .auth-divider span {
@@ -314,6 +352,8 @@ html.auth-html body.auth-body {
 
 /* --- Футер --- */
 .auth-footer {
+    position: relative;
+    z-index: 1;
     margin: 0;
     text-align: center;
     font-size: 13px;
@@ -334,9 +374,11 @@ html.auth-html body.auth-body {
 
 /* --- Режим просмотра --- */
 .auth-preview-hint {
+    position: relative;
+    z-index: 1;
     margin: 0 0 16px;
     padding: 10px 12px;
-    border-radius: 8px;
+    border-radius: 10px;
     background: rgba(59, 130, 246, 0.1);
     border: 1px solid rgba(59, 130, 246, 0.22);
     font-size: 12px;
@@ -354,7 +396,7 @@ html.auth-html body.auth-body {
 .auth-error-block {
     margin-bottom: 14px;
     padding: 10px 12px;
-    border-radius: 8px;
+    border-radius: 10px;
     background: rgba(239, 68, 68, 0.12);
     border: 1px solid rgba(239, 68, 68, 0.25);
     font-size: 13px;
@@ -367,4 +409,32 @@ html.auth-html body.auth-body {
     margin-top: 6px;
     font-size: 12px;
     color: #f87171;
+}
+
+@media (max-width: 480px) {
+    html.auth-html,
+    html.auth-html body.auth-body {
+        overflow: auto;
+    }
+
+    .auth-page {
+        min-height: 100dvh;
+        height: auto;
+        padding: 20px 16px;
+    }
+
+    .auth-card {
+        padding: 28px 22px 26px;
+        border-radius: 14px;
+    }
+
+    .auth-logo {
+        height: 92px;
+        margin-bottom: 16px;
+    }
+
+    .auth-brand {
+        margin-bottom: 26px;
+        padding-bottom: 22px;
+    }
 }

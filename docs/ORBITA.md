@@ -67,3 +67,44 @@ docker compose -f deploy/control-panel/docker-compose.yml up --build
 - `POST /api/v1/workers/telemetry/events`
 
 Авторизация воркера: `Authorization: Bearer {apiKey}`.
+
+## Развёртывание на VPS (production)
+
+Подробно: `deploy/ORBITA_SERVER_DEPLOY.md`
+
+Кратко:
+- DNS: `orbitsu.ru`, `www.orbitsu.ru`, `api.orbitsu.ru` → A-запись на IP сервера.
+- В панели хостинга открой порты 22, 80, 443, 8080.
+- SSH только по ключу, CrowdSec + Caddy (HTTPS) на сервере.
+- Публичный ключ:
+  `ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAfD+Y6/za2llrCsfESqBUl5r+osc+sZZ7LzhH0z12JO orbita`
+- Готовые секреты для `.env`:
+  ```
+  REGISTRATION_SECRET=vfqFzRXuK5sPJdL3oNEr1MeYWZwxCDaUG62n0V8m
+  JWT_KEY=GwxfgyOpT72RkYEeVdcqQbu8AvlZ3IDFP19HWzLMj6srt4KB
+  ADMIN_PASSWORD=Orbq0Mei6RpAku7tIvd!
+  CORS_ORIGIN_0=https://orbitsu.ru
+  CORS_ORIGIN_1=https://www.orbitsu.ru
+  ```
+- На сервере в `/opt/orbita`:
+  `docker compose --env-file .env up -d`
+- Caddy: `deploy/control-panel/Caddyfile` → `/etc/caddy/Caddyfile`
+- Бэкап БД: `/opt/orbita/backup-db.sh` (cron ежедневно в 03:00)
+
+Панель: https://orbitsu.ru/
+API: https://api.orbitsu.ru/
+NotifyBot (3DS SMS → Telegram): https://notify.orbitsu.ru/
+Fallback (пока DNS): http://163.5.153.207/
+
+## NotifyBot (тот же VPS)
+
+Telegram-бот для пересылки 3DS SMS с Plusofon. Разворачивается рядом с Orbita в `/opt/orbita`.
+
+Подробно: `deploy/control-panel/NOTIFYBOT.md`
+
+Кратко:
+- DNS: `notify.orbitsu.ru` → A-запись на IP сервера
+- Webhook Plusofon: `https://notify.orbitsu.ru/api/webhooks/plusofon`
+- Docker-сервисы: `notifybot-postgres` (порт 5433), `notifybot-api` (порт 8083)
+- Caddy проксирует `notify.orbitsu.ru` → `127.0.0.1:8083`
+- Переменные в `.env`: `TELEGRAM_*`, `PLUSOFON_SECRET` (см. `.env.example`)
