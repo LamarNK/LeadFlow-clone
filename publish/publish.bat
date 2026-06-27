@@ -280,11 +280,11 @@ if exist "!STAGE_DIR!" rmdir /s /q "!STAGE_DIR!"
 mkdir "!STAGE_DIR!" || exit /b 1
 
 for %%F in (docker-compose.images.yml Caddyfile backup-db.sh) do (
-    if not exist "!REPO!deploy\control-panel\%%F" (
+    if not exist "!REPO!\deploy\control-panel\%%F" (
         echo Config file not found: deploy\control-panel\%%F
         exit /b 1
     )
-    copy /y "!REPO!deploy\control-panel\%%F" "!STAGE_DIR!\%%F" >nul
+    copy /y "!REPO!\deploy\control-panel\%%F" "!STAGE_DIR!\%%F" >nul
 )
 
 echo == Checking config changes ==
@@ -381,7 +381,7 @@ if not defined DOCKERFILE (
 exit /b 0
 
 :ensure_publish_paths
-set "ORBITA_COMPOSE_IMAGES=%REPO%deploy\control-panel\docker-compose.images.yml"
+set "ORBITA_COMPOSE_IMAGES=!REPO!\deploy\control-panel\docker-compose.images.yml"
 if not exist "!ORBITA_COMPOSE_IMAGES!" (
     echo Compose file not found: !ORBITA_COMPOSE_IMAGES!
     exit /b 1
@@ -439,7 +439,7 @@ if defined LEADFLOW_SECRET_FILE (
 ) else if exist "%ROOT%secrets\orbita.env" (
     set "SECRET_FILE=%ROOT%secrets\orbita.env"
 ) else (
-    set "SECRET_FILE=%REPO%deploy\control-panel\.env"
+    set "SECRET_FILE=!REPO!\deploy\control-panel\.env"
 )
 exit /b 0
 
