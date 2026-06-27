@@ -14,7 +14,6 @@ set "DEPLOY_CONTEXT_SCRIPT=%ROOT%scripts\deploy-context.ps1"
 set "REMOTE_BUILD_SCRIPT=%ROOT%deploy-remote-build.sh"
 set "REMOTE_COMPOSE_SCRIPT=%ROOT%deploy-remote-compose.sh"
 set "CONFIG_SCRIPT=%ROOT%deploy-config-remote.sh"
-set "COMPOSE_FILE=%REPO%deploy\control-panel\docker-compose.images.yml"
 set "TMP_ROOT=%ROOT%tmp\deploy"
 set "STATE_ROOT=%ROOT%state"
 
@@ -48,10 +47,8 @@ if not exist "%REMOTE_COMPOSE_SCRIPT%" (
     exit /b 1
 )
 
-if not exist "%COMPOSE_FILE%" (
-    echo Compose file not found: %COMPOSE_FILE%
-    exit /b 1
-)
+call :ensure_publish_paths
+if errorlevel 1 exit /b 1
 
 if not exist "%CONFIG_SCRIPT%" (
     echo Remote config helper not found: %CONFIG_SCRIPT%
@@ -146,6 +143,10 @@ exit /b 0
 :run_selection
 set "selection=%~1"
 
+call :ensure_publish_paths
+if errorlevel 1 exit /b 1
+call :build_transport_args
+
 if not "%SKIP_SECRETS_SYNC%"=="1" (
     call :sync_secrets
     if errorlevel 1 exit /b 1
@@ -190,155 +191,157 @@ exit /b 0
 
 :publish_target
 set "TARGET=%~1"
+call :ensure_publish_paths
+if errorlevel 1 exit /b 1
 
-if /i "%TARGET%"=="config" (
+if /i "!TARGET!"=="config" (
     call :publish_config
     if errorlevel 1 exit /b 1
     exit /b 0
 )
 
-call :configure_target "%TARGET%"
+call :configure_target "!TARGET!"
 if errorlevel 1 exit /b 1
 
-if /i not "%TARGET%"=="notifybot" (
+if /i not "!TARGET!"=="notifybot" (
     call :sync_compose_always
     if errorlevel 1 exit /b 1
 )
 
-set "TARGET_ROOT=%TMP_ROOT%\%TARGET%"
-set "STAGE_DIR=%TARGET_ROOT%\stage"
-set "ARCHIVE=%TMP_ROOT%\leadflow-%TARGET%-context.tar.gz"
+set "TARGET_ROOT=!TMP_ROOT!\!TARGET!"
+set "STAGE_DIR=!TARGET_ROOT!\stage"
+set "ARCHIVE=!TMP_ROOT!\leadflow-!TARGET!-context.tar.gz"
 
-if exist "%TARGET_ROOT%" rmdir /s /q "%TARGET_ROOT%"
-if exist "%ARCHIVE%" del /f /q "%ARCHIVE%"
-mkdir "%STAGE_DIR%" || exit /b 1
+if exist "!TARGET_ROOT!" rmdir /s /q "!TARGET_ROOT!"
+if exist "!ARCHIVE!" del /f /q "!ARCHIVE!"
+mkdir "!STAGE_DIR!" || exit /b 1
 
-echo == Staging %TARGET% build context ==
+echo == Staging !TARGET! build context ==
 for %%P in (!CONTEXT_ITEMS!) do (
     call :copy_context_path "%%P"
     if errorlevel 1 exit /b 1
 )
 
-set "PLAN_FILE=%TARGET_ROOT%\deploy-plan.json"
+set "PLAN_FILE=!TARGET_ROOT!\deploy-plan.json"
 set "DEPLOY_MODE=full"
 
-echo == Checking %TARGET% changes ==
-powershell -NoProfile -ExecutionPolicy Bypass -File "%DEPLOY_CONTEXT_SCRIPT%" -Action plan -Target "%TARGET%" -StageDir "%STAGE_DIR%" -StateDir "%STATE_ROOT%" -PlanPath "%PLAN_FILE%"
+echo == Checking !TARGET! changes ==
+powershell -NoProfile -ExecutionPolicy Bypass -File "!DEPLOY_CONTEXT_SCRIPT!" -Action plan -Target "!TARGET!" -StageDir "!STAGE_DIR!" -StateDir "!STATE_ROOT!" -PlanPath "!PLAN_FILE!"
 if errorlevel 1 exit /b 1
 
-if exist "%PLAN_FILE%.mode" (
-    set /p "DEPLOY_MODE="<"%PLAN_FILE%.mode"
+if exist "!PLAN_FILE!.mode" (
+    set /p "DEPLOY_MODE="<"!PLAN_FILE!.mode"
 )
 
 if /i "!DEPLOY_MODE!"=="SKIP" (
-    echo == %TARGET% unchanged; image rebuild skipped ==
-    if /i not "%TARGET%"=="notifybot" (
-        echo == Recreating %COMPOSE_SERVICE% with current compose ==
-        scp %SCP_ARGS% "%REMOTE_COMPOSE_SCRIPT%" "%SERVER%:/tmp/deploy-remote-compose.sh"
+    echo == !TARGET! unchanged; image rebuild skipped ==
+    if /i not "!TARGET!"=="notifybot" (
+        echo == Recreating !COMPOSE_SERVICE! with current compose ==
+        scp !SCP_ARGS! "!REMOTE_COMPOSE_SCRIPT!" "!SERVER!:/tmp/deploy-remote-compose.sh"
         if errorlevel 1 exit /b 1
-        ssh %SSH_ARGS% %SERVER% "sed -i 's/\r$//' /tmp/deploy-remote-compose.sh && chmod +x /tmp/deploy-remote-compose.sh && bash /tmp/deploy-remote-compose.sh %COMPOSE_SERVICE% %REMOTE_DIR%"
+        ssh !SSH_ARGS! !SERVER! "sed -i 's/\r$//' /tmp/deploy-remote-compose.sh && chmod +x /tmp/deploy-remote-compose.sh && bash /tmp/deploy-remote-compose.sh !COMPOSE_SERVICE! !REMOTE_DIR!"
         if errorlevel 1 exit /b 1
     )
-    if exist "%TARGET_ROOT%" rmdir /s /q "%TARGET_ROOT%"
+    if exist "!TARGET_ROOT!" rmdir /s /q "!TARGET_ROOT!"
     exit /b 0
 )
 
-echo == Packing %TARGET% build context ==
-powershell -NoProfile -ExecutionPolicy Bypass -File "%DEPLOY_CONTEXT_SCRIPT%" -Action pack -Target "%TARGET%" -StageDir "%STAGE_DIR%" -StateDir "%STATE_ROOT%" -ArchivePath "%ARCHIVE%" -PlanPath "%PLAN_FILE%"
+echo == Packing !TARGET! build context ==
+powershell -NoProfile -ExecutionPolicy Bypass -File "!DEPLOY_CONTEXT_SCRIPT!" -Action pack -Target "!TARGET!" -StageDir "!STAGE_DIR!" -StateDir "!STATE_ROOT!" -ArchivePath "!ARCHIVE!" -PlanPath "!PLAN_FILE!"
 if errorlevel 1 exit /b 1
 
-echo == Uploading %TARGET% ==
-scp %SCP_ARGS% "%ARCHIVE%" "%SERVER%:/tmp/leadflow-%TARGET%-context.tar.gz"
+echo == Uploading !TARGET! ==
+scp !SCP_ARGS! "!ARCHIVE!" "!SERVER!:/tmp/leadflow-!TARGET!-context.tar.gz"
 if errorlevel 1 exit /b 1
 
-scp %SCP_ARGS% "%REMOTE_BUILD_SCRIPT%" "%SERVER%:/tmp/deploy-remote-build.sh"
+scp !SCP_ARGS! "!REMOTE_BUILD_SCRIPT!" "!SERVER!:/tmp/deploy-remote-build.sh"
 if errorlevel 1 exit /b 1
 
-echo == Building and deploying %TARGET% on %SERVER% ==
-ssh %SSH_ARGS% %SERVER% "sed -i 's/\r$//' /tmp/deploy-remote-build.sh && chmod +x /tmp/deploy-remote-build.sh && bash /tmp/deploy-remote-build.sh /tmp/leadflow-%TARGET%-context.tar.gz %DOCKERFILE% %IMAGE_TAG% %COMPOSE_SERVICE% %REMOTE_DIR% !DEPLOY_MODE!"
+echo == Building and deploying !TARGET! on !SERVER! ==
+ssh !SSH_ARGS! !SERVER! "sed -i 's/\r$//' /tmp/deploy-remote-build.sh && chmod +x /tmp/deploy-remote-build.sh && bash /tmp/deploy-remote-build.sh /tmp/leadflow-!TARGET!-context.tar.gz !DOCKERFILE! !IMAGE_TAG! !COMPOSE_SERVICE! !REMOTE_DIR! !DEPLOY_MODE!"
 if errorlevel 1 exit /b 1
 
-powershell -NoProfile -ExecutionPolicy Bypass -File "%DEPLOY_CONTEXT_SCRIPT%" -Action save -Target "%TARGET%" -StageDir "%STAGE_DIR%" -StateDir "%STATE_ROOT%"
+powershell -NoProfile -ExecutionPolicy Bypass -File "!DEPLOY_CONTEXT_SCRIPT!" -Action save -Target "!TARGET!" -StageDir "!STAGE_DIR!" -StateDir "!STATE_ROOT!"
 if errorlevel 1 exit /b 1
 
-if exist "%TARGET_ROOT%" rmdir /s /q "%TARGET_ROOT%"
-if exist "%ARCHIVE%" del /f /q "%ARCHIVE%"
+if exist "!TARGET_ROOT!" rmdir /s /q "!TARGET_ROOT!"
+if exist "!ARCHIVE!" del /f /q "!ARCHIVE!"
 
-echo == Finished %TARGET% ==
+echo == Finished !TARGET! ==
 exit /b 0
 
 :publish_config
-set "STAGE_DIR=%TMP_ROOT%\config"
+set "STAGE_DIR=!TMP_ROOT!\config"
 set "REMOTE_STAGING=/tmp/leadflow-orbita-config"
-set "PLAN_FILE=%STAGE_DIR%\deploy-plan.json"
+set "PLAN_FILE=!STAGE_DIR!\deploy-plan.json"
 set "DEPLOY_MODE=full"
 
-if exist "%STAGE_DIR%" rmdir /s /q "%STAGE_DIR%"
-mkdir "%STAGE_DIR%" || exit /b 1
+if exist "!STAGE_DIR!" rmdir /s /q "!STAGE_DIR!"
+mkdir "!STAGE_DIR!" || exit /b 1
 
 for %%F in (docker-compose.images.yml Caddyfile backup-db.sh) do (
-    if not exist "%REPO%deploy\control-panel\%%F" (
+    if not exist "!REPO!deploy\control-panel\%%F" (
         echo Config file not found: deploy\control-panel\%%F
         exit /b 1
     )
-    copy /y "%REPO%deploy\control-panel\%%F" "%STAGE_DIR%\%%F" >nul
+    copy /y "!REPO!deploy\control-panel\%%F" "!STAGE_DIR!\%%F" >nul
 )
 
 echo == Checking config changes ==
-powershell -NoProfile -ExecutionPolicy Bypass -File "%DEPLOY_CONTEXT_SCRIPT%" -Action plan -Target "config" -StageDir "%STAGE_DIR%" -StateDir "%STATE_ROOT%" -PlanPath "%PLAN_FILE%"
+powershell -NoProfile -ExecutionPolicy Bypass -File "!DEPLOY_CONTEXT_SCRIPT!" -Action plan -Target "config" -StageDir "!STAGE_DIR!" -StateDir "!STATE_ROOT!" -PlanPath "!PLAN_FILE!"
 if errorlevel 1 exit /b 1
 
-if exist "%PLAN_FILE%.mode" (
-    set /p "DEPLOY_MODE="<"%PLAN_FILE%.mode"
+if exist "!PLAN_FILE!.mode" (
+    set /p "DEPLOY_MODE="<"!PLAN_FILE!.mode"
 )
 
 if /i "!DEPLOY_MODE!"=="SKIP" (
     echo == Config unchanged; full upload skipped ==
     call :sync_compose_always
     if errorlevel 1 exit /b 1
-    if exist "%STAGE_DIR%" rmdir /s /q "%STAGE_DIR%"
+    if exist "!STAGE_DIR!" rmdir /s /q "!STAGE_DIR!"
     exit /b 0
 )
 
 echo == Uploading server config ==
-ssh %SSH_ARGS% %SERVER% "rm -rf %REMOTE_STAGING% && mkdir -p %REMOTE_STAGING%"
+ssh !SSH_ARGS! !SERVER! "rm -rf !REMOTE_STAGING! && mkdir -p !REMOTE_STAGING!"
 if errorlevel 1 exit /b 1
 
 for %%F in (docker-compose.images.yml Caddyfile backup-db.sh) do (
-    scp %SCP_ARGS% "%STAGE_DIR%\%%F" "%SERVER%:%REMOTE_STAGING%/%%F"
+    scp !SCP_ARGS! "!STAGE_DIR!\%%F" "!SERVER!:!REMOTE_STAGING!/%%F"
     if errorlevel 1 exit /b 1
 )
 
-scp %SCP_ARGS% "%CONFIG_SCRIPT%" "%SERVER%:/tmp/deploy-config-remote.sh"
+scp !SCP_ARGS! "!CONFIG_SCRIPT!" "!SERVER!:/tmp/deploy-config-remote.sh"
 if errorlevel 1 exit /b 1
 
-ssh %SSH_ARGS% %SERVER% "sed -i 's/\r$//' /tmp/deploy-config-remote.sh && chmod +x /tmp/deploy-config-remote.sh && bash /tmp/deploy-config-remote.sh %REMOTE_DIR% %REMOTE_STAGING%"
+ssh !SSH_ARGS! !SERVER! "sed -i 's/\r$//' /tmp/deploy-config-remote.sh && chmod +x /tmp/deploy-config-remote.sh && bash /tmp/deploy-config-remote.sh !REMOTE_DIR! !REMOTE_STAGING!"
 if errorlevel 1 exit /b 1
 
-powershell -NoProfile -ExecutionPolicy Bypass -File "%DEPLOY_CONTEXT_SCRIPT%" -Action save -Target "config" -StageDir "%STAGE_DIR%" -StateDir "%STATE_ROOT%"
+powershell -NoProfile -ExecutionPolicy Bypass -File "!DEPLOY_CONTEXT_SCRIPT!" -Action save -Target "config" -StageDir "!STAGE_DIR!" -StateDir "!STATE_ROOT!"
 if errorlevel 1 exit /b 1
 
-if exist "%STAGE_DIR%" rmdir /s /q "%STAGE_DIR%"
+if exist "!STAGE_DIR!" rmdir /s /q "!STAGE_DIR!"
 
 echo == Server config deployed ==
 exit /b 0
 
 :copy_context_path
 set "REL=%~1"
-set "SRC=%REPO%\%REL%"
-set "DST=%STAGE_DIR%\%REL%"
+set "SRC=!REPO!\!REL!"
+set "DST=!STAGE_DIR!\!REL!"
 
-if not exist "%SRC%" (
-    echo Context path not found: %SRC%
+if not exist "!SRC!" (
+    echo Context path not found: !SRC!
     exit /b 1
 )
 
-for %%D in ("%DST%") do mkdir "%%~dpD" >nul 2>&1
-if exist "%SRC%\*" (
-    robocopy "%SRC%" "%DST%" /E /XD bin obj .vs .git node_modules .idea /XF *.user *.suo /NFL /NDL /NJH /NJS /NC /NS >nul
+for %%D in ("!DST!") do mkdir "%%~dpD" >nul 2>&1
+if exist "!SRC!\*" (
+    robocopy "!SRC!" "!DST!" /E /XD bin obj .vs .git node_modules .idea /XF *.user *.suo /NFL /NDL /NJH /NJS /NC /NS >nul
     if errorlevel 8 exit /b 1
 ) else (
-    copy /y "%SRC%" "%DST%" >nul
+    copy /y "!SRC!" "!DST!" >nul
 )
 
 exit /b 0
@@ -377,9 +380,19 @@ if not defined DOCKERFILE (
 
 exit /b 0
 
+:ensure_publish_paths
+set "ORBITA_COMPOSE_IMAGES=%REPO%deploy\control-panel\docker-compose.images.yml"
+if not exist "!ORBITA_COMPOSE_IMAGES!" (
+    echo Compose file not found: !ORBITA_COMPOSE_IMAGES!
+    exit /b 1
+)
+exit /b 0
+
 :sync_compose_always
-echo == Syncing docker-compose.images.yml to %REMOTE_DIR% ==
-scp %SCP_ARGS% "%COMPOSE_FILE%" "%SERVER%:%REMOTE_DIR%/docker-compose.images.yml"
+call :ensure_publish_paths
+if errorlevel 1 exit /b 1
+echo == Syncing docker-compose.images.yml to !REMOTE_DIR! ==
+scp !SCP_ARGS! "!ORBITA_COMPOSE_IMAGES!" "!SERVER!:!REMOTE_DIR!/docker-compose.images.yml"
 if errorlevel 1 exit /b 1
 exit /b 0
 
@@ -396,11 +409,11 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo == Syncing .env to %REMOTE_DIR% ==
-scp %SCP_ARGS% "%SECRET_FILE%" "%SERVER%:/tmp/leadflow-orbita.env"
+echo == Syncing .env to !REMOTE_DIR! ==
+scp !SCP_ARGS! "!SECRET_FILE!" "!SERVER!:/tmp/leadflow-orbita.env"
 if errorlevel 1 exit /b 1
 
-ssh %SSH_ARGS% %SERVER% "cp /tmp/leadflow-orbita.env %REMOTE_DIR%/.env && chmod 600 %REMOTE_DIR%/.env && rm -f /tmp/leadflow-orbita.env"
+ssh !SSH_ARGS! !SERVER! "cp /tmp/leadflow-orbita.env !REMOTE_DIR!/.env && chmod 600 !REMOTE_DIR!/.env && rm -f /tmp/leadflow-orbita.env"
 if errorlevel 1 exit /b 1
 
 exit /b 0
@@ -412,11 +425,11 @@ if not defined SSH_KEY if defined ORBITA_SSH_KEY if exist "%ORBITA_SSH_KEY%" set
 exit /b 0
 
 :build_transport_args
-set "SSH_ARGS=-p %LEADFLOW_SSH_PORT% -o BatchMode=yes -o StrictHostKeyChecking=accept-new"
-set "SCP_ARGS=-P %LEADFLOW_SSH_PORT% -o BatchMode=yes -o StrictHostKeyChecking=accept-new"
+set "SSH_ARGS=-p !LEADFLOW_SSH_PORT! -o BatchMode=yes -o StrictHostKeyChecking=accept-new"
+set "SCP_ARGS=-P !LEADFLOW_SSH_PORT! -o BatchMode=yes -o StrictHostKeyChecking=accept-new"
 if defined SSH_KEY (
-    set "SSH_ARGS=-i %SSH_KEY% %SSH_ARGS%"
-    set "SCP_ARGS=-i %SSH_KEY% %SCP_ARGS%"
+    set "SSH_ARGS=-i !SSH_KEY! !SSH_ARGS!"
+    set "SCP_ARGS=-i !SSH_KEY! !SCP_ARGS!"
 )
 exit /b 0
 
