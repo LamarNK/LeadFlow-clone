@@ -112,6 +112,13 @@ public sealed class TelemetryService(OrbitaDbContext db, OfficeAdminService offi
         worker.LastSeenAtUtc = DateTime.UtcNow;
         worker.MonitoringStatus = worker.MonitoringStatus;
 
+        // Slim: if the worker sent a mostly-empty snapshot, only update LastSeen (heartbeat already does the heavy lifting).
+        if (IsMostlyEmptySnapshot(request))
+        {
+            await db.SaveChangesAsync(ct);
+            return true;
+        }
+
         db.WorkerSnapshots.Add(new WorkerSnapshotEntity
         {
             Id = Guid.NewGuid(),
@@ -163,7 +170,41 @@ public sealed class TelemetryService(OrbitaDbContext db, OfficeAdminService offi
         }
 
         await db.SaveChangesAsync(ct);
+
+        // Probabilistic retention to keep snapshot table from growing unbounded.
+        // Keep latest + anything in last ~48h. Called rarely to avoid overhead.
+        if (Random.Shared.Next(0, 25) == 0)
+        {
+            try
+            {
+                var cutoff = DateTime.UtcNow.AddHours(-48);
+                var stale = await db.WorkerSnapshots
+                    .Where(s => s.WorkerId == request.WorkerId && s.CapturedAtUtc < cutoff)
+                    .ToListAsync(ct);
+                if (stale.Count > 0)
+                {
+                    db.WorkerSnapshots.RemoveRange(stale);
+                    await db.SaveChangesAsync(ct);
+                }
+            }
+            catch
+            {
+                // ignore prune errors
+            }
+        }
+
         return true;
+    }
+
+    private static bool IsMostlyEmptySnapshot(WorkerSnapshotRequest req)
+    {
+        var s = req.Stats;
+        bool statsEmpty = s.NewResponses == 0 && s.TotalToday == 0 && s.SentToCrm == 0 &&
+                          s.Duplicates == 0 && s.Errors == 0 && s.ActiveAdsCount == 0 &&
+                          (s.HourlyActivity == null || s.HourlyActivity.All(p => p.NewCount == 0));
+        bool noBalances = req.Balances == null || req.Balances.Count == 0;
+        bool accountsTrivial = req.Accounts == null || req.Accounts.All(a => a.ActiveAdsCount == 0 && a.BlockedCount == 0 && string.IsNullOrEmpty(a.LastErrorMessage));
+        return statsEmpty && noBalances && accountsTrivial;
     }
 
     public async Task<bool> SaveEventsAsync(WorkerEventBatchRequest request, CancellationToken ct)

@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Options;
+using Orbita.Contracts;
 using Orbita.Web.Models.ViewModels;
 using Orbita.Web.Options;
 
@@ -6,11 +7,11 @@ namespace Orbita.Web.Services;
 
 public sealed class DashboardService(OrbitaApiClient api, IOptions<DesignPreviewOptions> previewOptions) : IDashboardService
 {
-    public async Task<DashboardViewModel> GetDashboardAsync(CancellationToken ct = default)
+    public async Task<DashboardViewModel> GetDashboardAsync(DashboardPeriod period, CancellationToken ct = default)
     {
         if (previewOptions.Value.Enabled)
         {
-            return DesignPreviewData.BuildDashboardViewModel();
+            return DesignPreviewData.BuildDashboardViewModel(period);
         }
 
         var summary = await api.GetSummaryAsync(ct);
@@ -22,19 +23,14 @@ public sealed class DashboardService(OrbitaApiClient api, IOptions<DesignPreview
         var workers = await api.GetWorkersAsync(ct) ?? [];
         var events = await api.GetEventsAsync(limit: 5, ct: ct) ?? [];
         var accountStats = await BuildAccountStatsAsync(workers, summary, ct);
-        var kpiCards = BuildKpiCards(summary);
-        var hourlyChart = DashboardChartsBuilder.FromHourlyActivity(summary.HourlyActivity);
+        var periodStats = AggregatePeriodStats(summary, period);
+        var kpiCards = BuildKpiCards(summary, periodStats);
+        var responseChart = BuildResponseChart(summary, period, periodStats);
+        var charts = DashboardChartsBuilder.FromPresentation(kpiCards, responseChart, accountStats, periodStats.DailyPoints);
 
         return new DashboardViewModel
         {
-            Header = new PageHeaderViewModel
-            {
-                Title = "Панель управления",
-                Subtitle = "Общая сводка по всем воркерам",
-                ShowRefresh = true,
-                ShowDateRange = true,
-                UpdatedAtUtc = DateTime.UtcNow
-            },
+            Header = BuildHeader(period),
             KpiCards = kpiCards,
             Workers = workers.Select(w => new DashboardWorkerRowViewModel
             {
@@ -43,12 +39,12 @@ public sealed class DashboardService(OrbitaApiClient api, IOptions<DesignPreview
                 IsOnline = w.IsOnline,
                 ActiveAccounts = w.AccountCount,
                 TotalAccounts = w.AccountCount,
-                Responses = w.TotalToday,
+                Responses = period.IsTodayOnly ? w.TotalToday : 0,
                 Duplicates = 0,
                 Errors = w.Errors,
                 LastActivityUtc = w.LastSeenAtUtc
             }).ToList(),
-            HourlyChart = hourlyChart,
+            HourlyChart = responseChart,
             Events = events.Select(e => new DashboardEventRowViewModel
             {
                 Message = e.Message,
@@ -59,126 +55,189 @@ public sealed class DashboardService(OrbitaApiClient api, IOptions<DesignPreview
                     : e.Level.Equals("Warning", StringComparison.OrdinalIgnoreCase) ? "warning" : "success"
             }).ToList(),
             AccountStats = accountStats,
-            Charts = DashboardChartsBuilder.FromPresentation(kpiCards, hourlyChart, accountStats)
+            Charts = charts
         };
     }
 
-    private static IReadOnlyList<DashboardKpiCardViewModel> BuildKpiCards(Orbita.Contracts.GlobalDashboardSummary s)
+    private static PageHeaderViewModel BuildHeader(DashboardPeriod period) => new()
     {
-        var hourly = s.HourlyActivity.Select(p => p.NewCount).ToList();
-        if (hourly.Count < 2)
+        Title = "Панель управления",
+        Subtitle = "Общая сводка по всем воркерам",
+        ShowRefresh = true,
+        ShowDateRange = true,
+        UpdatedAtUtc = DateTime.UtcNow,
+        DateRangeLabel = period.Label,
+        DateFrom = period.From,
+        DateTo = period.To,
+        ActivePeriodPreset = period.ActivePreset
+    };
+
+    private static DashboardPeriodStats AggregatePeriodStats(GlobalDashboardSummary summary, DashboardPeriod period)
+    {
+        var dailyPoints = summary.WeeklyByDayActivity
+            .Where(p => p.LocalDate.HasValue
+                && p.LocalDate.Value.Date >= period.From
+                && p.LocalDate.Value.Date <= period.To)
+            .OrderBy(p => p.LocalDate)
+            .ToList();
+
+        if (period.IsTodayOnly)
         {
-            hourly = [10, 14, 12, 18, 16, 20, 22, 24];
+            return new DashboardPeriodStats(
+                summary.TotalToday,
+                summary.Duplicates,
+                summary.Errors,
+                summary.HourlyActivity.Select(p => p.NewCount).ToList(),
+                summary.HourlyActivity.Select(p => p.DuplicateCount).ToList(),
+                summary.HourlyActivity.Select(p => p.ErrorCount).ToList(),
+                dailyPoints);
         }
+
+        if (period.IsSingleDay && dailyPoints.Count == 1)
+        {
+            var day = dailyPoints[0];
+            return new DashboardPeriodStats(
+                day.NewCount,
+                day.DuplicateCount,
+                day.ErrorCount,
+                [day.NewCount],
+                [day.DuplicateCount],
+                [day.ErrorCount],
+                dailyPoints);
+        }
+
+        return new DashboardPeriodStats(
+            dailyPoints.Sum(p => p.NewCount),
+            dailyPoints.Sum(p => p.DuplicateCount),
+            dailyPoints.Sum(p => p.ErrorCount),
+            dailyPoints.Select(p => p.NewCount).ToList(),
+            dailyPoints.Select(p => p.DuplicateCount).ToList(),
+            dailyPoints.Select(p => p.ErrorCount).ToList(),
+            dailyPoints);
+    }
+
+    private static IReadOnlyList<DashboardChartPointViewModel> BuildResponseChart(
+        GlobalDashboardSummary summary,
+        DashboardPeriod period,
+        DashboardPeriodStats periodStats)
+    {
+        if (period.IsTodayOnly)
+        {
+            return DashboardChartsBuilder.FromHourlyActivity(summary.HourlyActivity);
+        }
+
+        return DashboardChartsBuilder.FromDailyActivity(periodStats.DailyPoints);
+    }
+
+    private static IReadOnlyList<DashboardKpiCardViewModel> BuildKpiCards(
+        GlobalDashboardSummary summary,
+        DashboardPeriodStats periodStats)
+    {
+        var responsesSeries = periodStats.ResponsesSeries;
+        var duplicatesSeries = periodStats.DuplicatesSeries;
+        var errorsSeries = periodStats.ErrorsSeries;
 
         return
         [
             new()
             {
+                Key = "responses",
                 Label = "Откликов всего",
-                Value = s.TotalToday.ToString(),
-                CountValue = s.TotalToday,
-                Delta = "+0%",
+                Value = periodStats.Responses.ToString(),
+                CountValue = periodStats.Responses,
+                Delta = "За период",
                 DeltaTone = "neutral",
                 IconClass = "fa-regular fa-comments",
                 IconTone = "blue",
-                Sparkline = SparklineGenerator.FromHourlySeries(hourly, SparklineTrend.Up),
+                Sparkline = SparklineGenerator.FromHourlySeries(responsesSeries, SparklineTrend.Up),
                 SparkColor = "#2563eb"
             },
             new()
             {
+                Key = "duplicates",
                 Label = "Дублей",
-                Value = s.Duplicates.ToString(),
-                CountValue = s.Duplicates,
-                Delta = "—",
+                Value = periodStats.Duplicates.ToString(),
+                CountValue = periodStats.Duplicates,
+                Delta = "За период",
                 DeltaTone = "neutral",
                 IconClass = "fa-regular fa-clone",
                 IconTone = "green",
-                Sparkline = SparklineGenerator.FromHourlySeries(hourly, SparklineTrend.Down),
+                Sparkline = SparklineGenerator.FromHourlySeries(duplicatesSeries, SparklineTrend.Down),
                 SparkColor = "#16a34a"
             },
             new()
             {
+                Key = "errors",
                 Label = "Ошибок",
-                Value = s.Errors.ToString(),
-                CountValue = s.Errors,
-                Delta = "—",
+                Value = periodStats.Errors.ToString(),
+                CountValue = periodStats.Errors,
+                Delta = "За период",
                 DeltaTone = "neutral",
                 IconClass = "fa-solid fa-triangle-exclamation",
                 IconTone = "orange",
-                Sparkline = SparklineGenerator.FromHourlySeries(hourly, SparklineTrend.UpGentle),
+                Sparkline = SparklineGenerator.FromHourlySeries(errorsSeries, SparklineTrend.UpGentle),
                 SparkColor = "#f59e0b"
             },
             new()
             {
+                Key = "accounts",
                 Label = "Аккаунтов активно",
-                Value = $"{Math.Max(0, s.ConnectedAccounts - s.AccountsNeedAttentionCount)} / {s.ConnectedAccounts}",
-                CountValue = Math.Max(0, s.ConnectedAccounts - s.AccountsNeedAttentionCount),
-                ValueSuffix = $" / {s.ConnectedAccounts}",
-                Delta = s.ConnectedAccounts == 0 ? "0%" : "100%",
+                Value = $"{Math.Max(0, summary.ConnectedAccounts - summary.AccountsNeedAttentionCount)} / {summary.ConnectedAccounts}",
+                CountValue = Math.Max(0, summary.ConnectedAccounts - summary.AccountsNeedAttentionCount),
+                ValueSuffix = $" / {summary.ConnectedAccounts}",
+                Delta = summary.ConnectedAccounts == 0 ? "0%" : "Сейчас",
                 DeltaTone = "good",
                 IconClass = "fa-regular fa-user",
                 IconTone = "purple",
-                Sparkline = SparklineGenerator.FromHourlySeries(hourly, SparklineTrend.Up),
+                Sparkline = SparklineGenerator.FromHourlySeries(responsesSeries, SparklineTrend.Up),
                 SparkColor = "#7c3aed"
             },
             new()
             {
+                Key = "workers",
                 Label = "Воркеров онлайн",
-                Value = $"{s.OnlineWorkers} / {s.TotalWorkers}",
-                CountValue = s.OnlineWorkers,
-                ValueSuffix = $" / {s.TotalWorkers}",
-                Delta = s.TotalWorkers == 0 ? "0%" : $"{s.OnlineWorkers * 100 / s.TotalWorkers}%",
+                Value = $"{summary.OnlineWorkers} / {summary.TotalWorkers}",
+                CountValue = summary.OnlineWorkers,
+                ValueSuffix = $" / {summary.TotalWorkers}",
+                Delta = summary.TotalWorkers == 0 ? "0%" : "Сейчас",
                 DeltaTone = "good",
                 IconClass = "fa-solid fa-server",
                 IconTone = "blue",
-                Sparkline = SparklineGenerator.FromHourlySeries(hourly, SparklineTrend.Up),
+                Sparkline = SparklineGenerator.FromHourlySeries(responsesSeries, SparklineTrend.Up),
                 SparkColor = "#2563eb"
             }
         ];
     }
 
-    private async Task<AccountStatsViewModel> BuildAccountStatsAsync(
-        IReadOnlyList<Orbita.Contracts.WorkerListItem> workers,
-        Orbita.Contracts.GlobalDashboardSummary summary,
+    private Task<AccountStatsViewModel> BuildAccountStatsAsync(
+        IReadOnlyList<WorkerListItem> workers,
+        GlobalDashboardSummary summary,
         CancellationToken ct)
     {
-        if (workers.Count == 0)
+        // Optimized: use aggregates already computed server-side in DashboardQueryService
+        // (from WorkerAccounts + response counts). Avoids N+1 per-worker /accounts fetches on every 10s poll.
+        // The detailed per-account list remains available on Workers/Details and Accounts pages.
+        var total = summary.ConnectedAccounts;
+        var needAttention = summary.AccountsNeedAttentionCount;
+        var active = Math.Max(0, total - needAttention);
+
+        // Rough split for the dashboard donut; detailed classification lives in worker accounts data.
+        return Task.FromResult(new AccountStatsViewModel
         {
-            return new AccountStatsViewModel
-            {
-                Total = summary.ConnectedAccounts,
-                Active = Math.Max(0, summary.ConnectedAccounts - summary.AccountsNeedAttentionCount),
-                Errors = summary.AccountsNeedAttentionCount
-            };
-        }
-
-        var active = 0;
-        var inactive = 0;
-        var blocked = 0;
-        var errors = 0;
-
-        foreach (var worker in workers)
-        {
-            var accounts = await api.GetWorkerAccountsAsync(worker.Id, ct);
-            if (accounts is null) continue;
-
-            foreach (var account in accounts)
-            {
-                if (!account.IsEnabled) { inactive++; continue; }
-                if (account.Status is "Blocked") { blocked++; continue; }
-                if (account.Status is "RequiresLogin" or "RequiresManualAction" or "Error") errors++;
-                else active++;
-            }
-        }
-
-        return new AccountStatsViewModel
-        {
-            Total = active + inactive + blocked + errors,
+            Total = total,
             Active = active,
-            Inactive = inactive,
-            Blocked = blocked,
-            Errors = errors
-        };
+            Inactive = 0, // not critical for live summary card
+            Blocked = 0,
+            Errors = needAttention
+        });
     }
+
+    private sealed record DashboardPeriodStats(
+        int Responses,
+        int Duplicates,
+        int Errors,
+        IReadOnlyList<int> ResponsesSeries,
+        IReadOnlyList<int> DuplicatesSeries,
+        IReadOnlyList<int> ErrorsSeries,
+        IReadOnlyList<ActivityPointDto> DailyPoints);
 }
