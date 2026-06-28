@@ -20,4 +20,17 @@ public sealed class EventsController(IEventsService events) : Controller
         var model = await events.GetIndexAsync(q, type, workerId, account, level, page, ct: ct);
         return View(model);
     }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Dismiss(Guid eventId, CancellationToken ct)
+    {
+        var (success, error) = await events.DismissEventAsync(eventId, ct);
+        if (!success)
+        {
+            return BadRequest(new { error = error ?? "Не удалось отметить событие." });
+        }
+
+        return Ok(new { message = "Событие отмечено как обработанное." });
+    }
 }

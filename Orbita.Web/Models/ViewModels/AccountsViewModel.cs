@@ -2,6 +2,7 @@ namespace Orbita.Web.Models.ViewModels;
 
 public sealed class AccountsIndexViewModel
 {
+    public PageHeaderViewModel Header { get; init; } = new();
     public IReadOnlyList<BreadcrumbItemViewModel> Breadcrumbs { get; init; } =
     [
         new() { Label = "Главная", Url = "/Dashboard" },
@@ -35,6 +36,7 @@ public sealed class AccountRowViewModel
     public int UniqueResponses { get; init; }
     public int Errors { get; init; }
     public DateTime? LastActivityUtc { get; init; }
+    public bool IsEnabledInPanel { get; init; } = true;
 }
 
 public sealed class AccountsSummaryViewModel

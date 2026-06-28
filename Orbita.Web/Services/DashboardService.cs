@@ -59,18 +59,12 @@ public sealed class DashboardService(OrbitaApiClient api, IOptions<DesignPreview
         };
     }
 
-    private static PageHeaderViewModel BuildHeader(DashboardPeriod period) => new()
-    {
-        Title = "Панель управления",
-        Subtitle = "Общая сводка по всем воркерам",
-        ShowRefresh = true,
-        ShowDateRange = true,
-        UpdatedAtUtc = DateTime.UtcNow,
-        DateRangeLabel = period.Label,
-        DateFrom = period.From,
-        DateTo = period.To,
-        ActivePeriodPreset = period.ActivePreset
-    };
+    private static PageHeaderViewModel BuildHeader(DashboardPeriod period) =>
+        PageHeaderBuilder.Create(
+            "Панель управления",
+            "Общая сводка по всем воркерам",
+            showDateRange: true,
+            period: period);
 
     private static DashboardPeriodStats AggregatePeriodStats(GlobalDashboardSummary summary, DashboardPeriod period)
     {

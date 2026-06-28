@@ -7,9 +7,16 @@ namespace Orbita.Api.Services;
 
 public sealed class WorkerConfigService(OrbitaDbContext db, OfficeScopeService officeScope)
 {
+    public Task<WorkerConfigDto?> GetConfigForWorkerAsync(
+        Guid workerId,
+        OfficeScope scope,
+        CancellationToken ct = default) =>
+        GetConfigForWorkerAsync(workerId, scope, consumePendingCommand: false, ct);
+
     public async Task<WorkerConfigDto?> GetConfigForWorkerAsync(
         Guid workerId,
         OfficeScope scope,
+        bool consumePendingCommand,
         CancellationToken ct = default)
     {
         if (!await officeScope.CanAccessWorkerAsync(scope, workerId, ct))
@@ -17,10 +24,20 @@ public sealed class WorkerConfigService(OrbitaDbContext db, OfficeScopeService o
             return null;
         }
 
-        var worker = await db.Workers.AsNoTracking().FirstOrDefaultAsync(x => x.Id == workerId, ct);
+        var worker = consumePendingCommand
+            ? await db.Workers.FirstOrDefaultAsync(x => x.Id == workerId, ct)
+            : await db.Workers.AsNoTracking().FirstOrDefaultAsync(x => x.Id == workerId, ct);
         if (worker is null)
         {
             return null;
+        }
+
+        var pendingCommand = worker.PendingCommand;
+        if (consumePendingCommand && !string.IsNullOrWhiteSpace(pendingCommand))
+        {
+            worker.PendingCommand = null;
+            worker.PendingCommandAtUtc = null;
+            await db.SaveChangesAsync(ct);
         }
 
         var accounts = await db.WorkerAccounts
@@ -41,7 +58,8 @@ public sealed class WorkerConfigService(OrbitaDbContext db, OfficeScopeService o
             worker.MaxConcurrentAccounts,
             worker.AdsPowerApiBaseUrl,
             worker.AdsPowerApiKey,
-            accounts);
+            accounts,
+            pendingCommand);
     }
 
     public async Task<bool> SyncAccountsAsync(

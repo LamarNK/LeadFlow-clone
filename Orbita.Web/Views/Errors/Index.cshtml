@@ -3,6 +3,7 @@
     ViewData["Title"] = "Ошибки";
     var pagination = Model.Pagination;
 }
+<partial name="_PageHeader" model="Model.Header" />
 <div class="orbita-main errors-page">
     <nav class="orbita-breadcrumbs orbita-breadcrumbs--errors" aria-label="Навигация">
         @for (var i = 0; i < Model.Breadcrumbs.Count; i++)
@@ -22,8 +23,6 @@
             }
         }
     </nav>
-
-    <h1 class="errors-page-title">Ошибки</h1>
 
     <div class="kpi-row errors-kpi-row">
         @{ var kpiIdx = 0; }
@@ -136,6 +135,19 @@
 
     <div class="card card--errors-table">
         <div class="card-body card-body-table errors-table-wrap">
+            @if (pagination.TotalItems == 0)
+            {
+                <partial name="_TableEmptyState" model="@(new TableEmptyStateViewModel
+                {
+                    IconClass = "fa-solid fa-triangle-exclamation",
+                    Title = "Ошибки не найдены",
+                    Description = "За выбранные фильтры записей нет — это хороший знак.",
+                    CtaLabel = "Сбросить фильтры",
+                    CtaUrl = Url.Action("Index")
+                })" />
+            }
+            else
+            {
             <table class="data-table data-table--errors">
                 <thead>
                     <tr>
@@ -157,7 +169,11 @@
                     var accountUrl = string.IsNullOrWhiteSpace(error.AccountName)
                         ? null
                         : Url.Action("Index", "Accounts", new { q = error.AccountName });
-                    <tr class="errors-row" data-copy="@error.CopyText">
+                    <tr class="errors-row"
+                        data-copy="@error.CopyText"
+                        data-detail-title="@error.ErrorTypeLabel"
+                        data-detail-subtitle="@error.WorkerName · @error.SeverityLabel"
+                        data-detail-body="@error.Message">
                         <td class="errors-time"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(error.OccurredAtUtc, "datetime-seconds"))" /></td>
                         <td>
                             <span class="error-severity-badge error-severity-badge--@error.Severity">@error.SeverityLabel</span>
@@ -185,14 +201,14 @@
                                     <i class="fa-solid fa-ellipsis-vertical" aria-hidden="true"></i>
                                 </button>
                                 <div class="row-menu-dropdown row-menu-dropdown--errors" hidden>
-                                    <button type="button" class="row-menu-item">
+                                    <button type="button" class="row-menu-item" data-orbita-detail-open>
                                         <i class="fa-regular fa-eye" aria-hidden="true"></i>
                                         Просмотреть детали
                                     </button>
-                                    <button type="button" class="row-menu-item">
+                                    <a class="row-menu-item" href="@Url.Action("Index", "Settings", new { tab = "logs", workerId = error.WorkerId })">
                                         <i class="fa-regular fa-file-lines" aria-hidden="true"></i>
                                         Открыть лог
-                                    </button>
+                                    </a>
                                     @if (accountUrl is not null)
                                     {
                                         <a class="row-menu-item" href="@accountUrl">
@@ -208,7 +224,7 @@
                                         <i class="fa-regular fa-copy" aria-hidden="true"></i>
                                         Копировать текст ошибки
                                     </button>
-                                    <button type="button" class="row-menu-item">
+                                    <button type="button" class="row-menu-item" data-error-dismiss data-event-id="@error.Id">
                                         <i class="fa-regular fa-circle-check" aria-hidden="true"></i>
                                         Отметить как обработанную
                                     </button>
@@ -219,46 +235,22 @@
                 }
                 </tbody>
             </table>
+            }
 
-            <div class="errors-pagination">
-                <span class="errors-pagination-info">
-                    @if (pagination.TotalItems == 0)
-                    {
-                        @:Показано 0 из 0
-                    }
-                    else
-                    {
-                        @:Показано @pagination.RangeStart–@pagination.RangeEnd из @pagination.TotalItems
-                    }
-                </span>
-                <div class="errors-pagination-controls">
-                    @{
-                        var prevPage = pagination.Page > 1 ? pagination.Page - 1 : (int?)null;
-                        var nextPage = pagination.Page < pagination.TotalPages ? pagination.Page + 1 : (int?)null;
-                    }
-                    @if (prevPage is not null)
-                    {
-                        <a class="errors-page-btn"
-                           href="@Url.Action("Index", new { q = Model.Filters.SearchQuery, severity = Model.Filters.Severity, type = Model.Filters.Type, workerId = Model.Filters.WorkerId, account = Model.Filters.Account, page = prevPage })"
-                           aria-label="Предыдущая страница">&lt;</a>
-                    }
-                    else
-                    {
-                        <span class="errors-page-btn errors-page-btn--disabled" aria-hidden="true">&lt;</span>
-                    }
-                    <span class="errors-page-btn errors-page-btn--active" aria-current="page">@pagination.Page</span>
-                    @if (nextPage is not null)
-                    {
-                        <a class="errors-page-btn"
-                           href="@Url.Action("Index", new { q = Model.Filters.SearchQuery, severity = Model.Filters.Severity, type = Model.Filters.Type, workerId = Model.Filters.WorkerId, account = Model.Filters.Account, page = nextPage })"
-                           aria-label="Следующая страница">&gt;</a>
-                    }
-                    else
-                    {
-                        <span class="errors-page-btn errors-page-btn--disabled" aria-hidden="true">&gt;</span>
-                    }
-                </div>
-            </div>
+            <partial name="_Pagination" model="@(new PaginationPartialViewModel
+            {
+                Pagination = pagination,
+                Controller = "Errors",
+                Action = "Index",
+                RouteValues = new
+                {
+                    q = Model.Filters.SearchQuery,
+                    severity = Model.Filters.Severity,
+                    type = Model.Filters.Type,
+                    workerId = Model.Filters.WorkerId,
+                    account = Model.Filters.Account
+                }
+            })" />
         </div>
     </div>
 </div>

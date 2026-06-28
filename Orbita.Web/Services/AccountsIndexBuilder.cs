@@ -33,6 +33,7 @@ internal static class AccountsIndexBuilder
 
         return new AccountsIndexViewModel
         {
+            Header = PageHeaderBuilder.AccountsList(),
             SearchQuery = searchQuery,
             ActiveTab = tab,
             Tabs = TabDefinitions,
@@ -69,7 +70,8 @@ internal static class AccountsIndexBuilder
             Responses = responses,
             UniqueResponses = unique,
             Errors = errors,
-            LastActivityUtc = account.LastMonitoringAt
+            LastActivityUtc = account.LastMonitoringAt,
+            IsEnabledInPanel = account.IsEnabledInPanel
         };
     }
 

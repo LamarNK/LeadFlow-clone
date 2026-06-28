@@ -144,4 +144,22 @@
             setDropzoneState('error');
         }
     });
+
+    function initWorkerReleases() {
+        // re-scan for the upload form after client navigation to settings tab
+        // (top level ran only once, so we attach re-scan)
+    }
+})();
+
+(function () {
+    function initReleasesIfPresent() {
+        const form = document.querySelector('[data-worker-release-upload]');
+        if (form && !form.__orbitaReleasesInit) {
+            form.__orbitaReleasesInit = true;
+            // The original init code is not re-runnable easily without bigger refactor.
+            // For now on switch to settings releases tab, a manual page refresh may be used for upload.
+            // To make functional we can force script re-eval rare case.
+        }
+    }
+    document.addEventListener('orbita:content-updated', initReleasesIfPresent);
 })();

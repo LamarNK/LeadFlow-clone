@@ -9,9 +9,9 @@ namespace Orbita.Web.Controllers;
 public sealed class WorkersController(IWorkersService workers) : Controller
 {
     [HttpGet]
-    public async Task<IActionResult> Index(string? q, int page = 1, CancellationToken ct = default)
+    public async Task<IActionResult> Index(string? q, string? status, int page = 1, CancellationToken ct = default)
     {
-        var model = await workers.GetIndexAsync(q, page, ct);
+        var model = await workers.GetIndexAsync(q, status, page, ct);
         return View(model);
     }
 
@@ -78,6 +78,19 @@ public sealed class WorkersController(IWorkersService workers) : Controller
         }
 
         return RedirectToAction(nameof(Details), new { id = workerId });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Restart(Guid workerId, CancellationToken ct)
+    {
+        var (success, error) = await workers.SendWorkerCommandAsync(workerId, WorkerCommands.Restart, ct);
+        if (!success)
+        {
+            return BadRequest(new { error = error ?? "Не удалось отправить команду." });
+        }
+
+        return Ok(new { message = "Команда перезапуска отправлена воркеру." });
     }
 
     [HttpPost]

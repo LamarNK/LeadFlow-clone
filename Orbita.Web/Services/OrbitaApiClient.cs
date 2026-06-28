@@ -419,6 +419,43 @@ public sealed class OrbitaApiClient(HttpClient http, AuthSession session, IOptio
             : (false, await ReadApiErrorAsync(response, ct));
     }
 
+    public async Task<(bool Success, string? Error)> SendWorkerCommandAsync(
+        Guid workerId,
+        string command,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"api/v1/workers/{workerId}/commands");
+        request.Content = JsonContent.Create(new WorkerCommandRequest(command));
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (false, InvalidApiSessionError);
+        }
+
+        return response.IsSuccessStatusCode
+            ? (true, null)
+            : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(bool Success, string? Error)> DismissEventAsync(Guid eventId, CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return (true, null);
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"api/v1/panel/events/{eventId}/dismiss");
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (false, InvalidApiSessionError);
+        }
+
+        return response.IsSuccessStatusCode
+            ? (true, null)
+            : (false, await ReadApiErrorAsync(response, ct));
+    }
+
     public async Task<(bool Success, string? Error)> UpdateWorkerAccountAsync(
         Guid workerId,
         Guid accountId,

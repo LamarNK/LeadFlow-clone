@@ -46,6 +46,17 @@ public sealed class WorkerOrchestrator(
 
                 credentials.WorkerId ??= config.WorkerId;
                 credentials.DisplayName ??= Environment.MachineName;
+
+                if (string.Equals(config.PendingCommand, WorkerCommands.Restart, StringComparison.OrdinalIgnoreCase))
+                {
+                    runtimeState.Status = "Перезапуск";
+                    runtimeState.Detail = "По команде из панели";
+                    await monitoringService.StopAsync().ConfigureAwait(false);
+                    await candidateSink.FlushAsync(stoppingToken).ConfigureAwait(false);
+                    WorkerRestartHelper.ScheduleRestart();
+                    return;
+                }
+
                 runtimeState.Status = "Онлайн";
                 runtimeState.Detail = config.Accounts.Count(a => a.IsEnabled) + " акк.";
 

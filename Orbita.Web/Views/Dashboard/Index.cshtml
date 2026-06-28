@@ -57,6 +57,19 @@
                     <h2>Воркеры</h2>
                 </div>
                 <div class="card-body">
+                    @if (Model.Workers.Count == 0)
+                    {
+                        <partial name="_TableEmptyState" model="@(new TableEmptyStateViewModel
+                        {
+                            IconClass = "fa-solid fa-server",
+                            Title = "Воркеры не найдены",
+                            Description = "Добавьте первый воркер или дождитесь подключения агента.",
+                            CtaLabel = "Все воркеры",
+                            CtaUrl = Url.Action("Index", "Workers")
+                        })" />
+                    }
+                    else
+                    {
                     <table class="data-table">
                         <thead>
                             <tr>
@@ -73,8 +86,9 @@
                         <tbody data-dashboard-workers-body>
                         @foreach (var w in Model.Workers)
                         {
+                            var workerDetailsUrl = Url.Action("Details", "Workers", new { id = w.Id });
                             <tr>
-                                <td class="cell-name"><a href="@Url.Action("Details", "Workers", new { id = w.Id })">@w.DisplayName</a></td>
+                                <td class="cell-name"><a href="@workerDetailsUrl">@w.DisplayName</a></td>
                                 <td>
                                     <span class="status-dot @(w.IsOnline ? "" : "offline")">
                                         <i class="fa-solid fa-circle status-dot-icon" aria-hidden="true"></i>
@@ -87,26 +101,30 @@
                                 <td>@w.Errors</td>
                                 <td><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(w.LastActivityUtc, "time"))" /></td>
                                 <td class="data-table-menu">
-                                    <button type="button" class="row-menu-btn" aria-label="Действия">
-                                        <i class="fa-solid fa-ellipsis-vertical" aria-hidden="true"></i>
-                                    </button>
+                                    <div class="row-menu" data-row-menu>
+                                        <button type="button" class="row-menu-btn" aria-label="Действия" aria-expanded="false" aria-haspopup="true">
+                                            <i class="fa-solid fa-ellipsis-vertical" aria-hidden="true"></i>
+                                        </button>
+                                        <div class="row-menu-dropdown" hidden>
+                                            <a class="row-menu-item" href="@workerDetailsUrl">Открыть</a>
+                                            <button type="button" class="row-menu-item" data-worker-restart data-worker-id="@w.Id">Перезапустить</button>
+                                            <a class="row-menu-item" href="@Url.Action("Index", "Settings", new { tab = "logs", workerId = w.Id })">Просмотреть логи</a>
+                                            <a class="row-menu-item" href="@(workerDetailsUrl)#worker-settings">Настройки</a>
+                                        </div>
+                                    </div>
                                 </td>
                             </tr>
                         }
                         </tbody>
                     </table>
+                    }
                     <a class="card-footer-btn" href="@Url.Action("Index", "Workers")">Показать все воркеры</a>
                 </div>
             </div>
             <div class="card card--chart-hourly">
                 <div class="card-header">
                     <h2>Отклики по времени</h2>
-                    <div class="chart-period-select-wrap">
-                        <select class="chart-period-select" aria-label="Период">
-                            <option>Сегодня</option>
-                        </select>
-                        <i class="fa-solid fa-chevron-down chart-period-caret" aria-hidden="true"></i>
-                    </div>
+                    <span class="chart-period-label" title="Период задаётся в шапке страницы">@Model.Header.DateRangeLabel</span>
                 </div>
                 <div class="card-body">
                     <div class="chart-canvas-wrap chart-canvas-wrap--hourly">
@@ -123,7 +141,21 @@
                 </div>
                 <div class="card-body">
                     <div data-dashboard-events>
-                        <partial name="_DashboardEventList" model="Model.Events" />
+                        @if (Model.Events.Count == 0)
+                        {
+                            <partial name="_TableEmptyState" model="@(new TableEmptyStateViewModel
+                            {
+                                IconClass = "fa-regular fa-clipboard",
+                                Title = "Событий пока нет",
+                                Description = "Здесь появятся последние события с воркеров.",
+                                CtaLabel = "Все события",
+                                CtaUrl = Url.Action("Index", "Events")
+                            })" />
+                        }
+                        else
+                        {
+                            <partial name="_DashboardEventList" model="Model.Events" />
+                        }
                     </div>
                     <a class="card-footer-btn" href="@Url.Action("Index", "Events")">Показать все события</a>
                 </div>

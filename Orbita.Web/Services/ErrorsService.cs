@@ -43,4 +43,7 @@ public sealed class ErrorsService(OrbitaApiClient api, IOptions<DesignPreviewOpt
 
         return ErrorsIndexBuilder.Build(rows, filters, page);
     }
+
+    public Task<(bool Success, string? Error)> DismissEventAsync(Guid eventId, CancellationToken ct = default) =>
+        api.DismissEventAsync(eventId, ct);
 }

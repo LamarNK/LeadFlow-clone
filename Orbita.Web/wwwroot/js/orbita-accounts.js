@@ -53,10 +53,13 @@
             });
         });
 
-        document.addEventListener('click', closeAllRowMenus);
-        document.addEventListener('keydown', function (e) {
-            if (e.key === 'Escape') closeAllRowMenus();
-        });
+        if (!window.__orbitaRowMenuDocListeners) {
+            document.addEventListener('click', closeAllRowMenus);
+            document.addEventListener('keydown', function (e) {
+                if (e.key === 'Escape') closeAllRowMenus();
+            });
+            window.__orbitaRowMenuDocListeners = true;
+        }
     }
 
     function closeAllRowMenus() {
@@ -73,12 +76,83 @@
             row.addEventListener('click', function (e) {
                 if (e.target.closest('[data-row-menu]') || e.target.closest('a')) return;
                 var href = row.getAttribute('data-href');
-                if (href) window.location.href = href;
+                if (href) {
+                    if (window.Orbita && typeof window.Orbita.navigateTo === 'function') {
+                        window.Orbita.navigateTo(href, true);
+                    } else {
+                        window.location.href = href;
+                    }
+                }
             });
         });
     }
 
-    initKpiCounters();
-    initRowMenus();
-    initRowNavigation();
+    function initAddAccountModal() {
+        var modal = document.getElementById('accountsAddModal');
+        if (!modal) return;
+
+        function openModal() { modal.removeAttribute('hidden'); }
+        function closeModal() { modal.setAttribute('hidden', ''); }
+
+        document.querySelectorAll('[data-accounts-add-open]').forEach(function (btn) {
+            btn.addEventListener('click', openModal);
+        });
+        modal.querySelectorAll('[data-accounts-add-close]').forEach(function (el) {
+            el.addEventListener('click', closeModal);
+        });
+    }
+
+    function initAccountToggleButtons() {
+        document.querySelectorAll('[data-account-toggle]').forEach(function (btn) {
+            if (btn.hasAttribute('data-account-toggle-bound')) return;
+            btn.setAttribute('data-account-toggle-bound', '1');
+
+            btn.addEventListener('click', async function (e) {
+                e.stopPropagation();
+                var workerId = btn.getAttribute('data-worker-id');
+                var accountId = btn.getAttribute('data-account-id');
+                var enabled = btn.getAttribute('data-enabled') === 'true';
+                if (!workerId || !accountId || !window.Orbita || !window.Orbita.postForm) return;
+
+                var label = enabled ? 'Включить аккаунт в панели?' : 'Отключить аккаунт в панели?';
+                if (window.Orbita.confirm) {
+                    var confirmed = await window.Orbita.confirm({
+                        title: label,
+                        message: 'Воркер получит обновлённую конфигурацию при следующем опросе.',
+                        confirmLabel: enabled ? 'Включить' : 'Отключить',
+                        variant: enabled ? 'primary' : 'danger'
+                    });
+                    if (!confirmed) return;
+                }
+
+                var result = await window.Orbita.postForm('/Accounts/Toggle', {
+                    workerId: workerId,
+                    accountId: accountId,
+                    enabled: enabled ? 'true' : 'false'
+                });
+
+                if (result.ok) {
+                    window.Orbita.toast((result.payload && result.payload.message) || 'Сохранено', { variant: 'success' });
+                    if (window.Orbita.navigateTo) {
+                        window.Orbita.navigateTo(window.location.pathname + window.location.search, true);
+                    } else {
+                        window.location.reload();
+                    }
+                } else {
+                    window.Orbita.toast((result.payload && result.payload.error) || 'Не удалось сохранить', { variant: 'error' });
+                }
+            });
+        });
+    }
+
+    function initAccountsPage() {
+        initKpiCounters();
+        initRowMenus();
+        initRowNavigation();
+        initAddAccountModal();
+        initAccountToggleButtons();
+    }
+
+    initAccountsPage();
+    document.addEventListener('orbita:content-updated', initAccountsPage);
 })();

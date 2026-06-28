@@ -54,10 +54,13 @@
             });
         });
 
-        document.addEventListener('click', closeAllRowMenus);
-        document.addEventListener('keydown', function (e) {
-            if (e.key === 'Escape') closeAllRowMenus();
-        });
+        if (!window.__orbitaRowMenuDocListeners) {
+            document.addEventListener('click', closeAllRowMenus);
+            document.addEventListener('keydown', function (e) {
+                if (e.key === 'Escape') closeAllRowMenus();
+            });
+            window.__orbitaRowMenuDocListeners = true;
+        }
     }
 
     function closeAllRowMenus() {
@@ -74,7 +77,13 @@
             row.addEventListener('click', function (e) {
                 if (e.target.closest('[data-row-menu]') || e.target.closest('a')) return;
                 var href = row.getAttribute('data-href');
-                if (href) window.location.href = href;
+                if (href) {
+                    if (window.Orbita && typeof window.Orbita.navigateTo === 'function') {
+                        window.Orbita.navigateTo(href, true);
+                    } else {
+                        window.location.href = href;
+                    }
+                }
             });
         });
     }
@@ -230,24 +239,22 @@
                 }
                 if (!text) return;
 
-                try {
-                    await navigator.clipboard.writeText(text);
-                    var original = button.textContent;
-                    button.textContent = 'Скопировано';
-                    window.setTimeout(function () {
-                        button.textContent = original;
-                    }, 1500);
-                } catch (err) {
-                    window.prompt('Скопируйте текст:', text);
+                if (window.Orbita && window.Orbita.copyText) {
+                    window.Orbita.copyText(text);
                 }
             });
         });
     }
 
-    initKpiCounters();
-    initRowMenus();
-    initAccountRowNavigation();
-    initActivityChart();
-    initParallelismSlider();
-    initCopyButtons();
+    function initWorkerPage() {
+        initKpiCounters();
+        initRowMenus();
+        initAccountRowNavigation();
+        initActivityChart();
+        initParallelismSlider();
+        initCopyButtons();
+    }
+
+    initWorkerPage();
+    document.addEventListener('orbita:content-updated', initWorkerPage);
 })();

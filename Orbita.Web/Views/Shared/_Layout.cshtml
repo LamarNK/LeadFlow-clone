@@ -3,6 +3,25 @@
 @using Orbita.Web.Options
 @inject Orbita.Web.Services.ThemeService Theme
 @inject IOptions<DesignPreviewOptions> PreviewOptions
+@{
+    var contentOnly = Context.Request.Headers.ContainsKey("X-Orbita-Content-Only") ||
+                      string.Equals(Context.Request.Query["content-only"], "1", StringComparison.OrdinalIgnoreCase);
+}
+@if (contentOnly)
+{
+    IgnoreSection("Scripts");
+    <div class="orbita-page-meta"
+         data-orbita-page-title="@((ViewData["Title"] as string ?? "") + " — Орбита")"
+         data-orbita-controller="@(ViewContext.RouteData.Values["controller"]?.ToString() ?? "")"
+         style="display:none"></div>
+    @if (PreviewOptions.Value.Enabled)
+    {
+        <div class="orbita-preview-banner">Режим просмотра дизайна — демо-данные, без БД и API</div>
+    }
+    @RenderBody()
+}
+else
+{
 <!DOCTYPE html>
 <html lang="ru" data-theme="@Theme.Theme">
 <head>
@@ -46,9 +65,9 @@
             <a class="nav-item @(ctrl == "Dashboard" ? "active" : "")" href="@Url.Action("Index", "Dashboard")" title="Панель управления"><i class="fa-solid fa-house" aria-hidden="true"></i><span class="nav-item-label">Панель управления</span></a>
             <a class="nav-item @(ctrl == "Workers" ? "active" : "")" href="@Url.Action("Index", "Workers")" title="Воркеры"><i class="fa-solid fa-server" aria-hidden="true"></i><span class="nav-item-label">Воркеры</span></a>
             <a class="nav-item @(ctrl == "Accounts" ? "active" : "")" href="@Url.Action("Index", "Accounts")" title="Аккаунты"><i class="fa-solid fa-users" aria-hidden="true"></i><span class="nav-item-label">Аккаунты</span></a>
-            <a class="nav-item @(ctrl == "Responses" ? "active" : "")" href="@Url.Action("Index", "Responses")" title="Отклики"><i class="fa-solid fa-inbox" aria-hidden="true"></i><span class="nav-item-label">Отклики</span></a>
+            <a class="nav-item @(ctrl == "Responses" ? "active" : "")" href="@Url.Action("Index", "Responses")" title="Отклики"><i class="fa-solid fa-inbox" aria-hidden="true"></i><span class="nav-item-label">Отклики</span><span class="nav-badge" data-nav-badge="responses" hidden></span></a>
             <a class="nav-item @(ctrl == "Events" ? "active" : "")" href="@Url.Action("Index", "Events")" title="События"><i class="fa-regular fa-clipboard" aria-hidden="true"></i><span class="nav-item-label">События</span></a>
-            <a class="nav-item @(ctrl == "Errors" ? "active" : "")" href="@Url.Action("Index", "Errors")" title="Ошибки"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i><span class="nav-item-label">Ошибки</span></a>
+            <a class="nav-item @(ctrl == "Errors" ? "active" : "")" href="@Url.Action("Index", "Errors")" title="Ошибки"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i><span class="nav-item-label">Ошибки</span><span class="nav-badge" data-nav-badge="errors" hidden></span></a>
             <a class="nav-item @(ctrl == "MySettings" ? "active" : "")" href="@Url.Action("Index", "MySettings")" title="Настройки"><i class="fa-solid fa-gear" aria-hidden="true"></i><span class="nav-item-label">Настройки</span></a>
             @if (User.IsInRole(OrbitaRoles.Admin))
             {
@@ -73,9 +92,50 @@
         }
         @RenderBody()
     </div>
+    <div class="orbita-sidebar-backdrop" data-orbita-sidebar-backdrop hidden></div>
+    <div class="orbita-toast-host" data-orbita-toast-host aria-live="polite" aria-atomic="true"></div>
+    <div class="orbita-confirm" id="orbitaConfirmDialog" hidden>
+        <div class="orbita-confirm__backdrop" data-orbita-confirm-cancel></div>
+        <div class="orbita-confirm__dialog" role="alertdialog" aria-modal="true" aria-labelledby="orbitaConfirmTitle" aria-describedby="orbitaConfirmMessage">
+            <h2 class="orbita-confirm__title" id="orbitaConfirmTitle"></h2>
+            <p class="orbita-confirm__message" id="orbitaConfirmMessage"></p>
+            <div class="orbita-confirm__actions">
+                <button type="button" class="orbita-confirm__btn orbita-confirm__btn--ghost" data-orbita-confirm-cancel>Отмена</button>
+                <button type="button" class="orbita-confirm__btn orbita-confirm__btn--primary" data-orbita-confirm-ok>Подтвердить</button>
+            </div>
+        </div>
+    </div>
+</div>
+<div class="orbita-detail-modal" id="orbitaDetailModal" hidden>
+    <div class="orbita-detail-modal__backdrop" data-orbita-detail-close></div>
+    <div class="orbita-detail-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="orbitaDetailTitle">
+        <header class="orbita-detail-modal__head">
+            <div>
+                <h2 class="orbita-detail-modal__title" id="orbitaDetailTitle"></h2>
+                <p class="orbita-detail-modal__subtitle" id="orbitaDetailSubtitle" hidden></p>
+            </div>
+            <button type="button" class="orbita-detail-modal__close" data-orbita-detail-close aria-label="Закрыть">
+                <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+            </button>
+        </header>
+        <div class="orbita-detail-modal__body" id="orbitaDetailBody"></div>
+    </div>
+</div>
+<div class="orbita-search" id="orbitaSearchPalette" hidden>
+    <div class="orbita-search__backdrop" data-orbita-search-close></div>
+    <div class="orbita-search__dialog" role="dialog" aria-modal="true" aria-label="Глобальный поиск">
+        <div class="orbita-search__head">
+            <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+            <input type="search" class="orbita-search__input" data-orbita-search-input placeholder="Поиск воркеров, аккаунтов, откликов..." autocomplete="off" />
+            <button type="button" class="orbita-search__close" data-orbita-search-close aria-label="Закрыть"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+        </div>
+        <div class="orbita-search__results" data-orbita-search-results></div>
+    </div>
 </div>
 <script src="~/js/orbita-time.js" asp-append-version="true"></script>
 <script src="~/js/orbita.js" asp-append-version="true"></script>
+<script src="~/js/orbita-search.js" asp-append-version="true"></script>
 @await RenderSectionAsync("Scripts", required: false)
 </body>
 </html>
+}

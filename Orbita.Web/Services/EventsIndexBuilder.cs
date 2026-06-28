@@ -51,6 +51,7 @@ internal static class EventsIndexBuilder
 
         return new EventsIndexViewModel
         {
+            Header = PageHeaderBuilder.EventsList(),
             Filters = filters,
             EventTypes = EventTypeOptions,
             Workers = workerOptions ?? BuildWorkerOptions(allRows),

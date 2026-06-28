@@ -6,58 +6,63 @@
         skipped: 'Пропущено'
     };
 
-    document.querySelectorAll('[data-bitrix-settings-form]').forEach((form) => {
-        const validateUrl = form.getAttribute('data-bitrix-validate-url');
-        const input = form.querySelector('[data-bitrix-webhook-input]');
-        const validateBtn = form.querySelector('[data-bitrix-validate-btn]');
-        const resultsEl = form.parentElement?.querySelector('[data-bitrix-validation-results]');
-        const tokenInput = form.querySelector('input[name="__RequestVerificationToken"]');
+    function initBitrixForms() {
+        document.querySelectorAll('[data-bitrix-settings-form]').forEach((form) => {
+            if (form.__orbitaBitrixInit) return;
+            form.__orbitaBitrixInit = true;
 
-        if (!validateUrl || !input || !validateBtn || !resultsEl || !tokenInput) {
-            return;
-        }
+            const validateUrl = form.getAttribute('data-bitrix-validate-url');
+            const input = form.querySelector('[data-bitrix-webhook-input]');
+            const validateBtn = form.querySelector('[data-bitrix-validate-btn]');
+            const resultsEl = form.parentElement?.querySelector('[data-bitrix-validation-results]');
+            const tokenInput = form.querySelector('input[name="__RequestVerificationToken"]');
 
-        validateBtn.addEventListener('click', async () => {
-            validateBtn.disabled = true;
-            resultsEl.hidden = false;
-            resultsEl.innerHTML = '<p class="settings-bitrix-validation-loading">Проверяем ссылку: формат, связь с Bitrix24 и права CRM…</p>';
-
-            try {
-                const formData = new FormData();
-                formData.append('webhookUrl', input.value.trim());
-                formData.append('__RequestVerificationToken', tokenInput.value);
-
-                const response = await fetch(validateUrl, {
-                    method: 'POST',
-                    body: formData
-                });
-
-                if (!response.ok) {
-                    let message = 'Не удалось выполнить проверку. Обновите страницу и попробуйте снова.';
-                    try {
-                        const payload = await response.json();
-                        if (payload?.error) {
-                            message = payload.error;
-                        }
-                    } catch {
-                        // ignore
-                    }
-                    resultsEl.innerHTML = `<div class="settings-bitrix-validation-summary settings-bitrix-validation-summary--error">${escapeHtml(message)}</div>`;
-                    return;
-                }
-
-                const validation = await response.json();
-                renderValidation(resultsEl, validation);
-            } catch {
-                resultsEl.innerHTML = `
-                    <div class="settings-bitrix-validation-summary settings-bitrix-validation-summary--error">
-                        Не удалось связаться с панелью. Проверьте интернет и попробуйте ещё раз.
-                    </div>`;
-            } finally {
-                validateBtn.disabled = false;
+            if (!validateUrl || !input || !validateBtn || !resultsEl || !tokenInput) {
+                return;
             }
+
+            validateBtn.addEventListener('click', async () => {
+                validateBtn.disabled = true;
+                resultsEl.hidden = false;
+                resultsEl.innerHTML = '<p class="settings-bitrix-validation-loading">Проверяем ссылку: формат, связь с Bitrix24 и права CRM…</p>';
+
+                try {
+                    const formData = new FormData();
+                    formData.append('webhookUrl', input.value.trim());
+                    formData.append('__RequestVerificationToken', tokenInput.value);
+
+                    const response = await fetch(validateUrl, {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    if (!response.ok) {
+                        let message = 'Не удалось выполнить проверку. Обновите страницу и попробуйте снова.';
+                        try {
+                            const payload = await response.json();
+                            if (payload?.error) {
+                                message = payload.error;
+                            }
+                        } catch {
+                            // ignore
+                        }
+                        resultsEl.innerHTML = `<div class="settings-bitrix-validation-summary settings-bitrix-validation-summary--error">${escapeHtml(message)}</div>`;
+                        return;
+                    }
+
+                    const validation = await response.json();
+                    renderValidation(resultsEl, validation);
+                } catch {
+                    resultsEl.innerHTML = `
+                        <div class="settings-bitrix-validation-summary settings-bitrix-validation-summary--error">
+                            Не удалось связаться с панелью. Проверьте интернет и попробуйте ещё раз.
+                        </div>`;
+                } finally {
+                    validateBtn.disabled = false;
+                }
+            });
         });
-    });
+    }
 
     function renderValidation(container, validation) {
         const steps = Array.isArray(validation?.steps) ? validation.steps : [];
@@ -99,4 +104,7 @@
             .replaceAll('>', '&gt;')
             .replaceAll('"', '&quot;');
     }
+
+    initBitrixForms();
+    document.addEventListener('orbita:content-updated', initBitrixForms);
 })();

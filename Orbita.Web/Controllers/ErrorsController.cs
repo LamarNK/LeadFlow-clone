@@ -20,4 +20,17 @@ public sealed class ErrorsController(IErrorsService errors) : Controller
         var model = await errors.GetIndexAsync(q, severity, type, workerId, account, page, ct);
         return View(model);
     }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Dismiss(Guid eventId, CancellationToken ct)
+    {
+        var (success, error) = await errors.DismissEventAsync(eventId, ct);
+        if (!success)
+        {
+            return BadRequest(new { error = error ?? "Не удалось отметить ошибку." });
+        }
+
+        return Ok(new { message = "Ошибка отмечена как обработанная." });
+    }
 }

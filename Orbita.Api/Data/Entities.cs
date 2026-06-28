@@ -53,6 +53,8 @@ public sealed class WorkerEntity
     public string? OperatingSystem { get; set; }
     public DateTime? StartedAtUtc { get; set; }
     public string? AgentVersion { get; set; }
+    public string? PendingCommand { get; set; }
+    public DateTime? PendingCommandAtUtc { get; set; }
 
     public OfficeEntity Office { get; set; } = null!;
     public ICollection<WorkerSnapshotEntity> Snapshots { get; set; } = [];
@@ -100,6 +102,8 @@ public sealed class WorkerEventEntity
     public string Message { get; set; } = string.Empty;
     public string? Details { get; set; }
     public DateTime CreatedAtUtc { get; set; }
+    public bool IsDismissed { get; set; }
+    public DateTime? DismissedAtUtc { get; set; }
 
     public WorkerEntity Worker { get; set; } = null!;
 }

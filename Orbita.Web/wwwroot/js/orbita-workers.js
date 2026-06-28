@@ -53,10 +53,13 @@
             });
         });
 
-        document.addEventListener('click', closeAllRowMenus);
-        document.addEventListener('keydown', function (e) {
-            if (e.key === 'Escape') closeAllRowMenus();
-        });
+        if (!window.__orbitaRowMenuDocListeners) {
+            document.addEventListener('click', closeAllRowMenus);
+            document.addEventListener('keydown', function (e) {
+                if (e.key === 'Escape') closeAllRowMenus();
+            });
+            window.__orbitaRowMenuDocListeners = true;
+        }
     }
 
     function closeAllRowMenus() {
@@ -73,7 +76,13 @@
             row.addEventListener('click', function (e) {
                 if (e.target.closest('[data-row-menu]') || e.target.closest('a')) return;
                 var href = row.getAttribute('data-href');
-                if (href) window.location.href = href;
+                if (href) {
+                    if (window.Orbita && typeof window.Orbita.navigateTo === 'function') {
+                        window.Orbita.navigateTo(href, true);
+                    } else {
+                        window.location.href = href;
+                    }
+                }
             });
         });
     }
@@ -100,13 +109,21 @@
             el.addEventListener('click', closeModal);
         });
 
-        document.addEventListener('keydown', function (e) {
-            if (e.key === 'Escape' && !modal.hasAttribute('hidden')) closeModal();
-        });
+        if (!window.__orbitaWorkersModalKeydown) {
+            document.addEventListener('keydown', function (e) {
+                if (e.key === 'Escape' && !modal.hasAttribute('hidden')) closeModal();
+            });
+            window.__orbitaWorkersModalKeydown = true;
+        }
     }
 
-    initKpiCounters();
-    initRowMenus();
-    initRowNavigation();
-    initAddWorkerModal();
+    function initWorkersPage() {
+        initKpiCounters();
+        initRowMenus();
+        initRowNavigation();
+        initAddWorkerModal();
+    }
+
+    initWorkersPage();
+    document.addEventListener('orbita:content-updated', initWorkersPage);
 })();

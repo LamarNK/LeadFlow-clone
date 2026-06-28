@@ -15,13 +15,15 @@ public sealed class WorkersService(
 
     public async Task<WorkersIndexViewModel> GetIndexAsync(
         string? searchQuery = null,
+        string? status = null,
         int page = 1,
         CancellationToken ct = default)
     {
         page = Math.Max(1, page);
+        status = NormalizeStatusFilter(status);
 
         if (previewOptions.Value.Enabled)
-            return DesignPreviewData.BuildWorkersIndexViewModel(searchQuery, page, DefaultPageSize);
+            return DesignPreviewData.BuildWorkersIndexViewModel(searchQuery, status, page, DefaultPageSize);
 
         var workers = await api.GetWorkersAsync(ct) ?? [];
         var latestRelease = await api.GetLatestWorkerReleaseAsync(ct);
@@ -37,15 +39,34 @@ public sealed class WorkersService(
                 .ToList();
         }
 
+        rows = FilterByStatus(rows, status);
+
         return BuildIndexViewModel(
             rows,
             searchQuery,
+            status,
             page,
             DefaultPageSize,
             latestRelease,
             isAdmin,
             offices);
     }
+
+    private static string? NormalizeStatusFilter(string? status) =>
+        status?.Trim().ToLowerInvariant() switch
+        {
+            "online" => "online",
+            "offline" => "offline",
+            _ => null
+        };
+
+    private static List<WorkerRowViewModel> FilterByStatus(IReadOnlyList<WorkerRowViewModel> rows, string? status) =>
+        status switch
+        {
+            "online" => rows.Where(w => w.IsOnline).ToList(),
+            "offline" => rows.Where(w => !w.IsOnline).ToList(),
+            _ => rows.ToList()
+        };
 
     public async Task<WorkerDetailsViewModel?> GetDetailsAsync(Guid id, CancellationToken ct = default)
     {
@@ -145,6 +166,19 @@ public sealed class WorkersService(
         CancellationToken ct = default) =>
         api.UpdateWorkerAccountAsync(workerId, accountId, isEnabled, ct);
 
+    public async Task<(bool Success, string? Error)> SendWorkerCommandAsync(
+        Guid workerId,
+        string command,
+        CancellationToken ct = default)
+    {
+        if (previewOptions.Value.Enabled)
+        {
+            return (true, null);
+        }
+
+        return await api.SendWorkerCommandAsync(workerId, command, ct);
+    }
+
     public Task<(Stream? Stream, string? FileName, string? Error)> OpenLatestWorkerReleaseDownloadAsync(
         CancellationToken ct = default) =>
         previewOptions.Value.Enabled
@@ -154,6 +188,7 @@ public sealed class WorkersService(
     private static WorkersIndexViewModel BuildIndexViewModel(
         IReadOnlyList<WorkerRowViewModel> allRows,
         string? searchQuery,
+        string? statusFilter,
         int page,
         int pageSize,
         WorkerReleaseLatestDto? latestRelease = null,
@@ -173,7 +208,9 @@ public sealed class WorkersService(
 
         return new WorkersIndexViewModel
         {
+            Header = PageHeaderBuilder.WorkersList(),
             SearchQuery = searchQuery,
+            StatusFilter = statusFilter,
             KpiCards =
             [
                 new()

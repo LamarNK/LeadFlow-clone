@@ -4,6 +4,7 @@ namespace Orbita.Web.Models.ViewModels;
 
 public sealed class WorkersIndexViewModel
 {
+    public PageHeaderViewModel Header { get; init; } = new();
     public IReadOnlyList<BreadcrumbItemViewModel> Breadcrumbs { get; init; } =
     [
         new() { Label = "Воркеры", Url = null },
@@ -14,6 +15,7 @@ public sealed class WorkersIndexViewModel
     public IReadOnlyList<WorkerRowViewModel> Workers { get; init; } = [];
     public PaginationViewModel Pagination { get; init; } = new();
     public string? SearchQuery { get; init; }
+    public string? StatusFilter { get; init; }
     public bool HasWorkerRelease { get; init; }
     public string? LatestWorkerReleaseVersion { get; init; }
     public string? LatestWorkerDownloadUrl { get; init; }
@@ -64,6 +66,59 @@ public sealed class PaginationViewModel
     public int RangeStart => TotalItems == 0 ? 0 : (Page - 1) * PageSize + 1;
 
     public int RangeEnd => TotalItems == 0 ? 0 : Math.Min(Page * PageSize, TotalItems);
+
+    public IReadOnlyList<PaginationPageItemViewModel> GetVisiblePages(int windowSize = 5)
+    {
+        var total = TotalPages;
+        if (total <= 1)
+        {
+            return Page > 0 && TotalItems > 0
+                ? [new PaginationPageItemViewModel { Page = Page, IsCurrent = true }]
+                : [];
+        }
+
+        windowSize = Math.Max(3, windowSize);
+        var half = windowSize / 2;
+        var start = Math.Max(1, Page - half);
+        var end = Math.Min(total, start + windowSize - 1);
+        start = Math.Max(1, end - windowSize + 1);
+
+        var items = new List<PaginationPageItemViewModel>();
+        if (start > 1)
+        {
+            items.Add(new PaginationPageItemViewModel { Page = 1 });
+            if (start > 2)
+            {
+                items.Add(PaginationPageItemViewModel.Ellipsis);
+            }
+        }
+
+        for (var p = start; p <= end; p++)
+        {
+            items.Add(new PaginationPageItemViewModel { Page = p, IsCurrent = p == Page });
+        }
+
+        if (end < total)
+        {
+            if (end < total - 1)
+            {
+                items.Add(PaginationPageItemViewModel.Ellipsis);
+            }
+
+            items.Add(new PaginationPageItemViewModel { Page = total });
+        }
+
+        return items;
+    }
+}
+
+public sealed class PaginationPageItemViewModel
+{
+    public static PaginationPageItemViewModel Ellipsis { get; } = new() { IsEllipsis = true };
+
+    public int Page { get; init; }
+    public bool IsCurrent { get; init; }
+    public bool IsEllipsis { get; init; }
 }
 
 public sealed class CreateWorkerResultViewModel
@@ -78,6 +133,7 @@ public sealed class WorkerDetailsViewModel
 {
     public const string DefaultAdsPowerApiBaseUrl = "http://local.adspower.net:50325";
 
+    public PageHeaderViewModel Header { get; init; } = new();
     public Guid WorkerId { get; init; }
     public int MaxConcurrentAccounts { get; init; } = 1;
     public string? AdsPowerApiBaseUrl { get; init; }

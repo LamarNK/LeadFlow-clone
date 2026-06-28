@@ -2,6 +2,7 @@ namespace Orbita.Web.Models.ViewModels;
 
 public sealed class EventsIndexViewModel
 {
+    public PageHeaderViewModel Header { get; init; } = new();
     public IReadOnlyList<BreadcrumbItemViewModel> Breadcrumbs { get; init; } =
     [
         new() { Label = "Главная", Url = "/Dashboard" },

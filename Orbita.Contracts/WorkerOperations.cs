@@ -18,12 +18,20 @@ public sealed record WorkerAccountConfigDto(
     string? AdsPowerApiBaseUrl,
     string? AdsPowerApiKey);
 
+public static class WorkerCommands
+{
+    public const string Restart = "restart";
+}
+
+public sealed record WorkerCommandRequest(string Command);
+
 public sealed record WorkerConfigDto(
     Guid WorkerId,
     int MaxConcurrentAccounts,
     string? AdsPowerApiBaseUrl,
     string? AdsPowerApiKey,
-    IReadOnlyList<WorkerAccountConfigDto> Accounts);
+    IReadOnlyList<WorkerAccountConfigDto> Accounts,
+    string? PendingCommand = null);
 
 public sealed record WorkerAccountSyncItemDto(
     string AdsPowerProfileId,

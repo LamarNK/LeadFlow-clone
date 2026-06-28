@@ -46,6 +46,7 @@ a:hover { color: var(--accent-hover); }
 
 .orbita-app {
     min-height: 100vh;
+    position: relative;
 }
 
 .orbita-sidebar {
@@ -752,6 +753,11 @@ html.sidebar-collapsed .logout-form {
 .orbita-main {
     padding: 0 28px 28px;
     flex: 1;
+}
+
+/* Subtle content transition for fast client-side navigation */
+.orbita-content > * {
+    transition: opacity 0.2s ease;
 }
 
 .card {
@@ -4568,6 +4574,57 @@ html.sidebar-collapsed .logout-form {
     color: #b45309;
 }
 
+/* Client-side fast page navigation loading overlay + spinner */
+.orbita-content {
+    position: relative;
+}
+
+.orbita-nav-loading {
+    position: absolute;
+    left: var(--orbita-sidebar-width);
+    top: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(248, 250, 252, 0.85);
+    backdrop-filter: blur(3px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 300;
+    pointer-events: all;
+}
+
+[data-theme="dark"] .orbita-nav-loading {
+    background: rgba(15, 23, 42, 0.85);
+}
+
+.orbita-spinner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    color: #334155;
+    font-size: 14px;
+    font-weight: 600;
+    background: white;
+    padding: 16px 28px;
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(15, 23, 42, 0.15), 0 2px 8px rgba(0,0,0,0.08);
+}
+
+[data-theme="dark"] .orbita-spinner {
+    background: #1e293b;
+    color: #e2e8f0;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+}
+
+.orbita-spinner i {
+    font-size: 36px;
+    color: #2563eb;
+}
+
+/* .orbita-nav-loading is now managed outside .orbita-content */
+
 .settings-registration-secret,
 .settings-registration-source {
     font-size: 13px;
@@ -5349,3 +5406,746 @@ html.sidebar-collapsed .logout-form {
     .responses-filter-field,
     .responses-filter-field--grow { min-width: 0; width: 100%; }
 }
+
+/* Toast notifications */
+.orbita-toast-host {
+    position: fixed;
+    right: 20px;
+    bottom: 20px;
+    z-index: 120;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-width: min(360px, calc(100vw - 32px));
+    pointer-events: none;
+}
+
+.orbita-toast {
+    pointer-events: auto;
+    padding: 12px 16px;
+    border-radius: 12px;
+    border: 1px solid #e4e7ec;
+    background: #ffffff;
+    color: #344054;
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.45;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+    opacity: 0;
+    transform: translateY(8px);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+    cursor: pointer;
+}
+
+.orbita-toast.is-visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.orbita-toast--success { border-color: #bbf7d0; background: #f0fdf4; color: #166534; }
+.orbita-toast--error { border-color: #fecaca; background: #fef2f2; color: #b91c1c; }
+.orbita-toast--info { border-color: #bfdbfe; background: #eff6ff; color: #1d4ed8; }
+
+[data-theme="dark"] .orbita-toast {
+    background: var(--bg-card);
+    border-color: var(--border);
+    color: var(--text-primary);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+[data-theme="dark"] .orbita-toast--success { background: #052e1c; border-color: #14532d; color: #6ee7a8; }
+[data-theme="dark"] .orbita-toast--error { background: #3f1d1d; border-color: #7f1d1d; color: #fca5a5; }
+[data-theme="dark"] .orbita-toast--info { background: #172554; border-color: #1e3a8a; color: #93c5fd; }
+
+/* Confirm dialog */
+.orbita-confirm {
+    position: fixed;
+    inset: 0;
+    z-index: 130;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+
+.orbita-confirm[hidden] { display: none !important; }
+
+.orbita-confirm__backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.45);
+}
+
+.orbita-confirm__dialog {
+    position: relative;
+    width: min(420px, 100%);
+    padding: 24px;
+    border-radius: 16px;
+    background: #ffffff;
+    border: 1px solid #e4e7ec;
+    box-shadow: 0 20px 48px rgba(15, 23, 42, 0.18);
+}
+
+.orbita-confirm__title {
+    margin: 0 0 8px;
+    font-size: 18px;
+    font-weight: 600;
+    color: #101828;
+}
+
+.orbita-confirm__message {
+    margin: 0 0 20px;
+    font-size: 14px;
+    line-height: 1.5;
+    color: #667085;
+}
+
+.orbita-confirm__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+.orbita-confirm__btn {
+    min-height: 40px;
+    padding: 0 16px;
+    border-radius: 10px;
+    border: 1px solid transparent;
+    font-size: 14px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+}
+
+.orbita-confirm__btn--ghost {
+    background: #ffffff;
+    border-color: #d0d5dd;
+    color: #344054;
+}
+
+.orbita-confirm__btn--primary {
+    background: #2563eb;
+    color: #ffffff;
+}
+
+.orbita-confirm__btn--danger {
+    background: #ef4444;
+    color: #ffffff;
+}
+
+[data-theme="dark"] .orbita-confirm__dialog {
+    background: var(--bg-card);
+    border-color: var(--border);
+}
+
+[data-theme="dark"] .orbita-confirm__title { color: var(--text-primary); }
+[data-theme="dark"] .orbita-confirm__message { color: var(--text-secondary); }
+[data-theme="dark"] .orbita-confirm__btn--ghost {
+    background: transparent;
+    border-color: var(--border);
+    color: var(--text-primary);
+}
+
+/* Empty state */
+.orbita-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 48px 24px;
+    min-height: 220px;
+}
+
+.orbita-empty-state__icon {
+    width: 56px;
+    height: 56px;
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #f2f4f7;
+    color: #667085;
+    font-size: 22px;
+    margin-bottom: 16px;
+}
+
+.orbita-empty-state__title {
+    margin: 0 0 8px;
+    font-size: 18px;
+    font-weight: 600;
+    color: #101828;
+}
+
+.orbita-empty-state__desc {
+    margin: 0 0 16px;
+    max-width: 360px;
+    font-size: 14px;
+    line-height: 1.5;
+    color: #667085;
+}
+
+.orbita-empty-state__cta {
+    display: inline-flex;
+    align-items: center;
+    min-height: 40px;
+    padding: 0 16px;
+    border-radius: 10px;
+    background: #2563eb;
+    color: #ffffff !important;
+    font-size: 14px;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.orbita-empty-state__cta:hover { background: #1d4ed8; color: #ffffff !important; }
+
+[data-theme="dark"] .orbita-empty-state__icon { background: #1f2937; color: var(--text-secondary); }
+[data-theme="dark"] .orbita-empty-state__title { color: var(--text-primary); }
+[data-theme="dark"] .orbita-empty-state__desc { color: var(--text-secondary); }
+
+/* Unified pagination */
+.orbita-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 16px 0 0;
+    flex-wrap: wrap;
+}
+
+.orbita-pagination__info {
+    font-size: 13px;
+    font-weight: 500;
+    color: #667085;
+}
+
+.orbita-pagination__controls {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.orbita-pagination__btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 36px;
+    height: 36px;
+    padding: 0 10px;
+    border-radius: 10px;
+    border: 1px solid #e4e7ec;
+    background: #ffffff;
+    color: #344054;
+    font-size: 14px;
+    font-weight: 600;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.orbita-pagination__btn:hover {
+    background: #f9fafb;
+    color: #101828;
+}
+
+.orbita-pagination__btn--active {
+    background: #2563eb;
+    border-color: #2563eb;
+    color: #ffffff;
+}
+
+.orbita-pagination__btn--disabled {
+    opacity: 0.4;
+    pointer-events: none;
+}
+
+.orbita-pagination__ellipsis {
+    min-width: 24px;
+    text-align: center;
+    color: #98a2b3;
+    font-weight: 600;
+}
+
+[data-theme="dark"] .orbita-pagination__btn {
+    background: var(--bg-card);
+    border-color: var(--border);
+    color: var(--text-primary);
+}
+
+[data-theme="dark"] .orbita-pagination__btn:hover { background: #334155; }
+
+/* Mobile menu button (hidden on desktop) */
+.orbita-mobile-menu-btn {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    margin-right: 12px;
+    flex-shrink: 0;
+    border: 1px solid #e4e7ec;
+    border-radius: 10px;
+    background: #ffffff;
+    color: #344054;
+    font-size: 18px;
+    cursor: pointer;
+}
+
+.orbita-topbar-left {
+    display: flex;
+    align-items: center;
+}
+
+.orbita-sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 35;
+    background: rgba(15, 23, 42, 0.45);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+}
+
+.orbita-sidebar-backdrop:not([hidden]) {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+@media (max-width: 768px) {
+    .orbita-mobile-menu-btn { display: inline-flex; }
+
+    .orbita-content {
+        margin-left: 0 !important;
+    }
+
+    .orbita-sidebar {
+        transform: translateX(-100%);
+        transition: transform 0.22s ease, width 0.2s ease, padding 0.2s ease;
+        z-index: 50;
+    }
+
+    html.sidebar-mobile-open .orbita-sidebar {
+        transform: translateX(0);
+    }
+
+    html.sidebar-mobile-open.sidebar-collapsed {
+        --orbita-sidebar-width: 250px;
+    }
+
+    html.sidebar-mobile-open.sidebar-collapsed .orbita-sidebar {
+        padding: 24px;
+    }
+
+    html.sidebar-mobile-open.sidebar-collapsed .orbita-sidebar-brand span,
+    html.sidebar-mobile-open.sidebar-collapsed .nav-item-label,
+    html.sidebar-mobile-open.sidebar-collapsed .sidebar-btn-label {
+        display: inline;
+    }
+
+    .orbita-nav-loading {
+        left: 0 !important;
+    }
+
+    .orbita-topbar {
+        flex-wrap: wrap;
+        padding: 16px 16px 0;
+    }
+
+    .orbita-topbar-actions {
+        width: 100%;
+        justify-content: flex-end;
+    }
+
+    .orbita-user-name { display: none; }
+}
+
+[data-theme="dark"] .orbita-mobile-menu-btn {
+    background: var(--bg-card);
+    border-color: var(--border);
+    color: var(--text-primary);
+}
+
+/* Nav badges */
+.nav-item {
+    position: relative;
+}
+
+.nav-badge {
+    position: absolute;
+    top: 8px;
+    right: 10px;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: #ef4444;
+    color: #ffffff;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 18px;
+    text-align: center;
+}
+
+html.sidebar-collapsed .nav-badge {
+    top: 4px;
+    right: 6px;
+}
+
+/* Global search trigger + palette */
+.orbita-search-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: 36px;
+    padding: 0 12px;
+    border: 1px solid #e4e7ec;
+    border-radius: 10px;
+    background: #ffffff;
+    color: #667085;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.orbita-search-trigger:hover {
+    background: #f9fafb;
+    color: #344054;
+}
+
+.orbita-search-kbd {
+    padding: 2px 6px;
+    border-radius: 6px;
+    border: 1px solid #e4e7ec;
+    background: #f9fafb;
+    font-size: 11px;
+    font-family: inherit;
+    color: #98a2b3;
+}
+
+.orbita-search {
+    position: fixed;
+    inset: 0;
+    z-index: 80;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 12vh 16px 16px;
+}
+
+.orbita-search[hidden] { display: none !important; }
+
+.orbita-search__backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.5);
+}
+
+.orbita-search__dialog {
+    position: relative;
+    width: min(640px, 100%);
+    border-radius: 16px;
+    border: 1px solid #e4e7ec;
+    background: #ffffff;
+    box-shadow: 0 24px 48px rgba(16, 24, 40, 0.18);
+    overflow: hidden;
+}
+
+.orbita-search__head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 16px;
+    border-bottom: 1px solid #eef2f7;
+    color: #98a2b3;
+}
+
+.orbita-search__input {
+    flex: 1;
+    border: 0;
+    outline: none;
+    font-size: 16px;
+    color: #101828;
+    background: transparent;
+}
+
+.orbita-search__close {
+    width: 32px;
+    height: 32px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: #667085;
+    cursor: pointer;
+}
+
+.orbita-search__results {
+    max-height: 360px;
+    overflow: auto;
+    padding: 8px;
+}
+
+.orbita-search__section-title {
+    padding: 8px 10px 4px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #98a2b3;
+}
+
+.orbita-search__hit {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    width: 100%;
+    padding: 10px 12px;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
+}
+
+.orbita-search__hit:hover { background: #f9fafb; }
+
+.orbita-search__hit-title {
+    display: block;
+    font-size: 14px;
+    font-weight: 600;
+    color: #101828;
+}
+
+.orbita-search__hit-sub {
+    display: block;
+    margin-top: 2px;
+    font-size: 12px;
+    color: #667085;
+}
+
+.orbita-search__hint {
+    padding: 20px 16px;
+    color: #667085;
+    font-size: 14px;
+    text-align: center;
+}
+
+/* Filter panels */
+.workers-filter-btn.is-active,
+.accounts-filter-btn.is-active,
+.events-filter-btn.is-active,
+.errors-filter-btn.is-active,
+.responses-filter-btn.is-active {
+    border-color: #2563eb;
+    color: #2563eb;
+    background: #eff6ff;
+}
+
+.orbita-filter-panel {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    z-index: 20;
+    min-width: 260px;
+    padding: 14px;
+    border-radius: 12px;
+    border: 1px solid #e4e7ec;
+    background: #ffffff;
+    box-shadow: 0 12px 24px rgba(16, 24, 40, 0.12);
+}
+
+.orbita-filter-panel[hidden] { display: none !important; }
+
+.workers-toolbar,
+.accounts-toolbar,
+.events-filters-actions,
+.errors-filters-actions,
+.responses-filters-actions {
+    position: relative;
+}
+
+.orbita-filter-panel__label {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #667085;
+}
+
+.orbita-filter-panel__select {
+    width: 100%;
+    height: 36px;
+    padding: 0 10px;
+    border-radius: 8px;
+    border: 1px solid #e4e7ec;
+    background: #ffffff;
+    font-size: 14px;
+}
+
+.orbita-filter-panel__actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.orbita-filter-panel__reset {
+    font-size: 13px;
+    color: #667085;
+    text-decoration: none;
+}
+
+.orbita-filter-panel__apply {
+    height: 32px;
+    padding: 0 12px;
+    border: 0;
+    border-radius: 8px;
+    background: #2563eb;
+    color: #ffffff;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+/* Detail + info modals */
+.orbita-detail-modal,
+.orbita-info-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 75;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px 16px;
+}
+
+.orbita-detail-modal[hidden],
+.orbita-info-modal[hidden] { display: none !important; }
+
+.orbita-detail-modal__backdrop,
+.orbita-info-modal__backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.45);
+}
+
+.orbita-detail-modal__dialog,
+.orbita-info-modal__dialog {
+    position: relative;
+    width: min(520px, 100%);
+    border-radius: 16px;
+    border: 1px solid #e4e7ec;
+    background: #ffffff;
+    box-shadow: 0 20px 40px rgba(16, 24, 40, 0.16);
+}
+
+.orbita-detail-modal__head,
+.orbita-info-modal__head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 18px 20px 0;
+}
+
+.orbita-detail-modal__title,
+.orbita-info-modal__head h2 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 700;
+    color: #101828;
+}
+
+.orbita-detail-modal__subtitle {
+    margin: 4px 0 0;
+    font-size: 13px;
+    color: #667085;
+}
+
+.orbita-detail-modal__body {
+    padding: 14px 20px 20px;
+    font-size: 14px;
+    line-height: 1.55;
+    color: #344054;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.orbita-detail-modal__close,
+.orbita-info-modal__close {
+    width: 32px;
+    height: 32px;
+    border: 0;
+    border-radius: 8px;
+    background: #f9fafb;
+    color: #667085;
+    cursor: pointer;
+}
+
+.orbita-info-modal__text {
+    margin: 0;
+    padding: 12px 20px 0;
+    font-size: 14px;
+    line-height: 1.55;
+    color: #344054;
+}
+
+.orbita-info-modal__footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 16px 20px 20px;
+}
+
+.orbita-info-modal__btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 36px;
+    padding: 0 14px;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 600;
+    text-decoration: none;
+    cursor: pointer;
+    border: 1px solid transparent;
+}
+
+.orbita-info-modal__btn--primary {
+    background: #2563eb;
+    color: #ffffff;
+}
+
+.orbita-info-modal__btn--ghost {
+    background: #ffffff;
+    border-color: #e4e7ec;
+    color: #344054;
+}
+
+.chart-period-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: #667085;
+}
+
+@media (max-width: 768px) {
+    .orbita-search-trigger-label,
+    .orbita-search-kbd { display: none; }
+}
+
+[data-theme="dark"] .orbita-search-trigger,
+[data-theme="dark"] .orbita-filter-panel,
+[data-theme="dark"] .orbita-search__dialog,
+[data-theme="dark"] .orbita-detail-modal__dialog,
+[data-theme="dark"] .orbita-info-modal__dialog {
+    background: var(--bg-card);
+    border-color: var(--border);
+    color: var(--text-primary);
+}
+
+[data-theme="dark"] .orbita-search__input,
+[data-theme="dark"] .orbita-detail-modal__title,
+[data-theme="dark"] .orbita-info-modal__head h2 {
+    color: var(--text-primary);
+}
+
+[data-theme="dark"] .orbita-search__hit:hover { background: #334155; }

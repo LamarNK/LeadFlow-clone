@@ -59,26 +59,52 @@
                     var text = row ? row.getAttribute('data-copy') : '';
                     if (!text) return;
 
-                    if (navigator.clipboard && navigator.clipboard.writeText) {
-                        navigator.clipboard.writeText(text);
-                    } else {
-                        var area = document.createElement('textarea');
-                        area.value = text;
-                        document.body.appendChild(area);
-                        area.select();
-                        document.execCommand('copy');
-                        document.body.removeChild(area);
+                    if (window.Orbita && window.Orbita.copyText) {
+                        window.Orbita.copyText(text);
                     }
 
                     closeAllRowMenus();
                 });
             });
+
+            dropdown.querySelectorAll('[data-event-dismiss]').forEach(function (btn) {
+                if (btn.hasAttribute('data-event-dismiss-bound')) return;
+                btn.setAttribute('data-event-dismiss-bound', '1');
+
+                btn.addEventListener('click', async function (e) {
+                    e.stopPropagation();
+                    var eventId = btn.getAttribute('data-event-id');
+                    if (!eventId || !window.Orbita || !window.Orbita.postForm) return;
+
+                    if (window.Orbita.confirm) {
+                        var confirmed = await window.Orbita.confirm({
+                            title: 'Отметить обработанным?',
+                            message: 'Событие будет скрыто из списка.',
+                            confirmLabel: 'Отметить'
+                        });
+                        if (!confirmed) return;
+                    }
+
+                    var result = await window.Orbita.postForm('/Events/Dismiss', { eventId: eventId });
+                    if (result.ok) {
+                        var row = menu.closest('.events-row');
+                        if (row && row.parentNode) row.parentNode.removeChild(row);
+                        window.Orbita.toast((result.payload && result.payload.message) || 'Готово', { variant: 'success' });
+                    } else {
+                        window.Orbita.toast((result.payload && result.payload.error) || 'Не удалось выполнить', { variant: 'error' });
+                    }
+                    closeAllRowMenus();
+                });
+            });
         });
 
-        document.addEventListener('click', closeAllRowMenus);
-        document.addEventListener('keydown', function (e) {
-            if (e.key === 'Escape') closeAllRowMenus();
-        });
+        if (!window.__orbitaRowMenuDocListeners) {
+            document.addEventListener('click', closeAllRowMenus);
+            document.addEventListener('keydown', function (e) {
+                if (e.key === 'Escape') closeAllRowMenus();
+            });
+            window.__orbitaRowMenuDocListeners = true;
+        }
     }
 
     function closeAllRowMenus() {
@@ -101,7 +127,12 @@
         });
     }
 
-    initKpiCounters();
-    initRowMenus();
-    initFilterAutoSubmit();
+    function initEventsPage() {
+        initKpiCounters();
+        initRowMenus();
+        initFilterAutoSubmit();
+    }
+
+    initEventsPage();
+    document.addEventListener('orbita:content-updated', initEventsPage);
 })();

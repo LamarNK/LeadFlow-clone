@@ -143,6 +143,8 @@ builder.Services.AddScoped<OfficeScopeService>();
 builder.Services.AddScoped<OfficeAdminService>();
 builder.Services.AddScoped<WorkerAdminService>();
 builder.Services.AddScoped<WorkerConfigService>();
+builder.Services.AddScoped<WorkerCommandService>();
+builder.Services.AddScoped<WorkerEventService>();
 builder.Services.Configure<WorkerReleaseOptions>(builder.Configuration.GetSection(WorkerReleaseOptions.SectionName));
 builder.Services.AddSingleton<WorkerReleaseService>();
 builder.Services.Configure<FormOptions>(options =>
@@ -252,7 +254,7 @@ workers.MapGet("/config", async (WorkerConfigService configService, ClaimsPrinci
         return Results.Forbid();
     }
 
-    var config = await configService.GetConfigForWorkerAsync(workerId, OfficeScope.GlobalAdmin, ct);
+    var config = await configService.GetConfigForWorkerAsync(workerId, OfficeScope.GlobalAdmin, consumePendingCommand: true, ct);
     return config is null ? Results.NotFound() : Results.Ok(config);
 }).RequireAuthorization("Worker");
 
@@ -1047,6 +1049,30 @@ admin.MapGet("/logs", async (
         ct)));
 
 var panel = app.MapGroup("/api/v1/panel").RequireAuthorization("Panel");
+panel.MapPost("/events/{id:guid}/dismiss", async (
+    Guid id,
+    WorkerEventService events,
+    OfficeScopeService officeScope,
+    ClaimsPrincipal principal,
+    CancellationToken ct) =>
+{
+    var scope = await officeScope.ResolveAsync(principal, ct);
+    if (!scope.HasAccess)
+    {
+        return Results.Forbid();
+    }
+
+    var (success, error) = await events.DismissAsync(id, scope, ct);
+    if (!success)
+    {
+        return error is not null && error.Contains("не найден", StringComparison.OrdinalIgnoreCase)
+            ? Results.NotFound(new { error })
+            : Results.BadRequest(new { error });
+    }
+
+    return Results.Ok(new { message = "Событие отмечено как обработанное." });
+});
+
 panel.MapGet("/me", async (
     PanelUserService panelUsers,
     ClaimsPrincipal principal,
@@ -1317,6 +1343,31 @@ workerPanel.MapPatch("/{id:guid}/settings", async (
     }
 
     return Results.Ok(config);
+});
+
+workerPanel.MapPost("/{id:guid}/commands", async (
+    Guid id,
+    WorkerCommandRequest request,
+    WorkerCommandService commands,
+    OfficeScopeService officeScope,
+    ClaimsPrincipal principal,
+    CancellationToken ct) =>
+{
+    var scope = await officeScope.ResolveAsync(principal, ct);
+    if (!scope.HasAccess)
+    {
+        return Results.Forbid();
+    }
+
+    var (success, error) = await commands.EnqueueAsync(id, request.Command, scope, ct);
+    if (!success)
+    {
+        return error is not null && error.Contains("не найден", StringComparison.OrdinalIgnoreCase)
+            ? Results.NotFound(new { error })
+            : Results.BadRequest(new { error });
+    }
+
+    return Results.Ok(new { message = "Команда поставлена в очередь." });
 });
 
 workerPanel.MapPatch("/{id:guid}/accounts/{accountId:guid}", async (

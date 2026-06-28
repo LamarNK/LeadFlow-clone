@@ -5,6 +5,7 @@
     var pagination = Model.Pagination;
     var workersError = TempData["WorkersError"] as string;
 }
+<partial name="_PageHeader" model="Model.Header" />
 <div class="orbita-main workers-page">
     <nav class="orbita-breadcrumbs" aria-label="Навигация">
         @for (var i = 0; i < Model.Breadcrumbs.Count; i++)
@@ -26,9 +27,12 @@
     </nav>
 
     <div class="workers-page-head">
-        <h1 class="workers-page-title">Все воркеры</h1>
         <div class="workers-toolbar">
             <form class="workers-search" method="get" asp-action="Index" role="search">
+                @if (!string.IsNullOrWhiteSpace(Model.StatusFilter))
+                {
+                    <input type="hidden" name="status" value="@Model.StatusFilter" />
+                }
                 <i class="fa-solid fa-magnifying-glass workers-search-icon" aria-hidden="true"></i>
                 <input type="search"
                        name="q"
@@ -36,9 +40,47 @@
                        placeholder="Поиск по воркерам..."
                        aria-label="Поиск по воркерам" />
             </form>
-            <button type="button" class="workers-filter-btn" aria-label="Фильтры">
+            <button type="button" class="workers-filter-btn@(string.IsNullOrWhiteSpace(Model.StatusFilter) ? "" : " is-active")" data-orbita-filter-toggle="workersFilterPanel" aria-label="Фильтры" aria-expanded="false">
                 <i class="fa-solid fa-filter" aria-hidden="true"></i>
             </button>
+            <div class="orbita-filter-panel" id="workersFilterPanel" hidden>
+                <form method="get" asp-action="Index" class="orbita-filter-panel__form">
+                    <input type="hidden" name="q" value="@Model.SearchQuery" />
+                    <label class="orbita-filter-panel__field">
+                        <span class="orbita-filter-panel__label">Статус</span>
+                        <select name="status" class="orbita-filter-panel__select">
+                            @if (string.IsNullOrWhiteSpace(Model.StatusFilter))
+                            {
+                                <option value="" selected>Все</option>
+                            }
+                            else
+                            {
+                                <option value="">Все</option>
+                            }
+                            @if (Model.StatusFilter == "online")
+                            {
+                                <option value="online" selected>Онлайн</option>
+                            }
+                            else
+                            {
+                                <option value="online">Онлайн</option>
+                            }
+                            @if (Model.StatusFilter == "offline")
+                            {
+                                <option value="offline" selected>Оффлайн</option>
+                            }
+                            else
+                            {
+                                <option value="offline">Оффлайн</option>
+                            }
+                        </select>
+                    </label>
+                    <div class="orbita-filter-panel__actions">
+                        <a class="orbita-filter-panel__reset" href="@Url.Action("Index", new { q = Model.SearchQuery })">Сбросить</a>
+                        <button type="submit" class="orbita-filter-panel__apply">Применить</button>
+                    </div>
+                </form>
+            </div>
             @if (Model.HasWorkerRelease && !string.IsNullOrWhiteSpace(Model.LatestWorkerDownloadUrl))
             {
                 <a class="workers-download-btn" href="@Model.LatestWorkerDownloadUrl">
@@ -78,6 +120,21 @@
 
     <div class="card card--workers-table">
         <div class="card-body card-body-table workers-table-wrap">
+            @if (pagination.TotalItems == 0)
+            {
+                <partial name="_TableEmptyState" model="@(new TableEmptyStateViewModel
+                {
+                    IconClass = "fa-solid fa-server",
+                    Title = string.IsNullOrWhiteSpace(Model.SearchQuery) ? "Воркеры не найдены" : "Ничего не найдено",
+                    Description = string.IsNullOrWhiteSpace(Model.SearchQuery)
+                        ? "Добавьте первый воркер через кнопку «Добавить воркер» в панели инструментов."
+                        : "Попробуйте изменить поисковый запрос.",
+                    CtaLabel = string.IsNullOrWhiteSpace(Model.SearchQuery) ? null : "Сбросить поиск",
+                    CtaUrl = string.IsNullOrWhiteSpace(Model.SearchQuery) ? null : Url.Action("Index")
+                })" />
+            }
+            else
+            {
             <table class="data-table data-table--workers">
                 <thead>
                     <tr>
@@ -121,9 +178,9 @@
                                 </button>
                                 <div class="row-menu-dropdown" hidden>
                                     <a class="row-menu-item" href="@detailsUrl">Открыть</a>
-                                    <button type="button" class="row-menu-item">Перезапустить</button>
-                                    <button type="button" class="row-menu-item">Просмотреть логи</button>
-                                    <button type="button" class="row-menu-item">Настройки</button>
+                                    <button type="button" class="row-menu-item" data-worker-restart data-worker-id="@w.Id">Перезапустить</button>
+                                    <a class="row-menu-item" href="@Url.Action("Index", "Settings", new { tab = "logs", workerId = w.Id })">Просмотреть логи</a>
+                                    <a class="row-menu-item" href="@(detailsUrl + "#worker-settings")">Настройки</a>
                                 </div>
                             </div>
                         </td>
@@ -131,46 +188,15 @@
                 }
                 </tbody>
             </table>
+            }
 
-            <div class="workers-pagination">
-                <span class="workers-pagination-info">
-                    @if (pagination.TotalItems == 0)
-                    {
-                        @:Показано 0 из 0
-                    }
-                    else
-                    {
-                        @:Показано @pagination.RangeStart–@pagination.RangeEnd из @pagination.TotalItems
-                    }
-                </span>
-                <div class="workers-pagination-controls">
-                    @{
-                        var prevPage = pagination.Page > 1 ? pagination.Page - 1 : (int?)null;
-                        var nextPage = pagination.Page < pagination.TotalPages ? pagination.Page + 1 : (int?)null;
-                    }
-                    @if (prevPage is not null)
-                    {
-                        <a class="workers-page-btn"
-                           href="@Url.Action("Index", new { q = Model.SearchQuery, page = prevPage })"
-                           aria-label="Предыдущая страница">&lt;</a>
-                    }
-                    else
-                    {
-                        <span class="workers-page-btn workers-page-btn--disabled" aria-hidden="true">&lt;</span>
-                    }
-                    <span class="workers-page-btn workers-page-btn--active" aria-current="page">@pagination.Page</span>
-                    @if (nextPage is not null)
-                    {
-                        <a class="workers-page-btn"
-                           href="@Url.Action("Index", new { q = Model.SearchQuery, page = nextPage })"
-                           aria-label="Следующая страница">&gt;</a>
-                    }
-                    else
-                    {
-                        <span class="workers-page-btn workers-page-btn--disabled" aria-hidden="true">&gt;</span>
-                    }
-                </div>
-            </div>
+            <partial name="_Pagination" model="@(new PaginationPartialViewModel
+            {
+                Pagination = pagination,
+                Controller = "Workers",
+                Action = "Index",
+                RouteValues = new { q = Model.SearchQuery, status = Model.StatusFilter }
+            })" />
         </div>
     </div>
 </div>

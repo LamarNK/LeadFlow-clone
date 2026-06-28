@@ -1,0 +1,15 @@
+@model TableEmptyStateViewModel
+<div class="orbita-empty-state" role="status">
+    <div class="orbita-empty-state__icon" aria-hidden="true">
+        <i class="@Model.IconClass"></i>
+    </div>
+    <h3 class="orbita-empty-state__title">@Model.Title</h3>
+    @if (!string.IsNullOrWhiteSpace(Model.Description))
+    {
+        <p class="orbita-empty-state__desc">@Model.Description</p>
+    }
+    @if (!string.IsNullOrWhiteSpace(Model.CtaLabel) && !string.IsNullOrWhiteSpace(Model.CtaUrl))
+    {
+        <a class="orbita-empty-state__cta" href="@Model.CtaUrl">@Model.CtaLabel</a>
+    }
+</div>

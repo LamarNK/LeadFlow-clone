@@ -50,6 +50,7 @@ internal static class ErrorsIndexBuilder
 
         return new ErrorsIndexViewModel
         {
+            Header = PageHeaderBuilder.ErrorsList(),
             Filters = filters,
             SeverityOptions = SeverityOptions,
             ErrorTypes = ErrorTypeOptions,

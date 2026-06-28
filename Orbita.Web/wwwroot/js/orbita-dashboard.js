@@ -1,23 +1,61 @@
 (function () {
-    if (typeof Chart === 'undefined') return;
-
-    var liveRoot = document.querySelector('[data-dashboard-live]');
-    var dataEl = document.getElementById('dashboard-charts-data');
-    if (!dataEl) return;
-
-    var payload;
-    try {
-        payload = JSON.parse(dataEl.textContent || '{}');
-    } catch (e) {
-        console.error('Dashboard charts: invalid JSON', e);
-        return;
+    function getLiveRoot() {
+        return document.querySelector('[data-dashboard-live]');
     }
+
+    function hasChart() {
+        return typeof Chart !== 'undefined';
+    }
+
+    function readChartsPayload() {
+        var el = document.getElementById('dashboard-charts-data');
+        if (!el) return null;
+        try {
+            return JSON.parse(el.textContent || '{}');
+        } catch (e) {
+            console.error('Dashboard charts: invalid JSON', e);
+            return null;
+        }
+    }
+
+    var payload = readChartsPayload() || {};
 
     var chartRegistry = {
         sparklines: [],
         hourly: null,
         donut: null
     };
+
+    function destroyChartOnCanvas(canvas) {
+        if (!canvas || typeof Chart === 'undefined' || typeof Chart.getChart !== 'function') return;
+        var existing = Chart.getChart(canvas);
+        if (existing) {
+            try { existing.destroy(); } catch (e) { }
+        }
+    }
+
+    function destroyAllCharts() {
+        if (typeof Chart === 'undefined') return;
+
+        chartRegistry.sparklines.forEach(function (chart) {
+            if (chart) {
+                try { chart.destroy(); } catch (e) { }
+            }
+        });
+        chartRegistry.sparklines = [];
+
+        if (chartRegistry.hourly) {
+            try { chartRegistry.hourly.destroy(); } catch (e) { }
+            chartRegistry.hourly = null;
+        }
+
+        if (chartRegistry.donut) {
+            try { chartRegistry.donut.destroy(); } catch (e) { }
+            chartRegistry.donut = null;
+        }
+
+        document.querySelectorAll('[data-sparkline-index], #chart-hourly-responses, #chart-account-status').forEach(destroyChartOnCanvas);
+    }
 
     var liveState = null;
     var pollTimer = null;
@@ -122,6 +160,7 @@
             var cfg = sparklines[index];
             if (!cfg || !cfg.values || cfg.values.length < 2) return;
 
+            destroyChartOnCanvas(canvas);
             var chart = createSparklineChart(canvas, cfg, index, reduced);
             chartRegistry.sparklines[index] = chart;
         });
@@ -221,6 +260,7 @@
         var canvas = document.getElementById('chart-hourly-responses');
         if (!canvas || !chartData || !chartData.values || chartData.values.length < 2) return;
 
+        destroyChartOnCanvas(canvas);
         chartRegistry.hourly = createHourlyChart(canvas, chartData);
     }
 
@@ -363,6 +403,7 @@
         var canvas = document.getElementById('chart-account-status');
         if (!canvas || !chartData) return;
 
+        destroyChartOnCanvas(canvas);
         chartRegistry.donut = createDonutChart(canvas, chartData);
     }
 
@@ -440,7 +481,8 @@
     }
 
     function workerDetailsUrl(id) {
-        var template = liveRoot ? liveRoot.getAttribute('data-worker-details-url') : '';
+        var root = getLiveRoot();
+        var template = root ? root.getAttribute('data-worker-details-url') : '';
         return template ? template.replace('__id__', id) : '#';
     }
 
@@ -456,21 +498,56 @@
                 ? '<time class="" data-orbita-utc="' + escapeHtml(iso) + '" data-orbita-format="time"></time>'
                 : '—';
 
+            var detailsUrl = workerDetailsUrl(w.id);
             return '<tr>' +
-                '<td class="cell-name"><a href="' + escapeHtml(workerDetailsUrl(w.id)) + '">' + escapeHtml(w.displayName) + '</a></td>' +
+                '<td class="cell-name"><a href="' + escapeHtml(detailsUrl) + '">' + escapeHtml(w.displayName) + '</a></td>' +
                 '<td><span class="status-dot' + statusClass + '"><i class="fa-solid fa-circle status-dot-icon" aria-hidden="true"></i>' + statusText + '</span></td>' +
                 '<td>' + w.activeAccounts + ' / ' + w.totalAccounts + '</td>' +
                 '<td>' + w.responses + '</td>' +
                 '<td>' + w.duplicates + '</td>' +
                 '<td>' + w.errors + '</td>' +
                 '<td>' + timeHtml + '</td>' +
-                '<td class="data-table-menu"><button type="button" class="row-menu-btn" aria-label="Действия"><i class="fa-solid fa-ellipsis-vertical" aria-hidden="true"></i></button></td>' +
+                '<td class="data-table-menu">' +
+                '<div class="row-menu" data-row-menu>' +
+                '<button type="button" class="row-menu-btn" aria-label="Действия" aria-expanded="false" aria-haspopup="true"><i class="fa-solid fa-ellipsis-vertical" aria-hidden="true"></i></button>' +
+                '<div class="row-menu-dropdown" hidden>' +
+                '<a class="row-menu-item" href="' + escapeHtml(detailsUrl) + '">Открыть</a>' +
+                '<button type="button" class="row-menu-item" data-worker-restart data-worker-id="' + escapeHtml(w.id) + '">Перезапустить</button>' +
+                '<a class="row-menu-item" href="/Settings?tab=logs">Просмотреть логи</a>' +
+                '<a class="row-menu-item" href="' + escapeHtml(detailsUrl) + '#worker-settings">Настройки</a>' +
+                '</div></div></td>' +
                 '</tr>';
         }).join('');
 
         if (window.OrbitaTime) {
             window.OrbitaTime.localizeAll(tbody);
         }
+
+        initDashboardRowMenus();
+        if (window.Orbita && window.Orbita.initWorkerRestartButtons) {
+            window.Orbita.initWorkerRestartButtons();
+        }
+    }
+
+    function initDashboardRowMenus() {
+        document.querySelectorAll('[data-dashboard-workers-body] [data-row-menu]').forEach(function (menu) {
+            var trigger = menu.querySelector('.row-menu-btn');
+            var dropdown = menu.querySelector('.row-menu-dropdown');
+            if (!trigger || !dropdown || trigger.hasAttribute('data-dash-row-menu-bound')) return;
+            trigger.setAttribute('data-dash-row-menu-bound', '1');
+
+            trigger.addEventListener('click', function (e) {
+                e.stopPropagation();
+                var open = dropdown.hasAttribute('hidden');
+                document.querySelectorAll('[data-dashboard-workers-body] .row-menu-dropdown').forEach(function (d) {
+                    d.setAttribute('hidden', '');
+                });
+                if (open) {
+                    dropdown.removeAttribute('hidden');
+                    trigger.setAttribute('aria-expanded', 'true');
+                }
+            });
+        });
     }
 
     function eventIcon(level) {
@@ -603,6 +680,7 @@
 
         var canvas = document.getElementById('chart-hourly-responses');
         if (canvas) {
+            destroyChartOnCanvas(canvas);
             chartRegistry.hourly = createHourlyChart(canvas, chartData);
             payload.hourlyResponses = chartData;
         }
@@ -690,6 +768,7 @@
     }
 
     function fetchSnapshot() {
+        var liveRoot = getLiveRoot();
         if (!liveRoot || pollInFlight) return Promise.resolve();
 
         var url = liveRoot.getAttribute('data-dashboard-snapshot');
@@ -728,6 +807,7 @@
     }
 
     function initLiveRefresh() {
+        var liveRoot = getLiveRoot();
         if (!liveRoot) return;
 
         var bootstrapEl = document.getElementById('dashboard-live-bootstrap');
@@ -739,13 +819,18 @@
             }
         }
 
-        document.addEventListener('visibilitychange', function () {
-            if (!document.hidden) fetchSnapshot();
-        });
+        if (!window.__orbitaDashVisListener) {
+            document.addEventListener('visibilitychange', function () {
+                if (!document.hidden) fetchSnapshot();
+            });
+            window.__orbitaDashVisListener = true;
+        }
 
         document.querySelectorAll('[data-orbita-refresh]').forEach(function (btn) {
+            if (btn.hasAttribute('data-orbita-dash-refresh-bound')) return;
+            btn.setAttribute('data-orbita-dash-refresh-bound', '1');
             btn.addEventListener('click', function (e) {
-                if (!document.querySelector('[data-dashboard-live]')) return;
+                if (!getLiveRoot()) return;
                 e.preventDefault();
                 fetchSnapshot();
             });
@@ -755,9 +840,65 @@
         window.setTimeout(fetchSnapshot, pollIntervalMs);
     }
 
-    initKpiCounters();
-    initSparklines(payload.sparklines);
-    initHourlyChart(payload.hourlyResponses);
-    initDonutChart(payload.accountStatus);
-    initLiveRefresh();
+    function initDashboardAll() {
+        if (typeof Chart === 'undefined') return;
+        if (!getLiveRoot()) return;
+
+        destroyAllCharts();
+
+        var freshPayload = readChartsPayload();
+        if (!freshPayload) return;
+        payload = freshPayload;
+
+        initKpiCounters();
+        initSparklines(payload.sparklines);
+        initHourlyChart(payload.hourlyResponses);
+        initDonutChart(payload.accountStatus);
+        initLiveRefresh();
+        initDashboardRowMenus();
+        if (window.Orbita && window.Orbita.initWorkerRestartButtons) {
+            window.Orbita.initWorkerRestartButtons();
+        }
+    }
+
+    var dashboardInitPending = false;
+
+    function scheduleDashboardInit() {
+        if (!getLiveRoot()) return;
+        if (dashboardInitPending) return;
+        dashboardInitPending = true;
+        requestAnimationFrame(function () {
+            requestAnimationFrame(function () {
+                dashboardInitPending = false;
+                if (!getLiveRoot()) return;
+                initDashboardAll();
+            });
+        });
+    }
+
+    if (getLiveRoot()) {
+        scheduleDashboardInit();
+    }
+
+    if (!window.__orbitaDashboardContentListener) {
+        document.addEventListener('orbita:content-updated', function () {
+            if (getLiveRoot()) {
+                scheduleDashboardInit();
+            }
+        });
+        window.__orbitaDashboardContentListener = true;
+    }
+
+    // expose for client nav cleanup when leaving the page
+    window.OrbitaDashboard = window.OrbitaDashboard || {};
+    window.OrbitaDashboard.reinit = scheduleDashboardInit;
+    window.OrbitaDashboard.destroyCharts = destroyAllCharts;
+    window.OrbitaDashboard.stopPolling = function () {
+        if (pollTimer) {
+            window.clearInterval(pollTimer);
+            pollTimer = null;
+        }
+        destroyAllCharts();
+        pollInFlight = false;
+    };
 })();

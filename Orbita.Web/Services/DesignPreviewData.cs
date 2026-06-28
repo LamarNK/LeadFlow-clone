@@ -52,7 +52,7 @@ internal static class DesignPreviewData
 
     public static IReadOnlyList<WorkerListItem> Workers => BuildWorkerListItems();
 
-    public static WorkersIndexViewModel BuildWorkersIndexViewModel(string? searchQuery, int page, int pageSize)
+    public static WorkersIndexViewModel BuildWorkersIndexViewModel(string? searchQuery, string? status, int page, int pageSize)
     {
         var rows = BuildWorkerRows();
         if (!string.IsNullOrWhiteSpace(searchQuery))
@@ -63,6 +63,22 @@ internal static class DesignPreviewData
                 .ToList();
         }
 
+        status = status?.Trim().ToLowerInvariant() switch
+        {
+            "online" => "online",
+            "offline" => "offline",
+            _ => null
+        };
+
+        if (status == "online")
+        {
+            rows = rows.Where(w => w.IsOnline).ToList();
+        }
+        else if (status == "offline")
+        {
+            rows = rows.Where(w => !w.IsOnline).ToList();
+        }
+
         var total = rows.Count;
         var paged = rows.Skip((page - 1) * pageSize).Take(pageSize).ToList();
         var online = rows.Count(w => w.IsOnline);
@@ -70,7 +86,9 @@ internal static class DesignPreviewData
 
         return new WorkersIndexViewModel
         {
+            Header = PageHeaderBuilder.WorkersList(),
             SearchQuery = searchQuery,
+            StatusFilter = status,
             KpiCards =
             [
                 new() { Label = "Всего воркеров", Value = total.ToString(), CountValue = total, IconClass = "fa-solid fa-server", IconTone = "blue" },
@@ -1065,6 +1083,7 @@ internal static class DesignPreviewData
 
         return new ResponsesIndexViewModel
         {
+            Header = PageHeaderBuilder.ResponsesList(period),
             Filters = filters,
             PeriodLabel = period.Label,
             ActivePeriodPreset = period.ActivePreset,

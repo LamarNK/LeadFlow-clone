@@ -8,6 +8,7 @@
     var workersError = TempData["WorkersError"] as string;
     var workersSuccess = TempData["WorkersSuccess"] as string;
 }
+<partial name="_PageHeader" model="Model.Header" />
 <div class="orbita-main worker-detail-page">
     <nav class="orbita-breadcrumbs" aria-label="Навигация">
         @for (var i = 0; i < Model.Breadcrumbs.Count; i++)
@@ -31,7 +32,6 @@
     <div class="worker-detail-head">
         <div class="worker-detail-title-block">
             <div class="worker-detail-title-row">
-                <h1 class="worker-detail-title">@Model.DisplayName</h1>
                 <span class="status-dot @(Model.IsOnline ? "" : "offline")">
                     <i class="fa-solid fa-circle status-dot-icon" aria-hidden="true"></i>
                     @(Model.IsOnline ? "Онлайн" : "Оффлайн")
@@ -41,15 +41,6 @@
                 Последняя активность:
                 <partial name="_UtcTime" model="@(new UtcTimeDisplayModel(Model.LastActivityUtc, "time"))" />
             </p>
-        </div>
-        <div class="worker-detail-toolbar">
-            <a href="@Context.Request.Path"
-               class="worker-refresh-btn"
-               title="Обновить данные"
-               data-orbita-refresh>
-                <i class="fa-solid fa-rotate-right" aria-hidden="true"></i>
-                <span>Обновить данные</span>
-            </a>
         </div>
     </div>
 
@@ -130,7 +121,7 @@
                 </div>
             </div>
         </div>
-        <div class="card card--worker-settings">
+        <div class="card card--worker-settings" id="worker-settings">
             <div class="card-header">
                 <h2>Настройки воркера</h2>
                 <p class="worker-settings-subtitle">Параллелизм и подключение к AdsPower Local API на VDS</p>
@@ -266,7 +257,7 @@
         </div>
     </div>
 
-    <div class="card card--worker-accounts">
+    <div class="card card--worker-accounts" id="worker-accounts">
         <div class="card-header">
             <h2>Аккаунты воркера</h2>
         </div>

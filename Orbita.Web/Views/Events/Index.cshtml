@@ -4,6 +4,7 @@
     var pagination = Model.Pagination;
     var formAction = Url.Action("Index", "Events");
 }
+<partial name="_PageHeader" model="Model.Header" />
 <div class="orbita-main events-page">
     <nav class="orbita-breadcrumbs orbita-breadcrumbs--events" aria-label="Навигация">
         @for (var i = 0; i < Model.Breadcrumbs.Count; i++)
@@ -23,8 +24,6 @@
             }
         }
     </nav>
-
-    <h1 class="events-page-title">События</h1>
 
     <div class="kpi-row events-kpi-row">
         @{ var kpiIdx = 0; }
@@ -137,6 +136,19 @@
 
     <div class="card card--events-table">
         <div class="card-body card-body-table events-table-wrap">
+            @if (pagination.TotalItems == 0)
+            {
+                <partial name="_TableEmptyState" model="@(new TableEmptyStateViewModel
+                {
+                    IconClass = "fa-regular fa-clipboard",
+                    Title = "События не найдены",
+                    Description = "За выбранные фильтры записей нет.",
+                    CtaLabel = "Сбросить фильтры",
+                    CtaUrl = formAction
+                })" />
+            }
+            else
+            {
             <table class="data-table data-table--events">
                 <thead>
                     <tr>
@@ -156,7 +168,11 @@
                     var accountUrl = string.IsNullOrWhiteSpace(evt.AccountName)
                         ? null
                         : Url.Action("Index", "Accounts", new { q = evt.AccountName });
-                    <tr class="events-row" data-copy="@evt.CopyText">
+                    <tr class="events-row"
+                        data-copy="@evt.CopyText"
+                        data-detail-title="@evt.EventTypeLabel"
+                        data-detail-subtitle="@evt.WorkerName · @evt.LevelLabel"
+                        data-detail-body="@evt.Description">
                         <td class="events-time"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(evt.OccurredAtUtc, "datetime-seconds"))" /></td>
                         <td>
                             <span class="event-type event-type--@evt.EventTypeTone">
@@ -187,14 +203,14 @@
                                     <i class="fa-solid fa-ellipsis-vertical" aria-hidden="true"></i>
                                 </button>
                                 <div class="row-menu-dropdown row-menu-dropdown--events" hidden>
-                                    <button type="button" class="row-menu-item">
+                                    <button type="button" class="row-menu-item" data-orbita-detail-open>
                                         <i class="fa-regular fa-eye" aria-hidden="true"></i>
                                         Просмотреть детали
                                     </button>
-                                    <button type="button" class="row-menu-item">
+                                    <a class="row-menu-item" href="@Url.Action("Index", "Settings", new { tab = "logs", workerId = evt.WorkerId })">
                                         <i class="fa-regular fa-file-lines" aria-hidden="true"></i>
                                         Открыть лог
-                                    </button>
+                                    </a>
                                     @if (accountUrl is not null)
                                     {
                                         <a class="row-menu-item" href="@accountUrl">
@@ -210,6 +226,10 @@
                                         <i class="fa-regular fa-copy" aria-hidden="true"></i>
                                         Копировать сообщение
                                     </button>
+                                    <button type="button" class="row-menu-item" data-event-dismiss data-event-id="@evt.Id">
+                                        <i class="fa-regular fa-circle-check" aria-hidden="true"></i>
+                                        Отметить обработанным
+                                    </button>
                                 </div>
                             </div>
                         </td>
@@ -217,46 +237,22 @@
                 }
                 </tbody>
             </table>
+            }
 
-            <div class="events-pagination">
-                <span class="events-pagination-info">
-                    @if (pagination.TotalItems == 0)
-                    {
-                        @:Показано 0 из 0
-                    }
-                    else
-                    {
-                        @:Показано @pagination.RangeStart–@pagination.RangeEnd из @pagination.TotalItems
-                    }
-                </span>
-                <div class="events-pagination-controls">
-                    @{
-                        var prevPage = pagination.Page > 1 ? pagination.Page - 1 : (int?)null;
-                        var nextPage = pagination.Page < pagination.TotalPages ? pagination.Page + 1 : (int?)null;
-                    }
-                    @if (prevPage is not null)
-                    {
-                        <a class="events-page-btn"
-                           href="@Url.Action("Index", "Events", new { q = Model.Filters.SearchQuery, type = Model.Filters.Type, workerId = Model.Filters.WorkerId, account = Model.Filters.Account, level = Model.Filters.Level, page = prevPage })"
-                           aria-label="Предыдущая страница">&lt;</a>
-                    }
-                    else
-                    {
-                        <span class="events-page-btn events-page-btn--disabled" aria-hidden="true">&lt;</span>
-                    }
-                    <span class="events-page-btn events-page-btn--active" aria-current="page">@pagination.Page</span>
-                    @if (nextPage is not null)
-                    {
-                        <a class="events-page-btn"
-                           href="@Url.Action("Index", "Events", new { q = Model.Filters.SearchQuery, type = Model.Filters.Type, workerId = Model.Filters.WorkerId, account = Model.Filters.Account, level = Model.Filters.Level, page = nextPage })"
-                           aria-label="Следующая страница">&gt;</a>
-                    }
-                    else
-                    {
-                        <span class="events-page-btn events-page-btn--disabled" aria-hidden="true">&gt;</span>
-                    }
-                </div>
-            </div>
+            <partial name="_Pagination" model="@(new PaginationPartialViewModel
+            {
+                Pagination = pagination,
+                Controller = "Events",
+                Action = "Index",
+                RouteValues = new
+                {
+                    q = Model.Filters.SearchQuery,
+                    type = Model.Filters.Type,
+                    workerId = Model.Filters.WorkerId,
+                    account = Model.Filters.Account,
+                    level = Model.Filters.Level
+                }
+            })" />
         </div>
     </div>
 </div>

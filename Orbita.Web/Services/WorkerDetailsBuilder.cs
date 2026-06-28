@@ -40,6 +40,7 @@ internal static class WorkerDetailsBuilder
 
         return new WorkerDetailsViewModel
         {
+            Header = PageHeaderBuilder.WorkerDetails(worker.DisplayName, DateTime.UtcNow),
             WorkerId = worker.Id,
             Breadcrumbs =
             [

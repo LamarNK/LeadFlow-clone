@@ -307,7 +307,8 @@ public sealed class DashboardQueryService(
         var workersQuery = officeScope.ApplyWorkerFilter(db.Workers.AsNoTracking(), scope, officeFilter);
         var allowedWorkerIds = await workersQuery.Select(x => x.Id).ToListAsync(ct);
 
-        var query = db.WorkerEvents.AsNoTracking().Where(x => allowedWorkerIds.Contains(x.WorkerId));
+        var query = db.WorkerEvents.AsNoTracking()
+            .Where(x => allowedWorkerIds.Contains(x.WorkerId) && !x.IsDismissed);
         if (workerId.HasValue)
         {
             query = query.Where(x => x.WorkerId == workerId.Value);

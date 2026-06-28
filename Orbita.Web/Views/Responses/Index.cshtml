@@ -15,6 +15,7 @@
         search = Model.Filters.SearchQuery
     };
 }
+<partial name="_PageHeader" model="Model.Header" />
 <div class="orbita-main responses-page">
     <nav class="orbita-breadcrumbs orbita-breadcrumbs--responses" aria-label="Навигация">
         @for (var i = 0; i < Model.Breadcrumbs.Count; i++)
@@ -34,8 +35,6 @@
             }
         }
     </nav>
-
-    <h1 class="responses-page-title">Отклики</h1>
 
     @if (TempData["ResponsesError"] is string errorMessage)
     {
@@ -196,6 +195,19 @@
 
     <div class="card card--responses-table">
         <div class="card-body card-body-table responses-table-wrap">
+            @if (pagination.TotalItems == 0)
+            {
+                <partial name="_TableEmptyState" model="@(new TableEmptyStateViewModel
+                {
+                    IconClass = "fa-solid fa-inbox",
+                    Title = "Отклики не найдены",
+                    Description = "Измените период или фильтры, чтобы увидеть отклики.",
+                    CtaLabel = "Сбросить фильтры",
+                    CtaUrl = formAction
+                })" />
+            }
+            else
+            {
             <table class="data-table data-table--responses">
                 <thead>
                     <tr>
@@ -332,46 +344,25 @@
                 }
                 </tbody>
             </table>
+            }
 
-            <div class="responses-pagination">
-                <span class="responses-pagination-info">
-                    @if (pagination.TotalItems == 0)
-                    {
-                        @:Показано 0 из 0
-                    }
-                    else
-                    {
-                        @:Показано @pagination.RangeStart–@pagination.RangeEnd из @pagination.TotalItems
-                    }
-                </span>
-                <div class="responses-pagination-controls">
-                    @{
-                        var prevPage = pagination.Page > 1 ? pagination.Page - 1 : (int?)null;
-                        var nextPage = pagination.Page < pagination.TotalPages ? pagination.Page + 1 : (int?)null;
-                    }
-                    @if (prevPage is not null)
-                    {
-                        <a class="responses-page-btn"
-                           href="@Url.Action("Index", "Responses", new { routeValues.from, routeValues.to, routeValues.status, routeValues.workerId, routeValues.accountId, routeValues.vacancy, routeValues.search, page = prevPage, id = Model.Selected?.Id })"
-                           aria-label="Предыдущая страница">&lt;</a>
-                    }
-                    else
-                    {
-                        <span class="responses-page-btn responses-page-btn--disabled" aria-hidden="true">&lt;</span>
-                    }
-                    <span class="responses-page-btn responses-page-btn--active" aria-current="page">@pagination.Page</span>
-                    @if (nextPage is not null)
-                    {
-                        <a class="responses-page-btn"
-                           href="@Url.Action("Index", "Responses", new { routeValues.from, routeValues.to, routeValues.status, routeValues.workerId, routeValues.accountId, routeValues.vacancy, routeValues.search, page = nextPage, id = Model.Selected?.Id })"
-                           aria-label="Следующая страница">&gt;</a>
-                    }
-                    else
-                    {
-                        <span class="responses-page-btn responses-page-btn--disabled" aria-hidden="true">&gt;</span>
-                    }
-                </div>
-            </div>
+            <partial name="_Pagination" model="@(new PaginationPartialViewModel
+            {
+                Pagination = pagination,
+                Controller = "Responses",
+                Action = "Index",
+                RouteValues = new
+                {
+                    routeValues.from,
+                    routeValues.to,
+                    routeValues.status,
+                    routeValues.workerId,
+                    routeValues.accountId,
+                    routeValues.vacancy,
+                    routeValues.search,
+                    id = Model.Selected?.Id
+                }
+            })" />
         </div>
     </div>
 </div>

@@ -60,6 +60,7 @@ public sealed class ResponsesService(OrbitaApiClient api, IOptions<DesignPreview
 
         return new ResponsesIndexViewModel
         {
+            Header = PageHeaderBuilder.ResponsesList(period),
             Filters = filters,
             PeriodLabel = period.Label,
             ActivePeriodPreset = period.ActivePreset,

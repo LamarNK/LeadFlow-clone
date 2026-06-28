@@ -51,6 +51,8 @@ builder.Services.AddScoped<IEventsService, EventsService>();
 builder.Services.AddScoped<IResponsesService, ResponsesService>();
 builder.Services.AddScoped<IErrorsService, ErrorsService>();
 builder.Services.AddScoped<IAccountsService, AccountsService>();
+builder.Services.AddScoped<NavBadgesService>();
+builder.Services.AddScoped<GlobalSearchService>();
 builder.Services.AddScoped<ISettingsService, SettingsService>();
 builder.Services.AddScoped<IMySettingsService, MySettingsService>();
 

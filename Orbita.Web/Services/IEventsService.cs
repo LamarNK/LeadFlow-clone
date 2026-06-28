@@ -12,4 +12,6 @@ public interface IEventsService
         string? level = null,
         int page = 1,
         CancellationToken ct = default);
+
+    Task<(bool Success, string? Error)> DismissEventAsync(Guid eventId, CancellationToken ct = default);
 }

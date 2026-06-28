@@ -3,6 +3,7 @@
     ViewData["Title"] = "Аккаунты";
     var pagination = Model.Pagination;
 }
+<partial name="_PageHeader" model="Model.Header" />
 <div class="orbita-main accounts-page">
     <nav class="orbita-breadcrumbs orbita-breadcrumbs--accounts" aria-label="Навигация">
         @for (var i = 0; i < Model.Breadcrumbs.Count; i++)
@@ -22,8 +23,6 @@
             }
         }
     </nav>
-
-    <h1 class="accounts-page-title">Аккаунты</h1>
 
     <div class="kpi-row accounts-kpi-row">
         @{ var kpiIdx = 0; }
@@ -69,7 +68,7 @@
             <button type="button" class="accounts-filter-btn" aria-label="Фильтры">
                 <i class="fa-solid fa-filter" aria-hidden="true"></i>
             </button>
-            <button type="button" class="accounts-add-btn">
+            <button type="button" class="accounts-add-btn" data-accounts-add-open>
                 <i class="fa-solid fa-plus" aria-hidden="true"></i>
                 <span>Добавить аккаунт</span>
             </button>
@@ -78,6 +77,19 @@
 
     <div class="card card--accounts-table">
         <div class="card-body card-body-table accounts-table-wrap">
+            @if (pagination.TotalItems == 0)
+            {
+                <partial name="_TableEmptyState" model="@(new TableEmptyStateViewModel
+                {
+                    IconClass = "fa-solid fa-users",
+                    Title = "Аккаунты не найдены",
+                    Description = "Измените вкладку, поиск или дождитесь синхронизации с воркерами.",
+                    CtaLabel = string.IsNullOrWhiteSpace(Model.SearchQuery) ? "Показать все" : "Сбросить поиск",
+                    CtaUrl = Url.Action("Index", new { tab = "all" })
+                })" />
+            }
+            else
+            {
             <table class="data-table data-table--accounts-list">
                 <thead>
                     <tr>
@@ -97,6 +109,7 @@
                 {
                     var workerUrl = Url.Action("Details", "Workers", new { id = account.WorkerId });
                     var accountUrl = Url.Action("Index", "Accounts", new { q = account.AccountName });
+                    var responsesUrl = Url.Action("Index", "Responses", new { accountId = account.Id });
                     <tr class="accounts-row" data-href="@accountUrl">
                         <td class="cell-account">
                             <a href="@accountUrl">@account.AccountName</a>
@@ -121,30 +134,42 @@
                                     <i class="fa-solid fa-ellipsis-vertical" aria-hidden="true"></i>
                                 </button>
                                 <div class="row-menu-dropdown row-menu-dropdown--accounts" hidden>
-                                    <button type="button" class="row-menu-item">
+                                    <a class="row-menu-item" href="@accountUrl">
                                         <i class="fa-regular fa-eye" aria-hidden="true"></i>
                                         Просмотр
-                                    </button>
-                                    <button type="button" class="row-menu-item">
+                                    </a>
+                                    <a class="row-menu-item" href="@(workerUrl + "#worker-accounts")">
                                         <i class="fa-regular fa-pen-to-square" aria-hidden="true"></i>
-                                        Редактировать
-                                    </button>
-                                    <button type="button" class="row-menu-item">
-                                        <i class="fa-solid fa-wallet" aria-hidden="true"></i>
-                                        Пополнить баланс
-                                    </button>
-                                    <button type="button" class="row-menu-item">
+                                        Настройки на воркере
+                                    </a>
+                                    <a class="row-menu-item" href="@responsesUrl">
                                         <i class="fa-regular fa-clock" aria-hidden="true"></i>
                                         История откликов
-                                    </button>
-                                    <button type="button" class="row-menu-item row-menu-item--danger">
-                                        <i class="fa-solid fa-ban" aria-hidden="true"></i>
-                                        Заблокировать
-                                    </button>
-                                    <button type="button" class="row-menu-item row-menu-item--danger">
-                                        <i class="fa-regular fa-trash-can" aria-hidden="true"></i>
-                                        Удалить
-                                    </button>
+                                    </a>
+                                    @if (account.IsEnabledInPanel)
+                                    {
+                                        <button type="button"
+                                                class="row-menu-item row-menu-item--danger"
+                                                data-account-toggle
+                                                data-worker-id="@account.WorkerId"
+                                                data-account-id="@account.Id"
+                                                data-enabled="false">
+                                            <i class="fa-solid fa-ban" aria-hidden="true"></i>
+                                            Отключить в панели
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <button type="button"
+                                                class="row-menu-item"
+                                                data-account-toggle
+                                                data-worker-id="@account.WorkerId"
+                                                data-account-id="@account.Id"
+                                                data-enabled="true">
+                                            <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
+                                            Включить в панели
+                                        </button>
+                                    }
                                 </div>
                             </div>
                         </td>
@@ -152,47 +177,33 @@
                 }
                 </tbody>
             </table>
+            }
 
-            <div class="accounts-pagination">
-                <span class="accounts-pagination-info">
-                    @if (pagination.TotalItems == 0)
-                    {
-                        @:Показано 0 из 0
-                    }
-                    else
-                    {
-                        @:Показано @pagination.RangeStart–@pagination.RangeEnd из @pagination.TotalItems
-                    }
-                </span>
-                <div class="accounts-pagination-controls">
-                    @{
-                        var prevPage = pagination.Page > 1 ? pagination.Page - 1 : (int?)null;
-                        var nextPage = pagination.Page < pagination.TotalPages ? pagination.Page + 1 : (int?)null;
-                    }
-                    @if (prevPage is not null)
-                    {
-                        <a class="accounts-page-btn"
-                           href="@Url.Action("Index", new { q = Model.SearchQuery, tab = Model.ActiveTab, page = prevPage })"
-                           aria-label="Предыдущая страница">&lt;</a>
-                    }
-                    else
-                    {
-                        <span class="accounts-page-btn accounts-page-btn--disabled" aria-hidden="true">&lt;</span>
-                    }
-                    <span class="accounts-page-btn accounts-page-btn--active" aria-current="page">@pagination.Page</span>
-                    @if (nextPage is not null)
-                    {
-                        <a class="accounts-page-btn"
-                           href="@Url.Action("Index", new { q = Model.SearchQuery, tab = Model.ActiveTab, page = nextPage })"
-                           aria-label="Следующая страница">&gt;</a>
-                    }
-                    else
-                    {
-                        <span class="accounts-page-btn accounts-page-btn--disabled" aria-hidden="true">&gt;</span>
-                    }
-                </div>
-            </div>
+            <partial name="_Pagination" model="@(new PaginationPartialViewModel
+            {
+                Pagination = pagination,
+                Controller = "Accounts",
+                Action = "Index",
+                RouteValues = new { q = Model.SearchQuery, tab = Model.ActiveTab }
+            })" />
         </div>
+    </div>
+</div>
+
+<div class="orbita-info-modal" id="accountsAddModal" hidden>
+    <div class="orbita-info-modal__backdrop" data-accounts-add-close></div>
+    <div class="orbita-info-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="accountsAddTitle">
+        <header class="orbita-info-modal__head">
+            <h2 id="accountsAddTitle">Добавление аккаунта</h2>
+            <button type="button" class="orbita-info-modal__close" data-accounts-add-close aria-label="Закрыть">
+                <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+            </button>
+        </header>
+        <p class="orbita-info-modal__text">Аккаунты синхронизируются с AdsPower на воркере автоматически. Добавьте профиль в AdsPower на VDS — он появится в списке после следующего цикла мониторинга.</p>
+        <footer class="orbita-info-modal__footer">
+            <a class="orbita-info-modal__btn orbita-info-modal__btn--primary" href="@Url.Action("Index", "Workers")">Перейти к воркерам</a>
+            <button type="button" class="orbita-info-modal__btn orbita-info-modal__btn--ghost" data-accounts-add-close>Закрыть</button>
+        </footer>
     </div>
 </div>
 

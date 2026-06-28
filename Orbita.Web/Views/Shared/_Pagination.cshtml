@@ -1,0 +1,75 @@
+@model PaginationPartialViewModel
+@{
+    var pagination = Model.Pagination;
+    var visiblePages = pagination.GetVisiblePages();
+    var prevPage = pagination.Page > 1 ? pagination.Page - 1 : (int?)null;
+    var nextPage = pagination.Page < pagination.TotalPages ? pagination.Page + 1 : (int?)null;
+    var extraClass = string.IsNullOrWhiteSpace(Model.ExtraClass) ? "" : " " + Model.ExtraClass;
+}
+<div class="orbita-pagination@extraClass">
+    <span class="orbita-pagination__info">
+        @if (pagination.TotalItems == 0)
+        {
+            @:Показано 0 из 0
+        }
+        else
+        {
+            @:Показано @pagination.RangeStart–@pagination.RangeEnd из @pagination.TotalItems
+        }
+    </span>
+    @if (pagination.TotalPages > 1)
+    {
+        <div class="orbita-pagination__controls" role="navigation" aria-label="Пагинация">
+            @if (prevPage is not null)
+            {
+                <a class="orbita-pagination__btn"
+                   href="@Url.Action(Model.Action, Model.Controller, MergeRoute(Model.RouteValues, prevPage.Value))"
+                   aria-label="Предыдущая страница">&lt;</a>
+            }
+            else
+            {
+                <span class="orbita-pagination__btn orbita-pagination__btn--disabled" aria-hidden="true">&lt;</span>
+            }
+            @foreach (var item in visiblePages)
+            {
+                if (item.IsEllipsis)
+                {
+                    <span class="orbita-pagination__ellipsis" aria-hidden="true">…</span>
+                }
+                else if (item.IsCurrent)
+                {
+                    <span class="orbita-pagination__btn orbita-pagination__btn--active" aria-current="page">@item.Page</span>
+                }
+                else
+                {
+                    <a class="orbita-pagination__btn"
+                       href="@Url.Action(Model.Action, Model.Controller, MergeRoute(Model.RouteValues, item.Page))"
+                       aria-label="Страница @item.Page">@item.Page</a>
+                }
+            }
+            @if (nextPage is not null)
+            {
+                <a class="orbita-pagination__btn"
+                   href="@Url.Action(Model.Action, Model.Controller, MergeRoute(Model.RouteValues, nextPage.Value))"
+                   aria-label="Следующая страница">&gt;</a>
+            }
+            else
+            {
+                <span class="orbita-pagination__btn orbita-pagination__btn--disabled" aria-hidden="true">&gt;</span>
+            }
+        </div>
+    }
+</div>
+
+@functions {
+    private object MergeRoute(object? routeValues, int page)
+    {
+        if (routeValues is null)
+        {
+            return new { page };
+        }
+
+        var dict = new RouteValueDictionary(routeValues) { ["page"] = page };
+        return dict;
+    }
+}
