@@ -8,11 +8,14 @@ internal static class DashboardChartsBuilder
     public static DashboardChartsViewModel FromPresentation(
         IReadOnlyList<DashboardKpiCardViewModel> kpiCards,
         IReadOnlyList<DashboardChartPointViewModel> hourlyChart,
-        AccountStatsViewModel accountStats)
+        AccountStatsViewModel accountStats,
+        IReadOnlyList<ActivityPointDto>? dailyPoints = null)
     {
-        var sparklineLabels = ResampleLabels(
-            hourlyChart.Select(p => p.Label).ToList(),
-            SparklineGenerator.PointCount);
+        var sparklineLabels = dailyPoints is { Count: > 0 }
+            ? dailyPoints.Select(p => p.Label).ToList()
+            : ResampleLabels(
+                hourlyChart.Select(p => p.Label).ToList(),
+                SparklineGenerator.PointCount);
 
         return new DashboardChartsViewModel
         {
@@ -38,6 +41,21 @@ internal static class DashboardChartsBuilder
                 Errors = accountStats.Errors
             }
         };
+    }
+
+    public static IReadOnlyList<DashboardChartPointViewModel> FromDailyActivity(
+        IReadOnlyList<ActivityPointDto> daily,
+        int axisEvery = 1)
+    {
+        if (daily.Count == 0)
+            return [];
+
+        return daily.Select((p, i) => new DashboardChartPointViewModel
+        {
+            Label = string.IsNullOrWhiteSpace(p.Label) ? $"День {i + 1}" : p.Label,
+            Value = Math.Clamp(p.NewCount, 0, 100),
+            ShowAxisLabel = i % axisEvery == 0 || i == daily.Count - 1
+        }).ToList();
     }
 
     public static IReadOnlyList<DashboardChartPointViewModel> FromHourlyActivity(

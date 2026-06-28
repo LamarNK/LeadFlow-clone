@@ -1,9 +1,10 @@
 using System.Diagnostics;
 using System.Reflection;
-using LeadFlow.Models;
+using LeadFlow.Core.Models;
+using LeadFlow.Core.Services;
+using LeadFlow.Core.Services.AdsPower;
+using LeadFlow.Core.Services.Avito;
 using LeadFlow.Services;
-using LeadFlow.Services.AdsPower;
-using LeadFlow.Services.Avito;
 using LeadFlow.Services.Bitrix;
 using LeadFlow.Tests.Support;
 using Xunit;

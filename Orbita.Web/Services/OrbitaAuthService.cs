@@ -9,7 +9,7 @@ public sealed class OrbitaAuthService(IHttpContextAccessor httpContextAccessor, 
 {
     public Task SignInAsync(string token, string email, CancellationToken ct = default)
     {
-        if (string.Equals(token, "design-preview", StringComparison.Ordinal))
+        if (string.Equals(token, AuthSession.DesignPreviewToken, StringComparison.Ordinal))
         {
             return SignInPreviewAsync(email, email, ct);
         }
@@ -19,7 +19,7 @@ public sealed class OrbitaAuthService(IHttpContextAccessor httpContextAccessor, 
 
     public async Task SignInPreviewAsync(string email, string displayName, CancellationToken ct = default)
     {
-        session.Token = "design-preview";
+        session.Token = AuthSession.DesignPreviewToken;
         session.Email = email;
 
         var context = httpContextAccessor.HttpContext
@@ -46,7 +46,7 @@ public sealed class OrbitaAuthService(IHttpContextAccessor httpContextAccessor, 
 
         context.Response.Cookies.Append(
             AuthSession.TokenCookieName,
-            "design-preview",
+            AuthSession.DesignPreviewToken,
             new CookieOptions
             {
                 HttpOnly = true,

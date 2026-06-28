@@ -126,9 +126,79 @@ public sealed class WorkerConfigService(OrbitaDbContext db, OfficeScopeService o
             return (null, "Воркер не найден.");
         }
 
+        if (!TryNormalizeAdsPowerApiBaseUrl(request.AdsPowerApiBaseUrl, out var normalizedBaseUrl, out var baseUrlError))
+        {
+            return (null, baseUrlError);
+        }
+
+        if (!TryNormalizeAdsPowerApiKey(request.AdsPowerApiKey, out var normalizedApiKey, out var apiKeyError))
+        {
+            return (null, apiKeyError);
+        }
+
         worker.MaxConcurrentAccounts = request.MaxConcurrentAccounts;
+        worker.AdsPowerApiBaseUrl = normalizedBaseUrl;
+        worker.AdsPowerApiKey = normalizedApiKey;
         await db.SaveChangesAsync(ct);
         return (await GetConfigForWorkerAsync(workerId, scope, ct), null);
+    }
+
+    private static bool TryNormalizeAdsPowerApiBaseUrl(
+        string? value,
+        out string? normalized,
+        out string? error)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            normalized = null;
+            error = null;
+            return true;
+        }
+
+        var trimmed = value.Trim().TrimEnd('/');
+        if (trimmed.Length > 512)
+        {
+            normalized = null;
+            error = "URL AdsPower API не должен превышать 512 символов.";
+            return false;
+        }
+
+        if (!Uri.TryCreate(trimmed, UriKind.Absolute, out var uri)
+            || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+        {
+            normalized = null;
+            error = "Укажите корректный URL AdsPower API (http или https).";
+            return false;
+        }
+
+        normalized = trimmed;
+        error = null;
+        return true;
+    }
+
+    private static bool TryNormalizeAdsPowerApiKey(
+        string? value,
+        out string? normalized,
+        out string? error)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            normalized = null;
+            error = null;
+            return true;
+        }
+
+        var trimmed = value.Trim();
+        if (trimmed.Length > 256)
+        {
+            normalized = null;
+            error = "API Key AdsPower не должен превышать 256 символов.";
+            return false;
+        }
+
+        normalized = trimmed;
+        error = null;
+        return true;
     }
 
     public async Task<(WorkerAccountConfigDto? Account, string? Error)> UpdateAccountEnabledAsync(

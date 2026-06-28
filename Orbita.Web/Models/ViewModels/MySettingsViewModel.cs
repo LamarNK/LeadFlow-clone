@@ -19,6 +19,16 @@ public sealed class BitrixSettingsViewModel
     public DateTime? LastValidatedAtUtc { get; init; }
     public string ValidationStatusLabel { get; init; } = string.Empty;
     public string ValidationStatusTone { get; init; } = "neutral";
+    public IReadOnlyList<OfficeBitrixWebhookRowViewModel> OfficeWebhooks { get; init; } = [];
+}
+
+public sealed class OfficeBitrixWebhookRowViewModel
+{
+    public string Email { get; init; } = string.Empty;
+    public string? PortalHost { get; init; }
+    public string ValidationStatusLabel { get; init; } = string.Empty;
+    public string ValidationStatusTone { get; init; } = "neutral";
+    public bool IsPrimaryForIngestion { get; init; }
 }
 
 public sealed class SaveBitrixIntegrationFormModel

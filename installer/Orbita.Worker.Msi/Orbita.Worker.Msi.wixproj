@@ -1,0 +1,15 @@
+﻿<Project Sdk="WixToolset.Sdk/5.0.2">
+  <PropertyGroup>
+    <OutputName>Orbita.Worker.Setup</OutputName>
+    <OutputType>Package</OutputType>
+    <PublishDir>$(MSBuildThisFileDirectory)..\..\publish\tmp\orbita-worker-publish\</PublishDir>
+    <ProductVersion Condition="'$(ProductVersion)' == ''">1.0.0.0</ProductVersion>
+    <DefineConstants>PublishDir=$(PublishDir);ProductVersion=$(ProductVersion)</DefineConstants>
+    <!-- WiX 5 Files + per-user profile: ICE38/ICE64 are false positives until WiX 7 registry KeyPath harvesting. -->
+    <SuppressIces>ICE38;ICE64;ICE91</SuppressIces>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="WixToolset.Util.wixext" Version="5.0.2" />
+  </ItemGroup>
+</Project>

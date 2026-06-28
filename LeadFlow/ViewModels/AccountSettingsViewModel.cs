@@ -5,7 +5,7 @@ using System.Text.Json;
 using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using LeadFlow.Models;
+
 using LeadFlow.Services.AntiDetect;
 using LeadFlow.Services.Browser;
 

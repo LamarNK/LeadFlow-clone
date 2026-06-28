@@ -64,8 +64,15 @@ builder.Services.AddAuthentication(options =>
         {
             OnAuthenticationFailed = async context =>
             {
+                var message = context.Exception.Message;
+                if (message.Contains("IDX14100", StringComparison.Ordinal)
+                    || message.Contains("no dots", StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+
                 await GlobalLogger.Instance.LogAsync(
-                    $"JWT authentication failed: {context.Exception.Message}",
+                    $"JWT authentication failed: {message}",
                     DeskLinkAuditLogLevel.Warning,
                     errorKey: "auth.jwt.failed",
                     properties: new Dictionary<string, object?>
@@ -145,6 +152,9 @@ builder.Services.Configure<FormOptions>(options =>
     options.MultipartHeadersLengthLimit = int.MaxValue;
 });
 builder.Services.AddScoped<CandidateIngestionService>();
+builder.Services.AddScoped<CandidateDuplicateService>();
+builder.Services.AddScoped<OfficeBitrixWebhookResolver>();
+builder.Services.AddScoped<ResponsesQueryService>();
 builder.Services.AddSingleton<PhoneNormalizer>();
 builder.Services.AddSingleton<CandidateParser>();
 builder.Services.AddSingleton<BitrixClient>();
@@ -1094,6 +1104,147 @@ panel.MapGet("/me/integrations/bitrix", async (
     }
 
     return Results.Ok(await integrations.GetForUserAsync(userId, ct));
+});
+
+panel.MapGet("/office/integrations/bitrix", async (
+    Guid? officeId,
+    OfficeBitrixWebhookResolver webhooks,
+    OfficeScopeService officeScope,
+    ClaimsPrincipal principal,
+    CancellationToken ct) =>
+{
+    var scope = await officeScope.ResolveAsync(principal, ct);
+    if (!scope.HasAccess)
+    {
+        return Results.Forbid();
+    }
+
+    var resolvedOfficeId = scope.ResolveFilter(officeId);
+    if (resolvedOfficeId is not Guid effectiveOfficeId)
+    {
+        return Results.BadRequest(new { error = "Укажите офис." });
+    }
+
+    return Results.Ok(await webhooks.ListOfficeWebhookDtosAsync(effectiveOfficeId, ct));
+});
+
+panel.MapGet("/responses", async (
+    ResponsesQueryService responses,
+    OfficeScopeService officeScope,
+    ClaimsPrincipal principal,
+    string? status,
+    string? search,
+    string? vacancy,
+    Guid? workerId,
+    Guid? accountId,
+    Guid? officeId,
+    DateTime? from,
+    DateTime? to,
+    int? page,
+    int? pageSize,
+    CancellationToken ct) =>
+{
+    var scope = await officeScope.ResolveAsync(principal, ct);
+    if (!scope.HasAccess)
+    {
+        return Results.Forbid();
+    }
+
+    return Results.Ok(await responses.GetPageAsync(
+        scope,
+        officeId,
+        status,
+        search,
+        vacancy,
+        workerId,
+        accountId,
+        from,
+        to,
+        page ?? 1,
+        pageSize ?? 10,
+        ct));
+});
+
+panel.MapGet("/responses/summary", async (
+    ResponsesQueryService responses,
+    OfficeScopeService officeScope,
+    ClaimsPrincipal principal,
+    string? status,
+    string? search,
+    string? vacancy,
+    Guid? workerId,
+    Guid? accountId,
+    Guid? officeId,
+    DateTime? from,
+    DateTime? to,
+    CancellationToken ct) =>
+{
+    var scope = await officeScope.ResolveAsync(principal, ct);
+    if (!scope.HasAccess)
+    {
+        return Results.Forbid();
+    }
+
+    return Results.Ok(await responses.GetSummaryAsync(
+        scope,
+        officeId,
+        status,
+        search,
+        vacancy,
+        workerId,
+        accountId,
+        from,
+        to,
+        ct));
+});
+
+panel.MapGet("/responses/filters/accounts", async (
+    ResponsesQueryService responses,
+    OfficeScopeService officeScope,
+    ClaimsPrincipal principal,
+    Guid? officeId,
+    CancellationToken ct) =>
+{
+    var scope = await officeScope.ResolveAsync(principal, ct);
+    if (!scope.HasAccess)
+    {
+        return Results.Forbid();
+    }
+
+    return Results.Ok(await responses.GetFilterAccountsAsync(scope, officeId, ct));
+});
+
+panel.MapGet("/responses/{id:guid}", async (
+    Guid id,
+    ResponsesQueryService responses,
+    OfficeScopeService officeScope,
+    ClaimsPrincipal principal,
+    CancellationToken ct) =>
+{
+    var scope = await officeScope.ResolveAsync(principal, ct);
+    if (!scope.HasAccess)
+    {
+        return Results.Forbid();
+    }
+
+    var detail = await responses.GetDetailAsync(id, scope, ct);
+    return detail is null ? Results.NotFound() : Results.Ok(detail);
+});
+
+panel.MapPost("/responses/{id:guid}/resend-bitrix", async (
+    Guid id,
+    CandidateIngestionService ingestion,
+    OfficeScopeService officeScope,
+    ClaimsPrincipal principal,
+    CancellationToken ct) =>
+{
+    var scope = await officeScope.ResolveAsync(principal, ct);
+    if (!scope.HasAccess)
+    {
+        return Results.Forbid();
+    }
+
+    return Results.Ok(await ingestion.ResendToBitrixAsync(id, scope, ct));
 });
 
 panel.MapPut("/me/integrations/bitrix", async (

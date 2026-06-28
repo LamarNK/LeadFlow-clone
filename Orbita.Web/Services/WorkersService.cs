@@ -133,8 +133,10 @@ public sealed class WorkersService(
     public Task<(bool Success, string? Error)> UpdateWorkerSettingsAsync(
         Guid workerId,
         int maxConcurrentAccounts,
+        string? adsPowerApiBaseUrl,
+        string? adsPowerApiKey,
         CancellationToken ct = default) =>
-        api.UpdateWorkerSettingsAsync(workerId, maxConcurrentAccounts, ct);
+        api.UpdateWorkerSettingsAsync(workerId, maxConcurrentAccounts, adsPowerApiBaseUrl, adsPowerApiKey, ct);
 
     public Task<(bool Success, string? Error)> UpdateWorkerAccountAsync(
         Guid workerId,

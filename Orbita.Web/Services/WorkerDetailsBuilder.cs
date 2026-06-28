@@ -61,6 +61,8 @@ internal static class WorkerDetailsBuilder
             PeriodStats = BuildPeriodStats(stats, responses, duplicates, errors),
             Accounts = accounts,
             MaxConcurrentAccounts = worker.MaxConcurrentAccounts,
+            AdsPowerApiBaseUrl = worker.AdsPowerApiBaseUrl,
+            AdsPowerApiKey = worker.AdsPowerApiKey,
             CpuPercent = worker.LastCpuPercent,
             RamPercent = worker.LastRamPercent,
             RamUsedMb = worker.LastRamUsedMb,

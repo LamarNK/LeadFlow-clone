@@ -1,5 +1,5 @@
-using LeadFlow.Models;
-using LeadFlow.Services;
+using LeadFlow.Core.Models;
+using LeadFlow.Core.Services;
 using LeadFlow.Services.Bitrix;
 using LeadFlow.Tests.Support;
 using Xunit;

@@ -80,7 +80,13 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.HasKey(x => x.Id);
             entity.HasIndex(x => x.CreatedAt);
             entity.HasIndex(x => x.PhoneNormalized);
-            entity.HasIndex(x => new { x.AccountId, x.SourceResponseId, x.PhoneNormalized }).IsUnique();
+            entity.HasIndex(x => new { x.OfficeId, x.PhoneNormalized });
+            entity.HasIndex(x => new { x.OfficeId, x.CreatedAt });
+            entity.HasIndex(x => new { x.AccountId, x.SourceResponseId })
+                .IsUnique()
+                .HasFilter("\"SourceResponseId\" <> ''");
+            entity.Property(x => x.DuplicateSummary).HasMaxLength(2000);
+            entity.HasOne(x => x.Office).WithMany().HasForeignKey(x => x.OfficeId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(x => x.Worker).WithMany().HasForeignKey(x => x.WorkerId);
         });
 

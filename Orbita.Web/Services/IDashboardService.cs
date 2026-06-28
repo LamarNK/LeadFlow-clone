@@ -4,5 +4,5 @@ namespace Orbita.Web.Services;
 
 public interface IDashboardService
 {
-    Task<DashboardViewModel> GetDashboardAsync(CancellationToken ct = default);
+    Task<DashboardViewModel> GetDashboardAsync(DashboardPeriod period, CancellationToken ct = default);
 }

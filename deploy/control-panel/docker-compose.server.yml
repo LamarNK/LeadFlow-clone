@@ -42,6 +42,7 @@ services:
       - "8080:8080"
     volumes:
       - orbita_logs:/app/Data/logs
+      - orbita_releases:/app/Data/releases
 
   web:
     build:
@@ -66,3 +67,4 @@ volumes:
   orbita_pg:
   orbita_logs:
   orbita_dataprotection:
+  orbita_releases:

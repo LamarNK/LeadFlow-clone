@@ -1,0 +1,465 @@
+@model ResponsesIndexViewModel
+@using Orbita.Web.Formatting
+@{
+    ViewData["Title"] = "Отклики";
+    var formAction = Url.Action("Index", "Responses");
+    var pagination = Model.Pagination;
+    var routeValues = new
+    {
+        from = Model.Filters.DateFrom.ToString("yyyy-MM-dd"),
+        to = Model.Filters.DateTo.ToString("yyyy-MM-dd"),
+        status = Model.Filters.Status,
+        workerId = Model.Filters.WorkerId,
+        accountId = Model.Filters.AccountId,
+        vacancy = Model.Filters.VacancyQuery,
+        search = Model.Filters.SearchQuery
+    };
+}
+<div class="orbita-main responses-page">
+    <nav class="orbita-breadcrumbs orbita-breadcrumbs--responses" aria-label="Навигация">
+        @for (var i = 0; i < Model.Breadcrumbs.Count; i++)
+        {
+            var crumb = Model.Breadcrumbs[i];
+            if (i > 0)
+            {
+                <span class="orbita-breadcrumbs-sep" aria-hidden="true">&gt;</span>
+            }
+            if (crumb.IsActive || string.IsNullOrEmpty(crumb.Url))
+            {
+                <span class="orbita-breadcrumbs-current">@crumb.Label</span>
+            }
+            else
+            {
+                <a class="orbita-breadcrumbs-link" href="@crumb.Url">@crumb.Label</a>
+            }
+        }
+    </nav>
+
+    <h1 class="responses-page-title">Отклики</h1>
+
+    @if (TempData["ResponsesError"] is string errorMessage)
+    {
+        <div class="orbita-preview-banner" role="alert">@errorMessage</div>
+    }
+
+    <div class="kpi-row responses-kpi-row">
+        @{ var kpiIdx = 0; }
+        @foreach (var kpi in Model.KpiCards)
+        {
+            var isAvgCard = kpi.Label == "Среднее время отклика";
+            var useCaption = isAvgCard || kpi.Delta == "За выбранный период";
+            <article class="kpi-card kpi-card--stat" style="--kpi-index: @kpiIdx">
+                <header class="kpi-card-head">
+                    <div class="kpi-icon-box kpi-icon-box--@kpi.IconTone">
+                        <i class="@kpi.IconClass" aria-hidden="true"></i>
+                    </div>
+                    <span class="kpi-card-label">@kpi.Label</span>
+                </header>
+                <div class="kpi-card-metric kpi-card-metric--stacked">
+                    @if (isAvgCard)
+                    {
+                        <span class="kpi-value kpi-value--text">@kpi.Value</span>
+                    }
+                    else
+                    {
+                        <span class="kpi-value"
+                              data-kpi-count="@kpi.CountValue.ToString(System.Globalization.CultureInfo.InvariantCulture)">0</span>
+                    }
+                    @if (useCaption)
+                    {
+                        <span class="kpi-card-caption">@kpi.Delta</span>
+                    }
+                    else
+                    {
+                        <span class="kpi-delta-pill kpi-delta-@kpi.DeltaTone">@kpi.Delta</span>
+                    }
+                </div>
+            </article>
+            kpiIdx++;
+        }
+    </div>
+
+    <div class="card card--responses-filters">
+        <form class="responses-filters" method="get" action="@formAction">
+            <input type="hidden" name="from" value="@Model.Filters.DateFrom.ToString("yyyy-MM-dd")" data-period-form-from />
+            <input type="hidden" name="to" value="@Model.Filters.DateTo.ToString("yyyy-MM-dd")" data-period-form-to />
+            <div class="responses-filters-row">
+                <div class="responses-filter-field responses-filter-field--period">
+                    <span class="responses-filter-label">Период</span>
+                    <div class="orbita-period-menu orbita-period-menu--inline" data-orbita-period-menu>
+                        <button type="button"
+                                class="orbita-period-picker orbita-period-picker--inline"
+                                aria-haspopup="true"
+                                aria-expanded="false">
+                            <i class="fa-regular fa-calendar orbita-period-icon" aria-hidden="true"></i>
+                            <span class="orbita-period-label">@Model.PeriodLabel</span>
+                            <i class="fa-solid fa-chevron-down orbita-period-caret" aria-hidden="true"></i>
+                        </button>
+                        <div class="orbita-period-dropdown" hidden>
+                            <div class="orbita-period-presets" role="group" aria-label="Быстрый выбор периода">
+                                <button type="button"
+                                        class="orbita-period-preset@(Model.ActivePeriodPreset == "today" ? " is-active" : "")"
+                                        data-period-preset="today">Сегодня</button>
+                                <button type="button"
+                                        class="orbita-period-preset@(Model.ActivePeriodPreset == "yesterday" ? " is-active" : "")"
+                                        data-period-preset="yesterday">Вчера</button>
+                                <button type="button"
+                                        class="orbita-period-preset@(Model.ActivePeriodPreset == "7d" ? " is-active" : "")"
+                                        data-period-preset="7d">7 дней</button>
+                                <button type="button"
+                                        class="orbita-period-preset@(Model.ActivePeriodPreset == "14d" ? " is-active" : "")"
+                                        data-period-preset="14d">14 дней</button>
+                                <button type="button"
+                                        class="orbita-period-preset@(Model.ActivePeriodPreset == "30d" ? " is-active" : "")"
+                                        data-period-preset="30d">30 дней</button>
+                            </div>
+                            <div class="orbita-period-custom">
+                                <div class="orbita-period-custom-fields">
+                                    <label class="orbita-period-field">
+                                        <span class="orbita-period-field-label">С</span>
+                                        <input type="date"
+                                               class="orbita-period-input"
+                                               data-period-from
+                                               value="@Model.Filters.DateFrom.ToString("yyyy-MM-dd")"
+                                               aria-label="Дата начала" />
+                                    </label>
+                                    <label class="orbita-period-field">
+                                        <span class="orbita-period-field-label">По</span>
+                                        <input type="date"
+                                               class="orbita-period-input"
+                                               data-period-to
+                                               value="@Model.Filters.DateTo.ToString("yyyy-MM-dd")"
+                                               aria-label="Дата окончания" />
+                                    </label>
+                                </div>
+                                <button type="button" class="orbita-period-apply" data-period-apply>Применить</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <label class="responses-filter-field">
+                    <span class="responses-filter-label">Воркер</span>
+                    <select name="workerId" class="responses-select" aria-label="Воркер">
+                        @foreach (var opt in Model.Workers)
+                        {
+                            <option value="@opt.Value" selected="@(opt.Value == (Model.Filters.WorkerId?.ToString() ?? ""))">@opt.Label</option>
+                        }
+                    </select>
+                </label>
+                <label class="responses-filter-field">
+                    <span class="responses-filter-label">Аккаунт</span>
+                    <select name="accountId" class="responses-select" aria-label="Аккаунт">
+                        @foreach (var opt in Model.Accounts)
+                        {
+                            <option value="@opt.Value" selected="@(opt.Value == (Model.Filters.AccountId?.ToString() ?? ""))">@opt.Label</option>
+                        }
+                    </select>
+                </label>
+                <label class="responses-filter-field responses-filter-field--grow">
+                    <span class="responses-filter-label">Объявление</span>
+                    <input type="search"
+                           name="vacancy"
+                           class="responses-input"
+                           value="@Model.Filters.VacancyQuery"
+                           placeholder="ID или название объявления..."
+                           aria-label="Поиск по объявлению" />
+                </label>
+                <label class="responses-filter-field">
+                    <span class="responses-filter-label">Статус</span>
+                    <select name="status" class="responses-select" aria-label="Статус">
+                        @foreach (var opt in Model.Statuses)
+                        {
+                            <option value="@opt.Value" selected="@(opt.Value == (Model.Filters.Status ?? ""))">@opt.Label</option>
+                        }
+                    </select>
+                </label>
+            </div>
+            <div class="responses-filters-actions">
+                <div class="responses-search">
+                    <i class="fa-solid fa-magnifying-glass responses-search-icon" aria-hidden="true"></i>
+                    <input type="search"
+                           name="search"
+                           value="@Model.Filters.SearchQuery"
+                           placeholder="Поиск по имени, телефону или объявлению..."
+                           aria-label="Поиск по откликам" />
+                </div>
+                <button type="button" class="responses-filter-btn" aria-label="Фильтры">
+                    <i class="fa-solid fa-filter" aria-hidden="true"></i>
+                </button>
+                <a class="responses-reset-btn" href="@formAction">
+                    <i class="fa-solid fa-rotate-right" aria-hidden="true"></i>
+                    <span>Сбросить фильтры</span>
+                </a>
+            </div>
+        </form>
+    </div>
+
+    <div class="card card--responses-table">
+        <div class="card-body card-body-table responses-table-wrap">
+            <table class="data-table data-table--responses">
+                <thead>
+                    <tr>
+                        <th>Время</th>
+                        <th>Объявление</th>
+                        <th>Автор</th>
+                        <th>Телефон</th>
+                        <th>Аккаунт</th>
+                        <th>Воркер</th>
+                        <th>Статус</th>
+                        <th>Источник</th>
+                        <th aria-hidden="true">Действия</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var row in Model.Responses)
+                {
+                    var workerUrl = Url.Action("Details", "Workers", new { id = row.WorkerId });
+                    var accountUrl = Url.Action("Index", "Accounts", new { q = row.AccountName });
+                    var phoneDisplay = ResponseDisplay.FormatPhone(row.PhoneRaw, row.PhoneNormalized);
+                    var adId = ResponseDisplay.DisplayAdId(row.SourceResponseId, row.VacancyUrl);
+                    var author = ResponseDisplay.DisplayAuthor(row.FullName);
+                    var detailUrl = Url.Action("Index", "Responses", new
+                    {
+                        routeValues.from,
+                        routeValues.to,
+                        routeValues.status,
+                        routeValues.workerId,
+                        routeValues.accountId,
+                        routeValues.vacancy,
+                        routeValues.search,
+                        page = Model.Filters.Page,
+                        id = row.Id
+                    });
+                    <tr class="responses-row"
+                        data-response-id="@row.Id"
+                        data-phone="@phoneDisplay"
+                        data-detail-url="@detailUrl">
+                        <td class="responses-time">@ResponseDisplay.FormatCreatedAtLocal(row.CreatedAtUtc)</td>
+                        <td class="responses-ad">
+                            @if (!string.IsNullOrWhiteSpace(row.VacancyUrl))
+                            {
+                                <a class="responses-ad-link" href="@row.VacancyUrl" target="_blank" rel="noopener">@row.Vacancy</a>
+                            }
+                            else
+                            {
+                                <span class="responses-ad-link">@row.Vacancy</span>
+                            }
+                            <span class="responses-ad-id">ID: @adId</span>
+                        </td>
+                        <td class="responses-author">@author</td>
+                        <td class="responses-phone">
+                            @if (row.IsPhoneHidden)
+                            {
+                                <span class="responses-phone-hidden">Скрыт</span>
+                            }
+                            else
+                            {
+                                <span>@phoneDisplay</span>
+                                @if (row.HasMessenger)
+                                {
+                                    <a class="responses-phone-action" href="@row.MessengerUrl" target="_blank" rel="noopener" aria-label="WhatsApp">
+                                        <i class="fa-brands fa-whatsapp" aria-hidden="true"></i>
+                                    </a>
+                                }
+                                else
+                                {
+                                    <span class="responses-phone-action" aria-hidden="true">
+                                        <i class="fa-solid fa-phone" aria-hidden="true"></i>
+                                    </span>
+                                }
+                            }
+                        </td>
+                        <td class="cell-link">
+                            <a href="@accountUrl">@row.AccountName</a>
+                        </td>
+                        <td class="cell-link">
+                            <a href="@workerUrl">@row.WorkerName</a>
+                        </td>
+                        <td>
+                            <span class="response-status-badge response-status-badge--@row.StatusTone">@row.StatusLabel</span>
+                        </td>
+                        <td class="responses-source">@row.Source</td>
+                        <td class="data-table-menu">
+                            <div class="row-menu" data-row-menu>
+                                <button type="button" class="row-menu-btn responses-row-menu-btn" aria-label="Действия" aria-expanded="false" aria-haspopup="true">
+                                    <i class="fa-solid fa-ellipsis-vertical" aria-hidden="true"></i>
+                                </button>
+                                <div class="row-menu-dropdown row-menu-dropdown--responses" hidden>
+                                    <a class="row-menu-item" href="@detailUrl">
+                                        <i class="fa-regular fa-eye" aria-hidden="true"></i>
+                                        Просмотреть отклик
+                                    </a>
+                                    @if (!row.IsPhoneHidden && !string.IsNullOrWhiteSpace(row.MessengerUrl))
+                                    {
+                                        <a class="row-menu-item" href="@row.MessengerUrl" target="_blank" rel="noopener">
+                                            <i class="fa-regular fa-user" aria-hidden="true"></i>
+                                            Перейти к автору
+                                        </a>
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(row.VacancyUrl))
+                                    {
+                                        <a class="row-menu-item" href="@row.VacancyUrl" target="_blank" rel="noopener">
+                                            <i class="fa-regular fa-rectangle-list" aria-hidden="true"></i>
+                                            Открыть объявление
+                                        </a>
+                                    }
+                                    <a class="row-menu-item" href="@accountUrl">
+                                        <i class="fa-regular fa-user" aria-hidden="true"></i>
+                                        Перейти к аккаунту
+                                    </a>
+                                    <a class="row-menu-item" href="@workerUrl">
+                                        <i class="fa-solid fa-server" aria-hidden="true"></i>
+                                        Перейти к воркеру
+                                    </a>
+                                    @if (!row.IsPhoneHidden)
+                                    {
+                                        <button type="button" class="row-menu-item" data-copy-phone>
+                                            <i class="fa-regular fa-copy" aria-hidden="true"></i>
+                                            Копировать телефон
+                                        </button>
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(row.BitrixEntityId))
+                                    {
+                                        <button type="button" class="row-menu-item" data-bitrix-id="@row.BitrixEntityId">
+                                            <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i>
+                                            Открыть карточку Bitrix24
+                                        </button>
+                                    }
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+
+            <div class="responses-pagination">
+                <span class="responses-pagination-info">
+                    @if (pagination.TotalItems == 0)
+                    {
+                        @:Показано 0 из 0
+                    }
+                    else
+                    {
+                        @:Показано @pagination.RangeStart–@pagination.RangeEnd из @pagination.TotalItems
+                    }
+                </span>
+                <div class="responses-pagination-controls">
+                    @{
+                        var prevPage = pagination.Page > 1 ? pagination.Page - 1 : (int?)null;
+                        var nextPage = pagination.Page < pagination.TotalPages ? pagination.Page + 1 : (int?)null;
+                    }
+                    @if (prevPage is not null)
+                    {
+                        <a class="responses-page-btn"
+                           href="@Url.Action("Index", "Responses", new { routeValues.from, routeValues.to, routeValues.status, routeValues.workerId, routeValues.accountId, routeValues.vacancy, routeValues.search, page = prevPage, id = Model.Selected?.Id })"
+                           aria-label="Предыдущая страница">&lt;</a>
+                    }
+                    else
+                    {
+                        <span class="responses-page-btn responses-page-btn--disabled" aria-hidden="true">&lt;</span>
+                    }
+                    <span class="responses-page-btn responses-page-btn--active" aria-current="page">@pagination.Page</span>
+                    @if (nextPage is not null)
+                    {
+                        <a class="responses-page-btn"
+                           href="@Url.Action("Index", "Responses", new { routeValues.from, routeValues.to, routeValues.status, routeValues.workerId, routeValues.accountId, routeValues.vacancy, routeValues.search, page = nextPage, id = Model.Selected?.Id })"
+                           aria-label="Следующая страница">&gt;</a>
+                    }
+                    else
+                    {
+                        <span class="responses-page-btn responses-page-btn--disabled" aria-hidden="true">&gt;</span>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (Model.Selected is not null)
+{
+    var detail = Model.Selected;
+    var detailPhone = ResponseDisplay.FormatPhone(detail.PhoneRaw, detail.PhoneNormalized);
+    <div class="responses-modal" id="responsesDetailModal">
+        <div class="responses-modal-backdrop" data-responses-modal-close></div>
+        <div class="responses-modal-dialog" role="dialog" aria-labelledby="responsesDetailTitle" aria-modal="true">
+            <header class="responses-modal-head">
+                <div>
+                    <h2 id="responsesDetailTitle">@ResponseDisplay.DisplayAuthor(detail.FullName)</h2>
+                    <p class="responses-modal-subtitle">
+                        <span class="response-status-badge response-status-badge--@detail.StatusTone">@detail.StatusLabel</span>
+                        <span class="responses-modal-meta">@ResponseDisplay.FormatCreatedAtLocal(detail.CreatedAtUtc)</span>
+                    </p>
+                </div>
+                <button type="button" class="responses-modal-close" data-responses-modal-close aria-label="Закрыть">
+                    <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                </button>
+            </header>
+            <div class="responses-modal-body">
+                <dl class="responses-detail-list">
+                    <dt>Телефон</dt>
+                    <dd>@(detailPhone.Length > 0 ? detailPhone : "Скрыт")</dd>
+                    <dt>Возраст</dt>
+                    <dd>@(detail.Age?.ToString() ?? "—")</dd>
+                    <dt>Город</dt>
+                    <dd>@detail.City</dd>
+                    <dt>Объявление</dt>
+                    <dd>@detail.Vacancy</dd>
+                    <dt>Аккаунт</dt>
+                    <dd>@detail.AccountName</dd>
+                    <dt>Воркер</dt>
+                    <dd>@detail.WorkerName</dd>
+                    <dt>Источник</dt>
+                    <dd>@detail.Source</dd>
+                    <dt>ID отклика</dt>
+                    <dd>@detail.SourceResponseId</dd>
+                    @if (!string.IsNullOrWhiteSpace(detail.BitrixEntityId))
+                    {
+                        <dt>Bitrix ID</dt>
+                        <dd>@detail.BitrixEntityId</dd>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(detail.DuplicateSummary))
+                    {
+                        <dt>Дубль</dt>
+                        <dd>@detail.DuplicateSummary</dd>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(detail.ErrorMessage))
+                    {
+                        <dt>Ошибка</dt>
+                        <dd>@detail.ErrorMessage</dd>
+                    }
+                </dl>
+            </div>
+            <footer class="responses-modal-footer">
+                @if (!string.IsNullOrWhiteSpace(detail.MessengerUrl))
+                {
+                    <a class="btn btn-secondary" href="@detail.MessengerUrl" target="_blank" rel="noopener">Мессенджер</a>
+                }
+                @if (!string.IsNullOrWhiteSpace(detail.VacancyUrl))
+                {
+                    <a class="btn btn-secondary" href="@detail.VacancyUrl" target="_blank" rel="noopener">Объявление</a>
+                }
+                @if (detail.CanResend)
+                {
+                    <form asp-action="Resend" method="post">
+                        @Html.AntiForgeryToken()
+                        <input type="hidden" name="id" value="@detail.Id" />
+                        <input type="hidden" name="from" value="@Model.Filters.DateFrom.ToString("yyyy-MM-dd")" />
+                        <input type="hidden" name="to" value="@Model.Filters.DateTo.ToString("yyyy-MM-dd")" />
+                        <input type="hidden" name="status" value="@Model.Filters.Status" />
+                        <input type="hidden" name="workerId" value="@Model.Filters.WorkerId" />
+                        <input type="hidden" name="accountId" value="@Model.Filters.AccountId" />
+                        <input type="hidden" name="vacancy" value="@Model.Filters.VacancyQuery" />
+                        <input type="hidden" name="search" value="@Model.Filters.SearchQuery" />
+                        <input type="hidden" name="page" value="@Model.Filters.Page" />
+                        <button type="submit" class="btn btn-primary">Отправить в Bitrix</button>
+                    </form>
+                }
+            </footer>
+        </div>
+    </div>
+}
+
+@section Scripts {
+    <script src="~/js/orbita-responses.js" asp-append-version="true"></script>
+}

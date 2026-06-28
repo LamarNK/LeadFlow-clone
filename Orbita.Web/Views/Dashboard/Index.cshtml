@@ -2,10 +2,24 @@
 @using System.Text.Json
 @{
     ViewData["Title"] = "Панель управления";
-    var chartsJson = JsonSerializer.Serialize(Model.Charts, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+    var jsonOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+    var chartsJson = JsonSerializer.Serialize(Model.Charts, jsonOptions);
+    var liveBootstrapJson = JsonSerializer.Serialize(new DashboardLiveSnapshotViewModel
+    {
+        UpdatedAtUtc = Model.Header.UpdatedAtUtc,
+        KpiCards = Model.KpiCards,
+        Workers = Model.Workers,
+        Events = Model.Events,
+        AccountStats = Model.AccountStats,
+        Charts = Model.Charts
+    }, jsonOptions);
+    var snapshotUrl = Url.Action("Snapshot", "Dashboard", new { from = Model.Header.DateFrom.ToString("yyyy-MM-dd"), to = Model.Header.DateTo.ToString("yyyy-MM-dd") })!;
 }
 <partial name="_PageHeader" model="Model.Header" />
-<div class="orbita-main">
+<div class="orbita-main"
+     data-dashboard-live
+     data-dashboard-snapshot="@snapshotUrl"
+     data-worker-details-url="@Url.Action("Details", "Workers", new { id = "__id__" })">
     @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
     {
         <p class="error-text">@Model.ErrorMessage</p>
@@ -16,7 +30,7 @@
             @{ var sparkIdx = 0; }
             @foreach (var kpi in Model.KpiCards)
             {
-                <article class="kpi-card" style="--kpi-index: @sparkIdx">
+                <article class="kpi-card" data-kpi-key="@kpi.Key" style="--kpi-index: @sparkIdx">
                     <header class="kpi-card-head">
                         <div class="kpi-icon-box kpi-icon-box--@kpi.IconTone">
                             <i class="@kpi.IconClass" aria-hidden="true"></i>
@@ -56,7 +70,7 @@
                                 <th aria-hidden="true"></th>
                             </tr>
                         </thead>
-                        <tbody>
+                        <tbody data-dashboard-workers-body>
                         @foreach (var w in Model.Workers)
                         {
                             <tr>
@@ -108,7 +122,9 @@
                     <h2>Последние события</h2>
                 </div>
                 <div class="card-body">
-                    <partial name="_DashboardEventList" model="Model.Events" />
+                    <div data-dashboard-events>
+                        <partial name="_DashboardEventList" model="Model.Events" />
+                    </div>
                     <a class="card-footer-btn" href="@Url.Action("Index", "Events")">Показать все события</a>
                 </div>
             </div>
@@ -120,14 +136,14 @@
                     var stats = Model.AccountStats;
                     var total = Math.Max(1, stats.Total);
                 }
-                <div class="account-stats-widget">
+                <div class="account-stats-widget" data-dashboard-account-stats>
                     <div class="account-stats-chart">
                         <div class="account-stats-donut">
                             <div class="chart-canvas-wrap chart-canvas-wrap--account-donut">
                                 <canvas id="chart-account-status" aria-label="Состояние аккаунтов"></canvas>
                             </div>
                             <div class="account-stats-center">
-                                <span class="account-stats-total-num">@stats.Total</span>
+                                <span class="account-stats-total-num" data-account-stat="total">@stats.Total</span>
                                 <span class="account-stats-total-lbl">Всего</span>
                             </div>
                         </div>
@@ -139,34 +155,34 @@
                                     <span class="account-stats-dot" style="background:#22c55e"></span>
                                     Активны
                                 </span>
-                                <span class="account-stats-value">@stats.Active (@FmtPct(stats.Active, total))</span>
+                                <span class="account-stats-value" data-account-stat="active">@stats.Active (@FmtPct(stats.Active, total))</span>
                             </div>
                             <div class="account-stats-row">
                                 <span class="account-stats-label">
                                     <span class="account-stats-dot" style="background:#94a3b8"></span>
                                     Неактивны
                                 </span>
-                                <span class="account-stats-value">@stats.Inactive (@FmtPct(stats.Inactive, total))</span>
+                                <span class="account-stats-value" data-account-stat="inactive">@stats.Inactive (@FmtPct(stats.Inactive, total))</span>
                             </div>
                             <div class="account-stats-row">
                                 <span class="account-stats-label">
                                     <span class="account-stats-dot" style="background:#ef4444"></span>
                                     Заблокированы
                                 </span>
-                                <span class="account-stats-value">@stats.Blocked (@FmtPct(stats.Blocked, total))</span>
+                                <span class="account-stats-value" data-account-stat="blocked">@stats.Blocked (@FmtPct(stats.Blocked, total))</span>
                             </div>
                             <div class="account-stats-row">
                                 <span class="account-stats-label">
                                     <span class="account-stats-dot" style="background:#f59e0b"></span>
                                     Ошибки
                                 </span>
-                                <span class="account-stats-value">@stats.Errors (@FmtPct(stats.Errors, total))</span>
+                                <span class="account-stats-value" data-account-stat="errors">@stats.Errors (@FmtPct(stats.Errors, total))</span>
                             </div>
                         </div>
                         <div class="account-stats-footer">
                             <div class="account-stats-row account-stats-row--summary">
                                 <span class="account-stats-summary-label">Всего</span>
-                                <span class="account-stats-summary-value">@stats.Total</span>
+                                <span class="account-stats-summary-value" data-account-stat="total-summary">@stats.Total</span>
                             </div>
                         </div>
                     </div>
@@ -175,6 +191,7 @@
         </div>
 
         <script id="dashboard-charts-data" type="application/json">@Html.Raw(chartsJson)</script>
+        <script id="dashboard-live-bootstrap" type="application/json">@Html.Raw(liveBootstrapJson)</script>
     }
 </div>
 

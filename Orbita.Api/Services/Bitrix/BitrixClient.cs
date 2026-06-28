@@ -154,6 +154,97 @@ public sealed class BitrixClient(IHttpClientFactory httpClientFactory, Candidate
         }
     }
 
+    public async Task<BitrixDuplicateLookupResult> HasDuplicateAsync(
+        string phoneNormalized,
+        string? webhookUrl,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(webhookUrl))
+        {
+            return new BitrixDuplicateLookupResult(
+                BitrixDuplicateLookupOutcome.Unavailable,
+                $"{MissingWebhookMessage} Проверка дублей в CRM недоступна.");
+        }
+
+        if (string.IsNullOrWhiteSpace(phoneNormalized))
+        {
+            return new BitrixDuplicateLookupResult(BitrixDuplicateLookupOutcome.Skipped);
+        }
+
+        var endpoint = webhookUrl.TrimEnd('/') + "/crm.duplicate.findbycomm.json";
+        var client = httpClientFactory.CreateClient(nameof(BitrixClient));
+        var request = new
+        {
+            type = "PHONE",
+            values = BuildDuplicateLookupValues(phoneNormalized)
+        };
+
+        try
+        {
+            using var result = await client.PostAsJsonAsync(endpoint, request, RestJsonPreserveFieldNames, cancellationToken);
+            if (!result.IsSuccessStatusCode)
+            {
+                var body = await result.Content.ReadAsStringAsync(cancellationToken);
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"Bitrix duplicate check HTTP {(int)result.StatusCode} for {phoneNormalized}. Body: {body}",
+                    DeskLinkAuditLogLevel.Error);
+                return new BitrixDuplicateLookupResult(
+                    BitrixDuplicateLookupOutcome.Unavailable,
+                    $"Bitrix24 вернул код {(int)result.StatusCode}. Проверка дублей недоступна.");
+            }
+
+            await using var stream = await result.Content.ReadAsStreamAsync(cancellationToken);
+            using var json = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+            var root = json.RootElement;
+            if (TryGetBitrixApiError(root, out var apiError))
+            {
+                return new BitrixDuplicateLookupResult(BitrixDuplicateLookupOutcome.Unavailable, apiError);
+            }
+
+            var hasDuplicate = HasDuplicateResult(root);
+            return new BitrixDuplicateLookupResult(
+                hasDuplicate ? BitrixDuplicateLookupOutcome.Duplicate : BitrixDuplicateLookupOutcome.NoDuplicate);
+        }
+        catch (Exception ex)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Bitrix duplicate check failed for {phoneNormalized}.{Environment.NewLine}{ex}",
+                DeskLinkAuditLogLevel.Error);
+            return new BitrixDuplicateLookupResult(
+                BitrixDuplicateLookupOutcome.Unavailable,
+                $"Проверка дублей в Bitrix24 недоступна: {ex.Message}");
+        }
+    }
+
+    private static string[] BuildDuplicateLookupValues(string phoneNormalized)
+    {
+        var values = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { phoneNormalized };
+        if (phoneNormalized.Length == 11 && phoneNormalized.StartsWith('7'))
+        {
+            values.Add($"+{phoneNormalized}");
+        }
+
+        return values.ToArray();
+    }
+
+    private static bool HasDuplicateResult(JsonElement root)
+    {
+        if (!root.TryGetProperty("result", out var resultElement) || resultElement.ValueKind != JsonValueKind.Object)
+        {
+            return false;
+        }
+
+        foreach (var property in resultElement.EnumerateObject())
+        {
+            if (property.Value.ValueKind == JsonValueKind.Array && property.Value.GetArrayLength() > 0)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private static string BuildDealIdempotencyKey(CandidateLead response)
     {
         var source = string.IsNullOrWhiteSpace(response.Source) ? "Avito" : response.Source.Trim();

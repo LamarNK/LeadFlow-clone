@@ -1,5 +1,5 @@
 using System.Diagnostics;
-using LeadFlow.Services;
+using LeadFlow.Core.Services;
 using Xunit;
 
 namespace LeadFlow.Tests;

@@ -257,6 +257,11 @@ namespace Orbita.Api.Data.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("DuplicateSummary")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
                     b.Property<string>("ErrorMessage")
                         .IsRequired()
                         .HasColumnType("text");
@@ -269,6 +274,12 @@ namespace Orbita.Api.Data.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<bool>("IsBitrixDuplicate")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsLocalDuplicate")
+                        .HasColumnType("boolean");
+
                     b.Property<string>("LastName")
                         .IsRequired()
                         .HasColumnType("text");
@@ -280,6 +291,9 @@ namespace Orbita.Api.Data.Migrations
                     b.Property<string>("MiddleName")
                         .IsRequired()
                         .HasColumnType("text");
+
+                    b.Property<Guid>("OfficeId")
+                        .HasColumnType("uuid");
 
                     b.Property<string>("PhoneNormalized")
                         .IsRequired()
@@ -331,8 +345,13 @@ namespace Orbita.Api.Data.Migrations
 
                     b.HasIndex("WorkerId");
 
-                    b.HasIndex("AccountId", "SourceResponseId", "PhoneNormalized")
-                        .IsUnique();
+                    b.HasIndex("AccountId", "SourceResponseId")
+                        .IsUnique()
+                        .HasFilter("\"SourceResponseId\" <> ''");
+
+                    b.HasIndex("OfficeId", "CreatedAt");
+
+                    b.HasIndex("OfficeId", "PhoneNormalized");
 
                     b.ToTable("CandidateResponses");
                 });
@@ -752,11 +771,19 @@ namespace Orbita.Api.Data.Migrations
 
             modelBuilder.Entity("Orbita.Api.Data.CandidateResponseEntity", b =>
                 {
+                    b.HasOne("Orbita.Api.Data.OfficeEntity", "Office")
+                        .WithMany()
+                        .HasForeignKey("OfficeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.HasOne("Orbita.Api.Data.WorkerEntity", "Worker")
                         .WithMany()
                         .HasForeignKey("WorkerId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("Office");
 
                     b.Navigation("Worker");
                 });

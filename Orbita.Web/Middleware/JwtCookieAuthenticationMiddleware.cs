@@ -17,12 +17,16 @@ public sealed class JwtCookieAuthenticationMiddleware(RequestDelegate next)
             && context.Request.Cookies.TryGetValue(AuthSession.TokenCookieName, out var token)
             && !string.IsNullOrWhiteSpace(token))
         {
-            if (string.Equals(token, "design-preview", StringComparison.Ordinal))
+            if (string.Equals(token, AuthSession.DesignPreviewToken, StringComparison.Ordinal))
             {
                 var preview = previewOptions.Value;
                 if (preview.Enabled)
                 {
                     await auth.SignInPreviewAsync(preview.Email, preview.DisplayName, context.RequestAborted);
+                }
+                else
+                {
+                    context.Response.Cookies.Delete(AuthSession.TokenCookieName);
                 }
             }
             else if (JwtTokenValidation.TryValidate(token, config, out var principal)

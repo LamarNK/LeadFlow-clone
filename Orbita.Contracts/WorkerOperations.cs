@@ -51,12 +51,22 @@ public sealed record WorkerCandidateDto(
 public sealed record WorkerCandidateBatchRequest(
     IReadOnlyList<WorkerCandidateDto> Candidates);
 
+public sealed record WorkerCandidateIngestionItemResultDto(
+    Guid? Id,
+    string SourceResponseId,
+    string Status,
+    string? ErrorMessage);
+
 public sealed record WorkerCandidateIngestionResultDto(
     int Received,
     int Ingested,
     int SkippedDuplicates,
-    int Errors);
+    int Errors,
+    IReadOnlyList<WorkerCandidateIngestionItemResultDto> Items);
 
-public sealed record UpdateWorkerSettingsRequest(int MaxConcurrentAccounts);
+public sealed record UpdateWorkerSettingsRequest(
+    int MaxConcurrentAccounts,
+    string? AdsPowerApiBaseUrl = null,
+    string? AdsPowerApiKey = null);
 
 public sealed record UpdateWorkerAccountRequest(bool IsEnabledInPanel);

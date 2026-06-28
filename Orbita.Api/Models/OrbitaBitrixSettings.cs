@@ -9,4 +9,5 @@ public sealed class OrbitaBitrixSettings
     public string DealAgeUfCode { get; set; } = "UF_CRM_1777753181424";
     public string DealProfessionUfCode { get; set; } = "UF_CRM_1777753209215";
     public string DealCityUfCode { get; set; } = "UF_CRM_1777753293892";
+    public bool CheckDuplicatesInBitrix { get; set; } = true;
 }

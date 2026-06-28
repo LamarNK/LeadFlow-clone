@@ -1,11 +1,6 @@
 using System.Windows;
-using LeadFlow.Data;
-using LeadFlow.Logging.Audit;
-using LeadFlow.Models;
 using LeadFlow.Services;
-using LeadFlow.Services.Avito;
-using LeadFlow.Services.AdsPower;
-using LeadFlow.Services.Bitrix;
+
 using LeadFlow.Services.Browser;
 using LeadFlow.ViewModels;
 using LeadFlow.Views;
@@ -110,10 +105,12 @@ public partial class App : System.Windows.Application
         builder.Services.AddSingleton<IDuplicateService, DuplicateService>();
         builder.Services.AddSingleton<IBitrixClient, BitrixClient>();
         builder.Services.AddSingleton<ICsvExportService, CsvExportService>();
-        builder.Services.AddSingleton<IAvitoResponseSource, AvitoResponseSource>();
+        builder.Services.AddSingleton<IAvitoWebViewCandidatesFetcher, AvitoWebViewCandidatesFetcher>();
+        builder.Services.AddSingleton<AvitoResponseSource>();
+        builder.Services.AddSingleton<IAvitoResponseSource>(sp => sp.GetRequiredService<AvitoResponseSource>());
         builder.Services.AddSingleton<IAdsPowerAvitoAutomationService, AdsPowerAvitoAutomationService>();
         builder.Services.AddSingleton<AvitoDemoResponseSource>();
-        builder.Services.AddSingleton<LeadFlow.Services.Avito.AvitoParserService>();
+        builder.Services.AddSingleton<AvitoParserService>();
         builder.Services.AddSingleton<AppRepository>();
         builder.Services.AddSingleton<ICandidateDuplicateRepository>(sp => sp.GetRequiredService<AppRepository>());
         builder.Services.AddSingleton<IMonitoringRepository>(sp => sp.GetRequiredService<AppRepository>());
@@ -186,7 +183,7 @@ public partial class App : System.Windows.Application
                     settings.Avito.Accounts.Clear();
                     LogStartup("Legacy accounts removed from encrypted settings file");
                 }
-                await repository.AddLogAsync(new Models.ProcessingLogItem
+                await repository.AddLogAsync(new ProcessingLogItem
                 {
                     AccountId = Guid.Empty,
                     CreatedAt = DateTime.UtcNow,

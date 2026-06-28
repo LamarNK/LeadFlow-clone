@@ -1,4 +1,4 @@
-using LeadFlow.Models;
+using LeadFlow.Core.Models;
 using LeadFlow.Services.Bitrix;
 
 namespace LeadFlow.Tests.Support;

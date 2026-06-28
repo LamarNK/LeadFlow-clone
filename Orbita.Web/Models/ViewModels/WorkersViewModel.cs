@@ -76,8 +76,14 @@ public sealed class CreateWorkerResultViewModel
 
 public sealed class WorkerDetailsViewModel
 {
+    public const string DefaultAdsPowerApiBaseUrl = "http://local.adspower.net:50325";
+
     public Guid WorkerId { get; init; }
     public int MaxConcurrentAccounts { get; init; } = 1;
+    public string? AdsPowerApiBaseUrl { get; init; }
+    public string? AdsPowerApiKey { get; init; }
+    public string EffectiveAdsPowerApiBaseUrl =>
+        string.IsNullOrWhiteSpace(AdsPowerApiBaseUrl) ? DefaultAdsPowerApiBaseUrl : AdsPowerApiBaseUrl;
     public double? CpuPercent { get; init; }
     public double? RamPercent { get; init; }
     public long? RamUsedMb { get; init; }

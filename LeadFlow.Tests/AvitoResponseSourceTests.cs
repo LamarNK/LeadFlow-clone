@@ -1,9 +1,11 @@
-using LeadFlow.Data;
-using LeadFlow.Models;
-using LeadFlow.Services;
-using LeadFlow.Services.AdsPower;
-using LeadFlow.Services.Avito;
+using LeadFlow.Core.Data;
+using LeadFlow.Core.Models;
+using LeadFlow.Core.Services;
+using LeadFlow.Core.Services.AdsPower;
+using LeadFlow.Core.Services.Avito;
+using LeadFlow.Core.Services.Browser;
 using LeadFlow.Services.Browser;
+using System.Text.Json;
 using LeadFlow.Tests.Support;
 using Xunit;
 
@@ -158,14 +160,14 @@ public sealed class AvitoResponseSourceTests
         Assert.Single(list);
     }
 
-    private static AvitoResponseSource CreateSut(AppRepository repo, AvitoCandidatesPageAutomationStub automation) =>
-        new(
-            repo,
-            new FakeBrowserSessionService(),
-            new NoOpBackgroundWebViewHostFactory(),
-            automation,
-            new FakeAdsPowerAvitoAutomationService(),
-            new PhoneNormalizer());
+    private static AvitoResponseSource CreateSut(AppRepository repo, AvitoCandidatesPageAutomationStub automation)
+    {
+        var phone = new PhoneNormalizer();
+        var adsPower = new FakeAdsPowerAvitoAutomationService();
+        var source = new AvitoResponseSource(repo, adsPower, phone);
+        var fetcher = new StubWebViewCandidatesFetcher(automation, source);
+        return new AvitoResponseSource(repo, adsPower, phone, fetcher);
+    }
 
     private static AvitoAccount NewAccount() => new()
     {
@@ -181,11 +183,44 @@ public sealed class AvitoResponseSourceTests
         Avito = new AvitoSettings()
     };
 
+    private sealed class StubWebViewCandidatesFetcher(
+        AvitoCandidatesPageAutomationStub automation,
+        AvitoResponseSource source) : IAvitoWebViewCandidatesFetcher
+    {
+        public async Task<IReadOnlyList<CandidateResponse>> FetchNewResponsesAsync(
+            AvitoAccount account,
+            AppSettings settings,
+            CancellationToken cancellationToken)
+        {
+            const int maxAttempts = 3;
+            for (var attempt = 1; attempt <= maxAttempts; attempt++)
+            {
+                try
+                {
+                    var raw = automation.DequeueExtraction();
+                    return await source.ParseCandidatesFromRawAsync(account, settings, raw, cancellationToken);
+                }
+                catch (JsonException ex)
+                {
+                    account.LastErrorMessage = ex.Message;
+                    if (attempt == maxAttempts)
+                    {
+                        return [];
+                    }
+                }
+            }
+
+            return [];
+        }
+    }
+
     private sealed class AvitoCandidatesPageAutomationStub : IWebPageAutomationService
     {
         private readonly Queue<string> _extraction = new();
 
         public void EnqueueExtraction(string payload) => _extraction.Enqueue(payload);
+
+        public string DequeueExtraction() => _extraction.Count > 0 ? _extraction.Dequeue() : string.Empty;
 
         public Task NavigateAsync(BrowserAccountSession session, string url, CancellationToken cancellationToken) =>
             Task.CompletedTask;

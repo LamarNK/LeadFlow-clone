@@ -4,11 +4,21 @@
 }
 
 orbitsu.ru, www.orbitsu.ru {
-	reverse_proxy 127.0.0.1:8081
+	reverse_proxy 127.0.0.1:8081 {
+		transport http {
+			read_timeout 30m
+			write_timeout 30m
+		}
+	}
 }
 
 api.orbitsu.ru {
-	reverse_proxy 127.0.0.1:8082
+	reverse_proxy 127.0.0.1:8082 {
+		transport http {
+			read_timeout 30m
+			write_timeout 30m
+		}
+	}
 }
 
 notify.orbitsu.ru {

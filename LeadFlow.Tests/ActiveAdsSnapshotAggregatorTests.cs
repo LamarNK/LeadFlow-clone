@@ -1,5 +1,5 @@
-using LeadFlow.Models;
-using LeadFlow.Services.Avito;
+using LeadFlow.Core.Models;
+using LeadFlow.Core.Services.Avito;
 using Xunit;
 
 namespace LeadFlow.Tests;

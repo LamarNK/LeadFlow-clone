@@ -51,6 +51,9 @@ internal static class SparklineGenerator
 
     public static IReadOnlyList<int> FromHourlySeries(IReadOnlyList<int> source, SparklineTrend trend = SparklineTrend.Up)
     {
+        if (source.Count == 0 || source.All(v => v == 0))
+            return Flat(PointCount);
+
         if (source.Count < 4)
             return Create(42, trend);
 
@@ -85,6 +88,8 @@ internal static class SparklineGenerator
 
         return NormalizeCalm(result.Select(v => (double)v).ToArray(), 32, 54);
     }
+
+    private static IReadOnlyList<int> Flat(int count) => Enumerable.Repeat(0, count).ToList();
 
     private static double[] MovingAverage(double[] values, int window)
     {

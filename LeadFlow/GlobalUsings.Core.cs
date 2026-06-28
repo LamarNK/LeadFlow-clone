@@ -1,0 +1,12 @@
+global using LeadFlow.Core;
+global using LeadFlow.Core.Data;
+global using LeadFlow.Core.Logging.Audit;
+global using LeadFlow.Core.Models;
+global using LeadFlow.Core.Services;
+global using LeadFlow.Core.Services.AdsPower;
+global using LeadFlow.Core.Services.Avito;
+global using LeadFlow.Core.Services.Bitrix;
+global using LeadFlow.Core.Services.Browser;
+global using LeadFlow.Models;
+global using LeadFlow.Services.Avito;
+global using LeadFlow.Services.Bitrix;

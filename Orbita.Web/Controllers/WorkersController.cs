@@ -55,12 +55,26 @@ public sealed class WorkersController(IWorkersService workers) : Controller
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> UpdateSettings(Guid workerId, int maxConcurrentAccounts, CancellationToken ct)
+    public async Task<IActionResult> UpdateSettings(
+        Guid workerId,
+        int maxConcurrentAccounts,
+        string? adsPowerApiBaseUrl,
+        string? adsPowerApiKey,
+        CancellationToken ct)
     {
-        var (success, error) = await workers.UpdateWorkerSettingsAsync(workerId, maxConcurrentAccounts, ct);
+        var (success, error) = await workers.UpdateWorkerSettingsAsync(
+            workerId,
+            maxConcurrentAccounts,
+            adsPowerApiBaseUrl,
+            adsPowerApiKey,
+            ct);
         if (!success)
         {
             TempData["WorkersError"] = error;
+        }
+        else
+        {
+            TempData["WorkersSuccess"] = "Настройки воркера сохранены.";
         }
 
         return RedirectToAction(nameof(Details), new { id = workerId });

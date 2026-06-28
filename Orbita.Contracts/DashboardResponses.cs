@@ -58,7 +58,9 @@ public sealed record WorkerDetail(
     string? IpAddress = null,
     string? OperatingSystem = null,
     DateTime? StartedAtUtc = null,
-    string? AgentVersion = null);
+    string? AgentVersion = null,
+    string? AdsPowerApiBaseUrl = null,
+    string? AdsPowerApiKey = null);
 
 public sealed record WorkerEventListItem(
     Guid Id,

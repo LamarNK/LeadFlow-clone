@@ -1,4 +1,4 @@
-using LeadFlow.Services.Avito;
+using LeadFlow.Core.Services.Avito;
 using Xunit;
 
 namespace LeadFlow.Tests;

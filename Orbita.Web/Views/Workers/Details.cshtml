@@ -6,6 +6,7 @@
     var createdApiKey = TempData["CreatedWorkerApiKey"] as string;
     var installCommand = TempData["CreatedWorkerInstallCommand"] as string;
     var workersError = TempData["WorkersError"] as string;
+    var workersSuccess = TempData["WorkersSuccess"] as string;
 }
 <div class="orbita-main worker-detail-page">
     <nav class="orbita-breadcrumbs" aria-label="Навигация">
@@ -96,6 +97,11 @@
         </div>
     }
 
+    @if (!string.IsNullOrWhiteSpace(workersSuccess))
+    {
+        <div class="settings-alert settings-alert--success" role="status">@workersSuccess</div>
+    }
+
     @if (!string.IsNullOrWhiteSpace(workersError))
     {
         <div class="settings-alert settings-alert--warn" role="alert">@workersError</div>
@@ -124,17 +130,63 @@
                 </div>
             </div>
         </div>
-        <div class="card card--worker-parallel">
-            <div class="card-header"><h2>Параллелизм</h2></div>
+        <div class="card card--worker-settings">
+            <div class="card-header">
+                <h2>Настройки воркера</h2>
+                <p class="worker-settings-subtitle">Параллелизм и подключение к AdsPower Local API на VDS</p>
+            </div>
             <div class="card-body">
-                <form asp-action="UpdateSettings" method="post" class="worker-parallel-form">
+                <form asp-action="UpdateSettings" method="post" class="worker-settings-form">
                     @Html.AntiForgeryToken()
                     <input type="hidden" name="workerId" value="@Model.WorkerId" />
-                    <label for="maxConcurrentAccounts">Аккаунтов одновременно</label>
-                    <div class="worker-parallel-controls">
-                        <input type="range" id="maxConcurrentAccounts" name="maxConcurrentAccounts" min="1" max="10" value="@Model.MaxConcurrentAccounts" />
-                        <output id="maxConcurrentAccountsOut">@Model.MaxConcurrentAccounts</output>
-                        <button type="submit" class="worker-refresh-btn">Сохранить</button>
+
+                    <div class="worker-settings-section">
+                        <span class="worker-settings-section-title">Параллелизм</span>
+                        <label class="worker-settings-field" for="maxConcurrentAccounts">
+                            <span class="worker-settings-label">Аккаунтов одновременно</span>
+                            <div class="worker-parallel-controls">
+                                <input type="range" id="maxConcurrentAccounts" name="maxConcurrentAccounts" min="1" max="10" value="@Model.MaxConcurrentAccounts" />
+                                <output id="maxConcurrentAccountsOut">@Model.MaxConcurrentAccounts</output>
+                            </div>
+                        </label>
+                    </div>
+
+                    <div class="worker-settings-section">
+                        <span class="worker-settings-section-title">AdsPower Local API</span>
+                        <label class="worker-settings-field" for="adsPowerApiBaseUrl">
+                            <span class="worker-settings-label">URL API</span>
+                            <input type="url"
+                                   id="adsPowerApiBaseUrl"
+                                   name="adsPowerApiBaseUrl"
+                                   value="@Model.AdsPowerApiBaseUrl"
+                                   placeholder="@WorkerDetailsViewModel.DefaultAdsPowerApiBaseUrl"
+                                   autocomplete="off"
+                                   spellcheck="false" />
+                            <span class="worker-settings-hint">
+                                Если поле пустое, воркер использует @WorkerDetailsViewModel.DefaultAdsPowerApiBaseUrl
+                            </span>
+                        </label>
+                        <label class="worker-settings-field" for="adsPowerApiKey">
+                            <span class="worker-settings-label">API Key</span>
+                            <input type="password"
+                                   id="adsPowerApiKey"
+                                   name="adsPowerApiKey"
+                                   value="@Model.AdsPowerApiKey"
+                                   placeholder="@(string.IsNullOrWhiteSpace(Model.AdsPowerApiKey) ? "Не задан — запросы без Authorization" : "Ключ задан")"
+                                   autocomplete="new-password"
+                                   spellcheck="false" />
+                            <span class="worker-settings-hint">
+                                Ключ из настроек AdsPower на VDS. Оставьте пустым, если Local API без авторизации.
+                            </span>
+                        </label>
+                        <div class="worker-settings-effective">
+                            <span class="worker-settings-label">Текущий URL для воркера</span>
+                            <code class="worker-settings-effective-value">@Model.EffectiveAdsPowerApiBaseUrl</code>
+                        </div>
+                    </div>
+
+                    <div class="worker-settings-actions">
+                        <button type="submit" class="worker-refresh-btn">Сохранить настройки</button>
                     </div>
                 </form>
             </div>

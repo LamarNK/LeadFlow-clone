@@ -1,4 +1,3 @@
-using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Orbita.Api.Data;
@@ -10,10 +9,10 @@ namespace Orbita.Api.Services;
 
 public sealed class CandidateIngestionService(
     OrbitaDbContext db,
-    UserManager<IdentityUser> users,
-    WebhookSecretProtector protector,
     PhoneNormalizer phoneNormalizer,
     CandidateParser candidateParser,
+    CandidateDuplicateService duplicateService,
+    OfficeBitrixWebhookResolver webhookResolver,
     BitrixClient bitrixClient,
     IOptions<OrbitaBitrixSettings> bitrixOptions)
 {
@@ -22,148 +21,272 @@ public sealed class CandidateIngestionService(
         WorkerCandidateBatchRequest request,
         CancellationToken ct = default)
     {
-        var workerExists = await db.Workers.AnyAsync(x => x.Id == workerId, ct);
-        if (!workerExists)
+        var worker = await db.Workers.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == workerId, ct);
+        if (worker is null)
         {
-            return new WorkerCandidateIngestionResultDto(0, 0, 0, 0);
+            return EmptyResult(request.Candidates.Count);
         }
 
-        var webhookUrl = await ResolveAdminWebhookUrlAsync(ct);
+        var webhookUrl = await webhookResolver.ResolvePrimaryForIngestionAsync(worker.OfficeId, ct);
         var received = request.Candidates.Count;
         var ingested = 0;
         var skippedDuplicates = 0;
         var errors = 0;
+        var items = new List<WorkerCandidateIngestionItemResultDto>();
 
         foreach (var candidate in request.Candidates)
         {
-            var phoneNormalized = phoneNormalizer.Normalize(candidate.PhoneRaw);
-            if (string.IsNullOrWhiteSpace(candidate.SourceResponseId) || string.IsNullOrWhiteSpace(phoneNormalized))
-            {
-                errors++;
-                continue;
-            }
+            var item = await IngestOneAsync(worker, candidate, webhookUrl, ct);
+            items.Add(item);
 
-            var isDuplicate = await db.CandidateResponses.AnyAsync(
-                x => x.AccountId == candidate.AccountId
-                     && x.SourceResponseId == candidate.SourceResponseId
-                     && x.PhoneNormalized == phoneNormalized,
-                ct);
-            if (isDuplicate)
+            switch (item.Status)
             {
-                skippedDuplicates++;
-                continue;
-            }
-
-            var (firstName, lastName, middleName) = candidateParser.ParseName(candidate.FullName);
-            var lead = new CandidateLead
-            {
-                AccountId = candidate.AccountId,
-                AccountName = candidate.AccountName,
-                Source = string.IsNullOrWhiteSpace(candidate.Source) ? "Avito" : candidate.Source,
-                SourceResponseId = candidate.SourceResponseId,
-                FullName = candidate.FullName,
-                FirstName = firstName,
-                LastName = lastName,
-                MiddleName = middleName,
-                Age = candidate.Age,
-                PhoneRaw = candidate.PhoneRaw,
-                PhoneNormalized = phoneNormalized,
-                City = candidate.City,
-                Vacancy = candidate.Vacancy,
-                VacancyUrl = candidate.VacancyUrl,
-                MessengerUrl = candidate.MessengerUrl,
-                AvitoSubProfileId = candidate.AvitoSubProfileId,
-                RawText = candidate.RawText,
-                CreatedAt = candidate.CreatedAt == default ? DateTime.UtcNow : candidate.CreatedAt
-            };
-
-            var entity = new CandidateResponseEntity
-            {
-                Id = Guid.NewGuid(),
-                WorkerId = workerId,
-                AccountId = lead.AccountId,
-                AccountName = lead.AccountName,
-                Source = lead.Source,
-                SourceResponseId = lead.SourceResponseId,
-                FullName = lead.FullName,
-                FirstName = lead.FirstName,
-                LastName = lead.LastName,
-                MiddleName = lead.MiddleName,
-                Age = lead.Age,
-                PhoneRaw = lead.PhoneRaw,
-                PhoneNormalized = lead.PhoneNormalized,
-                City = lead.City,
-                Vacancy = lead.Vacancy,
-                VacancyUrl = lead.VacancyUrl,
-                MessengerUrl = lead.MessengerUrl,
-                AvitoSubProfileId = lead.AvitoSubProfileId,
-                RawText = lead.RawText,
-                CreatedAt = lead.CreatedAt,
-                Status = "InProgress",
-                BitrixEntityType = bitrixOptions.Value.EntityType
-            };
-
-            if (string.IsNullOrWhiteSpace(webhookUrl))
-            {
-                entity.Status = "Error";
-                entity.ErrorMessage = "Не настроен вебхук Bitrix24 у администратора панели.";
-                errors++;
-            }
-            else
-            {
-                var bitrixResult = await bitrixClient.CreateLeadAsync(
-                    lead,
-                    webhookUrl,
-                    bitrixOptions.Value,
-                    ct);
-                entity.ProcessedAt = DateTime.UtcNow;
-                if (bitrixResult.IsSuccess)
-                {
-                    entity.Status = "Sent";
-                    entity.BitrixEntityId = bitrixResult.EntityId;
-                    entity.BitrixContactId = bitrixResult.ContactId;
+                case ResponseStatuses.Sent:
                     ingested++;
-                }
-                else
-                {
-                    entity.Status = "Error";
-                    entity.ErrorMessage = bitrixResult.Error;
-                    entity.BitrixContactId = bitrixResult.ContactId;
+                    break;
+                case ResponseStatuses.Duplicate:
+                    skippedDuplicates++;
+                    break;
+                case ResponseStatuses.Error:
                     errors++;
-                }
+                    break;
             }
-
-            db.CandidateResponses.Add(entity);
-            await db.SaveChangesAsync(ct);
         }
 
-        return new WorkerCandidateIngestionResultDto(received, ingested, skippedDuplicates, errors);
+        return new WorkerCandidateIngestionResultDto(received, ingested, skippedDuplicates, errors, items);
     }
 
-    private async Task<string?> ResolveAdminWebhookUrlAsync(CancellationToken ct)
+    private async Task<WorkerCandidateIngestionItemResultDto> IngestOneAsync(
+        WorkerEntity worker,
+        WorkerCandidateDto candidate,
+        string? webhookUrl,
+        CancellationToken ct)
     {
-        var adminUsers = await users.GetUsersInRoleAsync(PanelRoles.Admin);
-        foreach (var admin in adminUsers.OrderBy(x => x.Email))
+        var phoneNormalized = phoneNormalizer.Normalize(candidate.PhoneRaw);
+        if (string.IsNullOrWhiteSpace(candidate.SourceResponseId) || string.IsNullOrWhiteSpace(phoneNormalized))
         {
-            var settings = await db.PanelUserBitrixSettings.AsNoTracking()
-                .FirstOrDefaultAsync(x => x.UserId == admin.Id, ct);
-            if (settings is null
-                || string.IsNullOrWhiteSpace(settings.WebhookUrlProtected)
-                || !string.Equals(settings.ValidationStatus, BitrixValidationStatuses.Ok, StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            try
-            {
-                return protector.Unprotect(settings.WebhookUrlProtected);
-            }
-            catch
-            {
-                continue;
-            }
+            return new WorkerCandidateIngestionItemResultDto(
+                null,
+                candidate.SourceResponseId,
+                ResponseStatuses.Error,
+                "Не задан SourceResponseId или телефон.");
         }
 
-        return null;
+        var existing = await db.CandidateResponses
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                x => x.AccountId == candidate.AccountId && x.SourceResponseId == candidate.SourceResponseId,
+                ct);
+        if (existing is not null)
+        {
+            return new WorkerCandidateIngestionItemResultDto(
+                existing.Id,
+                candidate.SourceResponseId,
+                existing.Status,
+                existing.ErrorMessage);
+        }
+
+        var (firstName, lastName, middleName) = candidateParser.ParseName(candidate.FullName);
+        var entity = new CandidateResponseEntity
+        {
+            Id = Guid.NewGuid(),
+            OfficeId = worker.OfficeId,
+            WorkerId = worker.Id,
+            AccountId = candidate.AccountId,
+            AccountName = candidate.AccountName,
+            Source = string.IsNullOrWhiteSpace(candidate.Source) ? "Avito" : candidate.Source,
+            SourceResponseId = candidate.SourceResponseId,
+            FullName = candidate.FullName,
+            FirstName = firstName,
+            LastName = lastName,
+            MiddleName = middleName,
+            Age = candidate.Age,
+            PhoneRaw = candidate.PhoneRaw,
+            PhoneNormalized = phoneNormalized,
+            City = candidate.City,
+            Vacancy = candidate.Vacancy,
+            VacancyUrl = candidate.VacancyUrl,
+            MessengerUrl = candidate.MessengerUrl,
+            AvitoSubProfileId = candidate.AvitoSubProfileId,
+            RawText = candidate.RawText,
+            CreatedAt = candidate.CreatedAt == default ? DateTime.UtcNow : candidate.CreatedAt,
+            Status = ResponseStatuses.InProgress,
+            BitrixEntityType = bitrixOptions.Value.EntityType
+        };
+
+        db.CandidateResponses.Add(entity);
+        await db.SaveChangesAsync(ct);
+
+        var duplicate = await duplicateService.CheckAsync(
+            entity,
+            webhookUrl,
+            bitrixOptions.Value.CheckDuplicatesInBitrix,
+            ct);
+
+        entity.IsLocalDuplicate = duplicate.IsLocalDuplicate;
+        entity.IsBitrixDuplicate = duplicate.IsBitrixDuplicate;
+        entity.DuplicateSummary = duplicate.Summary;
+        entity.ProcessedAt = DateTime.UtcNow;
+
+        if (duplicate.IsDuplicate)
+        {
+            entity.Status = ResponseStatuses.Duplicate;
+            await db.SaveChangesAsync(ct);
+            return new WorkerCandidateIngestionItemResultDto(
+                entity.Id,
+                candidate.SourceResponseId,
+                entity.Status,
+                entity.DuplicateSummary);
+        }
+
+        if (duplicate.ShouldDeferBitrixSend)
+        {
+            entity.Status = ResponseStatuses.ActionRequired;
+            entity.ErrorMessage = duplicate.BitrixCheckUnavailableReason ?? duplicate.Summary;
+            await db.SaveChangesAsync(ct);
+            return new WorkerCandidateIngestionItemResultDto(
+                entity.Id,
+                candidate.SourceResponseId,
+                entity.Status,
+                entity.ErrorMessage);
+        }
+
+        if (string.IsNullOrWhiteSpace(webhookUrl))
+        {
+            entity.Status = ResponseStatuses.ActionRequired;
+            entity.ErrorMessage = "Не настроен валидный вебхук Bitrix24 для офиса.";
+            await db.SaveChangesAsync(ct);
+            return new WorkerCandidateIngestionItemResultDto(
+                entity.Id,
+                candidate.SourceResponseId,
+                entity.Status,
+                entity.ErrorMessage);
+        }
+
+        var lead = MapLead(entity);
+        var bitrixResult = await bitrixClient.CreateLeadAsync(lead, webhookUrl, bitrixOptions.Value, ct);
+        if (bitrixResult.IsSuccess)
+        {
+            entity.Status = ResponseStatuses.Sent;
+            entity.BitrixEntityId = bitrixResult.EntityId;
+            entity.BitrixContactId = bitrixResult.ContactId;
+            entity.ErrorMessage = string.Empty;
+        }
+        else
+        {
+            entity.Status = ResponseStatuses.Error;
+            entity.ErrorMessage = bitrixResult.Error;
+            entity.BitrixContactId = bitrixResult.ContactId;
+        }
+
+        await db.SaveChangesAsync(ct);
+        return new WorkerCandidateIngestionItemResultDto(
+            entity.Id,
+            candidate.SourceResponseId,
+            entity.Status,
+            entity.ErrorMessage);
     }
+
+    public async Task<ResendBitrixResultDto> ResendToBitrixAsync(
+        Guid responseId,
+        OfficeScope scope,
+        CancellationToken ct = default)
+    {
+        var entity = await db.CandidateResponses
+            .Include(x => x.Worker)
+            .FirstOrDefaultAsync(x => x.Id == responseId, ct);
+        if (entity is null)
+        {
+            return new ResendBitrixResultDto(false, ResponseStatuses.Error, null, "Отклик не найден.");
+        }
+
+        if (!scope.CanAccessOffice(entity.OfficeId))
+        {
+            return new ResendBitrixResultDto(false, ResponseStatuses.Error, null, "Нет доступа к отклику.");
+        }
+
+        var webhookUrl = await webhookResolver.ResolvePrimaryForIngestionAsync(entity.OfficeId, ct);
+        if (string.IsNullOrWhiteSpace(webhookUrl))
+        {
+            entity.Status = ResponseStatuses.ActionRequired;
+            entity.ErrorMessage = "Не настроен валидный вебхук Bitrix24 для офиса.";
+            entity.ProcessedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync(ct);
+            return new ResendBitrixResultDto(false, entity.Status, null, entity.ErrorMessage);
+        }
+
+        var duplicate = await duplicateService.CheckAsync(
+            entity,
+            webhookUrl,
+            bitrixOptions.Value.CheckDuplicatesInBitrix,
+            ct);
+        entity.IsLocalDuplicate = duplicate.IsLocalDuplicate;
+        entity.IsBitrixDuplicate = duplicate.IsBitrixDuplicate;
+        entity.DuplicateSummary = duplicate.Summary;
+
+        if (duplicate.IsDuplicate)
+        {
+            entity.Status = ResponseStatuses.Duplicate;
+            entity.ProcessedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync(ct);
+            return new ResendBitrixResultDto(false, entity.Status, null, entity.DuplicateSummary);
+        }
+
+        if (duplicate.ShouldDeferBitrixSend)
+        {
+            entity.Status = ResponseStatuses.ActionRequired;
+            entity.ErrorMessage = duplicate.BitrixCheckUnavailableReason ?? duplicate.Summary;
+            entity.ProcessedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync(ct);
+            return new ResendBitrixResultDto(false, entity.Status, null, entity.ErrorMessage);
+        }
+
+        var bitrixResult = await bitrixClient.CreateLeadAsync(
+            MapLead(entity),
+            webhookUrl,
+            bitrixOptions.Value,
+            ct);
+        entity.ProcessedAt = DateTime.UtcNow;
+        if (bitrixResult.IsSuccess)
+        {
+            entity.Status = ResponseStatuses.Sent;
+            entity.BitrixEntityId = bitrixResult.EntityId;
+            entity.BitrixContactId = bitrixResult.ContactId;
+            entity.ErrorMessage = string.Empty;
+            await db.SaveChangesAsync(ct);
+            return new ResendBitrixResultDto(true, entity.Status, entity.BitrixEntityId, null);
+        }
+
+        entity.Status = ResponseStatuses.Error;
+        entity.ErrorMessage = bitrixResult.Error;
+        entity.BitrixContactId = bitrixResult.ContactId;
+        await db.SaveChangesAsync(ct);
+        return new ResendBitrixResultDto(false, entity.Status, null, entity.ErrorMessage);
+    }
+
+    private static CandidateLead MapLead(CandidateResponseEntity entity) => new()
+    {
+        AccountId = entity.AccountId,
+        AccountName = entity.AccountName,
+        Source = entity.Source,
+        SourceResponseId = entity.SourceResponseId,
+        FullName = entity.FullName,
+        FirstName = entity.FirstName,
+        LastName = entity.LastName,
+        MiddleName = entity.MiddleName,
+        Age = entity.Age,
+        PhoneRaw = entity.PhoneRaw,
+        PhoneNormalized = entity.PhoneNormalized,
+        City = entity.City,
+        Vacancy = entity.Vacancy,
+        VacancyUrl = entity.VacancyUrl,
+        MessengerUrl = entity.MessengerUrl,
+        AvitoSubProfileId = entity.AvitoSubProfileId,
+        RawText = entity.RawText,
+        CreatedAt = entity.CreatedAt
+    };
+
+    private static WorkerCandidateIngestionResultDto EmptyResult(int received) =>
+        new(received, 0, 0, received, []);
 }

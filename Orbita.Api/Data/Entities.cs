@@ -119,6 +119,7 @@ public sealed class PanelUserBitrixSettingsEntity
 public sealed class CandidateResponseEntity
 {
     public Guid Id { get; set; }
+    public Guid OfficeId { get; set; }
     public Guid WorkerId { get; set; }
     public Guid AccountId { get; set; }
     public string AccountName { get; set; } = string.Empty;
@@ -138,6 +139,9 @@ public sealed class CandidateResponseEntity
     public string MessengerUrl { get; set; } = string.Empty;
     public string AvitoSubProfileId { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
+    public bool IsLocalDuplicate { get; set; }
+    public bool IsBitrixDuplicate { get; set; }
+    public string DuplicateSummary { get; set; } = string.Empty;
     public string BitrixEntityType { get; set; } = string.Empty;
     public string BitrixEntityId { get; set; } = string.Empty;
     public string BitrixContactId { get; set; } = string.Empty;
@@ -146,6 +150,7 @@ public sealed class CandidateResponseEntity
     public DateTime CreatedAt { get; set; }
     public DateTime? ProcessedAt { get; set; }
 
+    public OfficeEntity Office { get; set; } = null!;
     public WorkerEntity Worker { get; set; } = null!;
 }
 

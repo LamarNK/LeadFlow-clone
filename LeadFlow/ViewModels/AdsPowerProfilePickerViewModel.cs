@@ -1,8 +1,8 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using LeadFlow.Logging.Audit;
-using LeadFlow.Services.AdsPower;
+
+
 
 namespace LeadFlow.ViewModels;
 

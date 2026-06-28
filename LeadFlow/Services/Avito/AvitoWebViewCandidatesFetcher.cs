@@ -1,0 +1,146 @@
+using System.Text.Json;
+using LeadFlow.Core.Logging.Audit;
+using LeadFlow.Core.Models;
+using LeadFlow.Core.Services.Avito;
+using LeadFlow.Core.Services.Browser;
+using LeadFlow.Services.Browser;
+
+namespace LeadFlow.Services.Avito;
+
+public sealed class AvitoWebViewCandidatesFetcher(
+    IBrowserSessionService browserSessionService,
+    IBackgroundWebViewHostFactory backgroundWebViewHostFactory,
+    IWebPageAutomationService automationService,
+    AvitoResponseSource avitoResponseSource) : IAvitoWebViewCandidatesFetcher
+{
+    public async Task<IReadOnlyList<CandidateResponse>> FetchNewResponsesAsync(
+        AvitoAccount account,
+        AppSettings settings,
+        CancellationToken cancellationToken)
+    {
+        var session = await browserSessionService.CreateSessionAsync(account, cancellationToken);
+        await using var host = await backgroundWebViewHostFactory.CreateAsync(cancellationToken);
+        await host.AttachAsync(session, cancellationToken);
+
+        const int maxAttempts = 3;
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            if (attempt > 1)
+            {
+                var pause = attempt == 2 ? TimeSpan.FromSeconds(5) : TimeSpan.FromSeconds(12);
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"Candidates page fetch retry {attempt}/{maxAttempts} for {account.DisplayName}.",
+                    DeskLinkAuditLogLevel.Info);
+                await Task.Delay(pause, cancellationToken);
+            }
+
+            try
+            {
+                var executeForBaseline = (string script, CancellationToken ct) =>
+                    automationService.ExecuteScriptAsync(session, script, ct);
+
+                string? staleListSignature = null;
+                if (!string.IsNullOrWhiteSpace(session.CurrentUrl)
+                    && session.CurrentUrl.Contains("/profile/candidates", StringComparison.OrdinalIgnoreCase))
+                {
+                    staleListSignature = await AvitoCandidatesPageWaiter
+                        .TryCaptureListSignatureAsync(executeForBaseline, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+
+                await automationService.NavigateAsync(session, AvitoResponseSource.CandidatesPageUrl, cancellationToken);
+                await WaitForCandidatesPageAsync(session, cancellationToken, staleListSignature);
+                account.LastAuthCheckAt = DateTime.UtcNow;
+
+                var execute = (string script, CancellationToken ct) =>
+                    automationService.ExecuteScriptAsync(session, script, ct);
+                await AvitoCandidatesListPreparer.PrepareAsync(
+                    execute,
+                    account.DisplayName,
+                    cancellationToken,
+                    ct => FetchPageHtmlSnapshotAsync(execute, ct),
+                    AvitoResponseSource.CandidatesPageUrl).ConfigureAwait(false);
+
+                var raw = await automationService.ExecuteScriptAsync(
+                    session,
+                    AvitoCandidatesPageScripts.BuildExtractionScript(),
+                    cancellationToken);
+                if (string.IsNullOrWhiteSpace(raw))
+                {
+                    if (attempt == maxAttempts)
+                    {
+                        account.LastErrorMessage = "Пустой ответ скрипта со страницы кандидатов";
+                        return [];
+                    }
+
+                    continue;
+                }
+
+                return await avitoResponseSource
+                    .ParseCandidatesFromRawAsync(account, settings, raw, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (JsonException)
+            {
+                if (attempt == maxAttempts)
+                {
+                    account.LastErrorMessage = "Некорректный JSON страницы кандидатов";
+                    return [];
+                }
+            }
+            catch (TimeoutException)
+            {
+                if (attempt == maxAttempts)
+                {
+                    account.LastErrorMessage = "Таймаут загрузки страницы кандидатов";
+                    return [];
+                }
+            }
+        }
+
+        account.LastErrorMessage = "Не удалось получить отклики после нескольких попыток";
+        return [];
+    }
+
+    private async Task WaitForCandidatesPageAsync(
+        BrowserAccountSession session,
+        CancellationToken cancellationToken,
+        string? baselineListSignature = null)
+    {
+        var execute = (string script, CancellationToken ct) =>
+            automationService.ExecuteScriptAsync(session, script, ct);
+
+        await AvitoCandidatesPageWaiter.WaitForCandidatesOrThrowFirewallAsync(
+            execute,
+            ct => FetchPageHtmlSnapshotAsync(execute, ct),
+            AvitoResponseSource.CandidatesPageUrl,
+            cancellationToken,
+            baselineListSignature).ConfigureAwait(false);
+    }
+
+    private static async Task<string?> FetchPageHtmlSnapshotAsync(
+        Func<string, CancellationToken, Task<string>> execute,
+        CancellationToken cancellationToken)
+    {
+        var raw = await execute(
+            "(() => (document.documentElement?.outerHTML ?? '').slice(0, 120000))()",
+            cancellationToken).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<string>(raw) ?? raw;
+        }
+        catch
+        {
+            return raw.Trim().Trim('"');
+        }
+    }
+}

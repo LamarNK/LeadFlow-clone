@@ -6,7 +6,7 @@ using System.Windows;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using LeadFlow.Models;
+
 using Microsoft.Extensions.DependencyInjection;
 
 namespace LeadFlow.ViewModels;

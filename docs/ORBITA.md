@@ -59,10 +59,49 @@ docker compose -f deploy/control-panel/docker-compose.yml up --build
 - Панель: http://localhost:8081
 - API: http://localhost:8080
 
-## API для воркеров (будущая интеграция)
+## Воркер (Orbita.Worker)
 
-- `POST /api/v1/workers/register`
-- `POST /api/v1/workers/heartbeat`
+Фоновое приложение Windows (только иконка в трее). Парсит Avito через AdsPower на VDS и отправляет отклики в Орбиту. Bitrix — на стороне портала.
+
+### Установка (MSI)
+
+1. В панели: **Воркеры → Добавить воркер** → сохраните API-ключ (показывается один раз).
+2. На VDS запустите `Orbita.Worker.Setup-{version}.msi` из `publish/out/orbita-worker/{version}/` (ожидаемый размер ~50–80 МБ, включает .NET runtime).
+3. После установки откроется **мастер настройки** — вставьте API-ключ.
+4. Воркер уходит в **трей** и добавляется в **автозапуск Windows**.
+5. В панели на странице воркера: включите нужные AdsPower-аккаунты, задайте параллелизм.
+
+**Обновление:** повторный запуск MSI той же линейки **заменяет** установленную версию (как DeskLink Agent), а не ставится параллельно. Путь `%LocalAppData%\Orbita\Worker\` и API-ключ в `%LocalAppData%\OrbitaWorker\` сохраняются. Перед апдейтом MSI закрывает запущенный `Orbita.Worker.exe`.
+
+Пути после установки:
+
+- Программа: `%LocalAppData%\Orbita\Worker\Orbita.Worker.exe`
+- Настройки (API-ключ): `%LocalAppData%\OrbitaWorker\`
+- Данные воркера: `%LocalAppData%\OrbitaWorker\Data\`
+
+Тихая установка для скриптов (без мастера):
+
+```powershell
+Orbita.Worker.exe --install --api-key <KEY>
+```
+
+### Сборка MSI
+
+```bat
+publish\build.bat -Target orbita-worker
+```
+
+Или через меню `publish\build.bat` → **Orbita Worker (Windows x64 MSI)**.
+
+Результат: `publish/out/orbita-worker/{version}/Orbita.Worker.Setup-{version}.msi`
+
+## API для воркеров
+
+- `POST /api/v1/admin/workers/create` — создать воркер (Admin)
+- `GET /api/v1/workers/config` — конфигурация (воркер)
+- `POST /api/v1/workers/accounts/sync` — синхронизация AdsPower-профилей
+- `POST /api/v1/workers/candidates` — отправка откликов
+- `POST /api/v1/workers/heartbeat` — heartbeat + CPU/RAM
 - `POST /api/v1/workers/telemetry/snapshot`
 - `POST /api/v1/workers/telemetry/events`
 

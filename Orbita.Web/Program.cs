@@ -48,6 +48,7 @@ builder.Services.AddSingleton<ThemeService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<IWorkersService, WorkersService>();
 builder.Services.AddScoped<IEventsService, EventsService>();
+builder.Services.AddScoped<IResponsesService, ResponsesService>();
 builder.Services.AddScoped<IErrorsService, ErrorsService>();
 builder.Services.AddScoped<IAccountsService, AccountsService>();
 builder.Services.AddScoped<ISettingsService, SettingsService>();

@@ -8,7 +8,18 @@ namespace Orbita.Web.Services;
 
 public sealed class OrbitaApiClient(HttpClient http, AuthSession session, IOptions<DesignPreviewOptions> previewOptions)
 {
+    private const string InvalidApiSessionError =
+        "Сессия недействительна. Выйдите из панели и войдите снова.";
+
     private readonly DesignPreviewOptions _preview = previewOptions.Value;
+
+    private bool CanUseAuthenticatedApi =>
+        !_preview.Enabled && IsJwtToken(session.Token);
+
+    private static bool IsJwtToken(string? token) =>
+        !string.IsNullOrWhiteSpace(token)
+        && !string.Equals(token, AuthSession.DesignPreviewToken, StringComparison.Ordinal)
+        && token.Count(c => c == '.') >= 2;
 
     public Task<LoginResponse?> LoginAsync(string email, string password, CancellationToken ct = default)
     {
@@ -17,7 +28,7 @@ public sealed class OrbitaApiClient(HttpClient http, AuthSession session, IOptio
             if (string.Equals(email, _preview.Email, StringComparison.OrdinalIgnoreCase)
                 && password == _preview.Password)
             {
-                return Task.FromResult<LoginResponse?>(new LoginResponse("design-preview", email));
+                return Task.FromResult<LoginResponse?>(new LoginResponse(AuthSession.DesignPreviewToken, email));
             }
 
             return Task.FromResult<LoginResponse?>(null);
@@ -85,14 +96,27 @@ public sealed class OrbitaApiClient(HttpClient http, AuthSession session, IOptio
     private async Task<T?> GetAsync<T>(string url, CancellationToken ct)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
-        ApplyAuth(request);
-        var response = await http.SendAsync(request, ct);
-        if (!response.IsSuccessStatusCode)
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null || !response.IsSuccessStatusCode)
         {
             return default;
         }
 
         return await response.Content.ReadFromJsonAsync<T>(ct);
+    }
+
+    private async Task<HttpResponseMessage?> SendAuthenticatedAsync(
+        HttpRequestMessage request,
+        CancellationToken ct,
+        HttpCompletionOption completionOption = HttpCompletionOption.ResponseContentRead)
+    {
+        if (!CanUseAuthenticatedApi)
+        {
+            return null;
+        }
+
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", session.Token!);
+        return await http.SendAsync(request, completionOption, ct);
     }
 
     public Task<IReadOnlyList<PanelUserDto>?> GetPanelUsersAsync(CancellationToken ct = default) =>
@@ -149,9 +173,13 @@ public sealed class OrbitaApiClient(HttpClient http, AuthSession session, IOptio
     public async Task<(OfficeDetailDto? Office, string? Error)> CreateOfficeAsync(string name, CancellationToken ct = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/admin/offices");
-        ApplyAuth(request);
         request.Content = JsonContent.Create(new CreateOfficeRequest(name));
-        var response = await http.SendAsync(request, ct);
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (null, InvalidApiSessionError);
+        }
+
         if (!response.IsSuccessStatusCode)
         {
             return (null, await ReadApiErrorAsync(response, ct));
@@ -168,9 +196,13 @@ public sealed class OrbitaApiClient(HttpClient http, AuthSession session, IOptio
         CancellationToken ct = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Put, $"api/v1/admin/offices/{id}");
-        ApplyAuth(request);
         request.Content = JsonContent.Create(new UpdateOfficeRequest(name, isEnabled));
-        var response = await http.SendAsync(request, ct);
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (null, InvalidApiSessionError);
+        }
+
         if (!response.IsSuccessStatusCode)
         {
             return (null, await ReadApiErrorAsync(response, ct));
@@ -185,8 +217,12 @@ public sealed class OrbitaApiClient(HttpClient http, AuthSession session, IOptio
         CancellationToken ct = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, $"api/v1/admin/offices/{id}/rotate-registration-secret");
-        ApplyAuth(request);
-        var response = await http.SendAsync(request, ct);
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (null, InvalidApiSessionError);
+        }
+
         if (!response.IsSuccessStatusCode)
         {
             return (null, await ReadApiErrorAsync(response, ct));
@@ -204,9 +240,13 @@ public sealed class OrbitaApiClient(HttpClient http, AuthSession session, IOptio
         CancellationToken ct = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/admin/users");
-        ApplyAuth(request);
         request.Content = JsonContent.Create(new CreatePanelUserRequest(email, password, role, officeId));
-        var response = await http.SendAsync(request, ct);
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (false, InvalidApiSessionError);
+        }
+
         if (response.IsSuccessStatusCode)
         {
             return (true, null);
@@ -218,8 +258,12 @@ public sealed class OrbitaApiClient(HttpClient http, AuthSession session, IOptio
     public async Task<(bool Success, string? Error)> DeletePanelUserAsync(string userId, CancellationToken ct = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Delete, $"api/v1/admin/users/{userId}");
-        ApplyAuth(request);
-        var response = await http.SendAsync(request, ct);
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (false, InvalidApiSessionError);
+        }
+
         if (response.IsSuccessStatusCode)
         {
             return (true, null);
@@ -234,9 +278,13 @@ public sealed class OrbitaApiClient(HttpClient http, AuthSession session, IOptio
         CancellationToken ct = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, $"api/v1/admin/users/{userId}/password");
-        ApplyAuth(request);
         request.Content = JsonContent.Create(new ResetPanelUserPasswordRequest(password));
-        var response = await http.SendAsync(request, ct);
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (false, InvalidApiSessionError);
+        }
+
         if (response.IsSuccessStatusCode)
         {
             return (true, null);
@@ -251,9 +299,13 @@ public sealed class OrbitaApiClient(HttpClient http, AuthSession session, IOptio
         CancellationToken ct = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Put, $"api/v1/admin/users/{userId}/role");
-        ApplyAuth(request);
         request.Content = JsonContent.Create(new UpdatePanelUserRoleRequest(role));
-        var response = await http.SendAsync(request, ct);
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (false, InvalidApiSessionError);
+        }
+
         if (response.IsSuccessStatusCode)
         {
             return (true, null);
@@ -283,9 +335,13 @@ public sealed class OrbitaApiClient(HttpClient http, AuthSession session, IOptio
         CancellationToken ct = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Put, $"api/v1/admin/workers/{workerId}");
-        ApplyAuth(request);
         request.Content = JsonContent.Create(new UpdateAdminWorkerRequest(displayName));
-        var response = await http.SendAsync(request, ct);
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (false, InvalidApiSessionError);
+        }
+
         return response.IsSuccessStatusCode
             ? (true, null)
             : (false, await ReadApiErrorAsync(response, ct));
@@ -303,9 +359,13 @@ public sealed class OrbitaApiClient(HttpClient http, AuthSession session, IOptio
         CancellationToken ct = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Put, $"api/v1/admin/users/{userId}/office");
-        ApplyAuth(request);
         request.Content = JsonContent.Create(new UpdatePanelUserOfficeRequest(officeId));
-        var response = await http.SendAsync(request, ct);
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (false, InvalidApiSessionError);
+        }
+
         return response.IsSuccessStatusCode
             ? (true, null)
             : (false, await ReadApiErrorAsync(response, ct));
@@ -317,9 +377,13 @@ public sealed class OrbitaApiClient(HttpClient http, AuthSession session, IOptio
         CancellationToken ct = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/admin/workers/create");
-        ApplyAuth(request);
         request.Content = JsonContent.Create(new CreateWorkerRequest(displayName, officeId));
-        var response = await http.SendAsync(request, ct);
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (null, InvalidApiSessionError);
+        }
+
         if (!response.IsSuccessStatusCode)
         {
             return (null, await ReadApiErrorAsync(response, ct));
@@ -335,12 +399,21 @@ public sealed class OrbitaApiClient(HttpClient http, AuthSession session, IOptio
     public async Task<(bool Success, string? Error)> UpdateWorkerSettingsAsync(
         Guid workerId,
         int maxConcurrentAccounts,
+        string? adsPowerApiBaseUrl,
+        string? adsPowerApiKey,
         CancellationToken ct = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Patch, $"api/v1/workers/{workerId}/settings");
-        ApplyAuth(request);
-        request.Content = JsonContent.Create(new UpdateWorkerSettingsRequest(maxConcurrentAccounts));
-        var response = await http.SendAsync(request, ct);
+        request.Content = JsonContent.Create(new UpdateWorkerSettingsRequest(
+            maxConcurrentAccounts,
+            adsPowerApiBaseUrl,
+            adsPowerApiKey));
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (false, InvalidApiSessionError);
+        }
+
         return response.IsSuccessStatusCode
             ? (true, null)
             : (false, await ReadApiErrorAsync(response, ct));
@@ -353,9 +426,13 @@ public sealed class OrbitaApiClient(HttpClient http, AuthSession session, IOptio
         CancellationToken ct = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Patch, $"api/v1/workers/{workerId}/accounts/{accountId}");
-        ApplyAuth(request);
         request.Content = JsonContent.Create(new UpdateWorkerAccountRequest(isEnabledInPanel));
-        var response = await http.SendAsync(request, ct);
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (false, InvalidApiSessionError);
+        }
+
         return response.IsSuccessStatusCode
             ? (true, null)
             : (false, await ReadApiErrorAsync(response, ct));
@@ -366,8 +443,12 @@ public sealed class OrbitaApiClient(HttpClient http, AuthSession session, IOptio
         CancellationToken ct = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, $"api/v1/admin/workers/{workerId}/rotate-key");
-        ApplyAuth(request);
-        var response = await http.SendAsync(request, ct);
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (null, InvalidApiSessionError);
+        }
+
         if (!response.IsSuccessStatusCode)
         {
             return (null, await ReadApiErrorAsync(response, ct));
@@ -427,6 +508,48 @@ public sealed class OrbitaApiClient(HttpClient http, AuthSession session, IOptio
             ? Task.FromResult<BitrixIntegrationDto?>(DesignPreviewData.MyBitrixIntegration)
             : GetAsync<BitrixIntegrationDto>("api/v1/panel/me/integrations/bitrix", ct);
 
+    public Task<IReadOnlyList<OfficeBitrixWebhookDto>?> GetOfficeBitrixWebhooksAsync(CancellationToken ct = default) =>
+        _preview.Enabled
+            ? Task.FromResult<IReadOnlyList<OfficeBitrixWebhookDto>?>([])
+            : GetAsync<IReadOnlyList<OfficeBitrixWebhookDto>>("api/v1/panel/office/integrations/bitrix", ct);
+
+    public Task<ResponsesPageDto?> GetResponsesPageAsync(string query, CancellationToken ct = default) =>
+        _preview.Enabled
+            ? Task.FromResult<ResponsesPageDto?>(new ResponsesPageDto([], 0, 1, 10))
+            : GetAsync<ResponsesPageDto>($"api/v1/panel/responses?{query}", ct);
+
+    public Task<ResponsesSummaryDto?> GetResponsesSummaryAsync(string query, CancellationToken ct = default) =>
+        _preview.Enabled
+            ? Task.FromResult<ResponsesSummaryDto?>(new ResponsesSummaryDto(0, 0, 0, 0, null))
+            : GetAsync<ResponsesSummaryDto>($"api/v1/panel/responses/summary?{query}", ct);
+
+    public Task<IReadOnlyList<ResponseFilterAccountDto>?> GetResponseFilterAccountsAsync(CancellationToken ct = default) =>
+        _preview.Enabled
+            ? Task.FromResult<IReadOnlyList<ResponseFilterAccountDto>?>([])
+            : GetAsync<IReadOnlyList<ResponseFilterAccountDto>>("api/v1/panel/responses/filters/accounts", ct);
+
+    public Task<ResponseDetailDto?> GetResponseDetailAsync(Guid id, CancellationToken ct = default) =>
+        _preview.Enabled
+            ? Task.FromResult<ResponseDetailDto?>(null)
+            : GetAsync<ResponseDetailDto>($"api/v1/panel/responses/{id}", ct);
+
+    public async Task<ResendBitrixResultDto?> ResendResponseToBitrixAsync(Guid id, CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return new ResendBitrixResultDto(true, ResponseStatuses.Sent, "1", null);
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"api/v1/panel/responses/{id}/resend-bitrix");
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null || !response.IsSuccessStatusCode)
+        {
+            return null;
+        }
+
+        return await response.Content.ReadFromJsonAsync<ResendBitrixResultDto>(ct);
+    }
+
     public async Task<(BitrixIntegrationDto? Integration, string? Error)> SaveMyBitrixIntegrationAsync(
         string webhookUrl,
         CancellationToken ct = default)
@@ -437,9 +560,13 @@ public sealed class OrbitaApiClient(HttpClient http, AuthSession session, IOptio
         }
 
         using var request = new HttpRequestMessage(HttpMethod.Put, "api/v1/panel/me/integrations/bitrix");
-        ApplyAuth(request);
         request.Content = JsonContent.Create(new SaveBitrixIntegrationRequest(webhookUrl));
-        var response = await http.SendAsync(request, ct);
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (null, InvalidApiSessionError);
+        }
+
         if (!response.IsSuccessStatusCode)
         {
             return (null, await ReadApiErrorAsync(response, ct));
@@ -459,9 +586,13 @@ public sealed class OrbitaApiClient(HttpClient http, AuthSession session, IOptio
         }
 
         using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/panel/me/integrations/bitrix/validate");
-        ApplyAuth(request);
         request.Content = JsonContent.Create(new ValidateBitrixIntegrationRequest(webhookUrl));
-        var response = await http.SendAsync(request, ct);
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (null, InvalidApiSessionError);
+        }
+
         if (!response.IsSuccessStatusCode)
         {
             return (null, await ReadApiErrorAsync(response, ct));
@@ -485,9 +616,13 @@ public sealed class OrbitaApiClient(HttpClient http, AuthSession session, IOptio
         CancellationToken ct = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Put, $"api/v1/admin/users/{userId}/integrations/bitrix");
-        ApplyAuth(request);
         request.Content = JsonContent.Create(new SaveBitrixIntegrationRequest(webhookUrl));
-        var response = await http.SendAsync(request, ct);
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (null, InvalidApiSessionError);
+        }
+
         if (!response.IsSuccessStatusCode)
         {
             return (null, await ReadApiErrorAsync(response, ct));
@@ -503,9 +638,13 @@ public sealed class OrbitaApiClient(HttpClient http, AuthSession session, IOptio
         CancellationToken ct = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, $"api/v1/admin/users/{userId}/integrations/bitrix/validate");
-        ApplyAuth(request);
         request.Content = JsonContent.Create(new ValidateBitrixIntegrationRequest(webhookUrl));
-        var response = await http.SendAsync(request, ct);
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (null, InvalidApiSessionError);
+        }
+
         if (!response.IsSuccessStatusCode)
         {
             return (null, await ReadApiErrorAsync(response, ct));
@@ -526,9 +665,13 @@ public sealed class OrbitaApiClient(HttpClient http, AuthSession session, IOptio
         }
 
         using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/panel/me/password");
-        ApplyAuth(request);
         request.Content = JsonContent.Create(new ChangeOwnPasswordRequest(currentPassword, newPassword));
-        var response = await http.SendAsync(request, ct);
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (false, InvalidApiSessionError);
+        }
+
         return response.IsSuccessStatusCode
             ? (true, null)
             : (false, await ReadApiErrorAsync(response, ct));
@@ -564,9 +707,13 @@ public sealed class OrbitaApiClient(HttpClient http, AuthSession session, IOptio
         }
 
         using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/admin/worker-releases/upload");
-        ApplyAuth(request);
         request.Content = content;
-        var response = await http.SendAsync(request, ct);
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (null, InvalidApiSessionError);
+        }
+
         if (!response.IsSuccessStatusCode)
         {
             return (null, await ReadApiErrorAsync(response, ct));
@@ -581,9 +728,13 @@ public sealed class OrbitaApiClient(HttpClient http, AuthSession session, IOptio
         CancellationToken ct = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/admin/worker-releases/set-latest");
-        ApplyAuth(request);
         request.Content = JsonContent.Create(new SetWorkerReleaseLatestRequest(version));
-        var response = await http.SendAsync(request, ct);
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (false, InvalidApiSessionError);
+        }
+
         return response.IsSuccessStatusCode
             ? (true, null)
             : (false, await ReadApiErrorAsync(response, ct));
@@ -594,9 +745,13 @@ public sealed class OrbitaApiClient(HttpClient http, AuthSession session, IOptio
         CancellationToken ct = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/admin/worker-releases/delete");
-        ApplyAuth(request);
         request.Content = JsonContent.Create(new DeleteWorkerReleaseRequest(version));
-        var response = await http.SendAsync(request, ct);
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (false, InvalidApiSessionError);
+        }
+
         return response.IsSuccessStatusCode
             ? (true, null)
             : (false, await ReadApiErrorAsync(response, ct));
@@ -623,8 +778,12 @@ public sealed class OrbitaApiClient(HttpClient http, AuthSession session, IOptio
         CancellationToken ct = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, $"api/v1/admin/worker-releases/{Uri.EscapeDataString(version)}/download");
-        ApplyAuth(request);
-        var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+        using var response = await SendAuthenticatedAsync(request, ct, HttpCompletionOption.ResponseHeadersRead);
+        if (response is null)
+        {
+            return (null, null, InvalidApiSessionError);
+        }
+
         if (!response.IsSuccessStatusCode)
         {
             return (null, null, await ReadApiErrorAsync(response, ct));
@@ -639,19 +798,15 @@ public sealed class OrbitaApiClient(HttpClient http, AuthSession session, IOptio
     private async Task<(bool Success, string? Error)> PostAdminActionAsync(string url, CancellationToken ct)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, url);
-        ApplyAuth(request);
-        var response = await http.SendAsync(request, ct);
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (false, InvalidApiSessionError);
+        }
+
         return response.IsSuccessStatusCode
             ? (true, null)
             : (false, await ReadApiErrorAsync(response, ct));
-    }
-
-    private void ApplyAuth(HttpRequestMessage request)
-    {
-        if (!string.IsNullOrWhiteSpace(session.Token))
-        {
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", session.Token);
-        }
     }
 
     private static async Task<string?> ReadApiErrorAsync(HttpResponseMessage response, CancellationToken ct)

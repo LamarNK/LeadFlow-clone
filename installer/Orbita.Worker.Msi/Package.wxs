@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+
+  <Package
+    Name="Orbita Worker"
+    Manufacturer="Orbita"
+    Version="$(var.ProductVersion)"
+    UpgradeCode="a7c4e2f1-9b3d-4a6e-8c0f-1d2e3f4a5b6c"
+    Scope="perUser"
+    Codepage="65001">
+
+    <MajorUpgrade
+      AllowSameVersionUpgrades="yes"
+      DowngradeErrorMessage="A newer version of Orbita Worker is already installed." />
+
+    <util:CloseApplication
+      Id="CloseOrbitaWorker"
+      Target="Orbita.Worker.exe"
+      Description="Закройте воркер Орбиты (иконка в трее) перед продолжением установки."
+      CloseMessage="yes"
+      TerminateProcess="0"
+      RebootPrompt="no" />
+
+    <MediaTemplate EmbedCab="yes" />
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="CompanyFolder" Name="Orbita">
+        <Directory Id="INSTALLFOLDER" Name="Worker" />
+      </Directory>
+    </StandardDirectory>
+
+    <ComponentGroup Id="AppFiles" Directory="INSTALLFOLDER">
+      <Files Include="$(var.PublishDir)**" />
+    </ComponentGroup>
+
+    <DirectoryRef Id="INSTALLFOLDER">
+      <Component Id="AutoStartComponent" Guid="b8d5e3f2-0c4e-5b7f-9d1a-2e3f4a5b6c7d">
+        <RegistryValue
+          Root="HKCU"
+          Key="Software\Microsoft\Windows\CurrentVersion\Run"
+          Name="OrbitaWorker"
+          Type="string"
+          Value="&quot;[INSTALLFOLDER]Orbita.Worker.exe&quot;"
+          KeyPath="yes" />
+      </Component>
+      <Component Id="CleanupInstallFolder" Guid="c9e6f4a3-1d5f-6c8e-0e2b-3f4a5b6c7d8e">
+        <RemoveFolder Id="RemoveInstallFolder" On="uninstall" />
+        <RegistryValue
+          Root="HKCU"
+          Key="Software\Orbita\Worker"
+          Name="InstallFolder"
+          Type="string"
+          Value="1"
+          KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+
+    <DirectoryRef Id="CompanyFolder">
+      <Component Id="CleanupCompanyFolder" Guid="d0f7a5b4-2e6a-7d9f-1f3c-4a5b6c7d8e9f">
+        <RemoveFolder Id="RemoveCompanyFolder" On="uninstall" />
+        <RegistryValue
+          Root="HKCU"
+          Key="Software\Orbita"
+          Name="WorkerRoot"
+          Type="string"
+          Value="1"
+          KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+
+    <Feature Id="MainFeature" Title="Orbita Worker" Level="1">
+      <ComponentGroupRef Id="AppFiles" />
+      <ComponentRef Id="AutoStartComponent" />
+      <ComponentRef Id="CleanupInstallFolder" />
+      <ComponentRef Id="CleanupCompanyFolder" />
+    </Feature>
+
+    <SetProperty
+      Id="WixUnelevatedShellExecTarget"
+      Value="[INSTALLFOLDER]Orbita.Worker.exe"
+      Before="LaunchWorkerAfterInstall"
+      Sequence="execute" />
+
+    <CustomAction
+      Id="LaunchWorkerAfterInstall"
+      BinaryRef="Wix4UtilCA_$(sys.BUILDARCHSHORT)"
+      DllEntry="WixUnelevatedShellExec"
+      Execute="immediate"
+      Return="ignore"
+      Impersonate="yes" />
+
+    <InstallExecuteSequence>
+      <Custom
+        Action="LaunchWorkerAfterInstall"
+        After="InstallFinalize"
+        Condition="(NOT Installed OR WIX_UPGRADE_DETECTED) AND NOT REMOVE~=&quot;ALL&quot;" />
+    </InstallExecuteSequence>
+  </Package>
+</Wix>

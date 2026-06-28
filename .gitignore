@@ -364,6 +364,15 @@ FodyWeavers.xsd
 
 # LeadFlow — локальные пакеты / publish в dist (не коммитить)
 dist/
+.publish/
+
+# Локальные артефакты IDE/агента
+agent-tools/
+mcps/
+terminals/
+tmp-cookies.txt
+tmp-login.html
+publish/$null
 
 # publish/ — скрипты в git, артефакты и секреты локально
 publish/out/

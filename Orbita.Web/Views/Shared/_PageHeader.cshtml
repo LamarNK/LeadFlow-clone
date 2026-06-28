@@ -19,7 +19,7 @@
         @if (Model.ShowRefresh)
         {
             <div class="orbita-updated-block">
-                <a href="@Context.Request.Path"
+                <a href="@(Context.Request.Path + Context.Request.QueryString)"
                    class="orbita-refresh-btn"
                    title="Обновить"
                    data-orbita-refresh>
@@ -39,11 +39,57 @@
         }
         @if (Model.ShowDateRange)
         {
-            <button type="button" class="orbita-period-picker" aria-label="Выбор периода">
-                <i class="fa-regular fa-calendar orbita-period-icon" aria-hidden="true"></i>
-                <span class="orbita-period-label">@Model.DateRangeLabel</span>
-                <i class="fa-solid fa-chevron-down orbita-period-caret" aria-hidden="true"></i>
-            </button>
+            <div class="orbita-period-menu" data-orbita-period-menu>
+                <button type="button"
+                        class="orbita-period-picker"
+                        aria-expanded="false"
+                        aria-haspopup="true"
+                        aria-label="Выбор периода">
+                    <i class="fa-regular fa-calendar orbita-period-icon" aria-hidden="true"></i>
+                    <span class="orbita-period-label">@Model.DateRangeLabel</span>
+                    <i class="fa-solid fa-chevron-down orbita-period-caret" aria-hidden="true"></i>
+                </button>
+                <div class="orbita-period-dropdown" hidden>
+                    <div class="orbita-period-presets" role="group" aria-label="Быстрый выбор периода">
+                        <button type="button"
+                                class="orbita-period-preset@(Model.ActivePeriodPreset == "today" ? " is-active" : "")"
+                                data-period-preset="today">Сегодня</button>
+                        <button type="button"
+                                class="orbita-period-preset@(Model.ActivePeriodPreset == "yesterday" ? " is-active" : "")"
+                                data-period-preset="yesterday">Вчера</button>
+                        <button type="button"
+                                class="orbita-period-preset@(Model.ActivePeriodPreset == "7d" ? " is-active" : "")"
+                                data-period-preset="7d">7 дней</button>
+                        <button type="button"
+                                class="orbita-period-preset@(Model.ActivePeriodPreset == "14d" ? " is-active" : "")"
+                                data-period-preset="14d">14 дней</button>
+                        <button type="button"
+                                class="orbita-period-preset@(Model.ActivePeriodPreset == "30d" ? " is-active" : "")"
+                                data-period-preset="30d">30 дней</button>
+                    </div>
+                    <div class="orbita-period-custom">
+                        <div class="orbita-period-custom-fields">
+                            <label class="orbita-period-field">
+                                <span class="orbita-period-field-label">С</span>
+                                <input type="date"
+                                       class="orbita-period-input"
+                                       data-period-from
+                                       value="@Model.DateFrom.ToString("yyyy-MM-dd")"
+                                       max="@DateTime.Today.ToString("yyyy-MM-dd")" />
+                            </label>
+                            <label class="orbita-period-field">
+                                <span class="orbita-period-field-label">По</span>
+                                <input type="date"
+                                       class="orbita-period-input"
+                                       data-period-to
+                                       value="@Model.DateTo.ToString("yyyy-MM-dd")"
+                                       max="@DateTime.Today.ToString("yyyy-MM-dd")" />
+                            </label>
+                        </div>
+                        <button type="button" class="orbita-period-apply" data-period-apply>Применить</button>
+                    </div>
+                </div>
+            </div>
         }
         @if ((Model.ShowRefresh || Model.ShowDateRange))
         {

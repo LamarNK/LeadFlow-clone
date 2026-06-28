@@ -1,27 +1,49 @@
 param(
-    [ValidateSet("leadflow")]
+    [ValidateSet("all", "leadflow", "orbita-worker")]
     [string]$Target = "leadflow",
     [string]$Configuration = "Release",
     [string]$Runtime = "win-x64",
+    [ValidateSet("auto", "revision", "build", "minor", "major")]
+    [string]$VersionBump = "auto",
+    [int]$MaxAutoRevision = 99,
     [switch]$Clean
 )
 
 $ErrorActionPreference = "Stop"
 
+. (Join-Path $PSScriptRoot "versioning.ps1")
+
 $publishRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $repoRoot = Resolve-Path (Join-Path $publishRoot "..")
-$distRoot = Join-Path $repoRoot "dist"
+$outRoot = Join-Path $publishRoot "out"
+$stateRoot = Join-Path $publishRoot "state"
 $workRoot = Join-Path $publishRoot "tmp\build"
-$packageName = if ($Runtime -eq "win-x64") { "LeadFlow-Windows-x64-$Configuration" } else { "LeadFlow-$Runtime-$Configuration" }
-$layoutRoot = Join-Path $distRoot $packageName
-$zipPath = Join-Path $distRoot "$packageName.zip"
+
+New-Item -Path $outRoot -ItemType Directory -Force | Out-Null
+New-Item -Path $stateRoot -ItemType Directory -Force | Out-Null
+New-Item -Path $workRoot -ItemType Directory -Force | Out-Null
+
+$targets = [ordered]@{
+    leadflow = @{
+        Project = "LeadFlow\LeadFlow.csproj"
+        OutputKind = "leadflow-zip"
+        Runtime = "win-x64"
+    }
+    "orbita-worker" = @{
+        Project = "Orbita.Worker\Orbita.Worker.csproj"
+        OutputKind = "orbita-worker-msi"
+        Runtime = "win-x64"
+    }
+}
 
 function Invoke-DotnetPublish {
     param(
         [string]$ProjectPath,
         [string]$OutputPath,
         [string]$RuntimeName,
-        [string]$Config
+        [string]$Config,
+        [string]$VersionText,
+        [bool]$SelfContained = $false
     )
 
     if ($Clean -and (Test-Path $OutputPath)) {
@@ -35,7 +57,11 @@ function Invoke-DotnetPublish {
         $ProjectPath,
         "-c", $Config,
         "-r", $RuntimeName,
-        "--self-contained", "false",
+        "--self-contained", ($(if ($SelfContained) { "true" } else { "false" })),
+        "-p:Version=$VersionText",
+        "-p:FileVersion=$VersionText",
+        "-p:InformationalVersion=$VersionText",
+        "-p:IncludeSourceRevisionInInformationalVersion=false",
         "-o", $OutputPath
     )
 
@@ -54,32 +80,35 @@ function Get-UnicodeName {
 }
 
 function Build-LeadFlowZip {
-    Write-Host "== Building LeadFlow ($Configuration / $Runtime) ==" -ForegroundColor Cyan
+    param(
+        [string]$VersionText,
+        [string]$TargetOut,
+        [hashtable]$Info
+    )
 
-    if ($Clean) {
-        Remove-Item -LiteralPath $layoutRoot -Recurse -Force -ErrorAction SilentlyContinue
-        Remove-Item -LiteralPath $zipPath -Force -ErrorAction SilentlyContinue
-    }
-
-    New-Item -Path $distRoot -ItemType Directory -Force | Out-Null
-    New-Item -Path $workRoot -ItemType Directory -Force | Out-Null
+    $targetRuntime = $Info.Runtime
+    Write-Host "== Building LeadFlow $VersionText ($Configuration / $targetRuntime) ==" -ForegroundColor Cyan
 
     $docsFolderName = Get-UnicodeName @(0x0414, 0x043E, 0x043A, 0x0443, 0x043C, 0x0435, 0x043D, 0x0442, 0x0430, 0x0446, 0x0438, 0x044F)
     $startFileName = Get-UnicodeName @(0x041A, 0x0430, 0x043A, 0x0020, 0x0437, 0x0430, 0x043F, 0x0443, 0x0441, 0x0442, 0x0438, 0x0442, 0x044C) + ".txt"
+    $packageName = "LeadFlow-Windows-x64-$VersionText"
+    $layoutRoot = Join-Path $TargetOut $packageName
+    $zipPath = Join-Path $TargetOut "$packageName.zip"
 
-    $appOut = Join-Path $layoutRoot "LeadFlow"
-    $docsOut = Join-Path $layoutRoot $docsFolderName
-    $projectPath = Join-Path $repoRoot "LeadFlow\LeadFlow.csproj"
-
+    $projectPath = Join-Path $repoRoot $Info.Project
     if (-not (Test-Path $projectPath)) {
         throw "LeadFlow project not found: $projectPath"
     }
 
     Remove-Item -LiteralPath $layoutRoot -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $zipPath -Force -ErrorAction SilentlyContinue
+
+    $appOut = Join-Path $layoutRoot "LeadFlow"
+    $docsOut = Join-Path $layoutRoot $docsFolderName
     New-Item -Path $appOut -ItemType Directory -Force | Out-Null
     New-Item -Path $docsOut -ItemType Directory -Force | Out-Null
 
-    Invoke-DotnetPublish -ProjectPath $projectPath -OutputPath $appOut -RuntimeName $Runtime -Config $Configuration
+    Invoke-DotnetPublish -ProjectPath $projectPath -OutputPath $appOut -RuntimeName $targetRuntime -Config $Configuration -VersionText $VersionText
 
     $readme = Join-Path $repoRoot "docs\README.md"
     $guide = Join-Path $repoRoot "docs\USER_GUIDE_RU.md"
@@ -95,7 +124,6 @@ function Build-LeadFlowZip {
         throw "LeadFlow.exe was not produced in $appOut"
     }
 
-    Remove-Item -LiteralPath $zipPath -Force -ErrorAction SilentlyContinue
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     [System.IO.Compression.ZipFile]::CreateFromDirectory(
         $layoutRoot,
@@ -104,13 +132,113 @@ function Build-LeadFlowZip {
         $false)
 
     $zipMb = [math]::Round((Get-Item $zipPath).Length / 1MB, 2)
-    Write-Host ""
-    Write-Host "LeadFlow package ready." -ForegroundColor Green
-    Write-Host "Folder: $layoutRoot"
-    Write-Host "Archive: $zipPath ($zipMb MB)"
+    Write-Host "Archive: $zipPath ($zipMb MB)" -ForegroundColor Green
 }
 
-switch ($Target) {
-    "leadflow" { Build-LeadFlowZip }
-    default { throw "Unknown build target: $Target" }
+function Build-OrbitaWorkerMsi {
+    param(
+        [string]$VersionText,
+        [string]$TargetOut,
+        [hashtable]$Info
+    )
+
+    $targetRuntime = $Info.Runtime
+    $workRootPublish = Join-Path $publishRoot "tmp\orbita-worker-publish"
+    $msiProject = Join-Path $repoRoot "installer\Orbita.Worker.Msi\Orbita.Worker.Msi.wixproj"
+    $projectPath = Join-Path $repoRoot $Info.Project
+    $msiName = "Orbita.Worker.Setup-$VersionText.msi"
+    $msiPath = Join-Path $TargetOut $msiName
+
+    Write-Host "== Building Orbita Worker $VersionText ($Configuration / $targetRuntime) ==" -ForegroundColor Cyan
+
+    if (-not (Test-Path $projectPath)) {
+        throw "Orbita.Worker project not found: $projectPath"
+    }
+    if (-not (Test-Path $msiProject)) {
+        throw "WiX project not found: $msiProject"
+    }
+
+    if ($Clean) {
+        Remove-Item -LiteralPath $workRootPublish -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    Invoke-DotnetPublish -ProjectPath $projectPath -OutputPath $workRootPublish -RuntimeName $targetRuntime -Config $Configuration -VersionText $VersionText -SelfContained $true
+
+    $exePath = Join-Path $workRootPublish "Orbita.Worker.exe"
+    if (-not (Test-Path $exePath)) {
+        throw "Orbita.Worker.exe was not produced in $workRootPublish"
+    }
+
+    $msiVersion = Convert-ToMsiProductVersion $VersionText
+    Write-Host "== Building MSI (product version $msiVersion) ==" -ForegroundColor Cyan
+    & dotnet build $msiProject -c $Configuration -p:PublishDir=$workRootPublish\ -p:ProductVersion=$msiVersion
+    if ($LASTEXITCODE -ne 0) {
+        throw "dotnet build failed: $msiProject"
+    }
+
+    $builtMsi = Get-ChildItem -LiteralPath (Join-Path $repoRoot "installer\Orbita.Worker.Msi\bin\$Configuration") -Filter "*.msi" |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 1
+
+    if (-not $builtMsi) {
+        throw "MSI was not produced by WiX build."
+    }
+
+    Copy-Item -LiteralPath $builtMsi.FullName -Destination $msiPath -Force
+    $msiMb = [math]::Round((Get-Item $msiPath).Length / 1MB, 2)
+    Write-Host "MSI: $msiPath ($msiMb MB)" -ForegroundColor Green
+
+    Write-BuildManifest -TargetOut $TargetOut -Name "orbita-worker" -VersionText $VersionText -Configuration $Configuration -Runtime $targetRuntime -SourceProject $Info.Project -Extra @{
+        msiProductVersion = $msiVersion
+        packageFile = $msiName
+    }
 }
+
+function Publish-Target {
+    param(
+        [string]$Name,
+        [hashtable]$Info,
+        [hashtable]$State,
+        [hashtable]$Seed
+    )
+
+    $versionInfo = Get-NextVersion -Name $Name -Info $Info -State $State -Seed $Seed -RepoRoot $repoRoot -OutRoot $outRoot -VersionBump $VersionBump -MaxAutoRevision $MaxAutoRevision
+    $versionText = $versionInfo.Version.ToString()
+    Write-Host "Version: $versionText (from $($versionInfo.Base), bump $($versionInfo.Bump))"
+
+    $targetOut = Join-Path (Join-Path $outRoot $Name) $versionText
+    Remove-Item -LiteralPath $targetOut -Recurse -Force -ErrorAction SilentlyContinue
+    New-Item -Path $targetOut -ItemType Directory -Force | Out-Null
+
+    switch ($Info.OutputKind) {
+        "leadflow-zip" {
+            Build-LeadFlowZip -VersionText $versionText -TargetOut $targetOut -Info $Info
+            Write-BuildManifest -TargetOut $targetOut -Name $Name -VersionText $versionText -Configuration $Configuration -Runtime $Info.Runtime -SourceProject $Info.Project -Extra @{
+                packageFile = "LeadFlow-Windows-x64-$versionText.zip"
+            }
+        }
+        "orbita-worker-msi" {
+            Build-OrbitaWorkerMsi -VersionText $versionText -TargetOut $targetOut -Info $Info
+        }
+        default {
+            throw "Unknown output kind: $($Info.OutputKind)"
+        }
+    }
+
+    $State[$Name] = $versionText
+    Write-Host "Output: $targetOut"
+}
+
+$seed = Read-VersionSeed -PublishRoot $publishRoot
+$state = Read-VersionState -StateRoot $stateRoot
+$selectedTargets = if ($Target -eq "all") { @("leadflow", "orbita-worker") } else { @($Target) }
+
+foreach ($name in $selectedTargets) {
+    Write-Host ""
+    Publish-Target -Name $name -Info $targets[$name] -State $state -Seed $seed
+}
+
+Write-VersionState -StateRoot $stateRoot -State $state
+
+Write-Host ""
+Write-Host "Build state: $(Join-Path $stateRoot "versions.json")" -ForegroundColor DarkGray

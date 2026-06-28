@@ -1,5 +1,5 @@
-using LeadFlow.Data;
-using LeadFlow.Models;
+using LeadFlow.Core.Data;
+using LeadFlow.Core.Models;
 using LeadFlow.Tests.Support;
 using Xunit;
 

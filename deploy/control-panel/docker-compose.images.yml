@@ -33,6 +33,10 @@ services:
       Cors__Origins__1: ${CORS_ORIGIN_1:-https://www.orbitsu.ru}
       Cors__Origins__2: ${CORS_ORIGIN_2:-http://163.5.153.207}
       Logs__SharedRoot: /app/Data/logs
+      Kestrel__Limits__MaxRequestBodySize: "536870912"
+      Kestrel__Limits__MinRequestBodyDataRate__BytesPerSecond: "100"
+      Kestrel__Limits__MinRequestBodyDataRate__GracePeriod: "00:10:00"
+      WorkerReleases__MaxUploadBytes: "536870912"
     depends_on:
       postgres:
         condition: service_healthy
@@ -40,6 +44,7 @@ services:
       - "127.0.0.1:8082:8080"
     volumes:
       - orbita_logs:/app/Data/logs
+      - orbita_releases:/app/Data/releases
 
   web:
     image: orbita-web:prod
@@ -53,6 +58,10 @@ services:
       Jwt__Key: ${JWT_KEY}
       DataProtection__KeysPath: /app/Data/dataprotection
       Logs__SharedRoot: /app/Data/logs
+      Kestrel__Limits__MaxRequestBodySize: "536870912"
+      Kestrel__Limits__MinRequestBodyDataRate__BytesPerSecond: "100"
+      Kestrel__Limits__MinRequestBodyDataRate__GracePeriod: "00:10:00"
+      WorkerReleases__MaxUploadBytes: "536870912"
     depends_on:
       - api
     ports:
@@ -102,5 +111,6 @@ services:
 volumes:
   orbita_pg:
   orbita_logs:
+  orbita_releases:
   orbita_dataprotection:
   notifybot_pg:

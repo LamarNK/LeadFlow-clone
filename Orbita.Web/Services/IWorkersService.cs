@@ -10,7 +10,12 @@ public interface IWorkersService
         string displayName,
         Guid? officeId = null,
         CancellationToken ct = default);
-    Task<(bool Success, string? Error)> UpdateWorkerSettingsAsync(Guid workerId, int maxConcurrentAccounts, CancellationToken ct = default);
+    Task<(bool Success, string? Error)> UpdateWorkerSettingsAsync(
+        Guid workerId,
+        int maxConcurrentAccounts,
+        string? adsPowerApiBaseUrl,
+        string? adsPowerApiKey,
+        CancellationToken ct = default);
     Task<(bool Success, string? Error)> UpdateWorkerAccountAsync(Guid workerId, Guid accountId, bool isEnabled, CancellationToken ct = default);
 
     Task<(Stream? Stream, string? FileName, string? Error)> OpenLatestWorkerReleaseDownloadAsync(CancellationToken ct = default);

@@ -4,8 +4,8 @@ using System.Windows;
 using System.Windows.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using LeadFlow.Data;
-using LeadFlow.Models;
+
+
 
 namespace LeadFlow.ViewModels;
 

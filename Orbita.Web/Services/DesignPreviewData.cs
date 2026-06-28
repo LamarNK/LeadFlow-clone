@@ -143,13 +143,15 @@ internal static class DesignPreviewData
         }).ToList();
     }
 
-    public static DashboardViewModel BuildDashboardViewModel()
+    public static DashboardViewModel BuildDashboardViewModel(DashboardPeriod? period = null)
     {
+        period ??= DashboardPeriod.Today;
         var updatedAt = Now;
         var kpiCards = (IReadOnlyList<DashboardKpiCardViewModel>)
         [
             new()
                 {
+                    Key = "responses",
                     Label = "Откликов всего",
                     Value = "1234",
                     CountValue = 1234,
@@ -162,6 +164,7 @@ internal static class DesignPreviewData
                 },
                 new()
                 {
+                    Key = "duplicates",
                     Label = "Дублей",
                     Value = "256",
                     CountValue = 256,
@@ -174,6 +177,7 @@ internal static class DesignPreviewData
                 },
                 new()
                 {
+                    Key = "errors",
                     Label = "Ошибок",
                     Value = "18",
                     CountValue = 18,
@@ -186,6 +190,7 @@ internal static class DesignPreviewData
                 },
                 new()
                 {
+                    Key = "accounts",
                     Label = "Аккаунтов активно",
                     Value = "30 / 30",
                     CountValue = 30,
@@ -199,6 +204,7 @@ internal static class DesignPreviewData
                 },
                 new()
                 {
+                    Key = "workers",
                     Label = "Воркеров онлайн",
                     Value = "3 / 3",
                     CountValue = 3,
@@ -230,7 +236,10 @@ internal static class DesignPreviewData
                 ShowRefresh = true,
                 ShowDateRange = true,
                 UpdatedAtUtc = updatedAt,
-                DateRangeLabel = $"{DateTime.Today:dd.MM.yyyy} — {DateTime.Today:dd.MM.yyyy}"
+                DateRangeLabel = period.Label,
+                DateFrom = period.From,
+                DateTo = period.To,
+                ActivePeriodPreset = period.ActivePreset
             },
             KpiCards = kpiCards,
             Workers =
@@ -297,7 +306,10 @@ internal static class DesignPreviewData
                 WorkerMoscowId, "Worker #1", "WIN-W01", "2.4.1",
                 "Running", null, true, true, Now.AddSeconds(-12), Now.AddMinutes(8),
                 new DashboardStatsDto(14, 432, 334, 42, 98, 5, 0, 10, 0, 0, 120, 0, 2, BuildHourly(), BuildWeekly()),
-                BuildWorkerBalances(WorkerMoscowId));
+                BuildWorkerBalances(WorkerMoscowId),
+                MaxConcurrentAccounts: 3,
+                AdsPowerApiBaseUrl: "http://local.adspower.net:50325",
+                AdsPowerApiKey: "preview-adspower-key");
         }
 
         if (id == WorkerSpbId)
@@ -1019,5 +1031,199 @@ internal static class DesignPreviewData
         var list = rows.ToList();
         var items = list.Skip((page - 1) * pageSize).Take(pageSize).ToList();
         return new ServiceLogsPageDto(items, list.Count, page, pageSize);
+    }
+
+    public static ResponsesIndexViewModel BuildResponsesIndexViewModel(ResponsesFilterViewModel filters)
+    {
+        var period = new DashboardPeriod(filters.DateFrom, filters.DateTo);
+        var allRows = BuildPreviewResponseRows();
+        var filtered = FilterPreviewResponseRows(allRows, filters, period);
+        var total = filtered.Count;
+        var page = Math.Max(1, filters.Page);
+        var pageSize = ResponsesIndexBuilder.DefaultPageSize;
+        var paged = filtered
+            .OrderByDescending(r => r.CreatedAtUtc)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToList();
+
+        var duplicates = filtered.Count(r => r.Status == ResponseStatuses.Duplicate);
+        var unique = total - duplicates;
+        var uniqueAuthors = filtered
+            .Where(r => !string.IsNullOrWhiteSpace(r.PhoneNormalized))
+            .Select(r => r.PhoneNormalized)
+            .Distinct(StringComparer.Ordinal)
+            .Count();
+
+        var summary = new ResponsesSummaryDto(total, unique, duplicates, uniqueAuthors, 17);
+
+        var accountOptions = ResponsesIndexBuilder.BuildAccountOptions(
+            filtered
+                .GroupBy(r => new { r.AccountId, r.AccountName })
+                .Select(g => new ResponseFilterAccountDto(g.Key.AccountId, g.Key.AccountName))
+                .ToList());
+
+        return new ResponsesIndexViewModel
+        {
+            Filters = filters,
+            PeriodLabel = period.Label,
+            ActivePeriodPreset = period.ActivePreset,
+            KpiCards = ResponsesIndexBuilder.BuildKpiCards(summary),
+            Statuses = ResponsesIndexBuilder.StatusOptions,
+            Workers = BuildPreviewWorkerOptions(),
+            Accounts = accountOptions,
+            Responses = paged,
+            Pagination = new PaginationViewModel
+            {
+                Page = page,
+                PageSize = pageSize,
+                TotalItems = total
+            }
+        };
+    }
+
+    private static IReadOnlyList<EventFilterOptionViewModel> BuildPreviewWorkerOptions()
+    {
+        var options = new List<EventFilterOptionViewModel> { new() { Value = "", Label = "Все воркеры" } };
+        options.AddRange(PreviewWorkerIds.Select((id, index) => new EventFilterOptionViewModel
+        {
+            Value = id.ToString(),
+            Label = $"Worker #{index + 1}"
+        }));
+        return options;
+    }
+
+    private static IReadOnlyList<ResponseRowViewModel> BuildPreviewResponseRows()
+    {
+        const int total = 1248;
+        var rng = new Random(5150);
+        var rows = new List<ResponseRowViewModel>(total);
+        var names = new[]
+        {
+            "Иван Петров", "Мария Сидорова", "Алексей Козлов", "Елена Волкова", "Дмитрий Орлов",
+            "", "Анна Морозова", "Сергей Лебедев", "Ольга Новикова", "Павел Соколов"
+        };
+        var vacancies = new[]
+        {
+            "Кровать двуспальная 180×200",
+            "Диван угловой серый",
+            "Шкаф-купе 240 см",
+            "Стол письменный белый",
+            "Кухонный гарнитур 2.4 м"
+        };
+        var statusPlan = new List<string>(total);
+        statusPlan.AddRange(Enumerable.Repeat(ResponseStatuses.Sent, 620));
+        statusPlan.AddRange(Enumerable.Repeat(ResponseStatuses.Duplicate, 316));
+        statusPlan.AddRange(Enumerable.Repeat(ResponseStatuses.Error, 82));
+        statusPlan.AddRange(Enumerable.Repeat(ResponseStatuses.InProgress, 230));
+        for (var i = statusPlan.Count - 1; i > 0; i--)
+        {
+            var j = rng.Next(i + 1);
+            (statusPlan[i], statusPlan[j]) = (statusPlan[j], statusPlan[i]);
+        }
+
+        for (var i = 0; i < total; i++)
+        {
+            var workerIndex = i % PreviewWorkerIds.Length;
+            var workerId = PreviewWorkerIds[workerIndex];
+            var accountNum = (i % 120) + 1;
+            var accountId = Guid.Parse($"33333333-3333-3333-3333-{accountNum:D12}");
+            var status = statusPlan[i];
+            var adId = rng.Next(10_000_000, 99_999_999).ToString();
+            var phoneDigits = $"79{rng.Next(10, 99)}{rng.Next(1000000, 9999999)}";
+            var hidePhone = i % 17 == 0;
+            var createdAt = Now.AddMinutes(-(i * 4 + rng.Next(0, 20)));
+
+            rows.Add(new ResponseRowViewModel
+            {
+                Id = Guid.Parse($"55555555-5555-5555-5555-{(i + 1):D12}"),
+                CreatedAtUtc = createdAt,
+                FullName = names[i % names.Length],
+                PhoneRaw = hidePhone ? string.Empty : $"+{phoneDigits}",
+                PhoneNormalized = hidePhone ? string.Empty : phoneDigits,
+                Vacancy = vacancies[i % vacancies.Length],
+                VacancyUrl = $"https://www.avito.ru/item/{adId}",
+                MessengerUrl = hidePhone ? string.Empty : $"https://www.avito.ru/profile/messenger/channel/{adId}",
+                SourceResponseId = adId,
+                City = "Москва",
+                AccountId = accountId,
+                AccountName = $"user_{accountNum:D2}",
+                WorkerId = workerId,
+                WorkerName = $"Worker #{workerIndex + 1}",
+                Source = "Avito",
+                Status = status,
+                StatusLabel = status switch
+                {
+                    ResponseStatuses.Duplicate => "Дубль",
+                    ResponseStatuses.Sent => "Отправлен",
+                    ResponseStatuses.Error => "Ошибка",
+                    _ => "Уникальный"
+                },
+                StatusTone = status switch
+                {
+                    ResponseStatuses.Duplicate => "duplicate",
+                    ResponseStatuses.Sent => "sent",
+                    ResponseStatuses.Error => "error",
+                    _ => "unique"
+                },
+                IsPhoneHidden = hidePhone,
+                HasMessenger = !hidePhone,
+                BitrixEntityId = status == ResponseStatuses.Sent ? rng.Next(1000, 99999).ToString() : null,
+                CanResend = status is ResponseStatuses.Error or ResponseStatuses.InProgress
+            });
+        }
+
+        return rows;
+    }
+
+    private static List<ResponseRowViewModel> FilterPreviewResponseRows(
+        IReadOnlyList<ResponseRowViewModel> rows,
+        ResponsesFilterViewModel filters,
+        DashboardPeriod period)
+    {
+        IEnumerable<ResponseRowViewModel> query = rows;
+        _ = period;
+
+        if (!string.IsNullOrWhiteSpace(filters.SearchQuery))
+        {
+            var term = filters.SearchQuery.Trim();
+            query = query.Where(r =>
+                r.FullName.Contains(term, StringComparison.OrdinalIgnoreCase)
+                || r.PhoneRaw.Contains(term, StringComparison.OrdinalIgnoreCase)
+                || r.Vacancy.Contains(term, StringComparison.OrdinalIgnoreCase)
+                || r.AccountName.Contains(term, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (!string.IsNullOrWhiteSpace(filters.VacancyQuery))
+        {
+            var adTerm = filters.VacancyQuery.Trim();
+            query = query.Where(r =>
+                r.Vacancy.Contains(adTerm, StringComparison.OrdinalIgnoreCase)
+                || r.SourceResponseId.Contains(adTerm, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (filters.WorkerId is Guid workerId)
+        {
+            query = query.Where(r => r.WorkerId == workerId);
+        }
+
+        if (filters.AccountId is Guid accountId)
+        {
+            query = query.Where(r => r.AccountId == accountId);
+        }
+
+        if (!string.IsNullOrWhiteSpace(filters.Status))
+        {
+            query = filters.Status switch
+            {
+                "unique" => query.Where(r => r.Status != ResponseStatuses.Duplicate),
+                "duplicate" => query.Where(r => r.Status == ResponseStatuses.Duplicate),
+                "sent" => query.Where(r => r.Status == ResponseStatuses.Sent),
+                "error" => query.Where(r => r.Status is ResponseStatuses.Error or ResponseStatuses.ActionRequired),
+                _ => query
+            };
+        }
+
+        return query.ToList();
     }
 }

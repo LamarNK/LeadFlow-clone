@@ -148,6 +148,39 @@
 
                     <div class="settings-bitrix-validation" data-bitrix-validation-results hidden></div>
 
+                    @if (bitrix.OfficeWebhooks.Count > 0)
+                    {
+                        <div class="settings-bitrix-office-list">
+                            <h3 class="settings-card-title">Вебхуки офиса</h3>
+                            <p class="settings-bitrix-hint">Автоотправка откликов использует первый валидный вебхук из списка.</p>
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Пользователь</th>
+                                        <th>Портал</th>
+                                        <th>Статус</th>
+                                        <th>Автоотправка</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                @foreach (var hook in bitrix.OfficeWebhooks)
+                                {
+                                    <tr>
+                                        <td>@hook.Email</td>
+                                        <td>@(hook.PortalHost ?? "—")</td>
+                                        <td>
+                                            <span class="settings-bitrix-status settings-bitrix-status--@hook.ValidationStatusTone">
+                                                @hook.ValidationStatusLabel
+                                            </span>
+                                        </td>
+                                        <td>@(hook.IsPrimaryForIngestion ? "Да" : "—")</td>
+                                    </tr>
+                                }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+
                     <details class="settings-bitrix-instructions">
                         <summary>Как получить вебхук и какие права выдать</summary>
                         <ol>

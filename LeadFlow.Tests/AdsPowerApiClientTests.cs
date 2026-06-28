@@ -1,5 +1,5 @@
 using System.Net.Http;
-using LeadFlow.Services.AdsPower;
+using LeadFlow.Core.Services.AdsPower;
 using LeadFlow.Tests.Support;
 using Xunit;
 

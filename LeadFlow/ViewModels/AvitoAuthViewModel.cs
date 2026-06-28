@@ -2,10 +2,11 @@ using System.Windows;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using LeadFlow.Data;
-using LeadFlow.Models;
+
+
 using LeadFlow.Services;
-using LeadFlow.Services.Avito;
+
+
 using LeadFlow.Services.Browser;
 
 namespace LeadFlow.ViewModels;

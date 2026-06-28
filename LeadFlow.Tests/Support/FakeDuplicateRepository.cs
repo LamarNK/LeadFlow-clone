@@ -1,5 +1,5 @@
-using LeadFlow.Data;
-using LeadFlow.Models;
+using LeadFlow.Core.Data;
+using LeadFlow.Core.Models;
 
 namespace LeadFlow.Tests.Support;
 
@@ -43,4 +43,9 @@ internal sealed class FakeDuplicateRepository : ICandidateDuplicateRepository
 
         return Task.FromResult(result);
     }
+
+    public Task<HashSet<string>> GetExistingSourceResponseIdsAsync(
+        IEnumerable<string> sourceResponseIds,
+        CancellationToken cancellationToken) =>
+        Task.FromResult(new HashSet<string>(StringComparer.Ordinal));
 }

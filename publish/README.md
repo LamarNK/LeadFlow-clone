@@ -1,29 +1,41 @@
 # Publish / Build
 
-## build.bat — только LeadFlow (Windows)
+## build.bat — LeadFlow и Orbita Worker (Windows)
 
-Собирает десктопное приложение в архив:
+Версионирование как в DeskLink: `publish\version-seed.json` (стартовые версии), `publish\state\versions.json` (последние собранные), артефакты в `publish\out\{target}\{version}\`.
 
-```text
-dist\LeadFlow-Windows-x64-Release.zip
+По умолчанию bump **auto**: +revision; при revision ≥ 99 → +build. Явный bump:
+
+```bat
+publish\build.bat -Target orbita-worker -VersionBump minor
+publish\build.bat -Target all -VersionBump revision -Clean
 ```
 
-Структура архива:
+### LeadFlow (ZIP)
 
 ```text
-LeadFlow-Windows-x64-Release/
-  LeadFlow\LeadFlow.exe
-  Документация\README.md
-  Документация\USER_GUIDE_RU.md
-  Как запустить.txt
+publish\out\leadflow\1.0.0.1\LeadFlow-Windows-x64-1.0.0.1.zip
+publish\out\leadflow\1.0.0.1\orbita-build.json
 ```
+
+### Orbita Worker (MSI)
+
+```text
+publish\out\orbita-worker\1.0.0.1\Orbita.Worker.Setup-1.0.0.1.msi
+```
+
+Self-contained (~50–80 MB), per-user: `%LocalAppData%\Orbita\Worker\`. Повторная установка MSI **обновляет** существующую версию (MajorUpgrade + тот же UpgradeCode), не создаёт вторую копию.
 
 Запуск:
 
 ```bat
 publish\build.bat
 publish\build.bat -Target leadflow
+publish\build.bat -Target orbita-worker
+publish\build.bat -Target all
 ```
+
+Меню: multi-select (Space — выбрать несколько, Enter — собрать).
 
 ## publish.bat — Orbita + NotifyBot (сервер)
 

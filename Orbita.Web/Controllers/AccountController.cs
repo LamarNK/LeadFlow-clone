@@ -66,7 +66,7 @@ public sealed class AccountController(
             $"Login succeeded in panel ({result.Email}).",
             DeskLinkAuditLogLevel.Info);
 
-        if (string.Equals(result.Token, "design-preview", StringComparison.Ordinal))
+        if (string.Equals(result.Token, AuthSession.DesignPreviewToken, StringComparison.Ordinal))
         {
             await auth.SignInPreviewAsync(result.Email, previewOptions.Value.DisplayName, ct);
         }

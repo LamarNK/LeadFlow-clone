@@ -8,7 +8,10 @@ public sealed class PageHeaderViewModel
     public bool ShowRefresh { get; init; }
     public bool ShowDateRange { get; init; }
     public string DateRangeLabel { get; init; } =
-        $"{DateTime.Today:dd.MM.yyyy} — {DateTime.Today:dd.MM.yyyy}";
+        DateTime.Today.ToString("dd.MM.yyyy");
+    public DateTime DateFrom { get; init; } = DateTime.Today;
+    public DateTime DateTo { get; init; } = DateTime.Today;
+    public string? ActivePeriodPreset { get; init; }
 
     public string UserInitial { get; init; } = "А";
 

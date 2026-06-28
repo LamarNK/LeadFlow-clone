@@ -1,4 +1,4 @@
-using LeadFlow.Data;
+using LeadFlow.Core.Data;
 using Microsoft.EntityFrameworkCore;
 
 namespace LeadFlow.Tests.Support;

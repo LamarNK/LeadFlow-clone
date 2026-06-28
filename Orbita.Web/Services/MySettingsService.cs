@@ -60,16 +60,20 @@ public sealed class MySettingsService(OrbitaApiClient api, IOptions<DesignPrevie
     private async Task<BitrixSettingsViewModel?> BuildBitrixAsync(CancellationToken ct)
     {
         var integration = await api.GetMyBitrixIntegrationAsync(ct);
+        var officeWebhooks = (await api.GetOfficeBitrixWebhooksAsync(ct) ?? [])
+            .Select(MapOfficeWebhook)
+            .ToList();
+
         if (integration is null)
         {
             return new BitrixSettingsViewModel
             {
                 ValidationStatus = BitrixValidationStatuses.NotConfigured,
                 ValidationStatusLabel = "Не настроено",
-                ValidationStatusTone = "neutral"
+                ValidationStatusTone = "neutral",
+                OfficeWebhooks = officeWebhooks
             };
         }
-
         var (label, tone) = MapValidationStatus(integration.ValidationStatus);
         return new BitrixSettingsViewModel
         {
@@ -78,8 +82,22 @@ public sealed class MySettingsService(OrbitaApiClient api, IOptions<DesignPrevie
             ValidationStatus = integration.ValidationStatus,
             ValidationMessage = integration.ValidationMessage,
             LastValidatedAtUtc = integration.LastValidatedAtUtc,
+            OfficeWebhooks = officeWebhooks,
             ValidationStatusLabel = label,
             ValidationStatusTone = tone
+        };
+    }
+
+    private static OfficeBitrixWebhookRowViewModel MapOfficeWebhook(OfficeBitrixWebhookDto webhook)
+    {
+        var (label, tone) = MapValidationStatus(webhook.ValidationStatus);
+        return new OfficeBitrixWebhookRowViewModel
+        {
+            Email = webhook.Email,
+            PortalHost = webhook.PortalHost,
+            ValidationStatusLabel = label,
+            ValidationStatusTone = tone,
+            IsPrimaryForIngestion = webhook.IsPrimaryForIngestion
         };
     }
 

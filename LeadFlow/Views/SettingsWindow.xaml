@@ -1,7 +1,7 @@
 <Window x:Class="LeadFlow.Views.SettingsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:models="clr-namespace:LeadFlow.Models"
+        xmlns:models="clr-namespace:LeadFlow.Core.Models;assembly=LeadFlow.Core"
         Title="Настройки LeadFlow"
         PreviewDragOver="SettingsWindow_OnPreviewDragOver"
         DragLeave="SettingsWindow_OnDragLeave"
