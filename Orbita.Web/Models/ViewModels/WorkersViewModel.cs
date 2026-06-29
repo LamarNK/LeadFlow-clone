@@ -182,6 +182,7 @@ public sealed class WorkerAccountRowViewModel
     public int Responses { get; init; }
     public DateTime? LastActivityUtc { get; init; }
     public int Errors { get; init; }
+    public string? LastErrorMessage { get; init; }
 }
 
 public sealed class WorkerExtraInfoViewModel

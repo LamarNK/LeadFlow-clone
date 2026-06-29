@@ -5,6 +5,7 @@ using LeadFlow.Core.Data;
 using LeadFlow.Core.Logging.Audit;
 using LeadFlow.Core.Services;
 using LeadFlow.Core.Services.Avito;
+using LeadFlow.Core.Services.Browser;
 using PuppeteerSharp;
 
 namespace LeadFlow.Core.Services.AdsPower;
@@ -322,7 +323,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 throw new InvalidOperationException("AdsPower CDP: страница объявлений Avito вернула пустой HTML.");
             }
 
-            ThrowIfCaptcha(html, page.Url, nameof(LoadProfileItemsHtmlAsync), adsPowerUserId);
+            await ThrowIfCaptchaAsync(page, html, cancellationToken).ConfigureAwait(false);
 
             _ = GlobalLogger.Instance.LogAsync(
                 $"AdsPower profile-items: HTML captured ({html.Length} chars).",
@@ -476,7 +477,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 throw new InvalidOperationException("AdsPower CDP: вкладка «С ошибками» вернула пустой HTML.");
             }
 
-            ThrowIfCaptcha(html, page.Url, nameof(LoadBlockedItemsHtmlAsync), adsPowerUserId);
+            await ThrowIfCaptchaAsync(page, html, cancellationToken).ConfigureAwait(false);
 
             _ = GlobalLogger.Instance.LogAsync(
                 $"AdsPower blocked-items: HTML captured ({html.Length} chars).",
@@ -511,7 +512,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
     /// Если в HTML обнаружена капча/firewall — логируем и бросаем <see cref="AvitoCaptchaDetectedException"/>,
     /// чтобы мониторинг перевёл аккаунт в RequiresManualAction и не долбил Avito дальше.
     /// </summary>
-    private static void ThrowIfCaptcha(string html, string? pageUrl, string memberName, string adsPowerUserId)
+    private static async Task ThrowIfCaptchaAsync(IPage page, string html, CancellationToken cancellationToken)
     {
         var kind = AvitoCaptchaDetector.Classify(html);
         if (kind is null)
@@ -519,20 +520,22 @@ public sealed partial class AdsPowerAvitoAutomationService(
             return;
         }
 
+        var screenshot = await BrowserDiagnosticsCapture
+            .CapturePageScreenshotAsync(page, cancellationToken)
+            .ConfigureAwait(false);
+
         _ = GlobalLogger.Instance.LogAsync(
-            $"AdsPower {memberName}: обнаружена капча/firewall ({kind}) на {pageUrl ?? "<unknown>"}.",
+            $"AdsPower captcha/firewall detected ({kind}) on {page.Url ?? "<unknown>"}.",
             DeskLinkAuditLogLevel.Warning,
-            memberName: memberName,
-            
             properties: new Dictionary<string, object?>
             {
                 ["step"] = "captcha_detected",
-                ["adsPower.userId"] = adsPowerUserId,
-                ["page.url"] = pageUrl,
-                ["captcha.kind"] = kind
+                ["page.url"] = page.Url,
+                ["captcha.kind"] = kind,
+                ["screenshot.bytes"] = screenshot?.Length ?? 0
             });
 
-        throw new AvitoCaptchaDetectedException(kind, pageUrl, html);
+        throw new AvitoCaptchaDetectedException(kind, page.Url, html, screenshot);
     }
 
     public async Task<string> LoadProfileSwitchHtmlAsync(
@@ -622,7 +625,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
             throw new InvalidOperationException("AdsPower CDP: страница переключения профилей вернула пустой HTML.");
         }
 
-        ThrowIfCaptcha(html, page.Url, nameof(CaptureProfileSwitchHtmlInSessionAsync), adsPowerUserId);
+        await ThrowIfCaptchaAsync(page, html, cancellationToken).ConfigureAwait(false);
 
         _ = GlobalLogger.Instance.LogAsync(
             $"AdsPower profile-switch: HTML captured ({html.Length} chars).",

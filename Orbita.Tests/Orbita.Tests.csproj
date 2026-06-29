@@ -19,6 +19,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Orbita.Api\Orbita.Api.csproj" />
+    <ProjectReference Include="..\Orbita.Contracts\Orbita.Contracts.csproj" />
   </ItemGroup>
 
 </Project>

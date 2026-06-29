@@ -108,6 +108,20 @@ public sealed class WorkerEventEntity
     public WorkerEntity Worker { get; set; } = null!;
 }
 
+public sealed class WorkerDiagnosticAttachmentEntity
+{
+    public Guid Id { get; set; }
+    public Guid WorkerId { get; set; }
+    public Guid? AccountId { get; set; }
+    public string Kind { get; set; } = string.Empty;
+    public string? PageUrl { get; set; }
+    public string RelativePath { get; set; } = string.Empty;
+    public long SizeBytes { get; set; }
+    public DateTime CreatedAtUtc { get; set; }
+
+    public WorkerEntity Worker { get; set; } = null!;
+}
+
 public sealed class PanelUserBitrixSettingsEntity
 {
     public string UserId { get; set; } = string.Empty;

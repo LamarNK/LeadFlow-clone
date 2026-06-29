@@ -16,6 +16,8 @@ public sealed class WorkerMonitoringService(
     IWorkerConfigProvider configProvider,
     IMonitoringRepository repository,
     INewCandidateSink candidateSink,
+    IWorkerEventSink eventSink,
+    IWorkerDiagnosticsUploader diagnosticsUploader,
     IPhoneNormalizer phoneNormalizer,
     ICandidateParser candidateParser,
     IAvitoResponseSource avitoResponseSource,
@@ -294,6 +296,12 @@ public sealed class WorkerMonitoringService(
             _ = GlobalLogger.Instance.LogAsync(
                 $"Worker account {account.DisplayName} failed: {ex.Message}",
                 DeskLinkAuditLogLevel.Error);
+            await PublishAccountEventAsync(
+                account,
+                "Error",
+                $"Ошибка аккаунта {account.DisplayName}: {ex.Message}",
+                ex.Message,
+                cancellationToken).ConfigureAwait(false);
             return (0, true, false);
         }
     }
@@ -674,8 +682,16 @@ public sealed class WorkerMonitoringService(
     {
         account.Status = AvitoAccountStatus.RequiresManualAction;
         account.LastErrorMessage =
-            $"Avito captcha/firewall ({captchaEx.Kind}). Manual action required.";
+            $"Avito captcha/firewall ({captchaEx.Kind}). Откройте браузер и пройдите проверку.";
         await repository.SaveAccountAsync(account, ct).ConfigureAwait(false);
+
+        var details = await BuildCaptchaEventDetailsAsync(account, captchaEx, ct).ConfigureAwait(false);
+        await PublishAccountEventAsync(
+            account,
+            "Warning",
+            $"Капча/firewall на аккаунте {account.DisplayName}",
+            details,
+            ct).ConfigureAwait(false);
     }
 
     private async Task HandleAdsPowerDailyOpenLimitForAccountAsync(
@@ -686,6 +702,12 @@ public sealed class WorkerMonitoringService(
         account.Status = AvitoAccountStatus.RequiresManualAction;
         account.LastErrorMessage = limitEx.ApiMessage ?? limitEx.Message;
         await repository.SaveAccountAsync(account, ct).ConfigureAwait(false);
+        await PublishAccountEventAsync(
+            account,
+            "Warning",
+            $"Лимит AdsPower для {account.DisplayName}",
+            account.LastErrorMessage,
+            ct).ConfigureAwait(false);
     }
 
     private async Task HandleAdsPowerRateLimitForAccountAsync(
@@ -695,5 +717,47 @@ public sealed class WorkerMonitoringService(
     {
         account.LastErrorMessage = rateEx.ApiMessage ?? rateEx.Message;
         await repository.SaveAccountAsync(account, ct).ConfigureAwait(false);
+        await PublishAccountEventAsync(
+            account,
+            "Warning",
+            $"Rate limit AdsPower для {account.DisplayName}",
+            account.LastErrorMessage,
+            ct).ConfigureAwait(false);
+    }
+
+    private Task PublishAccountEventAsync(
+        AvitoAccount account,
+        string level,
+        string message,
+        string? details,
+        CancellationToken ct) =>
+        eventSink.PublishAsync(account.Id, level, message, details, ct);
+
+    private async Task<string> BuildCaptchaEventDetailsAsync(
+        AvitoAccount account,
+        AvitoCaptchaDetectedException captchaEx,
+        CancellationToken ct)
+    {
+        var fallback = $"{captchaEx.Kind} :: {captchaEx.Url ?? "<unknown url>"} :: {account.LastErrorMessage}";
+        if (captchaEx.ScreenshotPng is not { Length: > 0 } png)
+        {
+            return fallback;
+        }
+
+        var attachmentId = await diagnosticsUploader
+            .UploadScreenshotAsync(account.Id, png, captchaEx.Kind, captchaEx.Url, ct)
+            .ConfigureAwait(false);
+        if (attachmentId is null)
+        {
+            return fallback;
+        }
+
+        return JsonSerializer.Serialize(new
+        {
+            attachmentId,
+            kind = captchaEx.Kind,
+            url = captchaEx.Url,
+            text = account.LastErrorMessage
+        });
     }
 }

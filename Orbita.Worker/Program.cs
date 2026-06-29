@@ -91,6 +91,11 @@ internal static class Program
         host.Services.AddSingleton<OrbitaConfigProvider>();
         host.Services.AddSingleton<OrbitaCandidateSink>();
         host.Services.AddSingleton<INewCandidateSink>(sp => sp.GetRequiredService<OrbitaCandidateSink>());
+        host.Services.AddSingleton<WorkerEventSink>();
+        host.Services.AddSingleton<IWorkerEventSink>(sp => sp.GetRequiredService<WorkerEventSink>());
+        host.Services.AddSingleton<WorkerTelemetryCollector>();
+        host.Services.AddSingleton<DiagnosticsUploadService>();
+        host.Services.AddSingleton<IWorkerDiagnosticsUploader>(sp => sp.GetRequiredService<DiagnosticsUploadService>());
         host.Services.AddSingleton<IWorkerConfigProvider>(sp => sp.GetRequiredService<OrbitaConfigProvider>());
         host.Services.AddSingleton<SystemMetricsCollector>();
         host.Services.AddHttpClient(nameof(WorkerSystemInfoCollector));

@@ -10,6 +10,8 @@ public sealed class WorkerOrchestrator(
     OrbitaApiClient apiClient,
     OrbitaConfigProvider configProvider,
     OrbitaCandidateSink candidateSink,
+    WorkerEventSink eventSink,
+    WorkerTelemetryCollector telemetryCollector,
     IAdsPowerApiClient adsPowerApi,
     IWorkerMonitoringService monitoringService,
     WorkerCredentials credentials,
@@ -53,6 +55,7 @@ public sealed class WorkerOrchestrator(
                     runtimeState.Detail = "По команде из панели";
                     await monitoringService.StopAsync().ConfigureAwait(false);
                     await candidateSink.FlushAsync(stoppingToken).ConfigureAwait(false);
+                    await eventSink.FlushAsync(stoppingToken).ConfigureAwait(false);
                     WorkerRestartHelper.ScheduleRestart();
                     return;
                 }
@@ -77,6 +80,7 @@ public sealed class WorkerOrchestrator(
                 {
                     await monitoringService.StopAsync().ConfigureAwait(false);
                     await candidateSink.FlushAsync(stoppingToken).ConfigureAwait(false);
+                    await eventSink.FlushAsync(stoppingToken).ConfigureAwait(false);
                     runtimeState.IsMonitoring = false;
                 }
 
@@ -152,33 +156,11 @@ public sealed class WorkerOrchestrator(
 
     private async Task SendSnapshotAsync(WorkerConfigDto config, CancellationToken ct)
     {
-        var accounts = config.Accounts.Select(a => new WorkerAccountDto(
-            a.AccountId,
-            a.DisplayName,
-            a.IsEnabled ? "Active" : "Disabled",
-            a.IsEnabled,
-            0, 0, 0, null, null)).ToList();
-
-        // Avoid spamming zero snapshots when we have nothing real to report.
-        // Heartbeat already keeps LastSeen + basic status. Snapshot is mainly for account details + charts.
-        bool hasRealData = accounts.Any(a => a.IsEnabled) || config.Accounts.Count > 0;
-        if (!hasRealData)
+        var snapshot = await telemetryCollector.BuildSnapshotAsync(config, ct).ConfigureAwait(false);
+        if (snapshot is null)
         {
             return;
         }
-
-        var emptyStats = new DashboardStatsDto(
-            0, 0, 0, 0, 0, 0, 0,
-            accounts.Count(a => a.IsEnabled),
-            0, 0, 0, 0, 0,
-            [], []);
-
-        var snapshot = new WorkerSnapshotRequest(
-            config.WorkerId,
-            DateTime.UtcNow,
-            emptyStats,
-            accounts,
-            []);
 
         await apiClient.SendSnapshotAsync(snapshot, ct).ConfigureAwait(false);
     }

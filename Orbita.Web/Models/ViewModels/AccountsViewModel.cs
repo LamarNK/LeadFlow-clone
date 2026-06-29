@@ -37,6 +37,7 @@ public sealed class AccountRowViewModel
     public int Errors { get; init; }
     public DateTime? LastActivityUtc { get; init; }
     public bool IsEnabledInPanel { get; init; } = true;
+    public string? LastErrorMessage { get; init; }
 }
 
 public sealed class AccountsSummaryViewModel

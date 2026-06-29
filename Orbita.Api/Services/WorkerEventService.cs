@@ -3,7 +3,10 @@ using Orbita.Api.Data;
 
 namespace Orbita.Api.Services;
 
-public sealed class WorkerEventService(OrbitaDbContext db, OfficeScopeService officeScope)
+public sealed class WorkerEventService(
+    OrbitaDbContext db,
+    OfficeScopeService officeScope,
+    WorkerDiagnosticsService diagnostics)
 {
     public async Task<(bool Success, string? Error)> DismissAsync(
         Guid eventId,
@@ -29,6 +32,13 @@ public sealed class WorkerEventService(OrbitaDbContext db, OfficeScopeService of
         evt.IsDismissed = true;
         evt.DismissedAtUtc = DateTime.UtcNow;
         await db.SaveChangesAsync(ct);
+
+        var attachmentId = WorkerDiagnosticsService.TryParseAttachmentId(evt.Details);
+        if (attachmentId is not null)
+        {
+            await diagnostics.DeleteAttachmentAsync(attachmentId.Value, ct).ConfigureAwait(false);
+        }
+
         return (true, null);
     }
 }

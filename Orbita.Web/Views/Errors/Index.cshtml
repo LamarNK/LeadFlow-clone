@@ -173,7 +173,8 @@
                         data-copy="@error.CopyText"
                         data-detail-title="@error.ErrorTypeLabel"
                         data-detail-subtitle="@error.WorkerName · @error.SeverityLabel"
-                        data-detail-body="@error.Message">
+                        data-detail-body="@error.Message"
+                        data-detail-attachment="@(error.AttachmentId is not null ? $"/Diagnostics/Image/{error.AttachmentId}" : "")">
                         <td class="errors-time"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(error.OccurredAtUtc, "datetime-seconds"))" /></td>
                         <td>
                             <span class="error-severity-badge error-severity-badge--@error.Severity">@error.SeverityLabel</span>

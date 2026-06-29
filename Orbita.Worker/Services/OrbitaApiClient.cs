@@ -83,6 +83,24 @@ public sealed class OrbitaApiClient
         await _http.SendAsync(request, ct).ConfigureAwait(false);
     }
 
+    public async Task<WorkerDiagnosticUploadResponse?> UploadDiagnosticAsync(
+        HttpContent content,
+        CancellationToken ct)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/workers/diagnostics/upload")
+        {
+            Content = content
+        };
+        ApplyAuth(request);
+        var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            return null;
+        }
+
+        return await response.Content.ReadFromJsonAsync<WorkerDiagnosticUploadResponse>(ct).ConfigureAwait(false);
+    }
+
     public async Task<WorkerUpdateCheckResponse?> CheckForUpdateAsync(string currentVersion, CancellationToken ct)
     {
         var url = $"api/v1/workers/updates/check?currentVersion={Uri.EscapeDataString(currentVersion)}";

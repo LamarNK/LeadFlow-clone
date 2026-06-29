@@ -43,6 +43,7 @@ services:
     volumes:
       - orbita_logs:/app/Data/logs
       - orbita_releases:/app/Data/releases
+      - orbita_diagnostics:/app/Data/diagnostics
 
   web:
     build:
@@ -68,3 +69,4 @@ volumes:
   orbita_logs:
   orbita_dataprotection:
   orbita_releases:
+  orbita_diagnostics:

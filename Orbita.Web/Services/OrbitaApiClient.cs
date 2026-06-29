@@ -93,6 +93,20 @@ public sealed class OrbitaApiClient(HttpClient http, AuthSession session, IOptio
         return GetAsync<IReadOnlyList<WorkerEventListItem>>(url, ct);
     }
 
+    public async Task<(Stream? Stream, string? ContentType)> GetDiagnosticImageAsync(Guid id, CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"api/v1/dashboard/diagnostics/{id}/image");
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null || !response.IsSuccessStatusCode)
+        {
+            return (null, null);
+        }
+
+        var contentType = response.Content.Headers.ContentType?.MediaType;
+        var buffer = await response.Content.ReadAsByteArrayAsync(ct);
+        return buffer.Length == 0 ? (null, contentType) : (new MemoryStream(buffer), contentType);
+    }
+
     private async Task<T?> GetAsync<T>(string url, CancellationToken ct)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, url);

@@ -516,7 +516,20 @@
                 detailSubtitle.setAttribute('hidden', '');
             }
         }
-        detailBody.textContent = options.body || '';
+        detailBody.textContent = '';
+        if (options.attachmentUrl) {
+            var img = document.createElement('img');
+            img.className = 'orbita-detail-screenshot';
+            img.alt = 'Скриншот страницы';
+            img.src = options.attachmentUrl;
+            detailBody.appendChild(img);
+        }
+        if (options.body) {
+            var text = document.createElement('p');
+            text.className = 'orbita-detail-text';
+            text.textContent = options.body;
+            detailBody.appendChild(text);
+        }
         detailModal.removeAttribute('hidden');
     }
 
@@ -536,7 +549,8 @@
                 openDetailModal({
                     title: row.getAttribute('data-detail-title') || 'Детали',
                     subtitle: row.getAttribute('data-detail-subtitle') || '',
-                    body: row.getAttribute('data-detail-body') || row.getAttribute('data-copy') || ''
+                    body: row.getAttribute('data-detail-body') || row.getAttribute('data-copy') || '',
+                    attachmentUrl: row.getAttribute('data-detail-attachment') || ''
                 });
                 closeAllPopovers();
             });

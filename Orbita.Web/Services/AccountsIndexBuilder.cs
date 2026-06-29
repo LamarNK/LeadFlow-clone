@@ -58,6 +58,7 @@ internal static class AccountsIndexBuilder
     {
         var (label, tone) = MapStatus(account.Status, account.IsEnabled);
         var unique = Math.Max(0, responses - errors / 2);
+        var hasError = !string.IsNullOrWhiteSpace(account.LastErrorMessage);
         return new AccountRowViewModel
         {
             Id = account.AccountId,
@@ -69,9 +70,10 @@ internal static class AccountsIndexBuilder
             Balance = balance,
             Responses = responses,
             UniqueResponses = unique,
-            Errors = errors,
+            Errors = errors > 0 ? errors : hasError ? 1 : 0,
             LastActivityUtc = account.LastMonitoringAt,
-            IsEnabledInPanel = account.IsEnabledInPanel
+            IsEnabledInPanel = account.IsEnabledInPanel,
+            LastErrorMessage = account.LastErrorMessage
         };
     }
 
@@ -113,7 +115,7 @@ internal static class AccountsIndexBuilder
             "active" => query.Where(a => a.StatusTone == "active"),
             "inactive" => query.Where(a => a.StatusTone == "inactive"),
             "blocked" => query.Where(a => a.StatusTone == "blocked"),
-            "errors" => query.Where(a => a.StatusTone == "error"),
+            "errors" => query.Where(a => a.StatusTone == "error" || !string.IsNullOrWhiteSpace(a.LastErrorMessage)),
             _ => query
         };
 

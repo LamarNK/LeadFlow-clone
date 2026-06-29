@@ -428,7 +428,7 @@ public sealed partial class AdsPowerAvitoAutomationService
             throw new InvalidOperationException("AdsPower CDP: страница объявлений Avito вернула пустой HTML.");
         }
 
-        ThrowIfCaptcha(html, page.Url, nameof(LoadProfileItemsHtmlOnPageAsync), adsPowerUserId);
+        await ThrowIfCaptchaAsync(page, html, cancellationToken).ConfigureAwait(false);
         return html;
     }
 
@@ -468,7 +468,7 @@ public sealed partial class AdsPowerAvitoAutomationService
             throw new InvalidOperationException("AdsPower CDP: вкладка «С ошибками» вернула пустой HTML.");
         }
 
-        ThrowIfCaptcha(html, page.Url, nameof(LoadBlockedItemsHtmlOnPageAsync), adsPowerUserId);
+        await ThrowIfCaptchaAsync(page, html, cancellationToken).ConfigureAwait(false);
         return html;
     }
 

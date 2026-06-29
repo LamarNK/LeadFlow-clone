@@ -45,6 +45,7 @@ services:
     volumes:
       - orbita_logs:/app/Data/logs
       - orbita_releases:/app/Data/releases
+      - orbita_diagnostics:/app/Data/diagnostics
 
   web:
     image: orbita-web:prod
@@ -115,5 +116,6 @@ volumes:
   orbita_pg:
   orbita_logs:
   orbita_releases:
+  orbita_diagnostics:
   orbita_dataprotection:
   notifybot_pg:

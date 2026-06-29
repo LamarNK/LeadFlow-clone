@@ -89,7 +89,8 @@ internal static class WorkerDetailsBuilder
             BalanceText = balance is null ? "—" : $"{balance.TotalBalance:N0} ₽",
             Responses = responses,
             LastActivityUtc = account.LastMonitoringAt,
-            Errors = errors
+            Errors = errors > 0 ? errors : !string.IsNullOrWhiteSpace(account.LastErrorMessage) ? 1 : 0,
+            LastErrorMessage = account.LastErrorMessage
         };
     }
 

@@ -122,6 +122,10 @@
                                 <i class="fa-solid fa-circle account-status-dot" aria-hidden="true"></i>
                                 @account.StatusLabel
                             </span>
+                            @if (!string.IsNullOrWhiteSpace(account.LastErrorMessage))
+                            {
+                                <span class="account-error-hint" title="@account.LastErrorMessage">@account.LastErrorMessage</span>
+                            }
                         </td>
                         <td class="cell-num">@account.Balance.ToString("N0") ₽</td>
                         <td class="cell-num">@account.Responses</td>

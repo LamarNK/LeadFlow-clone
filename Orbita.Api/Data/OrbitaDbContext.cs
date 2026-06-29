@@ -13,6 +13,7 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
     public DbSet<WorkerSnapshotEntity> WorkerSnapshots => Set<WorkerSnapshotEntity>();
     public DbSet<WorkerAccountEntity> WorkerAccounts => Set<WorkerAccountEntity>();
     public DbSet<WorkerEventEntity> WorkerEvents => Set<WorkerEventEntity>();
+    public DbSet<WorkerDiagnosticAttachmentEntity> WorkerDiagnosticAttachments => Set<WorkerDiagnosticAttachmentEntity>();
     public DbSet<PanelAuditLogEntity> PanelAuditLogs => Set<PanelAuditLogEntity>();
     public DbSet<PanelUserBitrixSettingsEntity> PanelUserBitrixSettings => Set<PanelUserBitrixSettingsEntity>();
     public DbSet<CandidateResponseEntity> CandidateResponses => Set<CandidateResponseEntity>();
@@ -97,6 +98,16 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.Property(x => x.Level).HasMaxLength(32);
             entity.Property(x => x.Message).HasMaxLength(2000);
             entity.HasOne(x => x.Worker).WithMany(x => x.Events).HasForeignKey(x => x.WorkerId);
+        });
+
+        modelBuilder.Entity<WorkerDiagnosticAttachmentEntity>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.WorkerId, x.CreatedAtUtc });
+            entity.Property(x => x.Kind).HasMaxLength(64);
+            entity.Property(x => x.PageUrl).HasMaxLength(2048);
+            entity.Property(x => x.RelativePath).HasMaxLength(512);
+            entity.HasOne(x => x.Worker).WithMany().HasForeignKey(x => x.WorkerId);
         });
 
         modelBuilder.Entity<PanelUserBitrixSettingsEntity>(entity =>

@@ -146,7 +146,10 @@ builder.Services.AddScoped<WorkerConfigService>();
 builder.Services.AddScoped<WorkerCommandService>();
 builder.Services.AddScoped<WorkerEventService>();
 builder.Services.Configure<WorkerReleaseOptions>(builder.Configuration.GetSection(WorkerReleaseOptions.SectionName));
+builder.Services.Configure<WorkerDiagnosticsOptions>(builder.Configuration.GetSection(WorkerDiagnosticsOptions.SectionName));
 builder.Services.AddSingleton<WorkerReleaseService>();
+builder.Services.AddScoped<WorkerDiagnosticsService>();
+builder.Services.AddHostedService<WorkerDiagnosticsCleanupService>();
 builder.Services.Configure<FormOptions>(options =>
 {
     options.MultipartBodyLengthLimit = maxUploadBytes;
@@ -321,7 +324,74 @@ workers.MapPost("/telemetry/events", async (WorkerEventBatchRequest request, Tel
     return await telemetry.SaveEventsAsync(request, ct) ? Results.Ok() : Results.NotFound();
 }).RequireAuthorization("Worker");
 
+workers.MapPost("/diagnostics/upload", async (
+    HttpRequest request,
+    WorkerDiagnosticsService diagnostics,
+    ClaimsPrincipal user,
+    CancellationToken ct) =>
+{
+    if (!TryGetWorkerId(user, out var workerId))
+    {
+        return Results.Forbid();
+    }
+
+    if (!request.HasFormContentType)
+    {
+        return Results.BadRequest(new { error = "Ожидается multipart/form-data." });
+    }
+
+    var form = await request.ReadFormAsync(ct);
+    var file = form.Files.GetFile("file");
+    if (file is null || file.Length == 0)
+    {
+        return Results.BadRequest(new { error = "Файл не передан." });
+    }
+
+    Guid? accountId = null;
+    if (Guid.TryParse(form["accountId"], out var parsedAccountId))
+    {
+        accountId = parsedAccountId;
+    }
+
+    var kind = form["kind"].ToString();
+    var pageUrl = form["pageUrl"].ToString();
+
+    await using var stream = file.OpenReadStream();
+    var (attachmentId, error) = await diagnostics.SaveUploadAsync(
+        workerId,
+        accountId,
+        kind,
+        string.IsNullOrWhiteSpace(pageUrl) ? null : pageUrl,
+        stream,
+        file.Length,
+        ct);
+
+    return attachmentId is null
+        ? Results.BadRequest(new { error = error ?? "Не удалось сохранить вложение." })
+        : Results.Ok(new WorkerDiagnosticUploadResponse(attachmentId.Value));
+}).RequireAuthorization("Worker")
+.DisableAntiforgery();
+
 var dashboard = app.MapGroup("/api/v1/dashboard").RequireAuthorization("Panel");
+dashboard.MapGet("/diagnostics/{id:guid}/image", async (
+    Guid id,
+    WorkerDiagnosticsService diagnostics,
+    OfficeScopeService officeScope,
+    ClaimsPrincipal principal,
+    CancellationToken ct) =>
+{
+    var scope = await officeScope.ResolveAsync(principal, ct);
+    if (!scope.HasAccess)
+    {
+        return Results.Forbid();
+    }
+
+    var (stream, contentType, error) = await diagnostics.OpenForPanelAsync(id, scope, ct);
+    return stream is null
+        ? Results.NotFound(new { error = error ?? "Вложение не найдено." })
+        : Results.File(stream, contentType ?? "image/png");
+});
+
 dashboard.MapGet("/summary", async (
     Guid? officeId,
     DashboardQueryService query,

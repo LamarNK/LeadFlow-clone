@@ -44,6 +44,7 @@ public sealed class ErrorRowViewModel
     public string WorkerName { get; init; } = string.Empty;
     public int OccurrenceCount { get; init; }
     public DateTime LastSeenUtc { get; init; }
+    public Guid? AttachmentId { get; init; }
 }
 
 public sealed class ErrorsSummaryViewModel

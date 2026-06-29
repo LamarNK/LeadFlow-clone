@@ -2692,6 +2692,34 @@ html.sidebar-collapsed .logout-form {
     color: #94a3b8;
 }
 
+.account-error-hint {
+    display: block;
+    margin-top: 4px;
+    max-width: 280px;
+    font-size: 11px;
+    line-height: 1.35;
+    color: #b45309;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.orbita-detail-screenshot {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    margin-bottom: 12px;
+    border-radius: 8px;
+    border: 1px solid rgba(148, 163, 184, 0.35);
+}
+
+.orbita-detail-text {
+    margin: 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
 @media (max-width: 1500px) {
     .worker-detail-kpi-row { grid-template-columns: repeat(3, 1fr); }
 }

@@ -89,7 +89,8 @@ internal static class ErrorsIndexBuilder
             WorkerId = item.WorkerId,
             WorkerName = FormatWorkerName(item.WorkerDisplayName),
             OccurrenceCount = 1,
-            LastSeenUtc = occurredAt
+            LastSeenUtc = occurredAt,
+            AttachmentId = WorkerEventDetailsParser.TryParseAttachmentId(item.Details)
         };
     }
 
@@ -233,6 +234,8 @@ internal static class ErrorsIndexBuilder
             return "network";
         if (lower.Contains("баланс"))
             return "balance";
+        if (lower.Contains("капч") || lower.Contains("captcha") || lower.Contains("firewall"))
+            return "blocked";
         if (lower.Contains("блок") || lower.Contains("заблок"))
             return "blocked";
         if (lower.Contains("парс") || lower.Contains("parse"))
