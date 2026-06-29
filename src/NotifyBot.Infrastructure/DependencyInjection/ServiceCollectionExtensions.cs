@@ -45,6 +45,7 @@ public static class ServiceCollectionExtensions
             client.BaseAddress = new Uri(plusofonOptions.ApiBaseUrl.TrimEnd('/') + "/");
         });
         services.AddSingleton<AdminSessionStore>();
+        services.AddSingleton<TelegramUpdateDeduplicator>();
         services.AddScoped<TelegramAdminPanel>();
         services.AddScoped<ITelegramUpdateHandler, TelegramUpdateHandler>();
         services.AddHostedService<TelegramBotHostedService>();

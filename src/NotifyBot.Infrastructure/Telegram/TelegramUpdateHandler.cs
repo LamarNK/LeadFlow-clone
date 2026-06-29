@@ -17,6 +17,7 @@ public sealed class TelegramUpdateHandler(
     ITelegramService telegramService,
     ISmsCheckService smsCheckService,
     TelegramAdminPanel adminPanel,
+    TelegramUpdateDeduplicator updateDeduplicator,
     IOptions<TelegramOptions> options,
     ILogger<TelegramUpdateHandler> logger) : ITelegramUpdateHandler
 {
@@ -25,6 +26,13 @@ public sealed class TelegramUpdateHandler(
 
     public async Task HandleAsync(Update update, CancellationToken cancellationToken = default)
     {
+        var updateKey = TelegramUpdateDeduplicator.UpdateKey.FromUpdate(update);
+        if (updateKey is { } key && !updateDeduplicator.TryMarkProcessed(key))
+        {
+            logger.LogDebug("Skipping duplicate Telegram update {Key}", key.Value);
+            return;
+        }
+
         if (update.CallbackQuery is { } callback)
         {
             await adminPanel.HandleCallbackAsync(callback, cancellationToken);

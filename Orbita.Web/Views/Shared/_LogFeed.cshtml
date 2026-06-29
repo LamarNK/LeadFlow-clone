@@ -1,0 +1,40 @@
+@model LogFeedPanelViewModel
+<div class="card-body service-logs-panel">
+    @if (Model.Rows.Count == 0)
+    {
+        <div class="service-logs-empty">@Model.EmptyMessage</div>
+    }
+    else
+    {
+        <div class="service-logs-feed" role="log" aria-label="@Model.FeedAriaLabel">
+            @foreach (var row in Model.Rows)
+            {
+                <article class="service-log-entry service-log-entry--@row.LevelTone @(row.IsTampered ? "service-log-entry--tampered" : null)">
+                    <div class="service-log-entry__body">
+                        <div class="service-log-entry__head">
+                            <partial name="_UtcTime" model="@(new UtcTimeDisplayModel(row.TimestampUtc, "datetime-seconds", "service-log-entry__time"))" />
+                            <span class="event-level-badge event-level-badge--@row.LevelTone">@row.Level</span>
+                            @if (Model.ShowServiceTag)
+                            {
+                                <span class="service-log-entry__tag">@row.Service</span>
+                            }
+                            <code class="service-log-entry__source" title="@row.Source">@row.Source</code>
+                            @if (!string.IsNullOrWhiteSpace(row.TraceId))
+                            {
+                                <button type="button"
+                                        class="service-log-entry__trace"
+                                        data-service-log-copy
+                                        data-copy-text="@row.TraceId"
+                                        title="Скопировать trace id">
+                                    <i class="fa-solid fa-fingerprint" aria-hidden="true"></i>
+                                    <span>@row.TraceId</span>
+                                </button>
+                            }
+                        </div>
+                        <div class="service-log-entry__message" data-service-log-message>@row.Message</div>
+                    </div>
+                </article>
+            }
+        </div>
+    }
+</div>

@@ -1,3 +1,4 @@
+using LeadFlow.Core.Logging.Audit;
 using Orbita.Worker.Services;
 
 namespace Orbita.Worker;
@@ -103,7 +104,7 @@ public sealed class TrayApplicationContext : ApplicationContext
 
     private static void OnOpenLogs(object? sender, EventArgs e)
     {
-        var dir = WorkerConfigStore.LogsDirectory;
+        var dir = GlobalLogger.ResolveLogDirectoryForService("Orbita.Worker");
         Directory.CreateDirectory(dir);
         System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
         {

@@ -10,7 +10,8 @@ internal static class WorkerDetailsBuilder
         IReadOnlyList<WorkerAccountRowViewModel> accounts,
         IReadOnlyList<DashboardEventRowViewModel> events,
         WorkerExtraInfoViewModel? extra = null,
-        WorkerRowViewModel? summary = null)
+        WorkerRowViewModel? summary = null,
+        WorkerLogsPanelViewModel? logs = null)
     {
         extra ??= new WorkerExtraInfoViewModel();
         var stats = worker.LatestStats;
@@ -67,7 +68,8 @@ internal static class WorkerDetailsBuilder
             CpuPercent = worker.LastCpuPercent,
             RamPercent = worker.LastRamPercent,
             RamUsedMb = worker.LastRamUsedMb,
-            RamTotalMb = worker.LastRamTotalMb
+            RamTotalMb = worker.LastRamTotalMb,
+            Logs = logs
         };
     }
 

@@ -155,6 +155,17 @@ public sealed class WorkerDetailsViewModel
     public IReadOnlyList<DashboardEventRowViewModel> Events { get; init; } = [];
     public IReadOnlyList<WorkerPeriodStatViewModel> PeriodStats { get; init; } = [];
     public IReadOnlyList<WorkerAccountRowViewModel> Accounts { get; init; } = [];
+    public WorkerLogsPanelViewModel? Logs { get; init; }
+}
+
+public sealed class WorkerLogsPanelViewModel
+{
+    public string? SearchQuery { get; init; }
+    public string? Level { get; init; }
+    public DateTime? Date { get; init; }
+    public int Page { get; init; } = 1;
+    public IReadOnlyList<EventFilterOptionViewModel> LevelOptions { get; init; } = [];
+    public LogFeedPanelViewModel Feed { get; init; } = new();
 }
 
 public sealed class WorkerInfoItemViewModel

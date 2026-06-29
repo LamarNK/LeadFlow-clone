@@ -19,6 +19,7 @@ public sealed class SettingsService(
         DateTime? date,
         string? action,
         string? userId = null,
+        Guid? workerId = null,
         int page = 1,
         CancellationToken ct = default)
     {
@@ -67,7 +68,7 @@ public sealed class SettingsService(
         var offices = await api.GetOfficesAsync(ct) ?? [];
         return activeTab switch
         {
-            "logs" => await BuildLogsTabAsync(q, level, service, date, page, ct),
+            "logs" => await BuildLogsTabAsync(q, level, service, date, workerId, page, ct),
             "offices" => await BuildOfficesTabAsync(tab, userId, ct),
             "profiles" => SettingsIndexBuilder.BuildProfilesTab(
                 await api.GetPanelUsersAsync(ct) ?? [],
@@ -292,9 +293,33 @@ public sealed class SettingsService(
         string? level,
         string? service,
         DateTime? date,
+        Guid? workerId,
         int page,
         CancellationToken ct)
     {
+        var workers = await api.GetAdminWorkersAsync(ct) ?? [];
+        var workerOptions = SettingsIndexBuilder.BuildWorkerOptions(workers, workerId);
+
+        if (workerId.HasValue)
+        {
+            var workerPage = await api.GetWorkerLogsAsync(
+                workerId.Value,
+                q,
+                level,
+                date ?? DateTime.UtcNow.Date,
+                page,
+                SettingsIndexBuilder.LogsPageSize,
+                ct) ?? new WorkerLogsPageDto([], 0, page, SettingsIndexBuilder.LogsPageSize);
+
+            return SettingsIndexBuilder.BuildWorkerLogsTab(
+                q,
+                level,
+                date,
+                workerPage,
+                workerId.Value,
+                workerOptions);
+        }
+
         var pageDto = await api.GetServiceLogsAsync(
             q,
             level,
@@ -304,7 +329,7 @@ public sealed class SettingsService(
             SettingsIndexBuilder.LogsPageSize,
             ct) ?? new ServiceLogsPageDto([], 0, page, SettingsIndexBuilder.LogsPageSize);
 
-        return SettingsIndexBuilder.BuildLogsTab(q, level, service, date, pageDto);
+        return SettingsIndexBuilder.BuildLogsTab(q, level, service, date, pageDto, workerOptions: workerOptions);
     }
 
     private async Task<SettingsIndexViewModel> BuildAuditTabAsync(

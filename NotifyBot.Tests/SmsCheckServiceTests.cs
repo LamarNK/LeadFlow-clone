@@ -37,6 +37,7 @@ public sealed class SmsCheckServiceTests
 
         Assert.Contains("645755", reply);
         Assert.Contains("*1062", reply);
+        Assert.Matches(@"\[\d{2}\.\d{2}\.\d{4} \d{2}:\d{2}:\d{2}\]", reply);
     }
 
     [Fact]
@@ -56,6 +57,60 @@ public sealed class SmsCheckServiceTests
         var reply = await service.CheckAsync(-100333);
 
         Assert.Contains("645755", reply);
+    }
+
+    [Fact]
+    public async Task CheckAsync_Old3dsSms_ReturnsTooOldMessage()
+    {
+        var plusofon = new Mock<IPlusofonSmsClient>();
+        plusofon
+            .Setup(x => x.GetRecentIncomingAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([
+                new PlusofonSmsMessage(SampleSms, DateTimeOffset.UtcNow.AddMinutes(-20), true)
+            ]);
+
+        var cards = new Mock<ICardRepository>();
+        cards
+            .Setup(x => x.GetAllAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync([
+                new Card { Last4 = "1062", DestinationChatId = -100333, Enabled = true }
+            ]);
+
+        var service = CreateService(plusofon.Object, cards.Object);
+        var reply = await service.CheckAsync(-100333);
+
+        Assert.Contains("15 мин", reply);
+        Assert.DoesNotContain("3DS код:", reply);
+    }
+
+    [Fact]
+    public async Task CheckAsync_ThreeCardsBound_ReturnsOnlyLatestSms()
+    {
+        var older =
+            "Для оплаты в old.shop 100.00 RUB Карта *9669; 3DS код: 111111";
+        var plusofon = new Mock<IPlusofonSmsClient>();
+        plusofon
+            .Setup(x => x.GetRecentIncomingAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([
+                new PlusofonSmsMessage(older, DateTimeOffset.UtcNow.AddMinutes(-10), true),
+                new PlusofonSmsMessage(SampleSms, DateTimeOffset.UtcNow, true)
+            ]);
+
+        var cards = new Mock<ICardRepository>();
+        cards
+            .Setup(x => x.GetAllAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync([
+                new Card { Last4 = "1062", DestinationChatId = -100333, Enabled = true },
+                new Card { Last4 = "9669", DestinationChatId = -100333, Enabled = true },
+                new Card { Last4 = "3098", DestinationChatId = -100333, Enabled = true }
+            ]);
+
+        var service = CreateService(plusofon.Object, cards.Object);
+        var reply = await service.CheckAsync(-100333);
+
+        Assert.Contains("645755", reply);
+        Assert.Contains("*1062", reply);
+        Assert.DoesNotContain("111111", reply);
     }
 
     [Fact]

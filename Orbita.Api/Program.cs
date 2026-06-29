@@ -147,9 +147,13 @@ builder.Services.AddScoped<WorkerCommandService>();
 builder.Services.AddScoped<WorkerEventService>();
 builder.Services.Configure<WorkerReleaseOptions>(builder.Configuration.GetSection(WorkerReleaseOptions.SectionName));
 builder.Services.Configure<WorkerDiagnosticsOptions>(builder.Configuration.GetSection(WorkerDiagnosticsOptions.SectionName));
+builder.Services.Configure<WorkerLogsOptions>(builder.Configuration.GetSection(WorkerLogsOptions.SectionName));
+builder.Services.Configure<ServiceLogsOptions>(builder.Configuration.GetSection(ServiceLogsOptions.SectionName));
 builder.Services.AddSingleton<WorkerReleaseService>();
 builder.Services.AddScoped<WorkerDiagnosticsService>();
 builder.Services.AddHostedService<WorkerDiagnosticsCleanupService>();
+builder.Services.AddScoped<WorkerLogsService>();
+builder.Services.AddHostedService<WorkerLogsCleanupService>();
 builder.Services.Configure<FormOptions>(options =>
 {
     options.MultipartBodyLengthLimit = maxUploadBytes;
@@ -166,6 +170,7 @@ builder.Services.AddSingleton<BitrixClient>();
 builder.Services.Configure<OrbitaBitrixSettings>(builder.Configuration.GetSection("Bitrix"));
 builder.Services.AddScoped<PasswordPolicyService>();
 builder.Services.AddScoped<ServiceLogsQueryService>();
+builder.Services.AddHostedService<ServiceLogsCleanupService>();
 builder.Services.AddScoped<WebhookSecretProtector>();
 builder.Services.AddScoped<BitrixWebhookValidator>();
 builder.Services.AddScoped<PanelBitrixIntegrationService>();
@@ -371,6 +376,24 @@ workers.MapPost("/diagnostics/upload", async (
         : Results.Ok(new WorkerDiagnosticUploadResponse(attachmentId.Value));
 }).RequireAuthorization("Worker")
 .DisableAntiforgery();
+
+workers.MapPost("/logs/batch", async (
+    WorkerLogsBatchRequest request,
+    WorkerLogsService logs,
+    ClaimsPrincipal user,
+    CancellationToken ct) =>
+{
+    if (!TryGetWorkerId(user, out var workerId))
+    {
+        return Results.Forbid();
+    }
+
+    var entries = request.Entries ?? [];
+    var (accepted, error) = await logs.IngestBatchAsync(workerId, entries, ct);
+    return error is not null
+        ? Results.BadRequest(new { error })
+        : Results.Ok(new { accepted });
+}).RequireAuthorization("Worker");
 
 var dashboard = app.MapGroup("/api/v1/dashboard").RequireAuthorization("Panel");
 dashboard.MapGet("/diagnostics/{id:guid}/image", async (
@@ -1116,6 +1139,24 @@ admin.MapGet("/logs", async (
         date,
         page ?? 1,
         pageSize ?? ServiceLogsQueryService.DefaultPageSize,
+        ct)));
+
+admin.MapGet("/workers/{workerId:guid}/logs", async (
+    Guid workerId,
+    string? q,
+    string? level,
+    DateTime? date,
+    int? page,
+    int? pageSize,
+    WorkerLogsService logs,
+    CancellationToken ct) =>
+    Results.Ok(await logs.SearchAsync(
+        workerId,
+        q,
+        level,
+        date,
+        page ?? 1,
+        pageSize ?? WorkerLogsService.DefaultPageSize,
         ct)));
 
 var panel = app.MapGroup("/api/v1/panel").RequireAuthorization("Panel");

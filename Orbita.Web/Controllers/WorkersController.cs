@@ -29,9 +29,23 @@ public sealed class WorkersController(IWorkersService workers) : Controller
     }
 
     [HttpGet]
-    public async Task<IActionResult> Details(Guid id, CancellationToken ct)
+    public async Task<IActionResult> Details(
+        Guid id,
+        string? logsQ,
+        string? logsLevel,
+        DateTime? logsDate,
+        int logsPage = 1,
+        CancellationToken ct = default)
     {
-        var model = await workers.GetDetailsAsync(id, ct);
+        var isAdmin = User.IsInRole(PanelRoles.Admin);
+        var model = await workers.GetDetailsAsync(
+            id,
+            logsQ,
+            logsLevel,
+            logsDate,
+            logsPage,
+            includeLogs: isAdmin,
+            ct);
         return model is null ? NotFound() : View(model);
     }
 

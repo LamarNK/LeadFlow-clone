@@ -101,6 +101,21 @@ public sealed class OrbitaApiClient
         return await response.Content.ReadFromJsonAsync<WorkerDiagnosticUploadResponse>(ct).ConfigureAwait(false);
     }
 
+    public async Task<int?> UploadLogsBatchAsync(WorkerLogsBatchRequest batch, CancellationToken ct)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/workers/logs/batch");
+        ApplyAuth(request);
+        request.Content = JsonContent.Create(batch);
+        var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            return null;
+        }
+
+        var payload = await response.Content.ReadFromJsonAsync<WorkerLogsUploadResponse>(ct).ConfigureAwait(false);
+        return payload?.Accepted ?? 0;
+    }
+
     public async Task<WorkerUpdateCheckResponse?> CheckForUpdateAsync(string currentVersion, CancellationToken ct)
     {
         var url = $"api/v1/workers/updates/check?currentVersion={Uri.EscapeDataString(currentVersion)}";
@@ -135,4 +150,6 @@ public sealed class OrbitaApiClient
         await input.CopyToAsync(output, ct).ConfigureAwait(false);
         return (true, null);
     }
+
+    private sealed record WorkerLogsUploadResponse(int Accepted);
 }

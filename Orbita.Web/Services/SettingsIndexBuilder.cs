@@ -191,7 +191,9 @@ internal static class SettingsIndexBuilder
         string? level,
         string? service,
         DateTime? date,
-        ServiceLogsPageDto page) =>
+        ServiceLogsPageDto page,
+        Guid? workerId = null,
+        IReadOnlyList<EventFilterOptionViewModel>? workerOptions = null) =>
         new()
         {
             ActiveTab = "logs",
@@ -203,8 +205,11 @@ internal static class SettingsIndexBuilder
                 Level = level,
                 Service = service,
                 Date = date ?? DateTime.UtcNow.Date,
+                WorkerId = workerId,
+                IsWorkerLogs = workerId.HasValue,
                 LevelOptions = BuildLevelOptions(),
                 ServiceOptions = BuildServiceOptions(),
+                WorkerOptions = workerOptions ?? [],
                 Rows = page.Items.Select(MapLogRow).ToList(),
                 Pagination = new PaginationViewModel
                 {
@@ -212,6 +217,79 @@ internal static class SettingsIndexBuilder
                     PageSize = page.PageSize,
                     TotalItems = page.Total
                 }
+            }
+        };
+
+    public static SettingsIndexViewModel BuildWorkerLogsTab(
+        string? q,
+        string? level,
+        DateTime? date,
+        WorkerLogsPageDto page,
+        Guid workerId,
+        IReadOnlyList<EventFilterOptionViewModel> workerOptions) =>
+        new()
+        {
+            ActiveTab = "logs",
+            Tabs = Tabs,
+            ProfileOptions = ProfileOptions,
+            Logs = new ServiceLogsViewModel
+            {
+                SearchQuery = q,
+                Level = level,
+                Date = date ?? DateTime.UtcNow.Date,
+                WorkerId = workerId,
+                IsWorkerLogs = true,
+                LevelOptions = BuildLevelOptions(),
+                WorkerOptions = workerOptions,
+                Rows = page.Items.Select(x => MapWorkerLogRow(x)).ToList(),
+                Pagination = new PaginationViewModel
+                {
+                    Page = page.Page,
+                    PageSize = page.PageSize,
+                    TotalItems = page.Total
+                }
+            }
+        };
+
+    public static WorkerLogsPanelViewModel BuildWorkerDetailsLogsPanel(
+        string? q,
+        string? level,
+        DateTime? date,
+        int page,
+        WorkerLogsPageDto pageDto) =>
+        new()
+        {
+            SearchQuery = q,
+            Level = level,
+            Date = date ?? DateTime.UtcNow.Date,
+            Page = page,
+            LevelOptions = BuildLevelOptions(),
+            Feed = BuildLogFeedPanel(
+                pageDto.Items.Select(x => MapWorkerLogRow(x)).ToList(),
+                pageDto.Total,
+                pageDto.Page,
+                pageDto.PageSize,
+                "Логи воркера",
+                showServiceTag: false)
+        };
+
+    public static LogFeedPanelViewModel BuildLogFeedPanel(
+        IReadOnlyList<ServiceLogRowViewModel> rows,
+        int total,
+        int page,
+        int pageSize,
+        string ariaLabel,
+        bool showServiceTag = true) =>
+        new()
+        {
+            Rows = rows,
+            ShowServiceTag = showServiceTag,
+            FeedAriaLabel = ariaLabel,
+            Pagination = new PaginationViewModel
+            {
+                Page = page,
+                PageSize = pageSize,
+                TotalItems = total
             }
         };
 
@@ -483,6 +561,49 @@ internal static class SettingsIndexBuilder
         new() { Value = PanelAuditActions.BitrixWebhookUpdated, Label = AuditActionLabel(PanelAuditActions.BitrixWebhookUpdated) },
         new() { Value = PanelAuditActions.BitrixWebhookValidated, Label = AuditActionLabel(PanelAuditActions.BitrixWebhookValidated) }
     ];
+
+    public static ServiceLogRowViewModel MapWorkerLogRow(WorkerLogEntryDto entry, string serviceLabel = "Orbita.Worker")
+    {
+        var tone = entry.Level switch
+        {
+            "Error" => "error",
+            "Warning" => "warning",
+            "Debug" => "info",
+            _ => "success"
+        };
+
+        return new ServiceLogRowViewModel
+        {
+            TimestampUtc = entry.TimestampUtc,
+            Level = entry.Level,
+            LevelTone = tone,
+            Service = serviceLabel,
+            Source = entry.Source,
+            Message = entry.Message,
+            TraceId = entry.TraceId,
+            IsTampered = entry.IsTampered
+        };
+    }
+
+    public static IReadOnlyList<EventFilterOptionViewModel> BuildWorkerOptions(
+        IReadOnlyList<AdminWorkerListItemDto> workers,
+        Guid? selectedWorkerId = null)
+    {
+        var options = new List<EventFilterOptionViewModel>
+        {
+            new() { Value = "", Label = "Сервисные логи" }
+        };
+
+        options.AddRange(workers
+            .OrderBy(x => x.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .Select(w => new EventFilterOptionViewModel
+            {
+                Value = w.Id.ToString(),
+                Label = w.DisplayName
+            }));
+
+        return options;
+    }
 
     private static ServiceLogRowViewModel MapLogRow(ServiceLogEntryDto entry)
     {

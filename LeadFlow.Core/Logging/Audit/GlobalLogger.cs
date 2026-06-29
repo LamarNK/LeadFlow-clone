@@ -148,6 +148,26 @@ public static class GlobalLogger
         return Path.Combine(root, serviceName.Trim());
     }
 
+    /// <summary>
+    /// Удаляет устаревшие файлы логов во всех подпапках сервисов (Orbita.Api, Orbita.Web и т.д.).
+    /// </summary>
+    public static int PruneLogFilesInRoot(string rootPath, DateTime cutoffDate, DateTime minSyncedUtc)
+    {
+        if (string.IsNullOrWhiteSpace(rootPath) || !Directory.Exists(rootPath))
+        {
+            return 0;
+        }
+
+        var total = 0;
+        foreach (var serviceDir in Directory.GetDirectories(rootPath))
+        {
+            var logger = new Logger(serviceDir);
+            total += logger.PruneLogFilesBeforeAsync(cutoffDate, minSyncedUtc);
+        }
+
+        return total;
+    }
+
 }
 
 /// <summary>
@@ -2244,6 +2264,127 @@ public class Logger
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Читает записи логов новее указанного момента (для синхронизации с сервером).
+    /// </summary>
+    public async Task<List<LogFileEntry>> ReadEntriesNewerThanAsync(DateTime sinceUtc, int maxCount = 500)
+    {
+        if (maxCount <= 0)
+        {
+            return [];
+        }
+
+        var startDate = sinceUtc.Date;
+        var endDate = DateTime.UtcNow.Date;
+        var collected = new List<LogFileEntry>();
+
+        for (var date = startDate; date <= endDate; date = date.AddDays(1))
+        {
+            var files = GetLogFilesForDate(date);
+            foreach (var file in files)
+            {
+                var fileEntries = await ReadLogFileAsync(file).ConfigureAwait(false);
+                foreach (var entry in fileEntries)
+                {
+                    if (entry.Timestamp > sinceUtc)
+                    {
+                        collected.Add(entry);
+                    }
+                }
+            }
+        }
+
+        return collected
+            .OrderBy(x => x.Timestamp)
+            .Take(maxCount)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Удаляет локальные файлы логов старше cutoffDate, если они уже синхронизированы (minSyncedUtc).
+    /// </summary>
+    public int PruneLogFilesBeforeAsync(DateTime cutoffDate, DateTime minSyncedUtc)
+    {
+        if (aggregateReadRoot != null)
+        {
+            return 0;
+        }
+
+        var removed = 0;
+        if (!Directory.Exists(logDirectory))
+        {
+            return removed;
+        }
+
+        foreach (var year in Directory.GetDirectories(logDirectory))
+        {
+            foreach (var month in Directory.GetDirectories(year))
+            {
+                foreach (var file in Directory.GetFiles(month, "log-*.bin"))
+                {
+                    if (!TryParseLogFileDate(file, out var fileDate))
+                    {
+                        continue;
+                    }
+
+                    if (fileDate >= cutoffDate.Date)
+                    {
+                        continue;
+                    }
+
+                    var dayEnd = fileDate.Date.AddDays(1).AddTicks(-1);
+                    if (minSyncedUtc < dayEnd)
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        File.Delete(file);
+                        var idx = Path.ChangeExtension(file, ".idx");
+                        if (File.Exists(idx))
+                        {
+                            File.Delete(idx);
+                        }
+
+                        removed++;
+                        InvalidateCache(fileDate);
+                    }
+                    catch (Exception ex)
+                    {
+                        ReportInternalLoggerError("PruneLogFilesBeforeAsync", ex, file);
+                    }
+                }
+            }
+        }
+
+        return removed;
+    }
+
+    private static bool TryParseLogFileDate(string filePath, out DateTime fileDate)
+    {
+        fileDate = default;
+        var name = Path.GetFileNameWithoutExtension(filePath);
+        if (!name.StartsWith("log-", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var datePart = name["log-".Length..];
+        var underscore = datePart.IndexOf('_');
+        if (underscore >= 0)
+        {
+            datePart = datePart[..underscore];
+        }
+
+        return DateTime.TryParseExact(
+            datePart,
+            "yyyy-MM-dd",
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+            out fileDate);
     }
 
 }

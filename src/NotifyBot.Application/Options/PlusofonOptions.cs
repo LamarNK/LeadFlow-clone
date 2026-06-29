@@ -16,6 +16,9 @@ public sealed class PlusofonOptions
 
     public int SmsFetchLimit { get; set; } = 20;
 
+    /// <summary>Максимальный возраст 3DS-SMS для /sms (минуты).</summary>
+    public int SmsMaxAgeMinutes { get; set; } = 15;
+
     public string Secret { get; set; } = string.Empty;
 
     public bool WebhookValidation { get; set; } = true;

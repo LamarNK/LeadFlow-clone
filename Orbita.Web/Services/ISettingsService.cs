@@ -12,6 +12,7 @@ public interface ISettingsService
         DateTime? date,
         string? action,
         string? userId = null,
+        Guid? workerId = null,
         int page = 1,
         CancellationToken ct = default);
 

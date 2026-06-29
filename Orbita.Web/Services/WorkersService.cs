@@ -68,10 +68,29 @@ public sealed class WorkersService(
             _ => rows.ToList()
         };
 
-    public async Task<WorkerDetailsViewModel?> GetDetailsAsync(Guid id, CancellationToken ct = default)
+    public async Task<WorkerDetailsViewModel?> GetDetailsAsync(
+        Guid id,
+        string? logsQ = null,
+        string? logsLevel = null,
+        DateTime? logsDate = null,
+        int logsPage = 1,
+        bool includeLogs = false,
+        CancellationToken ct = default)
     {
         if (previewOptions.Value.Enabled)
-            return DesignPreviewData.BuildWorkerDetailsViewModel(id);
+        {
+            if (!includeLogs)
+            {
+                return DesignPreviewData.BuildWorkerDetailsViewModel(id);
+            }
+
+            return DesignPreviewData.BuildWorkerDetailsViewModelWithLogs(
+                id,
+                logsQ,
+                logsLevel,
+                logsDate,
+                logsPage);
+        }
 
         var apiWorker = await api.GetWorkerAsync(id, ct);
         if (apiWorker is null) return null;
@@ -101,6 +120,27 @@ public sealed class WorkersService(
             })
             .ToList();
 
+        WorkerLogsPanelViewModel? logsPanel = null;
+        if (includeLogs)
+        {
+            logsPage = Math.Max(1, logsPage);
+            var logsPageDto = await api.GetWorkerLogsAsync(
+                id,
+                logsQ,
+                logsLevel,
+                logsDate ?? DateTime.UtcNow.Date,
+                logsPage,
+                SettingsIndexBuilder.LogsPageSize,
+                ct) ?? new WorkerLogsPageDto([], 0, logsPage, SettingsIndexBuilder.LogsPageSize);
+
+            logsPanel = SettingsIndexBuilder.BuildWorkerDetailsLogsPanel(
+                logsQ,
+                logsLevel,
+                logsDate,
+                logsPage,
+                logsPageDto);
+        }
+
         return WorkerDetailsBuilder.Build(
             apiWorker,
             accountRows,
@@ -115,7 +155,8 @@ public sealed class WorkersService(
                     : apiWorker.AgentVersion,
                 OperatingSystem = string.IsNullOrWhiteSpace(apiWorker.OperatingSystem) ? "—" : apiWorker.OperatingSystem,
                 ConnectionCheck = apiWorker.IsOnline ? "Успешно" : "Нет связи"
-            });
+            },
+            logs: logsPanel);
     }
 
     public async Task<(CreateWorkerResultViewModel? Result, string? Error)> CreateWorkerAsync(

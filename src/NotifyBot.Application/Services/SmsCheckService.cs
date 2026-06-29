@@ -41,7 +41,7 @@ public sealed class SmsCheckService(
             return "Входящих SMS пока нет.";
         }
 
-        var parsed = messages
+        var parsed = DeduplicateMessages(messages)
             .Select(m => (Message: m, Info: smsParser.Parse(m.Text)))
             .Where(x => x.Info is not null)
             .Select(x => (x.Message, Info: x.Info!))
@@ -63,16 +63,39 @@ public sealed class SmsCheckService(
             return $"Нет SMS для карт этого чата ({cardList}).";
         }
 
-        var latestByCard = relevant
-            .GroupBy(x => x.Info.CardLast4)
-            .Select(g => g.OrderByDescending(x => x.Message.ReceivedAtUtc ?? DateTimeOffset.MinValue).First())
-            .OrderByDescending(x => x.Message.ReceivedAtUtc ?? DateTimeOffset.MinValue)
-            .ToList();
+        var fresh = FilterByMaxAge(relevant, _options.SmsMaxAgeMinutes);
+        if (fresh.Count == 0)
+        {
+            return $"Свежих 3DS-кодов нет (старше {_options.SmsMaxAgeMinutes} мин не показываем). Подождите SMS и нажмите /sms снова.";
+        }
 
-        return string.Join(
-            "\n\n—\n\n",
-            latestByCard.Select(x => SmsMessageFormatter.Format3ds(x.Info)));
+        var latest = fresh
+            .OrderByDescending(x => x.Message.ReceivedAtUtc ?? DateTimeOffset.MinValue)
+            .First();
+
+        return SmsMessageFormatter.Format3ds(latest.Info, latest.Message.ReceivedAtUtc);
     }
+
+    private static List<(PlusofonSmsMessage Message, SmsInfo Info)> FilterByMaxAge(
+        IEnumerable<(PlusofonSmsMessage Message, SmsInfo Info)> items,
+        int maxAgeMinutes)
+    {
+        if (maxAgeMinutes <= 0)
+        {
+            return items.ToList();
+        }
+
+        var cutoff = DateTimeOffset.UtcNow.AddMinutes(-maxAgeMinutes);
+        return items
+            .Where(x => x.Message.ReceivedAtUtc is null || x.Message.ReceivedAtUtc >= cutoff)
+            .ToList();
+    }
+
+    private static IReadOnlyList<PlusofonSmsMessage> DeduplicateMessages(IReadOnlyList<PlusofonSmsMessage> messages) =>
+        messages
+            .GroupBy(m => m.Text.Trim(), StringComparer.Ordinal)
+            .Select(g => g.OrderByDescending(m => m.ReceivedAtUtc ?? DateTimeOffset.MinValue).First())
+            .ToList();
 
     public async Task<string> ListAllForDebugAsync(CancellationToken cancellationToken = default)
     {
@@ -107,13 +130,7 @@ public sealed class SmsCheckService(
 
         foreach (var message in messages)
         {
-            var when = message.ReceivedAtUtc?.ToLocalTime().ToString("dd.MM.yyyy HH:mm:ss") ?? "?";
-            var direction = message.Incoming ? "вх" : "исх";
-            var block =
-                $"[{when}] {direction}\n" +
-                $"от: {message.Sender ?? "?"}\n" +
-                $"кому: {message.Receiver ?? "?"}\n" +
-                $"{message.Text}";
+            var block = SmsMessageFormatter.FormatSmsBlock(message);
 
             var separatorLength = blocks.Count == 0 ? 2 : 7;
             if (totalLength + separatorLength + block.Length > maxLength)

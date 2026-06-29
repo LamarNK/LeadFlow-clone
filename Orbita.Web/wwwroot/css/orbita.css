@@ -4208,6 +4208,24 @@ html.sidebar-collapsed .logout-form {
     background: rgba(239, 68, 68, 0.08);
 }
 
+.worker-logs-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.card--worker-logs-filters {
+    border: none;
+    box-shadow: none;
+    margin-bottom: 0;
+}
+
+.card-footer-btn--inline {
+    margin: 0;
+    white-space: nowrap;
+}
+
 .service-logs-panel {
     padding: 0;
 }

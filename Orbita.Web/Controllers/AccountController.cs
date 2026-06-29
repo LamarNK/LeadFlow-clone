@@ -20,7 +20,7 @@ public sealed class AccountController(
         var preview = previewOptions.Value;
         return View(new LoginViewModel
         {
-            Email = preview.Enabled ? preview.Email : "admin@orbita.local",
+            Email = preview.Enabled ? preview.Email : string.Empty,
             DesignPreviewEnabled = preview.Enabled
         });
     }

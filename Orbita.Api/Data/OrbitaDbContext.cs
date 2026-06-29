@@ -14,6 +14,7 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
     public DbSet<WorkerAccountEntity> WorkerAccounts => Set<WorkerAccountEntity>();
     public DbSet<WorkerEventEntity> WorkerEvents => Set<WorkerEventEntity>();
     public DbSet<WorkerDiagnosticAttachmentEntity> WorkerDiagnosticAttachments => Set<WorkerDiagnosticAttachmentEntity>();
+    public DbSet<WorkerLogEntryEntity> WorkerLogEntries => Set<WorkerLogEntryEntity>();
     public DbSet<PanelAuditLogEntity> PanelAuditLogs => Set<PanelAuditLogEntity>();
     public DbSet<PanelUserBitrixSettingsEntity> PanelUserBitrixSettings => Set<PanelUserBitrixSettingsEntity>();
     public DbSet<CandidateResponseEntity> CandidateResponses => Set<CandidateResponseEntity>();
@@ -107,6 +108,18 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.Property(x => x.Kind).HasMaxLength(64);
             entity.Property(x => x.PageUrl).HasMaxLength(2048);
             entity.Property(x => x.RelativePath).HasMaxLength(512);
+            entity.HasOne(x => x.Worker).WithMany().HasForeignKey(x => x.WorkerId);
+        });
+
+        modelBuilder.Entity<WorkerLogEntryEntity>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.WorkerId, x.TimestampUtc });
+            entity.HasIndex(x => new { x.WorkerId, x.DedupHash }).IsUnique();
+            entity.Property(x => x.Level).HasMaxLength(16);
+            entity.Property(x => x.Source).HasMaxLength(256);
+            entity.Property(x => x.TraceId).HasMaxLength(64);
+            entity.Property(x => x.DedupHash).HasMaxLength(64);
             entity.HasOne(x => x.Worker).WithMany().HasForeignKey(x => x.WorkerId);
         });
 

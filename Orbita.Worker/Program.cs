@@ -19,6 +19,7 @@ internal static class Program
     [STAThread]
     private static void Main(string[] args)
     {
+        Environment.SetEnvironmentVariable("LOG_SERVICE_NAME", "Orbita.Worker");
         ApplicationConfiguration.Initialize();
 
         if (TryHandleSilentInstall(args))
@@ -96,6 +97,11 @@ internal static class Program
         host.Services.AddSingleton<WorkerTelemetryCollector>();
         host.Services.AddSingleton<DiagnosticsUploadService>();
         host.Services.AddSingleton<IWorkerDiagnosticsUploader>(sp => sp.GetRequiredService<DiagnosticsUploadService>());
+        host.Services.AddSingleton<WorkerLogSyncState>();
+        host.Services.AddSingleton<WorkerLogUploadService>();
+        host.Services.AddSingleton<IWorkerLogsUploader>(sp => sp.GetRequiredService<WorkerLogUploadService>());
+        host.Services.AddHostedService<WorkerLogSyncService>();
+        host.Services.AddHostedService<WorkerLogCleanupService>();
         host.Services.AddSingleton<IWorkerConfigProvider>(sp => sp.GetRequiredService<OrbitaConfigProvider>());
         host.Services.AddSingleton<SystemMetricsCollector>();
         host.Services.AddHttpClient(nameof(WorkerSystemInfoCollector));

@@ -762,6 +762,23 @@
                 <input type="hidden" name="tab" value="logs" />
                 <div class="settings-logs-filters-row">
                     <label class="settings-filter-field">
+                        <span class="settings-filter-label">Источник</span>
+                        <select name="workerId" class="settings-select" aria-label="Источник логов">
+                            @foreach (var opt in logs.WorkerOptions)
+                            {
+                                var selectedWorker = logs.WorkerId?.ToString() ?? "";
+                                if (opt.Value == selectedWorker)
+                                {
+                                    <option value="@opt.Value" selected>@opt.Label</option>
+                                }
+                                else
+                                {
+                                    <option value="@opt.Value">@opt.Label</option>
+                                }
+                            }
+                        </select>
+                    </label>
+                    <label class="settings-filter-field">
                         <span class="settings-filter-label">Уровень</span>
                         <select name="level" class="settings-select" aria-label="Уровень">
                             @foreach (var opt in logs.LevelOptions)
@@ -777,6 +794,8 @@
                             }
                         </select>
                     </label>
+                    @if (!logs.IsWorkerLogs)
+                    {
                     <label class="settings-filter-field">
                         <span class="settings-filter-label">Сервис</span>
                         <select name="service" class="settings-select" aria-label="Сервис">
@@ -793,6 +812,7 @@
                             }
                         </select>
                     </label>
+                    }
                     <label class="settings-filter-field">
                         <span class="settings-filter-label">Дата</span>
                         <input type="date"
@@ -819,78 +839,49 @@
         </div>
 
         <div class="card card--settings-logs-table">
-            <div class="card-body service-logs-panel">
-                @if (logs.Rows.Count == 0)
-                {
-                    <div class="service-logs-empty">Записей не найдено за выбранные условия.</div>
-                }
-                else
-                {
-                    <div class="service-logs-feed" role="log" aria-label="Логи сервиса">
-                        @foreach (var row in logs.Rows)
+            <partial name="_LogFeed" model="@(new LogFeedPanelViewModel
+            {
+                Rows = logs.Rows,
+                Pagination = logs.Pagination,
+                FeedAriaLabel = logs.IsWorkerLogs ? "Логи воркера" : "Логи сервиса",
+                ShowServiceTag = !logs.IsWorkerLogs
+            })" />
+
+            @if (logsPagination is not null && logsPagination.TotalItems > 0)
+            {
+                <div class="settings-pagination">
+                    <span class="settings-pagination-info">
+                        Показано @logsPagination.RangeStart–@logsPagination.RangeEnd из @logsPagination.TotalItems
+                    </span>
+                    <div class="settings-pagination-controls">
+                        @{
+                            var prevPage = logsPagination.Page > 1 ? logsPagination.Page - 1 : (int?)null;
+                            var nextPage = logsPagination.Page < logsPagination.TotalPages ? logsPagination.Page + 1 : (int?)null;
+                        }
+                        @if (prevPage is not null)
                         {
-                            <article class="service-log-entry service-log-entry--@row.LevelTone @(row.IsTampered ? "service-log-entry--tampered" : null)">
-                                <div class="service-log-entry__body">
-                                    <div class="service-log-entry__head">
-                                        <partial name="_UtcTime" model="@(new UtcTimeDisplayModel(row.TimestampUtc, "datetime-seconds", "service-log-entry__time"))" />
-                                        <span class="event-level-badge event-level-badge--@row.LevelTone">@row.Level</span>
-                                        <span class="service-log-entry__tag">@row.Service</span>
-                                        <code class="service-log-entry__source" title="@row.Source">@row.Source</code>
-                                        @if (!string.IsNullOrWhiteSpace(row.TraceId))
-                                        {
-                                            <button type="button"
-                                                    class="service-log-entry__trace"
-                                                    data-service-log-copy
-                                                    data-copy-text="@row.TraceId"
-                                                    title="Скопировать trace id">
-                                                <i class="fa-solid fa-fingerprint" aria-hidden="true"></i>
-                                                <span>@row.TraceId</span>
-                                            </button>
-                                        }
-                                    </div>
-                                    <div class="service-log-entry__message" data-service-log-message>@row.Message</div>
-                                </div>
-                            </article>
+                            <a class="settings-page-btn"
+                               href="@Url.Action("Index", new { tab = "logs", workerId = logs.WorkerId, q = logs.SearchQuery, level = logs.Level, service = logs.Service, date = logs.Date?.ToString("yyyy-MM-dd"), page = prevPage })"
+                               aria-label="Предыдущая страница">&lt;</a>
+                        }
+                        else
+                        {
+                            <span class="settings-page-btn settings-page-btn--disabled" aria-hidden="true">&lt;</span>
+                        }
+                        <span class="settings-page-btn settings-page-btn--active" aria-current="page">@logsPagination.Page</span>
+                        @if (nextPage is not null)
+                        {
+                            <a class="settings-page-btn"
+                               href="@Url.Action("Index", new { tab = "logs", workerId = logs.WorkerId, q = logs.SearchQuery, level = logs.Level, service = logs.Service, date = logs.Date?.ToString("yyyy-MM-dd"), page = nextPage })"
+                               aria-label="Следующая страница">&gt;</a>
+                        }
+                        else
+                        {
+                            <span class="settings-page-btn settings-page-btn--disabled" aria-hidden="true">&gt;</span>
                         }
                     </div>
-                }
-
-                @if (logsPagination is not null && logsPagination.TotalItems > 0)
-                {
-                    <div class="settings-pagination">
-                        <span class="settings-pagination-info">
-                            Показано @logsPagination.RangeStart–@logsPagination.RangeEnd из @logsPagination.TotalItems
-                        </span>
-                        <div class="settings-pagination-controls">
-                            @{
-                                var prevPage = logsPagination.Page > 1 ? logsPagination.Page - 1 : (int?)null;
-                                var nextPage = logsPagination.Page < logsPagination.TotalPages ? logsPagination.Page + 1 : (int?)null;
-                            }
-                            @if (prevPage is not null)
-                            {
-                                <a class="settings-page-btn"
-                                   href="@Url.Action("Index", new { tab = "logs", q = logs.SearchQuery, level = logs.Level, service = logs.Service, date = logs.Date?.ToString("yyyy-MM-dd"), page = prevPage })"
-                                   aria-label="Предыдущая страница">&lt;</a>
-                            }
-                            else
-                            {
-                                <span class="settings-page-btn settings-page-btn--disabled" aria-hidden="true">&lt;</span>
-                            }
-                            <span class="settings-page-btn settings-page-btn--active" aria-current="page">@logsPagination.Page</span>
-                            @if (nextPage is not null)
-                            {
-                                <a class="settings-page-btn"
-                                   href="@Url.Action("Index", new { tab = "logs", q = logs.SearchQuery, level = logs.Level, service = logs.Service, date = logs.Date?.ToString("yyyy-MM-dd"), page = nextPage })"
-                                   aria-label="Следующая страница">&gt;</a>
-                            }
-                            else
-                            {
-                                <span class="settings-page-btn settings-page-btn--disabled" aria-hidden="true">&gt;</span>
-                            }
-                        </div>
-                    </div>
-                }
-            </div>
+                </div>
+            }
         </div>
     }
     else if (Model.ActiveTab == "integrations" && integrations is not null)

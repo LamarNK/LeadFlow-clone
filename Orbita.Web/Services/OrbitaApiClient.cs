@@ -178,6 +178,43 @@ public sealed class OrbitaApiClient(HttpClient http, AuthSession session, IOptio
         return GetAsync<ServiceLogsPageDto>(url, ct);
     }
 
+    public Task<WorkerLogsPageDto?> GetWorkerLogsAsync(
+        Guid workerId,
+        string? q,
+        string? level,
+        DateTime? date,
+        int page,
+        int pageSize,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return Task.FromResult<WorkerLogsPageDto?>(
+                DesignPreviewData.BuildWorkerLogsPage(workerId, q, level, date, page, pageSize));
+        }
+
+        var query = new List<string>();
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            query.Add($"q={Uri.EscapeDataString(q)}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(level))
+        {
+            query.Add($"level={Uri.EscapeDataString(level)}");
+        }
+
+        if (date.HasValue)
+        {
+            query.Add($"date={date.Value:yyyy-MM-dd}");
+        }
+
+        query.Add($"page={page}");
+        query.Add($"pageSize={pageSize}");
+        var url = $"api/v1/admin/workers/{workerId}/logs?" + string.Join("&", query);
+        return GetAsync<WorkerLogsPageDto>(url, ct);
+    }
+
     public Task<IReadOnlyList<OfficeDto>?> GetOfficesAsync(CancellationToken ct = default) =>
         GetAsync<IReadOnlyList<OfficeDto>>("api/v1/admin/offices", ct);
 

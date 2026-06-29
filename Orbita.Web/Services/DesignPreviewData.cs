@@ -384,6 +384,39 @@ internal static class DesignPreviewData
             summary);
     }
 
+    public static WorkerDetailsViewModel? BuildWorkerDetailsViewModelWithLogs(
+        Guid id,
+        string? logsQ,
+        string? logsLevel,
+        DateTime? logsDate,
+        int logsPage)
+    {
+        var worker = GetWorker(id);
+        if (worker is null) return null;
+
+        var summary = BuildWorkerRows().FirstOrDefault(w => w.Id == id);
+        var logsPageDto = BuildWorkerLogsPage(
+            id,
+            logsQ,
+            logsLevel,
+            logsDate,
+            logsPage,
+            SettingsIndexBuilder.LogsPageSize);
+
+        return WorkerDetailsBuilder.Build(
+            worker,
+            GetWorkerAccountRows(id),
+            GetWorkerEvents(id),
+            GetWorkerMeta(id),
+            summary,
+            logs: SettingsIndexBuilder.BuildWorkerDetailsLogsPanel(
+                logsQ,
+                logsLevel,
+                logsDate,
+                logsPage,
+                logsPageDto));
+    }
+
     private static IReadOnlyList<WorkerBalanceDto> BuildWorkerBalances(Guid workerId)
     {
         if (workerId == WorkerMoscowId)
@@ -1049,6 +1082,39 @@ internal static class DesignPreviewData
         var list = rows.ToList();
         var items = list.Skip((page - 1) * pageSize).Take(pageSize).ToList();
         return new ServiceLogsPageDto(items, list.Count, page, pageSize);
+    }
+
+    public static WorkerLogsPageDto BuildWorkerLogsPage(
+        Guid workerId,
+        string? q,
+        string? level,
+        DateTime? date,
+        int page,
+        int pageSize = 50)
+    {
+        IEnumerable<WorkerLogEntryDto> rows =
+        [
+            new(Now.AddMinutes(-5), "Info", "[WorkerMonitoringService.StartAsync]", $"Worker monitoring started. WorkerId={workerId:N}", null, false),
+            new(Now.AddMinutes(-18), "Warning", "[AdsPowerApiClient.ListProfilesAsync]", "AdsPower API responded slowly (4.2s). Retrying with backoff.", null, false),
+            new(Now.AddMinutes(-42), "Error", "[AdsPowerAvitoAutomationService.ProcessAccountAsync]", "Captcha detected on account profile. Screenshot uploaded, cycle paused.", "trace-worker-001", false)
+        ];
+
+        if (!string.IsNullOrWhiteSpace(level))
+        {
+            rows = rows.Where(r => string.Equals(r.Level, level, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            rows = rows.Where(r =>
+                r.Message.Contains(q, StringComparison.OrdinalIgnoreCase)
+                || r.Source.Contains(q, StringComparison.OrdinalIgnoreCase)
+                || (r.TraceId?.Contains(q, StringComparison.OrdinalIgnoreCase) ?? false));
+        }
+
+        var list = rows.ToList();
+        var items = list.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+        return new WorkerLogsPageDto(items, list.Count, page, pageSize);
     }
 
     public static ResponsesIndexViewModel BuildResponsesIndexViewModel(ResponsesFilterViewModel filters)
