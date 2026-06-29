@@ -1,3 +1,5 @@
+using LeadFlow.Core.Data;
+using LeadFlow.Core.Models;
 using LeadFlow.Core.Services.AdsPower;
 using LeadFlow.Core.Services.Worker;
 using Microsoft.Extensions.Hosting;
@@ -7,6 +9,8 @@ using Orbita.Worker;
 namespace Orbita.Worker.Services;
 
 public sealed class WorkerOrchestrator(
+    AppRepository repository,
+    AppSettings appSettings,
     OrbitaApiClient apiClient,
     OrbitaConfigProvider configProvider,
     OrbitaCandidateSink candidateSink,
@@ -32,6 +36,7 @@ public sealed class WorkerOrchestrator(
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         Environment.SetEnvironmentVariable("LOG_SERVICE_NAME", "Orbita.Worker");
+        await repository.InitializeAsync(appSettings, stoppingToken).ConfigureAwait(false);
 
         while (!stoppingToken.IsCancellationRequested)
         {
