@@ -90,7 +90,7 @@ public sealed class WorkerLogsService(
 
         if (date.HasValue)
         {
-            var dayStart = date.Value.Date;
+            var dayStart = DateOnly.FromDateTime(date.Value).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
             var dayEnd = dayStart.AddDays(1);
             query = query.Where(x => x.TimestampUtc >= dayStart && x.TimestampUtc < dayEnd);
         }
@@ -151,7 +151,7 @@ public sealed class WorkerLogsService(
         return new WorkerLogEntryEntity
         {
             WorkerId = workerId,
-            TimestampUtc = entry.TimestampUtc,
+            TimestampUtc = EnsureUtc(entry.TimestampUtc),
             Level = level,
             Source = source,
             Message = message,
@@ -161,6 +161,13 @@ public sealed class WorkerLogsService(
             DedupHash = BuildDedupHash(workerId, entry.TimestampUtc, level, source, message, traceId)
         };
     }
+
+    private static DateTime EnsureUtc(DateTime value) => value.Kind switch
+    {
+        DateTimeKind.Utc => value,
+        DateTimeKind.Local => value.ToUniversalTime(),
+        _ => DateTime.SpecifyKind(value, DateTimeKind.Utc)
+    };
 
     private static string NormalizeLevel(string? level) => level?.Trim() switch
     {

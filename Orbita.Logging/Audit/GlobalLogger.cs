@@ -1151,7 +1151,7 @@ public class Logger
                 if (await fs.ReadAsync(traceIdLenBuffer, 0, 4) != 4) break;
                 
                 long fileOffset = BitConverter.ToInt64(offsetBuffer, 0);
-                DateTime timestamp = new DateTime(BitConverter.ToInt64(timestampBuffer, 0));
+                DateTime timestamp = new DateTime(BitConverter.ToInt64(timestampBuffer, 0), DateTimeKind.Utc);
                 DeskLinkAuditLogLevel level = (DeskLinkAuditLogLevel)levelByte;
                 int traceIdLen = BitConverter.ToInt32(traceIdLenBuffer, 0);
                 
@@ -1356,7 +1356,7 @@ public class Logger
             byte[] timestampBuffer = new byte[8];
             bytesRead = await stream.ReadAsync(timestampBuffer, 0, 8);
             if (bytesRead != 8) return null;
-            DateTime timestamp = new DateTime(BitConverter.ToInt64(timestampBuffer, 0));
+            DateTime timestamp = new DateTime(BitConverter.ToInt64(timestampBuffer, 0), DateTimeKind.Utc);
 
             // Level
             int levelByte = stream.ReadByte();

@@ -72,11 +72,12 @@ public sealed class ResponsesQueryService(OrbitaDbContext db)
         CancellationToken ct = default)
     {
         var query = ApplyOfficeFilter(db.CandidateResponses.AsNoTracking(), scope, officeFilter);
-        return await query
-            .GroupBy(x => new { x.AccountId, x.AccountName })
-            .Select(g => new ResponseFilterAccountDto(g.Key.AccountId, g.Key.AccountName))
+        var rows = await query
+            .Select(x => new { x.AccountId, x.AccountName })
+            .Distinct()
             .OrderBy(x => x.AccountName)
             .ToListAsync(ct);
+        return rows.Select(x => new ResponseFilterAccountDto(x.AccountId, x.AccountName)).ToList();
     }
 
     public async Task<ResponseDetailDto?> GetDetailAsync(

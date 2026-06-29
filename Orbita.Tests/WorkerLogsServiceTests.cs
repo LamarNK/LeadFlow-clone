@@ -62,6 +62,67 @@ public sealed class WorkerLogsServiceTests
     }
 
     [Fact]
+    public async Task Search_FiltersByDateWithUnspecifiedKind()
+    {
+        await using var db = CreateDb();
+        await SeedWorkerAsync(db);
+        var service = CreateService(db);
+        var day = new DateTime(2026, 6, 29, 15, 30, 0, DateTimeKind.Utc);
+
+        db.WorkerLogEntries.AddRange(
+            new WorkerLogEntryEntity
+            {
+                WorkerId = WorkerId,
+                TimestampUtc = day,
+                Level = "Info",
+                Source = "[Today.Method]",
+                Message = "today",
+                DedupHash = "hash-today",
+                IngestedAtUtc = day
+            },
+            new WorkerLogEntryEntity
+            {
+                WorkerId = WorkerId,
+                TimestampUtc = day.AddDays(-1),
+                Level = "Info",
+                Source = "[Yesterday.Method]",
+                Message = "yesterday",
+                DedupHash = "hash-yesterday",
+                IngestedAtUtc = day.AddDays(-1)
+            });
+        await db.SaveChangesAsync();
+
+        var unspecifiedDate = new DateTime(2026, 6, 29);
+        var page = await service.SearchAsync(WorkerId, null, null, unspecifiedDate, 1, 50);
+
+        Assert.Single(page.Items);
+        Assert.Equal("today", page.Items[0].Message);
+    }
+
+    [Fact]
+    public async Task IngestBatch_AcceptsUnspecifiedTimestampAsUtc()
+    {
+        await using var db = CreateDb();
+        await SeedWorkerAsync(db);
+        var service = CreateService(db);
+
+        var entry = new WorkerLogEntryUploadDto(
+            new DateTime(2026, 6, 29, 12, 0, 0),
+            "Info",
+            "[Sync.Method]",
+            "Synced",
+            null,
+            false);
+
+        var (accepted, error) = await service.IngestBatchAsync(WorkerId, [entry]);
+
+        Assert.Null(error);
+        Assert.Equal(1, accepted);
+        var stored = await db.WorkerLogEntries.SingleAsync();
+        Assert.Equal(DateTimeKind.Utc, stored.TimestampUtc.Kind);
+    }
+
+    [Fact]
     public async Task PruneExpired_RemovesOldEntries()
     {
         await using var db = CreateDb();
