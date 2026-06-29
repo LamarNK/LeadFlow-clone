@@ -56,7 +56,7 @@ public sealed class SmsRoutingService(
         {
             logger.LogWarning("Unknown or disabled card: *{CardLast4}", smsInfo.CardLast4);
             await SafeDispatchToAdminsAsync(
-                $"Неизвестная или отключённая карта *{smsInfo.CardLast4}:\n\n{FormatMessage(smsInfo)}",
+                $"Неизвестная или отключённая карта *{smsInfo.CardLast4}:\n\n{SmsMessageFormatter.Format3ds(smsInfo)}",
                 cancellationToken);
             return;
         }
@@ -65,7 +65,7 @@ public sealed class SmsRoutingService(
         {
             logger.LogWarning("Card *{CardLast4} has no destination chat configured", card.Last4);
             await SafeDispatchToAdminsAsync(
-                $"Карта *{card.Last4} не привязана к чату. Привяжите через /bind в боте.\n\n{FormatMessage(smsInfo)}",
+                $"Карта *{card.Last4} не привязана к чату. Привяжите через бота.\n\n{SmsMessageFormatter.Format3ds(smsInfo)}",
                 cancellationToken);
             return;
         }
@@ -75,14 +75,11 @@ public sealed class SmsRoutingService(
             card.Last4,
             card.DestinationChatId);
 
-        await SafeDispatchToDestinationAsync(card.DestinationChatId.Value, FormatMessage(smsInfo), cancellationToken);
+        await SafeDispatchToDestinationAsync(
+            card.DestinationChatId.Value,
+            SmsMessageFormatter.Format3ds(smsInfo),
+            cancellationToken);
     }
-
-    private static string FormatMessage(Domain.Models.SmsInfo smsInfo) =>
-        $"3DS код: {smsInfo.Code}\n" +
-        $"Сумма: {smsInfo.Amount} RUB\n" +
-        $"Магазин: {smsInfo.Merchant}\n" +
-        $"Карта: *{smsInfo.CardLast4}";
 
     private async Task SafeDispatchToDestinationAsync(long chatId, string message, CancellationToken cancellationToken)
     {

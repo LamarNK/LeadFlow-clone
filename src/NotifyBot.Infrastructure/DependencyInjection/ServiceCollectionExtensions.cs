@@ -7,6 +7,7 @@ using NotifyBot.Application.Services;
 using NotifyBot.Infrastructure.Data;
 using NotifyBot.Infrastructure.Notifications;
 using NotifyBot.Infrastructure.Parsing;
+using NotifyBot.Infrastructure.Plusofon;
 using NotifyBot.Infrastructure.Telegram;
 using Telegram.Bot;
 
@@ -37,10 +38,16 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ITelegramService, TelegramService>();
         services.AddScoped<INotificationDispatcher, NotificationDispatcher>();
         services.AddScoped<ISmsRoutingService, SmsRoutingService>();
+        services.AddScoped<ISmsCheckService, SmsCheckService>();
+        services.AddHttpClient<IPlusofonSmsClient, PlusofonSmsClient>((sp, client) =>
+        {
+            var plusofonOptions = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<PlusofonOptions>>().Value;
+            client.BaseAddress = new Uri(plusofonOptions.ApiBaseUrl.TrimEnd('/') + "/");
+        });
         services.AddSingleton<AdminSessionStore>();
         services.AddScoped<TelegramAdminPanel>();
         services.AddScoped<ITelegramUpdateHandler, TelegramUpdateHandler>();
-        services.AddHostedService<TelegramWebhookSetupService>();
+        services.AddHostedService<TelegramBotHostedService>();
 
         return services;
     }

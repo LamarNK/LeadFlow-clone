@@ -15,11 +15,13 @@ public sealed class TelegramUpdateHandler(
     ITelegramChatRepository chatRepository,
     IAdminUserRepository adminUserRepository,
     ITelegramService telegramService,
+    ISmsCheckService smsCheckService,
     TelegramAdminPanel adminPanel,
     IOptions<TelegramOptions> options,
     ILogger<TelegramUpdateHandler> logger) : ITelegramUpdateHandler
 {
     private readonly TelegramOptions _options = options.Value;
+    private string? _botUsername;
 
     public async Task HandleAsync(Update update, CancellationToken cancellationToken = default)
     {
@@ -47,6 +49,12 @@ public sealed class TelegramUpdateHandler(
             if (message.Text is not null && message.Text.StartsWith('/'))
             {
                 await HandleCommandAsync(message, cancellationToken);
+                return;
+            }
+
+            if (message.Text is not null && await IsBotMentionedAsync(message, cancellationToken))
+            {
+                await HandleSmsCheckAsync(message, cancellationToken);
                 return;
             }
 
@@ -114,6 +122,27 @@ public sealed class TelegramUpdateHandler(
         var user = message.From!;
         var command = message.Text!.Trim().Split(' ')[0].Split('@')[0].ToLowerInvariant();
 
+        if (command is "/sms" or "/check")
+        {
+            await HandleSmsCheckAsync(message, cancellationToken);
+            return;
+        }
+
+        if (command is "/sms_all")
+        {
+            if (!_options.IsAdminUsername(user.Username))
+            {
+                await botClient.SendMessage(
+                    message.Chat.Id,
+                    "Команда только для администраторов.",
+                    cancellationToken: cancellationToken);
+                return;
+            }
+
+            await HandleSmsAllDebugAsync(message, cancellationToken);
+            return;
+        }
+
         if (command is not ("/start" or "/menu" or "/help"))
         {
             if (message.Chat.Type == ChatType.Private && _options.IsAdminUsername(user.Username))
@@ -157,6 +186,77 @@ public sealed class TelegramUpdateHandler(
         }, cancellationToken);
 
         await adminPanel.ShowMainMenuAsync(message.Chat.Id, cancellationToken: cancellationToken);
+    }
+
+    private async Task HandleSmsCheckAsync(Message message, CancellationToken cancellationToken)
+    {
+        var chatId = message.Chat.Id;
+        try
+        {
+            var reply = await smsCheckService.CheckAsync(chatId, cancellationToken);
+            await botClient.SendMessage(chatId, reply, cancellationToken: cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to handle SMS check for chat {ChatId}", chatId);
+            await botClient.SendMessage(
+                chatId,
+                "Ошибка при проверке SMS. Попробуйте снова.",
+                cancellationToken: cancellationToken);
+        }
+    }
+
+    private async Task HandleSmsAllDebugAsync(Message message, CancellationToken cancellationToken)
+    {
+        var chatId = message.Chat.Id;
+        try
+        {
+            var reply = await smsCheckService.ListAllForDebugAsync(cancellationToken);
+            await botClient.SendMessage(chatId, reply, cancellationToken: cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to handle SMS debug list for chat {ChatId}", chatId);
+            await botClient.SendMessage(
+                chatId,
+                "Ошибка при получении списка SMS.",
+                cancellationToken: cancellationToken);
+        }
+    }
+
+    private async Task<bool> IsBotMentionedAsync(Message message, CancellationToken cancellationToken)
+    {
+        if (message.Entities is null || message.Text is null)
+        {
+            return false;
+        }
+
+        var botUsername = await GetBotUsernameAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(botUsername))
+        {
+            return false;
+        }
+
+        var mention = $"@{botUsername}";
+        return message.Entities.Any(entity =>
+            entity.Type == MessageEntityType.Mention &&
+            entity.Offset >= 0 &&
+            entity.Length > 0 &&
+            entity.Offset + entity.Length <= message.Text.Length &&
+            message.Text.Substring(entity.Offset, entity.Length)
+                .Equals(mention, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private async Task<string?> GetBotUsernameAsync(CancellationToken cancellationToken)
+    {
+        if (_botUsername is not null)
+        {
+            return _botUsername;
+        }
+
+        var me = await botClient.GetMe(cancellationToken);
+        _botUsername = me.Username;
+        return _botUsername;
     }
 
     private static TelegramChat MapChat(Chat chat) =>

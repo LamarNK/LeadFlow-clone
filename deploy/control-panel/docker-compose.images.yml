@@ -97,11 +97,14 @@ services:
       ASPNETCORE_URLS: http://+:8080
       ConnectionStrings__Default: Host=notifybot-postgres;Port=5432;Database=notifybot;Username=notifybot;Password=${NOTIFYBOT_DB_PASSWORD:-notifybot}
       Telegram__BotToken: ${TELEGRAM_BOT_TOKEN}
-      Telegram__WebhookUrl: ${TELEGRAM_WEBHOOK_URL:-https://notify.orbitsu.ru/api/webhooks/telegram}
+      Telegram__WebhookUrl: ${TELEGRAM_WEBHOOK_URL:-}
       Telegram__AdminUsernames__0: andreypakin
       Telegram__AdminUsernames__1: LamarrNK
+      Plusofon__ClientId: ${PLUSOFON_CLIENT_ID:-10553}
+      Plusofon__ApiToken: ${PLUSOFON_API_TOKEN}
+      Plusofon__SmsFetchLimit: ${PLUSOFON_SMS_FETCH_LIMIT:-20}
       Plusofon__Secret: ${PLUSOFON_SECRET}
-      Plusofon__WebhookValidation: ${PLUSOFON_WEBHOOK_VALIDATION:-true}
+      Plusofon__WebhookValidation: ${PLUSOFON_WEBHOOK_VALIDATION:-false}
     depends_on:
       notifybot-postgres:
         condition: service_healthy

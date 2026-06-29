@@ -14,6 +14,7 @@ public sealed class TelegramAdminPanel(
     ITelegramBotClient botClient,
     ITelegramChatRepository chatRepository,
     ICardRepository cardRepository,
+    ISmsCheckService smsCheckService,
     AdminSessionStore sessionStore,
     IOptions<TelegramOptions> options,
     ILogger<TelegramAdminPanel> logger)
@@ -34,6 +35,7 @@ public sealed class TelegramAdminPanel(
 
         var keyboard = new InlineKeyboardMarkup([
             [Btn("💳 Карты", "m|cards"), Btn("💬 Чаты", "m|chats")],
+            [Btn("📋 Все SMS", "m|smsdebug")],
             [Btn("ℹ️ Как это работает", "m|help")]
         ]);
 
@@ -138,9 +140,29 @@ public sealed class TelegramAdminPanel(
             case "help":
                 await ShowHelpAsync(chatId, messageId, cancellationToken);
                 break;
+            case "smsdebug":
+                await ShowSmsDebugAsync(chatId, cancellationToken);
+                break;
             default:
                 await ShowMainMenuAsync(chatId, messageId, cancellationToken);
                 break;
+        }
+    }
+
+    private async Task ShowSmsDebugAsync(long chatId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var reply = await smsCheckService.ListAllForDebugAsync(cancellationToken);
+            await botClient.SendMessage(chatId, reply, cancellationToken: cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to fetch SMS debug list for admin chat {ChatId}", chatId);
+            await botClient.SendMessage(
+                chatId,
+                "Не удалось получить список SMS из Plusofon.",
+                cancellationToken: cancellationToken);
         }
     }
 
@@ -423,7 +445,8 @@ public sealed class TelegramAdminPanel(
             3. В разделе «Карты» добавьте карту (4 цифры).
             4. Откройте карту → «Привязать к чату».
 
-            3DS-коды с Plusofon будут уходить в выбранный чат автоматически.
+            После оплаты: /sms или /check в чате офиса (можно тегнуть бота).
+            Админам: кнопка «Все SMS» в главном меню — сырой список из Plusofon.
             """;
 
         await SendOrEditAsync(

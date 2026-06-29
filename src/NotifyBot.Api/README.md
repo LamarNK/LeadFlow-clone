@@ -53,26 +53,28 @@ API стартует на `http://localhost:5090`.
 
 ## Настройка Plusofon
 
-Укажите webhook URL:
+В `.env` или `appsettings` укажите API-доступ:
 
 ```text
-https://<your-host>/api/webhooks/plusofon
+PLUSOFON_API_TOKEN=<ключ доступа из ЛК>
 ```
 
-Если включена проверка секрета (`Plusofon:WebhookValidation=true`), передавайте секрет:
+Заголовок `Client` для Plusofon API всегда `10553` (зашито в коде, в `.env` не нужен).
 
-- заголовок `X-Plusofon-Secret`, или
-- query-параметр `?secret=...`
+Мгновенный webhook Plusofon — платная опция; используем запрос по команде в Telegram.
 
-## Тест webhook
+## Получение 3DS-кода
 
-```bash
-curl -X POST http://localhost:8090/api/webhooks/plusofon \
-  -H "Content-Type: application/json" \
-  -d "{\"text\":\"Для оплаты в ticket.rzd.ru 6,194.60 RUB Карта *1062; 3DS код: 645755\"}"
+В чате офиса (или личке):
+
+```text
+/sms
+/check
+@YourBotName
 ```
 
-Ожидаемый ответ: `200 OK` (даже при внутренних ошибках).
+Бот запросит свежие входящие SMS через `GET api/v1/sms` и вернёт распознанный 3DS-код.
+Если к чату привязаны карты — покажет коды только для них.
 
 ## Настройка маршрутизации (админы)
 
@@ -124,8 +126,4 @@ NotifyBot разворачивается на том же VPS, что и Orbita 
 
 Инструкция: [deploy/control-panel/NOTIFYBOT.md](../../../deploy/control-panel/NOTIFYBOT.md)
 
-Публичный webhook:
-
-```text
-https://notify.orbitsu.ru/api/webhooks/plusofon
-```
+Команды бота: `/sms`, `/check` (см. [NOTIFYBOT.md](../../../deploy/control-panel/NOTIFYBOT.md)).

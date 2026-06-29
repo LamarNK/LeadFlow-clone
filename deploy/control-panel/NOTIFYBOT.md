@@ -8,23 +8,13 @@ NotifyBot разворачивается **на том же VPS**, что и Orb
 |-----------|------------------|---------------|
 | Orbita Web | 8081 | https://orbitsu.ru |
 | Orbita API | 8082 | https://api.orbitsu.ru |
-| **NotifyBot API** | **8083** | **https://notify.orbitsu.ru** |
+| **NotifyBot** | **8083** | **не нужен** (polling) |
 | Orbita PostgreSQL | 5432 | только localhost |
 | NotifyBot PostgreSQL | 5433 | только localhost |
 
-Webhook для Plusofon:
-
-```text
-https://notify.orbitsu.ru/api/webhooks/plusofon
-```
-
-## DNS
-
-Добавьте A-запись:
-
-```text
-notify.orbitsu.ru  →  163.5.153.207
-```
+Бот работает в **polling-режиме**: сам опрашивает Telegram, публичный домен не требуется.
+3DS-коды запрашиваются по команде `/sms`, `/check` или тегом бота.
+Plusofon — через API по ключу доступа (webhook не используется).
 
 ## Первый деплой
 
@@ -35,8 +25,8 @@ notify.orbitsu.ru  →  163.5.153.207
 ```bash
 NOTIFYBOT_DB_PASSWORD=<strong-password>
 TELEGRAM_BOT_TOKEN=<bot-token>
-PLUSOFON_SECRET=<plusofon-secret>
-PLUSOFON_WEBHOOK_VALIDATION=true
+PLUSOFON_API_TOKEN=<ключ доступа из ЛК: Разработчикам → Доступ к API>
+PLUSOFON_SMS_FETCH_LIMIT=20
 ```
 
 Привязка карт к чатам — **через Telegram-бота**, не через `.env`.
@@ -54,38 +44,15 @@ cd /opt/orbita
 docker compose -f docker-compose.images.yml --env-file .env up -d notifybot-postgres notifybot-api
 ```
 
-5. Обновите Caddy и перезагрузите:
-
-```bash
-sudo cp /opt/orbita/Caddyfile /etc/caddy/Caddyfile
-sudo systemctl reload caddy
-```
-
-6. Проверьте webhook:
-
-```bash
-curl -X POST "https://notify.orbitsu.ru/api/webhooks/plusofon?secret=<PLUSOFON_SECRET>" \
-  -H "Content-Type: application/json" \
-  -d '{"text":"Для оплаты в ticket.rzd.ru 6,194.60 RUB Карта *1062; 3DS код: 645755"}'
-```
-
-Ожидается `200 OK`. Сообщение уйдёт в чат, куда привязана карта `1062` (см. ниже).
+5. Проверьте бота: в чате офиса отправьте `/sms` — бот заберёт свежие SMS из Plusofon и вернёт 3DS-код.
 
 ## Настройка маршрутизации (@andreypakin, @LamarrNK)
 
 1. Напишите боту `/start` в личку.
-2. Добавьте бота в группы офисов (или привязывайте карты к личным сообщениям).
-3. `/chats` — убедитесь, что чаты видны.
-4. В нужном чате: `/bind 1062`, `/bind 9669`, `/bind 3098`.
-5. `/cards` — проверить привязки.
-
-Команды: `/help`, `/chats`, `/cards`, `/bind`, `/addcard`, `/enable`, `/disable`.
-
-Webhook бота (регистрируется при старте API):
-
-```text
-https://notify.orbitsu.ru/api/webhooks/telegram
-```
+2. Добавьте бота в группы офисов.
+3. В панели бота: «Чаты» — убедитесь, что чаты видны.
+4. «Карты» → привязать карту к чату.
+5. `/sms` в чате офиса — проверить получение кода.
 
 ## Обновление версии
 
@@ -108,13 +75,7 @@ docker compose -f docker-compose.images.yml --env-file .env up -d notifybot-api
 
 ## Plusofon
 
-В личном кабинете Plusofon укажите URL webhook:
+В `.env` укажите `PLUSOFON_API_TOKEN` (ключ доступа из ЛК → Разработчикам → Доступ к API). Заголовок `Client` всегда `10553`.
 
-```text
-https://notify.orbitsu.ru/api/webhooks/plusofon
-```
-
-Если включена проверка секрета, передавайте `PLUSOFON_SECRET` через:
-
-- заголовок `X-Plusofon-Secret`, или
-- query `?secret=...`
+Схема работы: оплатили → в чате офиса `/sms` или тегнули бота → получили код.
+Если к чату привязаны карты, бот покажет коды только для них.

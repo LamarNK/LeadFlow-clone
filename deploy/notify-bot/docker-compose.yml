@@ -24,8 +24,11 @@ services:
       Telegram__WebhookUrl: ${TELEGRAM_WEBHOOK_URL:-}
       Telegram__AdminUsernames__0: andreypakin
       Telegram__AdminUsernames__1: LamarrNK
+      Plusofon__ClientId: ${PLUSOFON_CLIENT_ID:-10553}
+      Plusofon__ApiToken: ${PLUSOFON_API_TOKEN:-}
+      Plusofon__SmsFetchLimit: ${PLUSOFON_SMS_FETCH_LIMIT:-20}
       Plusofon__Secret: ${PLUSOFON_SECRET:-your-plusofon-secret}
-      Plusofon__WebhookValidation: ${PLUSOFON_WEBHOOK_VALIDATION:-true}
+      Plusofon__WebhookValidation: ${PLUSOFON_WEBHOOK_VALIDATION:-false}
     depends_on:
       - postgres
     ports:

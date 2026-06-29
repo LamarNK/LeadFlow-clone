@@ -66,10 +66,6 @@ api.orbitsu.ru {
 	}
 }
 
-notify.orbitsu.ru {
-	reverse_proxy 127.0.0.1:8083
-}
-
 http://163.5.153.207 {
 	reverse_proxy 127.0.0.1:8081 {
 		transport http {
