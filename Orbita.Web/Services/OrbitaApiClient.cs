@@ -445,6 +445,46 @@ public sealed class OrbitaApiClient(HttpClient http, AuthSession session, IOptio
         return result is null ? (null, "Не удалось прочитать ответ API.") : (result, null);
     }
 
+    public async Task<(bool Success, string? Error)> SetWorkerEnabledAsync(
+        Guid workerId,
+        bool enabled,
+        CancellationToken ct = default) =>
+        await PostPanelActionAsync($"api/v1/panel/workers/{workerId}/{(enabled ? "enable" : "disable")}", ct);
+
+    public async Task<(bool Success, string? Error)> DeleteWorkerAsync(Guid workerId, CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Delete, $"api/v1/panel/workers/{workerId}");
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (false, InvalidApiSessionError);
+        }
+
+        return response.IsSuccessStatusCode
+            ? (true, null)
+            : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(RotateWorkerApiKeyResponse? Result, string? Error)> RotateWorkerKeyAsync(
+        Guid workerId,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"api/v1/panel/workers/{workerId}/rotate-key");
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (null, InvalidApiSessionError);
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            return (null, await ReadApiErrorAsync(response, ct));
+        }
+
+        var result = await response.Content.ReadFromJsonAsync<RotateWorkerApiKeyResponse>(ct);
+        return result is null ? (null, "Не удалось прочитать ответ API.") : (result, null);
+    }
+
     public Task<WorkerConfigDto?> GetWorkerConfigAsync(Guid workerId, CancellationToken ct = default) =>
         GetAsync<WorkerConfigDto>($"api/v1/workers/{workerId}/config", ct);
 
@@ -918,7 +958,10 @@ public sealed class OrbitaApiClient(HttpClient http, AuthSession session, IOptio
         return (stream, fileName, null);
     }
 
-    private async Task<(bool Success, string? Error)> PostAdminActionAsync(string url, CancellationToken ct)
+    private async Task<(bool Success, string? Error)> PostAdminActionAsync(string url, CancellationToken ct) =>
+        await PostPanelActionAsync(url, ct);
+
+    private async Task<(bool Success, string? Error)> PostPanelActionAsync(string url, CancellationToken ct)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, url);
         using var response = await SendAuthenticatedAsync(request, ct);

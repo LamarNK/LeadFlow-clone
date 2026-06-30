@@ -54,6 +54,7 @@ public sealed class WorkerRowViewModel
     public bool UpdateAvailable { get; init; }
     public string? LatestReleaseVersion { get; init; }
     public string OfficeName { get; init; } = string.Empty;
+    public bool IsEnabled { get; init; } = true;
 }
 
 public sealed class PaginationViewModel
@@ -148,6 +149,7 @@ public sealed class WorkerDetailsViewModel
     public IReadOnlyList<BreadcrumbItemViewModel> Breadcrumbs { get; init; } = [];
     public string DisplayName { get; init; } = string.Empty;
     public bool IsOnline { get; init; }
+    public bool IsEnabled { get; init; } = true;
     public DateTime? LastActivityUtc { get; init; }
     public DateTime UpdatedAtUtc { get; init; } = DateTime.UtcNow;
     public IReadOnlyList<DashboardKpiCardViewModel> KpiCards { get; init; } = [];

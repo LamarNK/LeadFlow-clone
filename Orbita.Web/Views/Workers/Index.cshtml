@@ -152,19 +152,33 @@
                 @foreach (var w in Model.Workers)
                 {
                     var detailsUrl = Url.Action("Details", new { id = w.Id });
-                    <tr class="workers-row" data-href="@detailsUrl">
+                    <tr class="workers-row@(!w.IsEnabled ? " workers-row--disabled" : "")" data-href="@detailsUrl">
                         <td class="cell-name">
                             <a href="@detailsUrl">@w.DisplayName</a>
+                            @if (!w.IsEnabled)
+                            {
+                                <span class="workers-status-badge workers-status-badge--disabled">Приостановлен</span>
+                            }
                             @if (w.UpdateAvailable)
                             {
                                 <span class="workers-update-badge" title="Доступна версия @(w.LatestReleaseVersion)">Обновление</span>
                             }
                         </td>
                         <td>
-                            <span class="status-dot @(w.IsOnline ? "" : "offline")">
-                                <i class="fa-solid fa-circle status-dot-icon" aria-hidden="true"></i>
-                                @(w.IsOnline ? "Онлайн" : "Оффлайн")
-                            </span>
+                            @if (!w.IsEnabled)
+                            {
+                                <span class="status-dot offline">
+                                    <i class="fa-solid fa-circle status-dot-icon" aria-hidden="true"></i>
+                                    Приостановлен
+                                </span>
+                            }
+                            else
+                            {
+                                <span class="status-dot @(w.IsOnline ? "" : "offline")">
+                                    <i class="fa-solid fa-circle status-dot-icon" aria-hidden="true"></i>
+                                    @(w.IsOnline ? "Онлайн" : "Оффлайн")
+                                </span>
+                            }
                         </td>
                         <td>@w.ActiveAccounts / @w.TotalAccounts</td>
                         <td>@w.Responses</td>
@@ -176,11 +190,58 @@
                                 <button type="button" class="row-menu-btn" aria-label="Действия" aria-expanded="false" aria-haspopup="true">
                                     <i class="fa-solid fa-ellipsis-vertical" aria-hidden="true"></i>
                                 </button>
-                                <div class="row-menu-dropdown" hidden>
-                                    <a class="row-menu-item" href="@detailsUrl">Открыть</a>
-                                    <button type="button" class="row-menu-item" data-worker-restart data-worker-id="@w.Id">Перезапустить</button>
-                                    <a class="row-menu-item" href="@Url.Action("Index", "Settings", new { tab = "logs", workerId = w.Id })">Просмотреть логи</a>
-                                    <a class="row-menu-item" href="@(detailsUrl + "#worker-settings")">Настройки</a>
+                                <div class="row-menu-dropdown row-menu-dropdown--workers" hidden>
+                                    <a class="row-menu-item" href="@detailsUrl">
+                                        <i class="fa-regular fa-eye" aria-hidden="true"></i>
+                                        Открыть
+                                    </a>
+                                    @if (w.IsEnabled)
+                                    {
+                                        <button type="button" class="row-menu-item" data-worker-restart data-worker-id="@w.Id">
+                                            <i class="fa-solid fa-rotate-right" aria-hidden="true"></i>
+                                            Перезапустить
+                                        </button>
+                                        <form asp-action="Disable" method="post" class="settings-inline-form">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="workerId" value="@w.Id" />
+                                            <input type="hidden" name="returnTo" value="index" />
+                                            <button type="submit" class="row-menu-item">
+                                                <i class="fa-solid fa-circle-pause" aria-hidden="true"></i>
+                                                Приостановить
+                                            </button>
+                                        </form>
+                                    }
+                                    else
+                                    {
+                                        <form asp-action="Enable" method="post" class="settings-inline-form">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="workerId" value="@w.Id" />
+                                            <input type="hidden" name="returnTo" value="index" />
+                                            <button type="submit" class="row-menu-item">
+                                                <i class="fa-solid fa-circle-play" aria-hidden="true"></i>
+                                                Включить
+                                            </button>
+                                        </form>
+                                    }
+                                    <a class="row-menu-item" href="@(detailsUrl + "#worker-settings")">
+                                        <i class="fa-regular fa-pen-to-square" aria-hidden="true"></i>
+                                        Настройки
+                                    </a>
+                                    @if (User.IsInRole(PanelRoles.Admin))
+                                    {
+                                        <a class="row-menu-item" href="@Url.Action("Index", "Settings", new { tab = "logs", workerId = w.Id })">
+                                            <i class="fa-solid fa-file-lines" aria-hidden="true"></i>
+                                            Просмотреть логи
+                                        </a>
+                                    }
+                                    <form asp-action="Delete" method="post" class="settings-inline-form" onsubmit="return confirm('Удалить воркер «@w.DisplayName»? Это действие необратимо.');">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="workerId" value="@w.Id" />
+                                        <button type="submit" class="row-menu-item row-menu-item--danger">
+                                            <i class="fa-regular fa-trash-can" aria-hidden="true"></i>
+                                            Удалить
+                                        </button>
+                                    </form>
                                 </div>
                             </div>
                         </td>
@@ -201,6 +262,13 @@
     </div>
 </div>
 
+@{
+    var workersSuccess = TempData["WorkersSuccess"] as string;
+}
+@if (!string.IsNullOrWhiteSpace(workersSuccess))
+{
+    <div class="settings-alert settings-alert--success" role="status">@workersSuccess</div>
+}
 @if (!string.IsNullOrWhiteSpace(workersError))
 {
     <div class="settings-alert settings-alert--warn" role="alert">@workersError</div>

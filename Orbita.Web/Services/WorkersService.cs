@@ -326,6 +326,35 @@ public sealed class WorkersService(
         LastActivityUtc = w.LastSeenAtUtc,
         UpdateAvailable = w.UpdateAvailable,
         LatestReleaseVersion = w.LatestReleaseVersion,
-        OfficeName = w.OfficeName
+        OfficeName = w.OfficeName,
+        IsEnabled = w.IsEnabled
     };
+
+    public Task<(bool Success, string? Error)> SetWorkerEnabledAsync(
+        Guid workerId,
+        bool enabled,
+        CancellationToken ct = default) =>
+        previewOptions.Value.Enabled
+            ? Task.FromResult<(bool, string?)>((true, null))
+            : api.SetWorkerEnabledAsync(workerId, enabled, ct);
+
+    public Task<(bool Success, string? Error)> DeleteWorkerAsync(
+        Guid workerId,
+        CancellationToken ct = default) =>
+        previewOptions.Value.Enabled
+            ? Task.FromResult<(bool, string?)>((true, null))
+            : api.DeleteWorkerAsync(workerId, ct);
+
+    public async Task<(string? ApiKey, string? Error)> RotateWorkerApiKeyAsync(
+        Guid workerId,
+        CancellationToken ct = default)
+    {
+        if (previewOptions.Value.Enabled)
+        {
+            return ("preview-rotated-key", null);
+        }
+
+        var (result, error) = await api.RotateWorkerKeyAsync(workerId, ct);
+        return result is null ? (null, error ?? "Не удалось перевыпустить API-ключ.") : (result.ApiKey, null);
+    }
 }

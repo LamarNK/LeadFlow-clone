@@ -95,6 +95,59 @@ public sealed class WorkersController(IWorkersService workers) : Controller
 
     [HttpPost]
     [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Enable(Guid workerId, string? returnTo, CancellationToken ct)
+    {
+        var (success, error) = await workers.SetWorkerEnabledAsync(workerId, true, ct);
+        TempData[success ? "WorkersSuccess" : "WorkersError"] = success
+            ? "Воркер включён."
+            : error;
+        return RedirectAfterWorkerAction(workerId, returnTo);
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Disable(Guid workerId, string? returnTo, CancellationToken ct)
+    {
+        var (success, error) = await workers.SetWorkerEnabledAsync(workerId, false, ct);
+        TempData[success ? "WorkersSuccess" : "WorkersError"] = success
+            ? "Воркер приостановлен."
+            : error;
+        return RedirectAfterWorkerAction(workerId, returnTo);
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Delete(Guid workerId, CancellationToken ct)
+    {
+        var (success, error) = await workers.DeleteWorkerAsync(workerId, ct);
+        if (!success)
+        {
+            TempData["WorkersError"] = error;
+            return RedirectToAction(nameof(Details), new { id = workerId });
+        }
+
+        TempData["WorkersSuccess"] = "Воркер удалён.";
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> RotateKey(Guid workerId, CancellationToken ct)
+    {
+        var (apiKey, error) = await workers.RotateWorkerApiKeyAsync(workerId, ct);
+        if (apiKey is null)
+        {
+            TempData["WorkersError"] = error;
+            return RedirectToAction(nameof(Details), new { id = workerId });
+        }
+
+        TempData["CreatedWorkerApiKey"] = apiKey;
+        TempData["WorkersSuccess"] = "API-ключ перевыпущен. Скопируйте его сейчас — повторно он не будет показан.";
+        return RedirectToAction(nameof(Details), new { id = workerId });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> Restart(Guid workerId, CancellationToken ct)
     {
         var (success, error) = await workers.SendWorkerCommandAsync(workerId, WorkerCommands.Restart, ct);
@@ -122,4 +175,9 @@ public sealed class WorkersController(IWorkersService workers) : Controller
 
         return RedirectToAction(nameof(Details), new { id = workerId });
     }
+
+    private IActionResult RedirectAfterWorkerAction(Guid workerId, string? returnTo) =>
+        string.Equals(returnTo, "index", StringComparison.OrdinalIgnoreCase)
+            ? RedirectToAction(nameof(Index))
+            : RedirectToAction(nameof(Details), new { id = workerId });
 }

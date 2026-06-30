@@ -33,15 +33,80 @@
     <div class="worker-detail-head">
         <div class="worker-detail-title-block">
             <div class="worker-detail-title-row">
-                <span class="status-dot @(Model.IsOnline ? "" : "offline")">
-                    <i class="fa-solid fa-circle status-dot-icon" aria-hidden="true"></i>
-                    @(Model.IsOnline ? "Онлайн" : "Оффлайн")
-                </span>
+                @if (!Model.IsEnabled)
+                {
+                    <span class="status-dot offline">
+                        <i class="fa-solid fa-circle-pause status-dot-icon" aria-hidden="true"></i>
+                        Приостановлен
+                    </span>
+                }
+                else
+                {
+                    <span class="status-dot @(Model.IsOnline ? "" : "offline")">
+                        <i class="fa-solid fa-circle status-dot-icon" aria-hidden="true"></i>
+                        @(Model.IsOnline ? "Онлайн" : "Оффлайн")
+                    </span>
+                }
             </div>
             <p class="worker-detail-sub">
                 Последняя активность:
                 <partial name="_UtcTime" model="@(new UtcTimeDisplayModel(Model.LastActivityUtc, "time"))" />
             </p>
+        </div>
+        <div class="worker-detail-toolbar">
+            @if (Model.IsEnabled)
+            {
+                <button type="button" class="worker-refresh-btn" data-worker-restart data-worker-id="@Model.WorkerId">
+                    <i class="fa-solid fa-rotate-right" aria-hidden="true"></i>
+                    <span>Перезапустить</span>
+                </button>
+            }
+            <div class="worker-actions-menu" data-row-menu>
+                <button type="button" class="worker-actions-trigger row-menu-btn" aria-label="Действия с воркером" aria-expanded="false" aria-haspopup="true">
+                    <i class="fa-solid fa-ellipsis" aria-hidden="true"></i>
+                    <span>Действия</span>
+                </button>
+                <div class="row-menu-dropdown row-menu-dropdown--workers row-menu-dropdown--worker-toolbar" hidden>
+                    @if (Model.IsEnabled)
+                    {
+                        <form asp-action="Disable" method="post" class="settings-inline-form">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="workerId" value="@Model.WorkerId" />
+                            <button type="submit" class="row-menu-item">
+                                <i class="fa-solid fa-circle-pause" aria-hidden="true"></i>
+                                Приостановить
+                            </button>
+                        </form>
+                    }
+                    else
+                    {
+                        <form asp-action="Enable" method="post" class="settings-inline-form">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="workerId" value="@Model.WorkerId" />
+                            <button type="submit" class="row-menu-item">
+                                <i class="fa-solid fa-circle-play" aria-hidden="true"></i>
+                                Включить
+                            </button>
+                        </form>
+                    }
+                    <form asp-action="RotateKey" method="post" class="settings-inline-form" onsubmit="return confirm('Перевыпустить API-ключ? Старый ключ перестанет работать.');">
+                        @Html.AntiForgeryToken()
+                        <input type="hidden" name="workerId" value="@Model.WorkerId" />
+                        <button type="submit" class="row-menu-item">
+                            <i class="fa-solid fa-key" aria-hidden="true"></i>
+                            Перевыпустить API-ключ
+                        </button>
+                    </form>
+                    <form asp-action="Delete" method="post" class="settings-inline-form" onsubmit="return confirm('Удалить воркер «@Model.DisplayName»? Это действие необратимо.');">
+                        @Html.AntiForgeryToken()
+                        <input type="hidden" name="workerId" value="@Model.WorkerId" />
+                        <button type="submit" class="row-menu-item row-menu-item--danger">
+                            <i class="fa-regular fa-trash-can" aria-hidden="true"></i>
+                            Удалить
+                        </button>
+                    </form>
+                </div>
+            </div>
         </div>
     </div>
 

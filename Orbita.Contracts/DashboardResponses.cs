@@ -35,7 +35,8 @@ public sealed record WorkerListItem(
     bool UpdateAvailable = false,
     string? LatestReleaseVersion = null,
     Guid OfficeId = default,
-    string OfficeName = "");
+    string OfficeName = "",
+    bool IsEnabled = true);
 
 public sealed record WorkerDetail(
     Guid Id,
@@ -60,7 +61,8 @@ public sealed record WorkerDetail(
     DateTime? StartedAtUtc = null,
     string? AgentVersion = null,
     string? AdsPowerApiBaseUrl = null,
-    string? AdsPowerApiKey = null);
+    string? AdsPowerApiKey = null,
+    bool IsEnabled = true);
 
 public sealed record WorkerEventListItem(
     Guid Id,

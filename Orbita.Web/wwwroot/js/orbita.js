@@ -137,7 +137,90 @@
         return year + '-' + month + '-' + day;
     }
 
+    function resetFloatingDropdown(dropdown) {
+        if (!dropdown) return;
+        dropdown.setAttribute('hidden', '');
+        dropdown.classList.remove('row-menu-dropdown--floating');
+        dropdown.style.top = '';
+        dropdown.style.left = '';
+        dropdown.style.right = '';
+        dropdown.style.visibility = '';
+    }
+
+    function positionFloatingDropdown(trigger, dropdown) {
+        dropdown.classList.add('row-menu-dropdown--floating');
+        dropdown.style.visibility = 'hidden';
+        dropdown.removeAttribute('hidden');
+
+        var rect = trigger.getBoundingClientRect();
+        var menuRect = dropdown.getBoundingClientRect();
+        var margin = 8;
+        var top = rect.bottom + 4;
+        var left = rect.right - menuRect.width;
+
+        if (left < margin) left = margin;
+        if (left + menuRect.width > window.innerWidth - margin) {
+            left = window.innerWidth - menuRect.width - margin;
+        }
+        if (top + menuRect.height > window.innerHeight - margin) {
+            top = rect.top - menuRect.height - 4;
+        }
+        if (top < margin) top = margin;
+
+        dropdown.style.top = top + 'px';
+        dropdown.style.left = left + 'px';
+        dropdown.style.right = 'auto';
+        dropdown.style.visibility = '';
+    }
+
+    function closeAllRowMenus() {
+        document.querySelectorAll('[data-row-menu]').forEach(function (menu) {
+            var trigger = menu.querySelector('.row-menu-btn');
+            var dropdown = menu.querySelector('.row-menu-dropdown');
+            resetFloatingDropdown(dropdown);
+            if (trigger) trigger.setAttribute('aria-expanded', 'false');
+        });
+    }
+
+    function handleRowMenuDocumentClick(e) {
+        var rowTrigger = e.target.closest('[data-row-menu] .row-menu-btn');
+        if (rowTrigger) {
+            e.stopPropagation();
+            var menu = rowTrigger.closest('[data-row-menu]');
+            var dropdown = menu && menu.querySelector('.row-menu-dropdown');
+            if (!dropdown) return;
+
+            var willOpen = dropdown.hasAttribute('hidden');
+            closeAllRowMenus();
+            if (willOpen) {
+                positionFloatingDropdown(rowTrigger, dropdown);
+                rowTrigger.setAttribute('aria-expanded', 'true');
+            }
+            return;
+        }
+
+        if (e.target.closest('.row-menu-dropdown')) {
+            return;
+        }
+
+        closeAllRowMenus();
+    }
+
+    function initRowMenus() {
+        if (window.__orbitaRowMenuDelegationReady) return;
+        window.__orbitaRowMenuDelegationReady = true;
+        window.__orbitaRowMenuDocListeners = true;
+
+        // Capture phase: run before other document click handlers (e.g. user menu close).
+        document.addEventListener('click', handleRowMenuDocumentClick, true);
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') closeAllPopovers();
+        });
+        window.addEventListener('resize', closeAllRowMenus);
+    }
+
     function closeAllPopovers() {
+        closeAllRowMenus();
         document.querySelectorAll('[data-orbita-user-menu]').forEach(function (menu) {
             var trigger = menu.querySelector('.orbita-user-trigger');
             var dropdown = menu.querySelector('.orbita-user-dropdown');
@@ -350,6 +433,7 @@
     }
 
     initUpdatedClock();
+    initRowMenus();
     initUserMenu();
     initPeriodPicker();
     initSidebarToggle();
@@ -623,6 +707,7 @@
         initSidebarToggle();
         initMobileSidebar();
         initConfirmDialog();
+        initRowMenus();
         initWorkerRestartButtons();
         initFilterPanels();
         initDetailModal();
@@ -974,4 +1059,6 @@
     window.Orbita.openDetailModal = openDetailModal;
     window.Orbita.initFilterPanels = initFilterPanels;
     window.Orbita.initDetailOpenButtons = initDetailOpenButtons;
+    window.Orbita.initRowMenus = initRowMenus;
+    window.Orbita.closeAllRowMenus = closeAllRowMenus;
 })();

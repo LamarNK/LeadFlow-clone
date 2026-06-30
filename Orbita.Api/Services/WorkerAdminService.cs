@@ -125,6 +125,34 @@ public sealed class WorkerAdminService(
         return (Map(worker), null);
     }
 
+    public async Task<(string? DisplayName, string? Error)> DeleteAsync(
+        Guid id,
+        OfficeScope scope,
+        WorkerDiagnosticsService diagnostics,
+        CancellationToken ct = default)
+    {
+        var worker = await db.Workers.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (worker is null || !scope.CanAccessOffice(worker.OfficeId))
+        {
+            return (null, "Воркер не найден.");
+        }
+
+        if (await db.CandidateResponses.AnyAsync(x => x.WorkerId == id, ct))
+        {
+            return (null, "Нельзя удалить воркер с откликами. Отключите его вместо удаления.");
+        }
+
+        var displayName = worker.DisplayName;
+        await diagnostics.DeleteAllForWorkerAsync(id, ct);
+        await db.WorkerLogEntries.Where(x => x.WorkerId == id).ExecuteDeleteAsync(ct);
+        await db.WorkerEvents.Where(x => x.WorkerId == id).ExecuteDeleteAsync(ct);
+        await db.WorkerAccounts.Where(x => x.WorkerId == id).ExecuteDeleteAsync(ct);
+        await db.WorkerSnapshots.Where(x => x.WorkerId == id).ExecuteDeleteAsync(ct);
+        db.Workers.Remove(worker);
+        await db.SaveChangesAsync(ct);
+        return (displayName, null);
+    }
+
     public async Task<(RotateWorkerApiKeyResponse? Result, string? Error)> RotateApiKeyAsync(
         Guid id,
         OfficeScope scope,

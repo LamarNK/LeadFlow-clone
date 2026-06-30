@@ -36,43 +36,11 @@
         });
     }
 
-    function initRowMenus() {
-        document.querySelectorAll('[data-row-menu]').forEach(function (menu) {
-            var trigger = menu.querySelector('.row-menu-btn');
-            var dropdown = menu.querySelector('.row-menu-dropdown');
-            if (!trigger || !dropdown) return;
-
-            trigger.addEventListener('click', function (e) {
-                e.stopPropagation();
-                var open = dropdown.hasAttribute('hidden');
-                closeAllRowMenus();
-                if (open) {
-                    dropdown.removeAttribute('hidden');
-                    trigger.setAttribute('aria-expanded', 'true');
-                }
-            });
-        });
-
-        if (!window.__orbitaRowMenuDocListeners) {
-            document.addEventListener('click', closeAllRowMenus);
-            document.addEventListener('keydown', function (e) {
-                if (e.key === 'Escape') closeAllRowMenus();
-            });
-            window.__orbitaRowMenuDocListeners = true;
-        }
-    }
-
-    function closeAllRowMenus() {
-        document.querySelectorAll('[data-row-menu]').forEach(function (menu) {
-            var trigger = menu.querySelector('.row-menu-btn');
-            var dropdown = menu.querySelector('.row-menu-dropdown');
-            if (dropdown) dropdown.setAttribute('hidden', '');
-            if (trigger) trigger.setAttribute('aria-expanded', 'false');
-        });
-    }
-
     function initRowNavigation() {
         document.querySelectorAll('.workers-row[data-href]').forEach(function (row) {
+            if (row.hasAttribute('data-workers-row-bound')) return;
+            row.setAttribute('data-workers-row-bound', '1');
+
             row.addEventListener('click', function (e) {
                 if (e.target.closest('[data-row-menu]') || e.target.closest('a')) return;
                 var href = row.getAttribute('data-href');
@@ -119,7 +87,9 @@
 
     function initWorkersPage() {
         initKpiCounters();
-        initRowMenus();
+        if (window.Orbita && typeof window.Orbita.initWorkerRestartButtons === 'function') {
+            window.Orbita.initWorkerRestartButtons();
+        }
         initRowNavigation();
         initAddWorkerModal();
     }

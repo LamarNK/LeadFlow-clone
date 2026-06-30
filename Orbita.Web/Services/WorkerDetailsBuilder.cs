@@ -50,6 +50,7 @@ internal static class WorkerDetailsBuilder
             ],
             DisplayName = worker.DisplayName,
             IsOnline = worker.IsOnline,
+            IsEnabled = worker.IsEnabled,
             LastActivityUtc = lastActivity,
             UpdatedAtUtc = DateTime.UtcNow,
             KpiCards = BuildKpiCards(activeAccounts, totalAccounts, activePct, responses, duplicates, errors, uptime),

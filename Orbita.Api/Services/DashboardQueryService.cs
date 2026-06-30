@@ -150,6 +150,7 @@ public sealed class DashboardQueryService(
                 w.MonitoringStatusMessage,
                 w.IsMonitoringActive,
                 w.LastSeenAtUtc,
+                w.IsEnabled,
                 w.OfficeId,
                 OfficeName = w.Office.Name
             })
@@ -202,7 +203,8 @@ public sealed class DashboardQueryService(
                 updateAvailable,
                 latestReleaseVersion,
                 w.OfficeId,
-                w.OfficeName);
+                w.OfficeName,
+                w.IsEnabled);
         }).ToList();
     }
 
@@ -260,7 +262,8 @@ public sealed class DashboardQueryService(
             worker.StartedAtUtc,
             worker.AgentVersion,
             worker.AdsPowerApiBaseUrl,
-            worker.AdsPowerApiKey);
+            worker.AdsPowerApiKey,
+            worker.IsEnabled);
     }
 
     public async Task<IReadOnlyList<WorkerAccountDto>> GetWorkerAccountsAsync(

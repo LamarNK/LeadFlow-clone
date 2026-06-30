@@ -1204,6 +1204,149 @@ panel.MapPost("/workers/create", async (
     return Results.Ok(result);
 });
 
+panel.MapPost("/workers/{id:guid}/enable", async (
+    Guid id,
+    WorkerAdminService workers,
+    PanelAuditService audit,
+    OfficeScopeService officeScope,
+    ClaimsPrincipal principal,
+    HttpContext http,
+    CancellationToken ct) =>
+{
+    var scope = await officeScope.ResolveAsync(principal, ct);
+    if (!scope.HasAccess)
+    {
+        return Results.Forbid();
+    }
+
+    var (worker, error) = await workers.SetEnabledAsync(id, true, scope, ct);
+    if (error is not null)
+    {
+        return Results.NotFound(new { error });
+    }
+
+    await audit.LogAsync(
+        principal.FindFirstValue(ClaimTypes.NameIdentifier),
+        principal.FindFirstValue(ClaimTypes.Email),
+        PanelAuditActions.WorkerEnabled,
+        "worker",
+        id.ToString(),
+        worker!.DisplayName,
+        http.Connection.RemoteIpAddress?.ToString(),
+        ct);
+
+    return Results.Ok(worker);
+});
+
+panel.MapPost("/workers/{id:guid}/disable", async (
+    Guid id,
+    WorkerAdminService workers,
+    PanelAuditService audit,
+    OfficeScopeService officeScope,
+    ClaimsPrincipal principal,
+    HttpContext http,
+    CancellationToken ct) =>
+{
+    var scope = await officeScope.ResolveAsync(principal, ct);
+    if (!scope.HasAccess)
+    {
+        return Results.Forbid();
+    }
+
+    var (worker, error) = await workers.SetEnabledAsync(id, false, scope, ct);
+    if (error is not null)
+    {
+        return Results.NotFound(new { error });
+    }
+
+    await audit.LogAsync(
+        principal.FindFirstValue(ClaimTypes.NameIdentifier),
+        principal.FindFirstValue(ClaimTypes.Email),
+        PanelAuditActions.WorkerDisabled,
+        "worker",
+        id.ToString(),
+        worker!.DisplayName,
+        http.Connection.RemoteIpAddress?.ToString(),
+        ct);
+
+    return Results.Ok(worker);
+});
+
+panel.MapPost("/workers/{id:guid}/rotate-key", async (
+    Guid id,
+    WorkerAdminService workers,
+    PanelAuditService audit,
+    OfficeScopeService officeScope,
+    ClaimsPrincipal principal,
+    HttpContext http,
+    CancellationToken ct) =>
+{
+    var scope = await officeScope.ResolveAsync(principal, ct);
+    if (!scope.HasAccess)
+    {
+        return Results.Forbid();
+    }
+
+    var (result, error) = await workers.RotateApiKeyAsync(id, scope, ct);
+    if (error is not null)
+    {
+        return Results.NotFound(new { error });
+    }
+
+    await audit.LogAsync(
+        principal.FindFirstValue(ClaimTypes.NameIdentifier),
+        principal.FindFirstValue(ClaimTypes.Email),
+        PanelAuditActions.WorkerKeyRotated,
+        "worker",
+        id.ToString(),
+        null,
+        http.Connection.RemoteIpAddress?.ToString(),
+        ct);
+
+    return Results.Ok(result);
+});
+
+panel.MapDelete("/workers/{id:guid}", async (
+    Guid id,
+    WorkerAdminService workers,
+    WorkerDiagnosticsService diagnostics,
+    PanelAuditService audit,
+    OfficeScopeService officeScope,
+    ClaimsPrincipal principal,
+    HttpContext http,
+    CancellationToken ct) =>
+{
+    var scope = await officeScope.ResolveAsync(principal, ct);
+    if (!scope.HasAccess)
+    {
+        return Results.Forbid();
+    }
+
+    var (displayName, error) = await workers.DeleteAsync(id, scope, diagnostics, ct);
+    if (error is not null)
+    {
+        return error.Contains("не найден", StringComparison.OrdinalIgnoreCase)
+            ? Results.NotFound(new { error })
+            : Results.BadRequest(new { error });
+    }
+
+    await audit.LogAsync(
+        principal.FindFirstValue(ClaimTypes.NameIdentifier),
+        principal.FindFirstValue(ClaimTypes.Email),
+        PanelAuditActions.WorkerDeleted,
+        "worker",
+        id.ToString(),
+        displayName,
+        http.Connection.RemoteIpAddress?.ToString(),
+        ct);
+
+    await GlobalLogger.Instance.LogAsync(
+        $"Worker deleted ({id}, {displayName}).",
+        DeskLinkAuditLogLevel.Warning);
+
+    return Results.Ok(new { message = "Воркер удалён." });
+});
+
 panel.MapPost("/events/{id:guid}/dismiss", async (
     Guid id,
     WorkerEventService events,

@@ -89,6 +89,24 @@ public sealed class WorkerDiagnosticsService(
         return (File.OpenRead(fullPath), "image/png", null);
     }
 
+    public async Task DeleteAllForWorkerAsync(Guid workerId, CancellationToken ct = default)
+    {
+        var attachments = await db.WorkerDiagnosticAttachments
+            .Where(x => x.WorkerId == workerId)
+            .ToListAsync(ct);
+
+        foreach (var item in attachments)
+        {
+            DeleteFileIfExists(item.RelativePath);
+        }
+
+        if (attachments.Count > 0)
+        {
+            db.WorkerDiagnosticAttachments.RemoveRange(attachments);
+            await db.SaveChangesAsync(ct).ConfigureAwait(false);
+        }
+    }
+
     public async Task<bool> DeleteAttachmentAsync(Guid attachmentId, CancellationToken ct = default)
     {
         var attachment = await db.WorkerDiagnosticAttachments

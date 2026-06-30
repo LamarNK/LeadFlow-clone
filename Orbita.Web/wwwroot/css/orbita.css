@@ -2299,6 +2299,85 @@ html.sidebar-collapsed .logout-form {
     cursor: pointer;
 }
 
+.data-table--workers tbody tr.workers-row--disabled {
+    opacity: 0.72;
+}
+
+.workers-status-badge {
+    display: inline-flex;
+    align-items: center;
+    margin-left: 8px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    vertical-align: middle;
+}
+
+.workers-status-badge--disabled {
+    background: rgba(239, 68, 68, 0.12);
+    color: #b91c1c;
+}
+
+.row-menu-dropdown--workers {
+    min-width: 220px;
+    padding: 8px;
+    border-radius: 12px;
+}
+
+.row-menu-dropdown--workers .row-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 42px;
+    padding: 0 12px;
+    font-size: 14px;
+}
+
+.row-menu-dropdown--workers .row-menu-item i {
+    width: 16px;
+    font-size: 14px;
+    color: #667085;
+    text-align: center;
+}
+
+.worker-actions-menu {
+    position: relative;
+}
+
+.worker-actions-trigger {
+    width: auto;
+    min-width: 44px;
+    height: 44px;
+    padding: 0 16px;
+    gap: 8px;
+    border: 1px solid #e4e7ec;
+    border-radius: 10px;
+    background: #ffffff;
+    color: #344054;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.worker-actions-trigger:hover {
+    background: #f9fafb;
+    border-color: #d0d5dd;
+}
+
+.worker-actions-trigger span {
+    display: inline;
+}
+
+[data-theme="dark"] .worker-actions-trigger {
+    background: var(--bg-card);
+    border-color: var(--border);
+    color: var(--text-primary);
+}
+
+.row-menu-dropdown--worker-toolbar {
+    min-width: 240px;
+}
+
 .card--workers-table .card-body-table {
     padding: 0;
 }
@@ -2319,6 +2398,14 @@ html.sidebar-collapsed .logout-form {
     border-radius: 10px;
     box-shadow: 0 8px 24px rgba(16, 24, 40, 0.08);
     z-index: 30;
+}
+
+.row-menu-dropdown--floating {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: auto;
+    z-index: 1200;
 }
 
 .row-menu-dropdown[hidden] {
@@ -2517,8 +2604,10 @@ html.sidebar-collapsed .logout-form {
 .worker-detail-toolbar {
     display: flex;
     align-items: center;
-    gap: 16px;
+    gap: 12px;
     flex-shrink: 0;
+    flex-wrap: wrap;
+    justify-content: flex-end;
 }
 
 .worker-refresh-btn {
@@ -2743,8 +2832,10 @@ html.sidebar-collapsed .logout-form {
 @media (max-width: 600px) {
     .worker-detail-title { font-size: 32px; }
     .worker-detail-kpi-row { grid-template-columns: 1fr; }
-    .worker-refresh-btn span { display: none; }
-    .worker-refresh-btn { width: 44px; padding: 0; }
+    .worker-refresh-btn span,
+    .worker-actions-trigger span { display: none; }
+    .worker-refresh-btn,
+    .worker-actions-trigger { width: 44px; padding: 0; }
 }
 
 /* Accounts page */
