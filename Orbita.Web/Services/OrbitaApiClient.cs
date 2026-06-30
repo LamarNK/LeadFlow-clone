@@ -903,6 +903,64 @@ public sealed class OrbitaApiClient(HttpClient http, AuthSession session, IOptio
             : (false, await ReadApiErrorAsync(response, ct));
     }
 
+    public async Task<(LeadFlowImportPreviewDto? Preview, string? Error)> PreviewLeadFlowImportAsync(
+        Stream databaseStream,
+        long fileLength,
+        string fileName,
+        Guid officeId,
+        string? encryptionKey,
+        CancellationToken ct = default)
+    {
+        using var content = new MultipartFormDataContent();
+        var fileContent = new StreamContent(databaseStream);
+        fileContent.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+        fileContent.Headers.ContentLength = fileLength;
+        content.Add(fileContent, "databaseFile", fileName);
+        content.Add(new StringContent(officeId.ToString()), "officeId");
+        if (!string.IsNullOrWhiteSpace(encryptionKey))
+        {
+            content.Add(new StringContent(encryptionKey.Trim()), "encryptionKey");
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/admin/leadflow-import/preview");
+        request.Content = content;
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (null, InvalidApiSessionError);
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            return (null, await ReadApiErrorAsync(response, ct));
+        }
+
+        var preview = await response.Content.ReadFromJsonAsync<LeadFlowImportPreviewDto>(ct);
+        return preview is null ? (null, "Не удалось прочитать ответ API.") : (preview, null);
+    }
+
+    public async Task<(LeadFlowImportExecuteResultDto? Result, string? Error)> ExecuteLeadFlowImportAsync(
+        Guid sessionId,
+        IReadOnlyList<Guid>? selectedIds,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/admin/leadflow-import/execute");
+        request.Content = JsonContent.Create(new LeadFlowImportExecuteRequest(sessionId, selectedIds));
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (null, InvalidApiSessionError);
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            return (null, await ReadApiErrorAsync(response, ct));
+        }
+
+        var result = await response.Content.ReadFromJsonAsync<LeadFlowImportExecuteResultDto>(ct);
+        return result is null ? (null, "Не удалось прочитать ответ API.") : (result, null);
+    }
+
     public async Task<(bool Success, string? Error)> DeleteWorkerReleaseAsync(
         string version,
         CancellationToken ct = default)

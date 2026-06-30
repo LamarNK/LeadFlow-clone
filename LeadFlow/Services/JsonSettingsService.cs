@@ -73,6 +73,14 @@ public sealed class JsonSettingsService(string? dataDirectoryOverride = null) : 
     public string GetSettingsPath() =>
         Path.Combine(_dataDirectoryPath, SettingsFileName);
 
+    public static async Task<AppSettings> LoadFromDataDirectoryAsync(
+        string dataDirectory,
+        CancellationToken cancellationToken = default)
+    {
+        var service = new JsonSettingsService(dataDirectory);
+        return await service.LoadAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     public static string GetDefaultDatabasePath() =>
         Path.Combine(GetDataDirectoryPath(), DatabaseFileName);
 

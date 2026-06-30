@@ -114,4 +114,5 @@ public static class PanelAuditActions
     public const string WorkerDeleted = "worker.deleted";
     public const string BitrixWebhookUpdated = "bitrix.webhook_updated";
     public const string BitrixWebhookValidated = "bitrix.webhook_validated";
+    public const string LeadFlowImportExecuted = "leadflow.import_executed";
 }

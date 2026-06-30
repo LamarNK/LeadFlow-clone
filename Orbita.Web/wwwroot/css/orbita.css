@@ -1919,6 +1919,44 @@ html.sidebar-collapsed .logout-form {
     gap: 16px;
 }
 
+.settings-leadflow-import-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 16px;
+}
+
+.settings-leadflow-import-status {
+    margin-top: 12px;
+    font-size: 14px;
+}
+
+.settings-leadflow-preview-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+}
+
+.settings-leadflow-preview-note {
+    margin: 0 18px 10px;
+    font-size: 13px;
+    color: #475467;
+}
+
+.settings-leadflow-select-all {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 18px 12px;
+    font-size: 14px;
+    color: #475467;
+}
+
+.data-table-check-col {
+    width: 40px;
+}
+
 .settings-input--readonly {
     background: #f9fafb;
     color: #344054;

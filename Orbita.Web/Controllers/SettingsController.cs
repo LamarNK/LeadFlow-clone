@@ -285,6 +285,76 @@ public sealed class SettingsController(
     }
 
     [HttpPost]
+    [RequestSizeLimit(104_857_600)]
+    [RequestFormLimits(MultipartBodyLengthLimit = 104_857_600)]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> PreviewLeadFlowImport(
+        IFormFile? databaseFile,
+        Guid officeId,
+        string? encryptionKey,
+        [FromServices] OrbitaApiClient api,
+        CancellationToken ct = default)
+    {
+        if (databaseFile is null || databaseFile.Length == 0)
+        {
+            return BadRequest(new { error = "Выберите файл leadflow.db." });
+        }
+
+        await using var stream = databaseFile.OpenReadStream();
+        var (preview, error) = await api.PreviewLeadFlowImportAsync(
+            stream,
+            databaseFile.Length,
+            databaseFile.FileName,
+            officeId,
+            encryptionKey,
+            ct);
+        if (preview is null)
+        {
+            return BadRequest(new { error });
+        }
+
+        return Json(preview);
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ExecuteLeadFlowImport(
+        Guid sessionId,
+        string? selectedIdsJson,
+        [FromServices] OrbitaApiClient api,
+        CancellationToken ct = default)
+    {
+        if (sessionId == Guid.Empty)
+        {
+            return BadRequest(new { error = "Сессия импорта не указана." });
+        }
+
+        IReadOnlyList<Guid>? selectedIds = null;
+        if (!string.IsNullOrWhiteSpace(selectedIdsJson))
+        {
+            try
+            {
+                selectedIds = System.Text.Json.JsonSerializer.Deserialize<List<Guid>>(selectedIdsJson);
+            }
+            catch
+            {
+                return BadRequest(new { error = "Некорректный список выбранных откликов." });
+            }
+        }
+
+        var (result, error) = await api.ExecuteLeadFlowImportAsync(
+            sessionId,
+            selectedIds,
+            ct);
+        if (result is null)
+        {
+            return BadRequest(new { error });
+        }
+
+        return Json(result);
+    }
+
+    [HttpPost]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> ValidateUserBitrix(
         string userId,

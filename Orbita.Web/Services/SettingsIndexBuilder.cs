@@ -14,6 +14,7 @@ internal static class SettingsIndexBuilder
         new() { Id = "users", Label = "Пользователи" },
         new() { Id = "profiles", Label = "Профили" },
         new() { Id = "workers", Label = "Воркеры" },
+        new() { Id = "leadflow-import", Label = "Импорт LeadFlow" },
         new() { Id = "worker-releases", Label = "Обновления воркера" },
         new() { Id = "audit", Label = "Аудит" },
         new() { Id = "logs", Label = "Логи сервиса" },
@@ -102,6 +103,28 @@ internal static class SettingsIndexBuilder
             }
         };
     }
+
+    public static SettingsIndexViewModel BuildLeadFlowImportTab(
+        IReadOnlyList<OfficeDto> offices) =>
+        new()
+        {
+            ActiveTab = "leadflow-import",
+            Tabs = Tabs,
+            ProfileOptions = ProfileOptions,
+            OfficeOptions = offices.Select(o => new EventFilterOptionViewModel
+            {
+                Value = o.Id.ToString(),
+                Label = o.Name
+            }).ToList(),
+            LeadFlowImport = new LeadFlowImportSettingsViewModel
+            {
+                OfficeOptions = offices.Select(o => new EventFilterOptionViewModel
+                {
+                    Value = o.Id.ToString(),
+                    Label = o.Name
+                }).ToList()
+            }
+        };
 
     public static SettingsIndexViewModel BuildWorkerReleasesTab(WorkerReleaseListResponse releases) =>
         new()
@@ -560,7 +583,8 @@ internal static class SettingsIndexBuilder
         new() { Value = PanelAuditActions.WorkerEnabled, Label = AuditActionLabel(PanelAuditActions.WorkerEnabled) },
         new() { Value = PanelAuditActions.WorkerKeyRotated, Label = AuditActionLabel(PanelAuditActions.WorkerKeyRotated) },
         new() { Value = PanelAuditActions.BitrixWebhookUpdated, Label = AuditActionLabel(PanelAuditActions.BitrixWebhookUpdated) },
-        new() { Value = PanelAuditActions.BitrixWebhookValidated, Label = AuditActionLabel(PanelAuditActions.BitrixWebhookValidated) }
+        new() { Value = PanelAuditActions.BitrixWebhookValidated, Label = AuditActionLabel(PanelAuditActions.BitrixWebhookValidated) },
+        new() { Value = PanelAuditActions.LeadFlowImportExecuted, Label = AuditActionLabel(PanelAuditActions.LeadFlowImportExecuted) }
     ];
 
     public static ServiceLogRowViewModel MapWorkerLogRow(WorkerLogEntryDto entry, string serviceLabel = "Orbita.Worker")
@@ -648,6 +672,7 @@ internal static class SettingsIndexBuilder
             PanelAuditActions.WorkerKeyRotated => "API-ключ перевыпущен",
             PanelAuditActions.BitrixWebhookUpdated => "Вебхук Bitrix обновлён",
             PanelAuditActions.BitrixWebhookValidated => "Вебхук Bitrix проверен",
+            PanelAuditActions.LeadFlowImportExecuted => "Импорт LeadFlow",
             _ => action
         };
 

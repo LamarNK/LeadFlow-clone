@@ -175,6 +175,9 @@ builder.Services.AddHostedService<ServiceLogsCleanupService>();
 builder.Services.AddScoped<WebhookSecretProtector>();
 builder.Services.AddScoped<BitrixWebhookValidator>();
 builder.Services.AddScoped<PanelBitrixIntegrationService>();
+builder.Services.Configure<LeadFlowImportOptions>(builder.Configuration.GetSection("LeadFlowImport"));
+builder.Services.AddSingleton<LeadFlowDatabaseReader>();
+builder.Services.AddScoped<LeadFlowImportService>();
 builder.Services.AddDataProtection();
 builder.Services.AddHttpClient(nameof(BitrixWebhookValidator), client =>
 {
@@ -1045,6 +1048,66 @@ admin.MapPost("/workers/{id:guid}/rotate-key", async (
 
 admin.MapGet("/workers/registration", (WorkerAdminService workers) =>
     Results.Ok(workers.GetRegistrationInfo()));
+
+admin.MapPost("/leadflow-import/preview", async (
+    HttpRequest request,
+    LeadFlowImportService importService,
+    CancellationToken ct) =>
+{
+    if (!request.HasFormContentType)
+    {
+        return Results.BadRequest(new { error = "Ожидается multipart/form-data." });
+    }
+
+    var form = await request.ReadFormAsync(ct);
+    var file = form.Files.GetFile("databaseFile");
+    if (file is null || file.Length == 0)
+    {
+        return Results.BadRequest(new { error = "Файл databaseFile не передан." });
+    }
+
+    if (!Guid.TryParse(form["officeId"].FirstOrDefault(), out var officeId))
+    {
+        return Results.BadRequest(new { error = "Укажите офис для импорта." });
+    }
+
+    var encryptionKey = form["encryptionKey"].FirstOrDefault();
+    await using var stream = file.OpenReadStream();
+    var (preview, error) = await importService.PreviewAsync(
+        stream,
+        file.FileName,
+        officeId,
+        encryptionKey,
+        ct);
+    return error is null ? Results.Ok(preview) : Results.BadRequest(new { error });
+}).DisableAntiforgery();
+
+admin.MapPost("/leadflow-import/execute", async (
+    LeadFlowImportExecuteRequest request,
+    LeadFlowImportService importService,
+    PanelAuditService audit,
+    ClaimsPrincipal principal,
+    HttpContext http,
+    CancellationToken ct) =>
+{
+    var (result, error) = await importService.ExecuteAsync(request.SessionId, request.SelectedIds, ct);
+    if (error is not null)
+    {
+        return Results.BadRequest(new { error });
+    }
+
+    await audit.LogAsync(
+        principal.FindFirstValue(ClaimTypes.NameIdentifier),
+        principal.FindFirstValue(ClaimTypes.Email),
+        PanelAuditActions.LeadFlowImportExecuted,
+        "office",
+        null,
+        $"imported={result!.Imported}; skipped={result.Skipped}; failed={result.Failed}",
+        http.Connection.RemoteIpAddress?.ToString(),
+        ct);
+
+    return Results.Ok(result);
+});
 
 admin.MapGet("/worker-releases", async (WorkerReleaseService releases, CancellationToken ct) =>
     Results.Ok(await releases.ListAsync(ct)));

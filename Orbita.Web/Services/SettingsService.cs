@@ -55,6 +55,7 @@ public sealed class SettingsService(
                     previewIntegrations,
                     userId,
                     string.IsNullOrWhiteSpace(userId) ? null : DesignPreviewData.MyBitrixIntegration),
+                "leadflow-import" => SettingsIndexBuilder.BuildLeadFlowImportTab(previewOffices),
                 "worker-releases" => SettingsIndexBuilder.BuildWorkerReleasesTab(DesignPreviewData.WorkerReleases),
                 _ => SettingsIndexBuilder.BuildUsersTab(
                     previewUsers,
@@ -81,6 +82,7 @@ public sealed class SettingsService(
                 await api.GetWorkerRegistrationInfoAsync(ct)),
             "audit" => await BuildAuditTabAsync(q, action, date, page, ct),
             "integrations" => await BuildIntegrationsTabAsync(userId, integrations, ct),
+            "leadflow-import" => SettingsIndexBuilder.BuildLeadFlowImportTab(offices),
             "worker-releases" => await BuildWorkerReleasesTabAsync(ct),
             _ => SettingsIndexBuilder.BuildUsersTab(
                 await api.GetPanelUsersAsync(ct) ?? [],
@@ -393,6 +395,7 @@ public sealed class SettingsService(
             "offices" => "offices",
             "profiles" => "profiles",
             "workers" => "workers",
+            "leadflow-import" => "leadflow-import",
             "worker-releases" => "worker-releases",
             "audit" => "audit",
             "logs" => "logs",

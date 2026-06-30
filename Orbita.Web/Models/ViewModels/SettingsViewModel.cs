@@ -16,6 +16,7 @@ public sealed record SettingsIndexViewModel
     public BitrixIntegrationsSettingsViewModel? Integrations { get; init; }
     public WorkerReleasesSettingsViewModel? WorkerReleases { get; init; }
     public OfficesSettingsViewModel? Offices { get; init; }
+    public LeadFlowImportSettingsViewModel? LeadFlowImport { get; init; }
     public IReadOnlyList<EventFilterOptionViewModel> OfficeOptions { get; init; } = [];
     public string? StatusMessage { get; init; }
     public string? ErrorMessage { get; init; }
@@ -288,6 +289,11 @@ public sealed class SaveAdminBitrixIntegrationFormModel
 {
     public string UserId { get; set; } = string.Empty;
     public string WebhookUrl { get; set; } = string.Empty;
+}
+
+public sealed class LeadFlowImportSettingsViewModel
+{
+    public IReadOnlyList<EventFilterOptionViewModel> OfficeOptions { get; init; } = [];
 }
 
 public sealed class ChangeOwnPasswordFormModel

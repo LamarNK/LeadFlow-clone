@@ -477,6 +477,105 @@
             </div>
         </div>
     }
+    else if (Model.ActiveTab == "leadflow-import" && Model.LeadFlowImport is not null)
+    {
+        var leadFlowImport = Model.LeadFlowImport;
+        <div class="card card--settings-leadflow-import">
+            <div class="card-header settings-card-header">
+                <div>
+                    <h2 class="settings-card-title">Импорт базы LeadFlow</h2>
+                    <p class="settings-card-subtitle">Загрузите leadflow.db с офисного ПК, выберите офис и проверьте отклики перед синхронизацией. Ключ шифрования — только через утилиту ReadLeadFlowDatabaseKey на том же компьютере.</p>
+                </div>
+            </div>
+            <div class="card-body settings-leadflow-import-body">
+                <form class="settings-leadflow-import-form" data-leadflow-import-form>
+                    @Html.AntiForgeryToken()
+                    <div class="settings-release-upload-grid">
+                        <label class="settings-filter-field">
+                            <span class="settings-filter-label">Офис в Орбите</span>
+                            <select name="officeId" class="settings-select" data-leadflow-import-office required>
+                                <option value="">Выберите офис</option>
+                                @foreach (var opt in leadFlowImport.OfficeOptions)
+                                {
+                                    <option value="@opt.Value">@opt.Label</option>
+                                }
+                            </select>
+                        </label>
+                        <label class="settings-filter-field">
+                            <span class="settings-filter-label">Ключ шифрования</span>
+                            <input type="password"
+                                   name="encryptionKey"
+                                   class="settings-input"
+                                   data-leadflow-import-key
+                                   placeholder="ReadLeadFlowDatabaseKey.exe на офисном ПК"
+                                   autocomplete="off" />
+                        </label>
+                    </div>
+                    <input type="file" name="databaseFile" accept=".db" class="settings-release-file-input" data-leadflow-import-file required hidden />
+                    <div class="settings-release-dropzone" data-leadflow-import-dropzone tabindex="0" role="button" aria-label="Перетащите leadflow.db или выберите файл">
+                        <div class="settings-release-dropzone-icon" aria-hidden="true">
+                            <i class="fa-solid fa-database"></i>
+                        </div>
+                        <p class="settings-release-dropzone-title">Перетащите leadflow.db сюда</p>
+                        <p class="settings-release-dropzone-hint">или нажмите, чтобы выбрать файл</p>
+                        <p class="settings-release-dropzone-file" data-leadflow-import-file-name hidden></p>
+                        <p class="settings-release-dropzone-error" data-leadflow-import-file-error hidden></p>
+                    </div>
+                    <div class="settings-leadflow-import-actions">
+                        <button type="button" class="settings-primary-btn" data-leadflow-import-preview disabled>Предпросмотр</button>
+                    </div>
+                    <p class="settings-leadflow-import-status" data-leadflow-import-status hidden role="status"></p>
+                </form>
+            </div>
+        </div>
+
+        <div class="card card--settings-leadflow-preview" data-leadflow-import-preview-card hidden>
+            <div class="card-header settings-card-header">
+                <div>
+                    <h2 class="settings-card-title">Предпросмотр</h2>
+                    <p class="settings-card-subtitle" data-leadflow-import-summary></p>
+                </div>
+                <div class="settings-leadflow-preview-actions">
+                    <button type="button"
+                            class="settings-primary-btn"
+                            data-leadflow-import-execute-all
+                            hidden
+                            disabled>
+                        Импортировать все новые
+                    </button>
+                    <button type="button"
+                            class="settings-secondary-btn"
+                            data-leadflow-import-execute-sample
+                            hidden
+                            disabled>
+                        Импортировать выбранные в таблице
+                    </button>
+                </div>
+            </div>
+            <p class="settings-leadflow-preview-note" data-leadflow-import-preview-note hidden></p>
+            <label class="settings-leadflow-select-all" data-leadflow-import-select-all-wrap hidden>
+                <input type="checkbox" data-leadflow-import-select-all checked />
+                <span>Выбрать все строки в таблице</span>
+            </label>
+            <div class="card-body card-body-table settings-table-wrap">
+                <table class="data-table data-table--settings-leadflow-import">
+                    <thead>
+                    <tr>
+                        <th class="data-table-check-col"></th>
+                        <th>Дата</th>
+                        <th>Кандидат</th>
+                        <th>Телефон</th>
+                        <th>Аккаунт</th>
+                        <th>Вакансия</th>
+                        <th>Статус LeadFlow</th>
+                        <th>Импорт</th>
+                    </tr>
+                    </thead>
+                    <tbody data-leadflow-import-preview-body></tbody>
+                </table>
+            </div>
+        </div>
+    }
     else if (Model.ActiveTab == "worker-releases" && Model.WorkerReleases is not null)
     {
         var releases = Model.WorkerReleases;
@@ -1028,6 +1127,10 @@
     @if (Model.ActiveTab == "integrations")
     {
         <script src="~/js/orbita-bitrix-settings.js" asp-append-version="true"></script>
+    }
+    @if (Model.ActiveTab == "leadflow-import")
+    {
+        <script src="~/js/orbita-leadflow-import.js" asp-append-version="true"></script>
     }
     @if (Model.ActiveTab == "worker-releases")
     {
