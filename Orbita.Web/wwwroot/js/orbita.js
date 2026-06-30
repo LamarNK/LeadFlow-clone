@@ -21,6 +21,9 @@
 
     function initUserMenu() {
         document.querySelectorAll('[data-orbita-user-menu]').forEach(function (menu) {
+            if (menu.hasAttribute('data-orbita-user-menu-bound')) return;
+            menu.setAttribute('data-orbita-user-menu-bound', '1');
+
             var trigger = menu.querySelector('.orbita-user-trigger');
             var dropdown = menu.querySelector('.orbita-user-dropdown');
             if (!trigger || !dropdown) return;
@@ -47,6 +50,9 @@
 
     function initPeriodPicker() {
         document.querySelectorAll('[data-orbita-period-menu]').forEach(function (menu) {
+            if (menu.hasAttribute('data-orbita-period-menu-bound')) return;
+            menu.setAttribute('data-orbita-period-menu-bound', '1');
+
             var trigger = menu.querySelector('.orbita-period-picker');
             var dropdown = menu.querySelector('.orbita-period-dropdown');
             var fromInput = menu.querySelector('[data-period-from]');
@@ -282,16 +288,19 @@
     }
 
     function initSidebarToggle() {
-        var toggle = document.querySelector('[data-orbita-sidebar-toggle]');
-        if (!toggle) return;
+        if (window.__orbitaSidebarToggleReady) return;
+        window.__orbitaSidebarToggleReady = true;
 
-        var icon = toggle.querySelector('i');
         var storageKey = 'orbita-sidebar-collapsed';
 
         function setCollapsed(collapsed) {
+            var toggle = document.querySelector('[data-orbita-sidebar-toggle]');
+            var icon = toggle && toggle.querySelector('i');
             document.documentElement.classList.toggle('sidebar-collapsed', collapsed);
-            toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
-            toggle.setAttribute('aria-label', collapsed ? 'Развернуть меню' : 'Свернуть меню');
+            if (toggle) {
+                toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+                toggle.setAttribute('aria-label', collapsed ? 'Развернуть меню' : 'Свернуть меню');
+            }
             if (icon) {
                 icon.className = collapsed ? 'fa-solid fa-angles-right' : 'fa-solid fa-bars';
             }
@@ -304,7 +313,8 @@
             setCollapsed(true);
         }
 
-        toggle.addEventListener('click', function () {
+        document.addEventListener('click', function (e) {
+            if (!e.target.closest('[data-orbita-sidebar-toggle]')) return;
             setCollapsed(!document.documentElement.classList.contains('sidebar-collapsed'));
         });
     }
@@ -700,12 +710,10 @@
     }
 
     function reinitAfterContentSwap() {
-        // Re-run shared inits (protected inside each)
+        // Re-run inits for swapped .orbita-content only (layout/sidebar handlers are one-time)
         initUpdatedClock();
         initUserMenu();
         initPeriodPicker();
-        initSidebarToggle();
-        initMobileSidebar();
         initConfirmDialog();
         initRowMenus();
         initWorkerRestartButtons();
@@ -763,7 +771,12 @@
         } else if (key === 'mysettings') {
             scripts = ['/js/orbita-bitrix-settings.js'];
         } else if (key === 'settings') {
-            scripts = ['/js/orbita-settings.js', '/js/orbita-bitrix-settings.js', '/js/orbita-worker-releases.js'];
+            scripts = [
+                '/js/orbita-settings.js',
+                '/js/orbita-bitrix-settings.js',
+                '/js/orbita-worker-releases.js',
+                '/js/orbita-leadflow-import.js'
+            ];
         }
         return scripts;
     }
