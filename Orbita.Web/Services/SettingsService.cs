@@ -139,6 +139,7 @@ public sealed class SettingsService(
         Guid officeId,
         string name,
         bool isEnabled,
+        bool bitrixTransmissionEnabled,
         CancellationToken ct = default)
     {
         if (previewOptions.Value.Enabled)
@@ -146,7 +147,7 @@ public sealed class SettingsService(
             return (true, null);
         }
 
-        var (office, error) = await api.UpdateOfficeAsync(officeId, name, isEnabled, ct);
+        var (office, error) = await api.UpdateOfficeAsync(officeId, name, isEnabled, bitrixTransmissionEnabled, ct);
         return office is not null ? (true, null) : (false, error);
     }
 

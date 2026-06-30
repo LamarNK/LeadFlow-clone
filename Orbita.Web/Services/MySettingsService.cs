@@ -40,6 +40,14 @@ public sealed class MySettingsService(OrbitaApiClient api, IOptions<DesignPrevie
         return integration is not null ? (true, null) : (false, error);
     }
 
+    public async Task<(bool Success, string? Error)> SaveBitrixTransmissionAsync(
+        bool transmissionEnabled,
+        CancellationToken ct = default)
+    {
+        var (settings, error) = await api.UpdateOfficeBitrixSettingsAsync(transmissionEnabled, ct);
+        return settings is not null ? (true, null) : (false, error);
+    }
+
     private async Task<ProfileSettingsViewModel?> BuildProfileAsync(CancellationToken ct)
     {
         var profile = await api.GetPanelProfileAsync(ct);
@@ -63,6 +71,7 @@ public sealed class MySettingsService(OrbitaApiClient api, IOptions<DesignPrevie
         var officeWebhooks = (await api.GetOfficeBitrixWebhooksAsync(ct) ?? [])
             .Select(MapOfficeWebhook)
             .ToList();
+        var officeBitrixSettings = await api.GetOfficeBitrixSettingsAsync(ct);
 
         if (integration is null)
         {
@@ -71,7 +80,10 @@ public sealed class MySettingsService(OrbitaApiClient api, IOptions<DesignPrevie
                 ValidationStatus = BitrixValidationStatuses.NotConfigured,
                 ValidationStatusLabel = "Не настроено",
                 ValidationStatusTone = "neutral",
-                OfficeWebhooks = officeWebhooks
+                OfficeWebhooks = officeWebhooks,
+                CanManageTransmission = officeBitrixSettings is not null,
+                TransmissionEnabled = officeBitrixSettings?.TransmissionEnabled ?? true,
+                OfficeName = officeBitrixSettings?.OfficeName
             };
         }
         var (label, tone) = MapValidationStatus(integration.ValidationStatus);
@@ -84,7 +96,10 @@ public sealed class MySettingsService(OrbitaApiClient api, IOptions<DesignPrevie
             LastValidatedAtUtc = integration.LastValidatedAtUtc,
             OfficeWebhooks = officeWebhooks,
             ValidationStatusLabel = label,
-            ValidationStatusTone = tone
+            ValidationStatusTone = tone,
+            CanManageTransmission = officeBitrixSettings is not null,
+            TransmissionEnabled = officeBitrixSettings?.TransmissionEnabled ?? true,
+            OfficeName = officeBitrixSettings?.OfficeName
         };
     }
 

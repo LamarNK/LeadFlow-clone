@@ -163,6 +163,7 @@ builder.Services.Configure<FormOptions>(options =>
 builder.Services.AddScoped<CandidateIngestionService>();
 builder.Services.AddScoped<CandidateDuplicateService>();
 builder.Services.AddScoped<OfficeBitrixWebhookResolver>();
+builder.Services.AddScoped<OfficeBitrixSettingsService>();
 builder.Services.AddScoped<ResponsesQueryService>();
 builder.Services.AddSingleton<PhoneNormalizer>();
 builder.Services.AddSingleton<CandidateParser>();
@@ -809,7 +810,12 @@ admin.MapPut("/offices/{id:guid}", async (
     HttpContext http,
     CancellationToken ct) =>
 {
-    var (office, error) = await offices.UpdateAsync(id, request.Name, request.IsEnabled, ct);
+    var (office, error) = await offices.UpdateAsync(
+        id,
+        request.Name,
+        request.IsEnabled,
+        request.BitrixTransmissionEnabled,
+        ct);
     if (error is not null)
     {
         return error.Contains("не найден", StringComparison.OrdinalIgnoreCase)
@@ -1160,6 +1166,44 @@ admin.MapGet("/workers/{workerId:guid}/logs", async (
         ct)));
 
 var panel = app.MapGroup("/api/v1/panel").RequireAuthorization("Panel");
+panel.MapPost("/workers/create", async (
+    CreateWorkerRequest request,
+    WorkerAdminService workers,
+    PanelAuditService audit,
+    OfficeScopeService officeScope,
+    ClaimsPrincipal principal,
+    HttpContext http,
+    CancellationToken ct) =>
+{
+    var scope = await officeScope.ResolveAsync(principal, ct);
+    if (!scope.HasAccess)
+    {
+        return Results.Forbid();
+    }
+
+    var (result, error) = await workers.CreateAsync(request.DisplayName, request.OfficeId, scope, ct);
+    if (error is not null)
+    {
+        return Results.BadRequest(new { error });
+    }
+
+    await audit.LogAsync(
+        principal.FindFirstValue(ClaimTypes.NameIdentifier),
+        principal.FindFirstValue(ClaimTypes.Email),
+        PanelAuditActions.WorkerCreated,
+        "worker",
+        result!.WorkerId.ToString(),
+        result.DisplayName,
+        http.Connection.RemoteIpAddress?.ToString(),
+        ct);
+
+    await GlobalLogger.Instance.LogAsync(
+        $"Worker created ({result.WorkerId}, {result.DisplayName}).",
+        DeskLinkAuditLogLevel.Info);
+
+    return Results.Ok(result);
+});
+
 panel.MapPost("/events/{id:guid}/dismiss", async (
     Guid id,
     WorkerEventService events,
@@ -1263,6 +1307,51 @@ panel.MapGet("/office/integrations/bitrix", async (
     }
 
     return Results.Ok(await webhooks.ListOfficeWebhookDtosAsync(effectiveOfficeId, ct));
+});
+
+panel.MapGet("/office/bitrix-settings", async (
+    OfficeBitrixSettingsService bitrixSettings,
+    OfficeScopeService officeScope,
+    ClaimsPrincipal principal,
+    CancellationToken ct) =>
+{
+    var scope = await officeScope.ResolveAsync(principal, ct);
+    if (!scope.HasAccess)
+    {
+        return Results.Forbid();
+    }
+
+    var settings = await bitrixSettings.GetForScopeAsync(scope, ct);
+    return settings is null
+        ? Results.BadRequest(new { error = "Офис не назначен." })
+        : Results.Ok(settings);
+});
+
+panel.MapPut("/office/bitrix-settings", async (
+    UpdateOfficeBitrixSettingsRequest request,
+    OfficeBitrixSettingsService bitrixSettings,
+    OfficeScopeService officeScope,
+    ClaimsPrincipal principal,
+    HttpContext http,
+    CancellationToken ct) =>
+{
+    var scope = await officeScope.ResolveAsync(principal, ct);
+    if (!scope.HasAccess)
+    {
+        return Results.Forbid();
+    }
+
+    var (settings, error) = await bitrixSettings.UpdateForScopeAsync(
+        scope,
+        request.TransmissionEnabled,
+        principal.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty,
+        principal.FindFirstValue(ClaimTypes.Email),
+        http.Connection.RemoteIpAddress?.ToString(),
+        ct);
+
+    return error is not null
+        ? Results.BadRequest(new { error })
+        : Results.Ok(settings);
 });
 
 panel.MapGet("/responses", async (

@@ -21,6 +21,7 @@ public sealed class WorkersIndexViewModel
     public string? LatestWorkerDownloadUrl { get; init; }
     public IReadOnlyList<EventFilterOptionViewModel> OfficeOptions { get; init; } = [];
     public bool CanSelectOffice { get; init; }
+    public bool CanCreateWorker { get; init; }
 }
 
 public sealed class BreadcrumbItemViewModel

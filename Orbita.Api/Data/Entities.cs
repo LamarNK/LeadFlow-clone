@@ -9,6 +9,7 @@ public sealed class OfficeEntity
     public string RegistrationSecretHash { get; set; } = string.Empty;
     public DateTime CreatedAtUtc { get; set; }
     public bool IsEnabled { get; set; } = true;
+    public bool BitrixTransmissionEnabled { get; set; } = true;
 
     public ICollection<WorkerEntity> Workers { get; set; } = [];
     public ICollection<PanelUserProfileEntity> UserProfiles { get; set; } = [];

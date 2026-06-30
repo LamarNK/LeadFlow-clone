@@ -856,8 +856,7 @@
             if (link.closest('.orbita-nav')) return;
 
             // Skip special buttons that open modals or have other behavior
-            if (link.classList.contains('accounts-add-btn') ||
-                link.classList.contains('workers-add-btn') ||
+            if (link.classList.contains('workers-add-btn') ||
                 link.hasAttribute('data-no-fast-nav') ||
                 link.getAttribute('target') === '_blank' ||
                 (link.getAttribute('href') || '').startsWith('#')) {

@@ -50,6 +50,19 @@ public sealed class MySettingsController(IMySettingsService settings) : Controll
 
     [HttpPost]
     [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SaveBitrixTransmission(SaveBitrixTransmissionFormModel model, CancellationToken ct = default)
+    {
+        var (success, error) = await settings.SaveBitrixTransmissionAsync(model.TransmissionEnabled, ct);
+        TempData[success ? "MySettingsStatus" : "MySettingsError"] = success
+            ? model.TransmissionEnabled
+                ? "Передача в Bitrix24 включена."
+                : "Передача в Bitrix24 отключена."
+            : error;
+        return RedirectToAction(nameof(Index), new { tab = "bitrix" });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> ValidateBitrix(
         string? webhookUrl,
         [FromServices] OrbitaApiClient api,

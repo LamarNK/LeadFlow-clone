@@ -2864,8 +2864,7 @@ html.sidebar-collapsed .logout-form {
     box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
 }
 
-.accounts-filter-btn,
-.accounts-add-btn {
+.accounts-filter-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -2892,17 +2891,6 @@ html.sidebar-collapsed .logout-form {
 .accounts-filter-btn:hover {
     background: #f9fafb;
     border-color: #d0d5dd;
-}
-
-.accounts-add-btn {
-    border: 0;
-    background: #2563eb;
-    color: #ffffff;
-    white-space: nowrap;
-}
-
-.accounts-add-btn:hover {
-    background: #1d4ed8;
 }
 
 .accounts-table-wrap {
@@ -3101,8 +3089,6 @@ html.sidebar-collapsed .logout-form {
     .accounts-page-title { font-size: 32px; }
     .accounts-kpi-row { grid-template-columns: 1fr; }
     .accounts-search { width: 100%; flex-basis: 100%; }
-    .accounts-add-btn span { display: none; }
-    .accounts-add-btn { width: 44px; padding: 0; }
 }
 
 /* Events page */
@@ -4769,6 +4755,16 @@ html.sidebar-collapsed .logout-form {
     color: #667085;
 }
 
+.settings-bitrix-transmission-form {
+    margin-bottom: 1.25rem;
+    padding-bottom: 1.25rem;
+    border-bottom: 1px solid var(--orbita-border, #eaecf0);
+}
+
+.settings-bitrix-transmission-toggle {
+    font-weight: 600;
+}
+
 .settings-bitrix-actions {
     display: flex;
     flex-wrap: wrap;
@@ -6052,9 +6048,8 @@ html.sidebar-collapsed .nav-badge {
     cursor: pointer;
 }
 
-/* Detail + info modals */
-.orbita-detail-modal,
-.orbita-info-modal {
+/* Detail modal */
+.orbita-detail-modal {
     position: fixed;
     inset: 0;
     z-index: 75;
@@ -6064,18 +6059,15 @@ html.sidebar-collapsed .nav-badge {
     padding: 24px 16px;
 }
 
-.orbita-detail-modal[hidden],
-.orbita-info-modal[hidden] { display: none !important; }
+.orbita-detail-modal[hidden] { display: none !important; }
 
-.orbita-detail-modal__backdrop,
-.orbita-info-modal__backdrop {
+.orbita-detail-modal__backdrop {
     position: absolute;
     inset: 0;
     background: rgba(15, 23, 42, 0.45);
 }
 
-.orbita-detail-modal__dialog,
-.orbita-info-modal__dialog {
+.orbita-detail-modal__dialog {
     position: relative;
     width: min(520px, 100%);
     border-radius: 16px;
@@ -6084,8 +6076,7 @@ html.sidebar-collapsed .nav-badge {
     box-shadow: 0 20px 40px rgba(16, 24, 40, 0.16);
 }
 
-.orbita-detail-modal__head,
-.orbita-info-modal__head {
+.orbita-detail-modal__head {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
@@ -6093,8 +6084,7 @@ html.sidebar-collapsed .nav-badge {
     padding: 18px 20px 0;
 }
 
-.orbita-detail-modal__title,
-.orbita-info-modal__head h2 {
+.orbita-detail-modal__title {
     margin: 0;
     font-size: 18px;
     font-weight: 700;
@@ -6116,8 +6106,7 @@ html.sidebar-collapsed .nav-badge {
     word-break: break-word;
 }
 
-.orbita-detail-modal__close,
-.orbita-info-modal__close {
+.orbita-detail-modal__close {
     width: 32px;
     height: 32px;
     border: 0;
@@ -6125,46 +6114,6 @@ html.sidebar-collapsed .nav-badge {
     background: #f9fafb;
     color: #667085;
     cursor: pointer;
-}
-
-.orbita-info-modal__text {
-    margin: 0;
-    padding: 12px 20px 0;
-    font-size: 14px;
-    line-height: 1.55;
-    color: #344054;
-}
-
-.orbita-info-modal__footer {
-    display: flex;
-    justify-content: flex-end;
-    gap: 8px;
-    padding: 16px 20px 20px;
-}
-
-.orbita-info-modal__btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    height: 36px;
-    padding: 0 14px;
-    border-radius: 10px;
-    font-size: 14px;
-    font-weight: 600;
-    text-decoration: none;
-    cursor: pointer;
-    border: 1px solid transparent;
-}
-
-.orbita-info-modal__btn--primary {
-    background: #2563eb;
-    color: #ffffff;
-}
-
-.orbita-info-modal__btn--ghost {
-    background: #ffffff;
-    border-color: #e4e7ec;
-    color: #344054;
 }
 
 .chart-period-label {
@@ -6181,16 +6130,14 @@ html.sidebar-collapsed .nav-badge {
 [data-theme="dark"] .orbita-search-trigger,
 [data-theme="dark"] .orbita-filter-panel,
 [data-theme="dark"] .orbita-search__dialog,
-[data-theme="dark"] .orbita-detail-modal__dialog,
-[data-theme="dark"] .orbita-info-modal__dialog {
+[data-theme="dark"] .orbita-detail-modal__dialog {
     background: var(--bg-card);
     border-color: var(--border);
     color: var(--text-primary);
 }
 
 [data-theme="dark"] .orbita-search__input,
-[data-theme="dark"] .orbita-detail-modal__title,
-[data-theme="dark"] .orbita-info-modal__head h2 {
+[data-theme="dark"] .orbita-detail-modal__title {
     color: var(--text-primary);
 }
 

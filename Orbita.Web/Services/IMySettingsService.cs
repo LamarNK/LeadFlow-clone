@@ -10,4 +10,6 @@ public interface IMySettingsService
         string newPassword,
         CancellationToken ct = default);
     Task<(bool Success, string? Error)> SaveBitrixAsync(string webhookUrl, CancellationToken ct = default);
+
+    Task<(bool Success, string? Error)> SaveBitrixTransmissionAsync(bool transmissionEnabled, CancellationToken ct = default);
 }

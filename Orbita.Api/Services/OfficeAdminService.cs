@@ -71,6 +71,7 @@ public sealed class OfficeAdminService(OrbitaDbContext db)
         Guid id,
         string name,
         bool isEnabled,
+        bool bitrixTransmissionEnabled,
         CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(name))
@@ -92,6 +93,7 @@ public sealed class OfficeAdminService(OrbitaDbContext db)
 
         office.Name = trimmedName;
         office.IsEnabled = isEnabled;
+        office.BitrixTransmissionEnabled = bitrixTransmissionEnabled;
         await db.SaveChangesAsync(ct);
         return (MapDetail(office), null);
     }
@@ -177,6 +179,7 @@ public sealed class OfficeAdminService(OrbitaDbContext db)
             office.Id,
             office.Name,
             office.IsEnabled,
+            office.BitrixTransmissionEnabled,
             office.CreatedAtUtc,
             !string.IsNullOrWhiteSpace(office.RegistrationSecretHash),
             MaskSecret(office.RegistrationSecretHash));

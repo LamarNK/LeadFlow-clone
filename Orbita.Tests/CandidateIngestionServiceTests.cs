@@ -66,16 +66,54 @@ public sealed class CandidateIngestionServiceTests
         Assert.True(stored.IsLocalDuplicate);
     }
 
+    [Fact]
+    public async Task IngestBatchAsync_BitrixTransmissionDisabled_StoresActionRequired()
+    {
+        await using var db = CreateDb();
+        SeedWorker(db, bitrixTransmissionEnabled: false);
+
+        var sut = CreateService(db);
+        var request = new WorkerCandidateBatchRequest([
+            new WorkerCandidateDto(
+                Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc"),
+                "acc",
+                "Avito",
+                "disabled-bitrix-source",
+                "New User",
+                25,
+                "+7 (900) 222-22-22",
+                "Москва",
+                "Курьер",
+                "",
+                "",
+                "",
+                "",
+                DateTime.UtcNow)
+        ]);
+
+        var result = await sut.IngestBatchAsync(WorkerId, request);
+
+        Assert.Equal(0, result.Ingested);
+        Assert.Equal(ResponseStatuses.ActionRequired, result.Items[0].Status);
+        Assert.Equal("Передача в Bitrix24 отключена.", result.Items[0].ErrorMessage);
+
+        var stored = await db.CandidateResponses.SingleAsync(x => x.SourceResponseId == "disabled-bitrix-source");
+        Assert.Equal(ResponseStatuses.ActionRequired, stored.Status);
+        Assert.Equal("Передача в Bitrix24 отключена.", stored.ErrorMessage);
+    }
+
     private static CandidateIngestionService CreateService(OrbitaDbContext db)
     {
         var duplicateService = new CandidateDuplicateService(db, new BitrixClient(new HttpClientFactoryStub(), new CandidateParser()));
         var webhookResolver = new OfficeBitrixWebhookResolver(db, null!, null!);
+        var officeBitrixSettings = new OfficeBitrixSettingsService(db, null!);
         return new CandidateIngestionService(
             db,
             new PhoneNormalizer(),
             new CandidateParser(),
             duplicateService,
             webhookResolver,
+            officeBitrixSettings,
             new BitrixClient(new HttpClientFactoryStub(), new CandidateParser()),
             Options.Create(new OrbitaBitrixSettings { CheckDuplicatesInBitrix = false }));
     }
@@ -88,7 +126,7 @@ public sealed class CandidateIngestionServiceTests
         return new OrbitaDbContext(options);
     }
 
-    private static void SeedWorker(OrbitaDbContext db)
+    private static void SeedWorker(OrbitaDbContext db, bool bitrixTransmissionEnabled = true)
     {
         db.Offices.Add(new OfficeEntity
         {
@@ -96,7 +134,8 @@ public sealed class CandidateIngestionServiceTests
             Name = "Test Office",
             RegistrationSecretHash = "hash",
             CreatedAtUtc = DateTime.UtcNow,
-            IsEnabled = true
+            IsEnabled = true,
+            BitrixTransmissionEnabled = bitrixTransmissionEnabled
         });
         db.Workers.Add(new WorkerEntity
         {

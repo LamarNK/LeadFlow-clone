@@ -118,6 +118,32 @@
                         <p class="settings-bitrix-checked">Последняя проверка: <span data-orbita-utc="@bitrix.LastValidatedAtUtc.Value.ToString("O")"></span></p>
                     }
 
+                    @if (bitrix.CanManageTransmission)
+                    {
+                        <form asp-action="SaveBitrixTransmission" method="post" class="settings-bitrix-transmission-form">
+                            @Html.AntiForgeryToken()
+                            <label class="settings-field settings-field--checkbox settings-bitrix-transmission-toggle">
+                                <input type="checkbox"
+                                       name="TransmissionEnabled"
+                                       value="true"
+                                       @(bitrix.TransmissionEnabled ? "checked" : null)
+                                       onchange="this.form.submit()" />
+                                <span>
+                                    Передача откликов в Bitrix24
+                                    @if (!string.IsNullOrWhiteSpace(bitrix.OfficeName))
+                                    {
+                                        <span class="settings-bitrix-hint">(офис «@bitrix.OfficeName»)</span>
+                                    }
+                                </span>
+                            </label>
+                            <p class="settings-bitrix-hint">
+                                @(bitrix.TransmissionEnabled
+                                    ? "Новые отклики автоматически отправляются в CRM после проверки дублей."
+                                    : "Отклики сохраняются в Орбите, но в Bitrix24 не передаются.")
+                            </p>
+                        </form>
+                    }
+
                     <form asp-action="SaveBitrix"
                           method="post"
                           class="settings-create-form settings-bitrix-form"

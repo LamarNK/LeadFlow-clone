@@ -95,7 +95,12 @@ public sealed class SettingsController(
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> UpdateOffice(UpdateOfficeFormModel model, CancellationToken ct = default)
     {
-        var (success, error) = await settings.UpdateOfficeAsync(model.OfficeId, model.Name, model.IsEnabled, ct);
+        var (success, error) = await settings.UpdateOfficeAsync(
+            model.OfficeId,
+            model.Name,
+            model.IsEnabled,
+            model.BitrixTransmissionEnabled,
+            ct);
         TempData[success ? "SettingsStatus" : "SettingsError"] = success
             ? "Офис обновлён."
             : error;

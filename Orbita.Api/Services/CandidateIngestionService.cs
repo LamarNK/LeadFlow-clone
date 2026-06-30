@@ -13,6 +13,7 @@ public sealed class CandidateIngestionService(
     CandidateParser candidateParser,
     CandidateDuplicateService duplicateService,
     OfficeBitrixWebhookResolver webhookResolver,
+    OfficeBitrixSettingsService officeBitrixSettings,
     BitrixClient bitrixClient,
     IOptions<OrbitaBitrixSettings> bitrixOptions)
 {
@@ -29,6 +30,7 @@ public sealed class CandidateIngestionService(
         }
 
         var webhookUrl = await webhookResolver.ResolvePrimaryForIngestionAsync(worker.OfficeId, ct);
+        var bitrixTransmissionEnabled = await officeBitrixSettings.IsTransmissionEnabledAsync(worker.OfficeId, ct);
         var received = request.Candidates.Count;
         var ingested = 0;
         var skippedDuplicates = 0;
@@ -37,7 +39,7 @@ public sealed class CandidateIngestionService(
 
         foreach (var candidate in request.Candidates)
         {
-            var item = await IngestOneAsync(worker, candidate, webhookUrl, ct);
+            var item = await IngestOneAsync(worker, candidate, webhookUrl, bitrixTransmissionEnabled, ct);
             items.Add(item);
 
             switch (item.Status)
@@ -61,6 +63,7 @@ public sealed class CandidateIngestionService(
         WorkerEntity worker,
         WorkerCandidateDto candidate,
         string? webhookUrl,
+        bool bitrixTransmissionEnabled,
         CancellationToken ct)
     {
         var phoneNormalized = phoneNormalizer.Normalize(candidate.PhoneRaw);
@@ -118,10 +121,11 @@ public sealed class CandidateIngestionService(
         db.CandidateResponses.Add(entity);
         await db.SaveChangesAsync(ct);
 
+        var checkBitrixDuplicates = bitrixTransmissionEnabled && bitrixOptions.Value.CheckDuplicatesInBitrix;
         var duplicate = await duplicateService.CheckAsync(
             entity,
             webhookUrl,
-            bitrixOptions.Value.CheckDuplicatesInBitrix,
+            checkBitrixDuplicates,
             ct);
 
         entity.IsLocalDuplicate = duplicate.IsLocalDuplicate;
@@ -144,6 +148,18 @@ public sealed class CandidateIngestionService(
         {
             entity.Status = ResponseStatuses.ActionRequired;
             entity.ErrorMessage = duplicate.BitrixCheckUnavailableReason ?? duplicate.Summary;
+            await db.SaveChangesAsync(ct);
+            return new WorkerCandidateIngestionItemResultDto(
+                entity.Id,
+                candidate.SourceResponseId,
+                entity.Status,
+                entity.ErrorMessage);
+        }
+
+        if (!bitrixTransmissionEnabled)
+        {
+            entity.Status = ResponseStatuses.ActionRequired;
+            entity.ErrorMessage = "Передача в Bitrix24 отключена.";
             await db.SaveChangesAsync(ct);
             return new WorkerCandidateIngestionItemResultDto(
                 entity.Id,
@@ -204,6 +220,15 @@ public sealed class CandidateIngestionService(
         if (!scope.CanAccessOffice(entity.OfficeId))
         {
             return new ResendBitrixResultDto(false, ResponseStatuses.Error, null, "Нет доступа к отклику.");
+        }
+
+        if (!await officeBitrixSettings.IsTransmissionEnabledAsync(entity.OfficeId, ct))
+        {
+            entity.Status = ResponseStatuses.ActionRequired;
+            entity.ErrorMessage = "Передача в Bitrix24 отключена.";
+            entity.ProcessedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync(ct);
+            return new ResendBitrixResultDto(false, entity.Status, null, entity.ErrorMessage);
         }
 
         var webhookUrl = await webhookResolver.ResolvePrimaryForIngestionAsync(entity.OfficeId, ct);

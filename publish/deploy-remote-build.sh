@@ -56,7 +56,8 @@ docker build -f "$dockerfile_rel" -t "$image_tag" .
 compose_src="$cache_dir/deploy/control-panel/docker-compose.images.yml"
 if [[ -f "$compose_src" ]]; then
   cp "$compose_src" "$remote_dir/docker-compose.images.yml"
-  echo "Updated docker-compose.images.yml in $remote_dir"
+  cp "$compose_src" "$remote_dir/docker-compose.yml"
+  echo "Updated docker-compose.images.yml and docker-compose.yml in $remote_dir"
 fi
 
 cd "$remote_dir"

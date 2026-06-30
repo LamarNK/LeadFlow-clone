@@ -41,6 +41,7 @@ public interface ISettingsService
         Guid officeId,
         string name,
         bool isEnabled,
+        bool bitrixTransmissionEnabled,
         CancellationToken ct = default);
 
     Task<(bool Success, string? Error, string? RegistrationSecret)> RotateOfficeRegistrationSecretAsync(

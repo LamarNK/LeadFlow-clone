@@ -17,7 +17,10 @@ public sealed class DashboardService(OrbitaApiClient api, IOptions<DesignPreview
         var summary = await api.GetSummaryAsync(ct);
         if (summary is null)
         {
-            return new DashboardViewModel { ErrorMessage = "Не удалось загрузить данные. Проверьте API." };
+            return new DashboardViewModel
+            {
+                ErrorMessage = "Не удалось загрузить данные. Выйдите из панели и войдите снова."
+            };
         }
 
         var workers = await api.GetWorkersAsync(ct) ?? [];

@@ -306,6 +306,7 @@ public sealed class WorkersService(
             LatestWorkerReleaseVersion = latestRelease?.Version,
             LatestWorkerDownloadUrl = latestRelease is null ? null : "/Workers/DownloadLatest",
             CanSelectOffice = canSelectOffice,
+            CanCreateWorker = true,
             OfficeOptions = (offices ?? [])
                 .Select(o => new EventFilterOptionViewModel { Value = o.Id.ToString(), Label = o.Name })
                 .ToList()

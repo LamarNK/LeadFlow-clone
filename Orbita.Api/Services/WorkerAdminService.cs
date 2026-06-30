@@ -21,7 +21,20 @@ public sealed class WorkerAdminService(
             return (null, "Имя воркера обязательно.");
         }
 
-        var resolvedOfficeId = await ResolveOfficeIdForCreateAsync(officeId, scope, ct);
+        if (!scope.IsGlobalAdmin)
+        {
+            if (!scope.OfficeId.HasValue)
+            {
+                return (null, "У пользователя не назначен офис.");
+            }
+
+            if (officeId.HasValue && officeId != scope.OfficeId)
+            {
+                return (null, "Нельзя создать воркер в другом офисе.");
+            }
+        }
+
+        var resolvedOfficeId = ResolveOfficeIdForCreate(officeId, scope);
         if (resolvedOfficeId is null)
         {
             return (null, "Укажите офис для воркера.");
@@ -140,15 +153,8 @@ public sealed class WorkerAdminService(
             "legacy-config");
     }
 
-    private async Task<Guid?> ResolveOfficeIdForCreateAsync(Guid? officeId, OfficeScope scope, CancellationToken ct)
-    {
-        if (scope.IsGlobalAdmin)
-        {
-            return officeId;
-        }
-
-        return scope.OfficeId;
-    }
+    private static Guid? ResolveOfficeIdForCreate(Guid? officeId, OfficeScope scope) =>
+        scope.IsGlobalAdmin ? officeId : scope.OfficeId;
 
     private static AdminWorkerListItemDto Map(
         WorkerEntity worker,

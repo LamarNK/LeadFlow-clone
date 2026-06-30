@@ -128,6 +128,10 @@
                             <input type="checkbox" name="IsEnabled" value="true" @(selected.IsEnabled ? "checked" : null) />
                             <span>Офис активен</span>
                         </label>
+                        <label class="settings-field settings-field--checkbox">
+                            <input type="checkbox" name="BitrixTransmissionEnabled" value="true" @(selected.BitrixTransmissionEnabled ? "checked" : null) />
+                            <span>Передача откликов в Bitrix24</span>
+                        </label>
                         <button type="submit" class="settings-primary-btn">Сохранить</button>
                     </form>
                     <div class="settings-registration-meta">

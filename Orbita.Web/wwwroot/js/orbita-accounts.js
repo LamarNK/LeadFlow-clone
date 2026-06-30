@@ -87,21 +87,6 @@
         });
     }
 
-    function initAddAccountModal() {
-        var modal = document.getElementById('accountsAddModal');
-        if (!modal) return;
-
-        function openModal() { modal.removeAttribute('hidden'); }
-        function closeModal() { modal.setAttribute('hidden', ''); }
-
-        document.querySelectorAll('[data-accounts-add-open]').forEach(function (btn) {
-            btn.addEventListener('click', openModal);
-        });
-        modal.querySelectorAll('[data-accounts-add-close]').forEach(function (el) {
-            el.addEventListener('click', closeModal);
-        });
-    }
-
     function initAccountToggleButtons() {
         document.querySelectorAll('[data-account-toggle]').forEach(function (btn) {
             if (btn.hasAttribute('data-account-toggle-bound')) return;
@@ -149,7 +134,6 @@
         initKpiCounters();
         initRowMenus();
         initRowNavigation();
-        initAddAccountModal();
         initAccountToggleButtons();
     }
 

@@ -64,6 +64,7 @@ public sealed class OfficeDetailViewModel
     public required Guid Id { get; init; }
     public required string Name { get; init; }
     public bool IsEnabled { get; init; }
+    public bool BitrixTransmissionEnabled { get; init; } = true;
     public bool RegistrationConfigured { get; init; }
     public required string MaskedRegistrationSecret { get; init; }
 }
@@ -78,6 +79,7 @@ public sealed class UpdateOfficeFormModel
     public Guid OfficeId { get; set; }
     public string Name { get; set; } = string.Empty;
     public bool IsEnabled { get; set; } = true;
+    public bool BitrixTransmissionEnabled { get; set; } = true;
 }
 
 public sealed class UpdatePanelUserOfficeFormModel

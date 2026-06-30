@@ -244,10 +244,11 @@ public sealed class OrbitaApiClient(HttpClient http, AuthSession session, IOptio
         Guid id,
         string name,
         bool isEnabled,
+        bool bitrixTransmissionEnabled,
         CancellationToken ct = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Put, $"api/v1/admin/offices/{id}");
-        request.Content = JsonContent.Create(new UpdateOfficeRequest(name, isEnabled));
+        request.Content = JsonContent.Create(new UpdateOfficeRequest(name, isEnabled, bitrixTransmissionEnabled));
         using var response = await SendAuthenticatedAsync(request, ct);
         if (response is null)
         {
@@ -427,7 +428,7 @@ public sealed class OrbitaApiClient(HttpClient http, AuthSession session, IOptio
         Guid? officeId = null,
         CancellationToken ct = default)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/admin/workers/create");
+        using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/panel/workers/create");
         request.Content = JsonContent.Create(new CreateWorkerRequest(displayName, officeId));
         using var response = await SendAuthenticatedAsync(request, ct);
         if (response is null)
@@ -600,6 +601,40 @@ public sealed class OrbitaApiClient(HttpClient http, AuthSession session, IOptio
         _preview.Enabled
             ? Task.FromResult<IReadOnlyList<OfficeBitrixWebhookDto>?>([])
             : GetAsync<IReadOnlyList<OfficeBitrixWebhookDto>>("api/v1/panel/office/integrations/bitrix", ct);
+
+    public Task<OfficeBitrixSettingsDto?> GetOfficeBitrixSettingsAsync(CancellationToken ct = default) =>
+        _preview.Enabled
+            ? Task.FromResult<OfficeBitrixSettingsDto?>(new OfficeBitrixSettingsDto(
+                DesignPreviewData.PreviewOfficeId,
+                "Основной",
+                true))
+            : GetAsync<OfficeBitrixSettingsDto>("api/v1/panel/office/bitrix-settings", ct);
+
+    public async Task<(OfficeBitrixSettingsDto? Settings, string? Error)> UpdateOfficeBitrixSettingsAsync(
+        bool transmissionEnabled,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return (new OfficeBitrixSettingsDto(DesignPreviewData.PreviewOfficeId, "Основной", transmissionEnabled), null);
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Put, "api/v1/panel/office/bitrix-settings");
+        request.Content = JsonContent.Create(new UpdateOfficeBitrixSettingsRequest(transmissionEnabled));
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (null, InvalidApiSessionError);
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            return (null, await ReadApiErrorAsync(response, ct));
+        }
+
+        var settings = await response.Content.ReadFromJsonAsync<OfficeBitrixSettingsDto>(ct);
+        return (settings, null);
+    }
 
     public Task<ResponsesPageDto?> GetResponsesPageAsync(string query, CancellationToken ct = default) =>
         _preview.Enabled

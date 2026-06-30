@@ -101,7 +101,8 @@ internal static class DesignPreviewData
             Pagination = new PaginationViewModel { Page = page, PageSize = pageSize, TotalItems = total },
             HasWorkerRelease = true,
             LatestWorkerReleaseVersion = "1.0.0.2",
-            LatestWorkerDownloadUrl = "/Workers/DownloadLatest"
+            LatestWorkerDownloadUrl = "/Workers/DownloadLatest",
+            CanCreateWorker = true
         };
     }
 

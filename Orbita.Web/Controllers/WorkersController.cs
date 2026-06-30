@@ -50,7 +50,6 @@ public sealed class WorkersController(IWorkersService workers) : Controller
     }
 
     [HttpPost]
-    [Authorize(Roles = PanelRoles.Admin)]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Create(string displayName, Guid? officeId, CancellationToken ct)
     {

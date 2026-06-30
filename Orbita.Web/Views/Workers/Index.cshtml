@@ -88,7 +88,7 @@
                     <span>Скачать воркер v@(Model.LatestWorkerReleaseVersion)</span>
                 </a>
             }
-            @if (User.IsInRole(PanelRoles.Admin))
+            @if (Model.CanCreateWorker)
             {
                 <button type="button" class="workers-add-btn" data-workers-add-open>
                     <i class="fa-solid fa-plus" aria-hidden="true"></i>
@@ -206,7 +206,7 @@
     <div class="settings-alert settings-alert--warn" role="alert">@workersError</div>
 }
 
-@if (User.IsInRole(PanelRoles.Admin))
+@if (Model.CanCreateWorker)
 {
     <div class="workers-modal" id="workersAddModal" hidden>
         <div class="workers-modal-backdrop" data-workers-add-close></div>
