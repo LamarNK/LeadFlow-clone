@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Orbita.Api.Data;
+using Orbita.Api.Helpers;
 using Orbita.Contracts;
 
 namespace Orbita.Api.Services;
@@ -116,15 +117,16 @@ public sealed class ResponsesQueryService(OrbitaDbContext db)
 
         var query = BuildFilteredQuery(scope, officeFilter, status, search, vacancy, workerId, accountId, fromUtc, toUtc);
         var total = await query.CountAsync(ct);
-        var items = await query
+        var rows = await query
             .OrderByDescending(x => x.CreatedAt)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
-            .Select(x => new ResponseListItemDto(
+            .Select(x => new
+            {
                 x.Id,
                 x.OfficeId,
                 x.WorkerId,
-                x.Worker.DisplayName,
+                WorkerName = x.Worker.DisplayName,
                 x.AccountId,
                 x.AccountName,
                 x.Source,
@@ -140,9 +142,50 @@ public sealed class ResponsesQueryService(OrbitaDbContext db)
                 x.IsLocalDuplicate,
                 x.IsBitrixDuplicate,
                 x.BitrixEntityId,
+                x.AvitoSubProfileId,
+                x.CreatedAt,
+                x.ProcessedAt
+            })
+            .ToListAsync(ct);
+
+        var accountIds = rows.Select(x => x.AccountId).Distinct().ToList();
+        var subProfileRows = accountIds.Count == 0
+            ? []
+            : await db.WorkerAccounts
+                .AsNoTracking()
+                .Where(a => accountIds.Contains(a.AccountId))
+                .Select(a => new { a.AccountId, a.SubProfilesJson })
+                .ToListAsync(ct);
+
+        var nameLookup = SubProfileNameResolver.BuildLookup(
+            subProfileRows.Select(x => (x.AccountId, x.SubProfilesJson)));
+
+        var items = rows
+            .Select(x => new ResponseListItemDto(
+                x.Id,
+                x.OfficeId,
+                x.WorkerId,
+                x.WorkerName,
+                x.AccountId,
+                x.AccountName,
+                x.Source,
+                x.SourceResponseId,
+                x.FullName,
+                x.PhoneRaw,
+                x.PhoneNormalized,
+                x.Vacancy,
+                x.VacancyUrl,
+                x.MessengerUrl,
+                x.City,
+                x.Status,
+                x.IsLocalDuplicate,
+                x.IsBitrixDuplicate,
+                x.BitrixEntityId,
+                x.AvitoSubProfileId,
+                ResolveSubProfileName(nameLookup, x.AccountId, x.AvitoSubProfileId),
                 x.CreatedAt,
                 x.ProcessedAt))
-            .ToListAsync(ct);
+            .ToList();
 
         return new ResponsesPageDto(items, total, page, pageSize);
     }
@@ -244,6 +287,19 @@ public sealed class ResponsesQueryService(OrbitaDbContext db)
         }
 
         return scope.IsGlobalAdmin ? query : query.Where(_ => false);
+    }
+
+    private static string? ResolveSubProfileName(
+        IReadOnlyDictionary<(Guid AccountId, string SubProfileId), string> lookup,
+        Guid accountId,
+        string? subProfileId)
+    {
+        if (string.IsNullOrWhiteSpace(subProfileId))
+        {
+            return null;
+        }
+
+        return lookup.TryGetValue((accountId, subProfileId), out var name) ? name : null;
     }
 
     private static ResponseDetailDto MapDetail(CandidateResponseEntity entity) => new(

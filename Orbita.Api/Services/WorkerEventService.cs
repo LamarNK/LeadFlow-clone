@@ -1,12 +1,14 @@
 using Microsoft.EntityFrameworkCore;
 using Orbita.Api.Data;
+using Orbita.Contracts;
 
 namespace Orbita.Api.Services;
 
 public sealed class WorkerEventService(
     OrbitaDbContext db,
     OfficeScopeService officeScope,
-    WorkerDiagnosticsService diagnostics)
+    WorkerDiagnosticsService diagnostics,
+    IPanelRealtimeNotifier panelRealtime)
 {
     public async Task<(bool Success, string? Error)> DismissAsync(
         Guid eventId,
@@ -32,6 +34,16 @@ public sealed class WorkerEventService(
         evt.IsDismissed = true;
         evt.DismissedAtUtc = DateTime.UtcNow;
         await db.SaveChangesAsync(ct);
+
+        var officeId = await db.Workers.AsNoTracking()
+            .Where(x => x.Id == evt.WorkerId)
+            .Select(x => (Guid?)x.OfficeId)
+            .FirstOrDefaultAsync(ct);
+
+        panelRealtime.Notify(
+            [PanelChangeKind.Events, PanelChangeKind.Errors],
+            officeId,
+            evt.WorkerId);
 
         var attachmentId = WorkerDiagnosticsService.TryParseAttachmentId(evt.Details);
         if (attachmentId is not null)

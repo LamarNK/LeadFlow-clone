@@ -1,6 +1,6 @@
 (function () {
     function getLiveRoot() {
-        return document.querySelector('[data-dashboard-live]');
+        return document.querySelector('[data-orbita-live]') || document.querySelector('[data-dashboard-live]');
     }
 
     function hasChart() {
@@ -58,9 +58,7 @@
     }
 
     var liveState = null;
-    var pollTimer = null;
-    var pollInFlight = false;
-    var pollIntervalMs = 10000;
+    var snapshotInFlight = false;
     var highlightMs = 1800;
 
     Chart.defaults.font.family = '"Segoe UI", system-ui, -apple-system, sans-serif';
@@ -380,23 +378,33 @@
     function donutDataset(chartData) {
         var total = chartData.total || 0;
         var active = chartData.active || 0;
-        var rest = Math.max(0, total - active);
-        var labels = ['Активны'];
-        var values = [active];
-        var colors = ['#22c55e'];
-        var isPartial = total > 0 && active > 0 && rest > 0;
+        var inactive = chartData.inactive || 0;
+        var blocked = chartData.blocked || 0;
+        var errors = chartData.errors || 0;
+        var segments = [
+            { label: 'Активны', value: active, color: '#22c55e' },
+            { label: 'Неактивны', value: inactive, color: '#94a3b8' },
+            { label: 'Заблокированы', value: blocked, color: '#ef4444' },
+            { label: 'Ошибки', value: errors, color: '#f59e0b' }
+        ].filter(function (segment) { return segment.value > 0; });
 
-        if (total === 0) {
-            labels = ['Нет данных'];
-            values = [1];
-            colors = ['#e5e7eb'];
-        } else if (rest > 0) {
-            labels = ['Активны', 'Остальные'];
-            values = [active, rest];
-            colors = ['#22c55e', '#e5e7eb'];
+        if (total === 0 || segments.length === 0) {
+            return {
+                total: total,
+                labels: ['Нет данных'],
+                values: [1],
+                colors: ['#e5e7eb'],
+                isPartial: false
+            };
         }
 
-        return { total: total, labels: labels, values: values, colors: colors, isPartial: isPartial };
+        return {
+            total: total,
+            labels: segments.map(function (segment) { return segment.label; }),
+            values: segments.map(function (segment) { return segment.value; }),
+            colors: segments.map(function (segment) { return segment.color; }),
+            isPartial: segments.length > 1 && active > 0 && active < total
+        };
     }
 
     function initDonutChart(chartData) {
@@ -776,13 +784,13 @@
 
     function fetchSnapshot() {
         var liveRoot = getLiveRoot();
-        if (!liveRoot || pollInFlight) return Promise.resolve();
+        if (!liveRoot || snapshotInFlight) return Promise.resolve();
 
-        var url = liveRoot.getAttribute('data-dashboard-snapshot');
+        var url = liveRoot.getAttribute('data-orbita-snapshot')
+            || liveRoot.getAttribute('data-dashboard-snapshot');
         if (!url) return Promise.resolve();
 
-        pollInFlight = true;
-        setRefreshBusy(true);
+        snapshotInFlight = true;
 
         return fetch(url, {
             method: 'GET',
@@ -796,21 +804,9 @@
             .then(function (snapshot) {
                 applySnapshot(snapshot, true);
             })
-            .catch(function (err) {
-                console.warn('Dashboard live refresh:', err);
-            })
             .finally(function () {
-                pollInFlight = false;
-                setRefreshBusy(false);
+                snapshotInFlight = false;
             });
-    }
-
-    function schedulePoll() {
-        if (pollTimer) window.clearInterval(pollTimer);
-        pollTimer = window.setInterval(function () {
-            if (document.hidden) return;
-            fetchSnapshot();
-        }, pollIntervalMs);
     }
 
     function initLiveRefresh() {
@@ -826,25 +822,9 @@
             }
         }
 
-        if (!window.__orbitaDashVisListener) {
-            document.addEventListener('visibilitychange', function () {
-                if (!document.hidden) fetchSnapshot();
-            });
-            window.__orbitaDashVisListener = true;
+        if (window.OrbitaLive) {
+            window.OrbitaLive.register('dashboard', { fetchSnapshot: fetchSnapshot });
         }
-
-        document.querySelectorAll('[data-orbita-refresh]').forEach(function (btn) {
-            if (btn.hasAttribute('data-orbita-dash-refresh-bound')) return;
-            btn.setAttribute('data-orbita-dash-refresh-bound', '1');
-            btn.addEventListener('click', function (e) {
-                if (!getLiveRoot()) return;
-                e.preventDefault();
-                fetchSnapshot();
-            });
-        });
-
-        schedulePoll();
-        window.setTimeout(fetchSnapshot, pollIntervalMs);
     }
 
     function initDashboardAll() {
@@ -900,12 +880,5 @@
     window.OrbitaDashboard = window.OrbitaDashboard || {};
     window.OrbitaDashboard.reinit = scheduleDashboardInit;
     window.OrbitaDashboard.destroyCharts = destroyAllCharts;
-    window.OrbitaDashboard.stopPolling = function () {
-        if (pollTimer) {
-            window.clearInterval(pollTimer);
-            pollTimer = null;
-        }
-        destroyAllCharts();
-        pollInFlight = false;
-    };
+    window.OrbitaDashboard.destroyChartsOnLeave = destroyAllCharts;
 })();

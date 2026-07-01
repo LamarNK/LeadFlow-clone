@@ -4,6 +4,8 @@ using Orbita.Api.Data;
 using Orbita.Api.Helpers;
 using Orbita.Contracts;
 
+using static Orbita.Api.Helpers.SubProfilesDisabledIdsHelper;
+
 namespace Orbita.Api.Services;
 
 public sealed class DashboardQueryService(
@@ -80,25 +82,28 @@ public sealed class DashboardQueryService(
         int activeAds = statsList.Sum(s => s.ActiveAdsCount);
         int blockedAds = statsList.Sum(s => s.BlockedAdsCount);
 
-        // If we have WorkerAccounts data we can compute some account aggregates directly (lightweight)
+        var accountStatusCounts = new DashboardAccountStatusCounts(0, 0, 0, 0);
+
+        // Prefer WorkerAccounts for account status breakdown (matches Accounts page classification).
         if (workerIds.Count > 0)
         {
-            var accountAgg = await db.WorkerAccounts
+            var accountRows = await db.WorkerAccounts
                 .AsNoTracking()
                 .Where(a => workerIds.Contains(a.WorkerId))
-                .GroupBy(a => 1)
-                .Select(g => new
-                {
-                    Total = g.Count(),
-                    Active = g.Count(a => a.IsEnabledInPanel && a.Status != "Blocked"),
-                    NeedAttention = g.Count(a => a.IsEnabledInPanel && (a.Status == "RequiresLogin" || a.Status == "RequiresManualAction" || a.Status == "Error" || a.Status == "Blocked"))
-                })
-                .FirstOrDefaultAsync(ct);
+                .Select(a => new { a.Status, a.IsEnabledInPanel })
+                .ToListAsync(ct);
 
-            if (accountAgg != null)
+            if (accountRows.Count > 0)
             {
-                connectedAccounts = Math.Max(connectedAccounts, accountAgg.Total);
-                needAttention = Math.Max(needAttention, accountAgg.NeedAttention);
+                var breakdown = AccountDashboardStatusClassifier.Summarize(
+                    accountRows.Select(a => (a.Status, a.IsEnabledInPanel)));
+                connectedAccounts = Math.Max(connectedAccounts, breakdown.Total);
+                needAttention = Math.Max(needAttention, breakdown.Errors + breakdown.Blocked);
+                accountStatusCounts = new DashboardAccountStatusCounts(
+                    breakdown.Active,
+                    breakdown.Inactive,
+                    breakdown.Blocked,
+                    breakdown.Errors);
             }
         }
 
@@ -114,6 +119,7 @@ public sealed class DashboardQueryService(
             ConnectedAccounts: connectedAccounts,
             RequiresAuthorization: requiresAuth,
             AccountsNeedAttentionCount: needAttention,
+            AccountStatusCounts: accountStatusCounts,
             ActiveAdsCount: activeAds,
             BlockedAdsCount: blockedAds,
             TotalBalance: balances.Sum(b => b.TotalBalance),
@@ -157,12 +163,20 @@ public sealed class DashboardQueryService(
             .ToListAsync(ct);
 
         var workerIds = workers.Select(w => w.Id).ToList();
-        var accountCounts = await db.WorkerAccounts
+        var accountRows = await db.WorkerAccounts
             .AsNoTracking()
             .Where(x => workerIds.Contains(x.WorkerId))
+            .Select(x => new { x.WorkerId, x.Status, x.IsEnabledInPanel })
+            .ToListAsync(ct);
+
+        var accountCounts = accountRows
             .GroupBy(x => x.WorkerId)
-            .Select(g => new { WorkerId = g.Key, Count = g.Count() })
-            .ToDictionaryAsync(x => x.WorkerId, x => x.Count, ct);
+            .ToDictionary(
+                g => g.Key,
+                g => (
+                    Total: g.Count(),
+                    Active: g.Count(a => AccountDashboardStatusClassifier.Classify(a.Status, a.IsEnabledInPanel)
+                        == AccountDashboardCategory.Active)));
 
         // Real per-worker today counts from CandidateResponses
         var workerTodayStats = await ComputeWorkerTodayStatsAsync(workerIds, todayStart, ct);
@@ -187,6 +201,7 @@ public sealed class DashboardQueryService(
 
             var today = workerTodayStats.TryGetValue(w.Id, out var s) ? s : (Total: 0, Errors: 0);
             var updateAvailable = AppVersionHelper.IsNewer(latestReleaseVersion, w.AppVersion);
+            accountCounts.TryGetValue(w.Id, out var counts);
             return new WorkerListItem(
                 w.Id,
                 w.DisplayName,
@@ -197,14 +212,15 @@ public sealed class DashboardQueryService(
                 w.IsMonitoringActive,
                 WorkerOnlineRules.IsOnline(w.LastSeenAtUtc, nowUtc),
                 w.LastSeenAtUtc,
-                accountCounts.GetValueOrDefault(w.Id),
+                counts.Total,
                 today.Total,   // real TotalToday from responses
                 today.Errors,  // real Errors (incl. ActionRequired)
                 updateAvailable,
                 latestReleaseVersion,
                 w.OfficeId,
                 w.OfficeName,
-                w.IsEnabled);
+                w.IsEnabled,
+                counts.Active);
         }).ToList();
     }
 
@@ -276,10 +292,30 @@ public sealed class DashboardQueryService(
             return [];
         }
 
-        return await db.WorkerAccounts
+        var rows = await db.WorkerAccounts
             .AsNoTracking()
             .Where(x => x.WorkerId == workerId)
             .OrderBy(x => x.DisplayName)
+            .Select(x => new
+            {
+                x.AccountId,
+                x.DisplayName,
+                x.Status,
+                x.IsEnabledInPanel,
+                x.ActiveAdsCount,
+                x.BlockedCount,
+                x.DraftsCount,
+                x.LastErrorMessage,
+                x.LastMonitoringAt,
+                x.AdsPowerProfileId,
+                x.SubProfilesJson,
+                x.SubProfilesRefreshedAtUtc,
+                x.SubProfilesRefreshRequestedAtUtc,
+                x.SubProfilesDisabledIdsJson
+            })
+            .ToListAsync(ct);
+
+        return rows
             .Select(x => new WorkerAccountDto(
                 x.AccountId,
                 x.DisplayName,
@@ -291,8 +327,11 @@ public sealed class DashboardQueryService(
                 x.LastErrorMessage,
                 x.LastMonitoringAt,
                 x.IsEnabledInPanel,
-                x.AdsPowerProfileId))
-            .ToListAsync(ct);
+                x.AdsPowerProfileId,
+                DeserializeSubProfiles(x.SubProfilesJson, x.SubProfilesDisabledIdsJson),
+                x.SubProfilesRefreshedAtUtc,
+                x.SubProfilesRefreshRequestedAtUtc))
+            .ToList();
     }
 
     public async Task<IReadOnlyList<WorkerEventListItem>> GetWorkerEventsAsync(
@@ -451,5 +490,33 @@ public sealed class DashboardQueryService(
             if (!result.ContainsKey(wid)) result[wid] = (Total: 0, Errors: 0);
 
         return result;
+    }
+
+    private static IReadOnlyList<WorkerSubProfileDto>? DeserializeSubProfiles(
+        string? json,
+        string? disabledIdsJson = null)
+    {
+        if (string.IsNullOrWhiteSpace(json) || json == "[]")
+        {
+            return null;
+        }
+
+        try
+        {
+            var profiles = JsonSerializer.Deserialize<List<WorkerSubProfileDto>>(json, JsonOptions);
+            if (profiles is null || profiles.Count == 0)
+            {
+                return null;
+            }
+
+            var disabled = Parse(disabledIdsJson);
+            return profiles
+                .Select(p => p with { IsEnabledInPanel = IsEnabled(disabled, p.Id) })
+                .ToList();
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 }

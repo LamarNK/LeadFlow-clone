@@ -111,7 +111,7 @@
         var yMax = Math.max(10, Math.ceil(maxValue / 10) * 10);
         var lineColor = '#2563eb';
 
-        new Chart(canvas, {
+        activityChart = new Chart(canvas, {
             type: 'line',
             data: {
                 labels: labels,
@@ -211,6 +211,222 @@
         });
     }
 
+    var shared = window.OrbitaLiveShared;
+    var liveState = null;
+    var activityChart = null;
+
+    function updateOnlineStatus(snapshot) {
+        document.querySelectorAll('[data-worker-online-badge]').forEach(function (el) {
+            var online = !!snapshot.isOnline;
+            el.classList.toggle('status-dot', true);
+            el.classList.toggle('offline', !online);
+            el.innerHTML = '<i class="fa-solid fa-circle status-dot-icon" aria-hidden="true"></i>' +
+                (online ? 'Онлайн' : 'Оффлайн');
+        });
+    }
+
+    function formatCpu(cpu) {
+        return typeof cpu === 'number' ? cpu.toFixed(1) + '%' : '—';
+    }
+
+    function formatRam(snapshot) {
+        if (typeof snapshot.ramPercent !== 'number') return '—';
+        var text = snapshot.ramPercent.toFixed(1) + '%';
+        if (typeof snapshot.ramUsedMb === 'number' && typeof snapshot.ramTotalMb === 'number') {
+            text += ' (' + snapshot.ramUsedMb + ' / ' + snapshot.ramTotalMb + ' MB)';
+        }
+        return text;
+    }
+
+    function updateSystemMetrics(snapshot) {
+        var cpuEl = document.querySelector('[data-worker-live="cpu"]');
+        var ramEl = document.querySelector('[data-worker-live="ram"]');
+        if (cpuEl) cpuEl.textContent = formatCpu(snapshot.cpuPercent);
+        if (ramEl) ramEl.textContent = formatRam(snapshot);
+    }
+
+    function updateLastActivity(isoUtc) {
+        document.querySelectorAll('[data-worker-last-activity]').forEach(function (el) {
+            if (!isoUtc) return;
+            el.setAttribute('data-orbita-utc', isoUtc);
+            if (window.OrbitaTime) {
+                window.OrbitaTime.localizeElement(el);
+            }
+        });
+    }
+
+    function renderInfoValue(item) {
+        if (item.timeValue && item.timeValue.utc) {
+            return '<time data-orbita-utc="' + shared.escapeHtml(item.timeValue.utc) +
+                '" data-orbita-format="' + shared.escapeHtml(item.timeValue.format || 'time') + '"></time>';
+        }
+        return shared.escapeHtml(item.value || '—');
+    }
+
+    function updateInfoItems(items) {
+        (items || []).forEach(function (item) {
+            var row = document.querySelector('[data-worker-info-label="' + item.label + '"] .worker-info-value');
+            if (!row) return;
+            row.innerHTML = renderInfoValue(item);
+        });
+        if (window.OrbitaTime) {
+            var list = document.querySelector('[data-worker-info-list]');
+            if (list) window.OrbitaTime.localizeAll(list);
+        }
+    }
+
+    function updatePeriodStats(stats) {
+        (stats || []).forEach(function (stat) {
+            var row = document.querySelector('[data-worker-stat-label="' + stat.label + '"] .worker-stats-value');
+            if (row) row.textContent = stat.value || '—';
+        });
+    }
+
+    function eventIcon(level) {
+        if (level === 'error') return 'fa-regular fa-circle-xmark';
+        if (level === 'warning') return 'fa-solid fa-triangle-exclamation';
+        return 'fa-regular fa-circle-check';
+    }
+
+    function renderWorkerEvents(events) {
+        var container = document.querySelector('[data-worker-events]');
+        if (!container || !shared) return;
+
+        if (!events || !events.length) {
+            container.innerHTML = '<p class="dash-event-empty">Событий пока нет.</p>';
+            return;
+        }
+
+        container.innerHTML = '<div class="dash-event-list">' + events.map(function (evt) {
+            var subtitle = evt.subtitle
+                ? '<div class="dash-event-subtitle">' + shared.escapeHtml(evt.subtitle) + '</div>'
+                : '';
+            var iso = evt.timeUtc || '';
+            return '<div class="dash-event-row">' +
+                '<div class="dash-event-icon dash-event-icon--' + shared.escapeHtml(evt.level || 'success') + '">' +
+                '<i class="' + eventIcon(evt.level) + '" aria-hidden="true"></i></div>' +
+                '<div class="dash-event-body"><div class="dash-event-title">' + shared.escapeHtml(evt.message || '') + '</div>' + subtitle + '</div>' +
+                '<div class="dash-event-side"><div class="dash-event-time">' +
+                '<time data-orbita-utc="' + shared.escapeHtml(iso) + '" data-orbita-format="time-short"></time></div></div></div>';
+        }).join('') + '</div>';
+
+        if (window.OrbitaTime) {
+            window.OrbitaTime.localizeAll(container);
+        }
+    }
+
+    function getWorkerId() {
+        return shared.getLiveAttr('data-worker-id');
+    }
+
+    function renderWorkerAccounts(accounts) {
+        var tbody = document.querySelector('[data-orbita-live-body="worker-accounts"]');
+        if (!tbody || !shared) return;
+        var workerId = getWorkerId();
+        var token = shared.getRequestVerificationToken();
+        var expandedPanels = {};
+        tbody.querySelectorAll('.subprofiles-toggle[aria-expanded="true"]').forEach(function (btn) {
+            var panelId = btn.getAttribute('aria-controls');
+            if (panelId) expandedPanels[panelId] = true;
+        });
+
+        tbody.innerHTML = (accounts || []).map(function (account) {
+            var statusHtml = '<span class="account-status account-status--' + shared.escapeHtml(account.statusTone || 'success') + '">' +
+                '<i class="fa-solid fa-circle account-status-dot" aria-hidden="true"></i>' +
+                shared.escapeHtml(account.statusLabel || '') + '</span>';
+            if (account.lastErrorMessage) {
+                statusHtml += '<span class="account-error-hint" title="' + shared.escapeHtml(account.lastErrorMessage) + '">' +
+                    shared.escapeHtml(account.lastErrorMessage) + '</span>';
+            }
+            var activityHtml = account.lastActivityUtc
+                ? '<time data-orbita-utc="' + shared.escapeHtml(account.lastActivityUtc) + '" data-orbita-format="time"></time>'
+                : '—';
+            var adsPower = account.adsPowerProfileId
+                ? '<span class="worker-account-sub">AdsPower ' + shared.escapeHtml(account.adsPowerProfileId) + '</span>'
+                : '';
+            var subProfiles = shared.renderSubProfilesToolbar(workerId, account, 'subprofiles');
+            var checked = account.isEnabledInPanel ? ' checked' : '';
+
+            return '<tr class="worker-account-row" data-account-id="' + shared.escapeHtml(account.id) + '">' +
+                '<td data-label="Вкл"><form action="/Workers/UpdateAccount" method="post" class="worker-account-toggle-form">' +
+                '<input type="hidden" name="__RequestVerificationToken" value="' + shared.escapeHtml(token) + '" />' +
+                '<input type="hidden" name="workerId" value="' + shared.escapeHtml(workerId) + '" />' +
+                '<input type="hidden" name="accountId" value="' + shared.escapeHtml(account.id) + '" />' +
+                '<label class="worker-toggle"><input type="checkbox" name="isEnabledInPanel" value="true"' + checked + ' onchange="this.form.submit()" />' +
+                '<span class="worker-toggle-slider"></span></label></form></td>' +
+                '<td class="cell-name" data-label="Аккаунт"><a href="/Accounts">' + shared.escapeHtml(account.displayName) + '</a>' + adsPower + subProfiles + '</td>' +
+                '<td data-label="Статус">' + statusHtml + '</td>' +
+                '<td data-label="Баланс">' + shared.escapeHtml(account.balanceText || '—') + '</td>' +
+                '<td data-label="Откликов">' + (account.responses || 0) + '</td>' +
+                '<td data-label="Последняя активность">' + activityHtml + '</td>' +
+                '<td data-label="Ошибок">' + (account.errors || 0) + '</td>' +
+                '<td class="data-table-menu" data-label=""></td></tr>';
+        }).join('');
+
+        Object.keys(expandedPanels).forEach(function (panelId) {
+            var btn = tbody.querySelector('[aria-controls="' + panelId + '"]');
+            var panel = document.getElementById(panelId);
+            if (btn && panel) {
+                btn.setAttribute('aria-expanded', 'true');
+                panel.removeAttribute('hidden');
+                var icon = btn.querySelector('.subprofiles-toggle-icon');
+                if (icon) icon.classList.add('subprofiles-toggle-icon--open');
+            }
+        });
+
+        if (window.OrbitaTime) {
+            window.OrbitaTime.localizeAll(tbody);
+        }
+        shared.reinitLiveContent();
+        initAccountRowNavigation();
+    }
+
+    function applySnapshot(snapshot, highlightChanged) {
+        if (!snapshot || !shared) return;
+        shared.updateKpiCards(snapshot.kpiCards || [], highlightChanged);
+        updateOnlineStatus(snapshot);
+        updateSystemMetrics(snapshot);
+        updateLastActivity(snapshot.lastActivityUtc);
+        updateInfoItems(snapshot.infoItems);
+        updatePeriodStats(snapshot.periodStats);
+
+        if (liveState && shared.stableJson(liveState.events) !== shared.stableJson(snapshot.events)) {
+            renderWorkerEvents(snapshot.events);
+            if (highlightChanged) shared.highlightCard(document.querySelector('.card--worker-events'));
+        } else if (!liveState) {
+            renderWorkerEvents(snapshot.events);
+        }
+
+        if (liveState && shared.stableJson(liveState.accounts) !== shared.stableJson(snapshot.accounts)) {
+            renderWorkerAccounts(snapshot.accounts);
+            if (highlightChanged) shared.highlightCard(document.querySelector('.card--worker-accounts'));
+        } else if (!liveState) {
+            renderWorkerAccounts(snapshot.accounts);
+        }
+
+        if (activityChart && snapshot.activityChart && snapshot.activityChart.values) {
+            activityChart.data.labels = snapshot.activityChart.labels || [];
+            activityChart.data.datasets[0].data = snapshot.activityChart.values || [];
+            activityChart.update('none');
+        }
+
+        liveState = snapshot;
+        shared.updateUpdatedClock(snapshot.updatedAtUtc);
+    }
+
+    function fetchSnapshot() {
+        var root = shared && shared.getLiveRoot();
+        if (!root) return Promise.resolve();
+        var url = root.getAttribute('data-orbita-snapshot');
+        if (!url) return Promise.resolve();
+        return fetch(url, { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+            .then(function (res) {
+                if (!res.ok) throw new Error('Worker details snapshot failed: ' + res.status);
+                return res.json();
+            })
+            .then(function (snapshot) { applySnapshot(snapshot, true); });
+    }
+
     function initWorkerPage() {
         initKpiCounters();
         if (window.Orbita && typeof window.Orbita.initWorkerRestartButtons === 'function') {
@@ -220,6 +436,9 @@
         initActivityChart();
         initParallelismSlider();
         initCopyButtons();
+        if (window.OrbitaLive && shared && shared.getLiveRoot()) {
+            window.OrbitaLive.register('worker', { fetchSnapshot: fetchSnapshot });
+        }
     }
 
     initWorkerPage();

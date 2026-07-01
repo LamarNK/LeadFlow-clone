@@ -52,6 +52,19 @@ public sealed class OrbitaConfigProvider(OrbitaApiClient apiClient, IMonitoringR
                     MergeRuntimeState(account, saved);
                 }
 
+                if (a.SubProfilesRefreshRequestedAtUtc is not null
+                    && (account.SubProfilesRefreshedAt is null
+                        || a.SubProfilesRefreshRequestedAtUtc > account.SubProfilesRefreshedAt))
+                {
+                    account.ForceSubProfilesRefresh = true;
+                }
+
+                if (a.DisabledSubProfileIds is { Count: > 0 })
+                {
+                    account.DisabledSubProfileIds = a.DisabledSubProfileIds
+                        .ToHashSet(StringComparer.Ordinal);
+                }
+
                 return account;
             })
             .ToList();
@@ -76,5 +89,6 @@ public sealed class OrbitaConfigProvider(OrbitaApiClient apiClient, IMonitoringR
         target.DraftsCount = source.DraftsCount;
         target.AdsStatsUpdatedAt = source.AdsStatsUpdatedAt;
         target.SubProfilesJson = source.SubProfilesJson;
+        target.SubProfilesRefreshedAt = source.SubProfilesRefreshedAt;
     }
 }

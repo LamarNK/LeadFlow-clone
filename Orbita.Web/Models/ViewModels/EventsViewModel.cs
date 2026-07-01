@@ -51,6 +51,7 @@ public sealed class EventRowViewModel
     public string WorkerName { get; init; } = string.Empty;
     public string Description { get; init; } = string.Empty;
     public string CopyText { get; init; } = string.Empty;
+    public Guid? AttachmentId { get; init; }
 }
 
 public sealed class EventsSummaryViewModel

@@ -12,11 +12,20 @@
         workerId = Model.Filters.WorkerId,
         accountId = Model.Filters.AccountId,
         vacancy = Model.Filters.VacancyQuery,
-        search = Model.Filters.SearchQuery
+        search = Model.Filters.SearchQuery,
+        page = Model.Filters.Page
     };
+    var snapshotUrl = Url.Action("Snapshot", "Responses", routeValues)!;
 }
 <partial name="_PageHeader" model="Model.Header" />
-<div class="orbita-main responses-page">
+<div class="orbita-main responses-page"
+     data-orbita-live
+     data-orbita-live-page="responses"
+     data-orbita-snapshot="@snapshotUrl"
+     data-worker-details-url="@Url.Action("Details", "Workers", new { id = "__id__" })"
+     data-account-search-url="@Url.Action("Index", "Accounts", new { q = "__q__" })"
+     data-response-detail-url="@Url.Action("Index", "Responses", new { from = routeValues.from, to = routeValues.to, status = routeValues.status, workerId = routeValues.workerId, accountId = routeValues.accountId, vacancy = routeValues.vacancy, search = routeValues.search, page = routeValues.page, id = "__id__" })"
+     data-responses-filter-url="@Url.Action("Index", "Responses", new { accountId = "__id__" })">
     <nav class="orbita-breadcrumbs orbita-breadcrumbs--responses" aria-label="Навигация">
         @for (var i = 0; i < Model.Breadcrumbs.Count; i++)
         {
@@ -188,13 +197,14 @@
                         <th>Автор</th>
                         <th>Телефон</th>
                         <th>Аккаунт</th>
+                        <th>Субпрофиль</th>
                         <th>Воркер</th>
                         <th>Статус</th>
                         <th>Источник</th>
                         <th aria-hidden="true">Действия</th>
                     </tr>
                 </thead>
-                <tbody>
+                <tbody data-orbita-live-body="responses">
                 @foreach (var row in Model.Responses)
                 {
                     var workerUrl = Url.Action("Details", "Workers", new { id = row.WorkerId });
@@ -255,6 +265,9 @@
                         </td>
                         <td class="cell-link" data-label="Аккаунт">
                             <a href="@accountUrl">@row.AccountName</a>
+                        </td>
+                        <td data-label="Субпрофиль">
+                            @(string.IsNullOrWhiteSpace(row.AvitoSubProfileName) ? "—" : row.AvitoSubProfileName)
                         </td>
                         <td class="cell-link" data-label="Воркер">
                             <a href="@workerUrl">@row.WorkerName</a>

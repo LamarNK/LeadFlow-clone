@@ -106,6 +106,7 @@ internal static class ResponsesIndexBuilder
             City = item.City,
             AccountId = item.AccountId,
             AccountName = item.AccountName,
+            AvitoSubProfileName = item.AvitoSubProfileName,
             WorkerId = item.WorkerId,
             WorkerName = FormatWorkerName(item.WorkerName),
             Source = string.IsNullOrWhiteSpace(item.Source) ? "Avito" : item.Source,

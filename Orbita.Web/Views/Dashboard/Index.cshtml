@@ -17,7 +17,10 @@
 }
 <partial name="_PageHeader" model="Model.Header" />
 <div class="orbita-main"
+     data-orbita-live
+     data-orbita-live-page="dashboard"
      data-dashboard-live
+     data-orbita-snapshot="@snapshotUrl"
      data-dashboard-snapshot="@snapshotUrl"
      data-worker-details-url="@Url.Action("Details", "Workers", new { id = "__id__" })">
     @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))

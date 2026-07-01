@@ -136,7 +136,14 @@ static List<WorkerAccountDto> BuildAccounts(int workerIndex, Random random)
                 random.Next(0, 2),
                 random.Next(0, 2),
                 random.NextDouble() > 0.9 ? "Требуется авторизация" : null,
-                DateTime.UtcNow.AddMinutes(-random.Next(1, 120)));
+                DateTime.UtcNow.AddMinutes(-random.Next(1, 120)),
+                true,
+                $"profile-{workerIndex}-{i}",
+                [
+                    new WorkerSubProfileDto($"sub-{i}-1", "Основной", "Работа", true, random.Next(500, 5000), null, null, null),
+                    new WorkerSubProfileDto($"sub-{i}-2", "Доп.", "Работа", false, random.Next(0, 2000), null, null, null)
+                ],
+                DateTime.UtcNow.AddHours(-2));
         })
         .ToList();
 }

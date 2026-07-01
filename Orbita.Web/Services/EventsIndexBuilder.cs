@@ -90,7 +90,8 @@ internal static class EventsIndexBuilder
             WorkerId = item.WorkerId,
             WorkerName = FormatWorkerName(item.WorkerDisplayName),
             Description = description,
-            CopyText = $"{item.Message}{(string.IsNullOrWhiteSpace(item.Details) ? "" : " — " + item.Details)}"
+            CopyText = description,
+            AttachmentId = WorkerEventDetailsParser.TryParseAttachmentId(item.Details)
         };
     }
 
@@ -283,16 +284,8 @@ internal static class EventsIndexBuilder
         _ => ("Информация", "fa-solid fa-circle-info", "info")
     };
 
-    private static string BuildDescription(string message, string? details)
-    {
-        if (string.IsNullOrWhiteSpace(details))
-            return message;
-
-        if (message.Contains(details, StringComparison.OrdinalIgnoreCase))
-            return message;
-
-        return $"{message} — {details}";
-    }
+    private static string BuildDescription(string message, string? details) =>
+        WorkerEventDetailsParser.FormatForDisplay(message, details);
 
     private static string FormatWorkerName(string workerDisplayName)
     {

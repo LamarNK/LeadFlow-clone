@@ -15,7 +15,8 @@ public sealed class CandidateIngestionService(
     OfficeBitrixWebhookResolver webhookResolver,
     OfficeBitrixSettingsService officeBitrixSettings,
     BitrixClient bitrixClient,
-    IOptions<OrbitaBitrixSettings> bitrixOptions)
+    IOptions<OrbitaBitrixSettings> bitrixOptions,
+    IPanelRealtimeNotifier panelRealtime)
 {
     public async Task<WorkerCandidateIngestionResultDto> IngestBatchAsync(
         Guid workerId,
@@ -54,6 +55,19 @@ public sealed class CandidateIngestionService(
                     errors++;
                     break;
             }
+        }
+
+        if (ingested > 0 || skippedDuplicates > 0 || errors > 0)
+        {
+            panelRealtime.Notify(
+                [
+                    PanelChangeKind.Responses,
+                    PanelChangeKind.Dashboard,
+                    PanelChangeKind.Accounts,
+                    PanelChangeKind.NavBadges
+                ],
+                worker.OfficeId,
+                worker.Id);
         }
 
         return new WorkerCandidateIngestionResultDto(received, ingested, skippedDuplicates, errors, items);

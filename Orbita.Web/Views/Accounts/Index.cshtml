@@ -2,9 +2,16 @@
 @{
     ViewData["Title"] = "Аккаунты";
     var pagination = Model.Pagination;
+    var snapshotUrl = Url.Action("Snapshot", "Accounts", new { q = Model.SearchQuery, tab = Model.ActiveTab, page = pagination.Page })!;
 }
 <partial name="_PageHeader" model="Model.Header" />
-<div class="orbita-main accounts-page">
+<div class="orbita-main accounts-page"
+     data-orbita-live
+     data-orbita-live-page="accounts"
+     data-orbita-snapshot="@snapshotUrl"
+     data-worker-details-url="@Url.Action("Details", "Workers", new { id = "__id__" })"
+     data-account-search-url="@Url.Action("Index", "Accounts", new { q = "__q__" })"
+     data-responses-filter-url="@Url.Action("Index", "Responses", new { accountId = "__id__" })">
     <nav class="orbita-breadcrumbs orbita-breadcrumbs--accounts" aria-label="Навигация">
         @for (var i = 0; i < Model.Breadcrumbs.Count; i++)
         {
@@ -88,7 +95,7 @@
                         <th aria-hidden="true">Действия</th>
                     </tr>
                 </thead>
-                <tbody>
+                <tbody data-orbita-live-body="accounts">
                 @foreach (var account in Model.Accounts)
                 {
                     var workerUrl = Url.Action("Details", "Workers", new { id = account.WorkerId });
@@ -97,6 +104,33 @@
                     <tr class="accounts-row" data-href="@accountUrl">
                         <td class="cell-account" data-label="Аккаунт">
                             <a href="@accountUrl">@account.AccountName</a>
+                            @if (account.CanRefreshSubProfiles || account.HasSubProfiles)
+                            {
+                                <div class="subprofiles-toolbar">
+                                    @if (account.HasSubProfiles)
+                                    {
+                                        <button type="button"
+                                                class="subprofiles-toggle"
+                                                data-subprofiles-toggle
+                                                aria-expanded="false"
+                                                aria-controls="subprofiles-acc-@account.Id">
+                                            <i class="fa-solid fa-chevron-right subprofiles-toggle-icon" aria-hidden="true"></i>
+                                            <span>@account.SubProfilesSummary</span>
+                                        </button>
+                                    }
+                                    else if (account.CanRefreshSubProfiles)
+                                    {
+                                        <span class="subprofiles-empty-hint">Субпрофили не обнаружены</span>
+                                    }
+                                    <partial name="_SubProfilesRefreshBtn" model="(account.WorkerId, account.Id, account.CanRefreshSubProfiles, account.IsSubProfilesRefreshPending)" />
+                                </div>
+                                @if (account.HasSubProfiles)
+                                {
+                                    <div class="subprofiles-panel" id="subprofiles-acc-@account.Id" hidden>
+                                        <partial name="_SubProfilesList" model="@(new SubProfilesListViewModel { WorkerId = account.WorkerId, AccountId = account.Id, Items = account.SubProfiles })" />
+                                    </div>
+                                }
+                            }
                         </td>
                         <td class="cell-worker" data-label="Воркер">
                             <a href="@workerUrl">@account.WorkerName</a>
@@ -172,7 +206,8 @@
                 Pagination = pagination,
                 Controller = "Accounts",
                 Action = "Index",
-                RouteValues = new { q = Model.SearchQuery, tab = Model.ActiveTab }
+                RouteValues = new { q = Model.SearchQuery, tab = Model.ActiveTab },
+                ExtraClass = "orbita-live-pagination"
             })" />
         </div>
     </div>

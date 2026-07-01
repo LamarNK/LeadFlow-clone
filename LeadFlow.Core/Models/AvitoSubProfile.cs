@@ -30,6 +30,9 @@ public sealed class AvitoSubProfile
     /// <summary>Когда зафиксирована последняя проблема (UTC).</summary>
     public DateTime? LastIssueAt { get; set; }
 
+    /// <summary>Последний диагностический скриншот страницы при ошибке субпрофиля.</summary>
+    public Guid? LastDiagnosticAttachmentId { get; set; }
+
     public bool HasIssue => !string.IsNullOrWhiteSpace(LastIssueKind);
 
     public string IssueKindLabel => AvitoSubProfileIssueKind.ToDisplayLabel(LastIssueKind);

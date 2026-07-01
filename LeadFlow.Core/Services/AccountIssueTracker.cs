@@ -16,6 +16,7 @@ public static class AccountIssueTracker
         sub.LastIssueKind = string.Empty;
         sub.LastIssueMessage = string.Empty;
         sub.LastIssueAt = null;
+        sub.LastDiagnosticAttachmentId = null;
     }
 
     public static void ClearAllSubProfileIssues(AvitoAccount account)

@@ -4,9 +4,16 @@
     ViewData["Title"] = "Все воркеры";
     var pagination = Model.Pagination;
     var workersError = TempData["WorkersError"] as string;
+    var snapshotUrl = Url.Action("Snapshot", "Workers", new { q = Model.SearchQuery, status = Model.StatusFilter, page = pagination.Page })!;
 }
 <partial name="_PageHeader" model="Model.Header" />
-<div class="orbita-main workers-page">
+<div class="orbita-main workers-page"
+     data-orbita-live
+     data-orbita-live-page="workers"
+     data-orbita-snapshot="@snapshotUrl"
+     data-worker-details-url="@Url.Action("Details", "Workers", new { id = "__id__" })"
+     data-settings-logs-url="@Url.Action("Index", "Settings", new { tab = "logs", workerId = "__id__" })"
+     data-show-admin-logs="@(User.IsInRole(PanelRoles.Admin) ? "true" : "false")">
     <nav class="orbita-breadcrumbs" aria-label="Навигация">
         @for (var i = 0; i < Model.Breadcrumbs.Count; i++)
         {
@@ -137,7 +144,7 @@
                         <th aria-hidden="true">Действия</th>
                     </tr>
                 </thead>
-                <tbody>
+                <tbody data-orbita-live-body="workers">
                 @foreach (var w in Model.Workers)
                 {
                     var detailsUrl = Url.Action("Details", new { id = w.Id });

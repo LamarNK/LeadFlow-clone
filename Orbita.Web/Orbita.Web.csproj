@@ -7,6 +7,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Yarp.ReverseProxy" Version="2.2.0" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.14.0" />
     <ProjectReference Include="..\Orbita.Contracts\Orbita.Contracts.csproj" />
     <ProjectReference Include="..\Orbita.Logging\Orbita.Logging.csproj" />

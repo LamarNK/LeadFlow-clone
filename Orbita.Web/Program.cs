@@ -1,11 +1,13 @@
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.HttpOverrides;
 using Orbita.Logging.Audit;
 using Orbita.Web.Authorization;
 using Orbita.Web.Middleware;
 using Orbita.Web.Options;
 using Orbita.Web.Services;
+using Yarp.ReverseProxy.Configuration;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.AddOrbitaLogging("Orbita.Web");
@@ -75,6 +77,28 @@ builder.Services.AddHttpClient<OrbitaApiClient>(client =>
     client.Timeout = TimeSpan.FromMinutes(30);
 });
 
+var apiProxyBase = (builder.Configuration["OrbitaApi:BaseUrl"] ?? "https://localhost:7291").TrimEnd('/') + "/";
+builder.Services.AddReverseProxy()
+    .LoadFromMemory(
+        [
+            new RouteConfig
+            {
+                RouteId = "orbita_signalr",
+                ClusterId = "orbita_api",
+                Match = new RouteMatch { Path = "/hubs/{**catch-all}" }
+            }
+        ],
+        [
+            new ClusterConfig
+            {
+                ClusterId = "orbita_api",
+                Destinations = new Dictionary<string, DestinationConfig>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["api"] = new() { Address = apiProxyBase }
+                }
+            }
+        ]);
+
 var app = builder.Build();
 app.UseOrbitaLogging();
 
@@ -93,13 +117,21 @@ if (!app.Environment.IsDevelopment())
     app.UseHsts();
 }
 
+app.UseForwardedHeaders(new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+});
+
 app.UseHttpsRedirection();
 app.UseStaticFiles();
+app.UseWebSockets();
 app.UseRouting();
 app.UseMiddleware<ThemeMiddleware>();
 app.UseAuthentication();
 app.UseMiddleware<JwtCookieAuthenticationMiddleware>();
 app.UseAuthorization();
+
+app.MapReverseProxy();
 
 app.MapControllerRoute(
     name: "default",

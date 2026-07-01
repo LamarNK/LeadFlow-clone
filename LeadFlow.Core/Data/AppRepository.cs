@@ -965,7 +965,8 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         AdsPowerApiBaseUrl = model.AdsPowerApiBaseUrl,
         AdsPowerApiKey = model.AdsPowerApiKey,
         AvitoProfileName = model.AvitoProfileName,
-        SubProfilesJson = string.IsNullOrWhiteSpace(model.SubProfilesJson) ? "[]" : model.SubProfilesJson
+        SubProfilesJson = string.IsNullOrWhiteSpace(model.SubProfilesJson) ? "[]" : model.SubProfilesJson,
+        SubProfilesRefreshedAt = model.SubProfilesRefreshedAt
     };
 
     private sealed class AdSnapshotProjection
@@ -1103,7 +1104,8 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         AdsPowerApiBaseUrl = entity.AdsPowerApiBaseUrl,
         AdsPowerApiKey = entity.AdsPowerApiKey,
         AvitoProfileName = entity.AvitoProfileName,
-        SubProfilesJson = string.IsNullOrWhiteSpace(entity.SubProfilesJson) ? "[]" : entity.SubProfilesJson
+        SubProfilesJson = string.IsNullOrWhiteSpace(entity.SubProfilesJson) ? "[]" : entity.SubProfilesJson,
+        SubProfilesRefreshedAt = entity.SubProfilesRefreshedAt
     };
 
   /// <summary>Поля, которые можно менять из окна настроек, не трогая blobs в БД.</summary>
@@ -1128,6 +1130,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         target.AdsPowerApiKey = source.AdsPowerApiKey;
         target.AvitoProfileName = source.AvitoProfileName;
         target.SubProfilesJson = string.IsNullOrWhiteSpace(source.SubProfilesJson) ? "[]" : source.SubProfilesJson;
+        target.SubProfilesRefreshedAt = source.SubProfilesRefreshedAt;
     }
 
     private static void Map(AvitoAccount source, AvitoAccountEntity target)
@@ -1191,6 +1194,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         target.AdsPowerApiKey = source.AdsPowerApiKey;
         target.AvitoProfileName = source.AvitoProfileName;
         target.SubProfilesJson = string.IsNullOrWhiteSpace(source.SubProfilesJson) ? "[]" : source.SubProfilesJson;
+        target.SubProfilesRefreshedAt = source.SubProfilesRefreshedAt;
     }
 
     private static CandidateResponseEntity ToEntity(CandidateResponse model) => new()
@@ -1336,6 +1340,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
             ["AdsPowerApiKey"] = "ALTER TABLE AvitoAccounts ADD COLUMN AdsPowerApiKey TEXT NULL;",
             ["AvitoProfileName"] = "ALTER TABLE AvitoAccounts ADD COLUMN AvitoProfileName TEXT NULL;",
             ["SubProfilesJson"] = "ALTER TABLE AvitoAccounts ADD COLUMN SubProfilesJson TEXT NOT NULL DEFAULT '[]';",
+            ["SubProfilesRefreshedAt"] = "ALTER TABLE AvitoAccounts ADD COLUMN SubProfilesRefreshedAt TEXT NULL;",
             ["ActiveAdsSnapshotJson"] = "ALTER TABLE AvitoAccounts ADD COLUMN ActiveAdsSnapshotJson TEXT NOT NULL DEFAULT '[]';",
             ["BlockedAdsSnapshotJson"] = "ALTER TABLE AvitoAccounts ADD COLUMN BlockedAdsSnapshotJson TEXT NOT NULL DEFAULT '[]';"
         };

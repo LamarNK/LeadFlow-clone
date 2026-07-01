@@ -8,6 +8,7 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.AspNetCore.Http.Features;
 using Orbita.Api.Auth;
 using Orbita.Api.Data;
+using Orbita.Api.Hubs;
 using Orbita.Api.Models;
 using Orbita.Api.Options;
 using Orbita.Api.Services;
@@ -101,6 +102,18 @@ builder.Services.AddAuthentication(options =>
                 var userManager = context.HttpContext.RequestServices
                     .GetRequiredService<UserManager<IdentityUser>>();
                 await JwtSecurityStampValidator.ValidateAsync(context, userManager);
+            },
+            OnMessageReceived = context =>
+            {
+                var accessToken = context.Request.Query["access_token"];
+                var path = context.HttpContext.Request.Path;
+                if (!string.IsNullOrEmpty(accessToken)
+                    && path.StartsWithSegments("/hubs", StringComparison.OrdinalIgnoreCase))
+                {
+                    context.Token = accessToken;
+                }
+
+                return Task.CompletedTask;
             }
         };
     })
@@ -127,12 +140,17 @@ builder.Services.AddAuthorization(options =>
     });
 });
 builder.Services.AddOpenApi();
+builder.Services.AddSignalR()
+    .AddJsonProtocol(options =>
+        options.PayloadSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
+builder.Services.AddSingleton<IPanelRealtimeNotifier, PanelRealtimeNotifier>();
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("Web", policy =>
         policy.WithOrigins(builder.Configuration.GetSection("Cors:Origins").Get<string[]>() ?? ["https://localhost:7123", "http://localhost:5123"])
             .AllowAnyHeader()
-            .AllowAnyMethod());
+            .AllowAnyMethod()
+            .AllowCredentials());
 });
 
 builder.Services.AddScoped<TelemetryService>();
@@ -209,6 +227,7 @@ if (app.Environment.IsDevelopment())
 app.UseCors("Web");
 app.UseAuthentication();
 app.UseAuthorization();
+app.MapHub<PanelHub>("/hubs/panel");
 
 var workers = app.MapGroup("/api/v1/workers");
 workers.MapPost("/register", async (WorkerRegisterRequest request, TelemetryService telemetry, IConfiguration config, CancellationToken ct) =>
@@ -1800,6 +1819,59 @@ workerPanel.MapPatch("/{id:guid}/accounts/{accountId:guid}", async (
     }
 
     return Results.Ok(account);
+});
+
+workerPanel.MapPost("/{id:guid}/accounts/{accountId:guid}/refresh-subprofiles", async (
+    Guid id,
+    Guid accountId,
+    WorkerConfigService configService,
+    OfficeScopeService officeScope,
+    ClaimsPrincipal principal,
+    CancellationToken ct) =>
+{
+    var scope = await officeScope.ResolveAsync(principal, ct);
+    if (!scope.HasAccess)
+    {
+        return Results.Forbid();
+    }
+
+    var (success, error) = await configService.RequestSubProfilesRefreshAsync(id, accountId, scope, ct);
+    if (!success)
+    {
+        return error is not null && error.Contains("не найден", StringComparison.OrdinalIgnoreCase)
+            ? Results.NotFound(new { error })
+            : Results.BadRequest(new { error });
+    }
+
+    return Results.Ok(new { message = "Запрос на обновление субпрофилей отправлен воркеру." });
+});
+
+workerPanel.MapPatch("/{id:guid}/accounts/{accountId:guid}/subprofiles/{subProfileId}", async (
+    Guid id,
+    Guid accountId,
+    string subProfileId,
+    UpdateWorkerSubProfileRequest request,
+    WorkerConfigService configService,
+    OfficeScopeService officeScope,
+    ClaimsPrincipal principal,
+    CancellationToken ct) =>
+{
+    var scope = await officeScope.ResolveAsync(principal, ct);
+    if (!scope.HasAccess)
+    {
+        return Results.Forbid();
+    }
+
+    var (success, error) = await configService.UpdateSubProfileEnabledAsync(
+        id, accountId, subProfileId, request, scope, ct);
+    if (!success)
+    {
+        return error is not null && error.Contains("не найден", StringComparison.OrdinalIgnoreCase)
+            ? Results.NotFound(new { error })
+            : Results.BadRequest(new { error });
+    }
+
+    return Results.Ok(new { message = request.IsEnabledInPanel ? "Субпрофиль включён." : "Субпрофиль отключён." });
 });
 
 panel.MapPost("/me/integrations/bitrix/validate", async (

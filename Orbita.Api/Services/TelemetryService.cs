@@ -5,7 +5,10 @@ using Orbita.Contracts;
 
 namespace Orbita.Api.Services;
 
-public sealed class TelemetryService(OrbitaDbContext db, OfficeAdminService offices)
+public sealed class TelemetryService(
+    OrbitaDbContext db,
+    OfficeAdminService offices,
+    IPanelRealtimeNotifier panelRealtime)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -49,6 +52,10 @@ public sealed class TelemetryService(OrbitaDbContext db, OfficeAdminService offi
         {
             return false;
         }
+
+        var nowUtc = DateTime.UtcNow;
+        var wasOnline = WorkerOnlineRules.IsOnline(worker.LastSeenAtUtc, nowUtc);
+        var previousMonitoringStatus = worker.MonitoringStatus;
 
         worker.MachineName = request.MachineName.Trim();
         if (string.IsNullOrWhiteSpace(worker.DisplayName))
@@ -101,6 +108,16 @@ public sealed class TelemetryService(OrbitaDbContext db, OfficeAdminService offi
         }
 
         await db.SaveChangesAsync(ct);
+
+        var isOnline = WorkerOnlineRules.IsOnline(worker.LastSeenAtUtc, nowUtc);
+        if (wasOnline != isOnline || previousMonitoringStatus != worker.MonitoringStatus)
+        {
+            panelRealtime.Notify(
+                [PanelChangeKind.Workers, PanelChangeKind.Dashboard, PanelChangeKind.Accounts],
+                worker.OfficeId,
+                worker.Id);
+        }
+
         return true;
     }
 
@@ -150,6 +167,15 @@ public sealed class TelemetryService(OrbitaDbContext db, OfficeAdminService offi
                 existing.LastErrorMessage = account.LastErrorMessage;
                 existing.LastMonitoringAt = account.LastMonitoringAt;
                 existing.TotalBalance = balance;
+                existing.SubProfilesJson = SerializeSubProfiles(account.SubProfiles);
+                existing.SubProfilesRefreshedAtUtc = account.SubProfilesRefreshedAtUtc;
+                if (existing.SubProfilesRefreshRequestedAtUtc is not null
+                    && account.SubProfilesRefreshedAtUtc is not null
+                    && account.SubProfilesRefreshedAtUtc >= existing.SubProfilesRefreshRequestedAtUtc)
+                {
+                    existing.SubProfilesRefreshRequestedAtUtc = null;
+                }
+
                 existing.UpdatedAtUtc = request.CapturedAtUtc;
             }
             else
@@ -167,12 +193,22 @@ public sealed class TelemetryService(OrbitaDbContext db, OfficeAdminService offi
                     LastErrorMessage = account.LastErrorMessage,
                     LastMonitoringAt = account.LastMonitoringAt,
                     TotalBalance = balance,
+                    SubProfilesJson = SerializeSubProfiles(account.SubProfiles),
+                    SubProfilesRefreshedAtUtc = account.SubProfilesRefreshedAtUtc,
                     UpdatedAtUtc = request.CapturedAtUtc
                 });
             }
         }
 
         await db.SaveChangesAsync(ct);
+
+        if (!IsMostlyEmptySnapshot(request))
+        {
+            panelRealtime.Notify(
+                [PanelChangeKind.Workers, PanelChangeKind.Dashboard, PanelChangeKind.Accounts],
+                worker.OfficeId,
+                worker.Id);
+        }
 
         // Probabilistic retention to keep snapshot table from growing unbounded.
         // Keep latest + anything in last ~48h. Called rarely to avoid overhead.
@@ -198,6 +234,9 @@ public sealed class TelemetryService(OrbitaDbContext db, OfficeAdminService offi
 
         return true;
     }
+
+    private static string SerializeSubProfiles(IReadOnlyList<WorkerSubProfileDto>? subProfiles) =>
+        JsonSerializer.Serialize(subProfiles ?? [], JsonOptions);
 
     private static bool IsMostlyEmptySnapshot(WorkerSnapshotRequest req)
     {
@@ -233,6 +272,28 @@ public sealed class TelemetryService(OrbitaDbContext db, OfficeAdminService offi
         }
 
         await db.SaveChangesAsync(ct);
+
+        if (request.Events.Count > 0)
+        {
+            var worker = await db.Workers.AsNoTracking()
+                .Where(x => x.Id == request.WorkerId)
+                .Select(x => new { x.OfficeId })
+                .FirstOrDefaultAsync(ct);
+
+            if (worker is not null)
+            {
+                panelRealtime.Notify(
+                    [
+                        PanelChangeKind.Events,
+                        PanelChangeKind.Errors,
+                        PanelChangeKind.Dashboard,
+                        PanelChangeKind.NavBadges
+                    ],
+                    worker.OfficeId,
+                    request.WorkerId);
+            }
+        }
+
         return true;
     }
 }

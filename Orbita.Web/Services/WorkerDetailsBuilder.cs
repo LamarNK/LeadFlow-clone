@@ -21,11 +21,14 @@ internal static class WorkerDetailsBuilder
         var totalAccounts = accounts.Count > 0
             ? accounts.Count
             : summary?.TotalAccounts ?? stats?.ConnectedAccounts ?? 0;
-        if (totalAccounts == 0 && summary is not null)
-            totalAccounts = summary.TotalAccounts;
 
-        if (activeAccounts == 0 && summary is not null)
-            activeAccounts = summary.ActiveAccounts;
+        if (accounts.Count == 0)
+        {
+            if (totalAccounts == 0 && summary is not null)
+                totalAccounts = summary.TotalAccounts;
+            if (summary is not null)
+                activeAccounts = summary.ActiveAccounts;
+        }
 
         var responses = summary?.Responses ?? stats?.TotalToday ?? 0;
         var duplicates = summary?.Duplicates ?? stats?.Duplicates ?? 0;
@@ -82,6 +85,7 @@ internal static class WorkerDetailsBuilder
         int errors = 0)
     {
         var (label, tone) = MapAccountStatus(account.Status, account.IsEnabled);
+        var subProfiles = SubProfileViewModelMapper.Map(account.SubProfiles);
         return new WorkerAccountRowViewModel
         {
             Id = account.AccountId,
@@ -94,7 +98,13 @@ internal static class WorkerDetailsBuilder
             Responses = responses,
             LastActivityUtc = account.LastMonitoringAt,
             Errors = errors > 0 ? errors : !string.IsNullOrWhiteSpace(account.LastErrorMessage) ? 1 : 0,
-            LastErrorMessage = account.LastErrorMessage
+            LastErrorMessage = account.LastErrorMessage,
+            SubProfiles = subProfiles,
+            SubProfilesSummary = SubProfileViewModelMapper.BuildSummary(subProfiles),
+            CanRefreshSubProfiles = !string.IsNullOrWhiteSpace(account.AdsPowerProfileId),
+            IsSubProfilesRefreshPending = SubProfileViewModelMapper.IsRefreshPending(
+                account.SubProfilesRefreshRequestedAtUtc,
+                account.SubProfilesRefreshedAtUtc)
         };
     }
 

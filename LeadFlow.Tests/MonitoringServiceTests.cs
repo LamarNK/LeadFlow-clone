@@ -809,6 +809,14 @@ public sealed class MonitoringServiceTests
             public Task<string> LoadBlockedItemsHtmlAsync(CancellationToken cancellationToken = default) =>
                 Task.FromResult(string.Empty);
 
+            public Task<string> CaptureProfileSwitchHtmlAsync(CancellationToken cancellationToken = default) =>
+                Task.FromResult(string.Empty);
+
+            public string? CurrentPageUrl => "https://www.avito.ru/profile/candidates";
+
+            public Task<byte[]?> CapturePageScreenshotAsync(CancellationToken cancellationToken = default) =>
+                Task.FromResult<byte[]?>(null);
+
             public ValueTask DisposeAsync() => ValueTask.CompletedTask;
         }
     }

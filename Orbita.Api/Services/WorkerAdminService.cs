@@ -8,7 +8,8 @@ namespace Orbita.Api.Services;
 public sealed class WorkerAdminService(
     OrbitaDbContext db,
     IConfiguration configuration,
-    WorkerReleaseService releases)
+    WorkerReleaseService releases,
+    IPanelRealtimeNotifier panelRealtime)
 {
     public async Task<(CreateWorkerResponse? Result, string? Error)> CreateAsync(
         string displayName,
@@ -61,6 +62,10 @@ public sealed class WorkerAdminService(
 
         db.Workers.Add(worker);
         await db.SaveChangesAsync(ct);
+        panelRealtime.Notify(
+            [PanelChangeKind.Workers, PanelChangeKind.Dashboard],
+            worker.OfficeId,
+            worker.Id);
         return (new CreateWorkerResponse(worker.Id, apiKey, worker.DisplayName), null);
     }
 
@@ -122,6 +127,10 @@ public sealed class WorkerAdminService(
 
         worker.IsEnabled = enabled;
         await db.SaveChangesAsync(ct);
+        panelRealtime.Notify(
+            [PanelChangeKind.Workers, PanelChangeKind.Dashboard],
+            worker.OfficeId,
+            worker.Id);
         return (Map(worker), null);
     }
 
@@ -143,6 +152,7 @@ public sealed class WorkerAdminService(
         }
 
         var displayName = worker.DisplayName;
+        var officeId = worker.OfficeId;
         await diagnostics.DeleteAllForWorkerAsync(id, ct);
         await db.WorkerLogEntries.Where(x => x.WorkerId == id).ExecuteDeleteAsync(ct);
         await db.WorkerEvents.Where(x => x.WorkerId == id).ExecuteDeleteAsync(ct);
@@ -150,6 +160,10 @@ public sealed class WorkerAdminService(
         await db.WorkerSnapshots.Where(x => x.WorkerId == id).ExecuteDeleteAsync(ct);
         db.Workers.Remove(worker);
         await db.SaveChangesAsync(ct);
+        panelRealtime.Notify(
+            [PanelChangeKind.Workers, PanelChangeKind.Dashboard],
+            officeId,
+            id);
         return (displayName, null);
     }
 

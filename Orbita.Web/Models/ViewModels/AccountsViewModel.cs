@@ -38,6 +38,11 @@ public sealed class AccountRowViewModel
     public DateTime? LastActivityUtc { get; init; }
     public bool IsEnabledInPanel { get; init; } = true;
     public string? LastErrorMessage { get; init; }
+    public IReadOnlyList<SubProfileRowViewModel> SubProfiles { get; init; } = [];
+    public bool HasSubProfiles => SubProfiles.Count > 0;
+    public string SubProfilesSummary { get; init; } = string.Empty;
+    public bool CanRefreshSubProfiles { get; init; }
+    public bool IsSubProfilesRefreshPending { get; init; }
 }
 
 public sealed class AccountsSummaryViewModel

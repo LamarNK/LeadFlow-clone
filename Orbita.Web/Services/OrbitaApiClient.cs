@@ -529,6 +529,57 @@ public sealed class OrbitaApiClient(HttpClient http, AuthSession session, IOptio
             : (false, await ReadApiErrorAsync(response, ct));
     }
 
+    public async Task<(bool Success, string? Error)> RequestSubProfilesRefreshAsync(
+        Guid workerId,
+        Guid accountId,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return (true, null);
+        }
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"api/v1/workers/{workerId}/accounts/{accountId}/refresh-subprofiles");
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (false, InvalidApiSessionError);
+        }
+
+        return response.IsSuccessStatusCode
+            ? (true, null)
+            : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(bool Success, string? Error)> UpdateSubProfileEnabledAsync(
+        Guid workerId,
+        Guid accountId,
+        string subProfileId,
+        bool isEnabledInPanel,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return (true, null);
+        }
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Patch,
+            $"api/v1/workers/{workerId}/accounts/{accountId}/subprofiles/{Uri.EscapeDataString(subProfileId)}");
+        request.Content = JsonContent.Create(new UpdateWorkerSubProfileRequest(isEnabledInPanel));
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (false, InvalidApiSessionError);
+        }
+
+        return response.IsSuccessStatusCode
+            ? (true, null)
+            : (false, await ReadApiErrorAsync(response, ct));
+    }
+
     public async Task<(bool Success, string? Error)> DismissEventAsync(Guid eventId, CancellationToken ct = default)
     {
         if (_preview.Enabled)

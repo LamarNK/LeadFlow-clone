@@ -532,6 +532,20 @@ namespace Orbita.Api.Data.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("SubProfilesDisabledIdsJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("SubProfilesJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("SubProfilesRefreshRequestedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("SubProfilesRefreshedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<decimal>("TotalBalance")
                         .HasColumnType("numeric");
 

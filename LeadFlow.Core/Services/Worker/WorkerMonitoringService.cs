@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text.Json;
 using LeadFlow.Core.Data;
+using LeadFlow.Core.Services;
 using LeadFlow.Core.Logging.Audit;
 using LeadFlow.Core.Models;
 using LeadFlow.Core.Services.AdsPower;
@@ -288,6 +289,11 @@ public sealed class WorkerMonitoringService(
             await HandleAdsPowerRateLimitForAccountAsync(account, rateEx, cancellationToken).ConfigureAwait(false);
             return (0, false, false);
         }
+        catch (SessionDiagnosticException diagnosticEx)
+        {
+            await HandleSessionDiagnosticForAccountAsync(account, diagnosticEx, cancellationToken).ConfigureAwait(false);
+            return (0, true, false);
+        }
         catch (Exception ex)
         {
             account.LastErrorMessage = ex.Message;
@@ -377,45 +383,17 @@ public sealed class WorkerMonitoringService(
             return (detectedTotal, budgetExhausted || detectedTotal > maxPerCycle);
         }
 
-        var subProfiles = account.SubProfiles;
         var hasAdsPowerCreds =
             !string.IsNullOrWhiteSpace(account.AdsPowerProfileId)
             && !string.IsNullOrWhiteSpace(account.AdsPowerApiBaseUrl);
 
-        if (subProfiles.Count == 0 || !hasAdsPowerCreds)
+        if (!hasAdsPowerCreds)
         {
-            var options = hasAdsPowerCreds
-                ? new AdsPowerConnectionOptions(
-                    account.AdsPowerApiBaseUrl!,
-                    string.IsNullOrWhiteSpace(account.AdsPowerApiKey) ? null : account.AdsPowerApiKey)
-                : null;
-
-            try
-            {
-                if (hasAdsPowerCreds && IsAdsStatsStale(account))
-                {
-                    var part = await CollectProfileItemsAsync(account, options!, cancellationToken)
-                        .ConfigureAwait(false);
-                    if (part.ParseSuccess)
-                    {
-                        await ApplyStatsSnapshotAsync(account, part, cancellationToken).ConfigureAwait(false);
-                    }
-                }
-
-                var responses = await avitoResponseSource
-                    .GetNewResponsesAsync(account, settings, cancellationToken)
-                    .ConfigureAwait(false);
-                await ProcessBatchInlineAsync(responses, account.DisplayName).ConfigureAwait(false);
-                return (detectedTotal, budgetExhausted || responses.Count > maxPerCycle);
-            }
-            finally
-            {
-                if (options is not null)
-                {
-                    await TryCloseAdsPowerBrowserForAccountAsync(account, options, cancellationToken)
-                        .ConfigureAwait(false);
-                }
-            }
+            var responses = await avitoResponseSource
+                .GetNewResponsesAsync(account, settings, cancellationToken)
+                .ConfigureAwait(false);
+            await ProcessBatchInlineAsync(responses, account.DisplayName).ConfigureAwait(false);
+            return (detectedTotal, budgetExhausted || responses.Count > maxPerCycle);
         }
 
         var adsOptions = new AdsPowerConnectionOptions(
@@ -424,16 +402,72 @@ public sealed class WorkerMonitoringService(
 
         try
         {
-            var collectStats = IsAdsStatsStale(account);
-            ProfileResult? statsAggregate = collectStats
-                ? new ProfileResult { ParseSuccess = false, PageLoadedSuccessfully = true, ActiveTabCounterResolved = true }
-                : null;
-
             await using var session = await adsPowerAvitoAutomationService
                 .OpenAccountSessionAsync(adsOptions, account.AdsPowerProfileId!, cancellationToken)
                 .ConfigureAwait(false);
 
+            AvitoSubProfile? diagnosticSubProfile = null;
+            try
+            {
+            if (ShouldRefreshSubProfiles(account))
+            {
+                await TryRefreshSubProfilesAsync(account, session, cancellationToken).ConfigureAwait(false);
+            }
+
             var messengerHints = new CandidatesMessengerEnrichmentHints(account.Id, settings.DuplicateScope);
+            var allSubProfiles = account.SubProfiles;
+            if (allSubProfiles.Count == 0)
+            {
+                if (IsAdsStatsStale(account))
+                {
+                    var part = await CollectProfileItemsFromSessionAsync(account, session, cancellationToken)
+                        .ConfigureAwait(false);
+                    if (part.ParseSuccess)
+                    {
+                        await ApplyStatsSnapshotAsync(account, part, cancellationToken).ConfigureAwait(false);
+                    }
+                }
+
+                var rawJson = await session
+                    .ExtractCandidatesJsonAsync(messengerHints, cancellationToken)
+                    .ConfigureAwait(false);
+                var singleBatch = await avitoResponseSource
+                    .ParseCandidatesFromRawAsync(account, settings, rawJson, cancellationToken)
+                    .ConfigureAwait(false);
+                if (account.Status == AvitoAccountStatus.RequiresLogin
+                    || account.Status == AvitoAccountStatus.RequiresManualAction)
+                {
+                    var issueMessage = string.IsNullOrWhiteSpace(account.LastErrorMessage)
+                        ? $"Аккаунт «{account.DisplayName}» — требуется действие на странице откликов."
+                        : account.LastErrorMessage;
+                    var issueKind = account.Status == AvitoAccountStatus.RequiresManualAction
+                        ? "subprofile-captcha"
+                        : "subprofile-auth-required";
+                    await PublishAccountDiagnosticFromSessionAsync(
+                        account,
+                        session,
+                        issueKind,
+                        issueMessage,
+                        cancellationToken).ConfigureAwait(false);
+                }
+
+                await ProcessBatchInlineAsync(singleBatch, account.DisplayName).ConfigureAwait(false);
+                return (detectedTotal, budgetExhausted || singleBatch.Count > maxPerCycle);
+            }
+
+            var subProfiles = SubProfileEnabledFilter.GetEnabled(allSubProfiles, account.DisabledSubProfileIds);
+            if (subProfiles.Count == 0)
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"Worker {account.DisplayName}: все субпрофили отключены в панели, мониторинг пропущен.",
+                    DeskLinkAuditLogLevel.Warning);
+                return (detectedTotal, budgetExhausted);
+            }
+
+            var collectStats = IsAdsStatsStale(account);
+            ProfileResult? statsAggregate = collectStats
+                ? new ProfileResult { ParseSuccess = false, PageLoadedSuccessfully = true, ActiveTabCounterResolved = true }
+                : null;
 
             for (var i = 0; i < subProfiles.Count; i++)
             {
@@ -443,23 +477,38 @@ public sealed class WorkerMonitoringService(
                 }
 
                 var sub = subProfiles[i];
+                diagnosticSubProfile = sub;
                 var switched = await session.SwitchSubProfileAsync(sub.Id, cancellationToken).ConfigureAwait(false);
                 if (!switched)
                 {
-                    AccountIssueTracker.ApplySubProfileIssue(
+                    await PublishSubProfileIssueWithDiagnosticAsync(
                         account,
+                        session,
                         sub,
                         AvitoSubProfileIssueKind.SwitchFailed,
-                        "не удалось переключить суб-профиль.");
+                        "не удалось переключить суб-профиль.",
+                        cancellationToken).ConfigureAwait(false);
                     continue;
                 }
 
                 var rawJson = await session
                     .ExtractCandidatesJsonAsync(messengerHints, cancellationToken)
                     .ConfigureAwait(false);
+                var issueAtBefore = sub.LastIssueAt;
                 var batch = await avitoResponseSource
                     .ParseCandidatesFromRawAsync(account, settings, rawJson, cancellationToken, sub)
                     .ConfigureAwait(false);
+                if (sub.HasIssue && sub.LastIssueAt != issueAtBefore)
+                {
+                    await PublishSubProfileIssueWithDiagnosticAsync(
+                        account,
+                        session,
+                        sub,
+                        sub.LastIssueKind,
+                        sub.LastIssueMessage,
+                        cancellationToken,
+                        applyIssue: false).ConfigureAwait(false);
+                }
 
                 foreach (var r in batch)
                 {
@@ -480,6 +529,11 @@ public sealed class WorkerMonitoringService(
                         statsAggregate.ActiveCount += part.ActiveCount;
                         statsAggregate.BlockedCount += part.BlockedCount;
                         statsAggregate.DraftsCount += part.DraftsCount;
+
+                        if (part.Balance.HasValue)
+                        {
+                            sub.Balance = part.Balance;
+                        }
                     }
                 }
 
@@ -489,7 +543,7 @@ public sealed class WorkerMonitoringService(
                 }
             }
 
-            account.SetSubProfiles(subProfiles);
+            account.SetSubProfiles(allSubProfiles);
             AccountIssueTracker.RefreshAccountIssueMessage(account);
 
             if (collectStats && statsAggregate is { ParseSuccess: true })
@@ -498,6 +552,13 @@ public sealed class WorkerMonitoringService(
             }
 
             return (detectedTotal, budgetExhausted);
+            }
+            catch (Exception ex) when (ShouldAttachSessionDiagnostic(ex))
+            {
+                await ThrowWithSessionDiagnosticAsync(session, ex, diagnosticSubProfile, cancellationToken)
+                    .ConfigureAwait(false);
+                throw; // unreachable
+            }
         }
         finally
         {
@@ -542,6 +603,57 @@ public sealed class WorkerMonitoringService(
         account.ProfileProvider == AvitoProfileProvider.AdsPower
         && !string.IsNullOrWhiteSpace(account.AdsPowerProfileId)
         && !string.IsNullOrWhiteSpace(account.AdsPowerApiBaseUrl);
+
+    private static bool ShouldRefreshSubProfiles(AvitoAccount account)
+    {
+        if (account.ForceSubProfilesRefresh)
+        {
+            return true;
+        }
+
+        if (account.SubProfiles.Count == 0)
+        {
+            return true;
+        }
+
+        var last = account.SubProfilesRefreshedAt;
+        if (last is null)
+        {
+            return true;
+        }
+
+        return DateTime.UtcNow - last.Value
+            >= TimeSpan.FromHours(MonitoringTiming.SubProfilesRefreshIntervalHours);
+    }
+
+    private async Task TryRefreshSubProfilesAsync(
+        AvitoAccount account,
+        IAdsPowerAccountSession session,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var html = await session.CaptureProfileSwitchHtmlAsync(cancellationToken).ConfigureAwait(false);
+            var discovered = AvitoSubProfilesParser.Parse(html);
+            if (discovered.Count > 0)
+            {
+                var merged = AvitoSubProfileMerger.Merge(account.SubProfiles, discovered);
+                account.SetSubProfiles(merged);
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"Worker {account.DisplayName}: sub-profiles refreshed, count={merged.Count}.",
+                    DeskLinkAuditLogLevel.Info);
+            }
+
+            account.SubProfilesRefreshedAt = DateTime.UtcNow;
+            await repository.SaveAccountAsync(account, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Worker {account.DisplayName}: sub-profiles refresh failed: {ex.Message}",
+                DeskLinkAuditLogLevel.Warning);
+        }
+    }
 
     private static bool IsAdsStatsStale(AvitoAccount account)
     {
@@ -681,16 +793,71 @@ public sealed class WorkerMonitoringService(
         CancellationToken ct)
     {
         account.Status = AvitoAccountStatus.RequiresManualAction;
-        account.LastErrorMessage =
-            $"Avito captcha/firewall ({captchaEx.Kind}). Откройте браузер и пройдите проверку.";
+        var sub = FindSubProfile(account, captchaEx.SubProfileId);
+        account.LastErrorMessage = sub is not null
+            ? AccountIssueFormatting.FormatIssue(
+                account,
+                sub,
+                AvitoSubProfileIssueKind.Captcha,
+                "нужна проверка на странице откликов.")
+            : $"Avito captcha/firewall ({captchaEx.Kind}). Откройте браузер и пройдите проверку.";
         await repository.SaveAccountAsync(account, ct).ConfigureAwait(false);
 
-        var details = await BuildCaptchaEventDetailsAsync(account, captchaEx, ct).ConfigureAwait(false);
+        var diagnostic = await WorkerDiagnosticEventDetailsBuilder.BuildAsync(
+            diagnosticsUploader,
+            account.Id,
+            captchaEx.Kind,
+            account.LastErrorMessage,
+            captchaEx.Url,
+            captchaEx.ScreenshotPng,
+            captchaEx.SubProfileId,
+            captchaEx.SubProfileName,
+            ct).ConfigureAwait(false);
+        StoreSubProfileDiagnosticAttachment(account, sub, diagnostic.AttachmentId);
+        await repository.SaveAccountAsync(account, ct).ConfigureAwait(false);
         await PublishAccountEventAsync(
             account,
             "Warning",
-            $"Капча/firewall на аккаунте {account.DisplayName}",
-            details,
+            sub is not null
+                ? account.LastErrorMessage
+                : $"Капча/firewall на аккаунте {account.DisplayName}",
+            diagnostic.Details,
+            ct).ConfigureAwait(false);
+    }
+
+    private async Task HandleSessionDiagnosticForAccountAsync(
+        AvitoAccount account,
+        SessionDiagnosticException diagnosticEx,
+        CancellationToken ct)
+    {
+        var inner = diagnosticEx.InnerException ?? diagnosticEx;
+        var sub = FindSubProfile(account, diagnosticEx.SubProfileId);
+        account.LastErrorMessage = sub is not null
+            ? AccountIssueFormatting.FormatIssue(account, sub, diagnosticEx.DiagnosticKind, inner.Message)
+            : inner.Message;
+        account.Status = AvitoAccountStatus.Error;
+        await repository.SaveAccountAsync(account, ct).ConfigureAwait(false);
+        _ = GlobalLogger.Instance.LogAsync(
+            $"Worker account {account.DisplayName} failed: {inner.Message}",
+            DeskLinkAuditLogLevel.Error);
+
+        var diagnostic = await WorkerDiagnosticEventDetailsBuilder.BuildAsync(
+            diagnosticsUploader,
+            account.Id,
+            diagnosticEx.DiagnosticKind,
+            account.LastErrorMessage,
+            diagnosticEx.PageUrl,
+            diagnosticEx.ScreenshotPng,
+            diagnosticEx.SubProfileId,
+            diagnosticEx.SubProfileName,
+            ct).ConfigureAwait(false);
+        StoreSubProfileDiagnosticAttachment(account, sub, diagnostic.AttachmentId);
+        await repository.SaveAccountAsync(account, ct).ConfigureAwait(false);
+        await PublishAccountEventAsync(
+            account,
+            "Error",
+            $"Ошибка аккаунта {account.DisplayName}: {account.LastErrorMessage}",
+            diagnostic.Details,
             ct).ConfigureAwait(false);
     }
 
@@ -733,31 +900,169 @@ public sealed class WorkerMonitoringService(
         CancellationToken ct) =>
         eventSink.PublishAsync(account.Id, level, message, details, ct);
 
-    private async Task<string> BuildCaptchaEventDetailsAsync(
+    private async Task PublishSubProfileIssueWithDiagnosticAsync(
         AvitoAccount account,
-        AvitoCaptchaDetectedException captchaEx,
+        IAdsPowerAccountSession session,
+        AvitoSubProfile sub,
+        string kind,
+        string detail,
+        CancellationToken ct,
+        bool applyIssue = true)
+    {
+        if (applyIssue)
+        {
+            AccountIssueTracker.ApplySubProfileIssue(account, sub, kind, detail);
+        }
+
+        var message = AccountIssueFormatting.FormatIssue(account, sub, kind, detail);
+        var diagnostic = await BuildDiagnosticEventDetailsFromSessionAsync(
+            account,
+            session,
+            $"subprofile-{kind}",
+            message,
+            sub.Id,
+            sub.Name,
+            ct).ConfigureAwait(false);
+        StoreSubProfileDiagnosticAttachment(account, sub, diagnostic.AttachmentId);
+        await PublishAccountEventAsync(account, "Warning", message, diagnostic.Details, ct).ConfigureAwait(false);
+    }
+
+    private async Task PublishAccountDiagnosticFromSessionAsync(
+        AvitoAccount account,
+        IAdsPowerAccountSession session,
+        string kind,
+        string message,
         CancellationToken ct)
     {
-        var fallback = $"{captchaEx.Kind} :: {captchaEx.Url ?? "<unknown url>"} :: {account.LastErrorMessage}";
-        if (captchaEx.ScreenshotPng is not { Length: > 0 } png)
+        var diagnostic = await BuildDiagnosticEventDetailsFromSessionAsync(
+            account,
+            session,
+            kind,
+            message,
+            null,
+            null,
+            ct).ConfigureAwait(false);
+        await PublishAccountEventAsync(account, "Warning", message, diagnostic.Details, ct).ConfigureAwait(false);
+    }
+
+    private Task<WorkerDiagnosticEventDetails> BuildDiagnosticEventDetailsFromSessionAsync(
+        AvitoAccount account,
+        IAdsPowerAccountSession session,
+        string kind,
+        string text,
+        string? subProfileId,
+        string? subProfileName,
+        CancellationToken ct) =>
+        BuildDiagnosticEventDetailsFromSessionAsync(
+            account,
+            session,
+            kind,
+            text,
+            subProfileId,
+            subProfileName,
+            session.CapturePageScreenshotAsync(ct),
+            ct);
+
+    private async Task<WorkerDiagnosticEventDetails> BuildDiagnosticEventDetailsFromSessionAsync(
+        AvitoAccount account,
+        IAdsPowerAccountSession session,
+        string kind,
+        string text,
+        string? subProfileId,
+        string? subProfileName,
+        Task<byte[]?> screenshotTask,
+        CancellationToken ct)
+    {
+        byte[]? screenshot = null;
+        try
         {
-            return fallback;
+            screenshot = await screenshotTask.ConfigureAwait(false);
+        }
+        catch
+        {
+            // Screenshot is best-effort diagnostics.
         }
 
-        var attachmentId = await diagnosticsUploader
-            .UploadScreenshotAsync(account.Id, png, captchaEx.Kind, captchaEx.Url, ct)
-            .ConfigureAwait(false);
-        if (attachmentId is null)
+        return await WorkerDiagnosticEventDetailsBuilder.BuildAsync(
+            diagnosticsUploader,
+            account.Id,
+            kind,
+            text,
+            session.CurrentPageUrl,
+            screenshot,
+            subProfileId,
+            subProfileName,
+            ct).ConfigureAwait(false);
+    }
+
+    private static AvitoSubProfile? FindSubProfile(AvitoAccount account, string? subProfileId)
+    {
+        if (string.IsNullOrWhiteSpace(subProfileId))
         {
-            return fallback;
+            return null;
         }
 
-        return JsonSerializer.Serialize(new
+        return account.SubProfiles.FirstOrDefault(x => string.Equals(x.Id, subProfileId, StringComparison.Ordinal));
+    }
+
+    private static void StoreSubProfileDiagnosticAttachment(
+        AvitoAccount account,
+        AvitoSubProfile? sub,
+        Guid? attachmentId)
+    {
+        if (sub is null || attachmentId is null)
         {
-            attachmentId,
-            kind = captchaEx.Kind,
-            url = captchaEx.Url,
-            text = account.LastErrorMessage
-        });
+            return;
+        }
+
+        sub.LastDiagnosticAttachmentId = attachmentId;
+        account.SetSubProfiles(account.SubProfiles.ToList());
+    }
+
+    private static bool ShouldAttachSessionDiagnostic(Exception ex) =>
+        ex is not OperationCanceledException
+        && ex is not AdsPowerRateLimitExceededException
+        && ex is not AdsPowerDailyOpenLimitExceededException
+        && ex is not SessionDiagnosticException;
+
+    private static async Task ThrowWithSessionDiagnosticAsync(
+        IAdsPowerAccountSession session,
+        Exception ex,
+        AvitoSubProfile? activeSubProfile,
+        CancellationToken ct)
+    {
+        byte[]? screenshot = null;
+        try
+        {
+            screenshot = await session.CapturePageScreenshotAsync(ct).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Screenshot is best-effort diagnostics.
+        }
+
+        var pageUrl = session.CurrentPageUrl;
+        var subProfileId = activeSubProfile?.Id ?? (ex as AvitoCaptchaDetectedException)?.SubProfileId;
+        var subProfileName = activeSubProfile?.Name ?? (ex as AvitoCaptchaDetectedException)?.SubProfileName;
+
+        if (ex is AvitoCaptchaDetectedException captchaEx && captchaEx.ScreenshotPng is null && screenshot is not null)
+        {
+            throw new AvitoCaptchaDetectedException(
+                captchaEx.Kind,
+                captchaEx.Url ?? pageUrl,
+                captchaEx.HtmlPreview,
+                screenshot,
+                subProfileId ?? captchaEx.SubProfileId,
+                subProfileName ?? captchaEx.SubProfileName);
+        }
+
+        var kind = ex switch
+        {
+            AvitoCaptchaDetectedException captcha => captcha.Kind,
+            JsonException => "parse-error",
+            _ => "account-error"
+        };
+
+        throw new SessionDiagnosticException(ex, kind, screenshot, pageUrl, subProfileId, subProfileName);
     }
 }

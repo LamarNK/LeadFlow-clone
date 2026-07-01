@@ -1,5 +1,11 @@
 ﻿namespace Orbita.Contracts;
 
+public sealed record DashboardAccountStatusCounts(
+    int Active,
+    int Inactive,
+    int Blocked,
+    int Errors);
+
 public sealed record GlobalDashboardSummary(
     int TotalWorkers,
     int OnlineWorkers,
@@ -12,6 +18,7 @@ public sealed record GlobalDashboardSummary(
     int ConnectedAccounts,
     int RequiresAuthorization,
     int AccountsNeedAttentionCount,
+    DashboardAccountStatusCounts AccountStatusCounts,
     int ActiveAdsCount,
     int BlockedAdsCount,
     decimal TotalBalance,
@@ -36,7 +43,8 @@ public sealed record WorkerListItem(
     string? LatestReleaseVersion = null,
     Guid OfficeId = default,
     string OfficeName = "",
-    bool IsEnabled = true);
+    bool IsEnabled = true,
+    int ActiveAccountCount = 0);
 
 public sealed record WorkerDetail(
     Guid Id,

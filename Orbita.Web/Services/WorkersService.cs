@@ -208,6 +208,20 @@ public sealed class WorkersService(
         CancellationToken ct = default) =>
         api.UpdateWorkerAccountAsync(workerId, accountId, isEnabled, ct);
 
+    public Task<(bool Success, string? Error)> RequestSubProfilesRefreshAsync(
+        Guid workerId,
+        Guid accountId,
+        CancellationToken ct = default) =>
+        api.RequestSubProfilesRefreshAsync(workerId, accountId, ct);
+
+    public Task<(bool Success, string? Error)> UpdateSubProfileEnabledAsync(
+        Guid workerId,
+        Guid accountId,
+        string subProfileId,
+        bool isEnabledInPanel,
+        CancellationToken ct = default) =>
+        api.UpdateSubProfileEnabledAsync(workerId, accountId, subProfileId, isEnabledInPanel, ct);
+
     public async Task<(bool Success, string? Error)> SendWorkerCommandAsync(
         Guid workerId,
         string command,
@@ -330,7 +344,7 @@ public sealed class WorkersService(
         DisplayName = w.DisplayName,
         MachineName = w.MachineName,
         IsOnline = w.IsOnline,
-        ActiveAccounts = w.AccountCount,
+        ActiveAccounts = w.ActiveAccountCount,
         TotalAccounts = w.AccountCount,
         Responses = w.TotalToday,
         Duplicates = 0,

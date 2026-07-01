@@ -139,7 +139,22 @@ public sealed class AvitoResponseSource(
             account.Status = AvitoAccountStatus.RequiresManualAction;
             var rawHtml = root.TryGetProperty("html", out var htmlProp) ? htmlProp.GetString() : null;
             var kind = AvitoCaptchaDetector.Classify(rawHtml) ?? "captcha";
-            throw new AvitoCaptchaDetectedException(kind, pageUrl, rawHtml);
+            const string captchaDetail = "нужна проверка на странице откликов.";
+            if (activeSubProfile is not null)
+            {
+                AccountIssueTracker.ApplySubProfileIssue(
+                    account,
+                    activeSubProfile,
+                    AvitoSubProfileIssueKind.Captcha,
+                    captchaDetail);
+            }
+
+            throw new AvitoCaptchaDetectedException(
+                kind,
+                pageUrl,
+                rawHtml,
+                subProfileId: activeSubProfile?.Id,
+                subProfileName: activeSubProfile?.Name);
         }
 
         if (hasLogin)

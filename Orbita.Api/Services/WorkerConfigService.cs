@@ -3,9 +3,14 @@ using Orbita.Api.Data;
 using Orbita.Api.Helpers;
 using Orbita.Contracts;
 
+using static Orbita.Api.Helpers.SubProfilesDisabledIdsHelper;
+
 namespace Orbita.Api.Services;
 
-public sealed class WorkerConfigService(OrbitaDbContext db, OfficeScopeService officeScope)
+public sealed class WorkerConfigService(
+    OrbitaDbContext db,
+    OfficeScopeService officeScope,
+    IPanelRealtimeNotifier panelRealtime)
 {
     public Task<WorkerConfigDto?> GetConfigForWorkerAsync(
         Guid workerId,
@@ -40,18 +45,32 @@ public sealed class WorkerConfigService(OrbitaDbContext db, OfficeScopeService o
             await db.SaveChangesAsync(ct);
         }
 
-        var accounts = await db.WorkerAccounts
+        var accountRows = await db.WorkerAccounts
             .AsNoTracking()
             .Where(x => x.WorkerId == workerId)
             .OrderBy(x => x.DisplayName)
+            .Select(x => new
+            {
+                x.AccountId,
+                x.AdsPowerProfileId,
+                x.DisplayName,
+                x.IsEnabledInPanel,
+                x.SubProfilesRefreshRequestedAtUtc,
+                x.SubProfilesDisabledIdsJson
+            })
+            .ToListAsync(ct);
+
+        var accounts = accountRows
             .Select(x => new WorkerAccountConfigDto(
                 x.AccountId,
                 x.AdsPowerProfileId,
                 x.DisplayName,
                 x.IsEnabledInPanel,
                 worker.AdsPowerApiBaseUrl,
-                worker.AdsPowerApiKey))
-            .ToListAsync(ct);
+                worker.AdsPowerApiKey,
+                x.SubProfilesRefreshRequestedAtUtc,
+                Parse(x.SubProfilesDisabledIdsJson)))
+            .ToList();
 
         return new WorkerConfigDto(
             worker.Id,
@@ -249,12 +268,124 @@ public sealed class WorkerConfigService(OrbitaDbContext db, OfficeScopeService o
         account.UpdatedAtUtc = DateTime.UtcNow;
         await db.SaveChangesAsync(ct);
 
+        panelRealtime.Notify(
+            [PanelChangeKind.Workers, PanelChangeKind.Accounts, PanelChangeKind.Dashboard],
+            worker.OfficeId,
+            workerId);
+
         return (new WorkerAccountConfigDto(
             account.AccountId,
             account.AdsPowerProfileId,
             account.DisplayName,
             account.IsEnabledInPanel,
             worker.AdsPowerApiBaseUrl,
-            worker.AdsPowerApiKey), null);
+            worker.AdsPowerApiKey,
+            account.SubProfilesRefreshRequestedAtUtc,
+            Parse(account.SubProfilesDisabledIdsJson)), null);
+    }
+
+    public async Task<(bool Success, string? Error)> UpdateSubProfileEnabledAsync(
+        Guid workerId,
+        Guid accountId,
+        string subProfileId,
+        UpdateWorkerSubProfileRequest request,
+        OfficeScope scope,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(subProfileId))
+        {
+            return (false, "Не указан субпрофиль.");
+        }
+
+        if (!await officeScope.CanAccessWorkerAsync(scope, workerId, ct))
+        {
+            return (false, "Воркер не найден.");
+        }
+
+        var account = await db.WorkerAccounts.FirstOrDefaultAsync(
+            x => x.WorkerId == workerId && x.AccountId == accountId,
+            ct);
+        if (account is null)
+        {
+            return (false, "Аккаунт не найден.");
+        }
+
+        if (!ContainsSubProfile(account.SubProfilesJson, subProfileId.Trim()))
+        {
+            return (false, "Субпрофиль не найден у аккаунта.");
+        }
+
+        var disabled = Parse(account.SubProfilesDisabledIdsJson).ToList();
+        var id = subProfileId.Trim();
+
+        if (request.IsEnabledInPanel)
+        {
+            disabled.RemoveAll(x => string.Equals(x, id, StringComparison.Ordinal));
+        }
+        else if (!disabled.Contains(id, StringComparer.Ordinal))
+        {
+            disabled.Add(id);
+        }
+
+        account.SubProfilesDisabledIdsJson = Serialize(disabled);
+        account.UpdatedAtUtc = DateTime.UtcNow;
+        await db.SaveChangesAsync(ct);
+
+        var worker = await db.Workers.AsNoTracking()
+            .Where(x => x.Id == workerId)
+            .Select(x => new { x.OfficeId })
+            .FirstOrDefaultAsync(ct);
+        if (worker is not null)
+        {
+            panelRealtime.Notify(
+                [PanelChangeKind.Workers, PanelChangeKind.Accounts],
+                worker.OfficeId,
+                workerId);
+        }
+
+        return (true, null);
+    }
+
+    public async Task<(bool Success, string? Error)> RequestSubProfilesRefreshAsync(
+        Guid workerId,
+        Guid accountId,
+        OfficeScope scope,
+        CancellationToken ct = default)
+    {
+        if (!await officeScope.CanAccessWorkerAsync(scope, workerId, ct))
+        {
+            return (false, "Воркер не найден.");
+        }
+
+        var account = await db.WorkerAccounts.FirstOrDefaultAsync(
+            x => x.WorkerId == workerId && x.AccountId == accountId,
+            ct);
+        if (account is null)
+        {
+            return (false, "Аккаунт не найден.");
+        }
+
+        if (string.IsNullOrWhiteSpace(account.AdsPowerProfileId))
+        {
+            return (false, "Аккаунт не привязан к AdsPower.");
+        }
+
+        account.SubProfilesRefreshRequestedAtUtc = DateTime.UtcNow;
+        account.UpdatedAtUtc = DateTime.UtcNow;
+        await db.SaveChangesAsync(ct);
+
+        var worker = await db.Workers.AsNoTracking()
+            .Where(x => x.Id == workerId)
+            .Select(x => new { x.OfficeId })
+            .FirstOrDefaultAsync(ct);
+        if (worker is not null)
+        {
+            panelRealtime.Notify(
+                [PanelChangeKind.Workers, PanelChangeKind.Accounts],
+                worker.OfficeId,
+                workerId);
+        }
+
+        return (true, null);
     }
 }

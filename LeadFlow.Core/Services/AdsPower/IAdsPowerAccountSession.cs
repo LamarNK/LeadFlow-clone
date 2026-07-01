@@ -18,4 +18,11 @@ public interface IAdsPowerAccountSession : IAsyncDisposable
     Task<string> LoadProfileItemsHtmlAsync(CancellationToken cancellationToken = default);
 
     Task<string> LoadBlockedItemsHtmlAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>HTML модалки «Выбор профиля» в текущей CDP-сессии.</summary>
+    Task<string> CaptureProfileSwitchHtmlAsync(CancellationToken cancellationToken = default);
+
+    string? CurrentPageUrl { get; }
+
+    Task<byte[]?> CapturePageScreenshotAsync(CancellationToken cancellationToken = default);
 }

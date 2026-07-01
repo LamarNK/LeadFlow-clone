@@ -89,6 +89,10 @@ public sealed class WorkerAccountEntity
     public string? LastErrorMessage { get; set; }
     public DateTime? LastMonitoringAt { get; set; }
     public decimal TotalBalance { get; set; }
+    public string SubProfilesJson { get; set; } = "[]";
+    public DateTime? SubProfilesRefreshedAtUtc { get; set; }
+    public DateTime? SubProfilesRefreshRequestedAtUtc { get; set; }
+    public string SubProfilesDisabledIdsJson { get; set; } = "[]";
     public DateTime UpdatedAtUtc { get; set; }
 
     public WorkerEntity Worker { get; set; } = null!;

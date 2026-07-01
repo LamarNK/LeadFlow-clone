@@ -41,7 +41,7 @@ public sealed class DashboardService(OrbitaApiClient api, IOptions<DesignPreview
                 DisplayName = w.DisplayName,
                 MachineName = w.MachineName,
                 IsOnline = w.IsOnline,
-                ActiveAccounts = w.AccountCount,
+                ActiveAccounts = w.ActiveAccountCount,
                 TotalAccounts = w.AccountCount,
                 Responses = period.IsTodayOnly ? w.TotalToday : 0,
                 Duplicates = 0,
@@ -185,8 +185,8 @@ public sealed class DashboardService(OrbitaApiClient api, IOptions<DesignPreview
                 Key = "accounts",
                 Href = KpiCardLinks.Dashboard("accounts", period.From, period.To),
                 Label = "Аккаунтов активно",
-                Value = $"{Math.Max(0, summary.ConnectedAccounts - summary.AccountsNeedAttentionCount)} / {summary.ConnectedAccounts}",
-                CountValue = Math.Max(0, summary.ConnectedAccounts - summary.AccountsNeedAttentionCount),
+                Value = $"{summary.AccountStatusCounts.Active} / {summary.ConnectedAccounts}",
+                CountValue = summary.AccountStatusCounts.Active,
                 ValueSuffix = $" / {summary.ConnectedAccounts}",
                 Delta = summary.ConnectedAccounts == 0 ? "0%" : "Сейчас",
                 DeltaTone = "good",
@@ -218,21 +218,15 @@ public sealed class DashboardService(OrbitaApiClient api, IOptions<DesignPreview
         GlobalDashboardSummary summary,
         CancellationToken ct)
     {
-        // Optimized: use aggregates already computed server-side in DashboardQueryService
-        // (from WorkerAccounts + response counts). Avoids N+1 per-worker /accounts fetches on every 10s poll.
-        // The detailed per-account list remains available on Workers/Details and Accounts pages.
-        var total = summary.ConnectedAccounts;
-        var needAttention = summary.AccountsNeedAttentionCount;
-        var active = Math.Max(0, total - needAttention);
-
-        // Rough split for the dashboard donut; detailed classification lives in worker accounts data.
+        // Aggregates are computed server-side in DashboardQueryService from WorkerAccounts.
+        var counts = summary.AccountStatusCounts;
         return Task.FromResult(new AccountStatsViewModel
         {
-            Total = total,
-            Active = active,
-            Inactive = 0, // not critical for live summary card
-            Blocked = 0,
-            Errors = needAttention
+            Total = summary.ConnectedAccounts,
+            Active = counts.Active,
+            Inactive = counts.Inactive,
+            Blocked = counts.Blocked,
+            Errors = counts.Errors
         });
     }
 

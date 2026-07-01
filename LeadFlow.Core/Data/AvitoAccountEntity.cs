@@ -77,4 +77,7 @@ public sealed class AvitoAccountEntity
     /// JSON-массив суб-профилей Avito Pro, распарсенных из модалки переключения профилей.
     /// </summary>
     public string SubProfilesJson { get; set; } = "[]";
+
+    /// <summary>Когда воркер последний раз перечитывал список суб-профилей из Avito (UTC).</summary>
+    public DateTime? SubProfilesRefreshedAt { get; set; }
 }

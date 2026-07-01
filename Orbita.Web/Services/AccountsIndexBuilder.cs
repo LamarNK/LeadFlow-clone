@@ -59,6 +59,7 @@ internal static class AccountsIndexBuilder
         var (label, tone) = MapStatus(account.Status, account.IsEnabled);
         var unique = Math.Max(0, responses - errors / 2);
         var hasError = !string.IsNullOrWhiteSpace(account.LastErrorMessage);
+        var subProfiles = SubProfileViewModelMapper.Map(account.SubProfiles);
         return new AccountRowViewModel
         {
             Id = account.AccountId,
@@ -73,7 +74,13 @@ internal static class AccountsIndexBuilder
             Errors = errors > 0 ? errors : hasError ? 1 : 0,
             LastActivityUtc = account.LastMonitoringAt,
             IsEnabledInPanel = account.IsEnabledInPanel,
-            LastErrorMessage = account.LastErrorMessage
+            LastErrorMessage = account.LastErrorMessage,
+            SubProfiles = subProfiles,
+            SubProfilesSummary = SubProfileViewModelMapper.BuildSummary(subProfiles),
+            CanRefreshSubProfiles = !string.IsNullOrWhiteSpace(account.AdsPowerProfileId),
+            IsSubProfilesRefreshPending = SubProfileViewModelMapper.IsRefreshPending(
+                account.SubProfilesRefreshRequestedAtUtc,
+                account.SubProfilesRefreshedAtUtc)
         };
     }
 

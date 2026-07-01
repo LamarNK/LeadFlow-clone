@@ -2395,6 +2395,233 @@ a.kpi-card:focus-visible {
     color: #667085;
 }
 
+.subprofiles-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 6px;
+    flex-wrap: wrap;
+}
+
+.subprofiles-empty-hint {
+    font-size: 12px;
+    color: #98a2b3;
+}
+
+.subprofiles-refresh-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border: 1px solid #e4e7ec;
+    border-radius: 8px;
+    background: #fff;
+    color: #667085;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.subprofiles-refresh-btn:hover:not(:disabled) {
+    color: #2563eb;
+    border-color: #bfdbfe;
+    background: #f8fafc;
+}
+
+.subprofiles-refresh-btn:disabled,
+.subprofiles-refresh-btn.is-loading {
+    cursor: wait;
+    opacity: 0.7;
+}
+
+.subprofiles-refresh-btn.is-pending:not(.is-loading) {
+    color: #2563eb;
+    border-color: #bfdbfe;
+    background: #eff6ff;
+}
+
+.subprofiles-refresh-btn.is-pending .subprofiles-refresh-icon {
+    animation: subprofiles-spin 1.2s linear infinite;
+}
+
+@keyframes subprofiles-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.subprofiles-refresh-btn.is-loading .subprofiles-refresh-icon {
+    animation: subprofiles-spin 0.8s linear infinite;
+}
+
+.subprofiles-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    font-size: 12px;
+    color: #475467;
+    cursor: pointer;
+    text-align: left;
+}
+
+.subprofiles-toggle:hover {
+    color: #2563eb;
+}
+
+.subprofiles-toggle-icon {
+    font-size: 10px;
+    transition: transform 0.15s ease;
+}
+
+.subprofiles-toggle[aria-expanded="true"] .subprofiles-toggle-icon {
+    transform: rotate(90deg);
+}
+
+.subprofiles-panel {
+    margin-top: 8px;
+}
+
+.subprofiles-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.subprofiles-item {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 8px 10px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: #f9fafb;
+    font-size: 12px;
+}
+
+.subprofiles-item--current {
+    background: #eff6ff;
+}
+
+.subprofiles-item--issue {
+    background: #fff7ed;
+}
+
+.subprofiles-item--disabled {
+    opacity: 0.55;
+}
+
+.subprofiles-item--disabled .subprofiles-name,
+.subprofiles-item--disabled .subprofiles-balance {
+    color: #98a2b3;
+}
+
+.subprofiles-item-body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.subprofiles-toggle-sm {
+    position: relative;
+    display: inline-flex;
+    width: 32px;
+    height: 18px;
+    flex-shrink: 0;
+    cursor: pointer;
+}
+
+.subprofiles-toggle-sm input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+    position: absolute;
+}
+
+.subprofiles-toggle-sm-slider {
+    position: absolute;
+    inset: 0;
+    border-radius: 999px;
+    background: #e4e7ec;
+    transition: background 0.15s ease;
+}
+
+.subprofiles-toggle-sm-slider::before {
+    content: "";
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    left: 2px;
+    top: 2px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(16, 24, 40, 0.12);
+    transition: transform 0.15s ease;
+}
+
+.subprofiles-toggle-sm input:checked + .subprofiles-toggle-sm-slider {
+    background: #2563eb;
+}
+
+.subprofiles-toggle-sm input:checked + .subprofiles-toggle-sm-slider::before {
+    transform: translateX(14px);
+}
+
+.subprofiles-toggle-sm input:disabled + .subprofiles-toggle-sm-slider {
+    opacity: 0.5;
+    cursor: wait;
+}
+
+.subprofiles-name {
+    font-weight: 600;
+    color: #101828;
+}
+
+.subprofiles-badge {
+    margin-left: 6px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: #dbeafe;
+    color: #1d4ed8;
+    font-size: 10px;
+    font-weight: 500;
+}
+
+.subprofiles-category {
+    color: #667085;
+}
+
+.subprofiles-balance {
+    font-weight: 600;
+    color: #101828;
+    white-space: nowrap;
+}
+
+.subprofiles-issue {
+    grid-column: 1 / -1;
+    color: #b54708;
+}
+
+.subprofiles-screenshot-link {
+    grid-column: 1 / -1;
+    font-size: 12px;
+    font-weight: 600;
+    color: #1570ef;
+    text-decoration: none;
+}
+
+.subprofiles-screenshot-link:hover {
+    text-decoration: underline;
+}
+
 .workers-install-cmd-label {
     margin: 12px 0 4px;
     font-size: 13px;

@@ -32,6 +32,9 @@ public static class MonitoringTiming
     public const int MaxResponsesPerAccountPerCycle = 10;
     public const int ActiveAdsRefreshIntervalMinutes = 75;
 
+    /// <summary>Как часто воркер перечитывает модалку «Выбор профиля» Avito Pro (часы).</summary>
+    public const int SubProfilesRefreshIntervalHours = 24;
+
     // ---- «Человеческие» рандомные паузы ----
     // Идея: после открытия страницы / переключения профиля / обработки отклика
     // имитируем чтение пользователем, чтобы не палить ботскую частоту запросов.

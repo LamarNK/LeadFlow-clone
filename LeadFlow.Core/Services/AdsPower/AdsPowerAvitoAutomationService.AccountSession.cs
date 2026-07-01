@@ -2,6 +2,7 @@ using System.Diagnostics;
 using LeadFlow.Core.Logging.Audit;
 using LeadFlow.Core.Services;
 using LeadFlow.Core.Services.Avito;
+using LeadFlow.Core.Services.Browser;
 using PuppeteerSharp;
 
 namespace LeadFlow.Core.Services.AdsPower;
@@ -624,6 +625,11 @@ public sealed partial class AdsPowerAvitoAutomationService
     {
         public string AdsPowerUserId { get; } = adsPowerUserId;
 
+        public string? CurrentPageUrl => page.Url;
+
+        public Task<byte[]?> CapturePageScreenshotAsync(CancellationToken cancellationToken = default) =>
+            BrowserDiagnosticsCapture.CapturePageScreenshotAsync(page, cancellationToken);
+
         public Task<bool> SwitchSubProfileAsync(string subProfileId, CancellationToken cancellationToken = default) =>
             owner.SwitchSubProfileOnPageAsync(page, subProfileId, cancellationToken);
 
@@ -640,6 +646,9 @@ public sealed partial class AdsPowerAvitoAutomationService
 
         public Task<string> LoadBlockedItemsHtmlAsync(CancellationToken cancellationToken = default) =>
             owner.LoadBlockedItemsHtmlOnPageAsync(page, AdsPowerUserId, cancellationToken);
+
+        public Task<string> CaptureProfileSwitchHtmlAsync(CancellationToken cancellationToken = default) =>
+            owner.CaptureProfileSwitchHtmlInSessionAsync(page, AdsPowerUserId, cancellationToken);
 
         public async ValueTask DisposeAsync()
         {

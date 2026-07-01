@@ -225,6 +225,80 @@
         window.addEventListener('resize', closeAllRowMenus);
     }
 
+    function initLiveRowActions() {
+        if (window.__orbitaLiveRowActionsReady) return;
+        window.__orbitaLiveRowActionsReady = true;
+
+        document.addEventListener('click', function (e) {
+            var copyPhone = e.target.closest('[data-copy-phone]');
+            if (copyPhone) {
+                e.stopPropagation();
+                var row = copyPhone.closest('.responses-row');
+                var phone = row ? row.getAttribute('data-phone') : '';
+                if (phone) copyText(phone);
+                closeAllRowMenus();
+                return;
+            }
+
+            var copyEvent = e.target.closest('[data-copy-event]');
+            if (copyEvent) {
+                e.stopPropagation();
+                var eventRow = copyEvent.closest('.events-row');
+                var eventText = eventRow ? eventRow.getAttribute('data-copy') : '';
+                if (eventText) copyText(eventText);
+                closeAllRowMenus();
+                return;
+            }
+
+            var copyError = e.target.closest('[data-copy-error]');
+            if (copyError) {
+                e.stopPropagation();
+                var errorRow = copyError.closest('.errors-row');
+                var errorText = errorRow ? errorRow.getAttribute('data-copy') : '';
+                if (errorText) copyText(errorText);
+                closeAllRowMenus();
+                return;
+            }
+
+            var dismissEvent = e.target.closest('[data-event-dismiss]');
+            if (dismissEvent) {
+                e.stopPropagation();
+                handleDismissRow(dismissEvent, '/Events/Dismiss', '.events-row', 'Отметить обработанным?', 'Событие будет скрыто из списка.');
+                return;
+            }
+
+            var dismissError = e.target.closest('[data-error-dismiss]');
+            if (dismissError) {
+                e.stopPropagation();
+                handleDismissRow(dismissError, '/Errors/Dismiss', '.errors-row', 'Отметить как обработанную?', 'Ошибка будет скрыта из списка.');
+            }
+        });
+    }
+
+    async function handleDismissRow(btn, url, rowSelector, title, message) {
+        var eventId = btn.getAttribute('data-event-id');
+        if (!eventId) return;
+
+        if (window.Orbita && window.Orbita.confirm) {
+            var confirmed = await window.Orbita.confirm({
+                title: title,
+                message: message,
+                confirmLabel: 'Отметить'
+            });
+            if (!confirmed) return;
+        }
+
+        var result = await postForm(url, { eventId: eventId });
+        if (result.ok) {
+            var row = btn.closest(rowSelector);
+            if (row && row.parentNode) row.parentNode.removeChild(row);
+            showToast((result.payload && result.payload.message) || 'Готово', { variant: 'success' });
+        } else {
+            showToast((result.payload && result.payload.error) || 'Не удалось выполнить', { variant: 'error' });
+        }
+        closeAllRowMenus();
+    }
+
     function closeAllPopovers() {
         closeAllRowMenus();
         document.querySelectorAll('[data-orbita-user-menu]').forEach(function (menu) {
@@ -442,8 +516,110 @@
         });
     }
 
+    function initSubProfilesRefreshButtons() {
+        document.querySelectorAll('[data-refresh-subprofiles]').forEach(function (btn) {
+            if (btn.hasAttribute('data-refresh-bound')) return;
+            btn.setAttribute('data-refresh-bound', '1');
+
+            btn.addEventListener('click', async function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                if (btn.disabled || btn.classList.contains('is-loading')) return;
+
+                var workerId = btn.getAttribute('data-worker-id');
+                var accountId = btn.getAttribute('data-account-id');
+                if (!workerId || !accountId) return;
+
+                var path = window.location.pathname.toLowerCase().indexOf('/accounts') >= 0
+                    ? '/Accounts/RefreshSubProfiles'
+                    : '/Workers/RefreshSubProfiles';
+
+                btn.disabled = true;
+                btn.classList.add('is-loading');
+
+                var result = await postForm(path, { workerId: workerId, accountId: accountId });
+                btn.classList.remove('is-loading');
+                btn.disabled = false;
+
+                if (result.ok) {
+                    btn.classList.add('is-pending');
+                    btn.title = 'Обновление запрошено — ждём воркер';
+                    showToast((result.payload && result.payload.message) || 'Запрос отправлен', { variant: 'success' });
+                } else {
+                    showToast((result.payload && result.payload.error) || 'Не удалось отправить запрос', { variant: 'error' });
+                }
+            });
+        });
+    }
+
+    function initSubProfileEnableToggles() {
+        document.querySelectorAll('[data-subprofile-toggle]').forEach(function (input) {
+            if (input.hasAttribute('data-subprofile-enable-bound')) return;
+            input.setAttribute('data-subprofile-enable-bound', '1');
+
+            input.addEventListener('change', async function (e) {
+                e.stopPropagation();
+                if (input.disabled) return;
+
+                var workerId = input.getAttribute('data-worker-id');
+                var accountId = input.getAttribute('data-account-id');
+                var subProfileId = input.getAttribute('data-subprofile-id');
+                if (!workerId || !accountId || !subProfileId) return;
+
+                var enabled = input.checked;
+                var path = window.location.pathname.toLowerCase().indexOf('/accounts') >= 0
+                    ? '/Accounts/UpdateSubProfile'
+                    : '/Workers/UpdateSubProfile';
+
+                input.disabled = true;
+                var result = await postForm(path, {
+                    workerId: workerId,
+                    accountId: accountId,
+                    subProfileId: subProfileId,
+                    isEnabledInPanel: enabled ? 'true' : 'false'
+                });
+                input.disabled = false;
+
+                var row = input.closest('.subprofiles-item');
+                if (result.ok) {
+                    if (row) {
+                        row.classList.toggle('subprofiles-item--disabled', !enabled);
+                    }
+                    showToast((result.payload && result.payload.message) || 'Сохранено', { variant: 'success' });
+                } else {
+                    input.checked = !enabled;
+                    showToast((result.payload && result.payload.error) || 'Не удалось сохранить', { variant: 'error' });
+                }
+            });
+        });
+    }
+
+    function initSubProfilesToggles() {
+        document.querySelectorAll('[data-subprofiles-toggle]').forEach(function (btn) {
+            if (btn.hasAttribute('data-subprofiles-bound')) return;
+            btn.setAttribute('data-subprofiles-bound', '1');
+            btn.addEventListener('click', function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                var panelId = btn.getAttribute('aria-controls');
+                var panel = panelId ? document.getElementById(panelId) : null;
+                if (!panel) return;
+                var expanded = btn.getAttribute('aria-expanded') === 'true';
+                btn.setAttribute('aria-expanded', expanded ? 'false' : 'true');
+                if (expanded) {
+                    panel.setAttribute('hidden', '');
+                } else {
+                    panel.removeAttribute('hidden');
+                }
+            });
+        });
+    }
+
     initUpdatedClock();
     initRowMenus();
+    initSubProfilesToggles();
+    initSubProfileEnableToggles();
+    initSubProfilesRefreshButtons();
     initUserMenu();
     initPeriodPicker();
     initSidebarToggle();
@@ -482,8 +658,6 @@
 
     initWorkerRestartButtons();
 
-    var navBadgesTimer = null;
-
     function updateNavBadges(payload) {
         if (!payload) return;
         var errorsEl = document.querySelector('[data-nav-badge="errors"]');
@@ -511,15 +685,6 @@
             .then(updateNavBadges)
             .catch(function () { });
     }
-
-    function initNavBadgesPolling() {
-        if (window.__orbitaNavBadgesPolling) return;
-        window.__orbitaNavBadgesPolling = true;
-        fetchNavBadges();
-        navBadgesTimer = window.setInterval(fetchNavBadges, 60000);
-    }
-
-    initNavBadgesPolling();
 
     function initFilterPanels() {
         document.querySelectorAll('[data-orbita-filter-toggle]').forEach(function (btn) {
@@ -654,6 +819,7 @@
     initFilterPanels();
     initDetailModal();
     initDetailOpenButtons();
+    initLiveRowActions();
 
     // --- Fast page switching (client-side, no full reload) + loading spinner ---
 
@@ -716,6 +882,9 @@
         initPeriodPicker();
         initConfirmDialog();
         initRowMenus();
+        initSubProfilesToggles();
+        initSubProfileEnableToggles();
+        initSubProfilesRefreshButtons();
         initWorkerRestartButtons();
         initFilterPanels();
         initDetailModal();
@@ -800,15 +969,16 @@
             return;
         }
 
-        // Stop dashboard polling / charts if we are leaving it
-        if (window.OrbitaDashboard) {
-            try {
-                if (typeof window.OrbitaDashboard.stopPolling === 'function') {
-                    window.OrbitaDashboard.stopPolling();
-                } else if (typeof window.OrbitaDashboard.destroyCharts === 'function') {
-                    window.OrbitaDashboard.destroyCharts();
-                }
-            } catch (e) { }
+        if (window.OrbitaDashboard && typeof window.OrbitaDashboard.destroyCharts === 'function') {
+            try { window.OrbitaDashboard.destroyCharts(); } catch (e) { }
+        }
+        if (window.OrbitaLive && typeof window.OrbitaLive.unregister === 'function') {
+            try { window.OrbitaLive.unregister(getActiveLivePage()); } catch (e) { }
+        }
+
+        function getActiveLivePage() {
+            var root = document.querySelector('[data-orbita-live]');
+            return root ? root.getAttribute('data-orbita-live-page') : null;
         }
 
         // Show spinner immediately
@@ -1074,4 +1244,7 @@
     window.Orbita.initDetailOpenButtons = initDetailOpenButtons;
     window.Orbita.initRowMenus = initRowMenus;
     window.Orbita.closeAllRowMenus = closeAllRowMenus;
+    window.Orbita.updateNavBadges = updateNavBadges;
+    window.Orbita.fetchNavBadges = fetchNavBadges;
+    window.Orbita.reinitLiveContent = reinitAfterContentSwap;
 })();

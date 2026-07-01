@@ -6,7 +6,7 @@
     var nextPage = pagination.Page < pagination.TotalPages ? pagination.Page + 1 : (int?)null;
     var extraClass = string.IsNullOrWhiteSpace(Model.ExtraClass) ? "" : " " + Model.ExtraClass;
 }
-<div class="orbita-pagination@extraClass">
+<div class="orbita-pagination@extraClass" data-orbita-live-pagination>
     <span class="orbita-pagination__info">
         @if (pagination.TotalItems == 0)
         {

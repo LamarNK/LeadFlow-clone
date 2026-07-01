@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Orbita.Contracts;
+using Orbita.Web.Models.ViewModels;
 using Orbita.Web.Services;
 
 namespace Orbita.Web.Controllers;
@@ -8,6 +9,51 @@ namespace Orbita.Web.Controllers;
 [Authorize]
 public sealed class WorkersController(IWorkersService workers) : Controller
 {
+    [HttpGet]
+    public async Task<IActionResult> Snapshot(string? q, string? status, int page = 1, CancellationToken ct = default)
+    {
+        var model = await workers.GetIndexAsync(q, status, page, ct);
+        return Json(new WorkersLiveSnapshotViewModel
+        {
+            UpdatedAtUtc = model.Header.UpdatedAtUtc,
+            KpiCards = model.KpiCards,
+            Workers = model.Workers,
+            Pagination = model.Pagination
+        });
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> DetailsSnapshot(Guid id, CancellationToken ct = default)
+    {
+        var model = await workers.GetDetailsAsync(
+            id,
+            includeLogs: false,
+            ct: ct);
+
+        if (model is null)
+        {
+            return NotFound();
+        }
+
+        return Json(new WorkerDetailsLiveSnapshotViewModel
+        {
+            UpdatedAtUtc = model.UpdatedAtUtc,
+            IsOnline = model.IsOnline,
+            IsEnabled = model.IsEnabled,
+            LastActivityUtc = model.LastActivityUtc,
+            CpuPercent = model.CpuPercent,
+            RamPercent = model.RamPercent,
+            RamUsedMb = model.RamUsedMb,
+            RamTotalMb = model.RamTotalMb,
+            KpiCards = model.KpiCards,
+            InfoItems = model.InfoItems,
+            PeriodStats = model.PeriodStats,
+            Accounts = model.Accounts,
+            Events = model.Events,
+            ActivityChart = model.ActivityChart
+        });
+    }
+
     [HttpGet]
     public async Task<IActionResult> Index(string? q, string? status, int page = 1, CancellationToken ct = default)
     {
@@ -148,6 +194,42 @@ public sealed class WorkersController(IWorkersService workers) : Controller
 
     [HttpPost]
     [ValidateAntiForgeryToken]
+    public async Task<IActionResult> UpdateSubProfile(
+        Guid workerId,
+        Guid accountId,
+        string subProfileId,
+        bool isEnabledInPanel,
+        CancellationToken ct)
+    {
+        var (success, error) = await workers.UpdateSubProfileEnabledAsync(
+            workerId, accountId, subProfileId, isEnabledInPanel, ct);
+        if (!success)
+        {
+            return BadRequest(new { error = error ?? "Не удалось сохранить." });
+        }
+
+        return Ok(new
+        {
+            message = isEnabledInPanel ? "Субпрофиль включён." : "Субпрофиль отключён.",
+            isEnabledInPanel
+        });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> RefreshSubProfiles(Guid workerId, Guid accountId, CancellationToken ct)
+    {
+        var (success, error) = await workers.RequestSubProfilesRefreshAsync(workerId, accountId, ct);
+        if (!success)
+        {
+            return BadRequest(new { error = error ?? "Не удалось отправить запрос." });
+        }
+
+        return Ok(new { message = "Воркер обновит субпрофили при следующем цикле." });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> Restart(Guid workerId, CancellationToken ct)
     {
         var (success, error) = await workers.SendWorkerCommandAsync(workerId, WorkerCommands.Restart, ct);
@@ -164,13 +246,23 @@ public sealed class WorkersController(IWorkersService workers) : Controller
     public async Task<IActionResult> UpdateAccount(
         Guid workerId,
         Guid accountId,
-        bool isEnabledInPanel,
         CancellationToken ct)
     {
+        // Чекбокс без hidden: при включении шлёт только value=true; при выключении поле не уходит в форму.
+        // Старый hidden value=false ломал включение — model binder брал первое значение (false).
+        var isEnabledInPanel = Request.Form.TryGetValue("isEnabledInPanel", out var value)
+            && string.Equals(value.ToString(), "true", StringComparison.OrdinalIgnoreCase);
+
         var (success, error) = await workers.UpdateWorkerAccountAsync(workerId, accountId, isEnabledInPanel, ct);
         if (!success)
         {
             TempData["WorkersError"] = error;
+        }
+        else
+        {
+            TempData["WorkersSuccess"] = isEnabledInPanel
+                ? "Аккаунт включён в панели."
+                : "Аккаунт отключён в панели.";
         }
 
         return RedirectToAction(nameof(Details), new { id = workerId });

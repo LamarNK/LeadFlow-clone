@@ -20,6 +20,8 @@ public sealed record ResponseListItemDto(
     bool IsLocalDuplicate,
     bool IsBitrixDuplicate,
     string? BitrixEntityId,
+    string AvitoSubProfileId,
+    string? AvitoSubProfileName,
     DateTime CreatedAt,
     DateTime? ProcessedAt);
 

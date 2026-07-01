@@ -115,7 +115,8 @@ public sealed class CandidateIngestionServiceTests
             webhookResolver,
             officeBitrixSettings,
             new BitrixClient(new HttpClientFactoryStub(), new CandidateParser()),
-            Options.Create(new OrbitaBitrixSettings { CheckDuplicatesInBitrix = false }));
+            Options.Create(new OrbitaBitrixSettings { CheckDuplicatesInBitrix = false }),
+            new NoopPanelRealtimeNotifier());
     }
 
     private static OrbitaDbContext CreateDb()

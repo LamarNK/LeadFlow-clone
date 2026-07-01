@@ -43,6 +43,7 @@ internal static class DesignPreviewData
         ConnectedAccounts: 30,
         RequiresAuthorization: 0,
         AccountsNeedAttentionCount: 0,
+        AccountStatusCounts: new DashboardAccountStatusCounts(24, 4, 1, 1),
         ActiveAdsCount: 120,
         BlockedAdsCount: 0,
         TotalBalance: 48_500m,
@@ -124,7 +125,9 @@ internal static class DesignPreviewData
             w.UpdateAvailable,
             w.LatestReleaseVersion,
             PreviewOfficeId,
-            "Основной")).ToList();
+            "Основной",
+            true,
+            w.ActiveAccounts)).ToList();
 
     private static IReadOnlyList<WorkerRowViewModel> BuildWorkerRows()
     {

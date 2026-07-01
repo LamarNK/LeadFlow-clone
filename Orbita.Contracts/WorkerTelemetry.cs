@@ -60,6 +60,18 @@ public sealed record ActivityPointDto(
     int SlotSpanHours,
     DateTime? LocalDate);
 
+public sealed record WorkerSubProfileDto(
+    string Id,
+    string Name,
+    string Category,
+    bool IsCurrent,
+    decimal? Balance,
+    string? LastIssueKind,
+    string? LastIssueMessage,
+    DateTime? LastIssueAt,
+    bool IsEnabledInPanel = true,
+    Guid? DiagnosticAttachmentId = null);
+
 public sealed record WorkerAccountDto(
     Guid AccountId,
     string DisplayName,
@@ -71,7 +83,10 @@ public sealed record WorkerAccountDto(
     string? LastErrorMessage,
     DateTime? LastMonitoringAt,
     bool IsEnabledInPanel = false,
-    string AdsPowerProfileId = "");
+    string AdsPowerProfileId = "",
+    IReadOnlyList<WorkerSubProfileDto>? SubProfiles = null,
+    DateTime? SubProfilesRefreshedAtUtc = null,
+    DateTime? SubProfilesRefreshRequestedAtUtc = null);
 
 public sealed record WorkerBalanceDto(
     Guid AccountId,

@@ -1,0 +1,13 @@
+@model (Guid WorkerId, Guid AccountId, bool CanRefresh, bool IsPending)
+@if (Model.CanRefresh)
+{
+    <button type="button"
+            class="subprofiles-refresh-btn@(Model.IsPending ? " is-pending" : "")"
+            data-refresh-subprofiles
+            data-worker-id="@Model.WorkerId"
+            data-account-id="@Model.AccountId"
+            title="@(Model.IsPending ? "Обновление запрошено — ждём воркер" : "Обновить список субпрофилей")"
+            aria-label="Обновить субпрофили">
+        <i class="fa-solid fa-arrows-rotate subprofiles-refresh-icon" aria-hidden="true"></i>
+    </button>
+}

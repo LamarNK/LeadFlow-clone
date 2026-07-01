@@ -1,0 +1,50 @@
+@model SubProfilesListViewModel
+@{
+    if (Model?.Items is null || Model.Items.Count == 0)
+    {
+        return;
+    }
+}
+<ul class="subprofiles-list">
+    @foreach (var sub in Model.Items)
+    {
+        <li class="subprofiles-item@(sub.IsCurrent ? " subprofiles-item--current" : "")@(sub.HasIssue ? " subprofiles-item--issue" : "")@(!sub.IsEnabledInPanel ? " subprofiles-item--disabled" : "")"
+            data-subprofile-id="@sub.Id">
+            <label class="subprofiles-toggle-sm" title="@(sub.IsEnabledInPanel ? "Отключить субпрофиль" : "Включить субпрофиль")">
+                <input type="checkbox"
+                       data-subprofile-toggle
+                       data-worker-id="@Model.WorkerId"
+                       data-account-id="@Model.AccountId"
+                       data-subprofile-id="@sub.Id"
+                       @(sub.IsEnabledInPanel ? "checked" : null) />
+                <span class="subprofiles-toggle-sm-slider"></span>
+            </label>
+            <div class="subprofiles-item-body">
+                <span class="subprofiles-name">
+                    @sub.Name
+                    @if (sub.IsCurrent)
+                    {
+                        <span class="subprofiles-badge">текущий</span>
+                    }
+                </span>
+                @if (!string.IsNullOrWhiteSpace(sub.Category))
+                {
+                    <span class="subprofiles-category">@sub.Category</span>
+                }
+                @if (sub.HasIssue && !string.IsNullOrWhiteSpace(sub.IssueSummary))
+                {
+                    <span class="subprofiles-issue" title="@sub.IssueSummary">@sub.IssueSummary</span>
+                    @if (sub.DiagnosticAttachmentId is not null)
+                    {
+                        <a class="subprofiles-screenshot-link"
+                           href="/Diagnostics/Image/@sub.DiagnosticAttachmentId"
+                           target="_blank"
+                           rel="noopener"
+                           title="Открыть скриншот страницы при ошибке">скрин</a>
+                    }
+                }
+            </div>
+            <span class="subprofiles-balance">@sub.BalanceText</span>
+        </li>
+    }
+</ul>

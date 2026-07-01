@@ -7,11 +7,19 @@ namespace LeadFlow.Core.Services.Avito;
 /// </summary>
 public sealed class AvitoCaptchaDetectedException : Exception
 {
-    public AvitoCaptchaDetectedException(string kind, string? url, string? html, byte[]? screenshotPng = null)
+    public AvitoCaptchaDetectedException(
+        string kind,
+        string? url,
+        string? html,
+        byte[]? screenshotPng = null,
+        string? subProfileId = null,
+        string? subProfileName = null)
         : base(BuildMessage(kind, url))
     {
         Kind = kind;
         Url = url;
+        SubProfileId = subProfileId;
+        SubProfileName = subProfileName;
         ScreenshotPng = screenshotPng is { Length: > 0 } ? screenshotPng : null;
         // Намеренно НЕ храним полный HTML в исключении — он может быть мегабайтным и попасть в логи.
         // Сохраняем только короткий префикс на случай диагностики.
@@ -29,6 +37,10 @@ public sealed class AvitoCaptchaDetectedException : Exception
     public string? HtmlPreview { get; }
 
     public byte[]? ScreenshotPng { get; }
+
+    public string? SubProfileId { get; }
+
+    public string? SubProfileName { get; }
 
     private static string BuildMessage(string kind, string? url) =>
         string.IsNullOrEmpty(url)

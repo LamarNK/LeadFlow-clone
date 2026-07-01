@@ -66,6 +66,15 @@ public sealed partial class AvitoAccount : ObservableObject
     [ObservableProperty] private int draftsCount;
     [ObservableProperty] private DateTime? adsStatsUpdatedAt;
 
+    /// <summary>Когда воркер последний раз перечитывал список суб-профилей из Avito (UTC).</summary>
+    [ObservableProperty] private DateTime? subProfilesRefreshedAt;
+
+    /// <summary>Панель запросила принудительное обновление (не сохраняется в SQLite).</summary>
+    public bool ForceSubProfilesRefresh { get; set; }
+
+    /// <summary>Id субпрофилей, отключённых в панели (не сохраняется в SQLite).</summary>
+    public HashSet<string> DisabledSubProfileIds { get; set; } = [];
+
     /// <summary>JSON-массив последних активных объявлений (вакансий), сохранённый в БД между сеансами.</summary>
     [ObservableProperty] private string activeAdsSnapshotJson = "[]";
 
@@ -222,6 +231,7 @@ public sealed partial class AvitoAccount : ObservableObject
         AdsStatsUpdatedAt = source.AdsStatsUpdatedAt;
         AvitoProfileName = source.AvitoProfileName;
         SubProfilesJson = string.IsNullOrWhiteSpace(source.SubProfilesJson) ? "[]" : source.SubProfilesJson;
+        SubProfilesRefreshedAt = source.SubProfilesRefreshedAt;
         ActiveAdsSnapshotJson = string.IsNullOrWhiteSpace(source.ActiveAdsSnapshotJson)
             ? "[]"
             : source.ActiveAdsSnapshotJson;

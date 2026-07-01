@@ -26,6 +26,14 @@ public sealed class WorkerTelemetryCollector(AppRepository repository)
             })
             .ToList();
 
+        var balances = accounts
+            .Select(a =>
+            {
+                localAccounts.TryGetValue(a.AccountId, out var local);
+                return MapBalance(a, local);
+            })
+            .ToList();
+
         var stats = await repository.GetDashboardStatsAsync(ct).ConfigureAwait(false);
         var statsDto = MapStats(stats, accounts);
 
@@ -34,7 +42,7 @@ public sealed class WorkerTelemetryCollector(AppRepository repository)
             DateTime.UtcNow,
             statsDto,
             accounts,
-            []);
+            balances);
     }
 
     private static WorkerAccountDto MapAccount(WorkerAccountConfigDto cfg, AvitoAccount? local)
@@ -54,7 +62,55 @@ public sealed class WorkerTelemetryCollector(AppRepository repository)
             string.IsNullOrWhiteSpace(local?.LastErrorMessage) ? null : local.LastErrorMessage.Trim(),
             local?.LastMonitoringAt,
             cfg.IsEnabled,
-            cfg.AdsPowerProfileId);
+            cfg.AdsPowerProfileId,
+            MapSubProfiles(local),
+            local?.SubProfilesRefreshedAt);
+    }
+
+    private static WorkerBalanceDto MapBalance(WorkerAccountDto account, AvitoAccount? local)
+    {
+        var subProfiles = account.SubProfiles ?? [];
+        if (subProfiles.Count == 0)
+        {
+            return new WorkerBalanceDto(
+                account.AccountId,
+                account.DisplayName,
+                0,
+                [new SubProfileBalanceDto("—", null)]);
+        }
+
+        var balanceItems = subProfiles
+            .Select(sp => new SubProfileBalanceDto(
+                string.IsNullOrWhiteSpace(sp.Name) ? sp.Id : sp.Name,
+                sp.Balance))
+            .ToList();
+
+        return new WorkerBalanceDto(
+            account.AccountId,
+            account.DisplayName,
+            balanceItems.Sum(x => x.Balance ?? 0m),
+            balanceItems);
+    }
+
+    private static IReadOnlyList<WorkerSubProfileDto>? MapSubProfiles(AvitoAccount? local)
+    {
+        if (local is null || local.SubProfiles.Count == 0)
+        {
+            return null;
+        }
+
+        return local.SubProfiles
+            .Select(sp => new WorkerSubProfileDto(
+                sp.Id,
+                sp.Name,
+                sp.Category,
+                sp.IsCurrent,
+                sp.Balance,
+                string.IsNullOrWhiteSpace(sp.LastIssueKind) ? null : sp.LastIssueKind,
+                string.IsNullOrWhiteSpace(sp.LastIssueMessage) ? null : sp.LastIssueMessage,
+                sp.LastIssueAt,
+                DiagnosticAttachmentId: sp.LastDiagnosticAttachmentId))
+            .ToList();
     }
 
     private static DashboardStatsDto MapStats(DashboardStats stats, IReadOnlyList<WorkerAccountDto> accounts)

@@ -20,4 +20,27 @@ public sealed class WorkerEventDetailsParserTests
     {
         Assert.Null(WorkerEventDetailsParser.TryParseAttachmentId("captcha :: url"));
     }
+
+    [Fact]
+    public void FormatForDisplay_ExtractsReadableText_FromJsonDetails()
+    {
+        var details = """
+            {
+              "attachmentId":"11111111-1111-1111-1111-111111111111",
+              "kind":"parse-error",
+              "url":"https://www.avito.ru/profile/candidates",
+              "text":"Ожидался JSON-объект откликов",
+              "subProfileName":"Служба 3"
+            }
+            """;
+
+        var formatted = WorkerEventDetailsParser.FormatForDisplay(
+            "Ошибка аккаунта Кабинет 1",
+            details);
+
+        Assert.Contains("Ожидался JSON-объект откликов", formatted);
+        Assert.Contains("Служба 3", formatted);
+        Assert.Contains("avito.ru/profile/candidates", formatted);
+        Assert.DoesNotContain("attachmentId", formatted);
+    }
 }

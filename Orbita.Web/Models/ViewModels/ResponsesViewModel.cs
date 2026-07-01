@@ -47,6 +47,7 @@ public sealed class ResponseRowViewModel
     public string City { get; init; } = string.Empty;
     public Guid AccountId { get; init; }
     public string AccountName { get; init; } = string.Empty;
+    public string? AvitoSubProfileName { get; init; }
     public Guid WorkerId { get; init; }
     public string WorkerName { get; init; } = string.Empty;
     public string Source { get; init; } = "Avito";

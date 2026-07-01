@@ -291,14 +291,8 @@ internal static class ErrorsIndexBuilder
         _ => "Низкий"
     };
 
-    private static string BuildMessage(string message, string? details)
-    {
-        if (string.IsNullOrWhiteSpace(details))
-            return message;
-        if (message.Contains(details, StringComparison.OrdinalIgnoreCase))
-            return message;
-        return $"{message} — {details}";
-    }
+    private static string BuildMessage(string message, string? details) =>
+        WorkerEventDetailsParser.FormatForDisplay(message, details);
 
     private static string FormatWorkerName(string workerDisplayName)
     {

@@ -8,9 +8,14 @@
     var installCommand = TempData["CreatedWorkerInstallCommand"] as string;
     var workersError = TempData["WorkersError"] as string;
     var workersSuccess = TempData["WorkersSuccess"] as string;
+    var snapshotUrl = Url.Action("DetailsSnapshot", "Workers", new { id = Model.WorkerId })!;
 }
 <partial name="_PageHeader" model="Model.Header" />
-<div class="orbita-main worker-detail-page">
+<div class="orbita-main worker-detail-page"
+     data-orbita-live
+     data-orbita-live-page="worker"
+     data-orbita-snapshot="@snapshotUrl"
+     data-worker-id="@Model.WorkerId">
     <nav class="orbita-breadcrumbs" aria-label="Навигация">
         @for (var i = 0; i < Model.Breadcrumbs.Count; i++)
         {
@@ -42,7 +47,7 @@
                 }
                 else
                 {
-                    <span class="status-dot @(Model.IsOnline ? "" : "offline")">
+                    <span class="status-dot @(Model.IsOnline ? "" : "offline")" data-worker-online-badge>
                         <i class="fa-solid fa-circle status-dot-icon" aria-hidden="true"></i>
                         @(Model.IsOnline ? "Онлайн" : "Оффлайн")
                     </span>
@@ -50,7 +55,9 @@
             </div>
             <p class="worker-detail-sub">
                 Последняя активность:
-                <partial name="_UtcTime" model="@(new UtcTimeDisplayModel(Model.LastActivityUtc, "time"))" />
+                <time data-worker-last-activity
+                      data-orbita-utc="@OrbitaTime.ToIsoUtc(Model.LastActivityUtc)"
+                      data-orbita-format="time"></time>
             </p>
         </div>
         <div class="worker-detail-toolbar">
@@ -150,11 +157,11 @@
             <div class="card-body worker-system-metrics">
                 <div class="worker-system-metric">
                     <span class="worker-system-label">CPU</span>
-                    <span class="worker-system-value">@(Model.CpuPercent.HasValue ? $"{Model.CpuPercent:F1}%" : "—")</span>
+                    <span class="worker-system-value" data-worker-live="cpu">@(Model.CpuPercent.HasValue ? $"{Model.CpuPercent:F1}%" : "—")</span>
                 </div>
                 <div class="worker-system-metric">
                     <span class="worker-system-label">RAM</span>
-                    <span class="worker-system-value">
+                    <span class="worker-system-value" data-worker-live="ram">
                         @if (Model.RamPercent.HasValue && Model.RamUsedMb.HasValue && Model.RamTotalMb.HasValue)
                         {
                             @($"{Model.RamPercent:F1}% ({Model.RamUsedMb} / {Model.RamTotalMb} MB)")
@@ -236,10 +243,10 @@
                 <h2>Общая информация</h2>
             </div>
             <div class="card-body">
-                <dl class="worker-info-list">
+                <dl class="worker-info-list" data-worker-info-list>
                     @foreach (var item in Model.InfoItems)
                     {
-                        <div class="worker-info-row">
+                        <div class="worker-info-row" data-worker-info-label="@item.Label">
                             <dt class="worker-info-label">@item.Label</dt>
                             <dd class="worker-info-value">
                                 @if (item.TimeValue is not null)
@@ -281,7 +288,9 @@
                 <h2>Последние события</h2>
             </div>
             <div class="card-body">
-                <partial name="_WorkerEventList" model="Model.Events" />
+                <div data-worker-events>
+                    <partial name="_WorkerEventList" model="Model.Events" />
+                </div>
                 <a class="card-footer-btn" href="@Url.Action("Index", "Events")">Показать все события</a>
             </div>
         </div>
@@ -290,10 +299,10 @@
                 <h2>Статистика за период</h2>
             </div>
             <div class="card-body">
-                <dl class="worker-stats-list">
+                <dl class="worker-stats-list" data-worker-period-stats>
                     @foreach (var stat in Model.PeriodStats)
                     {
-                        <div class="worker-stats-row">
+                        <div class="worker-stats-row" data-worker-stat-label="@stat.Label">
                             <dt class="worker-stats-label">@stat.Label</dt>
                             <dd class="worker-stats-value">@stat.Value</dd>
                         </div>
@@ -321,17 +330,16 @@
                         <th aria-hidden="true">Действия</th>
                     </tr>
                 </thead>
-                <tbody>
+                <tbody data-orbita-live-body="worker-accounts">
                 @foreach (var account in Model.Accounts)
                 {
                     var accountUrl = Url.Action("Index", "Accounts");
-                    <tr class="worker-account-row">
+                    <tr class="worker-account-row" data-account-id="@account.Id">
                         <td data-label="Вкл">
                             <form asp-action="UpdateAccount" method="post" class="worker-account-toggle-form">
                                 @Html.AntiForgeryToken()
                                 <input type="hidden" name="workerId" value="@Model.WorkerId" />
                                 <input type="hidden" name="accountId" value="@account.Id" />
-                                <input type="hidden" name="isEnabledInPanel" value="false" />
                                 <label class="worker-toggle">
                                     <input type="checkbox"
                                            name="isEnabledInPanel"
@@ -347,6 +355,33 @@
                             @if (!string.IsNullOrWhiteSpace(account.AdsPowerProfileId))
                             {
                                 <span class="worker-account-sub">AdsPower @account.AdsPowerProfileId</span>
+                            }
+                            @if (account.CanRefreshSubProfiles || account.HasSubProfiles)
+                            {
+                                <div class="subprofiles-toolbar">
+                                    @if (account.HasSubProfiles)
+                                    {
+                                        <button type="button"
+                                                class="subprofiles-toggle"
+                                                data-subprofiles-toggle
+                                                aria-expanded="false"
+                                                aria-controls="subprofiles-@account.Id">
+                                            <i class="fa-solid fa-chevron-right subprofiles-toggle-icon" aria-hidden="true"></i>
+                                            <span>@account.SubProfilesSummary</span>
+                                        </button>
+                                    }
+                                    else if (account.CanRefreshSubProfiles)
+                                    {
+                                        <span class="subprofiles-empty-hint">Субпрофили не обнаружены</span>
+                                    }
+                                    <partial name="_SubProfilesRefreshBtn" model="(Model.WorkerId, account.Id, account.CanRefreshSubProfiles, account.IsSubProfilesRefreshPending)" />
+                                </div>
+                                @if (account.HasSubProfiles)
+                                {
+                                    <div class="subprofiles-panel" id="subprofiles-@account.Id" hidden>
+                                        <partial name="_SubProfilesList" model="@(new SubProfilesListViewModel { WorkerId = Model.WorkerId, AccountId = account.Id, Items = account.SubProfiles })" />
+                                    </div>
+                                }
                             }
                         </td>
                         <td data-label="Статус">

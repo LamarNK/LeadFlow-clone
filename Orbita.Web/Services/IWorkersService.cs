@@ -24,6 +24,13 @@ public interface IWorkersService
         string? adsPowerApiKey,
         CancellationToken ct = default);
     Task<(bool Success, string? Error)> UpdateWorkerAccountAsync(Guid workerId, Guid accountId, bool isEnabled, CancellationToken ct = default);
+    Task<(bool Success, string? Error)> RequestSubProfilesRefreshAsync(Guid workerId, Guid accountId, CancellationToken ct = default);
+    Task<(bool Success, string? Error)> UpdateSubProfileEnabledAsync(
+        Guid workerId,
+        Guid accountId,
+        string subProfileId,
+        bool isEnabledInPanel,
+        CancellationToken ct = default);
     Task<(bool Success, string? Error)> SendWorkerCommandAsync(Guid workerId, string command, CancellationToken ct = default);
     Task<(bool Success, string? Error)> SetWorkerEnabledAsync(Guid workerId, bool enabled, CancellationToken ct = default);
     Task<(bool Success, string? Error)> DeleteWorkerAsync(Guid workerId, CancellationToken ct = default);

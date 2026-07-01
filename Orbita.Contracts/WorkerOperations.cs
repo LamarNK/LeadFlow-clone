@@ -16,7 +16,11 @@ public sealed record WorkerAccountConfigDto(
     string DisplayName,
     bool IsEnabled,
     string? AdsPowerApiBaseUrl,
-    string? AdsPowerApiKey);
+    string? AdsPowerApiKey,
+    DateTime? SubProfilesRefreshRequestedAtUtc = null,
+    IReadOnlyList<string>? DisabledSubProfileIds = null);
+
+public sealed record UpdateWorkerSubProfileRequest(bool IsEnabledInPanel);
 
 public static class WorkerCommands
 {
