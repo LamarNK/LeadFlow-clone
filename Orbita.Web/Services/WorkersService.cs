@@ -35,7 +35,8 @@ public sealed class WorkersService(
         {
             var q = searchQuery.Trim();
             rows = rows
-                .Where(w => w.DisplayName.Contains(q, StringComparison.OrdinalIgnoreCase))
+                .Where(w => w.DisplayName.Contains(q, StringComparison.OrdinalIgnoreCase)
+                    || w.MachineName.Contains(q, StringComparison.OrdinalIgnoreCase))
                 .ToList();
         }
 
@@ -327,6 +328,7 @@ public sealed class WorkersService(
     {
         Id = w.Id,
         DisplayName = w.DisplayName,
+        MachineName = w.MachineName,
         IsOnline = w.IsOnline,
         ActiveAccounts = w.AccountCount,
         TotalAccounts = w.AccountCount,

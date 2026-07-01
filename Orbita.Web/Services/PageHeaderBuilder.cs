@@ -43,8 +43,13 @@ public static class PageHeaderBuilder
     public static PageHeaderViewModel WorkersList() =>
         Create("Все воркеры", "Мониторинг и управление VDS-воркерами");
 
-    public static PageHeaderViewModel WorkerDetails(string displayName, DateTime updatedAtUtc) =>
-        Create(displayName, "Детали воркера и аккаунты", updatedAtUtc: updatedAtUtc);
+    public static PageHeaderViewModel WorkerDetails(string displayName, string? machineName, DateTime updatedAtUtc)
+    {
+        var subtitle = Formatting.WorkerDisplay.ShouldShowMachineName(displayName, machineName)
+            ? $"{Formatting.WorkerDisplay.FormatMachineSubtitle(machineName!)} · Детали воркера и аккаунты"
+            : "Детали воркера и аккаунты";
+        return Create(displayName, subtitle, updatedAtUtc: updatedAtUtc);
+    }
 
     public static PageHeaderViewModel AccountsList() =>
         Create("Аккаунты", "Статус, баланс и активность аккаунтов Avito");

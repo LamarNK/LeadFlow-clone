@@ -822,7 +822,7 @@ html.sidebar-collapsed .logout-form {
         0 6px 18px rgba(16, 24, 40, 0.05);
     display: flex;
     flex-direction: column;
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
     animation: kpi-card-enter 0.45s ease both;
     animation-delay: calc(var(--kpi-index) * 0.07s);
 }
@@ -834,8 +834,28 @@ html.sidebar-collapsed .logout-form {
 
 .kpi-card:hover,
 a.kpi-card:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 10px 25px rgba(16, 24, 40, 0.08);
+    border-color: #d0d5dd;
+    box-shadow:
+        0 1px 2px rgba(16, 24, 40, 0.05),
+        0 4px 14px rgba(16, 24, 40, 0.06);
+}
+
+[data-theme="dark"] .kpi-card:hover,
+[data-theme="dark"] a.kpi-card:hover {
+    border-color: #475467;
+    box-shadow:
+        0 1px 2px rgba(0, 0, 0, 0.2),
+        0 4px 14px rgba(0, 0, 0, 0.18);
+}
+
+a.kpi-card--link:hover,
+a.kpi-card--link:focus-visible {
+    border-color: #c7d7fe;
+}
+
+[data-theme="dark"] a.kpi-card--link:hover,
+[data-theme="dark"] a.kpi-card--link:focus-visible {
+    border-color: #3b4f7a;
 }
 
 a.kpi-card {
@@ -854,13 +874,13 @@ a.kpi-card:focus-visible {
     position: absolute;
     top: 16px;
     right: 16px;
-    width: 8px;
-    height: 8px;
-    border-top: 2px solid #98a2b3;
-    border-right: 2px solid #98a2b3;
+    width: 7px;
+    height: 7px;
+    border-top: 1.5px solid #98a2b3;
+    border-right: 1.5px solid #98a2b3;
     transform: rotate(45deg);
-    opacity: 0;
-    transition: opacity 0.2s ease, transform 0.2s ease;
+    opacity: 0.35;
+    transition: opacity 0.15s ease;
 }
 
 .kpi-card--link {
@@ -869,8 +889,7 @@ a.kpi-card:focus-visible {
 
 .kpi-card--link:hover::after,
 .kpi-card--link:focus-visible::after {
-    opacity: 1;
-    transform: rotate(45deg) translate(1px, -1px);
+    opacity: 0.65;
 }
 
 [data-theme="dark"] .kpi-card--link::after {
@@ -1043,7 +1062,8 @@ a.kpi-card:focus-visible {
         transform: none;
     }
 
-    .kpi-card:hover { transform: none; }
+    .kpi-card:hover,
+    a.kpi-card:hover { transform: none; }
 
     .kpi-card.orbita-live-updated,
     .card.orbita-live-updated {
@@ -1179,6 +1199,32 @@ a.kpi-card:focus-visible {
 
 .data-table .cell-name a:hover {
     color: var(--accent);
+}
+
+.cell-name-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.cell-name-primary {
+    font-size: 15px;
+    font-weight: 600;
+    color: #101828;
+}
+
+.cell-name-machine {
+    display: block;
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 1.35;
+    color: var(--text-secondary, #667085);
+    word-break: break-word;
+}
+
+[data-theme="dark"] .cell-name-primary {
+    color: var(--text-primary);
 }
 
 [data-theme="dark"] .data-table .cell-name,

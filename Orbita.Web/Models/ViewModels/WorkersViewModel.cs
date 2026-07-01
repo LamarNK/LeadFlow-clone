@@ -35,6 +35,7 @@ public sealed class WorkerRowViewModel
 {
     public Guid Id { get; init; }
     public string DisplayName { get; init; } = string.Empty;
+    public string MachineName { get; init; } = string.Empty;
     public bool IsOnline { get; init; }
     public int ActiveAccounts { get; init; }
     public int TotalAccounts { get; init; }
@@ -139,6 +140,7 @@ public sealed class WorkerDetailsViewModel
     public long? RamTotalMb { get; init; }
     public IReadOnlyList<BreadcrumbItemViewModel> Breadcrumbs { get; init; } = [];
     public string DisplayName { get; init; } = string.Empty;
+    public string MachineName { get; init; } = string.Empty;
     public bool IsOnline { get; init; }
     public bool IsEnabled { get; init; } = true;
     public DateTime? LastActivityUtc { get; init; }

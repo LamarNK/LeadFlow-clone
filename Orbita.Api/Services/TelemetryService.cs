@@ -50,8 +50,11 @@ public sealed class TelemetryService(OrbitaDbContext db, OfficeAdminService offi
             return false;
         }
 
-        worker.DisplayName = request.DisplayName.Trim();
         worker.MachineName = request.MachineName.Trim();
+        if (string.IsNullOrWhiteSpace(worker.DisplayName))
+        {
+            worker.DisplayName = request.DisplayName.Trim();
+        }
         worker.AppVersion = request.AppVersion.Trim();
         worker.MonitoringStatus = request.MonitoringStatus;
         worker.MonitoringStatusMessage = request.MonitoringStatusMessage;

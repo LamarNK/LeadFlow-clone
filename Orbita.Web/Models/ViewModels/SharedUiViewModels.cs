@@ -26,6 +26,13 @@ public enum KpiCardLayout
     StatStacked
 }
 
+public sealed class WorkerNameCellViewModel
+{
+    public string DisplayName { get; init; } = string.Empty;
+    public string MachineName { get; init; } = string.Empty;
+    public string? Url { get; init; }
+}
+
 public sealed class KpiCardPartialViewModel
 {
     public DashboardKpiCardViewModel Card { get; init; } = new();

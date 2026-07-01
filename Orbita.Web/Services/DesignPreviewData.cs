@@ -59,7 +59,8 @@ internal static class DesignPreviewData
         {
             var q = searchQuery.Trim();
             rows = rows
-                .Where(w => w.DisplayName.Contains(q, StringComparison.OrdinalIgnoreCase))
+                .Where(w => w.DisplayName.Contains(q, StringComparison.OrdinalIgnoreCase)
+                    || w.MachineName.Contains(q, StringComparison.OrdinalIgnoreCase))
                 .ToList();
         }
 
@@ -150,6 +151,7 @@ internal static class DesignPreviewData
         {
             Id = PreviewWorkerIds[i],
             DisplayName = $"Worker #{i + 1}",
+            MachineName = $"WIN-W{(i + 1):D2}",
             IsOnline = online[i],
             UpdateAvailable = i < 3,
             LatestReleaseVersion = "1.0.0.2",
@@ -272,6 +274,7 @@ internal static class DesignPreviewData
                 {
                     Id = WorkerMoscowId,
                     DisplayName = "Worker #1",
+                    MachineName = "WIN-W01",
                     IsOnline = true,
                     ActiveAccounts = 10,
                     TotalAccounts = 10,
@@ -284,6 +287,7 @@ internal static class DesignPreviewData
                 {
                     Id = WorkerSpbId,
                     DisplayName = "Worker #2",
+                    MachineName = "WIN-W02",
                     IsOnline = true,
                     ActiveAccounts = 10,
                     TotalAccounts = 10,
@@ -296,6 +300,7 @@ internal static class DesignPreviewData
                 {
                     Id = WorkerKazanId,
                     DisplayName = "Worker #3",
+                    MachineName = "WIN-W03",
                     IsOnline = true,
                     ActiveAccounts = 10,
                     TotalAccounts = 10,

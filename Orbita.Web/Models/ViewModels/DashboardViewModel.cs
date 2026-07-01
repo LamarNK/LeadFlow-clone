@@ -39,6 +39,7 @@ public sealed class DashboardWorkerRowViewModel
 {
     public Guid Id { get; init; }
     public string DisplayName { get; init; } = string.Empty;
+    public string MachineName { get; init; } = string.Empty;
     public bool IsOnline { get; init; }
     public int ActiveAccounts { get; init; }
     public int TotalAccounts { get; init; }

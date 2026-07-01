@@ -72,7 +72,9 @@
                         {
                             var workerDetailsUrl = Url.Action("Details", "Workers", new { id = w.Id });
                             <tr>
-                                <td class="cell-name" data-label="Воркер"><a href="@workerDetailsUrl">@w.DisplayName</a></td>
+                                <td class="cell-name" data-label="Воркер">
+                                    <partial name="_WorkerNameCell" model="@(new WorkerNameCellViewModel { DisplayName = w.DisplayName, MachineName = w.MachineName, Url = workerDetailsUrl })" />
+                                </td>
                                 <td data-label="Статус">
                                     <span class="status-dot @(w.IsOnline ? "" : "offline")">
                                         <i class="fa-solid fa-circle status-dot-icon" aria-hidden="true"></i>

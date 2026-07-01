@@ -1,0 +1,18 @@
+@model WorkerNameCellViewModel
+@{
+    var showMachine = WorkerDisplay.ShouldShowMachineName(Model.DisplayName, Model.MachineName);
+}
+<div class="cell-name-stack">
+    @if (!string.IsNullOrWhiteSpace(Model.Url))
+    {
+        <a href="@Model.Url">@Model.DisplayName</a>
+    }
+    else
+    {
+        <span class="cell-name-primary">@Model.DisplayName</span>
+    }
+    @if (showMachine)
+    {
+        <span class="cell-name-machine">@Model.MachineName</span>
+    }
+</div>

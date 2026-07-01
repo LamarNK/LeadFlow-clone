@@ -41,7 +41,7 @@ internal static class WorkerDetailsBuilder
 
         return new WorkerDetailsViewModel
         {
-            Header = PageHeaderBuilder.WorkerDetails(worker.DisplayName, DateTime.UtcNow),
+            Header = PageHeaderBuilder.WorkerDetails(worker.DisplayName, worker.MachineName, DateTime.UtcNow),
             WorkerId = worker.Id,
             Breadcrumbs =
             [
@@ -49,6 +49,7 @@ internal static class WorkerDetailsBuilder
                 new() { Label = worker.DisplayName, IsActive = true }
             ],
             DisplayName = worker.DisplayName,
+            MachineName = worker.MachineName,
             IsOnline = worker.IsOnline,
             IsEnabled = worker.IsEnabled,
             LastActivityUtc = lastActivity,
@@ -176,7 +177,8 @@ internal static class WorkerDetailsBuilder
     [
         new() { Label = "Статус", Value = worker.IsOnline ? "Онлайн" : "Оффлайн" },
         new() { Label = "ID воркера", Value = worker.Id.ToString() },
-        new() { Label = "Имя сервера", Value = worker.MachineName },
+        new() { Label = "Имя воркера", Value = worker.DisplayName },
+        new() { Label = "Имя ПК", Value = string.IsNullOrWhiteSpace(worker.MachineName) ? "—" : worker.MachineName },
         new() { Label = "IP-адрес", Value = extra.IpAddress },
         new()
         {

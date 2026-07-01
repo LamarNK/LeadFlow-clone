@@ -499,8 +499,15 @@
                 : '—';
 
             var detailsUrl = workerDetailsUrl(w.id);
+            var machineName = (w.machineName || '').trim();
+            var showMachine = machineName
+                && machineName.localeCompare((w.displayName || '').trim(), undefined, { sensitivity: 'accent' }) !== 0;
+            var nameCell = '<div class="cell-name-stack">' +
+                '<a href="' + escapeHtml(detailsUrl) + '">' + escapeHtml(w.displayName) + '</a>' +
+                (showMachine ? '<span class="cell-name-machine">' + escapeHtml(machineName) + '</span>' : '') +
+                '</div>';
             return '<tr>' +
-                '<td class="cell-name" data-label="Воркер"><a href="' + escapeHtml(detailsUrl) + '">' + escapeHtml(w.displayName) + '</a></td>' +
+                '<td class="cell-name" data-label="Воркер">' + nameCell + '</td>' +
                 '<td data-label="Статус"><span class="status-dot' + statusClass + '"><i class="fa-solid fa-circle status-dot-icon" aria-hidden="true"></i>' + statusText + '</span></td>' +
                 '<td data-label="Аккаунтов">' + w.activeAccounts + ' / ' + w.totalAccounts + '</td>' +
                 '<td data-label="Откликов">' + w.responses + '</td>' +

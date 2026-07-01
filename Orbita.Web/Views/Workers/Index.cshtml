@@ -143,7 +143,7 @@
                     var detailsUrl = Url.Action("Details", new { id = w.Id });
                     <tr class="workers-row@(!w.IsEnabled ? " workers-row--disabled" : "")" data-href="@detailsUrl">
                         <td class="cell-name" data-label="Воркер">
-                            <a href="@detailsUrl">@w.DisplayName</a>
+                            <partial name="_WorkerNameCell" model="@(new WorkerNameCellViewModel { DisplayName = w.DisplayName, MachineName = w.MachineName, Url = detailsUrl })" />
                             @if (!w.IsEnabled)
                             {
                                 <span class="workers-status-badge workers-status-badge--disabled">Приостановлен</span>

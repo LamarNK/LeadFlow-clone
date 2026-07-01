@@ -39,6 +39,7 @@ public sealed class DashboardService(OrbitaApiClient api, IOptions<DesignPreview
             {
                 Id = w.Id,
                 DisplayName = w.DisplayName,
+                MachineName = w.MachineName,
                 IsOnline = w.IsOnline,
                 ActiveAccounts = w.AccountCount,
                 TotalAccounts = w.AccountCount,
