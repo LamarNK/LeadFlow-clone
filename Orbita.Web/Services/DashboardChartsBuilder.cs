@@ -9,24 +9,19 @@ internal static class DashboardChartsBuilder
         IReadOnlyList<DashboardKpiCardViewModel> kpiCards,
         IReadOnlyList<DashboardChartPointViewModel> hourlyChart,
         AccountStatsViewModel accountStats,
-        IReadOnlyList<ActivityPointDto>? dailyPoints = null)
+        IReadOnlyList<ActivityPointDto>? dailyPoints = null,
+        bool useHourlyLabels = false)
     {
-        var sparklineLabels = dailyPoints is { Count: > 0 }
-            ? dailyPoints.Select(p => p.Label).ToList()
-            : ResampleLabels(
-                hourlyChart.Select(p => p.Label).ToList(),
-                SparklineGenerator.PointCount);
+        var labelSource = useHourlyLabels || dailyPoints is not { Count: > 0 }
+            ? hourlyChart.Select(p => p.Label).ToList()
+            : dailyPoints.Select(p => p.Label).ToList();
+        var sparklineLabels = ResampleLabels(labelSource, SparklineGenerator.PointCount);
 
         return new DashboardChartsViewModel
         {
-            Sparklines = kpiCards.Select(k => new SparklineChartViewModel
-            {
-                Color = k.SparkColor,
-                MetricLabel = TooltipLabelFor(k.Label),
-                Labels = sparklineLabels,
-                Values = k.Sparkline,
-                TooltipValues = BuildTooltipValues(k.Label, (int)Math.Round(k.CountValue), hourlyChart, SparklineGenerator.PointCount)
-            }).ToList(),
+            Sparklines = kpiCards
+                .Select(k => BuildKpiChart(k, sparklineLabels))
+                .ToList(),
             HourlyResponses = new LineChartViewModel
             {
                 Labels = hourlyChart.Select(p => p.Label).ToList(),
@@ -43,6 +38,60 @@ internal static class DashboardChartsBuilder
         };
     }
 
+    private static SparklineChartViewModel BuildKpiChart(
+        DashboardKpiCardViewModel card,
+        IReadOnlyList<string> sparklineLabels) =>
+        card.Segments.Count > 0
+            ? new SparklineChartViewModel
+            {
+                Kind = "segments",
+                MetricLabel = TooltipLabelFor(card.Label),
+                Segments = card.Segments
+            }
+            : new SparklineChartViewModel
+            {
+                Kind = "sparkline",
+                Color = card.SparkColor,
+                MetricLabel = TooltipLabelFor(card.Label),
+                Labels = sparklineLabels,
+                Values = card.Sparkline,
+                TooltipValues = card.Sparkline
+            };
+
+    internal static IReadOnlyList<KpiChartSegmentViewModel> BuildAccountSegments(AccountStatsViewModel stats)
+    {
+        var segments = new List<KpiChartSegmentViewModel>
+        {
+            new() { Label = "Активны", Value = stats.Active, Color = "#22c55e" },
+            new() { Label = "Неактивны", Value = stats.Inactive, Color = "#94a3b8" },
+            new() { Label = "Заблокированы", Value = stats.Blocked, Color = "#ef4444" },
+            new() { Label = "Ошибки", Value = stats.Errors, Color = "#f59e0b" }
+        };
+
+        var withValues = segments.Where(s => s.Value > 0).ToList();
+        if (withValues.Count > 0)
+            return withValues;
+
+        return [new() { Label = "Нет данных", Value = 1, Color = "#e5e7eb" }];
+    }
+
+    internal static IReadOnlyList<KpiChartSegmentViewModel> BuildWorkerSegments(int onlineWorkers, int totalWorkers)
+    {
+        if (totalWorkers <= 0)
+            return [new() { Label = "Нет данных", Value = 1, Color = "#e5e7eb" }];
+
+        var offline = Math.Max(0, totalWorkers - onlineWorkers);
+        var segments = new List<KpiChartSegmentViewModel>();
+        if (onlineWorkers > 0)
+            segments.Add(new() { Label = "Онлайн", Value = onlineWorkers, Color = "#2563eb" });
+        if (offline > 0)
+            segments.Add(new() { Label = "Офлайн", Value = offline, Color = "#94a3b8" });
+
+        return segments.Count > 0
+            ? segments
+            : [new() { Label = "Нет данных", Value = 1, Color = "#e5e7eb" }];
+    }
+
     public static IReadOnlyList<DashboardChartPointViewModel> FromDailyActivity(
         IReadOnlyList<ActivityPointDto> daily,
         int axisEvery = 1)
@@ -53,7 +102,7 @@ internal static class DashboardChartsBuilder
         return daily.Select((p, i) => new DashboardChartPointViewModel
         {
             Label = string.IsNullOrWhiteSpace(p.Label) ? $"День {i + 1}" : p.Label,
-            Value = Math.Clamp(p.NewCount, 0, 100),
+            Value = Math.Max(0, p.NewCount),
             ShowAxisLabel = i % axisEvery == 0 || i == daily.Count - 1
         }).ToList();
     }
@@ -68,7 +117,7 @@ internal static class DashboardChartsBuilder
         var points = hourly.Select((p, i) => new DashboardChartPointViewModel
         {
             Label = string.IsNullOrWhiteSpace(p.Label) ? $"{i:00}:00" : p.Label,
-            Value = Math.Clamp(p.NewCount, 0, 100),
+            Value = Math.Max(0, p.NewCount),
             ShowAxisLabel = i % axisEvery == 0
         }).ToList();
 
@@ -101,51 +150,6 @@ internal static class DashboardChartsBuilder
             var pos = i * (source.Count - 1) / (double)Math.Max(1, count - 1);
             var idx = (int)Math.Round(pos);
             result[i] = source[Math.Min(idx, source.Count - 1)];
-        }
-
-        return result;
-    }
-
-    private static IReadOnlyList<int> BuildTooltipValues(
-        string kpiLabel,
-        int countValue,
-        IReadOnlyList<DashboardChartPointViewModel> hourlyChart,
-        int count)
-    {
-        if (kpiLabel is "Аккаунтов активно" or "Воркеров онлайн")
-            return Enumerable.Repeat(countValue, count).ToList();
-
-        var hourlyValues = hourlyChart.Count > 0
-            ? hourlyChart.Select(p => p.Value).ToList()
-            : [];
-
-        var resampled = ResampleValues(hourlyValues, count);
-        if (kpiLabel == "Откликов всего")
-            return resampled;
-
-        var sum = resampled.Sum();
-        if (sum <= 0)
-            return resampled;
-
-        return resampled
-            .Select(v => Math.Max(0, (int)Math.Round(v * countValue / (double)sum)))
-            .ToList();
-    }
-
-    private static IReadOnlyList<int> ResampleValues(IReadOnlyList<int> source, int count)
-    {
-        if (source.Count == 0)
-            return Enumerable.Repeat(0, count).ToList();
-
-        var result = new int[count];
-        for (var i = 0; i < count; i++)
-        {
-            var pos = i * (source.Count - 1) / (double)Math.Max(1, count - 1);
-            var idx = (int)Math.Floor(pos);
-            var frac = pos - idx;
-            var a = source[Math.Min(idx, source.Count - 1)];
-            var b = source[Math.Min(idx + 1, source.Count - 1)];
-            result[i] = (int)Math.Round(a + (b - a) * frac);
         }
 
         return result;

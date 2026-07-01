@@ -19,10 +19,10 @@ else
                     <i class="@icon" aria-hidden="true"></i>
                 </div>
                 <div class="dash-event-body">
-                    <div class="dash-event-title">@evt.Message</div>
+                    <div class="dash-event-title" title="@evt.Message">@evt.Message</div>
                     @if (!string.IsNullOrWhiteSpace(evt.Subtitle))
                     {
-                        <div class="dash-event-subtitle">@evt.Subtitle</div>
+                        <div class="dash-event-subtitle" title="@evt.Subtitle">@evt.Subtitle</div>
                     }
                 </div>
                 <div class="dash-event-side">

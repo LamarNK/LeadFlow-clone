@@ -72,9 +72,11 @@ public sealed class DashboardQueryService(
         int totalToday = responseStats.TotalToday;
         int sentToCrm = responseStats.Sent;
         int duplicates = responseStats.Duplicates;
-        int errors = responseStats.Errors;
         int inProgress = responseStats.InProgress;
         int actionRequired = responseStats.ActionRequired;
+
+        var workerEventErrors = await ComputeWorkerEventErrorStatsAsync(workerIds, todayStart, ct);
+        int errors = workerEventErrors.TodayCount;
 
         int connectedAccounts = statsList.Sum(s => s.ConnectedAccounts);
         int requiresAuth = statsList.Sum(s => s.RequiresAuthorization);
@@ -123,8 +125,12 @@ public sealed class DashboardQueryService(
             ActiveAdsCount: activeAds,
             BlockedAdsCount: blockedAds,
             TotalBalance: balances.Sum(b => b.TotalBalance),
-            HourlyActivity: AggregateHourly(statsList),
-            WeeklyByDayActivity: AggregateWeekly(statsList),
+            HourlyActivity: WorkerEventErrorStatsHelper.ApplyHourlyErrors(
+                AggregateHourly(statsList),
+                workerEventErrors.Hourly),
+            WeeklyByDayActivity: WorkerEventErrorStatsHelper.MergeDailyErrors(
+                AggregateWeekly(statsList),
+                workerEventErrors.Daily),
             AggregatedAtUtc: nowUtc);
 
         // Store in short cache
@@ -163,23 +169,7 @@ public sealed class DashboardQueryService(
             .ToListAsync(ct);
 
         var workerIds = workers.Select(w => w.Id).ToList();
-        var accountRows = await db.WorkerAccounts
-            .AsNoTracking()
-            .Where(x => workerIds.Contains(x.WorkerId))
-            .Select(x => new { x.WorkerId, x.Status, x.IsEnabledInPanel })
-            .ToListAsync(ct);
-
-        var accountCounts = accountRows
-            .GroupBy(x => x.WorkerId)
-            .ToDictionary(
-                g => g.Key,
-                g => (
-                    Total: g.Count(),
-                    Active: g.Count(a => AccountDashboardStatusClassifier.Classify(a.Status, a.IsEnabledInPanel)
-                        == AccountDashboardCategory.Active)));
-
-        // Real per-worker today counts from CandidateResponses
-        var workerTodayStats = await ComputeWorkerTodayStatsAsync(workerIds, todayStart, ct);
+        var operationalStats = await ComputeWorkerOperationalStatsAsync(workerIds, todayStart, ct);
 
         var latestStats = await db.WorkerSnapshots
             .AsNoTracking()
@@ -199,9 +189,9 @@ public sealed class DashboardQueryService(
                 stats = JsonSerializer.Deserialize<DashboardStatsDto>(json, JsonOptions);
             }
 
-            var today = workerTodayStats.TryGetValue(w.Id, out var s) ? s : (Total: 0, Errors: 0);
+            operationalStats.TryGetValue(w.Id, out var op);
+            op ??= WorkerOperationalStats.Empty;
             var updateAvailable = AppVersionHelper.IsNewer(latestReleaseVersion, w.AppVersion);
-            accountCounts.TryGetValue(w.Id, out var counts);
             return new WorkerListItem(
                 w.Id,
                 w.DisplayName,
@@ -212,15 +202,16 @@ public sealed class DashboardQueryService(
                 w.IsMonitoringActive,
                 WorkerOnlineRules.IsOnline(w.LastSeenAtUtc, nowUtc),
                 w.LastSeenAtUtc,
-                counts.Total,
-                today.Total,   // real TotalToday from responses
-                today.Errors,  // real Errors (incl. ActionRequired)
+                op.TotalAccounts,
+                op.TodayResponses,
+                op.TodayDuplicates,
+                op.TodayEventErrors,
                 updateAvailable,
                 latestReleaseVersion,
                 w.OfficeId,
                 w.OfficeName,
                 w.IsEnabled,
-                counts.Active);
+                op.ActiveAccounts);
         }).ToList();
     }
 
@@ -255,6 +246,11 @@ public sealed class DashboardQueryService(
             balances = JsonSerializer.Deserialize<List<WorkerBalanceDto>>(latestSnapshot.BalancesJson, JsonOptions) ?? [];
         }
 
+        var todayStart = nowUtc.Date;
+        var operationalStats = await ComputeWorkerOperationalStatsAsync([workerId], todayStart, ct);
+        operationalStats.TryGetValue(workerId, out var op);
+        op ??= WorkerOperationalStats.Empty;
+
         return new WorkerDetail(
             worker.Id,
             worker.DisplayName,
@@ -279,7 +275,12 @@ public sealed class DashboardQueryService(
             worker.AgentVersion,
             worker.AdsPowerApiBaseUrl,
             worker.AdsPowerApiKey,
-            worker.IsEnabled);
+            worker.IsEnabled,
+            op.TodayResponses,
+            op.TodayDuplicates,
+            op.TodayEventErrors,
+            op.ActiveAccounts,
+            op.TotalAccounts);
     }
 
     public async Task<IReadOnlyList<WorkerAccountDto>> GetWorkerAccountsAsync(
@@ -292,6 +293,7 @@ public sealed class DashboardQueryService(
             return [];
         }
 
+        var todayStart = DateTime.UtcNow.Date;
         var rows = await db.WorkerAccounts
             .AsNoTracking()
             .Where(x => x.WorkerId == workerId)
@@ -315,22 +317,59 @@ public sealed class DashboardQueryService(
             })
             .ToListAsync(ct);
 
+        var accountIds = rows.Select(x => x.AccountId).ToList();
+        var responseStats = accountIds.Count == 0
+            ? new Dictionary<Guid, (int Total, int Duplicates)>()
+            : await db.CandidateResponses
+                .AsNoTracking()
+                .Where(x => x.WorkerId == workerId && accountIds.Contains(x.AccountId) && x.CreatedAt >= todayStart)
+                .GroupBy(x => x.AccountId)
+                .Select(g => new
+                {
+                    g.Key,
+                    Total = g.Count(),
+                    Duplicates = g.Count(x => x.Status == ResponseStatuses.Duplicate)
+                })
+                .ToDictionaryAsync(x => x.Key, x => (x.Total, x.Duplicates), ct);
+
+        var eventStats = accountIds.Count == 0
+            ? new Dictionary<Guid, int>()
+            : await db.WorkerEvents
+                .AsNoTracking()
+                .Where(x => x.WorkerId == workerId
+                    && x.AccountId != null
+                    && accountIds.Contains(x.AccountId.Value)
+                    && !x.IsDismissed
+                    && x.CreatedAtUtc >= todayStart
+                    && (x.Level == "Error" || x.Level == "Warning"))
+                .GroupBy(x => x.AccountId!.Value)
+                .Select(g => new { AccountId = g.Key, Count = g.Count() })
+                .ToDictionaryAsync(x => x.AccountId, x => x.Count, ct);
+
         return rows
-            .Select(x => new WorkerAccountDto(
-                x.AccountId,
-                x.DisplayName,
-                x.Status,
-                x.IsEnabledInPanel,
-                x.ActiveAdsCount,
-                x.BlockedCount,
-                x.DraftsCount,
-                x.LastErrorMessage,
-                x.LastMonitoringAt,
-                x.IsEnabledInPanel,
-                x.AdsPowerProfileId,
-                DeserializeSubProfiles(x.SubProfilesJson, x.SubProfilesDisabledIdsJson),
-                x.SubProfilesRefreshedAtUtc,
-                x.SubProfilesRefreshRequestedAtUtc))
+            .Select(x =>
+            {
+                responseStats.TryGetValue(x.AccountId, out var responses);
+                eventStats.TryGetValue(x.AccountId, out var eventErrors);
+                return new WorkerAccountDto(
+                    x.AccountId,
+                    x.DisplayName,
+                    x.Status,
+                    x.IsEnabledInPanel,
+                    x.ActiveAdsCount,
+                    x.BlockedCount,
+                    x.DraftsCount,
+                    x.LastErrorMessage,
+                    x.LastMonitoringAt,
+                    x.IsEnabledInPanel,
+                    x.AdsPowerProfileId,
+                    DeserializeSubProfiles(x.SubProfilesJson, x.SubProfilesDisabledIdsJson),
+                    x.SubProfilesRefreshedAtUtc,
+                    x.SubProfilesRefreshRequestedAtUtc,
+                    responses.Total,
+                    responses.Duplicates,
+                    eventErrors);
+            })
             .ToList();
     }
 
@@ -463,11 +502,72 @@ public sealed class DashboardQueryService(
         return (totalToday, sent, duplicates, errors + actionReq, inProgress, actionReq);
     }
 
-    // Per-worker today stats for list view (TotalToday + Errors for WorkerListItem)
-    private async Task<Dictionary<Guid, (int Total, int Errors)>> ComputeWorkerTodayStatsAsync(
+    private async Task<WorkerEventErrorStats> ComputeWorkerEventErrorStatsAsync(
+        HashSet<Guid> workerIds,
+        DateTime todayStartUtc,
+        CancellationToken ct)
+    {
+        if (workerIds.Count == 0)
+            return WorkerEventErrorStats.Empty;
+
+        var rangeStart = todayStartUtc.AddDays(-WorkerEventErrorStatsHelper.DailyLookbackDays);
+        var rows = await db.WorkerEvents
+            .AsNoTracking()
+            .Where(x => workerIds.Contains(x.WorkerId) && !x.IsDismissed)
+            .Where(x => x.CreatedAtUtc >= rangeStart)
+            .Where(x => x.Level == "Error" || x.Level == "Warning")
+            .Select(x => new { x.WorkerId, x.CreatedAtUtc })
+            .ToListAsync(ct);
+
+        return WorkerEventErrorStatsHelper.Compute(
+            rows.Select(x => (x.WorkerId, x.CreatedAtUtc)),
+            todayStartUtc);
+    }
+
+    private static Dictionary<Guid, (int Total, int Active)> BuildAccountCounts(
+        IEnumerable<(Guid WorkerId, string Status, bool IsEnabledInPanel)> accountRows) =>
+        accountRows
+            .GroupBy(x => x.WorkerId)
+            .ToDictionary(
+                g => g.Key,
+                g => (
+                    Total: g.Count(),
+                    Active: g.Count(a => AccountDashboardStatusClassifier.Classify(a.Status, a.IsEnabledInPanel)
+                        == AccountDashboardCategory.Active)));
+
+    private async Task<Dictionary<Guid, WorkerOperationalStats>> ComputeWorkerOperationalStatsAsync(
+        IReadOnlyList<Guid> workerIds,
+        DateTime todayStartUtc,
+        CancellationToken ct)
+    {
+        if (workerIds.Count == 0)
+            return [];
+
+        var accountRows = await db.WorkerAccounts
+            .AsNoTracking()
+            .Where(x => workerIds.Contains(x.WorkerId))
+            .Select(x => new { x.WorkerId, x.Status, x.IsEnabledInPanel })
+            .ToListAsync(ct);
+
+        var accountCounts = BuildAccountCounts(
+            accountRows.Select(x => (x.WorkerId, x.Status, x.IsEnabledInPanel)));
+        var responseStats = await ComputeWorkerTodayStatsAsync(workerIds, todayStartUtc, ct);
+        var workerEventErrors = await ComputeWorkerEventErrorStatsAsync(workerIds.ToHashSet(), todayStartUtc, ct);
+
+        return WorkerOperationalStatsHelper.Merge(
+            workerIds,
+            responseStats.ToDictionary(
+                x => x.Key,
+                x => (x.Value.Total, x.Value.Duplicates, x.Value.Errors)),
+            workerEventErrors.PerWorkerToday,
+            accountCounts);
+    }
+
+    // Per-worker today response totals.
+    private async Task<Dictionary<Guid, (int Total, int Duplicates, int Errors)>> ComputeWorkerTodayStatsAsync(
         IReadOnlyList<Guid> workerIds, DateTime todayStartUtc, CancellationToken ct)
     {
-        var result = new Dictionary<Guid, (int Total, int Errors)>();
+        var result = new Dictionary<Guid, (int Total, int Duplicates, int Errors)>();
         if (workerIds.Count == 0) return result;
 
         var idSet = workerIds.ToHashSet();
@@ -478,16 +578,16 @@ public sealed class DashboardQueryService(
             {
                 WorkerId = g.Key,
                 Total = g.Count(),
+                Duplicates = g.Count(x => x.Status == ResponseStatuses.Duplicate),
                 Errors = g.Count(x => x.Status == ResponseStatuses.Error || x.Status == ResponseStatuses.ActionRequired)
             })
             .ToListAsync(ct);
 
         foreach (var r in rows)
-            result[r.WorkerId] = (Total: r.Total, Errors: r.Errors);
+            result[r.WorkerId] = (Total: r.Total, Duplicates: r.Duplicates, Errors: r.Errors);
 
-        // Ensure all requested workers have entry
         foreach (var wid in workerIds)
-            if (!result.ContainsKey(wid)) result[wid] = (Total: 0, Errors: 0);
+            if (!result.ContainsKey(wid)) result[wid] = (Total: 0, Duplicates: 0, Errors: 0);
 
         return result;
     }

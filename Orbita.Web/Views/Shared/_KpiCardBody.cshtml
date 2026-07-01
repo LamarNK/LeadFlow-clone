@@ -1,8 +1,13 @@
 @model KpiCardPartialViewModel
+@using System.Globalization
 @{
     var card = Model.Card;
     var isAvgCard = card.Label == "Среднее время отклика";
     var useCaption = Model.Layout == KpiCardLayout.StatStacked && (isAvgCard || card.Delta == "За выбранный период");
+    var hasSegments = card.Segments.Count > 0;
+    var segmentTotal = hasSegments ? card.Segments.Sum(s => s.Value) : 0;
+    var hasSegmentData = segmentTotal > 0
+        && !(card.Segments.Count == 1 && card.Segments[0].Label == "Нет данных");
 }
 <header class="kpi-card-head">
     <div class="kpi-icon-box kpi-icon-box--@card.IconTone">
@@ -18,8 +23,27 @@
               data-kpi-suffix="@(card.ValueSuffix ?? "")">0@(card.ValueSuffix)</span>
         <span class="kpi-delta-pill kpi-delta-@card.DeltaTone">@card.Delta</span>
     </div>
-    <div class="kpi-sparkline-wrap">
-        <canvas data-sparkline-index="@Model.Index" aria-hidden="true"></canvas>
+    <div class="kpi-sparkline-wrap@(hasSegments ? " kpi-sparkline-wrap--segments" : "")">
+        @if (hasSegments)
+        {
+            <div class="kpi-segment-track" data-kpi-segment-track role="img" aria-label="@card.Label">
+                @foreach (var segment in card.Segments)
+                {
+                    var pct = hasSegmentData
+                        ? segment.Value * 100.0 / segmentTotal
+                        : 100.0;
+                    <span class="kpi-segment-piece"
+                          style="width: @pct.ToString("0.####", CultureInfo.InvariantCulture)%; background-color: @segment.Color"
+                          title="@segment.Label: @segment.Value"
+                          data-segment-label="@segment.Label"
+                          data-segment-value="@segment.Value"></span>
+                }
+            </div>
+        }
+        else
+        {
+            <canvas data-sparkline-index="@Model.Index" aria-hidden="true"></canvas>
+        }
     </div>
 }
 else if (Model.Layout == KpiCardLayout.Stat)

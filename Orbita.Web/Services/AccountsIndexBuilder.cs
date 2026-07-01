@@ -52,12 +52,13 @@ internal static class AccountsIndexBuilder
         WorkerAccountDto account,
         Guid workerId,
         string workerName,
-        decimal balance = 0,
-        int responses = 0,
-        int errors = 0)
+        decimal balance = 0)
     {
-        var (label, tone) = MapStatus(account.Status, account.IsEnabled);
-        var unique = Math.Max(0, responses - errors / 2);
+        var (label, tone) = AccountStatusMapper.ForAccountsPage(account.Status, account.IsEnabledInPanel);
+        var responses = account.TodayResponses;
+        var duplicates = account.TodayDuplicates;
+        var errors = account.TodayEventErrors;
+        var unique = Math.Max(0, responses - duplicates);
         var hasError = !string.IsNullOrWhiteSpace(account.LastErrorMessage);
         var subProfiles = SubProfileViewModelMapper.Map(account.SubProfiles);
         return new AccountRowViewModel
@@ -84,24 +85,6 @@ internal static class AccountsIndexBuilder
         };
     }
 
-    public static (string Label, string Tone) MapStatus(string status, bool isEnabled)
-    {
-        if (status.Equals("Blocked", StringComparison.OrdinalIgnoreCase))
-            return ("Заблокирован", "blocked");
-
-        if (status.Equals("Error", StringComparison.OrdinalIgnoreCase)
-            || status.Equals("RequiresLogin", StringComparison.OrdinalIgnoreCase)
-            || status.Equals("RequiresManualAction", StringComparison.OrdinalIgnoreCase))
-            return ("Ошибка", "error");
-
-        if (!isEnabled
-            || status.Equals("Paused", StringComparison.OrdinalIgnoreCase)
-            || status.Equals("Offline", StringComparison.OrdinalIgnoreCase))
-            return ("Неактивен", "inactive");
-
-        return ("Активен", "active");
-    }
-
     private static IReadOnlyList<AccountRowViewModel> FilterRows(
         IReadOnlyList<AccountRowViewModel> rows,
         string? searchQuery,
@@ -122,7 +105,7 @@ internal static class AccountsIndexBuilder
             "active" => query.Where(a => a.StatusTone == "active"),
             "inactive" => query.Where(a => a.StatusTone == "inactive"),
             "blocked" => query.Where(a => a.StatusTone == "blocked"),
-            "errors" => query.Where(a => a.StatusTone == "error" || !string.IsNullOrWhiteSpace(a.LastErrorMessage)),
+            "errors" => query.Where(a => a.StatusTone == "error" || a.Errors > 0),
             _ => query
         };
 

@@ -27,9 +27,14 @@ public sealed class DashboardService(OrbitaApiClient api, IOptions<DesignPreview
         var events = await api.GetEventsAsync(limit: 5, ct: ct) ?? [];
         var accountStats = await BuildAccountStatsAsync(workers, summary, ct);
         var periodStats = AggregatePeriodStats(summary, period);
-        var kpiCards = BuildKpiCards(summary, periodStats, period);
+        var kpiCards = BuildKpiCards(summary, periodStats, period, accountStats);
         var responseChart = BuildResponseChart(summary, period, periodStats);
-        var charts = DashboardChartsBuilder.FromPresentation(kpiCards, responseChart, accountStats, periodStats.DailyPoints);
+        var charts = DashboardChartsBuilder.FromPresentation(
+            kpiCards,
+            responseChart,
+            accountStats,
+            periodStats.DailyPoints,
+            period.IsTodayOnly);
 
         return new DashboardViewModel
         {
@@ -43,21 +48,13 @@ public sealed class DashboardService(OrbitaApiClient api, IOptions<DesignPreview
                 IsOnline = w.IsOnline,
                 ActiveAccounts = w.ActiveAccountCount,
                 TotalAccounts = w.AccountCount,
-                Responses = period.IsTodayOnly ? w.TotalToday : 0,
-                Duplicates = 0,
+                Responses = w.TotalToday,
+                Duplicates = w.DuplicatesToday,
                 Errors = w.Errors,
                 LastActivityUtc = w.LastSeenAtUtc
             }).ToList(),
             HourlyChart = responseChart,
-            Events = events.Select(e => new DashboardEventRowViewModel
-            {
-                Message = e.Message,
-                Subtitle = !string.IsNullOrWhiteSpace(e.Details) ? e.Details : e.AccountId.HasValue ? "Аккаунт" : string.Empty,
-                TimeUtc = e.CreatedAtUtc,
-                WorkerName = e.WorkerDisplayName,
-                Level = e.Level.Equals("Error", StringComparison.OrdinalIgnoreCase) ? "error"
-                    : e.Level.Equals("Warning", StringComparison.OrdinalIgnoreCase) ? "warning" : "success"
-            }).ToList(),
+            Events = events.Select(DashboardEventMapper.Map).ToList(),
             AccountStats = accountStats,
             Charts = charts
         };
@@ -130,7 +127,8 @@ public sealed class DashboardService(OrbitaApiClient api, IOptions<DesignPreview
     private static IReadOnlyList<DashboardKpiCardViewModel> BuildKpiCards(
         GlobalDashboardSummary summary,
         DashboardPeriodStats periodStats,
-        DashboardPeriod period)
+        DashboardPeriod period,
+        AccountStatsViewModel accountStats)
     {
         var responsesSeries = periodStats.ResponsesSeries;
         var duplicatesSeries = periodStats.DuplicatesSeries;
@@ -149,7 +147,7 @@ public sealed class DashboardService(OrbitaApiClient api, IOptions<DesignPreview
                 DeltaTone = "neutral",
                 IconClass = "fa-regular fa-comments",
                 IconTone = "blue",
-                Sparkline = SparklineGenerator.FromHourlySeries(responsesSeries, SparklineTrend.Up),
+                Sparkline = SparklineGenerator.FromSeries(responsesSeries),
                 SparkColor = "#2563eb"
             },
             new()
@@ -163,7 +161,7 @@ public sealed class DashboardService(OrbitaApiClient api, IOptions<DesignPreview
                 DeltaTone = "neutral",
                 IconClass = "fa-regular fa-clone",
                 IconTone = "green",
-                Sparkline = SparklineGenerator.FromHourlySeries(duplicatesSeries, SparklineTrend.Down),
+                Sparkline = SparklineGenerator.FromSeries(duplicatesSeries),
                 SparkColor = "#16a34a"
             },
             new()
@@ -177,7 +175,7 @@ public sealed class DashboardService(OrbitaApiClient api, IOptions<DesignPreview
                 DeltaTone = "neutral",
                 IconClass = "fa-solid fa-triangle-exclamation",
                 IconTone = "orange",
-                Sparkline = SparklineGenerator.FromHourlySeries(errorsSeries, SparklineTrend.UpGentle),
+                Sparkline = SparklineGenerator.FromSeries(errorsSeries),
                 SparkColor = "#f59e0b"
             },
             new()
@@ -192,8 +190,8 @@ public sealed class DashboardService(OrbitaApiClient api, IOptions<DesignPreview
                 DeltaTone = "good",
                 IconClass = "fa-regular fa-user",
                 IconTone = "purple",
-                Sparkline = SparklineGenerator.FromHourlySeries(responsesSeries, SparklineTrend.Up),
-                SparkColor = "#7c3aed"
+                SparkColor = "#7c3aed",
+                Segments = DashboardChartsBuilder.BuildAccountSegments(accountStats)
             },
             new()
             {
@@ -207,8 +205,8 @@ public sealed class DashboardService(OrbitaApiClient api, IOptions<DesignPreview
                 DeltaTone = "good",
                 IconClass = "fa-solid fa-server",
                 IconTone = "blue",
-                Sparkline = SparklineGenerator.FromHourlySeries(responsesSeries, SparklineTrend.Up),
-                SparkColor = "#2563eb"
+                SparkColor = "#2563eb",
+                Segments = DashboardChartsBuilder.BuildWorkerSegments(summary.OnlineWorkers, summary.TotalWorkers)
             }
         ];
     }

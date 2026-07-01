@@ -1,4 +1,4 @@
-namespace Orbita.Api.Helpers;
+namespace Orbita.Contracts;
 
 public enum AccountDashboardCategory
 {

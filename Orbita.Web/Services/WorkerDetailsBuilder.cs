@@ -17,22 +17,25 @@ internal static class WorkerDetailsBuilder
         var stats = worker.LatestStats;
         var lastActivity = worker.LastSeenAtUtc
             ?? summary?.LastActivityUtc;
-        var activeAccounts = accounts.Count(a => a.StatusTone == "success");
-        var totalAccounts = accounts.Count > 0
-            ? accounts.Count
-            : summary?.TotalAccounts ?? stats?.ConnectedAccounts ?? 0;
+        var activeAccounts = worker.ActiveAccountCount > 0 || worker.TotalAccountCount > 0
+            ? worker.ActiveAccountCount
+            : summary?.ActiveAccounts ?? accounts.Count(a => a.StatusTone == "success");
+        var totalAccounts = worker.TotalAccountCount > 0
+            ? worker.TotalAccountCount
+            : accounts.Count > 0
+                ? accounts.Count
+                : summary?.TotalAccounts ?? stats?.ConnectedAccounts ?? 0;
 
-        if (accounts.Count == 0)
-        {
-            if (totalAccounts == 0 && summary is not null)
-                totalAccounts = summary.TotalAccounts;
-            if (summary is not null)
-                activeAccounts = summary.ActiveAccounts;
-        }
-
-        var responses = summary?.Responses ?? stats?.TotalToday ?? 0;
-        var duplicates = summary?.Duplicates ?? stats?.Duplicates ?? 0;
-        var errors = summary?.Errors ?? stats?.Errors ?? 0;
+        var hasDbStats = worker.TotalAccountCount > 0;
+        var responses = hasDbStats
+            ? worker.TodayResponses
+            : summary?.Responses ?? stats?.TotalToday ?? 0;
+        var duplicates = hasDbStats
+            ? worker.TodayDuplicates
+            : summary?.Duplicates ?? stats?.Duplicates ?? 0;
+        var errors = hasDbStats
+            ? worker.TodayErrors
+            : summary?.Errors ?? 0;
         var uptime = FormatUptime(extra.StartedAtUtc);
         var activePct = totalAccounts == 0
             ? 0
@@ -80,11 +83,11 @@ internal static class WorkerDetailsBuilder
 
     public static WorkerAccountRowViewModel MapAccount(
         WorkerAccountDto account,
-        WorkerBalanceDto? balance,
-        int responses = 0,
-        int errors = 0)
+        WorkerBalanceDto? balance)
     {
-        var (label, tone) = MapAccountStatus(account.Status, account.IsEnabled);
+        var (label, tone) = AccountStatusMapper.ForWorkerDetails(account.Status, account.IsEnabledInPanel);
+        var responses = account.TodayResponses;
+        var errors = account.TodayEventErrors;
         var subProfiles = SubProfileViewModelMapper.Map(account.SubProfiles);
         return new WorkerAccountRowViewModel
         {
@@ -98,6 +101,7 @@ internal static class WorkerDetailsBuilder
             Responses = responses,
             LastActivityUtc = account.LastMonitoringAt,
             Errors = errors > 0 ? errors : !string.IsNullOrWhiteSpace(account.LastErrorMessage) ? 1 : 0,
+            // TodayEventErrors from API; LastErrorMessage is legacy fallback
             LastErrorMessage = account.LastErrorMessage,
             SubProfiles = subProfiles,
             SubProfilesSummary = SubProfileViewModelMapper.BuildSummary(subProfiles),
@@ -221,20 +225,6 @@ internal static class WorkerDetailsBuilder
             new() { Label = "Дублей", Value = duplicates.ToString() },
             new() { Label = "Ошибок", Value = errors.ToString() }
         ];
-    }
-
-    private static (string Label, string Tone) MapAccountStatus(string status, bool isEnabled)
-    {
-        if (!isEnabled)
-            return ("Заблокирован", "blocked");
-
-        return status switch
-        {
-            "Active" => ("Активен", "success"),
-            "Blocked" => ("Заблокирован", "blocked"),
-            "Error" or "RequiresLogin" or "RequiresManualAction" => ("Ошибка", "error"),
-            _ => isEnabled ? ("Активен", "success") : ("Заблокирован", "blocked")
-        };
     }
 
     private static string FormatUptime(DateTime? startedAtUtc)

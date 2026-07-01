@@ -9,11 +9,20 @@ public sealed class DashboardChartsViewModel
 
 public sealed class SparklineChartViewModel
 {
+    public string Kind { get; init; } = "sparkline";
     public string Color { get; init; } = "#2563eb";
     public string MetricLabel { get; init; } = string.Empty;
     public IReadOnlyList<string> Labels { get; init; } = [];
     public IReadOnlyList<int> Values { get; init; } = [];
     public IReadOnlyList<int> TooltipValues { get; init; } = [];
+    public IReadOnlyList<KpiChartSegmentViewModel> Segments { get; init; } = [];
+}
+
+public sealed class KpiChartSegmentViewModel
+{
+    public string Label { get; init; } = string.Empty;
+    public int Value { get; init; }
+    public string Color { get; init; } = "#94a3b8";
 }
 
 public sealed class LineChartViewModel

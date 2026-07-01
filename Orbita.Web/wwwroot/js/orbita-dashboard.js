@@ -149,6 +149,48 @@
         requestAnimationFrame(frame);
     }
 
+    function isSparklineChart(cfg) {
+        return cfg && cfg.kind !== 'segments' && cfg.values && cfg.values.length >= 2;
+    }
+
+    function segmentTrackTotal(segments) {
+        if (!Array.isArray(segments) || segments.length === 0) return 0;
+        if (segments.length === 1 && segments[0].label === 'Нет данных') return 0;
+        return segments.reduce(function (sum, segment) {
+            return sum + (segment.value || 0);
+        }, 0);
+    }
+
+    function renderSegmentTrack(track, segments) {
+        if (!track || !Array.isArray(segments)) return;
+
+        var total = segmentTrackTotal(segments);
+        var hasData = total > 0;
+        track.innerHTML = '';
+
+        segments.forEach(function (segment) {
+            var pct = hasData ? segment.value * 100 / total : 100;
+            var piece = document.createElement('span');
+            piece.className = 'kpi-segment-piece';
+            piece.style.width = pct + '%';
+            piece.style.backgroundColor = segment.color;
+            piece.title = segment.label + ': ' + segment.value;
+            piece.setAttribute('data-segment-label', segment.label);
+            piece.setAttribute('data-segment-value', String(segment.value));
+            track.appendChild(piece);
+        });
+    }
+
+    function updateKpiSegmentTrack(cardEl, segments) {
+        if (!cardEl || !Array.isArray(segments) || segments.length === 0) return false;
+
+        var track = cardEl.querySelector('[data-kpi-segment-track]');
+        if (!track) return false;
+
+        renderSegmentTrack(track, segments);
+        return true;
+    }
+
     function initSparklines(sparklines) {
         if (!Array.isArray(sparklines)) return;
         var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -156,12 +198,38 @@
         document.querySelectorAll('[data-sparkline-index]').forEach(function (canvas) {
             var index = parseInt(canvas.getAttribute('data-sparkline-index'), 10);
             var cfg = sparklines[index];
-            if (!cfg || !cfg.values || cfg.values.length < 2) return;
+            if (!cfg || !isSparklineChart(cfg)) return;
 
             destroyChartOnCanvas(canvas);
-            var chart = createSparklineChart(canvas, cfg, index, reduced);
-            chartRegistry.sparklines[index] = chart;
+            chartRegistry.sparklines[index] = createSparklineChart(canvas, cfg, index, reduced);
         });
+    }
+
+    function resolveSparklineTooltipValues(cfg) {
+        var values = cfg.values || [];
+        if (!values.length) return null;
+        if (cfg.tooltipValues && cfg.tooltipValues.length === values.length) {
+            return cfg.tooltipValues;
+        }
+        return values;
+    }
+
+    function applySparklineChartData(chart, cfg) {
+        if (!chart || !cfg || !cfg.values || cfg.values.length < 2) return;
+
+        var values = cfg.values;
+        var labels = cfg.labels && cfg.labels.length === values.length
+            ? cfg.labels
+            : values.map(function (_, i) { return String(i + 1); });
+        var tooltipValues = resolveSparklineTooltipValues(cfg);
+        var yBounds = sparklineYBounds(values);
+
+        chart.data.labels = labels;
+        chart.data.datasets[0].data = values;
+        chart.options.scales.y.min = yBounds.yMin;
+        chart.options.scales.y.max = yBounds.yMax;
+        chart.$tooltipValues = tooltipValues;
+        chart.$metricLabel = cfg.metricLabel || 'Значение';
     }
 
     function createSparklineChart(canvas, cfg, index, reduced) {
@@ -171,12 +239,10 @@
             ? cfg.labels
             : values.map(function (_, i) { return String(i + 1); });
         var metricLabel = cfg.metricLabel || 'Значение';
-        var tooltipValues = cfg.tooltipValues && cfg.tooltipValues.length === values.length
-            ? cfg.tooltipValues
-            : null;
+        var tooltipValues = resolveSparklineTooltipValues(cfg);
         var yBounds = sparklineYBounds(values);
 
-        return new Chart(canvas, {
+        var chart = new Chart(canvas, {
             type: 'line',
             data: {
                 labels: labels,
@@ -185,19 +251,19 @@
                     borderColor: color,
                     backgroundColor: 'transparent',
                     fill: false,
-                    cubicInterpolationMode: yBounds.isFlat ? false : 'monotone',
-                    tension: yBounds.isFlat ? 0 : 0.4,
+                    cubicInterpolationMode: false,
+                    tension: 0,
                     borderWidth: 2,
                     borderCapStyle: 'round',
                     borderJoinStyle: 'round',
-                    pointRadius: 1.5,
+                    pointRadius: values.length <= 6 ? 3 : 1.5,
                     pointBackgroundColor: color,
                     pointBorderWidth: 0,
                     pointHoverRadius: 4,
                     pointHoverBackgroundColor: color,
                     pointHoverBorderColor: '#ffffff',
                     pointHoverBorderWidth: 2,
-                    pointHitRadius: 10
+                    pointHitRadius: 12
                 }]
             },
             options: {
@@ -231,7 +297,8 @@
                 plugins: {
                     legend: { display: false },
                     tooltip: dashboardTooltipOptions(metricLabel, function (idx, fallback) {
-                        return tooltipValues ? tooltipValues[idx] : fallback;
+                        var source = chart.$tooltipValues || tooltipValues;
+                        return source ? source[idx] : fallback;
                     })
                 },
                 scales: {
@@ -241,16 +308,30 @@
                 layout: { padding: { top: 8, bottom: 4, left: 2, right: 2 } }
             }
         });
+
+        chart.$tooltipValues = tooltipValues;
+        chart.$metricLabel = metricLabel;
+        return chart;
     }
 
     function sparklineYBounds(values) {
         var minVal = Math.min.apply(null, values);
         var maxVal = Math.max.apply(null, values);
         var isFlat = minVal === maxVal;
+        if (isFlat) {
+            var flatPad = minVal === 0 ? 1 : Math.max(1, Math.ceil(minVal * 0.15));
+            return {
+                isFlat: true,
+                yMin: Math.max(0, minVal - flatPad),
+                yMax: minVal + flatPad
+            };
+        }
+
+        var pad = Math.max(1, Math.ceil((maxVal - minVal) * 0.12));
         return {
-            isFlat: isFlat,
-            yMin: isFlat ? minVal : minVal - 3,
-            yMax: isFlat ? minVal + 1 : maxVal + 3
+            isFlat: false,
+            yMin: Math.max(0, minVal - pad),
+            yMax: maxVal + pad
         };
     }
 
@@ -262,10 +343,25 @@
         chartRegistry.hourly = createHourlyChart(canvas, chartData);
     }
 
+    function hourlyYBounds(values) {
+        var nums = (values || []).map(function (v) { return Number(v) || 0; });
+        if (!nums.length) {
+            return { yMin: 0, yMax: 5, step: 1 };
+        }
+        var maxVal = Math.max.apply(null, nums);
+        if (maxVal === 0) {
+            return { yMin: 0, yMax: 5, step: 1 };
+        }
+        var padded = maxVal + Math.max(1, Math.ceil(maxVal * 0.15));
+        var step = Math.max(1, Math.ceil(padded / 5));
+        return { yMin: 0, yMax: Math.ceil(padded / step) * step, step: step };
+    }
+
     function createHourlyChart(canvas, chartData) {
         var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
         var labels = chartData.labels || [];
         var lineColor = '#2563eb';
+        var yBounds = hourlyYBounds(chartData.values);
 
         return new Chart(canvas, {
             type: 'line',
@@ -353,15 +449,15 @@
                         }
                     },
                     y: {
-                        min: 0,
-                        max: 100,
+                        min: yBounds.yMin,
+                        max: yBounds.yMax,
                         grid: {
                             color: '#f2f4f7',
                             lineWidth: 1
                         },
                         border: { display: false },
                         ticks: {
-                            stepSize: 20,
+                            stepSize: yBounds.step,
                             color: '#98a2b3',
                             font: { size: 12, weight: '400' },
                             padding: 8
@@ -393,8 +489,7 @@
                 total: total,
                 labels: ['Нет данных'],
                 values: [1],
-                colors: ['#e5e7eb'],
-                isPartial: false
+                colors: ['#e5e7eb']
             };
         }
 
@@ -402,8 +497,7 @@
             total: total,
             labels: segments.map(function (segment) { return segment.label; }),
             values: segments.map(function (segment) { return segment.value; }),
-            colors: segments.map(function (segment) { return segment.color; }),
-            isPartial: segments.length > 1 && active > 0 && active < total
+            colors: segments.map(function (segment) { return segment.color; })
         };
     }
 
@@ -427,8 +521,8 @@
                     backgroundColor: dataset.colors,
                     borderWidth: 0,
                     borderRadius: function (ctx) {
-                        if (!dataset.isPartial || ctx.dataIndex !== 0) return 0;
-                        return 13;
+                        var count = ctx.chart.data.datasets[0].data.length;
+                        return count > 1 ? 6 : 0;
                     },
                     borderAlign: 'inner',
                     hoverOffset: 0,
@@ -582,13 +676,13 @@
 
         container.innerHTML = '<div class="dash-event-list">' + events.map(function (evt) {
             var subtitle = evt.subtitle
-                ? '<div class="dash-event-subtitle">' + escapeHtml(evt.subtitle) + '</div>'
+                ? '<div class="dash-event-subtitle" title="' + escapeHtml(evt.subtitle) + '">' + escapeHtml(evt.subtitle) + '</div>'
                 : '';
             var iso = evt.timeUtc || '';
 
             return '<div class="dash-event-row">' +
                 '<div class="dash-event-icon dash-event-icon--' + escapeHtml(evt.level) + '"><i class="' + eventIcon(evt.level) + '" aria-hidden="true"></i></div>' +
-                '<div class="dash-event-body"><div class="dash-event-title">' + escapeHtml(evt.message) + '</div>' + subtitle + '</div>' +
+                '<div class="dash-event-body"><div class="dash-event-title" title="' + escapeHtml(evt.message) + '">' + escapeHtml(evt.message) + '</div>' + subtitle + '</div>' +
                 '<div class="dash-event-side">' +
                 '<div class="dash-event-time"><time data-orbita-utc="' + escapeHtml(iso) + '" data-orbita-format="time"></time></div>' +
                 '<div class="dash-event-worker">' + escapeHtml(evt.workerName) + '</div>' +
@@ -654,22 +748,34 @@
                 deltaEl.className = 'kpi-delta-pill kpi-delta-' + (card.deltaTone || 'neutral');
             }
 
+            var segmentChanged = false;
+            if (Array.isArray(card.segments) && card.segments.length > 0) {
+                var sparkCfg = payload.sparklines && payload.sparklines[index];
+                var nextCfg = charts && charts.sparklines ? charts.sparklines[index] : null;
+                var nextSegments = nextCfg && nextCfg.segments ? nextCfg.segments : card.segments;
+                var prevSegments = sparkCfg && sparkCfg.segments ? sparkCfg.segments : null;
+                segmentChanged = !prevSegments || stableJson(prevSegments) !== stableJson(nextSegments);
+                if (segmentChanged) {
+                    updateKpiSegmentTrack(el, nextSegments);
+                    if (nextCfg) {
+                        payload.sparklines[index] = nextCfg;
+                    }
+                }
+            }
+
             var sparkCfg = payload.sparklines && payload.sparklines[index];
             var chart = chartRegistry.sparklines[index];
             var nextCfg = charts && charts.sparklines ? charts.sparklines[index] : null;
-            var sparkChanged = nextCfg && sparkCfg && stableJson(nextCfg.values) !== stableJson(sparkCfg.values);
+            var sparkChanged = nextCfg && sparkCfg
+                && stableJson(nextCfg.values) !== stableJson(sparkCfg.values);
 
             if (chart && nextCfg && sparkChanged) {
-                var bounds = sparklineYBounds(nextCfg.values);
-                chart.data.labels = nextCfg.labels;
-                chart.data.datasets[0].data = nextCfg.values;
-                chart.options.scales.y.min = bounds.yMin;
-                chart.options.scales.y.max = bounds.yMax;
+                applySparklineChartData(chart, nextCfg);
                 chart.update('none');
                 payload.sparklines[index] = nextCfg;
             }
 
-            if (highlightChanged && (valueChanged || sparkChanged)) {
+            if (highlightChanged && (valueChanged || sparkChanged || segmentChanged)) {
                 highlightCard(el);
             }
         });
@@ -684,8 +790,12 @@
 
         if (chartRegistry.hourly) {
             if (changed) {
+                var yBounds = hourlyYBounds(chartData.values);
                 chartRegistry.hourly.data.labels = chartData.labels;
                 chartRegistry.hourly.data.datasets[0].data = chartData.values;
+                chartRegistry.hourly.options.scales.y.min = yBounds.yMin;
+                chartRegistry.hourly.options.scales.y.max = yBounds.yMax;
+                chartRegistry.hourly.options.scales.y.ticks.stepSize = yBounds.step;
                 chartRegistry.hourly.update('active');
                 payload.hourlyResponses = chartData;
                 if (highlightChanged) highlightCard(card);
@@ -711,7 +821,8 @@
                     key: k.key,
                     countValue: k.countValue,
                     suffix: k.valueSuffix || '',
-                    spark: spark ? spark.values : []
+                    segments: k.segments || [],
+                    spark: spark && spark.kind !== 'segments' ? spark.values : []
                 };
             })),
             workers: stableJson(snapshot.workers || []),

@@ -86,7 +86,10 @@ public sealed record WorkerAccountDto(
     string AdsPowerProfileId = "",
     IReadOnlyList<WorkerSubProfileDto>? SubProfiles = null,
     DateTime? SubProfilesRefreshedAtUtc = null,
-    DateTime? SubProfilesRefreshRequestedAtUtc = null);
+    DateTime? SubProfilesRefreshRequestedAtUtc = null,
+    int TodayResponses = 0,
+    int TodayDuplicates = 0,
+    int TodayEventErrors = 0);
 
 public sealed record WorkerBalanceDto(
     Guid AccountId,

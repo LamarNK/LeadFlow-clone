@@ -101,16 +101,7 @@ public sealed class WorkersService(
         var workerEvents = events
             .Where(e => e.WorkerId == id)
             .Take(10)
-            .Select(e => new DashboardEventRowViewModel
-            {
-                Message = e.Message,
-                Subtitle = !string.IsNullOrWhiteSpace(e.Details)
-                    ? e.Details
-                    : e.AccountId.HasValue ? "Аккаунт" : string.Empty,
-                TimeUtc = e.CreatedAtUtc,
-                Level = e.Level.Equals("Error", StringComparison.OrdinalIgnoreCase) ? "error"
-                    : e.Level.Equals("Warning", StringComparison.OrdinalIgnoreCase) ? "warning" : "success"
-            })
+            .Select(DashboardEventMapper.Map)
             .ToList();
 
         var accountRows = accounts
@@ -260,6 +251,7 @@ public sealed class WorkersService(
         var online = allRows.Count(w => w.IsOnline);
         var offline = allRows.Count - online;
         var totalResponses = allRows.Sum(w => w.Responses);
+        var totalDuplicates = allRows.Sum(w => w.Duplicates);
         var totalErrors = allRows.Sum(w => w.Errors);
 
         return new WorkersIndexViewModel
@@ -299,26 +291,42 @@ public sealed class WorkersService(
                     IconClass = "fa-solid fa-circle-xmark",
                     IconTone = "orange"
                 },
-                new()
-                {
-                    Key = "responses",
-                    Href = KpiCardLinks.WorkersCard("responses"),
-                    Label = "Всего откликов",
-                    Value = totalResponses.ToString(),
-                    CountValue = totalResponses,
-                    IconClass = "fa-regular fa-comments",
-                    IconTone = "blue"
-                },
-                new()
-                {
-                    Key = "errors",
+            new()
+            {
+                Key = "responses",
+                Href = KpiCardLinks.WorkersCard("responses"),
+                Label = "Всего откликов",
+                Value = totalResponses.ToString(),
+                CountValue = totalResponses,
+                Delta = "Сегодня",
+                DeltaTone = "neutral",
+                IconClass = "fa-regular fa-comments",
+                IconTone = "blue"
+            },
+            new()
+            {
+                Key = "duplicates",
+                Href = KpiCardLinks.WorkersCard("responses"),
+                Label = "Дублей",
+                Value = totalDuplicates.ToString(),
+                CountValue = totalDuplicates,
+                Delta = "Сегодня",
+                DeltaTone = "neutral",
+                IconClass = "fa-regular fa-clone",
+                IconTone = "green"
+            },
+            new()
+            {
+                Key = "errors",
                     Href = KpiCardLinks.WorkersCard("errors"),
-                    Label = "Ошибок",
-                    Value = totalErrors.ToString(),
-                    CountValue = totalErrors,
-                    IconClass = "fa-solid fa-triangle-exclamation",
-                    IconTone = "orange"
-                }
+                Label = "Ошибок",
+                Value = totalErrors.ToString(),
+                CountValue = totalErrors,
+                Delta = "Сегодня",
+                DeltaTone = totalErrors > 0 ? "bad" : "good",
+                IconClass = "fa-solid fa-triangle-exclamation",
+                IconTone = "orange"
+            }
             ],
             Workers = paged,
             Pagination = new PaginationViewModel
@@ -347,7 +355,7 @@ public sealed class WorkersService(
         ActiveAccounts = w.ActiveAccountCount,
         TotalAccounts = w.AccountCount,
         Responses = w.TotalToday,
-        Duplicates = 0,
+        Duplicates = w.DuplicatesToday,
         Errors = w.Errors,
         LastActivityUtc = w.LastSeenAtUtc,
         UpdateAvailable = w.UpdateAvailable,

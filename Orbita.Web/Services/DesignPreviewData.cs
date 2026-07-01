@@ -121,6 +121,7 @@ internal static class DesignPreviewData
             w.LastActivityUtc?.ToUniversalTime(),
             w.TotalAccounts,
             w.Responses,
+            w.Duplicates,
             w.Errors,
             w.UpdateAvailable,
             w.LatestReleaseVersion,
@@ -171,6 +172,18 @@ internal static class DesignPreviewData
     {
         period ??= DashboardPeriod.Today;
         var updatedAt = Now;
+        var hourlyChart = BuildHourlyChart();
+        var previewResponses = HourlyResponsesGenerator.DailyValues.ToList();
+        var previewDuplicates = previewResponses.Select(v => Math.Max(0, v / 5)).ToList();
+        var previewErrors = previewResponses.Select((v, i) => i == 14 ? 2 : (i % 9 == 0 ? 1 : 0)).ToList();
+        var accountStats = new AccountStatsViewModel
+        {
+            Total = 30,
+            Active = 24,
+            Inactive = 4,
+            Blocked = 1,
+            Errors = 1
+        };
         var kpiCards = (IReadOnlyList<DashboardKpiCardViewModel>)
         [
             new()
@@ -184,7 +197,7 @@ internal static class DesignPreviewData
                     DeltaTone = "good",
                     IconClass = "fa-regular fa-comments",
                     IconTone = "blue",
-                    Sparkline = SparklineGenerator.Create(1101, SparklineTrend.Up),
+                    Sparkline = SparklineGenerator.FromSeries(previewResponses),
                     SparkColor = "#2563eb"
                 },
                 new()
@@ -198,7 +211,7 @@ internal static class DesignPreviewData
                     DeltaTone = "good",
                     IconClass = "fa-regular fa-clone",
                     IconTone = "green",
-                    Sparkline = SparklineGenerator.Create(1102, SparklineTrend.Down),
+                    Sparkline = SparklineGenerator.FromSeries(previewDuplicates),
                     SparkColor = "#16a34a"
                 },
                 new()
@@ -212,7 +225,7 @@ internal static class DesignPreviewData
                     DeltaTone = "bad",
                     IconClass = "fa-solid fa-triangle-exclamation",
                     IconTone = "orange",
-                    Sparkline = SparklineGenerator.Create(1103, SparklineTrend.UpGentle),
+                    Sparkline = SparklineGenerator.FromSeries(previewErrors),
                     SparkColor = "#f59e0b"
                 },
                 new()
@@ -220,15 +233,15 @@ internal static class DesignPreviewData
                     Key = "accounts",
                     Href = KpiCardLinks.Dashboard("accounts", period.From, period.To),
                     Label = "Аккаунтов активно",
-                    Value = "30 / 30",
-                    CountValue = 30,
+                    Value = "24 / 30",
+                    CountValue = 24,
                     ValueSuffix = " / 30",
-                    Delta = "100%",
+                    Delta = "80%",
                     DeltaTone = "good",
                     IconClass = "fa-regular fa-user",
                     IconTone = "purple",
-                    Sparkline = SparklineGenerator.Create(1104, SparklineTrend.Up),
-                    SparkColor = "#7c3aed"
+                    SparkColor = "#7c3aed",
+                    Segments = DashboardChartsBuilder.BuildAccountSegments(accountStats)
                 },
                 new()
                 {
@@ -242,19 +255,10 @@ internal static class DesignPreviewData
                     DeltaTone = "good",
                     IconClass = "fa-solid fa-server",
                     IconTone = "blue",
-                    Sparkline = SparklineGenerator.Create(1105, SparklineTrend.Up),
-                    SparkColor = "#2563eb"
+                    SparkColor = "#2563eb",
+                    Segments = DashboardChartsBuilder.BuildWorkerSegments(3, 3)
                 }
         ];
-        var hourlyChart = BuildHourlyChart();
-        var accountStats = new AccountStatsViewModel
-        {
-            Total = 30,
-            Active = 30,
-            Inactive = 0,
-            Blocked = 0,
-            Errors = 0
-        };
 
         return new DashboardViewModel
         {
@@ -323,7 +327,11 @@ internal static class DesignPreviewData
                 new() { Message = "Аккаунт успешно авторизован", Subtitle = "Аккаунт: user_08", TimeUtc = updatedAt.AddSeconds(-149), WorkerName = "Worker #2", Level = "success" }
             ],
             AccountStats = accountStats,
-            Charts = DashboardChartsBuilder.FromPresentation(kpiCards, hourlyChart, accountStats)
+            Charts = DashboardChartsBuilder.FromPresentation(
+                kpiCards,
+                hourlyChart,
+                accountStats,
+                useHourlyLabels: true)
         };
     }
 
@@ -341,7 +349,12 @@ internal static class DesignPreviewData
                 BuildWorkerBalances(WorkerMoscowId),
                 MaxConcurrentAccounts: 3,
                 AdsPowerApiBaseUrl: "http://local.adspower.net:50325",
-                AdsPowerApiKey: "preview-adspower-key");
+                AdsPowerApiKey: "preview-adspower-key",
+                TodayResponses: 432,
+                TodayDuplicates: 98,
+                TodayErrors: 5,
+                ActiveAccountCount: 8,
+                TotalAccountCount: 10);
         }
 
         if (id == WorkerSpbId)
@@ -381,7 +394,12 @@ internal static class DesignPreviewData
             new DashboardStatsDto(
                 6, row.Responses, row.Responses - row.Duplicates, row.Duplicates, row.Errors,
                 0, 0, row.TotalAccounts, 0, 0, row.TotalAccounts, 0, 0, BuildHourly(), BuildWeekly()),
-            []);
+            [],
+            TodayResponses: row.Responses,
+            TodayDuplicates: row.Duplicates,
+            TodayErrors: row.Errors,
+            ActiveAccountCount: row.ActiveAccounts,
+            TotalAccountCount: row.TotalAccounts);
     }
 
     public static WorkerDetailsViewModel? BuildWorkerDetailsViewModel(Guid id)
@@ -517,7 +535,7 @@ internal static class DesignPreviewData
         return GetAccounts(workerId).Select((a, i) =>
         {
             var balance = BuildWorkerBalances(workerId).FirstOrDefault(b => b.AccountId == a.AccountId);
-            var mapped = WorkerDetailsBuilder.MapAccount(a, balance, row.Responses / Math.Max(1, row.TotalAccounts), a.LastErrorMessage is not null ? 1 : 0);
+            var mapped = WorkerDetailsBuilder.MapAccount(a, balance);
             return mapped;
         }).ToList();
     }

@@ -38,6 +38,7 @@ public sealed record WorkerListItem(
     DateTime? LastSeenAtUtc,
     int AccountCount,
     int TotalToday,
+    int DuplicatesToday,
     int Errors,
     bool UpdateAvailable = false,
     string? LatestReleaseVersion = null,
@@ -70,7 +71,12 @@ public sealed record WorkerDetail(
     string? AgentVersion = null,
     string? AdsPowerApiBaseUrl = null,
     string? AdsPowerApiKey = null,
-    bool IsEnabled = true);
+    bool IsEnabled = true,
+    int TodayResponses = 0,
+    int TodayDuplicates = 0,
+    int TodayErrors = 0,
+    int ActiveAccountCount = 0,
+    int TotalAccountCount = 0);
 
 public sealed record WorkerEventListItem(
     Guid Id,

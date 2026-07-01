@@ -148,7 +148,7 @@ internal static class ErrorsIndexBuilder
                 Label = "Всего ошибок",
                 Value = summary.Total.ToString(),
                 CountValue = summary.Total,
-                Delta = "За период",
+                Delta = "Сегодня",
                 DeltaTone = "neutral",
                 IconClass = "fa-regular fa-circle-xmark",
                 IconTone = "orange"

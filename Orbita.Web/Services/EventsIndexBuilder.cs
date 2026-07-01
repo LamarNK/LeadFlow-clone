@@ -155,7 +155,7 @@ internal static class EventsIndexBuilder
                 Label = "Всего событий",
                 Value = summary.Total.ToString(),
                 CountValue = summary.Total,
-                Delta = "За период",
+                Delta = "Сегодня",
                 DeltaTone = "neutral",
                 IconClass = "fa-regular fa-clipboard",
                 IconTone = "blue"

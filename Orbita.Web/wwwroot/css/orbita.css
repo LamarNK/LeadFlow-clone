@@ -1032,6 +1032,28 @@ a.kpi-card:focus-visible {
     margin-top: auto;
 }
 
+.kpi-sparkline-wrap--segments {
+    display: flex;
+    align-items: flex-end;
+    padding-bottom: 4px;
+    box-sizing: border-box;
+}
+
+.kpi-segment-track {
+    display: flex;
+    width: 100%;
+    height: 3px;
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.kpi-segment-piece {
+    display: block;
+    height: 100%;
+    min-width: 0;
+    transition: width 0.35s ease;
+}
+
 .kpi-sparkline-wrap canvas {
     width: 100% !important;
     height: 100% !important;
@@ -1095,9 +1117,10 @@ a.kpi-card:focus-visible {
 .dashboard-grid,
 .dashboard-grid-bottom {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: 20px;
     align-items: stretch;
+    min-width: 0;
 }
 
 .dashboard-grid {
@@ -1110,6 +1133,8 @@ a.kpi-card:focus-visible {
     flex-direction: column;
     height: 100%;
     min-height: 0;
+    min-width: 0;
+    overflow: hidden;
 }
 
 .dashboard-grid > .card > .card-body,
@@ -1406,9 +1431,16 @@ a.kpi-card:focus-visible {
     color: #667085;
 }
 
+[data-dashboard-events] {
+    min-width: 0;
+    overflow: hidden;
+}
+
 .dash-event-list {
     display: flex;
     flex-direction: column;
+    min-width: 0;
+    overflow: hidden;
 }
 
 .dash-event-row {
@@ -1416,9 +1448,11 @@ a.kpi-card:focus-visible {
     align-items: center;
     gap: 12px;
     min-height: 56px;
+    min-width: 0;
     padding: 0 4px;
     border-bottom: 1px solid #f2f4f7;
     transition: background 0.2s ease;
+    overflow: hidden;
 }
 
 .dash-event-row:last-child {
@@ -1462,9 +1496,12 @@ a.kpi-card:focus-visible {
     font-weight: 500;
     color: #101828;
     line-height: 1.3;
+    display: block;
+    max-width: 100%;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    overflow-wrap: anywhere;
 }
 
 .dash-event-subtitle {
@@ -1473,9 +1510,12 @@ a.kpi-card:focus-visible {
     font-weight: 400;
     color: #667085;
     line-height: 1.3;
+    display: block;
+    max-width: 100%;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    overflow-wrap: anywhere;
 }
 
 [data-theme="dark"] .dash-event-title {
