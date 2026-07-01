@@ -97,6 +97,24 @@ public sealed class CandidateIngestionService(
                 ct);
         if (existing is not null)
         {
+            if (!string.IsNullOrWhiteSpace(candidate.ChatMessagesJson)
+                && !string.Equals(candidate.ChatMessagesJson, existing.ChatMessagesJson, StringComparison.Ordinal))
+            {
+                var tracked = await db.CandidateResponses.FirstAsync(x => x.Id == existing.Id, ct);
+                tracked.ChatMessagesJson = candidate.ChatMessagesJson;
+                if (string.IsNullOrWhiteSpace(tracked.MessengerUrl)
+                    && !string.IsNullOrWhiteSpace(candidate.MessengerUrl))
+                {
+                    tracked.MessengerUrl = candidate.MessengerUrl;
+                }
+
+                await db.SaveChangesAsync(ct);
+                panelRealtime.Notify(
+                    [PanelChangeKind.Responses],
+                    worker.OfficeId,
+                    worker.Id);
+            }
+
             return new WorkerCandidateIngestionItemResultDto(
                 existing.Id,
                 candidate.SourceResponseId,
@@ -127,6 +145,7 @@ public sealed class CandidateIngestionService(
             MessengerUrl = candidate.MessengerUrl,
             AvitoSubProfileId = candidate.AvitoSubProfileId,
             RawText = candidate.RawText,
+            ChatMessagesJson = candidate.ChatMessagesJson,
             CreatedAt = candidate.CreatedAt == default ? DateTime.UtcNow : candidate.CreatedAt,
             Status = ResponseStatuses.InProgress,
             BitrixEntityType = bitrixOptions.Value.EntityType

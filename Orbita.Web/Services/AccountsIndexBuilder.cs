@@ -52,7 +52,8 @@ internal static class AccountsIndexBuilder
         WorkerAccountDto account,
         Guid workerId,
         string workerName,
-        decimal balance = 0)
+        decimal balance = 0,
+        WorkerBalanceDto? balanceDetail = null)
     {
         var (label, tone) = AccountStatusMapper.ForAccountsPage(account.Status, account.IsEnabledInPanel);
         var responses = account.TodayResponses;
@@ -60,7 +61,7 @@ internal static class AccountsIndexBuilder
         var errors = account.TodayEventErrors;
         var unique = Math.Max(0, responses - duplicates);
         var hasError = !string.IsNullOrWhiteSpace(account.LastErrorMessage);
-        var subProfiles = SubProfileViewModelMapper.Map(account.SubProfiles);
+        var subProfiles = SubProfileViewModelMapper.Map(account.SubProfiles, balanceDetail?.SubProfiles);
         return new AccountRowViewModel
         {
             Id = account.AccountId,
@@ -70,6 +71,7 @@ internal static class AccountsIndexBuilder
             StatusLabel = label,
             StatusTone = tone,
             Balance = balance,
+            BalanceBreakdown = SubProfileViewModelMapper.BuildBalanceBreakdown(subProfiles),
             Responses = responses,
             UniqueResponses = unique,
             Errors = errors > 0 ? errors : hasError ? 1 : 0,

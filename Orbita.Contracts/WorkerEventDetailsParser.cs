@@ -60,11 +60,23 @@ public static class WorkerEventDetailsParser
         var text = TryParseDiagnosticText(details);
         var url = TryParseDiagnosticUrl(details);
         var subProfile = TryParseDiagnosticSubProfileName(details);
+        var expectedStep = TryParseStringProperty(details, "expectedStep");
+        var actualStep = TryParseStringProperty(details, "actualStep");
+        var pageStateSummary = TryParseStringProperty(details, "pageStateSummary");
 
         var parts = new List<string>();
         if (!string.IsNullOrWhiteSpace(text))
         {
             parts.Add(text.Trim());
+        }
+
+        if (!string.IsNullOrWhiteSpace(expectedStep) && !string.IsNullOrWhiteSpace(actualStep))
+        {
+            parts.Add($"ожидали: {expectedStep.Trim()} · факт: {actualStep.Trim()}");
+        }
+        else if (!string.IsNullOrWhiteSpace(pageStateSummary))
+        {
+            parts.Add(pageStateSummary.Trim());
         }
 
         if (!string.IsNullOrWhiteSpace(subProfile))

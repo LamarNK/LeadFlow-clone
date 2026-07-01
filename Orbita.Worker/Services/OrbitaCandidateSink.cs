@@ -39,6 +39,7 @@ public sealed class OrbitaCandidateSink(OrbitaApiClient apiClient) : INewCandida
             candidate.MessengerUrl,
             candidate.AvitoSubProfileId,
             candidate.RawText,
+            candidate.ChatMessagesJson,
             candidate.CreatedAt);
 
         _queue.Enqueue(dto);

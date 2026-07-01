@@ -21,6 +21,9 @@ public sealed class CandidateResponse
     /// <summary>Ссылка на чат с кандидатом в мессенджере Avito (если удалось извлечь при парсинге).</summary>
     public string MessengerUrl { get; set; } = string.Empty;
 
+    /// <summary>JSON-массив сообщений мини-чата Avito (<see cref="AvitoChatMessage"/>).</summary>
+    public string ChatMessagesJson { get; set; } = string.Empty;
+
     /// <summary>
     /// Суб-профиль Avito Pro (<c>data-marker=component-profile-switch/profile-…</c>), с которого собран отклик в AdsPower.
     /// Пусто — один кабинет в профиле или встроенный WebView2.

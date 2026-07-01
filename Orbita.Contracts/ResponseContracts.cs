@@ -47,6 +47,7 @@ public sealed record ResponseDetailDto(
     string MessengerUrl,
     string AvitoSubProfileId,
     string RawText,
+    string ChatMessagesJson,
     string Status,
     bool IsLocalDuplicate,
     bool IsBitrixDuplicate,

@@ -1,7 +1,9 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Orbita.Api.Data;
+using Orbita.Api.Helpers;
 using Orbita.Contracts;
+using Orbita.Logging.Audit;
 
 namespace Orbita.Api.Services;
 
@@ -66,7 +68,7 @@ public sealed class TelemetryService(
         worker.MonitoringStatus = request.MonitoringStatus;
         worker.MonitoringStatusMessage = request.MonitoringStatusMessage;
         worker.IsMonitoringActive = request.IsMonitoringActive;
-        worker.NextCycleCheckAtUtc = request.NextCycleCheckAtUtc;
+        worker.NextCycleCheckAtUtc = DateTimeUtcHelper.EnsureUtc(request.NextCycleCheckAtUtc);
         worker.LastSeenAtUtc = DateTime.UtcNow;
 
         var ipAddress = !string.IsNullOrWhiteSpace(clientIpAddress)
@@ -84,7 +86,7 @@ public sealed class TelemetryService(
 
         if (request.StartedAtUtc is not null)
         {
-            worker.StartedAtUtc = request.StartedAtUtc;
+            worker.StartedAtUtc = DateTimeUtcHelper.EnsureUtc(request.StartedAtUtc);
         }
 
         if (!string.IsNullOrWhiteSpace(request.AgentVersion))
@@ -104,7 +106,7 @@ public sealed class TelemetryService(
             worker.LastUpdateVersion = request.LastUpdateResult.Version;
             worker.LastUpdateSuccess = request.LastUpdateResult.Success;
             worker.LastUpdateMessage = request.LastUpdateResult.Message;
-            worker.LastUpdateAtUtc = request.LastUpdateResult.CompletedAtUtc;
+            worker.LastUpdateAtUtc = DateTimeUtcHelper.EnsureUtc(request.LastUpdateResult.CompletedAtUtc);
         }
 
         await db.SaveChangesAsync(ct);
@@ -139,11 +141,13 @@ public sealed class TelemetryService(
             return true;
         }
 
+        var capturedAtUtc = DateTimeUtcHelper.EnsureUtc(request.CapturedAtUtc);
+
         db.WorkerSnapshots.Add(new WorkerSnapshotEntity
         {
             Id = Guid.NewGuid(),
             WorkerId = request.WorkerId,
-            CapturedAtUtc = request.CapturedAtUtc,
+            CapturedAtUtc = capturedAtUtc,
             StatsJson = JsonSerializer.Serialize(request.Stats, JsonOptions),
             BalancesJson = JsonSerializer.Serialize(request.Balances, JsonOptions)
         });
@@ -158,49 +162,21 @@ public sealed class TelemetryService(
             balanceByAccount.TryGetValue(account.AccountId, out var balance);
             if (existingAccounts.TryGetValue(account.AccountId, out var existing))
             {
-                existing.DisplayName = account.DisplayName;
-                existing.Status = account.Status;
-                existing.IsEnabled = account.IsEnabled;
-                existing.ActiveAdsCount = account.ActiveAdsCount;
-                existing.BlockedCount = account.BlockedCount;
-                existing.DraftsCount = account.DraftsCount;
-                existing.LastErrorMessage = account.LastErrorMessage;
-                existing.LastMonitoringAt = account.LastMonitoringAt;
-                existing.TotalBalance = balance;
-                existing.SubProfilesJson = SerializeSubProfiles(account.SubProfiles);
-                existing.SubProfilesRefreshedAtUtc = account.SubProfilesRefreshedAtUtc;
-                if (existing.SubProfilesRefreshRequestedAtUtc is not null
-                    && account.SubProfilesRefreshedAtUtc is not null
-                    && account.SubProfilesRefreshedAtUtc >= existing.SubProfilesRefreshRequestedAtUtc)
-                {
-                    existing.SubProfilesRefreshRequestedAtUtc = null;
-                }
-
-                existing.UpdatedAtUtc = request.CapturedAtUtc;
+                ApplyAccountSnapshot(existing, account, balance, capturedAtUtc);
             }
             else
             {
-                db.WorkerAccounts.Add(new WorkerAccountEntity
+                var created = new WorkerAccountEntity
                 {
                     WorkerId = request.WorkerId,
-                    AccountId = account.AccountId,
-                    DisplayName = account.DisplayName,
-                    Status = account.Status,
-                    IsEnabled = account.IsEnabled,
-                    ActiveAdsCount = account.ActiveAdsCount,
-                    BlockedCount = account.BlockedCount,
-                    DraftsCount = account.DraftsCount,
-                    LastErrorMessage = account.LastErrorMessage,
-                    LastMonitoringAt = account.LastMonitoringAt,
-                    TotalBalance = balance,
-                    SubProfilesJson = SerializeSubProfiles(account.SubProfiles),
-                    SubProfilesRefreshedAtUtc = account.SubProfilesRefreshedAtUtc,
-                    UpdatedAtUtc = request.CapturedAtUtc
-                });
+                    AccountId = account.AccountId
+                };
+                ApplyAccountSnapshot(created, account, balance, capturedAtUtc);
+                db.WorkerAccounts.Add(created);
             }
         }
 
-        await db.SaveChangesAsync(ct);
+        await SaveSnapshotChangesAsync(request.WorkerId, ct);
 
         if (!IsMostlyEmptySnapshot(request))
         {
@@ -235,6 +211,67 @@ public sealed class TelemetryService(
         return true;
     }
 
+    private static void ApplyAccountSnapshot(
+        WorkerAccountEntity target,
+        WorkerAccountDto account,
+        decimal balance,
+        DateTime capturedAtUtc)
+    {
+        target.DisplayName = account.DisplayName;
+        target.Status = account.Status;
+        target.IsEnabled = account.IsEnabled;
+        target.IsEnabledInPanel = account.IsEnabledInPanel;
+        target.AdsPowerProfileId = account.AdsPowerProfileId?.Trim() ?? string.Empty;
+        target.ActiveAdsCount = account.ActiveAdsCount;
+        target.BlockedCount = account.BlockedCount;
+        target.DraftsCount = account.DraftsCount;
+        target.LastErrorMessage = account.LastErrorMessage;
+        target.LastMonitoringAt = DateTimeUtcHelper.EnsureUtc(account.LastMonitoringAt);
+        target.TotalBalance = balance;
+
+        if (account.SubProfiles is not null)
+        {
+            target.SubProfilesJson = SerializeSubProfiles(account.SubProfiles);
+        }
+
+        var refreshedAtUtc = DateTimeUtcHelper.EnsureUtc(account.SubProfilesRefreshedAtUtc);
+        if (refreshedAtUtc is not null)
+        {
+            target.SubProfilesRefreshedAtUtc = refreshedAtUtc;
+        }
+
+        if (target.SubProfilesRefreshRequestedAtUtc is not null
+            && refreshedAtUtc is not null
+            && refreshedAtUtc >= target.SubProfilesRefreshRequestedAtUtc)
+        {
+            target.SubProfilesRefreshRequestedAtUtc = null;
+        }
+
+        target.UpdatedAtUtc = capturedAtUtc;
+    }
+
+    private async Task SaveSnapshotChangesAsync(Guid workerId, CancellationToken ct)
+    {
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex)
+        {
+            var inner = ex.InnerException?.Message ?? ex.Message;
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Telemetry snapshot save failed for worker {workerId}: {inner}",
+                DeskLinkAuditLogLevel.Error,
+                errorKey: "telemetry.snapshot.save_failed",
+                properties: new Dictionary<string, object?>
+                {
+                    ["workerId"] = workerId,
+                    ["exception"] = ex.GetType().Name
+                });
+            throw;
+        }
+    }
+
     private static string SerializeSubProfiles(IReadOnlyList<WorkerSubProfileDto>? subProfiles) =>
         JsonSerializer.Serialize(subProfiles ?? [], JsonOptions);
 
@@ -267,11 +304,11 @@ public sealed class TelemetryService(
                 Level = evt.Level,
                 Message = evt.Message,
                 Details = evt.Details,
-                CreatedAtUtc = evt.CreatedAtUtc
+                CreatedAtUtc = DateTimeUtcHelper.EnsureUtc(evt.CreatedAtUtc)
             });
         }
 
-        await db.SaveChangesAsync(ct);
+        await SaveSnapshotChangesAsync(request.WorkerId, ct);
 
         if (request.Events.Count > 0)
         {

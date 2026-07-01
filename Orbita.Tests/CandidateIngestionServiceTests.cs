@@ -53,6 +53,7 @@ public sealed class CandidateIngestionServiceTests
                 "",
                 "",
                 "",
+                "",
                 DateTime.UtcNow)
         ]);
 
@@ -84,6 +85,7 @@ public sealed class CandidateIngestionServiceTests
                 "+7 (900) 222-22-22",
                 "Москва",
                 "Курьер",
+                "",
                 "",
                 "",
                 "",

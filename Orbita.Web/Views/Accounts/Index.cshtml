@@ -87,7 +87,7 @@
                         <th>Аккаунт</th>
                         <th>Воркер</th>
                         <th>Статус</th>
-                        <th class="cell-num">Баланс</th>
+                        <th class="cell-num" title="Сумма по всем субпрофилям аккаунта">Баланс</th>
                         <th class="cell-num">Откликов</th>
                         <th class="cell-num">Уникальных</th>
                         <th class="cell-num">Ошибок</th>
@@ -145,7 +145,11 @@
                                 <span class="account-error-hint" title="@account.LastErrorMessage">@account.LastErrorMessage</span>
                             }
                         </td>
-                        <td class="cell-num" data-label="Баланс">@account.Balance.ToString("N0") ₽</td>
+                        <td class="cell-num cell-balance" data-label="Баланс">
+                            <div class="account-balance">
+                                <span class="account-balance-total" title="@(account.HasMultipleSubProfiles ? "Сумма авансов по субпрофилям" : null)">@account.Balance.ToString("N0") ₽</span>
+                            </div>
+                        </td>
                         <td class="cell-num" data-label="Откликов">@account.Responses</td>
                         <td class="cell-num" data-label="Уникальных">@account.UniqueResponses</td>
                         <td class="cell-num" data-label="Ошибок">@account.Errors</td>

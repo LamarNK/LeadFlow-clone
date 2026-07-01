@@ -135,6 +135,120 @@ function Build-LeadFlowZip {
     Write-Host "Archive: $zipPath ($zipMb MB)" -ForegroundColor Green
 }
 
+function Stop-OrbitaWorkerForPackaging {
+    $procs = Get-Process -Name "Orbita.Worker" -ErrorAction SilentlyContinue
+    if (-not $procs) {
+        return
+    }
+
+    Write-Host "Stopping running Orbita.Worker before MSI build..." -ForegroundColor Yellow
+    $procs | Stop-Process -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 2
+}
+
+function Reset-WindowsInstallerService {
+    $svc = Get-Service -Name msiserver -ErrorAction SilentlyContinue
+    if (-not $svc) {
+        throw "Windows Installer service (msiserver) is not available on this machine."
+    }
+
+    try {
+        if ($svc.Status -eq 'Running') {
+            Restart-Service -Name msiserver -Force
+        } else {
+            Start-Service -Name msiserver
+        }
+    } catch {
+        throw "Cannot start Windows Installer service (msiserver). WiX MSI build requires it. Run PowerShell as Administrator and execute: Start-Service msiserver"
+    }
+
+    $svc.Refresh()
+    if ($svc.Status -ne 'Running') {
+        throw "Windows Installer service (msiserver) is not running (status: $($svc.Status)). Start it manually: Start-Service msiserver"
+    }
+}
+
+function Get-BuiltMsiCandidate {
+    param(
+        [string[]]$SearchRoots,
+        [string]$Config
+    )
+
+    $candidates = @()
+    foreach ($root in $SearchRoots) {
+        if (-not (Test-Path $root)) {
+            continue
+        }
+
+        $candidates += Get-ChildItem -LiteralPath $root -Recurse -Filter "*.msi" -ErrorAction SilentlyContinue |
+            Where-Object { $_.Length -gt 1MB }
+    }
+
+    return $candidates |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 1
+}
+
+function Invoke-WixMsiBuild {
+    param(
+        [string]$MsiProject,
+        [string]$PublishDir,
+        [string]$MsiVersion,
+        [string]$Config,
+        [string]$IntermediateOutputPath,
+        [string]$OutputPath,
+        [int]$MaxAttempts = 3
+    )
+
+    $publishDirArg = if ($PublishDir.EndsWith('\')) { $PublishDir } else { "$PublishDir\" }
+    $intermediateArg = if ($IntermediateOutputPath.EndsWith('\')) { $IntermediateOutputPath } else { "$IntermediateOutputPath\" }
+    $outputArg = if ($OutputPath.EndsWith('\')) { $OutputPath } else { "$OutputPath\" }
+
+    $searchRoots = @(
+        (Join-Path $outputArg $Config),
+        (Join-Path $intermediateArg $Config)
+    )
+
+    $builtMsi = $null
+    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+        if ($attempt -gt 1) {
+            Write-Host "MSI build retry $attempt/$MaxAttempts..." -ForegroundColor Yellow
+            Reset-WindowsInstallerService
+            Start-Sleep -Seconds 3
+        }
+
+        & dotnet build $MsiProject -c $Config `
+            -p:PublishDir=$publishDirArg `
+            -p:ProductVersion=$MsiVersion `
+            -p:BaseIntermediateOutputPath=$intermediateArg `
+            -p:BaseOutputPath=$outputArg `
+            -p:OutputPath=$outputArg
+
+        if ($LASTEXITCODE -eq 0) {
+            $builtMsi = Get-BuiltMsiCandidate -SearchRoots $searchRoots -Config $Config
+            if ($builtMsi) {
+                return $builtMsi
+            }
+        } else {
+            $builtMsi = Get-BuiltMsiCandidate -SearchRoots $searchRoots -Config $Config
+            if ($builtMsi) {
+                Write-Host "WiX reported failure but MSI artifact exists; continuing with $($builtMsi.FullName)" -ForegroundColor Yellow
+                return $builtMsi
+            }
+        }
+    }
+
+    throw @"
+dotnet build failed: $MsiProject
+WiX native MSI error 1627 usually means Windows Installer could not finish packaging (often transient).
+Try:
+  1) Close Orbita.Worker and retry
+  2) Run: Restart-Service msiserver
+  3) Re-run with -Clean
+  4) Free disk/RAM; avoid building under heavy load
+"@
+}
+
 function Build-OrbitaWorkerMsi {
     param(
         [string]$VersionText,
@@ -145,6 +259,9 @@ function Build-OrbitaWorkerMsi {
     $targetRuntime = $Info.Runtime
     $workRootPublish = Join-Path $publishRoot "tmp\orbita-worker-publish"
     $msiProject = Join-Path $repoRoot "installer\Orbita.Worker.Msi\Orbita.Worker.Msi.wixproj"
+    $localWixRoot = Join-Path $env:TEMP "orbita-worker-wix-msi"
+    $localWixObj = Join-Path $localWixRoot "obj"
+    $localWixBin = Join-Path $localWixRoot "bin"
     $projectPath = Join-Path $repoRoot $Info.Project
     $msiName = "Orbita.Worker.Setup-$VersionText.msi"
     $msiPath = Join-Path $TargetOut $msiName
@@ -160,6 +277,7 @@ function Build-OrbitaWorkerMsi {
 
     if ($Clean) {
         Remove-Item -LiteralPath $workRootPublish -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $localWixRoot -Recurse -Force -ErrorAction SilentlyContinue
     }
 
     Invoke-DotnetPublish -ProjectPath $projectPath -OutputPath $workRootPublish -RuntimeName $targetRuntime -Config $Configuration -VersionText $VersionText -SelfContained $true
@@ -169,16 +287,30 @@ function Build-OrbitaWorkerMsi {
         throw "Orbita.Worker.exe was not produced in $workRootPublish"
     }
 
+    Stop-OrbitaWorkerForPackaging
+    Reset-WindowsInstallerService
+
+    # WiX native MSI backend is sensitive to network paths; stage publish on local disk.
+    $localPublish = Join-Path $env:TEMP "orbita-worker-publish-msi"
+    if (Test-Path $localPublish) {
+        Remove-Item -LiteralPath $localPublish -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    Write-Host "Staging publish output on local disk: $localPublish" -ForegroundColor DarkGray
+    Copy-Item -LiteralPath $workRootPublish -Destination $localPublish -Recurse -Force
+
+    New-Item -Path $localWixObj -ItemType Directory -Force | Out-Null
+    New-Item -Path $localWixBin -ItemType Directory -Force | Out-Null
+
     $msiVersion = Convert-ToMsiProductVersion $VersionText
     Write-Host "== Building MSI (product version $msiVersion) ==" -ForegroundColor Cyan
-    & dotnet build $msiProject -c $Configuration -p:PublishDir=$workRootPublish\ -p:ProductVersion=$msiVersion
-    if ($LASTEXITCODE -ne 0) {
-        throw "dotnet build failed: $msiProject"
-    }
-
-    $builtMsi = Get-ChildItem -LiteralPath (Join-Path $repoRoot "installer\Orbita.Worker.Msi\bin\$Configuration") -Filter "*.msi" |
-        Sort-Object LastWriteTime -Descending |
-        Select-Object -First 1
+    Write-Host "WiX intermediate/output on local disk: $localWixRoot" -ForegroundColor DarkGray
+    $builtMsi = Invoke-WixMsiBuild `
+        -MsiProject $msiProject `
+        -PublishDir $localPublish `
+        -MsiVersion $msiVersion `
+        -Config $Configuration `
+        -IntermediateOutputPath $localWixObj `
+        -OutputPath $localWixBin
 
     if (-not $builtMsi) {
         throw "MSI was not produced by WiX build."

@@ -52,6 +52,92 @@ public sealed class AvitoCandidatesJsonParserTests
         Assert.Equal(expected, AvitoCandidatesJsonParser.ParseAge(input));
     }
 
+    [Theory]
+    [InlineData("Мужчина · 54 года · Гражданство: Россия · Опыт: Нет", 54)]
+    [InlineData("Женщина · 37 лет · Гражданство: Россия · Опыт: Нет", 37)]
+    [InlineData("Опыт: Нет", null)]
+    [InlineData("3 июня в 14:25 · «Разнорабочий вахта» · Фрязино", null)]
+    public void ParseAgeFromCardText_ExtractsAgeFromNewCandidateCardFormat(string? input, int? expected)
+    {
+        Assert.Equal(expected, AvitoCandidatesJsonParser.ParseAgeFromCardText(input));
+    }
+
+    [Fact]
+    public void ParseVacancyLineFromDetailText_ExtractsVacancyAndCity()
+    {
+        const string line = "Отклик: 29 июня в 18:38 на вакансию Разнорабочий вахта · Фрязино";
+
+        var (vacancy, city) = AvitoCandidatesJsonParser.ParseVacancyLineFromDetailText(line);
+
+        Assert.Equal("Разнорабочий вахта", vacancy);
+        Assert.Equal("Фрязино", city);
+    }
+
+    [Fact]
+    public void BuildSourceResponseId_WithVacancyUrl_UsesStableItemAndPhone()
+    {
+        var id = AvitoCandidatesJsonParser.BuildSourceResponseId(
+            "Федоров Владимир",
+            "+7 926 596-91-00",
+            "Разнорабочий вахта",
+            "Фрязино",
+            "https://www.avito.ru/8060043292");
+
+        Assert.Equal("avito:8060043292:79265969100", id);
+        Assert.Equal(
+            id,
+            AvitoCandidatesJsonParser.BuildSourceResponseId(
+                "Федоров Владимир",
+                "8 926 596-91-00",
+                "Разнорабочий вахта",
+                "Фрязино",
+                "https://www.avito.ru/8060043292"));
+    }
+
+    [Fact]
+    public void BuildSourceResponseId_WithoutVacancyUrl_UsesStableHash()
+    {
+        var first = AvitoCandidatesJsonParser.BuildSourceResponseId(
+            "Иван",
+            "+7 900 000-00-01",
+            "Продавец",
+            "Москва",
+            string.Empty);
+        var second = AvitoCandidatesJsonParser.BuildSourceResponseId(
+            "Иван",
+            "+7 900 000-00-01",
+            "Продавец",
+            "Москва",
+            string.Empty);
+
+        Assert.StartsWith("avito:", first, StringComparison.Ordinal);
+        Assert.Equal(first, second);
+    }
+
+    [Fact]
+    public void ParseCandidates_UsesVacancyUrlFromExtractionJson()
+    {
+        var account = new AvitoAccount { Id = Guid.NewGuid(), DisplayName = "A" };
+        using var doc = JsonDocument.Parse(
+            """
+            {
+              "candidates": [
+                {
+                  "fullName": "Федоров Владимир",
+                  "phone": "+7 926 596-91-00",
+                  "sourceResponseId": "id-1",
+                  "vacancy": "Разнорабочий вахта",
+                  "city": "Фрязино",
+                  "vacancyUrl": "https://www.avito.ru/8060043292"
+                }
+              ]
+            }
+            """);
+
+        var list = AvitoCandidatesJsonParser.ParseCandidates(doc.RootElement, account);
+        Assert.Equal("https://www.avito.ru/8060043292", list[0].VacancyUrl);
+    }
+
     [Fact]
     public void ParseCandidates_SkipsIncompleteRows()
     {
@@ -150,6 +236,34 @@ public sealed class AvitoCandidatesJsonParserTests
 
         var list = AvitoCandidatesJsonParser.ParseCandidates(doc.RootElement, account);
         Assert.Equal("https://www.avito.ru/item/1", list[0].VacancyUrl);
+    }
+
+    [Fact]
+    public void ParseCandidates_ExtractsChatMessagesJson()
+    {
+        var account = new AvitoAccount { Id = Guid.NewGuid(), DisplayName = "A" };
+        using var doc = JsonDocument.Parse(
+            """
+            {
+              "candidates": [
+                {
+                  "fullName": "Я Рамазан",
+                  "phone": "+7 992 361-10-07",
+                  "sourceResponseId": "avito:1:79923611007",
+                  "chatMessages": [
+                    { "text": "Здравствуйте вакансия открыта", "at": "2026-06-18T00:09:31", "side": "left", "isPlatform": false },
+                    { "text": "Доброго времени суток", "at": "2026-06-18T08:45:09", "side": "right" }
+                  ]
+                }
+              ]
+            }
+            """);
+
+        var list = AvitoCandidatesJsonParser.ParseCandidates(doc.RootElement, account);
+        var messages = AvitoChatMessagesJson.Parse(list[0].ChatMessagesJson);
+        Assert.Equal(2, messages.Count);
+        Assert.Equal("Здравствуйте вакансия открыта", messages[0].Text);
+        Assert.Equal("Доброго времени суток", messages[1].Text);
     }
 
     [Fact]

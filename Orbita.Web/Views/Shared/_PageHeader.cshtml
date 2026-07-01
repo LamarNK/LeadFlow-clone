@@ -15,11 +15,13 @@
                 aria-label="Открыть меню">
             <i class="fa-solid fa-bars" aria-hidden="true"></i>
         </button>
-        <h1>@Model.Title</h1>
-        @if (!string.IsNullOrWhiteSpace(Model.Subtitle))
-        {
-            <p class="orbita-topbar-sub">@Model.Subtitle</p>
-        }
+        <div class="orbita-topbar-heading">
+            <h1>@Model.Title</h1>
+            @if (!string.IsNullOrWhiteSpace(Model.Subtitle))
+            {
+                <p class="orbita-topbar-sub">@Model.Subtitle</p>
+            }
+        </div>
     </div>
     <div class="orbita-topbar-actions">
         <button type="button" class="orbita-search-trigger" data-orbita-search-open title="Поиск (Ctrl+K)">

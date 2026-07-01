@@ -189,6 +189,39 @@ public sealed partial class AdsPowerAvitoAutomationService
             // не критично
         }
 
+        var preSwitchState = await ProbePageStateAsync(page, cancellationToken).ConfigureAwait(false);
+        if (preSwitchState?.HasLoginForm == true || preSwitchState?.PageKind == AvitoPageKind.Login)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"AdsPower profile-switch (session): login page detected for subProfile {subProfileId}, skipping.",
+                DeskLinkAuditLogLevel.Warning,
+                memberName: nameof(SwitchSubProfileOnPageAsync),
+                properties: new Dictionary<string, object?>
+                {
+                    ["step"] = "login_page",
+                    ["avito.subProfileId"] = subProfileId,
+                    ["page.url"] = page.Url,
+                    ["pageState"] = preSwitchState.DescribeForDiagnostics()
+                });
+            return false;
+        }
+
+        if (preSwitchState?.HasCaptcha == true || preSwitchState?.PageKind == AvitoPageKind.Captcha)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"AdsPower profile-switch (session): captcha/firewall detected for subProfile {subProfileId}, skipping.",
+                DeskLinkAuditLogLevel.Warning,
+                memberName: nameof(SwitchSubProfileOnPageAsync),
+                properties: new Dictionary<string, object?>
+                {
+                    ["step"] = preSwitchState.HasFirewallIp ? "firewall_ip" : "captcha",
+                    ["avito.subProfileId"] = subProfileId,
+                    ["page.url"] = page.Url,
+                    ["pageState"] = preSwitchState.DescribeForDiagnostics()
+                });
+            return false;
+        }
+
         if (IsOnUrl(page.Url, CandidatesPageUrl))
         {
             await NavigateAwayFromCandidatesForSwitchAsync(page, cancellationToken, nameof(SwitchSubProfileOnPageAsync))
@@ -314,35 +347,8 @@ public sealed partial class AdsPowerAvitoAutomationService
         var executeScript = (string script, CancellationToken ct) =>
             EvaluateWithRetryAsync<string>(page, script, ct);
 
-        string? staleListSignature = null;
-        if (IsOnUrl(page.Url, CandidatesPageUrl))
-        {
-            staleListSignature = await AvitoCandidatesPageWaiter
-                .TryCaptureListSignatureAsync(executeScript, cancellationToken)
-                .ConfigureAwait(false);
-        }
-
-        await NavigateToCandidatesPageRefreshingAsync(page, cancellationToken).ConfigureAwait(false);
-
         var waitSw = Stopwatch.StartNew();
-        await AvitoCandidatesPageWaiter
-            .WaitForCandidatesOrThrowFirewallAsync(
-                executeScript,
-                async ct =>
-                {
-                    try
-                    {
-                        return await page.GetContentAsync().ConfigureAwait(false);
-                    }
-                    catch
-                    {
-                        return null;
-                    }
-                },
-                page.Url,
-                cancellationToken,
-                staleListSignature)
-            .ConfigureAwait(false);
+        await EnsureOnCandidatesPageAsync(page, adsPowerUserId, cancellationToken).ConfigureAwait(false);
 
         var finalSignature = await AvitoCandidatesPageWaiter
             .TryCaptureListSignatureAsync(executeScript, cancellationToken)
@@ -357,10 +363,13 @@ public sealed partial class AdsPowerAvitoAutomationService
                 ["step"] = "candidates_stable",
                 ["adsPower.userId"] = adsPowerUserId,
                 ["page.url"] = page.Url,
-                ["candidates.baselineSignature"] = staleListSignature ?? "<none>",
+                ["candidates.baselineSignature"] = "<handled-in-ensure>",
                 ["candidates.finalSignature"] = finalSignature ?? "<none>",
                 ["candidates.waitMs"] = waitSw.ElapsedMilliseconds
             });
+
+        var knownPhones = await LoadKnownNormalizedPhonesAsync(messengerEnrichmentHints, cancellationToken)
+            .ConfigureAwait(false);
 
         await AvitoCandidatesListPreparer.PrepareAsync(
             executeScript,
@@ -377,7 +386,8 @@ public sealed partial class AdsPowerAvitoAutomationService
                     return null;
                 }
             },
-            page.Url).ConfigureAwait(false);
+            page.Url,
+            knownPhones).ConfigureAwait(false);
 
         var raw = await EvaluateWithRetryAsync<string>(page, ExtractionScript, cancellationToken).ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(raw))
@@ -389,6 +399,80 @@ public sealed partial class AdsPowerAvitoAutomationService
             .ConfigureAwait(false);
 
         return raw;
+    }
+
+    private async Task<decimal?> TryReadAdvanceBalanceOnPageAsync(
+        IPage page,
+        string adsPowerUserId,
+        CancellationToken cancellationToken)
+    {
+        if (!IsOnActiveProfileItemsPage(page.Url))
+        {
+            if (IsOnUrl(page.Url, CandidatesPageUrl))
+            {
+                return null;
+            }
+
+            try
+            {
+                await page.GoToAsync(ProfileItemsPageUrl, new NavigationOptions
+                {
+                    Timeout = 45_000,
+                    WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
+                }).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (IsRecoverableNavigationError(ex))
+            {
+                await Task.Delay(1400, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        try
+        {
+            await page.WaitForSelectorAsync(
+                    "[data-marker='osp-sidebar/tools/money']",
+                    new WaitForSelectorOptions { Timeout = 12_000 })
+                .ConfigureAwait(false);
+        }
+        catch
+        {
+            // Sidebar иногда отрисовывается позже карточек — всё равно пробуем распарсить HTML.
+        }
+
+        string html;
+        try
+        {
+            html = await page.GetContentAsync().ConfigureAwait(false);
+        }
+        catch
+        {
+            return null;
+        }
+
+        if (string.IsNullOrWhiteSpace(html))
+        {
+            return null;
+        }
+
+        var balance = AvitoBalanceParser.ParseAdvanceBalance(html);
+        if (balance is null
+            && (html.Contains("osp-sidebar/tools/money", StringComparison.OrdinalIgnoreCase)
+                || html.Contains("Аванс", StringComparison.OrdinalIgnoreCase)))
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"AdsPower balance: sidebar present but advance parse failed for user {adsPowerUserId}.",
+                DeskLinkAuditLogLevel.Warning,
+                memberName: nameof(TryReadAdvanceBalanceOnPageAsync),
+                properties: new Dictionary<string, object?>
+                {
+                    ["adsPower.userId"] = adsPowerUserId,
+                    ["page.url"] = page.Url,
+                    ["html.hasMoneyMarker"] = html.Contains("osp-sidebar/tools/money", StringComparison.OrdinalIgnoreCase),
+                    ["html.hasAdvanceText"] = html.Contains("Аванс", StringComparison.OrdinalIgnoreCase)
+                });
+        }
+
+        return balance;
     }
 
     private async Task<string> LoadProfileItemsHtmlOnPageAsync(
@@ -647,8 +731,14 @@ public sealed partial class AdsPowerAvitoAutomationService
         public Task<string> LoadBlockedItemsHtmlAsync(CancellationToken cancellationToken = default) =>
             owner.LoadBlockedItemsHtmlOnPageAsync(page, AdsPowerUserId, cancellationToken);
 
+        public Task<decimal?> TryReadAdvanceBalanceAsync(CancellationToken cancellationToken = default) =>
+            owner.TryReadAdvanceBalanceOnPageAsync(page, AdsPowerUserId, cancellationToken);
+
         public Task<string> CaptureProfileSwitchHtmlAsync(CancellationToken cancellationToken = default) =>
             owner.CaptureProfileSwitchHtmlInSessionAsync(page, AdsPowerUserId, cancellationToken);
+
+        public Task<AvitoPageState?> GetPageStateAsync(CancellationToken cancellationToken = default) =>
+            ProbePageStateAsync(page, cancellationToken);
 
         public async ValueTask DisposeAsync()
         {

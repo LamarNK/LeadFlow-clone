@@ -28,30 +28,80 @@ public static class SubProfileViewModelMapper
         requestedAtUtc is not null
         && (refreshedAtUtc is null || requestedAtUtc > refreshedAtUtc);
     public static IReadOnlyList<SubProfileRowViewModel> Map(
-        IReadOnlyList<Orbita.Contracts.WorkerSubProfileDto>? subProfiles)
+        IReadOnlyList<Orbita.Contracts.WorkerSubProfileDto>? subProfiles,
+        IReadOnlyList<Orbita.Contracts.SubProfileBalanceDto>? balanceItems = null)
     {
         if (subProfiles is null || subProfiles.Count == 0)
         {
             return [];
         }
 
+        var balanceByName = balanceItems is null || balanceItems.Count == 0
+            ? null
+            : balanceItems
+                .Where(b => !string.IsNullOrWhiteSpace(b.SubProfileName))
+                .ToDictionary(
+                    b => b.SubProfileName.Trim(),
+                    b => b.Balance,
+                    StringComparer.OrdinalIgnoreCase);
+
         return subProfiles
-            .Select(sp => new SubProfileRowViewModel
+            .Select(sp =>
+            {
+                var name = string.IsNullOrWhiteSpace(sp.Name) ? sp.Id : sp.Name;
+                return new SubProfileRowViewModel
             {
                 Id = sp.Id,
-                Name = string.IsNullOrWhiteSpace(sp.Name) ? sp.Id : sp.Name,
+                Name = name,
                 Category = sp.Category,
                 IsCurrent = sp.IsCurrent,
                 IsEnabledInPanel = sp.IsEnabledInPanel,
-                BalanceText = sp.Balance.HasValue ? $"{sp.Balance.Value:N0} ₽" : "—",
+                BalanceText = FormatBalance(ResolveBalance(sp.Balance, name, balanceByName)),
                 HasIssue = !string.IsNullOrWhiteSpace(sp.LastIssueKind),
                 IssueSummary = string.IsNullOrWhiteSpace(sp.LastIssueMessage)
                     ? null
                     : sp.LastIssueMessage,
                 DiagnosticAttachmentId = sp.DiagnosticAttachmentId
+            };
             })
             .ToList();
     }
+
+    public static string? BuildBalanceBreakdown(IReadOnlyList<SubProfileRowViewModel> subProfiles)
+    {
+        if (subProfiles.Count <= 1)
+        {
+            return null;
+        }
+
+        var parts = subProfiles
+            .Select(s => $"{s.Name}: {s.BalanceText}")
+            .ToList();
+
+        return parts.Count > 0 ? string.Join(" · ", parts) : null;
+    }
+
+    private static decimal? ResolveBalance(
+        decimal? profileBalance,
+        string profileName,
+        IReadOnlyDictionary<string, decimal?>? balanceByName)
+    {
+        if (profileBalance.HasValue)
+        {
+            return profileBalance;
+        }
+
+        if (balanceByName is not null
+            && balanceByName.TryGetValue(profileName, out var balance))
+        {
+            return balance;
+        }
+
+        return null;
+    }
+
+    private static string FormatBalance(decimal? balance) =>
+        balance.HasValue ? $"{balance.Value:N0} ₽" : "—";
 
     public static string BuildSummary(IReadOnlyList<SubProfileRowViewModel> subProfiles)
     {

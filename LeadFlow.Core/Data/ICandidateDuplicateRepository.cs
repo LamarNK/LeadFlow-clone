@@ -24,4 +24,10 @@ public interface ICandidateDuplicateRepository
     Task<HashSet<string>> GetExistingSourceResponseIdsAsync(
         IEnumerable<string> sourceResponseIds,
         CancellationToken cancellationToken);
+
+    /// <summary>Все нормализованные телефоны уже сохранённых откликов (для пропуска кликов по карточкам).</summary>
+    Task<HashSet<string>> GetAllStoredNormalizedPhonesAsync(
+        DuplicateScope scope,
+        Guid accountId,
+        CancellationToken cancellationToken);
 }

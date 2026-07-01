@@ -101,4 +101,38 @@ public sealed class AvitoBalanceParserTests
         Assert.Null(AvitoBalanceParser.ParseAdvanceBalance(""));
         Assert.Null(AvitoBalanceParser.ParseAdvanceBalance("   "));
     }
+
+    [Fact]
+    public void ParseAdvanceBalance_CurrentAvitoSidebar_ReturnsAdvanceNotWallet()
+    {
+        var html = """
+            <div class="Tiles-root-N_U99" data-marker="osp-sidebar/tools/money">
+                <a href="/account/step1" class="Tiles-tile-IqmVC">
+                    <div class="Tiles-card-H2qPF">
+                        <article>
+                            <div class="Tiles-info-OLT22">
+                                <p class="styles-module-noAccent-kVktl">Кошелёк</p>
+                                <h5 style="color:#000000">0,00&nbsp;₽</h5>
+                            </div>
+                        </article>
+                    </div>
+                </a>
+                <a href="/tariff/cpa/profile" class="Tiles-tile-IqmVC">
+                    <div class="Tiles-card-H2qPF">
+                        <article>
+                            <div class="Tiles-info-OLT22">
+                                <p class="styles-module-root-aoe_4 styles-module-size_xs-h7c0j styles-module-noAccent-kVktl">Аванс</p>
+                                <h5 class="styles-module-root-ECS7y styles-module-size_xm-JQ25Y" style="color:#000000">885&nbsp;₽</h5>
+                                <p>~ на 13 дней</p>
+                            </div>
+                        </article>
+                    </div>
+                </a>
+            </div>
+            """;
+
+        var balance = AvitoBalanceParser.ParseAdvanceBalance(html);
+
+        Assert.Equal(885m, balance);
+    }
 }

@@ -305,6 +305,266 @@ public static class AvitoCandidatesPageScripts
         })();
         """;
 
+    /// <summary>Клик по карточке отклика в списке (открывает панель «Данные» справа).</summary>
+    public static string BuildClickCandidateItemByIndexScript(int index) =>
+        $$"""
+        (() => {
+            const items = Array.from(document.querySelectorAll("[data-marker='job-application/item']"));
+            const index = {{index}};
+            if (index < 0 || index >= items.length) {
+                return JSON.stringify({ ok: false, reason: "index_out_of_range", items: items.length, index });
+            }
+
+            const item = items[index];
+            try {
+                item.scrollIntoView({ block: "center", inline: "nearest" });
+            } catch {
+            }
+
+            try {
+                item.click();
+                return JSON.stringify({ ok: true, index, items: items.length });
+            } catch (error) {
+                return JSON.stringify({ ok: false, reason: String(error), index, items: items.length });
+            }
+        })();
+        """;
+
+    /// <summary>Снимок открытой панели отклика: ссылка «на вакансию», возраст и т.д.</summary>
+    public static string BuildReadDetailPanelScript() =>
+        """
+        (() => {
+            const normalize = (text) => (text ?? "").replace(/\s+/g, " ").trim();
+            const normalizeUrl = (href) => {
+                if (!href) {
+                    return "";
+                }
+
+                const t = href.trim();
+                if (!t || t === "#") {
+                    return "";
+                }
+
+                if (t.startsWith("//")) {
+                    return `https:${t}`;
+                }
+
+                if (t.startsWith("/")) {
+                    return `${window.location.origin}${t}`;
+                }
+
+                return t;
+            };
+
+            const phoneEl =
+                document.querySelector("[data-marker='job-application/call-button']") ??
+                document.querySelector("[data-marker='job-application/phone']");
+            const phone = normalize(phoneEl?.textContent ?? "");
+            const phoneDigits = phone.replace(/\D/g, "");
+
+            const responseRoot =
+                phoneEl?.closest?.("[class*='styles-module-response']") ??
+                document.querySelector("[class*='styles-module-response']");
+            const searchRoot = responseRoot ?? document;
+
+            let vacancyUrl = "";
+            let vacancy = "";
+            let city = "";
+            for (const paragraph of searchRoot.querySelectorAll("p")) {
+                const text = normalize(paragraph.textContent);
+                if (!/на вакансию/i.test(text)) {
+                    continue;
+                }
+
+                const anchor = paragraph.querySelector("a[href]");
+                if (!anchor) {
+                    continue;
+                }
+
+                const href = normalizeUrl(anchor.getAttribute("href") ?? "");
+                if (!href || !/\/\d{5,}/.test(href)) {
+                    continue;
+                }
+
+                vacancyUrl = href;
+                vacancy = normalize(anchor.textContent);
+                const tail = text.slice(text.toLowerCase().indexOf(anchor.textContent.toLowerCase()) + anchor.textContent.length);
+                const cityParts = tail.split(/[·]/).map((x) => x.trim()).filter(Boolean);
+                if (cityParts.length > 0) {
+                    city = cityParts[cityParts.length - 1];
+                }
+
+                break;
+            }
+
+            const agePattern = /(\d{1,2})\s*(?:лет|года|год)/i;
+            let age = "";
+            for (const paragraph of searchRoot.querySelectorAll("p")) {
+                const match = normalize(paragraph.textContent).match(agePattern);
+                if (match) {
+                    age = `${match[1]} лет`;
+                    break;
+                }
+            }
+
+            return JSON.stringify({
+                phoneDigits,
+                phone,
+                vacancyUrl,
+                vacancy,
+                city,
+                age,
+                hasPanel: !!responseRoot
+            });
+        })();
+        """;
+
+    public static string BuildApplyDetailEnrichmentScript(string enrichmentJson) =>
+        $"window.__leadflowDetailEnrichment = {enrichmentJson}; JSON.stringify({{ ok: true, count: Object.keys(window.__leadflowDetailEnrichment || {{}}).length }});";
+
+    /// <summary>Телефоны из списка карточек (без клика в детальную панель).</summary>
+    public static string BuildCollectListItemPhonesScript() =>
+        """
+        (() => {
+            const readPhone = (item) => {
+                const raw =
+                    item.querySelector("[data-marker='job-application/phone']")?.textContent ??
+                    item.querySelector("[data-marker='job-application/call-button']")?.textContent ??
+                    "";
+                return (raw ?? "").replace(/\D/g, "");
+            };
+
+            const normalizePhoneKey = (digits) => {
+                if (!digits) {
+                    return "";
+                }
+
+                if (digits.length === 11 && digits.startsWith("8")) {
+                    return `7${digits.slice(1)}`;
+                }
+
+                if (digits.length === 10) {
+                    return `7${digits}`;
+                }
+
+                return digits;
+            };
+
+            const items = Array.from(document.querySelectorAll("[data-marker='job-application/item']"));
+            return JSON.stringify(
+                items.map((item, index) => ({
+                    index,
+                    phoneDigits: normalizePhoneKey(readPhone(item))
+                }))
+            );
+        })();
+        """;
+
+    /// <summary>Прокрутка истории мини-чата и сбор сообщений (после клика «Перейти в чат»).</summary>
+    public static string BuildScrollAndCollectMiniMessengerMessagesScript() =>
+        """
+        (() => {
+            const normalize = (text) => (text ?? "").replace(/\s+/g, " ").trim();
+            const list = document.querySelector("[data-marker='messagesHistory/list']");
+            if (!list) {
+                return JSON.stringify({ ok: false, reason: "no_messages_list", messages: [] });
+            }
+
+            const countMessages = () => list.querySelectorAll("[data-marker='message']").length;
+            let lastCount = countMessages();
+            let stableRounds = 0;
+            for (let round = 0; round < 24; round++) {
+                const prevTop = list.scrollTop;
+                list.scrollTop = 0;
+                if (Math.abs(list.scrollTop - prevTop) < 1) {
+                    list.scrollTop = Math.max(0, list.scrollHeight - list.clientHeight);
+                }
+
+                const count = countMessages();
+                if (count === lastCount) {
+                    stableRounds++;
+                    if (stableRounds >= 3) {
+                        break;
+                    }
+                } else {
+                    stableRounds = 0;
+                    lastCount = count;
+                }
+            }
+
+            const readText = (message) => {
+                const direct = message.querySelector("[data-marker='messageText']");
+                if (direct) {
+                    return normalize(direct.innerText ?? direct.textContent ?? "");
+                }
+
+                const platform = message.querySelector("[data-marker='platformMessage/text']");
+                if (platform) {
+                    return normalize(platform.innerText ?? platform.textContent ?? "");
+                }
+
+                return "";
+            };
+
+            const messages = [];
+            for (const message of list.querySelectorAll("[data-marker='message']")) {
+                const text = readText(message);
+                if (!text) {
+                    continue;
+                }
+
+                const className = message.className ?? "";
+                const side = className.includes("message-base-module-right") ? "right" : "left";
+                const isPlatform = !!message.querySelector("[data-marker='platformMessage/text']");
+                const timeEl = message.querySelector("time[datetime]");
+                const at = timeEl?.getAttribute("datetime") ?? "";
+
+                messages.push({ text, at, side, isPlatform });
+            }
+
+            return JSON.stringify({ ok: true, messages, count: messages.length });
+        })();
+        """;
+
+    /// <summary>Есть ли на карточке признак непрочитанного чата (бейдж/точка у кнопки «Перейти в чат»).</summary>
+    public static string BuildReadCandidateChatUnreadScript(int index) =>
+        $$"""
+        (() => {
+            const idx = {{index}};
+            const items = Array.from(document.querySelectorAll("[data-marker='job-application/item']"));
+            const item = items[idx];
+            if (!item) {
+                return JSON.stringify({ ok: false, unread: false });
+            }
+
+            const chat = item.querySelector("[data-marker='job-application/link/to-chat']");
+            if (!chat) {
+                return JSON.stringify({ ok: true, unread: false, hasChatButton: false });
+            }
+
+            const aria = (chat.getAttribute("aria-label") ?? "").toLowerCase();
+            if (/непрочит|нов(ое|ые|ых)?\s+сообщ|unread/i.test(aria)) {
+                return JSON.stringify({ ok: true, unread: true, hasChatButton: true });
+            }
+
+            const contacts = item.querySelector("[class*='styles-module-contacts']") ?? item;
+            const dotSelectors = [
+                "[class*='pulse-dot'][class*='dot_red']",
+                "[class*='dot_red']",
+                "[class*='badge']",
+                "[class*='unread']"
+            ];
+            for (const selector of dotSelectors) {
+                const hit = contacts.querySelector(selector);
+                if (hit && hit !== chat) {
+                    return JSON.stringify({ ok: true, unread: true, hasChatButton: true });
+                }
+            }
+
+            return JSON.stringify({ ok: true, unread: false, hasChatButton: true });
+        })();
+        """;
+
     /// <summary>Клик по кнопкам с замаскированным номером, чтобы Avito подставил полный телефон.</summary>
     public static string BuildRevealMaskedPhonesStepScript() =>
         """
@@ -551,6 +811,56 @@ public static class AvitoCandidatesPageScripts
                 return h.toString(16);
             };
 
+            const normalizePhoneKey = (phone) => {
+                let digits = (phone ?? "").replace(/\D/g, "");
+                if (digits.length === 11 && digits.startsWith("8")) {
+                    digits = `7${digits.slice(1)}`;
+                } else if (digits.length === 10) {
+                    digits = `7${digits}`;
+                }
+
+                return digits;
+            };
+
+            const buildSourceResponseId = (name, phone, vacancy, city, vacancyUrl) => {
+                const phoneKey = normalizePhoneKey(phone);
+                const vacancyIdMatch = (vacancyUrl ?? "").match(/\/(\d{5,})(?:\?|$|\/)/);
+                if (vacancyIdMatch && phoneKey.length >= 10) {
+                    return `avito:${vacancyIdMatch[1]}:${phoneKey}`;
+                }
+
+                const stablePayload = [name, phone, vacancy, city]
+                    .map((x) => (x ?? "").trim().replace(/\s+/g, " "))
+                    .join("\u001f");
+                return `avito:${fnv1a32Hex(stablePayload)}`;
+            };
+
+            const parseVacancyLink = (root, vacancyListingAnchor) => {
+                for (const paragraph of root.querySelectorAll("p")) {
+                    const text = (paragraph.textContent ?? "").replace(/\s+/g, " ").trim();
+                    if (!/на вакансию/i.test(text)) {
+                        continue;
+                    }
+
+                    const anchor = paragraph.querySelector("a[href]");
+                    if (!anchor) {
+                        continue;
+                    }
+
+                    const href = normalizeUrl(anchor.getAttribute("href") ?? "");
+                    if (href && /\/\d{5,}/.test(href)) {
+                        return href;
+                    }
+                }
+
+                const legacyHref = normalizeUrl(vacancyListingAnchor?.getAttribute("href") ?? "");
+                if (legacyHref && !/\/profile\/candidates(?:[/?#]|$)/i.test(legacyHref) && /\/\d{5,}/.test(legacyHref)) {
+                    return legacyHref;
+                }
+
+                return "";
+            };
+
             const parseVacancyAndCity = (root, vacancyListingAnchor) => {
                 const fromAnchor = (vacancyListingAnchor?.textContent ?? "").replace(/\s+/g, " ").trim();
                 if (fromAnchor) {
@@ -583,28 +893,59 @@ public static class AvitoCandidatesPageScripts
                     return oldAge;
                 }
 
-                const ageMatch = rawText.match(/(?:^|\s|·)(\d{1,2})\s*г(?:ода|од|лет)\b/i);
+                // Новый формат карточки: «Мужчина · 54 года · …» / «Женщина · 37 лет · …».
+                // \b в JS не работает с кириллицей; «лет» — отдельное слово, не «г»+«лет».
+                const agePattern = /(\d{1,2})\s*(?:лет|года|год)/i;
+                const normalize = (text) => (text ?? "").replace(/\s+/g, " ").trim();
+
+                for (const line of Array.from(root.querySelectorAll("p"))) {
+                    const match = normalize(line.textContent).match(agePattern);
+                    if (match) {
+                        return `${match[1]} лет`;
+                    }
+                }
+
+                const ageMatch = normalize(rawText).match(agePattern);
                 return ageMatch ? `${ageMatch[1]} лет` : "";
             };
 
+            const listItems = Array.from(document.querySelectorAll("[data-marker='job-application/item']"));
             const candidates = roots.map((root) => {
                 const name = getNameNode(root)?.textContent?.trim() ?? "";
                 const phone = getPhoneNode(root)?.textContent?.trim() ?? "";
                 const vacancyListingAnchor = root.querySelector("[data-marker='job-application/link/to-resume']");
-                let vacancyUrl = normalizeUrl(vacancyListingAnchor?.getAttribute("href") ?? "");
-                if (/\/profile\/candidates(?:[/?#]|$)/i.test(vacancyUrl)) {
-                    vacancyUrl = "";
-                }
+                let vacancyUrl = parseVacancyLink(root, vacancyListingAnchor);
                 const rawText = root.innerText?.replace(/\s+/g, " ").trim() ?? "";
-                const ageText = parseAgeText(root, rawText);
+                let ageText = parseAgeText(root, rawText);
                 const vacancyAndCity = parseVacancyAndCity(root, vacancyListingAnchor);
-                const vacancy = vacancyAndCity.vacancy;
-                const city = vacancyAndCity.city;
+                let vacancy = vacancyAndCity.vacancy;
+                let city = vacancyAndCity.city;
+
+                const phoneKey = phone.replace(/\D/g, "");
+                const rootIndex = listItems.indexOf(root);
+                const enriched =
+                    (typeof window !== "undefined" && window.__leadflowDetailEnrichment)
+                        ? (window.__leadflowDetailEnrichment[phoneKey] ?? window.__leadflowDetailEnrichment[String(rootIndex)])
+                        : null;
+                if (enriched) {
+                    if (enriched.vacancyUrl) {
+                        vacancyUrl = enriched.vacancyUrl;
+                    }
+
+                    if (enriched.vacancy) {
+                        vacancy = enriched.vacancy;
+                    }
+
+                    if (enriched.city) {
+                        city = enriched.city;
+                    }
+
+                    if (enriched.age && !ageText) {
+                        ageText = enriched.age;
+                    }
+                }
                 const messengerUrl = resolveMessengerUrl(root);
-                const stablePayload = [name, phone, vacancy, city, vacancyUrl, messengerUrl]
-                    .map((x) => (x ?? "").trim().replace(/\s+/g, " "))
-                    .join("\u001f");
-                const sourceResponseId = `avito:${fnv1a32Hex(stablePayload)}`;
+                const sourceResponseId = buildSourceResponseId(name, phone, vacancy, city, vacancyUrl);
 
                 return {
                     fullName: name,

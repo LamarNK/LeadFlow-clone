@@ -69,6 +69,12 @@ internal sealed class FakeAvitoResponseSource : IAvitoResponseSource
             ? AsyncImpl(account, settings, cancellationToken)
             : Task.FromResult(Impl(account, settings));
     }
+
+    public Task<HashSet<string>> GetKnownNormalizedPhonesForPrepareAsync(
+        Guid accountId,
+        DuplicateScope duplicateScope,
+        CancellationToken cancellationToken) =>
+        Task.FromResult(new HashSet<string>(StringComparer.Ordinal));
 }
 
 internal sealed class StubBrowserSessionService : IBrowserSessionService

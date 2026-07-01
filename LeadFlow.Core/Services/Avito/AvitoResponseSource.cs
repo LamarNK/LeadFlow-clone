@@ -17,6 +17,12 @@ public sealed class AvitoResponseSource(
 {
     public const string CandidatesPageUrl = "https://www.avito.ru/profile/candidates";
 
+    public Task<HashSet<string>> GetKnownNormalizedPhonesForPrepareAsync(
+        Guid accountId,
+        DuplicateScope duplicateScope,
+        CancellationToken cancellationToken) =>
+        duplicateRepository.GetAllStoredNormalizedPhonesAsync(duplicateScope, accountId, cancellationToken);
+
     public Task<IReadOnlyList<CandidateResponse>> ParseCandidatesFromRawAsync(
         AvitoAccount account,
         AppSettings settings,

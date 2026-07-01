@@ -904,6 +904,25 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
             .ToHashSetAsync(cancellationToken);
     }
 
+    public async Task<HashSet<string>> GetAllStoredNormalizedPhonesAsync(
+        DuplicateScope scope,
+        Guid accountId,
+        CancellationToken cancellationToken)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var query = db.CandidateResponses.AsNoTracking()
+            .Where(x => x.PhoneNormalized != "");
+        if (scope == DuplicateScope.PerAvitoAccount)
+        {
+            query = query.Where(x => x.AccountId == accountId);
+        }
+
+        return await query
+            .Select(x => x.PhoneNormalized)
+            .Distinct()
+            .ToHashSetAsync(cancellationToken);
+    }
+
     private static AvitoAccountEntity ToEntity(AvitoAccount model) => new()
     {
         Id = model.Id,
@@ -1216,6 +1235,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         SourceUrl = model.VacancyUrl,
         VacancyUrl = model.VacancyUrl,
         MessengerUrl = model.MessengerUrl,
+        ChatMessagesJson = model.ChatMessagesJson,
         AvitoSubProfileId = model.AvitoSubProfileId,
         Status = model.Status.ToString(),
         BitrixEntityType = model.BitrixEntityType,
@@ -1245,6 +1265,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         Vacancy = entity.Vacancy,
         VacancyUrl = string.IsNullOrWhiteSpace(entity.VacancyUrl) ? entity.SourceUrl : entity.VacancyUrl,
         MessengerUrl = entity.MessengerUrl,
+        ChatMessagesJson = entity.ChatMessagesJson,
         AvitoSubProfileId = entity.AvitoSubProfileId,
         Status = Enum.TryParse<ResponseStatus>(entity.Status, out var status) ? status : ResponseStatus.New,
         BitrixEntityType = entity.BitrixEntityType,
@@ -1274,6 +1295,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         target.SourceUrl = source.VacancyUrl;
         target.VacancyUrl = source.VacancyUrl;
         target.MessengerUrl = source.MessengerUrl;
+        target.ChatMessagesJson = source.ChatMessagesJson;
         target.AvitoSubProfileId = source.AvitoSubProfileId;
         target.Status = source.Status.ToString();
         target.BitrixEntityType = source.BitrixEntityType;
@@ -1378,6 +1400,14 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         {
             await db.Database.ExecuteSqlRawAsync(
                 "ALTER TABLE CandidateResponses ADD COLUMN MessengerUrl TEXT NOT NULL DEFAULT '';",
+                cancellationToken);
+        }
+
+        existingColumns = await GetTableColumnsAsync(db, "CandidateResponses", cancellationToken);
+        if (!existingColumns.Contains("ChatMessagesJson"))
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                "ALTER TABLE CandidateResponses ADD COLUMN ChatMessagesJson TEXT NOT NULL DEFAULT '';",
                 cancellationToken);
         }
 

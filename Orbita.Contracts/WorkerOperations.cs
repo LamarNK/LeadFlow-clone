@@ -58,6 +58,7 @@ public sealed record WorkerCandidateDto(
     string MessengerUrl,
     string AvitoSubProfileId,
     string RawText,
+    string ChatMessagesJson,
     DateTime CreatedAt);
 
 public sealed record WorkerCandidateBatchRequest(

@@ -48,4 +48,13 @@ internal sealed class FakeDuplicateRepository : ICandidateDuplicateRepository
         IEnumerable<string> sourceResponseIds,
         CancellationToken cancellationToken) =>
         Task.FromResult(new HashSet<string>(StringComparer.Ordinal));
+
+    public Func<DuplicateScope, Guid, HashSet<string>> AllStoredPhonesLookup { get; set; }
+        = (_, _) => [];
+
+    public Task<HashSet<string>> GetAllStoredNormalizedPhonesAsync(
+        DuplicateScope scope,
+        Guid accountId,
+        CancellationToken cancellationToken) =>
+        Task.FromResult(AllStoredPhonesLookup(scope, accountId));
 }

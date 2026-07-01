@@ -60,11 +60,12 @@ public sealed class WorkerTelemetryCollector(AppRepository repository)
             local?.BlockedCount ?? 0,
             local?.DraftsCount ?? 0,
             string.IsNullOrWhiteSpace(local?.LastErrorMessage) ? null : local.LastErrorMessage.Trim(),
-            local?.LastMonitoringAt,
+            EnsureUtc(local?.LastMonitoringAt),
             cfg.IsEnabled,
             cfg.AdsPowerProfileId,
             MapSubProfiles(local),
-            local?.SubProfilesRefreshedAt);
+            EnsureUtc(local?.SubProfilesRefreshedAt),
+            SubProfilesRefreshRequestedAtUtc: null);
     }
 
     private static WorkerBalanceDto MapBalance(WorkerAccountDto account, AvitoAccount? local)
@@ -112,6 +113,16 @@ public sealed class WorkerTelemetryCollector(AppRepository repository)
                 DiagnosticAttachmentId: sp.LastDiagnosticAttachmentId))
             .ToList();
     }
+
+    private static DateTime? EnsureUtc(DateTime? value) =>
+        value is null
+            ? null
+            : value.Value.Kind switch
+            {
+                DateTimeKind.Utc => value,
+                DateTimeKind.Local => value.Value.ToUniversalTime(),
+                _ => DateTime.SpecifyKind(value.Value, DateTimeKind.Utc)
+            };
 
     private static DashboardStatsDto MapStats(DashboardStats stats, IReadOnlyList<WorkerAccountDto> accounts)
     {

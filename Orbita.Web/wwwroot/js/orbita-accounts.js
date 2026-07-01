@@ -141,7 +141,7 @@
                 '<td class="cell-account" data-label="Аккаунт"><a href="' + shared.escapeHtml(accountUrl) + '">' + shared.escapeHtml(account.accountName) + '</a>' + subProfiles + '</td>' +
                 '<td class="cell-worker" data-label="Воркер"><a href="' + shared.escapeHtml(workerUrl) + '">' + shared.escapeHtml(account.workerName) + '</a></td>' +
                 '<td data-label="Статус">' + statusHtml + '</td>' +
-                '<td class="cell-num" data-label="Баланс">' + shared.formatBalance(account.balance) + '</td>' +
+                '<td class="cell-num cell-balance" data-label="Баланс">' + shared.renderAccountBalance(account) + '</td>' +
                 '<td class="cell-num" data-label="Откликов">' + (account.responses || 0) + '</td>' +
                 '<td class="cell-num" data-label="Уникальных">' + (account.uniqueResponses || 0) + '</td>' +
                 '<td class="cell-num" data-label="Ошибок">' + (account.errors || 0) + '</td>' +

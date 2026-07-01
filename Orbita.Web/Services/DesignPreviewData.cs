@@ -1273,20 +1273,24 @@ internal static class DesignPreviewData
                 {
                     ResponseStatuses.Duplicate => "Дубль",
                     ResponseStatuses.Sent => "Отправлен",
-                    ResponseStatuses.Error => "Ошибка",
+                    ResponseStatuses.ActionRequired => "Ожидает CRM",
+                    ResponseStatuses.Error => "Ошибка Bitrix",
                     _ => "Уникальный"
                 },
                 StatusTone = status switch
                 {
                     ResponseStatuses.Duplicate => "duplicate",
                     ResponseStatuses.Sent => "sent",
+                    ResponseStatuses.ActionRequired => "action-required",
                     ResponseStatuses.Error => "error",
                     _ => "unique"
                 },
                 IsPhoneHidden = hidePhone,
                 HasMessenger = !hidePhone,
                 BitrixEntityId = status == ResponseStatuses.Sent ? rng.Next(1000, 99999).ToString() : null,
-                CanResend = status is ResponseStatuses.Error or ResponseStatuses.InProgress
+                CanResend = status is ResponseStatuses.Error
+                    or ResponseStatuses.ActionRequired
+                    or ResponseStatuses.InProgress
             });
         }
 
@@ -1336,7 +1340,8 @@ internal static class DesignPreviewData
                 "unique" => query.Where(r => r.Status != ResponseStatuses.Duplicate),
                 "duplicate" => query.Where(r => r.Status == ResponseStatuses.Duplicate),
                 "sent" => query.Where(r => r.Status == ResponseStatuses.Sent),
-                "error" => query.Where(r => r.Status is ResponseStatuses.Error or ResponseStatuses.ActionRequired),
+                "action_required" => query.Where(r => r.Status == ResponseStatuses.ActionRequired),
+                "error" => query.Where(r => r.Status == ResponseStatuses.Error),
                 _ => query
             };
         }

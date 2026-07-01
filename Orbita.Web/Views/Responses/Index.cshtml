@@ -1,5 +1,6 @@
 @model ResponsesIndexViewModel
 @using Orbita.Web.Formatting
+@using Orbita.Web.Services
 @{
     ViewData["Title"] = "Отклики";
     var formAction = Url.Action("Index", "Responses");
@@ -358,7 +359,7 @@
     var detailPhone = ResponseDisplay.FormatPhone(detail.PhoneRaw, detail.PhoneNormalized);
     <div class="responses-modal" id="responsesDetailModal">
         <div class="responses-modal-backdrop" data-responses-modal-close></div>
-        <div class="responses-modal-dialog" role="dialog" aria-labelledby="responsesDetailTitle" aria-modal="true">
+        <div class="responses-modal-dialog@(detail.ChatMessages.Count > 0 ? " responses-modal-dialog--with-chat" : "")" role="dialog" aria-labelledby="responsesDetailTitle" aria-modal="true">
             <header class="responses-modal-head">
                 <div>
                     <h2 id="responsesDetailTitle">@ResponseDisplay.DisplayAuthor(detail.FullName)</h2>
@@ -401,10 +402,28 @@
                     }
                     @if (!string.IsNullOrWhiteSpace(detail.ErrorMessage))
                     {
-                        <dt>Ошибка</dt>
+                        <dt>@ResponsesIndexBuilder.MapStatusMessageLabel(detail.Status)</dt>
                         <dd>@detail.ErrorMessage</dd>
                     }
                 </dl>
+                @if (detail.ChatMessages.Count > 0)
+                {
+                    <section class="responses-chat" aria-label="Переписка в чате Avito">
+                        <h3 class="responses-chat-title">Чат</h3>
+                        <div class="responses-chat-thread">
+                            @foreach (var message in detail.ChatMessages)
+                            {
+                                <div class="responses-chat-bubble responses-chat-bubble--@message.Tone">
+                                    <div class="responses-chat-text">@message.Text</div>
+                                    @if (!string.IsNullOrWhiteSpace(message.TimeLabel))
+                                    {
+                                        <time class="responses-chat-time">@message.TimeLabel</time>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    </section>
+                }
             </div>
             <footer class="responses-modal-footer">
                 @if (!string.IsNullOrWhiteSpace(detail.MessengerUrl))

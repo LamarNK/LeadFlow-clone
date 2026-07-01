@@ -809,10 +809,26 @@ public sealed class MonitoringServiceTests
             public Task<string> LoadBlockedItemsHtmlAsync(CancellationToken cancellationToken = default) =>
                 Task.FromResult(string.Empty);
 
+            public Task<decimal?> TryReadAdvanceBalanceAsync(CancellationToken cancellationToken = default) =>
+                Task.FromResult<decimal?>(null);
+
             public Task<string> CaptureProfileSwitchHtmlAsync(CancellationToken cancellationToken = default) =>
                 Task.FromResult(string.Empty);
 
             public string? CurrentPageUrl => "https://www.avito.ru/profile/candidates";
+
+            public Task<AvitoPageState?> GetPageStateAsync(CancellationToken cancellationToken = default) =>
+                Task.FromResult<AvitoPageState?>(new AvitoPageState(
+                    AvitoPageKind.Candidates,
+                    CurrentPageUrl,
+                    null,
+                    false,
+                    0,
+                    owner._currentSubProfileId,
+                    null,
+                    0,
+                    false,
+                    false));
 
             public Task<byte[]?> CapturePageScreenshotAsync(CancellationToken cancellationToken = default) =>
                 Task.FromResult<byte[]?>(null);

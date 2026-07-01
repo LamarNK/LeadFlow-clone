@@ -14,7 +14,8 @@ internal static class ResponsesIndexBuilder
         new() { Value = "unique", Label = "Уникальный" },
         new() { Value = "duplicate", Label = "Дубль" },
         new() { Value = "sent", Label = "Отправлен в Bitrix24" },
-        new() { Value = "error", Label = "Ошибка обработки" }
+        new() { Value = "action_required", Label = "Ожидает CRM" },
+        new() { Value = "error", Label = "Ошибка Bitrix" }
     ];
 
     public static IReadOnlyList<DashboardKpiCardViewModel> BuildKpiCards(
@@ -151,6 +152,7 @@ internal static class ResponsesIndexBuilder
             BitrixEntityId = detail.BitrixEntityId,
             ErrorMessage = detail.ErrorMessage,
             RawText = detail.RawText,
+            ChatMessages = ResponseChatDisplay.ParseMessages(detail.ChatMessagesJson),
             CreatedAtUtc = detail.CreatedAt,
             ProcessedAtUtc = detail.ProcessedAt,
             CanResend = detail.Status is ResponseStatuses.Error
@@ -192,11 +194,19 @@ internal static class ResponsesIndexBuilder
         return options;
     }
 
+    public static string MapStatusMessageLabel(string status) => status switch
+    {
+        ResponseStatuses.ActionRequired => "Примечание",
+        ResponseStatuses.Error => "Ошибка Bitrix",
+        _ => "Сообщение"
+    };
+
     private static string MapStatusLabel(string status) => status switch
     {
         ResponseStatuses.Duplicate => "Дубль",
         ResponseStatuses.Sent => "Отправлен",
-        ResponseStatuses.Error or ResponseStatuses.ActionRequired => "Ошибка",
+        ResponseStatuses.ActionRequired => "Ожидает CRM",
+        ResponseStatuses.Error => "Ошибка Bitrix",
         _ => "Уникальный"
     };
 
@@ -204,7 +214,8 @@ internal static class ResponsesIndexBuilder
     {
         ResponseStatuses.Duplicate => "duplicate",
         ResponseStatuses.Sent => "sent",
-        ResponseStatuses.Error or ResponseStatuses.ActionRequired => "error",
+        ResponseStatuses.ActionRequired => "action-required",
+        ResponseStatuses.Error => "error",
         _ => "unique"
     };
 

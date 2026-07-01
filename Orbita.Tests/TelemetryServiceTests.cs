@@ -14,6 +14,89 @@ public sealed class TelemetryServiceTests
     private static readonly Guid AccountId = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc");
 
     [Fact]
+    public async Task SaveSnapshotAsync_NullSubProfiles_DoesNotWipeExistingJson()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db, disabledIdsJson: "[]");
+        const string existingJson = """[{"Id":"sp-1","Name":"Alpha"}]""";
+        var account = await db.WorkerAccounts.SingleAsync();
+        account.SubProfilesJson = existingJson;
+        await db.SaveChangesAsync();
+
+        var sut = new TelemetryService(db, new OfficeAdminService(db), new NoopPanelRealtimeNotifier());
+        var capturedAt = DateTime.UtcNow;
+        var request = new WorkerSnapshotRequest(
+            WorkerId,
+            capturedAt,
+            CreateNonEmptyStats(),
+            [
+                new WorkerAccountDto(
+                    AccountId,
+                    "acc-1",
+                    "Ok",
+                    true,
+                    1,
+                    0,
+                    0,
+                    null,
+                    capturedAt,
+                    SubProfiles: null)
+            ],
+            [
+                new WorkerBalanceDto(AccountId, "acc-1", 0m, [])
+            ]);
+
+        var saved = await sut.SaveSnapshotAsync(request, CancellationToken.None);
+
+        Assert.True(saved);
+        account = await db.WorkerAccounts.SingleAsync();
+        Assert.Equal(existingJson, account.SubProfilesJson);
+    }
+
+    [Fact]
+    public async Task SaveSnapshotAsync_UnspecifiedSubProfilesRefreshedAt_SavesSuccessfully()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db, disabledIdsJson: "[]");
+
+        var sut = new TelemetryService(db, new OfficeAdminService(db), new NoopPanelRealtimeNotifier());
+        var capturedAt = new DateTime(2026, 7, 1, 12, 0, 0, DateTimeKind.Unspecified);
+        var request = new WorkerSnapshotRequest(
+            WorkerId,
+            capturedAt,
+            CreateNonEmptyStats(),
+            [
+                new WorkerAccountDto(
+                    AccountId,
+                    "acc-1",
+                    "Ok",
+                    true,
+                    1,
+                    0,
+                    0,
+                    null,
+                    LastMonitoringAt: new DateTime(2026, 7, 1, 11, 0, 0, DateTimeKind.Unspecified),
+                    SubProfiles:
+                    [
+                        new WorkerSubProfileDto("sp-1", "Alpha", "", true, 100m, null, null, null)
+                    ],
+                    SubProfilesRefreshedAtUtc: new DateTime(2026, 7, 1, 11, 30, 0, DateTimeKind.Unspecified))
+            ],
+            [
+                new WorkerBalanceDto(AccountId, "acc-1", 100m, [])
+            ]);
+
+        var saved = await sut.SaveSnapshotAsync(request, CancellationToken.None);
+
+        Assert.True(saved);
+        var account = await db.WorkerAccounts.SingleAsync();
+        Assert.NotNull(account.SubProfilesRefreshedAtUtc);
+        Assert.Equal(DateTimeKind.Utc, account.SubProfilesRefreshedAtUtc!.Value.Kind);
+        Assert.NotNull(account.LastMonitoringAt);
+        Assert.Equal(DateTimeKind.Utc, account.LastMonitoringAt!.Value.Kind);
+    }
+
+    [Fact]
     public async Task SaveSnapshotAsync_PreservesSubProfilesDisabledIdsJson()
     {
         await using var db = CreateDb();

@@ -1,3 +1,5 @@
+using LeadFlow.Core.Services.Avito;
+
 namespace LeadFlow.Core.Services.AdsPower;
 
 /// <summary>
@@ -19,10 +21,15 @@ public interface IAdsPowerAccountSession : IAsyncDisposable
 
     Task<string> LoadBlockedItemsHtmlAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>Читает «Аванс» из сайдбара Avito Pro на странице кабинета (не на откликах).</summary>
+    Task<decimal?> TryReadAdvanceBalanceAsync(CancellationToken cancellationToken = default);
+
     /// <summary>HTML модалки «Выбор профиля» в текущей CDP-сессии.</summary>
     Task<string> CaptureProfileSwitchHtmlAsync(CancellationToken cancellationToken = default);
 
     string? CurrentPageUrl { get; }
+
+    Task<AvitoPageState?> GetPageStateAsync(CancellationToken cancellationToken = default);
 
     Task<byte[]?> CapturePageScreenshotAsync(CancellationToken cancellationToken = default);
 }

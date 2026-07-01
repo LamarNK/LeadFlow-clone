@@ -178,6 +178,12 @@
         return Math.round(n).toLocaleString('ru-RU') + ' ₽';
     }
 
+    function renderAccountBalance(account) {
+        var total = formatBalance(account.balance);
+        var title = account.hasMultipleSubProfiles ? ' title="Сумма авансов по субпрофилям"' : '';
+        return '<div class="account-balance"><span class="account-balance-total"' + title + '>' + total + '</span></div>';
+    }
+
     function updatePaginationInfo(pagination) {
         if (!pagination) return;
         document.querySelectorAll('[data-orbita-live-pagination] .orbita-pagination__info').forEach(function (el) {
@@ -255,6 +261,7 @@
         displayAuthor: displayAuthor,
         shouldShowMachineName: shouldShowMachineName,
         formatBalance: formatBalance,
+        renderAccountBalance: renderAccountBalance,
         updatePaginationInfo: updatePaginationInfo,
         renderSubProfilesList: renderSubProfilesList,
         renderSubProfilesToolbar: renderSubProfilesToolbar,

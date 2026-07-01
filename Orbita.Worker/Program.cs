@@ -95,6 +95,8 @@ internal static class Program
         host.Services.AddSingleton<WorkerEventSink>();
         host.Services.AddSingleton<IWorkerEventSink>(sp => sp.GetRequiredService<WorkerEventSink>());
         host.Services.AddSingleton<WorkerTelemetryCollector>();
+        host.Services.AddSingleton<OrbitaTelemetrySink>();
+        host.Services.AddSingleton<IWorkerTelemetrySink>(sp => sp.GetRequiredService<OrbitaTelemetrySink>());
         host.Services.AddSingleton<DiagnosticsUploadService>();
         host.Services.AddSingleton<IWorkerDiagnosticsUploader>(sp => sp.GetRequiredService<DiagnosticsUploadService>());
         host.Services.AddSingleton<WorkerLogSyncState>();

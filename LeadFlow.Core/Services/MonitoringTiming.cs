@@ -32,6 +32,9 @@ public static class MonitoringTiming
     public const int MaxResponsesPerAccountPerCycle = 10;
     public const int ActiveAdsRefreshIntervalMinutes = 75;
 
+    /// <summary>Собирать статистику объявлений в проходе Orbita.Worker (отклики + объявления). Пока выключено.</summary>
+    public const bool CollectActiveAdsInWorkerPass = false;
+
     /// <summary>Как часто воркер перечитывает модалку «Выбор профиля» Avito Pro (часы).</summary>
     public const int SubProfilesRefreshIntervalHours = 24;
 

@@ -268,8 +268,8 @@ public sealed class ResponsesQueryService(OrbitaDbContext db)
             "unique" => query.Where(x => x.Status != ResponseStatuses.Duplicate),
             "duplicate" => query.Where(x => x.Status == ResponseStatuses.Duplicate),
             "sent" => query.Where(x => x.Status == ResponseStatuses.Sent),
-            "error" => query.Where(x =>
-                x.Status == ResponseStatuses.Error || x.Status == ResponseStatuses.ActionRequired),
+            "action_required" => query.Where(x => x.Status == ResponseStatuses.ActionRequired),
+            "error" => query.Where(x => x.Status == ResponseStatuses.Error),
             "exclude-duplicates" => query.Where(x => x.Status != ResponseStatuses.Duplicate),
             _ => query.Where(x => x.Status == status)
         };
@@ -324,6 +324,7 @@ public sealed class ResponsesQueryService(OrbitaDbContext db)
         entity.MessengerUrl,
         entity.AvitoSubProfileId,
         entity.RawText,
+        entity.ChatMessagesJson,
         entity.Status,
         entity.IsLocalDuplicate,
         entity.IsBitrixDuplicate,

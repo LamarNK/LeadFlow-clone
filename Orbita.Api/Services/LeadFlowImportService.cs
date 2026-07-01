@@ -262,6 +262,7 @@ public sealed class LeadFlowImportService(
             SourceUrl = record.SourceUrl,
             VacancyUrl = record.VacancyUrl,
             MessengerUrl = record.MessengerUrl,
+            ChatMessagesJson = record.ChatMessagesJson,
             AvitoSubProfileId = record.AvitoSubProfileId,
             Status = status,
             IsLocalDuplicate = isDuplicate,

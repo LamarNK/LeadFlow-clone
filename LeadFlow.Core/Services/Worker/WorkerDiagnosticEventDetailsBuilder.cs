@@ -1,4 +1,5 @@
 using System.Text.Json;
+using LeadFlow.Core.Services.Avito;
 
 namespace LeadFlow.Core.Services.Worker;
 
@@ -15,7 +16,9 @@ public static class WorkerDiagnosticEventDetailsBuilder
         byte[]? screenshotPng,
         string? subProfileId = null,
         string? subProfileName = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        AvitoPageState? pageState = null,
+        string? expectedStep = null)
     {
         Guid? attachmentId = null;
         if (screenshotPng is { Length: > 0 })
@@ -40,7 +43,10 @@ public static class WorkerDiagnosticEventDetailsBuilder
             url = pageUrl,
             text,
             subProfileId,
-            subProfileName
+            subProfileName,
+            expectedStep,
+            actualStep = pageState?.DescribeKindRu(),
+            pageStateSummary = pageState?.DescribeForDiagnostics()
         }, JsonOptions);
         return new WorkerDiagnosticEventDetails(details, attachmentId);
     }

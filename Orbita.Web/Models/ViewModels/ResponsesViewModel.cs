@@ -87,6 +87,7 @@ public sealed class ResponseDetailViewModel
     public string? BitrixEntityId { get; init; }
     public string? ErrorMessage { get; init; }
     public string RawText { get; init; } = string.Empty;
+    public IReadOnlyList<Formatting.ResponseChatMessageViewModel> ChatMessages { get; init; } = [];
     public DateTime CreatedAtUtc { get; init; }
     public DateTime? ProcessedAtUtc { get; init; }
     public bool CanResend { get; init; }

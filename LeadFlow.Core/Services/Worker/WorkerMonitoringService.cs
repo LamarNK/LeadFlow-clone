@@ -6,6 +6,8 @@ using LeadFlow.Core.Logging.Audit;
 using LeadFlow.Core.Models;
 using LeadFlow.Core.Services.AdsPower;
 using LeadFlow.Core.Services.Avito;
+using PuppeteerSharp;
+using System.Text.Json;
 
 namespace LeadFlow.Core.Services.Worker;
 
@@ -18,6 +20,7 @@ public sealed class WorkerMonitoringService(
     IMonitoringRepository repository,
     INewCandidateSink candidateSink,
     IWorkerEventSink eventSink,
+    IWorkerTelemetrySink telemetrySink,
     IWorkerDiagnosticsUploader diagnosticsUploader,
     IPhoneNormalizer phoneNormalizer,
     ICandidateParser candidateParser,
@@ -418,7 +421,7 @@ public sealed class WorkerMonitoringService(
             var allSubProfiles = account.SubProfiles;
             if (allSubProfiles.Count == 0)
             {
-                if (IsAdsStatsStale(account))
+                if (MonitoringTiming.CollectActiveAdsInWorkerPass && IsAdsStatsStale(account))
                 {
                     var part = await CollectProfileItemsFromSessionAsync(account, session, cancellationToken)
                         .ConfigureAwait(false);
@@ -426,6 +429,10 @@ public sealed class WorkerMonitoringService(
                     {
                         await ApplyStatsSnapshotAsync(account, part, cancellationToken).ConfigureAwait(false);
                     }
+                }
+                else
+                {
+                    await TryCaptureAccountBalanceAsync(account, session, cancellationToken).ConfigureAwait(false);
                 }
 
                 var rawJson = await session
@@ -464,7 +471,7 @@ public sealed class WorkerMonitoringService(
                 return (detectedTotal, budgetExhausted);
             }
 
-            var collectStats = IsAdsStatsStale(account);
+            var collectStats = MonitoringTiming.CollectActiveAdsInWorkerPass && IsAdsStatsStale(account);
             ProfileResult? statsAggregate = collectStats
                 ? new ProfileResult { ParseSuccess = false, PageLoadedSuccessfully = true, ActiveTabCounterResolved = true }
                 : null;
@@ -478,63 +485,84 @@ public sealed class WorkerMonitoringService(
 
                 var sub = subProfiles[i];
                 diagnosticSubProfile = sub;
-                var switched = await session.SwitchSubProfileAsync(sub.Id, cancellationToken).ConfigureAwait(false);
-                if (!switched)
+                try
                 {
-                    await PublishSubProfileIssueWithDiagnosticAsync(
-                        account,
-                        session,
-                        sub,
-                        AvitoSubProfileIssueKind.SwitchFailed,
-                        "не удалось переключить суб-профиль.",
-                        cancellationToken).ConfigureAwait(false);
-                    continue;
-                }
-
-                var rawJson = await session
-                    .ExtractCandidatesJsonAsync(messengerHints, cancellationToken)
-                    .ConfigureAwait(false);
-                var issueAtBefore = sub.LastIssueAt;
-                var batch = await avitoResponseSource
-                    .ParseCandidatesFromRawAsync(account, settings, rawJson, cancellationToken, sub)
-                    .ConfigureAwait(false);
-                if (sub.HasIssue && sub.LastIssueAt != issueAtBefore)
-                {
-                    await PublishSubProfileIssueWithDiagnosticAsync(
-                        account,
-                        session,
-                        sub,
-                        sub.LastIssueKind,
-                        sub.LastIssueMessage,
-                        cancellationToken,
-                        applyIssue: false).ConfigureAwait(false);
-                }
-
-                foreach (var r in batch)
-                {
-                    r.AvitoSubProfileId = sub.Id;
-                }
-
-                await ProcessBatchInlineAsync(batch, sub.Name).ConfigureAwait(false);
-
-                if (collectStats && statsAggregate is not null)
-                {
-                    var part = await CollectProfileItemsFromSessionAsync(account, session, cancellationToken)
-                        .ConfigureAwait(false);
-                    if (part.ParseSuccess)
+                    var switched = await session.SwitchSubProfileAsync(sub.Id, cancellationToken).ConfigureAwait(false);
+                    if (!switched)
                     {
-                        statsAggregate.ParseSuccess = true;
-                        statsAggregate.ActiveAds.AddRange(part.ActiveAds);
-                        statsAggregate.BlockedAds.AddRange(part.BlockedAds);
-                        statsAggregate.ActiveCount += part.ActiveCount;
-                        statsAggregate.BlockedCount += part.BlockedCount;
-                        statsAggregate.DraftsCount += part.DraftsCount;
-
-                        if (part.Balance.HasValue)
+                        if (await HandleSubProfileSwitchFailureAsync(
+                                account,
+                                session,
+                                sub,
+                                cancellationToken).ConfigureAwait(false))
                         {
-                            sub.Balance = part.Balance;
+                            break;
+                        }
+
+                        continue;
+                    }
+
+                    await TryCaptureSubProfileBalanceAsync(sub, session, cancellationToken).ConfigureAwait(false);
+
+                    var rawJson = await session
+                        .ExtractCandidatesJsonAsync(messengerHints, cancellationToken)
+                        .ConfigureAwait(false);
+                    var issueAtBefore = sub.LastIssueAt;
+                    var batch = await avitoResponseSource
+                        .ParseCandidatesFromRawAsync(account, settings, rawJson, cancellationToken, sub)
+                        .ConfigureAwait(false);
+                    if (sub.HasIssue && sub.LastIssueAt != issueAtBefore)
+                    {
+                        await PublishSubProfileIssueWithDiagnosticAsync(
+                            account,
+                            session,
+                            sub,
+                            sub.LastIssueKind,
+                            sub.LastIssueMessage,
+                            cancellationToken,
+                            applyIssue: false).ConfigureAwait(false);
+                    }
+
+                    foreach (var r in batch)
+                    {
+                        r.AvitoSubProfileId = sub.Id;
+                    }
+
+                    await ProcessBatchInlineAsync(batch, sub.Name).ConfigureAwait(false);
+
+                    if (collectStats && statsAggregate is not null)
+                    {
+                        var part = await CollectProfileItemsFromSessionAsync(account, session, cancellationToken)
+                            .ConfigureAwait(false);
+                        if (part.ParseSuccess)
+                        {
+                            statsAggregate.ParseSuccess = true;
+                            statsAggregate.ActiveAds.AddRange(part.ActiveAds);
+                            statsAggregate.BlockedAds.AddRange(part.BlockedAds);
+                            statsAggregate.ActiveCount += part.ActiveCount;
+                            statsAggregate.BlockedCount += part.BlockedCount;
+                            statsAggregate.DraftsCount += part.DraftsCount;
+
+                            if (part.Balance.HasValue)
+                            {
+                                sub.Balance = part.Balance;
+                            }
                         }
                     }
+                }
+                catch (AvitoCaptchaDetectedException)
+                {
+                    throw;
+                }
+                catch (Exception ex) when (ShouldHandleAsSubProfileAutomationFailure(ex))
+                {
+                    await HandleSubProfileAutomationFailureAsync(
+                        account,
+                        session,
+                        sub,
+                        ex,
+                        "сбор откликов",
+                        cancellationToken).ConfigureAwait(false);
                 }
 
                 if (i < subProfiles.Count - 1 && !cancellationToken.IsCancellationRequested && !budgetExhausted)
@@ -639,19 +667,54 @@ public sealed class WorkerMonitoringService(
             {
                 var merged = AvitoSubProfileMerger.Merge(account.SubProfiles, discovered);
                 account.SetSubProfiles(merged);
+                account.SubProfilesRefreshedAt = DateTime.UtcNow;
+                account.ForceSubProfilesRefresh = false;
                 _ = GlobalLogger.Instance.LogAsync(
                     $"Worker {account.DisplayName}: sub-profiles refreshed, count={merged.Count}.",
                     DeskLinkAuditLogLevel.Info);
             }
+            else
+            {
+                var pageState = await session.GetPageStateAsync(cancellationToken).ConfigureAwait(false);
+                var detail = pageState?.ProfileSwitchModalOpen == true
+                    ? $"модалка открыта, но парсер не нашёл карточки ({pageState.ProfileCardsCount} в DOM)."
+                    : "парсер не обнаружил субпрофили в HTML модалки.";
+                await PublishAccountEventAsync(
+                    account,
+                    "Warning",
+                    $"Субпрофили {account.DisplayName}: {detail}",
+                    detail,
+                    cancellationToken).ConfigureAwait(false);
+            }
 
-            account.SubProfilesRefreshedAt = DateTime.UtcNow;
             await repository.SaveAccountAsync(account, cancellationToken).ConfigureAwait(false);
+            if (discovered.Count > 0)
+            {
+                await telemetrySink.PushSnapshotAsync(cancellationToken).ConfigureAwait(false);
+            }
         }
         catch (Exception ex)
         {
+            AvitoPageState? pageState = null;
+            try
+            {
+                pageState = await session.GetPageStateAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch
+            {
+                // best effort
+            }
+
+            var message = AvitoAutomationFailureFormatter.Format("обновление субпрофилей", pageState, ex);
             _ = GlobalLogger.Instance.LogAsync(
-                $"Worker {account.DisplayName}: sub-profiles refresh failed: {ex.Message}",
+                $"Worker {account.DisplayName}: sub-profiles refresh failed: {message}",
                 DeskLinkAuditLogLevel.Warning);
+            await PublishAccountEventAsync(
+                account,
+                "Warning",
+                $"Субпрофили {account.DisplayName}: {message}",
+                message,
+                cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -710,6 +773,7 @@ public sealed class WorkerMonitoringService(
 
         var part = avitoParser.ParseProfilePage(activeHtml, account.Id);
         part.PageLoadedSuccessfully = true;
+        part.Balance = AvitoBalanceParser.ParseAdvanceBalance(activeHtml);
 
         if (part.BlockedCount > 0)
         {
@@ -744,6 +808,7 @@ public sealed class WorkerMonitoringService(
 
         var part = avitoParser.ParseProfilePage(activeHtml, account.Id);
         part.PageLoadedSuccessfully = true;
+        part.Balance = AvitoBalanceParser.ParseAdvanceBalance(activeHtml);
 
         if (part.BlockedCount > 0)
         {
@@ -761,6 +826,48 @@ public sealed class WorkerMonitoringService(
         }
 
         return part;
+    }
+
+    private static async Task TryCaptureSubProfileBalanceAsync(
+        AvitoSubProfile sub,
+        IAdsPowerAccountSession session,
+        CancellationToken cancellationToken)
+    {
+        var balance = await session.TryReadAdvanceBalanceAsync(cancellationToken).ConfigureAwait(false);
+        if (balance.HasValue)
+        {
+            sub.Balance = balance;
+        }
+    }
+
+    private async Task TryCaptureAccountBalanceAsync(
+        AvitoAccount account,
+        IAdsPowerAccountSession session,
+        CancellationToken cancellationToken)
+    {
+        var balance = await session.TryReadAdvanceBalanceAsync(cancellationToken).ConfigureAwait(false);
+        if (!balance.HasValue)
+        {
+            return;
+        }
+
+        var subs = account.SubProfiles.ToList();
+        if (subs.Count == 0)
+        {
+            subs.Add(new AvitoSubProfile
+            {
+                Id = account.Id.ToString("N"),
+                Name = account.DisplayName,
+                IsCurrent = true,
+                Balance = balance
+            });
+            account.SetSubProfiles(subs);
+            return;
+        }
+
+        var target = subs.FirstOrDefault(s => s.IsCurrent) ?? subs[0];
+        target.Balance = balance;
+        account.SetSubProfiles(subs);
     }
 
     private async Task TryCloseAdsPowerBrowserForAccountAsync(
@@ -832,9 +939,15 @@ public sealed class WorkerMonitoringService(
     {
         var inner = diagnosticEx.InnerException ?? diagnosticEx;
         var sub = FindSubProfile(account, diagnosticEx.SubProfileId);
+        AvitoPageState? pageState = null;
+        var formatted = AvitoAutomationFailureFormatter.Format(
+            "мониторинг аккаунта",
+            pageState,
+            inner,
+            inner is AvitoPageMismatchException mm ? mm.RecoveryAttempts : null);
         account.LastErrorMessage = sub is not null
-            ? AccountIssueFormatting.FormatIssue(account, sub, diagnosticEx.DiagnosticKind, inner.Message)
-            : inner.Message;
+            ? AccountIssueFormatting.FormatIssue(account, sub, diagnosticEx.DiagnosticKind, formatted)
+            : formatted;
         account.Status = AvitoAccountStatus.Error;
         await repository.SaveAccountAsync(account, ct).ConfigureAwait(false);
         _ = GlobalLogger.Instance.LogAsync(
@@ -907,7 +1020,9 @@ public sealed class WorkerMonitoringService(
         string kind,
         string detail,
         CancellationToken ct,
-        bool applyIssue = true)
+        bool applyIssue = true,
+        AvitoPageState? pageState = null,
+        string? expectedStep = null)
     {
         if (applyIssue)
         {
@@ -922,7 +1037,9 @@ public sealed class WorkerMonitoringService(
             message,
             sub.Id,
             sub.Name,
-            ct).ConfigureAwait(false);
+            ct,
+            pageState,
+            expectedStep).ConfigureAwait(false);
         StoreSubProfileDiagnosticAttachment(account, sub, diagnostic.AttachmentId);
         await PublishAccountEventAsync(account, "Warning", message, diagnostic.Details, ct).ConfigureAwait(false);
     }
@@ -952,7 +1069,9 @@ public sealed class WorkerMonitoringService(
         string text,
         string? subProfileId,
         string? subProfileName,
-        CancellationToken ct) =>
+        CancellationToken ct,
+        AvitoPageState? pageState = null,
+        string? expectedStep = null) =>
         BuildDiagnosticEventDetailsFromSessionAsync(
             account,
             session,
@@ -961,7 +1080,9 @@ public sealed class WorkerMonitoringService(
             subProfileId,
             subProfileName,
             session.CapturePageScreenshotAsync(ct),
-            ct);
+            ct,
+            pageState,
+            expectedStep);
 
     private async Task<WorkerDiagnosticEventDetails> BuildDiagnosticEventDetailsFromSessionAsync(
         AvitoAccount account,
@@ -971,7 +1092,9 @@ public sealed class WorkerMonitoringService(
         string? subProfileId,
         string? subProfileName,
         Task<byte[]?> screenshotTask,
-        CancellationToken ct)
+        CancellationToken ct,
+        AvitoPageState? pageState = null,
+        string? expectedStep = null)
     {
         byte[]? screenshot = null;
         try
@@ -983,16 +1106,34 @@ public sealed class WorkerMonitoringService(
             // Screenshot is best-effort diagnostics.
         }
 
+        pageState ??= await TryGetPageStateAsync(session, ct).ConfigureAwait(false);
+
         return await WorkerDiagnosticEventDetailsBuilder.BuildAsync(
             diagnosticsUploader,
             account.Id,
             kind,
             text,
-            session.CurrentPageUrl,
+            pageState?.Url ?? session.CurrentPageUrl,
             screenshot,
             subProfileId,
             subProfileName,
-            ct).ConfigureAwait(false);
+            ct,
+            pageState,
+            expectedStep).ConfigureAwait(false);
+    }
+
+    private static async Task<AvitoPageState?> TryGetPageStateAsync(
+        IAdsPowerAccountSession session,
+        CancellationToken ct)
+    {
+        try
+        {
+            return await session.GetPageStateAsync(ct).ConfigureAwait(false);
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static AvitoSubProfile? FindSubProfile(AvitoAccount account, string? subProfileId)
@@ -1023,7 +1164,70 @@ public sealed class WorkerMonitoringService(
         ex is not OperationCanceledException
         && ex is not AdsPowerRateLimitExceededException
         && ex is not AdsPowerDailyOpenLimitExceededException
-        && ex is not SessionDiagnosticException;
+        && ex is not SessionDiagnosticException
+        && !ShouldHandleAsSubProfileAutomationFailure(ex);
+
+    private static bool ShouldHandleAsSubProfileAutomationFailure(Exception ex) =>
+        ex is AvitoPageMismatchException
+        or JsonException
+        or PuppeteerException
+        or InvalidOperationException;
+
+    private async Task<bool> HandleSubProfileSwitchFailureAsync(
+        AvitoAccount account,
+        IAdsPowerAccountSession session,
+        AvitoSubProfile sub,
+        CancellationToken ct)
+    {
+        AvitoPageState? pageState = await TryGetPageStateAsync(session, ct).ConfigureAwait(false);
+        var kind = AvitoAutomationFailureFormatter.MapDiagnosticKind(pageState, null);
+        var detail = AvitoAutomationFailureFormatter.Format("переключение субпрофиля", pageState, null);
+        await PublishSubProfileIssueWithDiagnosticAsync(
+            account,
+            session,
+            sub,
+            kind,
+            detail,
+            ct,
+            pageState: pageState,
+            expectedStep: "переключение субпрофиля").ConfigureAwait(false);
+
+        return AvitoAutomationFailureFormatter.IsAccountBlockingIssue(kind);
+    }
+
+    private async Task HandleSubProfileAutomationFailureAsync(
+        AvitoAccount account,
+        IAdsPowerAccountSession session,
+        AvitoSubProfile sub,
+        Exception ex,
+        string expectedStep,
+        CancellationToken ct)
+    {
+        AvitoPageState? pageState = null;
+        try
+        {
+            pageState = await session.GetPageStateAsync(ct).ConfigureAwait(false);
+        }
+        catch
+        {
+            // best effort
+        }
+
+        var recoveryAttempts = ex is AvitoPageMismatchException mismatch
+            ? mismatch.RecoveryAttempts
+            : null;
+        var kind = AvitoAutomationFailureFormatter.MapDiagnosticKind(pageState, ex);
+        var detail = AvitoAutomationFailureFormatter.Format(expectedStep, pageState, ex, recoveryAttempts);
+        await PublishSubProfileIssueWithDiagnosticAsync(
+            account,
+            session,
+            sub,
+            kind,
+            detail,
+            ct,
+            pageState: pageState,
+            expectedStep: expectedStep).ConfigureAwait(false);
+    }
 
     private static async Task ThrowWithSessionDiagnosticAsync(
         IAdsPowerAccountSession session,
@@ -1041,7 +1245,17 @@ public sealed class WorkerMonitoringService(
             // Screenshot is best-effort diagnostics.
         }
 
-        var pageUrl = session.CurrentPageUrl;
+        AvitoPageState? pageState = null;
+        try
+        {
+            pageState = await session.GetPageStateAsync(ct).ConfigureAwait(false);
+        }
+        catch
+        {
+            // best effort
+        }
+
+        var pageUrl = pageState?.Url ?? session.CurrentPageUrl;
         var subProfileId = activeSubProfile?.Id ?? (ex as AvitoCaptchaDetectedException)?.SubProfileId;
         var subProfileName = activeSubProfile?.Name ?? (ex as AvitoCaptchaDetectedException)?.SubProfileName;
 
@@ -1056,12 +1270,9 @@ public sealed class WorkerMonitoringService(
                 subProfileName ?? captchaEx.SubProfileName);
         }
 
-        var kind = ex switch
-        {
-            AvitoCaptchaDetectedException captcha => captcha.Kind,
-            JsonException => "parse-error",
-            _ => "account-error"
-        };
+        var kind = ex is AvitoCaptchaDetectedException captcha
+            ? captcha.Kind
+            : AvitoAutomationFailureFormatter.MapDiagnosticKind(pageState, ex);
 
         throw new SessionDiagnosticException(ex, kind, screenshot, pageUrl, subProfileId, subProfileName);
     }

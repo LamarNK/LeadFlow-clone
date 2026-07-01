@@ -26,8 +26,9 @@ public sealed class AccountsService(OrbitaApiClient api, IOptions<DesignPreviewO
             var workerDetail = await api.GetWorkerAsync(worker.Id, ct);
             foreach (var account in accounts)
             {
-                var balance = workerDetail?.Balances.FirstOrDefault(b => b.AccountId == account.AccountId)?.TotalBalance ?? 0;
-                rows.Add(AccountsIndexBuilder.MapAccount(account, worker.Id, worker.DisplayName, balance));
+                var balanceDetail = workerDetail?.Balances.FirstOrDefault(b => b.AccountId == account.AccountId);
+                var balance = balanceDetail?.TotalBalance ?? 0;
+                rows.Add(AccountsIndexBuilder.MapAccount(account, worker.Id, worker.DisplayName, balance, balanceDetail));
             }
         }
 

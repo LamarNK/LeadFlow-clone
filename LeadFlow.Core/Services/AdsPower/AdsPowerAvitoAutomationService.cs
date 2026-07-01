@@ -1,5 +1,6 @@
 using System.Runtime.ExceptionServices;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using LeadFlow.Core.Data;
 using LeadFlow.Core.Logging.Audit;
@@ -63,35 +64,9 @@ public sealed partial class AdsPowerAvitoAutomationService(
             var executeScript = (string script, CancellationToken ct) =>
                 EvaluateWithRetryAsync<string>(page, script, ct);
 
-            // После переключения суб-профиля Avito часто оставляет старый список откликов в SPA.
-            // Снимаем сигнатуру до reload и ждём, пока DOM стабилизируется с новым содержимым.
-            string? staleListSignature = null;
-            if (IsOnUrl(page.Url, CandidatesPageUrl))
-            {
-                staleListSignature = await AvitoCandidatesPageWaiter
-                    .TryCaptureListSignatureAsync(executeScript, cancellationToken)
-                    .ConfigureAwait(false);
-            }
+            await EnsureOnCandidatesPageAsync(page, adsPowerUserId, cancellationToken).ConfigureAwait(false);
 
-            await NavigateToCandidatesPageRefreshingAsync(page, cancellationToken).ConfigureAwait(false);
-
-            await AvitoCandidatesPageWaiter
-                .WaitForCandidatesOrThrowFirewallAsync(
-                    executeScript,
-                    async ct =>
-                    {
-                        try
-                        {
-                            return await page.GetContentAsync().ConfigureAwait(false);
-                        }
-                        catch
-                        {
-                            return null;
-                        }
-                    },
-                    page.Url,
-                    cancellationToken,
-                    staleListSignature)
+            var knownPhones = await LoadKnownNormalizedPhonesAsync(messengerEnrichmentHints, cancellationToken)
                 .ConfigureAwait(false);
 
             await AvitoCandidatesListPreparer.PrepareAsync(
@@ -109,7 +84,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
                         return null;
                     }
                 },
-                page.Url).ConfigureAwait(false);
+                page.Url,
+                knownPhones).ConfigureAwait(false);
 
             var raw = await EvaluateWithRetryAsync<string>(page, ExtractionScript, cancellationToken).ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(raw))
@@ -640,6 +616,17 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 ["html.length"] = html.Length
             });
 
+        await DismissProfileSwitchModalAsync(page, cancellationToken).ConfigureAwait(false);
+        var postDismiss = await ProbePageStateAsync(page, cancellationToken).ConfigureAwait(false);
+        if (postDismiss?.ProfileSwitchModalOpen == true)
+        {
+            throw new AvitoPageMismatchException(
+                "закрытие модалки субпрофилей",
+                AvitoPageKind.Dashboard,
+                postDismiss,
+                ["закрыть модалку Escape/навигация"]);
+        }
+
         return html;
     }
 
@@ -755,7 +742,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
     }
 
     private static Task<bool> IsTargetSubProfileAlreadyCurrentAsync(IPage page, string subProfileId) =>
-        page.EvaluateExpressionAsync<bool>(
+        PuppeteerJsonEvaluator.EvaluateBoolAsync(
+            page,
             $@"(() => {{
                 const el = document.querySelector('[data-marker=""component-profile-switch/profile-{Escape(subProfileId)}""]');
                 return !!el && /isCurrent/i.test(el.className || '');
@@ -766,8 +754,9 @@ public sealed partial class AdsPowerAvitoAutomationService(
     {
         for (var i = 0; i < 3; i++)
         {
-            var open = await page.EvaluateExpressionAsync<bool>(
-                "() => !!document.querySelector(\"[data-marker='component-profile-switch/root']\")")
+            var open = await PuppeteerJsonEvaluator.EvaluateBoolAsync(
+                page,
+                "(!!document.querySelector(\"[data-marker='component-profile-switch/root']\"))")
                 .ConfigureAwait(false);
             if (!open)
             {
@@ -789,8 +778,9 @@ public sealed partial class AdsPowerAvitoAutomationService(
             await Task.Delay(450, cancellationToken).ConfigureAwait(false);
         }
 
-        var stillOpen = await page.EvaluateExpressionAsync<bool>(
-            "() => !!document.querySelector(\"[data-marker='component-profile-switch/root']\")")
+        var stillOpen = await PuppeteerJsonEvaluator.EvaluateBoolAsync(
+            page,
+            "(!!document.querySelector(\"[data-marker='component-profile-switch/root']\"))")
             .ConfigureAwait(false);
         if (!stillOpen)
         {
@@ -846,7 +836,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
             return false;
         }
 
-        var clicked = await page.EvaluateExpressionAsync<bool>(
+        var clicked = await PuppeteerJsonEvaluator.EvaluateBoolAsync(
+                page,
                 BuildClickSubProfileJs(subProfileId))
             .ConfigureAwait(false);
 
@@ -879,8 +870,9 @@ public sealed partial class AdsPowerAvitoAutomationService(
             var modalClosed = false;
             try
             {
-                var modalStillOpen = await page.EvaluateExpressionAsync<bool>(
-                    "() => !!document.querySelector(\"[data-marker='component-profile-switch/root']\")").ConfigureAwait(false);
+                var modalStillOpen = await PuppeteerJsonEvaluator.EvaluateBoolAsync(
+                    page,
+                    "(!!document.querySelector(\"[data-marker='component-profile-switch/root']\"))").ConfigureAwait(false);
                 if (!modalStillOpen)
                 {
                     modalClosed = true;
@@ -901,7 +893,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
                                 ["avito.subProfileId"] = subProfileId
                             });
 
-                        var elementClicked = await page.EvaluateExpressionAsync<bool>(
+                        var elementClicked = await PuppeteerJsonEvaluator.EvaluateBoolAsync(
+                            page,
                             BuildClickSubProfileJs(subProfileId)).ConfigureAwait(false);
 
                         if (!elementClicked)
@@ -1337,37 +1330,117 @@ public sealed partial class AdsPowerAvitoAutomationService(
             return true;
         }})()";
 
-    private static async Task NavigateToCandidatesPageRefreshingAsync(IPage page, CancellationToken cancellationToken)
+    private static Task<AvitoPageState?> ProbePageStateAsync(IPage page, CancellationToken cancellationToken) =>
+        AvitoPageStateProbe.TryProbeAsync(
+            (script, ct) => EvaluateWithRetryAsync<string>(page, script, ct),
+            cancellationToken);
+
+    private async Task EnsureOnCandidatesPageAsync(
+        IPage page,
+        string adsPowerUserId,
+        CancellationToken cancellationToken)
     {
-        var alreadyOnCandidates = IsOnUrl(page.Url, CandidatesPageUrl);
-        var navigationOptions = new NavigationOptions
-        {
-            Timeout = 60_000,
-            WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
-        };
+        var executeScript = (string script, CancellationToken ct) =>
+            EvaluateWithRetryAsync<string>(page, script, ct);
 
-        _ = GlobalLogger.Instance.LogAsync(
-            alreadyOnCandidates
-                ? "AdsPower candidates: hard navigation (refresh list after sub-profile switch)."
-                : "AdsPower candidates: navigating to responses page.",
-            DeskLinkAuditLogLevel.Info,
-            memberName: nameof(ExtractCandidatesJsonAsync),
-            properties: new Dictionary<string, object?>
+        var recoveryAttempts = new List<string>();
+        const int maxAttempts = 3;
+
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var state = await ProbePageStateAsync(page, cancellationToken).ConfigureAwait(false);
+            if (state?.IsOnCandidates == true)
             {
-                ["step"] = alreadyOnCandidates ? "candidates_hard_nav" : "candidates_goto",
-                ["page.url"] = page.Url,
-                ["avito.url"] = CandidatesPageUrl
-            });
+                return;
+            }
 
-        try
-        {
-            await page.GoToAsync(CandidatesPageUrl, navigationOptions).ConfigureAwait(false);
+            if (state?.ProfileSwitchModalOpen == true)
+            {
+                recoveryAttempts.Add($"попытка {attempt}: закрыть модалку субпрофилей");
+                await DismissProfileSwitchModalAsync(page, cancellationToken).ConfigureAwait(false);
+                state = await ProbePageStateAsync(page, cancellationToken).ConfigureAwait(false);
+                if (state?.IsOnCandidates == true)
+                {
+                    return;
+                }
+            }
+
+            var alreadyOnCandidates = IsOnUrl(page.Url, CandidatesPageUrl);
+            _ = GlobalLogger.Instance.LogAsync(
+                alreadyOnCandidates
+                    ? $"AdsPower candidates: hard navigation attempt {attempt}/{maxAttempts}."
+                    : $"AdsPower candidates: navigating to responses page (attempt {attempt}/{maxAttempts}).",
+                DeskLinkAuditLogLevel.Info,
+                memberName: nameof(EnsureOnCandidatesPageAsync),
+                properties: new Dictionary<string, object?>
+                {
+                    ["step"] = alreadyOnCandidates ? "candidates_hard_nav" : "candidates_goto",
+                    ["attempt"] = attempt,
+                    ["page.url"] = page.Url,
+                    ["avito.url"] = CandidatesPageUrl,
+                    ["pageState"] = state?.DescribeForDiagnostics()
+                });
+
+            recoveryAttempts.Add($"попытка {attempt}: переход на /profile/candidates");
+
+            var navigationOptions = new NavigationOptions
+            {
+                Timeout = 60_000,
+                WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
+            };
+
+            try
+            {
+                await page.GoToAsync(CandidatesPageUrl, navigationOptions).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (IsRecoverableNavigationError(ex))
+            {
+                await Task.Delay(3000, cancellationToken).ConfigureAwait(false);
+                await page.GoToAsync(CandidatesPageUrl, navigationOptions).ConfigureAwait(false);
+            }
+
+            string? staleListSignature = null;
+            if (IsOnUrl(page.Url, CandidatesPageUrl))
+            {
+                staleListSignature = await AvitoCandidatesPageWaiter
+                    .TryCaptureListSignatureAsync(executeScript, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            await AvitoCandidatesPageWaiter
+                .WaitForCandidatesOrThrowFirewallAsync(
+                    executeScript,
+                    async ct =>
+                    {
+                        try
+                        {
+                            return await page.GetContentAsync().ConfigureAwait(false);
+                        }
+                        catch
+                        {
+                            return null;
+                        }
+                    },
+                    page.Url,
+                    cancellationToken,
+                    staleListSignature)
+                .ConfigureAwait(false);
+
+            state = await ProbePageStateAsync(page, cancellationToken).ConfigureAwait(false);
+            if (state?.IsOnCandidates == true)
+            {
+                return;
+            }
         }
-        catch (Exception ex) when (IsRecoverableNavigationError(ex))
-        {
-            await Task.Delay(3000, cancellationToken).ConfigureAwait(false);
-            await page.GoToAsync(CandidatesPageUrl, navigationOptions).ConfigureAwait(false);
-        }
+
+        var finalState = await ProbePageStateAsync(page, cancellationToken).ConfigureAwait(false);
+        throw new AvitoPageMismatchException(
+            "отклики",
+            AvitoPageKind.Candidates,
+            finalState,
+            recoveryAttempts);
     }
 
     /// <summary>
@@ -1611,6 +1684,23 @@ public sealed partial class AdsPowerAvitoAutomationService(
             || url.Contains("messenger/channel", StringComparison.OrdinalIgnoreCase);
     }
 
+    private async Task<HashSet<string>> LoadKnownNormalizedPhonesAsync(
+        CandidatesMessengerEnrichmentHints? enrichmentHints,
+        CancellationToken cancellationToken)
+    {
+        if (enrichmentHints is null)
+        {
+            return [];
+        }
+
+        return await duplicateRepository
+            .GetAllStoredNormalizedPhonesAsync(
+                enrichmentHints.DuplicateScope,
+                enrichmentHints.AccountId,
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
     /// <summary>
     /// На странице откликов кнопка «в чат» часто без href; ссылка канала появляется в шапке мини-мессенджера
     /// (<c>mini-messenger/messenger-page-link</c>) только после клика — дополняем JSON для AdsPower CDP.
@@ -1689,30 +1779,37 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 continue;
             }
 
-            var messengerUrl = item["messengerUrl"]?.GetValue<string>();
-            if (LooksLikeAvitoMessengerChannelUrl(messengerUrl))
-            {
-                continue;
-            }
-
             var phoneRawForSkip = item["phone"]?.GetValue<string>() ?? string.Empty;
             var normalizedForSkip = phoneNormalizer.Normalize(phoneRawForSkip);
-            if (existingNormalizedFromDb is not null
+            var isKnownPhone = existingNormalizedFromDb is not null
                 && LooksLikeCompleteRussianMobile(normalizedForSkip)
-                && existingNormalizedFromDb.Contains(normalizedForSkip))
+                && existingNormalizedFromDb.Contains(normalizedForSkip);
+            if (isKnownPhone)
             {
-                continue;
+                var hasUnread = await TryReadCandidateChatUnreadAsync(page, i, cancellationToken)
+                    .ConfigureAwait(false);
+                if (!hasUnread)
+                {
+                    continue;
+                }
             }
 
-            var channelUrl = await TryReadMessengerChannelUrlForCandidateCardAsync(page, i, cancellationToken)
+            var enrichment = await TryEnrichMessengerForCandidateCardAsync(page, i, cancellationToken)
                 .ConfigureAwait(false);
-            if (string.IsNullOrWhiteSpace(channelUrl))
+            if (string.IsNullOrWhiteSpace(enrichment.ChannelUrl) && enrichment.ChatMessages.Count == 0)
             {
                 continue;
             }
 
-            item["messengerUrl"] = channelUrl;
-            item["sourceResponseId"] = channelUrl;
+            if (!string.IsNullOrWhiteSpace(enrichment.ChannelUrl))
+            {
+                item["messengerUrl"] = enrichment.ChannelUrl;
+            }
+
+            if (enrichment.ChatMessages.Count > 0)
+            {
+                item["chatMessages"] = enrichment.ChatMessages;
+            }
         }
 
         await CloseMiniMessengerPanelIfOpenAsync(page, cancellationToken).ConfigureAwait(false);
@@ -1724,8 +1821,9 @@ public sealed partial class AdsPowerAvitoAutomationService(
     {
         try
         {
-            var hasPanel = await page.EvaluateExpressionAsync<bool>(
-                    "!!document.querySelector(\"a[data-marker='mini-messenger/messenger-page-link']\")")
+            var hasPanel = await PuppeteerJsonEvaluator.EvaluateBoolAsync(
+                    page,
+                    "(!!document.querySelector(\"a[data-marker='mini-messenger/messenger-page-link']\"))")
                 .ConfigureAwait(false);
             if (!hasPanel)
             {
@@ -1757,7 +1855,36 @@ public sealed partial class AdsPowerAvitoAutomationService(
         await Task.Delay(200, cancellationToken).ConfigureAwait(false);
     }
 
-    private static async Task<string?> TryReadMessengerChannelUrlForCandidateCardAsync(
+    private sealed record MessengerCardEnrichmentResult(string? ChannelUrl, JsonArray ChatMessages);
+
+    private static async Task<bool> TryReadCandidateChatUnreadAsync(
+        IPage page,
+        int candidateIndex,
+        CancellationToken cancellationToken)
+    {
+        var raw = await EvaluateWithRetryAsync<string>(
+                page,
+                AvitoCandidatesPageScripts.BuildReadCandidateChatUnreadScript(candidateIndex),
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(UnwrapMessengerJson(raw));
+            return doc.RootElement.TryGetProperty("unread", out var unreadProp)
+                && unreadProp.ValueKind == JsonValueKind.True;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static async Task<MessengerCardEnrichmentResult> TryEnrichMessengerForCandidateCardAsync(
         IPage page,
         int candidateIndex,
         CancellationToken cancellationToken)
@@ -1769,34 +1896,129 @@ public sealed partial class AdsPowerAvitoAutomationService(
             candidateIndex.ToString(),
             StringComparison.Ordinal);
 
-        var clicked = await page.EvaluateExpressionAsync<bool>(clickExpr).ConfigureAwait(false);
+        var clicked = await PuppeteerJsonEvaluator.EvaluateBoolAsync(page, clickExpr).ConfigureAwait(false);
         if (!clicked)
         {
-            return null;
+            return new MessengerCardEnrichmentResult(null, new JsonArray());
         }
 
         await Task.Delay(350, cancellationToken).ConfigureAwait(false);
 
+        string? channelUrl = null;
         try
         {
             await page.WaitForSelectorAsync(
                     "a[data-marker='mini-messenger/messenger-page-link'][href*='/profile/messenger/']",
                     new WaitForSelectorOptions { Timeout = 12_000 })
                 .ConfigureAwait(false);
+
+            channelUrl = await page.EvaluateExpressionAsync<string>(
+                    @"(() => {
+                        const a = document.querySelector(""a[data-marker='mini-messenger/messenger-page-link']"");
+                        return a?.href ?? """";
+                    })()")
+                .ConfigureAwait(false);
+            channelUrl = string.IsNullOrWhiteSpace(channelUrl) ? null : channelUrl.Trim();
         }
         catch
         {
-            return null;
+            // Мини-чат мог открыться без ссылки в шапке — всё равно попробуем снять сообщения.
         }
 
-        var href = await page.EvaluateExpressionAsync<string>(
-                @"(() => {
-                    const a = document.querySelector(""a[data-marker='mini-messenger/messenger-page-link']"");
-                    return a?.href ?? """";
-                })()")
-            .ConfigureAwait(false);
+        JsonArray chatMessages = new();
+        for (var round = 0; round < 4; round++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await Task.Delay(round == 0 ? 280 : 220, cancellationToken).ConfigureAwait(false);
 
-        return string.IsNullOrWhiteSpace(href) ? null : href.Trim();
+            var messagesRaw = await EvaluateWithRetryAsync<string>(
+                    page,
+                    AvitoCandidatesPageScripts.BuildScrollAndCollectMiniMessengerMessagesScript(),
+                    cancellationToken)
+                .ConfigureAwait(false);
+            var parsed = TryParseMiniMessengerMessages(messagesRaw);
+            if (parsed.Count > 0)
+            {
+                chatMessages = parsed;
+                break;
+            }
+        }
+
+        return new MessengerCardEnrichmentResult(channelUrl, chatMessages);
+    }
+
+    private static JsonArray TryParseMiniMessengerMessages(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return new JsonArray();
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(UnwrapMessengerJson(raw));
+            if (!doc.RootElement.TryGetProperty("messages", out var messagesElement)
+                || messagesElement.ValueKind != JsonValueKind.Array)
+            {
+                return new JsonArray();
+            }
+
+            var result = new JsonArray();
+            foreach (var message in messagesElement.EnumerateArray())
+            {
+                var text = message.TryGetProperty("text", out var textProp) ? textProp.GetString() : null;
+                if (string.IsNullOrWhiteSpace(text))
+                {
+                    continue;
+                }
+
+                var node = new JsonObject
+                {
+                    ["text"] = text.Trim()
+                };
+                if (message.TryGetProperty("at", out var atProp) && atProp.ValueKind == JsonValueKind.String)
+                {
+                    node["at"] = atProp.GetString();
+                }
+
+                if (message.TryGetProperty("side", out var sideProp) && sideProp.ValueKind == JsonValueKind.String)
+                {
+                    node["side"] = sideProp.GetString();
+                }
+
+                if (message.TryGetProperty("isPlatform", out var platformProp)
+                    && platformProp.ValueKind == JsonValueKind.True)
+                {
+                    node["isPlatform"] = true;
+                }
+
+                result.Add(node);
+            }
+
+            return result;
+        }
+        catch
+        {
+            return new JsonArray();
+        }
+    }
+
+    private static string UnwrapMessengerJson(string raw)
+    {
+        var trimmed = raw.Trim();
+        if (trimmed.Length >= 2 && trimmed[0] == '"' && trimmed[^1] == '"')
+        {
+            try
+            {
+                return JsonSerializer.Deserialize<string>(trimmed) ?? trimmed;
+            }
+            catch
+            {
+                return trimmed;
+            }
+        }
+
+        return trimmed;
     }
 
     /// <summary>Тот же порядок карточек, что и в <see cref="ExtractionScript"/>.</summary>

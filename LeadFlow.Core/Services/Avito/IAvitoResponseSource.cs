@@ -15,4 +15,9 @@ public interface IAvitoResponseSource
         string rawExtractionJson,
         CancellationToken cancellationToken,
         AvitoSubProfile? activeSubProfile = null);
+
+    Task<HashSet<string>> GetKnownNormalizedPhonesForPrepareAsync(
+        Guid accountId,
+        DuplicateScope duplicateScope,
+        CancellationToken cancellationToken);
 }
