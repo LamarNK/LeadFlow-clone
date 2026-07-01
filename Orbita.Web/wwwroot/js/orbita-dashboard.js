@@ -500,14 +500,14 @@
 
             var detailsUrl = workerDetailsUrl(w.id);
             return '<tr>' +
-                '<td class="cell-name"><a href="' + escapeHtml(detailsUrl) + '">' + escapeHtml(w.displayName) + '</a></td>' +
-                '<td><span class="status-dot' + statusClass + '"><i class="fa-solid fa-circle status-dot-icon" aria-hidden="true"></i>' + statusText + '</span></td>' +
-                '<td>' + w.activeAccounts + ' / ' + w.totalAccounts + '</td>' +
-                '<td>' + w.responses + '</td>' +
-                '<td>' + w.duplicates + '</td>' +
-                '<td>' + w.errors + '</td>' +
-                '<td>' + timeHtml + '</td>' +
-                '<td class="data-table-menu">' +
+                '<td class="cell-name" data-label="Воркер"><a href="' + escapeHtml(detailsUrl) + '">' + escapeHtml(w.displayName) + '</a></td>' +
+                '<td data-label="Статус"><span class="status-dot' + statusClass + '"><i class="fa-solid fa-circle status-dot-icon" aria-hidden="true"></i>' + statusText + '</span></td>' +
+                '<td data-label="Аккаунтов">' + w.activeAccounts + ' / ' + w.totalAccounts + '</td>' +
+                '<td data-label="Откликов">' + w.responses + '</td>' +
+                '<td data-label="Дублей">' + w.duplicates + '</td>' +
+                '<td data-label="Ошибок">' + w.errors + '</td>' +
+                '<td data-label="Последняя активность">' + timeHtml + '</td>' +
+                '<td class="data-table-menu" data-label="">' +
                 '<div class="row-menu" data-row-menu>' +
                 '<button type="button" class="row-menu-btn" aria-label="Действия" aria-expanded="false" aria-haspopup="true"><i class="fa-solid fa-ellipsis-vertical" aria-hidden="true"></i></button>' +
                 '<div class="row-menu-dropdown" hidden>' +

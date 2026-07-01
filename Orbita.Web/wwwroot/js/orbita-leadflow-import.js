@@ -161,18 +161,18 @@
                 const row = document.createElement('tr');
                 const canSelect = item.canImport;
                 row.innerHTML =
-                    '<td class="data-table-check-col">' +
+                    '<td class="data-table-check-col" data-label="">' +
                         (canSelect
                             ? '<input type="checkbox" data-leadflow-import-row-id="' + item.id + '" checked />'
                             : '') +
                     '</td>' +
-                    '<td class="settings-log-time">' + formatDate(item.createdAt) + '</td>' +
-                    '<td>' + escapeHtml(item.fullName || '—') + '</td>' +
-                    '<td>' + escapeHtml(item.phoneRaw || '—') + '</td>' +
-                    '<td>' + escapeHtml(item.accountName || '—') + '</td>' +
-                    '<td>' + escapeHtml(item.vacancy || '—') + '</td>' +
-                    '<td>' + escapeHtml(statusLabel(item.status)) + '</td>' +
-                    '<td><span class="settings-status-pill settings-status-pill--' + (canSelect ? 'online' : 'offline') + '">' +
+                    '<td class="settings-log-time" data-label="Дата">' + formatDate(item.createdAt) + '</td>' +
+                    '<td class="cell-name" data-label="Кандидат">' + escapeHtml(item.fullName || '—') + '</td>' +
+                    '<td data-label="Телефон">' + escapeHtml(item.phoneRaw || '—') + '</td>' +
+                    '<td data-label="Аккаунт">' + escapeHtml(item.accountName || '—') + '</td>' +
+                    '<td data-label="Вакансия">' + escapeHtml(item.vacancy || '—') + '</td>' +
+                    '<td data-label="Статус LeadFlow">' + escapeHtml(statusLabel(item.status)) + '</td>' +
+                    '<td data-label="Импорт"><span class="settings-status-pill settings-status-pill--' + (canSelect ? 'online' : 'offline') + '">' +
                         escapeHtml(importStateLabel(item.importState)) + '</span></td>';
                 previewBody.appendChild(row);
             });

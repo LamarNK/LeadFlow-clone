@@ -28,19 +28,7 @@
         @{ var kpiIdx = 0; }
         @foreach (var kpi in Model.KpiCards)
         {
-            <article class="kpi-card kpi-card--stat" style="--kpi-index: @kpiIdx">
-                <header class="kpi-card-head">
-                    <div class="kpi-icon-box kpi-icon-box--@kpi.IconTone">
-                        <i class="@kpi.IconClass" aria-hidden="true"></i>
-                    </div>
-                    <span class="kpi-card-label">@kpi.Label</span>
-                </header>
-                <div class="kpi-card-metric">
-                    <span class="kpi-value"
-                          data-kpi-count="@kpi.CountValue.ToString(System.Globalization.CultureInfo.InvariantCulture)">0</span>
-                    <span class="kpi-delta-pill kpi-delta-@kpi.DeltaTone">@kpi.Delta</span>
-                </div>
-            </article>
+            <partial name="_KpiCard" model="@(new KpiCardPartialViewModel { Card = kpi, Index = kpiIdx, Layout = KpiCardLayout.StatDelta, ExtraClass = " kpi-card--stat" })" />
             kpiIdx++;
         }
     </div>
@@ -148,7 +136,7 @@
             }
             else
             {
-            <table class="data-table data-table--errors">
+            <table class="data-table data-table--errors data-table--cards">
                 <thead>
                     <tr>
                         <th>Время</th>
@@ -175,13 +163,13 @@
                         data-detail-subtitle="@error.WorkerName · @error.SeverityLabel"
                         data-detail-body="@error.Message"
                         data-detail-attachment="@(error.AttachmentId is not null ? $"/Diagnostics/Image/{error.AttachmentId}" : "")">
-                        <td class="errors-time"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(error.OccurredAtUtc, "datetime-seconds"))" /></td>
-                        <td>
+                        <td class="errors-time" data-label="Время"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(error.OccurredAtUtc, "datetime-seconds"))" /></td>
+                        <td data-label="Уровень">
                             <span class="error-severity-badge error-severity-badge--@error.Severity">@error.SeverityLabel</span>
                         </td>
-                        <td class="errors-type">@error.ErrorTypeLabel</td>
-                        <td class="errors-message" title="@error.Message">@error.Message</td>
-                        <td class="cell-link">
+                        <td class="errors-type" data-label="Тип ошибки">@error.ErrorTypeLabel</td>
+                        <td class="errors-message" data-label="Сообщение" title="@error.Message">@error.Message</td>
+                        <td class="cell-link" data-label="Аккаунт">
                             @if (accountUrl is not null)
                             {
                                 <a href="@accountUrl">@error.AccountName</a>
@@ -191,12 +179,12 @@
                                 <span class="errors-muted">—</span>
                             }
                         </td>
-                        <td class="cell-link">
+                        <td class="cell-link" data-label="Воркер">
                             <a href="@workerUrl">@error.WorkerName</a>
                         </td>
-                        <td class="cell-num @(error.OccurrenceCount > 10 ? "errors-count-high" : "")">@error.OccurrenceCount</td>
-                        <td class="errors-last-seen"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(error.LastSeenUtc, "time"))" /></td>
-                        <td class="data-table-menu">
+                        <td class="cell-num @(error.OccurrenceCount > 10 ? "errors-count-high" : "")" data-label="Повторений">@error.OccurrenceCount</td>
+                        <td class="errors-last-seen" data-label="Последнее появление"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(error.LastSeenUtc, "time"))" /></td>
+                        <td class="data-table-menu" data-label="">
                             <div class="row-menu" data-row-menu>
                                 <button type="button" class="row-menu-btn" aria-label="Действия" aria-expanded="false" aria-haspopup="true">
                                     <i class="fa-solid fa-ellipsis-vertical" aria-hidden="true"></i>

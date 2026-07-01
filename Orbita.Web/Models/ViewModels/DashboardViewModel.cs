@@ -22,6 +22,7 @@ public sealed class DashboardViewModel
 public sealed class DashboardKpiCardViewModel
 {
     public string Key { get; init; } = string.Empty;
+    public string? Href { get; init; }
     public string Label { get; init; } = string.Empty;
     public string Value { get; init; } = string.Empty;
     public double CountValue { get; init; }

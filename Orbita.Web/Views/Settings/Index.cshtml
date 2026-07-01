@@ -13,10 +13,8 @@
     var rotatedOfficeSecret = ViewBag.RotatedOfficeRegistrationSecret as string;
     var officesTab = Model.Offices;
 }
+<partial name="_PageHeader" model="Model.Header" />
 <div class="orbita-main settings-page">
-    <h1 class="settings-page-title">Администрирование</h1>
-    <p class="settings-page-subtitle">Пользователи, воркеры, интеграции Bitrix, аудит и логи</p>
-
     @if (!string.IsNullOrWhiteSpace(Model.StatusMessage))
     {
         <div class="settings-alert settings-alert--success" role="status">@Model.StatusMessage</div>
@@ -58,7 +56,7 @@
                     </div>
                 </div>
                 <div class="card-body card-body-table settings-table-wrap">
-                    <table class="data-table data-table--settings-users">
+                    <table class="data-table data-table--settings-users data-table--cards">
                         <thead>
                         <tr>
                             <th>Название</th>
@@ -72,13 +70,13 @@
                         @foreach (var office in officesTab.Rows)
                         {
                             <tr>
-                                <td>
+                                <td class="cell-name" data-label="Название">
                                     <a href="@Url.Action("Index", new { tab = "offices", userId = office.Id })">@office.Name</a>
                                 </td>
-                                <td>@office.WorkerCount</td>
-                                <td>@office.UserCount</td>
-                                <td>@(office.IsEnabled ? "Активен" : "Отключён")</td>
-                                <td>
+                                <td data-label="Воркеры">@office.WorkerCount</td>
+                                <td data-label="Операторы">@office.UserCount</td>
+                                <td data-label="Статус">@(office.IsEnabled ? "Активен" : "Отключён")</td>
+                                <td class="data-table-actions-col" data-label="">
                                     <a class="settings-link-btn" href="@Url.Action("Index", new { tab = "offices", userId = office.Id })">Настроить</a>
                                 </td>
                             </tr>
@@ -160,7 +158,7 @@
                     </div>
                 </div>
                 <div class="card-body card-body-table settings-table-wrap">
-                    <table class="data-table data-table--settings-users">
+                    <table class="data-table data-table--settings-users data-table--cards">
                         <thead>
                         <tr>
                             <th>Email</th>
@@ -174,7 +172,7 @@
                         @foreach (var user in Model.Users)
                         {
                             <tr>
-                                <td>
+                                <td class="cell-name" data-label="Email">
                                     <span class="settings-user-email">@user.Email</span>
                                     @if (user.IsCurrentUser)
                                     {
@@ -185,7 +183,7 @@
                                         <span class="settings-user-badge settings-user-badge--locked">Заблокирован</span>
                                     }
                                 </td>
-                                <td>
+                                <td data-label="Профиль">
                                     @if (user.IsCurrentUser)
                                     {
                                         <span class="settings-role-pill">@user.RoleLabel</span>
@@ -212,7 +210,7 @@
                                         </form>
                                     }
                                 </td>
-                                <td>
+                                <td data-label="Офис">
                                     @if (user.Role == PanelRoles.Admin)
                                     {
                                         <span class="settings-role-pill">Все офисы</span>
@@ -243,13 +241,13 @@
                                         </form>
                                     }
                                 </td>
-                                <td>
+                                <td data-label="Bitrix24">
                                     <a class="settings-bitrix-status settings-bitrix-status--@user.BitrixStatusTone"
                                        href="@Url.Action("Index", new { tab = "integrations", userId = user.Id })">
                                         @user.BitrixStatusLabel
                                     </a>
                                 </td>
-                                <td class="data-table-menu">
+                                <td class="data-table-menu" data-label="">
                                     @if (!user.IsCurrentUser)
                                     {
                                         <div class="row-menu" data-row-menu>
@@ -390,7 +388,7 @@
                 </div>
             </div>
             <div class="card-body card-body-table settings-table-wrap">
-                <table class="data-table data-table--settings-workers">
+                <table class="data-table data-table--settings-workers data-table--cards">
                     <thead>
                     <tr>
                         <th>Имя</th>
@@ -407,7 +405,7 @@
                     @foreach (var worker in workers.Rows)
                     {
                         <tr class="@(!worker.IsEnabled ? "settings-worker-row--disabled" : null)">
-                            <td>
+                            <td class="cell-name" data-label="Имя">
                                 <form asp-action="RenameWorker" method="post" class="settings-worker-rename-form">
                                     @Html.AntiForgeryToken()
                                     <input type="hidden" name="WorkerId" value="@worker.Id" />
@@ -415,16 +413,16 @@
                                     <button type="submit" class="settings-link-btn">Сохранить</button>
                                 </form>
                             </td>
-                            <td>@worker.OfficeName</td>
-                            <td>@worker.MachineName</td>
-                            <td>
+                            <td data-label="Офис">@worker.OfficeName</td>
+                            <td data-label="Машина">@worker.MachineName</td>
+                            <td data-label="Версия">
                                 <span class="@(worker.UpdateAvailable ? "settings-version--outdated" : null)">@worker.AppVersion</span>
                                 @if (worker.UpdateAvailable)
                                 {
                                     <span class="settings-update-badge" title="Доступна версия @(worker.LatestReleaseVersion)">↑</span>
                                 }
                             </td>
-                            <td>
+                            <td data-label="Статус">
                                 @if (!worker.IsEnabled)
                                 {
                                     <span class="settings-status-pill settings-status-pill--disabled">Отключён</span>
@@ -438,9 +436,9 @@
                                     <span class="settings-status-pill settings-status-pill--offline">Офлайн</span>
                                 }
                             </td>
-                            <td class="settings-log-time"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(worker.LastSeenAtUtc, "datetime"))" /></td>
-                            <td class="settings-log-time"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(worker.ApiKeyRotatedAtUtc, "datetime"))" /></td>
-                            <td class="data-table-menu">
+                            <td class="settings-log-time" data-label="Последний контакт"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(worker.LastSeenAtUtc, "datetime"))" /></td>
+                            <td class="settings-log-time" data-label="Ключ"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(worker.ApiKeyRotatedAtUtc, "datetime"))" /></td>
+                            <td class="data-table-menu" data-label="">
                                 <div class="row-menu" data-row-menu>
                                     <button type="button" class="row-menu-btn" aria-label="Действия" aria-expanded="false" aria-haspopup="true">
                                         <i class="fa-solid fa-ellipsis-vertical" aria-hidden="true"></i>
@@ -558,7 +556,7 @@
                 <span>Выбрать все строки в таблице</span>
             </label>
             <div class="card-body card-body-table settings-table-wrap">
-                <table class="data-table data-table--settings-leadflow-import">
+                <table class="data-table data-table--settings-leadflow-import data-table--cards">
                     <thead>
                     <tr>
                         <th class="data-table-check-col"></th>
@@ -621,7 +619,7 @@
 
         <div class="card card--settings-worker-releases-list">
             <div class="card-body card-body-table settings-table-wrap">
-                <table class="data-table data-table--settings-releases">
+                <table class="data-table data-table--settings-releases data-table--cards">
                     <thead>
                     <tr>
                         <th>Версия</th>
@@ -636,17 +634,17 @@
                     @foreach (var release in releases.Versions)
                     {
                         <tr>
-                            <td>
+                            <td class="cell-name" data-label="Версия">
                                 <strong>@release.Version</strong>
                                 @if (!string.IsNullOrWhiteSpace(release.ReleaseNotes))
                                 {
                                     <div class="settings-release-notes">@release.ReleaseNotes</div>
                                 }
                             </td>
-                            <td>@release.FileSizeLabel</td>
-                            <td class="settings-release-sha"><code>@release.Sha256[..Math.Min(12, release.Sha256.Length)]…</code></td>
-                            <td class="settings-log-time"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(release.UploadedAtUtc, "datetime"))" /></td>
-                            <td>
+                            <td data-label="Размер">@release.FileSizeLabel</td>
+                            <td class="settings-release-sha" data-label="SHA256"><code>@release.Sha256[..Math.Min(12, release.Sha256.Length)]…</code></td>
+                            <td class="settings-log-time" data-label="Загружен"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(release.UploadedAtUtc, "datetime"))" /></td>
+                            <td data-label="Статус">
                                 @if (release.IsLatest)
                                 {
                                     <span class="settings-status-pill settings-status-pill--online">Актуальная</span>
@@ -656,7 +654,7 @@
                                     <span class="settings-status-pill settings-status-pill--offline">Архив</span>
                                 }
                             </td>
-                            <td>
+                            <td class="data-table-actions-col" data-label="">
                                 <div class="settings-release-actions">
                                     @if (!release.IsLatest)
                                     {
@@ -729,7 +727,7 @@
 
         <div class="card card--settings-logs-table">
             <div class="card-body card-body-table settings-table-wrap">
-                <table class="data-table data-table--settings-audit">
+                <table class="data-table data-table--settings-audit data-table--cards">
                     <thead>
                     <tr>
                         <th>Время</th>
@@ -752,13 +750,13 @@
                         @foreach (var row in audit.Rows)
                         {
                             <tr>
-                                <td class="settings-log-time"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(row.TimestampUtc, "datetime-seconds"))" /></td>
-                                <td>@(row.ActorEmail ?? "—")</td>
-                                <td>
+                                <td class="settings-log-time" data-label="Время"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(row.TimestampUtc, "datetime-seconds"))" /></td>
+                                <td data-label="Актор">@(row.ActorEmail ?? "—")</td>
+                                <td data-label="Действие">
                                     <span class="settings-audit-action">@row.ActionLabel</span>
                                     <span class="settings-log-trace">@row.Action</span>
                                 </td>
-                                <td class="settings-log-source">
+                                <td class="settings-log-source" data-label="Объект">
                                     @if (!string.IsNullOrWhiteSpace(row.TargetType))
                                     {
                                         <span>@row.TargetType</span>
@@ -768,8 +766,8 @@
                                         <span class="settings-log-trace">@row.TargetId</span>
                                     }
                                 </td>
-                                <td class="settings-log-message">@(row.Details ?? "—")</td>
-                                <td class="settings-log-time">@(row.IpAddress ?? "—")</td>
+                                <td class="settings-log-message" data-label="Детали">@(row.Details ?? "—")</td>
+                                <td class="settings-log-time" data-label="IP">@(row.IpAddress ?? "—")</td>
                             </tr>
                         }
                     }
@@ -998,7 +996,7 @@
                     </div>
                 </div>
                 <div class="card-body card-body-table settings-table-wrap">
-                    <table class="data-table data-table--settings-integrations">
+                    <table class="data-table data-table--settings-integrations data-table--cards">
                         <thead>
                         <tr>
                             <th>Email</th>
@@ -1013,13 +1011,13 @@
                         @foreach (var row in integrations.Rows)
                         {
                             <tr>
-                                <td>@row.Email</td>
-                                <td><span class="settings-role-pill">@row.RoleLabel</span></td>
-                                <td>@(row.PortalHost ?? "—")</td>
-                                <td>
+                                <td class="cell-name" data-label="Email">@row.Email</td>
+                                <td data-label="Роль"><span class="settings-role-pill">@row.RoleLabel</span></td>
+                                <td data-label="Портал">@(row.PortalHost ?? "—")</td>
+                                <td data-label="Статус">
                                     <span class="settings-bitrix-status settings-bitrix-status--@row.ValidationStatusTone">@row.ValidationStatusLabel</span>
                                 </td>
-                                <td>
+                                <td data-label="Проверка">
                                     @if (row.LastValidatedAtUtc is not null)
                                     {
                                         <span data-orbita-utc="@row.LastValidatedAtUtc.Value.ToString("O")"></span>
@@ -1029,7 +1027,7 @@
                                         <span>—</span>
                                     }
                                 </td>
-                                <td>
+                                <td class="data-table-actions-col" data-label="">
                                     <a class="settings-link-btn" href="@Url.Action("Index", new { tab = "integrations", userId = row.UserId })">Настроить</a>
                                 </td>
                             </tr>

@@ -64,7 +64,7 @@ public sealed class ResponsesService(OrbitaApiClient api, IOptions<DesignPreview
             Filters = filters,
             PeriodLabel = period.Label,
             ActivePeriodPreset = period.ActivePreset,
-            KpiCards = ResponsesIndexBuilder.BuildKpiCards(summary),
+            KpiCards = ResponsesIndexBuilder.BuildKpiCards(summary, period.From, period.To, workerId, accountId),
             Statuses = ResponsesIndexBuilder.StatusOptions,
             Workers = ResponsesIndexBuilder.BuildWorkerOptions(workers),
             Accounts = ResponsesIndexBuilder.BuildAccountOptions(accounts),

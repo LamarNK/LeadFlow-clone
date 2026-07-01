@@ -17,7 +17,12 @@ internal static class ResponsesIndexBuilder
         new() { Value = "error", Label = "Ошибка обработки" }
     ];
 
-    public static IReadOnlyList<DashboardKpiCardViewModel> BuildKpiCards(ResponsesSummaryDto summary)
+    public static IReadOnlyList<DashboardKpiCardViewModel> BuildKpiCards(
+        ResponsesSummaryDto summary,
+        DateTime from,
+        DateTime to,
+        Guid? workerId = null,
+        Guid? accountId = null)
     {
         var total = Math.Max(1, summary.Total);
         string Pct(int value) => $"{value * 100.0 / total:0.#}%";
@@ -26,6 +31,8 @@ internal static class ResponsesIndexBuilder
         [
             new()
             {
+                Key = "total",
+                Href = KpiCardLinks.ResponsesCard("total", from, to, workerId, accountId),
                 Label = "Всего откликов",
                 Value = summary.Total.ToString(),
                 CountValue = summary.Total,
@@ -36,6 +43,8 @@ internal static class ResponsesIndexBuilder
             },
             new()
             {
+                Key = "unique",
+                Href = KpiCardLinks.ResponsesCard("unique", from, to, workerId, accountId),
                 Label = "Уникальных",
                 Value = summary.Unique.ToString(),
                 CountValue = summary.Unique,
@@ -46,6 +55,8 @@ internal static class ResponsesIndexBuilder
             },
             new()
             {
+                Key = "duplicates",
+                Href = KpiCardLinks.ResponsesCard("duplicates", from, to, workerId, accountId),
                 Label = "Дублей",
                 Value = summary.Duplicates.ToString(),
                 CountValue = summary.Duplicates,
@@ -56,6 +67,8 @@ internal static class ResponsesIndexBuilder
             },
             new()
             {
+                Key = "unique_authors",
+                Href = KpiCardLinks.ResponsesCard("unique_authors", from, to, workerId, accountId),
                 Label = "Уникальных авторов",
                 Value = summary.UniqueAuthors.ToString(),
                 CountValue = summary.UniqueAuthors,

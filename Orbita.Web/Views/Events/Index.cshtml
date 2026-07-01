@@ -29,19 +29,7 @@
         @{ var kpiIdx = 0; }
         @foreach (var kpi in Model.KpiCards)
         {
-            <article class="kpi-card kpi-card--stat" style="--kpi-index: @kpiIdx">
-                <header class="kpi-card-head">
-                    <div class="kpi-icon-box kpi-icon-box--@kpi.IconTone">
-                        <i class="@kpi.IconClass" aria-hidden="true"></i>
-                    </div>
-                    <span class="kpi-card-label">@kpi.Label</span>
-                </header>
-                <div class="kpi-card-metric">
-                    <span class="kpi-value"
-                          data-kpi-count="@kpi.CountValue.ToString(System.Globalization.CultureInfo.InvariantCulture)">0</span>
-                    <span class="kpi-delta-pill kpi-delta-@kpi.DeltaTone">@kpi.Delta</span>
-                </div>
-            </article>
+            <partial name="_KpiCard" model="@(new KpiCardPartialViewModel { Card = kpi, Index = kpiIdx, Layout = KpiCardLayout.StatDelta, ExtraClass = " kpi-card--stat" })" />
             kpiIdx++;
         }
     </div>
@@ -149,7 +137,7 @@
             }
             else
             {
-            <table class="data-table data-table--events">
+            <table class="data-table data-table--events data-table--cards">
                 <thead>
                     <tr>
                         <th>Время</th>
@@ -173,17 +161,17 @@
                         data-detail-title="@evt.EventTypeLabel"
                         data-detail-subtitle="@evt.WorkerName · @evt.LevelLabel"
                         data-detail-body="@evt.Description">
-                        <td class="events-time"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(evt.OccurredAtUtc, "datetime-seconds"))" /></td>
-                        <td>
+                        <td class="events-time" data-label="Время"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(evt.OccurredAtUtc, "datetime-seconds"))" /></td>
+                        <td data-label="Тип события">
                             <span class="event-type event-type--@evt.EventTypeTone">
                                 <i class="@evt.EventTypeIcon event-type-icon" aria-hidden="true"></i>
                                 <span>@evt.EventTypeLabel</span>
                             </span>
                         </td>
-                        <td>
+                        <td data-label="Уровень">
                             <span class="event-level-badge event-level-badge--@evt.Level">@evt.LevelLabel</span>
                         </td>
-                        <td class="cell-link">
+                        <td class="cell-link" data-label="Аккаунт">
                             @if (accountUrl is not null)
                             {
                                 <a href="@accountUrl">@evt.AccountName</a>
@@ -193,11 +181,11 @@
                                 <span class="events-muted">—</span>
                             }
                         </td>
-                        <td class="cell-link">
+                        <td class="cell-link" data-label="Воркер">
                             <a href="@workerUrl">@evt.WorkerName</a>
                         </td>
-                        <td class="events-desc" title="@evt.Description">@evt.Description</td>
-                        <td class="data-table-menu">
+                        <td class="events-desc" data-label="Описание" title="@evt.Description">@evt.Description</td>
+                        <td class="data-table-menu" data-label="">
                             <div class="row-menu" data-row-menu>
                                 <button type="button" class="row-menu-btn" aria-label="Действия" aria-expanded="false" aria-haspopup="true">
                                     <i class="fa-solid fa-ellipsis-vertical" aria-hidden="true"></i>

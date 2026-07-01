@@ -1,0 +1,69 @@
+@model KpiCardPartialViewModel
+@{
+    var card = Model.Card;
+    var isAvgCard = card.Label == "Среднее время отклика";
+    var useCaption = Model.Layout == KpiCardLayout.StatStacked && (isAvgCard || card.Delta == "За выбранный период");
+}
+<header class="kpi-card-head">
+    <div class="kpi-icon-box kpi-icon-box--@card.IconTone">
+        <i class="@card.IconClass" aria-hidden="true"></i>
+    </div>
+    <span class="kpi-card-label">@card.Label</span>
+</header>
+@if (Model.Layout == KpiCardLayout.Dashboard)
+{
+    <div class="kpi-card-metric">
+        <span class="kpi-value"
+              data-kpi-count="@card.CountValue.ToString(System.Globalization.CultureInfo.InvariantCulture)"
+              data-kpi-suffix="@(card.ValueSuffix ?? "")">0@(card.ValueSuffix)</span>
+        <span class="kpi-delta-pill kpi-delta-@card.DeltaTone">@card.Delta</span>
+    </div>
+    <div class="kpi-sparkline-wrap">
+        <canvas data-sparkline-index="@Model.Index" aria-hidden="true"></canvas>
+    </div>
+}
+else if (Model.Layout == KpiCardLayout.Stat)
+{
+    <div class="kpi-card-metric kpi-card-metric--solo">
+        <span class="kpi-value"
+              data-kpi-count="@card.CountValue.ToString(System.Globalization.CultureInfo.InvariantCulture)">0</span>
+    </div>
+}
+else if (Model.Layout == KpiCardLayout.StatStacked)
+{
+    <div class="kpi-card-metric kpi-card-metric--stacked">
+        @if (isAvgCard)
+        {
+            <span class="kpi-value kpi-value--text">@card.Value</span>
+        }
+        else
+        {
+            <span class="kpi-value"
+                  data-kpi-count="@card.CountValue.ToString(System.Globalization.CultureInfo.InvariantCulture)">0</span>
+        }
+        @if (useCaption)
+        {
+            <span class="kpi-card-caption">@card.Delta</span>
+        }
+        else
+        {
+            <span class="kpi-delta-pill kpi-delta-@card.DeltaTone">@card.Delta</span>
+        }
+    </div>
+}
+else
+{
+    <div class="kpi-card-metric">
+        @if (card.Label == "Время работы")
+        {
+            <span class="kpi-value kpi-value--text">@card.Value</span>
+        }
+        else
+        {
+            <span class="kpi-value"
+                  data-kpi-count="@card.CountValue.ToString(System.Globalization.CultureInfo.InvariantCulture)"
+                  data-kpi-suffix="@(card.ValueSuffix ?? "")">0@(card.ValueSuffix)</span>
+        }
+        <span class="kpi-delta-pill kpi-delta-@card.DeltaTone">@card.Delta</span>
+    </div>
+}

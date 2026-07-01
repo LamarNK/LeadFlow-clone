@@ -91,11 +91,11 @@ internal static class DesignPreviewData
             StatusFilter = status,
             KpiCards =
             [
-                new() { Label = "Всего воркеров", Value = total.ToString(), CountValue = total, IconClass = "fa-solid fa-server", IconTone = "blue" },
-                new() { Label = "Онлайн", Value = online.ToString(), CountValue = online, IconClass = "fa-solid fa-circle-check", IconTone = "green" },
-                new() { Label = "Оффлайн", Value = offline.ToString(), CountValue = offline, IconClass = "fa-solid fa-circle-xmark", IconTone = "orange" },
-                new() { Label = "Всего откликов", Value = rows.Sum(w => w.Responses).ToString(), CountValue = rows.Sum(w => w.Responses), IconClass = "fa-regular fa-comments", IconTone = "blue" },
-                new() { Label = "Ошибок", Value = rows.Sum(w => w.Errors).ToString(), CountValue = rows.Sum(w => w.Errors), IconClass = "fa-solid fa-triangle-exclamation", IconTone = "orange" }
+                new() { Key = "total", Href = KpiCardLinks.WorkersCard("total"), Label = "Всего воркеров", Value = total.ToString(), CountValue = total, IconClass = "fa-solid fa-server", IconTone = "blue" },
+                new() { Key = "online", Href = KpiCardLinks.WorkersCard("online"), Label = "Онлайн", Value = online.ToString(), CountValue = online, IconClass = "fa-solid fa-circle-check", IconTone = "green" },
+                new() { Key = "offline", Href = KpiCardLinks.WorkersCard("offline"), Label = "Оффлайн", Value = offline.ToString(), CountValue = offline, IconClass = "fa-solid fa-circle-xmark", IconTone = "orange" },
+                new() { Key = "responses", Href = KpiCardLinks.WorkersCard("responses"), Label = "Всего откликов", Value = rows.Sum(w => w.Responses).ToString(), CountValue = rows.Sum(w => w.Responses), IconClass = "fa-regular fa-comments", IconTone = "blue" },
+                new() { Key = "errors", Href = KpiCardLinks.WorkersCard("errors"), Label = "Ошибок", Value = rows.Sum(w => w.Errors).ToString(), CountValue = rows.Sum(w => w.Errors), IconClass = "fa-solid fa-triangle-exclamation", IconTone = "orange" }
             ],
             Workers = paged,
             Pagination = new PaginationViewModel { Page = page, PageSize = pageSize, TotalItems = total },
@@ -171,6 +171,7 @@ internal static class DesignPreviewData
             new()
                 {
                     Key = "responses",
+                    Href = KpiCardLinks.Dashboard("responses", period.From, period.To),
                     Label = "Откликов всего",
                     Value = "1234",
                     CountValue = 1234,
@@ -184,6 +185,7 @@ internal static class DesignPreviewData
                 new()
                 {
                     Key = "duplicates",
+                    Href = KpiCardLinks.Dashboard("duplicates", period.From, period.To),
                     Label = "Дублей",
                     Value = "256",
                     CountValue = 256,
@@ -197,6 +199,7 @@ internal static class DesignPreviewData
                 new()
                 {
                     Key = "errors",
+                    Href = KpiCardLinks.Dashboard("errors", period.From, period.To),
                     Label = "Ошибок",
                     Value = "18",
                     CountValue = 18,
@@ -210,6 +213,7 @@ internal static class DesignPreviewData
                 new()
                 {
                     Key = "accounts",
+                    Href = KpiCardLinks.Dashboard("accounts", period.From, period.To),
                     Label = "Аккаунтов активно",
                     Value = "30 / 30",
                     CountValue = 30,
@@ -224,6 +228,7 @@ internal static class DesignPreviewData
                 new()
                 {
                     Key = "workers",
+                    Href = KpiCardLinks.Dashboard("workers", period.From, period.To),
                     Label = "Воркеров онлайн",
                     Value = "3 / 3",
                     CountValue = 3,
@@ -1154,7 +1159,7 @@ internal static class DesignPreviewData
             Filters = filters,
             PeriodLabel = period.Label,
             ActivePeriodPreset = period.ActivePreset,
-            KpiCards = ResponsesIndexBuilder.BuildKpiCards(summary),
+            KpiCards = ResponsesIndexBuilder.BuildKpiCards(summary, period.From, period.To, filters.WorkerId, filters.AccountId),
             Statuses = ResponsesIndexBuilder.StatusOptions,
             Workers = BuildPreviewWorkerOptions(),
             Accounts = accountOptions,

@@ -140,6 +140,8 @@ internal static class AccountsIndexBuilder
         [
             new()
             {
+                Key = "total",
+                Href = KpiCardLinks.AccountsCard("total"),
                 Label = "Всего аккаунтов",
                 Value = summary.Total.ToString(),
                 CountValue = summary.Total,
@@ -150,6 +152,8 @@ internal static class AccountsIndexBuilder
             },
             new()
             {
+                Key = "active",
+                Href = KpiCardLinks.AccountsCard("active"),
                 Label = "Активны",
                 Value = summary.Active.ToString(),
                 CountValue = summary.Active,
@@ -160,6 +164,8 @@ internal static class AccountsIndexBuilder
             },
             new()
             {
+                Key = "inactive",
+                Href = KpiCardLinks.AccountsCard("inactive"),
                 Label = "Неактивны",
                 Value = summary.Inactive.ToString(),
                 CountValue = summary.Inactive,
@@ -170,6 +176,8 @@ internal static class AccountsIndexBuilder
             },
             new()
             {
+                Key = "blocked",
+                Href = KpiCardLinks.AccountsCard("blocked"),
                 Label = "Заблокированы",
                 Value = summary.Blocked.ToString(),
                 CountValue = summary.Blocked,
@@ -180,6 +188,8 @@ internal static class AccountsIndexBuilder
             },
             new()
             {
+                Key = "errors",
+                Href = KpiCardLinks.AccountsCard("errors"),
                 Label = "Ошибки",
                 Value = summary.Errors.ToString(),
                 CountValue = summary.Errors,

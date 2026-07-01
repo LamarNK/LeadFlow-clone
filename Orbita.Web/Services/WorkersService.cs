@@ -256,6 +256,8 @@ public sealed class WorkersService(
             [
                 new()
                 {
+                    Key = "total",
+                    Href = KpiCardLinks.WorkersCard("total"),
                     Label = "Всего воркеров",
                     Value = total.ToString(),
                     CountValue = total,
@@ -264,6 +266,8 @@ public sealed class WorkersService(
                 },
                 new()
                 {
+                    Key = "online",
+                    Href = KpiCardLinks.WorkersCard("online"),
                     Label = "Онлайн",
                     Value = online.ToString(),
                     CountValue = online,
@@ -272,6 +276,8 @@ public sealed class WorkersService(
                 },
                 new()
                 {
+                    Key = "offline",
+                    Href = KpiCardLinks.WorkersCard("offline"),
                     Label = "Оффлайн",
                     Value = offline.ToString(),
                     CountValue = offline,
@@ -280,6 +286,8 @@ public sealed class WorkersService(
                 },
                 new()
                 {
+                    Key = "responses",
+                    Href = KpiCardLinks.WorkersCard("responses"),
                     Label = "Всего откликов",
                     Value = totalResponses.ToString(),
                     CountValue = totalResponses,
@@ -288,6 +296,8 @@ public sealed class WorkersService(
                 },
                 new()
                 {
+                    Key = "errors",
+                    Href = KpiCardLinks.WorkersCard("errors"),
                     Label = "Ошибок",
                     Value = totalErrors.ToString(),
                     CountValue = totalErrors,

@@ -4,10 +4,8 @@
     var profile = Model.Profile;
     var bitrix = Model.Bitrix;
 }
+<partial name="_PageHeader" model="Model.Header" />
 <div class="orbita-main settings-page">
-    <h1 class="settings-page-title">Настройки</h1>
-    <p class="settings-page-subtitle">Профиль и интеграция с Bitrix24</p>
-
     @if (!string.IsNullOrWhiteSpace(Model.StatusMessage))
     {
         <div class="settings-alert settings-alert--success" role="status">@Model.StatusMessage</div>
@@ -179,7 +177,7 @@
                         <div class="settings-bitrix-office-list">
                             <h3 class="settings-card-title">Вебхуки офиса</h3>
                             <p class="settings-bitrix-hint">Автоотправка откликов использует первый валидный вебхук из списка.</p>
-                            <table class="data-table">
+                            <table class="data-table data-table--cards">
                                 <thead>
                                     <tr>
                                         <th>Пользователь</th>
@@ -192,14 +190,14 @@
                                 @foreach (var hook in bitrix.OfficeWebhooks)
                                 {
                                     <tr>
-                                        <td>@hook.Email</td>
-                                        <td>@(hook.PortalHost ?? "—")</td>
-                                        <td>
+                                        <td class="cell-name" data-label="Пользователь">@hook.Email</td>
+                                        <td data-label="Портал">@(hook.PortalHost ?? "—")</td>
+                                        <td data-label="Статус">
                                             <span class="settings-bitrix-status settings-bitrix-status--@hook.ValidationStatusTone">
                                                 @hook.ValidationStatusLabel
                                             </span>
                                         </td>
-                                        <td>@(hook.IsPrimaryForIngestion ? "Да" : "—")</td>
+                                        <td data-label="Автоотправка">@(hook.IsPrimaryForIngestion ? "Да" : "—")</td>
                                     </tr>
                                 }
                                 </tbody>

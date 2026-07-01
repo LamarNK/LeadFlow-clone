@@ -28,19 +28,7 @@
         @{ var kpiIdx = 0; }
         @foreach (var kpi in Model.KpiCards)
         {
-            <article class="kpi-card kpi-card--stat" style="--kpi-index: @kpiIdx">
-                <header class="kpi-card-head">
-                    <div class="kpi-icon-box kpi-icon-box--@kpi.IconTone">
-                        <i class="@kpi.IconClass" aria-hidden="true"></i>
-                    </div>
-                    <span class="kpi-card-label">@kpi.Label</span>
-                </header>
-                <div class="kpi-card-metric">
-                    <span class="kpi-value"
-                          data-kpi-count="@kpi.CountValue.ToString(System.Globalization.CultureInfo.InvariantCulture)">0</span>
-                    <span class="kpi-delta-pill kpi-delta-@kpi.DeltaTone">@kpi.Delta</span>
-                </div>
-            </article>
+            <partial name="_KpiCard" model="@(new KpiCardPartialViewModel { Card = kpi, Index = kpiIdx, Layout = KpiCardLayout.StatDelta, ExtraClass = " kpi-card--stat" })" />
             kpiIdx++;
         }
     </div>
@@ -86,7 +74,7 @@
             }
             else
             {
-            <table class="data-table data-table--accounts-list">
+            <table class="data-table data-table--accounts-list data-table--cards">
                 <thead>
                     <tr>
                         <th>Аккаунт</th>
@@ -107,13 +95,13 @@
                     var accountUrl = Url.Action("Index", "Accounts", new { q = account.AccountName });
                     var responsesUrl = Url.Action("Index", "Responses", new { accountId = account.Id });
                     <tr class="accounts-row" data-href="@accountUrl">
-                        <td class="cell-account">
+                        <td class="cell-account" data-label="Аккаунт">
                             <a href="@accountUrl">@account.AccountName</a>
                         </td>
-                        <td class="cell-worker">
+                        <td class="cell-worker" data-label="Воркер">
                             <a href="@workerUrl">@account.WorkerName</a>
                         </td>
-                        <td>
+                        <td data-label="Статус">
                             <span class="account-status account-status--@account.StatusTone">
                                 <i class="fa-solid fa-circle account-status-dot" aria-hidden="true"></i>
                                 @account.StatusLabel
@@ -123,12 +111,12 @@
                                 <span class="account-error-hint" title="@account.LastErrorMessage">@account.LastErrorMessage</span>
                             }
                         </td>
-                        <td class="cell-num">@account.Balance.ToString("N0") ₽</td>
-                        <td class="cell-num">@account.Responses</td>
-                        <td class="cell-num">@account.UniqueResponses</td>
-                        <td class="cell-num">@account.Errors</td>
-                        <td><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(account.LastActivityUtc, "time"))" /></td>
-                        <td class="data-table-menu">
+                        <td class="cell-num" data-label="Баланс">@account.Balance.ToString("N0") ₽</td>
+                        <td class="cell-num" data-label="Откликов">@account.Responses</td>
+                        <td class="cell-num" data-label="Уникальных">@account.UniqueResponses</td>
+                        <td class="cell-num" data-label="Ошибок">@account.Errors</td>
+                        <td data-label="Последняя активность"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(account.LastActivityUtc, "time"))" /></td>
+                        <td class="data-table-menu" data-label="">
                             <div class="row-menu" data-row-menu>
                                 <button type="button" class="row-menu-btn" aria-label="Действия" aria-expanded="false" aria-haspopup="true">
                                     <i class="fa-solid fa-ellipsis-vertical" aria-hidden="true"></i>

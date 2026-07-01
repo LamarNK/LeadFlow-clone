@@ -143,6 +143,8 @@ internal static class ErrorsIndexBuilder
         [
             new()
             {
+                Key = "total",
+                Href = KpiCardLinks.ErrorsCard("total"),
                 Label = "Всего ошибок",
                 Value = summary.Total.ToString(),
                 CountValue = summary.Total,
@@ -153,6 +155,8 @@ internal static class ErrorsIndexBuilder
             },
             new()
             {
+                Key = "critical",
+                Href = KpiCardLinks.ErrorsCard("critical"),
                 Label = "Критические",
                 Value = summary.Critical.ToString(),
                 CountValue = summary.Critical,
@@ -163,6 +167,8 @@ internal static class ErrorsIndexBuilder
             },
             new()
             {
+                Key = "high",
+                Href = KpiCardLinks.ErrorsCard("high"),
                 Label = "Высокий уровень",
                 Value = summary.High.ToString(),
                 CountValue = summary.High,
@@ -173,6 +179,8 @@ internal static class ErrorsIndexBuilder
             },
             new()
             {
+                Key = "medium",
+                Href = KpiCardLinks.ErrorsCard("medium"),
                 Label = "Средний уровень",
                 Value = summary.Medium.ToString(),
                 CountValue = summary.Medium,
@@ -183,6 +191,8 @@ internal static class ErrorsIndexBuilder
             },
             new()
             {
+                Key = "low",
+                Href = KpiCardLinks.ErrorsCard("low"),
                 Label = "Низкий уровень",
                 Value = summary.Low.ToString(),
                 CountValue = summary.Low,

@@ -27,7 +27,7 @@ public sealed class DashboardService(OrbitaApiClient api, IOptions<DesignPreview
         var events = await api.GetEventsAsync(limit: 5, ct: ct) ?? [];
         var accountStats = await BuildAccountStatsAsync(workers, summary, ct);
         var periodStats = AggregatePeriodStats(summary, period);
-        var kpiCards = BuildKpiCards(summary, periodStats);
+        var kpiCards = BuildKpiCards(summary, periodStats, period);
         var responseChart = BuildResponseChart(summary, period, periodStats);
         var charts = DashboardChartsBuilder.FromPresentation(kpiCards, responseChart, accountStats, periodStats.DailyPoints);
 
@@ -128,7 +128,8 @@ public sealed class DashboardService(OrbitaApiClient api, IOptions<DesignPreview
 
     private static IReadOnlyList<DashboardKpiCardViewModel> BuildKpiCards(
         GlobalDashboardSummary summary,
-        DashboardPeriodStats periodStats)
+        DashboardPeriodStats periodStats,
+        DashboardPeriod period)
     {
         var responsesSeries = periodStats.ResponsesSeries;
         var duplicatesSeries = periodStats.DuplicatesSeries;
@@ -139,6 +140,7 @@ public sealed class DashboardService(OrbitaApiClient api, IOptions<DesignPreview
             new()
             {
                 Key = "responses",
+                Href = KpiCardLinks.Dashboard("responses", period.From, period.To),
                 Label = "Откликов всего",
                 Value = periodStats.Responses.ToString(),
                 CountValue = periodStats.Responses,
@@ -152,6 +154,7 @@ public sealed class DashboardService(OrbitaApiClient api, IOptions<DesignPreview
             new()
             {
                 Key = "duplicates",
+                Href = KpiCardLinks.Dashboard("duplicates", period.From, period.To),
                 Label = "Дублей",
                 Value = periodStats.Duplicates.ToString(),
                 CountValue = periodStats.Duplicates,
@@ -165,6 +168,7 @@ public sealed class DashboardService(OrbitaApiClient api, IOptions<DesignPreview
             new()
             {
                 Key = "errors",
+                Href = KpiCardLinks.Dashboard("errors", period.From, period.To),
                 Label = "Ошибок",
                 Value = periodStats.Errors.ToString(),
                 CountValue = periodStats.Errors,
@@ -178,6 +182,7 @@ public sealed class DashboardService(OrbitaApiClient api, IOptions<DesignPreview
             new()
             {
                 Key = "accounts",
+                Href = KpiCardLinks.Dashboard("accounts", period.From, period.To),
                 Label = "Аккаунтов активно",
                 Value = $"{Math.Max(0, summary.ConnectedAccounts - summary.AccountsNeedAttentionCount)} / {summary.ConnectedAccounts}",
                 CountValue = Math.Max(0, summary.ConnectedAccounts - summary.AccountsNeedAttentionCount),
@@ -192,6 +197,7 @@ public sealed class DashboardService(OrbitaApiClient api, IOptions<DesignPreview
             new()
             {
                 Key = "workers",
+                Href = KpiCardLinks.Dashboard("workers", period.From, period.To),
                 Label = "Воркеров онлайн",
                 Value = $"{summary.OnlineWorkers} / {summary.TotalWorkers}",
                 CountValue = summary.OnlineWorkers,

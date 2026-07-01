@@ -32,7 +32,7 @@ public sealed class SettingsService(
             var previewUsers = DesignPreviewData.PanelUsers;
             var previewIntegrations = DesignPreviewData.BitrixIntegrations;
             var previewOffices = DesignPreviewData.Offices;
-            return activeTab switch
+            var previewModel = activeTab switch
             {
                 "logs" => SettingsIndexBuilder.BuildLogsTab(
                     q,
@@ -63,11 +63,12 @@ public sealed class SettingsService(
                     previewOffices,
                     currentUserId ?? "preview-admin")
             };
+            return previewModel with { Header = PageHeaderBuilder.SettingsAdmin() };
         }
 
         var integrations = await api.GetAdminBitrixIntegrationsAsync(ct) ?? [];
         var offices = await api.GetOfficesAsync(ct) ?? [];
-        return activeTab switch
+        var model = activeTab switch
         {
             "logs" => await BuildLogsTabAsync(q, level, service, date, workerId, page, ct),
             "offices" => await BuildOfficesTabAsync(tab, userId, ct),
@@ -90,6 +91,7 @@ public sealed class SettingsService(
                 offices,
                 currentUserId)
         };
+        return model with { Header = PageHeaderBuilder.SettingsAdmin() };
     }
 
     public async Task<(bool Success, string? Error)> SaveUserBitrixAsync(

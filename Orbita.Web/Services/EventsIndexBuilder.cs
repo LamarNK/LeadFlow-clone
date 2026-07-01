@@ -149,6 +149,8 @@ internal static class EventsIndexBuilder
         [
             new()
             {
+                Key = "total",
+                Href = KpiCardLinks.EventsCard("total"),
                 Label = "Всего событий",
                 Value = summary.Total.ToString(),
                 CountValue = summary.Total,
@@ -159,6 +161,8 @@ internal static class EventsIndexBuilder
             },
             new()
             {
+                Key = "success",
+                Href = KpiCardLinks.EventsCard("success"),
                 Label = "Успешных",
                 Value = summary.Success.ToString(),
                 CountValue = summary.Success,
@@ -169,6 +173,8 @@ internal static class EventsIndexBuilder
             },
             new()
             {
+                Key = "warning",
+                Href = KpiCardLinks.EventsCard("warning"),
                 Label = "Предупреждений",
                 Value = summary.Warning.ToString(),
                 CountValue = summary.Warning,
@@ -179,6 +185,8 @@ internal static class EventsIndexBuilder
             },
             new()
             {
+                Key = "error",
+                Href = KpiCardLinks.EventsCard("error"),
                 Label = "Ошибок",
                 Value = summary.Error.ToString(),
                 CountValue = summary.Error,

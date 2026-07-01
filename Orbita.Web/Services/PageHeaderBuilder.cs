@@ -57,4 +57,10 @@ public static class PageHeaderBuilder
 
     public static PageHeaderViewModel ErrorsList() =>
         Create("Ошибки", "Агрегированные ошибки и предупреждения");
+
+    public static PageHeaderViewModel MySettings() =>
+        Create("Настройки", "Профиль и интеграция с Bitrix24", showRefresh: false);
+
+    public static PageHeaderViewModel SettingsAdmin() =>
+        Create("Администрирование", "Пользователи, воркеры, интеграции Bitrix, аудит и логи", showRefresh: false);
 }

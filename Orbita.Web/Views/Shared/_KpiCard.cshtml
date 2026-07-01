@@ -1,0 +1,20 @@
+@model KpiCardPartialViewModel
+@{
+    var card = Model.Card;
+    var isLink = !string.IsNullOrWhiteSpace(card.Href);
+    var tagClass = $"kpi-card{Model.ExtraClass}{(isLink ? " kpi-card--link" : "")}";
+    var styleAttr = $"--kpi-index: {Model.Index};";
+    var keyAttr = string.IsNullOrWhiteSpace(card.Key) ? null : card.Key;
+}
+@if (isLink)
+{
+    <a href="@card.Href" class="@tagClass" style="@styleAttr" @(keyAttr is not null ? Html.Raw($"data-kpi-key=\"{keyAttr}\"") : null)>
+        <partial name="_KpiCardBody" model="Model" />
+    </a>
+}
+else
+{
+    <article class="@tagClass" style="@styleAttr" @(keyAttr is not null ? Html.Raw($"data-kpi-key=\"{keyAttr}\"") : null)>
+        <partial name="_KpiCardBody" model="Model" />
+    </article>
+}

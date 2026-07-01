@@ -17,3 +17,19 @@ public sealed class PaginationPartialViewModel
     public object? RouteValues { get; init; }
     public string? ExtraClass { get; init; }
 }
+
+public enum KpiCardLayout
+{
+    Dashboard,
+    Stat,
+    StatDelta,
+    StatStacked
+}
+
+public sealed class KpiCardPartialViewModel
+{
+    public DashboardKpiCardViewModel Card { get; init; } = new();
+    public int Index { get; init; }
+    public KpiCardLayout Layout { get; init; } = KpiCardLayout.StatDelta;
+    public string? ExtraClass { get; init; }
+}

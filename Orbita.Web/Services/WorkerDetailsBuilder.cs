@@ -53,7 +53,7 @@ internal static class WorkerDetailsBuilder
             IsEnabled = worker.IsEnabled,
             LastActivityUtc = lastActivity,
             UpdatedAtUtc = DateTime.UtcNow,
-            KpiCards = BuildKpiCards(activeAccounts, totalAccounts, activePct, responses, duplicates, errors, uptime),
+            KpiCards = BuildKpiCards(worker.Id, activeAccounts, totalAccounts, activePct, responses, duplicates, errors, uptime),
             InfoItems = BuildInfoItems(worker, extra, lastActivity, uptime),
             ActivityChart = new LineChartViewModel
             {
@@ -98,6 +98,7 @@ internal static class WorkerDetailsBuilder
     }
 
     private static IReadOnlyList<DashboardKpiCardViewModel> BuildKpiCards(
+        Guid workerId,
         int activeAccounts,
         int totalAccounts,
         int activePct,
@@ -108,6 +109,8 @@ internal static class WorkerDetailsBuilder
     [
         new()
         {
+            Key = "accounts",
+            Href = KpiCardLinks.WorkerDetailsCard("accounts", workerId),
             Label = "Аккаунтов",
             Value = $"{activeAccounts} / {totalAccounts}",
             CountValue = activeAccounts,
@@ -119,6 +122,8 @@ internal static class WorkerDetailsBuilder
         },
         new()
         {
+            Key = "responses",
+            Href = KpiCardLinks.WorkerDetailsCard("responses", workerId),
             Label = "Откликов",
             Value = responses.ToString(),
             CountValue = responses,
@@ -129,6 +134,8 @@ internal static class WorkerDetailsBuilder
         },
         new()
         {
+            Key = "duplicates",
+            Href = KpiCardLinks.WorkerDetailsCard("duplicates", workerId),
             Label = "Дублей",
             Value = duplicates.ToString(),
             CountValue = duplicates,
@@ -139,6 +146,8 @@ internal static class WorkerDetailsBuilder
         },
         new()
         {
+            Key = "errors",
+            Href = KpiCardLinks.WorkerDetailsCard("errors", workerId),
             Label = "Ошибок",
             Value = errors.ToString(),
             CountValue = errors,
@@ -175,7 +184,7 @@ internal static class WorkerDetailsBuilder
             TimeValue = new UtcTimeDisplayModel(extra.StartedAtUtc, "datetime")
         },
         new() { Label = "Время работы", Value = uptime },
-        new() { Label = "Версия LeadFlow", Value = extra.LeadFlowVersion },
+        new() { Label = "Версия воркера", Value = extra.LeadFlowVersion },
         new() { Label = "Версия агента", Value = extra.AgentVersion },
         new() { Label = "Операционная система", Value = extra.OperatingSystem },
         new()

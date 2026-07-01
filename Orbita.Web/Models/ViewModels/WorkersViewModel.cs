@@ -11,7 +11,7 @@ public sealed class WorkersIndexViewModel
         new() { Label = "Все воркеры", IsActive = true }
     ];
 
-    public IReadOnlyList<WorkersKpiCardViewModel> KpiCards { get; init; } = [];
+    public IReadOnlyList<DashboardKpiCardViewModel> KpiCards { get; init; } = [];
     public IReadOnlyList<WorkerRowViewModel> Workers { get; init; } = [];
     public PaginationViewModel Pagination { get; init; } = new();
     public string? SearchQuery { get; init; }
@@ -29,15 +29,6 @@ public sealed class BreadcrumbItemViewModel
     public string Label { get; init; } = string.Empty;
     public string? Url { get; init; }
     public bool IsActive { get; init; }
-}
-
-public sealed class WorkersKpiCardViewModel
-{
-    public string Label { get; init; } = string.Empty;
-    public string Value { get; init; } = string.Empty;
-    public double CountValue { get; init; }
-    public string IconClass { get; init; } = "fa-solid fa-circle";
-    public string IconTone { get; init; } = "blue";
 }
 
 public sealed class WorkerRowViewModel

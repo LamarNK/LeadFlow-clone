@@ -114,27 +114,7 @@
         @{ var kpiIdx = 0; }
         @foreach (var kpi in Model.KpiCards)
         {
-            <article class="kpi-card kpi-card--stat" style="--kpi-index: @kpiIdx">
-                <header class="kpi-card-head">
-                    <div class="kpi-icon-box kpi-icon-box--@kpi.IconTone">
-                        <i class="@kpi.IconClass" aria-hidden="true"></i>
-                    </div>
-                    <span class="kpi-card-label">@kpi.Label</span>
-                </header>
-                <div class="kpi-card-metric">
-                    @if (kpi.Label == "Время работы")
-                    {
-                        <span class="kpi-value kpi-value--text">@kpi.Value</span>
-                    }
-                    else
-                    {
-                        <span class="kpi-value"
-                              data-kpi-count="@kpi.CountValue.ToString(System.Globalization.CultureInfo.InvariantCulture)"
-                              data-kpi-suffix="@(kpi.ValueSuffix ?? "")">0@(kpi.ValueSuffix)</span>
-                    }
-                    <span class="kpi-delta-pill kpi-delta-@kpi.DeltaTone">@kpi.Delta</span>
-                </div>
-            </article>
+            <partial name="_KpiCard" model="@(new KpiCardPartialViewModel { Card = kpi, Index = kpiIdx, Layout = KpiCardLayout.StatDelta, ExtraClass = " kpi-card--stat" })" />
             kpiIdx++;
         }
     </div>
@@ -328,7 +308,7 @@
             <h2>Аккаунты воркера</h2>
         </div>
         <div class="card-body card-body-table worker-accounts-wrap">
-            <table class="data-table data-table--accounts">
+            <table class="data-table data-table--accounts data-table--cards">
                 <thead>
                     <tr>
                         <th>Вкл</th>
@@ -346,7 +326,7 @@
                 {
                     var accountUrl = Url.Action("Index", "Accounts");
                     <tr class="worker-account-row">
-                        <td>
+                        <td data-label="Вкл">
                             <form asp-action="UpdateAccount" method="post" class="worker-account-toggle-form">
                                 @Html.AntiForgeryToken()
                                 <input type="hidden" name="workerId" value="@Model.WorkerId" />
@@ -362,14 +342,14 @@
                                 </label>
                             </form>
                         </td>
-                        <td class="cell-name">
+                        <td class="cell-name" data-label="Аккаунт">
                             <a href="@accountUrl">@account.DisplayName</a>
                             @if (!string.IsNullOrWhiteSpace(account.AdsPowerProfileId))
                             {
                                 <span class="worker-account-sub">AdsPower @account.AdsPowerProfileId</span>
                             }
                         </td>
-                        <td>
+                        <td data-label="Статус">
                             <span class="account-status account-status--@account.StatusTone">
                                 <i class="fa-solid fa-circle account-status-dot" aria-hidden="true"></i>
                                 @account.StatusLabel
@@ -379,11 +359,11 @@
                                 <span class="account-error-hint" title="@account.LastErrorMessage">@account.LastErrorMessage</span>
                             }
                         </td>
-                        <td>@account.BalanceText</td>
-                        <td>@account.Responses</td>
-                        <td><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(account.LastActivityUtc, "time"))" /></td>
-                        <td>@account.Errors</td>
-                        <td class="data-table-menu">
+                        <td data-label="Баланс">@account.BalanceText</td>
+                        <td data-label="Откликов">@account.Responses</td>
+                        <td data-label="Последняя активность"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(account.LastActivityUtc, "time"))" /></td>
+                        <td data-label="Ошибок">@account.Errors</td>
+                        <td class="data-table-menu" data-label="">
                             <div class="row-menu" data-row-menu>
                                 <button type="button" class="row-menu-btn" aria-label="Действия" aria-expanded="false" aria-haspopup="true">
                                     <i class="fa-solid fa-ellipsis-vertical" aria-hidden="true"></i>

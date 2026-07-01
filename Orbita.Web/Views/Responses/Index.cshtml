@@ -45,35 +45,7 @@
         @{ var kpiIdx = 0; }
         @foreach (var kpi in Model.KpiCards)
         {
-            var isAvgCard = kpi.Label == "Среднее время отклика";
-            var useCaption = isAvgCard || kpi.Delta == "За выбранный период";
-            <article class="kpi-card kpi-card--stat" style="--kpi-index: @kpiIdx">
-                <header class="kpi-card-head">
-                    <div class="kpi-icon-box kpi-icon-box--@kpi.IconTone">
-                        <i class="@kpi.IconClass" aria-hidden="true"></i>
-                    </div>
-                    <span class="kpi-card-label">@kpi.Label</span>
-                </header>
-                <div class="kpi-card-metric kpi-card-metric--stacked">
-                    @if (isAvgCard)
-                    {
-                        <span class="kpi-value kpi-value--text">@kpi.Value</span>
-                    }
-                    else
-                    {
-                        <span class="kpi-value"
-                              data-kpi-count="@kpi.CountValue.ToString(System.Globalization.CultureInfo.InvariantCulture)">0</span>
-                    }
-                    @if (useCaption)
-                    {
-                        <span class="kpi-card-caption">@kpi.Delta</span>
-                    }
-                    else
-                    {
-                        <span class="kpi-delta-pill kpi-delta-@kpi.DeltaTone">@kpi.Delta</span>
-                    }
-                </div>
-            </article>
+            <partial name="_KpiCard" model="@(new KpiCardPartialViewModel { Card = kpi, Index = kpiIdx, Layout = KpiCardLayout.StatStacked, ExtraClass = " kpi-card--stat" })" />
             kpiIdx++;
         }
     </div>
@@ -208,7 +180,7 @@
             }
             else
             {
-            <table class="data-table data-table--responses">
+            <table class="data-table data-table--responses data-table--cards">
                 <thead>
                     <tr>
                         <th>Время</th>
@@ -246,8 +218,8 @@
                         data-response-id="@row.Id"
                         data-phone="@phoneDisplay"
                         data-detail-url="@detailUrl">
-                        <td class="responses-time">@ResponseDisplay.FormatCreatedAtLocal(row.CreatedAtUtc)</td>
-                        <td class="responses-ad">
+                        <td class="responses-time" data-label="Время">@ResponseDisplay.FormatCreatedAtLocal(row.CreatedAtUtc)</td>
+                        <td class="responses-ad" data-label="Объявление">
                             @if (!string.IsNullOrWhiteSpace(row.VacancyUrl))
                             {
                                 <a class="responses-ad-link" href="@row.VacancyUrl" target="_blank" rel="noopener">@row.Vacancy</a>
@@ -258,8 +230,8 @@
                             }
                             <span class="responses-ad-id">ID: @adId</span>
                         </td>
-                        <td class="responses-author">@author</td>
-                        <td class="responses-phone">
+                        <td class="responses-author" data-label="Автор">@author</td>
+                        <td class="responses-phone" data-label="Телефон">
                             @if (row.IsPhoneHidden)
                             {
                                 <span class="responses-phone-hidden">Скрыт</span>
@@ -281,17 +253,17 @@
                                 }
                             }
                         </td>
-                        <td class="cell-link">
+                        <td class="cell-link" data-label="Аккаунт">
                             <a href="@accountUrl">@row.AccountName</a>
                         </td>
-                        <td class="cell-link">
+                        <td class="cell-link" data-label="Воркер">
                             <a href="@workerUrl">@row.WorkerName</a>
                         </td>
-                        <td>
+                        <td data-label="Статус">
                             <span class="response-status-badge response-status-badge--@row.StatusTone">@row.StatusLabel</span>
                         </td>
-                        <td class="responses-source">@row.Source</td>
-                        <td class="data-table-menu">
+                        <td class="responses-source" data-label="Источник">@row.Source</td>
+                        <td class="data-table-menu" data-label="">
                             <div class="row-menu" data-row-menu>
                                 <button type="button" class="row-menu-btn responses-row-menu-btn" aria-label="Действия" aria-expanded="false" aria-haspopup="true">
                                     <i class="fa-solid fa-ellipsis-vertical" aria-hidden="true"></i>

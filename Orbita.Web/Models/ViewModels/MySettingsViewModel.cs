@@ -2,6 +2,8 @@ namespace Orbita.Web.Models.ViewModels;
 
 public sealed record MySettingsIndexViewModel
 {
+    public PageHeaderViewModel? Header { get; init; }
+
     public required string ActiveTab { get; init; }
     public required IReadOnlyList<SettingsTabViewModel> Tabs { get; init; }
     public ProfileSettingsViewModel? Profile { get; init; }

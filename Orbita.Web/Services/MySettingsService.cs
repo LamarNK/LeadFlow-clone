@@ -21,6 +21,7 @@ public sealed class MySettingsService(OrbitaApiClient api, IOptions<DesignPrevie
 
         return new MySettingsIndexViewModel
         {
+            Header = PageHeaderBuilder.MySettings(),
             ActiveTab = activeTab,
             Tabs = Tabs,
             Profile = profile,
