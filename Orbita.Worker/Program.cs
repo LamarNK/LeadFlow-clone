@@ -76,7 +76,7 @@ internal static class Program
             return;
         }
 
-        var appSettings = CreateAppSettings();
+        var appSettings = new WorkerAppSettingsStore().LoadOrCreate();
         var host = Host.CreateApplicationBuilder();
         host.Services.AddSingleton(credentials);
         host.Services.AddSingleton(store);
@@ -167,21 +167,4 @@ internal static class Program
         return true;
     }
 
-    private static AppSettings CreateAppSettings()
-    {
-        var dataDir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "OrbitaWorker",
-            "Data");
-
-        Directory.CreateDirectory(dataDir);
-
-        return new AppSettings
-        {
-            DatabasePath = Path.Combine(dataDir, "worker.db"),
-            DatabaseEncryptionKey = Convert.ToBase64String(Guid.NewGuid().ToByteArray()),
-            DuplicateScope = DuplicateScope.GlobalAcrossAllAccounts,
-            MonitoringSafety = new MonitoringSafetyOptions { MaxConcurrentAccounts = 1 }
-        };
-    }
 }

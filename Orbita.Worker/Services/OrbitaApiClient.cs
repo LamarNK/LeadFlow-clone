@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using LeadFlow.Core.Logging.Audit;
 using Orbita.Contracts;
 
 namespace Orbita.Worker.Services;
@@ -28,6 +29,16 @@ public sealed class OrbitaApiClient
         var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Worker config request failed with HTTP {(int)response.StatusCode}.",
+                DeskLinkAuditLogLevel.Warning,
+                memberName: nameof(GetConfigAsync),
+                filePath: "OrbitaApiClient.cs",
+                properties: new Dictionary<string, object?>
+                {
+                    ["http.statusCode"] = (int)response.StatusCode,
+                    ["http.path"] = "api/v1/workers/config"
+                });
             return null;
         }
 
