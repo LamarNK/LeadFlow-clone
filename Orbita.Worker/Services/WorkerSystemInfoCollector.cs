@@ -2,6 +2,8 @@ using System.Diagnostics;
 using System.Management;
 using System.Net;
 using System.Runtime.InteropServices;
+using System.Text.Json;
+using Orbita.Contracts;
 
 namespace Orbita.Worker.Services;
 
@@ -56,27 +58,35 @@ public sealed class WorkerSystemInfoCollector(IHttpClientFactory httpClientFacto
         var client = httpClientFactory.CreateClient(nameof(WorkerSystemInfoCollector));
         client.Timeout = TimeSpan.FromSeconds(8);
 
-        string[] endpoints =
+        (string Url, IpEndpointKind Kind)[] endpoints =
         [
-            "https://api.ipify.org",
-            "https://icanhazip.com",
-            "https://ifconfig.me/ip"
+            ("https://icanhazip.com", IpEndpointKind.PlainText),
+            ("https://api.cerio.ru/api/ip/address", IpEndpointKind.CerioJson),
+            ("https://api.ipify.org", IpEndpointKind.PlainText),
+            ("https://ifconfig.me/ip", IpEndpointKind.PlainText)
         ];
 
-        foreach (var endpoint in endpoints)
+        foreach (var (url, kind) in endpoints)
         {
             try
             {
-                var response = await client.GetAsync(endpoint, ct).ConfigureAwait(false);
+                var response = await client.GetAsync(url, ct).ConfigureAwait(false);
                 if (!response.IsSuccessStatusCode)
                 {
                     continue;
                 }
 
                 var body = (await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false)).Trim();
-                if (IPAddress.TryParse(body, out _))
+                var ip = kind switch
                 {
-                    return body;
+                    IpEndpointKind.PlainText => body,
+                    IpEndpointKind.CerioJson => TryParseCerioIp(body),
+                    _ => null
+                };
+
+                if (ip is not null && WorkerIpAddressRules.IsUsablePublic(ip))
+                {
+                    return WorkerIpAddressRules.Normalize(ip);
                 }
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -90,6 +100,30 @@ public sealed class WorkerSystemInfoCollector(IHttpClientFactory httpClientFacto
         }
 
         return null;
+    }
+
+    private static string? TryParseCerioIp(string body)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            if (doc.RootElement.TryGetProperty("ip", out var ipProp))
+            {
+                return ipProp.GetString()?.Trim();
+            }
+        }
+        catch
+        {
+            // Fall through.
+        }
+
+        return null;
+    }
+
+    private enum IpEndpointKind
+    {
+        PlainText,
+        CerioJson
     }
 
     private static DateTime GetProcessStartUtc()

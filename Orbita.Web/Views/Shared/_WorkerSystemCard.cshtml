@@ -24,85 +24,91 @@
 }
 
 <div class="worker-system-panel">
-    <div class="worker-system-meters">
-        <div class="worker-system-meter">
-            <div class="worker-system-meter-head">
-                <span class="worker-system-meter-label">
-                    <i class="fa-solid fa-microchip" aria-hidden="true"></i>
-                    CPU
-                </span>
-                <span class="worker-system-meter-value" data-worker-live="cpu">
-                    @(Model.CpuPercent.HasValue ? $"{Model.CpuPercent:F1}%" : "—")
-                </span>
-            </div>
-            <div class="worker-system-meter-track" aria-hidden="true">
-                <div class="worker-system-meter-fill worker-system-meter-fill--@cpuTone"
-                     data-worker-live="cpu-bar"
-                     style="width: @(cpuWidth)%"></div>
-            </div>
-        </div>
-
-        <div class="worker-system-meter">
-            <div class="worker-system-meter-head">
-                <span class="worker-system-meter-label">
-                    <i class="fa-solid fa-memory" aria-hidden="true"></i>
-                    RAM
-                </span>
-                <span class="worker-system-meter-value">
-                    <span data-worker-live="ram">
-                        @(Model.RamPercent.HasValue ? $"{Model.RamPercent:F1}%" : "—")
+    <section class="worker-system-section">
+        <span class="worker-system-section-title">Ресурсы</span>
+        <div class="worker-system-meters">
+            <div class="worker-system-meter">
+                <div class="worker-system-meter-head">
+                    <span class="worker-system-meter-label">
+                        <i class="fa-solid fa-microchip" aria-hidden="true"></i>
+                        CPU
                     </span>
-                    @if (ramDetail is not null)
-                    {
-                        <span class="worker-system-meter-sub" data-worker-live="ram-detail">@ramDetail</span>
-                    }
-                    else
-                    {
-                        <span class="worker-system-meter-sub" data-worker-live="ram-detail" hidden></span>
-                    }
-                </span>
+                    <span class="worker-system-meter-value" data-worker-live="cpu">
+                        @(Model.CpuPercent.HasValue ? $"{Model.CpuPercent:F1}%" : "—")
+                    </span>
+                </div>
+                <div class="worker-system-meter-track" aria-hidden="true">
+                    <div class="worker-system-meter-fill worker-system-meter-fill--@cpuTone"
+                         data-worker-live="cpu-bar"
+                         style="width: @(cpuWidth)%"></div>
+                </div>
             </div>
-            <div class="worker-system-meter-track" aria-hidden="true">
-                <div class="worker-system-meter-fill worker-system-meter-fill--@ramTone"
-                     data-worker-live="ram-bar"
-                     style="width: @(ramWidth)%"></div>
+
+            <div class="worker-system-meter">
+                <div class="worker-system-meter-head">
+                    <span class="worker-system-meter-label">
+                        <i class="fa-solid fa-memory" aria-hidden="true"></i>
+                        RAM
+                    </span>
+                    <span class="worker-system-meter-value">
+                        <span data-worker-live="ram">
+                            @(Model.RamPercent.HasValue ? $"{Model.RamPercent:F1}%" : "—")
+                        </span>
+                        @if (ramDetail is not null)
+                        {
+                            <span class="worker-system-meter-sub" data-worker-live="ram-detail">@ramDetail</span>
+                        }
+                        else
+                        {
+                            <span class="worker-system-meter-sub" data-worker-live="ram-detail" hidden></span>
+                        }
+                    </span>
+                </div>
+                <div class="worker-system-meter-track" aria-hidden="true">
+                    <div class="worker-system-meter-fill worker-system-meter-fill--@ramTone"
+                         data-worker-live="ram-bar"
+                         style="width: @(ramWidth)%"></div>
+                </div>
             </div>
         </div>
-    </div>
 
-    @if (!Model.HasResourceMetrics)
-    {
-        <p class="worker-system-hint">Метрики CPU и RAM появятся, когда воркер будет онлайн и передаст телеметрию.</p>
-    }
+        @if (!Model.HasResourceMetrics)
+        {
+            <p class="worker-system-hint">Метрики CPU и RAM появятся, когда воркер будет онлайн и передаст телеметрию.</p>
+        }
+    </section>
 
-    <dl class="worker-system-facts">
-        <div class="worker-system-fact">
-            <dt>Имя ПК</dt>
-            <dd>@Model.MachineName</dd>
-        </div>
-        <div class="worker-system-fact">
-            <dt>IP-адрес</dt>
-            <dd>@Model.IpAddress</dd>
-        </div>
-        <div class="worker-system-fact">
-            <dt>ОС</dt>
-            <dd>@Model.OperatingSystem</dd>
-        </div>
-        <div class="worker-system-fact">
-            <dt>Версия воркера</dt>
-            <dd>@Model.LeadFlowVersion</dd>
-        </div>
-        <div class="worker-system-fact">
-            <dt>Версия агента</dt>
-            <dd>@Model.AgentVersion</dd>
-        </div>
-        <div class="worker-system-fact">
-            <dt>Связь</dt>
-            <dd>
-                <span class="worker-system-connection worker-system-connection--@(Model.ConnectionCheck == "Успешно" ? "ok" : "bad")">
-                    @Model.ConnectionCheck
-                </span>
-            </dd>
-        </div>
-    </dl>
+    <section class="worker-system-section worker-system-section--details">
+        <span class="worker-system-section-title">Машина и ПО</span>
+        <dl class="worker-system-facts">
+            <div class="worker-system-fact">
+                <dt>Имя ПК</dt>
+                <dd>@Model.MachineName</dd>
+            </div>
+            <div class="worker-system-fact">
+                <dt>IP-адрес</dt>
+                <dd>@Model.IpAddress</dd>
+            </div>
+            <div class="worker-system-fact">
+                <dt>ОС</dt>
+                <dd>@Model.OperatingSystem</dd>
+            </div>
+            <div class="worker-system-fact">
+                <dt>Версия воркера</dt>
+                <dd>@Model.LeadFlowVersion</dd>
+            </div>
+            <div class="worker-system-fact">
+                <dt>Версия агента</dt>
+                <dd>@Model.AgentVersion</dd>
+            </div>
+            <div class="worker-system-fact">
+                <dt>Связь</dt>
+                <dd>
+                    <span class="worker-system-connection worker-system-connection--@(Model.ConnectionCheck == "Успешно" ? "ok" : "bad")">
+                        @Model.ConnectionCheck
+                    </span>
+                </dd>
+            </div>
+        </dl>
+    </section>
 </div>

@@ -71,9 +71,7 @@ public sealed class TelemetryService(
         worker.NextCycleCheckAtUtc = DateTimeUtcHelper.EnsureUtc(request.NextCycleCheckAtUtc);
         worker.LastSeenAtUtc = DateTime.UtcNow;
 
-        var ipAddress = !string.IsNullOrWhiteSpace(clientIpAddress)
-            ? clientIpAddress.Trim()
-            : request.PublicIpAddress?.Trim();
+        var ipAddress = WorkerIpAddressRules.ResolveForHeartbeat(clientIpAddress, request.PublicIpAddress);
         if (!string.IsNullOrWhiteSpace(ipAddress))
         {
             worker.IpAddress = ipAddress;

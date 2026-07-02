@@ -156,6 +156,31 @@ public sealed class TelemetryServiceTests
     }
 
     [Fact]
+    public async Task HeartbeatAsync_UsesReportedPublicIp_WhenConnectionIpIsLoopback()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db, disabledIdsJson: "[]");
+
+        var sut = new TelemetryService(db, new OfficeAdminService(db), new NoopPanelRealtimeNotifier());
+        var request = new WorkerHeartbeatRequest(
+            WorkerId,
+            "worker-1",
+            "1.0.0.23",
+            "VM-0D94DA08-DB2",
+            "Running",
+            null,
+            true,
+            DateTime.UtcNow.AddMinutes(5),
+            PublicIpAddress: "46.146.232.119");
+
+        var saved = await sut.HeartbeatAsync(request, "127.0.0.1", CancellationToken.None);
+
+        Assert.True(saved);
+        var worker = await db.Workers.SingleAsync();
+        Assert.Equal("46.146.232.119", worker.IpAddress);
+    }
+
+    [Fact]
     public async Task SaveActivityAsync_ReturnsFalseForUnknownWorker()
     {
         await using var db = CreateDb();
