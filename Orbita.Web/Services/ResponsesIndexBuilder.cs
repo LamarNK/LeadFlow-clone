@@ -117,6 +117,7 @@ internal static class ResponsesIndexBuilder
             IsPhoneHidden = ResponseDisplay.IsPhoneHidden(item.PhoneRaw, item.PhoneNormalized),
             HasMessenger = !string.IsNullOrWhiteSpace(item.MessengerUrl),
             BitrixEntityId = item.BitrixEntityId,
+            BitrixEntityUrl = item.BitrixEntityUrl,
             CanResend = item.Status is ResponseStatuses.Error
                 or ResponseStatuses.ActionRequired
                 or ResponseStatuses.InProgress
@@ -150,6 +151,7 @@ internal static class ResponsesIndexBuilder
             StatusTone = tone,
             DuplicateSummary = detail.DuplicateSummary,
             BitrixEntityId = detail.BitrixEntityId,
+            BitrixEntityUrl = detail.BitrixEntityUrl,
             ErrorMessage = detail.ErrorMessage,
             RawText = detail.RawText,
             ChatMessages = ResponseChatDisplay.ParseMessages(detail.ChatMessagesJson),
@@ -229,4 +231,12 @@ internal static class ResponsesIndexBuilder
 
         return workerDisplayName;
     }
+
+    public static bool HasActiveFilters(ResponsesFilterViewModel filters, DashboardPeriod period) =>
+        !string.IsNullOrWhiteSpace(filters.Status)
+        || filters.WorkerId.HasValue
+        || filters.AccountId.HasValue
+        || !string.IsNullOrWhiteSpace(filters.VacancyQuery)
+        || !string.IsNullOrWhiteSpace(filters.SearchQuery)
+        || !period.IsTodayOnly;
 }

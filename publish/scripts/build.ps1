@@ -152,12 +152,12 @@ function Reset-WindowsInstallerService {
         throw "Windows Installer service (msiserver) is not available on this machine."
     }
 
+    if ($svc.Status -eq 'Running') {
+        return
+    }
+
     try {
-        if ($svc.Status -eq 'Running') {
-            Restart-Service -Name msiserver -Force
-        } else {
-            Start-Service -Name msiserver
-        }
+        Start-Service -Name msiserver
     } catch {
         throw "Cannot start Windows Installer service (msiserver). WiX MSI build requires it. Run PowerShell as Administrator and execute: Start-Service msiserver"
     }

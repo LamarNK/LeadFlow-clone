@@ -84,4 +84,10 @@ public static class MonitoringTiming
 
     /// <summary>Интервал опроса активного суб-профиля (мс).</summary>
     public const int VerifySubProfilePollMs = 650;
+
+    /// <summary>
+    /// Через сколько часов сбрасывать блокирующий статус аккаунта (капча, вход) и повторять проход.
+    /// Пока срок не истёк, воркер не открывает браузер, чтобы не долбить Avito.
+    /// </summary>
+    public const int AccountBlockingIssueRetryAfterHours = 6;
 }

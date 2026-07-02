@@ -47,6 +47,20 @@ public sealed class WorkerRowViewModel
     public string? LatestReleaseVersion { get; init; }
     public string OfficeName { get; init; } = string.Empty;
     public bool IsEnabled { get; init; } = true;
+    public string? CurrentActivityLabel { get; init; }
+    public string CurrentActivityTone { get; init; } = "muted";
+    public bool IsActivityLive { get; init; }
+}
+
+public sealed class WorkerActivityViewModel
+{
+    public string Label { get; init; } = string.Empty;
+    public string Tone { get; init; } = "muted";
+    public bool IsLive { get; init; }
+    public string? Phase { get; init; }
+    public Guid? AccountId { get; init; }
+    public string? SubProfileId { get; init; }
+    public DateTime? UpdatedAtUtc { get; init; }
 }
 
 public sealed class PaginationViewModel
@@ -152,6 +166,7 @@ public sealed class WorkerDetailsViewModel
     public IReadOnlyList<WorkerPeriodStatViewModel> PeriodStats { get; init; } = [];
     public IReadOnlyList<WorkerAccountRowViewModel> Accounts { get; init; } = [];
     public WorkerLogsPanelViewModel? Logs { get; init; }
+    public WorkerActivityViewModel CurrentActivity { get; init; } = new();
 }
 
 public sealed class WorkerLogsPanelViewModel

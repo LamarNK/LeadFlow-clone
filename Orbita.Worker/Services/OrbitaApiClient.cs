@@ -78,6 +78,14 @@ public sealed class OrbitaApiClient
         await _http.SendAsync(request, ct).ConfigureAwait(false);
     }
 
+    public async Task SendActivityAsync(WorkerActivityRequest activity, CancellationToken ct)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/workers/activity");
+        ApplyAuth(request);
+        request.Content = JsonContent.Create(activity);
+        await _http.SendAsync(request, ct).ConfigureAwait(false);
+    }
+
     public async Task SendSnapshotAsync(WorkerSnapshotRequest snapshot, CancellationToken ct)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/workers/telemetry/snapshot");

@@ -48,6 +48,9 @@ public sealed class DashboardWorkerRowViewModel
     public int Duplicates { get; init; }
     public int Errors { get; init; }
     public DateTime? LastActivityUtc { get; init; }
+    public string? CurrentActivityLabel { get; init; }
+    public string CurrentActivityTone { get; init; } = "muted";
+    public bool IsActivityLive { get; init; }
 }
 
 public sealed class DashboardChartPointViewModel
@@ -55,6 +58,7 @@ public sealed class DashboardChartPointViewModel
     public string Label { get; init; } = string.Empty;
     public int Value { get; init; }
     public bool ShowAxisLabel { get; init; }
+    public int UtcHour { get; init; }
 }
 
 public sealed class DashboardEventRowViewModel

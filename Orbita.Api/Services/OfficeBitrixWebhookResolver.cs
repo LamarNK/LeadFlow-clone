@@ -100,6 +100,13 @@ public sealed class OfficeBitrixWebhookResolver(
                 x.IsPrimaryForIngestion))
             .ToList();
     }
+
+    public async Task<string?> ResolvePortalHostAsync(Guid officeId, CancellationToken ct = default)
+    {
+        var entries = await ListOfficeWebhooksAsync(officeId, ct);
+        return entries.FirstOrDefault(x => x.IsPrimaryForIngestion && !string.IsNullOrWhiteSpace(x.PortalHost))?.PortalHost
+            ?? entries.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x.PortalHost))?.PortalHost;
+    }
 }
 
 public sealed record OfficeBitrixWebhookEntry(

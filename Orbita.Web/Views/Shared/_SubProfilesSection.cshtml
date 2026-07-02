@@ -1,0 +1,38 @@
+@model SubProfilesSectionViewModel
+@{
+    if (!Model.CanRefreshSubProfiles && !Model.HasSubProfiles)
+    {
+        return;
+    }
+
+    var panelId = $"{Model.PanelIdPrefix}-{Model.AccountId}";
+    var summary = SubProfileViewModelMapper.BuildSummary(Model.Items);
+    var hasIssues = SubProfileViewModelMapper.HasAnyIssue(Model.Items);
+}
+<div class="subprofiles-section">
+    <div class="subprofiles-toolbar">
+        @if (Model.HasSubProfiles)
+        {
+            <button type="button"
+                    class="subprofiles-toggle"
+                    data-subprofiles-toggle
+                    aria-expanded="false"
+                    aria-controls="@panelId"
+                    title="@summary">
+                <i class="fa-solid fa-chevron-right subprofiles-toggle-icon" aria-hidden="true"></i>
+                <span class="subprofiles-summary@(hasIssues ? " subprofiles-summary--issue" : "")">@summary</span>
+            </button>
+        }
+        else if (Model.CanRefreshSubProfiles)
+        {
+            <span class="subprofiles-empty-hint">Субпрофили не обнаружены</span>
+        }
+        <partial name="_SubProfilesRefreshBtn" model="(Model.WorkerId, Model.AccountId, Model.CanRefreshSubProfiles, Model.IsSubProfilesRefreshPending)" />
+    </div>
+    @if (Model.HasSubProfiles)
+    {
+        <div class="subprofiles-panel" id="@panelId" hidden>
+            <partial name="_SubProfilesList" model="@(new SubProfilesListViewModel { WorkerId = Model.WorkerId, AccountId = Model.AccountId, ProcessingSubProfileId = Model.ProcessingSubProfileId, Items = Model.Items })" />
+        </div>
+    }
+</div>

@@ -123,6 +123,30 @@ public sealed class TelemetryService(
         return true;
     }
 
+    public async Task<bool> SaveActivityAsync(WorkerActivityRequest request, CancellationToken ct)
+    {
+        var worker = await db.Workers.FindAsync([request.WorkerId], ct);
+        if (worker is null)
+        {
+            return false;
+        }
+
+        var changed = WorkerActivityMapper.ActivityChanged(worker, request);
+        WorkerActivityMapper.Apply(worker, request);
+        worker.LastSeenAtUtc = DateTime.UtcNow;
+        await db.SaveChangesAsync(ct);
+
+        if (changed)
+        {
+            panelRealtime.Notify(
+                [PanelChangeKind.Workers, PanelChangeKind.Dashboard, PanelChangeKind.Accounts],
+                worker.OfficeId,
+                worker.Id);
+        }
+
+        return true;
+    }
+
     public async Task<bool> SaveSnapshotAsync(WorkerSnapshotRequest request, CancellationToken ct)
     {
         var worker = await db.Workers.FindAsync([request.WorkerId], ct);

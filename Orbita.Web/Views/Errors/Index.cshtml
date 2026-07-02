@@ -48,9 +48,33 @@
         }
     </div>
 
-    <div class="card card--errors-filters">
-        <form class="errors-filters" method="get" asp-action="Index">
-            <div class="errors-filters-row">
+    <div class="orbita-filters-bar">
+        <form class="orbita-filters-form errors-filters" method="get" asp-action="Index">
+            <div class="orbita-filters-toolbar errors-filters-actions">
+                <div class="orbita-filters-search errors-search">
+                    <i class="fa-solid fa-magnifying-glass errors-search-icon" aria-hidden="true"></i>
+                    <input type="search"
+                           name="q"
+                           value="@Model.Filters.SearchQuery"
+                           placeholder="Поиск по ошибкам..."
+                           aria-label="Поиск по ошибкам" />
+                </div>
+                <div class="orbita-filters-toolbar-actions">
+                    <button type="button"
+                            class="orbita-filters-toggle errors-filter-btn@(Model.HasActiveFilters ? " is-active" : "")"
+                            data-orbita-filter-toggle="errorsFilterPanel"
+                            aria-label="Фильтры"
+                            aria-expanded="false">
+                        <i class="fa-solid fa-filter" aria-hidden="true"></i>
+                    </button>
+                    <button type="submit" class="orbita-filters-apply errors-apply-btn">Применить</button>
+                    <a class="orbita-filters-reset errors-reset-btn" href="@Url.Action("Index")">
+                        <i class="fa-solid fa-rotate-right" aria-hidden="true"></i>
+                        <span>Сбросить</span>
+                    </a>
+                </div>
+            </div>
+            <div class="orbita-filters-fields errors-filters-row" id="errorsFilterPanel" data-orbita-collapsible-filters hidden>
                 <label class="errors-filter-field">
                     <span class="errors-filter-label">Уровень</span>
                     <select name="severity" class="errors-select" aria-label="Уровень">
@@ -115,23 +139,6 @@
                         }
                     </select>
                 </label>
-            </div>
-            <div class="errors-filters-actions">
-                <div class="errors-search">
-                    <i class="fa-solid fa-magnifying-glass errors-search-icon" aria-hidden="true"></i>
-                    <input type="search"
-                           name="q"
-                           value="@Model.Filters.SearchQuery"
-                           placeholder="Поиск по ошибкам..."
-                           aria-label="Поиск по ошибкам" />
-                </div>
-                <button type="button" class="errors-filter-btn" aria-label="Фильтры">
-                    <i class="fa-solid fa-filter" aria-hidden="true"></i>
-                </button>
-                <a class="errors-reset-btn" href="@Url.Action("Index")">
-                    <i class="fa-solid fa-rotate-right" aria-hidden="true"></i>
-                    <span>Сбросить фильтры</span>
-                </a>
             </div>
         </form>
     </div>

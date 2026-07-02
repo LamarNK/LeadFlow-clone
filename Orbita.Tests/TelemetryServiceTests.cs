@@ -97,6 +97,80 @@ public sealed class TelemetryServiceTests
     }
 
     [Fact]
+    public async Task SaveActivityAsync_UpdatesWorkerAndNotifiesOnChange()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db, disabledIdsJson: "[]");
+
+        var notifier = new CapturingPanelRealtimeNotifier();
+        var sut = new TelemetryService(db, new OfficeAdminService(db), notifier);
+        var request = new WorkerActivityRequest(
+            WorkerId,
+            WorkerActivityPhases.SubProfile,
+            "сбор откликов",
+            AccountId,
+            "acc-1",
+            "sp-1",
+            "Основной",
+            UpdatedAtUtc: DateTime.UtcNow);
+
+        var saved = await sut.SaveActivityAsync(request, CancellationToken.None);
+
+        Assert.True(saved);
+        var worker = await db.Workers.SingleAsync();
+        Assert.Equal(WorkerActivityPhases.SubProfile, worker.ActivityPhase);
+        Assert.Equal("сбор откликов", worker.ActivityMessage);
+        Assert.Equal(AccountId, worker.ActivityAccountId);
+        Assert.Equal("sp-1", worker.ActivitySubProfileId);
+        Assert.NotNull(worker.ActivityUpdatedAtUtc);
+        Assert.Equal(1, notifier.NotifyCount);
+        Assert.Equal(WorkerId, notifier.LastWorkerId);
+        Assert.Contains(PanelChangeKind.Workers, notifier.LastKinds);
+        Assert.Contains(PanelChangeKind.Dashboard, notifier.LastKinds);
+        Assert.Contains(PanelChangeKind.Accounts, notifier.LastKinds);
+    }
+
+    [Fact]
+    public async Task SaveActivityAsync_DoesNotNotifyWhenUnchanged()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db, disabledIdsJson: "[]");
+        var worker = await db.Workers.SingleAsync();
+        worker.ActivityPhase = WorkerActivityPhases.Cycle;
+        worker.ActivityMessage = "старт цикла";
+        worker.ActivityUpdatedAtUtc = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+
+        var notifier = new CapturingPanelRealtimeNotifier();
+        var sut = new TelemetryService(db, new OfficeAdminService(db), notifier);
+        var request = new WorkerActivityRequest(
+            WorkerId,
+            WorkerActivityPhases.Cycle,
+            "старт цикла",
+            UpdatedAtUtc: DateTime.UtcNow);
+
+        var saved = await sut.SaveActivityAsync(request, CancellationToken.None);
+
+        Assert.True(saved);
+        Assert.Equal(0, notifier.NotifyCount);
+    }
+
+    [Fact]
+    public async Task SaveActivityAsync_ReturnsFalseForUnknownWorker()
+    {
+        await using var db = CreateDb();
+        var sut = new TelemetryService(db, new OfficeAdminService(db), new CapturingPanelRealtimeNotifier());
+        var request = new WorkerActivityRequest(
+            Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd"),
+            WorkerActivityPhases.Idle,
+            "ожидание");
+
+        var saved = await sut.SaveActivityAsync(request, CancellationToken.None);
+
+        Assert.False(saved);
+    }
+
+    [Fact]
     public async Task SaveSnapshotAsync_PreservesSubProfilesDisabledIdsJson()
     {
         await using var db = CreateDb();

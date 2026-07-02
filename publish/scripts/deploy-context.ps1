@@ -1,13 +1,11 @@
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet("plan", "pack", "save")]
+    [ValidateSet("plan", "pack", "save", "upgrade-full")]
     [string]$Action,
 
-    [Parameter(Mandatory = $true)]
-    [string]$Target,
+    [string]$Target = "",
 
-    [Parameter(Mandatory = $true)]
-    [string]$StageDir,
+    [string]$StageDir = "",
 
     [string]$StateDir = "",
     [string]$ArchivePath = "",
@@ -273,6 +271,26 @@ function Invoke-Pack {
     }
 }
 
+function Invoke-UpgradeFull {
+    if ([string]::IsNullOrWhiteSpace($PlanPath)) {
+        throw "PlanPath is required for upgrade-full action."
+    }
+    if (-not (Test-Path -LiteralPath $PlanPath)) {
+        throw "Plan file not found: $PlanPath"
+    }
+
+    $plan = Get-Content -LiteralPath $PlanPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    $currentMode = [string]$plan.mode
+    if ($currentMode -eq "FULL") {
+        return
+    }
+
+    $plan.mode = "FULL"
+    $plan | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $PlanPath -Encoding UTF8
+    Set-Content -LiteralPath ($PlanPath + ".mode") -Value "full" -Encoding Ascii -NoNewline
+    Write-Host "Remote build cache is incomplete; deploy plan upgraded to full upload." -ForegroundColor Yellow
+}
+
 function Invoke-Save {
     New-Item -Path $StateDir -ItemType Directory -Force | Out-Null
 
@@ -288,11 +306,21 @@ function Invoke-Save {
     $state | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $stateFile -Encoding UTF8
 }
 
-$StageDir = (Resolve-Path -LiteralPath $StageDir).Path
+if ($Action -ne "upgrade-full") {
+    if ([string]::IsNullOrWhiteSpace($Target)) {
+        throw "Target is required."
+    }
+    if ([string]::IsNullOrWhiteSpace($StageDir)) {
+        throw "StageDir is required."
+    }
+
+    $StageDir = (Resolve-Path -LiteralPath $StageDir).Path
+}
 
 switch ($Action) {
     "plan" { Invoke-Plan }
     "pack" { Invoke-Pack }
     "save" { Invoke-Save }
+    "upgrade-full" { Invoke-UpgradeFull }
     default { throw "Unknown action: $Action" }
 }

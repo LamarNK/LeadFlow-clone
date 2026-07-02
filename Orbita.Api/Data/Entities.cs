@@ -56,6 +56,14 @@ public sealed class WorkerEntity
     public string? AgentVersion { get; set; }
     public string? PendingCommand { get; set; }
     public DateTime? PendingCommandAtUtc { get; set; }
+    public string? ActivityPhase { get; set; }
+    public string? ActivityMessage { get; set; }
+    public Guid? ActivityAccountId { get; set; }
+    public string? ActivityAccountName { get; set; }
+    public string? ActivitySubProfileId { get; set; }
+    public string? ActivitySubProfileName { get; set; }
+    public DateTime? ActivityUpdatedAtUtc { get; set; }
+    public DateTime? ActivityNextCycleAtUtc { get; set; }
 
     public OfficeEntity Office { get; set; } = null!;
     public ICollection<WorkerSnapshotEntity> Snapshots { get; set; } = [];

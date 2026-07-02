@@ -290,6 +290,11 @@ html.auth-html body.auth-body {
     text-decoration: underline;
 }
 
+.auth-forgot--muted {
+    color: #667085;
+    cursor: default;
+}
+
 /* --- Кнопка --- */
 .auth-submit {
     display: block;

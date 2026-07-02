@@ -60,9 +60,6 @@
                        placeholder="Поиск по аккаунтам..."
                        aria-label="Поиск по аккаунтам" />
             </form>
-            <button type="button" class="accounts-filter-btn" aria-label="Фильтры">
-                <i class="fa-solid fa-filter" aria-hidden="true"></i>
-            </button>
         </div>
     </div>
 
@@ -87,6 +84,7 @@
                         <th>Аккаунт</th>
                         <th>Воркер</th>
                         <th>Статус</th>
+                        <th>Сейчас</th>
                         <th class="cell-num" title="Сумма по всем субпрофилям аккаунта">Баланс</th>
                         <th class="cell-num">Откликов</th>
                         <th class="cell-num">Уникальных</th>
@@ -101,36 +99,20 @@
                     var workerUrl = Url.Action("Details", "Workers", new { id = account.WorkerId });
                     var accountUrl = Url.Action("Index", "Accounts", new { q = account.AccountName });
                     var responsesUrl = Url.Action("Index", "Responses", new { accountId = account.Id });
-                    <tr class="accounts-row" data-href="@accountUrl">
+                    <tr class="accounts-row@(account.IsProcessingNow ? " accounts-row--processing" : "")" data-href="@accountUrl">
                         <td class="cell-account" data-label="Аккаунт">
                             <a href="@accountUrl">@account.AccountName</a>
-                            @if (account.CanRefreshSubProfiles || account.HasSubProfiles)
+                            <partial name="_SubProfilesSection" model="@(new SubProfilesSectionViewModel
                             {
-                                <div class="subprofiles-toolbar">
-                                    @if (account.HasSubProfiles)
-                                    {
-                                        <button type="button"
-                                                class="subprofiles-toggle"
-                                                data-subprofiles-toggle
-                                                aria-expanded="false"
-                                                aria-controls="subprofiles-acc-@account.Id">
-                                            <i class="fa-solid fa-chevron-right subprofiles-toggle-icon" aria-hidden="true"></i>
-                                            <span>@account.SubProfilesSummary</span>
-                                        </button>
-                                    }
-                                    else if (account.CanRefreshSubProfiles)
-                                    {
-                                        <span class="subprofiles-empty-hint">Субпрофили не обнаружены</span>
-                                    }
-                                    <partial name="_SubProfilesRefreshBtn" model="(account.WorkerId, account.Id, account.CanRefreshSubProfiles, account.IsSubProfilesRefreshPending)" />
-                                </div>
-                                @if (account.HasSubProfiles)
-                                {
-                                    <div class="subprofiles-panel" id="subprofiles-acc-@account.Id" hidden>
-                                        <partial name="_SubProfilesList" model="@(new SubProfilesListViewModel { WorkerId = account.WorkerId, AccountId = account.Id, Items = account.SubProfiles })" />
-                                    </div>
-                                }
-                            }
+                                WorkerId = account.WorkerId,
+                                AccountId = account.Id,
+                                PanelIdPrefix = "subprofiles-acc",
+                                CanRefreshSubProfiles = account.CanRefreshSubProfiles,
+                                IsSubProfilesRefreshPending = account.IsSubProfilesRefreshPending,
+                                HasSubProfiles = account.HasSubProfiles,
+                                ProcessingSubProfileId = account.IsProcessingNow ? account.ProcessingSubProfileId : null,
+                                Items = account.SubProfiles
+                            })" />
                         </td>
                         <td class="cell-worker" data-label="Воркер">
                             <a href="@workerUrl">@account.WorkerName</a>
@@ -145,6 +127,16 @@
                                 <span class="account-error-hint" title="@account.LastErrorMessage">@account.LastErrorMessage</span>
                             }
                         </td>
+                        <td data-label="Сейчас">
+                            @if (!string.IsNullOrWhiteSpace(account.ProcessingLabel))
+                            {
+                                <partial name="_WorkerActivityPillFromRow" model="@(account.ProcessingLabel, account.ProcessingTone, account.IsProcessingNow)" />
+                            }
+                            else
+                            {
+                                <span class="worker-activity-pill worker-activity-pill--muted">—</span>
+                            }
+                        </td>
                         <td class="cell-num cell-balance" data-label="Баланс">
                             <div class="account-balance">
                                 <span class="account-balance-total" title="@(account.HasMultipleSubProfiles ? "Сумма авансов по субпрофилям" : null)">@account.Balance.ToString("N0") ₽</span>
@@ -153,7 +145,7 @@
                         <td class="cell-num" data-label="Откликов">@account.Responses</td>
                         <td class="cell-num" data-label="Уникальных">@account.UniqueResponses</td>
                         <td class="cell-num" data-label="Ошибок">@account.Errors</td>
-                        <td data-label="Последняя активность"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(account.LastActivityUtc, "time"))" /></td>
+                        <td data-label="Последняя активность"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(account.LastActivityUtc, "activity"))" /></td>
                         <td class="data-table-menu" data-label="">
                             <div class="row-menu" data-row-menu>
                                 <button type="button" class="row-menu-btn" aria-label="Действия" aria-expanded="false" aria-haspopup="true">

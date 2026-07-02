@@ -35,10 +35,8 @@ public sealed class EventsService(OrbitaApiClient api, IOptions<DesignPreviewOpt
         int page,
         CancellationToken ct)
     {
-        var todayStartUtc = DateTime.UtcNow.Date;
         var items = await api.GetEventsAsync(limit: 500, ct: ct) ?? [];
         var rows = items
-            .Where(e => e.CreatedAtUtc >= todayStartUtc)
             .Select(e => EventsIndexBuilder.MapEvent(e, e.AccountId?.ToString()[..8]))
             .ToList();
 

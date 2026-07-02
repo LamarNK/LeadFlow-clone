@@ -53,8 +53,11 @@ internal static class AccountsIndexBuilder
         Guid workerId,
         string workerName,
         decimal balance = 0,
-        WorkerBalanceDto? balanceDetail = null)
+        WorkerBalanceDto? balanceDetail = null,
+        WorkerActivityDto? workerActivity = null,
+        bool workerIsOnline = false)
     {
+        var processing = WorkerActivityPresenter.PresentForAccount(workerActivity, workerIsOnline, account.AccountId);
         var (label, tone) = AccountStatusMapper.ForAccountsPage(account.Status, account.IsEnabledInPanel);
         var responses = account.TodayResponses;
         var duplicates = account.TodayDuplicates;
@@ -83,7 +86,11 @@ internal static class AccountsIndexBuilder
             CanRefreshSubProfiles = !string.IsNullOrWhiteSpace(account.AdsPowerProfileId),
             IsSubProfilesRefreshPending = SubProfileViewModelMapper.IsRefreshPending(
                 account.SubProfilesRefreshRequestedAtUtc,
-                account.SubProfilesRefreshedAtUtc)
+                account.SubProfilesRefreshedAtUtc),
+            IsProcessingNow = processing.IsProcessingNow,
+            ProcessingLabel = processing.Label,
+            ProcessingTone = processing.Tone,
+            ProcessingSubProfileId = processing.SubProfileId
         };
     }
 

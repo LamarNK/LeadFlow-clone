@@ -45,7 +45,8 @@ public sealed record WorkerListItem(
     Guid OfficeId = default,
     string OfficeName = "",
     bool IsEnabled = true,
-    int ActiveAccountCount = 0);
+    int ActiveAccountCount = 0,
+    WorkerActivityDto? CurrentActivity = null);
 
 public sealed record WorkerDetail(
     Guid Id,
@@ -76,7 +77,8 @@ public sealed record WorkerDetail(
     int TodayDuplicates = 0,
     int TodayErrors = 0,
     int ActiveAccountCount = 0,
-    int TotalAccountCount = 0);
+    int TotalAccountCount = 0,
+    WorkerActivityDto? CurrentActivity = null);
 
 public sealed record WorkerEventListItem(
     Guid Id,

@@ -346,23 +346,30 @@ public sealed class WorkersService(
         };
     }
 
-    private static WorkerRowViewModel MapRow(WorkerListItem w) => new()
+    private static WorkerRowViewModel MapRow(WorkerListItem w)
     {
-        Id = w.Id,
-        DisplayName = w.DisplayName,
-        MachineName = w.MachineName,
-        IsOnline = w.IsOnline,
-        ActiveAccounts = w.ActiveAccountCount,
-        TotalAccounts = w.AccountCount,
-        Responses = w.TotalToday,
-        Duplicates = w.DuplicatesToday,
-        Errors = w.Errors,
-        LastActivityUtc = w.LastSeenAtUtc,
-        UpdateAvailable = w.UpdateAvailable,
-        LatestReleaseVersion = w.LatestReleaseVersion,
-        OfficeName = w.OfficeName,
-        IsEnabled = w.IsEnabled
-    };
+        var activity = WorkerActivityPresenter.Present(w.CurrentActivity, w.IsOnline);
+        return new WorkerRowViewModel
+        {
+            Id = w.Id,
+            DisplayName = w.DisplayName,
+            MachineName = w.MachineName,
+            IsOnline = w.IsOnline,
+            ActiveAccounts = w.ActiveAccountCount,
+            TotalAccounts = w.AccountCount,
+            Responses = w.TotalToday,
+            Duplicates = w.DuplicatesToday,
+            Errors = w.Errors,
+            LastActivityUtc = w.LastSeenAtUtc,
+            UpdateAvailable = w.UpdateAvailable,
+            LatestReleaseVersion = w.LatestReleaseVersion,
+            OfficeName = w.OfficeName,
+            IsEnabled = w.IsEnabled,
+            CurrentActivityLabel = activity.Label,
+            CurrentActivityTone = activity.Tone,
+            IsActivityLive = activity.IsLive
+        };
+    }
 
     public Task<(bool Success, string? Error)> SetWorkerEnabledAsync(
         Guid workerId,

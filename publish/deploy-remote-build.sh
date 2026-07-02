@@ -48,6 +48,11 @@ rm -rf "$extract_dir" "$context_archive"
 cd "$cache_dir"
 
 if [[ ! -f "$dockerfile_rel" ]]; then
+  if [[ "$deploy_mode" == "delta" ]]; then
+    echo "Build cache incomplete for delta deploy; missing $dockerfile_rel"
+    echo "Retrying with a full upload is required."
+    exit 42
+  fi
   echo "Dockerfile not found in context: $dockerfile_rel"
   exit 1
 fi

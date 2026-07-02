@@ -65,7 +65,9 @@ internal static class WorkerDetailsBuilder
             ActivityChart = new LineChartViewModel
             {
                 Labels = hourly.Select(p => p.Label).ToList(),
-                Values = hourly.Select(p => p.Value).ToList()
+                Values = hourly.Select(p => p.Value).ToList(),
+                UtcHours = hourly.Select(p => p.UtcHour).ToList(),
+                ReferenceDayUtc = DateTime.UtcNow.ToString("yyyy-MM-dd")
             },
             Events = events,
             PeriodStats = BuildPeriodStats(stats, responses, duplicates, errors),
@@ -77,7 +79,8 @@ internal static class WorkerDetailsBuilder
             RamPercent = worker.LastRamPercent,
             RamUsedMb = worker.LastRamUsedMb,
             RamTotalMb = worker.LastRamTotalMb,
-            Logs = logs
+            Logs = logs,
+            CurrentActivity = WorkerActivityPresenter.Present(worker.CurrentActivity, worker.IsOnline)
         };
     }
 
@@ -206,7 +209,7 @@ internal static class WorkerDetailsBuilder
         new()
         {
             Label = "Последняя активность",
-            TimeValue = new UtcTimeDisplayModel(lastActivity, "time")
+            TimeValue = new UtcTimeDisplayModel(lastActivity, "activity")
         },
         new() { Label = "Проверка соединения", Value = extra.ConnectionCheck }
     ];

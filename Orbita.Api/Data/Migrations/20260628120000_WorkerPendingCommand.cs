@@ -1,10 +1,14 @@
 using System;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Orbita.Api.Data;
 
 #nullable disable
 
 namespace Orbita.Api.Data.Migrations;
 
+[DbContext(typeof(OrbitaDbContext))]
+[Migration("20260628120000_WorkerPendingCommand")]
 public partial class WorkerPendingCommand : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)

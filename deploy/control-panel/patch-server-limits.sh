@@ -49,6 +49,10 @@ cat > Caddyfile <<'EOF'
 }
 
 orbitsu.ru, www.orbitsu.ru {
+	request_body {
+		max_size 512MB
+	}
+
 	reverse_proxy 127.0.0.1:8081 {
 		transport http {
 			read_timeout 30m
@@ -58,6 +62,10 @@ orbitsu.ru, www.orbitsu.ru {
 }
 
 api.orbitsu.ru {
+	request_body {
+		max_size 512MB
+	}
+
 	reverse_proxy 127.0.0.1:8082 {
 		transport http {
 			read_timeout 30m
@@ -67,6 +75,10 @@ api.orbitsu.ru {
 }
 
 http://163.5.153.207 {
+	request_body {
+		max_size 512MB
+	}
+
 	reverse_proxy 127.0.0.1:8081 {
 		transport http {
 			read_timeout 30m
@@ -80,9 +92,24 @@ http://163.5.153.207 {
 }
 EOF
 
-cp Caddyfile /etc/caddy/Caddyfile
-caddy validate --config /etc/caddy/Caddyfile
-systemctl reload caddy
+if [ -f nginx-orbitsu.ru.conf ]; then
+  cp nginx-orbitsu.ru.conf "/etc/nginx/sites-enabled/orbitsu.ru.bak-$(date +%Y%m%d%H%M%S)"
+  cp nginx-orbitsu.ru.conf /etc/nginx/sites-enabled/orbitsu.ru
+fi
+
+if [ -f nginx-orbitsu-sni-443.conf ]; then
+  mkdir -p /etc/nginx/stream-conf.d
+  cp nginx-orbitsu-sni-443.conf /etc/nginx/stream-conf.d/orbitsu-sni-443.conf
+fi
+
+if systemctl is-active --quiet nginx; then
+  nginx -t
+  systemctl reload nginx
+elif systemctl is-enabled --quiet caddy 2>/dev/null; then
+  cp Caddyfile /etc/caddy/Caddyfile
+  caddy validate --config /etc/caddy/Caddyfile
+  systemctl reload caddy
+fi
 
 docker compose -f docker-compose.images.yml --env-file .env up -d api web
 

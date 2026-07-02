@@ -40,18 +40,25 @@ public sealed class DashboardService(OrbitaApiClient api, IOptions<DesignPreview
         {
             Header = BuildHeader(period),
             KpiCards = kpiCards,
-            Workers = workers.Select(w => new DashboardWorkerRowViewModel
+            Workers = workers.Select(w =>
             {
-                Id = w.Id,
-                DisplayName = w.DisplayName,
-                MachineName = w.MachineName,
-                IsOnline = w.IsOnline,
-                ActiveAccounts = w.ActiveAccountCount,
-                TotalAccounts = w.AccountCount,
-                Responses = w.TotalToday,
-                Duplicates = w.DuplicatesToday,
-                Errors = w.Errors,
-                LastActivityUtc = w.LastSeenAtUtc
+                var activity = WorkerActivityPresenter.Present(w.CurrentActivity, w.IsOnline);
+                return new DashboardWorkerRowViewModel
+                {
+                    Id = w.Id,
+                    DisplayName = w.DisplayName,
+                    MachineName = w.MachineName,
+                    IsOnline = w.IsOnline,
+                    ActiveAccounts = w.ActiveAccountCount,
+                    TotalAccounts = w.AccountCount,
+                    Responses = w.TotalToday,
+                    Duplicates = w.DuplicatesToday,
+                    Errors = w.Errors,
+                    LastActivityUtc = w.LastSeenAtUtc,
+                    CurrentActivityLabel = activity.Label,
+                    CurrentActivityTone = activity.Tone,
+                    IsActivityLive = activity.IsLive
+                };
             }).ToList(),
             HourlyChart = responseChart,
             Events = events.Select(DashboardEventMapper.Map).ToList(),

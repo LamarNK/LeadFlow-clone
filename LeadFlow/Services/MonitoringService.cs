@@ -723,6 +723,21 @@ public sealed class MonitoringService(
     /// <returns>Новые откликов с Авито, был ли опрос источника, есть ли необработанный «хвост» сверх лимита за цикл.</returns>
     internal async Task<(int NewResponsesDetected, bool PolledSource, bool HasUndischargedBacklog)> ProcessAccountAsync(AvitoAccount account, AppSettings settings, CancellationToken cancellationToken)
     {
+        if (AccountIssueTracker.TryClearStaleBlockingState(account))
+        {
+            await repository.SaveAccountAsync(account, cancellationToken).ConfigureAwait(false);
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Account {account.DisplayName}: stale blocking status cleared, retrying monitoring.",
+                DeskLinkAuditLogLevel.Info);
+            await repository.AddLogAsync(new ProcessingLogItem
+            {
+                AccountId = account.Id,
+                Level = "Info",
+                Message = "Повторный проход после устаревшей блокировки",
+                Details = $"Статус сброшен, интервал {MonitoringTiming.AccountBlockingIssueRetryAfterHours} ч."
+            }, cancellationToken);
+        }
+
         if (account.Status is AvitoAccountStatus.RequiresLogin or AvitoAccountStatus.RequiresManualAction or AvitoAccountStatus.Paused)
         {
             AccountIssueTracker.RefreshAccountIssueMessage(account);

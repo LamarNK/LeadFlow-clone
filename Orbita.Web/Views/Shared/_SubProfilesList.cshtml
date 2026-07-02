@@ -8,7 +8,8 @@
 <ul class="subprofiles-list">
     @foreach (var sub in Model.Items)
     {
-        <li class="subprofiles-item@(sub.IsCurrent ? " subprofiles-item--current" : "")@(sub.HasIssue ? " subprofiles-item--issue" : "")@(!sub.IsEnabledInPanel ? " subprofiles-item--disabled" : "")"
+        var isProcessing = Model.ProcessingSubProfileId is not null && sub.Id == Model.ProcessingSubProfileId;
+        <li class="subprofiles-item@(sub.IsCurrent ? " subprofiles-item--current" : "")@(isProcessing ? " subprofiles-item--processing" : "")@(sub.HasIssue ? " subprofiles-item--issue" : "")@(!sub.IsEnabledInPanel ? " subprofiles-item--disabled" : "")"
             data-subprofile-id="@sub.Id">
             <label class="subprofiles-toggle-sm" title="@(sub.IsEnabledInPanel ? "Отключить субпрофиль" : "Включить субпрофиль")">
                 <input type="checkbox"
@@ -19,29 +20,44 @@
                        @(sub.IsEnabledInPanel ? "checked" : null) />
                 <span class="subprofiles-toggle-sm-slider"></span>
             </label>
-            <div class="subprofiles-item-body">
-                <span class="subprofiles-name">
-                    @sub.Name
-                    @if (sub.IsCurrent)
+            <div class="subprofiles-item-main">
+                <div class="subprofiles-item-head">
+                    <span class="subprofiles-name">@sub.Name</span>
+                    @if (!string.IsNullOrWhiteSpace(sub.Category))
                     {
-                        <span class="subprofiles-badge">текущий</span>
+                        <span class="subprofiles-tag">@sub.Category</span>
                     }
-                </span>
-                @if (!string.IsNullOrWhiteSpace(sub.Category))
-                {
-                    <span class="subprofiles-category">@sub.Category</span>
-                }
+                    <span class="subprofiles-status-badges">
+                        @if (isProcessing)
+                        {
+                            <span class="subprofiles-badge subprofiles-badge--processing">
+                                <span class="subprofiles-badge-dot" aria-hidden="true"></span>
+                                сейчас
+                            </span>
+                        }
+                        else if (sub.IsCurrent)
+                        {
+                            <span class="subprofiles-badge subprofiles-badge--current">текущий</span>
+                        }
+                        @if (!sub.IsEnabledInPanel)
+                        {
+                            <span class="subprofiles-badge subprofiles-badge--off">выкл</span>
+                        }
+                    </span>
+                </div>
                 @if (sub.HasIssue && !string.IsNullOrWhiteSpace(sub.IssueSummary))
                 {
-                    <span class="subprofiles-issue" title="@sub.IssueSummary">@sub.IssueSummary</span>
-                    @if (sub.DiagnosticAttachmentId is not null)
-                    {
-                        <a class="subprofiles-screenshot-link"
-                           href="/Diagnostics/Image/@sub.DiagnosticAttachmentId"
-                           target="_blank"
-                           rel="noopener"
-                           title="Открыть скриншот страницы при ошибке">скрин</a>
-                    }
+                    <div class="subprofiles-item-alert">
+                        <span class="subprofiles-issue" title="@sub.IssueSummary">@sub.IssueSummary</span>
+                        @if (sub.DiagnosticAttachmentId is not null)
+                        {
+                            <a class="subprofiles-screenshot-btn"
+                               href="/Diagnostics/Image/@sub.DiagnosticAttachmentId"
+                               target="_blank"
+                               rel="noopener"
+                               title="Открыть скриншот страницы при ошибке">скрин</a>
+                        }
+                    </div>
                 }
             </div>
             <span class="subprofiles-balance">@sub.BalanceText</span>

@@ -15,6 +15,8 @@ public sealed class SparklineChartViewModel
     public IReadOnlyList<string> Labels { get; init; } = [];
     public IReadOnlyList<int> Values { get; init; } = [];
     public IReadOnlyList<int> TooltipValues { get; init; } = [];
+    public IReadOnlyList<int> UtcHours { get; init; } = [];
+    public string? ReferenceDayUtc { get; init; }
     public IReadOnlyList<KpiChartSegmentViewModel> Segments { get; init; } = [];
 }
 
@@ -29,6 +31,8 @@ public sealed class LineChartViewModel
 {
     public IReadOnlyList<string> Labels { get; init; } = [];
     public IReadOnlyList<int> Values { get; init; } = [];
+    public IReadOnlyList<int> UtcHours { get; init; } = [];
+    public string? ReferenceDayUtc { get; init; }
     public bool HasData => Values.Count > 0 && Values.Any(v => v > 0);
 }
 

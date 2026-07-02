@@ -135,8 +135,8 @@
         if (!row.isPhoneHidden) {
             items += '<button type="button" class="row-menu-item" data-copy-phone><i class="fa-regular fa-copy" aria-hidden="true"></i>Копировать телефон</button>';
         }
-        if (row.bitrixEntityId) {
-            items += '<button type="button" class="row-menu-item" data-bitrix-id="' + shared.escapeHtml(row.bitrixEntityId) + '"><i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i>Открыть карточку Bitrix24</button>';
+        if (row.bitrixEntityUrl) {
+            items += '<a class="row-menu-item" href="' + shared.escapeHtml(row.bitrixEntityUrl) + '" target="_blank" rel="noopener"><i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i>Открыть карточку Bitrix24</a>';
         }
         return shared.rowMenuShell('row-menu-dropdown--responses', items);
     }

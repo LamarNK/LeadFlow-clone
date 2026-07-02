@@ -100,6 +100,35 @@ public static class AccountIssueTracker
         };
     }
 
+    /// <summary>
+    /// Сбрасывает устаревший блокирующий статус (<see cref="AvitoAccountStatus.RequiresManualAction"/>,
+    /// <see cref="AvitoAccountStatus.RequiresLogin"/>), чтобы воркер снова попробовал пройти аккаунт.
+    /// </summary>
+    public static bool TryClearStaleBlockingState(AvitoAccount account, DateTime? utcNow = null)
+    {
+        if (account.Status is not (AvitoAccountStatus.RequiresManualAction or AvitoAccountStatus.RequiresLogin))
+        {
+            return false;
+        }
+
+        var issueAt = GetBlockingIssueAtUtc(account);
+        if (issueAt is null)
+        {
+            return false;
+        }
+
+        var now = utcNow ?? DateTime.UtcNow;
+        if (now - issueAt.Value < TimeSpan.FromHours(MonitoringTiming.AccountBlockingIssueRetryAfterHours))
+        {
+            return false;
+        }
+
+        ClearAllSubProfileIssues(account);
+        account.Status = AvitoAccountStatus.Authorized;
+        account.LastErrorMessage = string.Empty;
+        return true;
+    }
+
     public static string FormatCycleProblemsHint(IEnumerable<AvitoAccount> accounts)
     {
         var problemAccounts = accounts
@@ -123,6 +152,36 @@ public static class AccountIssueTracker
 
         var suffix = problemAccounts.Count > lines.Count ? " …" : string.Empty;
         return $"Требуют внимания: {string.Join(" | ", lines)}{suffix}";
+    }
+
+    private static DateTime? GetBlockingIssueAtUtc(AvitoAccount account)
+    {
+        DateTime? latest = null;
+
+        void Consider(DateTime? timestamp)
+        {
+            if (timestamp is null)
+            {
+                return;
+            }
+
+            if (latest is null || timestamp > latest)
+            {
+                latest = timestamp;
+            }
+        }
+
+        if (account.HasSubProfileIssues)
+        {
+            foreach (var sub in account.SubProfiles.Where(static sub => sub.HasIssue))
+            {
+                Consider(sub.LastIssueAt);
+            }
+        }
+
+        Consider(account.LastMonitoringAt);
+        Consider(account.LastAuthCheckAt);
+        return latest;
     }
 
     private static void SyncAccountStatusFromSubProfileIssues(AvitoAccount account)

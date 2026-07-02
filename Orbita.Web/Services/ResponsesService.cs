@@ -35,7 +35,7 @@ public sealed class ResponsesService(OrbitaApiClient api, IOptions<DesignPreview
 
         if (previewOptions.Value.Enabled)
         {
-            return DesignPreviewData.BuildResponsesIndexViewModel(filters);
+            return DesignPreviewData.BuildResponsesIndexViewModel(filters, selectedId);
         }
 
         var (fromUtc, toUtc) = ToUtcRange(period);
@@ -75,7 +75,8 @@ public sealed class ResponsesService(OrbitaApiClient api, IOptions<DesignPreview
                 PageSize = pageDto.PageSize,
                 TotalItems = pageDto.TotalCount
             },
-            Selected = selected
+            Selected = selected,
+            HasActiveFilters = ResponsesIndexBuilder.HasActiveFilters(filters, period)
         };
     }
 

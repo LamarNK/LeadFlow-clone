@@ -22,7 +22,8 @@ public sealed class WorkerOrchestrator(
     WorkerRuntimeState runtimeState,
     SystemMetricsCollector metricsCollector,
     WorkerSystemInfoCollector systemInfoCollector,
-    WorkerUpdateStore updateStore) : BackgroundService
+    WorkerUpdateStore updateStore,
+    IWorkerActivityReporter activityReporter) : BackgroundService
 {
     private bool _monitoringRequested = true;
 
@@ -87,6 +88,10 @@ public sealed class WorkerOrchestrator(
                     await candidateSink.FlushAsync(stoppingToken).ConfigureAwait(false);
                     await eventSink.FlushAsync(stoppingToken).ConfigureAwait(false);
                     runtimeState.IsMonitoring = false;
+                }
+                else if (!_monitoringRequested)
+                {
+                    activityReporter.ReportIdle();
                 }
 
                 await SendHeartbeatAsync(config.WorkerId, stoppingToken).ConfigureAwait(false);

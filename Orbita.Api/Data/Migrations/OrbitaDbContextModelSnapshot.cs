@@ -618,6 +618,31 @@ namespace Orbita.Api.Data.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
 
+                    b.Property<Guid?>("ActivityAccountId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ActivityAccountName")
+                        .HasColumnType("text");
+
+                    b.Property<string>("ActivityMessage")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("ActivityNextCycleAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ActivityPhase")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("ActivitySubProfileId")
+                        .HasColumnType("text");
+
+                    b.Property<string>("ActivitySubProfileName")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("ActivityUpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("ApiKeyHash")
                         .IsRequired()
                         .HasMaxLength(512)

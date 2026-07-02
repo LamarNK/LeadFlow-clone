@@ -686,6 +686,22 @@
             .catch(function () { });
     }
 
+    function getFilterPanels() {
+        return document.querySelectorAll('.orbita-filter-panel, [data-orbita-collapsible-filters]');
+    }
+
+    function closeAllFilterPanels() {
+        getFilterPanels().forEach(function (p) {
+            if (p.hasAttribute('data-orbita-collapsible-filters') && window.matchMedia('(min-width: 1101px)').matches) {
+                return;
+            }
+            p.setAttribute('hidden', '');
+        });
+        document.querySelectorAll('[data-orbita-filter-toggle]').forEach(function (b) {
+            b.setAttribute('aria-expanded', 'false');
+        });
+    }
+
     function initFilterPanels() {
         document.querySelectorAll('[data-orbita-filter-toggle]').forEach(function (btn) {
             if (btn.hasAttribute('data-orbita-filter-bound')) return;
@@ -698,12 +714,7 @@
                 if (!panel) return;
 
                 var open = panel.hasAttribute('hidden');
-                document.querySelectorAll('.orbita-filter-panel').forEach(function (p) {
-                    p.setAttribute('hidden', '');
-                });
-                document.querySelectorAll('[data-orbita-filter-toggle]').forEach(function (b) {
-                    b.setAttribute('aria-expanded', 'false');
-                });
+                closeAllFilterPanels();
 
                 if (open) {
                     panel.removeAttribute('hidden');
@@ -714,22 +725,16 @@
 
         if (!window.__orbitaFilterPanelDocListeners) {
             document.addEventListener('click', function (e) {
-                if (e.target.closest('[data-orbita-filter-toggle]') || e.target.closest('.orbita-filter-panel')) return;
-                document.querySelectorAll('.orbita-filter-panel').forEach(function (p) {
-                    p.setAttribute('hidden', '');
-                });
-                document.querySelectorAll('[data-orbita-filter-toggle]').forEach(function (b) {
-                    b.setAttribute('aria-expanded', 'false');
-                });
+                if (e.target.closest('[data-orbita-filter-toggle]')
+                    || e.target.closest('.orbita-filter-panel')
+                    || e.target.closest('[data-orbita-collapsible-filters]')) {
+                    return;
+                }
+                closeAllFilterPanels();
             });
             document.addEventListener('keydown', function (e) {
                 if (e.key !== 'Escape') return;
-                document.querySelectorAll('.orbita-filter-panel').forEach(function (p) {
-                    p.setAttribute('hidden', '');
-                });
-                document.querySelectorAll('[data-orbita-filter-toggle]').forEach(function (b) {
-                    b.setAttribute('aria-expanded', 'false');
-                });
+                closeAllFilterPanels();
             });
             window.__orbitaFilterPanelDocListeners = true;
         }

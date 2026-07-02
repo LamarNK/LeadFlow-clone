@@ -490,12 +490,16 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         var byHour = new Dictionary<int, HourlyCounters>();
         foreach (var row in hourlyGroupsUtc)
         {
-            var utcHour = new DateTime(row.Year, row.Month, row.Day, row.Hour, 0, 0, DateTimeKind.Utc);
-            var localHour = utcHour.ToLocalTimeFromStoredUtc().Hour;
-            if (!byHour.TryGetValue(localHour, out var bucket))
+            var utcHour = row.Hour;
+            if (utcHour is < 0 or > 23)
+            {
+                continue;
+            }
+
+            if (!byHour.TryGetValue(utcHour, out var bucket))
             {
                 bucket = new HourlyCounters();
-                byHour[localHour] = bucket;
+                byHour[utcHour] = bucket;
             }
 
             bucket.Total += row.Total;

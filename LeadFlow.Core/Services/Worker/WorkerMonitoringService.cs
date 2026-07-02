@@ -27,7 +27,8 @@ public sealed class WorkerMonitoringService(
     IAvitoResponseSource avitoResponseSource,
     AvitoDemoResponseSource avitoDemoResponseSource,
     AvitoParserService avitoParser,
-    IAdsPowerAvitoAutomationService adsPowerAvitoAutomationService) : IWorkerMonitoringService
+    IAdsPowerAvitoAutomationService adsPowerAvitoAutomationService,
+    IWorkerActivityReporter activityReporter) : IWorkerMonitoringService
 {
     private const int LoopRecoveryPauseMinutes = 12;
     private const int MaxLoopRecoveryFailuresBeforeStop = 10;
@@ -71,6 +72,7 @@ public sealed class WorkerMonitoringService(
         _cts.Dispose();
         _cts = null;
         _ = GlobalLogger.Instance.LogAsync("Worker monitoring stopped.", DeskLinkAuditLogLevel.Info);
+        activityReporter.ReportStopped();
     }
 
     private async Task RunAsync(CancellationToken cancellationToken)
@@ -88,9 +90,23 @@ public sealed class WorkerMonitoringService(
                         .Where(IsAdsPowerAccount)
                         .ToList();
 
+                    if (accounts.Count == 0)
+                    {
+                        _ = GlobalLogger.Instance.LogAsync(
+                            "Worker cycle skipped: no enabled accounts.",
+                            DeskLinkAuditLogLevel.Info);
+                        activityReporter.ReportNoEnabledAccounts();
+                        await Task.Delay(
+                                TimeSpan.FromMinutes(MonitoringTiming.CycleDelayMinMinutes),
+                                cancellationToken)
+                            .ConfigureAwait(false);
+                        continue;
+                    }
+
                     _ = GlobalLogger.Instance.LogAsync(
                         $"Worker cycle start: {accounts.Count} AdsPower account(s).",
                         DeskLinkAuditLogLevel.Info);
+                    activityReporter.ReportCycle(accounts.Count);
 
                     var cycleSw = Stopwatch.StartNew();
                     var newResponsesThisCycle = 0;
@@ -184,6 +200,11 @@ public sealed class WorkerMonitoringService(
                         $"Worker cycle done in {cycleSw.Elapsed.TotalSeconds:F1}s; next in {delay.TotalMinutes:F1} min (new={newResponsesThisCycle}, polled={accountsPolled}).",
                         DeskLinkAuditLogLevel.Info);
 
+                    var nextCycleAt = DateTime.UtcNow.Add(delay);
+                    activityReporter.ReportWaiting(
+                        nextCycleAt,
+                        $"Пауза до следующего цикла (~{Math.Max(1, (int)Math.Round(delay.TotalMinutes))} мин)");
+
                     await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException)
@@ -210,6 +231,7 @@ public sealed class WorkerMonitoringService(
         _ = GlobalLogger.Instance.LogAsync(
             $"Worker monitoring loop failed.{Environment.NewLine}{ex}",
             DeskLinkAuditLogLevel.Error);
+        activityReporter.ReportError($"Ошибка цикла: {ex.Message}");
 
         _consecutiveMonitoringLoopFailures++;
         if (MaxLoopRecoveryFailuresBeforeStop > 0
@@ -242,11 +264,30 @@ public sealed class WorkerMonitoringService(
             return (0, false, false);
         }
 
+        if (AccountIssueTracker.TryClearStaleBlockingState(account))
+        {
+            await repository.SaveAccountAsync(account, cancellationToken).ConfigureAwait(false);
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Worker account {account.DisplayName}: stale blocking status cleared, retrying monitoring.",
+                DeskLinkAuditLogLevel.Info);
+            await repository.AddLogAsync(new ProcessingLogItem
+            {
+                AccountId = account.Id,
+                Level = "Info",
+                Message = "Повторный проход после устаревшей блокировки",
+                Details = $"Статус сброшен, интервал {MonitoringTiming.AccountBlockingIssueRetryAfterHours} ч."
+            }, cancellationToken).ConfigureAwait(false);
+        }
+
         if (account.Status is AvitoAccountStatus.RequiresLogin
             or AvitoAccountStatus.RequiresManualAction
             or AvitoAccountStatus.Paused)
         {
             AccountIssueTracker.RefreshAccountIssueMessage(account);
+            activityReporter.ReportSkipped(
+                account.Id,
+                account.DisplayName,
+                $"Пропущен: {AccountIssueTracker.FormatStatusHint(account)}");
             await repository.AddLogAsync(new ProcessingLogItem
             {
                 AccountId = account.Id,
@@ -257,6 +298,10 @@ public sealed class WorkerMonitoringService(
             return (0, false, false);
         }
 
+        activityReporter.ReportAccount(
+            account.Id,
+            account.DisplayName,
+            "Открывает браузер и проверяет отклики");
         account.Status = AvitoAccountStatus.Monitoring;
         account.LastMonitoringAt = DateTime.UtcNow;
         await repository.SaveAccountAsync(account, cancellationToken).ConfigureAwait(false);
@@ -468,6 +513,10 @@ public sealed class WorkerMonitoringService(
                 _ = GlobalLogger.Instance.LogAsync(
                     $"Worker {account.DisplayName}: все субпрофили отключены в панели, мониторинг пропущен.",
                     DeskLinkAuditLogLevel.Warning);
+                activityReporter.ReportSkipped(
+                    account.Id,
+                    account.DisplayName,
+                    "Все субпрофили отключены в панели");
                 return (detectedTotal, budgetExhausted);
             }
 
@@ -487,6 +536,12 @@ public sealed class WorkerMonitoringService(
                 diagnosticSubProfile = sub;
                 try
                 {
+                    activityReporter.ReportSubProfile(
+                        account.Id,
+                        account.DisplayName,
+                        sub.Id,
+                        sub.Name,
+                        "Переключает субпрофиль");
                     var switched = await session.SwitchSubProfileAsync(sub.Id, cancellationToken).ConfigureAwait(false);
                     if (!switched)
                     {
@@ -504,6 +559,12 @@ public sealed class WorkerMonitoringService(
 
                     await TryCaptureSubProfileBalanceAsync(sub, session, cancellationToken).ConfigureAwait(false);
 
+                    activityReporter.ReportSubProfile(
+                        account.Id,
+                        account.DisplayName,
+                        sub.Id,
+                        sub.Name,
+                        "Читает отклики");
                     var rawJson = await session
                         .ExtractCandidatesJsonAsync(messengerHints, cancellationToken)
                         .ConfigureAwait(false);

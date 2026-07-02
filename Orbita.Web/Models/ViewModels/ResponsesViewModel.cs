@@ -19,6 +19,7 @@ public sealed class ResponsesIndexViewModel
     public IReadOnlyList<ResponseRowViewModel> Responses { get; init; } = [];
     public PaginationViewModel Pagination { get; init; } = new();
     public ResponseDetailViewModel? Selected { get; init; }
+    public bool HasActiveFilters { get; init; }
 }
 
 public sealed record ResponsesFilterViewModel
@@ -57,6 +58,7 @@ public sealed class ResponseRowViewModel
     public bool IsPhoneHidden { get; init; }
     public bool HasMessenger { get; init; }
     public string? BitrixEntityId { get; init; }
+    public string? BitrixEntityUrl { get; init; }
     public bool CanResend { get; init; }
 }
 
@@ -85,6 +87,7 @@ public sealed class ResponseDetailViewModel
     public string StatusTone { get; init; } = "unique";
     public string? DuplicateSummary { get; init; }
     public string? BitrixEntityId { get; init; }
+    public string? BitrixEntityUrl { get; init; }
     public string? ErrorMessage { get; init; }
     public string RawText { get; init; } = string.Empty;
     public IReadOnlyList<Formatting.ResponseChatMessageViewModel> ChatMessages { get; init; } = [];

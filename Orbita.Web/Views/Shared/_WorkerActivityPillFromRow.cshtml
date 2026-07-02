@@ -1,0 +1,15 @@
+@model (string? Label, string Tone, bool IsLive)
+@{
+    if (string.IsNullOrWhiteSpace(Model.Label))
+    {
+        return;
+    }
+    var liveClass = Model.IsLive ? " worker-activity-pill--live" : "";
+}
+<span class="worker-activity-pill worker-activity-pill--@Model.Tone@liveClass" title="@Model.Label">
+    @if (Model.IsLive)
+    {
+        <span class="worker-activity-pill-dot" aria-hidden="true"></span>
+    }
+    <span class="worker-activity-pill-text">@Model.Label</span>
+</span>

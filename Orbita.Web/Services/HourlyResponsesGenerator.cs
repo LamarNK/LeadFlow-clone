@@ -21,7 +21,8 @@ internal static class HourlyResponsesGenerator
             {
                 Label = $"{i:00}:00",
                 Value = DailyProfile[i],
-                ShowAxisLabel = i % 4 == 0
+                ShowAxisLabel = i % 4 == 0,
+                UtcHour = i
             });
         }
 
@@ -35,7 +36,8 @@ internal static class HourlyResponsesGenerator
             {
                 Label = $"{i:00}:00",
                 Value = 0,
-                ShowAxisLabel = i % 4 == 0
+                ShowAxisLabel = i % 4 == 0,
+                UtcHour = i
             })
             .ToList();
     }

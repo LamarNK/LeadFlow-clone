@@ -65,7 +65,28 @@
     Chart.defaults.font.size = 11;
     Chart.defaults.color = '#94a3b8';
 
-    function dashboardTooltipOptions(metricLabel, valueAtIndex) {
+    function localizeChartData(chartData) {
+        if (window.OrbitaTime && window.OrbitaTime.localizeHourlyChart) {
+            return window.OrbitaTime.localizeHourlyChart(chartData);
+        }
+        return chartData;
+    }
+
+    function sparklineTooltipTitle(items) {
+        if (!items.length) return '';
+        var chart = items[0].chart;
+        var utcHours = chart.$utcHours;
+        var refDay = chart.$referenceDayUtc;
+        if (utcHours && utcHours.length && window.OrbitaTime && window.OrbitaTime.utcHourToLocalLabel) {
+            var idx = items[0].dataIndex;
+            if (idx >= 0 && idx < utcHours.length) {
+                return window.OrbitaTime.utcHourToLocalLabel(utcHours[idx], refDay);
+            }
+        }
+        return String(items[0].label || '');
+    }
+
+    function dashboardTooltipOptions(metricLabel, valueAtIndex, titleAtIndex) {
         return {
             enabled: true,
             backgroundColor: '#ffffff',
@@ -82,6 +103,9 @@
             caretPadding: 10,
             callbacks: {
                 title: function (items) {
+                    if (typeof titleAtIndex === 'function') {
+                        return titleAtIndex(items);
+                    }
                     return items.length ? String(items[0].label) : '';
                 },
                 label: function (ctx) {
@@ -217,6 +241,7 @@
     function applySparklineChartData(chart, cfg) {
         if (!chart || !cfg || !cfg.values || cfg.values.length < 2) return;
 
+        cfg = localizeChartData(cfg);
         var values = cfg.values;
         var labels = cfg.labels && cfg.labels.length === values.length
             ? cfg.labels
@@ -230,9 +255,12 @@
         chart.options.scales.y.max = yBounds.yMax;
         chart.$tooltipValues = tooltipValues;
         chart.$metricLabel = cfg.metricLabel || 'Значение';
+        chart.$utcHours = cfg.utcHours || null;
+        chart.$referenceDayUtc = cfg.referenceDayUtc || null;
     }
 
     function createSparklineChart(canvas, cfg, index, reduced) {
+        cfg = localizeChartData(cfg);
         var color = cfg.color || '#2563eb';
         var values = cfg.values;
         var labels = cfg.labels && cfg.labels.length === values.length
@@ -296,10 +324,13 @@
                 },
                 plugins: {
                     legend: { display: false },
-                    tooltip: dashboardTooltipOptions(metricLabel, function (idx, fallback) {
-                        var source = chart.$tooltipValues || tooltipValues;
-                        return source ? source[idx] : fallback;
-                    })
+                    tooltip: dashboardTooltipOptions(
+                        metricLabel,
+                        function (idx, fallback) {
+                            var source = chart.$tooltipValues || tooltipValues;
+                            return source ? source[idx] : fallback;
+                        },
+                        sparklineTooltipTitle)
                 },
                 scales: {
                     x: { display: false, offset: false },
@@ -311,6 +342,8 @@
 
         chart.$tooltipValues = tooltipValues;
         chart.$metricLabel = metricLabel;
+        chart.$utcHours = cfg.utcHours || null;
+        chart.$referenceDayUtc = cfg.referenceDayUtc || null;
         return chart;
     }
 
@@ -358,6 +391,7 @@
     }
 
     function createHourlyChart(canvas, chartData) {
+        chartData = localizeChartData(chartData);
         var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
         var labels = chartData.labels || [];
         var lineColor = '#2563eb';
@@ -429,7 +463,15 @@
                 },
                 plugins: {
                     legend: { display: false },
-                    tooltip: dashboardTooltipOptions('Откликов')
+                    tooltip: dashboardTooltipOptions(
+                        'Откликов',
+                        null,
+                        function (items) {
+                            if (!items.length) return '';
+                            var chart = items[0].chart;
+                            var labels = chart.data && chart.data.labels ? chart.data.labels : [];
+                            return String(labels[items[0].dataIndex] || items[0].label || '');
+                        })
                 },
                 scales: {
                     x: {
@@ -597,7 +639,7 @@
             var statusText = w.isOnline ? 'Онлайн' : 'Оффлайн';
             var iso = w.lastActivityUtc || '';
             var timeHtml = iso
-                ? '<time class="" data-orbita-utc="' + escapeHtml(iso) + '" data-orbita-format="time"></time>'
+                ? '<time class="" data-orbita-utc="' + escapeHtml(iso) + '" data-orbita-format="activity"></time>'
                 : '—';
 
             var detailsUrl = workerDetailsUrl(w.id);
@@ -611,6 +653,7 @@
             return '<tr>' +
                 '<td class="cell-name" data-label="Воркер">' + nameCell + '</td>' +
                 '<td data-label="Статус"><span class="status-dot' + statusClass + '"><i class="fa-solid fa-circle status-dot-icon" aria-hidden="true"></i>' + statusText + '</span></td>' +
+                '<td data-label="Сейчас">' + (window.OrbitaLiveShared ? window.OrbitaLiveShared.renderActivityPill(w.currentActivityLabel, w.currentActivityTone, w.isActivityLive) : escapeHtml(w.currentActivityLabel || '—')) + '</td>' +
                 '<td data-label="Аккаунтов">' + w.activeAccounts + ' / ' + w.totalAccounts + '</td>' +
                 '<td data-label="Откликов">' + w.responses + '</td>' +
                 '<td data-label="Дублей">' + w.duplicates + '</td>' +
@@ -790,8 +833,9 @@
 
         if (chartRegistry.hourly) {
             if (changed) {
+                var localized = localizeChartData(chartData);
                 var yBounds = hourlyYBounds(chartData.values);
-                chartRegistry.hourly.data.labels = chartData.labels;
+                chartRegistry.hourly.data.labels = localized.labels;
                 chartRegistry.hourly.data.datasets[0].data = chartData.values;
                 chartRegistry.hourly.options.scales.y.min = yBounds.yMin;
                 chartRegistry.hourly.options.scales.y.max = yBounds.yMax;

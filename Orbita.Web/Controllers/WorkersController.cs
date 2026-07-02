@@ -50,7 +50,8 @@ public sealed class WorkersController(IWorkersService workers) : Controller
             PeriodStats = model.PeriodStats,
             Accounts = model.Accounts,
             Events = model.Events,
-            ActivityChart = model.ActivityChart
+            ActivityChart = model.ActivityChart,
+            CurrentActivity = model.CurrentActivity
         });
     }
 

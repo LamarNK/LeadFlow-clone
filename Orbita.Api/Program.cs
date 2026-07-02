@@ -264,6 +264,20 @@ workers.MapPost("/heartbeat", async (WorkerHeartbeatRequest request, TelemetrySe
     return await telemetry.HeartbeatAsync(request, clientIp, ct) ? Results.Ok() : Results.NotFound();
 }).RequireAuthorization("Worker");
 
+workers.MapPost("/activity", async (WorkerActivityRequest request, TelemetryService telemetry, ClaimsPrincipal user, CancellationToken ct) =>
+{
+    if (!TryGetWorkerId(user, out var workerId) || workerId != request.WorkerId)
+    {
+        await GlobalLogger.Instance.LogAsync(
+            $"Worker activity forbidden: token worker mismatch (token={workerId}, request={request.WorkerId}).",
+            DeskLinkAuditLogLevel.Warning,
+            errorKey: "auth.worker.worker_id_mismatch");
+        return Results.Forbid();
+    }
+
+    return await telemetry.SaveActivityAsync(request, ct) ? Results.Ok() : Results.NotFound();
+}).RequireAuthorization("Worker");
+
 workers.MapPost("/telemetry/snapshot", async (WorkerSnapshotRequest request, TelemetryService telemetry, ClaimsPrincipal user, CancellationToken ct) =>
 {
     if (!TryGetWorkerId(user, out var workerId) || workerId != request.WorkerId)

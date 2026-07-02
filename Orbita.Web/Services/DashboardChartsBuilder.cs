@@ -12,20 +12,30 @@ internal static class DashboardChartsBuilder
         IReadOnlyList<ActivityPointDto>? dailyPoints = null,
         bool useHourlyLabels = false)
     {
-        var labelSource = useHourlyLabels || dailyPoints is not { Count: > 0 }
+        var useHourly = useHourlyLabels || dailyPoints is not { Count: > 0 };
+        var labelSource = useHourly
             ? hourlyChart.Select(p => p.Label).ToList()
-            : dailyPoints.Select(p => p.Label).ToList();
+            : dailyPoints!.Select(p => p.Label).ToList();
+        var utcHourSource = useHourly
+            ? hourlyChart.Select(p => p.UtcHour).ToList()
+            : [];
+        var referenceDayUtc = useHourly ? DateTime.UtcNow.ToString("yyyy-MM-dd") : null;
         var sparklineLabels = ResampleLabels(labelSource, SparklineGenerator.PointCount);
+        var sparklineUtcHours = utcHourSource.Count > 0
+            ? ResampleUtcHours(utcHourSource, SparklineGenerator.PointCount)
+            : [];
 
         return new DashboardChartsViewModel
         {
             Sparklines = kpiCards
-                .Select(k => BuildKpiChart(k, sparklineLabels))
+                .Select(k => BuildKpiChart(k, sparklineLabels, sparklineUtcHours, referenceDayUtc))
                 .ToList(),
             HourlyResponses = new LineChartViewModel
             {
                 Labels = hourlyChart.Select(p => p.Label).ToList(),
-                Values = hourlyChart.Select(p => p.Value).ToList()
+                Values = hourlyChart.Select(p => p.Value).ToList(),
+                UtcHours = hourlyChart.Select(p => p.UtcHour).ToList(),
+                ReferenceDayUtc = referenceDayUtc
             },
             AccountStatus = new DonutChartViewModel
             {
@@ -40,7 +50,9 @@ internal static class DashboardChartsBuilder
 
     private static SparklineChartViewModel BuildKpiChart(
         DashboardKpiCardViewModel card,
-        IReadOnlyList<string> sparklineLabels) =>
+        IReadOnlyList<string> sparklineLabels,
+        IReadOnlyList<int> sparklineUtcHours,
+        string? referenceDayUtc) =>
         card.Segments.Count > 0
             ? new SparklineChartViewModel
             {
@@ -55,7 +67,9 @@ internal static class DashboardChartsBuilder
                 MetricLabel = TooltipLabelFor(card.Label),
                 Labels = sparklineLabels,
                 Values = card.Sparkline,
-                TooltipValues = card.Sparkline
+                TooltipValues = card.Sparkline,
+                UtcHours = sparklineUtcHours,
+                ReferenceDayUtc = referenceDayUtc
             };
 
     internal static IReadOnlyList<KpiChartSegmentViewModel> BuildAccountSegments(AccountStatsViewModel stats)
@@ -118,7 +132,8 @@ internal static class DashboardChartsBuilder
         {
             Label = string.IsNullOrWhiteSpace(p.Label) ? $"{i:00}:00" : p.Label,
             Value = Math.Max(0, p.NewCount),
-            ShowAxisLabel = i % axisEvery == 0
+            ShowAxisLabel = i % axisEvery == 0,
+            UtcHour = p.SlotStartHour is >= 0 and <= 23 ? p.SlotStartHour : i
         }).ToList();
 
         if (points.Count < 25 && points.Count >= 2)
@@ -128,11 +143,32 @@ internal static class DashboardChartsBuilder
             {
                 Label = "24:00",
                 Value = last.Value,
-                ShowAxisLabel = true
+                ShowAxisLabel = true,
+                UtcHour = 24
             });
         }
 
         return points;
+    }
+
+    private static IReadOnlyList<int> ResampleUtcHours(IReadOnlyList<int> source, int count)
+    {
+        if (source.Count == 0)
+        {
+            return Enumerable.Range(0, count)
+                .Select(i => i * 24 / Math.Max(1, count - 1))
+                .ToList();
+        }
+
+        var result = new int[count];
+        for (var i = 0; i < count; i++)
+        {
+            var pos = i * (source.Count - 1) / (double)Math.Max(1, count - 1);
+            var idx = (int)Math.Round(pos);
+            result[i] = source[Math.Min(idx, source.Count - 1)];
+        }
+
+        return result;
     }
 
     private static IReadOnlyList<string> ResampleLabels(IReadOnlyList<string> source, int count)

@@ -111,3 +111,36 @@ public sealed record WorkerEventDto(
     string Message,
     string? Details,
     DateTime CreatedAtUtc);
+
+public static class WorkerActivityPhases
+{
+    public const string Idle = "idle";
+    public const string Waiting = "waiting";
+    public const string Cycle = "cycle";
+    public const string Account = "account";
+    public const string SubProfile = "subprofile";
+    public const string Skipped = "skipped";
+    public const string Error = "error";
+    public const string Stopped = "stopped";
+}
+
+public sealed record WorkerActivityRequest(
+    Guid WorkerId,
+    string Phase,
+    string Message,
+    Guid? AccountId = null,
+    string? AccountName = null,
+    string? SubProfileId = null,
+    string? SubProfileName = null,
+    DateTime? NextCycleAtUtc = null,
+    DateTime UpdatedAtUtc = default);
+
+public sealed record WorkerActivityDto(
+    string Phase,
+    string Message,
+    Guid? AccountId,
+    string? AccountName,
+    string? SubProfileId,
+    string? SubProfileName,
+    DateTime? NextCycleAtUtc,
+    DateTime UpdatedAtUtc);

@@ -133,14 +133,19 @@
                 statusHtml += '<span class="account-error-hint" title="' + shared.escapeHtml(account.lastErrorMessage) + '">' + shared.escapeHtml(account.lastErrorMessage) + '</span>';
             }
             var activityHtml = account.lastActivityUtc
-                ? '<time data-orbita-utc="' + shared.escapeHtml(account.lastActivityUtc) + '" data-orbita-format="time"></time>'
+                ? '<time data-orbita-utc="' + shared.escapeHtml(account.lastActivityUtc) + '" data-orbita-format="activity"></time>'
                 : '—';
             var subProfiles = shared.renderSubProfilesToolbar(account.workerId, account, 'subprofiles-acc');
+            var processingHtml = account.processingLabel
+                ? shared.renderActivityPill(account.processingLabel, account.processingTone, account.isProcessingNow)
+                : '<span class="worker-activity-pill worker-activity-pill--muted">—</span>';
+            var rowClass = 'accounts-row' + (account.isProcessingNow ? ' accounts-row--processing' : '');
 
-            return '<tr class="accounts-row" data-href="' + shared.escapeHtml(accountUrl) + '" data-account-id="' + shared.escapeHtml(account.id) + '">' +
+            return '<tr class="' + rowClass + '" data-href="' + shared.escapeHtml(accountUrl) + '" data-account-id="' + shared.escapeHtml(account.id) + '">' +
                 '<td class="cell-account" data-label="Аккаунт"><a href="' + shared.escapeHtml(accountUrl) + '">' + shared.escapeHtml(account.accountName) + '</a>' + subProfiles + '</td>' +
                 '<td class="cell-worker" data-label="Воркер"><a href="' + shared.escapeHtml(workerUrl) + '">' + shared.escapeHtml(account.workerName) + '</a></td>' +
                 '<td data-label="Статус">' + statusHtml + '</td>' +
+                '<td data-label="Сейчас">' + processingHtml + '</td>' +
                 '<td class="cell-num cell-balance" data-label="Баланс">' + shared.renderAccountBalance(account) + '</td>' +
                 '<td class="cell-num" data-label="Откликов">' + (account.responses || 0) + '</td>' +
                 '<td class="cell-num" data-label="Уникальных">' + (account.uniqueResponses || 0) + '</td>' +

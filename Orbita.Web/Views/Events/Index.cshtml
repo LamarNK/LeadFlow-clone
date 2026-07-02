@@ -49,9 +49,33 @@
         }
     </div>
 
-    <div class="card card--events-filters">
-        <form class="events-filters" method="get" action="@formAction">
-            <div class="events-filters-row">
+    <div class="orbita-filters-bar">
+        <form class="orbita-filters-form events-filters" method="get" action="@formAction">
+            <div class="orbita-filters-toolbar events-filters-actions">
+                <div class="orbita-filters-search events-search">
+                    <i class="fa-solid fa-magnifying-glass events-search-icon" aria-hidden="true"></i>
+                    <input type="search"
+                           name="q"
+                           value="@Model.Filters.SearchQuery"
+                           placeholder="Поиск по событиям..."
+                           aria-label="Поиск по событиям" />
+                </div>
+                <div class="orbita-filters-toolbar-actions">
+                    <button type="button"
+                            class="orbita-filters-toggle events-filter-btn@(Model.HasActiveFilters ? " is-active" : "")"
+                            data-orbita-filter-toggle="eventsFilterPanel"
+                            aria-label="Фильтры"
+                            aria-expanded="false">
+                        <i class="fa-solid fa-filter" aria-hidden="true"></i>
+                    </button>
+                    <button type="submit" class="orbita-filters-apply events-apply-btn">Применить</button>
+                    <a class="orbita-filters-reset events-reset-btn" href="@formAction">
+                        <i class="fa-solid fa-rotate-right" aria-hidden="true"></i>
+                        <span>Сбросить</span>
+                    </a>
+                </div>
+            </div>
+            <div class="orbita-filters-fields events-filters-row" id="eventsFilterPanel" data-orbita-collapsible-filters hidden>
                 <label class="events-filter-field">
                     <span class="events-filter-label">Тип события</span>
                     <select name="type" class="events-select" aria-label="Тип события">
@@ -116,23 +140,6 @@
                         }
                     </select>
                 </label>
-            </div>
-            <div class="events-filters-actions">
-                <div class="events-search">
-                    <i class="fa-solid fa-magnifying-glass events-search-icon" aria-hidden="true"></i>
-                    <input type="search"
-                           name="q"
-                           value="@Model.Filters.SearchQuery"
-                           placeholder="Поиск по событиям..."
-                           aria-label="Поиск по событиям" />
-                </div>
-                <button type="button" class="events-filter-btn" aria-label="Фильтры">
-                    <i class="fa-solid fa-filter" aria-hidden="true"></i>
-                </button>
-                <a class="events-reset-btn" href="@formAction">
-                    <i class="fa-solid fa-rotate-right" aria-hidden="true"></i>
-                    <span>Сбросить фильтры</span>
-                </a>
             </div>
         </form>
     </div>

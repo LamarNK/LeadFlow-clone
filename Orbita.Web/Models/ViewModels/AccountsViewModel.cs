@@ -45,6 +45,18 @@ public sealed class AccountRowViewModel
     public string SubProfilesSummary { get; init; } = string.Empty;
     public bool CanRefreshSubProfiles { get; init; }
     public bool IsSubProfilesRefreshPending { get; init; }
+    public bool IsProcessingNow { get; init; }
+    public string? ProcessingLabel { get; init; }
+    public string ProcessingTone { get; init; } = "live";
+    public string? ProcessingSubProfileId { get; init; }
+}
+
+public sealed class AccountProcessingViewModel
+{
+    public bool IsProcessingNow { get; init; }
+    public string? Label { get; init; }
+    public string Tone { get; init; } = "live";
+    public string? SubProfileId { get; init; }
 }
 
 public sealed class AccountsSummaryViewModel

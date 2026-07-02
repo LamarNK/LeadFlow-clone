@@ -132,7 +132,7 @@
             var statusText = !w.isEnabled ? 'Приостановлен' : (w.isOnline ? 'Онлайн' : 'Оффлайн');
             var iso = w.lastActivityUtc || '';
             var timeHtml = iso
-                ? '<time data-orbita-utc="' + shared.escapeHtml(iso) + '" data-orbita-format="time"></time>'
+                ? '<time data-orbita-utc="' + shared.escapeHtml(iso) + '" data-orbita-format="activity"></time>'
                 : '—';
             var disabledRow = !w.isEnabled ? ' workers-row--disabled' : '';
             var updateBadge = w.updateAvailable
@@ -145,6 +145,7 @@
             return '<tr class="workers-row' + disabledRow + '" data-href="' + shared.escapeHtml(detailsUrl) + '" data-worker-id="' + shared.escapeHtml(w.id) + '">' +
                 '<td class="cell-name" data-label="Воркер">' + renderWorkerNameCell(w) + pausedBadge + updateBadge + '</td>' +
                 '<td data-label="Статус"><span class="status-dot' + statusClass + '"><i class="fa-solid fa-circle status-dot-icon" aria-hidden="true"></i>' + statusText + '</span></td>' +
+                '<td data-label="Сейчас">' + shared.renderActivityPill(w.currentActivityLabel, w.currentActivityTone, w.isActivityLive) + '</td>' +
                 '<td data-label="Аккаунтов">' + w.activeAccounts + ' / ' + w.totalAccounts + '</td>' +
                 '<td data-label="Откликов">' + w.responses + '</td>' +
                 '<td data-label="Дублей">' + w.duplicates + '</td>' +

@@ -53,6 +53,7 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.Property(x => x.ApiKeyHash).HasMaxLength(512);
             entity.Property(x => x.AppVersion).HasMaxLength(50);
             entity.Property(x => x.MonitoringStatus).HasMaxLength(50);
+            entity.Property(x => x.ActivityPhase).HasMaxLength(32);
             entity.Property(x => x.AdsPowerApiBaseUrl).HasMaxLength(512);
             entity.Property(x => x.AdsPowerApiKey).HasMaxLength(256);
             entity.Property(x => x.LastUpdateVersion).HasMaxLength(50);

@@ -64,9 +64,17 @@ internal static class EventsIndexBuilder
                 Page = page,
                 PageSize = pageSize,
                 TotalItems = total
-            }
+            },
+            HasActiveFilters = HasActiveFilters(filters)
         };
     }
+
+    public static bool HasActiveFilters(EventsFilterViewModel filters) =>
+        !string.IsNullOrWhiteSpace(filters.Type)
+        || filters.WorkerId.HasValue
+        || !string.IsNullOrWhiteSpace(filters.Account)
+        || !string.IsNullOrWhiteSpace(filters.Level)
+        || !string.IsNullOrWhiteSpace(filters.SearchQuery);
 
     public static EventRowViewModel MapEvent(WorkerEventListItem item, string? accountName = null)
     {
@@ -155,7 +163,7 @@ internal static class EventsIndexBuilder
                 Label = "Всего событий",
                 Value = summary.Total.ToString(),
                 CountValue = summary.Total,
-                Delta = "Сегодня",
+                Delta = "Недавние",
                 DeltaTone = "neutral",
                 IconClass = "fa-regular fa-clipboard",
                 IconTone = "blue"

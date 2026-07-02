@@ -121,6 +121,8 @@ internal static class Program
         host.Services.AddSingleton<AppRepository>();
         host.Services.AddSingleton<IMonitoringRepository>(sp => sp.GetRequiredService<AppRepository>());
         host.Services.AddSingleton<ICandidateDuplicateRepository>(sp => sp.GetRequiredService<AppRepository>());
+        host.Services.AddSingleton<WorkerActivityReporter>();
+        host.Services.AddSingleton<IWorkerActivityReporter>(sp => sp.GetRequiredService<WorkerActivityReporter>());
         host.Services.AddSingleton<IWorkerMonitoringService, WorkerMonitoringService>();
 
         host.Services.AddDbContextFactory<AppDbContext>((sp, options) =>

@@ -197,28 +197,58 @@
         });
     }
 
-    function renderSubProfilesList(workerId, accountId, items) {
+    function renderActivityPill(label, tone, isLive) {
+        if (!label) return '<span class="worker-activity-pill worker-activity-pill--muted">—</span>';
+        var liveClass = isLive ? ' worker-activity-pill--live' : '';
+        var dot = isLive ? '<span class="worker-activity-pill-dot" aria-hidden="true"></span>' : '';
+        return '<span class="worker-activity-pill worker-activity-pill--' + escapeHtml(tone || 'muted') + liveClass + '" title="' + escapeHtml(label) + '">' +
+            dot + '<span class="worker-activity-pill-text">' + escapeHtml(label) + '</span></span>';
+    }
+
+    function renderSubProfileStatusBadges(sub, isProcessing) {
+        var badges = '';
+        if (isProcessing) {
+            badges += '<span class="subprofiles-badge subprofiles-badge--processing"><span class="subprofiles-badge-dot" aria-hidden="true"></span>сейчас</span>';
+        } else if (sub.isCurrent) {
+            badges += '<span class="subprofiles-badge subprofiles-badge--current">текущий</span>';
+        }
+        if (!sub.isEnabledInPanel) {
+            badges += '<span class="subprofiles-badge subprofiles-badge--off">выкл</span>';
+        }
+        return badges ? '<span class="subprofiles-status-badges">' + badges + '</span>' : '';
+    }
+
+    function renderSubProfilesList(workerId, accountId, items, activeSubProfileId) {
         if (!items || !items.length) return '';
         return '<ul class="subprofiles-list">' + items.map(function (sub) {
+            var isProcessing = !!(activeSubProfileId && sub.id === activeSubProfileId);
             var classes = 'subprofiles-item';
             if (sub.isCurrent) classes += ' subprofiles-item--current';
+            if (isProcessing) classes += ' subprofiles-item--processing';
             if (sub.hasIssue) classes += ' subprofiles-item--issue';
             if (!sub.isEnabledInPanel) classes += ' subprofiles-item--disabled';
-            var currentBadge = sub.isCurrent ? '<span class="subprofiles-badge">текущий</span>' : '';
             var category = sub.category
-                ? '<span class="subprofiles-category">' + escapeHtml(sub.category) + '</span>'
+                ? '<span class="subprofiles-tag">' + escapeHtml(sub.category) + '</span>'
                 : '';
-            var issue = sub.hasIssue && sub.issueSummary
-                ? '<span class="subprofiles-issue" title="' + escapeHtml(sub.issueSummary) + '">' + escapeHtml(sub.issueSummary) + '</span>'
-                : '';
-            var screenshot = sub.diagnosticAttachmentId
-                ? '<a class="subprofiles-screenshot-link" href="/Diagnostics/Image/' + escapeHtml(sub.diagnosticAttachmentId) + '" target="_blank" rel="noopener" title="Открыть скриншот страницы при ошибке">скрин</a>'
-                : '';
+            var alert = '';
+            if (sub.hasIssue && sub.issueSummary) {
+                var screenshot = sub.diagnosticAttachmentId
+                    ? '<a class="subprofiles-screenshot-btn" href="/Diagnostics/Image/' + escapeHtml(sub.diagnosticAttachmentId) + '" target="_blank" rel="noopener" title="Открыть скриншот страницы при ошибке">скрин</a>'
+                    : '';
+                alert = '<div class="subprofiles-item-alert">' +
+                    '<span class="subprofiles-issue" title="' + escapeHtml(sub.issueSummary) + '">' + escapeHtml(sub.issueSummary) + '</span>' +
+                    screenshot +
+                    '</div>';
+            }
             return '<li class="' + classes + '" data-subprofile-id="' + escapeHtml(sub.id) + '">' +
                 '<label class="subprofiles-toggle-sm" title="' + (sub.isEnabledInPanel ? 'Отключить субпрофиль' : 'Включить субпрофиль') + '">' +
                 '<input type="checkbox" data-subprofile-toggle data-worker-id="' + escapeHtml(workerId) + '" data-account-id="' + escapeHtml(accountId) + '" data-subprofile-id="' + escapeHtml(sub.id) + '"' + (sub.isEnabledInPanel ? ' checked' : '') + ' />' +
                 '<span class="subprofiles-toggle-sm-slider"></span></label>' +
-                '<div class="subprofiles-item-body"><span class="subprofiles-name">' + escapeHtml(sub.name) + currentBadge + '</span>' + category + issue + screenshot + '</div>' +
+                '<div class="subprofiles-item-main">' +
+                '<div class="subprofiles-item-head">' +
+                '<span class="subprofiles-name">' + escapeHtml(sub.name) + '</span>' + category + renderSubProfileStatusBadges(sub, isProcessing) +
+                '</div>' + alert +
+                '</div>' +
                 '<span class="subprofiles-balance">' + escapeHtml(sub.balanceText || '—') + '</span></li>';
         }).join('') + '</ul>';
     }
@@ -228,13 +258,24 @@
         var refreshBtn = account.canRefreshSubProfiles
             ? '<button type="button" class="subprofiles-refresh-btn' + (account.isSubProfilesRefreshPending ? ' is-pending' : '') + '" data-refresh-subprofiles data-worker-id="' + escapeHtml(workerId) + '" data-account-id="' + escapeHtml(account.id) + '" title="' + (account.isSubProfilesRefreshPending ? 'Обновление запрошено — ждём воркер' : 'Обновить список субпрофилей') + '" aria-label="Обновить субпрофили"><i class="fa-solid fa-arrows-rotate subprofiles-refresh-icon" aria-hidden="true"></i></button>'
             : '';
-        var toggle = account.hasSubProfiles
-            ? '<button type="button" class="subprofiles-toggle" data-subprofiles-toggle aria-expanded="false" aria-controls="' + panelIdPrefix + '-' + escapeHtml(account.id) + '"><i class="fa-solid fa-chevron-right subprofiles-toggle-icon" aria-hidden="true"></i><span>' + escapeHtml(account.subProfilesSummary || '') + '</span></button>'
-            : (account.canRefreshSubProfiles ? '<span class="subprofiles-empty-hint">Субпрофили не обнаружены</span>' : '');
-        var panel = account.hasSubProfiles
-            ? '<div class="subprofiles-panel" id="' + panelIdPrefix + '-' + escapeHtml(account.id) + '" hidden>' + renderSubProfilesList(workerId, account.id, account.subProfiles) + '</div>'
-            : '';
-        return '<div class="subprofiles-toolbar">' + toggle + refreshBtn + '</div>' + panel;
+        var panelId = panelIdPrefix + '-' + account.id;
+        var toggle = '';
+        var panel = '';
+        if (account.hasSubProfiles) {
+            var items = account.subProfiles || [];
+            var hasIssues = items.some(function (sub) { return sub.hasIssue; });
+            var summaryClass = hasIssues ? ' subprofiles-summary--issue' : '';
+            toggle = '<button type="button" class="subprofiles-toggle" data-subprofiles-toggle aria-expanded="false" aria-controls="' + escapeHtml(panelId) + '" title="' + escapeHtml(account.subProfilesSummary || '') + '">' +
+                '<i class="fa-solid fa-chevron-right subprofiles-toggle-icon" aria-hidden="true"></i>' +
+                '<span class="subprofiles-summary' + summaryClass + '">' + escapeHtml(account.subProfilesSummary || '') + '</span>' +
+                '</button>';
+            panel = '<div class="subprofiles-panel" id="' + escapeHtml(panelId) + '" hidden>' +
+                renderSubProfilesList(workerId, account.id, items, account.isProcessingNow ? account.processingSubProfileId : null) +
+                '</div>';
+        } else if (account.canRefreshSubProfiles) {
+            toggle = '<span class="subprofiles-empty-hint">Субпрофили не обнаружены</span>';
+        }
+        return '<div class="subprofiles-section"><div class="subprofiles-toolbar">' + toggle + refreshBtn + '</div>' + panel + '</div>';
     }
 
     function reinitLiveContent() {
@@ -263,6 +304,7 @@
         formatBalance: formatBalance,
         renderAccountBalance: renderAccountBalance,
         updatePaginationInfo: updatePaginationInfo,
+        renderActivityPill: renderActivityPill,
         renderSubProfilesList: renderSubProfilesList,
         renderSubProfilesToolbar: renderSubProfilesToolbar,
         reinitLiveContent: reinitLiveContent

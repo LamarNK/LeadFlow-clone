@@ -19,7 +19,7 @@
       Target="Orbita.Worker.exe"
       Description="Закройте воркер Орбиты (иконка в трее) перед продолжением установки."
       CloseMessage="yes"
-      TerminateProcess="0"
+      TerminateProcess="1"
       RebootPrompt="no" />
 
     <MediaTemplate EmbedCab="yes" />
@@ -94,7 +94,7 @@
       <Custom
         Action="LaunchWorkerAfterInstall"
         After="InstallFinalize"
-        Condition="(NOT Installed OR WIX_UPGRADE_DETECTED) AND NOT REMOVE~=&quot;ALL&quot;" />
+        Condition="(NOT Installed) AND NOT REMOVE~=&quot;ALL&quot;" />
     </InstallExecuteSequence>
   </Package>
 </Wix>

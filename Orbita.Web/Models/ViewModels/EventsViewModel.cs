@@ -18,6 +18,7 @@ public sealed class EventsIndexViewModel
     public IReadOnlyList<EventFilterOptionViewModel> Levels { get; init; } = [];
     public IReadOnlyList<EventRowViewModel> Events { get; init; } = [];
     public PaginationViewModel Pagination { get; init; } = new();
+    public bool HasActiveFilters { get; init; }
 }
 
 public sealed record EventsFilterViewModel

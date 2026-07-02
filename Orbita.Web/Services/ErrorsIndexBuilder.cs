@@ -63,9 +63,17 @@ internal static class ErrorsIndexBuilder
                 Page = page,
                 PageSize = pageSize,
                 TotalItems = total
-            }
+            },
+            HasActiveFilters = HasActiveFilters(filters)
         };
     }
+
+    public static bool HasActiveFilters(ErrorsFilterViewModel filters) =>
+        !string.IsNullOrWhiteSpace(filters.Severity)
+        || !string.IsNullOrWhiteSpace(filters.Type)
+        || filters.WorkerId.HasValue
+        || !string.IsNullOrWhiteSpace(filters.Account)
+        || !string.IsNullOrWhiteSpace(filters.SearchQuery);
 
     public static ErrorRowViewModel MapEvent(WorkerEventListItem item, string? accountName = null)
     {
@@ -148,7 +156,7 @@ internal static class ErrorsIndexBuilder
                 Label = "Всего ошибок",
                 Value = summary.Total.ToString(),
                 CountValue = summary.Total,
-                Delta = "Сегодня",
+                Delta = "Недавние",
                 DeltaTone = "neutral",
                 IconClass = "fa-regular fa-circle-xmark",
                 IconTone = "orange"

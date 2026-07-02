@@ -96,6 +96,10 @@
 
         if (!chartData.values || chartData.values.length < 2) return;
 
+        if (window.OrbitaTime && window.OrbitaTime.localizeHourlyChart) {
+            chartData = window.OrbitaTime.localizeHourlyChart(chartData);
+        }
+
         Chart.defaults.font.family = '"Segoe UI", system-ui, -apple-system, sans-serif';
         Chart.defaults.font.size = 11;
         Chart.defaults.color = '#94a3b8';
@@ -319,6 +323,24 @@
         return shared.getLiveAttr('data-worker-id');
     }
 
+    function accountSearchUrl(name) {
+        return shared.urlFromTemplate(shared.getLiveAttr('data-account-search-url'), '__q__', name);
+    }
+
+    function responsesFilterUrl(accountId) {
+        return shared.urlFromTemplate(shared.getLiveAttr('data-responses-filter-url'), '__id__', accountId);
+    }
+
+    function renderWorkerAccountMenu(account) {
+        var items = '<a class="row-menu-item" href="' + shared.escapeHtml(accountSearchUrl(account.displayName)) + '">' +
+            '<i class="fa-regular fa-eye" aria-hidden="true"></i>Просмотр</a>' +
+            '<a class="row-menu-item" href="#worker-accounts">' +
+            '<i class="fa-regular fa-pen-to-square" aria-hidden="true"></i>Настройки на воркере</a>' +
+            '<a class="row-menu-item" href="' + shared.escapeHtml(responsesFilterUrl(account.id)) + '">' +
+            '<i class="fa-regular fa-clock" aria-hidden="true"></i>История откликов</a>';
+        return shared.rowMenuShell('', items);
+    }
+
     function renderWorkerAccounts(accounts) {
         var tbody = document.querySelector('[data-orbita-live-body="worker-accounts"]');
         if (!tbody || !shared) return;
@@ -339,7 +361,7 @@
                     shared.escapeHtml(account.lastErrorMessage) + '</span>';
             }
             var activityHtml = account.lastActivityUtc
-                ? '<time data-orbita-utc="' + shared.escapeHtml(account.lastActivityUtc) + '" data-orbita-format="time"></time>'
+                ? '<time data-orbita-utc="' + shared.escapeHtml(account.lastActivityUtc) + '" data-orbita-format="activity"></time>'
                 : '—';
             var adsPower = account.adsPowerProfileId
                 ? '<span class="worker-account-sub">AdsPower ' + shared.escapeHtml(account.adsPowerProfileId) + '</span>'
@@ -354,13 +376,13 @@
                 '<input type="hidden" name="accountId" value="' + shared.escapeHtml(account.id) + '" />' +
                 '<label class="worker-toggle"><input type="checkbox" name="isEnabledInPanel" value="true"' + checked + ' onchange="this.form.submit()" />' +
                 '<span class="worker-toggle-slider"></span></label></form></td>' +
-                '<td class="cell-name" data-label="Аккаунт"><a href="/Accounts">' + shared.escapeHtml(account.displayName) + '</a>' + adsPower + subProfiles + '</td>' +
+                '<td class="cell-name" data-label="Аккаунт"><a href="' + shared.escapeHtml(accountSearchUrl(account.displayName)) + '">' + shared.escapeHtml(account.displayName) + '</a>' + adsPower + subProfiles + '</td>' +
                 '<td data-label="Статус">' + statusHtml + '</td>' +
                 '<td data-label="Баланс">' + shared.escapeHtml(account.balanceText || '—') + '</td>' +
                 '<td data-label="Откликов">' + (account.responses || 0) + '</td>' +
                 '<td data-label="Последняя активность">' + activityHtml + '</td>' +
                 '<td data-label="Ошибок">' + (account.errors || 0) + '</td>' +
-                '<td class="data-table-menu" data-label=""></td></tr>';
+                '<td class="data-table-menu" data-label="">' + renderWorkerAccountMenu(account) + '</td></tr>';
         }).join('');
 
         Object.keys(expandedPanels).forEach(function (panelId) {
@@ -381,9 +403,27 @@
         initAccountRowNavigation();
     }
 
+    function updateCurrentActivity(activity) {
+        var host = document.querySelector('[data-worker-current-activity]');
+        if (!host || !shared) return;
+        var pillHost = host.querySelector('.worker-activity-pill') || host;
+        if (!activity || !activity.label) {
+            pillHost.outerHTML = '<span class="worker-activity-pill worker-activity-pill--muted">—</span>';
+            return;
+        }
+        var html = shared.renderActivityPill(activity.label, activity.tone, activity.isLive);
+        var existing = host.querySelector('.worker-activity-pill');
+        if (existing) {
+            existing.outerHTML = html;
+        } else {
+            host.insertAdjacentHTML('beforeend', html);
+        }
+    }
+
     function applySnapshot(snapshot, highlightChanged) {
         if (!snapshot || !shared) return;
         shared.updateKpiCards(snapshot.kpiCards || [], highlightChanged);
+        updateCurrentActivity(snapshot.currentActivity);
         updateOnlineStatus(snapshot);
         updateSystemMetrics(snapshot);
         updateLastActivity(snapshot.lastActivityUtc);
@@ -405,8 +445,12 @@
         }
 
         if (activityChart && snapshot.activityChart && snapshot.activityChart.values) {
-            activityChart.data.labels = snapshot.activityChart.labels || [];
-            activityChart.data.datasets[0].data = snapshot.activityChart.values || [];
+            var chartData = snapshot.activityChart;
+            if (window.OrbitaTime && window.OrbitaTime.localizeHourlyChart) {
+                chartData = window.OrbitaTime.localizeHourlyChart(chartData);
+            }
+            activityChart.data.labels = chartData.labels || [];
+            activityChart.data.datasets[0].data = chartData.values || [];
             activityChart.update('none');
         }
 

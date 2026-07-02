@@ -28,7 +28,14 @@ public sealed class AccountsService(OrbitaApiClient api, IOptions<DesignPreviewO
             {
                 var balanceDetail = workerDetail?.Balances.FirstOrDefault(b => b.AccountId == account.AccountId);
                 var balance = balanceDetail?.TotalBalance ?? 0;
-                rows.Add(AccountsIndexBuilder.MapAccount(account, worker.Id, worker.DisplayName, balance, balanceDetail));
+                rows.Add(AccountsIndexBuilder.MapAccount(
+                    account,
+                    worker.Id,
+                    worker.DisplayName,
+                    balance,
+                    balanceDetail,
+                    worker.CurrentActivity,
+                    worker.IsOnline));
             }
         }
 

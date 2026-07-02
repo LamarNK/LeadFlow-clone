@@ -17,6 +17,7 @@ public sealed class ErrorsIndexViewModel
     public IReadOnlyList<EventFilterOptionViewModel> Accounts { get; init; } = [];
     public IReadOnlyList<ErrorRowViewModel> Errors { get; init; } = [];
     public PaginationViewModel Pagination { get; init; } = new();
+    public bool HasActiveFilters { get; init; }
 }
 
 public sealed record ErrorsFilterViewModel

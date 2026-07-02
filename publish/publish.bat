@@ -246,6 +246,16 @@ if /i "!DEPLOY_MODE!"=="SKIP" (
     exit /b 0
 )
 
+if /i "!DEPLOY_MODE!"=="delta" (
+    call :ensure_remote_build_cache
+    if errorlevel 1 (
+        powershell -NoProfile -ExecutionPolicy Bypass -File "!DEPLOY_CONTEXT_SCRIPT!" -Action upgrade-full -PlanPath "!PLAN_FILE!"
+        if errorlevel 1 exit /b 1
+        set "DEPLOY_MODE=full"
+    )
+)
+
+:publish_target_deploy
 echo == Packing !TARGET! build context ==
 powershell -NoProfile -ExecutionPolicy Bypass -File "!DEPLOY_CONTEXT_SCRIPT!" -Action pack -Target "!TARGET!" -StageDir "!STAGE_DIR!" -StateDir "!STATE_ROOT!" -ArchivePath "!ARCHIVE!" -PlanPath "!PLAN_FILE!"
 if errorlevel 1 exit /b 1
@@ -259,7 +269,18 @@ if errorlevel 1 exit /b 1
 
 echo == Building and deploying !TARGET! on !SERVER! ==
 ssh !SSH_ARGS! !SERVER! "sed -i 's/\r$//' /tmp/deploy-remote-build.sh && chmod +x /tmp/deploy-remote-build.sh && bash /tmp/deploy-remote-build.sh /tmp/leadflow-!TARGET!-context.tar.gz !DOCKERFILE! !IMAGE_TAG! !COMPOSE_SERVICE! !REMOTE_DIR! !DEPLOY_MODE!"
-if errorlevel 1 exit /b 1
+set "BUILD_RC=!ERRORLEVEL!"
+if !BUILD_RC! equ 42 (
+    if /i not "!DEPLOY_MODE!"=="full" (
+        echo.
+        echo == Remote build cache incomplete; retrying with full upload ==
+        powershell -NoProfile -ExecutionPolicy Bypass -File "!DEPLOY_CONTEXT_SCRIPT!" -Action upgrade-full -PlanPath "!PLAN_FILE!"
+        if errorlevel 1 exit /b 1
+        set "DEPLOY_MODE=full"
+        goto publish_target_deploy
+    )
+)
+if !BUILD_RC! neq 0 exit /b !BUILD_RC!
 
 powershell -NoProfile -ExecutionPolicy Bypass -File "!DEPLOY_CONTEXT_SCRIPT!" -Action save -Target "!TARGET!" -StageDir "!STAGE_DIR!" -StateDir "!STATE_ROOT!"
 if errorlevel 1 exit /b 1
@@ -324,6 +345,12 @@ if errorlevel 1 exit /b 1
 if exist "!STAGE_DIR!" rmdir /s /q "!STAGE_DIR!"
 
 echo == Server config deployed ==
+exit /b 0
+
+:ensure_remote_build_cache
+set "CACHE_DOCKERFILE=!REMOTE_DIR!/.build-cache/!COMPOSE_SERVICE!/!DOCKERFILE!"
+ssh !SSH_ARGS! !SERVER! "test -f \"!CACHE_DOCKERFILE!\""
+if errorlevel 1 exit /b 1
 exit /b 0
 
 :copy_context_path

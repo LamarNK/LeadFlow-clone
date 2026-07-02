@@ -62,6 +62,7 @@
                             <tr>
                                 <th>Воркер</th>
                                 <th>Статус</th>
+                                <th>Сейчас</th>
                                 <th>Аккаунтов</th>
                                 <th>Откликов</th>
                                 <th>Дублей</th>
@@ -84,11 +85,14 @@
                                         @(w.IsOnline ? "Онлайн" : "Оффлайн")
                                     </span>
                                 </td>
+                                <td data-label="Сейчас">
+                                    <partial name="_WorkerActivityPillFromRow" model="@(w.CurrentActivityLabel, w.CurrentActivityTone, w.IsActivityLive)" />
+                                </td>
                                 <td data-label="Аккаунтов">@w.ActiveAccounts / @w.TotalAccounts</td>
                                 <td data-label="Откликов">@w.Responses</td>
                                 <td data-label="Дублей">@w.Duplicates</td>
                                 <td data-label="Ошибок">@w.Errors</td>
-                                <td data-label="Последняя активность"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(w.LastActivityUtc, "time"))" /></td>
+                                <td data-label="Последняя активность"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(w.LastActivityUtc, "activity"))" /></td>
                                 <td class="data-table-menu" data-label="">
                                     <div class="row-menu" data-row-menu>
                                         <button type="button" class="row-menu-btn" aria-label="Действия" aria-expanded="false" aria-haspopup="true">

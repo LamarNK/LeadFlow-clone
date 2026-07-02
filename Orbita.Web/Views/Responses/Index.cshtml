@@ -60,11 +60,35 @@
         }
     </div>
 
-    <div class="card card--responses-filters">
-        <form class="responses-filters" method="get" action="@formAction">
+    <div class="orbita-filters-bar">
+        <form class="orbita-filters-form responses-filters" method="get" action="@formAction">
             <input type="hidden" name="from" value="@Model.Filters.DateFrom.ToString("yyyy-MM-dd")" data-period-form-from />
             <input type="hidden" name="to" value="@Model.Filters.DateTo.ToString("yyyy-MM-dd")" data-period-form-to />
-            <div class="responses-filters-row">
+            <div class="orbita-filters-toolbar responses-filters-actions">
+                <div class="orbita-filters-search responses-search">
+                    <i class="fa-solid fa-magnifying-glass responses-search-icon" aria-hidden="true"></i>
+                    <input type="search"
+                           name="search"
+                           value="@Model.Filters.SearchQuery"
+                           placeholder="Поиск по имени, телефону или объявлению..."
+                           aria-label="Поиск по откликам" />
+                </div>
+                <div class="orbita-filters-toolbar-actions">
+                    <button type="button"
+                            class="orbita-filters-toggle responses-filter-btn@(Model.HasActiveFilters ? " is-active" : "")"
+                            data-orbita-filter-toggle="responsesFilterPanel"
+                            aria-label="Фильтры"
+                            aria-expanded="false">
+                        <i class="fa-solid fa-filter" aria-hidden="true"></i>
+                    </button>
+                    <button type="submit" class="orbita-filters-apply responses-apply-btn">Применить</button>
+                    <a class="orbita-filters-reset responses-reset-btn" href="@formAction">
+                        <i class="fa-solid fa-rotate-right" aria-hidden="true"></i>
+                        <span>Сбросить</span>
+                    </a>
+                </div>
+            </div>
+            <div class="orbita-filters-fields responses-filters-row" id="responsesFilterPanel" data-orbita-collapsible-filters hidden>
                 <div class="responses-filter-field responses-filter-field--period">
                     <span class="responses-filter-label">Период</span>
                     <div class="orbita-period-menu orbita-period-menu--inline" data-orbita-period-menu>
@@ -154,23 +178,6 @@
                         }
                     </select>
                 </label>
-            </div>
-            <div class="responses-filters-actions">
-                <div class="responses-search">
-                    <i class="fa-solid fa-magnifying-glass responses-search-icon" aria-hidden="true"></i>
-                    <input type="search"
-                           name="search"
-                           value="@Model.Filters.SearchQuery"
-                           placeholder="Поиск по имени, телефону или объявлению..."
-                           aria-label="Поиск по откликам" />
-                </div>
-                <button type="button" class="responses-filter-btn" aria-label="Фильтры">
-                    <i class="fa-solid fa-filter" aria-hidden="true"></i>
-                </button>
-                <a class="responses-reset-btn" href="@formAction">
-                    <i class="fa-solid fa-rotate-right" aria-hidden="true"></i>
-                    <span>Сбросить фильтры</span>
-                </a>
             </div>
         </form>
     </div>
@@ -316,12 +323,12 @@
                                             Копировать телефон
                                         </button>
                                     }
-                                    @if (!string.IsNullOrWhiteSpace(row.BitrixEntityId))
+                                    @if (!string.IsNullOrWhiteSpace(row.BitrixEntityUrl))
                                     {
-                                        <button type="button" class="row-menu-item" data-bitrix-id="@row.BitrixEntityId">
+                                        <a class="row-menu-item" href="@row.BitrixEntityUrl" target="_blank" rel="noopener">
                                             <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i>
                                             Открыть карточку Bitrix24
-                                        </button>
+                                        </a>
                                     }
                                 </div>
                             </div>
@@ -393,7 +400,16 @@
                     @if (!string.IsNullOrWhiteSpace(detail.BitrixEntityId))
                     {
                         <dt>Bitrix ID</dt>
-                        <dd>@detail.BitrixEntityId</dd>
+                        <dd>
+                            @if (!string.IsNullOrWhiteSpace(detail.BitrixEntityUrl))
+                            {
+                                <a href="@detail.BitrixEntityUrl" target="_blank" rel="noopener">@detail.BitrixEntityId</a>
+                            }
+                            else
+                            {
+                                @detail.BitrixEntityId
+                            }
+                        </dd>
                     }
                     @if (!string.IsNullOrWhiteSpace(detail.DuplicateSummary))
                     {
@@ -433,6 +449,10 @@
                 @if (!string.IsNullOrWhiteSpace(detail.VacancyUrl))
                 {
                     <a class="btn btn-secondary" href="@detail.VacancyUrl" target="_blank" rel="noopener">Объявление</a>
+                }
+                @if (!string.IsNullOrWhiteSpace(detail.BitrixEntityUrl))
+                {
+                    <a class="btn btn-secondary" href="@detail.BitrixEntityUrl" target="_blank" rel="noopener">Bitrix24</a>
                 }
                 @if (detail.CanResend)
                 {

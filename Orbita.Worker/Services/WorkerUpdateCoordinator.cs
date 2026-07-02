@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Security.Cryptography;
 using Microsoft.Extensions.Hosting;
 using Orbita.Contracts;
@@ -7,8 +6,7 @@ namespace Orbita.Worker.Services;
 
 public sealed class WorkerUpdateCoordinator(
     OrbitaApiClient apiClient,
-    WorkerUpdateStore updateStore,
-    IHostApplicationLifetime lifetime) : BackgroundService
+    WorkerUpdateStore updateStore) : BackgroundService
 {
     private static readonly TimeSpan CheckInterval = TimeSpan.FromMinutes(30);
     private static readonly TimeSpan InitialDelay = TimeSpan.FromMinutes(2);
@@ -49,6 +47,7 @@ public sealed class WorkerUpdateCoordinator(
         var tempDir = Path.Combine(Path.GetTempPath(), "orbita-worker-update");
         Directory.CreateDirectory(tempDir);
         var msiPath = Path.Combine(tempDir, $"Orbita.Worker.Setup-{targetVersion}.msi");
+        var applyUpdate = false;
 
         try
         {
@@ -67,23 +66,16 @@ public sealed class WorkerUpdateCoordinator(
                 return;
             }
 
-            var exitCode = await RunInstallerAsync(msiPath, ct).ConfigureAwait(false);
-            if (exitCode == 0)
-            {
-                updateStore.SaveResult(new WorkerUpdateResultDto(
-                    targetVersion,
-                    true,
-                    "Обновление установлено.",
-                    DateTime.UtcNow));
-                lifetime.StopApplication();
-                return;
-            }
-
-            SaveFailure(targetVersion, $"msiexec завершился с кодом {exitCode}.");
+            updateStore.SavePendingInstall(targetVersion);
+            applyUpdate = true;
+            WorkerRestartHelper.ScheduleInstallAndRestart(msiPath);
         }
         finally
         {
-            TryDeleteFile(msiPath);
+            if (!applyUpdate)
+            {
+                TryDeleteFile(msiPath);
+            }
         }
     }
 
@@ -96,28 +88,6 @@ public sealed class WorkerUpdateCoordinator(
         var hash = await SHA256.HashDataAsync(stream, ct).ConfigureAwait(false);
         var actual = Convert.ToHexString(hash);
         return string.Equals(actual, expectedSha256, StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static async Task<int> RunInstallerAsync(string msiPath, CancellationToken ct)
-    {
-        using var process = new Process
-        {
-            StartInfo = new ProcessStartInfo
-            {
-                FileName = "msiexec.exe",
-                Arguments = $"/qn /i \"{msiPath}\"",
-                UseShellExecute = false,
-                CreateNoWindow = true
-            }
-        };
-
-        if (!process.Start())
-        {
-            return -1;
-        }
-
-        await process.WaitForExitAsync(ct).ConfigureAwait(false);
-        return process.ExitCode;
     }
 
     private static void TryDeleteFile(string path)

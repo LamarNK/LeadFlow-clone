@@ -4,6 +4,10 @@
 }
 
 orbitsu.ru, www.orbitsu.ru {
+	request_body {
+		max_size 512MB
+	}
+
 	reverse_proxy 127.0.0.1:8081 {
 		transport http {
 			read_timeout 30m
@@ -13,6 +17,10 @@ orbitsu.ru, www.orbitsu.ru {
 }
 
 api.orbitsu.ru {
+	request_body {
+		max_size 512MB
+	}
+
 	reverse_proxy 127.0.0.1:8082 {
 		transport http {
 			read_timeout 30m
@@ -23,6 +31,10 @@ api.orbitsu.ru {
 
 # Fallback по IP, пока DNS не распространился
 http://163.5.153.207 {
+	request_body {
+		max_size 512MB
+	}
+
 	reverse_proxy 127.0.0.1:8081
 }
 

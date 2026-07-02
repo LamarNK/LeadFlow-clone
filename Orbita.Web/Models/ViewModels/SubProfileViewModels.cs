@@ -17,6 +17,19 @@ public sealed class SubProfilesListViewModel
 {
     public Guid WorkerId { get; init; }
     public Guid AccountId { get; init; }
+    public string? ProcessingSubProfileId { get; init; }
+    public IReadOnlyList<SubProfileRowViewModel> Items { get; init; } = [];
+}
+
+public sealed class SubProfilesSectionViewModel
+{
+    public Guid WorkerId { get; init; }
+    public Guid AccountId { get; init; }
+    public string PanelIdPrefix { get; init; } = "subprofiles";
+    public bool CanRefreshSubProfiles { get; init; }
+    public bool IsSubProfilesRefreshPending { get; init; }
+    public bool HasSubProfiles { get; init; }
+    public string? ProcessingSubProfileId { get; init; }
     public IReadOnlyList<SubProfileRowViewModel> Items { get; init; } = [];
 }
 
@@ -102,6 +115,36 @@ public static class SubProfileViewModelMapper
 
     private static string FormatBalance(decimal? balance) =>
         balance.HasValue ? $"{balance.Value:N0} ₽" : "—";
+
+    public static IReadOnlyList<SubProfileRowViewModel> GetPreviewChips(
+        IReadOnlyList<SubProfileRowViewModel> subProfiles,
+        int max = 3)
+    {
+        if (subProfiles.Count == 0)
+        {
+            return [];
+        }
+
+        var enabled = subProfiles.Where(s => s.IsEnabledInPanel).ToList();
+        var source = enabled.Count > 0 ? enabled : subProfiles;
+        return source.Take(max).ToList();
+    }
+
+    public static int GetPreviewOverflowCount(
+        IReadOnlyList<SubProfileRowViewModel> subProfiles,
+        int max = 3)
+    {
+        if (subProfiles.Count == 0)
+        {
+            return 0;
+        }
+
+        var previewCount = Math.Min(GetPreviewChips(subProfiles, max).Count, subProfiles.Count);
+        return Math.Max(0, subProfiles.Count - previewCount);
+    }
+
+    public static bool HasAnyIssue(IReadOnlyList<SubProfileRowViewModel> subProfiles) =>
+        subProfiles.Any(s => s.HasIssue);
 
     public static string BuildSummary(IReadOnlyList<SubProfileRowViewModel> subProfiles)
     {

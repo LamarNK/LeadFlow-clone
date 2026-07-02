@@ -125,9 +125,11 @@ public sealed class DashboardQueryService(
             ActiveAdsCount: activeAds,
             BlockedAdsCount: blockedAds,
             TotalBalance: balances.Sum(b => b.TotalBalance),
-            HourlyActivity: WorkerEventErrorStatsHelper.ApplyHourlyErrors(
-                AggregateHourly(statsList),
-                workerEventErrors.Hourly),
+            HourlyActivity: await ComputeHourlyActivityFromDbAsync(
+                workerIds,
+                todayStart,
+                workerEventErrors.Hourly,
+                ct),
             WeeklyByDayActivity: WorkerEventErrorStatsHelper.MergeDailyErrors(
                 AggregateWeekly(statsList),
                 workerEventErrors.Daily),
@@ -164,7 +166,15 @@ public sealed class DashboardQueryService(
                 w.LastSeenAtUtc,
                 w.IsEnabled,
                 w.OfficeId,
-                OfficeName = w.Office.Name
+                OfficeName = w.Office.Name,
+                w.ActivityPhase,
+                w.ActivityMessage,
+                w.ActivityAccountId,
+                w.ActivityAccountName,
+                w.ActivitySubProfileId,
+                w.ActivitySubProfileName,
+                w.ActivityUpdatedAtUtc,
+                w.ActivityNextCycleAtUtc
             })
             .ToListAsync(ct);
 
@@ -211,7 +221,16 @@ public sealed class DashboardQueryService(
                 w.OfficeId,
                 w.OfficeName,
                 w.IsEnabled,
-                op.ActiveAccounts);
+                op.ActiveAccounts,
+                WorkerActivityMapper.ToDto(
+                    w.ActivityPhase,
+                    w.ActivityMessage,
+                    w.ActivityAccountId,
+                    w.ActivityAccountName,
+                    w.ActivitySubProfileId,
+                    w.ActivitySubProfileName,
+                    w.ActivityNextCycleAtUtc,
+                    w.ActivityUpdatedAtUtc));
         }).ToList();
     }
 
@@ -247,6 +266,17 @@ public sealed class DashboardQueryService(
         }
 
         var todayStart = nowUtc.Date;
+        var workerEventErrors = await ComputeWorkerEventErrorStatsAsync(new HashSet<Guid> { workerId }, todayStart, ct);
+        var hourlyActivity = await ComputeHourlyActivityFromDbAsync(
+            new HashSet<Guid> { workerId },
+            todayStart,
+            workerEventErrors.Hourly,
+            ct);
+        if (stats is not null)
+        {
+            stats = stats with { HourlyActivity = hourlyActivity };
+        }
+
         var operationalStats = await ComputeWorkerOperationalStatsAsync([workerId], todayStart, ct);
         operationalStats.TryGetValue(workerId, out var op);
         op ??= WorkerOperationalStats.Empty;
@@ -280,7 +310,8 @@ public sealed class DashboardQueryService(
             op.TodayDuplicates,
             op.TodayEventErrors,
             op.ActiveAccounts,
-            op.TotalAccounts);
+            op.TotalAccounts,
+            WorkerActivityMapper.ToDto(worker));
     }
 
     public async Task<IReadOnlyList<WorkerAccountDto>> GetWorkerAccountsAsync(
@@ -412,6 +443,74 @@ public sealed class DashboardQueryService(
                     evt.Details,
                     evt.CreatedAtUtc))
             .ToListAsync(ct);
+    }
+
+    private async Task<IReadOnlyList<ActivityPointDto>> ComputeHourlyActivityFromDbAsync(
+        HashSet<Guid> workerIds,
+        DateTime todayStartUtc,
+        IReadOnlyList<int> hourlyEventErrors,
+        CancellationToken ct)
+    {
+        var newCounts = new int[24];
+        var sentCounts = new int[24];
+        var duplicateCounts = new int[24];
+
+        if (workerIds.Count > 0)
+        {
+            var rows = await db.CandidateResponses
+                .AsNoTracking()
+                .Where(x => workerIds.Contains(x.WorkerId) && x.CreatedAt >= todayStartUtc)
+                .Select(x => new { x.CreatedAt, x.Status })
+                .ToListAsync(ct);
+
+            foreach (var row in rows)
+            {
+                var hour = UtcHour(row.CreatedAt);
+                if (hour is < 0 or > 23)
+                {
+                    continue;
+                }
+
+                newCounts[hour]++;
+                if (row.Status == ResponseStatuses.Sent)
+                {
+                    sentCounts[hour]++;
+                }
+
+                if (row.Status == ResponseStatuses.Duplicate)
+                {
+                    duplicateCounts[hour]++;
+                }
+            }
+        }
+
+        var errorHourly = hourlyEventErrors.Count == 24
+            ? hourlyEventErrors
+            : Enumerable.Repeat(0, 24).ToArray();
+
+        return Enumerable.Range(0, 24)
+            .Select(hour => new ActivityPointDto(
+                $"{hour:00}:00",
+                newCounts[hour],
+                sentCounts[hour],
+                duplicateCounts[hour],
+                errorHourly[hour],
+                hour,
+                1,
+                null))
+            .ToArray();
+    }
+
+    private static int UtcHour(DateTime value)
+    {
+        var utc = value.Kind switch
+        {
+            DateTimeKind.Utc => value,
+            DateTimeKind.Local => value.ToUniversalTime(),
+            _ => DateTime.SpecifyKind(value, DateTimeKind.Utc)
+        };
+
+        return utc.Hour;
     }
 
     private static IReadOnlyList<ActivityPointDto> AggregateHourly(IReadOnlyList<DashboardStatsDto> statsList)

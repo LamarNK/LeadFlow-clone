@@ -15,7 +15,9 @@
      data-orbita-live
      data-orbita-live-page="worker"
      data-orbita-snapshot="@snapshotUrl"
-     data-worker-id="@Model.WorkerId">
+     data-worker-id="@Model.WorkerId"
+     data-account-search-url="@Url.Action("Index", "Accounts", new { q = "__q__" })"
+     data-responses-filter-url="@Url.Action("Index", "Responses", new { accountId = "__id__" })">
     <nav class="orbita-breadcrumbs" aria-label="Навигация">
         @for (var i = 0; i < Model.Breadcrumbs.Count; i++)
         {
@@ -57,8 +59,12 @@
                 Последняя активность:
                 <time data-worker-last-activity
                       data-orbita-utc="@OrbitaTime.ToIsoUtc(Model.LastActivityUtc)"
-                      data-orbita-format="time"></time>
+                      data-orbita-format="activity"></time>
             </p>
+            <div class="worker-detail-activity" data-worker-current-activity>
+                <span class="worker-detail-activity-label">Сейчас:</span>
+                <partial name="_WorkerActivityPill" model="Model.CurrentActivity" />
+            </div>
         </div>
         <div class="worker-detail-toolbar">
             @if (Model.IsEnabled)
@@ -333,7 +339,8 @@
                 <tbody data-orbita-live-body="worker-accounts">
                 @foreach (var account in Model.Accounts)
                 {
-                    var accountUrl = Url.Action("Index", "Accounts");
+                    var accountSearchUrl = Url.Action("Index", "Accounts", new { q = account.DisplayName });
+                    var responsesUrl = Url.Action("Index", "Responses", new { accountId = account.Id });
                     <tr class="worker-account-row" data-account-id="@account.Id">
                         <td data-label="Вкл">
                             <form asp-action="UpdateAccount" method="post" class="worker-account-toggle-form">
@@ -351,38 +358,22 @@
                             </form>
                         </td>
                         <td class="cell-name" data-label="Аккаунт">
-                            <a href="@accountUrl">@account.DisplayName</a>
+                            <a href="@accountSearchUrl">@account.DisplayName</a>
                             @if (!string.IsNullOrWhiteSpace(account.AdsPowerProfileId))
                             {
                                 <span class="worker-account-sub">AdsPower @account.AdsPowerProfileId</span>
                             }
-                            @if (account.CanRefreshSubProfiles || account.HasSubProfiles)
+                            <partial name="_SubProfilesSection" model="@(new SubProfilesSectionViewModel
                             {
-                                <div class="subprofiles-toolbar">
-                                    @if (account.HasSubProfiles)
-                                    {
-                                        <button type="button"
-                                                class="subprofiles-toggle"
-                                                data-subprofiles-toggle
-                                                aria-expanded="false"
-                                                aria-controls="subprofiles-@account.Id">
-                                            <i class="fa-solid fa-chevron-right subprofiles-toggle-icon" aria-hidden="true"></i>
-                                            <span>@account.SubProfilesSummary</span>
-                                        </button>
-                                    }
-                                    else if (account.CanRefreshSubProfiles)
-                                    {
-                                        <span class="subprofiles-empty-hint">Субпрофили не обнаружены</span>
-                                    }
-                                    <partial name="_SubProfilesRefreshBtn" model="(Model.WorkerId, account.Id, account.CanRefreshSubProfiles, account.IsSubProfilesRefreshPending)" />
-                                </div>
-                                @if (account.HasSubProfiles)
-                                {
-                                    <div class="subprofiles-panel" id="subprofiles-@account.Id" hidden>
-                                        <partial name="_SubProfilesList" model="@(new SubProfilesListViewModel { WorkerId = Model.WorkerId, AccountId = account.Id, Items = account.SubProfiles })" />
-                                    </div>
-                                }
-                            }
+                                WorkerId = Model.WorkerId,
+                                AccountId = account.Id,
+                                PanelIdPrefix = "subprofiles",
+                                CanRefreshSubProfiles = account.CanRefreshSubProfiles,
+                                IsSubProfilesRefreshPending = account.IsSubProfilesRefreshPending,
+                                HasSubProfiles = account.HasSubProfiles,
+                                ProcessingSubProfileId = Model.CurrentActivity.IsLive && Model.CurrentActivity.AccountId == account.Id ? Model.CurrentActivity.SubProfileId : null,
+                                Items = account.SubProfiles
+                            })" />
                         </td>
                         <td data-label="Статус">
                             <span class="account-status account-status--@account.StatusTone">
@@ -396,7 +387,7 @@
                         </td>
                         <td data-label="Баланс">@account.BalanceText</td>
                         <td data-label="Откликов">@account.Responses</td>
-                        <td data-label="Последняя активность"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(account.LastActivityUtc, "time"))" /></td>
+                        <td data-label="Последняя активность"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(account.LastActivityUtc, "activity"))" /></td>
                         <td data-label="Ошибок">@account.Errors</td>
                         <td class="data-table-menu" data-label="">
                             <div class="row-menu" data-row-menu>
@@ -404,10 +395,18 @@
                                     <i class="fa-solid fa-ellipsis-vertical" aria-hidden="true"></i>
                                 </button>
                                 <div class="row-menu-dropdown" hidden>
-                                    <a class="row-menu-item" href="@accountUrl">Открыть</a>
-                                    <button type="button" class="row-menu-item">Перезапустить</button>
-                                    <button type="button" class="row-menu-item">Просмотреть логи</button>
-                                    <button type="button" class="row-menu-item">Настройки</button>
+                                    <a class="row-menu-item" href="@accountSearchUrl">
+                                        <i class="fa-regular fa-eye" aria-hidden="true"></i>
+                                        Просмотр
+                                    </a>
+                                    <a class="row-menu-item" href="#worker-accounts">
+                                        <i class="fa-regular fa-pen-to-square" aria-hidden="true"></i>
+                                        Настройки на воркере
+                                    </a>
+                                    <a class="row-menu-item" href="@responsesUrl">
+                                        <i class="fa-regular fa-clock" aria-hidden="true"></i>
+                                        История откликов
+                                    </a>
                                 </div>
                             </div>
                         </td>

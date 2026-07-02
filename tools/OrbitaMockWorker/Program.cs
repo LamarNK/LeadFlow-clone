@@ -78,6 +78,22 @@ while (true)
             balances));
         await http.SendAsync(snapshotRequest);
 
+        var activityAccount = accounts[random.Next(accounts.Count)];
+        var activitySubProfile = activityAccount.SubProfiles?.FirstOrDefault();
+        using var activityRequest = new HttpRequestMessage(HttpMethod.Post, "api/v1/workers/activity");
+        activityRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", worker.ApiKey);
+        activityRequest.Content = JsonContent.Create(new WorkerActivityRequest(
+            worker.Id,
+            random.NextDouble() > 0.3 ? WorkerActivityPhases.SubProfile : WorkerActivityPhases.Waiting,
+            random.NextDouble() > 0.3 ? "сбор откликов" : "ожидание следующего цикла",
+            activityAccount.AccountId,
+            activityAccount.DisplayName,
+            activitySubProfile?.Id,
+            activitySubProfile?.Name,
+            DateTime.UtcNow.AddMinutes(5),
+            DateTime.UtcNow));
+        await http.SendAsync(activityRequest);
+
         using var eventsRequest = new HttpRequestMessage(HttpMethod.Post, "api/v1/workers/telemetry/events");
         eventsRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", worker.ApiKey);
         eventsRequest.Content = JsonContent.Create(new WorkerEventBatchRequest(

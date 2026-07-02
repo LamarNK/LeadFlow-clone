@@ -19,11 +19,8 @@ internal static class SparklineGenerator
         for (var i = 0; i < PointCount; i++)
         {
             var pos = i * (source.Count - 1) / (double)(PointCount - 1);
-            var idx = (int)Math.Floor(pos);
-            var frac = pos - idx;
-            var a = source[Math.Min(idx, source.Count - 1)];
-            var b = source[Math.Min(idx + 1, source.Count - 1)];
-            result[i] = (int)Math.Round(a + (b - a) * frac);
+            var idx = (int)Math.Round(pos);
+            result[i] = source[Math.Min(idx, source.Count - 1)];
         }
 
         return result;

@@ -1,4 +1,6 @@
+using System.Globalization;
 using Orbita.Contracts;
+using Orbita.Web.Formatting;
 using Orbita.Web.Models.ViewModels;
 
 namespace Orbita.Web.Services;
@@ -128,7 +130,8 @@ internal static class DesignPreviewData
             PreviewOfficeId,
             "Основной",
             true,
-            w.ActiveAccounts)).ToList();
+            w.ActiveAccounts,
+            BuildPreviewWorkerActivity(i, w.IsOnline))).ToList();
 
     private static IReadOnlyList<WorkerRowViewModel> BuildWorkerRows()
     {
@@ -151,21 +154,86 @@ internal static class DesignPreviewData
         var errors = new[] { 5, 8, 5, 4, 6, 3, 2, 4, 1, 2, 3, 0 };
         var online = new[] { true, true, true, true, true, true, true, true, true, true, true, false };
 
-        return Enumerable.Range(0, 12).Select(i => new WorkerRowViewModel
+        return Enumerable.Range(0, 12).Select(i =>
         {
-            Id = PreviewWorkerIds[i],
-            DisplayName = $"Worker #{i + 1}",
-            MachineName = $"WIN-W{(i + 1):D2}",
-            IsOnline = online[i],
-            UpdateAvailable = i < 3,
-            LatestReleaseVersion = "1.0.0.2",
-            ActiveAccounts = accounts[i].Active,
-            TotalAccounts = accounts[i].Total,
-            Responses = responses[i],
-            Duplicates = duplicates[i],
-            Errors = errors[i],
-            LastActivityUtc = times[i]
+            var activityDto = BuildPreviewWorkerActivity(i, online[i]);
+            var activity = WorkerActivityPresenter.Present(activityDto, online[i]);
+            return new WorkerRowViewModel
+            {
+                Id = PreviewWorkerIds[i],
+                DisplayName = $"Worker #{i + 1}",
+                MachineName = $"WIN-W{(i + 1):D2}",
+                IsOnline = online[i],
+                UpdateAvailable = i < 3,
+                LatestReleaseVersion = "1.0.0.2",
+                ActiveAccounts = accounts[i].Active,
+                TotalAccounts = accounts[i].Total,
+                Responses = responses[i],
+                Duplicates = duplicates[i],
+                Errors = errors[i],
+                LastActivityUtc = times[i],
+                CurrentActivityLabel = activity.Label,
+                CurrentActivityTone = activity.Tone,
+                IsActivityLive = activity.IsLive
+            };
         }).ToList();
+    }
+
+    private static WorkerActivityDto? BuildPreviewWorkerActivity(int index, bool isOnline)
+    {
+        if (!isOnline)
+        {
+            return null;
+        }
+
+        return index switch
+        {
+            0 => new(
+                WorkerActivityPhases.SubProfile,
+                "сбор откликов",
+                AccountAlphaId,
+                "user_01",
+                "sp-main",
+                "Основной",
+                null,
+                Now.AddSeconds(-8)),
+            1 => new(
+                WorkerActivityPhases.Waiting,
+                "ожидание следующего цикла",
+                null,
+                null,
+                null,
+                null,
+                Now.AddMinutes(4),
+                Now.AddSeconds(-12)),
+            2 => new(
+                WorkerActivityPhases.Cycle,
+                "старт цикла мониторинга",
+                null,
+                null,
+                null,
+                null,
+                null,
+                Now.AddSeconds(-5)),
+            10 => new(
+                WorkerActivityPhases.Account,
+                "проверка авторизации",
+                AccountBetaId,
+                "user_02",
+                null,
+                null,
+                null,
+                Now.AddHours(-1)),
+            _ => new(
+                WorkerActivityPhases.Idle,
+                "ожидание",
+                null,
+                null,
+                null,
+                null,
+                null,
+                Now.AddMinutes(-2))
+        };
     }
 
     public static DashboardViewModel BuildDashboardViewModel(DashboardPeriod? period = null)
@@ -275,48 +343,22 @@ internal static class DesignPreviewData
                 ActivePeriodPreset = period.ActivePreset
             },
             KpiCards = kpiCards,
-            Workers =
-            [
-                new()
-                {
-                    Id = WorkerMoscowId,
-                    DisplayName = "Worker #1",
-                    MachineName = "WIN-W01",
-                    IsOnline = true,
-                    ActiveAccounts = 10,
-                    TotalAccounts = 10,
-                    Responses = 432,
-                    Duplicates = 98,
-                    Errors = 5,
-                    LastActivityUtc = updatedAt.AddSeconds(-12)
-                },
-                new()
-                {
-                    Id = WorkerSpbId,
-                    DisplayName = "Worker #2",
-                    MachineName = "WIN-W02",
-                    IsOnline = true,
-                    ActiveAccounts = 10,
-                    TotalAccounts = 10,
-                    Responses = 401,
-                    Duplicates = 87,
-                    Errors = 8,
-                    LastActivityUtc = updatedAt.AddSeconds(-8)
-                },
-                new()
-                {
-                    Id = WorkerKazanId,
-                    DisplayName = "Worker #3",
-                    MachineName = "WIN-W03",
-                    IsOnline = true,
-                    ActiveAccounts = 10,
-                    TotalAccounts = 10,
-                    Responses = 401,
-                    Duplicates = 71,
-                    Errors = 5,
-                    LastActivityUtc = updatedAt.AddSeconds(-15)
-                }
-            ],
+            Workers = BuildWorkerRows().Take(3).Select(w => new DashboardWorkerRowViewModel
+            {
+                Id = w.Id,
+                DisplayName = w.DisplayName,
+                MachineName = w.MachineName,
+                IsOnline = w.IsOnline,
+                ActiveAccounts = w.ActiveAccounts,
+                TotalAccounts = w.TotalAccounts,
+                Responses = w.Responses,
+                Duplicates = w.Duplicates,
+                Errors = w.Errors,
+                LastActivityUtc = w.LastActivityUtc,
+                CurrentActivityLabel = w.CurrentActivityLabel,
+                CurrentActivityTone = w.CurrentActivityTone,
+                IsActivityLive = w.IsActivityLive
+            }).ToList(),
             HourlyChart = hourlyChart,
             Events =
             [
@@ -354,7 +396,8 @@ internal static class DesignPreviewData
                 TodayDuplicates: 98,
                 TodayErrors: 5,
                 ActiveAccountCount: 8,
-                TotalAccountCount: 10);
+                TotalAccountCount: 10,
+                CurrentActivity: BuildPreviewWorkerActivity(0, true));
         }
 
         if (id == WorkerSpbId)
@@ -363,7 +406,8 @@ internal static class DesignPreviewData
                 WorkerSpbId, "Worker #2", "WIN-W02", "2.4.1",
                 "Running", null, true, true, Now.AddMinutes(-5), Now.AddMinutes(5),
                 new DashboardStatsDto(9, 62, 48, 5, 3, 2, 1, 3, 1, 1, 15, 2, 1, BuildHourly(), BuildWeekly()),
-                [new(AccountGammaId, "avito_gamma", 67_400m, [new("Основной", 67_400m)])]);
+                [new(AccountGammaId, "avito_gamma", 67_400m, [new("Основной", 67_400m)])],
+                CurrentActivity: BuildPreviewWorkerActivity(1, true));
         }
 
         if (id == WorkerKazanId)
@@ -372,7 +416,8 @@ internal static class DesignPreviewData
                 WorkerKazanId, "Worker #3", "WIN-W03", "2.4.1",
                 "Running", null, true, true, Now.AddSeconds(-15), Now.AddMinutes(5),
                 new DashboardStatsDto(3, 26, 16, 2, 2, 0, 0, 2, 0, 0, 9, 0, 0, BuildHourly(), BuildWeekly()),
-                []);
+                [],
+                CurrentActivity: BuildPreviewWorkerActivity(2, true));
         }
 
         var row = BuildWorkerRows().FirstOrDefault(w => w.Id == id);
@@ -399,7 +444,8 @@ internal static class DesignPreviewData
             TodayDuplicates: row.Duplicates,
             TodayErrors: row.Errors,
             ActiveAccountCount: row.ActiveAccounts,
-            TotalAccountCount: row.TotalAccounts);
+            TotalAccountCount: row.TotalAccounts,
+            CurrentActivity: BuildPreviewWorkerActivity(index, row.IsOnline));
     }
 
     public static WorkerDetailsViewModel? BuildWorkerDetailsViewModel(Guid id)
@@ -449,30 +495,10 @@ internal static class DesignPreviewData
                 logsPageDto));
     }
 
-    private static IReadOnlyList<WorkerBalanceDto> BuildWorkerBalances(Guid workerId)
-    {
-        if (workerId == WorkerMoscowId)
-        {
-            return
-            [
-                new(AccountAlphaId, "user_01", 42_300m, [new("Основной", 42_300m)]),
-                new(AccountBetaId, "user_02", 18_750m, [new("Основной", 18_750m)]),
-                new(Guid.Parse("22222222-2222-2222-2222-222222222209"), "user_03", 31_200m, [new("Основной", 31_200m)]),
-                new(Guid.Parse("22222222-2222-2222-2222-222222222210"), "user_04", 27_450m, [new("Основной", 27_450m)]),
-                new(Guid.Parse("22222222-2222-2222-2222-222222222211"), "user_05", 19_800m, [new("Основной", 19_800m)]),
-                new(Guid.Parse("22222222-2222-2222-2222-222222222212"), "user_06", 22_100m, [new("Основной", 22_100m)]),
-                new(Guid.Parse("22222222-2222-2222-2222-222222222213"), "user_07", 15_600m, [new("Основной", 15_600m)]),
-                new(Guid.Parse("22222222-2222-2222-2222-222222222214"), "user_08", 28_900m, [new("Основной", 28_900m)]),
-                new(Guid.Parse("22222222-2222-2222-2222-222222222215"), "user_09", 12_400m, [new("Основной", 12_400m)]),
-                new(Guid.Parse("22222222-2222-2222-2222-222222222216"), "user_10", 9_850m, [new("Основной", 9_850m)])
-            ];
-        }
-
-        if (workerId == WorkerSpbId)
-            return [new(AccountGammaId, "avito_gamma", 67_400m, [new("Основной", 67_400m)])];
-
-        return [];
-    }
+    private static IReadOnlyList<WorkerBalanceDto> BuildWorkerBalances(Guid workerId) =>
+        GetAccounts(workerId)
+            .Select(a => BuildDemoBalance(a.AccountId, a.DisplayName, a.SubProfiles))
+            .ToList();
 
     private static WorkerExtraInfoViewModel GetWorkerMeta(Guid workerId)
     {
@@ -492,53 +518,14 @@ internal static class DesignPreviewData
         };
     }
 
-    private static IReadOnlyList<WorkerAccountRowViewModel> GetWorkerAccountRows(Guid workerId)
-    {
-        if (workerId == WorkerMoscowId)
-        {
-            var responses = new[] { 58, 51, 47, 44, 39, 36, 33, 41, 38, 45 };
-            var errors = new[] { 0, 0, 1, 0, 0, 0, 0, 1, 0, 0 };
-            var balances = new[] { 42_300m, 18_750m, 31_200m, 27_450m, 19_800m, 22_100m, 15_600m, 28_900m, 12_400m, 9_850m };
-            var tones = new[] { "success", "success", "error", "success", "success", "success", "success", "error", "success", "success" };
-            var labels = new[] { "Активен", "Активен", "Ошибка", "Активен", "Активен", "Активен", "Активен", "Ошибка", "Активен", "Активен" };
-
-            var accountIds = new[]
+    private static IReadOnlyList<WorkerAccountRowViewModel> GetWorkerAccountRows(Guid workerId) =>
+        GetAccounts(workerId)
+            .Select(a =>
             {
-                AccountAlphaId,
-                AccountBetaId,
-                Guid.Parse("22222222-2222-2222-2222-222222222209"),
-                Guid.Parse("22222222-2222-2222-2222-222222222210"),
-                Guid.Parse("22222222-2222-2222-2222-222222222211"),
-                Guid.Parse("22222222-2222-2222-2222-222222222212"),
-                Guid.Parse("22222222-2222-2222-2222-222222222213"),
-                Guid.Parse("22222222-2222-2222-2222-222222222214"),
-                Guid.Parse("22222222-2222-2222-2222-222222222215"),
-                Guid.Parse("22222222-2222-2222-2222-222222222216")
-            };
-
-            return Enumerable.Range(1, 10).Select(i => new WorkerAccountRowViewModel
-            {
-                Id = accountIds[i - 1],
-                DisplayName = $"user_{i:D2}",
-                StatusLabel = labels[i - 1],
-                StatusTone = tones[i - 1],
-                BalanceText = $"{balances[i - 1]:N0} ₽",
-                Responses = responses[i - 1],
-                LastActivityUtc = Now.AddMinutes(-(i * 3 + 1)),
-                Errors = errors[i - 1]
-            }).ToList();
-        }
-
-        var row = BuildWorkerRows().FirstOrDefault(w => w.Id == workerId);
-        if (row is null) return [];
-
-        return GetAccounts(workerId).Select((a, i) =>
-        {
-            var balance = BuildWorkerBalances(workerId).FirstOrDefault(b => b.AccountId == a.AccountId);
-            var mapped = WorkerDetailsBuilder.MapAccount(a, balance);
-            return mapped;
-        }).ToList();
-    }
+                var balance = BuildWorkerBalances(workerId).FirstOrDefault(b => b.AccountId == a.AccountId);
+                return WorkerDetailsBuilder.MapAccount(a, balance);
+            })
+            .ToList();
 
     private static IReadOnlyList<DashboardEventRowViewModel> GetWorkerEvents(Guid workerId)
     {
@@ -574,22 +561,160 @@ internal static class DesignPreviewData
             .ToList();
     }
 
+    private static string DemoAdsPowerProfileId(int seed) =>
+        seed % 8 == 0 ? string.Empty : $"k19{seed:D4}";
+
+    private static IReadOnlyList<WorkerSubProfileDto> BuildDemoSubProfiles(Guid accountId, int seed, string tone)
+    {
+        if (tone is "inactive" or "blocked")
+        {
+            return seed % 3 == 0
+                ? [new($"sp-{seed}-main", "Основной", "Работа", true, 0m, null, null, null)]
+                : [];
+        }
+
+        if (accountId == AccountAlphaId || seed == 1)
+        {
+            return
+            [
+                new("sp-main", "Основной", "Работа", true, 28_500m, null, null, null, true),
+                new("sp-extra", "Доп.", "Работа", false, 12_800m, null, null, null, true),
+                new("sp-arch", "Архив", "Личное", false, 900m, null, null, null, false)
+            ];
+        }
+
+        if (accountId == AccountBetaId || seed == 2)
+        {
+            return
+            [
+                new("sp-beta-main", "Основной", "Работа", true, 11_200m, null, null, null, true),
+                new("sp-beta-reserve", "Резерв", "Работа", false, 7_550m, null, null, null, true)
+            ];
+        }
+
+        if (accountId == Guid.Parse("22222222-2222-2222-2222-222222222209") || seed == 3)
+        {
+            return
+            [
+                new("sp-auth-main", "Основной", "Работа", true, 31_200m, "AuthRequired", "Требуется повторный вход в Avito.", Now.AddHours(-2), true)
+            ];
+        }
+
+        if (accountId == Guid.Parse("22222222-2222-2222-2222-222222222211") || seed == 5)
+        {
+            return
+            [
+                new("sp-5-main", "Основной", "Работа", true, 9_800m, null, null, null, true),
+                new("sp-5-extra", "Доп.", "Работа", false, 4_200m, null, null, null, true),
+                new("sp-5-old", "Старый", "Архив", false, 1_100m, null, null, null, false),
+                new("sp-5-test", "Тест", "Тест", false, 700m, "Captcha", "Обнаружена капча при переключении.", Now.AddMinutes(-45), true)
+            ];
+        }
+
+        if (accountId == Guid.Parse("22222222-2222-2222-2222-222222222214") || seed == 8)
+        {
+            return
+            [
+                new("sp-8-main", "Основной", "Работа", true, 24_100m, "Timeout", "Таймаут при сборе откликов.", Now.AddMinutes(-28), true),
+                new("sp-8-extra", "Доп.", "Работа", false, 4_800m, null, null, null, true)
+            ];
+        }
+
+        if (accountId == AccountGammaId)
+        {
+            return
+            [
+                new("sp-gamma-main", "Основной", "Работа", true, 42_300m, null, null, null, true),
+                new("sp-gamma-b2b", "B2B", "Бизнес", false, 18_900m, null, null, null, true),
+                new("sp-gamma-off", "Запасной", "Резерв", false, 6_200m, null, null, null, false)
+            ];
+        }
+
+        return (seed % 4) switch
+        {
+            0 => [],
+            1 => [new($"sp-{seed}-solo", "Основной", "Работа", true, 15_000m + seed * 250m, null, null, null, true)],
+            _ =>
+            [
+                new($"sp-{seed}-a", "Основной", "Работа", true, 10_000m + seed * 180m, null, null, null, true),
+                new($"sp-{seed}-b", "Доп.", "Работа", false, 3_500m + seed * 90m, null, null, null, seed % 2 == 0)
+            ]
+        };
+    }
+
+    private static WorkerBalanceDto BuildDemoBalance(Guid accountId, string accountName, IReadOnlyList<WorkerSubProfileDto>? subProfiles)
+    {
+        if (subProfiles is null || subProfiles.Count == 0)
+        {
+            return new(accountId, accountName, 0m, []);
+        }
+
+        var items = subProfiles
+            .Select(sp => new SubProfileBalanceDto(sp.Name, sp.Balance))
+            .ToList();
+        var total = subProfiles
+            .Where(sp => sp.Balance.HasValue)
+            .Sum(sp => sp.Balance!.Value);
+
+        return new(accountId, accountName, total, items);
+    }
+
+    private static WorkerAccountDto BuildDemoWorkerAccount(
+        Guid accountId,
+        string displayName,
+        string status,
+        bool isEnabled,
+        int activeAds,
+        int blocked,
+        int drafts,
+        string? lastError,
+        DateTime? lastMonitoringAt,
+        int seed,
+        string tone,
+        int todayResponses = 0,
+        int todayDuplicates = 0,
+        int todayErrors = 0,
+        bool isEnabledInPanel = true,
+        DateTime? subProfilesRefreshedAtUtc = null,
+        DateTime? subProfilesRefreshRequestedAtUtc = null)
+    {
+        var subProfiles = BuildDemoSubProfiles(accountId, seed, tone);
+        return new WorkerAccountDto(
+            accountId,
+            displayName,
+            status,
+            isEnabled,
+            activeAds,
+            blocked,
+            drafts,
+            lastError,
+            lastMonitoringAt,
+            isEnabledInPanel,
+            DemoAdsPowerProfileId(seed),
+            subProfiles.Count > 0 ? subProfiles : null,
+            subProfilesRefreshedAtUtc ?? (subProfiles.Count > 0 ? Now.AddHours(-2) : null),
+            subProfilesRefreshRequestedAtUtc,
+            todayResponses,
+            todayDuplicates,
+            todayErrors);
+    }
+
     public static IReadOnlyList<WorkerAccountDto> GetAccounts(Guid workerId)
     {
         if (workerId == WorkerMoscowId)
         {
             return
             [
-                new(AccountAlphaId, "user_01", "Active", true, 12, 0, 1, null, Now.AddMinutes(-3)),
-                new(AccountBetaId, "user_02", "Active", true, 8, 1, 0, null, Now.AddMinutes(-4)),
-                new(Guid.Parse("22222222-2222-2222-2222-222222222209"), "user_03", "RequiresLogin", true, 0, 0, 0, "Требуется повторный вход", Now.AddHours(-2)),
-                new(Guid.Parse("22222222-2222-2222-2222-222222222210"), "user_04", "Active", true, 10, 0, 0, null, Now.AddMinutes(-8)),
-                new(Guid.Parse("22222222-2222-2222-2222-222222222211"), "user_05", "Active", true, 9, 0, 0, null, Now.AddMinutes(-10)),
-                new(Guid.Parse("22222222-2222-2222-2222-222222222212"), "user_06", "Active", true, 7, 0, 0, null, Now.AddMinutes(-12)),
-                new(Guid.Parse("22222222-2222-2222-2222-222222222213"), "user_07", "Active", true, 11, 0, 0, null, Now.AddMinutes(-14)),
-                new(Guid.Parse("22222222-2222-2222-2222-222222222214"), "user_08", "Error", true, 3, 1, 0, "Ошибка отправки в CRM", Now.AddMinutes(-16)),
-                new(Guid.Parse("22222222-2222-2222-2222-222222222215"), "user_09", "Active", true, 6, 0, 0, null, Now.AddMinutes(-18)),
-                new(Guid.Parse("22222222-2222-2222-2222-222222222216"), "user_10", "Active", true, 5, 0, 0, null, Now.AddMinutes(-20))
+                BuildDemoWorkerAccount(AccountAlphaId, "user_01", "Active", true, 12, 0, 1, null, Now.AddMinutes(-3), 1, "active", 58, 5, 0),
+                BuildDemoWorkerAccount(AccountBetaId, "user_02", "Active", true, 8, 1, 0, null, Now.AddMinutes(-4), 2, "active", 51, 4, 0),
+                BuildDemoWorkerAccount(Guid.Parse("22222222-2222-2222-2222-222222222209"), "user_03", "RequiresLogin", true, 0, 0, 0, "Требуется повторный вход", Now.AddHours(-2), 3, "active", 0, 0, 0),
+                BuildDemoWorkerAccount(Guid.Parse("22222222-2222-2222-2222-222222222210"), "user_04", "Active", true, 10, 0, 0, null, Now.AddMinutes(-8), 4, "active", 47, 3, 0),
+                BuildDemoWorkerAccount(Guid.Parse("22222222-2222-2222-2222-222222222211"), "user_05", "Active", true, 9, 0, 0, null, Now.AddMinutes(-10), 5, "active", 44, 2, 0),
+                BuildDemoWorkerAccount(Guid.Parse("22222222-2222-2222-2222-222222222212"), "user_06", "Active", true, 7, 0, 0, null, Now.AddMinutes(-12), 6, "active", 39, 2, 0, subProfilesRefreshRequestedAtUtc: Now.AddMinutes(-3)),
+                BuildDemoWorkerAccount(Guid.Parse("22222222-2222-2222-2222-222222222213"), "user_07", "Active", true, 11, 0, 0, null, Now.AddMinutes(-14), 7, "active", 36, 1, 0),
+                BuildDemoWorkerAccount(Guid.Parse("22222222-2222-2222-2222-222222222214"), "user_08", "Error", true, 3, 1, 0, "Ошибка отправки в CRM", Now.AddMinutes(-16), 8, "active", 33, 1, 1),
+                BuildDemoWorkerAccount(Guid.Parse("22222222-2222-2222-2222-222222222215"), "user_09", "Active", true, 6, 0, 0, null, Now.AddMinutes(-18), 9, "active", 41, 2, 0),
+                BuildDemoWorkerAccount(Guid.Parse("22222222-2222-2222-2222-222222222216"), "user_10", "Active", true, 5, 0, 0, null, Now.AddMinutes(-20), 10, "active", 38, 1, 0)
             ];
         }
 
@@ -597,9 +722,9 @@ internal static class DesignPreviewData
         {
             return
             [
-                new(AccountGammaId, "avito_gamma", "Active", true, 15, 2, 1, null, Now.AddMinutes(-6)),
-                new(Guid.Parse("22222222-2222-2222-2222-222222222205"), "avito_epsilon", "Error", true, 3, 1, 0, "Ошибка отправки в CRM", Now.AddMinutes(-12)),
-                new(Guid.Parse("22222222-2222-2222-2222-222222222206"), "avito_zeta", "Paused", false, 0, 0, 0, null, Now.AddDays(-1))
+                BuildDemoWorkerAccount(AccountGammaId, "avito_gamma", "Active", true, 15, 2, 1, null, Now.AddMinutes(-6), 11, "active", 22, 3, 0),
+                BuildDemoWorkerAccount(Guid.Parse("22222222-2222-2222-2222-222222222205"), "avito_epsilon", "Error", true, 3, 1, 0, "Ошибка отправки в CRM", Now.AddMinutes(-12), 12, "active", 8, 1, 1),
+                BuildDemoWorkerAccount(Guid.Parse("22222222-2222-2222-2222-222222222206"), "avito_zeta", "Paused", false, 0, 0, 0, null, Now.AddDays(-1), 13, "inactive", 0, 0, 0, isEnabledInPanel: false)
             ];
         }
 
@@ -607,8 +732,8 @@ internal static class DesignPreviewData
         {
             return
             [
-                new(Guid.Parse("22222222-2222-2222-2222-222222222207"), "avito_eta", "Offline", false, 0, 0, 0, null, Now.AddMinutes(-18)),
-                new(Guid.Parse("22222222-2222-2222-2222-222222222208"), "avito_theta", "Offline", false, 0, 0, 0, null, Now.AddMinutes(-18))
+                BuildDemoWorkerAccount(Guid.Parse("22222222-2222-2222-2222-222222222207"), "avito_eta", "Offline", false, 0, 0, 0, null, Now.AddMinutes(-18), 14, "inactive", 0, 0, 0, isEnabledInPanel: false),
+                BuildDemoWorkerAccount(Guid.Parse("22222222-2222-2222-2222-222222222208"), "avito_theta", "Offline", false, 0, 0, 0, null, Now.AddMinutes(-18), 15, "blocked", 0, 0, 0, isEnabledInPanel: false)
             ];
         }
 
@@ -921,28 +1046,13 @@ internal static class DesignPreviewData
             var workerId = PreviewWorkerIds[workerIndex];
             var workerName = $"Worker #{workerIndex + 1}";
 
-            string label;
-            string tone;
-            if (i <= 98)
+            var tone = i switch
             {
-                label = "Активен";
-                tone = "active";
-            }
-            else if (i <= 110)
-            {
-                label = "Неактивен";
-                tone = "inactive";
-            }
-            else if (i <= 116)
-            {
-                label = "Заблокирован";
-                tone = "blocked";
-            }
-            else
-            {
-                label = "Ошибка";
-                tone = "error";
-            }
+                <= 98 => "active",
+                <= 110 => "inactive",
+                <= 116 => "blocked",
+                _ => "error"
+            };
 
             var responses = tone == "inactive" ? 0 : rng.Next(8, 64);
             var errors = tone == "error" ? rng.Next(1, 5) : tone == "active" ? rng.Next(0, 2) : 0;
@@ -956,20 +1066,54 @@ internal static class DesignPreviewData
                 _ => Now.AddMinutes(-rng.Next(1, 180))
             };
 
-            rows.Add(new AccountRowViewModel
+            var accountId = Guid.Parse($"33333333-3333-3333-3333-{i:D12}");
+            var accountStatus = tone switch
             {
-                Id = Guid.Parse($"33333333-3333-3333-3333-{i:D12}"),
-                AccountName = $"user_{i:D2}",
-                WorkerId = workerId,
-                WorkerName = workerName,
-                StatusLabel = label,
-                StatusTone = tone,
-                Balance = balance,
-                Responses = responses,
-                UniqueResponses = unique,
-                Errors = errors,
-                LastActivityUtc = lastActivity
-            });
+                "inactive" => "Paused",
+                "blocked" => "Blocked",
+                "error" => "Error",
+                _ => "Active"
+            };
+            var accountDto = BuildDemoWorkerAccount(
+                accountId,
+                $"user_{i:D2}",
+                accountStatus,
+                tone != "inactive",
+                tone == "active" ? rng.Next(4, 14) : 0,
+                tone == "blocked" ? 1 : 0,
+                0,
+                tone == "error" ? "Ошибка мониторинга" : null,
+                lastActivity,
+                i,
+                tone,
+                responses,
+                responses - unique,
+                errors,
+                tone != "inactive" && tone != "blocked",
+                subProfilesRefreshRequestedAtUtc: i == 6 ? Now.AddMinutes(-4) : null);
+            var balanceDetail = BuildDemoBalance(accountId, accountDto.DisplayName, accountDto.SubProfiles);
+            var workerIsOnline = workerIndex < 3;
+            var isProcessing = i == 1 && workerIndex == 0;
+            WorkerActivityDto? activity = isProcessing
+                ? new(
+                    WorkerActivityPhases.SubProfile,
+                    "сбор откликов",
+                    accountId,
+                    accountDto.DisplayName,
+                    "sp-main",
+                    "Основной",
+                    null,
+                    Now.AddSeconds(-8))
+                : null;
+
+            rows.Add(AccountsIndexBuilder.MapAccount(
+                accountDto,
+                workerId,
+                workerName,
+                balanceDetail.TotalBalance > 0 ? balanceDetail.TotalBalance : balance,
+                balanceDetail,
+                activity,
+                workerIsOnline));
         }
 
         return rows;
@@ -1149,7 +1293,7 @@ internal static class DesignPreviewData
         return new WorkerLogsPageDto(items, list.Count, page, pageSize);
     }
 
-    public static ResponsesIndexViewModel BuildResponsesIndexViewModel(ResponsesFilterViewModel filters)
+    public static ResponsesIndexViewModel BuildResponsesIndexViewModel(ResponsesFilterViewModel filters, Guid? selectedId = null)
     {
         var period = new DashboardPeriod(filters.DateFrom, filters.DateTo);
         var allRows = BuildPreviewResponseRows();
@@ -1195,7 +1339,11 @@ internal static class DesignPreviewData
                 Page = page,
                 PageSize = pageSize,
                 TotalItems = total
-            }
+            },
+            Selected = selectedId is Guid id
+                ? BuildPreviewResponseDetail(allRows, id)
+                : null,
+            HasActiveFilters = ResponsesIndexBuilder.HasActiveFilters(filters, period)
         };
     }
 
@@ -1251,6 +1399,7 @@ internal static class DesignPreviewData
             var hidePhone = i % 17 == 0;
             var createdAt = Now.AddMinutes(-(i * 4 + rng.Next(0, 20)));
 
+            var bitrixEntityId = status == ResponseStatuses.Sent ? rng.Next(1000, 99999).ToString() : null;
             rows.Add(new ResponseRowViewModel
             {
                 Id = Guid.Parse($"55555555-5555-5555-5555-{(i + 1):D12}"),
@@ -1287,7 +1436,10 @@ internal static class DesignPreviewData
                 },
                 IsPhoneHidden = hidePhone,
                 HasMessenger = !hidePhone,
-                BitrixEntityId = status == ResponseStatuses.Sent ? rng.Next(1000, 99999).ToString() : null,
+                BitrixEntityId = bitrixEntityId,
+                BitrixEntityUrl = bitrixEntityId is null
+                    ? null
+                    : $"https://demo.bitrix24.ru/crm/deal/details/{bitrixEntityId}/",
                 CanResend = status is ResponseStatuses.Error
                     or ResponseStatuses.ActionRequired
                     or ResponseStatuses.InProgress
@@ -1347,5 +1499,146 @@ internal static class DesignPreviewData
         }
 
         return query.ToList();
+    }
+
+    private static ResponseDetailViewModel? BuildPreviewResponseDetail(
+        IReadOnlyList<ResponseRowViewModel> allRows,
+        Guid selectedId)
+    {
+        var row = allRows.FirstOrDefault(r => r.Id == selectedId);
+        if (row is null)
+        {
+            return null;
+        }
+
+        var rowIndex = ParsePreviewResponseIndex(row.Id);
+        var (firstName, lastName, middleName) = SplitPreviewFullName(row.FullName);
+
+        return new ResponseDetailViewModel
+        {
+            Id = row.Id,
+            FullName = row.FullName,
+            FirstName = firstName,
+            LastName = lastName,
+            MiddleName = middleName,
+            Age = rowIndex % 4 == 0 ? 28 : rowIndex % 3 == 1 ? 34 : null,
+            PhoneRaw = row.PhoneRaw,
+            PhoneNormalized = row.PhoneNormalized,
+            City = row.City,
+            Vacancy = row.Vacancy,
+            VacancyUrl = row.VacancyUrl,
+            MessengerUrl = row.MessengerUrl,
+            AccountId = row.AccountId,
+            AccountName = row.AccountName,
+            WorkerId = row.WorkerId,
+            WorkerName = row.WorkerName,
+            Source = row.Source,
+            SourceResponseId = row.SourceResponseId,
+            Status = row.Status,
+            StatusLabel = row.StatusLabel,
+            StatusTone = row.StatusTone,
+            DuplicateSummary = row.Status == ResponseStatuses.Duplicate
+                ? "Такой телефон уже был 12.03.2026 в 14:22"
+                : null,
+            BitrixEntityId = row.BitrixEntityId,
+            BitrixEntityUrl = row.BitrixEntityUrl,
+            ErrorMessage = row.Status == ResponseStatuses.Error
+                ? "Bitrix24: поле «Телефон» не прошло валидацию"
+                : null,
+            RawText = row.IsPhoneHidden
+                ? "Соискатель скрыл номер — узнать в чате"
+                : $"{row.FullName} · {row.City} · отклик на «{row.Vacancy}»",
+            ChatMessages = BuildPreviewChatMessages(rowIndex, row.CreatedAtUtc),
+            CreatedAtUtc = row.CreatedAtUtc,
+            ProcessedAtUtc = row.Status == ResponseStatuses.Sent
+                ? row.CreatedAtUtc.AddMinutes(3)
+                : null,
+            CanResend = row.CanResend
+        };
+    }
+
+    private static int ParsePreviewResponseIndex(Guid id)
+    {
+        var suffix = id.ToString("N")[^12..];
+        return int.TryParse(suffix, out var index) ? Math.Max(0, index - 1) : 0;
+    }
+
+    private static (string First, string Last, string Middle) SplitPreviewFullName(string fullName)
+    {
+        var parts = fullName.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return parts.Length switch
+        {
+            0 => ("", "", ""),
+            1 => (parts[0], "", ""),
+            2 => (parts[0], parts[1], ""),
+            _ => (parts[0], parts[1], string.Join(' ', parts.Skip(2)))
+        };
+    }
+
+    private static IReadOnlyList<ResponseChatMessageViewModel> BuildPreviewChatMessages(int rowIndex, DateTime createdAtUtc)
+    {
+        if (rowIndex == 0)
+        {
+            return
+            [
+                new()
+                {
+                    Text = "Кандидат откликнулся на вакансию «Кровать двуспальная 180×200»",
+                    TimeLabel = FormatPreviewChatTime(createdAtUtc, 42),
+                    Tone = "system"
+                },
+                new()
+                {
+                    Text = "Здравствуйте! Интересует вакансия, ещё актуально?",
+                    TimeLabel = FormatPreviewChatTime(createdAtUtc, 38),
+                    Tone = "incoming"
+                },
+                new()
+                {
+                    Text = "Добрый день! Да, вакансия открыта. Когда удобно созвониться?",
+                    TimeLabel = FormatPreviewChatTime(createdAtUtc, 31),
+                    Tone = "outgoing"
+                },
+                new()
+                {
+                    Text = "Могу сегодня после 18:00 или завтра с 10:00",
+                    TimeLabel = FormatPreviewChatTime(createdAtUtc, 24),
+                    Tone = "incoming"
+                },
+                new()
+                {
+                    Text = "Отлично, жду звонка сегодня вечером. Если не дозвонитесь — напишите сюда.",
+                    TimeLabel = FormatPreviewChatTime(createdAtUtc, 18),
+                    Tone = "outgoing"
+                }
+            ];
+        }
+
+        if (rowIndex % 7 == 3)
+        {
+            return
+            [
+                new()
+                {
+                    Text = "Добрый день! Можно уточнить график работы?",
+                    TimeLabel = FormatPreviewChatTime(createdAtUtc, 15),
+                    Tone = "incoming"
+                },
+                new()
+                {
+                    Text = "Здравствуйте! График 2/2, с 9:00 до 21:00. Подробности в объявлении.",
+                    TimeLabel = FormatPreviewChatTime(createdAtUtc, 9),
+                    Tone = "outgoing"
+                }
+            ];
+        }
+
+        return [];
+    }
+
+    private static string FormatPreviewChatTime(DateTime createdAtUtc, int minutesBefore)
+    {
+        var local = createdAtUtc.AddMinutes(-minutesBefore).ToLocalTime();
+        return local.ToString("dd MMM HH:mm", CultureInfo.GetCultureInfo("ru-RU"));
     }
 }

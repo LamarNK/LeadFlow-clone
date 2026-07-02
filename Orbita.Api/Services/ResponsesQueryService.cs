@@ -5,7 +5,9 @@ using Orbita.Contracts;
 
 namespace Orbita.Api.Services;
 
-public sealed class ResponsesQueryService(OrbitaDbContext db)
+public sealed class ResponsesQueryService(
+    OrbitaDbContext db,
+    OfficeBitrixWebhookResolver bitrixWebhooks)
 {
     public Task<ResponsesPageDto> GetPageAsync(
         OfficeScope scope,
@@ -95,7 +97,8 @@ public sealed class ResponsesQueryService(OrbitaDbContext db)
             return null;
         }
 
-        return MapDetail(entity);
+        var portalHost = await bitrixWebhooks.ResolvePortalHostAsync(entity.OfficeId, ct);
+        return MapDetail(entity, portalHost);
     }
 
     private async Task<ResponsesPageDto> GetPageInternalAsync(
@@ -142,11 +145,18 @@ public sealed class ResponsesQueryService(OrbitaDbContext db)
                 x.IsLocalDuplicate,
                 x.IsBitrixDuplicate,
                 x.BitrixEntityId,
+                x.BitrixEntityType,
                 x.AvitoSubProfileId,
                 x.CreatedAt,
                 x.ProcessedAt
             })
             .ToListAsync(ct);
+
+        var portalByOffice = new Dictionary<Guid, string?>();
+        foreach (var officeId in rows.Select(x => x.OfficeId).Distinct())
+        {
+            portalByOffice[officeId] = await bitrixWebhooks.ResolvePortalHostAsync(officeId, ct);
+        }
 
         var accountIds = rows.Select(x => x.AccountId).Distinct().ToList();
         var subProfileRows = accountIds.Count == 0
@@ -161,30 +171,40 @@ public sealed class ResponsesQueryService(OrbitaDbContext db)
             subProfileRows.Select(x => (x.AccountId, x.SubProfilesJson)));
 
         var items = rows
-            .Select(x => new ResponseListItemDto(
-                x.Id,
-                x.OfficeId,
-                x.WorkerId,
-                x.WorkerName,
-                x.AccountId,
-                x.AccountName,
-                x.Source,
-                x.SourceResponseId,
-                x.FullName,
-                x.PhoneRaw,
-                x.PhoneNormalized,
-                x.Vacancy,
-                x.VacancyUrl,
-                x.MessengerUrl,
-                x.City,
-                x.Status,
-                x.IsLocalDuplicate,
-                x.IsBitrixDuplicate,
-                x.BitrixEntityId,
-                x.AvitoSubProfileId,
-                ResolveSubProfileName(nameLookup, x.AccountId, x.AvitoSubProfileId),
-                x.CreatedAt,
-                x.ProcessedAt))
+            .Select(x =>
+            {
+                portalByOffice.TryGetValue(x.OfficeId, out var portalHost);
+                var bitrixEntityUrl = BitrixPortalLinks.TryBuildEntityDetailsUrl(
+                    portalHost,
+                    x.BitrixEntityType,
+                    x.BitrixEntityId);
+                return new ResponseListItemDto(
+                    x.Id,
+                    x.OfficeId,
+                    x.WorkerId,
+                    x.WorkerName,
+                    x.AccountId,
+                    x.AccountName,
+                    x.Source,
+                    x.SourceResponseId,
+                    x.FullName,
+                    x.PhoneRaw,
+                    x.PhoneNormalized,
+                    x.Vacancy,
+                    x.VacancyUrl,
+                    x.MessengerUrl,
+                    x.City,
+                    x.Status,
+                    x.IsLocalDuplicate,
+                    x.IsBitrixDuplicate,
+                    x.BitrixEntityId,
+                    string.IsNullOrWhiteSpace(x.BitrixEntityType) ? null : x.BitrixEntityType,
+                    bitrixEntityUrl,
+                    x.AvitoSubProfileId,
+                    ResolveSubProfileName(nameLookup, x.AccountId, x.AvitoSubProfileId),
+                    x.CreatedAt,
+                    x.ProcessedAt);
+            })
             .ToList();
 
         return new ResponsesPageDto(items, total, page, pageSize);
@@ -302,36 +322,45 @@ public sealed class ResponsesQueryService(OrbitaDbContext db)
         return lookup.TryGetValue((accountId, subProfileId), out var name) ? name : null;
     }
 
-    private static ResponseDetailDto MapDetail(CandidateResponseEntity entity) => new(
-        entity.Id,
-        entity.OfficeId,
-        entity.WorkerId,
-        entity.Worker.DisplayName,
-        entity.AccountId,
-        entity.AccountName,
-        entity.Source,
-        entity.SourceResponseId,
-        entity.FullName,
-        entity.FirstName,
-        entity.LastName,
-        entity.MiddleName,
-        entity.Age,
-        entity.PhoneRaw,
-        entity.PhoneNormalized,
-        entity.City,
-        entity.Vacancy,
-        entity.VacancyUrl,
-        entity.MessengerUrl,
-        entity.AvitoSubProfileId,
-        entity.RawText,
-        entity.ChatMessagesJson,
-        entity.Status,
-        entity.IsLocalDuplicate,
-        entity.IsBitrixDuplicate,
-        entity.DuplicateSummary,
-        entity.BitrixEntityId,
-        entity.BitrixContactId,
-        entity.ErrorMessage,
-        entity.CreatedAt,
-        entity.ProcessedAt);
+    private static ResponseDetailDto MapDetail(CandidateResponseEntity entity, string? portalHost)
+    {
+        var bitrixEntityUrl = BitrixPortalLinks.TryBuildEntityDetailsUrl(
+            portalHost,
+            entity.BitrixEntityType,
+            entity.BitrixEntityId);
+        return new(
+            entity.Id,
+            entity.OfficeId,
+            entity.WorkerId,
+            entity.Worker.DisplayName,
+            entity.AccountId,
+            entity.AccountName,
+            entity.Source,
+            entity.SourceResponseId,
+            entity.FullName,
+            entity.FirstName,
+            entity.LastName,
+            entity.MiddleName,
+            entity.Age,
+            entity.PhoneRaw,
+            entity.PhoneNormalized,
+            entity.City,
+            entity.Vacancy,
+            entity.VacancyUrl,
+            entity.MessengerUrl,
+            entity.AvitoSubProfileId,
+            entity.RawText,
+            entity.ChatMessagesJson,
+            entity.Status,
+            entity.IsLocalDuplicate,
+            entity.IsBitrixDuplicate,
+            entity.DuplicateSummary,
+            entity.BitrixEntityId,
+            string.IsNullOrWhiteSpace(entity.BitrixEntityType) ? null : entity.BitrixEntityType,
+            bitrixEntityUrl,
+            entity.BitrixContactId,
+            entity.ErrorMessage,
+            entity.CreatedAt,
+            entity.ProcessedAt);
+    }
 }

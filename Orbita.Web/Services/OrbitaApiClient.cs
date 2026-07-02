@@ -39,7 +39,15 @@ public sealed class OrbitaApiClient(HttpClient http, AuthSession session, IOptio
 
     private async Task<LoginResponse?> LoginViaApiAsync(string email, string password, CancellationToken ct)
     {
-        var response = await http.PostAsJsonAsync("api/v1/auth/login", new { email, password }, ct);
+        using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/auth/login")
+        {
+            Content = JsonContent.Create(new { email, password })
+        };
+        using var response = await SendAsyncSafe(request, HttpCompletionOption.ResponseContentRead, ct);
+        if (response is null)
+        {
+            return null;
+        }
         if (!response.IsSuccessStatusCode)
         {
             return null;
@@ -130,7 +138,26 @@ public sealed class OrbitaApiClient(HttpClient http, AuthSession session, IOptio
         }
 
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", session.Token!);
-        return await http.SendAsync(request, completionOption, ct);
+        return await SendAsyncSafe(request, completionOption, ct);
+    }
+
+    private async Task<HttpResponseMessage?> SendAsyncSafe(
+        HttpRequestMessage request,
+        HttpCompletionOption completionOption,
+        CancellationToken ct)
+    {
+        try
+        {
+            return await http.SendAsync(request, completionOption, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or IOException)
+        {
+            return null;
+        }
     }
 
     public Task<IReadOnlyList<PanelUserDto>?> GetPanelUsersAsync(CancellationToken ct = default) =>
@@ -1033,8 +1060,8 @@ public sealed class OrbitaApiClient(HttpClient http, AuthSession session, IOptio
         CancellationToken ct = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, "api/v1/public/worker-releases/latest/download");
-        var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
-        if (!response.IsSuccessStatusCode)
+        using var response = await SendAsyncSafe(request, HttpCompletionOption.ResponseHeadersRead, ct);
+        if (response is null || !response.IsSuccessStatusCode)
         {
             return (null, null, await ReadApiErrorAsync(response, ct));
         }
