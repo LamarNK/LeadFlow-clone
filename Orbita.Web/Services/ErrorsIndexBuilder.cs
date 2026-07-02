@@ -24,6 +24,7 @@ internal static class ErrorsIndexBuilder
         new() { Value = "network", Label = "Сеть" },
         new() { Value = "balance", Label = "Баланс" },
         new() { Value = "blocked", Label = "Блокировка аккаунта" },
+        new() { Value = "automation", Label = "Сбой автоматизации" },
         new() { Value = "parsing", Label = "Парсинг" },
         new() { Value = "postgres", Label = "PostgreSQL" },
         new() { Value = "api", Label = "API" },
@@ -241,50 +242,38 @@ internal static class ErrorsIndexBuilder
 
     public static string InferErrorType(string message, string? details = null)
     {
-        var text = $"{message} {details}".ToLowerInvariant();
-        if (IsCaptchaOrBlocked(text, details))
+        var text = $"{message} {details}";
+        if (WorkerEventClassifier.MapIssueLabelToErrorType(message) is { } issueType)
+            return issueType;
+        if (WorkerEventClassifier.IsCaptcha(text, details))
             return "blocked";
-        if (text.Contains("авториз") || text.Contains("логин") || text.Contains("парол") || text.Contains("нужен вход"))
+        if (text.Contains("авториз", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("логин", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("парол", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("нужен вход", StringComparison.OrdinalIgnoreCase))
             return "auth";
-        if (text.Contains("bitrix") || text.Contains("crm"))
+        if (text.Contains("bitrix", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("crm", StringComparison.OrdinalIgnoreCase))
             return "bitrix";
-        if (text.Contains("postgres") || text.Contains("база данных"))
+        if (text.Contains("postgres", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("база данных", StringComparison.OrdinalIgnoreCase))
             return "postgres";
-        if (IsNetworkError(text))
+        if (WorkerEventClassifier.IsNetworkFailure(text))
             return "network";
-        if (text.Contains("баланс"))
+        if (text.Contains("баланс", StringComparison.OrdinalIgnoreCase))
             return "balance";
-        if (text.Contains("парс") || text.Contains("parse"))
+        if (text.Contains("парс", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("parse", StringComparison.OrdinalIgnoreCase))
             return "parsing";
-        if (text.Contains("api"))
+        if (text.Contains("лимит adspower", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("rate limit adspower", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("api", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("adspower", StringComparison.OrdinalIgnoreCase))
             return "api";
+        if (WorkerEventClassifier.IsAutomationFailure(text, "Warning"))
+            return "automation";
         return "unknown";
     }
-
-    private static bool IsCaptchaOrBlocked(string text, string? details)
-    {
-        if (text.Contains("капч") || text.Contains("captcha") || text.Contains("firewall") || text.Contains("блок ip"))
-            return true;
-        if (text.Contains("блок") || text.Contains("заблок"))
-            return true;
-
-        if (string.IsNullOrWhiteSpace(details) || !details.TrimStart().StartsWith('{'))
-            return false;
-
-        var lowerDetails = details.ToLowerInvariant();
-        return lowerDetails.Contains("\"kind\":\"captcha")
-            || lowerDetails.Contains("subprofile-captcha")
-            || lowerDetails.Contains("image-captcha")
-            || lowerDetails.Contains("hcaptcha")
-            || lowerDetails.Contains("geetest")
-            || lowerDetails.Contains("\"kind\":\"firewall");
-    }
-
-    private static bool IsNetworkError(string text) =>
-        text.Contains("сеть") || text.Contains("таймаут") || text.Contains("подключ")
-        || text.Contains("connection") || text.Contains("dns")
-        || text.Contains("http ") || text.Contains("http/")
-        || text.Contains("httperror") || text.Contains("httprequestexception");
 
     public static string ErrorTypeLabel(string type) => type switch
     {
@@ -293,6 +282,7 @@ internal static class ErrorsIndexBuilder
         "network" => "Ошибка сети",
         "balance" => "Ошибка баланса",
         "blocked" => "Блокировка аккаунта",
+        "automation" => "Сбой автоматизации",
         "parsing" => "Ошибка парсинга",
         "postgres" => "Ошибка PostgreSQL",
         "api" => "Ошибка API",

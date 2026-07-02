@@ -1,0 +1,108 @@
+@model WorkerSystemPanelViewModel
+@using System.Globalization
+
+@{
+    string MeterTone(double? percent) => percent switch
+    {
+        null => "empty",
+        >= 85 => "critical",
+        >= 60 => "warn",
+        _ => "good"
+    };
+
+    var cpuTone = MeterTone(Model.CpuPercent);
+    var ramTone = MeterTone(Model.RamPercent);
+    var cpuWidth = Model.CpuPercent.HasValue
+        ? Math.Clamp(Model.CpuPercent.Value, 0, 100).ToString("0.#", CultureInfo.InvariantCulture)
+        : "0";
+    var ramWidth = Model.RamPercent.HasValue
+        ? Math.Clamp(Model.RamPercent.Value, 0, 100).ToString("0.#", CultureInfo.InvariantCulture)
+        : "0";
+    var ramDetail = Model.RamPercent.HasValue && Model.RamUsedMb.HasValue && Model.RamTotalMb.HasValue
+        ? $"{Model.RamUsedMb:N0} / {Model.RamTotalMb:N0} MB"
+        : null;
+}
+
+<div class="worker-system-panel">
+    <div class="worker-system-meters">
+        <div class="worker-system-meter">
+            <div class="worker-system-meter-head">
+                <span class="worker-system-meter-label">
+                    <i class="fa-solid fa-microchip" aria-hidden="true"></i>
+                    CPU
+                </span>
+                <span class="worker-system-meter-value" data-worker-live="cpu">
+                    @(Model.CpuPercent.HasValue ? $"{Model.CpuPercent:F1}%" : "—")
+                </span>
+            </div>
+            <div class="worker-system-meter-track" aria-hidden="true">
+                <div class="worker-system-meter-fill worker-system-meter-fill--@cpuTone"
+                     data-worker-live="cpu-bar"
+                     style="width: @(cpuWidth)%"></div>
+            </div>
+        </div>
+
+        <div class="worker-system-meter">
+            <div class="worker-system-meter-head">
+                <span class="worker-system-meter-label">
+                    <i class="fa-solid fa-memory" aria-hidden="true"></i>
+                    RAM
+                </span>
+                <span class="worker-system-meter-value">
+                    <span data-worker-live="ram">
+                        @(Model.RamPercent.HasValue ? $"{Model.RamPercent:F1}%" : "—")
+                    </span>
+                    @if (ramDetail is not null)
+                    {
+                        <span class="worker-system-meter-sub" data-worker-live="ram-detail">@ramDetail</span>
+                    }
+                    else
+                    {
+                        <span class="worker-system-meter-sub" data-worker-live="ram-detail" hidden></span>
+                    }
+                </span>
+            </div>
+            <div class="worker-system-meter-track" aria-hidden="true">
+                <div class="worker-system-meter-fill worker-system-meter-fill--@ramTone"
+                     data-worker-live="ram-bar"
+                     style="width: @(ramWidth)%"></div>
+            </div>
+        </div>
+    </div>
+
+    @if (!Model.HasResourceMetrics)
+    {
+        <p class="worker-system-hint">Метрики CPU и RAM появятся, когда воркер будет онлайн и передаст телеметрию.</p>
+    }
+
+    <dl class="worker-system-facts">
+        <div class="worker-system-fact">
+            <dt>Имя ПК</dt>
+            <dd>@Model.MachineName</dd>
+        </div>
+        <div class="worker-system-fact">
+            <dt>IP-адрес</dt>
+            <dd>@Model.IpAddress</dd>
+        </div>
+        <div class="worker-system-fact">
+            <dt>ОС</dt>
+            <dd>@Model.OperatingSystem</dd>
+        </div>
+        <div class="worker-system-fact">
+            <dt>Версия воркера</dt>
+            <dd>@Model.LeadFlowVersion</dd>
+        </div>
+        <div class="worker-system-fact">
+            <dt>Версия агента</dt>
+            <dd>@Model.AgentVersion</dd>
+        </div>
+        <div class="worker-system-fact">
+            <dt>Связь</dt>
+            <dd>
+                <span class="worker-system-connection worker-system-connection--@(Model.ConnectionCheck == "Успешно" ? "ok" : "bad")">
+                    @Model.ConnectionCheck
+                </span>
+            </dd>
+        </div>
+    </dl>
+</div>

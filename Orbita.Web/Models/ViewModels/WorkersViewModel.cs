@@ -148,10 +148,7 @@ public sealed class WorkerDetailsViewModel
     public string? AdsPowerApiKey { get; init; }
     public string EffectiveAdsPowerApiBaseUrl =>
         string.IsNullOrWhiteSpace(AdsPowerApiBaseUrl) ? DefaultAdsPowerApiBaseUrl : AdsPowerApiBaseUrl;
-    public double? CpuPercent { get; init; }
-    public double? RamPercent { get; init; }
-    public long? RamUsedMb { get; init; }
-    public long? RamTotalMb { get; init; }
+    public WorkerSystemPanelViewModel System { get; init; } = new();
     public IReadOnlyList<BreadcrumbItemViewModel> Breadcrumbs { get; init; } = [];
     public string DisplayName { get; init; } = string.Empty;
     public string MachineName { get; init; } = string.Empty;
@@ -177,6 +174,21 @@ public sealed class WorkerLogsPanelViewModel
     public int Page { get; init; } = 1;
     public IReadOnlyList<EventFilterOptionViewModel> LevelOptions { get; init; } = [];
     public LogFeedPanelViewModel Feed { get; init; } = new();
+}
+
+public sealed class WorkerSystemPanelViewModel
+{
+    public double? CpuPercent { get; init; }
+    public double? RamPercent { get; init; }
+    public long? RamUsedMb { get; init; }
+    public long? RamTotalMb { get; init; }
+    public string MachineName { get; init; } = "—";
+    public string IpAddress { get; init; } = "—";
+    public string OperatingSystem { get; init; } = "—";
+    public string LeadFlowVersion { get; init; } = "—";
+    public string AgentVersion { get; init; } = "—";
+    public string ConnectionCheck { get; init; } = "—";
+    public bool HasResourceMetrics => CpuPercent.HasValue || RamPercent.HasValue;
 }
 
 public sealed class WorkerInfoItemViewModel

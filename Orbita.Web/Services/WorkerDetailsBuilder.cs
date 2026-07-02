@@ -61,7 +61,7 @@ internal static class WorkerDetailsBuilder
             LastActivityUtc = lastActivity,
             UpdatedAtUtc = DateTime.UtcNow,
             KpiCards = BuildKpiCards(worker.Id, activeAccounts, totalAccounts, activePct, responses, duplicates, errors, uptime),
-            InfoItems = BuildInfoItems(worker, extra, lastActivity, uptime),
+            InfoItems = BuildInfoItems(worker, extra, lastActivity),
             ActivityChart = new LineChartViewModel
             {
                 Labels = hourly.Select(p => p.Label).ToList(),
@@ -75,10 +75,7 @@ internal static class WorkerDetailsBuilder
             MaxConcurrentAccounts = worker.MaxConcurrentAccounts,
             AdsPowerApiBaseUrl = worker.AdsPowerApiBaseUrl,
             AdsPowerApiKey = worker.AdsPowerApiKey,
-            CpuPercent = worker.LastCpuPercent,
-            RamPercent = worker.LastRamPercent,
-            RamUsedMb = worker.LastRamUsedMb,
-            RamTotalMb = worker.LastRamTotalMb,
+            System = BuildSystemPanel(worker, extra),
             Logs = logs,
             CurrentActivity = WorkerActivityPresenter.Present(worker.CurrentActivity, worker.IsOnline)
         };
@@ -189,29 +186,21 @@ internal static class WorkerDetailsBuilder
     private static IReadOnlyList<WorkerInfoItemViewModel> BuildInfoItems(
         WorkerDetail worker,
         WorkerExtraInfoViewModel extra,
-        DateTime? lastActivity,
-        string uptime) =>
+        DateTime? lastActivity) =>
     [
         new() { Label = "Статус", Value = worker.IsOnline ? "Онлайн" : "Оффлайн" },
         new() { Label = "ID воркера", Value = worker.Id.ToString() },
         new() { Label = "Имя воркера", Value = worker.DisplayName },
-        new() { Label = "Имя ПК", Value = string.IsNullOrWhiteSpace(worker.MachineName) ? "—" : worker.MachineName },
-        new() { Label = "IP-адрес", Value = extra.IpAddress },
         new()
         {
             Label = "Дата запуска",
             TimeValue = new UtcTimeDisplayModel(extra.StartedAtUtc, "datetime")
         },
-        new() { Label = "Время работы", Value = uptime },
-        new() { Label = "Версия воркера", Value = extra.LeadFlowVersion },
-        new() { Label = "Версия агента", Value = extra.AgentVersion },
-        new() { Label = "Операционная система", Value = extra.OperatingSystem },
         new()
         {
             Label = "Последняя активность",
             TimeValue = new UtcTimeDisplayModel(lastActivity, "activity")
-        },
-        new() { Label = "Проверка соединения", Value = extra.ConnectionCheck }
+        }
     ];
 
     private static IReadOnlyList<WorkerPeriodStatViewModel> BuildPeriodStats(
@@ -229,6 +218,21 @@ internal static class WorkerDetailsBuilder
             new() { Label = "Ошибок", Value = errors.ToString() }
         ];
     }
+
+    private static WorkerSystemPanelViewModel BuildSystemPanel(WorkerDetail worker, WorkerExtraInfoViewModel extra) =>
+        new()
+        {
+            CpuPercent = worker.LastCpuPercent,
+            RamPercent = worker.LastRamPercent,
+            RamUsedMb = worker.LastRamUsedMb,
+            RamTotalMb = worker.LastRamTotalMb,
+            MachineName = string.IsNullOrWhiteSpace(worker.MachineName) ? "—" : worker.MachineName,
+            IpAddress = extra.IpAddress,
+            OperatingSystem = extra.OperatingSystem,
+            LeadFlowVersion = extra.LeadFlowVersion,
+            AgentVersion = extra.AgentVersion,
+            ConnectionCheck = extra.ConnectionCheck
+        };
 
     private static string FormatUptime(DateTime? startedAtUtc)
     {

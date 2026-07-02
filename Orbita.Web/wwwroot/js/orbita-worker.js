@@ -229,24 +229,68 @@
         });
     }
 
+    function meterTone(percent) {
+        if (typeof percent !== 'number') return 'empty';
+        if (percent >= 85) return 'critical';
+        if (percent >= 60) return 'warn';
+        return 'good';
+    }
+
+    function meterWidth(percent) {
+        if (typeof percent !== 'number') return 0;
+        return Math.max(0, Math.min(100, percent));
+    }
+
     function formatCpu(cpu) {
         return typeof cpu === 'number' ? cpu.toFixed(1) + '%' : '—';
     }
 
-    function formatRam(snapshot) {
-        if (typeof snapshot.ramPercent !== 'number') return '—';
-        var text = snapshot.ramPercent.toFixed(1) + '%';
-        if (typeof snapshot.ramUsedMb === 'number' && typeof snapshot.ramTotalMb === 'number') {
-            text += ' (' + snapshot.ramUsedMb + ' / ' + snapshot.ramTotalMb + ' MB)';
-        }
-        return text;
+    function formatRamPercent(snapshot) {
+        return typeof snapshot.ramPercent === 'number' ? snapshot.ramPercent.toFixed(1) + '%' : '—';
+    }
+
+    function formatRamDetail(snapshot) {
+        if (typeof snapshot.ramUsedMb !== 'number' || typeof snapshot.ramTotalMb !== 'number') return '';
+        return snapshot.ramUsedMb.toLocaleString('ru-RU') + ' / ' + snapshot.ramTotalMb.toLocaleString('ru-RU') + ' MB';
+    }
+
+    function updateMeterBar(barEl, percent) {
+        if (!barEl) return;
+        barEl.style.width = meterWidth(percent) + '%';
+        barEl.classList.remove(
+            'worker-system-meter-fill--good',
+            'worker-system-meter-fill--warn',
+            'worker-system-meter-fill--critical',
+            'worker-system-meter-fill--empty'
+        );
+        barEl.classList.add('worker-system-meter-fill--' + meterTone(percent));
     }
 
     function updateSystemMetrics(snapshot) {
         var cpuEl = document.querySelector('[data-worker-live="cpu"]');
         var ramEl = document.querySelector('[data-worker-live="ram"]');
+        var ramDetailEl = document.querySelector('[data-worker-live="ram-detail"]');
         if (cpuEl) cpuEl.textContent = formatCpu(snapshot.cpuPercent);
-        if (ramEl) ramEl.textContent = formatRam(snapshot);
+        if (ramEl) ramEl.textContent = formatRamPercent(snapshot);
+        updateMeterBar(document.querySelector('[data-worker-live="cpu-bar"]'), snapshot.cpuPercent);
+        updateMeterBar(document.querySelector('[data-worker-live="ram-bar"]'), snapshot.ramPercent);
+
+        if (ramDetailEl) {
+            var ramDetail = formatRamDetail(snapshot);
+            if (ramDetail) {
+                ramDetailEl.textContent = ramDetail;
+                ramDetailEl.hidden = false;
+            } else {
+                ramDetailEl.textContent = '';
+                ramDetailEl.hidden = true;
+            }
+        }
+
+        var hintEl = document.querySelector('.worker-system-hint');
+        if (hintEl) {
+            var hasMetrics = typeof snapshot.cpuPercent === 'number' || typeof snapshot.ramPercent === 'number';
+            hintEl.hidden = hasMetrics;
+        }
     }
 
     function updateLastActivity(isoUtc) {

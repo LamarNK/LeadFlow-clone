@@ -160,24 +160,8 @@
     <div class="worker-detail-settings-row">
         <div class="card card--worker-system">
             <div class="card-header"><h2>Система</h2></div>
-            <div class="card-body worker-system-metrics">
-                <div class="worker-system-metric">
-                    <span class="worker-system-label">CPU</span>
-                    <span class="worker-system-value" data-worker-live="cpu">@(Model.CpuPercent.HasValue ? $"{Model.CpuPercent:F1}%" : "—")</span>
-                </div>
-                <div class="worker-system-metric">
-                    <span class="worker-system-label">RAM</span>
-                    <span class="worker-system-value" data-worker-live="ram">
-                        @if (Model.RamPercent.HasValue && Model.RamUsedMb.HasValue && Model.RamTotalMb.HasValue)
-                        {
-                            @($"{Model.RamPercent:F1}% ({Model.RamUsedMb} / {Model.RamTotalMb} MB)")
-                        }
-                        else
-                        {
-                            @("—")
-                        }
-                    </span>
-                </div>
+            <div class="card-body">
+                <partial name="_WorkerSystemCard" model="Model.System" />
             </div>
         </div>
         <div class="card card--worker-settings" id="worker-settings">

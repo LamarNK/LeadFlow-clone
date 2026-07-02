@@ -267,9 +267,9 @@ internal static class EventsIndexBuilder
         var text = $"{message} {details}".ToLowerInvariant();
         if (text.Contains("дубл") || text.Contains("duplicate"))
             return "duplicate";
-        if (TryInferTypeFromIssueLabel(message) is { } issueType)
+        if (WorkerEventClassifier.MapIssueLabelToEventType(message) is { } issueType)
             return issueType;
-        if (IsCaptchaEvent(text, details))
+        if (WorkerEventClassifier.IsCaptcha(text, details))
             return "captcha";
         if (text.Contains("авториз") || text.Contains("вход") || text.Contains("нужен вход") || text.Contains("требуется действие"))
             return "auth";
@@ -279,98 +279,40 @@ internal static class EventsIndexBuilder
             return "start";
         if (text.Contains("останов") || text.Contains("heartbeat") || text.Contains("не получен"))
             return "stop";
-        if (IsAutomationFailure(text, level))
+        if (text.Contains("лимит adspower") || text.Contains("rate limit adspower"))
+            return "error";
+        if (text.Contains("субпрофили ") && text.Contains("парсер"))
+            return "error";
+        if (WorkerEventClassifier.IsAutomationFailure(text, level))
             return "error";
         if (level == "error" || text.Contains("ошиб"))
             return "error";
-        if (IsNewResponseEvent(text, level))
+        if (WorkerEventClassifier.IsNewResponseCandidate(text, level))
             return "response";
         return "info";
-    }
-
-    /// <summary>Тип из формата «… — {метка}: {детали}» (сообщения о проблемах аккаунта).</summary>
-    private static string? TryInferTypeFromIssueLabel(string message)
-    {
-        var separator = message.IndexOf(" — ", StringComparison.Ordinal);
-        if (separator < 0)
-            return null;
-
-        var afterSeparator = message[(separator + 3)..];
-        var colon = afterSeparator.IndexOf(':');
-        if (colon <= 0)
-            return null;
-
-        var label = afterSeparator[..colon].Trim();
-        return label.ToLowerInvariant() switch
-        {
-            "капча / блок ip" => "captcha",
-            "нужен вход" => "auth",
-            "не переключился" => "switch",
-            "ошибка парсинга" or "таймаут" or "проблема" => "error",
-            "лимит частоты adspower" or "дневной лимит adspower" => "error",
-            _ => null
-        };
-    }
-
-    private static bool IsAutomationFailure(string text, string level)
-    {
-        if (level.Equals("Warning", StringComparison.OrdinalIgnoreCase)
-            || level.Equals("Error", StringComparison.OrdinalIgnoreCase))
-        {
-            if (text.Contains("не удалось") || text.Contains("неизвестная страница") || text.Contains("проблема:"))
-                return true;
-        }
-
-        return text.Contains("не удалось перейти") || text.Contains("не удалось переключить");
-    }
-
-    private static bool IsCaptchaEvent(string text, string? details)
-    {
-        if (text.Contains("капча") || text.Contains("captcha") || text.Contains("блок ip") || text.Contains("firewall"))
-            return true;
-
-        if (string.IsNullOrWhiteSpace(details) || !details.TrimStart().StartsWith('{'))
-            return false;
-
-        var lowerDetails = details.ToLowerInvariant();
-        return lowerDetails.Contains("\"kind\":\"captcha")
-            || lowerDetails.Contains("subprofile-captcha")
-            || lowerDetails.Contains("image-captcha")
-            || lowerDetails.Contains("hcaptcha")
-            || lowerDetails.Contains("geetest")
-            || lowerDetails.Contains("\"kind\":\"firewall");
-    }
-
-    private static bool IsNewResponseEvent(string text, string level)
-    {
-        if (!level.Equals("Success", StringComparison.OrdinalIgnoreCase))
-            return false;
-
-        if (text.Contains("не удалось") || text.Contains("проблема:") || text.Contains("неизвестная страница"))
-            return false;
-
-        if (text.Contains("странице откликов") || text.Contains("страница откликов")
-            || text.Contains("к откликам") || text.Contains("перейти к откликам"))
-            return false;
-
-        if (text.Contains("новый отклик") || text.Contains("отклик получен") || text.Contains("отклик отправлен"))
-            return true;
-
-        if (text.Contains("получен") && text.Contains("отклик"))
-            return true;
-
-        return text.Contains("отклик")
-            && !text.Contains("объект откликов")
-            && !text.Contains("сбор откликов")
-            && !text.Contains("мониторинг откликов");
     }
 
     public static (string Label, string Icon, string Tone) EventTypePresentation(string type, string? message = null)
     {
         if (type == "error" && message is not null)
         {
+            var issueLabel = WorkerEventClassifier.TryParseIssueLabel(message)?.ToLowerInvariant();
+            if (issueLabel is not null)
+            {
+                return issueLabel switch
+                {
+                    "ошибка парсинга" => ("Ошибка парсинга", "fa-regular fa-circle-xmark", "error"),
+                    "таймаут" => ("Таймаут", "fa-regular fa-circle-xmark", "error"),
+                    "лимит частоты adspower" or "дневной лимит adspower" => ("Лимит AdsPower", "fa-regular fa-circle-xmark", "error"),
+                    "проблема" => ("Сбой автоматизации", "fa-regular fa-circle-xmark", "error"),
+                    _ => ("Сбой автоматизации", "fa-regular fa-circle-xmark", "error")
+                };
+            }
+
             var lower = message.ToLowerInvariant();
-            if (lower.Contains("проблема:") || lower.Contains("не удалось") || lower.Contains("неизвестная страница"))
+            if (lower.Contains("лимит adspower") || lower.Contains("rate limit adspower"))
+                return ("Лимит AdsPower", "fa-regular fa-circle-xmark", "error");
+            if (lower.Contains("субпрофили ") || lower.Contains("не удалось") || lower.Contains("неизвестная страница"))
                 return ("Сбой автоматизации", "fa-regular fa-circle-xmark", "error");
         }
 
