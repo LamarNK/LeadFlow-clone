@@ -22,6 +22,8 @@ if not defined LEADFLOW_SERVER set "LEADFLOW_SERVER=root@163.5.153.207"
 if not defined LEADFLOW_SSH_PORT set "LEADFLOW_SSH_PORT=22"
 if not defined LEADFLOW_REMOTE_DIR set "LEADFLOW_REMOTE_DIR=/opt/orbita"
 if not defined LEADFLOW_SKIP_SECRETS_SYNC set "LEADFLOW_SKIP_SECRETS_SYNC=0"
+if not defined LEADFLOW_SKIP_DOCKER_PRUNE set "LEADFLOW_SKIP_DOCKER_PRUNE=0"
+if not defined LEADFLOW_DOCKER_PRUNE_DEEP set "LEADFLOW_DOCKER_PRUNE_DEEP=0"
 
 set "SERVER=%LEADFLOW_SERVER%"
 set "REMOTE_DIR=%LEADFLOW_REMOTE_DIR%"
@@ -268,7 +270,7 @@ scp !SCP_ARGS! "!REMOTE_BUILD_SCRIPT!" "!SERVER!:/tmp/deploy-remote-build.sh"
 if errorlevel 1 exit /b 1
 
 echo == Building and deploying !TARGET! on !SERVER! ==
-ssh !SSH_ARGS! !SERVER! "sed -i 's/\r$//' /tmp/deploy-remote-build.sh && chmod +x /tmp/deploy-remote-build.sh && bash /tmp/deploy-remote-build.sh /tmp/leadflow-!TARGET!-context.tar.gz !DOCKERFILE! !IMAGE_TAG! !COMPOSE_SERVICE! !REMOTE_DIR! !DEPLOY_MODE!"
+ssh !SSH_ARGS! !SERVER! "sed -i 's/\r$//' /tmp/deploy-remote-build.sh && chmod +x /tmp/deploy-remote-build.sh && LEADFLOW_SKIP_DOCKER_PRUNE=!LEADFLOW_SKIP_DOCKER_PRUNE! LEADFLOW_DOCKER_PRUNE_DEEP=!LEADFLOW_DOCKER_PRUNE_DEEP! bash /tmp/deploy-remote-build.sh /tmp/leadflow-!TARGET!-context.tar.gz !DOCKERFILE! !IMAGE_TAG! !COMPOSE_SERVICE! !REMOTE_DIR! !DEPLOY_MODE!"
 set "BUILD_RC=!ERRORLEVEL!"
 if !BUILD_RC! equ 42 (
     if /i not "!DEPLOY_MODE!"=="full" (

@@ -12,6 +12,8 @@ internal static class EventsIndexBuilder
         new() { Value = "", Label = "Все типы" },
         new() { Value = "response", Label = "Новый отклик" },
         new() { Value = "duplicate", Label = "Дубль" },
+        new() { Value = "captcha", Label = "Капча / блок IP" },
+        new() { Value = "switch", Label = "Не переключился" },
         new() { Value = "error", Label = "Ошибка" },
         new() { Value = "auth", Label = "Авторизация" },
         new() { Value = "balance", Label = "Баланс" },
@@ -80,7 +82,7 @@ internal static class EventsIndexBuilder
     {
         var level = NormalizeLevel(item.Level);
         var type = InferEventType(item.Message, item.Details, level);
-        var (typeLabel, typeIcon, typeTone) = EventTypePresentation(type);
+        var (typeLabel, typeIcon, typeTone) = EventTypePresentation(type, item.Message);
         var description = BuildDescription(item.Message, item.Details);
 
         return new EventRowViewModel
@@ -265,7 +267,11 @@ internal static class EventsIndexBuilder
         var text = $"{message} {details}".ToLowerInvariant();
         if (text.Contains("дубл") || text.Contains("duplicate"))
             return "duplicate";
-        if (text.Contains("авториз") || text.Contains("вход"))
+        if (TryInferTypeFromIssueLabel(message) is { } issueType)
+            return issueType;
+        if (IsCaptchaEvent(text, details))
+            return "captcha";
+        if (text.Contains("авториз") || text.Contains("вход") || text.Contains("нужен вход") || text.Contains("требуется действие"))
             return "auth";
         if (text.Contains("баланс"))
             return "balance";
@@ -273,24 +279,115 @@ internal static class EventsIndexBuilder
             return "start";
         if (text.Contains("останов") || text.Contains("heartbeat") || text.Contains("не получен"))
             return "stop";
+        if (IsAutomationFailure(text, level))
+            return "error";
         if (level == "error" || text.Contains("ошиб"))
             return "error";
-        if (text.Contains("отклик"))
+        if (IsNewResponseEvent(text, level))
             return "response";
         return "info";
     }
 
-    public static (string Label, string Icon, string Tone) EventTypePresentation(string type) => type switch
+    /// <summary>Тип из формата «… — {метка}: {детали}» (сообщения о проблемах аккаунта).</summary>
+    private static string? TryInferTypeFromIssueLabel(string message)
     {
+        var separator = message.IndexOf(" — ", StringComparison.Ordinal);
+        if (separator < 0)
+            return null;
+
+        var afterSeparator = message[(separator + 3)..];
+        var colon = afterSeparator.IndexOf(':');
+        if (colon <= 0)
+            return null;
+
+        var label = afterSeparator[..colon].Trim();
+        return label.ToLowerInvariant() switch
+        {
+            "капча / блок ip" => "captcha",
+            "нужен вход" => "auth",
+            "не переключился" => "switch",
+            "ошибка парсинга" or "таймаут" or "проблема" => "error",
+            "лимит частоты adspower" or "дневной лимит adspower" => "error",
+            _ => null
+        };
+    }
+
+    private static bool IsAutomationFailure(string text, string level)
+    {
+        if (level.Equals("Warning", StringComparison.OrdinalIgnoreCase)
+            || level.Equals("Error", StringComparison.OrdinalIgnoreCase))
+        {
+            if (text.Contains("не удалось") || text.Contains("неизвестная страница") || text.Contains("проблема:"))
+                return true;
+        }
+
+        return text.Contains("не удалось перейти") || text.Contains("не удалось переключить");
+    }
+
+    private static bool IsCaptchaEvent(string text, string? details)
+    {
+        if (text.Contains("капча") || text.Contains("captcha") || text.Contains("блок ip") || text.Contains("firewall"))
+            return true;
+
+        if (string.IsNullOrWhiteSpace(details) || !details.TrimStart().StartsWith('{'))
+            return false;
+
+        var lowerDetails = details.ToLowerInvariant();
+        return lowerDetails.Contains("\"kind\":\"captcha")
+            || lowerDetails.Contains("subprofile-captcha")
+            || lowerDetails.Contains("image-captcha")
+            || lowerDetails.Contains("hcaptcha")
+            || lowerDetails.Contains("geetest")
+            || lowerDetails.Contains("\"kind\":\"firewall");
+    }
+
+    private static bool IsNewResponseEvent(string text, string level)
+    {
+        if (!level.Equals("Success", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        if (text.Contains("не удалось") || text.Contains("проблема:") || text.Contains("неизвестная страница"))
+            return false;
+
+        if (text.Contains("странице откликов") || text.Contains("страница откликов")
+            || text.Contains("к откликам") || text.Contains("перейти к откликам"))
+            return false;
+
+        if (text.Contains("новый отклик") || text.Contains("отклик получен") || text.Contains("отклик отправлен"))
+            return true;
+
+        if (text.Contains("получен") && text.Contains("отклик"))
+            return true;
+
+        return text.Contains("отклик")
+            && !text.Contains("объект откликов")
+            && !text.Contains("сбор откликов")
+            && !text.Contains("мониторинг откликов");
+    }
+
+    public static (string Label, string Icon, string Tone) EventTypePresentation(string type, string? message = null)
+    {
+        if (type == "error" && message is not null)
+        {
+            var lower = message.ToLowerInvariant();
+            if (lower.Contains("проблема:") || lower.Contains("не удалось") || lower.Contains("неизвестная страница"))
+                return ("Сбой автоматизации", "fa-regular fa-circle-xmark", "error");
+        }
+
+        return type switch
+        {
         "response" => ("Новый отклик", "fa-regular fa-circle-check", "success"),
         "duplicate" => ("Дубликат", "fa-solid fa-triangle-exclamation", "warning"),
+        "captcha" => ("Капча / блок IP", "fa-solid fa-shield-halved", "warning"),
+        "switch" => ("Не переключился", "fa-solid fa-arrows-rotate", "warning"),
         "error" => ("Ошибка отправки", "fa-regular fa-circle-xmark", "error"),
         "auth" => ("Авторизация", "fa-solid fa-key", "info"),
         "balance" => ("Обновление баланса", "fa-solid fa-circle-info", "info"),
         "start" => ("Запуск", "fa-solid fa-play", "success"),
         "stop" => ("Остановка", "fa-solid fa-stop", "warning"),
         _ => ("Информация", "fa-solid fa-circle-info", "info")
-    };
+        };
+    }
 
     private static string BuildDescription(string message, string? details) =>
         WorkerEventDetailsParser.FormatForDisplay(message, details);

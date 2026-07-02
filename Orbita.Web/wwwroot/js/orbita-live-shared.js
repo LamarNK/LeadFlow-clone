@@ -233,7 +233,7 @@
             var alert = '';
             if (sub.hasIssue && sub.issueSummary) {
                 var screenshot = sub.diagnosticAttachmentId
-                    ? '<a class="subprofiles-screenshot-btn" href="/Diagnostics/Image/' + escapeHtml(sub.diagnosticAttachmentId) + '" target="_blank" rel="noopener" title="Открыть скриншот страницы при ошибке">скрин</a>'
+                    ? '<button type="button" class="subprofiles-screenshot-btn" data-subprofile-screenshot data-screenshot-url="/Diagnostics/Image/' + escapeHtml(sub.diagnosticAttachmentId) + '" title="Посмотреть скриншот страницы при ошибке">скрин</button>'
                     : '';
                 alert = '<div class="subprofiles-item-alert">' +
                     '<span class="subprofiles-issue" title="' + escapeHtml(sub.issueSummary) + '">' + escapeHtml(sub.issueSummary) + '</span>' +

@@ -51,11 +51,11 @@
                         <span class="subprofiles-issue" title="@sub.IssueSummary">@sub.IssueSummary</span>
                         @if (sub.DiagnosticAttachmentId is not null)
                         {
-                            <a class="subprofiles-screenshot-btn"
-                               href="/Diagnostics/Image/@sub.DiagnosticAttachmentId"
-                               target="_blank"
-                               rel="noopener"
-                               title="Открыть скриншот страницы при ошибке">скрин</a>
+                            <button type="button"
+                                    class="subprofiles-screenshot-btn"
+                                    data-subprofile-screenshot
+                                    data-screenshot-url="/Diagnostics/Image/@sub.DiagnosticAttachmentId"
+                                    title="Посмотреть скриншот страницы при ошибке">скрин</button>
                         }
                     </div>
                 }

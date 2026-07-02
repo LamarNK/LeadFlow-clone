@@ -78,7 +78,7 @@ internal static class ErrorsIndexBuilder
     public static ErrorRowViewModel MapEvent(WorkerEventListItem item, string? accountName = null)
     {
         var text = $"{item.Message} {item.Details}";
-        var errorType = InferErrorType(text);
+        var errorType = InferErrorType(item.Message, item.Details);
         var severity = InferSeverity(item.Level, text);
         var occurredAt = item.CreatedAtUtc;
 
@@ -239,29 +239,52 @@ internal static class ErrorsIndexBuilder
         return options;
     }
 
-    public static string InferErrorType(string text)
+    public static string InferErrorType(string message, string? details = null)
     {
-        var lower = text.ToLowerInvariant();
-        if (lower.Contains("авториз") || lower.Contains("логин") || lower.Contains("парол"))
+        var text = $"{message} {details}".ToLowerInvariant();
+        if (IsCaptchaOrBlocked(text, details))
+            return "blocked";
+        if (text.Contains("авториз") || text.Contains("логин") || text.Contains("парол") || text.Contains("нужен вход"))
             return "auth";
-        if (lower.Contains("bitrix") || lower.Contains("crm"))
+        if (text.Contains("bitrix") || text.Contains("crm"))
             return "bitrix";
-        if (lower.Contains("postgres") || lower.Contains("база данных"))
+        if (text.Contains("postgres") || text.Contains("база данных"))
             return "postgres";
-        if (lower.Contains("сеть") || lower.Contains("таймаут") || lower.Contains("http") || lower.Contains("подключ"))
+        if (IsNetworkError(text))
             return "network";
-        if (lower.Contains("баланс"))
+        if (text.Contains("баланс"))
             return "balance";
-        if (lower.Contains("капч") || lower.Contains("captcha") || lower.Contains("firewall"))
-            return "blocked";
-        if (lower.Contains("блок") || lower.Contains("заблок"))
-            return "blocked";
-        if (lower.Contains("парс") || lower.Contains("parse"))
+        if (text.Contains("парс") || text.Contains("parse"))
             return "parsing";
-        if (lower.Contains("api"))
+        if (text.Contains("api"))
             return "api";
         return "unknown";
     }
+
+    private static bool IsCaptchaOrBlocked(string text, string? details)
+    {
+        if (text.Contains("капч") || text.Contains("captcha") || text.Contains("firewall") || text.Contains("блок ip"))
+            return true;
+        if (text.Contains("блок") || text.Contains("заблок"))
+            return true;
+
+        if (string.IsNullOrWhiteSpace(details) || !details.TrimStart().StartsWith('{'))
+            return false;
+
+        var lowerDetails = details.ToLowerInvariant();
+        return lowerDetails.Contains("\"kind\":\"captcha")
+            || lowerDetails.Contains("subprofile-captcha")
+            || lowerDetails.Contains("image-captcha")
+            || lowerDetails.Contains("hcaptcha")
+            || lowerDetails.Contains("geetest")
+            || lowerDetails.Contains("\"kind\":\"firewall");
+    }
+
+    private static bool IsNetworkError(string text) =>
+        text.Contains("сеть") || text.Contains("таймаут") || text.Contains("подключ")
+        || text.Contains("connection") || text.Contains("dns")
+        || text.Contains("http ") || text.Contains("http/")
+        || text.Contains("httperror") || text.Contains("httprequestexception");
 
     public static string ErrorTypeLabel(string type) => type switch
     {

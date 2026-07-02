@@ -2779,24 +2779,26 @@ a.kpi-card:focus-visible {
 }
 
 .subprofiles-screenshot-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: auto;
-    height: auto;
+    display: inline;
     padding: 0;
     border: 0;
     border-radius: 0;
     background: transparent;
     color: #667085;
-    text-decoration: none;
+    text-decoration: underline;
+    text-decoration-color: #d0d5dd;
+    text-underline-offset: 2px;
     flex-shrink: 0;
+    font: inherit;
     font-size: 11px;
-    transition: color 0.15s ease;
+    line-height: inherit;
+    cursor: pointer;
+    transition: color 0.15s ease, text-decoration-color 0.15s ease;
 }
 
 .subprofiles-screenshot-btn:hover {
     color: #2563eb;
+    text-decoration-color: #93c5fd;
 }
 
 .workers-install-cmd-label {
@@ -3446,12 +3448,14 @@ a.kpi-card:focus-visible {
 
 .orbita-detail-screenshot {
     display: block;
-    width: 100%;
+    width: auto;
     max-width: 100%;
+    max-height: min(72vh, calc(100vh - 220px));
     height: auto;
-    margin-bottom: 12px;
+    margin: 0 auto 12px;
     border-radius: 8px;
     border: 1px solid rgba(148, 163, 184, 0.35);
+    object-fit: contain;
 }
 
 .orbita-detail-text {
@@ -6917,6 +6921,11 @@ html.sidebar-collapsed .nav-badge {
     align-items: center;
     justify-content: center;
     padding: 24px 16px;
+    overflow-y: auto;
+}
+
+.orbita-detail-modal--media {
+    align-items: flex-start;
 }
 
 .orbita-detail-modal[hidden] { display: none !important; }
@@ -6930,10 +6939,18 @@ html.sidebar-collapsed .nav-badge {
 .orbita-detail-modal__dialog {
     position: relative;
     width: min(520px, 100%);
+    max-height: calc(100vh - 48px);
+    display: flex;
+    flex-direction: column;
     border-radius: 16px;
     border: 1px solid #e4e7ec;
     background: #ffffff;
     box-shadow: 0 20px 40px rgba(16, 24, 40, 0.16);
+    overflow: hidden;
+}
+
+.orbita-detail-modal--media .orbita-detail-modal__dialog {
+    width: min(960px, calc(100vw - 32px));
 }
 
 .orbita-detail-modal__head {
@@ -6942,6 +6959,7 @@ html.sidebar-collapsed .nav-badge {
     justify-content: space-between;
     gap: 12px;
     padding: 18px 20px 0;
+    flex-shrink: 0;
 }
 
 .orbita-detail-modal__title {
@@ -6964,6 +6982,9 @@ html.sidebar-collapsed .nav-badge {
     color: #344054;
     white-space: pre-wrap;
     word-break: break-word;
+    overflow-y: auto;
+    flex: 1;
+    min-height: 0;
 }
 
 .orbita-detail-modal__close {

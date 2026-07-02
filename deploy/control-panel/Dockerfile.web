@@ -1,10 +1,17 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
+
+COPY Orbita.Contracts/*.csproj Orbita.Contracts/
+COPY Orbita.Logging/*.csproj Orbita.Logging/
+COPY Orbita.Web/*.csproj Orbita.Web/
+RUN --mount=type=cache,target=/root/.nuget/packages \
+    dotnet restore Orbita.Web/Orbita.Web.csproj
+
 COPY Orbita.Contracts/ Orbita.Contracts/
 COPY Orbita.Logging/ Orbita.Logging/
 COPY Orbita.Web/ Orbita.Web/
-RUN dotnet restore Orbita.Web/Orbita.Web.csproj
-RUN dotnet publish Orbita.Web/Orbita.Web.csproj -c Release -o /app/publish /p:UseAppHost=false
+RUN --mount=type=cache,target=/root/.nuget/packages \
+    dotnet publish Orbita.Web/Orbita.Web.csproj -c Release -o /app/publish /p:UseAppHost=false
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app

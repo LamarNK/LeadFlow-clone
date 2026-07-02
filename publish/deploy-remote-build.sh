@@ -1,6 +1,42 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+prune_docker_artifacts() {
+  if [[ "${LEADFLOW_SKIP_DOCKER_PRUNE:-0}" == "1" ]]; then
+    echo "Docker prune skipped (LEADFLOW_SKIP_DOCKER_PRUNE=1)."
+    return 0
+  fi
+
+  echo "== Pruning dangling Docker images =="
+  docker image prune -f
+
+  if [[ "${LEADFLOW_DOCKER_PRUNE_DEEP:-0}" == "1" ]]; then
+    echo "== Deep prune: unused images =="
+    docker image prune -a -f
+
+    echo "== Deep prune: build cache older than 7 days =="
+    if ! docker builder prune -f --filter until=168h; then
+      echo "Build cache prune skipped (BuildKit unavailable)."
+    fi
+  fi
+}
+
+build_docker_image() {
+  export DOCKER_BUILDKIT=1
+
+  local -a build_args=(
+    --build-arg BUILDKIT_INLINE_CACHE=1
+    -f "$dockerfile_rel"
+    -t "$image_tag"
+  )
+
+  if docker image inspect "$image_tag" >/dev/null 2>&1; then
+    build_args+=(--cache-from "$image_tag")
+  fi
+
+  docker build "${build_args[@]}" .
+}
+
 context_archive="${1:?context archive is required}"
 dockerfile_rel="${2:?dockerfile path is required}"
 image_tag="${3:?image tag is required}"
@@ -57,7 +93,7 @@ if [[ ! -f "$dockerfile_rel" ]]; then
   exit 1
 fi
 
-docker build -f "$dockerfile_rel" -t "$image_tag" .
+build_docker_image
 compose_src="$cache_dir/deploy/control-panel/docker-compose.images.yml"
 if [[ -f "$compose_src" ]]; then
   cp "$compose_src" "$remote_dir/docker-compose.images.yml"
@@ -84,4 +120,7 @@ else
 fi
 
 docker compose -f docker-compose.images.yml ps
+
+prune_docker_artifacts
+
 echo "Built and deployed $image_tag ($service) using $deploy_mode context"

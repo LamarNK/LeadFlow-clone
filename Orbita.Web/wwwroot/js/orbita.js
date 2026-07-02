@@ -594,6 +594,31 @@
         });
     }
 
+    function initSubProfileScreenshotLinks() {
+        document.querySelectorAll('[data-subprofile-screenshot]').forEach(function (btn) {
+            if (btn.hasAttribute('data-subprofile-screenshot-bound')) return;
+            btn.setAttribute('data-subprofile-screenshot-bound', '1');
+
+            btn.addEventListener('click', function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                var url = btn.getAttribute('data-screenshot-url');
+                if (!url) return;
+
+                var item = btn.closest('.subprofiles-item');
+                var issueEl = btn.closest('.subprofiles-item-alert')?.querySelector('.subprofiles-issue');
+                var name = item?.querySelector('.subprofiles-name')?.textContent?.trim() || '';
+                var issue = issueEl?.textContent?.trim() || '';
+
+                openDetailModal({
+                    title: name ? 'Скриншот · ' + name : 'Скриншот ошибки',
+                    body: issue,
+                    attachmentUrl: url
+                });
+            });
+        });
+    }
+
     function initSubProfilesToggles() {
         document.querySelectorAll('[data-subprofiles-toggle]').forEach(function (btn) {
             if (btn.hasAttribute('data-subprofiles-bound')) return;
@@ -620,6 +645,7 @@
     initSubProfilesToggles();
     initSubProfileEnableToggles();
     initSubProfilesRefreshButtons();
+    initSubProfileScreenshotLinks();
     initUserMenu();
     initPeriodPicker();
     initSidebarToggle();
@@ -794,11 +820,15 @@
             text.textContent = options.body;
             detailBody.appendChild(text);
         }
+        detailModal.classList.toggle('orbita-detail-modal--media', !!options.attachmentUrl);
         detailModal.removeAttribute('hidden');
+        detailBody.scrollTop = 0;
     }
 
     function closeDetailModal() {
-        if (detailModal) detailModal.setAttribute('hidden', '');
+        if (!detailModal) return;
+        detailModal.setAttribute('hidden', '');
+        detailModal.classList.remove('orbita-detail-modal--media');
     }
 
     function initDetailOpenButtons() {
@@ -890,6 +920,7 @@
         initSubProfilesToggles();
         initSubProfileEnableToggles();
         initSubProfilesRefreshButtons();
+        initSubProfileScreenshotLinks();
         initWorkerRestartButtons();
         initFilterPanels();
         initDetailModal();
