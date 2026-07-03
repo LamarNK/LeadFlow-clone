@@ -106,6 +106,7 @@ public sealed class WorkerEventClassificationMatrixTests
             WorkerId,
             "WM1",
             AccountId,
+            "user_01",
             level,
             message,
             details,

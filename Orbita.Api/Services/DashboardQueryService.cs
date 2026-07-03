@@ -426,22 +426,24 @@ public sealed class DashboardQueryService(
             query = query.Where(x => x.WorkerId == workerId.Value);
         }
 
-        return await query
-            .OrderByDescending(x => x.CreatedAtUtc)
-            .Take(limit)
-            .Join(
-                db.Workers.AsNoTracking(),
-                evt => evt.WorkerId,
-                worker => worker.Id,
-                (evt, worker) => new WorkerEventListItem(
-                    evt.Id,
-                    evt.WorkerId,
-                    worker.DisplayName,
-                    evt.AccountId,
-                    evt.Level,
-                    evt.Message,
-                    evt.Details,
-                    evt.CreatedAtUtc))
+        return await (
+            from evt in query.OrderByDescending(x => x.CreatedAtUtc).Take(limit)
+            join worker in db.Workers.AsNoTracking() on evt.WorkerId equals worker.Id
+            join account in db.WorkerAccounts.AsNoTracking()
+                on new { evt.WorkerId, AccountId = evt.AccountId }
+                equals new { account.WorkerId, AccountId = (Guid?)account.AccountId }
+                into accounts
+            from account in accounts.DefaultIfEmpty()
+            select new WorkerEventListItem(
+                evt.Id,
+                evt.WorkerId,
+                worker.DisplayName,
+                evt.AccountId,
+                account != null ? account.DisplayName : null,
+                evt.Level,
+                evt.Message,
+                evt.Details,
+                evt.CreatedAtUtc))
             .ToListAsync(ct);
     }
 

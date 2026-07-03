@@ -95,7 +95,7 @@ internal static class EventsIndexBuilder
             EventTypeTone = typeTone,
             Level = level,
             LevelLabel = LevelLabel(level),
-            AccountName = accountName,
+            AccountName = accountName ?? item.AccountDisplayName,
             AccountId = item.AccountId,
             WorkerId = item.WorkerId,
             WorkerName = FormatWorkerName(item.WorkerDisplayName),

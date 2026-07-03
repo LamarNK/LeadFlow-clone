@@ -37,7 +37,7 @@ public sealed class EventsService(OrbitaApiClient api, IOptions<DesignPreviewOpt
     {
         var items = await api.GetEventsAsync(limit: 500, ct: ct) ?? [];
         var rows = items
-            .Select(e => EventsIndexBuilder.MapEvent(e, e.AccountId?.ToString()[..8]))
+            .Select(e => EventsIndexBuilder.MapEvent(e))
             .ToList();
 
         return EventsIndexBuilder.Build(rows, filters, page);

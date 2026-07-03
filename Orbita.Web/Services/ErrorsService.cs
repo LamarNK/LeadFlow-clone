@@ -38,7 +38,7 @@ public sealed class ErrorsService(OrbitaApiClient api, IOptions<DesignPreviewOpt
         var items = await api.GetEventsAsync(limit: 500, ct: ct) ?? [];
         var rows = items
             .Where(e => e.Level is "Error" or "Warning")
-            .Select(e => ErrorsIndexBuilder.MapEvent(e, e.AccountId?.ToString()[..8]))
+            .Select(e => ErrorsIndexBuilder.MapEvent(e))
             .ToList();
 
         return ErrorsIndexBuilder.Build(rows, filters, page);

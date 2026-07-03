@@ -553,7 +553,9 @@ internal static class DesignPreviewData
             .Select(e => new DashboardEventRowViewModel
             {
                 Message = e.Message,
-                Subtitle = e.AccountId.HasValue ? $"Аккаунт {e.AccountId.Value.ToString()[..8]}" : (e.Details ?? string.Empty),
+                Subtitle = !string.IsNullOrWhiteSpace(e.AccountDisplayName)
+                    ? e.AccountDisplayName
+                    : (e.Details ?? string.Empty),
                 TimeUtc = e.CreatedAtUtc,
                 Level = e.Level.Equals("Error", StringComparison.OrdinalIgnoreCase) ? "error"
                     : e.Level.Equals("Warning", StringComparison.OrdinalIgnoreCase) ? "warning" : "success"
@@ -742,14 +744,14 @@ internal static class DesignPreviewData
 
     public static IReadOnlyList<WorkerEventListItem> Events =>
     [
-        new(Guid.Parse("33333333-3333-3333-3333-333333333301"), WorkerMoscowId, "VDS-Москва-01", AccountAlphaId, "Info", "Отклик отправлен в CRM", null, Now.AddMinutes(-1)),
-        new(Guid.Parse("33333333-3333-3333-3333-333333333302"), WorkerSpbId, "VDS-СПб-02", AccountGammaId, "Warning", "Дубликат отклика пропущен", "candidate_id=88421", Now.AddMinutes(-4)),
-        new(Guid.Parse("33333333-3333-3333-3333-333333333303"), WorkerMoscowId, "VDS-Москва-01", AccountBetaId, "Info", "Мониторинг завершён", "3 аккаунта", Now.AddMinutes(-7)),
-        new(Guid.Parse("33333333-3333-3333-3333-333333333304"), WorkerSpbId, "VDS-СПб-02", Guid.Parse("22222222-2222-2222-2222-222222222205"), "Error", "Ошибка отправки в CRM", "HTTP 503", Now.AddMinutes(-12)),
-        new(Guid.Parse("33333333-3333-3333-3333-333333333305"), WorkerKazanId, "VDS-Казань-03", null, "Warning", "Heartbeat не получен", "18 мин", Now.AddMinutes(-18)),
-        new(Guid.Parse("33333333-3333-3333-3333-333333333306"), WorkerMoscowId, "VDS-Москва-01", AccountAlphaId, "Info", "Новый отклик получен", "vacancy_id=120984", Now.AddMinutes(-22)),
-        new(Guid.Parse("33333333-3333-3333-3333-333333333307"), WorkerSpbId, "VDS-СПб-02", AccountGammaId, "Info", "Баланс обновлён", "67400 ₽", Now.AddMinutes(-35)),
-        new(Guid.Parse("33333333-3333-3333-3333-333333333308"), WorkerMoscowId, "VDS-Москва-01", Guid.Parse("22222222-2222-2222-2222-222222222204"), "Warning", "Требуется авторизация", null, Now.AddHours(-2))
+        new(Guid.Parse("33333333-3333-3333-3333-333333333301"), WorkerMoscowId, "VDS-Москва-01", AccountAlphaId, "user_01", "Info", "Отклик отправлен в CRM", null, Now.AddMinutes(-1)),
+        new(Guid.Parse("33333333-3333-3333-3333-333333333302"), WorkerSpbId, "VDS-СПб-02", AccountGammaId, "avito_gamma", "Warning", "Дубликат отклика пропущен", "candidate_id=88421", Now.AddMinutes(-4)),
+        new(Guid.Parse("33333333-3333-3333-3333-333333333303"), WorkerMoscowId, "VDS-Москва-01", AccountBetaId, "user_02", "Info", "Мониторинг завершён", "3 аккаунта", Now.AddMinutes(-7)),
+        new(Guid.Parse("33333333-3333-3333-3333-333333333304"), WorkerSpbId, "VDS-СПб-02", Guid.Parse("22222222-2222-2222-2222-222222222205"), "avito_epsilon", "Error", "Ошибка отправки в CRM", "HTTP 503", Now.AddMinutes(-12)),
+        new(Guid.Parse("33333333-3333-3333-3333-333333333305"), WorkerKazanId, "VDS-Казань-03", null, null, "Warning", "Heartbeat не получен", "18 мин", Now.AddMinutes(-18)),
+        new(Guid.Parse("33333333-3333-3333-3333-333333333306"), WorkerMoscowId, "VDS-Москва-01", AccountAlphaId, "user_01", "Info", "Новый отклик получен", "vacancy_id=120984", Now.AddMinutes(-22)),
+        new(Guid.Parse("33333333-3333-3333-3333-333333333307"), WorkerSpbId, "VDS-СПб-02", AccountGammaId, "avito_gamma", "Info", "Баланс обновлён", "67400 ₽", Now.AddMinutes(-35)),
+        new(Guid.Parse("33333333-3333-3333-3333-333333333308"), WorkerMoscowId, "VDS-Москва-01", Guid.Parse("22222222-2222-2222-2222-222222222204"), "user_04", "Warning", "Требуется авторизация", null, Now.AddHours(-2))
     ];
 
     private static IReadOnlyList<ActivityPointDto> BuildHourly()

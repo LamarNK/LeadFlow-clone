@@ -27,7 +27,9 @@ internal static class DashboardEventMapper
             if (!string.IsNullOrWhiteSpace(subProfile))
                 parts.Add($"Субпрофиль «{subProfile.Trim()}»");
 
-            if (item.AccountId.HasValue)
+            if (!string.IsNullOrWhiteSpace(item.AccountDisplayName))
+                parts.Add(item.AccountDisplayName);
+            else if (item.AccountId.HasValue)
                 parts.Add("Аккаунт");
 
             return parts.Count > 0 ? string.Join(" · ", parts) : string.Empty;
@@ -35,6 +37,9 @@ internal static class DashboardEventMapper
 
         if (!string.IsNullOrWhiteSpace(item.Details))
             return item.Details.Trim();
+
+        if (!string.IsNullOrWhiteSpace(item.AccountDisplayName))
+            return item.AccountDisplayName;
 
         return item.AccountId.HasValue ? "Аккаунт" : string.Empty;
     }

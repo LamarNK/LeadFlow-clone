@@ -93,7 +93,7 @@ internal static class ErrorsIndexBuilder
             ErrorTypeLabel = ErrorTypeLabel(errorType),
             Message = BuildMessage(item.Message, item.Details),
             CopyText = BuildMessage(item.Message, item.Details),
-            AccountName = accountName,
+            AccountName = accountName ?? item.AccountDisplayName,
             AccountId = item.AccountId,
             WorkerId = item.WorkerId,
             WorkerName = FormatWorkerName(item.WorkerDisplayName),

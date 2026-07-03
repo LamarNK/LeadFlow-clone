@@ -82,6 +82,7 @@ public sealed class EventsIndexBuilderTests
             WorkerId,
             "WM1",
             AccountId,
+            "user_01",
             level,
             message,
             details,

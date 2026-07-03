@@ -85,6 +85,7 @@ public sealed record WorkerEventListItem(
     Guid WorkerId,
     string WorkerDisplayName,
     Guid? AccountId,
+    string? AccountDisplayName,
     string Level,
     string Message,
     string? Details,

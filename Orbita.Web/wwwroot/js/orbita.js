@@ -230,6 +230,12 @@
         window.__orbitaLiveRowActionsReady = true;
 
         document.addEventListener('click', function (e) {
+            var detailRow = e.target.closest('.events-row, .errors-row');
+            if (detailRow && !e.target.closest('a, button, .row-menu, input, select, label')) {
+                openDetailFromRow(detailRow);
+                return;
+            }
+
             var copyPhone = e.target.closest('[data-copy-phone]');
             if (copyPhone) {
                 e.stopPropagation();
@@ -291,8 +297,12 @@
         var result = await postForm(url, { eventId: eventId });
         if (result.ok) {
             var row = btn.closest(rowSelector);
+            if (!row) {
+                row = document.querySelector(rowSelector + '[data-event-id="' + eventId + '"]');
+            }
             if (row && row.parentNode) row.parentNode.removeChild(row);
             showToast((result.payload && result.payload.message) || 'Готово', { variant: 'success' });
+            closeDetailModal();
         } else {
             showToast((result.payload && result.payload.error) || 'Не удалось выполнить', { variant: 'error' });
         }
@@ -770,6 +780,133 @@
     var detailTitle = null;
     var detailSubtitle = null;
     var detailBody = null;
+    var detailFoot = null;
+    var detailNav = null;
+    var detailCopy = null;
+    var detailCopyLabel = null;
+    var detailDismiss = null;
+    var detailDismissLabel = null;
+
+    function getRowDetailLinks(row) {
+        var links = [];
+        var logUrl = row.getAttribute('data-detail-log-url');
+        var accountUrl = row.getAttribute('data-detail-account-url');
+        var workerUrl = row.getAttribute('data-detail-worker-url');
+
+        if (logUrl) {
+            links.push({ href: logUrl, label: 'Открыть лог', icon: 'fa-regular fa-file-lines' });
+        }
+        if (accountUrl) {
+            links.push({ href: accountUrl, label: 'К аккаунту', icon: 'fa-regular fa-user' });
+        }
+        if (workerUrl) {
+            links.push({ href: workerUrl, label: 'К воркеру', icon: 'fa-solid fa-server' });
+        }
+
+        return links;
+    }
+
+    function getRowDetailOptions(row) {
+        if (!row) return null;
+
+        var options = {
+            title: row.getAttribute('data-detail-title') || 'Детали',
+            subtitle: row.getAttribute('data-detail-subtitle') || '',
+            body: row.getAttribute('data-detail-body') || row.getAttribute('data-copy') || '',
+            attachmentUrl: row.getAttribute('data-detail-attachment') || '',
+            links: getRowDetailLinks(row),
+            copyText: row.getAttribute('data-copy') || ''
+        };
+
+        if (row.classList.contains('events-row')) {
+            options.copyLabel = 'Копировать сообщение';
+            options.dismiss = {
+                eventId: row.getAttribute('data-event-id') || '',
+                url: '/Events/Dismiss',
+                rowSelector: '.events-row',
+                title: 'Отметить обработанным?',
+                message: 'Событие будет скрыто из списка.',
+                label: 'Отметить обработанным'
+            };
+        } else if (row.classList.contains('errors-row')) {
+            options.copyLabel = 'Копировать текст';
+            options.dismiss = {
+                eventId: row.getAttribute('data-event-id') || '',
+                url: '/Errors/Dismiss',
+                rowSelector: '.errors-row',
+                title: 'Отметить как обработанную?',
+                message: 'Ошибка будет скрыта из списка.',
+                label: 'Отметить как обработанную'
+            };
+        }
+
+        return options;
+    }
+
+    function openDetailFromRow(row) {
+        var options = getRowDetailOptions(row);
+        if (!options) return;
+        openDetailModal(options);
+    }
+
+    function setDetailFooter(options) {
+        if (!detailFoot || !detailNav || !detailCopy || !detailCopyLabel || !detailDismiss || !detailDismissLabel) return;
+
+        options = options || {};
+        var links = options.links || [];
+        var hasLinks = links.length > 0;
+        var hasCopy = !!options.copyText;
+        var dismiss = options.dismiss || null;
+        var hasDismiss = !!(dismiss && dismiss.eventId);
+
+        detailNav.innerHTML = '';
+        if (hasLinks) {
+            links.forEach(function (link) {
+                var anchor = document.createElement('a');
+                anchor.className = 'orbita-detail-modal__nav-link';
+                anchor.href = link.href;
+                anchor.innerHTML = '<i class="' + link.icon + '" aria-hidden="true"></i><span>' + link.label + '</span>';
+                detailNav.appendChild(anchor);
+            });
+            detailNav.removeAttribute('hidden');
+        } else {
+            detailNav.setAttribute('hidden', '');
+        }
+
+        if (hasCopy) {
+            detailCopy.dataset.copyText = options.copyText;
+            detailCopyLabel.textContent = options.copyLabel || 'Копировать';
+            detailCopy.removeAttribute('hidden');
+        } else {
+            detailCopy.removeAttribute('data-copy-text');
+            detailCopy.setAttribute('hidden', '');
+        }
+
+        detailDismiss.removeAttribute('data-event-id');
+        detailDismiss.removeAttribute('data-dismiss-url');
+        detailDismiss.removeAttribute('data-dismiss-row-selector');
+        detailDismiss.removeAttribute('data-dismiss-title');
+        detailDismiss.removeAttribute('data-dismiss-message');
+
+        if (hasDismiss) {
+            detailDismiss.setAttribute('data-event-id', dismiss.eventId);
+            detailDismiss.setAttribute('data-dismiss-url', dismiss.url);
+            detailDismiss.setAttribute('data-dismiss-row-selector', dismiss.rowSelector);
+            detailDismiss.setAttribute('data-dismiss-title', dismiss.title);
+            detailDismiss.setAttribute('data-dismiss-message', dismiss.message);
+            detailDismissLabel.textContent = dismiss.label;
+            detailDismiss.removeAttribute('hidden');
+        } else {
+            detailDismiss.setAttribute('hidden', '');
+            detailDismissLabel.textContent = '';
+        }
+
+        if (hasLinks || hasCopy || hasDismiss) {
+            detailFoot.removeAttribute('hidden');
+        } else {
+            detailFoot.setAttribute('hidden', '');
+        }
+    }
 
     function initDetailModal() {
         detailModal = document.getElementById('orbitaDetailModal');
@@ -778,10 +915,36 @@
         detailTitle = detailModal.querySelector('#orbitaDetailTitle');
         detailSubtitle = detailModal.querySelector('#orbitaDetailSubtitle');
         detailBody = detailModal.querySelector('#orbitaDetailBody');
+        detailFoot = detailModal.querySelector('#orbitaDetailFoot');
+        detailNav = detailModal.querySelector('#orbitaDetailNav');
+        detailCopy = detailModal.querySelector('#orbitaDetailCopy');
+        detailCopyLabel = detailModal.querySelector('#orbitaDetailCopyLabel');
+        detailDismiss = detailModal.querySelector('#orbitaDetailDismiss');
+        detailDismissLabel = detailModal.querySelector('#orbitaDetailDismissLabel');
 
         detailModal.querySelectorAll('[data-orbita-detail-close]').forEach(function (btn) {
             btn.addEventListener('click', closeDetailModal);
         });
+
+        if (detailCopy) {
+            detailCopy.addEventListener('click', function (e) {
+                e.stopPropagation();
+                var text = detailCopy.dataset.copyText || '';
+                if (text) copyText(text);
+            });
+        }
+
+        if (detailDismiss) {
+            detailDismiss.addEventListener('click', function (e) {
+                e.stopPropagation();
+                var url = detailDismiss.getAttribute('data-dismiss-url');
+                var rowSelector = detailDismiss.getAttribute('data-dismiss-row-selector');
+                var title = detailDismiss.getAttribute('data-dismiss-title');
+                var message = detailDismiss.getAttribute('data-dismiss-message');
+                if (!url || !rowSelector) return;
+                handleDismissRow(detailDismiss, url, rowSelector, title, message);
+            });
+        }
 
         document.addEventListener('keydown', function (e) {
             if (e.key === 'Escape' && detailModal && !detailModal.hasAttribute('hidden')) {
@@ -820,15 +983,23 @@
             text.textContent = options.body;
             detailBody.appendChild(text);
         }
+        setDetailFooter({
+            links: options.links || [],
+            copyText: options.copyText || '',
+            copyLabel: options.copyLabel || 'Копировать',
+            dismiss: options.dismiss || null
+        });
         detailModal.classList.toggle('orbita-detail-modal--media', !!options.attachmentUrl);
         detailModal.removeAttribute('hidden');
         detailBody.scrollTop = 0;
+        closeAllPopovers();
     }
 
     function closeDetailModal() {
         if (!detailModal) return;
         detailModal.setAttribute('hidden', '');
         detailModal.classList.remove('orbita-detail-modal--media');
+        setDetailFooter(null);
     }
 
     function initDetailOpenButtons() {
@@ -840,13 +1011,7 @@
                 e.stopPropagation();
                 var row = btn.closest('tr');
                 if (!row) return;
-                openDetailModal({
-                    title: row.getAttribute('data-detail-title') || 'Детали',
-                    subtitle: row.getAttribute('data-detail-subtitle') || '',
-                    body: row.getAttribute('data-detail-body') || row.getAttribute('data-copy') || '',
-                    attachmentUrl: row.getAttribute('data-detail-attachment') || ''
-                });
-                closeAllPopovers();
+                openDetailFromRow(row);
             });
         });
     }

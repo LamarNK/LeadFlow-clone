@@ -179,11 +179,15 @@
                         ? null
                         : Url.Action("Index", "Accounts", new { q = evt.AccountName });
                     <tr class="events-row"
+                        data-event-id="@evt.Id"
                         data-copy="@evt.CopyText"
                         data-detail-title="@evt.EventTypeLabel"
                         data-detail-subtitle="@evt.WorkerName · @evt.LevelLabel"
                         data-detail-body="@evt.Description"
-                        data-detail-attachment="@(evt.AttachmentId is not null ? $"/Diagnostics/Image/{evt.AttachmentId}" : "")">
+                        data-detail-attachment="@(evt.AttachmentId is not null ? $"/Diagnostics/Image/{evt.AttachmentId}" : "")"
+                        data-detail-log-url="@Url.Action("Index", "Settings", new { tab = "logs", workerId = evt.WorkerId })"
+                        data-detail-worker-url="@workerUrl"
+                        data-detail-account-url="@(accountUrl ?? "")">
                         <td class="events-time" data-label="Время"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(evt.OccurredAtUtc, "datetime-seconds"))" /></td>
                         <td data-label="Тип события">
                             <span class="event-type event-type--@evt.EventTypeTone">
@@ -214,10 +218,6 @@
                                     <i class="fa-solid fa-ellipsis-vertical" aria-hidden="true"></i>
                                 </button>
                                 <div class="row-menu-dropdown row-menu-dropdown--events" hidden>
-                                    <button type="button" class="row-menu-item" data-orbita-detail-open>
-                                        <i class="fa-regular fa-eye" aria-hidden="true"></i>
-                                        Просмотреть детали
-                                    </button>
                                     <a class="row-menu-item" href="@Url.Action("Index", "Settings", new { tab = "logs", workerId = evt.WorkerId })">
                                         <i class="fa-regular fa-file-lines" aria-hidden="true"></i>
                                         Открыть лог

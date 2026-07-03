@@ -74,18 +74,20 @@
                 : '<span class="events-muted">—</span>';
             var attachmentUrl = evt.attachmentId ? '/Diagnostics/Image/' + evt.attachmentId : '';
             var menu = shared.rowMenuShell('row-menu-dropdown--events',
-                '<button type="button" class="row-menu-item" data-orbita-detail-open><i class="fa-regular fa-eye" aria-hidden="true"></i>Просмотреть детали</button>' +
                 '<a class="row-menu-item" href="' + shared.escapeHtml(settingsLogsUrl(evt.workerId)) + '"><i class="fa-regular fa-file-lines" aria-hidden="true"></i>Открыть лог</a>' +
                 (accountUrl ? '<a class="row-menu-item" href="' + shared.escapeHtml(accountUrl) + '"><i class="fa-regular fa-user" aria-hidden="true"></i>Перейти к аккаунту</a>' : '') +
                 '<a class="row-menu-item" href="' + shared.escapeHtml(workerUrl) + '"><i class="fa-solid fa-server" aria-hidden="true"></i>Перейти к воркеру</a>' +
                 '<button type="button" class="row-menu-item" data-copy-event><i class="fa-regular fa-copy" aria-hidden="true"></i>Копировать сообщение</button>' +
                 '<button type="button" class="row-menu-item" data-event-dismiss data-event-id="' + shared.escapeHtml(evt.id) + '"><i class="fa-regular fa-circle-check" aria-hidden="true"></i>Отметить обработанным</button>');
 
-            return '<tr class="events-row" data-copy="' + shared.escapeHtml(evt.copyText || '') + '"' +
+            return '<tr class="events-row" data-event-id="' + shared.escapeHtml(evt.id) + '" data-copy="' + shared.escapeHtml(evt.copyText || '') + '"' +
                 ' data-detail-title="' + shared.escapeHtml(evt.eventTypeLabel || 'Детали') + '"' +
                 ' data-detail-subtitle="' + shared.escapeHtml((evt.workerName || '') + ' · ' + (evt.levelLabel || '')) + '"' +
                 ' data-detail-body="' + shared.escapeHtml(evt.description || '') + '"' +
-                ' data-detail-attachment="' + shared.escapeHtml(attachmentUrl) + '">' +
+                ' data-detail-attachment="' + shared.escapeHtml(attachmentUrl) + '"' +
+                ' data-detail-log-url="' + shared.escapeHtml(settingsLogsUrl(evt.workerId)) + '"' +
+                ' data-detail-worker-url="' + shared.escapeHtml(workerUrl) + '"' +
+                ' data-detail-account-url="' + shared.escapeHtml(accountUrl) + '">' +
                 '<td class="events-time" data-label="Время"><time data-orbita-utc="' + shared.escapeHtml(evt.occurredAtUtc) + '" data-orbita-format="datetime-seconds"></time></td>' +
                 '<td data-label="Тип события"><span class="event-type event-type--' + shared.escapeHtml(evt.eventTypeTone || 'info') + '"><i class="' + shared.escapeHtml(evt.eventTypeIcon || 'fa-regular fa-circle') + ' event-type-icon" aria-hidden="true"></i><span>' + shared.escapeHtml(evt.eventTypeLabel || '') + '</span></span></td>' +
                 '<td data-label="Уровень"><span class="event-level-badge event-level-badge--' + shared.escapeHtml(evt.level || 'info') + '">' + shared.escapeHtml(evt.levelLabel || '') + '</span></td>' +

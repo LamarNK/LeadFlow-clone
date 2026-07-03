@@ -46,6 +46,7 @@ public sealed class ErrorsIndexBuilderTests
             WorkerId,
             "WM1",
             AccountId,
+            "user_01",
             level,
             message,
             details,
