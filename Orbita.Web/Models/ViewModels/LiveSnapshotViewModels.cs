@@ -33,6 +33,7 @@ public sealed class WorkerDetailsLiveSnapshotViewModel
     public IReadOnlyList<DashboardEventRowViewModel> Events { get; init; } = [];
     public LineChartViewModel ActivityChart { get; init; } = new();
     public WorkerActivityViewModel CurrentActivity { get; init; } = new();
+    public IReadOnlyList<WorkerActivityViewModel> ActiveAccountActivities { get; init; } = [];
 }
 
 public sealed class EventsLiveSnapshotViewModel

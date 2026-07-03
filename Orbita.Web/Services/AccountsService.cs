@@ -35,7 +35,8 @@ public sealed class AccountsService(OrbitaApiClient api, IOptions<DesignPreviewO
                     balance,
                     balanceDetail,
                     worker.CurrentActivity,
-                    worker.IsOnline));
+                    worker.IsOnline,
+                    worker.ActiveAccounts ?? worker.CurrentActivity?.ActiveAccounts));
             }
         }
 

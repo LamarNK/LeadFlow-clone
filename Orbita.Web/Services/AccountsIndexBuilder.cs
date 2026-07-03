@@ -56,9 +56,14 @@ internal static class AccountsIndexBuilder
         decimal balance = 0,
         WorkerBalanceDto? balanceDetail = null,
         WorkerActivityDto? workerActivity = null,
-        bool workerIsOnline = false)
+        bool workerIsOnline = false,
+        IReadOnlyList<WorkerActiveAccountDto>? activeAccounts = null)
     {
-        var processing = WorkerActivityPresenter.PresentForAccount(workerActivity, workerIsOnline, account.AccountId);
+        var processing = WorkerActivityPresenter.PresentForAccount(
+            workerActivity,
+            workerIsOnline,
+            account.AccountId,
+            activeAccounts);
         var (label, tone) = AccountStatusMapper.ForAccountsPage(account.Status, account.IsEnabledInPanel);
         var responses = account.TodayResponses;
         var duplicates = account.TodayDuplicates;

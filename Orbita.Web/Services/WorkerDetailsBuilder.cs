@@ -78,18 +78,31 @@ internal static class WorkerDetailsBuilder
             AdsPowerApiKey = worker.AdsPowerApiKey,
             System = BuildSystemPanel(worker, extra),
             Logs = logs,
-            CurrentActivity = WorkerActivityPresenter.Present(worker.CurrentActivity, worker.IsOnline)
+            CurrentActivity = WorkerActivityPresenter.Present(
+                worker.CurrentActivity,
+                worker.IsOnline,
+                worker.ActiveAccounts ?? worker.CurrentActivity?.ActiveAccounts),
+            ActiveAccountActivities = WorkerActivityPresenter.PresentActiveAccounts(
+                worker.ActiveAccounts ?? worker.CurrentActivity?.ActiveAccounts,
+                worker.IsOnline)
         };
     }
 
     public static WorkerAccountRowViewModel MapAccount(
         WorkerAccountDto account,
-        WorkerBalanceDto? balance)
+        WorkerBalanceDto? balance,
+        IReadOnlyList<WorkerActiveAccountDto>? activeAccounts = null,
+        bool workerIsOnline = false)
     {
         var (label, tone) = AccountStatusMapper.ForWorkerDetails(account.Status, account.IsEnabledInPanel);
         var responses = account.TodayResponses;
         var errors = account.TodayEventErrors;
         var subProfiles = SubProfileViewModelMapper.Map(account.SubProfiles, balance?.SubProfiles);
+        var processing = WorkerActivityPresenter.PresentForAccount(
+            null,
+            workerIsOnline,
+            account.AccountId,
+            activeAccounts);
         return new WorkerAccountRowViewModel
         {
             Id = account.AccountId,
@@ -111,7 +124,11 @@ internal static class WorkerDetailsBuilder
             CanRefreshSubProfiles = !string.IsNullOrWhiteSpace(account.AdsPowerProfileId),
             IsSubProfilesRefreshPending = SubProfileViewModelMapper.IsRefreshPending(
                 account.SubProfilesRefreshRequestedAtUtc,
-                account.SubProfilesRefreshedAtUtc)
+                account.SubProfilesRefreshedAtUtc),
+            IsProcessingNow = processing.IsProcessingNow,
+            ProcessingLabel = processing.Label,
+            ProcessingTone = processing.Tone,
+            ProcessingSubProfileId = processing.SubProfileId
         };
     }
 

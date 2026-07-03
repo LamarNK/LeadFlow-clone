@@ -104,11 +104,12 @@ public sealed class WorkersService(
             .Select(DashboardEventMapper.Map)
             .ToList();
 
+        var activeAccounts = apiWorker.ActiveAccounts ?? apiWorker.CurrentActivity?.ActiveAccounts;
         var accountRows = accounts
             .Select(a =>
             {
                 var balance = apiWorker.Balances.FirstOrDefault(b => b.AccountId == a.AccountId);
-                return WorkerDetailsBuilder.MapAccount(a, balance);
+                return WorkerDetailsBuilder.MapAccount(a, balance, activeAccounts, apiWorker.IsOnline);
             })
             .ToList();
 
@@ -350,7 +351,10 @@ public sealed class WorkersService(
 
     private static WorkerRowViewModel MapRow(WorkerListItem w)
     {
-        var activity = WorkerActivityPresenter.Present(w.CurrentActivity, w.IsOnline);
+        var activity = WorkerActivityPresenter.Present(
+            w.CurrentActivity,
+            w.IsOnline,
+            w.ActiveAccounts ?? w.CurrentActivity?.ActiveAccounts);
         return new WorkerRowViewModel
         {
             Id = w.Id,

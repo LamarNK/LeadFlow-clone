@@ -65,7 +65,19 @@
             </p>
             <div class="worker-detail-activity" data-worker-current-activity>
                 <span class="worker-detail-activity-label">Сейчас:</span>
-                <partial name="_WorkerActivityPill" model="Model.CurrentActivity" />
+                @if (Model.ActiveAccountActivities.Count > 1)
+                {
+                    <div class="worker-detail-activity-list">
+                        @foreach (var item in Model.ActiveAccountActivities)
+                        {
+                            <partial name="_WorkerActivityPill" model="item" />
+                        }
+                    </div>
+                }
+                else
+                {
+                    <partial name="_WorkerActivityPill" model="Model.CurrentActivity" />
+                }
             </div>
         </div>
         <div class="worker-detail-toolbar">
@@ -333,7 +345,7 @@
                 {
                     var accountSearchUrl = Url.Action("Index", "Accounts", new { q = account.DisplayName });
                     var responsesUrl = Url.Action("Index", "Responses", new { accountId = account.Id });
-                    <tr class="worker-account-row" data-account-id="@account.Id">
+                    <tr class="worker-account-row@(account.IsProcessingNow ? " worker-account-row--processing" : "")" data-account-id="@account.Id">
                         <td data-label="Вкл">
                             <form asp-action="UpdateAccount" method="post" class="worker-account-toggle-form">
                                 @Html.AntiForgeryToken()
@@ -363,7 +375,7 @@
                                 CanRefreshSubProfiles = account.CanRefreshSubProfiles,
                                 IsSubProfilesRefreshPending = account.IsSubProfilesRefreshPending,
                                 HasSubProfiles = account.HasSubProfiles,
-                                ProcessingSubProfileId = Model.CurrentActivity.IsLive && Model.CurrentActivity.AccountId == account.Id ? Model.CurrentActivity.SubProfileId : null,
+                                ProcessingSubProfileId = account.IsProcessingNow ? account.ProcessingSubProfileId : null,
                                 Items = account.SubProfiles
                             })" />
                         </td>

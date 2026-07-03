@@ -45,7 +45,10 @@ public sealed class DashboardService(OrbitaApiClient api, IOptions<DesignPreview
             KpiCards = kpiCards,
             Workers = workers.Select(w =>
             {
-                var activity = WorkerActivityPresenter.Present(w.CurrentActivity, w.IsOnline);
+                var activity = WorkerActivityPresenter.Present(
+                    w.CurrentActivity,
+                    w.IsOnline,
+                    w.ActiveAccounts ?? w.CurrentActivity?.ActiveAccounts);
                 return new DashboardWorkerRowViewModel
                 {
                     Id = w.Id,

@@ -273,7 +273,14 @@ public sealed class WorkerMonitoringService(
                 .ConfigureAwait(false);
         }
 
-        return await ProcessAccountAsync(account, settings, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await ProcessAccountAsync(account, settings, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            activityReporter.ReportAccountFinished(account.Id);
+        }
     }
 
     private async Task<(int NewResponsesDetected, bool PolledSource, bool HasUndischargedBacklog)> ProcessAccountAsync(

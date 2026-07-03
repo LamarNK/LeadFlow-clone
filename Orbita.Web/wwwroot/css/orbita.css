@@ -3340,6 +3340,14 @@ a.kpi-card:focus-visible {
     color: #667085;
 }
 
+.worker-detail-activity-list {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+
 .worker-activity-pill {
     display: inline-flex;
     align-items: center;
@@ -3397,6 +3405,10 @@ a.kpi-card:focus-visible {
 }
 
 .accounts-row--processing {
+    background: linear-gradient(90deg, rgba(34, 197, 94, 0.06), transparent 55%);
+}
+
+.worker-account-row--processing {
     background: linear-gradient(90deg, rgba(34, 197, 94, 0.06), transparent 55%);
 }
 

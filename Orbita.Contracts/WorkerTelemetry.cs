@@ -163,4 +163,4 @@ public sealed record WorkerActivityDto(
     string? SubProfileName,
     DateTime? NextCycleAtUtc,
     DateTime UpdatedAtUtc,
-    IReadOnlyList<WorkerActiveAccountDto> ActiveAccounts = null!);
+    IReadOnlyList<WorkerActiveAccountDto>? ActiveAccounts = null);

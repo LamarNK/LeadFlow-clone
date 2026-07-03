@@ -10,6 +10,7 @@ internal static class WorkerActivityPresenter
     public static WorkerActivityViewModel Present(
         WorkerActivityDto? activity,
         bool isOnline,
+        IReadOnlyList<WorkerActiveAccountDto>? activeAccounts = null,
         DateTime? nowUtc = null)
     {
         nowUtc ??= DateTime.UtcNow;
@@ -22,6 +23,25 @@ internal static class WorkerActivityPresenter
                 Tone = "offline",
                 IsLive = false
             };
+        }
+
+        var liveAccounts = GetLiveActiveAccounts(activeAccounts, nowUtc);
+        if (liveAccounts.Count > 1)
+        {
+            return new WorkerActivityViewModel
+            {
+                Label = $"{liveAccounts.Count} аккаунта в работе",
+                Tone = "live",
+                IsLive = true,
+                Phase = WorkerActivityPhases.Parallel,
+                UpdatedAtUtc = liveAccounts.Max(x => x.UpdatedAtUtc),
+                ActiveAccounts = PresentActiveAccounts(liveAccounts, isOnline, nowUtc)
+            };
+        }
+
+        if (liveAccounts.Count == 1)
+        {
+            return PresentActiveAccount(liveAccounts[0], nowUtc);
         }
 
         if (activity is null)
@@ -54,16 +74,48 @@ internal static class WorkerActivityPresenter
         };
     }
 
+    public static IReadOnlyList<WorkerActivityViewModel> PresentActiveAccounts(
+        IReadOnlyList<WorkerActiveAccountDto>? activeAccounts,
+        bool isOnline,
+        DateTime? nowUtc = null)
+    {
+        if (!isOnline)
+        {
+            return [];
+        }
+
+        return GetLiveActiveAccounts(activeAccounts, nowUtc)
+            .Select(x => PresentActiveAccount(x, nowUtc))
+            .ToList();
+    }
+
     public static AccountProcessingViewModel PresentForAccount(
         WorkerActivityDto? activity,
         bool workerIsOnline,
         Guid accountId,
+        IReadOnlyList<WorkerActiveAccountDto>? activeAccounts = null,
         DateTime? nowUtc = null)
     {
-        var workerActivity = Present(activity, workerIsOnline, nowUtc);
-        if (!workerIsOnline
-            || activity?.AccountId != accountId
-            || string.IsNullOrWhiteSpace(activity.Message))
+        if (!workerIsOnline)
+        {
+            return new AccountProcessingViewModel();
+        }
+
+        var match = GetLiveActiveAccounts(activeAccounts, nowUtc)
+            .FirstOrDefault(x => x.AccountId == accountId);
+        if (match is not null)
+        {
+            return new AccountProcessingViewModel
+            {
+                IsProcessingNow = true,
+                Label = FormatAccountLabelFromActive(match),
+                SubProfileId = match.SubProfileId,
+                Tone = MapTone(match.Phase, isLive: true)
+            };
+        }
+
+        var workerActivity = Present(activity, workerIsOnline, activeAccounts, nowUtc);
+        if (activity?.AccountId != accountId || string.IsNullOrWhiteSpace(activity.Message))
         {
             return new AccountProcessingViewModel();
         }
@@ -77,11 +129,83 @@ internal static class WorkerActivityPresenter
         };
     }
 
+    private static WorkerActivityViewModel PresentActiveAccount(
+        WorkerActiveAccountDto active,
+        DateTime? nowUtc)
+    {
+        nowUtc ??= DateTime.UtcNow;
+        var age = nowUtc.Value - active.UpdatedAtUtc;
+        var isLive = age.TotalSeconds >= 0 && age.TotalSeconds < LiveThresholdSeconds;
+        var label = FormatAccountActivityLabel(active);
+        if (!isLive && age.TotalSeconds >= LiveThresholdSeconds)
+        {
+            label += $" · {FormatAge(age)} назад";
+        }
+
+        return new WorkerActivityViewModel
+        {
+            Label = label,
+            Tone = MapTone(active.Phase, isLive),
+            IsLive = isLive,
+            Phase = active.Phase,
+            AccountId = active.AccountId,
+            SubProfileId = active.SubProfileId,
+            UpdatedAtUtc = active.UpdatedAtUtc
+        };
+    }
+
+    private static List<WorkerActiveAccountDto> GetLiveActiveAccounts(
+        IReadOnlyList<WorkerActiveAccountDto>? activeAccounts,
+        DateTime? nowUtc)
+    {
+        if (activeAccounts is null || activeAccounts.Count == 0)
+        {
+            return [];
+        }
+
+        nowUtc ??= DateTime.UtcNow;
+        return activeAccounts
+            .Where(x =>
+            {
+                var age = nowUtc.Value - x.UpdatedAtUtc;
+                return age.TotalSeconds >= 0 && age.TotalSeconds < LiveThresholdSeconds;
+            })
+            .OrderBy(x => x.AccountName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static string FormatAccountActivityLabel(WorkerActiveAccountDto active)
+    {
+        var accountPart = $"«{active.AccountName}»";
+        if (!string.IsNullOrWhiteSpace(active.SubProfileName))
+        {
+            return $"{accountPart} · «{active.SubProfileName}» · {active.Message}";
+        }
+
+        return $"{accountPart} · {active.Message}";
+    }
+
+    private static string FormatAccountLabelFromActive(WorkerActiveAccountDto active)
+    {
+        if (!string.IsNullOrWhiteSpace(active.SubProfileName))
+        {
+            return $"«{active.SubProfileName}» · {active.Message}";
+        }
+
+        return active.Message;
+    }
+
     private static string FormatLabel(WorkerActivityDto activity, DateTime nowUtc)
     {
         if (string.Equals(activity.Phase, WorkerActivityPhases.Idle, StringComparison.Ordinal))
         {
             return activity.Message;
+        }
+
+        if (string.Equals(activity.Phase, WorkerActivityPhases.Parallel, StringComparison.Ordinal)
+            && activity.ActiveAccounts is { Count: > 1 })
+        {
+            return $"{activity.ActiveAccounts.Count} аккаунта в работе";
         }
 
         if (string.Equals(activity.Phase, WorkerActivityPhases.Waiting, StringComparison.Ordinal)

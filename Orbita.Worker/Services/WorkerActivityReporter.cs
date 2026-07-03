@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using LeadFlow.Core.Services.Worker;
 using Orbita.Contracts;
 
@@ -10,18 +11,25 @@ public sealed class WorkerActivityReporter(
     private static readonly TimeSpan DebounceInterval = TimeSpan.FromSeconds(2);
 
     private readonly Lock _sync = new();
+    private readonly ConcurrentDictionary<Guid, WorkerActiveAccountDto> _activeAccounts = new();
+    private WorkerActivityGlobalState? _global;
     private WorkerActivityRequest? _pending;
     private DateTime _lastSentUtc = DateTime.MinValue;
     private CancellationTokenSource? _flushCts;
 
+    private sealed record WorkerActivityGlobalState(
+        string Phase,
+        string Message,
+        DateTime? NextCycleAtUtc);
+
     public void ReportCycle(int accountCount) =>
-        Enqueue(WorkerActivityPhases.Cycle, $"Цикл: {accountCount} аккаунт(ов)");
+        SetGlobal(WorkerActivityPhases.Cycle, $"Цикл: {accountCount} аккаунт(ов)");
 
     public void ReportWaiting(DateTime nextCycleAtUtc, string message) =>
-        Enqueue(WorkerActivityPhases.Waiting, message, nextCycleAtUtc: nextCycleAtUtc);
+        SetGlobal(WorkerActivityPhases.Waiting, message, nextCycleAtUtc);
 
     public void ReportAccount(Guid accountId, string accountName, string message) =>
-        Enqueue(WorkerActivityPhases.Account, message, accountId, accountName);
+        UpsertAccount(accountId, accountName, WorkerActivityPhases.Account, message);
 
     public void ReportSubProfile(
         Guid accountId,
@@ -29,38 +37,79 @@ public sealed class WorkerActivityReporter(
         string subProfileId,
         string subProfileName,
         string message) =>
-        Enqueue(
-            WorkerActivityPhases.SubProfile,
-            message,
+        UpsertAccount(
             accountId,
             accountName,
+            WorkerActivityPhases.SubProfile,
+            message,
             subProfileId,
             subProfileName);
 
     public void ReportSkipped(Guid accountId, string accountName, string reason) =>
-        Enqueue(WorkerActivityPhases.Skipped, reason, accountId, accountName);
+        UpsertAccount(accountId, accountName, WorkerActivityPhases.Skipped, reason);
 
     public void ReportError(string message) =>
-        Enqueue(WorkerActivityPhases.Error, message);
+        SetGlobal(WorkerActivityPhases.Error, message, flushImmediately: true);
 
     public void ReportStopped() =>
-        Enqueue(WorkerActivityPhases.Stopped, "Мониторинг остановлен", flushImmediately: true);
+        SetGlobal(WorkerActivityPhases.Stopped, "Мониторинг остановлен", flushImmediately: true);
 
     public void ReportIdle() =>
-        Enqueue(WorkerActivityPhases.Idle, "Ожидание", flushImmediately: true);
+        SetGlobal(WorkerActivityPhases.Idle, "Ожидание", flushImmediately: true);
 
     public void ReportNoEnabledAccounts() =>
-        Enqueue(WorkerActivityPhases.Idle, "Нет активных аккаунтов", flushImmediately: true);
+        SetGlobal(WorkerActivityPhases.Idle, "Нет активных аккаунтов", flushImmediately: true);
 
-    private void Enqueue(
+    public void ReportAccountFinished(Guid accountId)
+    {
+        if (!_activeAccounts.TryRemove(accountId, out _))
+        {
+            return;
+        }
+
+        EnqueueFlush();
+    }
+
+    private void SetGlobal(
         string phase,
         string message,
-        Guid? accountId = null,
-        string? accountName = null,
-        string? subProfileId = null,
-        string? subProfileName = null,
         DateTime? nextCycleAtUtc = null,
         bool flushImmediately = false)
+    {
+        lock (_sync)
+        {
+            _global = new WorkerActivityGlobalState(phase, message, nextCycleAtUtc);
+            _activeAccounts.Clear();
+        }
+
+        EnqueueFlush(flushImmediately);
+    }
+
+    private void UpsertAccount(
+        Guid accountId,
+        string accountName,
+        string phase,
+        string message,
+        string? subProfileId = null,
+        string? subProfileName = null)
+    {
+        lock (_sync)
+        {
+            _global = null;
+            _activeAccounts[accountId] = new WorkerActiveAccountDto(
+                accountId,
+                accountName,
+                phase,
+                message,
+                subProfileId,
+                subProfileName,
+                DateTime.UtcNow);
+        }
+
+        EnqueueFlush();
+    }
+
+    private void EnqueueFlush(bool flushImmediately = false)
     {
         var workerId = credentials.WorkerId;
         if (workerId is null)
@@ -68,16 +117,11 @@ public sealed class WorkerActivityReporter(
             return;
         }
 
-        var request = new WorkerActivityRequest(
-            workerId.Value,
-            phase,
-            message,
-            accountId,
-            accountName,
-            subProfileId,
-            subProfileName,
-            nextCycleAtUtc,
-            DateTime.UtcNow);
+        var request = BuildRequest(workerId.Value);
+        if (request is null)
+        {
+            return;
+        }
 
         lock (_sync)
         {
@@ -106,6 +150,58 @@ public sealed class WorkerActivityReporter(
                 }
             });
         }
+    }
+
+    private WorkerActivityRequest? BuildRequest(Guid workerId)
+    {
+        WorkerActivityGlobalState? global;
+        List<WorkerActiveAccountDto> active;
+        lock (_sync)
+        {
+            global = _global;
+            active = _activeAccounts.Values
+                .OrderBy(x => x.AccountName, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        var now = DateTime.UtcNow;
+        if (global is not null && active.Count == 0)
+        {
+            return new WorkerActivityRequest(
+                workerId,
+                global.Phase,
+                global.Message,
+                NextCycleAtUtc: global.NextCycleAtUtc,
+                UpdatedAtUtc: now,
+                ActiveAccounts: []);
+        }
+
+        if (active.Count == 0)
+        {
+            return null;
+        }
+
+        if (active.Count == 1)
+        {
+            var one = active[0];
+            return new WorkerActivityRequest(
+                workerId,
+                one.Phase,
+                one.Message,
+                one.AccountId,
+                one.AccountName,
+                one.SubProfileId,
+                one.SubProfileName,
+                UpdatedAtUtc: now,
+                ActiveAccounts: active);
+        }
+
+        return new WorkerActivityRequest(
+            workerId,
+            WorkerActivityPhases.Parallel,
+            $"{active.Count} аккаунта в работе",
+            ActiveAccounts: active,
+            UpdatedAtUtc: now);
     }
 
     private async Task FlushAsync(CancellationToken ct)

@@ -64,6 +64,7 @@ public sealed class WorkerActivityViewModel
     public Guid? AccountId { get; init; }
     public string? SubProfileId { get; init; }
     public DateTime? UpdatedAtUtc { get; init; }
+    public IReadOnlyList<WorkerActivityViewModel> ActiveAccounts { get; init; } = [];
 }
 
 public sealed class PaginationViewModel
@@ -167,6 +168,7 @@ public sealed class WorkerDetailsViewModel
     public IReadOnlyList<WorkerAccountRowViewModel> Accounts { get; init; } = [];
     public WorkerLogsPanelViewModel? Logs { get; init; }
     public WorkerActivityViewModel CurrentActivity { get; init; } = new();
+    public IReadOnlyList<WorkerActivityViewModel> ActiveAccountActivities { get; init; } = [];
 }
 
 public sealed class WorkerLogsPanelViewModel
@@ -225,6 +227,10 @@ public sealed class WorkerAccountRowViewModel
     public string SubProfilesSummary { get; init; } = string.Empty;
     public bool CanRefreshSubProfiles { get; init; }
     public bool IsSubProfilesRefreshPending { get; init; }
+    public bool IsProcessingNow { get; init; }
+    public string? ProcessingLabel { get; init; }
+    public string ProcessingTone { get; init; } = "live";
+    public string? ProcessingSubProfileId { get; init; }
 }
 
 public sealed class WorkerExtraInfoViewModel

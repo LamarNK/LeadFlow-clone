@@ -174,7 +174,8 @@ public sealed class DashboardQueryService(
                 w.ActivitySubProfileId,
                 w.ActivitySubProfileName,
                 w.ActivityUpdatedAtUtc,
-                w.ActivityNextCycleAtUtc
+                w.ActivityNextCycleAtUtc,
+                w.ActivityActiveAccountsJson
             })
             .ToListAsync(ct);
 
@@ -230,7 +231,9 @@ public sealed class DashboardQueryService(
                     w.ActivitySubProfileId,
                     w.ActivitySubProfileName,
                     w.ActivityNextCycleAtUtc,
-                    w.ActivityUpdatedAtUtc));
+                    w.ActivityUpdatedAtUtc,
+                    WorkerActivityMapper.DeserializeActiveAccounts(w.ActivityActiveAccountsJson)),
+                WorkerActivityMapper.DeserializeActiveAccounts(w.ActivityActiveAccountsJson));
         }).ToList();
     }
 
@@ -311,7 +314,8 @@ public sealed class DashboardQueryService(
             op.TodayEventErrors,
             op.ActiveAccounts,
             op.TotalAccounts,
-            WorkerActivityMapper.ToDto(worker));
+            WorkerActivityMapper.ToDto(worker),
+            WorkerActivityMapper.DeserializeActiveAccounts(worker.ActivityActiveAccountsJson));
     }
 
     public async Task<IReadOnlyList<WorkerAccountDto>> GetWorkerAccountsAsync(

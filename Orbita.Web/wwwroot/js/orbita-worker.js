@@ -430,7 +430,9 @@
             var subProfiles = shared.renderSubProfilesToolbar(workerId, account, 'subprofiles');
             var checked = account.isEnabledInPanel ? ' checked' : '';
 
-            return '<tr class="worker-account-row" data-account-id="' + shared.escapeHtml(account.id) + '">' +
+            var rowClass = 'worker-account-row' + (account.isProcessingNow ? ' worker-account-row--processing' : '');
+
+            return '<tr class="' + rowClass + '" data-account-id="' + shared.escapeHtml(account.id) + '">' +
                 '<td data-label="Вкл"><form action="/Workers/UpdateAccount" method="post" class="worker-account-toggle-form">' +
                 '<input type="hidden" name="__RequestVerificationToken" value="' + shared.escapeHtml(token) + '" />' +
                 '<input type="hidden" name="workerId" value="' + shared.escapeHtml(workerId) + '" />' +
@@ -464,27 +466,46 @@
         initAccountRowNavigation();
     }
 
-    function updateCurrentActivity(activity) {
+    function renderActivityBlock(activity, activeAccountActivities) {
+        var items = (activeAccountActivities || []).filter(function (item) {
+            return item && item.label;
+        });
+        if (items.length > 1) {
+            return '<div class="worker-detail-activity-list">' + items.map(function (item) {
+                return shared.renderActivityPill(item.label, item.tone, item.isLive);
+            }).join('') + '</div>';
+        }
+
+        var single = items.length === 1 ? items[0] : activity;
+        if (!single || !single.label) {
+            return '<span class="worker-activity-pill worker-activity-pill--muted">—</span>';
+        }
+        return shared.renderActivityPill(single.label, single.tone, single.isLive);
+    }
+
+    function updateCurrentActivity(activity, activeAccountActivities) {
         var host = document.querySelector('[data-worker-current-activity]');
         if (!host || !shared) return;
-        var pillHost = host.querySelector('.worker-activity-pill') || host;
-        if (!activity || !activity.label) {
-            pillHost.outerHTML = '<span class="worker-activity-pill worker-activity-pill--muted">—</span>';
-            return;
-        }
-        var html = shared.renderActivityPill(activity.label, activity.tone, activity.isLive);
-        var existing = host.querySelector('.worker-activity-pill');
-        if (existing) {
-            existing.outerHTML = html;
+        var labelEl = host.querySelector('.worker-detail-activity-label');
+        var contentHtml = renderActivityBlock(activity, activeAccountActivities);
+        var existingList = host.querySelector('.worker-detail-activity-list');
+        var existingPill = host.querySelector('.worker-activity-pill');
+
+        if (existingList) {
+            existingList.outerHTML = contentHtml;
+        } else if (existingPill) {
+            existingPill.outerHTML = contentHtml;
+        } else if (labelEl) {
+            labelEl.insertAdjacentHTML('afterend', contentHtml);
         } else {
-            host.insertAdjacentHTML('beforeend', html);
+            host.insertAdjacentHTML('beforeend', contentHtml);
         }
     }
 
     function applySnapshot(snapshot, highlightChanged) {
         if (!snapshot || !shared) return;
         shared.updateKpiCards(snapshot.kpiCards || [], highlightChanged);
-        updateCurrentActivity(snapshot.currentActivity);
+        updateCurrentActivity(snapshot.currentActivity, snapshot.activeAccountActivities);
         updateOnlineStatus(snapshot);
         updateSystemMetrics(snapshot);
         updateLastActivity(snapshot.lastActivityUtc);

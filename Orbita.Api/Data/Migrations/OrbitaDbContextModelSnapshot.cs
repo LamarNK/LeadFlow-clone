@@ -618,6 +618,10 @@ namespace Orbita.Api.Data.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
 
+                    b.Property<string>("ActivityActiveAccountsJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
                     b.Property<Guid?>("ActivityAccountId")
                         .HasColumnType("uuid");
 
