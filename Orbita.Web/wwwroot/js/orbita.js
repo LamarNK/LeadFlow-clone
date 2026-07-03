@@ -230,7 +230,7 @@
         window.__orbitaLiveRowActionsReady = true;
 
         document.addEventListener('click', function (e) {
-            var detailRow = e.target.closest('.events-row, .errors-row');
+            var detailRow = e.target.closest('.events-row, .errors-row, .dash-event-row--detail');
             if (detailRow && !e.target.closest('a, button, .row-menu, input, select, label')) {
                 openDetailFromRow(detailRow);
                 return;
@@ -699,7 +699,7 @@
         var errorsEl = document.querySelector('[data-nav-badge="errors"]');
         var responsesEl = document.querySelector('[data-nav-badge="responses"]');
         setBadge(errorsEl, payload.errorsToday);
-        setBadge(responsesEl, payload.responsesToday);
+        setBadge(responsesEl, payload.actionRequired);
     }
 
     function setBadge(el, value) {
@@ -738,7 +738,78 @@
         });
     }
 
+    function syncFilterToggleCounts() {
+        document.querySelectorAll('[data-orbita-filter-toggle]').forEach(function (btn) {
+            var scope = btn.closest('form') || btn.closest('.orbita-filters-bar') || btn.closest('.workers-page');
+            var chips = scope ? scope.querySelector('[data-orbita-filter-chips]') : null;
+            var count = chips ? chips.querySelectorAll('.orbita-filter-chip').length : parseInt(btn.getAttribute('data-orbita-filter-count') || '0', 10) || 0;
+            btn.setAttribute('data-orbita-filter-count', String(count));
+            var badge = btn.querySelector('.orbita-filters-toggle-count');
+            if (count > 0) {
+                btn.setAttribute('aria-label', 'Фильтры (' + count + ')');
+                if (!badge) {
+                    badge = document.createElement('span');
+                    badge.className = 'orbita-filters-toggle-count';
+                    btn.appendChild(badge);
+                }
+                badge.textContent = String(count);
+            } else {
+                btn.setAttribute('aria-label', 'Фильтры');
+                if (badge && badge.parentNode) badge.parentNode.removeChild(badge);
+            }
+        });
+    }
+
+    function submitFilterForm(form) {
+        if (!form) return;
+        if (typeof form.requestSubmit === 'function') {
+            form.requestSubmit();
+        } else {
+            form.submit();
+        }
+    }
+
+    function initDebouncedSearch() {
+        var DEBOUNCE_MS = 400;
+        document.querySelectorAll(
+            '.orbita-filters-form input[type="search"], .workers-search input[type="search"], .accounts-search input[type="search"]'
+        ).forEach(function (input) {
+            if (input.hasAttribute('data-orbita-debounce-bound')) return;
+            input.setAttribute('data-orbita-debounce-bound', '1');
+
+            var timer = null;
+            var form = input.closest('form');
+            if (!form) return;
+
+            input.addEventListener('input', function () {
+                if (timer) window.clearTimeout(timer);
+                timer = window.setTimeout(function () {
+                    timer = null;
+                    submitFilterForm(form);
+                }, DEBOUNCE_MS);
+            });
+
+            input.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter' && timer) {
+                    window.clearTimeout(timer);
+                    timer = null;
+                }
+            });
+        });
+    }
+
+    function initAutoFilterSubmit() {
+        document.querySelectorAll('[data-orbita-collapsible-filters] select, .orbita-filter-panel select').forEach(function (select) {
+            if (select.hasAttribute('data-orbita-auto-submit-bound')) return;
+            select.setAttribute('data-orbita-auto-submit-bound', '1');
+            select.addEventListener('change', function () {
+                submitFilterForm(select.closest('form'));
+            });
+        });
+    }
+
     function initFilterPanels() {
+        syncFilterToggleCounts();
         document.querySelectorAll('[data-orbita-filter-toggle]').forEach(function (btn) {
             if (btn.hasAttribute('data-orbita-filter-bound')) return;
             btn.setAttribute('data-orbita-filter-bound', '1');
@@ -786,6 +857,8 @@
     var detailCopyLabel = null;
     var detailDismiss = null;
     var detailDismissLabel = null;
+    var detailPrimary = null;
+    var detailCloseHandler = null;
 
     function getRowDetailLinks(row) {
         var links = [];
@@ -838,6 +911,29 @@
                 message: 'Ошибка будет скрыта из списка.',
                 label: 'Отметить как обработанную'
             };
+        } else if (row.classList.contains('dash-event-row--detail')) {
+            var isError = row.getAttribute('data-is-error') === 'true';
+            if (isError) {
+                options.copyLabel = 'Копировать текст';
+                options.dismiss = {
+                    eventId: row.getAttribute('data-event-id') || '',
+                    url: '/Errors/Dismiss',
+                    rowSelector: '.dash-event-row--detail',
+                    title: 'Отметить как обработанную?',
+                    message: 'Ошибка будет скрыта из списка.',
+                    label: 'Отметить как обработанную'
+                };
+            } else {
+                options.copyLabel = 'Копировать сообщение';
+                options.dismiss = {
+                    eventId: row.getAttribute('data-event-id') || '',
+                    url: '/Events/Dismiss',
+                    rowSelector: '.dash-event-row--detail',
+                    title: 'Отметить обработанным?',
+                    message: 'Событие будет скрыто из списка.',
+                    label: 'Отметить обработанным'
+                };
+            }
         }
 
         return options;
@@ -849,11 +945,63 @@
         openDetailModal(options);
     }
 
+    function renderDetailPrimaryActions(actions) {
+        if (!detailPrimary) return false;
+        detailPrimary.innerHTML = '';
+        var items = actions || [];
+        if (!items.length) {
+            detailPrimary.setAttribute('hidden', '');
+            return false;
+        }
+
+        items.forEach(function (action) {
+            if (action.action === 'resend' && action.responseId) {
+                var form = document.createElement('form');
+                form.method = 'post';
+                form.action = '/Responses/Resend';
+                form.className = 'orbita-detail-modal__primary-form';
+                var token = document.querySelector('input[name="__RequestVerificationToken"]');
+                if (token) {
+                    var tokenInput = document.createElement('input');
+                    tokenInput.type = 'hidden';
+                    tokenInput.name = '__RequestVerificationToken';
+                    tokenInput.value = token.value;
+                    form.appendChild(tokenInput);
+                }
+                var idInput = document.createElement('input');
+                idInput.type = 'hidden';
+                idInput.name = 'id';
+                idInput.value = action.responseId;
+                form.appendChild(idInput);
+                var btn = document.createElement('button');
+                btn.type = 'submit';
+                btn.className = 'orbita-detail-modal__action orbita-detail-modal__action--primary';
+                btn.textContent = action.label || 'Отправить';
+                form.appendChild(btn);
+                detailPrimary.appendChild(form);
+                return;
+            }
+
+            var anchor = document.createElement('a');
+            anchor.className = 'orbita-detail-modal__action orbita-detail-modal__action--' + (action.tone || 'secondary');
+            anchor.href = action.href || '#';
+            anchor.textContent = action.label || '';
+            if (action.external) {
+                anchor.target = '_blank';
+                anchor.rel = 'noopener';
+            }
+            detailPrimary.appendChild(anchor);
+        });
+        detailPrimary.removeAttribute('hidden');
+        return true;
+    }
+
     function setDetailFooter(options) {
         if (!detailFoot || !detailNav || !detailCopy || !detailCopyLabel || !detailDismiss || !detailDismissLabel) return;
 
         options = options || {};
         var links = options.links || [];
+        var hasPrimary = renderDetailPrimaryActions(options.primaryActions);
         var hasLinks = links.length > 0;
         var hasCopy = !!options.copyText;
         var dismiss = options.dismiss || null;
@@ -901,7 +1049,7 @@
             detailDismissLabel.textContent = '';
         }
 
-        if (hasLinks || hasCopy || hasDismiss) {
+        if (hasLinks || hasCopy || hasDismiss || hasPrimary) {
             detailFoot.removeAttribute('hidden');
         } else {
             detailFoot.setAttribute('hidden', '');
@@ -921,6 +1069,7 @@
         detailCopyLabel = detailModal.querySelector('#orbitaDetailCopyLabel');
         detailDismiss = detailModal.querySelector('#orbitaDetailDismiss');
         detailDismissLabel = detailModal.querySelector('#orbitaDetailDismissLabel');
+        detailPrimary = detailModal.querySelector('#orbitaDetailPrimary');
 
         detailModal.querySelectorAll('[data-orbita-detail-close]').forEach(function (btn) {
             btn.addEventListener('click', closeDetailModal);
@@ -969,7 +1118,10 @@
                 detailSubtitle.setAttribute('hidden', '');
             }
         }
+        detailCloseHandler = options.onClose || null;
         detailBody.textContent = '';
+        detailModal.classList.remove('orbita-detail-modal--chat');
+
         if (options.attachmentUrl) {
             var img = document.createElement('img');
             img.className = 'orbita-detail-screenshot';
@@ -977,17 +1129,71 @@
             img.src = options.attachmentUrl;
             detailBody.appendChild(img);
         }
-        if (options.body) {
+
+        if (options.sections && options.sections.length) {
+            var dl = document.createElement('dl');
+            dl.className = 'orbita-detail-sections';
+            options.sections.forEach(function (section) {
+                var dt = document.createElement('dt');
+                dt.textContent = section.label || '';
+                var dd = document.createElement('dd');
+                if (section.href) {
+                    var link = document.createElement('a');
+                    link.href = section.href;
+                    link.textContent = section.value || '';
+                    link.target = '_blank';
+                    link.rel = 'noopener';
+                    dd.appendChild(link);
+                } else {
+                    dd.textContent = section.value || '';
+                }
+                dl.appendChild(dt);
+                dl.appendChild(dd);
+            });
+            detailBody.appendChild(dl);
+        } else if (options.body) {
             var text = document.createElement('p');
             text.className = 'orbita-detail-text';
             text.textContent = options.body;
             detailBody.appendChild(text);
         }
+
+        if (options.chatMessages && options.chatMessages.length) {
+            detailModal.classList.add('orbita-detail-modal--chat');
+            var chat = document.createElement('section');
+            chat.className = 'orbita-detail-chat';
+            chat.setAttribute('aria-label', 'Переписка');
+            var chatTitle = document.createElement('h3');
+            chatTitle.className = 'orbita-detail-chat__title';
+            chatTitle.textContent = 'Чат';
+            chat.appendChild(chatTitle);
+            var thread = document.createElement('div');
+            thread.className = 'orbita-detail-chat__thread';
+            options.chatMessages.forEach(function (message) {
+                var bubble = document.createElement('div');
+                bubble.className = 'orbita-detail-chat__bubble orbita-detail-chat__bubble--' + (message.tone || 'incoming');
+                var bubbleText = document.createElement('div');
+                bubbleText.className = 'orbita-detail-chat__text';
+                bubbleText.textContent = message.text || '';
+                bubble.appendChild(bubbleText);
+                if (message.timeLabel) {
+                    var time = document.createElement('time');
+                    time.className = 'orbita-detail-chat__time';
+                    time.textContent = message.timeLabel;
+                    bubble.appendChild(time);
+                }
+                thread.appendChild(bubble);
+            });
+            chat.appendChild(thread);
+            detailBody.appendChild(chat);
+        }
+
         setDetailFooter({
             links: options.links || [],
             copyText: options.copyText || '',
             copyLabel: options.copyLabel || 'Копировать',
-            dismiss: options.dismiss || null
+            dismiss: options.dismiss || null,
+            primaryActions: options.primaryActions || []
         });
         detailModal.classList.toggle('orbita-detail-modal--media', !!options.attachmentUrl);
         detailModal.removeAttribute('hidden');
@@ -997,9 +1203,94 @@
 
     function closeDetailModal() {
         if (!detailModal) return;
+        if (typeof detailCloseHandler === 'function') {
+            detailCloseHandler();
+            detailCloseHandler = null;
+        }
         detailModal.setAttribute('hidden', '');
-        detailModal.classList.remove('orbita-detail-modal--media');
+        detailModal.classList.remove('orbita-detail-modal--media', 'orbita-detail-modal--chat');
         setDetailFooter(null);
+    }
+
+    function initAccountCombobox() {
+        document.querySelectorAll('[data-orbita-account-combobox]').forEach(function (root) {
+            if (root.hasAttribute('data-orbita-combobox-bound')) return;
+            root.setAttribute('data-orbita-combobox-bound', '1');
+
+            var hidden = root.querySelector('[data-orbita-account-value]');
+            var input = root.querySelector('.orbita-account-combobox__input');
+            var list = root.querySelector('.orbita-account-combobox__list');
+            var clearBtn = root.querySelector('[data-orbita-account-clear]');
+            var options = Array.prototype.slice.call(root.querySelectorAll('.orbita-account-combobox__option'));
+            if (!hidden || !input || !list) return;
+
+            function setValue(value, label, submit) {
+                hidden.value = value || '';
+                input.value = label || '';
+                options.forEach(function (opt) {
+                    var selected = opt.getAttribute('data-value') === (value || '');
+                    opt.classList.toggle('is-selected', selected);
+                    opt.setAttribute('aria-selected', selected ? 'true' : 'false');
+                });
+                if (clearBtn) {
+                    if (value) clearBtn.removeAttribute('hidden');
+                    else clearBtn.setAttribute('hidden', '');
+                }
+                if (submit) {
+                    var form = root.closest('form');
+                    if (form) submitFilterForm(form);
+                }
+            }
+
+            function filteredOptions(query) {
+                var q = (query || '').trim().toLowerCase();
+                if (!q) return options;
+                return options.filter(function (opt) {
+                    return (opt.getAttribute('data-label') || opt.textContent || '').toLowerCase().indexOf(q) >= 0;
+                });
+            }
+
+            function openList() {
+                list.removeAttribute('hidden');
+                input.setAttribute('aria-expanded', 'true');
+            }
+
+            function closeList() {
+                list.setAttribute('hidden', '');
+                input.setAttribute('aria-expanded', 'false');
+            }
+
+            input.addEventListener('focus', function () {
+                openList();
+            });
+
+            input.addEventListener('input', function () {
+                var visible = filteredOptions(input.value);
+                options.forEach(function (opt) {
+                    opt.hidden = visible.indexOf(opt) < 0;
+                });
+                openList();
+            });
+
+            options.forEach(function (opt) {
+                opt.addEventListener('mousedown', function (e) {
+                    e.preventDefault();
+                    setValue(opt.getAttribute('data-value') || '', opt.getAttribute('data-label') || opt.textContent, true);
+                    closeList();
+                });
+            });
+
+            if (clearBtn) {
+                clearBtn.addEventListener('click', function () {
+                    setValue('', '', true);
+                    closeList();
+                });
+            }
+
+            document.addEventListener('click', function (e) {
+                if (!root.contains(e.target)) closeList();
+            });
+        });
     }
 
     function initDetailOpenButtons() {
@@ -1017,6 +1308,9 @@
     }
 
     initFilterPanels();
+    initDebouncedSearch();
+    initAutoFilterSubmit();
+    initAccountCombobox();
     initDetailModal();
     initDetailOpenButtons();
     initLiveRowActions();
@@ -1088,6 +1382,9 @@
         initSubProfileScreenshotLinks();
         initWorkerRestartButtons();
         initFilterPanels();
+        initDebouncedSearch();
+        initAutoFilterSubmit();
+        initAccountCombobox();
         initDetailModal();
         initDetailOpenButtons();
 
@@ -1132,10 +1429,8 @@
             }
         } else if (key === 'accounts') {
             scripts = ['/js/orbita-accounts.js'];
-        } else if (key === 'events') {
-            scripts = ['/js/orbita-events.js'];
-        } else if (key === 'errors') {
-            scripts = ['/js/orbita-errors.js'];
+        } else if (key === 'events' || key === 'errors') {
+            scripts = ['/js/orbita-journal.js'];
         } else if (key === 'responses') {
             scripts = ['/js/orbita-responses.js'];
         } else if (key === 'mysettings') {

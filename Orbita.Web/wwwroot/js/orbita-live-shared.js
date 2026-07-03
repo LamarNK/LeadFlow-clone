@@ -167,6 +167,16 @@
         return fullName && String(fullName).trim() ? String(fullName).trim() : 'Неизвестный пользователь';
     }
 
+    function renderResponseAccountCell(accountName, subProfileName, accountUrl) {
+        var account = accountName && String(accountName).trim() ? String(accountName).trim() : '—';
+        var sub = subProfileName && String(subProfileName).trim() ? String(subProfileName).trim() : '';
+        var html = '<a href="' + escapeHtml(accountUrl) + '">' + escapeHtml(account) + '</a>';
+        if (sub) {
+            html += '<span class="responses-account-sub" title="Субпрофиль Avito">' + escapeHtml(sub) + '</span>';
+        }
+        return html;
+    }
+
     function shouldShowMachineName(displayName, machineName) {
         if (!machineName || !String(machineName).trim()) return false;
         return String(displayName || '').trim().toLowerCase() !== String(machineName).trim().toLowerCase();
@@ -180,8 +190,13 @@
 
     function renderAccountBalance(account) {
         var total = formatBalance(account.balance);
-        var title = account.hasMultipleSubProfiles ? ' title="Сумма авансов по субпрофилям"' : '';
-        return '<div class="account-balance"><span class="account-balance-total"' + title + '>' + total + '</span></div>';
+        var title = account.hasMultipleSubProfiles ? ' title="Сумма авансов по субпрофилям"' : ' title="Аванс"';
+        var html = '<div class="account-balance"><span class="account-balance-total"' + title + '>' + total + '</span>';
+        if (account.balanceSubtitle) {
+            html += '<span class="account-balance-breakdown">' + escapeHtml(account.balanceSubtitle) + '</span>';
+        }
+        html += '</div>';
+        return html;
     }
 
     function updatePaginationInfo(pagination) {
@@ -300,6 +315,7 @@
         isPhoneHidden: isPhoneHidden,
         displayAdId: displayAdId,
         displayAuthor: displayAuthor,
+        renderResponseAccountCell: renderResponseAccountCell,
         shouldShowMachineName: shouldShowMachineName,
         formatBalance: formatBalance,
         renderAccountBalance: renderAccountBalance,

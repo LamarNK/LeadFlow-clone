@@ -37,7 +37,8 @@ internal static class EventsIndexBuilder
         int page,
         IReadOnlyList<EventFilterOptionViewModel>? workerOptions = null,
         IReadOnlyList<EventFilterOptionViewModel>? accountOptions = null,
-        int pageSize = DefaultPageSize)
+        int pageSize = DefaultPageSize,
+        string? journalView = null)
     {
         page = Math.Max(1, page);
 
@@ -50,14 +51,18 @@ internal static class EventsIndexBuilder
             .ToList();
 
         var summary = Summarize(allRows);
+        var workers = workerOptions ?? BuildWorkerOptions(allRows);
+        var accounts = accountOptions ?? BuildAccountOptions(allRows);
+        var activeFilterChips = FilterChipsBuilder.ForEvents(filters, EventTypeOptions, workers, accounts, LevelOptions, journalView);
 
         return new EventsIndexViewModel
         {
             Header = PageHeaderBuilder.EventsList(),
+            JournalView = journalView ?? "all",
             Filters = filters,
             EventTypes = EventTypeOptions,
-            Workers = workerOptions ?? BuildWorkerOptions(allRows),
-            Accounts = accountOptions ?? BuildAccountOptions(allRows),
+            Workers = workers,
+            Accounts = accounts,
             Levels = LevelOptions,
             KpiCards = BuildKpiCards(summary),
             Events = paged,
@@ -67,14 +72,15 @@ internal static class EventsIndexBuilder
                 PageSize = pageSize,
                 TotalItems = total
             },
-            HasActiveFilters = HasActiveFilters(filters)
+            HasActiveFilters = HasActiveFilters(filters),
+            ActiveFilterChips = activeFilterChips
         };
     }
 
     public static bool HasActiveFilters(EventsFilterViewModel filters) =>
         !string.IsNullOrWhiteSpace(filters.Type)
         || filters.WorkerId.HasValue
-        || !string.IsNullOrWhiteSpace(filters.Account)
+        || filters.AccountId.HasValue
         || !string.IsNullOrWhiteSpace(filters.Level)
         || !string.IsNullOrWhiteSpace(filters.SearchQuery);
 
@@ -127,8 +133,8 @@ internal static class EventsIndexBuilder
         if (filters.WorkerId.HasValue)
             query = query.Where(e => e.WorkerId == filters.WorkerId.Value);
 
-        if (!string.IsNullOrWhiteSpace(filters.Account))
-            query = query.Where(e => e.AccountName == filters.Account);
+        if (filters.AccountId.HasValue)
+            query = query.Where(e => e.AccountId == filters.AccountId.Value);
 
         if (!string.IsNullOrWhiteSpace(filters.Level))
         {
@@ -238,11 +244,15 @@ internal static class EventsIndexBuilder
     {
         var options = new List<EventFilterOptionViewModel> { new() { Value = "", Label = "Все аккаунты" } };
         options.AddRange(rows
-            .Where(e => !string.IsNullOrWhiteSpace(e.AccountName))
-            .Select(e => e.AccountName!)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .OrderBy(a => a, StringComparer.OrdinalIgnoreCase)
-            .Select(a => new EventFilterOptionViewModel { Value = a, Label = a }));
+            .Where(e => e.AccountId.HasValue && !string.IsNullOrWhiteSpace(e.AccountName))
+            .GroupBy(e => e.AccountId!.Value)
+            .Select(g => g.First())
+            .OrderBy(e => e.AccountName, StringComparer.OrdinalIgnoreCase)
+            .Select(e => new EventFilterOptionViewModel
+            {
+                Value = e.AccountId!.Value.ToString(),
+                Label = e.AccountName!
+            }));
         return options;
     }
 

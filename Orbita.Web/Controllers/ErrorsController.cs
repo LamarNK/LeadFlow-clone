@@ -1,6 +1,5 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Orbita.Web.Models.ViewModels;
 using Orbita.Web.Services;
 
 namespace Orbita.Web.Controllers;
@@ -9,38 +8,35 @@ namespace Orbita.Web.Controllers;
 public sealed class ErrorsController(IErrorsService errors) : Controller
 {
     [HttpGet]
-    public async Task<IActionResult> Snapshot(
+    public IActionResult Index(
         string? q,
         string? severity,
         string? type,
         Guid? workerId,
-        string? account,
-        int page = 1,
-        CancellationToken ct = default)
-    {
-        var model = await errors.GetIndexAsync(q, severity, type, workerId, account, page, ct);
-        return Json(new ErrorsLiveSnapshotViewModel
+        Guid? accountId,
+        Guid? account,
+        int page = 1) =>
+        RedirectToAction("Index", "Events", new
         {
-            UpdatedAtUtc = model.Header.UpdatedAtUtc,
-            KpiCards = model.KpiCards,
-            Errors = model.Errors,
-            Pagination = model.Pagination
+            view = "errors",
+            q,
+            severity,
+            type,
+            workerId,
+            accountId = accountId ?? account,
+            page
         });
-    }
 
     [HttpGet]
-    public async Task<IActionResult> Index(
+    public IActionResult Snapshot(
         string? q,
         string? severity,
         string? type,
         Guid? workerId,
-        string? account,
-        int page = 1,
-        CancellationToken ct = default)
-    {
-        var model = await errors.GetIndexAsync(q, severity, type, workerId, account, page, ct);
-        return View(model);
-    }
+        Guid? accountId,
+        Guid? account,
+        int page = 1) =>
+        RedirectToAction(nameof(Index), new { q, severity, type, workerId, accountId = accountId ?? account, page });
 
     [HttpPost]
     [ValidateAntiForgeryToken]

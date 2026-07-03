@@ -8,6 +8,13 @@ public static partial class ResponseDisplay
     public static string DisplayAuthor(string? fullName) =>
         string.IsNullOrWhiteSpace(fullName) ? "Неизвестный пользователь" : fullName.Trim();
 
+    public static string FormatAccountWithSubProfile(string? accountName, string? subProfileName)
+    {
+        var account = string.IsNullOrWhiteSpace(accountName) ? "—" : accountName.Trim();
+        var sub = string.IsNullOrWhiteSpace(subProfileName) ? null : subProfileName.Trim();
+        return sub is null ? account : $"{account} · {sub}";
+    }
+
     public static bool IsPhoneHidden(string? phoneRaw, string? phoneNormalized) =>
         string.IsNullOrWhiteSpace(phoneRaw) && string.IsNullOrWhiteSpace(phoneNormalized);
 

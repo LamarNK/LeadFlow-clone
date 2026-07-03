@@ -32,7 +32,9 @@ public sealed class AccountRowViewModel
     public string StatusLabel { get; init; } = string.Empty;
     public string StatusTone { get; init; } = "active";
     public decimal Balance { get; init; }
+    public decimal WalletBalance { get; init; }
     public string? BalanceBreakdown { get; init; }
+    public string? BalanceSubtitle { get; init; }
     public bool HasMultipleSubProfiles => SubProfiles.Count > 1;
     public int Responses { get; init; }
     public int UniqueResponses { get; init; }

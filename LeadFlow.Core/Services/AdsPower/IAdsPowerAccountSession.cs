@@ -21,8 +21,8 @@ public interface IAdsPowerAccountSession : IAsyncDisposable
 
     Task<string> LoadBlockedItemsHtmlAsync(CancellationToken cancellationToken = default);
 
-    /// <summary>Читает «Аванс» из сайдбара Avito Pro на странице кабинета (не на откликах).</summary>
-    Task<decimal?> TryReadAdvanceBalanceAsync(CancellationToken cancellationToken = default);
+    /// <summary>Читает «Кошелёк» и «Аванс» из сайдбара Avito Pro на странице кабинета (не на откликах).</summary>
+    Task<AvitoMoneySidebar?> TryReadMoneySidebarAsync(CancellationToken cancellationToken = default);
 
     /// <summary>HTML модалки «Выбор профиля» в текущей CDP-сессии.</summary>
     Task<string> CaptureProfileSwitchHtmlAsync(CancellationToken cancellationToken = default);

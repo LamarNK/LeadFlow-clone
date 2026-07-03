@@ -24,4 +24,6 @@ public interface IWorkerActivityReporter
     void ReportIdle();
 
     void ReportNoEnabledAccounts();
+
+    void ReportAccountFinished(Guid accountId);
 }

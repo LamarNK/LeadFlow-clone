@@ -98,7 +98,14 @@ public sealed class ResponsesQueryService(
         }
 
         var portalHost = await bitrixWebhooks.ResolvePortalHostAsync(entity.OfficeId, ct);
-        return MapDetail(entity, portalHost);
+        var subProfilesJson = await db.WorkerAccounts
+            .AsNoTracking()
+            .Where(a => a.AccountId == entity.AccountId)
+            .Select(a => a.SubProfilesJson)
+            .FirstOrDefaultAsync(ct);
+        var nameLookup = SubProfileNameResolver.BuildLookup([(entity.AccountId, subProfilesJson ?? "[]")]);
+        var subProfileName = ResolveSubProfileName(nameLookup, entity.AccountId, entity.AvitoSubProfileId);
+        return MapDetail(entity, portalHost, subProfileName);
     }
 
     private async Task<ResponsesPageDto> GetPageInternalAsync(
@@ -322,7 +329,10 @@ public sealed class ResponsesQueryService(
         return lookup.TryGetValue((accountId, subProfileId), out var name) ? name : null;
     }
 
-    private static ResponseDetailDto MapDetail(CandidateResponseEntity entity, string? portalHost)
+    private static ResponseDetailDto MapDetail(
+        CandidateResponseEntity entity,
+        string? portalHost,
+        string? subProfileName = null)
     {
         var bitrixEntityUrl = BitrixPortalLinks.TryBuildEntityDetailsUrl(
             portalHost,
@@ -349,6 +359,7 @@ public sealed class ResponsesQueryService(
             entity.VacancyUrl,
             entity.MessengerUrl,
             entity.AvitoSubProfileId,
+            subProfileName,
             entity.RawText,
             entity.ChatMessagesJson,
             entity.Status,

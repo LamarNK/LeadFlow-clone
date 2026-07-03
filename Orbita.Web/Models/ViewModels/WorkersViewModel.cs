@@ -22,6 +22,9 @@ public sealed class WorkersIndexViewModel
     public IReadOnlyList<EventFilterOptionViewModel> OfficeOptions { get; init; } = [];
     public bool CanSelectOffice { get; init; }
     public bool CanCreateWorker { get; init; }
+    public bool HasActiveFilters { get; init; }
+    public IReadOnlyList<ActiveFilterChipViewModel> ActiveFilterChips { get; init; } = [];
+    public int ActiveFilterCount => ActiveFilterChips.Count;
 }
 
 public sealed class BreadcrumbItemViewModel

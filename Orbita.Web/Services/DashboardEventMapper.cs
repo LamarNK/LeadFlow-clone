@@ -8,15 +8,54 @@ internal static class DashboardEventMapper
     private const int MaxMessageLength = 180;
     private const int MaxSubtitleLength = 96;
 
-    public static DashboardEventRowViewModel Map(WorkerEventListItem item) =>
-        new()
+    public static DashboardEventRowViewModel Map(WorkerEventListItem item)
+    {
+        var level = NormalizeLevel(item.Level);
+        var subtitle = Truncate(BuildSubtitle(item), MaxSubtitleLength);
+
+        if (level == "error")
         {
-            Message = Truncate(WorkerEventDetailsParser.FormatForDisplay(item.Message, item.Details), MaxMessageLength),
-            Subtitle = Truncate(BuildSubtitle(item), MaxSubtitleLength),
+            var error = ErrorsIndexBuilder.MapEvent(item);
+            return new()
+            {
+                Id = error.Id,
+                WorkerId = error.WorkerId,
+                Message = Truncate(error.Message, MaxMessageLength),
+                Subtitle = subtitle,
+                TimeUtc = item.CreatedAtUtc,
+                WorkerName = error.WorkerName,
+                Level = level,
+                LevelLabel = error.SeverityLabel,
+                AccountName = error.AccountName,
+                DetailTitle = error.ErrorTypeLabel,
+                DetailSubtitle = $"{error.WorkerName} · {error.SeverityLabel}",
+                DetailBody = error.Message,
+                CopyText = error.CopyText,
+                AttachmentId = error.AttachmentId,
+                IsError = true
+            };
+        }
+
+        var evt = EventsIndexBuilder.MapEvent(item);
+        return new()
+        {
+            Id = evt.Id,
+            WorkerId = evt.WorkerId,
+            Message = Truncate(evt.Description, MaxMessageLength),
+            Subtitle = subtitle,
             TimeUtc = item.CreatedAtUtc,
-            WorkerName = item.WorkerDisplayName,
-            Level = NormalizeLevel(item.Level)
+            WorkerName = evt.WorkerName,
+            Level = level,
+            LevelLabel = evt.LevelLabel,
+            AccountName = evt.AccountName,
+            DetailTitle = evt.EventTypeLabel,
+            DetailSubtitle = $"{evt.WorkerName} · {evt.LevelLabel}",
+            DetailBody = evt.Description,
+            CopyText = evt.CopyText,
+            AttachmentId = evt.AttachmentId,
+            IsError = false
         };
+    }
 
     private static string BuildSubtitle(WorkerEventListItem item)
     {

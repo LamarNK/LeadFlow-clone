@@ -1,0 +1,53 @@
+@model ListFiltersBarViewModel
+<div class="orbita-filters-bar">
+    <form class="@Model.FormClass" method="get" action="@Model.FormAction">
+        @if (!string.IsNullOrWhiteSpace(Model.ExtraFormContent))
+        {
+            @Html.Raw(Model.ExtraFormContent)
+        }
+        <div class="orbita-filters-toolbar">
+            <div class="orbita-filters-search">
+                <i class="fa-solid fa-magnifying-glass orbita-filters-search-icon" aria-hidden="true"></i>
+                <input type="search"
+                       name="@Model.SearchName"
+                       value="@Model.SearchValue"
+                       placeholder="@Model.SearchPlaceholder"
+                       aria-label="@Model.SearchPlaceholder" />
+            </div>
+            <div class="orbita-filters-toolbar-actions">
+                @if (!string.IsNullOrWhiteSpace(Model.FilterPanelId))
+                {
+                    <button type="button"
+                            class="@Model.FilterToggleClass@(Model.HasActiveFilters ? " is-active" : "")"
+                            data-orbita-filter-toggle="@Model.FilterPanelId"
+                            data-orbita-filter-count="@Model.ActiveFilterCount"
+                            aria-label="@(Model.ActiveFilterCount > 0 ? $"Фильтры ({Model.ActiveFilterCount})" : "Фильтры")"
+                            aria-expanded="false">
+                        <i class="fa-solid fa-filter" aria-hidden="true"></i>
+                        @if (Model.ActiveFilterCount > 0)
+                        {
+                            <span class="orbita-filters-toggle-count">@Model.ActiveFilterCount</span>
+                        }
+                    </button>
+                }
+                @if (Model.ShowApply)
+                {
+                    <button type="submit" class="orbita-filters-apply">Применить</button>
+                }
+                else
+                {
+                    <button type="submit" class="orbita-filters-apply" hidden>Применить</button>
+                }
+                <a class="orbita-filters-reset" href="@Model.ResetUrl">
+                    <i class="fa-solid fa-rotate-right" aria-hidden="true"></i>
+                    <span>Сбросить</span>
+                </a>
+            </div>
+        </div>
+        <partial name="_FilterChips" model="Model.ActiveFilterChips" />
+        @if (!string.IsNullOrWhiteSpace(Model.FilterFieldsPartialName))
+        {
+            <partial name="@Model.FilterFieldsPartialName" model="Model.FilterFieldsModel" />
+        }
+    </form>
+</div>

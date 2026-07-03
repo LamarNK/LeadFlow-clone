@@ -26,4 +26,6 @@ public sealed class NullWorkerActivityReporter : IWorkerActivityReporter
     public void ReportIdle() { }
 
     public void ReportNoEnabledAccounts() { }
+
+    public void ReportAccountFinished(Guid accountId) { }
 }

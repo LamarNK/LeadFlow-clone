@@ -18,6 +18,8 @@ public sealed class ErrorsIndexViewModel
     public IReadOnlyList<ErrorRowViewModel> Errors { get; init; } = [];
     public PaginationViewModel Pagination { get; init; } = new();
     public bool HasActiveFilters { get; init; }
+    public IReadOnlyList<ActiveFilterChipViewModel> ActiveFilterChips { get; init; } = [];
+    public int ActiveFilterCount => ActiveFilterChips.Count;
 }
 
 public sealed record ErrorsFilterViewModel
@@ -25,7 +27,7 @@ public sealed record ErrorsFilterViewModel
     public string? Severity { get; init; }
     public string? Type { get; init; }
     public Guid? WorkerId { get; init; }
-    public string? Account { get; init; }
+    public Guid? AccountId { get; init; }
     public string? SearchQuery { get; init; }
 }
 

@@ -19,13 +19,17 @@ public sealed class EventsIndexViewModel
     public IReadOnlyList<EventRowViewModel> Events { get; init; } = [];
     public PaginationViewModel Pagination { get; init; } = new();
     public bool HasActiveFilters { get; init; }
+    public IReadOnlyList<ActiveFilterChipViewModel> ActiveFilterChips { get; init; } = [];
+    public int ActiveFilterCount => ActiveFilterChips.Count;
+    public string JournalView { get; init; } = "all";
+    public ErrorsIndexViewModel? ErrorsPage { get; init; }
 }
 
 public sealed record EventsFilterViewModel
 {
     public string? Type { get; init; }
     public Guid? WorkerId { get; init; }
-    public string? Account { get; init; }
+    public Guid? AccountId { get; init; }
     public string? Level { get; init; }
     public string? SearchQuery { get; init; }
 }

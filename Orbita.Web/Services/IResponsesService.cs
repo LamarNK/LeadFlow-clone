@@ -17,4 +17,6 @@ public interface IResponsesService
         CancellationToken ct = default);
 
     Task<(bool Success, string? Error)> ResendToBitrixAsync(Guid id, CancellationToken ct = default);
+
+    Task<ResponseDetailJsonViewModel?> GetDetailJsonAsync(Guid id, CancellationToken ct = default);
 }

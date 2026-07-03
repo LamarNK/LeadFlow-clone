@@ -222,7 +222,7 @@ public sealed partial class AdsPowerAvitoAutomationService
             return false;
         }
 
-        if (IsOnUrl(page.Url, CandidatesPageUrl))
+        if (IsOnCandidatesResponsesPage(page.Url))
         {
             await NavigateAwayFromCandidatesForSwitchAsync(page, cancellationToken, nameof(SwitchSubProfileOnPageAsync))
                 .ConfigureAwait(false);
@@ -283,7 +283,7 @@ public sealed partial class AdsPowerAvitoAutomationService
         }
 
         var sw = Stopwatch.StartNew();
-        if (IsOnUrl(page.Url, CandidatesPageUrl))
+        if (IsOnCandidatesResponsesPage(page.Url))
         {
             await NavigateAwayFromCandidatesForSwitchAsync(page, cancellationToken, nameof(VerifyActiveSubProfileOnPageAsync))
                 .ConfigureAwait(false);
@@ -401,14 +401,14 @@ public sealed partial class AdsPowerAvitoAutomationService
         return raw;
     }
 
-    private async Task<decimal?> TryReadAdvanceBalanceOnPageAsync(
+    private async Task<AvitoMoneySidebar?> TryReadMoneySidebarOnPageAsync(
         IPage page,
         string adsPowerUserId,
         CancellationToken cancellationToken)
     {
         if (!IsOnActiveProfileItemsPage(page.Url))
         {
-            if (IsOnUrl(page.Url, CandidatesPageUrl))
+            if (IsOnCandidatesResponsesPage(page.Url))
             {
                 return null;
             }
@@ -454,25 +454,27 @@ public sealed partial class AdsPowerAvitoAutomationService
             return null;
         }
 
-        var balance = AvitoBalanceParser.ParseAdvanceBalance(html);
-        if (balance is null
+        var money = AvitoBalanceParser.ParseMoneySidebar(html);
+        if (money is null
             && (html.Contains("osp-sidebar/tools/money", StringComparison.OrdinalIgnoreCase)
-                || html.Contains("Аванс", StringComparison.OrdinalIgnoreCase)))
+                || html.Contains("Аванс", StringComparison.OrdinalIgnoreCase)
+                || html.Contains("Кошел", StringComparison.OrdinalIgnoreCase)))
         {
             _ = GlobalLogger.Instance.LogAsync(
-                $"AdsPower balance: sidebar present but advance parse failed for user {adsPowerUserId}.",
+                $"AdsPower balance: sidebar present but money parse failed for user {adsPowerUserId}.",
                 DeskLinkAuditLogLevel.Warning,
-                memberName: nameof(TryReadAdvanceBalanceOnPageAsync),
+                memberName: nameof(TryReadMoneySidebarOnPageAsync),
                 properties: new Dictionary<string, object?>
                 {
                     ["adsPower.userId"] = adsPowerUserId,
                     ["page.url"] = page.Url,
                     ["html.hasMoneyMarker"] = html.Contains("osp-sidebar/tools/money", StringComparison.OrdinalIgnoreCase),
-                    ["html.hasAdvanceText"] = html.Contains("Аванс", StringComparison.OrdinalIgnoreCase)
+                    ["html.hasAdvanceText"] = html.Contains("Аванс", StringComparison.OrdinalIgnoreCase),
+                    ["html.hasWalletText"] = html.Contains("Кошел", StringComparison.OrdinalIgnoreCase)
                 });
         }
 
-        return balance;
+        return money;
     }
 
     private async Task<string> LoadProfileItemsHtmlOnPageAsync(
@@ -731,8 +733,8 @@ public sealed partial class AdsPowerAvitoAutomationService
         public Task<string> LoadBlockedItemsHtmlAsync(CancellationToken cancellationToken = default) =>
             owner.LoadBlockedItemsHtmlOnPageAsync(page, AdsPowerUserId, cancellationToken);
 
-        public Task<decimal?> TryReadAdvanceBalanceAsync(CancellationToken cancellationToken = default) =>
-            owner.TryReadAdvanceBalanceOnPageAsync(page, AdsPowerUserId, cancellationToken);
+        public Task<AvitoMoneySidebar?> TryReadMoneySidebarAsync(CancellationToken cancellationToken = default) =>
+            owner.TryReadMoneySidebarOnPageAsync(page, AdsPowerUserId, cancellationToken);
 
         public Task<string> CaptureProfileSwitchHtmlAsync(CancellationToken cancellationToken = default) =>
             owner.CaptureProfileSwitchHtmlInSessionAsync(page, AdsPowerUserId, cancellationToken);

@@ -106,7 +106,9 @@ internal static class DesignPreviewData
             HasWorkerRelease = true,
             LatestWorkerReleaseVersion = "1.0.0.2",
             LatestWorkerDownloadUrl = "/Workers/DownloadLatest",
-            CanCreateWorker = true
+            CanCreateWorker = true,
+            HasActiveFilters = !string.IsNullOrWhiteSpace(searchQuery) || !string.IsNullOrWhiteSpace(status),
+            ActiveFilterChips = FilterChipsBuilder.ForWorkers(searchQuery, status)
         };
     }
 
@@ -360,14 +362,12 @@ internal static class DesignPreviewData
                 IsActivityLive = w.IsActivityLive
             }).ToList(),
             HourlyChart = hourlyChart,
-            Events =
-            [
-                new() { Message = "Новый отклик по объявлению 12345678", Subtitle = "Аккаунт: user_01", TimeUtc = updatedAt.AddSeconds(-42), WorkerName = "Worker #1", Level = "success" },
-                new() { Message = "Найден дубликат отклика", Subtitle = "Аккаунт: user_07", TimeUtc = updatedAt.AddSeconds(-75), WorkerName = "Worker #2", Level = "warning" },
-                new() { Message = "Ошибка при отправке в Bitrix24", Subtitle = "Аккаунт: user_03", TimeUtc = updatedAt.AddSeconds(-108), WorkerName = "Worker #1", Level = "error" },
-                new() { Message = "Баланс обновлен", Subtitle = "Аккаунт: user_05", TimeUtc = updatedAt.AddSeconds(-121), WorkerName = "Worker #3", Level = "success" },
-                new() { Message = "Аккаунт успешно авторизован", Subtitle = "Аккаунт: user_08", TimeUtc = updatedAt.AddSeconds(-149), WorkerName = "Worker #2", Level = "success" }
-            ],
+            Events = Events
+                .Where(e => e.CreatedAtUtc >= DashboardRecentEvents.SinceUtc)
+                .OrderByDescending(e => e.CreatedAtUtc)
+                .Take(DashboardRecentEvents.Limit)
+                .Select(DashboardEventMapper.Map)
+                .ToList(),
             AccountStats = accountStats,
             Charts = DashboardChartsBuilder.FromPresentation(
                 kpiCards,
@@ -527,41 +527,13 @@ internal static class DesignPreviewData
             })
             .ToList();
 
-    private static IReadOnlyList<DashboardEventRowViewModel> GetWorkerEvents(Guid workerId)
-    {
-        if (workerId == WorkerMoscowId)
-        {
-            return
-            [
-                new() { Message = "Новый отклик", Subtitle = "Аккаунт user_01", TimeUtc = Now.AddMinutes(-3), Level = "success" },
-                new() { Message = "Отклик отправлен в CRM", Subtitle = "Аккаунт user_02", TimeUtc = Now.AddMinutes(-5), Level = "success" },
-                new() { Message = "Дубликат отклика пропущен", Subtitle = "Аккаунт user_07", TimeUtc = Now.AddMinutes(-7), Level = "warning" },
-                new() { Message = "Баланс обновлён", Subtitle = "Аккаунт user_05", TimeUtc = Now.AddMinutes(-10), Level = "success" },
-                new() { Message = "Ошибка авторизации", Subtitle = "Аккаунт user_03", TimeUtc = Now.AddMinutes(-13), Level = "error" },
-                new() { Message = "Мониторинг завершён", Subtitle = "10 аккаунтов", TimeUtc = Now.AddMinutes(-16), Level = "success" },
-                new() { Message = "Новый отклик", Subtitle = "Аккаунт user_08", TimeUtc = Now.AddMinutes(-19), Level = "success" },
-                new() { Message = "Объявление разблокировано", Subtitle = "Аккаунт user_04", TimeUtc = Now.AddMinutes(-26), Level = "success" },
-                new() { Message = "Требуется авторизация", Subtitle = "Аккаунт user_03", TimeUtc = Now.AddMinutes(-32), Level = "warning" },
-                new() { Message = "Heartbeat получен", Subtitle = "Агент LeadFlow", TimeUtc = Now.AddMinutes(-36), Level = "success" }
-            ];
-        }
-
-        return Events
+    private static IReadOnlyList<DashboardEventRowViewModel> GetWorkerEvents(Guid workerId) =>
+        Events
             .Where(e => e.WorkerId == workerId)
             .OrderByDescending(e => e.CreatedAtUtc)
             .Take(10)
-            .Select(e => new DashboardEventRowViewModel
-            {
-                Message = e.Message,
-                Subtitle = !string.IsNullOrWhiteSpace(e.AccountDisplayName)
-                    ? e.AccountDisplayName
-                    : (e.Details ?? string.Empty),
-                TimeUtc = e.CreatedAtUtc,
-                Level = e.Level.Equals("Error", StringComparison.OrdinalIgnoreCase) ? "error"
-                    : e.Level.Equals("Warning", StringComparison.OrdinalIgnoreCase) ? "warning" : "success"
-            })
+            .Select(DashboardEventMapper.Map)
             .ToList();
-    }
 
     private static string DemoAdsPowerProfileId(int seed) =>
         seed % 8 == 0 ? string.Empty : $"k19{seed:D4}";
@@ -876,12 +848,14 @@ internal static class DesignPreviewData
     public static EventsIndexViewModel BuildEventsIndexViewModel(
         EventsFilterViewModel filters,
         int page,
-        int pageSize) =>
+        int pageSize,
+        string? journalView = null) =>
         EventsIndexBuilder.Build(
             BuildPreviewEventRows(),
             filters,
             page,
-            pageSize: pageSize);
+            pageSize: pageSize,
+            journalView: journalView);
 
     private static IReadOnlyList<EventRowViewModel> BuildPreviewEventRows()
     {
@@ -1345,7 +1319,13 @@ internal static class DesignPreviewData
             Selected = selectedId is Guid id
                 ? BuildPreviewResponseDetail(allRows, id)
                 : null,
-            HasActiveFilters = ResponsesIndexBuilder.HasActiveFilters(filters, period)
+            HasActiveFilters = ResponsesIndexBuilder.HasActiveFilters(filters, period),
+            ActiveFilterChips = FilterChipsBuilder.ForResponses(
+                filters,
+                period,
+                ResponsesIndexBuilder.StatusOptions,
+                BuildPreviewWorkerOptions(),
+                accountOptions)
         };
     }
 
@@ -1416,6 +1396,9 @@ internal static class DesignPreviewData
                 City = "Москва",
                 AccountId = accountId,
                 AccountName = $"user_{accountNum:D2}",
+                AvitoSubProfileName = accountNum % 3 == 0
+                    ? null
+                    : (accountNum % 2 == 0 ? "контракт РФ 7" : "Служба 3"),
                 WorkerId = workerId,
                 WorkerName = $"Worker #{workerIndex + 1}",
                 Source = "Avito",

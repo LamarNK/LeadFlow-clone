@@ -8,6 +8,38 @@ namespace LeadFlow.Tests;
 public sealed class AvitoCandidatesJsonParserTests
 {
     [Fact]
+    public void ParseCandidates_JobCrmCardFormat_ExtractsVacancyFromListAnchor()
+    {
+        var account = new AvitoAccount { Id = Guid.NewGuid(), DisplayName = "CRM" };
+        using var doc = JsonDocument.Parse(
+            """
+            {
+              "pageVariant": "job-crm",
+              "candidates": [
+                {
+                  "fullName": "Мехоношина Мария Юрьевна",
+                  "phone": "8 950 324-97-58",
+                  "sourceResponseId": "avito:8184422870:79503249758",
+                  "vacancy": "Охранник вахта в Африку",
+                  "city": "посёлок городского типа Апастово",
+                  "vacancyUrl": "https://www.avito.ru/8184422870",
+                  "age": "40 лет"
+                }
+              ]
+            }
+            """);
+
+        var list = AvitoCandidatesJsonParser.ParseCandidates(doc.RootElement, account);
+
+        Assert.Single(list);
+        Assert.Equal("Мехоношина Мария Юрьевна", list[0].FullName);
+        Assert.Equal("Охранник вахта в Африку", list[0].Vacancy);
+        Assert.Equal("посёлок городского типа Апастово", list[0].City);
+        Assert.Equal("https://www.avito.ru/8184422870", list[0].VacancyUrl);
+        Assert.Equal(40, list[0].Age);
+    }
+
+    [Fact]
     public void ParseCandidates_ExtractsFields()
     {
         var account = new AvitoAccount { Id = Guid.Parse("a1111111-1111-1111-1111-111111111111"), DisplayName = "TestAcc" };

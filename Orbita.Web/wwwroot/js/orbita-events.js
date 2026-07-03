@@ -74,11 +74,7 @@
                 : '<span class="events-muted">—</span>';
             var attachmentUrl = evt.attachmentId ? '/Diagnostics/Image/' + evt.attachmentId : '';
             var menu = shared.rowMenuShell('row-menu-dropdown--events',
-                '<a class="row-menu-item" href="' + shared.escapeHtml(settingsLogsUrl(evt.workerId)) + '"><i class="fa-regular fa-file-lines" aria-hidden="true"></i>Открыть лог</a>' +
-                (accountUrl ? '<a class="row-menu-item" href="' + shared.escapeHtml(accountUrl) + '"><i class="fa-regular fa-user" aria-hidden="true"></i>Перейти к аккаунту</a>' : '') +
-                '<a class="row-menu-item" href="' + shared.escapeHtml(workerUrl) + '"><i class="fa-solid fa-server" aria-hidden="true"></i>Перейти к воркеру</a>' +
-                '<button type="button" class="row-menu-item" data-copy-event><i class="fa-regular fa-copy" aria-hidden="true"></i>Копировать сообщение</button>' +
-                '<button type="button" class="row-menu-item" data-event-dismiss data-event-id="' + shared.escapeHtml(evt.id) + '"><i class="fa-regular fa-circle-check" aria-hidden="true"></i>Отметить обработанным</button>');
+                '<a class="row-menu-item" href="' + shared.escapeHtml(settingsLogsUrl(evt.workerId)) + '"><i class="fa-regular fa-file-lines" aria-hidden="true"></i>Открыть лог</a>');
 
             return '<tr class="events-row" data-event-id="' + shared.escapeHtml(evt.id) + '" data-copy="' + shared.escapeHtml(evt.copyText || '') + '"' +
                 ' data-detail-title="' + shared.escapeHtml(evt.eventTypeLabel || 'Детали') + '"' +

@@ -1,4 +1,5 @@
 using Orbita.Contracts;
+using Orbita.Web.Formatting;
 using Orbita.Web.Models.ViewModels;
 
 namespace Orbita.Web.Services;
@@ -65,6 +66,11 @@ internal static class AccountsIndexBuilder
         var unique = Math.Max(0, responses - duplicates);
         var hasError = !string.IsNullOrWhiteSpace(account.LastErrorMessage);
         var subProfiles = SubProfileViewModelMapper.Map(account.SubProfiles, balanceDetail?.SubProfiles);
+        var walletBalance = balanceDetail?.TotalWalletBalance ?? 0m;
+        var durationHint = BalanceDisplay.ResolveAdvanceDurationHint(
+            (balanceDetail?.SubProfiles ?? [])
+                .Select(s => (s.Balance, s.AdvanceDurationText))
+                .ToList());
         return new AccountRowViewModel
         {
             Id = account.AccountId,
@@ -74,7 +80,11 @@ internal static class AccountsIndexBuilder
             StatusLabel = label,
             StatusTone = tone,
             Balance = balance,
+            WalletBalance = walletBalance,
             BalanceBreakdown = SubProfileViewModelMapper.BuildBalanceBreakdown(subProfiles),
+            BalanceSubtitle = BalanceDisplay.FormatAccountBreakdown(
+                walletBalance > 0 ? walletBalance : null,
+                durationHint),
             Responses = responses,
             UniqueResponses = unique,
             Errors = errors > 0 ? errors : hasError ? 1 : 0,

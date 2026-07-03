@@ -630,6 +630,26 @@
         return template ? template.replace('__id__', id) : '#';
     }
 
+    function accountSearchUrl(name) {
+        var shared = window.OrbitaLiveShared;
+        if (shared) {
+            return shared.urlFromTemplate(shared.getLiveAttr('data-account-search-url'), '__q__', name);
+        }
+        var root = getLiveRoot();
+        var template = root ? root.getAttribute('data-account-search-url') : '';
+        return name && template ? template.split('__q__').join(encodeURIComponent(String(name))) : '';
+    }
+
+    function settingsLogsUrl(workerId) {
+        var shared = window.OrbitaLiveShared;
+        if (shared) {
+            return shared.urlFromTemplate(shared.getLiveAttr('data-settings-logs-url'), '__id__', workerId);
+        }
+        var root = getLiveRoot();
+        var template = root ? root.getAttribute('data-settings-logs-url') : '';
+        return template ? template.replace('__id__', workerId) : '';
+    }
+
     function renderWorkers(workers) {
         var tbody = document.querySelector('[data-dashboard-workers-body]');
         if (!tbody) return;
@@ -650,7 +670,7 @@
                 '<a href="' + escapeHtml(detailsUrl) + '">' + escapeHtml(w.displayName) + '</a>' +
                 (showMachine ? '<span class="cell-name-machine">' + escapeHtml(machineName) + '</span>' : '') +
                 '</div>';
-            return '<tr>' +
+            return '<tr data-href="' + escapeHtml(detailsUrl) + '">' +
                 '<td class="cell-name" data-label="Воркер">' + nameCell + '</td>' +
                 '<td data-label="Статус"><span class="status-dot' + statusClass + '"><i class="fa-solid fa-circle status-dot-icon" aria-hidden="true"></i>' + statusText + '</span></td>' +
                 '<td data-label="Сейчас">' + (window.OrbitaLiveShared ? window.OrbitaLiveShared.renderActivityPill(w.currentActivityLabel, w.currentActivityTone, w.isActivityLive) : escapeHtml(w.currentActivityLabel || '—')) + '</td>' +
@@ -676,9 +696,28 @@
         }
 
         initDashboardRowMenus();
+        initDashboardRowNavigation();
         if (window.Orbita && window.Orbita.initWorkerRestartButtons) {
             window.Orbita.initWorkerRestartButtons();
         }
+    }
+
+    function initDashboardRowNavigation() {
+        document.querySelectorAll('[data-dashboard-workers-body] tr[data-href]').forEach(function (row) {
+            if (row.hasAttribute('data-dash-row-nav-bound')) return;
+            row.setAttribute('data-dash-row-nav-bound', '1');
+
+            row.addEventListener('click', function (e) {
+                if (e.target.closest('[data-row-menu]') || e.target.closest('a') || e.target.closest('form')) return;
+                var href = row.getAttribute('data-href');
+                if (!href) return;
+                if (window.Orbita && typeof window.Orbita.navigateTo === 'function') {
+                    window.Orbita.navigateTo(href, true);
+                } else {
+                    window.location.href = href;
+                }
+            });
+        });
     }
 
     function initDashboardRowMenus() {
@@ -722,8 +761,22 @@
                 ? '<div class="dash-event-subtitle" title="' + escapeHtml(evt.subtitle) + '">' + escapeHtml(evt.subtitle) + '</div>'
                 : '';
             var iso = evt.timeUtc || '';
+            var workerUrl = workerDetailsUrl(evt.workerId);
+            var accountUrl = evt.accountName ? accountSearchUrl(evt.accountName) : '';
+            var logUrl = settingsLogsUrl(evt.workerId);
+            var attachmentUrl = evt.attachmentId ? '/Diagnostics/Image/' + evt.attachmentId : '';
 
-            return '<div class="dash-event-row">' +
+            return '<div class="dash-event-row dash-event-row--detail" role="button" tabindex="0"' +
+                ' data-event-id="' + escapeHtml(evt.id || '') + '"' +
+                ' data-copy="' + escapeHtml(evt.copyText || '') + '"' +
+                ' data-detail-title="' + escapeHtml(evt.detailTitle || 'Детали') + '"' +
+                ' data-detail-subtitle="' + escapeHtml(evt.detailSubtitle || '') + '"' +
+                ' data-detail-body="' + escapeHtml(evt.detailBody || '') + '"' +
+                ' data-detail-attachment="' + escapeHtml(attachmentUrl) + '"' +
+                ' data-detail-log-url="' + escapeHtml(logUrl) + '"' +
+                ' data-detail-worker-url="' + escapeHtml(workerUrl) + '"' +
+                ' data-detail-account-url="' + escapeHtml(accountUrl) + '"' +
+                ' data-is-error="' + (evt.isError ? 'true' : 'false') + '">' +
                 '<div class="dash-event-icon dash-event-icon--' + escapeHtml(evt.level) + '"><i class="' + eventIcon(evt.level) + '" aria-hidden="true"></i></div>' +
                 '<div class="dash-event-body"><div class="dash-event-title" title="' + escapeHtml(evt.message) + '">' + escapeHtml(evt.message) + '</div>' + subtitle + '</div>' +
                 '<div class="dash-event-side">' +
@@ -998,6 +1051,7 @@
         initDonutChart(payload.accountStatus);
         initLiveRefresh();
         initDashboardRowMenus();
+        initDashboardRowNavigation();
         if (window.Orbita && window.Orbita.initWorkerRestartButtons) {
             window.Orbita.initWorkerRestartButtons();
         }

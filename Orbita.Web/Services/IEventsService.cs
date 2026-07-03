@@ -8,8 +8,10 @@ public interface IEventsService
         string? q = null,
         string? type = null,
         Guid? workerId = null,
-        string? account = null,
+        Guid? accountId = null,
         string? level = null,
+        string? view = null,
+        string? severity = null,
         int page = 1,
         CancellationToken ct = default);
 

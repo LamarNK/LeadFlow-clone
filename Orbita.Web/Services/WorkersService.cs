@@ -342,7 +342,9 @@ public sealed class WorkersService(
             CanCreateWorker = true,
             OfficeOptions = (offices ?? [])
                 .Select(o => new EventFilterOptionViewModel { Value = o.Id.ToString(), Label = o.Name })
-                .ToList()
+                .ToList(),
+            HasActiveFilters = !string.IsNullOrWhiteSpace(searchQuery) || !string.IsNullOrWhiteSpace(statusFilter),
+            ActiveFilterChips = FilterChipsBuilder.ForWorkers(searchQuery, statusFilter)
         };
     }
 

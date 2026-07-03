@@ -1,0 +1,108 @@
+@model ErrorsIndexViewModel
+@{
+    var pagination = Model.Pagination;
+    var formAction = Url.Action("Index", "Events", new { view = "errors" });
+}
+<div class="card card--errors-table">
+    <div class="card-body card-body-table errors-table-wrap">
+        @if (pagination.TotalItems == 0)
+        {
+            <partial name="_TableEmptyState" model="@(new TableEmptyStateViewModel
+            {
+                IconClass = "fa-solid fa-triangle-exclamation",
+                Title = "Ошибки не найдены",
+                Description = "За выбранные фильтры записей нет — это хороший знак.",
+                CtaLabel = "Сбросить фильтры",
+                CtaUrl = formAction
+            })" />
+        }
+        else
+        {
+            <table class="data-table data-table--errors data-table--cards">
+                <thead>
+                    <tr>
+                        <th>Время</th>
+                        <th>Уровень</th>
+                        <th>Тип ошибки</th>
+                        <th>Сообщение</th>
+                        <th>Аккаунт</th>
+                        <th>Воркер</th>
+                        <th class="cell-num">Повторений</th>
+                        <th>Последнее появление</th>
+                        <th aria-hidden="true">Действия</th>
+                    </tr>
+                </thead>
+                <tbody data-orbita-live-body="errors">
+                @foreach (var error in Model.Errors)
+                {
+                    var workerUrl = Url.Action("Details", "Workers", new { id = error.WorkerId });
+                    var accountUrl = string.IsNullOrWhiteSpace(error.AccountName)
+                        ? null
+                        : Url.Action("Index", "Accounts", new { q = error.AccountName });
+                    <tr class="errors-row"
+                        data-event-id="@error.Id"
+                        data-copy="@error.CopyText"
+                        data-detail-title="@error.ErrorTypeLabel"
+                        data-detail-subtitle="@error.WorkerName · @error.SeverityLabel"
+                        data-detail-body="@error.Message"
+                        data-detail-attachment="@(error.AttachmentId is not null ? $"/Diagnostics/Image/{error.AttachmentId}" : "")"
+                        data-detail-log-url="@Url.Action("Index", "Settings", new { tab = "logs", workerId = error.WorkerId })"
+                        data-detail-worker-url="@workerUrl"
+                        data-detail-account-url="@(accountUrl ?? "")">
+                        <td class="errors-time" data-label="Время"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(error.OccurredAtUtc, "datetime-seconds"))" /></td>
+                        <td data-label="Уровень">
+                            <span class="error-severity-badge error-severity-badge--@error.Severity">@error.SeverityLabel</span>
+                        </td>
+                        <td class="errors-type" data-label="Тип ошибки">@error.ErrorTypeLabel</td>
+                        <td class="errors-message" data-label="Сообщение" title="@error.Message">@error.Message</td>
+                        <td class="cell-link" data-label="Аккаунт">
+                            @if (accountUrl is not null)
+                            {
+                                <a href="@accountUrl">@error.AccountName</a>
+                            }
+                            else
+                            {
+                                <span class="errors-muted">—</span>
+                            }
+                        </td>
+                        <td class="cell-link" data-label="Воркер">
+                            <a href="@workerUrl">@error.WorkerName</a>
+                        </td>
+                        <td class="cell-num @(error.OccurrenceCount > 10 ? "errors-count-high" : "")" data-label="Повторений">@error.OccurrenceCount</td>
+                        <td class="errors-last-seen" data-label="Последнее появление"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(error.LastSeenUtc, "time"))" /></td>
+                        <td class="data-table-menu" data-label="">
+                            <div class="row-menu" data-row-menu>
+                                <button type="button" class="row-menu-btn" aria-label="Действия" aria-expanded="false" aria-haspopup="true">
+                                    <i class="fa-solid fa-ellipsis-vertical" aria-hidden="true"></i>
+                                </button>
+                                <div class="row-menu-dropdown row-menu-dropdown--errors" hidden>
+                                    <a class="row-menu-item" href="@Url.Action("Index", "Settings", new { tab = "logs", workerId = error.WorkerId })">
+                                        <i class="fa-regular fa-file-lines" aria-hidden="true"></i>
+                                        Открыть лог
+                                    </a>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        }
+
+        <partial name="_Pagination" model="@(new PaginationPartialViewModel
+        {
+            Pagination = pagination,
+            Controller = "Events",
+            Action = "Index",
+            RouteValues = new
+            {
+                view = "errors",
+                q = Model.Filters.SearchQuery,
+                severity = Model.Filters.Severity,
+                type = Model.Filters.Type,
+                workerId = Model.Filters.WorkerId,
+                accountId = Model.Filters.AccountId
+            }
+        })" />
+    </div>
+</div>

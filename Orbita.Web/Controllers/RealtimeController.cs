@@ -5,7 +5,7 @@ using Orbita.Web.Services;
 namespace Orbita.Web.Controllers;
 
 [Authorize]
-public sealed class RealtimeController(AuthSession session) : Controller
+public sealed class RealtimeController(IConfiguration configuration, AuthSession session) : Controller
 {
     [HttpGet]
     public IActionResult AccessToken()
@@ -17,17 +17,31 @@ public sealed class RealtimeController(AuthSession session) : Controller
             return Unauthorized(new { error = "Сессия недействительна." });
         }
 
-        // Same-origin URL: browser must not use OrbitaApi:BaseUrl (often internal http://api:8080 in Docker).
+        // Prefer public API URL in production: WebSocket through Web→YARP→API often fails behind reverse proxies.
+        // OrbitaApi:BaseUrl is internal (http://api:8080 in Docker) and must not be sent to the browser.
+        var hubUrl = BuildHubUrl();
+
+        return Json(new
+        {
+            hubUrl,
+            accessToken = token
+        });
+    }
+
+    private string BuildHubUrl()
+    {
+        var publicApiBase = configuration["OrbitaApi:PublicBaseUrl"]?.Trim().TrimEnd('/');
+        if (!string.IsNullOrWhiteSpace(publicApiBase))
+        {
+            return $"{publicApiBase}/hubs/panel";
+        }
+
         var hubPath = $"{Request.PathBase}/hubs/panel".Replace("//", "/");
         if (!hubPath.StartsWith('/'))
         {
             hubPath = "/" + hubPath;
         }
 
-        return Json(new
-        {
-            hubUrl = hubPath,
-            accessToken = token
-        });
+        return hubPath;
     }
 }

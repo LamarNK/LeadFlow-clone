@@ -75,11 +75,7 @@
             var attachmentUrl = error.attachmentId ? '/Diagnostics/Image/' + error.attachmentId : '';
             var countClass = (error.occurrenceCount || 0) > 10 ? ' errors-count-high' : '';
             var menu = shared.rowMenuShell('row-menu-dropdown--errors',
-                '<a class="row-menu-item" href="' + shared.escapeHtml(settingsLogsUrl(error.workerId)) + '"><i class="fa-regular fa-file-lines" aria-hidden="true"></i>Открыть лог</a>' +
-                (accountUrl ? '<a class="row-menu-item" href="' + shared.escapeHtml(accountUrl) + '"><i class="fa-regular fa-user" aria-hidden="true"></i>Перейти к аккаунту</a>' : '') +
-                '<a class="row-menu-item" href="' + shared.escapeHtml(workerUrl) + '"><i class="fa-solid fa-server" aria-hidden="true"></i>Перейти к воркеру</a>' +
-                '<button type="button" class="row-menu-item" data-copy-error><i class="fa-regular fa-copy" aria-hidden="true"></i>Копировать текст ошибки</button>' +
-                '<button type="button" class="row-menu-item" data-error-dismiss data-event-id="' + shared.escapeHtml(error.id) + '"><i class="fa-regular fa-circle-check" aria-hidden="true"></i>Отметить как обработанную</button>');
+                '<a class="row-menu-item" href="' + shared.escapeHtml(settingsLogsUrl(error.workerId)) + '"><i class="fa-regular fa-file-lines" aria-hidden="true"></i>Открыть лог</a>');
 
             return '<tr class="errors-row" data-event-id="' + shared.escapeHtml(error.id) + '" data-copy="' + shared.escapeHtml(error.copyText || '') + '"' +
                 ' data-detail-title="' + shared.escapeHtml(error.errorTypeLabel || 'Детали') + '"' +

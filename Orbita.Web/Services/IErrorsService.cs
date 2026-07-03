@@ -9,7 +9,7 @@ public interface IErrorsService
         string? severity = null,
         string? type = null,
         Guid? workerId = null,
-        string? account = null,
+        Guid? accountId = null,
         int page = 1,
         CancellationToken ct = default);
 

@@ -20,6 +20,8 @@ public sealed class ResponsesIndexViewModel
     public PaginationViewModel Pagination { get; init; } = new();
     public ResponseDetailViewModel? Selected { get; init; }
     public bool HasActiveFilters { get; init; }
+    public IReadOnlyList<ActiveFilterChipViewModel> ActiveFilterChips { get; init; } = [];
+    public int ActiveFilterCount => ActiveFilterChips.Count;
 }
 
 public sealed record ResponsesFilterViewModel
@@ -78,6 +80,8 @@ public sealed class ResponseDetailViewModel
     public string MessengerUrl { get; init; } = string.Empty;
     public Guid AccountId { get; init; }
     public string AccountName { get; init; } = string.Empty;
+    public string? AvitoSubProfileId { get; init; }
+    public string? AvitoSubProfileName { get; init; }
     public Guid WorkerId { get; init; }
     public string WorkerName { get; init; } = string.Empty;
     public string Source { get; init; } = "Avito";

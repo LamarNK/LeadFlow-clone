@@ -196,6 +196,115 @@ public sealed class TelemetryServiceTests
     }
 
     [Fact]
+    public async Task SaveEventsAsync_SkipsDuplicateActiveEvent()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db, disabledIdsJson: "[]");
+        const string message = "Аккаунт «acc-1» — Капча / блок IP: требуется действие";
+        db.WorkerEvents.Add(new WorkerEventEntity
+        {
+            Id = Guid.NewGuid(),
+            WorkerId = WorkerId,
+            AccountId = AccountId,
+            Level = "Warning",
+            Message = message,
+            CreatedAtUtc = DateTime.UtcNow.AddMinutes(-5)
+        });
+        await db.SaveChangesAsync();
+
+        var sut = new TelemetryService(db, new OfficeAdminService(db), new NoopPanelRealtimeNotifier());
+        var request = new WorkerEventBatchRequest(
+            WorkerId,
+            [
+                new WorkerEventDto(
+                    AccountId,
+                    "Warning",
+                    message,
+                    """{"attachmentId":"11111111-1111-1111-1111-111111111111"}""",
+                    DateTime.UtcNow)
+            ]);
+
+        var saved = await sut.SaveEventsAsync(request, CancellationToken.None);
+
+        Assert.True(saved);
+        Assert.Equal(1, await db.WorkerEvents.CountAsync());
+    }
+
+    [Fact]
+    public async Task SaveEventsAsync_SkipsEventAfterDismiss()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db, disabledIdsJson: "[]");
+        const string message = "Аккаунт «acc-1» — Нужен вход: сессия истекла";
+        db.WorkerEvents.Add(new WorkerEventEntity
+        {
+            Id = Guid.NewGuid(),
+            WorkerId = WorkerId,
+            AccountId = AccountId,
+            Level = "Warning",
+            Message = message,
+            CreatedAtUtc = DateTime.UtcNow.AddHours(-1),
+            IsDismissed = true,
+            DismissedAtUtc = DateTime.UtcNow.AddMinutes(-30)
+        });
+        await db.SaveChangesAsync();
+
+        var sut = new TelemetryService(db, new OfficeAdminService(db), new NoopPanelRealtimeNotifier());
+        var request = new WorkerEventBatchRequest(
+            WorkerId,
+            [
+                new WorkerEventDto(
+                    AccountId,
+                    "Warning",
+                    message,
+                    """{"attachmentId":"22222222-2222-2222-2222-222222222222"}""",
+                    DateTime.UtcNow)
+            ]);
+
+        var saved = await sut.SaveEventsAsync(request, CancellationToken.None);
+
+        Assert.True(saved);
+        Assert.Equal(1, await db.WorkerEvents.CountAsync());
+        Assert.True((await db.WorkerEvents.SingleAsync()).IsDismissed);
+    }
+
+    [Fact]
+    public async Task SaveEventsAsync_InsertsWhenFingerprintDiffers()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db, disabledIdsJson: "[]");
+        db.WorkerEvents.Add(new WorkerEventEntity
+        {
+            Id = Guid.NewGuid(),
+            WorkerId = WorkerId,
+            AccountId = AccountId,
+            Level = "Warning",
+            Message = "Аккаунт «acc-1» — Нужен вход: сессия истекла",
+            CreatedAtUtc = DateTime.UtcNow.AddHours(-1),
+            IsDismissed = true,
+            DismissedAtUtc = DateTime.UtcNow.AddMinutes(-30)
+        });
+        await db.SaveChangesAsync();
+
+        var sut = new TelemetryService(db, new OfficeAdminService(db), new NoopPanelRealtimeNotifier());
+        var request = new WorkerEventBatchRequest(
+            WorkerId,
+            [
+                new WorkerEventDto(
+                    AccountId,
+                    "Error",
+                    "Ошибка аккаунта acc-1: timeout",
+                    "timeout",
+                    DateTime.UtcNow)
+            ]);
+
+        var saved = await sut.SaveEventsAsync(request, CancellationToken.None);
+
+        Assert.True(saved);
+        Assert.Equal(2, await db.WorkerEvents.CountAsync());
+    }
+
+    [Fact]
     public async Task SaveSnapshotAsync_PreservesSubProfilesDisabledIdsJson()
     {
         await using var db = CreateDb();

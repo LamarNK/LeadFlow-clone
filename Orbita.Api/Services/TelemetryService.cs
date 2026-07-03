@@ -316,8 +316,56 @@ public sealed class TelemetryService(
             return false;
         }
 
+        if (request.Events.Count == 0)
+        {
+            await SaveSnapshotChangesAsync(request.WorkerId, ct);
+            return true;
+        }
+
+        var messages = request.Events
+            .Select(x => x.Message.Trim())
+            .Where(x => x.Length > 0)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        var existingRows = messages.Count == 0
+            ? []
+            : await db.WorkerEvents
+                .AsNoTracking()
+                .Where(x => x.WorkerId == request.WorkerId && messages.Contains(x.Message))
+                .Select(x => new WorkerEventFingerprintRow(
+                    x.AccountId,
+                    x.Level,
+                    x.Message,
+                    x.IsDismissed))
+                .ToListAsync(ct);
+
+        var knownFingerprints = existingRows
+            .Select(x => WorkerEventDedupHelper.BuildFingerprint(
+                request.WorkerId,
+                x.AccountId,
+                x.Level,
+                x.Message))
+            .ToHashSet(StringComparer.Ordinal);
+
+        var inserted = 0;
         foreach (var evt in request.Events)
         {
+            if (string.IsNullOrWhiteSpace(evt.Message))
+            {
+                continue;
+            }
+
+            var fingerprint = WorkerEventDedupHelper.BuildFingerprint(
+                request.WorkerId,
+                evt.AccountId,
+                evt.Level,
+                evt.Message);
+            if (!knownFingerprints.Add(fingerprint))
+            {
+                continue;
+            }
+
             db.WorkerEvents.Add(new WorkerEventEntity
             {
                 Id = Guid.NewGuid(),
@@ -328,11 +376,12 @@ public sealed class TelemetryService(
                 Details = evt.Details,
                 CreatedAtUtc = DateTimeUtcHelper.EnsureUtc(evt.CreatedAtUtc)
             });
+            inserted++;
         }
 
         await SaveSnapshotChangesAsync(request.WorkerId, ct);
 
-        if (request.Events.Count > 0)
+        if (inserted > 0)
         {
             var worker = await db.Workers.AsNoTracking()
                 .Where(x => x.Id == request.WorkerId)
@@ -355,4 +404,10 @@ public sealed class TelemetryService(
 
         return true;
     }
+
+    private sealed record WorkerEventFingerprintRow(
+        Guid? AccountId,
+        string Level,
+        string Message,
+        bool IsDismissed);
 }

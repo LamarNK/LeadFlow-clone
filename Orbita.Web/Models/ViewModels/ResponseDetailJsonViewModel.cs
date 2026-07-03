@@ -1,0 +1,37 @@
+namespace Orbita.Web.Models.ViewModels;
+
+public sealed class ResponseDetailJsonViewModel
+{
+    public string Title { get; init; } = string.Empty;
+    public string Subtitle { get; init; } = string.Empty;
+    public IReadOnlyList<DetailSectionItemViewModel> Sections { get; init; } = [];
+    public IReadOnlyList<DetailChatMessageViewModel> ChatMessages { get; init; } = [];
+    public IReadOnlyList<DetailActionLinkViewModel> Links { get; init; } = [];
+    public IReadOnlyList<DetailActionLinkViewModel> PrimaryActions { get; init; } = [];
+    public string? CopyText { get; init; }
+    public string CopyLabel { get; init; } = "Копировать телефон";
+}
+
+public sealed class DetailSectionItemViewModel
+{
+    public string Label { get; init; } = string.Empty;
+    public string Value { get; init; } = string.Empty;
+    public string? Href { get; init; }
+}
+
+public sealed class DetailChatMessageViewModel
+{
+    public string Text { get; init; } = string.Empty;
+    public string Tone { get; init; } = "incoming";
+    public string? TimeLabel { get; init; }
+}
+
+public sealed class DetailActionLinkViewModel
+{
+    public string Label { get; init; } = string.Empty;
+    public string Href { get; init; } = string.Empty;
+    public bool External { get; init; }
+    public string Tone { get; init; } = "secondary";
+    public string Action { get; init; } = "link";
+    public Guid? ResponseId { get; init; }
+}

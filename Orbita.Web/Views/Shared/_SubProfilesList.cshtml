@@ -60,7 +60,13 @@
                     </div>
                 }
             </div>
-            <span class="subprofiles-balance">@sub.BalanceText</span>
+            <div class="subprofiles-meta">
+                @if (!string.IsNullOrWhiteSpace(sub.RatingText))
+                {
+                    <span class="subprofiles-rating">@sub.RatingText</span>
+                }
+                <span class="subprofiles-balance">@sub.BalanceText</span>
+            </div>
         </li>
     }
 </ul>

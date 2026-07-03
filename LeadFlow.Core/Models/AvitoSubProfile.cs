@@ -18,8 +18,23 @@ public sealed class AvitoSubProfile
     /// <summary>True, если профиль сейчас выбран (ProfileCard-module-isCurrent).</summary>
     public bool IsCurrent { get; set; }
 
-    /// <summary>Баланс на Avito для этого субпрофиля (null — не указан, 0 — пустой).</summary>
+    /// <summary>Баланс «Аванс» на Avito для этого субпрофиля (null — не указан, 0 — пустой).</summary>
     public decimal? Balance { get; set; }
+
+    /// <summary>Баланс «Кошелёк» на Avito для этого субпрофиля.</summary>
+    public decimal? WalletBalance { get; set; }
+
+    /// <summary>Оценка Avito, на сколько хватит аванса (например, «~ на 9 дней»).</summary>
+    public string AdvanceDurationText { get; set; } = string.Empty;
+
+    /// <summary>Рейтинг субпрофиля из сайдбара (<c>osp-sidebar/tools/stats/rating</c>).</summary>
+    public decimal? Rating { get; set; }
+
+    /// <summary>Число отзывов, если удалось извлечь из текста («1 отзыв», «5 отзывов»).</summary>
+    public int? ReviewsCount { get; set; }
+
+    /// <summary>Сырой текст отзывов из сайдбара (например, «1 отзыв»).</summary>
+    public string ReviewsText { get; set; } = string.Empty;
 
     /// <summary>Тип последней проблемы (<see cref="AvitoSubProfileIssueKind"/>); пусто — всё в порядке.</summary>
     public string LastIssueKind { get; set; } = string.Empty;

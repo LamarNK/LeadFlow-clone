@@ -14,7 +14,23 @@ else
                 "warning" => "fa-solid fa-triangle-exclamation",
                 _ => "fa-regular fa-circle-check"
             };
-            <div class="dash-event-row">
+            var workerUrl = Url.Action("Details", "Workers", new { id = evt.WorkerId });
+            var accountUrl = string.IsNullOrWhiteSpace(evt.AccountName)
+                ? null
+                : Url.Action("Index", "Accounts", new { q = evt.AccountName });
+            var logUrl = Url.Action("Index", "Settings", new { tab = "logs", workerId = evt.WorkerId });
+            var attachmentUrl = evt.AttachmentId is not null ? $"/Diagnostics/Image/{evt.AttachmentId}" : "";
+            <div class="dash-event-row dash-event-row--detail" role="button" tabindex="0"
+                 data-event-id="@evt.Id"
+                 data-copy="@evt.CopyText"
+                 data-detail-title="@evt.DetailTitle"
+                 data-detail-subtitle="@evt.DetailSubtitle"
+                 data-detail-body="@evt.DetailBody"
+                 data-detail-attachment="@attachmentUrl"
+                 data-detail-log-url="@logUrl"
+                 data-detail-worker-url="@workerUrl"
+                 data-detail-account-url="@(accountUrl ?? "")"
+                 data-is-error="@(evt.IsError ? "true" : "false")">
                 <div class="dash-event-icon dash-event-icon--@evt.Level">
                     <i class="@icon" aria-hidden="true"></i>
                 </div>

@@ -12,25 +12,6 @@
      data-worker-details-url="@Url.Action("Details", "Workers", new { id = "__id__" })"
      data-account-search-url="@Url.Action("Index", "Accounts", new { q = "__q__" })"
      data-responses-filter-url="@Url.Action("Index", "Responses", new { accountId = "__id__" })">
-    <nav class="orbita-breadcrumbs orbita-breadcrumbs--accounts" aria-label="Навигация">
-        @for (var i = 0; i < Model.Breadcrumbs.Count; i++)
-        {
-            var crumb = Model.Breadcrumbs[i];
-            if (i > 0)
-            {
-                <span class="orbita-breadcrumbs-sep" aria-hidden="true">&gt;</span>
-            }
-            if (crumb.IsActive || string.IsNullOrEmpty(crumb.Url))
-            {
-                <span class="orbita-breadcrumbs-current">@crumb.Label</span>
-            }
-            else
-            {
-                <a class="orbita-breadcrumbs-link" href="@crumb.Url">@crumb.Label</a>
-            }
-        }
-    </nav>
-
     <div class="kpi-row accounts-kpi-row">
         @{ var kpiIdx = 0; }
         @foreach (var kpi in Model.KpiCards)
@@ -139,7 +120,11 @@
                         </td>
                         <td class="cell-num cell-balance" data-label="Баланс">
                             <div class="account-balance">
-                                <span class="account-balance-total" title="@(account.HasMultipleSubProfiles ? "Сумма авансов по субпрофилям" : null)">@account.Balance.ToString("N0") ₽</span>
+                                <span class="account-balance-total" title="@(account.HasMultipleSubProfiles ? "Сумма авансов по субпрофилям" : "Аванс")">@account.Balance.ToString("N0") ₽</span>
+                                @if (!string.IsNullOrWhiteSpace(account.BalanceSubtitle))
+                                {
+                                    <span class="account-balance-breakdown">@account.BalanceSubtitle</span>
+                                }
                             </div>
                         </td>
                         <td class="cell-num" data-label="Откликов">@account.Responses</td>

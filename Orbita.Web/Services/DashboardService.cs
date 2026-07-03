@@ -24,7 +24,10 @@ public sealed class DashboardService(OrbitaApiClient api, IOptions<DesignPreview
         }
 
         var workers = await api.GetWorkersAsync(ct) ?? [];
-        var events = await api.GetEventsAsync(limit: 5, ct: ct) ?? [];
+        var events = await api.GetEventsAsync(
+            limit: DashboardRecentEvents.Limit,
+            sinceUtc: DashboardRecentEvents.SinceUtc,
+            ct: ct) ?? [];
         var accountStats = await BuildAccountStatsAsync(workers, summary, ct);
         var periodStats = AggregatePeriodStats(summary, period);
         var kpiCards = BuildKpiCards(summary, periodStats, period, accountStats);

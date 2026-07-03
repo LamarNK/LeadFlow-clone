@@ -17,6 +17,8 @@
      data-orbita-snapshot="@snapshotUrl"
      data-worker-id="@Model.WorkerId"
      data-account-search-url="@Url.Action("Index", "Accounts", new { q = "__q__" })"
+     data-worker-details-url="@Url.Action("Details", "Workers", new { id = "__id__" })"
+     data-settings-logs-url="@Url.Action("Index", "Settings", new { tab = "logs", workerId = "__id__" })"
      data-responses-filter-url="@Url.Action("Index", "Responses", new { accountId = "__id__" })">
     <nav class="orbita-breadcrumbs" aria-label="Навигация">
         @for (var i = 0; i < Model.Breadcrumbs.Count; i++)
@@ -185,6 +187,9 @@
                                 <input type="range" id="maxConcurrentAccounts" name="maxConcurrentAccounts" min="1" max="10" value="@Model.MaxConcurrentAccounts" />
                                 <output id="maxConcurrentAccountsOut">@Model.MaxConcurrentAccounts</output>
                             </div>
+                            <span class="worker-settings-hint">
+                                Применяется в текущем цикле перед стартом следующего аккаунта. Уже открытые браузеры не закрываются при уменьшении лимита.
+                            </span>
                         </label>
                     </div>
 
@@ -372,7 +377,7 @@
                                 <span class="account-error-hint" title="@account.LastErrorMessage">@account.LastErrorMessage</span>
                             }
                         </td>
-                        <td data-label="Баланс">@account.BalanceText</td>
+                        <td data-label="Баланс"><span class="account-balance-multiline">@account.BalanceText</span></td>
                         <td data-label="Откликов">@account.Responses</td>
                         <td data-label="Последняя активность"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(account.LastActivityUtc, "activity"))" /></td>
                         <td data-label="Ошибок">@account.Errors</td>

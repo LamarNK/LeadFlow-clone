@@ -48,6 +48,7 @@ public sealed record ResponseDetailDto(
     string VacancyUrl,
     string MessengerUrl,
     string AvitoSubProfileId,
+    string? AvitoSubProfileName,
     string RawText,
     string ChatMessagesJson,
     string Status,

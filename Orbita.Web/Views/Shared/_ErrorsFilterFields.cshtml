@@ -1,0 +1,39 @@
+@model ErrorsIndexViewModel
+<div class="orbita-filters-fields errors-filters-row" id="errorsFilterPanel" data-orbita-collapsible-filters hidden>
+    <input type="hidden" name="view" value="errors" />
+    <label class="errors-filter-field">
+        <span class="errors-filter-label">Уровень</span>
+        <select name="severity" class="errors-select" aria-label="Уровень">
+            @foreach (var opt in Model.SeverityOptions)
+            {
+                <option value="@opt.Value" selected="@(opt.Value == (Model.Filters.Severity ?? ""))">@opt.Label</option>
+            }
+        </select>
+    </label>
+    <label class="errors-filter-field">
+        <span class="errors-filter-label">Тип ошибки</span>
+        <select name="type" class="errors-select" aria-label="Тип ошибки">
+            @foreach (var opt in Model.ErrorTypes)
+            {
+                <option value="@opt.Value" selected="@(opt.Value == (Model.Filters.Type ?? ""))">@opt.Label</option>
+            }
+        </select>
+    </label>
+    <label class="errors-filter-field">
+        <span class="errors-filter-label">Воркер</span>
+        <select name="workerId" class="errors-select" aria-label="Воркер">
+            @foreach (var opt in Model.Workers)
+            {
+                <option value="@opt.Value" selected="@(opt.Value == (Model.Filters.WorkerId?.ToString() ?? ""))">@opt.Label</option>
+            }
+        </select>
+    </label>
+    <label class="errors-filter-field">
+        <span class="errors-filter-label">Аккаунт</span>
+        <partial name="_AccountCombobox" model="@(new AccountComboboxViewModel {
+            FieldName = "accountId",
+            SelectedValue = Model.Filters.AccountId?.ToString() ?? "",
+            Options = Model.Accounts
+        })" />
+    </label>
+</div>

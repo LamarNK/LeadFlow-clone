@@ -809,8 +809,8 @@ public sealed class MonitoringServiceTests
             public Task<string> LoadBlockedItemsHtmlAsync(CancellationToken cancellationToken = default) =>
                 Task.FromResult(string.Empty);
 
-            public Task<decimal?> TryReadAdvanceBalanceAsync(CancellationToken cancellationToken = default) =>
-                Task.FromResult<decimal?>(null);
+            public Task<AvitoMoneySidebar?> TryReadMoneySidebarAsync(CancellationToken cancellationToken = default) =>
+                Task.FromResult<AvitoMoneySidebar?>(null);
 
             public Task<string> CaptureProfileSwitchHtmlAsync(CancellationToken cancellationToken = default) =>
                 Task.FromResult(string.Empty);

@@ -83,14 +83,17 @@ public sealed class WorkerTelemetryCollector(AppRepository repository)
         var balanceItems = subProfiles
             .Select(sp => new SubProfileBalanceDto(
                 string.IsNullOrWhiteSpace(sp.Name) ? sp.Id : sp.Name,
-                sp.Balance))
+                sp.Balance,
+                sp.WalletBalance,
+                string.IsNullOrWhiteSpace(sp.AdvanceDurationText) ? null : sp.AdvanceDurationText))
             .ToList();
 
         return new WorkerBalanceDto(
             account.AccountId,
             account.DisplayName,
             balanceItems.Sum(x => x.Balance ?? 0m),
-            balanceItems);
+            balanceItems,
+            balanceItems.Sum(x => x.WalletBalance ?? 0m));
     }
 
     private static IReadOnlyList<WorkerSubProfileDto>? MapSubProfiles(AvitoAccount? local)
@@ -110,7 +113,12 @@ public sealed class WorkerTelemetryCollector(AppRepository repository)
                 string.IsNullOrWhiteSpace(sp.LastIssueKind) ? null : sp.LastIssueKind,
                 string.IsNullOrWhiteSpace(sp.LastIssueMessage) ? null : sp.LastIssueMessage,
                 sp.LastIssueAt,
-                DiagnosticAttachmentId: sp.LastDiagnosticAttachmentId))
+                DiagnosticAttachmentId: sp.LastDiagnosticAttachmentId,
+                WalletBalance: sp.WalletBalance,
+                AdvanceDurationText: string.IsNullOrWhiteSpace(sp.AdvanceDurationText) ? null : sp.AdvanceDurationText,
+                Rating: sp.Rating,
+                ReviewsCount: sp.ReviewsCount,
+                ReviewsText: string.IsNullOrWhiteSpace(sp.ReviewsText) ? null : sp.ReviewsText))
             .ToList();
     }
 

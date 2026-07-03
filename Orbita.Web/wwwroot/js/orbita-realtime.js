@@ -139,10 +139,23 @@
                     return connection;
                 }
 
+                var hubUrl = payload.hubUrl || '/hubs/panel';
+                // Same-origin hub goes through Web→YARP→API; WebSocket upgrade often fails there.
+                // Direct api.* URL (absolute) supports WebSocket through a single reverse proxy hop.
+                var useWebSockets = /^https?:\/\//i.test(hubUrl);
+                var transports = useWebSockets
+                    ? (signalR.HttpTransportType.WebSockets
+                        | signalR.HttpTransportType.ServerSentEvents
+                        | signalR.HttpTransportType.LongPolling)
+                    : (signalR.HttpTransportType.ServerSentEvents
+                        | signalR.HttpTransportType.LongPolling);
+
                 connection = new signalR.HubConnectionBuilder()
-                    .withUrl(payload.hubUrl, {
-                        accessTokenFactory: function () { return accessToken || ''; }
+                    .withUrl(hubUrl, {
+                        accessTokenFactory: function () { return accessToken || ''; },
+                        transport: transports
                     })
+                    .configureLogging(signalR.LogLevel.Warning)
                     .withAutomaticReconnect([0, 2000, 5000, 10000, 30000])
                     .build();
 

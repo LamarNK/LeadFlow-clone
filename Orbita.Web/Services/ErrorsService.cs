@@ -11,7 +11,7 @@ public sealed class ErrorsService(OrbitaApiClient api, IOptions<DesignPreviewOpt
         string? severity = null,
         string? type = null,
         Guid? workerId = null,
-        string? account = null,
+        Guid? accountId = null,
         int page = 1,
         CancellationToken ct = default)
     {
@@ -21,7 +21,7 @@ public sealed class ErrorsService(OrbitaApiClient api, IOptions<DesignPreviewOpt
             Severity = severity,
             Type = type,
             WorkerId = workerId,
-            Account = account
+            AccountId = accountId
         };
 
         if (previewOptions.Value.Enabled)

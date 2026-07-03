@@ -70,7 +70,12 @@ public sealed record WorkerSubProfileDto(
     string? LastIssueMessage,
     DateTime? LastIssueAt,
     bool IsEnabledInPanel = true,
-    Guid? DiagnosticAttachmentId = null);
+    Guid? DiagnosticAttachmentId = null,
+    decimal? WalletBalance = null,
+    string? AdvanceDurationText = null,
+    decimal? Rating = null,
+    int? ReviewsCount = null,
+    string? ReviewsText = null);
 
 public sealed record WorkerAccountDto(
     Guid AccountId,
@@ -95,11 +100,14 @@ public sealed record WorkerBalanceDto(
     Guid AccountId,
     string AccountName,
     decimal TotalBalance,
-    IReadOnlyList<SubProfileBalanceDto> SubProfiles);
+    IReadOnlyList<SubProfileBalanceDto> SubProfiles,
+    decimal TotalWalletBalance = 0);
 
 public sealed record SubProfileBalanceDto(
     string SubProfileName,
-    decimal? Balance);
+    decimal? Balance,
+    decimal? WalletBalance = null,
+    string? AdvanceDurationText = null);
 
 public sealed record WorkerEventBatchRequest(
     Guid WorkerId,
@@ -122,7 +130,17 @@ public static class WorkerActivityPhases
     public const string Skipped = "skipped";
     public const string Error = "error";
     public const string Stopped = "stopped";
+    public const string Parallel = "parallel";
 }
+
+public sealed record WorkerActiveAccountDto(
+    Guid AccountId,
+    string AccountName,
+    string Phase,
+    string Message,
+    string? SubProfileId = null,
+    string? SubProfileName = null,
+    DateTime UpdatedAtUtc = default);
 
 public sealed record WorkerActivityRequest(
     Guid WorkerId,
@@ -133,7 +151,8 @@ public sealed record WorkerActivityRequest(
     string? SubProfileId = null,
     string? SubProfileName = null,
     DateTime? NextCycleAtUtc = null,
-    DateTime UpdatedAtUtc = default);
+    DateTime UpdatedAtUtc = default,
+    IReadOnlyList<WorkerActiveAccountDto>? ActiveAccounts = null);
 
 public sealed record WorkerActivityDto(
     string Phase,
@@ -143,4 +162,5 @@ public sealed record WorkerActivityDto(
     string? SubProfileId,
     string? SubProfileName,
     DateTime? NextCycleAtUtc,
-    DateTime UpdatedAtUtc);
+    DateTime UpdatedAtUtc,
+    IReadOnlyList<WorkerActiveAccountDto> ActiveAccounts = null!);

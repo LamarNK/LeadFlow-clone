@@ -2231,10 +2231,12 @@ public sealed class MonitoringService(
         var part = avitoParser.ParseProfilePage(activeHtml, account.Id);
         part.ItemSnippetMarkersFound = CountItemSnippetMarkers(activeHtml);
         part.PageLoadedSuccessfully = true;
-        part.Balance = AvitoBalanceParser.ParseAdvanceBalance(activeHtml);
-        if (part.Balance is null &&
+        var money = AvitoBalanceParser.ParseMoneySidebar(activeHtml);
+        money?.ApplyTo(part);
+        if (money is null &&
             (activeHtml.Contains("osp-sidebar/tools/money", StringComparison.OrdinalIgnoreCase) ||
-             activeHtml.Contains("Аванс", StringComparison.OrdinalIgnoreCase)))
+             activeHtml.Contains("Аванс", StringComparison.OrdinalIgnoreCase) ||
+             activeHtml.Contains("Кошел", StringComparison.OrdinalIgnoreCase)))
         {
             _ = GlobalLogger.Instance.LogAsync(
                 $"Аккаунт {account.DisplayName}: не удалось распарсить баланс Avito из sidebar HTML.",
@@ -2245,7 +2247,8 @@ public sealed class MonitoringService(
                     ["accountId"] = account.Id,
                     ["accountName"] = account.DisplayName,
                     ["html.hasMoneyMarker"] = activeHtml.Contains("osp-sidebar/tools/money", StringComparison.OrdinalIgnoreCase),
-                    ["html.hasAdvanceText"] = activeHtml.Contains("Аванс", StringComparison.OrdinalIgnoreCase)
+                    ["html.hasAdvanceText"] = activeHtml.Contains("Аванс", StringComparison.OrdinalIgnoreCase),
+                    ["html.hasWalletText"] = activeHtml.Contains("Кошел", StringComparison.OrdinalIgnoreCase)
                 });
         }
 
@@ -2329,10 +2332,12 @@ public sealed class MonitoringService(
         var part = avitoParser.ParseProfilePage(activeHtml, account.Id);
         part.ItemSnippetMarkersFound = CountItemSnippetMarkers(activeHtml);
         part.PageLoadedSuccessfully = true;
-        part.Balance = AvitoBalanceParser.ParseAdvanceBalance(activeHtml);
-        if (part.Balance is null &&
+        var money = AvitoBalanceParser.ParseMoneySidebar(activeHtml);
+        money?.ApplyTo(part);
+        if (money is null &&
             (activeHtml.Contains("osp-sidebar/tools/money", StringComparison.OrdinalIgnoreCase) ||
-             activeHtml.Contains("Аванс", StringComparison.OrdinalIgnoreCase)))
+             activeHtml.Contains("Аванс", StringComparison.OrdinalIgnoreCase) ||
+             activeHtml.Contains("Кошел", StringComparison.OrdinalIgnoreCase)))
         {
             _ = GlobalLogger.Instance.LogAsync(
                 $"Аккаунт {account.DisplayName}: не удалось распарсить баланс Avito из sidebar HTML.",
@@ -2343,7 +2348,8 @@ public sealed class MonitoringService(
                     ["accountId"] = account.Id,
                     ["accountName"] = account.DisplayName,
                     ["html.hasMoneyMarker"] = activeHtml.Contains("osp-sidebar/tools/money", StringComparison.OrdinalIgnoreCase),
-                    ["html.hasAdvanceText"] = activeHtml.Contains("Аванс", StringComparison.OrdinalIgnoreCase)
+                    ["html.hasAdvanceText"] = activeHtml.Contains("Аванс", StringComparison.OrdinalIgnoreCase),
+                    ["html.hasWalletText"] = activeHtml.Contains("Кошел", StringComparison.OrdinalIgnoreCase)
                 });
         }
 

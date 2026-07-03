@@ -109,70 +109,8 @@ public sealed class WorkerMonitoringService(
                     activityReporter.ReportCycle(accounts.Count);
 
                     var cycleSw = Stopwatch.StartNew();
-                    var newResponsesThisCycle = 0;
-                    var accountsPolled = 0;
-                    var hadUndischargedBacklog = false;
-                    var parallelism = Math.Clamp(config.MaxConcurrentAccounts, 1, 10);
-                    var launchSlot = 0;
-
-                    if (parallelism == 1)
-                    {
-                        foreach (var account in accounts)
-                        {
-                            if (cancellationToken.IsCancellationRequested)
-                            {
-                                break;
-                            }
-
-                            var (newCount, polled, backlog) = await ProcessAccountAsync(
-                                    account, settings, cancellationToken)
-                                .ConfigureAwait(false);
-                            if (polled)
-                            {
-                                accountsPolled++;
-                                newResponsesThisCycle += newCount;
-                                hadUndischargedBacklog |= backlog;
-                            }
-
-                            await Task.Delay(
-                                    TimeSpan.FromSeconds(MonitoringTiming.DelayBetweenAccountsSeconds),
-                                    cancellationToken)
-                                .ConfigureAwait(false);
-                        }
-                    }
-                    else
-                    {
-                        await Parallel.ForEachAsync(
-                            accounts,
-                            new ParallelOptions
-                            {
-                                MaxDegreeOfParallelism = parallelism,
-                                CancellationToken = cancellationToken
-                            },
-                            async (account, ct) =>
-                            {
-                                var slot = Interlocked.Increment(ref launchSlot) - 1;
-                                if (slot > 0)
-                                {
-                                    await Task.Delay(
-                                            TimeSpan.FromMilliseconds(slot * MonitoringTiming.ParallelAccountLaunchStaggerMs),
-                                            ct)
-                                        .ConfigureAwait(false);
-                                }
-
-                                var (newCount, polled, backlog) = await ProcessAccountAsync(account, settings, ct)
-                                    .ConfigureAwait(false);
-                                if (polled)
-                                {
-                                    Interlocked.Increment(ref accountsPolled);
-                                    Interlocked.Add(ref newResponsesThisCycle, newCount);
-                                    if (backlog)
-                                    {
-                                        Volatile.Write(ref hadUndischargedBacklog, true);
-                                    }
-                                }
-                            }).ConfigureAwait(false);
-                    }
+                    var (newResponsesThisCycle, accountsPolled, hadUndischargedBacklog) =
+                        await ProcessAccountsInCycleAsync(accounts, cancellationToken).ConfigureAwait(false);
 
                     cycleSw.Stop();
                     _consecutiveMonitoringLoopFailures = 0;
@@ -252,6 +190,90 @@ public sealed class WorkerMonitoringService(
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// Обход аккаунтов с динамическим параллелизмом: лимит перечитывается из конфига перед стартом каждого нового аккаунта.
+    /// Уже запущенные браузеры не обрываются при снижении лимита в панели.
+    /// </summary>
+    private async Task<(int NewResponses, int AccountsPolled, bool HadBacklog)> ProcessAccountsInCycleAsync(
+        IReadOnlyList<AvitoAccount> accounts,
+        CancellationToken cancellationToken)
+    {
+        var newResponsesThisCycle = 0;
+        var accountsPolled = 0;
+        var hadUndischargedBacklog = false;
+        var nextIndex = 0;
+        var launchSlot = 0;
+        var running = new List<Task<(int NewCount, bool Polled, bool Backlog)>>();
+        var lastLoggedParallelism = -1;
+
+        while (nextIndex < accounts.Count || running.Count > 0)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            configProvider.InvalidateConfigCache();
+            var config = await configProvider.GetConfigAsync(cancellationToken).ConfigureAwait(false);
+            var settings = ToAppSettings(config);
+            var parallelism = Math.Clamp(config.MaxConcurrentAccounts, 1, 10);
+
+            if (parallelism != lastLoggedParallelism)
+            {
+                lastLoggedParallelism = parallelism;
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"Worker cycle parallelism: {parallelism} account(s) in flight max.",
+                    DeskLinkAuditLogLevel.Info);
+            }
+
+            while (running.Count < parallelism && nextIndex < accounts.Count)
+            {
+                var account = accounts[nextIndex++];
+                var slot = launchSlot++;
+                running.Add(RunAccountInCycleSlotAsync(account, settings, slot, cancellationToken));
+            }
+
+            if (running.Count == 0)
+            {
+                break;
+            }
+
+            var completed = await Task.WhenAny(running).ConfigureAwait(false);
+            running.Remove(completed);
+            var (newCount, polled, backlog) = await completed.ConfigureAwait(false);
+            if (polled)
+            {
+                accountsPolled++;
+                newResponsesThisCycle += newCount;
+                hadUndischargedBacklog |= backlog;
+            }
+
+            if (parallelism == 1 && nextIndex < accounts.Count)
+            {
+                await Task.Delay(
+                        TimeSpan.FromSeconds(MonitoringTiming.DelayBetweenAccountsSeconds),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+        }
+
+        return (newResponsesThisCycle, accountsPolled, hadUndischargedBacklog);
+    }
+
+    private async Task<(int NewCount, bool Polled, bool Backlog)> RunAccountInCycleSlotAsync(
+        AvitoAccount account,
+        AppSettings settings,
+        int launchSlot,
+        CancellationToken cancellationToken)
+    {
+        if (launchSlot > 0)
+        {
+            await Task.Delay(
+                    TimeSpan.FromMilliseconds(launchSlot * MonitoringTiming.ParallelAccountLaunchStaggerMs),
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        return await ProcessAccountAsync(account, settings, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<(int NewResponsesDetected, bool PolledSource, bool HasUndischargedBacklog)> ProcessAccountAsync(
@@ -604,10 +626,7 @@ public sealed class WorkerMonitoringService(
                             statsAggregate.BlockedCount += part.BlockedCount;
                             statsAggregate.DraftsCount += part.DraftsCount;
 
-                            if (part.Balance.HasValue)
-                            {
-                                sub.Balance = part.Balance;
-                            }
+                            part.ApplyMoneyTo(sub);
                         }
                     }
                 }
@@ -834,7 +853,7 @@ public sealed class WorkerMonitoringService(
 
         var part = avitoParser.ParseProfilePage(activeHtml, account.Id);
         part.PageLoadedSuccessfully = true;
-        part.Balance = AvitoBalanceParser.ParseAdvanceBalance(activeHtml);
+        AvitoBalanceParser.ParseMoneySidebar(activeHtml)?.ApplyTo(part);
 
         if (part.BlockedCount > 0)
         {
@@ -869,7 +888,7 @@ public sealed class WorkerMonitoringService(
 
         var part = avitoParser.ParseProfilePage(activeHtml, account.Id);
         part.PageLoadedSuccessfully = true;
-        part.Balance = AvitoBalanceParser.ParseAdvanceBalance(activeHtml);
+        AvitoBalanceParser.ParseMoneySidebar(activeHtml)?.ApplyTo(part);
 
         if (part.BlockedCount > 0)
         {
@@ -894,11 +913,8 @@ public sealed class WorkerMonitoringService(
         IAdsPowerAccountSession session,
         CancellationToken cancellationToken)
     {
-        var balance = await session.TryReadAdvanceBalanceAsync(cancellationToken).ConfigureAwait(false);
-        if (balance.HasValue)
-        {
-            sub.Balance = balance;
-        }
+        var money = await session.TryReadMoneySidebarAsync(cancellationToken).ConfigureAwait(false);
+        money?.ApplyTo(sub);
     }
 
     private async Task TryCaptureAccountBalanceAsync(
@@ -906,8 +922,8 @@ public sealed class WorkerMonitoringService(
         IAdsPowerAccountSession session,
         CancellationToken cancellationToken)
     {
-        var balance = await session.TryReadAdvanceBalanceAsync(cancellationToken).ConfigureAwait(false);
-        if (!balance.HasValue)
+        var money = await session.TryReadMoneySidebarAsync(cancellationToken).ConfigureAwait(false);
+        if (money is null || !money.HasAnyData)
         {
             return;
         }
@@ -915,19 +931,20 @@ public sealed class WorkerMonitoringService(
         var subs = account.SubProfiles.ToList();
         if (subs.Count == 0)
         {
-            subs.Add(new AvitoSubProfile
+            var created = new AvitoSubProfile
             {
                 Id = account.Id.ToString("N"),
                 Name = account.DisplayName,
-                IsCurrent = true,
-                Balance = balance
-            });
+                IsCurrent = true
+            };
+            money.ApplyTo(created);
+            subs.Add(created);
             account.SetSubProfiles(subs);
             return;
         }
 
         var target = subs.FirstOrDefault(s => s.IsCurrent) ?? subs[0];
-        target.Balance = balance;
+        money.ApplyTo(target);
         account.SetSubProfiles(subs);
     }
 

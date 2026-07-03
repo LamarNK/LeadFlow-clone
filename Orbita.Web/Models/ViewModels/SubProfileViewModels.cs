@@ -1,3 +1,6 @@
+using Orbita.Contracts;
+using Orbita.Web.Formatting;
+
 namespace Orbita.Web.Models.ViewModels;
 
 public sealed class SubProfileRowViewModel
@@ -8,6 +11,7 @@ public sealed class SubProfileRowViewModel
     public bool IsCurrent { get; init; }
     public bool IsEnabledInPanel { get; init; } = true;
     public string BalanceText { get; init; } = "—";
+    public string? RatingText { get; init; }
     public bool HasIssue { get; init; }
     public string? IssueSummary { get; init; }
     public Guid? DiagnosticAttachmentId { get; init; }
@@ -55,13 +59,22 @@ public static class SubProfileViewModelMapper
                 .Where(b => !string.IsNullOrWhiteSpace(b.SubProfileName))
                 .ToDictionary(
                     b => b.SubProfileName.Trim(),
-                    b => b.Balance,
+                    b => b,
                     StringComparer.OrdinalIgnoreCase);
 
         return subProfiles
             .Select(sp =>
             {
                 var name = string.IsNullOrWhiteSpace(sp.Name) ? sp.Id : sp.Name;
+                SubProfileBalanceDto? balanceItem = null;
+                if (balanceByName is not null)
+                {
+                    balanceByName.TryGetValue(name, out balanceItem);
+                }
+
+                var advance = ResolveBalance(sp.Balance, balanceItem?.Balance);
+                var wallet = ResolveBalance(sp.WalletBalance, balanceItem?.WalletBalance);
+                var duration = ResolveDuration(sp.AdvanceDurationText, balanceItem?.AdvanceDurationText);
                 return new SubProfileRowViewModel
             {
                 Id = sp.Id,
@@ -69,7 +82,8 @@ public static class SubProfileViewModelMapper
                 Category = sp.Category,
                 IsCurrent = sp.IsCurrent,
                 IsEnabledInPanel = sp.IsEnabledInPanel,
-                BalanceText = FormatBalance(ResolveBalance(sp.Balance, name, balanceByName)),
+                BalanceText = BalanceDisplay.FormatSubProfile(wallet, advance, duration),
+                RatingText = RatingDisplay.FormatSubProfile(sp.Rating, sp.ReviewsCount, sp.ReviewsText),
                 HasIssue = !string.IsNullOrWhiteSpace(sp.LastIssueKind),
                 IssueSummary = string.IsNullOrWhiteSpace(sp.LastIssueMessage)
                     ? null
@@ -94,27 +108,13 @@ public static class SubProfileViewModelMapper
         return parts.Count > 0 ? string.Join(" · ", parts) : null;
     }
 
-    private static decimal? ResolveBalance(
-        decimal? profileBalance,
-        string profileName,
-        IReadOnlyDictionary<string, decimal?>? balanceByName)
-    {
-        if (profileBalance.HasValue)
-        {
-            return profileBalance;
-        }
+    private static decimal? ResolveBalance(decimal? profileValue, decimal? balanceItemValue) =>
+        profileValue ?? balanceItemValue;
 
-        if (balanceByName is not null
-            && balanceByName.TryGetValue(profileName, out var balance))
-        {
-            return balance;
-        }
-
-        return null;
-    }
-
-    private static string FormatBalance(decimal? balance) =>
-        balance.HasValue ? $"{balance.Value:N0} ₽" : "—";
+    private static string? ResolveDuration(string? profileValue, string? balanceItemValue) =>
+        !string.IsNullOrWhiteSpace(profileValue)
+            ? profileValue
+            : string.IsNullOrWhiteSpace(balanceItemValue) ? null : balanceItemValue;
 
     public static IReadOnlyList<SubProfileRowViewModel> GetPreviewChips(
         IReadOnlyList<SubProfileRowViewModel> subProfiles,

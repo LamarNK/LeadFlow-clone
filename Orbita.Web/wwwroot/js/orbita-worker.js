@@ -347,13 +347,30 @@
 
         container.innerHTML = '<div class="dash-event-list">' + events.map(function (evt) {
             var subtitle = evt.subtitle
-                ? '<div class="dash-event-subtitle">' + shared.escapeHtml(evt.subtitle) + '</div>'
+                ? '<div class="dash-event-subtitle" title="' + shared.escapeHtml(evt.subtitle) + '">' + shared.escapeHtml(evt.subtitle) + '</div>'
                 : '';
             var iso = evt.timeUtc || '';
-            return '<div class="dash-event-row">' +
+            var workerUrl = shared.urlFromTemplate(shared.getLiveAttr('data-worker-details-url'), '__id__', evt.workerId);
+            var accountUrl = evt.accountName
+                ? shared.urlFromTemplate(shared.getLiveAttr('data-account-search-url'), '__q__', evt.accountName)
+                : '';
+            var logUrl = shared.urlFromTemplate(shared.getLiveAttr('data-settings-logs-url'), '__id__', evt.workerId);
+            var attachmentUrl = evt.attachmentId ? '/Diagnostics/Image/' + evt.attachmentId : '';
+
+            return '<div class="dash-event-row dash-event-row--detail" role="button" tabindex="0"' +
+                ' data-event-id="' + shared.escapeHtml(evt.id || '') + '"' +
+                ' data-copy="' + shared.escapeHtml(evt.copyText || '') + '"' +
+                ' data-detail-title="' + shared.escapeHtml(evt.detailTitle || 'Детали') + '"' +
+                ' data-detail-subtitle="' + shared.escapeHtml(evt.detailSubtitle || '') + '"' +
+                ' data-detail-body="' + shared.escapeHtml(evt.detailBody || '') + '"' +
+                ' data-detail-attachment="' + shared.escapeHtml(attachmentUrl) + '"' +
+                ' data-detail-log-url="' + shared.escapeHtml(logUrl) + '"' +
+                ' data-detail-worker-url="' + shared.escapeHtml(workerUrl) + '"' +
+                ' data-detail-account-url="' + shared.escapeHtml(accountUrl) + '"' +
+                ' data-is-error="' + (evt.isError ? 'true' : 'false') + '">' +
                 '<div class="dash-event-icon dash-event-icon--' + shared.escapeHtml(evt.level || 'success') + '">' +
                 '<i class="' + eventIcon(evt.level) + '" aria-hidden="true"></i></div>' +
-                '<div class="dash-event-body"><div class="dash-event-title">' + shared.escapeHtml(evt.message || '') + '</div>' + subtitle + '</div>' +
+                '<div class="dash-event-body"><div class="dash-event-title" title="' + shared.escapeHtml(evt.message || '') + '">' + shared.escapeHtml(evt.message || '') + '</div>' + subtitle + '</div>' +
                 '<div class="dash-event-side"><div class="dash-event-time">' +
                 '<time data-orbita-utc="' + shared.escapeHtml(iso) + '" data-orbita-format="time-short"></time></div></div></div>';
         }).join('') + '</div>';
@@ -422,7 +439,7 @@
                 '<span class="worker-toggle-slider"></span></label></form></td>' +
                 '<td class="cell-name" data-label="Аккаунт"><a href="' + shared.escapeHtml(accountSearchUrl(account.displayName)) + '">' + shared.escapeHtml(account.displayName) + '</a>' + adsPower + subProfiles + '</td>' +
                 '<td data-label="Статус">' + statusHtml + '</td>' +
-                '<td data-label="Баланс">' + shared.escapeHtml(account.balanceText || '—') + '</td>' +
+                '<td data-label="Баланс"><span class="account-balance-multiline">' + shared.escapeHtml(account.balanceText || '—') + '</span></td>' +
                 '<td data-label="Откликов">' + (account.responses || 0) + '</td>' +
                 '<td data-label="Последняя активность">' + activityHtml + '</td>' +
                 '<td data-label="Ошибок">' + (account.errors || 0) + '</td>' +

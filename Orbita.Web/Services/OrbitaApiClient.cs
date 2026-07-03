@@ -82,7 +82,11 @@ public sealed class OrbitaApiClient(HttpClient http, AuthSession session, IOptio
             ? Task.FromResult<IReadOnlyList<WorkerAccountDto>?>(DesignPreviewData.GetAccounts(id))
             : GetAsync<IReadOnlyList<WorkerAccountDto>>($"api/v1/workers/{id}/accounts", ct);
 
-    public Task<IReadOnlyList<WorkerEventListItem>?> GetEventsAsync(Guid? workerId = null, int limit = 100, CancellationToken ct = default)
+    public Task<IReadOnlyList<WorkerEventListItem>?> GetEventsAsync(
+        Guid? workerId = null,
+        int limit = 100,
+        DateTime? sinceUtc = null,
+        CancellationToken ct = default)
     {
         if (_preview.Enabled)
         {
@@ -92,13 +96,27 @@ public sealed class OrbitaApiClient(HttpClient http, AuthSession session, IOptio
                 events = events.Where(e => e.WorkerId == workerId.Value).ToList();
             }
 
-            return Task.FromResult<IReadOnlyList<WorkerEventListItem>?>(events.Take(limit).ToList());
+            if (sinceUtc.HasValue)
+            {
+                events = events.Where(e => e.CreatedAtUtc >= sinceUtc.Value).ToList();
+            }
+
+            return Task.FromResult<IReadOnlyList<WorkerEventListItem>?>(
+                events.OrderByDescending(e => e.CreatedAtUtc).Take(limit).ToList());
         }
 
-        var url = workerId.HasValue
-            ? $"api/v1/events?workerId={workerId}&limit={limit}"
-            : $"api/v1/events?limit={limit}";
-        return GetAsync<IReadOnlyList<WorkerEventListItem>>(url, ct);
+        var parts = new List<string> { $"limit={limit}" };
+        if (workerId.HasValue)
+        {
+            parts.Add($"workerId={workerId}");
+        }
+
+        if (sinceUtc.HasValue)
+        {
+            parts.Add($"since={Uri.EscapeDataString(sinceUtc.Value.ToString("o"))}");
+        }
+
+        return GetAsync<IReadOnlyList<WorkerEventListItem>>($"api/v1/events?{string.Join('&', parts)}", ct);
     }
 
     public async Task<(Stream? Stream, string? ContentType)> GetDiagnosticImageAsync(Guid id, CancellationToken ct = default)

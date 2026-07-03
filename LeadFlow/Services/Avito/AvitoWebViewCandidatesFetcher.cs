@@ -40,16 +40,23 @@ public sealed class AvitoWebViewCandidatesFetcher(
                     automationService.ExecuteScriptAsync(session, script, ct);
 
                 string? staleListSignature = null;
-                if (!string.IsNullOrWhiteSpace(session.CurrentUrl)
-                    && session.CurrentUrl.Contains("/profile/candidates", StringComparison.OrdinalIgnoreCase))
+                if (AvitoCandidatesPageUrls.IsCandidatesResponsesUrl(session.CurrentUrl))
                 {
                     staleListSignature = await AvitoCandidatesPageWaiter
                         .TryCaptureListSignatureAsync(executeForBaseline, cancellationToken)
                         .ConfigureAwait(false);
                 }
 
-                await automationService.NavigateAsync(session, AvitoResponseSource.CandidatesPageUrl, cancellationToken);
-                await WaitForCandidatesPageAsync(session, cancellationToken, staleListSignature);
+                if (!await TryNavigateToCandidatesPageAsync(session, cancellationToken, staleListSignature))
+                {
+                    if (attempt == maxAttempts)
+                    {
+                        account.LastErrorMessage = "Не удалось открыть страницу откликов Avito";
+                        return [];
+                    }
+
+                    continue;
+                }
                 account.LastAuthCheckAt = DateTime.UtcNow;
 
                 var execute = (string script, CancellationToken ct) =>
@@ -110,7 +117,7 @@ public sealed class AvitoWebViewCandidatesFetcher(
         return [];
     }
 
-    private async Task WaitForCandidatesPageAsync(
+    private async Task<bool> TryNavigateToCandidatesPageAsync(
         BrowserAccountSession session,
         CancellationToken cancellationToken,
         string? baselineListSignature = null)
@@ -118,12 +125,35 @@ public sealed class AvitoWebViewCandidatesFetcher(
         var execute = (string script, CancellationToken ct) =>
             automationService.ExecuteScriptAsync(session, script, ct);
 
-        await AvitoCandidatesPageWaiter.WaitForCandidatesOrThrowFirewallAsync(
-            execute,
-            ct => FetchPageHtmlSnapshotAsync(execute, ct),
-            AvitoResponseSource.CandidatesPageUrl,
-            cancellationToken,
-            baselineListSignature).ConfigureAwait(false);
+        foreach (var targetUrl in AvitoCandidatesPageUrls.NavigationOrder)
+        {
+            try
+            {
+                await automationService.NavigateAsync(session, targetUrl, cancellationToken);
+                await AvitoCandidatesPageWaiter.WaitForCandidatesOrThrowFirewallAsync(
+                    execute,
+                    ct => FetchPageHtmlSnapshotAsync(execute, ct),
+                    targetUrl,
+                    cancellationToken,
+                    baselineListSignature).ConfigureAwait(false);
+
+                var probeRaw = await automationService.ExecuteScriptAsync(
+                    session,
+                    AvitoPageStateScripts.BuildProbeScript(),
+                    cancellationToken);
+                var state = AvitoPageStateProbe.TryParse(probeRaw);
+                if (state?.IsOnCandidates == true)
+                {
+                    return true;
+                }
+            }
+            catch (TimeoutException)
+            {
+                // Пробуем альтернативный URL (CRM job-responses).
+            }
+        }
+
+        return false;
     }
 
     private static async Task<string?> FetchPageHtmlSnapshotAsync(

@@ -66,8 +66,7 @@ else
             <a class="nav-item @(ctrl == "Workers" ? "active" : "")" href="@Url.Action("Index", "Workers")" title="Воркеры"><i class="fa-solid fa-server" aria-hidden="true"></i><span class="nav-item-label">Воркеры</span></a>
             <a class="nav-item @(ctrl == "Accounts" ? "active" : "")" href="@Url.Action("Index", "Accounts")" title="Аккаунты"><i class="fa-solid fa-users" aria-hidden="true"></i><span class="nav-item-label">Аккаунты</span></a>
             <a class="nav-item @(ctrl == "Responses" ? "active" : "")" href="@Url.Action("Index", "Responses")" title="Отклики"><i class="fa-solid fa-inbox" aria-hidden="true"></i><span class="nav-item-label">Отклики</span><span class="nav-badge" data-nav-badge="responses" hidden></span></a>
-            <a class="nav-item @(ctrl == "Events" ? "active" : "")" href="@Url.Action("Index", "Events")" title="События"><i class="fa-regular fa-clipboard" aria-hidden="true"></i><span class="nav-item-label">События</span></a>
-            <a class="nav-item @(ctrl == "Errors" ? "active" : "")" href="@Url.Action("Index", "Errors")" title="Ошибки"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i><span class="nav-item-label">Ошибки</span><span class="nav-badge" data-nav-badge="errors" hidden></span></a>
+            <a class="nav-item @(ctrl is "Events" or "Errors" ? "active" : "")" href="@Url.Action("Index", "Events")" title="События"><i class="fa-regular fa-clipboard" aria-hidden="true"></i><span class="nav-item-label">События</span><span class="nav-badge" data-nav-badge="errors" hidden></span></a>
             <a class="nav-item @(ctrl == "MySettings" ? "active" : "")" href="@Url.Action("Index", "MySettings")" title="Настройки"><i class="fa-solid fa-gear" aria-hidden="true"></i><span class="nav-item-label">Настройки</span></a>
             @if (User.IsInRole(OrbitaRoles.Admin))
             {
@@ -122,6 +121,7 @@ else
         <footer class="orbita-detail-modal__foot" id="orbitaDetailFoot" hidden>
             <div class="orbita-detail-modal__nav" id="orbitaDetailNav" hidden></div>
             <div class="orbita-detail-modal__foot-actions" id="orbitaDetailFootActions">
+                <div class="orbita-detail-modal__primary" id="orbitaDetailPrimary" hidden></div>
                 <button type="button" class="orbita-detail-modal__action orbita-detail-modal__action--ghost" id="orbitaDetailCopy" hidden>
                     <i class="fa-regular fa-copy" aria-hidden="true"></i>
                     <span id="orbitaDetailCopyLabel">Копировать</span>

@@ -1,43 +1,88 @@
 @model EventsIndexViewModel
 @{
     ViewData["Title"] = "События";
-    var pagination = Model.Pagination;
+    var isErrorsView = Model.JournalView == "errors";
+    var errorsPage = Model.ErrorsPage;
+    var pagination = isErrorsView && errorsPage is not null ? errorsPage.Pagination : Model.Pagination;
     var formAction = Url.Action("Index", "Events");
-    var snapshotUrl = Url.Action("Snapshot", "Events", new
-    {
-        q = Model.Filters.SearchQuery,
-        type = Model.Filters.Type,
-        workerId = Model.Filters.WorkerId,
-        account = Model.Filters.Account,
-        level = Model.Filters.Level,
-        page = pagination.Page
-    })!;
+    var snapshotUrl = isErrorsView && errorsPage is not null
+        ? Url.Action("Snapshot", "Events", new
+        {
+            view = "errors",
+            q = errorsPage.Filters.SearchQuery,
+            severity = errorsPage.Filters.Severity,
+            type = errorsPage.Filters.Type,
+            workerId = errorsPage.Filters.WorkerId,
+            accountId = errorsPage.Filters.AccountId,
+            page = pagination.Page
+        })!
+        : Url.Action("Snapshot", "Events", new
+        {
+            view = Model.JournalView == "all" ? null : Model.JournalView,
+            q = Model.Filters.SearchQuery,
+            type = Model.Filters.Type,
+            workerId = Model.Filters.WorkerId,
+            accountId = Model.Filters.AccountId,
+            level = Model.Filters.Level,
+            page = pagination.Page
+        })!;
+    var resetUrl = isErrorsView
+        ? Url.Action("Index", "Events", new { view = "errors" })
+        : Url.Action("Index", "Events", new { view = Model.JournalView == "all" ? null : Model.JournalView });
+    var filterBar = isErrorsView && errorsPage is not null
+        ? new ListFiltersBarViewModel
+        {
+            FormAction = formAction,
+            FormClass = "orbita-filters-form errors-filters",
+            SearchName = "q",
+            SearchPlaceholder = "Поиск по ошибкам...",
+            SearchValue = errorsPage.Filters.SearchQuery,
+            FilterPanelId = "errorsFilterPanel",
+            FilterToggleClass = "orbita-filters-toggle errors-filter-btn",
+            HasActiveFilters = errorsPage.HasActiveFilters,
+            ActiveFilterCount = errorsPage.ActiveFilterCount,
+            ActiveFilterChips = errorsPage.ActiveFilterChips,
+            ResetUrl = resetUrl,
+            FilterFieldsPartialName = "_ErrorsFilterFields",
+            FilterFieldsModel = errorsPage
+        }
+        : new ListFiltersBarViewModel
+        {
+            FormAction = formAction,
+            FormClass = "orbita-filters-form events-filters",
+            SearchName = "q",
+            SearchPlaceholder = "Поиск по событиям...",
+            SearchValue = Model.Filters.SearchQuery,
+            FilterPanelId = "eventsFilterPanel",
+            FilterToggleClass = "orbita-filters-toggle events-filter-btn",
+            HasActiveFilters = Model.HasActiveFilters,
+            ActiveFilterCount = Model.ActiveFilterCount,
+            ActiveFilterChips = Model.ActiveFilterChips,
+            ResetUrl = resetUrl,
+            FilterFieldsPartialName = "_EventsFilterFields",
+            FilterFieldsModel = Model
+        };
 }
 <partial name="_PageHeader" model="Model.Header" />
-<div class="orbita-main events-page"
+<div class="orbita-main events-page journal-page"
      data-orbita-live
-     data-orbita-live-page="events"
+     data-orbita-live-page="journal"
+     data-orbita-journal-view="@Model.JournalView"
      data-orbita-snapshot="@snapshotUrl"
      data-worker-details-url="@Url.Action("Details", "Workers", new { id = "__id__" })"
      data-account-search-url="@Url.Action("Index", "Accounts", new { q = "__q__" })"
-     data-settings-logs-url="@Url.Action("Index", "Settings", new { tab = "logs", workerId = "__id__" })">
-    <nav class="orbita-breadcrumbs orbita-breadcrumbs--events" aria-label="Навигация">
-        @for (var i = 0; i < Model.Breadcrumbs.Count; i++)
-        {
-            var crumb = Model.Breadcrumbs[i];
-            if (i > 0)
-            {
-                <span class="orbita-breadcrumbs-sep" aria-hidden="true">&gt;</span>
-            }
-            if (crumb.IsActive || string.IsNullOrEmpty(crumb.Url))
-            {
-                <span class="orbita-breadcrumbs-current">@crumb.Label</span>
-            }
-            else
-            {
-                <a class="orbita-breadcrumbs-link" href="@crumb.Url">@crumb.Label</a>
-            }
-        }
+     data-settings-logs-url="@Url.Action("Index", "Settings", new { tab = "logs", workerId = "__id__" })"
+     data-response-detail-json-url="@Url.Action("DetailJson", "Responses", new { id = "__id__" })">
+    <nav class="journal-tabs" aria-label="Журнал событий">
+        <a class="journal-tab @(Model.JournalView == "all" ? "journal-tab--active" : "")"
+           href="@Url.Action("Index", "Events")"
+           aria-current="@(Model.JournalView == "all" ? "page" : null)">Все</a>
+        <a class="journal-tab @(Model.JournalView == "warnings" ? "journal-tab--active" : "")"
+           href="@Url.Action("Index", "Events", new { view = "warnings" })"
+           aria-current="@(Model.JournalView == "warnings" ? "page" : null)">Предупреждения</a>
+        <a class="journal-tab @(Model.JournalView == "errors" ? "journal-tab--active" : "")"
+           href="@Url.Action("Index", "Events", new { view = "errors" })"
+           aria-current="@(Model.JournalView == "errors" ? "page" : null)">Ошибки</a>
     </nav>
 
     <div class="kpi-row events-kpi-row">
@@ -49,225 +94,121 @@
         }
     </div>
 
-    <div class="orbita-filters-bar">
-        <form class="orbita-filters-form events-filters" method="get" action="@formAction">
-            <div class="orbita-filters-toolbar events-filters-actions">
-                <div class="orbita-filters-search events-search">
-                    <i class="fa-solid fa-magnifying-glass events-search-icon" aria-hidden="true"></i>
-                    <input type="search"
-                           name="q"
-                           value="@Model.Filters.SearchQuery"
-                           placeholder="Поиск по событиям..."
-                           aria-label="Поиск по событиям" />
-                </div>
-                <div class="orbita-filters-toolbar-actions">
-                    <button type="button"
-                            class="orbita-filters-toggle events-filter-btn@(Model.HasActiveFilters ? " is-active" : "")"
-                            data-orbita-filter-toggle="eventsFilterPanel"
-                            aria-label="Фильтры"
-                            aria-expanded="false">
-                        <i class="fa-solid fa-filter" aria-hidden="true"></i>
-                    </button>
-                    <button type="submit" class="orbita-filters-apply events-apply-btn">Применить</button>
-                    <a class="orbita-filters-reset events-reset-btn" href="@formAction">
-                        <i class="fa-solid fa-rotate-right" aria-hidden="true"></i>
-                        <span>Сбросить</span>
-                    </a>
-                </div>
-            </div>
-            <div class="orbita-filters-fields events-filters-row" id="eventsFilterPanel" data-orbita-collapsible-filters hidden>
-                <label class="events-filter-field">
-                    <span class="events-filter-label">Тип события</span>
-                    <select name="type" class="events-select" aria-label="Тип события">
-                        @foreach (var opt in Model.EventTypes)
-                        {
-                            if (opt.Value == (Model.Filters.Type ?? ""))
-                            {
-                                <option value="@opt.Value" selected>@opt.Label</option>
-                            }
-                            else
-                            {
-                                <option value="@opt.Value">@opt.Label</option>
-                            }
-                        }
-                    </select>
-                </label>
-                <label class="events-filter-field">
-                    <span class="events-filter-label">Воркер</span>
-                    <select name="workerId" class="events-select" aria-label="Воркер">
-                        @foreach (var opt in Model.Workers)
-                        {
-                            if (opt.Value == (Model.Filters.WorkerId?.ToString() ?? ""))
-                            {
-                                <option value="@opt.Value" selected>@opt.Label</option>
-                            }
-                            else
-                            {
-                                <option value="@opt.Value">@opt.Label</option>
-                            }
-                        }
-                    </select>
-                </label>
-                <label class="events-filter-field">
-                    <span class="events-filter-label">Аккаунт</span>
-                    <select name="account" class="events-select" aria-label="Аккаунт">
-                        @foreach (var opt in Model.Accounts)
-                        {
-                            if (opt.Value == (Model.Filters.Account ?? ""))
-                            {
-                                <option value="@opt.Value" selected>@opt.Label</option>
-                            }
-                            else
-                            {
-                                <option value="@opt.Value">@opt.Label</option>
-                            }
-                        }
-                    </select>
-                </label>
-                <label class="events-filter-field">
-                    <span class="events-filter-label">Уровень</span>
-                    <select name="level" class="events-select" aria-label="Уровень">
-                        @foreach (var opt in Model.Levels)
-                        {
-                            if (opt.Value == (Model.Filters.Level ?? ""))
-                            {
-                                <option value="@opt.Value" selected>@opt.Label</option>
-                            }
-                            else
-                            {
-                                <option value="@opt.Value">@opt.Label</option>
-                            }
-                        }
-                    </select>
-                </label>
-            </div>
-        </form>
-    </div>
+    <partial name="_ListFiltersBar" model="filterBar" />
 
-    <div class="card card--events-table">
-        <div class="card-body card-body-table events-table-wrap">
-            @if (pagination.TotalItems == 0)
-            {
-                <partial name="_TableEmptyState" model="@(new TableEmptyStateViewModel
+    @if (isErrorsView && errorsPage is not null)
+    {
+        <partial name="_JournalErrorsTable" model="errorsPage" />
+    }
+    else
+    {
+        <div class="card card--events-table">
+            <div class="card-body card-body-table events-table-wrap">
+                @if (pagination.TotalItems == 0)
                 {
-                    IconClass = "fa-regular fa-clipboard",
-                    Title = "События не найдены",
-                    Description = "За выбранные фильтры записей нет.",
-                    CtaLabel = "Сбросить фильтры",
-                    CtaUrl = formAction
-                })" />
-            }
-            else
-            {
-            <table class="data-table data-table--events data-table--cards">
-                <thead>
-                    <tr>
-                        <th>Время</th>
-                        <th>Тип события</th>
-                        <th>Уровень</th>
-                        <th>Аккаунт</th>
-                        <th>Воркер</th>
-                        <th>Описание</th>
-                        <th aria-hidden="true">Действия</th>
-                    </tr>
-                </thead>
-                <tbody data-orbita-live-body="events">
-                @foreach (var evt in Model.Events)
+                    <partial name="_TableEmptyState" model="@(new TableEmptyStateViewModel
+                    {
+                        IconClass = "fa-regular fa-clipboard",
+                        Title = "События не найдены",
+                        Description = "За выбранные фильтры записей нет.",
+                        CtaLabel = "Сбросить фильтры",
+                        CtaUrl = resetUrl
+                    })" />
+                }
+                else
                 {
-                    var workerUrl = Url.Action("Details", "Workers", new { id = evt.WorkerId });
-                    var accountUrl = string.IsNullOrWhiteSpace(evt.AccountName)
-                        ? null
-                        : Url.Action("Index", "Accounts", new { q = evt.AccountName });
-                    <tr class="events-row"
-                        data-event-id="@evt.Id"
-                        data-copy="@evt.CopyText"
-                        data-detail-title="@evt.EventTypeLabel"
-                        data-detail-subtitle="@evt.WorkerName · @evt.LevelLabel"
-                        data-detail-body="@evt.Description"
-                        data-detail-attachment="@(evt.AttachmentId is not null ? $"/Diagnostics/Image/{evt.AttachmentId}" : "")"
-                        data-detail-log-url="@Url.Action("Index", "Settings", new { tab = "logs", workerId = evt.WorkerId })"
-                        data-detail-worker-url="@workerUrl"
-                        data-detail-account-url="@(accountUrl ?? "")">
-                        <td class="events-time" data-label="Время"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(evt.OccurredAtUtc, "datetime-seconds"))" /></td>
-                        <td data-label="Тип события">
-                            <span class="event-type event-type--@evt.EventTypeTone">
-                                <i class="@evt.EventTypeIcon event-type-icon" aria-hidden="true"></i>
-                                <span>@evt.EventTypeLabel</span>
-                            </span>
-                        </td>
-                        <td data-label="Уровень">
-                            <span class="event-level-badge event-level-badge--@evt.Level">@evt.LevelLabel</span>
-                        </td>
-                        <td class="cell-link" data-label="Аккаунт">
-                            @if (accountUrl is not null)
-                            {
-                                <a href="@accountUrl">@evt.AccountName</a>
-                            }
-                            else
-                            {
-                                <span class="events-muted">—</span>
-                            }
-                        </td>
-                        <td class="cell-link" data-label="Воркер">
-                            <a href="@workerUrl">@evt.WorkerName</a>
-                        </td>
-                        <td class="events-desc" data-label="Описание" title="@evt.Description">@evt.Description</td>
-                        <td class="data-table-menu" data-label="">
-                            <div class="row-menu" data-row-menu>
-                                <button type="button" class="row-menu-btn" aria-label="Действия" aria-expanded="false" aria-haspopup="true">
-                                    <i class="fa-solid fa-ellipsis-vertical" aria-hidden="true"></i>
-                                </button>
-                                <div class="row-menu-dropdown row-menu-dropdown--events" hidden>
-                                    <a class="row-menu-item" href="@Url.Action("Index", "Settings", new { tab = "logs", workerId = evt.WorkerId })">
-                                        <i class="fa-regular fa-file-lines" aria-hidden="true"></i>
-                                        Открыть лог
-                                    </a>
+                    <table class="data-table data-table--events data-table--cards">
+                        <thead>
+                            <tr>
+                                <th>Время</th>
+                                <th>Тип события</th>
+                                <th>Уровень</th>
+                                <th>Аккаунт</th>
+                                <th>Воркер</th>
+                                <th>Описание</th>
+                                <th aria-hidden="true">Действия</th>
+                            </tr>
+                        </thead>
+                        <tbody data-orbita-live-body="events">
+                        @foreach (var evt in Model.Events)
+                        {
+                            var workerUrl = Url.Action("Details", "Workers", new { id = evt.WorkerId });
+                            var accountUrl = string.IsNullOrWhiteSpace(evt.AccountName)
+                                ? null
+                                : Url.Action("Index", "Accounts", new { q = evt.AccountName });
+                            <tr class="events-row"
+                                data-event-id="@evt.Id"
+                                data-copy="@evt.CopyText"
+                                data-detail-title="@evt.EventTypeLabel"
+                                data-detail-subtitle="@evt.WorkerName · @evt.LevelLabel"
+                                data-detail-body="@evt.Description"
+                                data-detail-attachment="@(evt.AttachmentId is not null ? $"/Diagnostics/Image/{evt.AttachmentId}" : "")"
+                                data-detail-log-url="@Url.Action("Index", "Settings", new { tab = "logs", workerId = evt.WorkerId })"
+                                data-detail-worker-url="@workerUrl"
+                                data-detail-account-url="@(accountUrl ?? "")">
+                                <td class="events-time" data-label="Время"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(evt.OccurredAtUtc, "datetime-seconds"))" /></td>
+                                <td data-label="Тип события">
+                                    <span class="event-type event-type--@evt.EventTypeTone">
+                                        <i class="@evt.EventTypeIcon event-type-icon" aria-hidden="true"></i>
+                                        <span>@evt.EventTypeLabel</span>
+                                    </span>
+                                </td>
+                                <td data-label="Уровень">
+                                    <span class="event-level-badge event-level-badge--@evt.Level">@evt.LevelLabel</span>
+                                </td>
+                                <td class="cell-link" data-label="Аккаунт">
                                     @if (accountUrl is not null)
                                     {
-                                        <a class="row-menu-item" href="@accountUrl">
-                                            <i class="fa-regular fa-user" aria-hidden="true"></i>
-                                            Перейти к аккаунту
-                                        </a>
+                                        <a href="@accountUrl">@evt.AccountName</a>
                                     }
-                                    <a class="row-menu-item" href="@workerUrl">
-                                        <i class="fa-solid fa-server" aria-hidden="true"></i>
-                                        Перейти к воркеру
-                                    </a>
-                                    <button type="button" class="row-menu-item" data-copy-event>
-                                        <i class="fa-regular fa-copy" aria-hidden="true"></i>
-                                        Копировать сообщение
-                                    </button>
-                                    <button type="button" class="row-menu-item" data-event-dismiss data-event-id="@evt.Id">
-                                        <i class="fa-regular fa-circle-check" aria-hidden="true"></i>
-                                        Отметить обработанным
-                                    </button>
-                                </div>
-                            </div>
-                        </td>
-                    </tr>
+                                    else
+                                    {
+                                        <span class="events-muted">—</span>
+                                    }
+                                </td>
+                                <td class="cell-link" data-label="Воркер">
+                                    <a href="@workerUrl">@evt.WorkerName</a>
+                                </td>
+                                <td class="events-desc" data-label="Описание" title="@evt.Description">@evt.Description</td>
+                                <td class="data-table-menu" data-label="">
+                                    <div class="row-menu" data-row-menu>
+                                        <button type="button" class="row-menu-btn" aria-label="Действия" aria-expanded="false" aria-haspopup="true">
+                                            <i class="fa-solid fa-ellipsis-vertical" aria-hidden="true"></i>
+                                        </button>
+                                        <div class="row-menu-dropdown row-menu-dropdown--events" hidden>
+                                            <a class="row-menu-item" href="@Url.Action("Index", "Settings", new { tab = "logs", workerId = evt.WorkerId })">
+                                                <i class="fa-regular fa-file-lines" aria-hidden="true"></i>
+                                                Открыть лог
+                                            </a>
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
                 }
-                </tbody>
-            </table>
-            }
 
-            <partial name="_Pagination" model="@(new PaginationPartialViewModel
-            {
-                Pagination = pagination,
-                Controller = "Events",
-                Action = "Index",
-                RouteValues = new
+                <partial name="_Pagination" model="@(new PaginationPartialViewModel
                 {
-                    q = Model.Filters.SearchQuery,
-                    type = Model.Filters.Type,
-                    workerId = Model.Filters.WorkerId,
-                    account = Model.Filters.Account,
-                    level = Model.Filters.Level
-                }
-            })" />
+                    Pagination = pagination,
+                    Controller = "Events",
+                    Action = "Index",
+                    RouteValues = new
+                    {
+                        view = Model.JournalView == "all" ? null : Model.JournalView,
+                        q = Model.Filters.SearchQuery,
+                        type = Model.Filters.Type,
+                        workerId = Model.Filters.WorkerId,
+                        accountId = Model.Filters.AccountId,
+                        level = Model.Filters.Level
+                    }
+                })" />
+            </div>
         </div>
-    </div>
+    }
 </div>
 
 @section Scripts {
-    <script src="~/js/orbita-events.js" asp-append-version="true"></script>
+    <script src="~/js/orbita-journal.js" asp-append-version="true"></script>
 }

@@ -225,6 +225,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseCors("Web");
+app.UseWebSockets();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapHub<PanelHub>("/hubs/panel");
@@ -519,6 +520,7 @@ workerRead.MapGet("/events", async (
     Guid? workerId,
     Guid? officeId,
     int? limit,
+    DateTime? since,
     DashboardQueryService query,
     OfficeScopeService officeScope,
     ClaimsPrincipal principal,
@@ -535,6 +537,7 @@ workerRead.MapGet("/events", async (
         workerId,
         officeId,
         Math.Clamp(limit ?? 100, 1, 500),
+        since,
         ct));
 });
 workerRead.MapGet("/worker-releases/latest", async (WorkerReleaseService releases, CancellationToken ct) =>

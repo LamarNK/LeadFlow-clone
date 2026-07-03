@@ -1,0 +1,32 @@
+@model AccountComboboxViewModel
+<div class="orbita-account-combobox" data-orbita-account-combobox>
+    <input type="hidden" name="@Model.FieldName" value="@Model.SelectedValue" data-orbita-account-value />
+    <div class="orbita-account-combobox__control">
+        <input type="search"
+               class="orbita-account-combobox__input"
+               value="@Model.SelectedLabel"
+               placeholder="@Model.Placeholder"
+               autocomplete="off"
+               aria-label="@Model.Label"
+               aria-expanded="false"
+               aria-haspopup="listbox"
+               role="combobox" />
+        <button type="button"
+                class="orbita-account-combobox__clear@(string.IsNullOrWhiteSpace(Model.SelectedValue) ? " is-hidden" : "")"
+                data-orbita-account-clear
+                aria-label="Сбросить аккаунт"
+                @(string.IsNullOrWhiteSpace(Model.SelectedValue) ? "hidden" : null)>
+            <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+        </button>
+    </div>
+    <ul class="orbita-account-combobox__list" role="listbox" hidden>
+        @foreach (var opt in Model.Options)
+        {
+            <li class="orbita-account-combobox__option@(opt.Value == Model.SelectedValue ? " is-selected" : "")"
+                role="option"
+                data-value="@opt.Value"
+                data-label="@opt.Label"
+                aria-selected="@(opt.Value == Model.SelectedValue ? "true" : "false")">@opt.Label</li>
+        }
+    </ul>
+</div>

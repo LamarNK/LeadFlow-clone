@@ -536,7 +536,7 @@ public partial class MonitoringViewModel : ObservableObject
             return false;
         }
 
-        return !normalized.Contains("/profile/candidates", StringComparison.OrdinalIgnoreCase);
+        return !AvitoCandidatesPageUrls.IsCandidatesResponsesUrl(normalized);
     }
 
     private bool CanOpenResponseVacancyInAvitoBrowser(CandidateResponse? r) => HasSpecificVacancyUrl(r);

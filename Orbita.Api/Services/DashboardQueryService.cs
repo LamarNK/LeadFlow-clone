@@ -409,6 +409,7 @@ public sealed class DashboardQueryService(
         Guid? workerId,
         Guid? officeFilter,
         int limit,
+        DateTime? sinceUtc = null,
         CancellationToken ct = default)
     {
         if (workerId.HasValue && !await officeScope.CanAccessWorkerAsync(scope, workerId.Value, ct))
@@ -424,6 +425,11 @@ public sealed class DashboardQueryService(
         if (workerId.HasValue)
         {
             query = query.Where(x => x.WorkerId == workerId.Value);
+        }
+
+        if (sinceUtc.HasValue)
+        {
+            query = query.Where(x => x.CreatedAtUtc >= sinceUtc.Value);
         }
 
         return await (

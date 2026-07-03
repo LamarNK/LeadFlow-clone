@@ -64,6 +64,7 @@ public sealed class WorkerEntity
     public string? ActivitySubProfileName { get; set; }
     public DateTime? ActivityUpdatedAtUtc { get; set; }
     public DateTime? ActivityNextCycleAtUtc { get; set; }
+    public string ActivityActiveAccountsJson { get; set; } = "[]";
 
     public OfficeEntity Office { get; set; } = null!;
     public ICollection<WorkerSnapshotEntity> Snapshots { get; set; } = [];

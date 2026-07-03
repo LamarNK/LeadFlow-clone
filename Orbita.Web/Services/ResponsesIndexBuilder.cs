@@ -142,6 +142,8 @@ internal static class ResponsesIndexBuilder
             MessengerUrl = detail.MessengerUrl,
             AccountId = detail.AccountId,
             AccountName = detail.AccountName,
+            AvitoSubProfileId = string.IsNullOrWhiteSpace(detail.AvitoSubProfileId) ? null : detail.AvitoSubProfileId,
+            AvitoSubProfileName = detail.AvitoSubProfileName,
             WorkerId = detail.WorkerId,
             WorkerName = FormatWorkerName(detail.WorkerName),
             Source = string.IsNullOrWhiteSpace(detail.Source) ? "Avito" : detail.Source,
@@ -239,4 +241,85 @@ internal static class ResponsesIndexBuilder
         || !string.IsNullOrWhiteSpace(filters.VacancyQuery)
         || !string.IsNullOrWhiteSpace(filters.SearchQuery)
         || !period.IsTodayOnly;
+
+    public static ResponseDetailJsonViewModel MapDetailJson(ResponseDetailViewModel detail)
+    {
+        var phone = ResponseDisplay.FormatPhone(detail.PhoneRaw, detail.PhoneNormalized);
+        var sections = new List<DetailSectionItemViewModel>
+        {
+            new() { Label = "Телефон", Value = phone.Length > 0 ? phone : "Скрыт" },
+            new() { Label = "Возраст", Value = detail.Age?.ToString() ?? "—" },
+            new() { Label = "Город", Value = detail.City },
+            new() { Label = "Объявление", Value = detail.Vacancy, Href = detail.VacancyUrl },
+            new() { Label = "Аккаунт", Value = ResponseDisplay.FormatAccountWithSubProfile(detail.AccountName, detail.AvitoSubProfileName) },
+            new() { Label = "Воркер", Value = detail.WorkerName },
+            new() { Label = "Источник", Value = detail.Source },
+            new() { Label = "ID отклика", Value = detail.SourceResponseId }
+        };
+
+        if (!string.IsNullOrWhiteSpace(detail.BitrixEntityId))
+        {
+            sections.Add(new DetailSectionItemViewModel
+            {
+                Label = "Bitrix ID",
+                Value = detail.BitrixEntityId,
+                Href = detail.BitrixEntityUrl
+            });
+        }
+
+        if (!string.IsNullOrWhiteSpace(detail.DuplicateSummary))
+        {
+            sections.Add(new DetailSectionItemViewModel { Label = "Дубль", Value = detail.DuplicateSummary });
+        }
+
+        if (!string.IsNullOrWhiteSpace(detail.ErrorMessage))
+        {
+            sections.Add(new DetailSectionItemViewModel
+            {
+                Label = MapStatusMessageLabel(detail.Status),
+                Value = detail.ErrorMessage
+            });
+        }
+
+        var links = new List<DetailActionLinkViewModel>();
+        if (!string.IsNullOrWhiteSpace(detail.VacancyUrl))
+        {
+            links.Add(new DetailActionLinkViewModel { Label = "Объявление", Href = detail.VacancyUrl, External = true });
+        }
+        if (!string.IsNullOrWhiteSpace(detail.BitrixEntityUrl))
+        {
+            links.Add(new DetailActionLinkViewModel { Label = "Bitrix24", Href = detail.BitrixEntityUrl, External = true });
+        }
+
+        var primaryActions = new List<DetailActionLinkViewModel>();
+        if (detail.CanResend)
+        {
+            primaryActions.Add(new DetailActionLinkViewModel
+            {
+                Label = "Отправить в Bitrix",
+                Tone = "primary",
+                Action = "resend",
+                ResponseId = detail.Id
+            });
+        }
+
+        return new ResponseDetailJsonViewModel
+        {
+            Title = ResponseDisplay.DisplayAuthor(detail.FullName),
+            Subtitle = $"{detail.StatusLabel} · {ResponseDisplay.FormatCreatedAtLocal(detail.CreatedAtUtc)}",
+            Sections = sections,
+            ChatMessages = detail.ChatMessages
+                .Select(m => new DetailChatMessageViewModel
+                {
+                    Text = m.Text,
+                    Tone = m.Tone,
+                    TimeLabel = m.TimeLabel
+                })
+                .ToList(),
+            Links = links,
+            PrimaryActions = primaryActions,
+            CopyText = phone.Length > 0 ? phone : null,
+            CopyLabel = "Копировать телефон"
+        };
+    }
 }

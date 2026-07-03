@@ -48,6 +48,9 @@ internal static class ErrorsIndexBuilder
             .ToList();
 
         var summary = Summarize(allRows);
+        var workers = BuildWorkerOptions(allRows);
+        var accounts = BuildAccountOptions(allRows);
+        var activeFilterChips = FilterChipsBuilder.ForErrors(filters, SeverityOptions, ErrorTypeOptions, workers, accounts);
 
         return new ErrorsIndexViewModel
         {
@@ -55,8 +58,8 @@ internal static class ErrorsIndexBuilder
             Filters = filters,
             SeverityOptions = SeverityOptions,
             ErrorTypes = ErrorTypeOptions,
-            Workers = BuildWorkerOptions(allRows),
-            Accounts = BuildAccountOptions(allRows),
+            Workers = workers,
+            Accounts = accounts,
             KpiCards = BuildKpiCards(summary),
             Errors = paged,
             Pagination = new PaginationViewModel
@@ -65,7 +68,8 @@ internal static class ErrorsIndexBuilder
                 PageSize = pageSize,
                 TotalItems = total
             },
-            HasActiveFilters = HasActiveFilters(filters)
+            HasActiveFilters = HasActiveFilters(filters),
+            ActiveFilterChips = activeFilterChips
         };
     }
 
@@ -73,7 +77,7 @@ internal static class ErrorsIndexBuilder
         !string.IsNullOrWhiteSpace(filters.Severity)
         || !string.IsNullOrWhiteSpace(filters.Type)
         || filters.WorkerId.HasValue
-        || !string.IsNullOrWhiteSpace(filters.Account)
+        || filters.AccountId.HasValue
         || !string.IsNullOrWhiteSpace(filters.SearchQuery);
 
     public static ErrorRowViewModel MapEvent(WorkerEventListItem item, string? accountName = null)
@@ -128,8 +132,8 @@ internal static class ErrorsIndexBuilder
         if (filters.WorkerId.HasValue)
             query = query.Where(e => e.WorkerId == filters.WorkerId.Value);
 
-        if (!string.IsNullOrWhiteSpace(filters.Account))
-            query = query.Where(e => e.AccountName == filters.Account);
+        if (filters.AccountId.HasValue)
+            query = query.Where(e => e.AccountId == filters.AccountId.Value);
 
         return query.ToList();
     }
@@ -232,11 +236,15 @@ internal static class ErrorsIndexBuilder
     {
         var options = new List<EventFilterOptionViewModel> { new() { Value = "", Label = "Все аккаунты" } };
         options.AddRange(rows
-            .Where(e => !string.IsNullOrWhiteSpace(e.AccountName))
-            .Select(e => e.AccountName!)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .OrderBy(a => a, StringComparer.OrdinalIgnoreCase)
-            .Select(a => new EventFilterOptionViewModel { Value = a, Label = a }));
+            .Where(e => e.AccountId.HasValue && !string.IsNullOrWhiteSpace(e.AccountName))
+            .GroupBy(e => e.AccountId!.Value)
+            .Select(g => g.First())
+            .OrderBy(e => e.AccountName, StringComparer.OrdinalIgnoreCase)
+            .Select(e => new EventFilterOptionViewModel
+            {
+                Value = e.AccountId!.Value.ToString(),
+                Label = e.AccountName!
+            }));
         return options;
     }
 

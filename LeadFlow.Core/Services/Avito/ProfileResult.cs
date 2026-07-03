@@ -44,4 +44,52 @@ public sealed class ProfileResult
 
     /// <summary>Баланс «Аванс» из боковой панели, если удалось распарсить.</summary>
     public decimal? Balance { get; set; }
+
+    /// <summary>Баланс «Кошелёк» из боковой панели, если удалось распарсить.</summary>
+    public decimal? WalletBalance { get; set; }
+
+    /// <summary>Оценка Avito, на сколько хватит аванса (например, «~ на 9 дней»).</summary>
+    public string? AdvanceDurationText { get; set; }
+
+    /// <summary>Рейтинг субпрофиля из сайдбара.</summary>
+    public decimal? Rating { get; set; }
+
+    /// <summary>Число отзывов субпрофиля.</summary>
+    public int? ReviewsCount { get; set; }
+
+    /// <summary>Текст отзывов из сайдбара (например, «1 отзыв»).</summary>
+    public string? ReviewsText { get; set; }
+
+    public void ApplyMoneyTo(Models.AvitoSubProfile sub)
+    {
+        if (WalletBalance.HasValue)
+        {
+            sub.WalletBalance = WalletBalance;
+        }
+
+        if (Balance.HasValue)
+        {
+            sub.Balance = Balance;
+        }
+
+        if (!string.IsNullOrWhiteSpace(AdvanceDurationText))
+        {
+            sub.AdvanceDurationText = AdvanceDurationText;
+        }
+
+        if (Rating.HasValue)
+        {
+            sub.Rating = Rating;
+        }
+
+        if (ReviewsCount.HasValue)
+        {
+            sub.ReviewsCount = ReviewsCount;
+        }
+
+        if (!string.IsNullOrWhiteSpace(ReviewsText))
+        {
+            sub.ReviewsText = ReviewsText;
+        }
+    }
 }

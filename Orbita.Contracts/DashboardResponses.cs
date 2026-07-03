@@ -46,7 +46,8 @@ public sealed record WorkerListItem(
     string OfficeName = "",
     bool IsEnabled = true,
     int ActiveAccountCount = 0,
-    WorkerActivityDto? CurrentActivity = null);
+    WorkerActivityDto? CurrentActivity = null,
+    IReadOnlyList<WorkerActiveAccountDto>? ActiveAccounts = null);
 
 public sealed record WorkerDetail(
     Guid Id,
@@ -78,7 +79,8 @@ public sealed record WorkerDetail(
     int TodayErrors = 0,
     int ActiveAccountCount = 0,
     int TotalAccountCount = 0,
-    WorkerActivityDto? CurrentActivity = null);
+    WorkerActivityDto? CurrentActivity = null,
+    IReadOnlyList<WorkerActiveAccountDto>? ActiveAccounts = null);
 
 public sealed record WorkerEventListItem(
     Guid Id,

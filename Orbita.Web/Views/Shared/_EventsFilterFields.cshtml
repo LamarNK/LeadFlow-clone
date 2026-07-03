@@ -1,0 +1,42 @@
+@model EventsIndexViewModel
+<div class="orbita-filters-fields events-filters-row" id="eventsFilterPanel" data-orbita-collapsible-filters hidden>
+    @if (!string.IsNullOrWhiteSpace(Model.JournalView) && Model.JournalView != "all")
+    {
+        <input type="hidden" name="view" value="@Model.JournalView" />
+    }
+    <label class="events-filter-field">
+        <span class="events-filter-label">Тип события</span>
+        <select name="type" class="events-select" aria-label="Тип события">
+            @foreach (var opt in Model.EventTypes)
+            {
+                <option value="@opt.Value" selected="@(opt.Value == (Model.Filters.Type ?? ""))">@opt.Label</option>
+            }
+        </select>
+    </label>
+    <label class="events-filter-field">
+        <span class="events-filter-label">Воркер</span>
+        <select name="workerId" class="events-select" aria-label="Воркер">
+            @foreach (var opt in Model.Workers)
+            {
+                <option value="@opt.Value" selected="@(opt.Value == (Model.Filters.WorkerId?.ToString() ?? ""))">@opt.Label</option>
+            }
+        </select>
+    </label>
+    <label class="events-filter-field">
+        <span class="events-filter-label">Аккаунт</span>
+        <partial name="_AccountCombobox" model="@(new AccountComboboxViewModel {
+            FieldName = "accountId",
+            SelectedValue = Model.Filters.AccountId?.ToString() ?? "",
+            Options = Model.Accounts
+        })" />
+    </label>
+    <label class="events-filter-field">
+        <span class="events-filter-label">Уровень</span>
+        <select name="level" class="events-select" aria-label="Уровень">
+            @foreach (var opt in Model.Levels)
+            {
+                <option value="@opt.Value" selected="@(opt.Value == (Model.Filters.Level ?? ""))">@opt.Label</option>
+            }
+        </select>
+    </label>
+</div>

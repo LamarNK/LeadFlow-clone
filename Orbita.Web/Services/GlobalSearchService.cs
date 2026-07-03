@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Options;
+using Orbita.Web.Formatting;
 using Orbita.Web.Models.ViewModels;
 using Orbita.Web.Options;
 
@@ -64,7 +65,7 @@ public sealed class GlobalSearchService(OrbitaApiClient api, IOptions<DesignPrev
             .Select(r => new SearchHitViewModel
             {
                 Title = string.IsNullOrWhiteSpace(r.FullName) ? r.Vacancy : r.FullName,
-                Subtitle = r.AccountName,
+                Subtitle = ResponseDisplay.FormatAccountWithSubProfile(r.AccountName, r.AvitoSubProfileName),
                 Url = $"/Responses?search={Uri.EscapeDataString(query)}&id={r.Id}",
                 IconClass = "fa-solid fa-inbox"
             })

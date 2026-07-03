@@ -71,7 +71,15 @@ public static class AvitoPageStateScripts
                 pageKind = "captcha";
             } else if (profileSwitchModalOpen) {
                 pageKind = "profileSwitchModal";
-            } else if (url.includes("/profile/candidates")) {
+            } else if (
+                url.includes("/profile/candidates")
+                || url.includes("/profile/job/responses")
+            ) {
+                pageKind = "candidates";
+            } else if (
+                document.querySelector("[data-marker='filters/status-list-content']")
+                || document.querySelector("[data-marker='job-crm/response/cv-button']")
+            ) {
                 pageKind = "candidates";
             } else if (url.includes("/profile/pro/items")) {
                 pageKind = "profileItems";

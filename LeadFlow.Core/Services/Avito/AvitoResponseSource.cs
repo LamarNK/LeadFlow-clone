@@ -15,7 +15,9 @@ public sealed class AvitoResponseSource(
     IPhoneNormalizer phoneNormalizer,
     IAvitoWebViewCandidatesFetcher? webViewCandidatesFetcher = null) : IAvitoResponseSource
 {
-    public const string CandidatesPageUrl = "https://www.avito.ru/profile/candidates";
+    public const string CandidatesPageUrl = AvitoCandidatesPageUrls.LegacyCandidates;
+
+    public const string JobResponsesPageUrl = AvitoCandidatesPageUrls.JobResponsesCrm;
 
     public Task<HashSet<string>> GetKnownNormalizedPhonesForPrepareAsync(
         Guid accountId,

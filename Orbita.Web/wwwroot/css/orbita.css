@@ -1477,6 +1477,14 @@ a.kpi-card:focus-visible {
     background: #fafafb;
 }
 
+.dash-event-row--detail {
+    cursor: pointer;
+}
+
+[data-dashboard-workers-body] tr[data-href] {
+    cursor: pointer;
+}
+
 [data-theme="dark"] .dash-event-row {
     border-bottom-color: var(--border);
 }
@@ -2928,13 +2936,35 @@ a.kpi-card:focus-visible {
     flex-shrink: 0;
 }
 
+.subprofiles-meta {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 2px;
+    flex-shrink: 0;
+}
+
+.subprofiles-rating {
+    font-size: 10px;
+    color: #667085;
+    line-height: 1.3;
+    text-align: right;
+    white-space: nowrap;
+}
+
+.subprofiles-balance,
+.account-balance-multiline {
+    white-space: pre-line;
+}
+
 .subprofiles-balance {
     font-weight: 500;
     color: #475467;
-    white-space: nowrap;
     font-variant-numeric: tabular-nums;
     padding-top: 1px;
     font-size: 11px;
+    text-align: right;
+    line-height: 1.35;
 }
 
 .subprofiles-item-alert {
@@ -3393,6 +3423,10 @@ a.kpi-card:focus-visible {
 
 [data-theme="dark"] .subprofiles-name {
     color: var(--text-primary);
+}
+
+[data-theme="dark"] .subprofiles-rating {
+    color: var(--text-secondary, #94a3b8);
 }
 
 [data-theme="dark"] .subprofiles-balance {
@@ -6149,6 +6183,21 @@ a.kpi-card:focus-visible {
     color: #344054;
 }
 
+.responses-account {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+}
+
+.responses-account-sub {
+    display: block;
+    font-size: 12px;
+    font-weight: 500;
+    color: #667085;
+    line-height: 1.3;
+}
+
 .responses-phone {
     display: flex;
     align-items: center;
@@ -7336,6 +7385,256 @@ html.sidebar-collapsed .nav-badge {
 }
 
 [data-theme="dark"] .orbita-search__hit:hover { background: #334155; }
+
+/* Active filter chips */
+.orbita-filter-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding-top: 4px;
+}
+
+.workers-page > .orbita-filter-chips {
+    margin-top: -16px;
+    margin-bottom: 20px;
+}
+
+.workers-filter-btn {
+    position: relative;
+}
+
+.journal-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 20px;
+}
+
+.journal-tab {
+    display: inline-flex;
+    align-items: center;
+    height: 36px;
+    padding: 0 14px;
+    border: 1px solid #e4e7ec;
+    border-radius: 999px;
+    background: #ffffff;
+    color: #667085;
+    font-size: 14px;
+    font-weight: 500;
+    text-decoration: none;
+    transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.journal-tab:hover {
+    background: #f9fafb;
+    color: #344054;
+}
+
+.journal-tab--active {
+    border-color: #2563eb;
+    background: #eff6ff;
+    color: #1d4ed8;
+}
+
+.orbita-account-combobox {
+    position: relative;
+    width: 100%;
+}
+
+.orbita-account-combobox__control {
+    position: relative;
+}
+
+.orbita-account-combobox__input {
+    width: 100%;
+    height: 40px;
+    padding: 0 36px 0 12px;
+    border: 1px solid #e4e7ec;
+    border-radius: 10px;
+    font-size: 14px;
+    font-family: inherit;
+}
+
+.orbita-account-combobox__clear {
+    position: absolute;
+    top: 50%;
+    right: 8px;
+    transform: translateY(-50%);
+    width: 24px;
+    height: 24px;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: #98a2b3;
+    cursor: pointer;
+}
+
+.orbita-account-combobox__list {
+    position: absolute;
+    z-index: 30;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    max-height: 220px;
+    margin: 0;
+    padding: 6px;
+    list-style: none;
+    overflow: auto;
+    border: 1px solid #e4e7ec;
+    border-radius: 10px;
+    background: #ffffff;
+    box-shadow: 0 8px 24px rgba(16, 24, 40, 0.12);
+}
+
+.orbita-account-combobox__option {
+    padding: 8px 10px;
+    border-radius: 8px;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+.orbita-account-combobox__option:hover,
+.orbita-account-combobox__option.is-selected {
+    background: #f2f4f7;
+}
+
+.orbita-detail-sections {
+    display: grid;
+    grid-template-columns: minmax(120px, 34%) 1fr;
+    gap: 10px 16px;
+    margin: 0;
+}
+
+.orbita-detail-sections dt {
+    margin: 0;
+    color: #667085;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.orbita-detail-sections dd {
+    margin: 0;
+    color: #101828;
+    font-size: 14px;
+}
+
+.orbita-detail-chat {
+    margin-top: 20px;
+}
+
+.orbita-detail-chat__title {
+    margin: 0 0 12px;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.orbita-detail-chat__thread {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 280px;
+    overflow: auto;
+}
+
+.orbita-detail-chat__bubble {
+    max-width: 85%;
+    padding: 10px 12px;
+    border-radius: 12px;
+    font-size: 14px;
+}
+
+.orbita-detail-chat__bubble--incoming {
+    align-self: flex-start;
+    background: #f2f4f7;
+}
+
+.orbita-detail-chat__bubble--outgoing {
+    align-self: flex-end;
+    background: #dbeafe;
+}
+
+.orbita-detail-chat__time {
+    display: block;
+    margin-top: 4px;
+    color: #98a2b3;
+    font-size: 11px;
+}
+
+.orbita-detail-modal__primary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-right: auto;
+}
+
+.orbita-detail-modal__action--primary {
+    border: 0;
+    background: #2563eb;
+    color: #ffffff;
+}
+
+.workers-filter-btn .orbita-filters-toggle-count {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    font-size: 10px;
+    border: 2px solid #ffffff;
+}
+
+.orbita-filter-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 28px;
+    padding: 0 10px;
+    border: 1px solid #d0d5dd;
+    border-radius: 999px;
+    background: #f9fafb;
+    color: #344054;
+    font-size: 12px;
+    font-weight: 500;
+    text-decoration: none;
+    transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.orbita-filter-chip:hover {
+    background: #f3f4f6;
+    border-color: #98a2b3;
+    color: #101828;
+}
+
+.orbita-filter-chip__remove {
+    font-size: 10px;
+    color: #98a2b3;
+}
+
+.orbita-filters-toggle-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: #2563eb;
+    color: #ffffff;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+}
+
+[data-theme="dark"] .orbita-filter-chip {
+    background: rgba(15, 23, 42, 0.5);
+    border-color: var(--border);
+    color: var(--text-primary);
+}
+
+[data-theme="dark"] .orbita-filter-chip:hover {
+    background: var(--bg-hover);
+    border-color: var(--border-strong);
+}
 
 /* Unified list filters bar (events, errors, responses) */
 .orbita-filters-bar {

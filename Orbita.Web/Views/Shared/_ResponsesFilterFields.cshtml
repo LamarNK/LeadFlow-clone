@@ -1,0 +1,38 @@
+@model ResponsesIndexViewModel
+<div class="orbita-filters-fields responses-filters-row" id="responsesFilterPanel" data-orbita-collapsible-filters hidden>
+    <label class="responses-filter-field">
+        <span class="responses-filter-label">Воркер</span>
+        <select name="workerId" class="responses-select" aria-label="Воркер">
+            @foreach (var opt in Model.Workers)
+            {
+                <option value="@opt.Value" selected="@(opt.Value == (Model.Filters.WorkerId?.ToString() ?? ""))">@opt.Label</option>
+            }
+        </select>
+    </label>
+    <label class="responses-filter-field">
+        <span class="responses-filter-label">Аккаунт</span>
+        <partial name="_AccountCombobox" model="@(new AccountComboboxViewModel {
+            FieldName = "accountId",
+            SelectedValue = Model.Filters.AccountId?.ToString() ?? "",
+            Options = Model.Accounts
+        })" />
+    </label>
+    <label class="responses-filter-field responses-filter-field--grow">
+        <span class="responses-filter-label">Объявление</span>
+        <input type="search"
+               name="vacancy"
+               class="responses-input"
+               value="@Model.Filters.VacancyQuery"
+               placeholder="ID или название объявления..."
+               aria-label="Поиск по объявлению" />
+    </label>
+    <label class="responses-filter-field">
+        <span class="responses-filter-label">Статус</span>
+        <select name="status" class="responses-select" aria-label="Статус">
+            @foreach (var opt in Model.Statuses)
+            {
+                <option value="@opt.Value" selected="@(opt.Value == (Model.Filters.Status ?? ""))">@opt.Label</option>
+            }
+        </select>
+    </label>
+</div>

@@ -22,7 +22,9 @@
      data-dashboard-live
      data-orbita-snapshot="@snapshotUrl"
      data-dashboard-snapshot="@snapshotUrl"
-     data-worker-details-url="@Url.Action("Details", "Workers", new { id = "__id__" })">
+     data-worker-details-url="@Url.Action("Details", "Workers", new { id = "__id__" })"
+     data-account-search-url="@Url.Action("Index", "Accounts", new { q = "__q__" })"
+     data-settings-logs-url="@Url.Action("Index", "Settings", new { tab = "logs", workerId = "__id__" })">
     @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
     {
         <p class="error-text">@Model.ErrorMessage</p>
@@ -75,7 +77,7 @@
                         @foreach (var w in Model.Workers)
                         {
                             var workerDetailsUrl = Url.Action("Details", "Workers", new { id = w.Id });
-                            <tr>
+                            <tr data-href="@workerDetailsUrl">
                                 <td class="cell-name" data-label="Воркер">
                                     <partial name="_WorkerNameCell" model="@(new WorkerNameCellViewModel { DisplayName = w.DisplayName, MachineName = w.MachineName, Url = workerDetailsUrl })" />
                                 </td>

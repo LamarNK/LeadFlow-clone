@@ -1,4 +1,5 @@
 using Orbita.Contracts;
+using Orbita.Web.Formatting;
 using Orbita.Web.Models.ViewModels;
 
 namespace Orbita.Web.Services;
@@ -88,7 +89,7 @@ internal static class WorkerDetailsBuilder
         var (label, tone) = AccountStatusMapper.ForWorkerDetails(account.Status, account.IsEnabledInPanel);
         var responses = account.TodayResponses;
         var errors = account.TodayEventErrors;
-        var subProfiles = SubProfileViewModelMapper.Map(account.SubProfiles);
+        var subProfiles = SubProfileViewModelMapper.Map(account.SubProfiles, balance?.SubProfiles);
         return new WorkerAccountRowViewModel
         {
             Id = account.AccountId,
@@ -97,7 +98,9 @@ internal static class WorkerDetailsBuilder
             AdsPowerProfileId = account.AdsPowerProfileId,
             StatusLabel = label,
             StatusTone = tone,
-            BalanceText = balance is null ? "—" : $"{balance.TotalBalance:N0} ₽",
+            BalanceText = balance is null
+                ? "—"
+                : FormatAccountBalanceText(balance),
             Responses = responses,
             LastActivityUtc = account.LastMonitoringAt,
             Errors = errors > 0 ? errors : !string.IsNullOrWhiteSpace(account.LastErrorMessage) ? 1 : 0,
@@ -110,6 +113,21 @@ internal static class WorkerDetailsBuilder
                 account.SubProfilesRefreshRequestedAtUtc,
                 account.SubProfilesRefreshedAtUtc)
         };
+    }
+
+    private static string FormatAccountBalanceText(WorkerBalanceDto balance)
+    {
+        var lines = new List<string> { $"Аванс {balance.TotalBalance:N0} ₽" };
+        var subtitle = BalanceDisplay.FormatAccountBreakdown(
+            balance.TotalWalletBalance > 0 ? balance.TotalWalletBalance : null,
+            BalanceDisplay.ResolveAdvanceDurationHint(
+                balance.SubProfiles.Select(s => (s.Balance, s.AdvanceDurationText)).ToList()));
+        if (!string.IsNullOrWhiteSpace(subtitle))
+        {
+            lines.Add(subtitle);
+        }
+
+        return string.Join("\n", lines);
     }
 
     private static IReadOnlyList<DashboardKpiCardViewModel> BuildKpiCards(

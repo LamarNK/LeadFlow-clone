@@ -34,6 +34,28 @@ public sealed class AvitoPageStateProbeTests
     }
 
     [Fact]
+    public void TryParse_JobResponsesCrmPage_IsOnCandidates()
+    {
+        const string json = """
+            {
+              "pageKind":"candidates",
+              "url":"https://www.avito.ru/profile/job/responses",
+              "profileSwitchModalOpen":false,
+              "profileCardsCount":0,
+              "candidatesItemCount":8,
+              "hasLoginForm":false,
+              "hasCaptcha":false
+            }
+            """;
+
+        var state = AvitoPageStateProbe.TryParse(json);
+
+        Assert.NotNull(state);
+        Assert.True(state!.IsOnCandidates);
+        Assert.Equal(8, state.CandidatesItemCount);
+    }
+
+    [Fact]
     public void TryParse_CandidatesPage_IsOnCandidates()
     {
         const string json = """

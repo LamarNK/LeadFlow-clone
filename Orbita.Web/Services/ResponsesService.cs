@@ -58,6 +58,15 @@ public sealed class ResponsesService(OrbitaApiClient api, IOptions<DesignPreview
             }
         }
 
+        var workerOptions = ResponsesIndexBuilder.BuildWorkerOptions(workers);
+        var accountOptions = ResponsesIndexBuilder.BuildAccountOptions(accounts);
+        var activeFilterChips = FilterChipsBuilder.ForResponses(
+            filters,
+            period,
+            ResponsesIndexBuilder.StatusOptions,
+            workerOptions,
+            accountOptions);
+
         return new ResponsesIndexViewModel
         {
             Header = PageHeaderBuilder.ResponsesList(period),
@@ -66,8 +75,8 @@ public sealed class ResponsesService(OrbitaApiClient api, IOptions<DesignPreview
             ActivePeriodPreset = period.ActivePreset,
             KpiCards = ResponsesIndexBuilder.BuildKpiCards(summary, period.From, period.To, workerId, accountId),
             Statuses = ResponsesIndexBuilder.StatusOptions,
-            Workers = ResponsesIndexBuilder.BuildWorkerOptions(workers),
-            Accounts = ResponsesIndexBuilder.BuildAccountOptions(accounts),
+            Workers = workerOptions,
+            Accounts = accountOptions,
             Responses = pageDto.Items.Select(ResponsesIndexBuilder.MapRow).ToList(),
             Pagination = new PaginationViewModel
             {
@@ -76,8 +85,23 @@ public sealed class ResponsesService(OrbitaApiClient api, IOptions<DesignPreview
                 TotalItems = pageDto.TotalCount
             },
             Selected = selected,
-            HasActiveFilters = ResponsesIndexBuilder.HasActiveFilters(filters, period)
+            HasActiveFilters = ResponsesIndexBuilder.HasActiveFilters(filters, period),
+            ActiveFilterChips = activeFilterChips
         };
+    }
+
+    public async Task<ResponseDetailJsonViewModel?> GetDetailJsonAsync(Guid id, CancellationToken ct = default)
+    {
+        if (previewOptions.Value.Enabled)
+        {
+            var preview = DesignPreviewData.BuildResponsesIndexViewModel(
+                new ResponsesFilterViewModel(),
+                id);
+            return preview.Selected is null ? null : ResponsesIndexBuilder.MapDetailJson(preview.Selected);
+        }
+
+        var detail = await api.GetResponseDetailAsync(id, ct);
+        return detail is null ? null : ResponsesIndexBuilder.MapDetailJson(ResponsesIndexBuilder.MapDetail(detail));
     }
 
     public async Task<(bool Success, string? Error)> ResendToBitrixAsync(Guid id, CancellationToken ct = default)

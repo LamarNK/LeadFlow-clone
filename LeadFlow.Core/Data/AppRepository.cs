@@ -263,7 +263,11 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
                         AccountId = row.Id,
                         AccountName = accountName,
                         SubProfileName = string.IsNullOrWhiteSpace(profile.Name) ? profile.Id : profile.Name,
-                        Balance = profile.Balance
+                        Balance = profile.Balance,
+                        WalletBalance = profile.WalletBalance,
+                        AdvanceDurationText = string.IsNullOrWhiteSpace(profile.AdvanceDurationText)
+                            ? null
+                            : profile.AdvanceDurationText
                     });
                 }
             }

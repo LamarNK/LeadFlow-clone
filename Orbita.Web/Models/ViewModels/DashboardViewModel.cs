@@ -63,11 +63,21 @@ public sealed class DashboardChartPointViewModel
 
 public sealed class DashboardEventRowViewModel
 {
+    public Guid Id { get; init; }
+    public Guid WorkerId { get; init; }
     public string Message { get; init; } = string.Empty;
     public string Subtitle { get; init; } = string.Empty;
     public DateTime TimeUtc { get; init; }
     public string WorkerName { get; init; } = string.Empty;
     public string Level { get; init; } = "success";
+    public string LevelLabel { get; init; } = string.Empty;
+    public string? AccountName { get; init; }
+    public string DetailTitle { get; init; } = string.Empty;
+    public string DetailSubtitle { get; init; } = string.Empty;
+    public string DetailBody { get; init; } = string.Empty;
+    public string CopyText { get; init; } = string.Empty;
+    public Guid? AttachmentId { get; init; }
+    public bool IsError { get; init; }
 }
 
 public sealed class AccountStatsViewModel

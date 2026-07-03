@@ -5,6 +5,11 @@ namespace LeadFlow.Core.Services.Worker;
 public interface IWorkerConfigProvider
 {
     Task<WorkerMonitoringConfig> GetConfigAsync(CancellationToken cancellationToken);
+
+    /// <summary>Сбросить кэш конфига (Orbita API), чтобы подхватить настройки без ожидания следующего цикла.</summary>
+    void InvalidateConfigCache()
+    {
+    }
 }
 
 public sealed class WorkerMonitoringConfig

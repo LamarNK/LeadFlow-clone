@@ -78,6 +78,8 @@ public sealed class OrbitaConfigProvider(OrbitaApiClient apiClient, IMonitoringR
 
     public void InvalidateCache() => _cached = null;
 
+    public void InvalidateConfigCache() => InvalidateCache();
+
     private static void MergeRuntimeState(AvitoAccount target, AvitoAccount source)
     {
         target.Status = source.Status;

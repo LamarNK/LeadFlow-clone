@@ -33,6 +33,18 @@ public sealed class ResponsesController(IResponsesService responses) : Controlle
     }
 
     [HttpGet]
+    public async Task<IActionResult> DetailJson(Guid id, CancellationToken ct = default)
+    {
+        var json = await responses.GetDetailJsonAsync(id, ct);
+        if (json is null)
+        {
+            return NotFound();
+        }
+
+        return Json(json);
+    }
+
+    [HttpGet]
     public async Task<IActionResult> Index(
         string? from,
         string? to,

@@ -1,7 +1,7 @@
 namespace LeadFlow.Core.Services.Avito;
 
 /// <summary>
-/// JS-снимки страницы <c>/profile/candidates</c>: подготовка списка (скролл) и извлечение карточек.
+/// JS-снимки страниц откликов Avito (<c>/profile/candidates</c> и CRM <c>/profile/job/responses</c>).
 /// </summary>
 public static class AvitoCandidatesPageScripts
 {
@@ -68,6 +68,7 @@ public static class AvitoCandidatesPageScripts
             const hasListData = itemCount > 0 || statusCount > 0;
             const listRoot =
                 document.querySelector("[data-marker='job-applications/list']") ||
+                document.querySelector(".styles-page-cyvKh") ||
                 document.querySelector("main") ||
                 document.body;
             const loading = !hasListData && !!(
@@ -133,7 +134,9 @@ public static class AvitoCandidatesPageScripts
                     }
                 }
 
-                const hints = document.querySelector("[class*='scrollable'], [data-marker='job-applications/list'], main");
+                const hints = document.querySelector(
+                    "[class*='scrollable'], [data-marker='job-applications/list'], .styles-page-cyvKh, main"
+                );
                 if (hints) {
                     let node = hints;
                     while (node && node !== document.body) {
@@ -460,6 +463,33 @@ public static class AvitoCandidatesPageScripts
         })();
         """;
 
+    /// <summary>Мини-панель в углу или полноэкранный канал после клика «Перейти в чат».</summary>
+    public static string BuildMessengerUiVisibleExpression() =>
+        """
+        () => !!document.querySelector("[data-marker='messagesHistory/list']")
+            || !!document.querySelector("a[data-marker='mini-messenger/messenger-page-link']")
+            || /\/profile\/messenger\/channel\//i.test(window.location.href)
+        """;
+
+    /// <summary>URL канала: из шапки мини-чата или из адреса полноэкранного мессенджера.</summary>
+    public static string BuildResolveMessengerChannelUrlExpression() =>
+        """
+        (() => {
+            const mini = document.querySelector("a[data-marker='mini-messenger/messenger-page-link']");
+            const miniHref = (mini?.href ?? "").trim();
+            if (miniHref && /\/profile\/messenger\//i.test(miniHref)) {
+                return miniHref;
+            }
+
+            const url = (window.location.href ?? "").trim();
+            if (/\/profile\/messenger\/channel\//i.test(url)) {
+                return url;
+            }
+
+            return "";
+        })()
+        """;
+
     /// <summary>Прокрутка истории мини-чата и сбор сообщений (после клика «Перейти в чат»).</summary>
     public static string BuildScrollAndCollectMiniMessengerMessagesScript() =>
         """
@@ -676,8 +706,15 @@ public static class AvitoCandidatesPageScripts
             const getPhoneNode = (root) =>
                 root?.querySelector("[data-marker='job-application/phone']") ??
                 root?.querySelector("[data-marker='job-application/call-button']");
+            const getVacancyAnchor = (root) =>
+                root?.querySelector("[data-marker='job-application/link/to-resume']");
 
             const findCardRoot = (element) => {
+                const itemRoot = element?.closest?.("[data-marker='job-application/item']");
+                if (itemRoot && getNameNode(itemRoot) && getPhoneNode(itemRoot)) {
+                    return itemRoot;
+                }
+
                 let current = element;
                 while (current) {
                     const name = getNameNode(current);
@@ -689,7 +726,7 @@ public static class AvitoCandidatesPageScripts
                     current = current.parentElement;
                 }
 
-                return null;
+                return itemRoot ?? null;
             };
 
             const addRoot = (root) => {
@@ -836,6 +873,15 @@ public static class AvitoCandidatesPageScripts
             };
 
             const parseVacancyLink = (root, vacancyListingAnchor) => {
+                const directHref = normalizeUrl(vacancyListingAnchor?.getAttribute("href") ?? "");
+                if (
+                    directHref
+                    && /\/\d{5,}/.test(directHref)
+                    && !/\/profile\/candidates(?:[/?#]|$)/i.test(directHref)
+                ) {
+                    return directHref;
+                }
+
                 for (const paragraph of root.querySelectorAll("p")) {
                     const text = (paragraph.textContent ?? "").replace(/\s+/g, " ").trim();
                     if (!/на вакансию/i.test(text)) {
@@ -913,7 +959,7 @@ public static class AvitoCandidatesPageScripts
             const candidates = roots.map((root) => {
                 const name = getNameNode(root)?.textContent?.trim() ?? "";
                 const phone = getPhoneNode(root)?.textContent?.trim() ?? "";
-                const vacancyListingAnchor = root.querySelector("[data-marker='job-application/link/to-resume']");
+                const vacancyListingAnchor = getVacancyAnchor(root);
                 let vacancyUrl = parseVacancyLink(root, vacancyListingAnchor);
                 const rawText = root.innerText?.replace(/\s+/g, " ").trim() ?? "";
                 let ageText = parseAgeText(root, rawText);
@@ -970,11 +1016,17 @@ public static class AvitoCandidatesPageScripts
                 return item.phone.replace(/\D/g, "").length >= 10;
             });
 
+            const isJobCrmResponsesPage = !!(
+                document.querySelector("[data-marker='filters/status-list-content']")
+                || document.querySelector("[data-marker='job-crm/response/cv-button']")
+            );
+
             return {
                 url: window.location.href,
                 hasCaptcha,
                 hasLogin,
                 candidates,
+                pageVariant: isJobCrmResponsesPage ? "job-crm" : "legacy",
                 domItemCount: document.querySelectorAll("[data-marker='job-application/item']").length,
                 domStatusCount: statusButtons.length
             };

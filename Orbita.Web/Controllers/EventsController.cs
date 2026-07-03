@@ -13,12 +13,25 @@ public sealed class EventsController(IEventsService events) : Controller
         string? q,
         string? type,
         Guid? workerId,
-        string? account,
+        Guid? accountId,
         string? level,
+        string? view,
+        string? severity,
         int page = 1,
         CancellationToken ct = default)
     {
-        var model = await events.GetIndexAsync(q, type, workerId, account, level, page, ct);
+        var model = await events.GetIndexAsync(q, type, workerId, accountId, level, view, severity, page, ct);
+        if (model.JournalView == "errors" && model.ErrorsPage is not null)
+        {
+            return Json(new ErrorsLiveSnapshotViewModel
+            {
+                UpdatedAtUtc = model.ErrorsPage.Header.UpdatedAtUtc,
+                KpiCards = model.ErrorsPage.KpiCards,
+                Errors = model.ErrorsPage.Errors,
+                Pagination = model.ErrorsPage.Pagination
+            });
+        }
+
         return Json(new EventsLiveSnapshotViewModel
         {
             UpdatedAtUtc = model.Header.UpdatedAtUtc,
@@ -33,12 +46,14 @@ public sealed class EventsController(IEventsService events) : Controller
         string? q,
         string? type,
         Guid? workerId,
-        string? account,
+        Guid? accountId,
         string? level,
+        string? view,
+        string? severity,
         int page = 1,
         CancellationToken ct = default)
     {
-        var model = await events.GetIndexAsync(q, type, workerId, account, level, page, ct: ct);
+        var model = await events.GetIndexAsync(q, type, workerId, accountId, level, view, severity, page, ct: ct);
         return View(model);
     }
 
