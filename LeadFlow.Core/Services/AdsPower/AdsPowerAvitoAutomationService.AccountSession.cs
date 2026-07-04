@@ -368,9 +368,6 @@ public sealed partial class AdsPowerAvitoAutomationService
                 ["candidates.waitMs"] = waitSw.ElapsedMilliseconds
             });
 
-        var knownPhones = await LoadKnownNormalizedPhonesAsync(messengerEnrichmentHints, cancellationToken)
-            .ConfigureAwait(false);
-
         await AvitoCandidatesListPreparer.PrepareAsync(
             executeScript,
             $"AdsPower:{adsPowerUserId}",
@@ -387,7 +384,7 @@ public sealed partial class AdsPowerAvitoAutomationService
                 }
             },
             page.Url,
-            knownPhones).ConfigureAwait(false);
+            BuildResolveExistingPhonesCallback(messengerEnrichmentHints)).ConfigureAwait(false);
 
         var raw = await EvaluateWithRetryAsync<string>(page, ExtractionScript, cancellationToken).ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(raw))

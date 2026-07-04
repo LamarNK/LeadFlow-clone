@@ -11,6 +11,7 @@ internal sealed class FakeDuplicateRepository : ICandidateDuplicateRepository
     public int CallCount { get; private set; }
     public string? LastPhoneArgument { get; private set; }
     public DuplicateScope? LastScopeArgument { get; private set; }
+    public string? LastSubProfileArgument { get; private set; }
 
     public Task<CandidateResponse?> FindDuplicateAsync(
         string phoneNormalized, DuplicateScope scope, Guid accountId, CancellationToken cancellationToken)
@@ -25,8 +26,11 @@ internal sealed class FakeDuplicateRepository : ICandidateDuplicateRepository
         IEnumerable<string> phoneNormalizedCandidates,
         DuplicateScope scope,
         Guid accountId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? avitoSubProfileId = null)
     {
+        LastScopeArgument = scope;
+        LastSubProfileArgument = avitoSubProfileId;
         var result = new HashSet<string>(StringComparer.Ordinal);
         foreach (var p in phoneNormalizedCandidates)
         {
@@ -49,13 +53,4 @@ internal sealed class FakeDuplicateRepository : ICandidateDuplicateRepository
         IEnumerable<string> sourceResponseIds,
         CancellationToken cancellationToken) =>
         Task.FromResult(new HashSet<string>(StringComparer.Ordinal));
-
-    public Func<DuplicateScope, Guid, HashSet<string>> AllStoredPhonesLookup { get; set; }
-        = (_, _) => [];
-
-    public Task<HashSet<string>> GetAllStoredNormalizedPhonesAsync(
-        DuplicateScope scope,
-        Guid accountId,
-        CancellationToken cancellationToken) =>
-        Task.FromResult(AllStoredPhonesLookup(scope, accountId));
 }

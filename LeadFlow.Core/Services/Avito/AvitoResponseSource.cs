@@ -19,11 +19,18 @@ public sealed class AvitoResponseSource(
 
     public const string JobResponsesPageUrl = AvitoCandidatesPageUrls.JobResponsesCrm;
 
-    public Task<HashSet<string>> GetKnownNormalizedPhonesForPrepareAsync(
+    public Task<HashSet<string>> ResolveExistingPhonesAsync(
         Guid accountId,
         DuplicateScope duplicateScope,
-        CancellationToken cancellationToken) =>
-        duplicateRepository.GetAllStoredNormalizedPhonesAsync(duplicateScope, accountId, cancellationToken);
+        IEnumerable<string> phoneCandidates,
+        CancellationToken cancellationToken,
+        string? avitoSubProfileId = null) =>
+        duplicateRepository.GetExistingNormalizedPhonesAsync(
+            phoneCandidates,
+            duplicateScope,
+            accountId,
+            cancellationToken,
+            avitoSubProfileId);
 
     public async Task<IReadOnlyList<CandidateResponse>> ParseCandidatesFromRawAsync(
         AvitoAccount account,

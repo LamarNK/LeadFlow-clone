@@ -144,6 +144,7 @@ public sealed class CandidateIngestionService(
             VacancyUrl = candidate.VacancyUrl,
             MessengerUrl = candidate.MessengerUrl,
             AvitoSubProfileId = candidate.AvitoSubProfileId,
+            AvitoSubProfileName = candidate.AvitoSubProfileName,
             RawText = candidate.RawText,
             ChatMessagesJson = candidate.ChatMessagesJson,
             CreatedAt = candidate.CreatedAt == default ? DateTime.UtcNow : candidate.CreatedAt,

@@ -22,7 +22,7 @@ public static class AvitoCandidatesListPreparer
         CancellationToken cancellationToken,
         Func<CancellationToken, Task<string?>>? fetchHtmlSnapshot = null,
         string? pageUrl = null,
-        IReadOnlySet<string>? knownNormalizedPhones = null)
+        Func<IReadOnlyCollection<string>, CancellationToken, Task<IReadOnlySet<string>>>? resolveExistingPhonesAsync = null)
     {
         await AvitoFirewallProbe.ThrowIfBlockedAsync(executeScript, fetchHtmlSnapshot, pageUrl, cancellationToken)
             .ConfigureAwait(false);
@@ -116,7 +116,7 @@ public static class AvitoCandidatesListPreparer
             var enrichment = await TryCollectDetailEnrichmentAsync(
                     executeScript,
                     Math.Min(domItems, MaxDetailEnrichClicks),
-                    knownNormalizedPhones,
+                    resolveExistingPhonesAsync,
                     cancellationToken)
                 .ConfigureAwait(false);
             detailEnrichClicks = enrichment.Clicks;
@@ -247,7 +247,7 @@ public static class AvitoCandidatesListPreparer
     private static async Task<DetailEnrichmentResult> TryCollectDetailEnrichmentAsync(
         Func<string, CancellationToken, Task<string>> executeScript,
         int itemCount,
-        IReadOnlySet<string>? knownNormalizedPhones,
+        Func<IReadOnlyCollection<string>, CancellationToken, Task<IReadOnlySet<string>>>? resolveExistingPhonesAsync,
         CancellationToken cancellationToken)
     {
         var entries = new Dictionary<string, object>(StringComparer.Ordinal);
@@ -256,14 +256,34 @@ public static class AvitoCandidatesListPreparer
         var hits = 0;
         var listPhones = await TryParseListItemPhonesAsync(executeScript, cancellationToken).ConfigureAwait(false);
 
+        IReadOnlySet<string>? existingOnPage = null;
+        if (resolveExistingPhonesAsync is not null)
+        {
+            var candidates = new HashSet<string>(StringComparer.Ordinal);
+            for (var index = 0; index < itemCount; index++)
+            {
+                if (listPhones.TryGetValue(index, out var listPhoneDigits)
+                    && !string.IsNullOrWhiteSpace(listPhoneDigits))
+                {
+                    candidates.Add(listPhoneDigits);
+                }
+            }
+
+            if (candidates.Count > 0)
+            {
+                existingOnPage = await resolveExistingPhonesAsync(candidates, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+        }
+
         for (var index = 0; index < itemCount; index++)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
             if (listPhones.TryGetValue(index, out var listPhoneDigits)
                 && !string.IsNullOrWhiteSpace(listPhoneDigits)
-                && knownNormalizedPhones is not null
-                && knownNormalizedPhones.Contains(listPhoneDigits))
+                && existingOnPage is not null
+                && existingOnPage.Contains(listPhoneDigits))
             {
                 skipped++;
                 continue;

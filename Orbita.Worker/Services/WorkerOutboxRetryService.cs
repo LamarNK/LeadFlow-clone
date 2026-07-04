@@ -65,6 +65,7 @@ public sealed class WorkerOutboxRetryService(
                     candidate.AccountId,
                     candidate.SourceResponseId,
                     NormalizePhone(candidate.PhoneRaw),
+                    candidate.AvitoSubProfileId,
                     cancellationToken)
                 .ConfigureAwait(false);
         }

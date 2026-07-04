@@ -23,8 +23,10 @@ public interface IAvitoResponseSource
         CancellationToken cancellationToken,
         AvitoSubProfile? activeSubProfile = null);
 
-    Task<HashSet<string>> GetKnownNormalizedPhonesForPrepareAsync(
+    Task<HashSet<string>> ResolveExistingPhonesAsync(
         Guid accountId,
         DuplicateScope duplicateScope,
-        CancellationToken cancellationToken);
+        IEnumerable<string> phoneCandidates,
+        CancellationToken cancellationToken,
+        string? avitoSubProfileId = null);
 }

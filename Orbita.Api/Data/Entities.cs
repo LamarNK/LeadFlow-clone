@@ -194,6 +194,7 @@ public sealed class CandidateResponseEntity
     public string MessengerUrl { get; set; } = string.Empty;
     public string ChatMessagesJson { get; set; } = string.Empty;
     public string AvitoSubProfileId { get; set; } = string.Empty;
+    public string AvitoSubProfileName { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
     public bool IsLocalDuplicate { get; set; }
     public bool IsBitrixDuplicate { get; set; }

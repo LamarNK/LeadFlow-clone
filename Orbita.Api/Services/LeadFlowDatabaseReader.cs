@@ -177,6 +177,7 @@ public sealed class LeadFlowCandidateRecord
         "MessengerUrl",
         "ChatMessagesJson",
         "AvitoSubProfileId",
+        "AvitoSubProfileName",
         "Status",
         "BitrixEntityType",
         "BitrixEntityId",
@@ -206,6 +207,7 @@ public sealed class LeadFlowCandidateRecord
     public string MessengerUrl { get; set; } = string.Empty;
     public string ChatMessagesJson { get; set; } = string.Empty;
     public string AvitoSubProfileId { get; set; } = string.Empty;
+    public string AvitoSubProfileName { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
     public string BitrixEntityType { get; set; } = string.Empty;
     public string BitrixEntityId { get; set; } = string.Empty;
@@ -305,6 +307,7 @@ public sealed class LeadFlowCandidateRecord
             case "MessengerUrl": record.MessengerUrl = value; break;
             case "ChatMessagesJson": record.ChatMessagesJson = value; break;
             case "AvitoSubProfileId": record.AvitoSubProfileId = value; break;
+            case "AvitoSubProfileName": record.AvitoSubProfileName = value; break;
             case "Status": record.Status = value; break;
             case "BitrixEntityType": record.BitrixEntityType = value; break;
             case "BitrixEntityId": record.BitrixEntityId = value; break;

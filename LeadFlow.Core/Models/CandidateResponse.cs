@@ -30,6 +30,9 @@ public sealed class CandidateResponse
     /// </summary>
     public string AvitoSubProfileId { get; set; } = string.Empty;
 
+    /// <summary>Имя субпрофиля Avito Pro на момент сбора отклика (не зависит от текущего списка аккаунтов воркера).</summary>
+    public string AvitoSubProfileName { get; set; } = string.Empty;
+
     public ResponseStatus Status { get; set; } = ResponseStatus.New;
     public string BitrixEntityType { get; set; } = "Deal";
     public string BitrixEntityId { get; set; } = string.Empty;

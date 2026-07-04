@@ -957,7 +957,8 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         IEnumerable<string> phoneNormalizedCandidates,
         DuplicateScope scope,
         Guid accountId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? avitoSubProfileId = null)
     {
         var distinct = phoneNormalizedCandidates
             .Where(static p => !string.IsNullOrWhiteSpace(p))
@@ -970,26 +971,15 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
 
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
         var query = db.CandidateResponses.AsNoTracking().Where(x => distinct.Contains(x.PhoneNormalized));
-        if (scope == DuplicateScope.PerAvitoAccount)
+
+        var subProfileId = avitoSubProfileId?.Trim();
+        if (!string.IsNullOrWhiteSpace(subProfileId))
         {
-            query = query.Where(x => x.AccountId == accountId);
+            query = query
+                .Where(x => x.AccountId == accountId)
+                .Where(x => x.AvitoSubProfileId == subProfileId);
         }
-
-        return await query
-            .Select(x => x.PhoneNormalized)
-            .Distinct()
-            .ToHashSetAsync(cancellationToken);
-    }
-
-    public async Task<HashSet<string>> GetAllStoredNormalizedPhonesAsync(
-        DuplicateScope scope,
-        Guid accountId,
-        CancellationToken cancellationToken)
-    {
-        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
-        var query = db.CandidateResponses.AsNoTracking()
-            .Where(x => x.PhoneNormalized != "");
-        if (scope == DuplicateScope.PerAvitoAccount)
+        else if (scope == DuplicateScope.PerAvitoAccount)
         {
             query = query.Where(x => x.AccountId == accountId);
         }
@@ -1314,6 +1304,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         MessengerUrl = model.MessengerUrl,
         ChatMessagesJson = model.ChatMessagesJson,
         AvitoSubProfileId = model.AvitoSubProfileId,
+        AvitoSubProfileName = model.AvitoSubProfileName,
         Status = model.Status.ToString(),
         BitrixEntityType = model.BitrixEntityType,
         BitrixEntityId = model.BitrixEntityId,
@@ -1344,6 +1335,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         MessengerUrl = entity.MessengerUrl,
         ChatMessagesJson = entity.ChatMessagesJson,
         AvitoSubProfileId = entity.AvitoSubProfileId,
+        AvitoSubProfileName = entity.AvitoSubProfileName,
         Status = Enum.TryParse<ResponseStatus>(entity.Status, out var status) ? status : ResponseStatus.New,
         BitrixEntityType = entity.BitrixEntityType,
         BitrixEntityId = entity.BitrixEntityId,
@@ -1374,6 +1366,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         target.MessengerUrl = source.MessengerUrl;
         target.ChatMessagesJson = source.ChatMessagesJson;
         target.AvitoSubProfileId = source.AvitoSubProfileId;
+        target.AvitoSubProfileName = source.AvitoSubProfileName;
         target.Status = source.Status.ToString();
         target.BitrixEntityType = source.BitrixEntityType;
         target.BitrixEntityId = source.BitrixEntityId;
@@ -1517,6 +1510,14 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         {
             await db.Database.ExecuteSqlRawAsync(
                 "ALTER TABLE CandidateResponses ADD COLUMN AvitoSubProfileId TEXT NOT NULL DEFAULT '';",
+                cancellationToken);
+        }
+
+        existingColumns = await GetTableColumnsAsync(db, "CandidateResponses", cancellationToken);
+        if (!existingColumns.Contains("AvitoSubProfileName"))
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                "ALTER TABLE CandidateResponses ADD COLUMN AvitoSubProfileName TEXT NOT NULL DEFAULT '';",
                 cancellationToken);
         }
     }

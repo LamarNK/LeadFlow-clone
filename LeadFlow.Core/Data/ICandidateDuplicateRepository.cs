@@ -12,23 +12,18 @@ public interface ICandidateDuplicateRepository
         CancellationToken cancellationToken);
 
     /// <summary>
-    /// Какие из переданных нормализованных номеров уже встречались в сохранённых откликах
-    /// (для пропуска тяжёлого обогащения мессенджером на странице кандидатов).
+    /// Batch lookup: какие из переданных нормализованных номеров уже есть в базе
+    /// (пропуск кликов detail-enrich и messenger-enrich на странице откликов).
     /// </summary>
     Task<HashSet<string>> GetExistingNormalizedPhonesAsync(
         IEnumerable<string> phoneNormalizedCandidates,
         DuplicateScope scope,
         Guid accountId,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        string? avitoSubProfileId = null);
 
     Task<HashSet<string>> GetExistingSourceResponseIdsAsync(
         Guid accountId,
         IEnumerable<string> sourceResponseIds,
-        CancellationToken cancellationToken);
-
-    /// <summary>Все нормализованные телефоны уже сохранённых откликов (для пропуска кликов по карточкам).</summary>
-    Task<HashSet<string>> GetAllStoredNormalizedPhonesAsync(
-        DuplicateScope scope,
-        Guid accountId,
         CancellationToken cancellationToken);
 }

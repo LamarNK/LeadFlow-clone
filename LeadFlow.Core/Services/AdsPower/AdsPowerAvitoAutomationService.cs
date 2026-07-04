@@ -70,9 +70,6 @@ public sealed partial class AdsPowerAvitoAutomationService(
 
             await EnsureOnCandidatesPageAsync(page, adsPowerUserId, cancellationToken).ConfigureAwait(false);
 
-            var knownPhones = await LoadKnownNormalizedPhonesAsync(messengerEnrichmentHints, cancellationToken)
-                .ConfigureAwait(false);
-
             await AvitoCandidatesListPreparer.PrepareAsync(
                 executeScript,
                 $"AdsPower:{adsPowerUserId}",
@@ -89,7 +86,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
                     }
                 },
                 page.Url,
-                knownPhones).ConfigureAwait(false);
+                BuildResolveExistingPhonesCallback(messengerEnrichmentHints)).ConfigureAwait(false);
 
             var raw = await EvaluateWithRetryAsync<string>(page, ExtractionScript, cancellationToken).ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(raw))
@@ -1760,21 +1757,23 @@ public sealed partial class AdsPowerAvitoAutomationService(
             || url.Contains("messenger/channel", StringComparison.OrdinalIgnoreCase);
     }
 
-    private async Task<HashSet<string>> LoadKnownNormalizedPhonesAsync(
-        CandidatesMessengerEnrichmentHints? enrichmentHints,
-        CancellationToken cancellationToken)
+    private Func<IReadOnlyCollection<string>, CancellationToken, Task<IReadOnlySet<string>>>? BuildResolveExistingPhonesCallback(
+        CandidatesMessengerEnrichmentHints? enrichmentHints)
     {
         if (enrichmentHints is null)
         {
-            return [];
+            return null;
         }
 
-        return await duplicateRepository
-            .GetAllStoredNormalizedPhonesAsync(
-                enrichmentHints.DuplicateScope,
-                enrichmentHints.AccountId,
-                cancellationToken)
-            .ConfigureAwait(false);
+        return async (phoneCandidates, cancellationToken) =>
+            (IReadOnlySet<string>)await duplicateRepository
+                .GetExistingNormalizedPhonesAsync(
+                    phoneCandidates,
+                    enrichmentHints.DuplicateScope,
+                    enrichmentHints.AccountId,
+                    cancellationToken,
+                    enrichmentHints.AvitoSubProfileId)
+                .ConfigureAwait(false);
     }
 
     /// <summary>
@@ -1839,7 +1838,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
                         toQuery,
                         enrichmentHints.DuplicateScope,
                         enrichmentHints.AccountId,
-                        cancellationToken)
+                        cancellationToken,
+                        enrichmentHints.AvitoSubProfileId)
                     .ConfigureAwait(false);
             }
         }

@@ -110,6 +110,7 @@ public sealed class OrbitaCandidateSink(
                     candidate.AccountId,
                     candidate.SourceResponseId,
                     NormalizePhone(candidate.PhoneRaw),
+                    candidate.AvitoSubProfileId,
                     ct)
                 .ConfigureAwait(false);
         }
@@ -131,7 +132,8 @@ public sealed class OrbitaCandidateSink(
             candidate.AvitoSubProfileId,
             candidate.RawText,
             candidate.ChatMessagesJson,
-            candidate.CreatedAt);
+            candidate.CreatedAt,
+            candidate.AvitoSubProfileName);
 
     private static string? NormalizePhone(string phoneRaw) =>
         string.IsNullOrWhiteSpace(phoneRaw) ? null : phoneRaw.Trim();

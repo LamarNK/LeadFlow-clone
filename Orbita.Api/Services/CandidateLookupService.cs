@@ -59,7 +59,15 @@ public sealed class CandidateLookupService(OrbitaDbContext db)
             var phoneQuery = db.CandidateResponses
                 .AsNoTracking()
                 .Where(x => x.OfficeId == worker.OfficeId && x.PhoneNormalized != "");
-            if (perAccount)
+
+            var subProfileId = request.AvitoSubProfileId?.Trim();
+            if (!string.IsNullOrWhiteSpace(subProfileId))
+            {
+                phoneQuery = phoneQuery
+                    .Where(x => x.AccountId == request.AccountId)
+                    .Where(x => x.AvitoSubProfileId == subProfileId);
+            }
+            else if (perAccount)
             {
                 phoneQuery = phoneQuery.Where(x => x.AccountId == request.AccountId);
             }

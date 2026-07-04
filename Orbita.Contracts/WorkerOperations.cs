@@ -76,7 +76,8 @@ public sealed record WorkerCandidateDto(
     string AvitoSubProfileId,
     string RawText,
     string ChatMessagesJson,
-    DateTime CreatedAt);
+    DateTime CreatedAt,
+    string AvitoSubProfileName = "");
 
 public sealed record WorkerCandidateBatchRequest(
     IReadOnlyList<WorkerCandidateDto> Candidates);
@@ -86,7 +87,8 @@ public sealed record WorkerCandidateLookupRequest(
     string DuplicateScope,
     IReadOnlyList<string> SourceResponseIds,
     IReadOnlyList<string> PhoneNormalized,
-    bool IncludeAllKnownPhones = false);
+    bool IncludeAllKnownPhones = false,
+    string? AvitoSubProfileId = null);
 
 public sealed record WorkerCandidateLookupResponse(
     IReadOnlyList<string> ExistingSourceResponseIds,

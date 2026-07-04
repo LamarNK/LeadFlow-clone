@@ -38,7 +38,8 @@ public sealed class OrbitaCandidateDuplicateRepository(
         IEnumerable<string> phoneNormalizedCandidates,
         DuplicateScope scope,
         Guid accountId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? avitoSubProfileId = null)
     {
         var phones = phoneNormalizedCandidates
             .Where(static x => !string.IsNullOrWhiteSpace(x))
@@ -54,7 +55,8 @@ public sealed class OrbitaCandidateDuplicateRepository(
                 [],
                 phones,
                 scope,
-                cancellationToken)
+                cancellationToken,
+                avitoSubProfileId)
             .ConfigureAwait(false);
         return existing;
     }
@@ -84,53 +86,18 @@ public sealed class OrbitaCandidateDuplicateRepository(
         return existing;
     }
 
-    public async Task<HashSet<string>> GetAllStoredNormalizedPhonesAsync(
-        DuplicateScope scope,
-        Guid accountId,
-        CancellationToken cancellationToken)
-    {
-        var phones = new HashSet<string>(StringComparer.Ordinal);
-
-        try
-        {
-            var apiResult = await apiClient.LookupCandidatesAsync(
-                    new WorkerCandidateLookupRequest(
-                        accountId,
-                        scope.ToString(),
-                        [],
-                        [],
-                        IncludeAllKnownPhones: true),
-                    cancellationToken)
-                .ConfigureAwait(false);
-            if (apiResult is not null)
-            {
-                foreach (var phone in apiResult.ExistingPhones)
-                {
-                    phones.Add(phone);
-                }
-            }
-        }
-        catch
-        {
-            // fallback to cache
-        }
-
-        var cachePhones = await dedupCache.GetAllPhonesAsync(scope, accountId, cancellationToken)
-            .ConfigureAwait(false);
-        phones.UnionWith(cachePhones);
-        return phones;
-    }
-
     public Task RecordSeenAsync(
         Guid accountId,
         string? sourceResponseId,
         string? phoneNormalized,
+        string? avitoSubProfileId = null,
         CancellationToken cancellationToken = default) =>
         dedupCache.RecordAsync(
             accountId,
             sourceResponseId,
             phoneNormalized,
             DateTime.UtcNow,
+            avitoSubProfileId,
             cancellationToken);
 
     private async Task<(HashSet<string> SourceIds, HashSet<string> Phones)> LookupMergedAsync(
@@ -138,7 +105,8 @@ public sealed class OrbitaCandidateDuplicateRepository(
         IReadOnlyList<string> sourceResponseIds,
         IReadOnlyList<string> phoneNormalized,
         DuplicateScope scope,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? avitoSubProfileId = null)
     {
         WorkerCandidateLookupResponse? apiResult = null;
         try
@@ -148,7 +116,8 @@ public sealed class OrbitaCandidateDuplicateRepository(
                         accountId,
                         scope.ToString(),
                         sourceResponseIds,
-                        phoneNormalized),
+                        phoneNormalized,
+                        AvitoSubProfileId: avitoSubProfileId),
                     cancellationToken)
                 .ConfigureAwait(false);
         }
@@ -162,7 +131,8 @@ public sealed class OrbitaCandidateDuplicateRepository(
                 sourceResponseIds,
                 phoneNormalized,
                 scope,
-                cancellationToken)
+                cancellationToken,
+                avitoSubProfileId)
             .ConfigureAwait(false);
 
         var sourceIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

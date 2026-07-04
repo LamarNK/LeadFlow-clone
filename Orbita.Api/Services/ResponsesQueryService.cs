@@ -106,7 +106,11 @@ public sealed class ResponsesQueryService(
             .Select(a => a.SubProfilesJson)
             .FirstOrDefaultAsync(ct);
         var nameLookup = SubProfileNameResolver.BuildLookup([(entity.AccountId, subProfilesJson ?? "[]")]);
-        var subProfileName = ResolveSubProfileName(nameLookup, entity.AccountId, entity.AvitoSubProfileId);
+        var subProfileName = CoalesceSubProfileName(
+            entity.AvitoSubProfileName,
+            nameLookup,
+            entity.AccountId,
+            entity.AvitoSubProfileId);
         return MapDetail(entity, portalHost, subProfileName);
     }
 
@@ -158,6 +162,7 @@ public sealed class ResponsesQueryService(
                 x.BitrixEntityId,
                 x.BitrixEntityType,
                 x.AvitoSubProfileId,
+                x.AvitoSubProfileName,
                 x.CreatedAt,
                 x.ProcessedAt
             })
@@ -213,7 +218,11 @@ public sealed class ResponsesQueryService(
                     string.IsNullOrWhiteSpace(x.BitrixEntityType) ? null : x.BitrixEntityType,
                     bitrixEntityUrl,
                     x.AvitoSubProfileId,
-                    ResolveSubProfileName(nameLookup, x.AccountId, x.AvitoSubProfileId),
+                    CoalesceSubProfileName(
+                        x.AvitoSubProfileName,
+                        nameLookup,
+                        x.AccountId,
+                        x.AvitoSubProfileId),
                     x.CreatedAt,
                     x.ProcessedAt);
             })
@@ -416,6 +425,20 @@ public sealed class ResponsesQueryService(
         return scope.IsGlobalAdmin ? query : query.Where(_ => false);
     }
 
+    private static string? CoalesceSubProfileName(
+        string? storedName,
+        IReadOnlyDictionary<(Guid AccountId, string SubProfileId), string> lookup,
+        Guid accountId,
+        string? subProfileId)
+    {
+        if (!string.IsNullOrWhiteSpace(storedName))
+        {
+            return storedName.Trim();
+        }
+
+        return ResolveSubProfileName(lookup, accountId, subProfileId);
+    }
+
     private static string? ResolveSubProfileName(
         IReadOnlyDictionary<(Guid AccountId, string SubProfileId), string> lookup,
         Guid accountId,
@@ -426,7 +449,8 @@ public sealed class ResponsesQueryService(
             return null;
         }
 
-        return lookup.TryGetValue((accountId, subProfileId), out var name) ? name : null;
+        var id = subProfileId.Trim();
+        return lookup.TryGetValue((accountId, id), out var name) ? name : null;
     }
 
     private static ResponseDetailDto MapDetail(

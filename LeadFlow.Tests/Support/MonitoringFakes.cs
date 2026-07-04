@@ -97,10 +97,12 @@ internal sealed class FakeAvitoResponseSource : IAvitoResponseSource
         return Task.FromResult(new AvitoCandidatesParseResult(list, AvitoCandidatesExtractionSummary.Empty));
     }
 
-    public Task<HashSet<string>> GetKnownNormalizedPhonesForPrepareAsync(
+    public Task<HashSet<string>> ResolveExistingPhonesAsync(
         Guid accountId,
         DuplicateScope duplicateScope,
-        CancellationToken cancellationToken) =>
+        IEnumerable<string> phoneCandidates,
+        CancellationToken cancellationToken,
+        string? avitoSubProfileId = null) =>
         Task.FromResult(new HashSet<string>(StringComparer.Ordinal));
 }
 

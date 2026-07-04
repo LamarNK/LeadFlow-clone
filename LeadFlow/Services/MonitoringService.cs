@@ -1308,7 +1308,6 @@ public sealed class MonitoringService(
             .OpenAccountSessionAsync(options, adsPowerProfileId, cancellationToken)
             .ConfigureAwait(false);
 
-        var messengerHints = new CandidatesMessengerEnrichmentHints(account.Id, settings.DuplicateScope);
         var deferredSubIds = new HashSet<string>(StringComparer.Ordinal);
 
         async Task ProcessSubProfilePassAsync(AvitoSubProfile sub, int i, bool deferredRetry)
@@ -1388,6 +1387,10 @@ public sealed class MonitoringService(
                     return;
                 }
 
+                var messengerHints = new CandidatesMessengerEnrichmentHints(
+                    account.Id,
+                    settings.DuplicateScope,
+                    sub.Id);
                 IReadOnlyList<CandidateResponse> batch;
                 try
                 {
@@ -1433,10 +1436,11 @@ public sealed class MonitoringService(
                     return;
                 }
 
-                foreach (var r in batch)
-                {
-                    r.AvitoSubProfileId = sub.Id;
-                }
+                    foreach (var r in batch)
+                    {
+                        r.AvitoSubProfileId = sub.Id;
+                        r.AvitoSubProfileName = sub.Name;
+                    }
 
                 deferredSubIds.Remove(sub.Id);
 

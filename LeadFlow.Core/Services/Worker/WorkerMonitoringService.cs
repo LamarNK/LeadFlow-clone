@@ -537,7 +537,6 @@ public sealed class WorkerMonitoringService(
                 await TryRefreshSubProfilesAsync(account, session, cancellationToken).ConfigureAwait(false);
             }
 
-            var messengerHints = new CandidatesMessengerEnrichmentHints(account.Id, settings.DuplicateScope);
             var allSubProfiles = account.SubProfiles;
             if (allSubProfiles.Count == 0)
             {
@@ -557,8 +556,9 @@ public sealed class WorkerMonitoringService(
                     _telemetryPusher.RequestDebouncedPush(cancellationToken);
                 }
 
+                var singleProfileHints = new CandidatesMessengerEnrichmentHints(account.Id, settings.DuplicateScope);
                 var rawJson = await session
-                    .ExtractCandidatesJsonAsync(messengerHints, cancellationToken)
+                    .ExtractCandidatesJsonAsync(singleProfileHints, cancellationToken)
                     .ConfigureAwait(false);
                 var singleParse = await avitoResponseSource
                     .ParseCandidatesDetailedFromRawAsync(account, settings, rawJson, cancellationToken)
@@ -662,6 +662,10 @@ public sealed class WorkerMonitoringService(
                         sub.Id,
                         sub.Name,
                         "Читает отклики");
+                    var messengerHints = new CandidatesMessengerEnrichmentHints(
+                        account.Id,
+                        settings.DuplicateScope,
+                        sub.Id);
                     var rawJson = await session
                         .ExtractCandidatesJsonAsync(messengerHints, cancellationToken)
                         .ConfigureAwait(false);
@@ -686,6 +690,7 @@ public sealed class WorkerMonitoringService(
                     foreach (var r in batch)
                     {
                         r.AvitoSubProfileId = sub.Id;
+                        r.AvitoSubProfileName = sub.Name;
                     }
 
                     _ = await ProcessBatchInlineAsync(batch).ConfigureAwait(false);

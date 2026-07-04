@@ -61,16 +61,17 @@ public sealed class AvitoWebViewCandidatesFetcher(
 
                 var execute = (string script, CancellationToken ct) =>
                     automationService.ExecuteScriptAsync(session, script, ct);
-                var knownPhones = await avitoResponseSource
-                    .GetKnownNormalizedPhonesForPrepareAsync(account.Id, settings.DuplicateScope, cancellationToken)
-                    .ConfigureAwait(false);
                 await AvitoCandidatesListPreparer.PrepareAsync(
                     execute,
                     account.DisplayName,
                     cancellationToken,
                     ct => FetchPageHtmlSnapshotAsync(execute, ct),
                     AvitoResponseSource.CandidatesPageUrl,
-                    knownPhones).ConfigureAwait(false);
+                    async (phones, ct) => (IReadOnlySet<string>)await avitoResponseSource.ResolveExistingPhonesAsync(
+                        account.Id,
+                        settings.DuplicateScope,
+                        phones,
+                        ct)).ConfigureAwait(false);
 
                 var raw = await automationService.ExecuteScriptAsync(
                     session,

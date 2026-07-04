@@ -85,7 +85,33 @@ public sealed class AppRepositoryDuplicateTests
         Assert.Equal("a-1", foundForA.SourceResponseId);
     }
 
-    private static CandidateResponse NewCandidate(Guid accountId, string phoneNorm, string sourceId, DateTime createdAt) => new()
+    [Fact]
+    public async Task GetExistingNormalizedPhonesAsync_WithSubProfile_FiltersBySubProfile()
+    {
+        var accountId = Guid.NewGuid();
+        await _repository.SaveCandidateAsync(
+            NewCandidate(accountId, "79000000010", "a-1", DateTime.UtcNow, "sub-a"),
+            CancellationToken.None);
+        await _repository.SaveCandidateAsync(
+            NewCandidate(accountId, "79000000011", "a-2", DateTime.UtcNow, "sub-b"),
+            CancellationToken.None);
+
+        var found = await _repository.GetExistingNormalizedPhonesAsync(
+            ["79000000010", "79000000011"],
+            DuplicateScope.PerAvitoAccount,
+            accountId,
+            CancellationToken.None,
+            "sub-a");
+
+        Assert.Equal(["79000000010"], found.OrderBy(static x => x));
+    }
+
+    private static CandidateResponse NewCandidate(
+        Guid accountId,
+        string phoneNorm,
+        string sourceId,
+        DateTime createdAt,
+        string avitoSubProfileId = "") => new()
     {
         Id = Guid.NewGuid(),
         AccountId = accountId,
@@ -95,6 +121,7 @@ public sealed class AppRepositoryDuplicateTests
         FullName = "Test User",
         PhoneRaw = phoneNorm,
         PhoneNormalized = phoneNorm,
+        AvitoSubProfileId = avitoSubProfileId,
         Status = ResponseStatus.Sent,
         CreatedAt = createdAt
     };
