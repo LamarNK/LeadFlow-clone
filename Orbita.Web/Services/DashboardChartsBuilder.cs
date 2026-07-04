@@ -78,7 +78,6 @@ internal static class DashboardChartsBuilder
         {
             new() { Label = "Активны", Value = stats.Active, Color = "#22c55e" },
             new() { Label = "Неактивны", Value = stats.Inactive, Color = "#94a3b8" },
-            new() { Label = "Заблокированы", Value = stats.Blocked, Color = "#ef4444" },
             new() { Label = "Ошибки", Value = stats.Errors, Color = "#f59e0b" }
         };
 

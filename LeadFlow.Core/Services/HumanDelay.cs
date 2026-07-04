@@ -53,4 +53,16 @@ public static class HumanDelay
             MonitoringTiming.HumanDelayBetweenSubProfilesMinMs,
             MonitoringTiming.HumanDelayBetweenSubProfilesMaxMs,
             cancellationToken);
+
+    public static Task BeforeCandidateClickAsync(CancellationToken cancellationToken = default) =>
+        DelayAsync(
+            MonitoringTiming.HumanDelayBeforeCandidateClickMinMs,
+            MonitoringTiming.HumanDelayBeforeCandidateClickMaxMs,
+            cancellationToken);
+
+    public static Task AfterCandidateClickAsync(CancellationToken cancellationToken = default) =>
+        DelayAsync(
+            MonitoringTiming.HumanDelayAfterCandidateClickMinMs,
+            MonitoringTiming.HumanDelayAfterCandidateClickMaxMs,
+            cancellationToken);
 }

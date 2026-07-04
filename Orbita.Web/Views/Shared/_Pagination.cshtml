@@ -22,13 +22,13 @@
         <div class="orbita-pagination__controls" role="navigation" aria-label="Пагинация">
             @if (prevPage is not null)
             {
-                <a class="orbita-pagination__btn"
+                <a class="orbita-pagination__btn orbita-pagination__btn--nav"
                    href="@Url.Action(Model.Action, Model.Controller, MergeRoute(Model.RouteValues, prevPage.Value))"
                    aria-label="Предыдущая страница">&lt;</a>
             }
             else
             {
-                <span class="orbita-pagination__btn orbita-pagination__btn--disabled" aria-hidden="true">&lt;</span>
+                <span class="orbita-pagination__btn orbita-pagination__btn--nav orbita-pagination__btn--disabled" aria-hidden="true">&lt;</span>
             }
             @foreach (var item in visiblePages)
             {
@@ -42,20 +42,20 @@
                 }
                 else
                 {
-                    <a class="orbita-pagination__btn"
+                    <a class="orbita-pagination__btn orbita-pagination__btn--page"
                        href="@Url.Action(Model.Action, Model.Controller, MergeRoute(Model.RouteValues, item.Page))"
                        aria-label="Страница @item.Page">@item.Page</a>
                 }
             }
             @if (nextPage is not null)
             {
-                <a class="orbita-pagination__btn"
+                <a class="orbita-pagination__btn orbita-pagination__btn--nav"
                    href="@Url.Action(Model.Action, Model.Controller, MergeRoute(Model.RouteValues, nextPage.Value))"
                    aria-label="Следующая страница">&gt;</a>
             }
             else
             {
-                <span class="orbita-pagination__btn orbita-pagination__btn--disabled" aria-hidden="true">&gt;</span>
+                <span class="orbita-pagination__btn orbita-pagination__btn--nav orbita-pagination__btn--disabled" aria-hidden="true">&gt;</span>
             }
         </div>
     }

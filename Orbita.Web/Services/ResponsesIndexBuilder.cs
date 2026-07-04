@@ -98,6 +98,7 @@ internal static class ResponsesIndexBuilder
             Id = item.Id,
             CreatedAtUtc = item.CreatedAt,
             FullName = item.FullName,
+            Age = item.Age,
             PhoneRaw = item.PhoneRaw,
             PhoneNormalized = item.PhoneNormalized,
             Vacancy = item.Vacancy,

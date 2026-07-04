@@ -1,0 +1,236 @@
+using Microsoft.EntityFrameworkCore;
+using Orbita.Api.Data;
+using Orbita.Api.Services;
+using Orbita.Contracts;
+
+namespace Orbita.Tests;
+
+public sealed class OfficeStatisticsQueryServiceTests
+{
+    private static readonly Guid OfficeA = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+    private static readonly Guid OfficeB = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+    private static readonly Guid WorkerA = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc");
+    private static readonly Guid WorkerB = Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd");
+    private static readonly Guid AccountA = Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee");
+    private static readonly Guid AccountB = Guid.Parse("ffffffff-ffff-ffff-ffff-ffffffffffff");
+
+    [Fact]
+    public async Task GetStatisticsAsync_OfficeIsolation_ExcludesOtherOffice()
+    {
+        await using var db = CreateDb();
+        SeedOfficeData(db);
+
+        var sut = CreateService(db);
+        var result = await sut.GetStatisticsAsync(
+            OfficeScope.ForOffice(OfficeA),
+            OfficeA,
+            DateTime.Today.AddDays(-6),
+            DateTime.Today);
+
+        Assert.Single(result.Balances.Accounts);
+        Assert.Equal(AccountA, result.Balances.Accounts[0].AccountId);
+        Assert.Equal(1, result.Workers.Total);
+        Assert.Equal(2, result.Responses.Total);
+        Assert.Equal(1, result.HrInsights.TopCities.Count);
+        Assert.Equal("Москва", result.HrInsights.TopCities[0].Name);
+    }
+
+    [Fact]
+    public async Task GetStatisticsAsync_BalanceRollup_AndLowBalanceFlag()
+    {
+        await using var db = CreateDb();
+        SeedOfficeData(db);
+
+        var sut = CreateService(db);
+        var result = await sut.GetStatisticsAsync(
+            OfficeScope.GlobalAdmin,
+            null,
+            DateTime.Today,
+            DateTime.Today);
+
+        Assert.Equal(2, result.Balances.Accounts.Count);
+        Assert.Equal(9000m, result.Balances.TotalAdvance);
+        Assert.Equal(1500m, result.Balances.TotalWallet);
+        Assert.Equal(1, result.Balances.LowBalanceAccountCount);
+        Assert.True(result.Balances.Accounts.Single(a => a.AccountId == AccountB).IsLowBalance);
+    }
+
+    [Fact]
+    public async Task GetStatisticsAsync_DailyTrend_FillsMissingDays()
+    {
+        await using var db = CreateDb();
+        SeedOfficeData(db);
+
+        var sut = CreateService(db);
+        var result = await sut.GetStatisticsAsync(
+            OfficeScope.ForOffice(OfficeA),
+            OfficeA,
+            DateTime.Today.AddDays(-2),
+            DateTime.Today);
+
+        Assert.Equal(3, result.DailyTrend.Count);
+        Assert.Contains(result.DailyTrend, d => d.Total == 0);
+        Assert.Equal(2, result.DailyTrend.Sum(d => d.Total));
+    }
+
+    private static OfficeStatisticsQueryService CreateService(OrbitaDbContext db) =>
+        new(db, new OfficeScopeService(db));
+
+    private static OrbitaDbContext CreateDb()
+    {
+        var options = new DbContextOptionsBuilder<OrbitaDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        return new OrbitaDbContext(options);
+    }
+
+    private static void SeedOfficeData(OrbitaDbContext db)
+    {
+        var now = DateTime.UtcNow;
+        db.Offices.AddRange(
+            new OfficeEntity
+            {
+                Id = OfficeA,
+                Name = "Office A",
+                RegistrationSecretHash = "hash",
+                CreatedAtUtc = now,
+                IsEnabled = true
+            },
+            new OfficeEntity
+            {
+                Id = OfficeB,
+                Name = "Office B",
+                RegistrationSecretHash = "hash",
+                CreatedAtUtc = now,
+                IsEnabled = true
+            });
+
+        db.Workers.AddRange(
+            new WorkerEntity
+            {
+                Id = WorkerA,
+                OfficeId = OfficeA,
+                DisplayName = "worker-a",
+                MachineName = "pc-a",
+                ApiKeyHash = "hash",
+                AppVersion = "1.0",
+                MonitoringStatus = "Running",
+                LastSeenAtUtc = now,
+                CreatedAtUtc = now
+            },
+            new WorkerEntity
+            {
+                Id = WorkerB,
+                OfficeId = OfficeB,
+                DisplayName = "worker-b",
+                MachineName = "pc-b",
+                ApiKeyHash = "hash",
+                AppVersion = "1.0",
+                MonitoringStatus = "Running",
+                LastSeenAtUtc = now,
+                CreatedAtUtc = now
+            });
+
+        db.WorkerAccounts.AddRange(
+            new WorkerAccountEntity
+            {
+                WorkerId = WorkerA,
+                AccountId = AccountA,
+                DisplayName = "Account A",
+                Status = "Active",
+                IsEnabledInPanel = true,
+                TotalBalance = 8000m,
+                UpdatedAtUtc = now
+            },
+            new WorkerAccountEntity
+            {
+                WorkerId = WorkerB,
+                AccountId = AccountB,
+                DisplayName = "Account B",
+                Status = "Active",
+                IsEnabledInPanel = true,
+                TotalBalance = 1000m,
+                UpdatedAtUtc = now
+            });
+
+        var balancesA = """[{"accountId":"eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee","accountName":"Account A","totalBalance":8000,"subProfiles":[{"subProfileName":"Main","balance":8000,"walletBalance":1000}],"totalWalletBalance":1000}]""";
+        var balancesB = """[{"accountId":"ffffffff-ffff-ffff-ffff-ffffffffffff","accountName":"Account B","totalBalance":1000,"subProfiles":[{"subProfileName":"Main","balance":1000,"walletBalance":500}],"totalWalletBalance":500}]""";
+
+        db.WorkerSnapshots.AddRange(
+            new WorkerSnapshotEntity
+            {
+                Id = Guid.NewGuid(),
+                WorkerId = WorkerA,
+                CapturedAtUtc = now,
+                StatsJson = """{"connectedAccounts":1,"activeAdsCount":3,"blockedAdsCount":0}""",
+                BalancesJson = balancesA
+            },
+            new WorkerSnapshotEntity
+            {
+                Id = Guid.NewGuid(),
+                WorkerId = WorkerB,
+                CapturedAtUtc = now,
+                StatsJson = """{"connectedAccounts":1,"activeAdsCount":1,"blockedAdsCount":1}""",
+                BalancesJson = balancesB
+            });
+
+        db.CandidateResponses.AddRange(
+            new CandidateResponseEntity
+            {
+                Id = Guid.NewGuid(),
+                OfficeId = OfficeA,
+                WorkerId = WorkerA,
+                AccountId = AccountA,
+                AccountName = "Account A",
+                Source = "Avito",
+                SourceResponseId = "r1",
+                FullName = "User 1",
+                Age = 22,
+                PhoneRaw = "+79001111111",
+                PhoneNormalized = "79001111111",
+                City = "Москва",
+                Vacancy = "Курьер",
+                MessengerUrl = "https://t.me/test",
+                Status = ResponseStatuses.Sent,
+                CreatedAt = now.AddHours(-2),
+                ProcessedAt = now.AddHours(-1)
+            },
+            new CandidateResponseEntity
+            {
+                Id = Guid.NewGuid(),
+                OfficeId = OfficeA,
+                WorkerId = WorkerA,
+                AccountId = AccountA,
+                AccountName = "Account A",
+                Source = "Avito",
+                SourceResponseId = "r2",
+                FullName = "User 2",
+                Age = 40,
+                PhoneRaw = "+79002222222",
+                PhoneNormalized = "79002222222",
+                City = "Москва",
+                Vacancy = "Водитель",
+                Status = ResponseStatuses.Duplicate,
+                CreatedAt = now.AddDays(-1)
+            },
+            new CandidateResponseEntity
+            {
+                Id = Guid.NewGuid(),
+                OfficeId = OfficeB,
+                WorkerId = WorkerB,
+                AccountId = AccountB,
+                AccountName = "Account B",
+                Source = "Avito",
+                SourceResponseId = "r3",
+                FullName = "User 3",
+                PhoneRaw = "+79003333333",
+                PhoneNormalized = "79003333333",
+                City = "Казань",
+                Vacancy = "Сборщик",
+                Status = ResponseStatuses.Sent,
+                CreatedAt = now.AddHours(-1)
+            });
+
+        db.SaveChanges();
+    }
+}

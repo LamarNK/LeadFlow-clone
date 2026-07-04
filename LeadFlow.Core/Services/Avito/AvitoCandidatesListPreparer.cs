@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Text.Json;
 using LeadFlow.Core.Logging.Audit;
+using LeadFlow.Core.Services;
 
 namespace LeadFlow.Core.Services.Avito;
 
@@ -14,7 +15,6 @@ public static class AvitoCandidatesListPreparer
     private const int MaxPhoneRevealRounds = 32;
     private const int MaxPhoneRevealRoundsWhenNoItems = 2;
     private const int MaxDetailEnrichClicks = 40;
-    private const int DetailPanelReadDelayMs = 500;
 
     public static async Task<CandidatesListPrepareResult> PrepareAsync(
         Func<string, CancellationToken, Task<string>> executeScript,
@@ -265,6 +265,8 @@ public static class AvitoCandidatesListPreparer
 
             clicks++;
 
+            await HumanDelay.BeforeCandidateClickAsync(cancellationToken).ConfigureAwait(false);
+
             var clickRaw = await executeScript(
                     AvitoCandidatesPageScripts.BuildClickCandidateItemByIndexScript(index),
                     cancellationToken)
@@ -274,7 +276,7 @@ public static class AvitoCandidatesListPreparer
                 continue;
             }
 
-            await Task.Delay(DetailPanelReadDelayMs, cancellationToken).ConfigureAwait(false);
+            await HumanDelay.AfterCandidateClickAsync(cancellationToken).ConfigureAwait(false);
 
             var detailRaw = await executeScript(AvitoCandidatesPageScripts.BuildReadDetailPanelScript(), cancellationToken)
                 .ConfigureAwait(false);

@@ -1,10 +1,12 @@
-using LeadFlow.Core.Data;
 using LeadFlow.Core.Models;
+using LeadFlow.Core.Services.Worker;
 using Orbita.Contracts;
 
 namespace Orbita.Worker.Services;
 
-public sealed class WorkerTelemetryCollector(AppRepository repository)
+public sealed class WorkerTelemetryCollector(
+    WorkerAccountRuntimeStore runtimeStore,
+    OrbitaApiClient apiClient)
 {
     public async Task<WorkerSnapshotRequest?> BuildSnapshotAsync(
         WorkerConfigDto config,
@@ -15,8 +17,7 @@ public sealed class WorkerTelemetryCollector(AppRepository repository)
             return null;
         }
 
-        var localAccounts = (await repository.GetAccountsAsync(ct).ConfigureAwait(false))
-            .ToDictionary(x => x.Id);
+        var localAccounts = runtimeStore.GetAll().ToDictionary(x => x.Id);
 
         var accounts = config.Accounts
             .Select(cfg =>
@@ -34,15 +35,27 @@ public sealed class WorkerTelemetryCollector(AppRepository repository)
             })
             .ToList();
 
-        var stats = await repository.GetDashboardStatsAsync(ct).ConfigureAwait(false);
-        var statsDto = MapStats(stats, accounts);
+        var statsDto = await ResolveStatsAsync(ct).ConfigureAwait(false);
+        var stats = MapStats(statsDto, accounts);
 
         return new WorkerSnapshotRequest(
             config.WorkerId,
             DateTime.UtcNow,
-            statsDto,
+            stats,
             accounts,
             balances);
+    }
+
+    private async Task<DashboardStatsDto> ResolveStatsAsync(CancellationToken ct)
+    {
+        var remote = await apiClient.GetMonitoringStatsAsync(ct).ConfigureAwait(false);
+        if (remote is not null)
+        {
+            return remote.Stats;
+        }
+
+        return new DashboardStatsDto(
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, [], []);
     }
 
     private static WorkerAccountDto MapAccount(WorkerAccountConfigDto cfg, AvitoAccount? local)
@@ -56,16 +69,16 @@ public sealed class WorkerTelemetryCollector(AppRepository repository)
             cfg.DisplayName,
             status,
             cfg.IsEnabled,
-            local?.ActiveAdsCount ?? 0,
-            local?.BlockedCount ?? 0,
-            local?.DraftsCount ?? 0,
+            local?.ActiveAdsCount ?? cfg.ActiveAdsCount,
+            local?.BlockedCount ?? cfg.BlockedCount,
+            local?.DraftsCount ?? cfg.DraftsCount,
             string.IsNullOrWhiteSpace(local?.LastErrorMessage) ? null : local.LastErrorMessage.Trim(),
-            EnsureUtc(local?.LastMonitoringAt),
+            EnsureUtc(local?.LastMonitoringAt ?? cfg.LastMonitoringAtUtc),
             cfg.IsEnabled,
             cfg.AdsPowerProfileId,
-            MapSubProfiles(local),
-            EnsureUtc(local?.SubProfilesRefreshedAt),
-            SubProfilesRefreshRequestedAtUtc: null);
+            MapSubProfiles(local, cfg),
+            EnsureUtc(local?.SubProfilesRefreshedAt ?? cfg.SubProfilesRefreshedAtUtc),
+            SubProfilesRefreshRequestedAtUtc: cfg.SubProfilesRefreshRequestedAtUtc);
     }
 
     private static WorkerBalanceDto MapBalance(WorkerAccountDto account, AvitoAccount? local)
@@ -96,30 +109,63 @@ public sealed class WorkerTelemetryCollector(AppRepository repository)
             balanceItems.Sum(x => x.WalletBalance ?? 0m));
     }
 
-    private static IReadOnlyList<WorkerSubProfileDto>? MapSubProfiles(AvitoAccount? local)
+    private static IReadOnlyList<WorkerSubProfileDto>? MapSubProfiles(AvitoAccount? local, WorkerAccountConfigDto cfg)
     {
-        if (local is null || local.SubProfiles.Count == 0)
+        if (local is { SubProfiles.Count: > 0 })
+        {
+            return local.SubProfiles
+                .Select(sp => new WorkerSubProfileDto(
+                    sp.Id,
+                    sp.Name,
+                    sp.Category,
+                    sp.IsCurrent,
+                    sp.Balance,
+                    string.IsNullOrWhiteSpace(sp.LastIssueKind) ? null : sp.LastIssueKind,
+                    string.IsNullOrWhiteSpace(sp.LastIssueMessage) ? null : sp.LastIssueMessage,
+                    sp.LastIssueAt,
+                    DiagnosticAttachmentId: sp.LastDiagnosticAttachmentId,
+                    WalletBalance: sp.WalletBalance,
+                    AdvanceDurationText: string.IsNullOrWhiteSpace(sp.AdvanceDurationText) ? null : sp.AdvanceDurationText,
+                    Rating: sp.Rating,
+                    ReviewsCount: sp.ReviewsCount,
+                    ReviewsText: string.IsNullOrWhiteSpace(sp.ReviewsText) ? null : sp.ReviewsText))
+                .ToList();
+        }
+
+        if (string.IsNullOrWhiteSpace(cfg.SubProfilesJson) || cfg.SubProfilesJson == "[]")
         {
             return null;
         }
 
-        return local.SubProfiles
-            .Select(sp => new WorkerSubProfileDto(
-                sp.Id,
-                sp.Name,
-                sp.Category,
-                sp.IsCurrent,
-                sp.Balance,
-                string.IsNullOrWhiteSpace(sp.LastIssueKind) ? null : sp.LastIssueKind,
-                string.IsNullOrWhiteSpace(sp.LastIssueMessage) ? null : sp.LastIssueMessage,
-                sp.LastIssueAt,
-                DiagnosticAttachmentId: sp.LastDiagnosticAttachmentId,
-                WalletBalance: sp.WalletBalance,
-                AdvanceDurationText: string.IsNullOrWhiteSpace(sp.AdvanceDurationText) ? null : sp.AdvanceDurationText,
-                Rating: sp.Rating,
-                ReviewsCount: sp.ReviewsCount,
-                ReviewsText: string.IsNullOrWhiteSpace(sp.ReviewsText) ? null : sp.ReviewsText))
-            .ToList();
+        try
+        {
+            var profiles = System.Text.Json.JsonSerializer.Deserialize<List<AvitoSubProfile>>(cfg.SubProfilesJson);
+            if (profiles is not { Count: > 0 })
+            {
+                return null;
+            }
+
+            return profiles
+                .Select(sp => new WorkerSubProfileDto(
+                    sp.Id,
+                    sp.Name,
+                    sp.Category,
+                    sp.IsCurrent,
+                    sp.Balance,
+                    string.IsNullOrWhiteSpace(sp.LastIssueKind) ? null : sp.LastIssueKind,
+                    string.IsNullOrWhiteSpace(sp.LastIssueMessage) ? null : sp.LastIssueMessage,
+                    sp.LastIssueAt,
+                    WalletBalance: sp.WalletBalance,
+                    AdvanceDurationText: string.IsNullOrWhiteSpace(sp.AdvanceDurationText) ? null : sp.AdvanceDurationText,
+                    Rating: sp.Rating,
+                    ReviewsCount: sp.ReviewsCount,
+                    ReviewsText: string.IsNullOrWhiteSpace(sp.ReviewsText) ? null : sp.ReviewsText))
+                .ToList();
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return null;
+        }
     }
 
     private static DateTime? EnsureUtc(DateTime? value) =>
@@ -132,31 +178,13 @@ public sealed class WorkerTelemetryCollector(AppRepository repository)
                 _ => DateTime.SpecifyKind(value.Value, DateTimeKind.Utc)
             };
 
-    private static DashboardStatsDto MapStats(DashboardStats stats, IReadOnlyList<WorkerAccountDto> accounts)
+    private static DashboardStatsDto MapStats(DashboardStatsDto stats, IReadOnlyList<WorkerAccountDto> accounts)
     {
-        var hourly = stats.HourlyActivity
-            .Select(p => new ActivityPointDto(
-                p.Label,
-                p.NewCount,
-                p.SentCount,
-                p.DuplicateCount,
-                p.ErrorCount,
-                p.SlotStartHour,
-                p.SlotSpanHours,
-                p.LocalDate))
-            .ToList();
-
-        var weekly = stats.WeeklyByDayActivity
-            .Select(p => new ActivityPointDto(
-                p.Label,
-                p.NewCount,
-                p.SentCount,
-                p.DuplicateCount,
-                p.ErrorCount,
-                p.SlotStartHour,
-                p.SlotSpanHours,
-                p.LocalDate))
-            .ToList();
+        var hourly = stats.HourlyActivity?.Count > 0
+            ? stats.HourlyActivity
+            : Enumerable.Range(0, 24)
+                .Select(h => new ActivityPointDto($"{h:00}:00", 0, 0, 0, 0, h, 1, null))
+                .ToList();
 
         return new DashboardStatsDto(
             stats.NewResponses,
@@ -169,10 +197,10 @@ public sealed class WorkerTelemetryCollector(AppRepository repository)
             stats.ConnectedAccounts > 0 ? stats.ConnectedAccounts : accounts.Count(a => a.IsEnabled),
             stats.RequiresAuthorization,
             stats.AccountsNeedAttentionCount,
-            stats.ActiveAdsCount,
-            stats.BlockedAdsCount,
-            stats.DraftsCount,
+            stats.ActiveAdsCount > 0 ? stats.ActiveAdsCount : accounts.Sum(a => a.ActiveAdsCount),
+            stats.BlockedAdsCount > 0 ? stats.BlockedAdsCount : accounts.Sum(a => a.BlockedCount),
+            stats.DraftsCount > 0 ? stats.DraftsCount : accounts.Sum(a => a.DraftsCount),
             hourly,
-            weekly);
+            stats.WeeklyByDayActivity ?? []);
     }
 }

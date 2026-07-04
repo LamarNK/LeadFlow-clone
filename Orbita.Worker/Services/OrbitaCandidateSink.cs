@@ -9,7 +9,10 @@ namespace Orbita.Worker.Services;
 /// Batches candidate publishes to reduce HTTP roundtrips.
 /// Flushes on size threshold, time window, or explicit FlushAsync (e.g. on monitoring stop).
 /// </summary>
-public sealed class OrbitaCandidateSink(OrbitaApiClient apiClient) : INewCandidateSink, IAsyncDisposable
+public sealed class OrbitaCandidateSink(
+    OrbitaApiClient apiClient,
+    OrbitaCandidateDuplicateRepository dedupRepository,
+    WorkerCandidateOutbox outbox) : INewCandidateSink, IAsyncDisposable
 {
     private const int MaxBatchSize = 5;
     private static readonly TimeSpan FlushWindow = TimeSpan.FromMilliseconds(1500);
@@ -23,9 +26,97 @@ public sealed class OrbitaCandidateSink(OrbitaApiClient apiClient) : INewCandida
         CandidateResponse candidate,
         CancellationToken cancellationToken)
     {
-        if (_disposed) return CandidatePublishResult.Pending();
+        if (_disposed)
+        {
+            return CandidatePublishResult.Pending();
+        }
 
-        var dto = new WorkerCandidateDto(
+        var dto = ToDto(candidate);
+        _queue.Enqueue(dto);
+
+        if (ShouldFlushNow())
+        {
+            await FlushInternalAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        return CandidatePublishResult.Pending();
+    }
+
+    public async Task FlushAsync(CancellationToken cancellationToken)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        await FlushInternalAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private bool ShouldFlushNow()
+    {
+        if (_queue.Count >= MaxBatchSize)
+        {
+            return true;
+        }
+
+        return DateTime.UtcNow - _lastFlushUtc >= FlushWindow && !_queue.IsEmpty;
+    }
+
+    private async Task FlushInternalAsync(CancellationToken ct)
+    {
+        if (_queue.IsEmpty)
+        {
+            return;
+        }
+
+        List<WorkerCandidateDto> batchDtos;
+        lock (_flushGate)
+        {
+            if (_queue.IsEmpty)
+            {
+                return;
+            }
+
+            batchDtos = new List<WorkerCandidateDto>();
+            while (_queue.TryDequeue(out var item) && batchDtos.Count < 100)
+            {
+                batchDtos.Add(item);
+            }
+
+            _lastFlushUtc = DateTime.UtcNow;
+        }
+
+        if (batchDtos.Count == 0)
+        {
+            return;
+        }
+
+        var batch = new WorkerCandidateBatchRequest(batchDtos);
+        var result = await apiClient.SubmitCandidatesAsync(batch, ct).ConfigureAwait(false);
+        if (result is null)
+        {
+            await outbox.EnqueueAsync(batch, ct).ConfigureAwait(false);
+            return;
+        }
+
+        await RecordDedupAsync(batchDtos, ct).ConfigureAwait(false);
+    }
+
+    private async Task RecordDedupAsync(IReadOnlyList<WorkerCandidateDto> batch, CancellationToken ct)
+    {
+        foreach (var candidate in batch)
+        {
+            await dedupRepository.RecordSeenAsync(
+                    candidate.AccountId,
+                    candidate.SourceResponseId,
+                    NormalizePhone(candidate.PhoneRaw),
+                    ct)
+                .ConfigureAwait(false);
+        }
+    }
+
+    private static WorkerCandidateDto ToDto(CandidateResponse candidate) =>
+        new(
             candidate.AccountId,
             candidate.AccountName,
             candidate.Source,
@@ -42,58 +133,16 @@ public sealed class OrbitaCandidateSink(OrbitaApiClient apiClient) : INewCandida
             candidate.ChatMessagesJson,
             candidate.CreatedAt);
 
-        _queue.Enqueue(dto);
-
-        if (ShouldFlushNow())
-        {
-            await FlushInternalAsync(cancellationToken).ConfigureAwait(false);
-        }
-
-        // Return Pending; real status comes back on flush for the item (caller usually doesn't block on it).
-        // For immediate feedback on a single publish we could force flush small, but batching wins for bursts.
-        return CandidatePublishResult.Pending();
-    }
-
-    public async Task FlushAsync(CancellationToken cancellationToken)
-    {
-        if (_disposed) return;
-        await FlushInternalAsync(cancellationToken).ConfigureAwait(false);
-    }
-
-    private bool ShouldFlushNow()
-    {
-        if (_queue.Count >= MaxBatchSize) return true;
-        if (DateTime.UtcNow - _lastFlushUtc >= FlushWindow && !_queue.IsEmpty) return true;
-        return false;
-    }
-
-    private async Task FlushInternalAsync(CancellationToken ct)
-    {
-        if (_queue.IsEmpty) return;
-
-        List<WorkerCandidateDto> batchDtos;
-        lock (_flushGate)
-        {
-            if (_queue.IsEmpty) return;
-            batchDtos = new List<WorkerCandidateDto>();
-            while (_queue.TryDequeue(out var item) && batchDtos.Count < 100)
-            {
-                batchDtos.Add(item);
-            }
-            _lastFlushUtc = DateTime.UtcNow;
-        }
-
-        if (batchDtos.Count == 0) return;
-
-        var batch = new WorkerCandidateBatchRequest(batchDtos);
-        // Fire and forget status per item is not critical for sink (ingestion service reports back via result if needed).
-        // We await to apply backpressure and respect cancellation.
-        _ = await apiClient.SubmitCandidatesAsync(batch, ct).ConfigureAwait(false);
-    }
+    private static string? NormalizePhone(string phoneRaw) =>
+        string.IsNullOrWhiteSpace(phoneRaw) ? null : phoneRaw.Trim();
 
     public async ValueTask DisposeAsync()
     {
-        if (_disposed) return;
+        if (_disposed)
+        {
+            return;
+        }
+
         _disposed = true;
         try
         {

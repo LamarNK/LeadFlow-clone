@@ -20,12 +20,13 @@ public sealed class SettingsController(
         string? service,
         string? action,
         string? userId,
+        Guid? officeId,
         Guid? workerId,
         DateTime? date,
         int page = 1,
         CancellationToken ct = default)
     {
-        var model = await settings.GetIndexAsync(tab, q, level, service, date, action, userId, workerId, page, ct);
+        var model = await settings.GetIndexAsync(tab, q, level, service, date, action, userId, officeId, workerId, page, ct);
         model = model with
         {
             StatusMessage = TempData["SettingsStatus"] as string ?? model.StatusMessage,
@@ -84,11 +85,11 @@ public sealed class SettingsController(
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> CreateOffice(CreateOfficeFormModel model, CancellationToken ct = default)
     {
-        var (success, error, _) = await settings.CreateOfficeAsync(model.Name, ct);
+        var (success, error, officeId, _) = await settings.CreateOfficeAsync(model.Name, ct);
         TempData[success ? "SettingsStatus" : "SettingsError"] = success
             ? "Офис создан. Секрет регистрации сгенерирован — перевыпустите его в карточке офиса при необходимости."
             : error;
-        return RedirectToAction(nameof(Index), new { tab = "offices" });
+        return RedirectToAction(nameof(Index), new { tab = "offices", officeId });
     }
 
     [HttpPost]
@@ -104,7 +105,7 @@ public sealed class SettingsController(
         TempData[success ? "SettingsStatus" : "SettingsError"] = success
             ? "Офис обновлён."
             : error;
-        return RedirectToAction(nameof(Index), new { tab = "offices", userId = model.OfficeId });
+        return RedirectToAction(nameof(Index), new { tab = "offices", officeId = model.OfficeId });
     }
 
     [HttpPost]
@@ -115,12 +116,12 @@ public sealed class SettingsController(
         if (!success || secret is null)
         {
             TempData["SettingsError"] = error;
-            return RedirectToAction(nameof(Index), new { tab = "offices", userId = officeId });
+            return RedirectToAction(nameof(Index), new { tab = "offices", officeId });
         }
 
         TempData["SettingsStatus"] = "Секрет регистрации перевыпущен. Скопируйте его сейчас — повторно он не будет показан.";
         TempData["RotatedOfficeRegistrationSecret"] = secret;
-        return RedirectToAction(nameof(Index), new { tab = "offices", userId = officeId });
+        return RedirectToAction(nameof(Index), new { tab = "offices", officeId });
     }
 
     [HttpPost]
@@ -275,13 +276,13 @@ public sealed class SettingsController(
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> SaveUserBitrix(SaveAdminBitrixIntegrationFormModel model, CancellationToken ct = default)
+    public async Task<IActionResult> SaveOfficeBitrix(SaveOfficeBitrixIntegrationFormModel model, CancellationToken ct = default)
     {
-        var (success, error) = await settings.SaveUserBitrixAsync(model.UserId, model.WebhookUrl, ct);
+        var (success, error) = await settings.SaveOfficeBitrixAsync(model.OfficeId, model.WebhookUrl, ct);
         TempData[success ? "SettingsStatus" : "SettingsError"] = success
-            ? "Вебхук пользователя сохранён и проверен."
+            ? "Вебхук Bitrix24 офиса сохранён и проверен."
             : error;
-        return RedirectToAction(nameof(Index), new { tab = "integrations", userId = model.UserId });
+        return RedirectToAction(nameof(Index), new { tab = "offices", officeId = model.OfficeId });
     }
 
     [HttpPost]
@@ -356,14 +357,14 @@ public sealed class SettingsController(
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> ValidateUserBitrix(
-        string userId,
+    public async Task<IActionResult> ValidateOfficeBitrix(
+        Guid officeId,
         string? webhookUrl,
         [FromServices] OrbitaApiClient api,
         CancellationToken ct = default)
     {
         webhookUrl = string.IsNullOrWhiteSpace(webhookUrl) ? null : webhookUrl.Trim();
-        var (validation, error) = await api.ValidateAdminUserBitrixIntegrationAsync(userId, webhookUrl, ct);
+        var (validation, error) = await api.ValidateAdminOfficeBitrixIntegrationAsync(officeId, webhookUrl, ct);
         if (validation is null)
         {
             return BadRequest(new { error });

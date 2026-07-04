@@ -67,42 +67,29 @@ internal static class SettingsIndexBuilder
 
     public static SettingsIndexViewModel BuildUsersTab(
         IReadOnlyList<PanelUserDto> users,
-        IReadOnlyList<BitrixIntegrationListItemDto> integrations,
         IReadOnlyList<OfficeDto> offices,
         string? currentUserId,
         string? statusMessage = null,
         string? errorMessage = null) =>
-        Build(users, integrations, offices, "users", currentUserId, statusMessage, errorMessage);
+        Build(users, offices, "users", currentUserId, statusMessage, errorMessage);
 
     public static SettingsIndexViewModel BuildProfilesTab(
         IReadOnlyList<PanelUserDto> users,
-        IReadOnlyList<BitrixIntegrationListItemDto> integrations,
         IReadOnlyList<OfficeDto> offices,
         string? currentUserId = null) =>
-        Build(users, integrations, offices, "profiles", currentUserId);
+        Build(users, offices, "profiles", currentUserId);
 
-    public static SettingsIndexViewModel BuildIntegrationsTab(
-        IReadOnlyList<BitrixIntegrationListItemDto> integrations,
-        string? editUserId = null,
-        BitrixIntegrationDto? editIntegration = null)
-    {
-        var editItem = editUserId is null
-            ? null
-            : integrations.FirstOrDefault(x => x.UserId == editUserId);
-        return new()
+    public static SettingsIndexViewModel BuildIntegrationsTab(IReadOnlyList<OfficeDto> offices) =>
+        new()
         {
             ActiveTab = "integrations",
             Tabs = Tabs,
             ProfileOptions = ProfileOptions,
             Integrations = new BitrixIntegrationsSettingsViewModel
             {
-                Rows = integrations.Select(MapIntegrationRow).ToList(),
-                Edit = editUserId is null || editIntegration is null || editItem is null
-                    ? null
-                    : MapIntegrationEdit(editItem.Email, editIntegration)
+                Rows = offices.Select(MapOfficeIntegrationRow).ToList()
             }
         };
-    }
 
     public static SettingsIndexViewModel BuildLeadFlowImportTab(
         IReadOnlyList<OfficeDto> offices) =>
@@ -318,7 +305,6 @@ internal static class SettingsIndexBuilder
 
     private static SettingsIndexViewModel Build(
         IReadOnlyList<PanelUserDto> users,
-        IReadOnlyList<BitrixIntegrationListItemDto> integrations,
         IReadOnlyList<OfficeDto> offices,
         string activeTab,
         string? currentUserId,
@@ -328,7 +314,7 @@ internal static class SettingsIndexBuilder
         {
             ActiveTab = activeTab,
             Tabs = Tabs,
-            Users = users.Select(u => MapUser(u, integrations, currentUserId)).ToList(),
+            Users = users.Select(u => MapUser(u, offices, currentUserId)).ToList(),
             Profiles = BuildProfiles(users),
             ProfileOptions = ProfileOptions,
             OfficeOptions = offices.Select(o => new EventFilterOptionViewModel
@@ -342,12 +328,14 @@ internal static class SettingsIndexBuilder
 
     private static PanelUserRowViewModel MapUser(
         PanelUserDto user,
-        IReadOnlyList<BitrixIntegrationListItemDto> integrations,
+        IReadOnlyList<OfficeDto> offices,
         string? currentUserId)
     {
         var role = PanelRoles.Normalize(user.Role);
-        var integration = integrations.FirstOrDefault(x => x.UserId == user.Id);
-        var (bitrixLabel, bitrixTone) = MapValidationStatus(integration?.ValidationStatus);
+        var office = user.OfficeId is Guid officeId
+            ? offices.FirstOrDefault(x => x.Id == officeId)
+            : null;
+        var (bitrixLabel, bitrixTone) = MapValidationStatus(office?.BitrixValidationStatus);
         return new PanelUserRowViewModel
         {
             Id = user.Id,
@@ -357,7 +345,7 @@ internal static class SettingsIndexBuilder
             ProfileId = PanelRoles.ProfileIdForRole(role),
             IsCurrentUser = string.Equals(user.Id, currentUserId, StringComparison.Ordinal),
             IsLocked = user.IsLocked,
-            BitrixStatus = integration?.ValidationStatus ?? BitrixValidationStatuses.NotConfigured,
+            BitrixStatus = office?.BitrixValidationStatus ?? BitrixValidationStatuses.NotConfigured,
             BitrixStatusLabel = bitrixLabel,
             BitrixStatusTone = bitrixTone,
             OfficeId = user.OfficeId,
@@ -376,48 +364,38 @@ internal static class SettingsIndexBuilder
             CreatedAtUtc = office.CreatedAtUtc
         };
 
-    private static OfficeDetailViewModel MapOfficeDetail(OfficeDetailDto office) =>
-        new()
+    private static OfficeDetailViewModel MapOfficeDetail(OfficeDetailDto office)
+    {
+        var (bitrixLabel, bitrixTone) = MapValidationStatus(office.BitrixValidationStatus);
+        return new()
         {
             Id = office.Id,
             Name = office.Name,
             IsEnabled = office.IsEnabled,
             BitrixTransmissionEnabled = office.BitrixTransmissionEnabled,
             RegistrationConfigured = office.RegistrationConfigured,
-            MaskedRegistrationSecret = office.MaskedRegistrationSecret
-        };
-
-    private static BitrixIntegrationRowViewModel MapIntegrationRow(BitrixIntegrationListItemDto item)
-    {
-        var (label, tone) = MapValidationStatus(item.ValidationStatus);
-        return new BitrixIntegrationRowViewModel
-        {
-            UserId = item.UserId,
-            Email = item.Email,
-            RoleLabel = RoleLabel(PanelRoles.Normalize(item.Role)),
-            PortalHost = item.PortalHost,
-            ValidationStatus = item.ValidationStatus,
-            ValidationStatusLabel = label,
-            ValidationStatusTone = tone,
-            ValidationMessage = item.ValidationMessage,
-            LastValidatedAtUtc = item.LastValidatedAtUtc
+            MaskedRegistrationSecret = office.MaskedRegistrationSecret,
+            BitrixValidationStatus = office.BitrixValidationStatus,
+            BitrixValidationStatusLabel = bitrixLabel,
+            BitrixValidationStatusTone = bitrixTone,
+            BitrixValidationMessage = office.BitrixValidationMessage,
+            MaskedBitrixWebhookUrl = office.MaskedBitrixWebhookUrl,
+            BitrixPortalHost = office.BitrixPortalHost,
+            BitrixLastValidatedAtUtc = office.BitrixLastValidatedAtUtc
         };
     }
 
-    private static BitrixIntegrationEditViewModel MapIntegrationEdit(string email, BitrixIntegrationDto integration)
+    private static BitrixIntegrationRowViewModel MapOfficeIntegrationRow(OfficeDto office)
     {
-        var (label, tone) = MapValidationStatus(integration.ValidationStatus);
-        return new BitrixIntegrationEditViewModel
+        var (label, tone) = MapValidationStatus(office.BitrixValidationStatus);
+        return new BitrixIntegrationRowViewModel
         {
-            UserId = integration.UserId,
-            Email = email,
-            MaskedWebhookUrl = integration.MaskedWebhookUrl,
-            PortalHost = integration.PortalHost,
-            ValidationStatus = integration.ValidationStatus,
+            OfficeId = office.Id,
+            OfficeName = office.Name,
+            PortalHost = office.BitrixPortalHost,
+            ValidationStatus = office.BitrixValidationStatus,
             ValidationStatusLabel = label,
-            ValidationStatusTone = tone,
-            ValidationMessage = integration.ValidationMessage,
-            LastValidatedAtUtc = integration.LastValidatedAtUtc
+            ValidationStatusTone = tone
         };
     }
 

@@ -69,7 +69,7 @@ public sealed class MySettingsController(IMySettingsService settings) : Controll
         CancellationToken ct = default)
     {
         webhookUrl = string.IsNullOrWhiteSpace(webhookUrl) ? null : webhookUrl.Trim();
-        var (validation, error) = await api.ValidateMyBitrixIntegrationAsync(webhookUrl, ct);
+        var (validation, error) = await api.ValidateOfficeBitrixIntegrationAsync(webhookUrl, ct);
         if (validation is null)
         {
             return BadRequest(new { error });

@@ -163,7 +163,7 @@ internal static class TableSort
     {
         public static readonly HashSet<string> Columns = new(StringComparer.OrdinalIgnoreCase)
         {
-            "time", "vacancy", "author", "account", "status"
+            "time", "vacancy", "author", "phone", "city", "age", "account", "status"
         };
 
         public static readonly TableSortState Default = TableSortState.Create("time", descending: true);
@@ -172,16 +172,25 @@ internal static class TableSort
             IEnumerable<ResponseRowViewModel> rows,
             TableSortState sort)
         {
-            return sort.Column switch
+            var ordered = sort.Column switch
             {
                 "vacancy" => OrderString(rows, x => x.Vacancy, sort.Descending),
                 "author" => OrderString(rows, x => x.FullName, sort.Descending),
+                "phone" => OrderString(rows, x => x.PhoneNormalized.Length > 0 ? x.PhoneNormalized : x.PhoneRaw, sort.Descending),
+                "city" => OrderString(rows, x => x.City, sort.Descending),
+                "age" => OrderNullableInt(rows, x => x.Age, sort.Descending),
                 "account" => OrderString(rows, x => x.AccountName, sort.Descending),
                 "status" => OrderString(rows, x => x.StatusLabel, sort.Descending),
                 _ => sort.Descending
                     ? rows.OrderByDescending(x => x.CreatedAtUtc)
                     : rows.OrderBy(x => x.CreatedAtUtc)
             };
+
+            return sort.Column is "time"
+                ? ordered
+                : sort.Descending
+                    ? ordered.ThenByDescending(x => x.CreatedAtUtc)
+                    : ordered.ThenBy(x => x.CreatedAtUtc);
         }
     }
 
@@ -245,4 +254,12 @@ internal static class TableSort
         descending
             ? rows.OrderByDescending(x => key(x) ?? decimal.MinValue)
             : rows.OrderBy(x => key(x) ?? decimal.MaxValue);
+
+    private static IOrderedEnumerable<T> OrderNullableInt<T>(
+        IEnumerable<T> rows,
+        Func<T, int?> key,
+        bool descending) =>
+        descending
+            ? rows.OrderByDescending(x => key(x) ?? int.MinValue)
+            : rows.OrderBy(x => key(x) ?? int.MaxValue);
 }

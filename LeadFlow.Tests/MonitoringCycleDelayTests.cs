@@ -15,7 +15,7 @@ public sealed class MonitoringCycleDelayTests
     [Fact]
     public void GetDelayAfterCycle_FullCapacity_UsesMinMinutes()
     {
-        var capacity = 3 * MonitoringTiming.MaxResponsesPerAccountPerCycle;
+        var capacity = 3 * MonitoringTiming.TypicalResponsesPerAccountPerCycle;
         var d = MonitoringCycleDelay.GetDelayAfterCycle(capacity, 3);
         Assert.Equal(MonitoringTiming.CycleDelayMinMinutes, d.TotalMinutes);
     }

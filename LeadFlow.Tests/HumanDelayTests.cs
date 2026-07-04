@@ -50,6 +50,26 @@ public sealed class HumanDelayTests
     }
 
     [Fact]
+    public void CandidateClickDelayBounds_AreOrdered()
+    {
+        Assert.True(MonitoringTiming.HumanDelayBeforeCandidateClickMinMs
+            <= MonitoringTiming.HumanDelayBeforeCandidateClickMaxMs);
+        Assert.True(MonitoringTiming.HumanDelayAfterCandidateClickMinMs
+            <= MonitoringTiming.HumanDelayAfterCandidateClickMaxMs);
+    }
+
+    [Fact]
+    public async Task BeforeCandidateClickAsync_RespectsLowerBound()
+    {
+        var sw = Stopwatch.StartNew();
+        await HumanDelay.BeforeCandidateClickAsync();
+        sw.Stop();
+
+        Assert.True(sw.ElapsedMilliseconds >= MonitoringTiming.HumanDelayBeforeCandidateClickMinMs - 80,
+            $"Expected >= {MonitoringTiming.HumanDelayBeforeCandidateClickMinMs - 80} ms, got {sw.ElapsedMilliseconds} ms.");
+    }
+
+    [Fact]
     public async Task DelayAsync_ProducesVariation_OverManyRuns()
     {
         // Несколько прогонов — должны давать разные значения (рандом, а не константа).

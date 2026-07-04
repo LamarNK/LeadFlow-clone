@@ -1,0 +1,40 @@
+@model string
+@{
+    var title = Model;
+    var rows = ViewData["Rows"] as IReadOnlyList<HrMetricRowViewModel> ?? [];
+}
+<div class="statistics-hr-panel">
+    <h3 class="statistics-hr-title">@title</h3>
+    <table class="data-table data-table--compact statistics-hr-table">
+        <thead>
+            <tr>
+                <th>Название</th>
+                <th class="cell-num">Всего</th>
+                <th class="cell-num">CRM</th>
+                <th class="cell-num">Конв.</th>
+                <th class="cell-num">Доля</th>
+            </tr>
+        </thead>
+        <tbody>
+            @if (rows.Count == 0)
+            {
+                <tr>
+                    <td colspan="5" class="cell-muted">Нет данных за период</td>
+                </tr>
+            }
+            else
+            {
+                @foreach (var row in rows)
+                {
+                    <tr>
+                        <td>@row.Name</td>
+                        <td class="cell-num">@row.Total</td>
+                        <td class="cell-num">@row.Sent</td>
+                        <td class="cell-num">@row.ConversionText</td>
+                        <td class="cell-num">@row.ShareText</td>
+                    </tr>
+                }
+            }
+        </tbody>
+    </table>
+</div>

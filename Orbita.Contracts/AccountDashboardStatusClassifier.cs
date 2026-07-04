@@ -15,7 +15,7 @@ public static class AccountDashboardStatusClassifier
         status ??= string.Empty;
 
         if (status.Equals("Blocked", StringComparison.OrdinalIgnoreCase))
-            return AccountDashboardCategory.Blocked;
+            return AccountDashboardCategory.Inactive;
 
         if (status.Equals("Error", StringComparison.OrdinalIgnoreCase)
             || status.Equals("RequiresLogin", StringComparison.OrdinalIgnoreCase)

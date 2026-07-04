@@ -2,7 +2,7 @@
 @using System.Globalization
 @{
     var card = Model.Card;
-    var isAvgCard = card.Label == "Среднее время отклика";
+    var isAvgCard = card.Label == "Среднее время отклика" || card.PreferTextValue;
     var useCaption = Model.Layout == KpiCardLayout.StatStacked && (isAvgCard || card.Delta == "За выбранный период");
     var hasSegments = card.Segments.Count > 0;
     var segmentTotal = hasSegments ? card.Segments.Sum(s => s.Value) : 0;
@@ -78,7 +78,7 @@ else if (Model.Layout == KpiCardLayout.StatStacked)
 else
 {
     <div class="kpi-card-metric">
-        @if (card.Label == "Время работы")
+        @if (card.Label == "Время работы" || card.PreferTextValue)
         {
             <span class="kpi-value kpi-value--text">@card.Value</span>
         }

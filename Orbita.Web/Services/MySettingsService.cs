@@ -37,7 +37,7 @@ public sealed class MySettingsService(OrbitaApiClient api, IOptions<DesignPrevie
 
     public async Task<(bool Success, string? Error)> SaveBitrixAsync(string webhookUrl, CancellationToken ct = default)
     {
-        var (integration, error) = await api.SaveMyBitrixIntegrationAsync(webhookUrl, ct);
+        var (integration, error) = await api.SaveOfficeBitrixIntegrationAsync(webhookUrl, ct);
         return integration is not null ? (true, null) : (false, error);
     }
 
@@ -68,10 +68,7 @@ public sealed class MySettingsService(OrbitaApiClient api, IOptions<DesignPrevie
 
     private async Task<BitrixSettingsViewModel?> BuildBitrixAsync(CancellationToken ct)
     {
-        var integration = await api.GetMyBitrixIntegrationAsync(ct);
-        var officeWebhooks = (await api.GetOfficeBitrixWebhooksAsync(ct) ?? [])
-            .Select(MapOfficeWebhook)
-            .ToList();
+        var integration = await api.GetOfficeBitrixIntegrationAsync(ct);
         var officeBitrixSettings = await api.GetOfficeBitrixSettingsAsync(ct);
 
         if (integration is null)
@@ -81,39 +78,26 @@ public sealed class MySettingsService(OrbitaApiClient api, IOptions<DesignPrevie
                 ValidationStatus = BitrixValidationStatuses.NotConfigured,
                 ValidationStatusLabel = "Не настроено",
                 ValidationStatusTone = "neutral",
-                OfficeWebhooks = officeWebhooks,
-                CanManageTransmission = officeBitrixSettings is not null,
-                TransmissionEnabled = officeBitrixSettings?.TransmissionEnabled ?? true,
-                OfficeName = officeBitrixSettings?.OfficeName
+                CanManageWebhook = false,
+                CanManageTransmission = false
             };
         }
+
         var (label, tone) = MapValidationStatus(integration.ValidationStatus);
         return new BitrixSettingsViewModel
         {
+            OfficeId = integration.OfficeId,
+            OfficeName = integration.OfficeName,
             MaskedWebhookUrl = integration.MaskedWebhookUrl,
             PortalHost = integration.PortalHost,
             ValidationStatus = integration.ValidationStatus,
             ValidationMessage = integration.ValidationMessage,
             LastValidatedAtUtc = integration.LastValidatedAtUtc,
-            OfficeWebhooks = officeWebhooks,
             ValidationStatusLabel = label,
             ValidationStatusTone = tone,
+            CanManageWebhook = true,
             CanManageTransmission = officeBitrixSettings is not null,
-            TransmissionEnabled = officeBitrixSettings?.TransmissionEnabled ?? true,
-            OfficeName = officeBitrixSettings?.OfficeName
-        };
-    }
-
-    private static OfficeBitrixWebhookRowViewModel MapOfficeWebhook(OfficeBitrixWebhookDto webhook)
-    {
-        var (label, tone) = MapValidationStatus(webhook.ValidationStatus);
-        return new OfficeBitrixWebhookRowViewModel
-        {
-            Email = webhook.Email,
-            PortalHost = webhook.PortalHost,
-            ValidationStatusLabel = label,
-            ValidationStatusTone = tone,
-            IsPrimaryForIngestion = webhook.IsPrimaryForIngestion
+            TransmissionEnabled = integration.TransmissionEnabled
         };
     }
 

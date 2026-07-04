@@ -74,6 +74,23 @@ public sealed class TableSortTests
     }
 
     [Fact]
+    public void ResponsesApply_SortsByCityAscending()
+    {
+        var rows = new[]
+        {
+            new ResponseRowViewModel { FullName = "a", City = "Казань", CreatedAtUtc = DateTime.UtcNow },
+            new ResponseRowViewModel { FullName = "b", City = "Москва", CreatedAtUtc = DateTime.UtcNow },
+            new ResponseRowViewModel { FullName = "c", City = "Екатеринбург", CreatedAtUtc = DateTime.UtcNow }
+        };
+
+        var sorted = TableSort.Responses
+            .Apply(rows, TableSortState.Create("city", descending: false))
+            .ToList();
+
+        Assert.Equal(["Екатеринбург", "Казань", "Москва"], sorted.Select(x => x.City).ToArray());
+    }
+
+    [Fact]
     public void WorkerAccountsApply_SortsByResponsesDescending()
     {
         var rows = new[]

@@ -10,6 +10,13 @@ public sealed class OfficeEntity
     public DateTime CreatedAtUtc { get; set; }
     public bool IsEnabled { get; set; } = true;
     public bool BitrixTransmissionEnabled { get; set; } = true;
+    public string? BitrixWebhookUrlProtected { get; set; }
+    public string? BitrixPortalHost { get; set; }
+    public string BitrixValidationStatus { get; set; } = BitrixValidationStatuses.NotConfigured;
+    public string? BitrixValidationMessage { get; set; }
+    public DateTime? BitrixLastValidatedAtUtc { get; set; }
+    public DateTime? BitrixUpdatedAtUtc { get; set; }
+    public string? BitrixUpdatedByUserId { get; set; }
 
     public ICollection<WorkerEntity> Workers { get; set; } = [];
     public ICollection<PanelUserProfileEntity> UserProfiles { get; set; } = [];

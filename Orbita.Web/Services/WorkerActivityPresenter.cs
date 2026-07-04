@@ -208,16 +208,24 @@ internal static class WorkerActivityPresenter
             return $"{activity.ActiveAccounts.Count} аккаунта в работе";
         }
 
-        if (string.Equals(activity.Phase, WorkerActivityPhases.Waiting, StringComparison.Ordinal)
-            && activity.NextCycleAtUtc is not null)
+        if (string.Equals(activity.Phase, WorkerActivityPhases.Waiting, StringComparison.Ordinal))
         {
-            var minutesUntil = (int)Math.Round((activity.NextCycleAtUtc.Value - nowUtc).TotalMinutes);
-            if (minutesUntil > 0)
+            if (!string.IsNullOrWhiteSpace(activity.Message)
+                && activity.Message.Contains("обновлен", StringComparison.OrdinalIgnoreCase))
             {
-                return $"Пауза · следующий цикл ~{minutesUntil} мин";
+                return activity.Message;
             }
 
-            return "Пауза · ожидание цикла";
+            if (activity.NextCycleAtUtc is not null)
+            {
+                var minutesUntil = (int)Math.Round((activity.NextCycleAtUtc.Value - nowUtc).TotalMinutes);
+                if (minutesUntil > 0)
+                {
+                    return $"Пауза · следующий цикл ~{minutesUntil} мин";
+                }
+
+                return "Пауза · ожидание цикла";
+            }
         }
 
         if (!string.IsNullOrWhiteSpace(activity.AccountName))

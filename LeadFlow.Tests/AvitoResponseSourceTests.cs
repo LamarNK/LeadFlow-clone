@@ -145,6 +145,40 @@ public sealed class AvitoResponseSourceTests
     }
 
     [Fact]
+    public async Task ParseCandidatesDetailedFromRawAsync_ReturnsSummaryWithPageVariant()
+    {
+        var db = new EfInMemoryDatabase();
+        var repo = new AppRepository(db.Factory);
+        var account = NewAccount();
+        var adsPower = new FakeAdsPowerAvitoAutomationService();
+        var sut = new AvitoResponseSource(repo, adsPower, new PhoneNormalizer());
+        const string raw = """
+            {
+              "hasCaptcha": false,
+              "hasLogin": false,
+              "url": "https://www.avito.ru/profile/job/responses",
+              "pageVariant": "job-crm",
+              "domItemCount": 3,
+              "domStatusCount": 2,
+              "candidates": [
+                {"fullName":"Иван","phone":"+79001112233","sourceResponseId":"a","vacancy":"Водитель"},
+                {"fullName":"Пётр","phone":"+79004445566","sourceResponseId":"b","vacancy":"Курьер"}
+              ]
+            }
+            """;
+
+        var result = await sut.ParseCandidatesDetailedFromRawAsync(
+            account,
+            NewSettings(),
+            raw,
+            CancellationToken.None);
+
+        Assert.Equal(2, result.Candidates.Count);
+        Assert.Equal(2, result.Summary.ParsedValidCount);
+        Assert.Contains("CRM", result.Summary.FormatLogLine());
+    }
+
+    [Fact]
     public async Task GetNewResponsesAsync_TwoCardsSamePhoneSameFetch_ReturnsOne()
     {
         var db = new EfInMemoryDatabase();

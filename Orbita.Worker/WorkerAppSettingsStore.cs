@@ -132,7 +132,7 @@ public sealed class WorkerAppSettingsStore
 
     private static void Normalize(AppSettings settings)
     {
-        settings.DatabasePath = Path.Combine(DataDirectory, "worker.db");
+        settings.DatabasePath = Path.Combine(DataDirectory, "cache.db");
         settings.DemoModeEnabled = false;
         settings.MonitoringSafety ??= new MonitoringSafetyOptions();
         settings.MonitoringSafety.MaxConcurrentAccounts =

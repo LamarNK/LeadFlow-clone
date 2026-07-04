@@ -255,6 +255,9 @@
                     screenshot +
                     '</div>';
             }
+            var rating = sub.ratingText
+                ? '<span class="subprofiles-rating">' + escapeHtml(sub.ratingText) + '</span>'
+                : '';
             return '<li class="' + classes + '" data-subprofile-id="' + escapeHtml(sub.id) + '">' +
                 '<label class="subprofiles-toggle-sm" title="' + (sub.isEnabledInPanel ? 'Отключить субпрофиль' : 'Включить субпрофиль') + '">' +
                 '<input type="checkbox" data-subprofile-toggle data-worker-id="' + escapeHtml(workerId) + '" data-account-id="' + escapeHtml(accountId) + '" data-subprofile-id="' + escapeHtml(sub.id) + '"' + (sub.isEnabledInPanel ? ' checked' : '') + ' />' +
@@ -264,8 +267,21 @@
                 '<span class="subprofiles-name">' + escapeHtml(sub.name) + '</span>' + category + renderSubProfileStatusBadges(sub, isProcessing) +
                 '</div>' + alert +
                 '</div>' +
-                '<span class="subprofiles-balance">' + escapeHtml(sub.balanceText || '—') + '</span></li>';
+                '<div class="subprofiles-meta">' + rating +
+                '<span class="subprofiles-balance">' + escapeHtml(sub.balanceText || '—') + '</span></div></li>';
         }).join('') + '</ul>';
+    }
+
+    function renderAccountEnableToggle(workerId, accountId, isEnabled, options) {
+        options = options || {};
+        var checked = isEnabled ? ' checked' : '';
+        var title = isEnabled ? 'Отключить аккаунт в панели' : 'Включить аккаунт в панели';
+        var urlAttr = options.toggleUrl ? ' data-toggle-url="' + escapeHtml(options.toggleUrl) + '"' : '';
+        var refreshAttr = options.refreshKind ? ' data-toggle-refresh="' + escapeHtml(options.refreshKind) + '"' : '';
+        return '<td class="cell-toggle" data-label="Вкл"><label class="worker-toggle" title="' + escapeHtml(title) + '">' +
+            '<input type="checkbox" data-account-enable-toggle data-worker-id="' + escapeHtml(workerId) + '" data-account-id="' + escapeHtml(accountId) + '"' +
+            urlAttr + refreshAttr + checked + ' />' +
+            '<span class="worker-toggle-slider"></span></label></td>';
     }
 
     function renderSubProfilesToolbar(workerId, account, panelIdPrefix) {
@@ -299,6 +315,30 @@
         }
     }
 
+    function captureExpandedSubprofilePanels(container) {
+        var expandedPanels = {};
+        if (!container) return expandedPanels;
+        container.querySelectorAll('.subprofiles-toggle[aria-expanded="true"]').forEach(function (btn) {
+            var panelId = btn.getAttribute('aria-controls');
+            if (panelId) expandedPanels[panelId] = true;
+        });
+        return expandedPanels;
+    }
+
+    function restoreExpandedSubprofilePanels(container, expandedPanels) {
+        if (!container || !expandedPanels) return;
+        Object.keys(expandedPanels).forEach(function (panelId) {
+            var btn = container.querySelector('[aria-controls="' + panelId + '"]');
+            var panel = document.getElementById(panelId);
+            if (btn && panel) {
+                btn.setAttribute('aria-expanded', 'true');
+                panel.removeAttribute('hidden');
+                var icon = btn.querySelector('.subprofiles-toggle-icon');
+                if (icon) icon.classList.add('subprofiles-toggle-icon--open');
+            }
+        });
+    }
+
     window.OrbitaLiveShared = {
         stableJson: stableJson,
         escapeHtml: escapeHtml,
@@ -323,6 +363,9 @@
         renderActivityPill: renderActivityPill,
         renderSubProfilesList: renderSubProfilesList,
         renderSubProfilesToolbar: renderSubProfilesToolbar,
+        renderAccountEnableToggle: renderAccountEnableToggle,
+        captureExpandedSubprofilePanels: captureExpandedSubprofilePanels,
+        restoreExpandedSubprofilePanels: restoreExpandedSubprofilePanels,
         reinitLiveContent: reinitLiveContent
     };
 })();

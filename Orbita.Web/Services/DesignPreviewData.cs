@@ -95,6 +95,100 @@ internal static class DesignPreviewData
     public static ResponsesSummaryDto GetResponsesSummary(Guid? officeId) =>
         new(0, 0, 0, 0, null);
 
+    public static OfficeStatisticsDto GetStatistics(Guid? officeId, DateTime from, DateTime to)
+    {
+        var summary = GetSummary(officeId);
+        var workers = GetWorkers(officeId);
+        var days = Math.Max(1, (to.Date - from.Date).Days + 1);
+        var dailyTrend = Enumerable.Range(0, days)
+            .Select(i =>
+            {
+                var date = from.Date.AddDays(i);
+                var factor = 0.6 + (i % 5) * 0.1;
+                return new DailyResponseBucketDto(
+                    date,
+                    (int)Math.Round(summary.TotalToday * factor / days),
+                    (int)Math.Round(summary.SentToCrm * factor / days),
+                    (int)Math.Round(summary.InProgress * factor / days),
+                    0,
+                    (int)Math.Round(summary.Duplicates * factor / days),
+                    (int)Math.Round(summary.Errors * factor / days));
+            })
+            .ToList();
+
+        var balanceAccounts = new List<AccountBalanceStatDto>
+        {
+            new(AccountAlphaId, "Альфа HR", WorkerMoscowId, "msk-worker-01", "Москва", 18500m, 3200m,
+                [new SubProfileBalanceDto("Основной", 12000m, 2000m, "~ на 12 дней"), new SubProfileBalanceDto("Доп.", 6500m, 1200m, "~ на 5 дней")],
+                false),
+            new(AccountBetaId, "Бета Кадры", WorkerSpbId, "spb-worker-02", "Санкт-Петербург", 4200m, 800m,
+                [new SubProfileBalanceDto("Основной", 4200m, 800m, "~ на 3 дня")],
+                true),
+            new(AccountGammaId, "Гамма Рекрут", WorkerKazanId, "kzn-worker-03", "Казань", 25800m, 5100m,
+                [new SubProfileBalanceDto("Основной", 25800m, 5100m, "~ на 18 дней")],
+                false)
+        };
+
+        if (officeId is Guid officeFilter)
+        {
+            balanceAccounts = balanceAccounts
+                .Where(a => workers.Any(w => w.Id == a.WorkerId))
+                .ToList();
+        }
+
+        return new OfficeStatisticsDto(
+            new BalanceStatisticsSection(
+                balanceAccounts.Sum(a => a.Advance),
+                balanceAccounts.Sum(a => a.Wallet),
+                balanceAccounts.Count(a => a.IsLowBalance),
+                balanceAccounts),
+            new AccountInfrastructureSection(
+                summary.ConnectedAccounts,
+                summary.AccountStatusCounts,
+                summary.ActiveAdsCount,
+                summary.BlockedAdsCount),
+            new WorkerInfrastructureSection(
+                workers.Count,
+                workers.Count(w => w.IsOnline),
+                workers.Select(w => new WorkerStatisticsRowDto(
+                    w.Id,
+                    w.DisplayName,
+                    w.OfficeName,
+                    w.IsOnline,
+                    w.TotalToday,
+                    w.DuplicatesToday,
+                    w.Errors,
+                    w.ActiveAccountCount,
+                    w.AccountCount)).ToList()),
+            new ResponsesPeriodSection(
+                dailyTrend.Sum(d => d.Total),
+                dailyTrend.Sum(d => d.Total - d.Duplicates),
+                dailyTrend.Sum(d => d.Duplicates),
+                dailyTrend.Sum(d => d.Sent),
+                dailyTrend.Sum(d => d.InProgress),
+                0,
+                dailyTrend.Sum(d => d.Errors),
+                84,
+                17.5),
+            dailyTrend,
+            new HrInsightsDto(
+                [new HrMetricDto("Москва", 420, 310, "73.8%", "34.1%"), new HrMetricDto("Санкт-Петербург", 280, 190, "67.9%", "22.7%")],
+                [new HrMetricDto("Курьер", 360, 250, "69.4%", "29.2%"), new HrMetricDto("Водитель", 210, 140, "66.7%", "17.0%")],
+                [new HrMetricDto("Альфа HR", 190, 140, "73.7%", "15.4%"), new HrMetricDto("Бета Кадры", 150, 95, "63.3%", "12.2%")],
+                [new AgeBucketDto("18-24", 180, 120, "66.7%"), new AgeBucketDto("25-34", 260, 180, "69.2%"), new AgeBucketDto("35-44", 140, 90, "64.3%")],
+                "28.4 лет",
+                "76.5%"),
+            Now);
+    }
+
+    public static StatisticsViewModel BuildStatisticsIndexViewModel(
+        DashboardPeriod period,
+        IOfficeContext officeContext) =>
+        StatisticsIndexBuilder.Build(
+            GetStatistics(officeContext.EffectiveOfficeId, period.From, period.To),
+            period,
+            officeContext);
+
     public static WorkersIndexViewModel BuildWorkersIndexViewModel(
         string? searchQuery,
         string? status,
@@ -108,10 +202,8 @@ internal static class DesignPreviewData
         var rows = FilterWorkerRowsByOffice(BuildWorkerRows(), officeId);
         if (!string.IsNullOrWhiteSpace(searchQuery))
         {
-            var q = searchQuery.Trim();
             rows = rows
-                .Where(w => w.DisplayName.Contains(q, StringComparison.OrdinalIgnoreCase)
-                    || w.MachineName.Contains(q, StringComparison.OrdinalIgnoreCase))
+                .Where(w => SearchQueryNormalizer.MatchesTokens(searchQuery, w.DisplayName, w.MachineName))
                 .ToList();
         }
 
@@ -319,8 +411,8 @@ internal static class DesignPreviewData
         {
             Total = 30,
             Active = 24,
-            Inactive = 4,
-            Blocked = 1,
+            Inactive = 5,
+            Blocked = 0,
             Errors = 1
         };
         var kpiCards = (IReadOnlyList<DashboardKpiCardViewModel>)
@@ -1205,9 +1297,46 @@ internal static class DesignPreviewData
 
     public static IReadOnlyList<OfficeDto> Offices =>
     [
-        new(PreviewOfficeId, "Основной", true, Now.AddDays(-30), 6, 1),
-        new(PreviewOffice2Id, "Сибирь", true, Now.AddDays(-14), 6, 0)
+        new(PreviewOfficeId, "Основной", true, Now.AddDays(-30), 6, 1, BitrixValidationStatuses.Ok, "demo.bitrix24.ru"),
+        new(PreviewOffice2Id, "Сибирь", true, Now.AddDays(-14), 6, 0, BitrixValidationStatuses.NotConfigured, null)
     ];
+
+    public static OfficeBitrixIntegrationDto OfficeBitrixIntegration =>
+        new(
+            PreviewOfficeId,
+            "Основной",
+            "https://demo.bitrix24.ru/rest/1/***/",
+            "demo.bitrix24.ru",
+            BitrixValidationStatuses.Ok,
+            "Вебхук настроен корректно.",
+            Now.AddHours(-2),
+            Now.AddHours(-2),
+            true);
+
+    public static OfficeDetailDto? GetOfficeDetail(Guid? officeId)
+    {
+        if (officeId is not Guid id)
+        {
+            return null;
+        }
+
+        var office = Offices.FirstOrDefault(x => x.Id == id);
+        return office is null
+            ? null
+            : new OfficeDetailDto(
+                office.Id,
+                office.Name,
+                office.IsEnabled,
+                BitrixTransmissionEnabled: true,
+                office.CreatedAtUtc,
+                RegistrationConfigured: true,
+                MaskedRegistrationSecret: "••••••••a1b2",
+                office.BitrixValidationStatus,
+                office.Id == PreviewOfficeId ? "Вебхук настроен корректно." : null,
+                office.Id == PreviewOfficeId ? "https://demo.bitrix24.ru/rest/1/***/" : null,
+                office.BitrixPortalHost,
+                office.Id == PreviewOfficeId ? Now.AddHours(-2) : null);
+    }
 
     public static PasswordPolicyDto PasswordPolicy =>
         new(8, true, false, false, false, 1);
@@ -1462,6 +1591,7 @@ internal static class DesignPreviewData
             "Стол письменный белый",
             "Кухонный гарнитур 2.4 м"
         };
+        var cities = new[] { "Москва", "Санкт-Петербург", "Казань", "Новосибирск", "Екатеринбург", "" };
         var statusPlan = new List<string>(total);
         statusPlan.AddRange(Enumerable.Repeat(ResponseStatuses.Sent, 620));
         statusPlan.AddRange(Enumerable.Repeat(ResponseStatuses.Duplicate, 316));
@@ -1486,18 +1616,20 @@ internal static class DesignPreviewData
             var createdAt = Now.AddMinutes(-(i * 4 + rng.Next(0, 20)));
 
             var bitrixEntityId = status == ResponseStatuses.Sent ? rng.Next(1000, 99999).ToString() : null;
+            var age = i % 11 == 0 ? (int?)null : rng.Next(19, 56);
             rows.Add(new ResponseRowViewModel
             {
                 Id = Guid.Parse($"55555555-5555-5555-5555-{(i + 1):D12}"),
                 CreatedAtUtc = createdAt,
                 FullName = names[i % names.Length],
+                Age = age,
                 PhoneRaw = hidePhone ? string.Empty : $"+{phoneDigits}",
                 PhoneNormalized = hidePhone ? string.Empty : phoneDigits,
                 Vacancy = vacancies[i % vacancies.Length],
                 VacancyUrl = $"https://www.avito.ru/item/{adId}",
                 MessengerUrl = hidePhone ? string.Empty : $"https://www.avito.ru/profile/messenger/channel/{adId}",
                 SourceResponseId = adId,
-                City = "Москва",
+                City = cities[i % cities.Length],
                 AccountId = accountId,
                 AccountName = $"user_{accountNum:D2}",
                 AvitoSubProfileName = accountNum % 3 == 0
@@ -1548,20 +1680,24 @@ internal static class DesignPreviewData
 
         if (!string.IsNullOrWhiteSpace(filters.SearchQuery))
         {
-            var term = filters.SearchQuery.Trim();
             query = query.Where(r =>
-                r.FullName.Contains(term, StringComparison.OrdinalIgnoreCase)
-                || r.PhoneRaw.Contains(term, StringComparison.OrdinalIgnoreCase)
-                || r.Vacancy.Contains(term, StringComparison.OrdinalIgnoreCase)
-                || r.AccountName.Contains(term, StringComparison.OrdinalIgnoreCase));
+                SearchQueryNormalizer.MatchesTokens(
+                    filters.SearchQuery,
+                    r.FullName,
+                    r.PhoneRaw,
+                    r.PhoneNormalized,
+                    r.Vacancy,
+                    r.City,
+                    r.AccountName));
         }
 
         if (!string.IsNullOrWhiteSpace(filters.VacancyQuery))
         {
-            var adTerm = filters.VacancyQuery.Trim();
             query = query.Where(r =>
-                r.Vacancy.Contains(adTerm, StringComparison.OrdinalIgnoreCase)
-                || r.SourceResponseId.Contains(adTerm, StringComparison.OrdinalIgnoreCase));
+                SearchQueryNormalizer.MatchesTokens(
+                    filters.VacancyQuery,
+                    r.Vacancy,
+                    r.SourceResponseId));
         }
 
         if (filters.WorkerId is Guid workerId)

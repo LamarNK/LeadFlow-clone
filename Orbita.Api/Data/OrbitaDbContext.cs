@@ -28,6 +28,11 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.HasKey(x => x.Id);
             entity.Property(x => x.Name).HasMaxLength(200);
             entity.Property(x => x.RegistrationSecretHash).HasMaxLength(512);
+            entity.Property(x => x.BitrixWebhookUrlProtected).HasMaxLength(2048);
+            entity.Property(x => x.BitrixPortalHost).HasMaxLength(256);
+            entity.Property(x => x.BitrixValidationStatus).HasMaxLength(32);
+            entity.Property(x => x.BitrixValidationMessage).HasMaxLength(2000);
+            entity.Property(x => x.BitrixUpdatedByUserId).HasMaxLength(128);
             entity.HasIndex(x => x.Name).IsUnique();
         });
 

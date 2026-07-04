@@ -35,6 +35,7 @@ public sealed class DashboardKpiCardViewModel
     public IReadOnlyList<int> Sparkline { get; init; } = [];
     public string SparkColor { get; init; } = "#2563eb";
     public IReadOnlyList<KpiChartSegmentViewModel> Segments { get; init; } = [];
+    public bool PreferTextValue { get; init; }
 }
 
 public sealed class DashboardWorkerRowViewModel

@@ -41,7 +41,7 @@ public sealed class WorkerEventService(
             .FirstOrDefaultAsync(ct);
 
         panelRealtime.Notify(
-            [PanelChangeKind.Events, PanelChangeKind.Errors],
+            [PanelChangeKind.Events, PanelChangeKind.Errors, PanelChangeKind.NavBadges],
             officeId,
             evt.WorkerId);
 

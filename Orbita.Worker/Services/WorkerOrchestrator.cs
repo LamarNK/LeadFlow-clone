@@ -1,5 +1,5 @@
-using LeadFlow.Core.Data;
 using LeadFlow.Core.Models;
+using LeadFlow.Core.Services;
 using LeadFlow.Core.Services.AdsPower;
 using LeadFlow.Core.Services.Worker;
 using Microsoft.Extensions.Hosting;
@@ -9,8 +9,8 @@ using Orbita.Worker;
 namespace Orbita.Worker.Services;
 
 public sealed class WorkerOrchestrator(
-    AppRepository repository,
-    AppSettings appSettings,
+    EphemeralDedupCache dedupCache,
+    WorkerCandidateOutbox candidateOutbox,
     OrbitaApiClient apiClient,
     OrbitaConfigProvider configProvider,
     OrbitaCandidateSink candidateSink,
@@ -23,6 +23,10 @@ public sealed class WorkerOrchestrator(
     SystemMetricsCollector metricsCollector,
     WorkerSystemInfoCollector systemInfoCollector,
     WorkerUpdateStore updateStore,
+    WorkerUpdateOfferSource updateOfferSource,
+    WorkerUpdateGate updateGate,
+    WorkerShutdownService shutdownService,
+    IWorkerPendingUpdateCoordinator pendingUpdateCoordinator,
     IWorkerActivityReporter activityReporter) : BackgroundService
 {
     private bool _monitoringRequested = true;
@@ -31,13 +35,18 @@ public sealed class WorkerOrchestrator(
     public void RequestStopMonitoring() => _monitoringRequested = false;
 
     private DateTime _lastAccountSyncUtc = DateTime.MinValue;
+    private string? _enabledAccountsFingerprint;
+    private DateTime _enabledAccountsChangedAtUtc = DateTime.MinValue;
     private static readonly TimeSpan AccountSyncInterval = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan TelemetryInterval = TimeSpan.FromSeconds(60);
+    private static readonly TimeSpan MonitoringStartDebounce =
+        TimeSpan.FromSeconds(MonitoringTiming.MonitoringStartDebounceSeconds);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         Environment.SetEnvironmentVariable("LOG_SERVICE_NAME", "Orbita.Worker");
-        await repository.InitializeAsync(appSettings, stoppingToken).ConfigureAwait(false);
+        await dedupCache.InitializeAsync(stoppingToken).ConfigureAwait(false);
+        await candidateOutbox.InitializeAsync(stoppingToken).ConfigureAwait(false);
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -55,19 +64,18 @@ public sealed class WorkerOrchestrator(
                 credentials.WorkerId ??= config.WorkerId;
                 credentials.DisplayName ??= Environment.MachineName;
 
+                updateOfferSource.SetOffer(config.UpdateOffer);
+
                 if (string.Equals(config.PendingCommand, WorkerCommands.Restart, StringComparison.OrdinalIgnoreCase))
                 {
                     runtimeState.Status = "Перезапуск";
                     runtimeState.Detail = "По команде из панели";
-                    await monitoringService.StopAsync().ConfigureAwait(false);
-                    await candidateSink.FlushAsync(stoppingToken).ConfigureAwait(false);
-                    await eventSink.FlushAsync(stoppingToken).ConfigureAwait(false);
-                    WorkerRestartHelper.ScheduleRestart();
+                    shutdownService.RequestRestart();
                     return;
                 }
 
+                var enabledCount = config.Accounts.Count(a => a.IsEnabled);
                 runtimeState.Status = "Онлайн";
-                runtimeState.Detail = config.Accounts.Count(a => a.IsEnabled) + " акк.";
 
                 // Reduce expensive full profile sync chatter: only every ~5 min or on first run
                 if (DateTime.UtcNow - _lastAccountSyncUtc >= AccountSyncInterval)
@@ -75,23 +83,19 @@ public sealed class WorkerOrchestrator(
                     await SyncAdsPowerProfilesAsync(config, stoppingToken).ConfigureAwait(false);
                     _lastAccountSyncUtc = DateTime.UtcNow;
                 }
-                configProvider.InvalidateCache();
 
-                if (_monitoringRequested && !monitoringService.IsActive)
+                await SyncMonitoringStateAsync(config, enabledCount, stoppingToken).ConfigureAwait(false);
+
+                if (pendingUpdateCoordinator.HasPendingInstall
+                    && pendingUpdateCoordinator.TryApplyPendingInstallAtPause())
                 {
-                    await monitoringService.StartAsync(stoppingToken).ConfigureAwait(false);
-                    runtimeState.IsMonitoring = true;
+                    return;
                 }
-                else if (!_monitoringRequested && monitoringService.IsActive)
+
+                if (updateStore.TryGetPendingMsi() is { } pendingMsi
+                    && !string.Equals(runtimeState.Status, "Обновление", StringComparison.Ordinal))
                 {
-                    await monitoringService.StopAsync().ConfigureAwait(false);
-                    await candidateSink.FlushAsync(stoppingToken).ConfigureAwait(false);
-                    await eventSink.FlushAsync(stoppingToken).ConfigureAwait(false);
-                    runtimeState.IsMonitoring = false;
-                }
-                else if (!_monitoringRequested)
-                {
-                    activityReporter.ReportIdle();
+                    runtimeState.Detail = $"Обновление {pendingMsi.Version} скачано, ожидание паузы";
                 }
 
                 await SendHeartbeatAsync(config.WorkerId, stoppingToken).ConfigureAwait(false);
@@ -114,6 +118,90 @@ public sealed class WorkerOrchestrator(
         {
             await monitoringService.StopAsync().ConfigureAwait(false);
         }
+    }
+
+    private async Task SyncMonitoringStateAsync(
+        WorkerConfigDto config,
+        int enabledCount,
+        CancellationToken stoppingToken)
+    {
+        var fingerprint = BuildEnabledAccountsFingerprint(config.Accounts);
+        if (!string.Equals(fingerprint, _enabledAccountsFingerprint, StringComparison.Ordinal))
+        {
+            _enabledAccountsFingerprint = fingerprint;
+            _enabledAccountsChangedAtUtc = DateTime.UtcNow;
+            configProvider.InvalidateCache();
+        }
+
+        var hasEnabledAccounts = enabledCount > 0;
+        var debounceElapsed = DateTime.UtcNow - _enabledAccountsChangedAtUtc >= MonitoringStartDebounce;
+
+        if (!hasEnabledAccounts)
+        {
+            if (monitoringService.IsActive)
+            {
+                await monitoringService.StopAsync().ConfigureAwait(false);
+                await candidateSink.FlushAsync(stoppingToken).ConfigureAwait(false);
+                await eventSink.FlushAsync(stoppingToken).ConfigureAwait(false);
+            }
+
+            runtimeState.IsMonitoring = false;
+            updateGate.SetMonitoringActive(false);
+            runtimeState.Detail = "Нет активных аккаунтов";
+            activityReporter.ReportNoEnabledAccounts();
+            return;
+        }
+
+        if (!_monitoringRequested)
+        {
+            if (monitoringService.IsActive)
+            {
+                await monitoringService.StopAsync().ConfigureAwait(false);
+                await candidateSink.FlushAsync(stoppingToken).ConfigureAwait(false);
+                await eventSink.FlushAsync(stoppingToken).ConfigureAwait(false);
+            }
+
+            runtimeState.IsMonitoring = false;
+            updateGate.SetMonitoringActive(false);
+            runtimeState.Detail = $"{enabledCount} акк.";
+            activityReporter.ReportIdle();
+            return;
+        }
+
+        if (!monitoringService.IsActive)
+        {
+            if (!debounceElapsed)
+            {
+                var waitSeconds = Math.Max(
+                    1,
+                    (int)Math.Ceiling((MonitoringStartDebounce - (DateTime.UtcNow - _enabledAccountsChangedAtUtc)).TotalSeconds));
+                runtimeState.IsMonitoring = false;
+                updateGate.SetMonitoringActive(false);
+                runtimeState.Detail = $"{enabledCount} акк. · старт через ~{waitSeconds} с";
+                activityReporter.ReportWaiting(
+                    DateTime.UtcNow.AddSeconds(waitSeconds),
+                    $"Ожидание старта · {enabledCount} акк.");
+                return;
+            }
+
+            await monitoringService.StartAsync(stoppingToken).ConfigureAwait(false);
+            runtimeState.IsMonitoring = true;
+            updateGate.SetMonitoringActive(true);
+            runtimeState.Detail = $"{enabledCount} акк.";
+            return;
+        }
+
+        updateGate.SetMonitoringActive(true);
+        runtimeState.Detail = $"{enabledCount} акк.";
+    }
+
+    private static string BuildEnabledAccountsFingerprint(IReadOnlyList<WorkerAccountConfigDto> accounts)
+    {
+        var enabledIds = accounts
+            .Where(static a => a.IsEnabled)
+            .Select(static a => a.AccountId)
+            .OrderBy(static x => x);
+        return string.Join(',', enabledIds);
     }
 
     private async Task SyncAdsPowerProfilesAsync(WorkerConfigDto config, CancellationToken ct)

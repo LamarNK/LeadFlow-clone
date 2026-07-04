@@ -107,7 +107,8 @@ public sealed class CandidateIngestionServiceTests
     private static CandidateIngestionService CreateService(OrbitaDbContext db)
     {
         var duplicateService = new CandidateDuplicateService(db, new BitrixClient(new HttpClientFactoryStub(), new CandidateParser()));
-        var webhookResolver = new OfficeBitrixWebhookResolver(db, null!, null!);
+        var officeBitrixIntegration = new OfficeBitrixIntegrationService(db, null!, null!, null!);
+        var webhookResolver = new OfficeBitrixWebhookResolver(db, null!, null!, officeBitrixIntegration);
         var officeBitrixSettings = new OfficeBitrixSettingsService(db, null!);
         return new CandidateIngestionService(
             db,

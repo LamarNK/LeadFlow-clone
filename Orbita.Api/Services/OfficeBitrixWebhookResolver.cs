@@ -8,10 +8,17 @@ namespace Orbita.Api.Services;
 public sealed class OfficeBitrixWebhookResolver(
     OrbitaDbContext db,
     UserManager<IdentityUser> users,
-    WebhookSecretProtector protector)
+    WebhookSecretProtector protector,
+    OfficeBitrixIntegrationService officeBitrixIntegration)
 {
     public async Task<string?> ResolvePrimaryForIngestionAsync(Guid officeId, CancellationToken ct = default)
     {
+        var officeWebhook = await officeBitrixIntegration.ResolveWebhookUrlAsync(officeId, ct);
+        if (!string.IsNullOrWhiteSpace(officeWebhook))
+        {
+            return officeWebhook;
+        }
+
         var entries = await ListOfficeWebhooksAsync(officeId, ct);
         var primary = entries.FirstOrDefault(x =>
             x.IsPrimaryForIngestion
@@ -103,6 +110,18 @@ public sealed class OfficeBitrixWebhookResolver(
 
     public async Task<string?> ResolvePortalHostAsync(Guid officeId, CancellationToken ct = default)
     {
+        var office = await db.Offices.AsNoTracking()
+            .Where(x => x.Id == officeId)
+            .Select(x => new { x.BitrixPortalHost, x.BitrixValidationStatus })
+            .FirstOrDefaultAsync(ct);
+
+        if (office is not null
+            && string.Equals(office.BitrixValidationStatus, BitrixValidationStatuses.Ok, StringComparison.Ordinal)
+            && !string.IsNullOrWhiteSpace(office.BitrixPortalHost))
+        {
+            return office.BitrixPortalHost;
+        }
+
         var entries = await ListOfficeWebhooksAsync(officeId, ct);
         return entries.FirstOrDefault(x => x.IsPrimaryForIngestion && !string.IsNullOrWhiteSpace(x.PortalHost))?.PortalHost
             ?? entries.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x.PortalHost))?.PortalHost;

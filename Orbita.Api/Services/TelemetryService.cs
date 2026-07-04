@@ -113,7 +113,7 @@ public sealed class TelemetryService(
         if (wasOnline != isOnline || previousMonitoringStatus != worker.MonitoringStatus)
         {
             panelRealtime.Notify(
-                [PanelChangeKind.Workers, PanelChangeKind.Dashboard, PanelChangeKind.Accounts],
+                [PanelChangeKind.Workers, PanelChangeKind.Dashboard, PanelChangeKind.Accounts, PanelChangeKind.Statistics],
                 worker.OfficeId,
                 worker.Id);
         }
@@ -137,7 +137,7 @@ public sealed class TelemetryService(
         if (changed)
         {
             panelRealtime.Notify(
-                [PanelChangeKind.Workers, PanelChangeKind.Dashboard, PanelChangeKind.Accounts],
+                [PanelChangeKind.Workers, PanelChangeKind.Dashboard, PanelChangeKind.Accounts, PanelChangeKind.Statistics],
                 worker.OfficeId,
                 worker.Id);
         }
@@ -203,7 +203,7 @@ public sealed class TelemetryService(
         if (!IsMostlyEmptySnapshot(request))
         {
             panelRealtime.Notify(
-                [PanelChangeKind.Workers, PanelChangeKind.Dashboard, PanelChangeKind.Accounts],
+                [PanelChangeKind.Workers, PanelChangeKind.Dashboard, PanelChangeKind.Accounts, PanelChangeKind.Statistics],
                 worker.OfficeId,
                 worker.Id);
         }

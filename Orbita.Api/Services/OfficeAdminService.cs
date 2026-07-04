@@ -29,7 +29,9 @@ public sealed class OfficeAdminService(OrbitaDbContext db)
                 x.IsEnabled,
                 x.CreatedAtUtc,
                 workerCounts.GetValueOrDefault(x.Id),
-                userCounts.GetValueOrDefault(x.Id)))
+                userCounts.GetValueOrDefault(x.Id),
+                x.BitrixValidationStatus,
+                x.BitrixPortalHost))
             .ToList();
     }
 
@@ -174,15 +176,23 @@ public sealed class OfficeAdminService(OrbitaDbContext db)
         return office;
     }
 
-    private static OfficeDetailDto MapDetail(OfficeEntity office) =>
-        new(
+    private static OfficeDetailDto MapDetail(OfficeEntity office)
+    {
+        var bitrix = OfficeBitrixIntegrationService.MapDto(office);
+        return new(
             office.Id,
             office.Name,
             office.IsEnabled,
             office.BitrixTransmissionEnabled,
             office.CreatedAtUtc,
             !string.IsNullOrWhiteSpace(office.RegistrationSecretHash),
-            MaskSecret(office.RegistrationSecretHash));
+            MaskSecret(office.RegistrationSecretHash),
+            bitrix.ValidationStatus,
+            bitrix.ValidationMessage,
+            bitrix.MaskedWebhookUrl,
+            bitrix.PortalHost,
+            bitrix.LastValidatedAtUtc);
+    }
 
     private static string MaskSecret(string hashOrSecret)
     {

@@ -1,10 +1,9 @@
 using LeadFlow.Core.Data;
+using LeadFlow.Core.Services.Worker;
 using LeadFlow.Core.Models;
 using LeadFlow.Core.Services;
 using LeadFlow.Core.Services.AdsPower;
 using LeadFlow.Core.Services.Avito;
-using LeadFlow.Core.Services.Worker;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Orbita.Worker.Services;
@@ -41,14 +40,11 @@ internal static class Program
             return;
         }
 
-        using var mutex = new Mutex(true, SingleInstanceMutexName, out var createdNew);
-        if (!createdNew)
+        var updateRestart = args.Any(arg =>
+            arg.Equals(WorkerRestartHelper.UpdateRestartArgument, StringComparison.OrdinalIgnoreCase));
+        using var mutex = AcquireSingleInstanceMutex(updateRestart);
+        if (mutex is null)
         {
-            MessageBox.Show(
-                "Воркер Орбиты уже запущен.",
-                WorkerSetupConstants.ProductName,
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Information);
             return;
         }
 
@@ -104,11 +100,17 @@ internal static class Program
         host.Services.AddSingleton<IWorkerLogsUploader>(sp => sp.GetRequiredService<WorkerLogUploadService>());
         host.Services.AddHostedService<WorkerLogSyncService>();
         host.Services.AddHostedService<WorkerLogCleanupService>();
+        host.Services.AddHostedService<EphemeralCacheCleanupService>();
+        host.Services.AddHostedService<WorkerOutboxRetryService>();
         host.Services.AddSingleton<IWorkerConfigProvider>(sp => sp.GetRequiredService<OrbitaConfigProvider>());
         host.Services.AddSingleton<SystemMetricsCollector>();
         host.Services.AddHttpClient(nameof(WorkerSystemInfoCollector));
         host.Services.AddSingleton<WorkerSystemInfoCollector>();
         host.Services.AddSingleton<WorkerUpdateStore>();
+        host.Services.AddSingleton<WorkerUpdateGate>();
+        host.Services.AddSingleton<WorkerUpdateOfferSource>();
+        host.Services.AddSingleton<WorkerShutdownService>();
+        host.Services.AddSingleton<IWorkerPendingUpdateCoordinator, WorkerPendingUpdateCoordinator>();
         host.Services.AddHostedService<WorkerUpdateCoordinator>();
 
         host.Services.AddSingleton<IPhoneNormalizer, PhoneNormalizer>();
@@ -118,18 +120,16 @@ internal static class Program
         host.Services.AddSingleton<AvitoDemoResponseSource>();
         host.Services.AddSingleton<AvitoParserService>();
         host.Services.AddSingleton<IAvitoResponseSource, AvitoResponseSource>();
-        host.Services.AddSingleton<AppRepository>();
-        host.Services.AddSingleton<IMonitoringRepository>(sp => sp.GetRequiredService<AppRepository>());
-        host.Services.AddSingleton<ICandidateDuplicateRepository>(sp => sp.GetRequiredService<AppRepository>());
+        host.Services.AddSingleton<WorkerAccountRuntimeStore>();
+        host.Services.AddSingleton<EphemeralDedupCache>();
+        host.Services.AddSingleton<WorkerCandidateOutbox>();
+        host.Services.AddSingleton<OrbitaMonitoringRepository>();
+        host.Services.AddSingleton<OrbitaCandidateDuplicateRepository>();
+        host.Services.AddSingleton<IMonitoringRepository>(sp => sp.GetRequiredService<OrbitaMonitoringRepository>());
+        host.Services.AddSingleton<ICandidateDuplicateRepository>(sp => sp.GetRequiredService<OrbitaCandidateDuplicateRepository>());
         host.Services.AddSingleton<WorkerActivityReporter>();
         host.Services.AddSingleton<IWorkerActivityReporter>(sp => sp.GetRequiredService<WorkerActivityReporter>());
         host.Services.AddSingleton<IWorkerMonitoringService, WorkerMonitoringService>();
-
-        host.Services.AddDbContextFactory<AppDbContext>((sp, options) =>
-        {
-            var settings = sp.GetRequiredService<AppSettings>();
-            options.UseSqlite(EncryptedSqliteConnectionBuilder.BuildConnectionString(settings));
-        });
 
         host.Services.AddSingleton<WorkerOrchestrator>();
         host.Services.AddHostedService(sp => sp.GetRequiredService<WorkerOrchestrator>());
@@ -140,9 +140,60 @@ internal static class Program
         var orchestrator = builtHost.Services.GetRequiredService<WorkerOrchestrator>();
         var runtimeState = builtHost.Services.GetRequiredService<WorkerRuntimeState>();
 
+        var shutdownService = builtHost.Services.GetRequiredService<WorkerShutdownService>();
+        var updateStore = builtHost.Services.GetRequiredService<WorkerUpdateStore>();
+
         Application.Run(new TrayApplicationContext(orchestrator, runtimeState, store, credentials));
 
         builtHost.StopAsync().GetAwaiter().GetResult();
+
+        if (shutdownService.PendingInstallPath is { } installPath)
+        {
+            var pendingMsi = updateStore.TryGetPendingMsi();
+            if (pendingMsi is not null)
+            {
+                updateStore.SavePendingInstall(pendingMsi.Version);
+                updateStore.ClearPendingMsi();
+            }
+
+            WorkerRestartHelper.LaunchInstallScript(installPath);
+            return;
+        }
+
+        if (shutdownService.PendingRestart)
+        {
+            WorkerRestartHelper.LaunchProcessRestart();
+        }
+    }
+
+    private static Mutex? AcquireSingleInstanceMutex(bool updateRestart)
+    {
+        const int retryCount = 120;
+        const int retryDelayMs = 500;
+
+        for (var attempt = 0; attempt < (updateRestart ? retryCount : 1); attempt++)
+        {
+            var mutex = new Mutex(true, SingleInstanceMutexName, out var createdNew);
+            if (createdNew)
+            {
+                return mutex;
+            }
+
+            mutex.Dispose();
+            if (!updateRestart)
+            {
+                break;
+            }
+
+            Thread.Sleep(retryDelayMs);
+        }
+
+        MessageBox.Show(
+            "Воркер Орбиты уже запущен.",
+            WorkerSetupConstants.ProductName,
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Information);
+        return null;
     }
 
     private static bool TryHandleSilentInstall(string[] args)

@@ -134,6 +134,26 @@ public sealed class WorkerActivityPresenterTests
     }
 
     [Fact]
+    public void Present_WaitingPhase_ShowsUpdateMessage_WhenPendingInstall()
+    {
+        var result = WorkerActivityPresenter.Present(
+            new WorkerActivityDto(
+                WorkerActivityPhases.Waiting,
+                "Пауза · установка обновления 1.0.0.33",
+                null,
+                null,
+                null,
+                null,
+                Now.AddMinutes(12),
+                Now.AddMinutes(-2)),
+            isOnline: true,
+            nowUtc: Now);
+
+        Assert.Contains("установка обновления", result.Label, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("следующий цикл", result.Label, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void Present_WaitingPhase_ShowsNextCycleMinutes()
     {
         var result = WorkerActivityPresenter.Present(

@@ -41,7 +41,8 @@
             if (row.hasAttribute('data-accounts-row-bound')) return;
             row.setAttribute('data-accounts-row-bound', '1');
             row.addEventListener('click', function (e) {
-                if (e.target.closest('[data-row-menu]') || e.target.closest('a') || e.target.closest('button')) return;
+                if (e.target.closest('[data-row-menu]') || e.target.closest('a') || e.target.closest('button')
+                    || e.target.closest('.worker-toggle') || e.target.closest('.subprofiles-section')) return;
                 var href = row.getAttribute('data-href');
                 if (href) {
                     if (window.Orbita && typeof window.Orbita.navigateTo === 'function') {
@@ -124,6 +125,7 @@
     function renderAccounts(rows) {
         var tbody = document.querySelector('[data-orbita-live-body="accounts"]');
         if (!tbody || !shared) return;
+        var expandedPanels = shared.captureExpandedSubprofilePanels(tbody);
 
         tbody.innerHTML = (rows || []).map(function (account) {
             var workerUrl = workerDetailsUrl(account.workerId);
@@ -145,7 +147,13 @@
                 ? '<td data-label="Офис">' + shared.escapeHtml(account.officeName || '—') + '</td>'
                 : '';
 
+            var toggleCell = shared.renderAccountEnableToggle(account.workerId, account.id, account.isEnabledInPanel, {
+                toggleUrl: '/Accounts/Toggle',
+                refreshKind: 'Accounts'
+            });
+
             return '<tr class="' + rowClass + '" data-href="' + shared.escapeHtml(accountUrl) + '" data-account-id="' + shared.escapeHtml(account.id) + '">' +
+                toggleCell +
                 '<td class="cell-account" data-label="Аккаунт"><a href="' + shared.escapeHtml(accountUrl) + '">' + shared.escapeHtml(account.accountName) + '</a>' + subProfiles + '</td>' +
                 '<td class="cell-worker" data-label="Воркер"><a href="' + shared.escapeHtml(workerUrl) + '">' + shared.escapeHtml(account.workerName) + '</a></td>' +
                 officeCell +
@@ -158,6 +166,8 @@
                 '<td data-label="Последняя активность">' + activityHtml + '</td>' +
                 '<td class="data-table-menu" data-label="">' + renderAccountMenu(account, accountUrl, workerUrl) + '</td></tr>';
         }).join('');
+
+        shared.restoreExpandedSubprofilePanels(tbody, expandedPanels);
 
         if (window.OrbitaTime) {
             window.OrbitaTime.localizeAll(tbody);
@@ -200,6 +210,9 @@
         initKpiCounters();
         initRowNavigation();
         initAccountToggleButtons();
+        if (window.Orbita && typeof window.Orbita.initWorkerAccountEnableToggles === 'function') {
+            window.Orbita.initWorkerAccountEnableToggles();
+        }
         if (window.OrbitaLive && shared && shared.getLiveRoot()) {
             window.OrbitaLive.register('accounts', { fetchSnapshot: fetchSnapshot });
         }

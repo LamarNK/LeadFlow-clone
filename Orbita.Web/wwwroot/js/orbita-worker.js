@@ -79,12 +79,38 @@
         };
     }
 
+    function destroyChartOnCanvas(canvas) {
+        if (typeof Chart === 'undefined' || typeof Chart.getChart !== 'function') return;
+        if (canvas) {
+            var existing = Chart.getChart(canvas);
+            if (existing) {
+                try { existing.destroy(); } catch (e) { }
+            }
+            if (canvas.id) {
+                var byId = Chart.getChart(canvas.id);
+                if (byId) {
+                    try { byId.destroy(); } catch (e) { }
+                }
+            }
+        }
+    }
+
+    function destroyActivityChart() {
+        destroyChartOnCanvas(document.getElementById('chart-worker-activity'));
+        if (activityChart) {
+            try { activityChart.destroy(); } catch (e) { }
+            activityChart = null;
+        }
+    }
+
     function initActivityChart() {
         if (typeof Chart === 'undefined') return;
 
         var dataEl = document.getElementById('worker-charts-data');
         var canvas = document.getElementById('chart-worker-activity');
         if (!dataEl || !canvas) return;
+
+        destroyActivityChart();
 
         var chartData;
         try {
@@ -406,11 +432,7 @@
         var tbody = document.querySelector('[data-orbita-live-body="worker-accounts"]');
         if (!tbody || !shared) return;
         var workerId = getWorkerId();
-        var expandedPanels = {};
-        tbody.querySelectorAll('.subprofiles-toggle[aria-expanded="true"]').forEach(function (btn) {
-            var panelId = btn.getAttribute('aria-controls');
-            if (panelId) expandedPanels[panelId] = true;
-        });
+        var expandedPanels = shared.captureExpandedSubprofilePanels(tbody);
 
         tbody.innerHTML = (accounts || []).map(function (account) {
             var statusHtml = '<span class="account-status account-status--' + shared.escapeHtml(account.statusTone || 'success') + '">' +
@@ -434,28 +456,19 @@
             var toggleTitle = account.isEnabledInPanel ? 'Отключить аккаунт в панели' : 'Включить аккаунт в панели';
 
             return '<tr class="' + rowClass + '" data-account-id="' + shared.escapeHtml(account.id) + '">' +
-                '<td data-label="Вкл"><label class="worker-toggle" title="' + shared.escapeHtml(toggleTitle) + '">' +
+                '<td class="cell-toggle" data-label="Вкл"><label class="worker-toggle" title="' + shared.escapeHtml(toggleTitle) + '">' +
                 '<input type="checkbox" data-account-enable-toggle data-worker-id="' + shared.escapeHtml(workerId) + '" data-account-id="' + shared.escapeHtml(account.id) + '"' + checked + ' />' +
                 '<span class="worker-toggle-slider"></span></label></td>' +
                 '<td class="cell-name" data-label="Аккаунт"><a href="' + shared.escapeHtml(accountSearchUrl(account.displayName)) + '">' + shared.escapeHtml(account.displayName) + '</a>' + adsPower + subProfiles + '</td>' +
                 '<td data-label="Статус">' + statusHtml + '</td>' +
-                '<td data-label="Баланс"><span class="account-balance-multiline">' + shared.escapeHtml(account.balanceText || '—') + '</span></td>' +
-                '<td data-label="Откликов">' + (account.responses || 0) + '</td>' +
+                '<td class="cell-num cell-balance" data-label="Баланс"><span class="account-balance-multiline">' + shared.escapeHtml(account.balanceText || '—') + '</span></td>' +
+                '<td class="cell-num" data-label="Откликов">' + (account.responses || 0) + '</td>' +
                 '<td data-label="Последняя активность">' + activityHtml + '</td>' +
-                '<td data-label="Ошибок">' + (account.errors || 0) + '</td>' +
+                '<td class="cell-num" data-label="Ошибок">' + (account.errors || 0) + '</td>' +
                 '<td class="data-table-menu" data-label="">' + renderWorkerAccountMenu(account) + '</td></tr>';
         }).join('');
 
-        Object.keys(expandedPanels).forEach(function (panelId) {
-            var btn = tbody.querySelector('[aria-controls="' + panelId + '"]');
-            var panel = document.getElementById(panelId);
-            if (btn && panel) {
-                btn.setAttribute('aria-expanded', 'true');
-                panel.removeAttribute('hidden');
-                var icon = btn.querySelector('.subprofiles-toggle-icon');
-                if (icon) icon.classList.add('subprofiles-toggle-icon--open');
-            }
-        });
+        shared.restoreExpandedSubprofilePanels(tbody, expandedPanels);
 
         if (window.OrbitaTime) {
             window.OrbitaTime.localizeAll(tbody);
@@ -570,6 +583,9 @@
             window.OrbitaLive.register('worker', { fetchSnapshot: fetchSnapshot });
         }
     }
+
+    window.OrbitaWorker = window.OrbitaWorker || {};
+    window.OrbitaWorker.destroyCharts = destroyActivityChart;
 
     initWorkerPage();
     document.addEventListener('orbita:content-updated', initWorkerPage);

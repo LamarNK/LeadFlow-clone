@@ -126,10 +126,20 @@
                 : '<span class="responses-ad-link">' + shared.escapeHtml(row.vacancy || '') + '</span>';
             adHtml += '<span class="responses-ad-id">ID: ' + shared.escapeHtml(adId) + '</span>';
 
-            return '<tr class="responses-row" data-response-id="' + shared.escapeHtml(row.id) + '" data-detail-json-url="' + shared.escapeHtml(detailJsonUrl(row.id)) + '">' +
+            var phoneDisplay = shared.formatPhone(row.phoneRaw, row.phoneNormalized);
+            var phoneCell = row.isPhoneHidden
+                ? '<span class="responses-phone-hidden">Скрыт</span>'
+                : '<span>' + shared.escapeHtml(phoneDisplay) + '</span>';
+            var cityDisplay = row.city && row.city.trim() ? shared.escapeHtml(row.city) : '—';
+            var ageDisplay = row.age > 0 ? String(row.age) : '—';
+
+            return '<tr class="responses-row" data-response-id="' + shared.escapeHtml(row.id) + '" data-phone="' + shared.escapeHtml(phoneDisplay) + '" data-detail-json-url="' + shared.escapeHtml(detailJsonUrl(row.id)) + '">' +
                 '<td class="responses-time" data-label="Время"><time data-orbita-utc="' + shared.escapeHtml(row.createdAtUtc) + '" data-orbita-format="datetime"></time></td>' +
-                '<td class="responses-ad" data-label="Объявление">' + adHtml + '</td>' +
                 '<td class="responses-author" data-label="Автор">' + shared.escapeHtml(author) + '</td>' +
+                '<td class="responses-phone" data-label="Телефон">' + phoneCell + '</td>' +
+                '<td class="responses-city" data-label="Город">' + cityDisplay + '</td>' +
+                '<td class="responses-age" data-label="Возраст">' + ageDisplay + '</td>' +
+                '<td class="responses-ad" data-label="Объявление">' + adHtml + '</td>' +
                 '<td class="cell-link responses-account" data-label="Аккаунт">' + shared.renderResponseAccountCell(row.accountName, row.avitoSubProfileName, accountUrl) + '</td>' +
                 '<td data-label="Статус"><span class="response-status-badge response-status-badge--' + shared.escapeHtml(row.statusTone || 'unique') + '">' + shared.escapeHtml(row.statusLabel || '') + '</span></td>' +
                 '<td class="data-table-menu" data-label="">' + renderResponseMenu(row, accountUrl, workerUrl) + '</td></tr>';

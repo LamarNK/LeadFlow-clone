@@ -44,10 +44,8 @@ public sealed class WorkersService(
 
         if (!string.IsNullOrWhiteSpace(searchQuery))
         {
-            var q = searchQuery.Trim();
             rows = rows
-                .Where(w => w.DisplayName.Contains(q, StringComparison.OrdinalIgnoreCase)
-                    || w.MachineName.Contains(q, StringComparison.OrdinalIgnoreCase))
+                .Where(w => SearchQueryNormalizer.MatchesTokens(searchQuery, w.DisplayName, w.MachineName))
                 .ToList();
         }
 

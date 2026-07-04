@@ -22,6 +22,7 @@ public interface ICandidateDuplicateRepository
         CancellationToken cancellationToken);
 
     Task<HashSet<string>> GetExistingSourceResponseIdsAsync(
+        Guid accountId,
         IEnumerable<string> sourceResponseIds,
         CancellationToken cancellationToken);
 

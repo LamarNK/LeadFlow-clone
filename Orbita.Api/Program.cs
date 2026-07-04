@@ -155,6 +155,7 @@ builder.Services.AddCors(options =>
 
 builder.Services.AddScoped<TelemetryService>();
 builder.Services.AddScoped<DashboardQueryService>();
+builder.Services.AddScoped<OfficeStatisticsQueryService>();
 builder.Services.AddScoped<PanelAuditService>();
 builder.Services.AddScoped<PanelUserService>();
 builder.Services.AddScoped<OfficeScopeService>();
@@ -179,9 +180,12 @@ builder.Services.Configure<FormOptions>(options =>
     options.MultipartHeadersLengthLimit = int.MaxValue;
 });
 builder.Services.AddScoped<CandidateIngestionService>();
+builder.Services.AddScoped<CandidateLookupService>();
+builder.Services.AddScoped<WorkerMonitoringStatsService>();
 builder.Services.AddScoped<CandidateDuplicateService>();
 builder.Services.AddScoped<OfficeBitrixWebhookResolver>();
 builder.Services.AddScoped<OfficeBitrixSettingsService>();
+builder.Services.AddScoped<OfficeBitrixIntegrationService>();
 builder.Services.AddScoped<ResponsesQueryService>();
 builder.Services.AddSingleton<PhoneNormalizer>();
 builder.Services.AddSingleton<CandidateParser>();
@@ -330,6 +334,35 @@ workers.MapPost("/candidates", async (
     }
 
     return Results.Ok(await ingestion.IngestBatchAsync(workerId, request, ct));
+}).RequireAuthorization("Worker");
+
+workers.MapGet("/monitoring-stats", async (
+    WorkerMonitoringStatsService statsService,
+    ClaimsPrincipal user,
+    CancellationToken ct) =>
+{
+    if (!TryGetWorkerId(user, out var workerId))
+    {
+        return Results.Forbid();
+    }
+
+    var stats = await statsService.GetForWorkerAsync(workerId, ct);
+    return stats is null ? Results.NotFound() : Results.Ok(stats);
+}).RequireAuthorization("Worker");
+
+workers.MapPost("/candidates/lookup", async (
+    WorkerCandidateLookupRequest request,
+    CandidateLookupService lookup,
+    ClaimsPrincipal user,
+    CancellationToken ct) =>
+{
+    if (!TryGetWorkerId(user, out var workerId))
+    {
+        return Results.Forbid();
+    }
+
+    var result = await lookup.LookupAsync(workerId, request, ct);
+    return result is null ? Results.NotFound() : Results.Ok(result);
 }).RequireAuthorization("Worker");
 
 workers.MapGet("/updates/check", async (
@@ -738,9 +771,73 @@ admin.MapPost("/users/{id}/revoke-sessions", async (
 });
 
 admin.MapGet("/integrations/bitrix", async (
-    PanelBitrixIntegrationService integrations,
+    OfficeAdminService offices,
     CancellationToken ct) =>
-    Results.Ok(await integrations.ListAllAsync(ct)));
+    Results.Ok(await offices.ListAsync(ct)));
+
+admin.MapGet("/offices/{id:guid}/integrations/bitrix", async (
+    Guid id,
+    OfficeBitrixIntegrationService bitrix,
+    CancellationToken ct) =>
+{
+    var integration = await bitrix.GetForOfficeAsync(id, ct);
+    return integration is null ? Results.NotFound() : Results.Ok(integration);
+});
+
+admin.MapPut("/offices/{id:guid}/integrations/bitrix", async (
+    Guid id,
+    SaveBitrixIntegrationRequest request,
+    OfficeBitrixIntegrationService bitrix,
+    ClaimsPrincipal principal,
+    HttpContext http,
+    CancellationToken ct) =>
+{
+    var actor = GetActor(principal, http);
+    var actorUserId = principal.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+    var (integration, error) = await bitrix.SaveAsync(
+        id,
+        request.WebhookUrl,
+        actorUserId,
+        actor.Email,
+        actor.IpAddress,
+        ct);
+    if (error is not null)
+    {
+        return error.Contains("не найден", StringComparison.OrdinalIgnoreCase)
+            ? Results.NotFound(new { error })
+            : Results.BadRequest(new { error });
+    }
+
+    return Results.Ok(integration);
+});
+
+admin.MapPost("/offices/{id:guid}/integrations/bitrix/validate", async (
+    Guid id,
+    ValidateBitrixIntegrationRequest request,
+    OfficeBitrixIntegrationService bitrix,
+    ClaimsPrincipal principal,
+    HttpContext http,
+    CancellationToken ct) =>
+{
+    var actor = GetActor(principal, http);
+    var actorUserId = principal.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+    var (validation, error) = await bitrix.ValidateAsync(
+        id,
+        request.WebhookUrl,
+        actorUserId,
+        actor.Email,
+        actor.IpAddress,
+        persistResult: true,
+        ct);
+    if (error is not null)
+    {
+        return error.Contains("не найден", StringComparison.OrdinalIgnoreCase)
+            ? Results.NotFound(new { error })
+            : Results.BadRequest(new { error });
+    }
+
+    return Results.Ok(validation);
+});
 
 admin.MapGet("/users/{userId}/integrations/bitrix", async (
     string userId,
@@ -1516,22 +1613,25 @@ panel.MapGet("/security/policy", (PasswordPolicyService policy) =>
     Results.Ok(policy.GetPolicy()));
 
 panel.MapGet("/me/integrations/bitrix", async (
-    PanelBitrixIntegrationService integrations,
+    OfficeBitrixIntegrationService officeBitrix,
+    OfficeScopeService officeScope,
     ClaimsPrincipal principal,
     CancellationToken ct) =>
 {
-    var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
-    if (string.IsNullOrWhiteSpace(userId))
+    var scope = await officeScope.ResolveAsync(principal, ct);
+    if (!scope.HasAccess)
     {
         return Results.Unauthorized();
     }
 
-    return Results.Ok(await integrations.GetForUserAsync(userId, ct));
+    var integration = await officeBitrix.GetForScopeAsync(scope, ct);
+    return integration is null
+        ? Results.BadRequest(new { error = "Офис не назначен." })
+        : Results.Ok(integration);
 });
 
 panel.MapGet("/office/integrations/bitrix", async (
-    Guid? officeId,
-    OfficeBitrixWebhookResolver webhooks,
+    OfficeBitrixIntegrationService bitrix,
     OfficeScopeService officeScope,
     ClaimsPrincipal principal,
     CancellationToken ct) =>
@@ -1542,13 +1642,67 @@ panel.MapGet("/office/integrations/bitrix", async (
         return Results.Forbid();
     }
 
-    var resolvedOfficeId = scope.ResolveFilter(officeId);
-    if (resolvedOfficeId is not Guid effectiveOfficeId)
+    var integration = await bitrix.GetForScopeAsync(scope, ct);
+    return integration is null
+        ? Results.BadRequest(new { error = "Офис не назначен." })
+        : Results.Ok(integration);
+});
+
+panel.MapPut("/office/integrations/bitrix", async (
+    SaveBitrixIntegrationRequest request,
+    OfficeBitrixIntegrationService bitrix,
+    OfficeScopeService officeScope,
+    ClaimsPrincipal principal,
+    HttpContext http,
+    CancellationToken ct) =>
+{
+    var scope = await officeScope.ResolveAsync(principal, ct);
+    if (!scope.HasAccess || scope.IsGlobalAdmin || scope.OfficeId is not Guid officeId)
     {
-        return Results.BadRequest(new { error = "Укажите офис." });
+        return Results.Forbid();
     }
 
-    return Results.Ok(await webhooks.ListOfficeWebhookDtosAsync(effectiveOfficeId, ct));
+    var actor = GetActor(principal, http);
+    var actorUserId = principal.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+    var (integration, error) = await bitrix.SaveAsync(
+        officeId,
+        request.WebhookUrl,
+        actorUserId,
+        actor.Email,
+        actor.IpAddress,
+        ct);
+    return error is not null
+        ? Results.BadRequest(new { error })
+        : Results.Ok(integration);
+});
+
+panel.MapPost("/office/integrations/bitrix/validate", async (
+    ValidateBitrixIntegrationRequest request,
+    OfficeBitrixIntegrationService bitrix,
+    OfficeScopeService officeScope,
+    ClaimsPrincipal principal,
+    HttpContext http,
+    CancellationToken ct) =>
+{
+    var scope = await officeScope.ResolveAsync(principal, ct);
+    if (!scope.HasAccess || scope.IsGlobalAdmin || scope.OfficeId is not Guid officeId)
+    {
+        return Results.Forbid();
+    }
+
+    var actor = GetActor(principal, http);
+    var actorUserId = principal.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+    var (validation, error) = await bitrix.ValidateAsync(
+        officeId,
+        request.WebhookUrl,
+        actorUserId,
+        actor.Email,
+        actor.IpAddress,
+        persistResult: true,
+        ct);
+    return error is not null
+        ? Results.BadRequest(new { error })
+        : Results.Ok(validation);
 });
 
 panel.MapGet("/office/bitrix-settings", async (
@@ -1670,6 +1824,24 @@ panel.MapGet("/responses/summary", async (
         ct));
 });
 
+panel.MapGet("/statistics", async (
+    OfficeStatisticsQueryService statistics,
+    OfficeScopeService officeScope,
+    ClaimsPrincipal principal,
+    Guid? officeId,
+    DateTime? from,
+    DateTime? to,
+    CancellationToken ct) =>
+{
+    var scope = await officeScope.ResolveAsync(principal, ct);
+    if (!scope.HasAccess)
+    {
+        return Results.Forbid();
+    }
+
+    return Results.Ok(await statistics.GetStatisticsAsync(scope, officeId, from, to, ct));
+});
+
 panel.MapGet("/responses/filters/accounts", async (
     ResponsesQueryService responses,
     OfficeScopeService officeScope,
@@ -1721,31 +1893,30 @@ panel.MapPost("/responses/{id:guid}/resend-bitrix", async (
 
 panel.MapPut("/me/integrations/bitrix", async (
     SaveBitrixIntegrationRequest request,
-    PanelBitrixIntegrationService integrations,
+    OfficeBitrixIntegrationService officeBitrix,
+    OfficeScopeService officeScope,
     ClaimsPrincipal principal,
     HttpContext http,
     CancellationToken ct) =>
 {
-    var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
-    if (string.IsNullOrWhiteSpace(userId))
+    var scope = await officeScope.ResolveAsync(principal, ct);
+    if (!scope.HasAccess || scope.IsGlobalAdmin || scope.OfficeId is not Guid officeId)
     {
-        return Results.Unauthorized();
+        return Results.Forbid();
     }
 
     var actor = GetActor(principal, http);
-    var (integration, error) = await integrations.SaveAsync(
-        userId,
+    var actorUserId = principal.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+    var (integration, error) = await officeBitrix.SaveAsync(
+        officeId,
         request.WebhookUrl,
-        userId,
+        actorUserId,
         actor.Email,
         actor.IpAddress,
         ct);
-    if (error is not null)
-    {
-        return Results.BadRequest(new { error });
-    }
-
-    return Results.Ok(integration);
+    return error is not null
+        ? Results.BadRequest(new { error })
+        : Results.Ok(integration);
 });
 
 var workerPanel = app.MapGroup("/api/v1/workers").RequireAuthorization("Panel");
@@ -1897,22 +2068,24 @@ workerPanel.MapPatch("/{id:guid}/accounts/{accountId:guid}/subprofiles/{subProfi
 
 panel.MapPost("/me/integrations/bitrix/validate", async (
     ValidateBitrixIntegrationRequest request,
-    PanelBitrixIntegrationService integrations,
+    OfficeBitrixIntegrationService officeBitrix,
+    OfficeScopeService officeScope,
     ClaimsPrincipal principal,
     HttpContext http,
     CancellationToken ct) =>
 {
-    var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
-    if (string.IsNullOrWhiteSpace(userId))
+    var scope = await officeScope.ResolveAsync(principal, ct);
+    if (!scope.HasAccess || scope.IsGlobalAdmin || scope.OfficeId is not Guid officeId)
     {
-        return Results.Unauthorized();
+        return Results.Forbid();
     }
 
     var actor = GetActor(principal, http);
-    var (validation, error) = await integrations.ValidateAsync(
-        userId,
+    var actorUserId = principal.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+    var (validation, error) = await officeBitrix.ValidateAsync(
+        officeId,
         request.WebhookUrl,
-        userId,
+        actorUserId,
         actor.Email,
         actor.IpAddress,
         persistResult: string.IsNullOrWhiteSpace(request.WebhookUrl),

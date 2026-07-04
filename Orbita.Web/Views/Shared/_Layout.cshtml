@@ -66,6 +66,7 @@ else
             <a class="nav-item @(ctrl == "Dashboard" ? "active" : "")" href="@Url.Action("Index", "Dashboard")" title="Панель управления"><i class="fa-solid fa-house" aria-hidden="true"></i><span class="nav-item-label">Панель управления</span></a>
             <a class="nav-item @(ctrl == "Workers" ? "active" : "")" href="@Url.Action("Index", "Workers")" title="Воркеры"><i class="fa-solid fa-server" aria-hidden="true"></i><span class="nav-item-label">Воркеры</span></a>
             <a class="nav-item @(ctrl == "Accounts" ? "active" : "")" href="@Url.Action("Index", "Accounts")" title="Аккаунты"><i class="fa-solid fa-users" aria-hidden="true"></i><span class="nav-item-label">Аккаунты</span></a>
+            <a class="nav-item @(ctrl == "Statistics" ? "active" : "")" href="@Url.Action("Index", "Statistics")" title="Статистика"><i class="fa-solid fa-chart-line" aria-hidden="true"></i><span class="nav-item-label">Статистика</span></a>
             <a class="nav-item @(ctrl == "Responses" ? "active" : "")" href="@Url.Action("Index", "Responses")" title="Отклики"><i class="fa-solid fa-inbox" aria-hidden="true"></i><span class="nav-item-label">Отклики</span><span class="nav-badge" data-nav-badge="responses" hidden></span></a>
             <a class="nav-item @(ctrl is "Events" or "Errors" ? "active" : "")" href="@Url.Action("Index", "Events")" title="События"><i class="fa-regular fa-clipboard" aria-hidden="true"></i><span class="nav-item-label">События</span><span class="nav-badge" data-nav-badge="errors" hidden></span></a>
             <a class="nav-item @(ctrl == "MySettings" ? "active" : "")" href="@Url.Action("Index", "MySettings")" title="Настройки"><i class="fa-solid fa-gear" aria-hidden="true"></i><span class="nav-item-label">Настройки</span></a>
@@ -139,11 +140,28 @@ else
     <div class="orbita-search__backdrop" data-orbita-search-close></div>
     <div class="orbita-search__dialog" role="dialog" aria-modal="true" aria-label="Глобальный поиск">
         <div class="orbita-search__head">
-            <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
-            <input type="search" class="orbita-search__input" data-orbita-search-input placeholder="Поиск воркеров, аккаунтов, откликов..." autocomplete="off" />
-            <button type="button" class="orbita-search__close" data-orbita-search-close aria-label="Закрыть"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+            <span class="orbita-search__icon" aria-hidden="true"><i class="fa-solid fa-magnifying-glass"></i></span>
+            <input type="search"
+                   class="orbita-search__input"
+                   data-orbita-search-input
+                   placeholder="Воркеры, аккаунты, отклики, события..."
+                   autocomplete="off"
+                   spellcheck="false"
+                   aria-controls="orbitaSearchResults"
+                   aria-autocomplete="list" />
+            <span class="orbita-search__spinner" data-orbita-search-spinner hidden aria-hidden="true">
+                <i class="fa-solid fa-spinner fa-spin"></i>
+            </span>
+            <button type="button" class="orbita-search__close" data-orbita-search-close aria-label="Закрыть">
+                <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+            </button>
         </div>
-        <div class="orbita-search__results" data-orbita-search-results></div>
+        <div class="orbita-search__results" id="orbitaSearchResults" data-orbita-search-results role="listbox"></div>
+        <div class="orbita-search__footer">
+            <span class="orbita-search__shortcut"><kbd>↑</kbd><kbd>↓</kbd> выбор</span>
+            <span class="orbita-search__shortcut"><kbd>Enter</kbd> открыть</span>
+            <span class="orbita-search__shortcut"><kbd>Esc</kbd> закрыть</span>
+        </div>
     </div>
 </div>
 <script src="~/js/orbita-time.js" asp-append-version="true"></script>

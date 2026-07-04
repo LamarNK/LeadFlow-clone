@@ -70,6 +70,13 @@ public sealed class OfficeDetailViewModel
     public bool BitrixTransmissionEnabled { get; init; } = true;
     public bool RegistrationConfigured { get; init; }
     public required string MaskedRegistrationSecret { get; init; }
+    public string BitrixValidationStatus { get; init; } = BitrixValidationStatuses.NotConfigured;
+    public string BitrixValidationStatusLabel { get; init; } = "Не настроено";
+    public string BitrixValidationStatusTone { get; init; } = "neutral";
+    public string? BitrixValidationMessage { get; init; }
+    public string? MaskedBitrixWebhookUrl { get; init; }
+    public string? BitrixPortalHost { get; init; }
+    public DateTime? BitrixLastValidatedAtUtc { get; init; }
 }
 
 public sealed class CreateOfficeFormModel
@@ -258,38 +265,21 @@ public sealed class RenameAdminWorkerFormModel
 public sealed class BitrixIntegrationsSettingsViewModel
 {
     public IReadOnlyList<BitrixIntegrationRowViewModel> Rows { get; init; } = [];
-    public BitrixIntegrationEditViewModel? Edit { get; init; }
 }
 
 public sealed class BitrixIntegrationRowViewModel
 {
-    public required string UserId { get; init; }
-    public required string Email { get; init; }
-    public required string RoleLabel { get; init; }
+    public required Guid OfficeId { get; init; }
+    public required string OfficeName { get; init; }
     public string? PortalHost { get; init; }
     public required string ValidationStatus { get; init; }
     public required string ValidationStatusLabel { get; init; }
     public required string ValidationStatusTone { get; init; }
-    public string? ValidationMessage { get; init; }
-    public DateTime? LastValidatedAtUtc { get; init; }
 }
 
-public sealed class BitrixIntegrationEditViewModel
+public sealed class SaveOfficeBitrixIntegrationFormModel
 {
-    public required string UserId { get; init; }
-    public required string Email { get; init; }
-    public string? MaskedWebhookUrl { get; init; }
-    public string? PortalHost { get; init; }
-    public required string ValidationStatus { get; init; }
-    public required string ValidationStatusLabel { get; init; }
-    public required string ValidationStatusTone { get; init; }
-    public string? ValidationMessage { get; init; }
-    public DateTime? LastValidatedAtUtc { get; init; }
-}
-
-public sealed class SaveAdminBitrixIntegrationFormModel
-{
-    public string UserId { get; set; } = string.Empty;
+    public Guid OfficeId { get; set; }
     public string WebhookUrl { get; set; } = string.Empty;
 }
 

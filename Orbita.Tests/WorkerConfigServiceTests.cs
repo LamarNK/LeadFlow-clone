@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Orbita.Api.Data;
 using Orbita.Api.Helpers;
+using Orbita.Api.Options;
 using Orbita.Api.Services;
 using Orbita.Contracts;
 using System.Text.Json;
@@ -74,6 +76,36 @@ public sealed class WorkerConfigServiceTests
     }
 
     [Fact]
+    public async Task GetConfigForWorkerAsync_IncludesUpdateOffer_WhenNewerReleaseExists()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db, appVersion: "1.0.0.1");
+
+        var releaseRoot = Path.Combine(Path.GetTempPath(), $"orbita-releases-{Guid.NewGuid():N}");
+        var releases = new WorkerReleaseService(Options.Create(new WorkerReleaseOptions
+        {
+            DataPath = releaseRoot,
+            MaxUploadBytes = 1024 * 1024
+        }));
+        await using var package = new MemoryStream([0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1, 0x00], writable: false);
+        var (_, uploadError) = await releases.UploadAsync(
+            package,
+            "Orbita.Worker.Setup-1.0.0.5.msi",
+            "1.0.0.5",
+            releaseNotes: "New build",
+            CancellationToken.None);
+        Assert.Null(uploadError);
+
+        var sut = new WorkerConfigService(db, new OfficeScopeService(db), new NoopPanelRealtimeNotifier(), releases);
+        var config = await sut.GetConfigForWorkerAsync(WorkerId, OfficeScope.ForOffice(OfficeId));
+
+        Assert.NotNull(config);
+        Assert.NotNull(config!.UpdateOffer);
+        Assert.Equal("1.0.0.5", config.UpdateOffer!.Version);
+        Assert.Contains("1.0.0.5", config.UpdateOffer.DownloadPath, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task GetConfigForWorkerAsync_ReturnsDisabledSubProfileIds()
     {
         await using var db = CreateDb();
@@ -87,8 +119,16 @@ public sealed class WorkerConfigServiceTests
         Assert.Equal(["sp-2"], config.Accounts[0].DisabledSubProfileIds);
     }
 
-    private static WorkerConfigService CreateService(OrbitaDbContext db) =>
-        new(db, new OfficeScopeService(db), new NoopPanelRealtimeNotifier());
+    private static WorkerConfigService CreateService(OrbitaDbContext db)
+    {
+        var releaseRoot = Path.Combine(Path.GetTempPath(), $"orbita-releases-{Guid.NewGuid():N}");
+        var releases = new WorkerReleaseService(Options.Create(new WorkerReleaseOptions
+        {
+            DataPath = releaseRoot,
+            MaxUploadBytes = 1024 * 1024
+        }));
+        return new(db, new OfficeScopeService(db), new NoopPanelRealtimeNotifier(), releases);
+    }
 
     private static OrbitaDbContext CreateDb()
     {
@@ -98,7 +138,10 @@ public sealed class WorkerConfigServiceTests
         return new OrbitaDbContext(options);
     }
 
-    private static void SeedWorkerWithAccount(OrbitaDbContext db, string disabledIdsJson = "[]")
+    private static void SeedWorkerWithAccount(
+        OrbitaDbContext db,
+        string disabledIdsJson = "[]",
+        string appVersion = "1.0")
     {
         db.Offices.Add(new OfficeEntity
         {
@@ -115,7 +158,7 @@ public sealed class WorkerConfigServiceTests
             DisplayName = "worker-1",
             MachineName = "pc",
             ApiKeyHash = "hash",
-            AppVersion = "1.0",
+            AppVersion = appVersion,
             MonitoringStatus = "Stopped",
             CreatedAtUtc = DateTime.UtcNow
         });

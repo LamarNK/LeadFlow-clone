@@ -121,12 +121,13 @@ internal static class ErrorsIndexBuilder
 
         if (!string.IsNullOrWhiteSpace(filters.SearchQuery))
         {
-            var q = filters.SearchQuery.Trim();
             query = query.Where(e =>
-                e.Message.Contains(q, StringComparison.OrdinalIgnoreCase)
-                || e.ErrorTypeLabel.Contains(q, StringComparison.OrdinalIgnoreCase)
-                || (e.AccountName?.Contains(q, StringComparison.OrdinalIgnoreCase) ?? false)
-                || e.WorkerName.Contains(q, StringComparison.OrdinalIgnoreCase));
+                SearchQueryNormalizer.MatchesTokens(
+                    filters.SearchQuery,
+                    e.Message,
+                    e.ErrorTypeLabel,
+                    e.AccountName,
+                    e.WorkerName));
         }
 
         if (!string.IsNullOrWhiteSpace(filters.Severity))

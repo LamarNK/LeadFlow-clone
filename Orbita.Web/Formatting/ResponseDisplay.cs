@@ -45,6 +45,12 @@ public static partial class ResponseDisplay
         return match.Success ? match.Groups[1].Value : "—";
     }
 
+    public static string FormatCity(string? city) =>
+        string.IsNullOrWhiteSpace(city) ? "—" : city.Trim();
+
+    public static string FormatAge(int? age) =>
+        age is > 0 and var value ? value.ToString(CultureInfo.InvariantCulture) : "—";
+
     public static string FormatCreatedAtLocal(DateTime createdAtUtc) =>
         createdAtUtc.ToLocalTime().ToString("dd.MM.yyyy HH:mm:ss", CultureInfo.InvariantCulture);
 

@@ -380,7 +380,10 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
             .ToListAsync(cancellationToken);
     }
 
-    public async Task<HashSet<string>> GetExistingSourceResponseIdsAsync(IEnumerable<string> sourceResponseIds, CancellationToken cancellationToken)
+    public async Task<HashSet<string>> GetExistingSourceResponseIdsAsync(
+        Guid accountId,
+        IEnumerable<string> sourceResponseIds,
+        CancellationToken cancellationToken)
     {
         var normalizedIds = sourceResponseIds
             .Where(x => !string.IsNullOrWhiteSpace(x))
@@ -395,7 +398,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
 
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
         var existing = await db.CandidateResponses
-            .Where(x => normalizedIds.Contains(x.SourceResponseId))
+            .Where(x => x.AccountId == accountId && normalizedIds.Contains(x.SourceResponseId))
             .Select(x => x.SourceResponseId)
             .ToListAsync(cancellationToken);
 
@@ -422,6 +425,72 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
             .ToListAsync(cancellationToken);
 
         return existing.ToHashSet(StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Удаляет устаревшие локальные отклики и журнал обработки.
+    /// Кандидаты в статусах New/InProgress не трогаются — могут ещё синхронизироваться с API.
+    /// </summary>
+    public async Task<WorkerDatabasePruneResult> PruneExpiredLocalDataAsync(
+        DateTime utcNow,
+        int candidateRetentionDays,
+        int logRetentionDays,
+        CancellationToken cancellationToken)
+    {
+        candidateRetentionDays = Math.Clamp(candidateRetentionDays, 14, 730);
+        logRetentionDays = Math.Clamp(logRetentionDays, 7, 365);
+
+        var candidateCutoff = utcNow.AddDays(-candidateRetentionDays);
+        var logCutoff = utcNow.AddDays(-logRetentionDays);
+        var protectedStatuses = new[]
+        {
+            nameof(ResponseStatus.New),
+            nameof(ResponseStatus.InProgress)
+        };
+
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+
+        var candidateIds = await db.CandidateResponses
+            .Where(x => x.CreatedAt < candidateCutoff)
+            .Where(x => !protectedStatuses.Contains(x.Status))
+            .Select(x => x.Id)
+            .ToListAsync(cancellationToken);
+
+        var logsToRemove = await db.ProcessingLogs
+            .Where(x => x.CreatedAt < logCutoff
+                        || (x.CandidateResponseId != null && candidateIds.Contains(x.CandidateResponseId.Value)))
+            .ToListAsync(cancellationToken);
+
+        if (logsToRemove.Count > 0)
+        {
+            db.ProcessingLogs.RemoveRange(logsToRemove);
+        }
+
+        if (candidateIds.Count > 0)
+        {
+            var candidates = await db.CandidateResponses
+                .Where(x => candidateIds.Contains(x.Id))
+                .ToListAsync(cancellationToken);
+            db.CandidateResponses.RemoveRange(candidates);
+        }
+
+        var logsRemoved = logsToRemove.Count;
+        if (logsRemoved > 0 || candidateIds.Count > 0)
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
+        var vacuumed = false;
+        if ((candidateIds.Count + logsRemoved) > 0 && db.Database.IsRelational())
+        {
+            await db.Database.ExecuteSqlRawAsync("VACUUM;", cancellationToken);
+            vacuumed = true;
+        }
+
+        return new WorkerDatabasePruneResult(
+            candidateIds.Count,
+            logsRemoved,
+            vacuumed);
     }
 
     public async Task<double> GetHistoricalResponseIngestHeatScoreAsync(DateTime utcNow, CancellationToken cancellationToken)

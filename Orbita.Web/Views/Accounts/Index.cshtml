@@ -66,6 +66,7 @@
             <table class="data-table data-table--accounts-list data-table--cards">
                         <thead>
                             <tr>
+                                <th class="cell-toggle">Вкл</th>
                                 <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Аккаунт", Column = "account", Sort = Model.Sort, Controller = "Accounts", Action = "Index", RouteValues = accountsSortRoute })" />
                                 <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Воркер", Column = "worker", Sort = Model.Sort, Controller = "Accounts", Action = "Index", RouteValues = accountsSortRoute })" />
                                 @if (Model.ShowOfficeColumn)
@@ -89,6 +90,18 @@
                     var accountUrl = Url.Action("Index", "Accounts", new { q = account.AccountName });
                     var responsesUrl = Url.Action("Index", "Responses", new { accountId = account.Id });
                     <tr class="accounts-row@(account.IsProcessingNow ? " accounts-row--processing" : "")" data-href="@accountUrl">
+                        <td class="cell-toggle" data-label="Вкл">
+                            <label class="worker-toggle" title="@(account.IsEnabledInPanel ? "Отключить аккаунт в панели" : "Включить аккаунт в панели")">
+                                <input type="checkbox"
+                                       data-account-enable-toggle
+                                       data-toggle-url="@Url.Action("Toggle", "Accounts")"
+                                       data-toggle-refresh="Accounts"
+                                       data-worker-id="@account.WorkerId"
+                                       data-account-id="@account.Id"
+                                       @(account.IsEnabledInPanel ? "checked" : null) />
+                                <span class="worker-toggle-slider"></span>
+                            </label>
+                        </td>
                         <td class="cell-account" data-label="Аккаунт">
                             <a href="@accountUrl">@account.AccountName</a>
                             <partial name="_SubProfilesSection" model="@(new SubProfilesSectionViewModel

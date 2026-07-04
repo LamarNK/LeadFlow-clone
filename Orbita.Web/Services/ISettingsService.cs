@@ -12,12 +12,13 @@ public interface ISettingsService
         DateTime? date,
         string? action,
         string? userId = null,
+        Guid? officeId = null,
         Guid? workerId = null,
         int page = 1,
         CancellationToken ct = default);
 
-    Task<(bool Success, string? Error)> SaveUserBitrixAsync(
-        string userId,
+    Task<(bool Success, string? Error)> SaveOfficeBitrixAsync(
+        Guid officeId,
         string webhookUrl,
         CancellationToken ct = default);
 
@@ -33,7 +34,7 @@ public interface ISettingsService
         Guid? officeId,
         CancellationToken ct = default);
 
-    Task<(bool Success, string? Error, string? RegistrationSecret)> CreateOfficeAsync(
+    Task<(bool Success, string? Error, Guid? OfficeId, string? RegistrationSecret)> CreateOfficeAsync(
         string name,
         CancellationToken ct = default);
 

@@ -126,12 +126,13 @@ internal static class EventsIndexBuilder
 
         if (!string.IsNullOrWhiteSpace(filters.SearchQuery))
         {
-            var q = filters.SearchQuery.Trim();
             query = query.Where(e =>
-                e.Description.Contains(q, StringComparison.OrdinalIgnoreCase)
-                || e.EventTypeLabel.Contains(q, StringComparison.OrdinalIgnoreCase)
-                || (e.AccountName?.Contains(q, StringComparison.OrdinalIgnoreCase) ?? false)
-                || e.WorkerName.Contains(q, StringComparison.OrdinalIgnoreCase));
+                SearchQueryNormalizer.MatchesTokens(
+                    filters.SearchQuery,
+                    e.Description,
+                    e.EventTypeLabel,
+                    e.AccountName,
+                    e.WorkerName));
         }
 
         if (!string.IsNullOrWhiteSpace(filters.Type))

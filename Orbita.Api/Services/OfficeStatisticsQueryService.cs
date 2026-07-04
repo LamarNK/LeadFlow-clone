@@ -1,0 +1,536 @@
+using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
+using Orbita.Api.Data;
+using Orbita.Api.Helpers;
+using Orbita.Contracts;
+
+namespace Orbita.Api.Services;
+
+public sealed class OfficeStatisticsQueryService(
+    OrbitaDbContext db,
+    OfficeScopeService officeScope)
+{
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
+    private static (
+        DateTime ExpiresUtc,
+        OfficeStatisticsDto? Value,
+        OfficeScope Scope,
+        Guid? OfficeFilter,
+        DateTime FromLocal,
+        DateTime ToLocal) _cache;
+    private static readonly object CacheLock = new();
+
+    public async Task<OfficeStatisticsDto> GetStatisticsAsync(
+        OfficeScope scope,
+        Guid? officeFilter,
+        DateTime? from,
+        DateTime? to,
+        CancellationToken ct = default)
+    {
+        var nowUtc = DateTime.UtcNow;
+        var (startLocal, endLocal, utcStart, utcEnd) = LocalCalendarDateRange.Normalize(from, to);
+
+        lock (CacheLock)
+        {
+            if (_cache.Value is not null
+                && _cache.ExpiresUtc > nowUtc
+                && _cache.Scope.IsGlobalAdmin == scope.IsGlobalAdmin
+                && _cache.OfficeFilter == officeFilter
+                && _cache.FromLocal == startLocal
+                && _cache.ToLocal == endLocal)
+            {
+                return _cache.Value with { AggregatedAtUtc = nowUtc };
+            }
+        }
+
+        var workersQuery = officeScope.ApplyWorkerFilter(db.Workers.AsNoTracking(), scope, officeFilter);
+        var workers = await workersQuery
+            .Select(w => new WorkerProjection(
+                w.Id,
+                w.DisplayName,
+                w.OfficeId,
+                w.Office.Name,
+                w.LastSeenAtUtc))
+            .ToListAsync(ct);
+
+        var workerIds = workers.Select(w => w.Id).ToHashSet();
+        if (workerIds.Count == 0)
+        {
+            return Empty(nowUtc);
+        }
+
+        var latestSnapshots = await db.WorkerSnapshots
+            .AsNoTracking()
+            .Where(x => workerIds.Contains(x.WorkerId))
+            .GroupBy(x => x.WorkerId)
+            .Select(g => g.OrderByDescending(x => x.CapturedAtUtc).First())
+            .ToListAsync(ct);
+
+        var statsList = latestSnapshots
+            .Select(s => JsonSerializer.Deserialize<DashboardStatsDto>(s.StatsJson, JsonOptions))
+            .Where(s => s is not null)
+            .Cast<DashboardStatsDto>()
+            .ToList();
+
+        var snapshotBalances = latestSnapshots
+            .SelectMany(s => JsonSerializer.Deserialize<List<WorkerBalanceDto>>(s.BalancesJson, JsonOptions) ?? [])
+            .ToDictionary(b => b.AccountId);
+
+        var accountRows = await db.WorkerAccounts
+            .AsNoTracking()
+            .Where(a => workerIds.Contains(a.WorkerId))
+            .Select(a => new AccountProjection(
+                a.WorkerId,
+                a.AccountId,
+                a.DisplayName,
+                a.Status,
+                a.IsEnabledInPanel,
+                a.TotalBalance,
+                a.SubProfilesJson))
+            .ToListAsync(ct);
+
+        var workerLookup = workers.ToDictionary(w => w.Id);
+        var balances = BuildBalances(accountRows, snapshotBalances, workerLookup);
+        var accountInfrastructure = BuildAccountInfrastructure(accountRows, statsList);
+        var responsesQuery = db.CandidateResponses
+            .AsNoTracking()
+            .Where(x => workerIds.Contains(x.WorkerId) && x.CreatedAt >= utcStart && x.CreatedAt < utcEnd);
+
+        var responses = await BuildResponsesPeriodAsync(responsesQuery, ct);
+        var dailyTrend = await BuildDailyTrendAsync(responsesQuery, startLocal, endLocal, ct);
+        var hrInsights = await BuildHrInsightsAsync(responsesQuery, ct);
+        var workerInfrastructure = await BuildWorkerInfrastructureAsync(
+            workers,
+            workerIds,
+            utcStart,
+            utcEnd,
+            accountRows,
+            ct);
+
+        var result = new OfficeStatisticsDto(
+            balances,
+            accountInfrastructure,
+            workerInfrastructure,
+            responses,
+            dailyTrend,
+            hrInsights,
+            nowUtc);
+
+        lock (CacheLock)
+        {
+            _cache = (nowUtc.AddSeconds(8), result, scope, officeFilter, startLocal, endLocal);
+        }
+
+        return result;
+    }
+
+    private static OfficeStatisticsDto Empty(DateTime aggregatedAtUtc) =>
+        new(
+            new BalanceStatisticsSection(0, 0, 0, []),
+            new AccountInfrastructureSection(0, new DashboardAccountStatusCounts(0, 0, 0, 0), 0, 0),
+            new WorkerInfrastructureSection(0, 0, []),
+            new ResponsesPeriodSection(0, 0, 0, 0, 0, 0, 0, 0, null),
+            [],
+            new HrInsightsDto([], [], [], [], "н/д", "0%"),
+            aggregatedAtUtc);
+
+    private static BalanceStatisticsSection BuildBalances(
+        IReadOnlyList<AccountProjection> accountRows,
+        IReadOnlyDictionary<Guid, WorkerBalanceDto> snapshotBalances,
+        IReadOnlyDictionary<Guid, WorkerProjection> workerLookup)
+    {
+        var items = new List<AccountBalanceStatDto>(accountRows.Count);
+
+        foreach (var row in accountRows)
+        {
+            if (!workerLookup.TryGetValue(row.WorkerId, out var worker))
+            {
+                continue;
+            }
+
+            decimal advance;
+            decimal wallet;
+            IReadOnlyList<SubProfileBalanceDto> subProfiles;
+
+            if (snapshotBalances.TryGetValue(row.AccountId, out var snapshot))
+            {
+                advance = snapshot.TotalBalance;
+                wallet = snapshot.TotalWalletBalance;
+                subProfiles = snapshot.SubProfiles;
+            }
+            else
+            {
+                subProfiles = DeserializeSubProfileBalances(row.SubProfilesJson);
+                advance = row.TotalBalance > 0 ? row.TotalBalance : subProfiles.Sum(s => s.Balance ?? 0m);
+                wallet = subProfiles.Sum(s => s.WalletBalance ?? 0m);
+            }
+
+            var isLowBalance = advance < BalanceDisplayRules.LowBalanceThresholdRub
+                || subProfiles.Any(s => s.Balance is decimal b && b < BalanceDisplayRules.LowBalanceThresholdRub);
+
+            items.Add(new AccountBalanceStatDto(
+                row.AccountId,
+                row.DisplayName,
+                row.WorkerId,
+                worker.DisplayName,
+                worker.OfficeName,
+                advance,
+                wallet,
+                subProfiles,
+                isLowBalance));
+        }
+
+        var ordered = items
+            .OrderBy(a => a.Advance)
+            .ThenBy(a => a.AccountName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return new BalanceStatisticsSection(
+            ordered.Sum(a => a.Advance),
+            ordered.Sum(a => a.Wallet),
+            ordered.Count(a => a.IsLowBalance),
+            ordered);
+    }
+
+    private static AccountInfrastructureSection BuildAccountInfrastructure(
+        IReadOnlyList<AccountProjection> accountRows,
+        IReadOnlyList<DashboardStatsDto> statsList)
+    {
+        var breakdown = AccountDashboardStatusClassifier.Summarize(
+            accountRows.Select(a => (a.Status, a.IsEnabledInPanel)));
+
+        return new AccountInfrastructureSection(
+            breakdown.Total,
+            new DashboardAccountStatusCounts(
+                breakdown.Active,
+                breakdown.Inactive,
+                breakdown.Blocked,
+                breakdown.Errors),
+            statsList.Sum(s => s.ActiveAdsCount),
+            statsList.Sum(s => s.BlockedAdsCount));
+    }
+
+    private static async Task<ResponsesPeriodSection> BuildResponsesPeriodAsync(
+        IQueryable<CandidateResponseEntity> query,
+        CancellationToken ct)
+    {
+        var total = await query.CountAsync(ct);
+        if (total == 0)
+        {
+            return new ResponsesPeriodSection(0, 0, 0, 0, 0, 0, 0, 0, null);
+        }
+
+        var sent = await query.CountAsync(x => x.Status == ResponseStatuses.Sent, ct);
+        var duplicates = await query.CountAsync(x => x.Status == ResponseStatuses.Duplicate, ct);
+        var errors = await query.CountAsync(x => x.Status == ResponseStatuses.Error, ct);
+        var actionRequired = await query.CountAsync(x => x.Status == ResponseStatuses.ActionRequired, ct);
+        var inProgress = await query.CountAsync(x => x.Status == ResponseStatuses.InProgress, ct);
+        var unique = total - duplicates;
+        var uniqueAuthors = await query
+            .Where(x => !string.IsNullOrWhiteSpace(x.PhoneNormalized))
+            .Select(x => x.PhoneNormalized)
+            .Distinct()
+            .CountAsync(ct);
+
+        double? avgMinutes = null;
+        var processed = await query
+            .Where(x => x.ProcessedAt != null)
+            .Select(x => new { x.CreatedAt, ProcessedAt = x.ProcessedAt!.Value })
+            .ToListAsync(ct);
+        if (processed.Count > 0)
+        {
+            avgMinutes = processed.Average(x => (x.ProcessedAt - x.CreatedAt).TotalMinutes);
+        }
+
+        return new ResponsesPeriodSection(
+            total,
+            unique,
+            duplicates,
+            sent,
+            inProgress,
+            actionRequired,
+            errors,
+            uniqueAuthors,
+            avgMinutes > 0 ? avgMinutes : null);
+    }
+
+    private static async Task<IReadOnlyList<DailyResponseBucketDto>> BuildDailyTrendAsync(
+        IQueryable<CandidateResponseEntity> query,
+        DateTime startLocal,
+        DateTime endLocal,
+        CancellationToken ct)
+    {
+        var rows = await query
+            .Select(x => new { x.CreatedAt, x.Status })
+            .ToListAsync(ct);
+
+        var byDay = new Dictionary<DateTime, DailyCounters>();
+        foreach (var row in rows)
+        {
+            var localDate = LocalCalendarDateRange.ToLocalDateFromStoredUtc(row.CreatedAt);
+            if (!byDay.TryGetValue(localDate, out var bucket))
+            {
+                bucket = new DailyCounters();
+                byDay[localDate] = bucket;
+            }
+
+            bucket.Total++;
+            switch (row.Status)
+            {
+                case ResponseStatuses.Sent:
+                    bucket.Sent++;
+                    break;
+                case ResponseStatuses.Duplicate:
+                    bucket.Duplicates++;
+                    break;
+                case ResponseStatuses.Error:
+                    bucket.Errors++;
+                    break;
+                case ResponseStatuses.InProgress:
+                    bucket.InProgress++;
+                    break;
+                case ResponseStatuses.ActionRequired:
+                    bucket.ActionRequired++;
+                    break;
+            }
+        }
+
+        var list = new List<DailyResponseBucketDto>((endLocal - startLocal).Days + 1);
+        for (var day = startLocal; day <= endLocal; day = day.AddDays(1))
+        {
+            if (!byDay.TryGetValue(day, out var counters))
+            {
+                list.Add(new DailyResponseBucketDto(day, 0, 0, 0, 0, 0, 0));
+                continue;
+            }
+
+            list.Add(new DailyResponseBucketDto(
+                day,
+                counters.Total,
+                counters.Sent,
+                counters.InProgress,
+                counters.ActionRequired,
+                counters.Duplicates,
+                counters.Errors));
+        }
+
+        return list;
+    }
+
+    private static async Task<HrInsightsDto> BuildHrInsightsAsync(
+        IQueryable<CandidateResponseEntity> query,
+        CancellationToken ct)
+    {
+        var total = await query.CountAsync(ct);
+        if (total == 0)
+        {
+            return new HrInsightsDto([], [], [], [], "н/д", "0%");
+        }
+
+        var withMessenger = await query.CountAsync(
+            x => x.MessengerUrl != null && x.MessengerUrl != string.Empty,
+            ct);
+        var avgAge = await query
+            .Where(x => x.Age.HasValue)
+            .Select(x => (double?)x.Age)
+            .AverageAsync(ct);
+
+        var cityRows = await query
+            .GroupBy(x => new { x.City, x.Status })
+            .Select(g => new GroupedStatusRow(g.Key.City, g.Key.Status, g.Count()))
+            .ToListAsync(ct);
+        var vacancyRows = await query
+            .GroupBy(x => new { x.Vacancy, x.Status })
+            .Select(g => new GroupedStatusRow(g.Key.Vacancy, g.Key.Status, g.Count()))
+            .ToListAsync(ct);
+        var accountRows = await query
+            .GroupBy(x => new { x.AccountName, x.Status })
+            .Select(g => new GroupedStatusRow(g.Key.AccountName, g.Key.Status, g.Count()))
+            .ToListAsync(ct);
+        var ageRows = await query
+            .GroupBy(x => new { x.Age, x.Status })
+            .Select(g => new GroupedAgeStatusRow(g.Key.Age, g.Key.Status, g.Count()))
+            .ToListAsync(ct);
+
+        var topCities = BuildTopMetrics(cityRows, "Город не указан", total, 8);
+        var topVacancies = BuildTopMetrics(vacancyRows, "Вакансия не указана", total, 8);
+        var topAccounts = BuildTopMetrics(accountRows, "Аккаунт не указан", total, 8);
+        var ageBuckets = BuildAgeBuckets(ageRows);
+
+        var avgAgeText = avgAge is null ? "н/д" : $"{Math.Round(avgAge.Value, 1):0.#} лет";
+        return new HrInsightsDto(
+            topCities,
+            topVacancies,
+            topAccounts,
+            ageBuckets,
+            avgAgeText,
+            Percent(withMessenger, total));
+    }
+
+    private async Task<WorkerInfrastructureSection> BuildWorkerInfrastructureAsync(
+        IReadOnlyList<WorkerProjection> workers,
+        HashSet<Guid> workerIds,
+        DateTime utcStart,
+        DateTime utcEnd,
+        IReadOnlyList<AccountProjection> accountRows,
+        CancellationToken ct)
+    {
+        var nowUtc = DateTime.UtcNow;
+        var online = workers.Count(w => WorkerOnlineRules.IsOnline(w.LastSeenAtUtc, nowUtc));
+
+        var accountCounts = accountRows
+            .GroupBy(a => a.WorkerId)
+            .ToDictionary(
+                g => g.Key,
+                g => (
+                    Total: g.Count(),
+                    Active: g.Count(a => AccountDashboardStatusClassifier.Classify(a.Status, a.IsEnabledInPanel)
+                        == AccountDashboardCategory.Active)));
+
+        var responseStats = await db.CandidateResponses
+            .AsNoTracking()
+            .Where(x => workerIds.Contains(x.WorkerId) && x.CreatedAt >= utcStart && x.CreatedAt < utcEnd)
+            .GroupBy(x => x.WorkerId)
+            .Select(g => new
+            {
+                WorkerId = g.Key,
+                Total = g.Count(),
+                Duplicates = g.Count(x => x.Status == ResponseStatuses.Duplicate),
+                Errors = g.Count(x => x.Status == ResponseStatuses.Error || x.Status == ResponseStatuses.ActionRequired)
+            })
+            .ToListAsync(ct);
+
+        var responseLookup = responseStats.ToDictionary(x => x.WorkerId);
+
+        var items = workers
+            .Select(w =>
+            {
+                responseLookup.TryGetValue(w.Id, out var stats);
+                accountCounts.TryGetValue(w.Id, out var accounts);
+                return new WorkerStatisticsRowDto(
+                    w.Id,
+                    w.DisplayName,
+                    w.OfficeName,
+                    WorkerOnlineRules.IsOnline(w.LastSeenAtUtc, nowUtc),
+                    stats?.Total ?? 0,
+                    stats?.Duplicates ?? 0,
+                    stats?.Errors ?? 0,
+                    accounts.Active,
+                    accounts.Total);
+            })
+            .OrderByDescending(w => w.PeriodResponses)
+            .ThenBy(w => w.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return new WorkerInfrastructureSection(workers.Count, online, items);
+    }
+
+    private static IReadOnlyList<HrMetricDto> BuildTopMetrics(
+        IEnumerable<GroupedStatusRow> groupedRows,
+        string fallback,
+        int total,
+        int take) =>
+        groupedRows
+            .GroupBy(x => Normalize(x.Key, fallback))
+            .Select(g =>
+            {
+                var sent = g.Where(x => x.Status == ResponseStatuses.Sent).Sum(x => x.Count);
+                var count = g.Sum(x => x.Count);
+                return new HrMetricDto(
+                    g.Key,
+                    count,
+                    sent,
+                    Percent(sent, count),
+                    Percent(count, total));
+            })
+            .OrderByDescending(x => x.Total)
+            .ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
+            .Take(take)
+            .ToList();
+
+    private static IReadOnlyList<AgeBucketDto> BuildAgeBuckets(IEnumerable<GroupedAgeStatusRow> ageRows) =>
+        ageRows
+            .GroupBy(x => GetAgeBucket(x.Age))
+            .Select(g =>
+            {
+                var count = g.Sum(x => x.Count);
+                var sent = g.Where(x => x.Status == ResponseStatuses.Sent).Sum(x => x.Count);
+                return new AgeBucketDto(
+                    g.Key,
+                    count,
+                    sent,
+                    Percent(sent, count));
+            })
+            .OrderByDescending(x => x.Total)
+            .ToList();
+
+    private static string GetAgeBucket(int? age) => age switch
+    {
+        null => "Возраст не указан",
+        < 18 => "< 18",
+        <= 24 => "18-24",
+        <= 34 => "25-34",
+        <= 44 => "35-44",
+        _ => "45+"
+    };
+
+    private static string Percent(int part, int whole) =>
+        whole <= 0 ? "0%" : $"{Math.Round(part * 100d / whole, 1):0.#}%";
+
+    private static string Normalize(string? value, string fallback) =>
+        string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
+
+    private static IReadOnlyList<SubProfileBalanceDto> DeserializeSubProfileBalances(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json) || json == "[]")
+        {
+            return [];
+        }
+
+        try
+        {
+            var profiles = JsonSerializer.Deserialize<List<WorkerSubProfileDto>>(json, JsonOptions) ?? [];
+            return profiles
+                .Select(p => new SubProfileBalanceDto(
+                    p.Name,
+                    p.Balance,
+                    p.WalletBalance,
+                    p.AdvanceDurationText))
+                .ToList();
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
+
+    private sealed record WorkerProjection(
+        Guid Id,
+        string DisplayName,
+        Guid OfficeId,
+        string OfficeName,
+        DateTime? LastSeenAtUtc);
+
+    private sealed record AccountProjection(
+        Guid WorkerId,
+        Guid AccountId,
+        string DisplayName,
+        string Status,
+        bool IsEnabledInPanel,
+        decimal TotalBalance,
+        string SubProfilesJson);
+
+    private sealed class DailyCounters
+    {
+        public int Total { get; set; }
+        public int Sent { get; set; }
+        public int InProgress { get; set; }
+        public int ActionRequired { get; set; }
+        public int Duplicates { get; set; }
+        public int Errors { get; set; }
+    }
+
+    private sealed record GroupedStatusRow(string? Key, string Status, int Count);
+    private sealed record GroupedAgeStatusRow(int? Age, string Status, int Count);
+}

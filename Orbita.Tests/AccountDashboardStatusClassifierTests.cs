@@ -12,7 +12,7 @@ public sealed class AccountDashboardStatusClassifierTests
     [InlineData("Offline", true, AccountDashboardCategory.Inactive)]
     [InlineData("Active", false, AccountDashboardCategory.Inactive)]
     [InlineData("", false, AccountDashboardCategory.Inactive)]
-    [InlineData("Blocked", true, AccountDashboardCategory.Blocked)]
+    [InlineData("Blocked", true, AccountDashboardCategory.Inactive)]
     [InlineData("Error", true, AccountDashboardCategory.Error)]
     [InlineData("RequiresLogin", true, AccountDashboardCategory.Error)]
     [InlineData("RequiresManualAction", true, AccountDashboardCategory.Error)]
@@ -53,8 +53,8 @@ public sealed class AccountDashboardStatusClassifierTests
 
         Assert.Equal(6, breakdown.Total);
         Assert.Equal(2, breakdown.Active);
-        Assert.Equal(1, breakdown.Inactive);
-        Assert.Equal(1, breakdown.Blocked);
+        Assert.Equal(2, breakdown.Inactive);
+        Assert.Equal(0, breakdown.Blocked);
         Assert.Equal(2, breakdown.Errors);
     }
 }

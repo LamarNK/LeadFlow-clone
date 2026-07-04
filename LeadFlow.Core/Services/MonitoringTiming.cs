@@ -3,6 +3,15 @@ namespace LeadFlow.Core.Services;
 /// <summary>Параметры мониторинга откликов; не выставляются в UI, задаются в коде.</summary>
 public static class MonitoringTiming
 {
+    /// <summary>Интервал опроса конфига, пока нет активных аккаунтов (без циклов мониторинга).</summary>
+    public const int NoAccountsConfigPollSeconds = 60;
+
+    /// <summary>Пауза после изменения списка аккаунтов в панели перед стартом мониторинга.</summary>
+    public const int MonitoringStartDebounceSeconds = 60;
+
+    /// <summary>Повторная попытка установки скачанного обновления в безопасном окне.</summary>
+    public const int PendingUpdateRetrySeconds = 15;
+
     /// <summary>Минимальная пауза между циклами при высокой доле новых откликов в последнем цикле.</summary>
     public const int CycleDelayMinMinutes = 3;
 
@@ -29,7 +38,18 @@ public static class MonitoringTiming
     /// <summary>Сдвиг старта параллельных аккаунтов (мс), чтобы не бить в AdsPower Local API пачкой browser/start.</summary>
     public const int ParallelAccountLaunchStaggerMs = 2000;
     public const int DelayBetweenResponsesSeconds = 8;
-    public const int MaxResponsesPerAccountPerCycle = 10;
+
+    /// <summary>
+    /// Оценка «ёмкости» цикла для расчёта паузы между проходами (<see cref="MonitoringCycleDelay"/>).
+    /// Жёсткого лимита публикаций нет — скорость ограничивают <see cref="HumanDelayBetweenResponsesMinSeconds"/> и клики на Avito.
+    /// </summary>
+    public const int TypicalResponsesPerAccountPerCycle = 30;
+
+    [Obsolete("Публикации больше не ограничиваются. Используйте TypicalResponsesPerAccountPerCycle для эвристик паузы.")]
+    public const int MaxResponsesPerAccountPerCycle = TypicalResponsesPerAccountPerCycle;
+
+    [Obsolete("Публикации больше не ограничиваются. Используйте TypicalResponsesPerAccountPerCycle для эвристик паузы.")]
+    public const int MaxResponsesPerSubProfilePerCycle = TypicalResponsesPerAccountPerCycle;
     public const int ActiveAdsRefreshIntervalMinutes = 75;
 
     /// <summary>Собирать статистику объявлений в проходе Orbita.Worker (отклики + объявления). Пока выключено.</summary>
@@ -61,6 +81,14 @@ public static class MonitoringTiming
     /// <summary>Пауза между суб-профилями на одном аккаунте — крупнее, имитируем «походили по кабинету».</summary>
     public const int HumanDelayBetweenSubProfilesMinMs = 8000;
     public const int HumanDelayBetweenSubProfilesMaxMs = 18000;
+
+    /// <summary>Перед кликом по карточке отклика (панель «Данные», чат) — короткий jitter, без долгих пауз.</summary>
+    public const int HumanDelayBeforeCandidateClickMinMs = 450;
+    public const int HumanDelayBeforeCandidateClickMaxMs = 950;
+
+    /// <summary>После клика по карточке до чтения панели или мини-чата.</summary>
+    public const int HumanDelayAfterCandidateClickMinMs = 520;
+    public const int HumanDelayAfterCandidateClickMaxMs = 1100;
 
     // ---- Ожидание готовности страницы откликов (сигналы DOM, не только таймер) ----
 

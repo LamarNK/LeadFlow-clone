@@ -1847,6 +1847,13 @@ public sealed partial class AdsPowerAvitoAutomationService(
         var viewportRestore = await EnsureMessengerEnrichmentViewportAsync(page, cancellationToken)
             .ConfigureAwait(false);
 
+        _ = await EvaluateWithRetryAsync<string>(
+                page,
+                AvitoCandidatesPageScripts.BuildDismissCandidateDetailPanelScript(),
+                cancellationToken)
+            .ConfigureAwait(false);
+        await Task.Delay(250, cancellationToken).ConfigureAwait(false);
+
         var candidatesReturnUrl = AvitoCandidatesPageUrls.IsCandidatesResponsesUrl(page.Url)
             ? page.Url
             : CandidatesPageUrl;
@@ -1996,19 +2003,34 @@ public sealed partial class AdsPowerAvitoAutomationService(
         CancellationToken cancellationToken)
     {
         await CloseMiniMessengerPanelIfOpenAsync(page, cancellationToken).ConfigureAwait(false);
+        await HumanDelay.BeforeCandidateClickAsync(cancellationToken).ConfigureAwait(false);
 
-        var clickExpr = CandidateCardChatClickExpression.Replace(
-            "__INDEX__",
-            candidateIndex.ToString(),
-            StringComparison.Ordinal);
-
-        var clicked = await PuppeteerJsonEvaluator.EvaluateBoolAsync(page, clickExpr).ConfigureAwait(false);
-        if (!clicked)
+        var clickRaw = await EvaluateWithRetryAsync<string>(
+                page,
+                AvitoCandidatesPageScripts.BuildClickCandidateChatByIndexScript(candidateIndex),
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (!TryParseMessengerChatClickStep(clickRaw, out var clicked, out var clickReason) || !clicked)
         {
+            if (!string.IsNullOrWhiteSpace(clickReason))
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"AdsPower messenger enrich: chat click failed for candidate index {candidateIndex}: {clickReason}.",
+                    DeskLinkAuditLogLevel.Warning,
+                    memberName: nameof(TryEnrichMessengerForCandidateCardAsync),
+                    properties: new Dictionary<string, object?>
+                    {
+                        ["candidate.index"] = candidateIndex,
+                        ["page.url"] = page.Url,
+                        ["page.innerWidth"] = await TryReadInnerWidthAsync(page).ConfigureAwait(false),
+                        ["messenger.clickReason"] = clickReason
+                    });
+            }
+
             return new MessengerCardEnrichmentResult(null, new JsonArray());
         }
 
-        await Task.Delay(350, cancellationToken).ConfigureAwait(false);
+        await HumanDelay.AfterCandidateClickAsync(cancellationToken).ConfigureAwait(false);
 
         try
         {
@@ -2103,7 +2125,16 @@ public sealed partial class AdsPowerAvitoAutomationService(
             Width = MessengerEnrichmentViewportWidth,
             Height = MessengerEnrichmentViewportHeight
         }).ConfigureAwait(false);
-        await Task.Delay(350, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await page.EvaluateExpressionAsync("window.dispatchEvent(new Event('resize'))").ConfigureAwait(false);
+        }
+        catch
+        {
+            // Не прерываем enrichment — layout может обновиться и без явного resize.
+        }
+
+        await Task.Delay(450, cancellationToken).ConfigureAwait(false);
         return snapshot;
     }
 
@@ -2267,65 +2298,33 @@ public sealed partial class AdsPowerAvitoAutomationService(
         return trimmed;
     }
 
-    /// <summary>Тот же порядок карточек, что и в <see cref="ExtractionScript"/>.</summary>
-    private const string CandidateCardChatClickExpression =
-        """
-        (() => {
-            const idx = __INDEX__;
-            const statusButtons = Array.from(document.querySelectorAll("[data-marker='job-application/response/status-select-button']"));
-            const roots = [];
-            const seen = new Set();
-            const findCardRoot = (element) => {
-                let current = element;
-                while (current) {
-                    const name = current.querySelector?.("h3");
-                    const phone = current.querySelector?.("[data-marker='job-application/phone']");
-                    if (name && phone) {
-                        return current;
-                    }
-                    current = current.parentElement;
-                }
-                return null;
-            };
-            const addRoot = (root) => {
-                if (!root || seen.has(root)) {
-                    return;
-                }
-                const name = root.querySelector?.("h3");
-                const phone = root.querySelector?.("[data-marker='job-application/phone']");
-                if (!name || !phone) {
-                    return;
-                }
-                seen.add(root);
-                roots.push(root);
-            };
-            for (const button of statusButtons) {
-                const root = button.closest?.("[data-marker='job-application/item']") ?? findCardRoot(button);
-                addRoot(root);
+    private static bool TryParseMessengerChatClickStep(string? raw, out bool ok, out string? reason)
+    {
+        ok = false;
+        reason = null;
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            reason = "empty_click_result";
+            return false;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(UnwrapMessengerJson(raw));
+            ok = doc.RootElement.TryGetProperty("ok", out var okProp) && okProp.GetBoolean();
+            if (!ok && doc.RootElement.TryGetProperty("reason", out var reasonProp))
+            {
+                reason = reasonProp.GetString();
             }
-            for (const item of document.querySelectorAll("[data-marker='job-application/item']")) {
-                addRoot(item);
-            }
-            const root = roots[idx];
-            if (!root) {
-                return false;
-            }
-            const chat = root.querySelector("[data-marker='job-application/link/to-chat']");
-            if (!chat) {
-                return false;
-            }
-            try {
-                chat.scrollIntoView({ block: "center", inline: "nearest" });
-            } catch {
-            }
-            try {
-                chat.click();
-            } catch {
-                return false;
-            }
+
             return true;
-        })()
-        """;
+        }
+        catch
+        {
+            reason = "invalid_click_result";
+            return false;
+        }
+    }
 
     private static async Task<T> EvaluateWithRetryAsync<T>(IPage page, string expression, CancellationToken cancellationToken)
     {

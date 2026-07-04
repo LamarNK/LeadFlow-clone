@@ -95,13 +95,13 @@ public sealed class WorkerLogsService(
             query = query.Where(x => x.TimestampUtc >= dayStart && x.TimestampUtc < dayEnd);
         }
 
-        if (!string.IsNullOrWhiteSpace(searchText))
+        foreach (var token in SearchQueryNormalizer.Tokenize(searchText))
         {
-            var q = searchText.Trim();
+            var pattern = SearchQueryNormalizer.ToILikePattern(token);
             query = query.Where(x =>
-                x.Message.Contains(q) ||
-                x.Source.Contains(q) ||
-                (x.TraceId != null && x.TraceId.Contains(q)));
+                EF.Functions.ILike(x.Message, pattern)
+                || EF.Functions.ILike(x.Source, pattern)
+                || (x.TraceId != null && EF.Functions.ILike(x.TraceId, pattern)));
         }
 
         var total = await query.CountAsync(ct).ConfigureAwait(false);

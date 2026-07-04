@@ -95,114 +95,96 @@
             <div class="card card--settings-bitrix">
                 <div class="card-header settings-card-header">
                     <div>
-                        <h2 class="settings-card-title">Интеграция с Bitrix24</h2>
-                        <p class="settings-card-subtitle">Входящий вебхук для отправки контактов и проверки дублей в CRM</p>
+                        <h2 class="settings-card-title">Bitrix24 офиса</h2>
+                        <p class="settings-card-subtitle">
+                            @if (!string.IsNullOrWhiteSpace(bitrix.OfficeName))
+                            {
+                                <text>Вебхук офиса «@bitrix.OfficeName» для отправки откликов и проверки дублей в CRM</text>
+                            }
+                            else
+                            {
+                                <text>Вебхук офиса для отправки откликов и проверки дублей в CRM</text>
+                            }
+                        </p>
                     </div>
                     <span class="settings-bitrix-status settings-bitrix-status--@bitrix.ValidationStatusTone">
                         @bitrix.ValidationStatusLabel
                     </span>
                 </div>
                 <div class="card-body">
-                    @if (!string.IsNullOrWhiteSpace(bitrix.MaskedWebhookUrl))
+                    @if (!bitrix.CanManageWebhook)
                     {
-                        <p class="settings-bitrix-current">Текущий вебхук: <code>@bitrix.MaskedWebhookUrl</code></p>
+                        <p class="settings-bitrix-hint">Офис не назначен. Обратитесь к администратору — без офиса вебхук Bitrix24 недоступен.</p>
                     }
-                    @if (!string.IsNullOrWhiteSpace(bitrix.ValidationMessage))
+                    else
                     {
-                        <p class="settings-bitrix-message">@bitrix.ValidationMessage</p>
-                    }
-                    @if (bitrix.LastValidatedAtUtc is not null)
-                    {
-                        <p class="settings-bitrix-checked">Последняя проверка: <span data-orbita-utc="@bitrix.LastValidatedAtUtc.Value.ToString("O")"></span></p>
-                    }
+                        @if (!string.IsNullOrWhiteSpace(bitrix.MaskedWebhookUrl))
+                        {
+                            <p class="settings-bitrix-current">Текущий вебхук: <code>@bitrix.MaskedWebhookUrl</code></p>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(bitrix.PortalHost))
+                        {
+                            <p class="settings-bitrix-hint">Портал: @bitrix.PortalHost</p>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(bitrix.ValidationMessage))
+                        {
+                            <p class="settings-bitrix-message">@bitrix.ValidationMessage</p>
+                        }
+                        @if (bitrix.LastValidatedAtUtc is not null)
+                        {
+                            <p class="settings-bitrix-checked">Последняя проверка: <span data-orbita-utc="@bitrix.LastValidatedAtUtc.Value.ToString("O")"></span></p>
+                        }
 
-                    @if (bitrix.CanManageTransmission)
-                    {
-                        <form asp-action="SaveBitrixTransmission" method="post" class="settings-bitrix-transmission-form">
+                        @if (bitrix.CanManageTransmission)
+                        {
+                            <div class="settings-options settings-options--bitrix-transmission">
+                                <div class="settings-option">
+                                    <div class="settings-option-text">
+                                        <span class="settings-option-label">Передача откликов в Bitrix24</span>
+                                        <span class="settings-option-desc">
+                                            @(bitrix.TransmissionEnabled
+                                                ? "Новые отклики автоматически отправляются в CRM после проверки дублей."
+                                                : "Отклики сохраняются в Орбите, но в Bitrix24 не передаются.")
+                                        </span>
+                                    </div>
+                                    <form asp-action="SaveBitrixTransmission" method="post" class="settings-bitrix-transmission-form">
+                                        @Html.AntiForgeryToken()
+                                        <label class="worker-toggle" title="Передача в Bitrix24">
+                                            <input type="checkbox"
+                                                   name="TransmissionEnabled"
+                                                   value="true"
+                                                   @(bitrix.TransmissionEnabled ? "checked" : null)
+                                                   onchange="this.form.submit()" />
+                                            <span class="worker-toggle-slider"></span>
+                                        </label>
+                                    </form>
+                                </div>
+                            </div>
+                        }
+
+                        <form asp-action="SaveBitrix"
+                              method="post"
+                              class="settings-create-form settings-bitrix-form"
+                              data-bitrix-settings-form
+                              data-bitrix-validate-url="@Url.Action("ValidateBitrix")">
                             @Html.AntiForgeryToken()
-                            <label class="settings-field settings-field--checkbox settings-bitrix-transmission-toggle">
-                                <input type="checkbox"
-                                       name="TransmissionEnabled"
-                                       value="true"
-                                       @(bitrix.TransmissionEnabled ? "checked" : null)
-                                       onchange="this.form.submit()" />
-                                <span>
-                                    Передача откликов в Bitrix24
-                                    @if (!string.IsNullOrWhiteSpace(bitrix.OfficeName))
-                                    {
-                                        <span class="settings-bitrix-hint">(офис «@bitrix.OfficeName»)</span>
-                                    }
-                                </span>
+                            <label class="settings-field">
+                                <span class="settings-field-label">URL вебхука</span>
+                                <input type="url"
+                                       name="WebhookUrl"
+                                       placeholder="https://ваш-портал.bitrix24.ru/rest/1/xxxxxxxx/"
+                                       autocomplete="off"
+                                       spellcheck="false"
+                                       data-bitrix-webhook-input />
                             </label>
-                            <p class="settings-bitrix-hint">
-                                @(bitrix.TransmissionEnabled
-                                    ? "Новые отклики автоматически отправляются в CRM после проверки дублей."
-                                    : "Отклики сохраняются в Орбите, но в Bitrix24 не передаются.")
-                            </p>
+                            <p class="settings-bitrix-hint">Один вебхук на весь офис. Изменения видят все операторы этого офиса.</p>
+                            <div class="settings-bitrix-actions">
+                                <button type="button" class="settings-secondary-btn" data-bitrix-validate-btn">Проверить</button>
+                                <button type="submit" class="settings-primary-btn">Сохранить</button>
+                            </div>
                         </form>
-                    }
 
-                    <form asp-action="SaveBitrix"
-                          method="post"
-                          class="settings-create-form settings-bitrix-form"
-                          data-bitrix-settings-form
-                          data-bitrix-validate-url="@Url.Action("ValidateBitrix")">
-                        @Html.AntiForgeryToken()
-                        <label class="settings-field">
-                            <span class="settings-field-label">URL вебхука</span>
-                            <input type="url"
-                                   name="WebhookUrl"
-                                   placeholder="https://ваш-портал.bitrix24.ru/rest/1/xxxxxxxx/"
-                                   autocomplete="off"
-                                   spellcheck="false"
-                                   data-bitrix-webhook-input />
-                        </label>
-                        <p class="settings-bitrix-hint">Без URL отправка в CRM и проверка дублей в портале не работают.</p>
-                        <div class="settings-bitrix-actions">
-                            <button type="button" class="settings-secondary-btn" data-bitrix-validate-btn>
-                                <i class="fa-solid fa-plug-circle-check" aria-hidden="true"></i>
-                                <span>Проверить</span>
-                            </button>
-                            <button type="submit" class="settings-primary-btn">
-                                <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>
-                                <span>Сохранить</span>
-                            </button>
-                        </div>
-                    </form>
-
-                    <div class="settings-bitrix-validation" data-bitrix-validation-results hidden></div>
-
-                    @if (bitrix.OfficeWebhooks.Count > 0)
-                    {
-                        <div class="settings-bitrix-office-list">
-                            <h3 class="settings-card-title">Вебхуки офиса</h3>
-                            <p class="settings-bitrix-hint">Автоотправка откликов использует первый валидный вебхук из списка.</p>
-                            <table class="data-table data-table--cards">
-                                <thead>
-                                    <tr>
-                                        <th>Пользователь</th>
-                                        <th>Портал</th>
-                                        <th>Статус</th>
-                                        <th>Автоотправка</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                @foreach (var hook in bitrix.OfficeWebhooks)
-                                {
-                                    <tr>
-                                        <td class="cell-name" data-label="Пользователь">@hook.Email</td>
-                                        <td data-label="Портал">@(hook.PortalHost ?? "—")</td>
-                                        <td data-label="Статус">
-                                            <span class="settings-bitrix-status settings-bitrix-status--@hook.ValidationStatusTone">
-                                                @hook.ValidationStatusLabel
-                                            </span>
-                                        </td>
-                                        <td data-label="Автоотправка">@(hook.IsPrimaryForIngestion ? "Да" : "—")</td>
-                                    </tr>
-                                }
-                                </tbody>
-                            </table>
-                        </div>
+                        <div class="settings-bitrix-validation" data-bitrix-validation-results hidden></div>
                     }
 
                     <details class="settings-bitrix-instructions">

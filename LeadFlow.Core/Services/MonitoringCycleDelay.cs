@@ -20,7 +20,7 @@ public static class MonitoringCycleDelay
             return TimeSpan.FromMinutes(min);
         }
 
-        var capacity = Math.Max(1, accountsPolled * MonitoringTiming.MaxResponsesPerAccountPerCycle);
+        var capacity = Math.Max(1, accountsPolled * MonitoringTiming.TypicalResponsesPerAccountPerCycle);
         var activity = Math.Clamp((double)newResponsesInCycle / capacity, 0, 1);
 
         // Не даём одному–двум новым откликам на фоне большой «ёмкости» цикла выглядеть как почти полная тишина.

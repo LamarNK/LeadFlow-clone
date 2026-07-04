@@ -576,8 +576,10 @@
                 if (!workerId || !accountId) return;
 
                 var enabled = input.checked;
+                var toggleUrl = input.getAttribute('data-toggle-url') || '/Workers/Toggle';
+                var refreshKind = input.getAttribute('data-toggle-refresh');
                 input.disabled = true;
-                var result = await postForm('/Workers/Toggle', {
+                var result = await postForm(toggleUrl, {
                     workerId: workerId,
                     accountId: accountId,
                     enabled: enabled ? 'true' : 'false'
@@ -590,6 +592,9 @@
                         label.title = enabled ? 'Отключить аккаунт в панели' : 'Включить аккаунт в панели';
                     }
                     showToast((result.payload && result.payload.message) || 'Сохранено', { variant: 'success' });
+                    if (refreshKind && window.OrbitaLive && window.OrbitaLive.scheduleRefresh) {
+                        window.OrbitaLive.scheduleRefresh({ kinds: [refreshKind] });
+                    }
                 } else {
                     input.checked = !enabled;
                     showToast((result.payload && result.payload.error) || 'Не удалось сохранить', { variant: 'error' });
@@ -818,8 +823,53 @@
         }
     }
 
+    var pendingSearchFocus = null;
+
+    function getSearchParamValue(input) {
+        var name = input.getAttribute('name') || 'search';
+        return new URL(window.location.href).searchParams.get(name) || '';
+    }
+
+    function shouldSubmitSearch(input) {
+        var next = input.value.trim();
+        var current = getSearchParamValue(input).trim();
+        return next !== current;
+    }
+
+    function rememberSearchFocus(input) {
+        pendingSearchFocus = {
+            name: input.getAttribute('name') || 'search',
+            formClass: (input.closest('form') && input.closest('form').className) || ''
+        };
+    }
+
+    function restoreSearchFocus() {
+        if (!pendingSearchFocus) return;
+        var state = pendingSearchFocus;
+        pendingSearchFocus = null;
+
+        var inputs = document.querySelectorAll(
+            '.orbita-filters-form input[type="search"], .workers-search input[type="search"], .accounts-search input[type="search"]'
+        );
+        var input = null;
+        inputs.forEach(function (candidate) {
+            if (input) return;
+            if ((candidate.getAttribute('name') || 'search') !== state.name) return;
+            var form = candidate.closest('form');
+            if (state.formClass && form && form.className !== state.formClass) return;
+            input = candidate;
+        });
+        if (!input) return;
+
+        input.focus({ preventScroll: true });
+        try {
+            var end = input.value.length;
+            input.setSelectionRange(end, end);
+        } catch (e) { }
+    }
+
     function initDebouncedSearch() {
-        var DEBOUNCE_MS = 400;
+        var DEBOUNCE_MS = 750;
         document.querySelectorAll(
             '.orbita-filters-form input[type="search"], .workers-search input[type="search"], .accounts-search input[type="search"]'
         ).forEach(function (input) {
@@ -834,14 +884,22 @@
                 if (timer) window.clearTimeout(timer);
                 timer = window.setTimeout(function () {
                     timer = null;
+                    if (!shouldSubmitSearch(input)) return;
+                    rememberSearchFocus(input);
                     submitFilterForm(form);
                 }, DEBOUNCE_MS);
             });
 
             input.addEventListener('keydown', function (e) {
-                if (e.key === 'Enter' && timer) {
-                    window.clearTimeout(timer);
-                    timer = null;
+                if (e.key === 'Enter') {
+                    if (timer) {
+                        window.clearTimeout(timer);
+                        timer = null;
+                    }
+                    if (!shouldSubmitSearch(input)) return;
+                    e.preventDefault();
+                    rememberSearchFocus(input);
+                    submitFilterForm(form);
                 }
             });
         });
@@ -1480,6 +1538,8 @@
             }
         } else if (key === 'accounts') {
             scripts = ['/js/orbita-accounts.js'];
+        } else if (key === 'statistics') {
+            scripts = ['/lib/chart.js/dist/chart.umd.js', '/js/orbita-statistics.js'];
         } else if (key === 'events' || key === 'errors') {
             scripts = ['/js/orbita-journal.js'];
         } else if (key === 'responses') {
@@ -1518,6 +1578,12 @@
 
         if (window.OrbitaDashboard && typeof window.OrbitaDashboard.destroyCharts === 'function') {
             try { window.OrbitaDashboard.destroyCharts(); } catch (e) { }
+        }
+        if (window.OrbitaStatistics && typeof window.OrbitaStatistics.destroyCharts === 'function') {
+            try { window.OrbitaStatistics.destroyCharts(); } catch (e) { }
+        }
+        if (window.OrbitaWorker && typeof window.OrbitaWorker.destroyCharts === 'function') {
+            try { window.OrbitaWorker.destroyCharts(); } catch (e) { }
         }
         if (window.OrbitaLive && typeof window.OrbitaLive.unregister === 'function') {
             try { window.OrbitaLive.unregister(getActiveLivePage()); } catch (e) { }
@@ -1603,6 +1669,7 @@
             updateActiveNav(targetPath);
             hidePageLoading();
             reinitAfterContentSwap();
+            restoreSearchFocus();
 
             await ensurePageScripts(targetPath, pageKey);
 
@@ -1610,11 +1677,17 @@
             document.dispatchEvent(new CustomEvent('orbita:content-updated', {
                 detail: { path: targetPath, key: pageKey }
             }));
+            restoreSearchFocus();
 
             if (pageKey && pageKey.toLowerCase() === 'dashboard'
                 && window.OrbitaDashboard
                 && typeof window.OrbitaDashboard.reinit === 'function') {
                 window.OrbitaDashboard.reinit();
+            }
+            if (pageKey && pageKey.toLowerCase() === 'statistics'
+                && window.OrbitaStatistics
+                && typeof window.OrbitaStatistics.reinit === 'function') {
+                window.OrbitaStatistics.reinit();
             }
         } catch (err) {
             console.warn('Orbita fast nav failed, falling back', err);
@@ -1795,4 +1868,6 @@
     window.Orbita.updateNavBadges = updateNavBadges;
     window.Orbita.fetchNavBadges = fetchNavBadges;
     window.Orbita.reinitLiveContent = reinitAfterContentSwap;
+
+    fetchNavBadges();
 })();

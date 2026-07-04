@@ -45,6 +45,7 @@ internal sealed class FakeDuplicateRepository : ICandidateDuplicateRepository
     }
 
     public Task<HashSet<string>> GetExistingSourceResponseIdsAsync(
+        Guid accountId,
         IEnumerable<string> sourceResponseIds,
         CancellationToken cancellationToken) =>
         Task.FromResult(new HashSet<string>(StringComparer.Ordinal));

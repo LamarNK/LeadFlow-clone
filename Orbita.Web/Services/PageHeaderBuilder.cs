@@ -96,4 +96,11 @@ public static class PageHeaderBuilder
 
     public static PageHeaderViewModel SettingsAdmin() =>
         Create("Администрирование", "Пользователи, воркеры, интеграции Bitrix, аудит и логи", showRefresh: false);
+
+    public static PageHeaderViewModel Statistics(DashboardPeriod period) =>
+        Create(
+            "Статистика",
+            "Балансы, динамика откликов и HR-метрики по офису",
+            showDateRange: true,
+            period: period);
 }

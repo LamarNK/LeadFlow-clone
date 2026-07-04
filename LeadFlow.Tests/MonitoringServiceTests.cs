@@ -74,7 +74,7 @@ public sealed class MonitoringServiceTests
     }
 
     [Fact]
-    public async Task ProcessAccount_RespectsMaxResponsesPerCycle()
+    public async Task ProcessAccount_PublishesAllNewResponsesWithoutHardCap()
     {
         var settings = NewSettings();
         var source = new FakeAvitoResponseSource
@@ -95,14 +95,8 @@ public sealed class MonitoringServiceTests
         var account = NewAccount();
         await harness.Service.ProcessAccountAsync(account, settings, CancellationToken.None);
 
-        Assert.Equal(MonitoringTiming.MaxResponsesPerAccountPerCycle, processed.Count);
-        Assert.Equal(MonitoringTiming.MaxResponsesPerAccountPerCycle, bitrix.CreateLeadCallCount);
-        Assert.Contains(harness.Statuses, s =>
-            s.Item2.Contains("15", StringComparison.Ordinal) &&
-            s.Item2.Contains($"до {MonitoringTiming.MaxResponsesPerAccountPerCycle}", StringComparison.Ordinal));
-        Assert.Contains(harness.Statuses, s =>
-            s.Item2.Contains("обрабатываем отклик", StringComparison.Ordinal) &&
-            s.Item2.Contains($"/{MonitoringTiming.MaxResponsesPerAccountPerCycle}", StringComparison.Ordinal));
+        Assert.Equal(15, processed.Count);
+        Assert.Equal(15, bitrix.CreateLeadCallCount);
     }
 
     [Fact]

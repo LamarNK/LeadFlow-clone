@@ -14,6 +14,8 @@ public sealed record MySettingsIndexViewModel
 
 public sealed class BitrixSettingsViewModel
 {
+    public Guid? OfficeId { get; init; }
+    public string? OfficeName { get; init; }
     public string? MaskedWebhookUrl { get; init; }
     public string? PortalHost { get; init; }
     public required string ValidationStatus { get; init; }
@@ -21,24 +23,14 @@ public sealed class BitrixSettingsViewModel
     public DateTime? LastValidatedAtUtc { get; init; }
     public string ValidationStatusLabel { get; init; } = string.Empty;
     public string ValidationStatusTone { get; init; } = "neutral";
-    public IReadOnlyList<OfficeBitrixWebhookRowViewModel> OfficeWebhooks { get; init; } = [];
+    public bool CanManageWebhook { get; init; }
     public bool CanManageTransmission { get; init; }
     public bool TransmissionEnabled { get; init; } = true;
-    public string? OfficeName { get; init; }
 }
 
 public sealed class SaveBitrixTransmissionFormModel
 {
     public bool TransmissionEnabled { get; set; } = true;
-}
-
-public sealed class OfficeBitrixWebhookRowViewModel
-{
-    public string Email { get; init; } = string.Empty;
-    public string? PortalHost { get; init; }
-    public string ValidationStatusLabel { get; init; } = string.Empty;
-    public string ValidationStatusTone { get; init; } = "neutral";
-    public bool IsPrimaryForIngestion { get; init; }
 }
 
 public sealed class SaveBitrixIntegrationFormModel

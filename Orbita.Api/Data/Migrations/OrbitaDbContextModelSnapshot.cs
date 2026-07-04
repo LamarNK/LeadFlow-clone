@@ -366,8 +366,35 @@ namespace Orbita.Api.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<DateTime?>("BitrixLastValidatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("BitrixPortalHost")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
                     b.Property<bool>("BitrixTransmissionEnabled")
                         .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("BitrixUpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("BitrixUpdatedByUserId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<string>("BitrixValidationMessage")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<string>("BitrixValidationStatus")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("BitrixWebhookUrlProtected")
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)");
 
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone");
@@ -606,26 +633,14 @@ namespace Orbita.Api.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<string>("AdsPowerApiBaseUrl")
-                        .HasMaxLength(512)
-                        .HasColumnType("character varying(512)");
-
-                    b.Property<string>("AdsPowerApiKey")
-                        .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
-
-                    b.Property<string>("AgentVersion")
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.Property<string>("ActivityActiveAccountsJson")
-                        .IsRequired()
-                        .HasColumnType("text");
-
                     b.Property<Guid?>("ActivityAccountId")
                         .HasColumnType("uuid");
 
                     b.Property<string>("ActivityAccountName")
+                        .HasColumnType("text");
+
+                    b.Property<string>("ActivityActiveAccountsJson")
+                        .IsRequired()
                         .HasColumnType("text");
 
                     b.Property<string>("ActivityMessage")
@@ -646,6 +661,18 @@ namespace Orbita.Api.Data.Migrations
 
                     b.Property<DateTime?>("ActivityUpdatedAtUtc")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("AdsPowerApiBaseUrl")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<string>("AdsPowerApiKey")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<string>("AgentVersion")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
 
                     b.Property<string>("ApiKeyHash")
                         .IsRequired()

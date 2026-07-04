@@ -13,7 +13,6 @@ internal static class AccountsIndexBuilder
         new() { Id = "all", Label = "Все аккаунты" },
         new() { Id = "active", Label = "Активные" },
         new() { Id = "inactive", Label = "Неактивные" },
-        new() { Id = "blocked", Label = "Заблокированные" },
         new() { Id = "errors", Label = "С ошибками" }
     ];
 
@@ -134,17 +133,14 @@ internal static class AccountsIndexBuilder
 
         if (!string.IsNullOrWhiteSpace(searchQuery))
         {
-            var q = searchQuery.Trim();
             query = query.Where(a =>
-                a.AccountName.Contains(q, StringComparison.OrdinalIgnoreCase)
-                || a.WorkerName.Contains(q, StringComparison.OrdinalIgnoreCase));
+                SearchQueryNormalizer.MatchesTokens(searchQuery, a.AccountName, a.WorkerName));
         }
 
         query = tab switch
         {
-            "active" => query.Where(a => a.StatusTone == "active"),
+            "active" => query.Where(IsActiveInPanel),
             "inactive" => query.Where(a => a.StatusTone == "inactive"),
-            "blocked" => query.Where(a => a.StatusTone == "blocked"),
             "errors" => query.Where(HasErrors),
             _ => query
         };
@@ -155,11 +151,18 @@ internal static class AccountsIndexBuilder
     private static AccountsSummaryViewModel Summarize(IReadOnlyList<AccountRowViewModel> rows) => new()
     {
         Total = rows.Count,
-        Active = rows.Count(a => a.StatusTone == "active"),
+        Active = rows.Count(IsActiveInPanel),
         Inactive = rows.Count(a => a.StatusTone == "inactive"),
-        Blocked = rows.Count(a => a.StatusTone == "blocked"),
         Errors = rows.Count(HasErrors)
     };
+
+    /// <summary>
+    /// Вкладка «Активные»: включён в панели и не отключён по статусу воркера.
+    /// Аккаунт с ошибкой остаётся здесь, если он включён — ошибка видна во вкладке «С ошибками».
+    /// </summary>
+    private static bool IsActiveInPanel(AccountRowViewModel account) =>
+        account.IsEnabledInPanel
+        && account.StatusTone != "inactive";
 
     private static bool HasErrors(AccountRowViewModel account) =>
         account.StatusTone == "error" || account.Errors > 0;
@@ -206,18 +209,6 @@ internal static class AccountsIndexBuilder
                 DeltaTone = "neutral",
                 IconClass = "fa-regular fa-circle",
                 IconTone = "gray"
-            },
-            new()
-            {
-                Key = "blocked",
-                Href = KpiCardLinks.AccountsCard("blocked"),
-                Label = "Заблокированы",
-                Value = summary.Blocked.ToString(),
-                CountValue = summary.Blocked,
-                Delta = Pct(summary.Blocked),
-                DeltaTone = "bad",
-                IconClass = "fa-solid fa-ban",
-                IconTone = "orange"
             },
             new()
             {

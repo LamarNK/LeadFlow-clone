@@ -54,6 +54,35 @@ public sealed class OrbitaApiClient
         return response.IsSuccessStatusCode;
     }
 
+    public async Task<WorkerMonitoringStatsDto?> GetMonitoringStatsAsync(CancellationToken ct)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, "api/v1/workers/monitoring-stats");
+        ApplyAuth(request);
+        var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            return null;
+        }
+
+        return await response.Content.ReadFromJsonAsync<WorkerMonitoringStatsDto>(ct).ConfigureAwait(false);
+    }
+
+    public async Task<WorkerCandidateLookupResponse?> LookupCandidatesAsync(
+        WorkerCandidateLookupRequest request,
+        CancellationToken ct)
+    {
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, "api/v1/workers/candidates/lookup");
+        ApplyAuth(httpRequest);
+        httpRequest.Content = JsonContent.Create(request);
+        var response = await _http.SendAsync(httpRequest, ct).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            return null;
+        }
+
+        return await response.Content.ReadFromJsonAsync<WorkerCandidateLookupResponse>(ct).ConfigureAwait(false);
+    }
+
     public async Task<WorkerCandidateIngestionResultDto?> SubmitCandidatesAsync(
         WorkerCandidateBatchRequest batch,
         CancellationToken ct)
@@ -152,12 +181,13 @@ public sealed class OrbitaApiClient
     public async Task<(bool Success, string? Error)> DownloadUpdateAsync(
         string downloadPath,
         string targetPath,
-        CancellationToken ct)
+        long? expectedFileSize = null,
+        CancellationToken ct = default)
     {
         var relativePath = downloadPath.TrimStart('/');
         using var request = new HttpRequestMessage(HttpMethod.Get, relativePath);
         ApplyAuth(request);
-        var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct)
+        using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct)
             .ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
@@ -167,6 +197,24 @@ public sealed class OrbitaApiClient
         await using var input = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
         await using var output = File.Create(targetPath);
         await input.CopyToAsync(output, ct).ConfigureAwait(false);
+        await output.FlushAsync(ct).ConfigureAwait(false);
+
+        var length = output.Length;
+        if (length == 0)
+        {
+            return (false, "Сервер вернул пустой файл.");
+        }
+
+        if (response.Content.Headers.ContentLength is > 0 && length != response.Content.Headers.ContentLength.Value)
+        {
+            return (false, "Размер скачанного файла не совпал с ответом сервера.");
+        }
+
+        if (expectedFileSize is > 0 && length != expectedFileSize.Value)
+        {
+            return (false, $"Ожидался файл {expectedFileSize.Value} байт, получено {length} байт.");
+        }
+
         return (true, null);
     }
 

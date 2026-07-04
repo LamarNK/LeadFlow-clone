@@ -25,9 +25,11 @@
     </div>
     <div class="orbita-topbar-actions">
         @await Component.InvokeAsync("OfficeSwitcher")
-        <button type="button" class="orbita-search-trigger" data-orbita-search-open title="Поиск (Ctrl+K)">
-            <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
-            <span class="orbita-search-trigger-label">Поиск</span>
+        <button type="button" class="orbita-search-trigger" data-orbita-search-open title="Поиск (Ctrl+K)" aria-label="Открыть поиск (Ctrl+K)">
+            <span class="orbita-search-trigger-leading">
+                <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                <span class="orbita-search-trigger-label">Поиск...</span>
+            </span>
             <kbd class="orbita-search-kbd">Ctrl+K</kbd>
         </button>
         <span class="orbita-topbar-sep" aria-hidden="true"></span>

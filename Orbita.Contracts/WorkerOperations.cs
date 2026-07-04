@@ -18,7 +18,16 @@ public sealed record WorkerAccountConfigDto(
     string? AdsPowerApiBaseUrl,
     string? AdsPowerApiKey,
     DateTime? SubProfilesRefreshRequestedAtUtc = null,
-    IReadOnlyList<string>? DisabledSubProfileIds = null);
+    IReadOnlyList<string>? DisabledSubProfileIds = null,
+    string? Status = null,
+    string? LastErrorMessage = null,
+    DateTime? LastMonitoringAtUtc = null,
+    DateTime? LastAuthCheckAtUtc = null,
+    string? SubProfilesJson = null,
+    DateTime? SubProfilesRefreshedAtUtc = null,
+    int ActiveAdsCount = 0,
+    int BlockedCount = 0,
+    int DraftsCount = 0);
 
 public sealed record UpdateWorkerSubProfileRequest(bool IsEnabledInPanel);
 
@@ -29,13 +38,21 @@ public static class WorkerCommands
 
 public sealed record WorkerCommandRequest(string Command);
 
+public sealed record WorkerUpdateOfferDto(
+    string Version,
+    string DownloadPath,
+    string Sha256,
+    long FileSize,
+    string? ReleaseNotes);
+
 public sealed record WorkerConfigDto(
     Guid WorkerId,
     int MaxConcurrentAccounts,
     string? AdsPowerApiBaseUrl,
     string? AdsPowerApiKey,
     IReadOnlyList<WorkerAccountConfigDto> Accounts,
-    string? PendingCommand = null);
+    string? PendingCommand = null,
+    WorkerUpdateOfferDto? UpdateOffer = null);
 
 public sealed record WorkerAccountSyncItemDto(
     string AdsPowerProfileId,
@@ -63,6 +80,21 @@ public sealed record WorkerCandidateDto(
 
 public sealed record WorkerCandidateBatchRequest(
     IReadOnlyList<WorkerCandidateDto> Candidates);
+
+public sealed record WorkerCandidateLookupRequest(
+    Guid AccountId,
+    string DuplicateScope,
+    IReadOnlyList<string> SourceResponseIds,
+    IReadOnlyList<string> PhoneNormalized,
+    bool IncludeAllKnownPhones = false);
+
+public sealed record WorkerCandidateLookupResponse(
+    IReadOnlyList<string> ExistingSourceResponseIds,
+    IReadOnlyList<string> ExistingPhones);
+
+public sealed record WorkerMonitoringStatsDto(
+    double HistoricalHeatScore,
+    DashboardStatsDto Stats);
 
 public sealed record WorkerCandidateIngestionItemResultDto(
     Guid? Id,

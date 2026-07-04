@@ -517,12 +517,10 @@
         var total = chartData.total || 0;
         var active = chartData.active || 0;
         var inactive = chartData.inactive || 0;
-        var blocked = chartData.blocked || 0;
         var errors = chartData.errors || 0;
         var segments = [
             { label: 'Активны', value: active, color: '#22c55e' },
             { label: 'Неактивны', value: inactive, color: '#94a3b8' },
-            { label: 'Заблокированы', value: blocked, color: '#ef4444' },
             { label: 'Ошибки', value: errors, color: '#f59e0b' }
         ].filter(function (segment) { return segment.value > 0; });
 
@@ -681,10 +679,10 @@
                 officeCell +
                 '<td data-label="Статус"><span class="status-dot' + statusClass + '"><i class="fa-solid fa-circle status-dot-icon" aria-hidden="true"></i>' + statusText + '</span></td>' +
                 '<td data-label="Сейчас">' + (window.OrbitaLiveShared ? window.OrbitaLiveShared.renderActivityPill(w.currentActivityLabel, w.currentActivityTone, w.isActivityLive) : escapeHtml(w.currentActivityLabel || '—')) + '</td>' +
-                '<td data-label="Аккаунтов">' + w.activeAccounts + ' / ' + w.totalAccounts + '</td>' +
-                '<td data-label="Откликов">' + w.responses + '</td>' +
-                '<td data-label="Дублей">' + w.duplicates + '</td>' +
-                '<td data-label="Ошибок">' + w.errors + '</td>' +
+                '<td class="cell-num" data-label="Аккаунтов">' + w.activeAccounts + ' / ' + w.totalAccounts + '</td>' +
+                '<td class="cell-num" data-label="Откликов">' + w.responses + '</td>' +
+                '<td class="cell-num" data-label="Дублей">' + w.duplicates + '</td>' +
+                '<td class="cell-num" data-label="Ошибок">' + w.errors + '</td>' +
                 '<td data-label="Последняя активность">' + timeHtml + '</td>' +
                 '<td class="data-table-menu" data-label="">' +
                 '<div class="row-menu" data-row-menu>' +
@@ -812,7 +810,6 @@
         setStat('total-summary', String(stats.total || 0));
         setStat('active', stats.active + ' (' + fmtPct(stats.active, total) + ')');
         setStat('inactive', stats.inactive + ' (' + fmtPct(stats.inactive, total) + ')');
-        setStat('blocked', stats.blocked + ' (' + fmtPct(stats.blocked, total) + ')');
         setStat('errors', stats.errors + ' (' + fmtPct(stats.errors, total) + ')');
 
         if (chartRegistry.donut) {

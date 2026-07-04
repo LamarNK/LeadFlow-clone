@@ -110,7 +110,7 @@ public sealed class CandidateIngestionService(
 
                 await db.SaveChangesAsync(ct);
                 panelRealtime.Notify(
-                    [PanelChangeKind.Responses],
+                    [PanelChangeKind.Responses, PanelChangeKind.NavBadges],
                     worker.OfficeId,
                     worker.Id);
             }

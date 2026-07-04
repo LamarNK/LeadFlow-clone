@@ -57,7 +57,23 @@ internal sealed class FakeAvitoResponseSource : IAvitoResponseSource
             : Task.FromResult(Impl(account, settings));
     }
 
-    public Task<IReadOnlyList<CandidateResponse>> ParseCandidatesFromRawAsync(
+    public async Task<IReadOnlyList<CandidateResponse>> ParseCandidatesFromRawAsync(
+        AvitoAccount account,
+        AppSettings settings,
+        string rawExtractionJson,
+        CancellationToken cancellationToken,
+        AvitoSubProfile? activeSubProfile = null)
+    {
+        var detailed = await ParseCandidatesDetailedFromRawAsync(
+            account,
+            settings,
+            rawExtractionJson,
+            cancellationToken,
+            activeSubProfile).ConfigureAwait(false);
+        return detailed.Candidates;
+    }
+
+    public Task<AvitoCandidatesParseResult> ParseCandidatesDetailedFromRawAsync(
         AvitoAccount account,
         AppSettings settings,
         string rawExtractionJson,
@@ -65,9 +81,20 @@ internal sealed class FakeAvitoResponseSource : IAvitoResponseSource
         AvitoSubProfile? activeSubProfile = null)
     {
         CallCount++;
-        return AsyncImpl is not null
-            ? AsyncImpl(account, settings, cancellationToken)
-            : Task.FromResult(Impl(account, settings));
+        if (AsyncImpl is not null)
+        {
+            return AsyncImpl(account, settings, cancellationToken)
+                .ContinueWith(
+                    t => new AvitoCandidatesParseResult(
+                        t.Result,
+                        AvitoCandidatesExtractionSummary.Empty),
+                    cancellationToken,
+                    TaskContinuationOptions.ExecuteSynchronously,
+                    TaskScheduler.Default);
+        }
+
+        var list = Impl(account, settings);
+        return Task.FromResult(new AvitoCandidatesParseResult(list, AvitoCandidatesExtractionSummary.Empty));
     }
 
     public Task<HashSet<string>> GetKnownNormalizedPhonesForPrepareAsync(

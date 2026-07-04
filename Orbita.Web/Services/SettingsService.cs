@@ -19,6 +19,7 @@ public sealed class SettingsService(
         DateTime? date,
         string? action,
         string? userId = null,
+        Guid? officeId = null,
         Guid? workerId = null,
         int page = 1,
         CancellationToken ct = default)
@@ -30,7 +31,6 @@ public sealed class SettingsService(
         if (previewOptions.Value.Enabled)
         {
             var previewUsers = DesignPreviewData.PanelUsers;
-            var previewIntegrations = DesignPreviewData.BitrixIntegrations;
             var previewOffices = DesignPreviewData.Offices;
             var previewModel = activeTab switch
             {
@@ -40,8 +40,10 @@ public sealed class SettingsService(
                     service,
                     date,
                     DesignPreviewData.BuildServiceLogsPage(q, level, service, date, page)),
-                "offices" => SettingsIndexBuilder.BuildOfficesTab(previewOffices),
-                "profiles" => SettingsIndexBuilder.BuildProfilesTab(previewUsers, previewIntegrations, previewOffices, currentUserId),
+                "offices" => SettingsIndexBuilder.BuildOfficesTab(
+                    previewOffices,
+                    DesignPreviewData.GetOfficeDetail(officeId)),
+                "profiles" => SettingsIndexBuilder.BuildProfilesTab(previewUsers, previewOffices, currentUserId),
                 "workers" => SettingsIndexBuilder.BuildWorkersTab(
                     DesignPreviewData.AdminWorkers,
                     previewOffices,
@@ -51,30 +53,24 @@ public sealed class SettingsService(
                     action,
                     date,
                     DesignPreviewData.BuildPanelAuditPage(q, action, date, page)),
-                "integrations" => SettingsIndexBuilder.BuildIntegrationsTab(
-                    previewIntegrations,
-                    userId,
-                    string.IsNullOrWhiteSpace(userId) ? null : DesignPreviewData.MyBitrixIntegration),
+                "integrations" => SettingsIndexBuilder.BuildIntegrationsTab(previewOffices),
                 "leadflow-import" => SettingsIndexBuilder.BuildLeadFlowImportTab(previewOffices),
                 "worker-releases" => SettingsIndexBuilder.BuildWorkerReleasesTab(DesignPreviewData.WorkerReleases),
                 _ => SettingsIndexBuilder.BuildUsersTab(
                     previewUsers,
-                    previewIntegrations,
                     previewOffices,
                     currentUserId ?? "preview-admin")
             };
             return previewModel with { Header = PageHeaderBuilder.SettingsAdmin() };
         }
 
-        var integrations = await api.GetAdminBitrixIntegrationsAsync(ct) ?? [];
         var offices = await api.GetOfficesAsync(ct) ?? [];
         var model = activeTab switch
         {
             "logs" => await BuildLogsTabAsync(q, level, service, date, workerId, page, ct),
-            "offices" => await BuildOfficesTabAsync(tab, userId, ct),
+            "offices" => await BuildOfficesTabAsync(officeId, ct),
             "profiles" => SettingsIndexBuilder.BuildProfilesTab(
                 await api.GetPanelUsersAsync(ct) ?? [],
-                integrations,
                 offices,
                 currentUserId),
             "workers" => SettingsIndexBuilder.BuildWorkersTab(
@@ -82,20 +78,19 @@ public sealed class SettingsService(
                 offices,
                 await api.GetWorkerRegistrationInfoAsync(ct)),
             "audit" => await BuildAuditTabAsync(q, action, date, page, ct),
-            "integrations" => await BuildIntegrationsTabAsync(userId, integrations, ct),
+            "integrations" => SettingsIndexBuilder.BuildIntegrationsTab(offices),
             "leadflow-import" => SettingsIndexBuilder.BuildLeadFlowImportTab(offices),
             "worker-releases" => await BuildWorkerReleasesTabAsync(ct),
             _ => SettingsIndexBuilder.BuildUsersTab(
                 await api.GetPanelUsersAsync(ct) ?? [],
-                integrations,
                 offices,
                 currentUserId)
         };
         return model with { Header = PageHeaderBuilder.SettingsAdmin() };
     }
 
-    public async Task<(bool Success, string? Error)> SaveUserBitrixAsync(
-        string userId,
+    public async Task<(bool Success, string? Error)> SaveOfficeBitrixAsync(
+        Guid officeId,
         string webhookUrl,
         CancellationToken ct = default)
     {
@@ -104,7 +99,7 @@ public sealed class SettingsService(
             return (true, null);
         }
 
-        var (integration, error) = await api.SaveAdminUserBitrixIntegrationAsync(userId, webhookUrl, ct);
+        var (integration, error) = await api.SaveAdminOfficeBitrixIntegrationAsync(officeId, webhookUrl, ct);
         return integration is not null ? (true, null) : (false, error);
     }
 
@@ -126,17 +121,17 @@ public sealed class SettingsService(
             ? Task.FromResult<(bool, string?)>((true, null))
             : api.UpdatePanelUserOfficeAsync(userId, officeId, ct);
 
-    public async Task<(bool Success, string? Error, string? RegistrationSecret)> CreateOfficeAsync(
+    public async Task<(bool Success, string? Error, Guid? OfficeId, string? RegistrationSecret)> CreateOfficeAsync(
         string name,
         CancellationToken ct = default)
     {
         if (previewOptions.Value.Enabled)
         {
-            return (true, null, "preview-office-secret");
+            return (true, null, DesignPreviewData.PreviewOfficeId, "preview-office-secret");
         }
 
         var (office, error) = await api.CreateOfficeAsync(name, ct);
-        return office is null ? (false, error, null) : (true, null, null);
+        return office is null ? (false, error, null, null) : (true, null, office.Id, null);
     }
 
     public async Task<(bool Success, string? Error)> UpdateOfficeAsync(
@@ -355,20 +350,6 @@ public sealed class SettingsService(
         return SettingsIndexBuilder.BuildAuditTab(q, action, date, pageDto);
     }
 
-    private async Task<SettingsIndexViewModel> BuildIntegrationsTabAsync(
-        string? userId,
-        IReadOnlyList<BitrixIntegrationListItemDto> integrations,
-        CancellationToken ct)
-    {
-        BitrixIntegrationDto? editIntegration = null;
-        if (!string.IsNullOrWhiteSpace(userId))
-        {
-            editIntegration = await api.GetAdminUserBitrixIntegrationAsync(userId, ct);
-        }
-
-        return SettingsIndexBuilder.BuildIntegrationsTab(integrations, userId, editIntegration);
-    }
-
     private async Task<SettingsIndexViewModel> BuildWorkerReleasesTabAsync(CancellationToken ct)
     {
         var releases = await api.GetWorkerReleasesAsync(ct)
@@ -377,13 +358,12 @@ public sealed class SettingsService(
     }
 
     private async Task<SettingsIndexViewModel> BuildOfficesTabAsync(
-        string? tab,
-        string? officeId,
+        Guid? officeId,
         CancellationToken ct)
     {
         var offices = await api.GetOfficesAsync(ct) ?? [];
         OfficeDetailDto? selected = null;
-        if (Guid.TryParse(officeId, out var parsedOfficeId))
+        if (officeId is Guid parsedOfficeId)
         {
             selected = await api.GetOfficeAsync(parsedOfficeId, ct);
         }

@@ -77,4 +77,50 @@ public sealed class AccountsIndexBuilderTests
         Assert.Equal(2, model.Pagination.TotalItems);
         Assert.Equal(2, model.Accounts.Count);
     }
+
+    [Fact]
+    public void Build_ActiveTab_IncludesEnabledAccountWithErrorStatus()
+    {
+        var rows = new List<AccountRowViewModel>
+        {
+            new()
+            {
+                Id = Guid.NewGuid(),
+                AccountName = "enabled-error",
+                WorkerId = Guid.NewGuid(),
+                WorkerName = "Worker-1",
+                StatusTone = "error",
+                IsEnabledInPanel = true,
+                Errors = 1
+            },
+            new()
+            {
+                Id = Guid.NewGuid(),
+                AccountName = "disabled-error",
+                WorkerId = Guid.NewGuid(),
+                WorkerName = "Worker-1",
+                StatusTone = "error",
+                IsEnabledInPanel = false,
+                Errors = 1
+            },
+            new()
+            {
+                Id = Guid.NewGuid(),
+                AccountName = "healthy",
+                WorkerId = Guid.NewGuid(),
+                WorkerName = "Worker-1",
+                StatusTone = "active",
+                IsEnabledInPanel = true
+            }
+        };
+
+        var model = AccountsIndexBuilder.Build(rows, searchQuery: null, tab: "active", page: 1);
+        var activeKpi = model.KpiCards.Single(k => k.Key == "active");
+
+        Assert.Equal(2, activeKpi.CountValue);
+        Assert.Equal(2, model.Pagination.TotalItems);
+        Assert.Contains(model.Accounts, a => a.AccountName == "enabled-error");
+        Assert.Contains(model.Accounts, a => a.AccountName == "healthy");
+        Assert.DoesNotContain(model.Accounts, a => a.AccountName == "disabled-error");
+    }
 }

@@ -25,7 +25,24 @@ public sealed class AvitoResponseSource(
         CancellationToken cancellationToken) =>
         duplicateRepository.GetAllStoredNormalizedPhonesAsync(duplicateScope, accountId, cancellationToken);
 
-    public Task<IReadOnlyList<CandidateResponse>> ParseCandidatesFromRawAsync(
+    public async Task<IReadOnlyList<CandidateResponse>> ParseCandidatesFromRawAsync(
+        AvitoAccount account,
+        AppSettings settings,
+        string rawExtractionJson,
+        CancellationToken cancellationToken,
+        AvitoSubProfile? activeSubProfile = null)
+    {
+        var result = await ParseCandidatesDetailedFromRawAsync(
+                account,
+                settings,
+                rawExtractionJson,
+                cancellationToken,
+                activeSubProfile)
+            .ConfigureAwait(false);
+        return result.Candidates;
+    }
+
+    public Task<AvitoCandidatesParseResult> ParseCandidatesDetailedFromRawAsync(
         AvitoAccount account,
         AppSettings settings,
         string rawExtractionJson,
@@ -68,8 +85,9 @@ public sealed class AvitoResponseSource(
                     var rawAdsPower = await adsPowerAvitoAutomationService
                         .ExtractCandidatesJsonAsync(options, account.AdsPowerProfileId, cancellationToken, messengerHints)
                         .ConfigureAwait(false);
-                    return await ParseResponsesFromRawExtractionAsync(account, settings, rawAdsPower, cancellationToken)
+                    var parsed = await ParseResponsesFromRawExtractionAsync(account, settings, rawAdsPower, cancellationToken)
                         .ConfigureAwait(false);
+                    return parsed.Candidates;
                 }
                 catch (OperationCanceledException)
                 {
@@ -118,7 +136,7 @@ public sealed class AvitoResponseSource(
             .ConfigureAwait(false);
     }
 
-    internal async Task<IReadOnlyList<CandidateResponse>> ParseResponsesFromRawExtractionAsync(
+    internal async Task<AvitoCandidatesParseResult> ParseResponsesFromRawExtractionAsync(
         AvitoAccount account,
         AppSettings settings,
         string raw,
@@ -186,7 +204,7 @@ public sealed class AvitoResponseSource(
                     loginDetail);
             }
 
-            return [];
+            return new AvitoCandidatesParseResult([], AvitoCandidatesExtractionSummary.Empty);
         }
 
         account.Status = AvitoAccountStatus.Authorized;
@@ -197,25 +215,16 @@ public sealed class AvitoResponseSource(
 
         account.LastAuthCheckAt = DateTime.UtcNow;
 
+        var pageVariant = root.TryGetProperty("pageVariant", out var variantProp) ? variantProp.GetString() ?? "unknown" : "unknown";
         var domItemCount = root.TryGetProperty("domItemCount", out var domItemsProp) ? domItemsProp.GetInt32() : 0;
         var domStatusCount = root.TryGetProperty("domStatusCount", out var domStatusProp) ? domStatusProp.GetInt32() : 0;
+        var scriptCandidatesCount = AvitoCandidatesExtractionSummary.ReadScriptCandidatesCount(root);
 
         var candidates = AvitoCandidatesJsonParser.ParseCandidates(root, account);
         var parsedCount = candidates.Count;
-        if (domItemCount > 0 && parsedCount < domItemCount)
-        {
-            _ = GlobalLogger.Instance.LogAsync(
-                $"Candidates extraction for {account.DisplayName}: DOM has {domItemCount} cards (status buttons {domStatusCount}), parsed {parsedCount} with name+phone. Possible incomplete scroll or phones not loaded yet.",
-                DeskLinkAuditLogLevel.Warning,
-                properties: new Dictionary<string, object?>
-                {
-                    ["candidates.domItemCount"] = domItemCount,
-                    ["candidates.domStatusCount"] = domStatusCount,
-                    ["candidates.parsedCount"] = parsedCount
-                });
-        }
 
         var existingIds = await duplicateRepository.GetExistingSourceResponseIdsAsync(
+            account.Id,
             candidates.Select(x => x.SourceResponseId),
             cancellationToken);
 
@@ -247,21 +256,62 @@ public sealed class AvitoResponseSource(
 
         var seenPhoneThisFetch = new HashSet<string>(StringComparer.Ordinal);
         var deduped = new List<CandidateResponse>();
+        var skippedDuplicatePhoneInBatch = 0;
         foreach (var c in afterDbPhone)
         {
             var n = phoneNormalizer.Normalize(c.PhoneRaw);
             if (!string.IsNullOrWhiteSpace(n) && !seenPhoneThisFetch.Add(n))
             {
+                skippedDuplicatePhoneInBatch++;
                 continue;
             }
 
             deduped.Add(c);
         }
 
-        return deduped
+        var ordered = deduped
             .OrderBy(x => phoneNormalizer.Normalize(x.PhoneRaw), StringComparer.Ordinal)
             .ThenBy(x => x.FullName, StringComparer.OrdinalIgnoreCase)
             .ToList();
+
+        var skippedExistingSourceId = candidates.Count - afterSourceId.Count;
+        var skippedDuplicatePhoneInDb = afterSourceId.Count - afterDbPhone.Count;
+        var sampleNames = ordered
+            .Take(4)
+            .Select(x => FormatSampleName(x.FullName, x.Vacancy))
+            .ToList();
+
+        var summary = new AvitoCandidatesExtractionSummary(
+            pageUrl,
+            pageVariant,
+            domItemCount,
+            domStatusCount,
+            scriptCandidatesCount,
+            parsedCount,
+            skippedExistingSourceId,
+            skippedDuplicatePhoneInDb,
+            skippedDuplicatePhoneInBatch,
+            ordered.Count,
+            sampleNames);
+
+        return new AvitoCandidatesParseResult(ordered, summary);
+    }
+
+    private static string FormatSampleName(string fullName, string vacancy)
+    {
+        var name = string.IsNullOrWhiteSpace(fullName) ? "—" : fullName.Trim();
+        if (string.IsNullOrWhiteSpace(vacancy))
+        {
+            return name;
+        }
+
+        var shortVacancy = vacancy.Trim();
+        if (shortVacancy.Length > 40)
+        {
+            shortVacancy = shortVacancy[..37] + "…";
+        }
+
+        return $"{name} ({shortVacancy})";
     }
 
     private static bool IsAdsPowerTransientCandidatesError(Exception ex) =>

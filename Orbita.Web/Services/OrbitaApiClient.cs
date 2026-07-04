@@ -752,15 +752,10 @@ public sealed class OrbitaApiClient(
             ? Task.FromResult<PanelProfileDto?>(DesignPreviewData.PanelProfile)
             : GetAsync<PanelProfileDto>("api/v1/panel/me", ct);
 
-    public Task<BitrixIntegrationDto?> GetMyBitrixIntegrationAsync(CancellationToken ct = default) =>
+    public Task<OfficeBitrixIntegrationDto?> GetOfficeBitrixIntegrationAsync(CancellationToken ct = default) =>
         _preview.Enabled
-            ? Task.FromResult<BitrixIntegrationDto?>(DesignPreviewData.MyBitrixIntegration)
-            : GetAsync<BitrixIntegrationDto>("api/v1/panel/me/integrations/bitrix", ct);
-
-    public Task<IReadOnlyList<OfficeBitrixWebhookDto>?> GetOfficeBitrixWebhooksAsync(CancellationToken ct = default) =>
-        _preview.Enabled
-            ? Task.FromResult<IReadOnlyList<OfficeBitrixWebhookDto>?>([])
-            : GetAsync<IReadOnlyList<OfficeBitrixWebhookDto>>("api/v1/panel/office/integrations/bitrix", ct);
+            ? Task.FromResult<OfficeBitrixIntegrationDto?>(DesignPreviewData.OfficeBitrixIntegration)
+            : GetAsync<OfficeBitrixIntegrationDto>("api/v1/panel/office/integrations/bitrix", ct);
 
     public Task<OfficeBitrixSettingsDto?> GetOfficeBitrixSettingsAsync(CancellationToken ct = default) =>
         _preview.Enabled
@@ -806,6 +801,22 @@ public sealed class OrbitaApiClient(
             ? Task.FromResult<ResponsesSummaryDto?>(DesignPreviewData.GetResponsesSummary(officeContext.EffectiveOfficeId))
             : GetAsync<ResponsesSummaryDto>(WithOfficeQuery($"api/v1/panel/responses/summary?{query}"), ct);
 
+    public Task<OfficeStatisticsDto?> GetStatisticsAsync(
+        DateTime from,
+        DateTime to,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return Task.FromResult<OfficeStatisticsDto?>(
+                DesignPreviewData.GetStatistics(officeContext.EffectiveOfficeId, from, to));
+        }
+
+        var query =
+            $"from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}";
+        return GetAsync<OfficeStatisticsDto>(WithOfficeQuery($"api/v1/panel/statistics?{query}"), ct);
+    }
+
     public Task<IReadOnlyList<ResponseFilterAccountDto>?> GetResponseFilterAccountsAsync(CancellationToken ct = default) =>
         _preview.Enabled
             ? Task.FromResult<IReadOnlyList<ResponseFilterAccountDto>?>([])
@@ -835,16 +846,16 @@ public sealed class OrbitaApiClient(
         return await response.Content.ReadFromJsonAsync<ResendBitrixResultDto>(ct);
     }
 
-    public async Task<(BitrixIntegrationDto? Integration, string? Error)> SaveMyBitrixIntegrationAsync(
+    public async Task<(OfficeBitrixIntegrationDto? Integration, string? Error)> SaveOfficeBitrixIntegrationAsync(
         string webhookUrl,
         CancellationToken ct = default)
     {
         if (_preview.Enabled)
         {
-            return (DesignPreviewData.MyBitrixIntegration, null);
+            return (DesignPreviewData.OfficeBitrixIntegration, null);
         }
 
-        using var request = new HttpRequestMessage(HttpMethod.Put, "api/v1/panel/me/integrations/bitrix");
+        using var request = new HttpRequestMessage(HttpMethod.Put, "api/v1/panel/office/integrations/bitrix");
         request.Content = JsonContent.Create(new SaveBitrixIntegrationRequest(webhookUrl));
         using var response = await SendAuthenticatedAsync(request, ct);
         if (response is null)
@@ -857,11 +868,11 @@ public sealed class OrbitaApiClient(
             return (null, await ReadApiErrorAsync(response, ct));
         }
 
-        var integration = await response.Content.ReadFromJsonAsync<BitrixIntegrationDto>(ct);
+        var integration = await response.Content.ReadFromJsonAsync<OfficeBitrixIntegrationDto>(ct);
         return integration is null ? (null, "Не удалось прочитать ответ API.") : (integration, null);
     }
 
-    public async Task<(BitrixWebhookValidationDto? Validation, string? Error)> ValidateMyBitrixIntegrationAsync(
+    public async Task<(BitrixWebhookValidationDto? Validation, string? Error)> ValidateOfficeBitrixIntegrationAsync(
         string? webhookUrl,
         CancellationToken ct = default)
     {
@@ -870,7 +881,7 @@ public sealed class OrbitaApiClient(
             return (DesignPreviewData.BitrixValidationOk, null);
         }
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/panel/me/integrations/bitrix/validate");
+        using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/panel/office/integrations/bitrix/validate");
         request.Content = JsonContent.Create(new ValidateBitrixIntegrationRequest(webhookUrl));
         using var response = await SendAuthenticatedAsync(request, ct);
         if (response is null)
@@ -887,20 +898,20 @@ public sealed class OrbitaApiClient(
         return validation is null ? (null, "Не удалось прочитать ответ API.") : (validation, null);
     }
 
-    public Task<IReadOnlyList<BitrixIntegrationListItemDto>?> GetAdminBitrixIntegrationsAsync(CancellationToken ct = default) =>
+    public Task<IReadOnlyList<OfficeDto>?> GetAdminBitrixIntegrationsAsync(CancellationToken ct = default) =>
         _preview.Enabled
-            ? Task.FromResult<IReadOnlyList<BitrixIntegrationListItemDto>?>(DesignPreviewData.BitrixIntegrations)
-            : GetAsync<IReadOnlyList<BitrixIntegrationListItemDto>>("api/v1/admin/integrations/bitrix", ct);
+            ? Task.FromResult<IReadOnlyList<OfficeDto>?>(DesignPreviewData.Offices)
+            : GetAsync<IReadOnlyList<OfficeDto>>("api/v1/admin/integrations/bitrix", ct);
 
-    public Task<BitrixIntegrationDto?> GetAdminUserBitrixIntegrationAsync(string userId, CancellationToken ct = default) =>
-        GetAsync<BitrixIntegrationDto>($"api/v1/admin/users/{userId}/integrations/bitrix", ct);
+    public Task<OfficeBitrixIntegrationDto?> GetAdminOfficeBitrixIntegrationAsync(Guid officeId, CancellationToken ct = default) =>
+        GetAsync<OfficeBitrixIntegrationDto>($"api/v1/admin/offices/{officeId:D}/integrations/bitrix", ct);
 
-    public async Task<(BitrixIntegrationDto? Integration, string? Error)> SaveAdminUserBitrixIntegrationAsync(
-        string userId,
+    public async Task<(OfficeBitrixIntegrationDto? Integration, string? Error)> SaveAdminOfficeBitrixIntegrationAsync(
+        Guid officeId,
         string webhookUrl,
         CancellationToken ct = default)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Put, $"api/v1/admin/users/{userId}/integrations/bitrix");
+        using var request = new HttpRequestMessage(HttpMethod.Put, $"api/v1/admin/offices/{officeId:D}/integrations/bitrix");
         request.Content = JsonContent.Create(new SaveBitrixIntegrationRequest(webhookUrl));
         using var response = await SendAuthenticatedAsync(request, ct);
         if (response is null)
@@ -913,16 +924,16 @@ public sealed class OrbitaApiClient(
             return (null, await ReadApiErrorAsync(response, ct));
         }
 
-        var integration = await response.Content.ReadFromJsonAsync<BitrixIntegrationDto>(ct);
+        var integration = await response.Content.ReadFromJsonAsync<OfficeBitrixIntegrationDto>(ct);
         return integration is null ? (null, "Не удалось прочитать ответ API.") : (integration, null);
     }
 
-    public async Task<(BitrixWebhookValidationDto? Validation, string? Error)> ValidateAdminUserBitrixIntegrationAsync(
-        string userId,
+    public async Task<(BitrixWebhookValidationDto? Validation, string? Error)> ValidateAdminOfficeBitrixIntegrationAsync(
+        Guid officeId,
         string? webhookUrl,
         CancellationToken ct = default)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Post, $"api/v1/admin/users/{userId}/integrations/bitrix/validate");
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"api/v1/admin/offices/{officeId:D}/integrations/bitrix/validate");
         request.Content = JsonContent.Create(new ValidateBitrixIntegrationRequest(webhookUrl));
         using var response = await SendAuthenticatedAsync(request, ct);
         if (response is null)
@@ -1110,10 +1121,7 @@ public sealed class OrbitaApiClient(
             return (null, null, await ReadApiErrorAsync(response, ct));
         }
 
-        var stream = await response.Content.ReadAsStreamAsync(ct);
-        var fileName = response.Content.Headers.ContentDisposition?.FileName?.Trim('"')
-            ?? "Orbita.Worker.Setup.msi";
-        return (stream, fileName, null);
+        return await MaterializeDownloadResponseAsync(response, "Orbita.Worker.Setup.msi", ct);
     }
 
     public async Task<(Stream? Stream, string? FileName, string? Error)> OpenWorkerReleaseDownloadAsync(
@@ -1132,10 +1140,69 @@ public sealed class OrbitaApiClient(
             return (null, null, await ReadApiErrorAsync(response, ct));
         }
 
-        var stream = await response.Content.ReadAsStreamAsync(ct);
+        return await MaterializeDownloadResponseAsync(response, $"Orbita.Worker.Setup-{version}.msi", ct);
+    }
+
+    private static async Task<(Stream? Stream, string? FileName, string? Error)> MaterializeDownloadResponseAsync(
+        HttpResponseMessage response,
+        string defaultFileName,
+        CancellationToken ct)
+    {
         var fileName = response.Content.Headers.ContentDisposition?.FileName?.Trim('"')
-            ?? $"Orbita.Worker.Setup-{version}.msi";
-        return (stream, fileName, null);
+            ?? defaultFileName;
+        var tempPath = Path.Combine(Path.GetTempPath(), $"orbita-worker-dl-{Guid.NewGuid():N}.msi");
+
+        try
+        {
+            await using var input = await response.Content.ReadAsStreamAsync(ct);
+            await using (var output = File.Create(tempPath))
+            {
+                await input.CopyToAsync(output, ct);
+            }
+
+            var fileInfo = new FileInfo(tempPath);
+            if (fileInfo.Length == 0)
+            {
+                TryDeleteDownloadTemp(tempPath);
+                return (null, null, "Сервер вернул пустой файл.");
+            }
+
+            if (response.Content.Headers.ContentLength is > 0
+                && fileInfo.Length != response.Content.Headers.ContentLength.Value)
+            {
+                TryDeleteDownloadTemp(tempPath);
+                return (null, null, "Размер скачанного файла не совпал с ответом сервера.");
+            }
+
+            var stream = new FileStream(
+                tempPath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read,
+                bufferSize: 81920,
+                FileOptions.DeleteOnClose | FileOptions.Asynchronous);
+            return (stream, fileName, null);
+        }
+        catch
+        {
+            TryDeleteDownloadTemp(tempPath);
+            throw;
+        }
+    }
+
+    private static void TryDeleteDownloadTemp(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch
+        {
+            // ignore cleanup errors
+        }
     }
 
     private async Task<(bool Success, string? Error)> PostAdminActionAsync(string url, CancellationToken ct) =>

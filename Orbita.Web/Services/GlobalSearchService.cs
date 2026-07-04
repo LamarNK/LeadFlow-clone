@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Options;
+using Orbita.Contracts;
 using Orbita.Web.Formatting;
 using Orbita.Web.Models.ViewModels;
 using Orbita.Web.Options;
@@ -9,18 +10,17 @@ public sealed class GlobalSearchService(OrbitaApiClient api, IOptions<DesignPrev
 {
     public async Task<GlobalSearchResultViewModel> SearchAsync(string? query, int limit = 8, CancellationToken ct = default)
     {
-        query = (query ?? string.Empty).Trim();
+        query = SearchQueryNormalizer.Normalize(query) ?? string.Empty;
         if (query.Length < 2)
         {
             return GlobalSearchResultViewModel.Empty;
         }
 
-        var q = query.ToLowerInvariant();
         var perGroup = Math.Max(2, limit / 4);
 
         if (previewOptions.Value.Enabled)
         {
-            return SearchPreview(q, perGroup);
+            return SearchPreview(query, perGroup);
         }
 
         var workersTask = api.GetWorkersAsync(ct);
@@ -31,7 +31,7 @@ public sealed class GlobalSearchService(OrbitaApiClient api, IOptions<DesignPrev
 
         var allWorkers = await workersTask ?? [];
         var workers = allWorkers
-            .Where(w => w.DisplayName.Contains(query, StringComparison.OrdinalIgnoreCase))
+            .Where(w => SearchQueryNormalizer.MatchesTokens(query, w.DisplayName, w.MachineName))
             .Take(perGroup)
             .Select(w => new SearchHitViewModel
             {
@@ -46,7 +46,7 @@ public sealed class GlobalSearchService(OrbitaApiClient api, IOptions<DesignPrev
         foreach (var worker in allWorkers)
         {
             var workerAccounts = await api.GetWorkerAccountsAsync(worker.Id, ct) ?? [];
-            foreach (var account in workerAccounts.Where(a => a.DisplayName.Contains(query, StringComparison.OrdinalIgnoreCase)).Take(perGroup))
+            foreach (var account in workerAccounts.Where(a => SearchQueryNormalizer.MatchesTokens(query, a.DisplayName)).Take(perGroup))
             {
                 accounts.Add(new SearchHitViewModel
                 {
@@ -72,7 +72,7 @@ public sealed class GlobalSearchService(OrbitaApiClient api, IOptions<DesignPrev
             .ToList() ?? [];
 
         var events = (await api.GetEventsAsync(limit: 200, ct: ct) ?? [])
-            .Where(e => (e.Message + " " + e.Details).Contains(query, StringComparison.OrdinalIgnoreCase))
+            .Where(e => SearchQueryNormalizer.MatchesTokens(query, e.Message, e.Details, e.WorkerDisplayName))
             .Take(perGroup)
             .Select(e => new SearchHitViewModel
             {
@@ -93,10 +93,10 @@ public sealed class GlobalSearchService(OrbitaApiClient api, IOptions<DesignPrev
         };
     }
 
-    private static GlobalSearchResultViewModel SearchPreview(string q, int limit)
+    private static GlobalSearchResultViewModel SearchPreview(string query, int limit)
     {
         var workers = DesignPreviewData.Workers
-            .Where(w => w.DisplayName.ToLowerInvariant().Contains(q))
+            .Where(w => SearchQueryNormalizer.MatchesTokens(query, w.DisplayName, w.MachineName))
             .Take(limit)
             .Select(w => new SearchHitViewModel
             {
@@ -109,7 +109,7 @@ public sealed class GlobalSearchService(OrbitaApiClient api, IOptions<DesignPrev
 
         return new GlobalSearchResultViewModel
         {
-            Query = q,
+            Query = query,
             Workers = workers,
             Responses =
             [

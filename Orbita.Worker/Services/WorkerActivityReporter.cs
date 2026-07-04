@@ -6,7 +6,8 @@ namespace Orbita.Worker.Services;
 
 public sealed class WorkerActivityReporter(
     OrbitaApiClient apiClient,
-    WorkerCredentials credentials) : IWorkerActivityReporter
+    WorkerCredentials credentials,
+    WorkerUpdateGate updateGate) : IWorkerActivityReporter
 {
     private static readonly TimeSpan DebounceInterval = TimeSpan.FromSeconds(2);
 
@@ -82,6 +83,7 @@ public sealed class WorkerActivityReporter(
             _activeAccounts.Clear();
         }
 
+        updateGate.SetPhase(phase);
         EnqueueFlush(flushImmediately);
     }
 
@@ -96,6 +98,7 @@ public sealed class WorkerActivityReporter(
         lock (_sync)
         {
             _global = null;
+            updateGate.SetPhase(phase);
             _activeAccounts[accountId] = new WorkerActiveAccountDto(
                 accountId,
                 accountName,

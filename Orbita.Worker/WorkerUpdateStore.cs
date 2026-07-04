@@ -19,7 +19,11 @@ public sealed class WorkerUpdateStore
 
     private static string PendingInstallPath => Path.Combine(StoreDirectory, "pending-install.txt");
 
+    private static string PendingMsiPath => Path.Combine(StoreDirectory, "pending-msi.json");
+
     private WorkerUpdateResultDto? _pendingHeartbeatResult;
+
+    public sealed record PendingMsiState(string Version, string MsiPath);
 
     public void SaveResult(WorkerUpdateResultDto result)
     {
@@ -32,6 +36,47 @@ public sealed class WorkerUpdateStore
     {
         Directory.CreateDirectory(StoreDirectory);
         File.WriteAllText(PendingInstallPath, targetVersion);
+    }
+
+    public void SaveDownloadedMsi(string version, string msiPath)
+    {
+        Directory.CreateDirectory(StoreDirectory);
+        var payload = new PendingMsiState(version, msiPath);
+        File.WriteAllText(PendingMsiPath, JsonSerializer.Serialize(payload, JsonOptions));
+    }
+
+    public PendingMsiState? TryGetPendingMsi()
+    {
+        if (!File.Exists(PendingMsiPath))
+        {
+            return null;
+        }
+
+        try
+        {
+            var state = JsonSerializer.Deserialize<PendingMsiState>(File.ReadAllText(PendingMsiPath), JsonOptions);
+            if (state is null || string.IsNullOrWhiteSpace(state.Version) || string.IsNullOrWhiteSpace(state.MsiPath))
+            {
+                return null;
+            }
+
+            if (!File.Exists(state.MsiPath))
+            {
+                ClearPendingMsi();
+                return null;
+            }
+
+            return state;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public void ClearPendingMsi()
+    {
+        TryDeleteFile(PendingMsiPath);
     }
 
     public WorkerUpdateResultDto? TryConsumePendingHeartbeatResult()
@@ -103,13 +148,15 @@ public sealed class WorkerUpdateStore
         }
     }
 
-    private static void TryDeleteStoreFile()
+    private static void TryDeleteStoreFile() => TryDeleteFile(StorePath);
+
+    private static void TryDeleteFile(string path)
     {
         try
         {
-            if (File.Exists(StorePath))
+            if (File.Exists(path))
             {
-                File.Delete(StorePath);
+                File.Delete(path);
             }
         }
         catch

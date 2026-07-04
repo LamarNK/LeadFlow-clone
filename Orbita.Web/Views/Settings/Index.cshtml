@@ -38,6 +38,8 @@
 
     @if (Model.ActiveTab == "offices" && officesTab is not null)
     {
+        var selectedOffice = officesTab.Selected;
+
         @if (!string.IsNullOrWhiteSpace(rotatedOfficeSecret))
         {
             <div class="settings-alert settings-alert--api-key" role="status">
@@ -47,105 +49,198 @@
             </div>
         }
 
-        <div class="settings-grid settings-grid--users">
-            <div class="card card--settings-users">
+        <div class="settings-grid settings-grid--offices">
+            <div class="card card--settings-offices-list">
                 <div class="card-header settings-card-header">
                     <div>
                         <h2 class="settings-card-title">Офисы</h2>
                         <p class="settings-card-subtitle">Изоляция данных: воркеры, мониторинг и события внутри офиса</p>
                     </div>
+                    <span class="settings-office-count">@officesTab.Rows.Count</span>
                 </div>
                 <div class="card-body card-body-table settings-table-wrap">
-                    <table class="data-table data-table--settings-users data-table--cards">
+                    <table class="data-table data-table--settings-offices data-table--cards">
                         <thead>
                         <tr>
                             <th>Название</th>
                             <th>Воркеры</th>
                             <th>Операторы</th>
                             <th>Статус</th>
-                            <th class="data-table-actions-col">Действия</th>
                         </tr>
                         </thead>
                         <tbody>
-                        @foreach (var office in officesTab.Rows)
+                        @if (officesTab.Rows.Count == 0)
                         {
                             <tr>
-                                <td class="cell-name" data-label="Название">
-                                    <a href="@Url.Action("Index", new { tab = "offices", userId = office.Id })">@office.Name</a>
-                                </td>
-                                <td data-label="Воркеры">@office.WorkerCount</td>
-                                <td data-label="Операторы">@office.UserCount</td>
-                                <td data-label="Статус">@(office.IsEnabled ? "Активен" : "Отключён")</td>
-                                <td class="data-table-actions-col" data-label="">
-                                    <a class="settings-link-btn" href="@Url.Action("Index", new { tab = "offices", userId = office.Id })">Настроить</a>
-                                </td>
+                                <td colspan="4" class="settings-empty-cell">Офисов пока нет — создайте первый в форме ниже.</td>
                             </tr>
+                        }
+                        else
+                        {
+                            @foreach (var office in officesTab.Rows)
+                            {
+                                var isSelected = selectedOffice?.Id == office.Id;
+                                <tr class="@(isSelected ? "settings-office-row--selected" : null)">
+                                    <td class="cell-name" data-label="Название">
+                                        <a class="settings-office-link @(isSelected ? "settings-office-link--active" : null)"
+                                           href="@Url.Action("Index", new { tab = "offices", officeId = office.Id })"
+                                           aria-current="@(isSelected ? "page" : null)">@office.Name</a>
+                                    </td>
+                                    <td data-label="Воркеры">@office.WorkerCount</td>
+                                    <td data-label="Операторы">@office.UserCount</td>
+                                    <td data-label="Статус">
+                                        @if (office.IsEnabled)
+                                        {
+                                            <span class="settings-status-pill settings-status-pill--online">Активен</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="settings-status-pill settings-status-pill--disabled">Отключён</span>
+                                        }
+                                    </td>
+                                </tr>
+                            }
                         }
                         </tbody>
                     </table>
                 </div>
             </div>
 
-            <div class="card card--settings-create">
-                <div class="card-header settings-card-header">
-                    <h2 class="settings-card-title">Добавить офис</h2>
-                </div>
-                <div class="card-body">
-                    <form asp-action="CreateOffice" method="post" class="settings-create-form">
-                        @Html.AntiForgeryToken()
-                        <label class="settings-field">
-                            <span class="settings-field-label">Название</span>
-                            <input type="text" name="Name" required maxlength="200" placeholder="Москва" />
-                        </label>
-                        <button type="submit" class="settings-primary-btn">
-                            <i class="fa-solid fa-building" aria-hidden="true"></i>
-                            <span>Создать</span>
-                        </button>
-                    </form>
-                </div>
-            </div>
-        </div>
+            @if (selectedOffice is not null)
+            {
+                var selected = selectedOffice;
+                <div class="card card--settings-office-detail">
+                    <div class="card-header settings-card-header">
+                        <div>
+                            <h2 class="settings-card-title">@selected.Name</h2>
+                            <p class="settings-card-subtitle">Параметры офиса и регистрация воркеров</p>
+                            <a class="settings-link-btn settings-office-create-link" href="@Url.Action("Index", new { tab = "offices" })">Создать другой офис</a>
+                        </div>
+                    </div>
+                    <div class="card-body settings-office-detail-body">
+                        <section class="settings-office-section">
+                            <h3 class="settings-office-section-title">Основные параметры</h3>
+                            <form asp-action="UpdateOffice" method="post" class="settings-create-form settings-office-form">
+                                @Html.AntiForgeryToken()
+                                <input type="hidden" name="OfficeId" value="@selected.Id" />
+                                <label class="settings-field">
+                                    <span class="settings-field-label">Название</span>
+                                    <input type="text" name="Name" value="@selected.Name" required maxlength="200" />
+                                </label>
+                                <div class="settings-options">
+                                    <div class="settings-option">
+                                        <div class="settings-option-text">
+                                            <span class="settings-option-label">Офис активен</span>
+                                            <span class="settings-option-desc">Воркеры и операторы офиса доступны в панели</span>
+                                        </div>
+                                        <label class="worker-toggle" title="Офис активен">
+                                            <input type="checkbox" name="IsEnabled" value="true" @(selected.IsEnabled ? "checked" : null) />
+                                            <span class="worker-toggle-slider"></span>
+                                        </label>
+                                    </div>
+                                    <div class="settings-option">
+                                        <div class="settings-option-text">
+                                            <span class="settings-option-label">Передача в Bitrix24</span>
+                                            <span class="settings-option-desc">Новые отклики офиса отправляются в CRM после проверки дублей</span>
+                                        </div>
+                                        <label class="worker-toggle" title="Передача в Bitrix24">
+                                            <input type="checkbox" name="BitrixTransmissionEnabled" value="true" @(selected.BitrixTransmissionEnabled ? "checked" : null) />
+                                            <span class="worker-toggle-slider"></span>
+                                        </label>
+                                    </div>
+                                </div>
+                                <button type="submit" class="settings-primary-btn">Сохранить</button>
+                            </form>
+                        </section>
 
-        @if (officesTab.Selected is not null)
-        {
-            var selected = officesTab.Selected;
-            <div class="card card--settings-registration">
-                <div class="card-body settings-registration-body">
-                    <div>
-                        <h2 class="settings-card-title">@selected.Name</h2>
-                        <p class="settings-card-subtitle">Секрет регистрации воркеров для этого офиса</p>
+                        <section class="settings-office-section settings-office-section--bitrix">
+                            <div class="settings-office-section-head">
+                                <div>
+                                    <h3 class="settings-office-section-title">Вебхук Bitrix24</h3>
+                                    <p class="settings-office-section-hint">Один входящий вебхук портала офиса для отправки откликов и проверки дублей в CRM.</p>
+                                </div>
+                                <span class="settings-bitrix-status settings-bitrix-status--@selected.BitrixValidationStatusTone">@selected.BitrixValidationStatusLabel</span>
+                            </div>
+                            @if (!string.IsNullOrWhiteSpace(selected.MaskedBitrixWebhookUrl))
+                            {
+                                <p class="settings-bitrix-current">Текущий вебхук: <code>@selected.MaskedBitrixWebhookUrl</code></p>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(selected.BitrixValidationMessage))
+                            {
+                                <p class="settings-bitrix-message">@selected.BitrixValidationMessage</p>
+                            }
+                            @if (selected.BitrixLastValidatedAtUtc is not null)
+                            {
+                                <p class="settings-bitrix-checked">Последняя проверка: <span data-orbita-utc="@selected.BitrixLastValidatedAtUtc.Value.ToString("O")"></span></p>
+                            }
+                            <form asp-action="SaveOfficeBitrix"
+                                  method="post"
+                                  class="settings-create-form settings-bitrix-form"
+                                  data-bitrix-settings-form
+                                  data-bitrix-validate-url="@Url.Action("ValidateOfficeBitrix", new { officeId = selected.Id })">
+                                @Html.AntiForgeryToken()
+                                <input type="hidden" name="OfficeId" value="@selected.Id" />
+                                <label class="settings-field">
+                                    <span class="settings-field-label">URL вебхука</span>
+                                    <input type="url"
+                                           name="WebhookUrl"
+                                           placeholder="https://ваш-портал.bitrix24.ru/rest/1/xxxxxxxx/"
+                                           autocomplete="off"
+                                           spellcheck="false"
+                                           data-bitrix-webhook-input />
+                                </label>
+                                <div class="settings-bitrix-actions">
+                                    <button type="button" class="settings-secondary-btn" data-bitrix-validate-btn>Проверить</button>
+                                    <button type="submit" class="settings-primary-btn">Сохранить</button>
+                                </div>
+                            </form>
+                            <div class="settings-bitrix-validation" data-bitrix-validation-results hidden></div>
+                        </section>
+
+                        <section class="settings-office-section settings-office-section--secret">
+                            <div class="settings-office-section-head">
+                                <div>
+                                    <h3 class="settings-office-section-title">Секрет регистрации воркеров</h3>
+                                    <p class="settings-office-section-hint">Укажите этот секрет при установке Orbita.Worker на ПК офиса. После перевыпуска старый секрет перестаёт работать.</p>
+                                </div>
+                                <span class="settings-registration-status @(selected.RegistrationConfigured ? "settings-registration-status--ok" : "settings-registration-status--warn")">
+                                    @(selected.RegistrationConfigured ? "Настроен" : "Не настроен")
+                                </span>
+                            </div>
+                            <div class="settings-office-secret-panel">
+                                <code class="settings-office-secret-value">@selected.MaskedRegistrationSecret</code>
+                                <form asp-action="RotateOfficeRegistrationSecret" method="post" class="settings-office-secret-form">
+                                    @Html.AntiForgeryToken()
+                                    <input type="hidden" name="officeId" value="@selected.Id" />
+                                    <button type="submit" class="settings-secondary-btn">Перевыпустить секрет</button>
+                                </form>
+                            </div>
+                        </section>
                     </div>
-                    <form asp-action="UpdateOffice" method="post" class="settings-create-form">
-                        @Html.AntiForgeryToken()
-                        <input type="hidden" name="OfficeId" value="@selected.Id" />
-                        <label class="settings-field">
-                            <span class="settings-field-label">Название</span>
-                            <input type="text" name="Name" value="@selected.Name" required maxlength="200" />
-                        </label>
-                        <label class="settings-field settings-field--checkbox">
-                            <input type="checkbox" name="IsEnabled" value="true" @(selected.IsEnabled ? "checked" : null) />
-                            <span>Офис активен</span>
-                        </label>
-                        <label class="settings-field settings-field--checkbox">
-                            <input type="checkbox" name="BitrixTransmissionEnabled" value="true" @(selected.BitrixTransmissionEnabled ? "checked" : null) />
-                            <span>Передача откликов в Bitrix24</span>
-                        </label>
-                        <button type="submit" class="settings-primary-btn">Сохранить</button>
-                    </form>
-                    <div class="settings-registration-meta">
-                        <span class="settings-registration-status @(selected.RegistrationConfigured ? "settings-registration-status--ok" : "settings-registration-status--warn")">
-                            @(selected.RegistrationConfigured ? "Настроен" : "Не настроен")
-                        </span>
-                        <span class="settings-registration-secret">@selected.MaskedRegistrationSecret</span>
-                    </div>
-                    <form asp-action="RotateOfficeRegistrationSecret" method="post">
-                        @Html.AntiForgeryToken()
-                        <input type="hidden" name="officeId" value="@selected.Id" />
-                        <button type="submit" class="settings-link-btn">Перевыпустить секрет</button>
-                    </form>
                 </div>
-            </div>
-        }
+            }
+            else
+            {
+                <div class="card card--settings-create card--settings-office-create">
+                    <div class="card-header settings-card-header">
+                        <div>
+                            <h2 class="settings-card-title">Новый офис</h2>
+                            <p class="settings-card-subtitle">Выберите офис в списке слева или создайте новый</p>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <form asp-action="CreateOffice" method="post" class="settings-create-form">
+                            @Html.AntiForgeryToken()
+                            <label class="settings-field">
+                                <span class="settings-field-label">Название</span>
+                                <input type="text" name="Name" required maxlength="200" placeholder="Москва" />
+                            </label>
+                            <button type="submit" class="settings-primary-btn">Создать офис</button>
+                        </form>
+                    </div>
+                </div>
+            }
+        </div>
     }
     else if (Model.ActiveTab == "users")
     {
@@ -242,10 +337,17 @@
                                     }
                                 </td>
                                 <td data-label="Bitrix24">
-                                    <a class="settings-bitrix-status settings-bitrix-status--@user.BitrixStatusTone"
-                                       href="@Url.Action("Index", new { tab = "integrations", userId = user.Id })">
-                                        @user.BitrixStatusLabel
-                                    </a>
+                                    @if (user.OfficeId is Guid userOfficeId)
+                                    {
+                                        <a class="settings-bitrix-status settings-bitrix-status--@user.BitrixStatusTone"
+                                           href="@Url.Action("Index", new { tab = "offices", officeId = userOfficeId })">
+                                            @user.BitrixStatusLabel
+                                        </a>
+                                    }
+                                    else
+                                    {
+                                        <span class="settings-bitrix-status settings-bitrix-status--@user.BitrixStatusTone">@user.BitrixStatusLabel</span>
+                                    }
                                 </td>
                                 <td class="data-table-menu" data-label="">
                                     @if (!user.IsCurrentUser)
@@ -366,8 +468,8 @@
             <div class="card card--settings-registration">
                 <div class="card-body settings-registration-body">
                     <div>
-                        <h2 class="settings-card-title">Legacy registration secret</h2>
-                        <p class="settings-card-subtitle">Устаревший глобальный секрет из config. Для новых воркеров используйте секрет офиса (вкладка «Офисы»).</p>
+                        <h2 class="settings-card-title">Устаревший глобальный секрет</h2>
+                        <p class="settings-card-subtitle">Секрет из config для старых установок. Для новых воркеров используйте секрет офиса (вкладка «Офисы»).</p>
                     </div>
                     <div class="settings-registration-meta">
                         <span class="settings-registration-status @(workers.Registration.IsConfigured ? "settings-registration-status--ok" : "settings-registration-status--warn")">
@@ -402,6 +504,14 @@
                     </tr>
                     </thead>
                     <tbody>
+                    @if (workers.Rows.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="8" class="settings-empty-cell">Воркеры не найдены.</td>
+                        </tr>
+                    }
+                    else
+                    {
                     @foreach (var worker in workers.Rows)
                     {
                         <tr class="@(!worker.IsEnabled ? "settings-worker-row--disabled" : null)">
@@ -469,6 +579,7 @@
                                 </div>
                             </td>
                         </tr>
+                    }
                     }
                     </tbody>
                 </table>
@@ -631,6 +742,14 @@
                     </tr>
                     </thead>
                     <tbody>
+                    @if (releases.Versions.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="6" class="settings-empty-cell">Релизы ещё не загружены.</td>
+                        </tr>
+                    }
+                    else
+                    {
                     @foreach (var release in releases.Versions)
                     {
                         <tr>
@@ -672,6 +791,7 @@
                                 </div>
                             </td>
                         </tr>
+                    }
                     }
                     </tbody>
                 </table>
@@ -987,118 +1107,49 @@
     }
     else if (Model.ActiveTab == "integrations" && integrations is not null)
     {
-        <div class="settings-grid settings-grid--integrations">
-            <div class="card card--settings-integrations-list">
-                <div class="card-header settings-card-header">
-                    <div>
-                        <h2 class="settings-card-title">Интеграции Bitrix24</h2>
-                        <p class="settings-card-subtitle">Вебхуки пользователей панели</p>
-                    </div>
-                </div>
-                <div class="card-body card-body-table settings-table-wrap">
-                    <table class="data-table data-table--settings-integrations data-table--cards">
-                        <thead>
-                        <tr>
-                            <th>Email</th>
-                            <th>Роль</th>
-                            <th>Портал</th>
-                            <th>Статус</th>
-                            <th>Проверка</th>
-                            <th></th>
-                        </tr>
-                        </thead>
-                        <tbody>
-                        @foreach (var row in integrations.Rows)
-                        {
-                            <tr>
-                                <td class="cell-name" data-label="Email">@row.Email</td>
-                                <td data-label="Роль"><span class="settings-role-pill">@row.RoleLabel</span></td>
-                                <td data-label="Портал">@(row.PortalHost ?? "—")</td>
-                                <td data-label="Статус">
-                                    <span class="settings-bitrix-status settings-bitrix-status--@row.ValidationStatusTone">@row.ValidationStatusLabel</span>
-                                </td>
-                                <td data-label="Проверка">
-                                    @if (row.LastValidatedAtUtc is not null)
-                                    {
-                                        <span data-orbita-utc="@row.LastValidatedAtUtc.Value.ToString("O")"></span>
-                                    }
-                                    else
-                                    {
-                                        <span>—</span>
-                                    }
-                                </td>
-                                <td class="data-table-actions-col" data-label="">
-                                    <a class="settings-link-btn" href="@Url.Action("Index", new { tab = "integrations", userId = row.UserId })">Настроить</a>
-                                </td>
-                            </tr>
-                        }
-                        </tbody>
-                    </table>
+        <div class="card card--settings-integrations-list">
+            <div class="card-header settings-card-header">
+                <div>
+                    <h2 class="settings-card-title">Интеграции Bitrix24</h2>
+                    <p class="settings-card-subtitle">Вебхук настраивается на уровне офиса — один портал CRM на офис</p>
                 </div>
             </div>
-
-            @if (integrations.Edit is not null)
-            {
-                var edit = integrations.Edit;
-                <div class="card card--settings-bitrix">
-                    <div class="card-header settings-card-header">
-                        <div>
-                            <h2 class="settings-card-title">@edit.Email</h2>
-                            <p class="settings-card-subtitle">Настройка вебхука Bitrix24</p>
-                        </div>
-                        <span class="settings-bitrix-status settings-bitrix-status--@edit.ValidationStatusTone">@edit.ValidationStatusLabel</span>
-                    </div>
-                    <div class="card-body">
-                        @if (!string.IsNullOrWhiteSpace(edit.MaskedWebhookUrl))
-                        {
-                            <p class="settings-bitrix-current">Текущий вебхук: <code>@edit.MaskedWebhookUrl</code></p>
-                        }
-                        @if (!string.IsNullOrWhiteSpace(edit.ValidationMessage))
-                        {
-                            <p class="settings-bitrix-message">@edit.ValidationMessage</p>
-                        }
-
-                        <form asp-action="SaveUserBitrix"
-                              method="post"
-                              class="settings-create-form settings-bitrix-form"
-                              data-bitrix-settings-form
-                              data-bitrix-validate-url="@Url.Action("ValidateUserBitrix", new { userId = edit.UserId })">
-                            @Html.AntiForgeryToken()
-                            <input type="hidden" name="UserId" value="@edit.UserId" />
-                            <label class="settings-field">
-                                <span class="settings-field-label">URL вебхука</span>
-                                <input type="url"
-                                       name="WebhookUrl"
-                                       placeholder="https://ваш-портал.bitrix24.ru/rest/1/xxxxxxxx/"
-                                       autocomplete="off"
-                                       spellcheck="false"
-                                       data-bitrix-webhook-input />
-                            </label>
-                            <div class="settings-bitrix-actions">
-                                <button type="button" class="settings-secondary-btn" data-bitrix-validate-btn>
-                                    <i class="fa-solid fa-plug-circle-check" aria-hidden="true"></i>
-                                    <span>Проверить</span>
-                                </button>
-                                <button type="submit" class="settings-primary-btn">
-                                    <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>
-                                    <span>Сохранить</span>
-                                </button>
-                            </div>
-                        </form>
-
-                        <div class="settings-bitrix-validation" data-bitrix-validation-results hidden></div>
-
-                        <details class="settings-bitrix-instructions">
-                            <summary>Как получить вебхук и какие права выдать</summary>
-                            <ol>
-                                <li>Bitrix24 → <strong>Приложения</strong> → <strong>Вебхуки</strong> → <strong>Входящий вебхук</strong>.</li>
-                                <li>Право: <strong>CRM</strong> (<code>crm</code>).</li>
-                                <li>Скопируйте полный URL и проверьте перед сохранением.</li>
-                            </ol>
-                        </details>
-                    </div>
-                </div>
-            }
+            <div class="card-body card-body-table settings-table-wrap">
+                <table class="data-table data-table--settings-integrations data-table--cards">
+                    <thead>
+                    <tr>
+                        <th>Офис</th>
+                        <th>Портал</th>
+                        <th>Статус</th>
+                        <th></th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    @if (integrations.Rows.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="4" class="settings-empty-cell">Интеграции не настроены — выберите офис на вкладке «Офисы».</td>
+                        </tr>
+                    }
+                    else
+                    {
+                    @foreach (var row in integrations.Rows)
+                    {
+                        <tr>
+                            <td class="cell-name" data-label="Офис">@row.OfficeName</td>
+                            <td data-label="Портал">@(row.PortalHost ?? "—")</td>
+                            <td data-label="Статус">
+                                <span class="settings-bitrix-status settings-bitrix-status--@row.ValidationStatusTone">@row.ValidationStatusLabel</span>
+                            </td>
+                            <td class="data-table-actions-col" data-label="">
+                                <a class="settings-link-btn" href="@Url.Action("Index", new { tab = "offices", officeId = row.OfficeId })">Настроить</a>
+                            </td>
+                        </tr>
+                    }
+                    }
+                    </tbody>
+                </table>
+            </div>
         </div>
     }
 
@@ -1122,7 +1173,7 @@
 
 @section Scripts {
     <script src="~/js/orbita-settings.js" asp-append-version="true"></script>
-    @if (Model.ActiveTab == "integrations")
+    @if (Model.ActiveTab == "integrations" || Model.ActiveTab == "offices")
     {
         <script src="~/js/orbita-bitrix-settings.js" asp-append-version="true"></script>
     }

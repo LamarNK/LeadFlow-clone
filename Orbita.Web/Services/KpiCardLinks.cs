@@ -71,7 +71,6 @@ internal static class KpiCardLinks
         "total" => "/Accounts?tab=all",
         "active" => "/Accounts?tab=active",
         "inactive" => "/Accounts?tab=inactive",
-        "blocked" => "/Accounts?tab=blocked",
         "errors" => "/Accounts?tab=errors",
         _ => null
     };
@@ -93,5 +92,13 @@ internal static class KpiCardLinks
         "medium" => "/Errors?severity=medium",
         "low" => "/Errors?severity=low",
         _ => null
+    };
+
+    public static string? StatisticsCard(string key, DateTime? from = null, DateTime? to = null) => key switch
+    {
+        "advance" or "wallet" or "accounts" => "/Accounts",
+        "responses" when from is not null && to is not null => Responses(from.Value, to.Value),
+        "workers" => "/Workers",
+        _ => "/Statistics"
     };
 }

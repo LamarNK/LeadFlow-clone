@@ -8,6 +8,7 @@ public enum PanelChangeKind
     Events,
     Errors,
     Accounts,
+    Statistics,
     NavBadges
 }
 

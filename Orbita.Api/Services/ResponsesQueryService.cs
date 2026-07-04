@@ -145,6 +145,7 @@ public sealed class ResponsesQueryService(
                 x.Source,
                 x.SourceResponseId,
                 x.FullName,
+                x.Age,
                 x.PhoneRaw,
                 x.PhoneNormalized,
                 x.Vacancy,
@@ -198,6 +199,7 @@ public sealed class ResponsesQueryService(
                     x.Source,
                     x.SourceResponseId,
                     x.FullName,
+                    x.Age,
                     x.PhoneRaw,
                     x.PhoneNormalized,
                     x.Vacancy,
@@ -222,7 +224,7 @@ public sealed class ResponsesQueryService(
 
     private static readonly HashSet<string> AllowedSortColumns = new(StringComparer.OrdinalIgnoreCase)
     {
-        "time", "vacancy", "author", "account", "status"
+        "time", "author", "phone", "city", "age", "vacancy", "account", "status", "source"
     };
 
     private static IQueryable<CandidateResponseEntity> ApplyOrdering(
@@ -233,24 +235,42 @@ public sealed class ResponsesQueryService(
         var column = NormalizeSortColumn(sort);
         var descending = ResolveDescending(column, sortDir);
 
-        return column switch
+        var ordered = column switch
         {
-            "vacancy" => descending
-                ? query.OrderByDescending(x => x.Vacancy)
-                : query.OrderBy(x => x.Vacancy),
             "author" => descending
                 ? query.OrderByDescending(x => x.FullName)
                 : query.OrderBy(x => x.FullName),
+            "phone" => descending
+                ? query.OrderByDescending(x => x.PhoneNormalized).ThenByDescending(x => x.PhoneRaw)
+                : query.OrderBy(x => x.PhoneNormalized).ThenBy(x => x.PhoneRaw),
+            "city" => descending
+                ? query.OrderByDescending(x => x.City)
+                : query.OrderBy(x => x.City),
+            "age" => descending
+                ? query.OrderByDescending(x => x.Age)
+                : query.OrderBy(x => x.Age),
+            "vacancy" => descending
+                ? query.OrderByDescending(x => x.Vacancy)
+                : query.OrderBy(x => x.Vacancy),
             "account" => descending
                 ? query.OrderByDescending(x => x.AccountName)
                 : query.OrderBy(x => x.AccountName),
             "status" => descending
                 ? query.OrderByDescending(x => x.Status)
                 : query.OrderBy(x => x.Status),
+            "source" => descending
+                ? query.OrderByDescending(x => x.Source)
+                : query.OrderBy(x => x.Source),
             _ => descending
                 ? query.OrderByDescending(x => x.CreatedAt)
                 : query.OrderBy(x => x.CreatedAt)
         };
+
+        return column == "time"
+            ? ordered
+            : descending
+                ? ordered.ThenByDescending(x => x.CreatedAt)
+                : ordered.ThenBy(x => x.CreatedAt);
     }
 
     private static string NormalizeSortColumn(string? sort) =>
@@ -313,25 +333,49 @@ public sealed class ResponsesQueryService(
             query = query.Where(x => x.CreatedAt < toUtc.Value);
         }
 
-        if (!string.IsNullOrWhiteSpace(search))
+        query = ApplySearchFilter(query, search);
+        query = ApplyVacancyFilter(query, vacancy);
+
+        return query;
+    }
+
+    private static IQueryable<CandidateResponseEntity> ApplySearchFilter(
+        IQueryable<CandidateResponseEntity> query,
+        string? search)
+    {
+        foreach (var token in SearchQueryNormalizer.Tokenize(search))
         {
-            var term = search.Trim();
+            var pattern = SearchQueryNormalizer.ToILikePattern(token);
+            var phoneDigits = SearchQueryNormalizer.ExtractDigits(token);
+            var hasPhone = phoneDigits.Length >= 4;
+            var phonePattern = $"%{phoneDigits}%";
+
             query = query.Where(x =>
-                x.FullName.Contains(term)
-                || x.PhoneRaw.Contains(term)
-                || x.PhoneNormalized.Contains(term)
-                || x.Vacancy.Contains(term)
-                || x.City.Contains(term)
-                || x.AccountName.Contains(term));
+                EF.Functions.ILike(x.FullName, pattern)
+                || EF.Functions.ILike(x.PhoneRaw, pattern)
+                || EF.Functions.ILike(x.PhoneNormalized, pattern)
+                || EF.Functions.ILike(x.Vacancy, pattern)
+                || EF.Functions.ILike(x.City, pattern)
+                || EF.Functions.ILike(x.AccountName, pattern)
+                || (hasPhone && (
+                    EF.Functions.ILike(x.PhoneRaw, phonePattern)
+                    || EF.Functions.ILike(x.PhoneNormalized, phonePattern))));
         }
 
-        if (!string.IsNullOrWhiteSpace(vacancy))
+        return query;
+    }
+
+    private static IQueryable<CandidateResponseEntity> ApplyVacancyFilter(
+        IQueryable<CandidateResponseEntity> query,
+        string? vacancy)
+    {
+        foreach (var token in SearchQueryNormalizer.Tokenize(vacancy))
         {
-            var adTerm = vacancy.Trim();
+            var pattern = SearchQueryNormalizer.ToILikePattern(token);
             query = query.Where(x =>
-                x.Vacancy.Contains(adTerm)
-                || x.SourceResponseId.Contains(adTerm)
-                || x.VacancyUrl.Contains(adTerm));
+                EF.Functions.ILike(x.Vacancy, pattern)
+                || EF.Functions.ILike(x.SourceResponseId, pattern)
+                || EF.Functions.ILike(x.VacancyUrl, pattern));
         }
 
         return query;

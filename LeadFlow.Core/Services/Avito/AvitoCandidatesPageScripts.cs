@@ -308,6 +308,61 @@ public static class AvitoCandidatesPageScripts
         })();
         """;
 
+    /// <summary>Клик по кнопке «Перейти в чат» на карточке отклика (тот же индекс, что у <c>job-application/item</c>).</summary>
+    public static string BuildClickCandidateChatByIndexScript(int index) =>
+        $$"""
+        (() => {
+            const isVisible = (element) => {
+                if (!element) {
+                    return false;
+                }
+
+                const style = window.getComputedStyle(element);
+                if (style.display === "none" || style.visibility === "hidden" || style.pointerEvents === "none") {
+                    return false;
+                }
+
+                const rect = element.getBoundingClientRect();
+                return rect.width > 0 && rect.height > 0;
+            };
+
+            const dispatchClick = (element) => {
+                element.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+                if (typeof element.click === "function") {
+                    element.click();
+                }
+            };
+
+            const items = Array.from(document.querySelectorAll("[data-marker='job-application/item']"));
+            const idx = {{index}};
+            if (idx < 0 || idx >= items.length) {
+                return JSON.stringify({ ok: false, reason: "index_out_of_range", items: items.length, index: idx });
+            }
+
+            const item = items[idx];
+            const chat = item.querySelector("[data-marker='job-application/link/to-chat']");
+            if (!chat) {
+                return JSON.stringify({ ok: false, reason: "no_chat_button", index: idx, items: items.length });
+            }
+
+            if (!isVisible(chat)) {
+                return JSON.stringify({ ok: false, reason: "chat_button_hidden", index: idx, items: items.length });
+            }
+
+            try {
+                chat.scrollIntoView({ block: "center", inline: "nearest" });
+            } catch {
+            }
+
+            try {
+                dispatchClick(chat);
+                return JSON.stringify({ ok: true, index: idx, items: items.length });
+            } catch (error) {
+                return JSON.stringify({ ok: false, reason: String(error), index: idx, items: items.length });
+            }
+        })();
+        """;
+
     /// <summary>Клик по карточке отклика в списке (открывает панель «Данные» справа).</summary>
     public static string BuildClickCandidateItemByIndexScript(int index) =>
         $$"""
@@ -460,6 +515,43 @@ public static class AvitoCandidatesPageScripts
                     phoneDigits: normalizePhoneKey(readPhone(item))
                 }))
             );
+        })();
+        """;
+
+    /// <summary>Закрыть панель «Данные» справа, если она осталась открытой после detail-enrich.</summary>
+    public static string BuildDismissCandidateDetailPanelScript() =>
+        """
+        (() => {
+            const dispatchEscape = () => {
+                document.dispatchEvent(new KeyboardEvent("keydown", {
+                    key: "Escape",
+                    code: "Escape",
+                    bubbles: true,
+                    cancelable: true
+                }));
+            };
+
+            dispatchEscape();
+
+            const overlays = Array.from(document.querySelectorAll(
+                "[class*='overlay'], [class*='Overlay'], [data-marker*='close'], [aria-label*='Закрыть'], [aria-label*='закрыть']"
+            ));
+            for (const overlay of overlays) {
+                try {
+                    overlay.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+                } catch {
+                }
+            }
+
+            const responsePanel = document.querySelector("[class*='styles-module-response']");
+            if (responsePanel) {
+                dispatchEscape();
+            }
+
+            return JSON.stringify({
+                ok: true,
+                hadResponsePanel: !!responsePanel
+            });
         })();
         """;
 

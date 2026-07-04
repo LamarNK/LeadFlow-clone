@@ -1,0 +1,277 @@
+@model StatisticsViewModel
+@using System.Text.Json
+@{
+    ViewData["Title"] = "Статистика";
+    var jsonOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+    var chartsJson = JsonSerializer.Serialize(Model.Charts, jsonOptions);
+    var snapshotUrl = Url.Action("Snapshot", "Statistics", new { from = Model.Header.DateFrom.ToString("yyyy-MM-dd"), to = Model.Header.DateTo.ToString("yyyy-MM-dd") })!;
+    var stats = Model.AccountStats;
+    var totalAccounts = Math.Max(1, stats.Total);
+}
+<partial name="_PageHeader" model="Model.Header" />
+<div class="orbita-main statistics-page"
+     data-orbita-live
+     data-orbita-live-page="statistics"
+     data-orbita-snapshot="@snapshotUrl"
+     data-show-office-column="@(Model.ShowOfficeColumn ? "true" : "false")"
+     data-worker-details-url="@Url.Action("Details", "Workers", new { id = "__id__" })"
+     data-accounts-url="@Url.Action("Index", "Accounts")">
+    @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+    {
+        <p class="error-text">@Model.ErrorMessage</p>
+    }
+    else
+    {
+        <div class="statistics-stack">
+        <div class="kpi-row statistics-kpi-row">
+            @{ var kpiIdx = 0; }
+            @foreach (var kpi in Model.KpiCards)
+            {
+                <partial name="_KpiCard" model="@(new KpiCardPartialViewModel { Card = kpi, Index = kpiIdx, Layout = KpiCardLayout.StatDelta, ExtraClass = " kpi-card--stat" })" />
+                kpiIdx++;
+            }
+        </div>
+
+        <div class="statistics-grid">
+            <div class="card card--statistics-balances">
+                <div class="card-header">
+                    <h2>Балансы аккаунтов</h2>
+                    <span class="card-header-meta">Текущий снимок с воркеров</span>
+                </div>
+                <div class="card-body" data-statistics-balances>
+                    @if (Model.BalanceRows.Count == 0)
+                    {
+                        <partial name="_TableEmptyState" model="@(new TableEmptyStateViewModel
+                        {
+                            IconClass = "fa-solid fa-wallet",
+                            Title = "Нет данных по балансам",
+                            Description = "Дождитесь синхронизации с воркерами или добавьте аккаунты.",
+                            CtaLabel = "Аккаунты",
+                            CtaUrl = Url.Action("Index", "Accounts")
+                        })" />
+                    }
+                    else
+                    {
+                        <div class="statistics-balance-list">
+                            @foreach (var row in Model.BalanceRows)
+                            {
+                                <div class="statistics-balance-row @(row.IsLowBalance ? "statistics-balance-row--low" : "")"
+                                     data-balance-account-id="@row.AccountId">
+                                    <div class="statistics-balance-head">
+                                        <div class="statistics-balance-title">
+                                            <a href="@Url.Action("Index", "Accounts", new { q = row.AccountName })" class="statistics-balance-name">@row.AccountName</a>
+                                            <span class="statistics-balance-meta">
+                                                @row.WorkerName
+                                                @if (Model.ShowOfficeColumn && !string.IsNullOrWhiteSpace(row.OfficeName))
+                                                {
+                                                    <span>· @row.OfficeName</span>
+                                                }
+                                            </span>
+                                        </div>
+                                        <div class="statistics-balance-amounts">
+                                            <span class="statistics-balance-advance" title="Аванс">@row.AdvanceText</span>
+                                            @if (row.Wallet > 0)
+                                            {
+                                                <span class="statistics-balance-wallet" title="Кошелёк">@row.WalletText</span>
+                                            }
+                                        </div>
+                                    </div>
+                                    <div class="statistics-balance-bar-track" aria-hidden="true">
+                                        <span class="statistics-balance-bar-fill" style="width: @((row.BarWidth * 100).ToString("0.####", System.Globalization.CultureInfo.InvariantCulture))%"></span>
+                                    </div>
+                                    @if (!string.IsNullOrWhiteSpace(row.BalanceBreakdown) || !string.IsNullOrWhiteSpace(row.BalanceSubtitle))
+                                    {
+                                        <div class="statistics-balance-foot">
+                                            @if (!string.IsNullOrWhiteSpace(row.BalanceBreakdown))
+                                            {
+                                                <span class="statistics-balance-breakdown">@row.BalanceBreakdown</span>
+                                            }
+                                            @if (!string.IsNullOrWhiteSpace(row.BalanceSubtitle))
+                                            {
+                                                <span class="statistics-balance-subtitle">@row.BalanceSubtitle</span>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <div class="card card--statistics-trend">
+                <div class="card-header">
+                    <h2>Динамика откликов</h2>
+                    <span class="card-header-meta">@Model.Header.DateRangeLabel</span>
+                </div>
+                <div class="card-body">
+                    <div class="chart-canvas-wrap chart-canvas-wrap--statistics-trend">
+                        <canvas id="chart-statistics-trend" aria-label="Динамика откликов по дням"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card card--statistics-hr">
+            <div class="card-header">
+                <h2>HR-инсайты</h2>
+                <span class="card-header-meta">
+                    Средний возраст: <span data-statistics-avg-age>@Model.HrInsights.AverageAgeText</span>
+                    · Мессенджер: <span data-statistics-messenger>@Model.HrInsights.MessengerCoverageText</span>
+                </span>
+            </div>
+            <div class="card-body">
+                <div class="statistics-hr-grid" data-statistics-hr>
+                    <partial name="_StatisticsHrTable" model="@("Города")" view-data="@(new ViewDataDictionary(ViewData) { ["Rows"] = Model.HrInsights.TopCities })" />
+                    <partial name="_StatisticsHrTable" model="@("Вакансии")" view-data="@(new ViewDataDictionary(ViewData) { ["Rows"] = Model.HrInsights.TopVacancies })" />
+                    <partial name="_StatisticsHrTable" model="@("Аккаунты")" view-data="@(new ViewDataDictionary(ViewData) { ["Rows"] = Model.HrInsights.TopAccounts })" />
+                    <div class="statistics-hr-panel">
+                        <h3 class="statistics-hr-title">Возраст</h3>
+                        <table class="data-table data-table--compact statistics-hr-table">
+                            <thead>
+                                <tr>
+                                    <th>Группа</th>
+                                    <th class="cell-num">Всего</th>
+                                    <th class="cell-num">CRM</th>
+                                    <th class="cell-num">Конв.</th>
+                                </tr>
+                            </thead>
+                            <tbody data-statistics-age-buckets>
+                                @foreach (var row in Model.HrInsights.AgeBuckets)
+                                {
+                                    <tr>
+                                        <td>@row.Bucket</td>
+                                        <td class="cell-num">@row.Total</td>
+                                        <td class="cell-num">@row.Sent</td>
+                                        <td class="cell-num">@row.ConversionText</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="statistics-grid statistics-grid--bottom">
+            <div class="card card--account-stats card--statistics-accounts">
+                <div class="card-header">
+                    <h2>Состояние аккаунтов</h2>
+                    <span class="card-header-meta">@Model.Summary.ActiveAdsCount активных / @Model.Summary.BlockedAdsCount заблок. объявлений</span>
+                </div>
+                <div class="card-body">
+                <div class="account-stats-widget" data-statistics-account-stats>
+                    <div class="account-stats-chart">
+                        <div class="account-stats-donut">
+                            <div class="chart-canvas-wrap chart-canvas-wrap--account-donut">
+                                <canvas id="chart-statistics-account-status" aria-label="Состояние аккаунтов"></canvas>
+                            </div>
+                            <div class="account-stats-center">
+                                <span class="account-stats-total-num" data-account-stat="total">@stats.Total</span>
+                                <span class="account-stats-total-lbl">Всего</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="account-stats-legend">
+                        <div class="account-stats-list">
+                            <div class="account-stats-row">
+                                <span class="account-stats-label"><span class="account-stats-dot" style="background:#22c55e"></span>Активны</span>
+                                <span class="account-stats-value" data-account-stat="active">@stats.Active (@FmtPct(stats.Active, totalAccounts))</span>
+                            </div>
+                            <div class="account-stats-row">
+                                <span class="account-stats-label"><span class="account-stats-dot" style="background:#94a3b8"></span>Неактивны</span>
+                                <span class="account-stats-value" data-account-stat="inactive">@stats.Inactive (@FmtPct(stats.Inactive, totalAccounts))</span>
+                            </div>
+                            <div class="account-stats-row">
+                                <span class="account-stats-label"><span class="account-stats-dot" style="background:#ef4444"></span>Заблокированы</span>
+                                <span class="account-stats-value" data-account-stat="blocked">@stats.Blocked (@FmtPct(stats.Blocked, totalAccounts))</span>
+                            </div>
+                            <div class="account-stats-row">
+                                <span class="account-stats-label"><span class="account-stats-dot" style="background:#f59e0b"></span>Ошибки</span>
+                                <span class="account-stats-value" data-account-stat="errors">@stats.Errors (@FmtPct(stats.Errors, totalAccounts))</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                </div>
+            </div>
+
+            <div class="card card--statistics-workers">
+                <div class="card-header">
+                    <h2>Воркеры за период</h2>
+                    @if (Model.Summary.AvgResponseMinutesText is not null)
+                    {
+                        <span class="card-header-meta">Среднее время отклика: @Model.Summary.AvgResponseMinutesText</span>
+                    }
+                </div>
+                <div class="card-body card-body-table statistics-workers-table-wrap">
+                    @if (Model.Workers.Count == 0)
+                    {
+                        <partial name="_TableEmptyState" model="@(new TableEmptyStateViewModel
+                        {
+                            IconClass = "fa-solid fa-server",
+                            Title = "Воркеры не найдены",
+                            Description = "Добавьте воркер или дождитесь подключения агента.",
+                            CtaLabel = "Все воркеры",
+                            CtaUrl = Url.Action("Index", "Workers")
+                        })" />
+                    }
+                    else
+                    {
+                        <table class="data-table data-table--cards data-table--statistics-workers">
+                            <thead>
+                                <tr>
+                                    <th>Воркер</th>
+                                    @if (Model.ShowOfficeColumn)
+                                    {
+                                        <th>Офис</th>
+                                    }
+                                    <th>Статус</th>
+                                    <th class="cell-num">Откл.</th>
+                                    <th class="cell-num">Дубл.</th>
+                                    <th class="cell-num">Ошиб.</th>
+                                    <th class="cell-num">Акк.</th>
+                                </tr>
+                            </thead>
+                            <tbody data-orbita-live-body="statistics-workers">
+                                @foreach (var worker in Model.Workers)
+                                {
+                                    <tr data-worker-id="@worker.Id">
+                                        <td data-label="Воркер">
+                                            <a href="@Url.Action("Details", "Workers", new { id = worker.Id })">@worker.DisplayName</a>
+                                        </td>
+                                        @if (Model.ShowOfficeColumn)
+                                        {
+                                            <td data-label="Офис">@worker.OfficeName</td>
+                                        }
+                                        <td data-label="Статус">
+                                            <span class="status-pill status-pill--@(worker.IsOnline ? "online" : "offline")">
+                                                @(worker.IsOnline ? "Онлайн" : "Офлайн")
+                                            </span>
+                                        </td>
+                                        <td class="cell-num" data-label="Отклики">@worker.PeriodResponses</td>
+                                        <td class="cell-num" data-label="Дубли">@worker.PeriodDuplicates</td>
+                                        <td class="cell-num" data-label="Ошибки">@worker.PeriodErrors</td>
+                                        <td class="cell-num" data-label="Аккаунты">@worker.ActiveAccounts / @worker.TotalAccounts</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    }
+                </div>
+            </div>
+        </div>
+        </div>
+
+        <script id="statistics-charts-data" type="application/json">@Html.Raw(chartsJson)</script>
+    }
+</div>
+
+@section Scripts {
+    <script src="~/lib/chart.js/dist/chart.umd.js" asp-append-version="true"></script>
+    <script src="~/js/orbita-statistics.js" asp-append-version="true"></script>
+}
+
+@functions {
+    private static string FmtPct(int value, int total) => $"{value * 100 / total}%";
+}

@@ -347,7 +347,7 @@
                     var accountSearchUrl = Url.Action("Index", "Accounts", new { q = account.DisplayName });
                     var responsesUrl = Url.Action("Index", "Responses", new { accountId = account.Id });
                     <tr class="worker-account-row@(account.IsProcessingNow ? " worker-account-row--processing" : "")" data-account-id="@account.Id">
-                        <td data-label="Вкл">
+                        <td class="cell-toggle" data-label="Вкл">
                             <label class="worker-toggle" title="@(account.IsEnabledInPanel ? "Отключить аккаунт в панели" : "Включить аккаунт в панели")">
                                 <input type="checkbox"
                                        data-account-enable-toggle
@@ -385,10 +385,10 @@
                                 <span class="account-error-hint" title="@account.LastErrorMessage">@account.LastErrorMessage</span>
                             }
                         </td>
-                        <td data-label="Баланс"><span class="account-balance-multiline">@account.BalanceText</span></td>
-                        <td data-label="Откликов">@account.Responses</td>
+                        <td class="cell-num cell-balance" data-label="Баланс"><span class="account-balance-multiline">@account.BalanceText</span></td>
+                        <td class="cell-num" data-label="Откликов">@account.Responses</td>
                         <td data-label="Последняя активность"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(account.LastActivityUtc, "activity"))" /></td>
-                        <td data-label="Ошибок">@account.Errors</td>
+                        <td class="cell-num" data-label="Ошибок">@account.Errors</td>
                         <td class="data-table-menu" data-label="">
                             <div class="row-menu" data-row-menu>
                                 <button type="button" class="row-menu-btn" aria-label="Действия" aria-expanded="false" aria-haspopup="true">

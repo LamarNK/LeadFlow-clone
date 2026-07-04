@@ -57,14 +57,14 @@ public sealed class PanelAuditService(OrbitaDbContext db)
             query = query.Where(x => x.Action == action);
         }
 
-        if (!string.IsNullOrWhiteSpace(searchText))
+        foreach (var token in SearchQueryNormalizer.Tokenize(searchText))
         {
-            var q = searchText.Trim();
+            var pattern = SearchQueryNormalizer.ToILikePattern(token);
             query = query.Where(x =>
-                (x.ActorEmail != null && EF.Functions.ILike(x.ActorEmail, $"%{q}%"))
-                || (x.Details != null && EF.Functions.ILike(x.Details, $"%{q}%"))
-                || (x.TargetId != null && EF.Functions.ILike(x.TargetId, $"%{q}%"))
-                || EF.Functions.ILike(x.Action, $"%{q}%"));
+                (x.ActorEmail != null && EF.Functions.ILike(x.ActorEmail, pattern))
+                || (x.Details != null && EF.Functions.ILike(x.Details, pattern))
+                || (x.TargetId != null && EF.Functions.ILike(x.TargetId, pattern))
+                || EF.Functions.ILike(x.Action, pattern));
         }
 
         var total = await query.CountAsync(ct);

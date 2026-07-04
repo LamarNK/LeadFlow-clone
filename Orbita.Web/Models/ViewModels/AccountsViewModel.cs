@@ -69,6 +69,5 @@ public sealed class AccountsSummaryViewModel
     public int Total { get; init; }
     public int Active { get; init; }
     public int Inactive { get; init; }
-    public int Blocked { get; init; }
     public int Errors { get; init; }
 }

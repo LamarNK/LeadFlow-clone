@@ -10,7 +10,8 @@ namespace Orbita.Api.Services;
 public sealed class WorkerConfigService(
     OrbitaDbContext db,
     OfficeScopeService officeScope,
-    IPanelRealtimeNotifier panelRealtime)
+    IPanelRealtimeNotifier panelRealtime,
+    WorkerReleaseService releases)
 {
     public Task<WorkerConfigDto?> GetConfigForWorkerAsync(
         Guid workerId,
@@ -49,28 +50,26 @@ public sealed class WorkerConfigService(
             .AsNoTracking()
             .Where(x => x.WorkerId == workerId)
             .OrderBy(x => x.DisplayName)
-            .Select(x => new
-            {
-                x.AccountId,
-                x.AdsPowerProfileId,
-                x.DisplayName,
-                x.IsEnabledInPanel,
-                x.SubProfilesRefreshRequestedAtUtc,
-                x.SubProfilesDisabledIdsJson
-            })
             .ToListAsync(ct);
 
         var accounts = accountRows
-            .Select(x => new WorkerAccountConfigDto(
-                x.AccountId,
-                x.AdsPowerProfileId,
-                x.DisplayName,
-                x.IsEnabledInPanel,
-                worker.AdsPowerApiBaseUrl,
-                worker.AdsPowerApiKey,
-                x.SubProfilesRefreshRequestedAtUtc,
-                Parse(x.SubProfilesDisabledIdsJson)))
+            .Select(x => ToAccountConfigDto(x, worker.AdsPowerApiBaseUrl, worker.AdsPowerApiKey))
             .ToList();
+
+        var updateCheck = await releases.CheckUpdateAsync(worker.AppVersion, ct);
+        WorkerUpdateOfferDto? updateOffer = null;
+        if (updateCheck.HasUpdate
+            && !string.IsNullOrWhiteSpace(updateCheck.LatestVersion)
+            && !string.IsNullOrWhiteSpace(updateCheck.DownloadPath)
+            && !string.IsNullOrWhiteSpace(updateCheck.Sha256))
+        {
+            updateOffer = new WorkerUpdateOfferDto(
+                updateCheck.LatestVersion,
+                updateCheck.DownloadPath,
+                updateCheck.Sha256,
+                updateCheck.FileSize,
+                updateCheck.ReleaseNotes);
+        }
 
         return new WorkerConfigDto(
             worker.Id,
@@ -78,7 +77,8 @@ public sealed class WorkerConfigService(
             worker.AdsPowerApiBaseUrl,
             worker.AdsPowerApiKey,
             accounts,
-            pendingCommand);
+            pendingCommand,
+            updateOffer);
     }
 
     public async Task<bool> SyncAccountsAsync(
@@ -265,6 +265,13 @@ public sealed class WorkerConfigService(
         }
 
         account.IsEnabledInPanel = request.IsEnabledInPanel;
+        if (request.IsEnabledInPanel
+            && string.Equals(account.Status, "Paused", StringComparison.OrdinalIgnoreCase))
+        {
+            account.Status = "Active";
+            account.LastErrorMessage = string.Empty;
+        }
+
         account.UpdatedAtUtc = DateTime.UtcNow;
         await db.SaveChangesAsync(ct);
 
@@ -273,16 +280,31 @@ public sealed class WorkerConfigService(
             worker.OfficeId,
             workerId);
 
-        return (new WorkerAccountConfigDto(
+        return (ToAccountConfigDto(account, worker.AdsPowerApiBaseUrl, worker.AdsPowerApiKey), null);
+    }
+
+    private static WorkerAccountConfigDto ToAccountConfigDto(
+        WorkerAccountEntity account,
+        string? adsPowerApiBaseUrl,
+        string? adsPowerApiKey) =>
+        new(
             account.AccountId,
             account.AdsPowerProfileId,
             account.DisplayName,
             account.IsEnabledInPanel,
-            worker.AdsPowerApiBaseUrl,
-            worker.AdsPowerApiKey,
+            adsPowerApiBaseUrl,
+            adsPowerApiKey,
             account.SubProfilesRefreshRequestedAtUtc,
-            Parse(account.SubProfilesDisabledIdsJson)), null);
-    }
+            Parse(account.SubProfilesDisabledIdsJson),
+            string.IsNullOrWhiteSpace(account.Status) ? null : account.Status,
+            string.IsNullOrWhiteSpace(account.LastErrorMessage) ? null : account.LastErrorMessage,
+            account.LastMonitoringAt,
+            LastAuthCheckAtUtc: null,
+            string.IsNullOrWhiteSpace(account.SubProfilesJson) ? null : account.SubProfilesJson,
+            account.SubProfilesRefreshedAtUtc,
+            account.ActiveAdsCount,
+            account.BlockedCount,
+            account.DraftsCount);
 
     public async Task<(bool Success, string? Error)> UpdateSubProfileEnabledAsync(
         Guid workerId,

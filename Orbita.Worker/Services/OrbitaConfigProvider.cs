@@ -1,11 +1,11 @@
-using LeadFlow.Core.Data;
-using LeadFlow.Core.Models;
 using LeadFlow.Core.Services.Worker;
 using Orbita.Contracts;
 
 namespace Orbita.Worker.Services;
 
-public sealed class OrbitaConfigProvider(OrbitaApiClient apiClient, IMonitoringRepository repository) : IWorkerConfigProvider
+public sealed class OrbitaConfigProvider(
+    OrbitaApiClient apiClient,
+    WorkerAccountRuntimeStore runtimeStore) : IWorkerConfigProvider
 {
     private WorkerConfigDto? _cached;
     private DateTime _cachedAtUtc = DateTime.MinValue;
@@ -28,43 +28,12 @@ public sealed class OrbitaConfigProvider(OrbitaApiClient apiClient, IMonitoringR
             ? "http://local.adspower.net:50325"
             : _cached.AdsPowerApiBaseUrl;
 
-        var persisted = (await repository.GetAccountsAsync(cancellationToken).ConfigureAwait(false))
-            .ToDictionary(x => x.Id);
-
         var accounts = _cached.Accounts
             .Where(a => a.IsEnabled)
             .Select(a =>
             {
-                var account = new AvitoAccount
-                {
-                    Id = a.AccountId,
-                    DisplayName = a.DisplayName,
-                    IsEnabled = true,
-                    ProfileProvider = AvitoProfileProvider.AdsPower,
-                    AdsPowerProfileId = a.AdsPowerProfileId,
-                    AdsPowerProfileName = a.DisplayName,
-                    AdsPowerApiBaseUrl = string.IsNullOrWhiteSpace(a.AdsPowerApiBaseUrl) ? defaultBaseUrl : a.AdsPowerApiBaseUrl,
-                    AdsPowerApiKey = a.AdsPowerApiKey ?? _cached.AdsPowerApiKey
-                };
-
-                if (persisted.TryGetValue(a.AccountId, out var saved))
-                {
-                    MergeRuntimeState(account, saved);
-                }
-
-                if (a.SubProfilesRefreshRequestedAtUtc is not null
-                    && (account.SubProfilesRefreshedAt is null
-                        || a.SubProfilesRefreshRequestedAtUtc > account.SubProfilesRefreshedAt))
-                {
-                    account.ForceSubProfilesRefresh = true;
-                }
-
-                if (a.DisabledSubProfileIds is { Count: > 0 })
-                {
-                    account.DisabledSubProfileIds = a.DisabledSubProfileIds
-                        .ToHashSet(StringComparer.Ordinal);
-                }
-
+                var account = WorkerAccountConfigMapper.ToAccount(a, _cached, defaultBaseUrl);
+                runtimeStore.OverlayRuntime(account);
                 return account;
             })
             .ToList();
@@ -79,18 +48,4 @@ public sealed class OrbitaConfigProvider(OrbitaApiClient apiClient, IMonitoringR
     public void InvalidateCache() => _cached = null;
 
     public void InvalidateConfigCache() => InvalidateCache();
-
-    private static void MergeRuntimeState(AvitoAccount target, AvitoAccount source)
-    {
-        target.Status = source.Status;
-        target.LastErrorMessage = source.LastErrorMessage;
-        target.LastMonitoringAt = source.LastMonitoringAt;
-        target.LastAuthCheckAt = source.LastAuthCheckAt;
-        target.ActiveAdsCount = source.ActiveAdsCount;
-        target.BlockedCount = source.BlockedCount;
-        target.DraftsCount = source.DraftsCount;
-        target.AdsStatsUpdatedAt = source.AdsStatsUpdatedAt;
-        target.SubProfilesJson = source.SubProfilesJson;
-        target.SubProfilesRefreshedAt = source.SubProfilesRefreshedAt;
-    }
 }
