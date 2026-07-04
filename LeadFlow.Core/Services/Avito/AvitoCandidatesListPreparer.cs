@@ -109,7 +109,9 @@ public static class AvitoCandidatesListPreparer
         var detailEnrichClicks = 0;
         var detailEnrichSkipped = 0;
         var detailEnrichHits = 0;
-        if (domItems > 0)
+        var isJobCrmPage = await TryDetectJobCrmResponsesPageAsync(executeScript, cancellationToken)
+            .ConfigureAwait(false);
+        if (domItems > 0 && !isJobCrmPage)
         {
             var enrichment = await TryCollectDetailEnrichmentAsync(
                     executeScript,
@@ -142,11 +144,15 @@ public static class AvitoCandidatesListPreparer
             detailEnrichSkipped,
             detailEnrichHits);
 
+        var detailEnrichNote = isJobCrmPage
+            ? "detailEnrich=skipped (CRM page)"
+            : $"detailEnrich={result.DetailEnrichHits}/{result.DetailEnrichClicks} (skipped {result.DetailEnrichSkipped})";
         _ = GlobalLogger.Instance.LogAsync(
-            $"Candidates list prepared for {logContext}: scrollRounds={result.ScrollRounds}, domItems={result.DomItemCount}, phonesReady={result.PhonesReady} ({result.CardsWithPhone}/{result.DomItemCount}), maskedLeft={result.MaskedPhonesLeft}, phoneRevealRounds={result.PhoneRevealRounds}, phoneClicks={result.PhoneRevealClicks}, detailEnrich={result.DetailEnrichHits}/{result.DetailEnrichClicks} (skipped {result.DetailEnrichSkipped}).",
+            $"Candidates list prepared for {logContext}: scrollRounds={result.ScrollRounds}, domItems={result.DomItemCount}, phonesReady={result.PhonesReady} ({result.CardsWithPhone}/{result.DomItemCount}), maskedLeft={result.MaskedPhonesLeft}, phoneRevealRounds={result.PhoneRevealRounds}, phoneClicks={result.PhoneRevealClicks}, {detailEnrichNote}.",
             DeskLinkAuditLogLevel.Info,
             properties: new Dictionary<string, object?>
             {
+                ["candidates.prepare.isJobCrmPage"] = isJobCrmPage,
                 ["candidates.prepare.scrollRounds"] = result.ScrollRounds,
                 ["candidates.prepare.domItemCount"] = result.DomItemCount,
                 ["candidates.prepare.cardsWithPhone"] = result.CardsWithPhone,
@@ -395,6 +401,28 @@ public static class AvitoCandidatesListPreparer
         catch
         {
             return null;
+        }
+    }
+
+    private static async Task<bool> TryDetectJobCrmResponsesPageAsync(
+        Func<string, CancellationToken, Task<string>> executeScript,
+        CancellationToken cancellationToken)
+    {
+        var raw = await executeScript(AvitoCandidatesPageScripts.BuildIsJobCrmResponsesPageScript(), cancellationToken)
+            .ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(UnwrapJsonString(raw));
+            return doc.RootElement.TryGetProperty("isJobCrm", out var prop) && prop.GetBoolean();
+        }
+        catch
+        {
+            return false;
         }
     }
 

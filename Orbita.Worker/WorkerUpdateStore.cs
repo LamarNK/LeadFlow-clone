@@ -11,9 +11,11 @@ public sealed class WorkerUpdateStore
     };
 
     private static string StoreDirectory =>
-        Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "OrbitaWorker");
+        Environment.GetEnvironmentVariable("ORBITA_WORKER_UPDATE_STORE_DIR") is { Length: > 0 } testDir
+            ? testDir
+            : Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "OrbitaWorker");
 
     private static string StorePath => Path.Combine(StoreDirectory, "update-result.json");
 
@@ -47,31 +49,45 @@ public sealed class WorkerUpdateStore
 
     public PendingMsiState? TryGetPendingMsi()
     {
-        if (!File.Exists(PendingMsiPath))
+        var state = TryReadPendingMsiState();
+        if (state is null)
         {
             return null;
         }
 
-        try
+        if (!File.Exists(state.MsiPath))
         {
-            var state = JsonSerializer.Deserialize<PendingMsiState>(File.ReadAllText(PendingMsiPath), JsonOptions);
-            if (state is null || string.IsNullOrWhiteSpace(state.Version) || string.IsNullOrWhiteSpace(state.MsiPath))
-            {
-                return null;
-            }
-
-            if (!File.Exists(state.MsiPath))
-            {
-                ClearPendingMsi();
-                return null;
-            }
-
-            return state;
-        }
-        catch
-        {
+            ClearPendingMsi();
             return null;
         }
+
+        if (!AppVersionHelper.IsNewer(state.Version, ApplicationVersionProvider.GetVersion()))
+        {
+            DiscardPendingMsi(state);
+            return null;
+        }
+
+        return state;
+    }
+
+    /// <summary>Удаляет скачанный MSI, если текущая версия воркера уже не ниже целевой.</summary>
+    public bool TryPruneObsoletePendingMsi(out string? prunedVersion)
+    {
+        prunedVersion = null;
+        var state = TryReadPendingMsiState();
+        if (state is null)
+        {
+            return false;
+        }
+
+        if (AppVersionHelper.IsNewer(state.Version, ApplicationVersionProvider.GetVersion()))
+        {
+            return false;
+        }
+
+        prunedVersion = state.Version;
+        DiscardPendingMsi(state);
+        return true;
     }
 
     public void ClearPendingMsi()
@@ -123,12 +139,47 @@ public sealed class WorkerUpdateStore
         }
 
         var currentVersion = ApplicationVersionProvider.GetVersion();
-        var succeeded = string.Equals(currentVersion, targetVersion, StringComparison.OrdinalIgnoreCase);
+        var succeeded = string.Equals(currentVersion, targetVersion, StringComparison.OrdinalIgnoreCase)
+            || !AppVersionHelper.IsNewer(targetVersion, currentVersion);
+        if (succeeded)
+        {
+            TryDeleteFile(PendingMsiPath);
+        }
+
         return new WorkerUpdateResultDto(
             targetVersion,
             succeeded,
             succeeded ? "Обновление установлено." : "Обновление не применилось.",
             DateTime.UtcNow);
+    }
+
+    private PendingMsiState? TryReadPendingMsiState()
+    {
+        if (!File.Exists(PendingMsiPath))
+        {
+            return null;
+        }
+
+        try
+        {
+            var state = JsonSerializer.Deserialize<PendingMsiState>(File.ReadAllText(PendingMsiPath), JsonOptions);
+            if (state is null || string.IsNullOrWhiteSpace(state.Version) || string.IsNullOrWhiteSpace(state.MsiPath))
+            {
+                return null;
+            }
+
+            return state;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private void DiscardPendingMsi(PendingMsiState state)
+    {
+        ClearPendingMsi();
+        TryDeleteFile(state.MsiPath);
     }
 
     public WorkerUpdateResultDto? LoadLastResult()

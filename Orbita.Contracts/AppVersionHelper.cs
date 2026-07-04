@@ -1,8 +1,8 @@
 using System.Text.RegularExpressions;
 
-namespace Orbita.Api.Helpers;
+namespace Orbita.Contracts;
 
-internal static partial class AppVersionHelper
+public static partial class AppVersionHelper
 {
     private static readonly Regex ReleaseFileNameRegex = ReleaseFileNamePattern();
 

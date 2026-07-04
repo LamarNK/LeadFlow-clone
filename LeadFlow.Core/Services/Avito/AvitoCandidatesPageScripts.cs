@@ -518,6 +518,19 @@ public static class AvitoCandidatesPageScripts
         })();
         """;
 
+    /// <summary>CRM-страница откликов <c>/profile/job/responses</c> (фильтры, cv-button, «Скачать отчёт»).</summary>
+    public static string BuildIsJobCrmResponsesPageScript() =>
+        """
+        (() => {
+            const isJobCrm = !!(
+                document.querySelector("[data-marker='filters/status-list-content']")
+                || document.querySelector("[data-marker='job-crm/response/cv-button']")
+                || document.querySelector("[data-marker='download-report-button/download']")
+            );
+            return JSON.stringify({ isJobCrm });
+        })();
+        """;
+
     /// <summary>Закрыть панель «Данные» справа, если она осталась открытой после detail-enrich.</summary>
     public static string BuildDismissCandidateDetailPanelScript() =>
         """
@@ -531,21 +544,67 @@ public static class AvitoCandidatesPageScripts
                 }));
             };
 
-            dispatchEscape();
-
-            const overlays = Array.from(document.querySelectorAll(
-                "[class*='overlay'], [class*='Overlay'], [data-marker*='close'], [aria-label*='Закрыть'], [aria-label*='закрыть']"
-            ));
-            for (const overlay of overlays) {
-                try {
-                    overlay.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
-                } catch {
+            const isForbiddenClick = (element) => {
+                if (!element) {
+                    return true;
                 }
-            }
+
+                const marker = element.getAttribute?.("data-marker") ?? "";
+                if (/^download-report-button/i.test(marker)) {
+                    return true;
+                }
+
+                if (/^filters\//i.test(marker)) {
+                    return true;
+                }
+
+                if (element.closest?.("[data-marker^='download-report-button']")) {
+                    return true;
+                }
+
+                if (element.closest?.("[data-marker^='filters/']")) {
+                    return true;
+                }
+
+                return false;
+            };
+
+            const tryClick = (element) => {
+                if (isForbiddenClick(element)) {
+                    return false;
+                }
+
+                try {
+                    element.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+                    if (typeof element.click === "function") {
+                        element.click();
+                    }
+
+                    return true;
+                } catch {
+                    return false;
+                }
+            };
+
+            dispatchEscape();
 
             const responsePanel = document.querySelector("[class*='styles-module-response']");
             if (responsePanel) {
+                const closeInPanel = responsePanel.querySelector(
+                    "[data-marker*='close'], [aria-label*='Закрыть'], [aria-label*='закрыть']"
+                );
+                tryClick(closeInPanel);
                 dispatchEscape();
+            }
+
+            const modalRoots = Array.from(document.querySelectorAll(
+                "[role='dialog'], [class*='modal'], [class*='Modal'], [class*='drawer'], [class*='Drawer']"
+            ));
+            for (const modal of modalRoots) {
+                const closeBtn = modal.querySelector(
+                    "[data-marker*='close'], [aria-label*='Закрыть'], [aria-label*='закрыть']"
+                );
+                tryClick(closeBtn);
             }
 
             return JSON.stringify({
@@ -706,9 +765,16 @@ public static class AvitoCandidatesPageScripts
                 return btn;
             };
 
-            const getPhoneButton = (item) =>
-                item.querySelector("[data-marker='job-application/phone']") ??
-                item.querySelector("[data-marker='job-application/call-button']");
+            const getPhoneButton = (item) => {
+                const btn =
+                    item.querySelector("[data-marker='job-application/phone']") ??
+                    item.querySelector("[data-marker='job-application/call-button']");
+                if (!btn || btn.closest?.("[data-marker^='download-report-button']")) {
+                    return null;
+                }
+
+                return btn;
+            };
 
             const items = Array.from(document.querySelectorAll("[data-marker='job-application/item']"));
             let masked = 0;

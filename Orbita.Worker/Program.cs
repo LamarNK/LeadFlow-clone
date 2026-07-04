@@ -149,14 +149,18 @@ internal static class Program
 
         if (shutdownService.PendingInstallPath is { } installPath)
         {
-            var pendingMsi = updateStore.TryGetPendingMsi();
-            if (pendingMsi is not null)
+            if (!shutdownService.InstallScriptLaunched)
             {
-                updateStore.SavePendingInstall(pendingMsi.Version);
-                updateStore.ClearPendingMsi();
+                var pendingMsi = updateStore.TryGetPendingMsi();
+                if (pendingMsi is not null)
+                {
+                    updateStore.SavePendingInstall(pendingMsi.Version);
+                    updateStore.ClearPendingMsi();
+                }
+
+                WorkerRestartHelper.LaunchInstallScript(installPath);
             }
 
-            WorkerRestartHelper.LaunchInstallScript(installPath);
             return;
         }
 

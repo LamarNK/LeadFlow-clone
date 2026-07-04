@@ -35,10 +35,11 @@ public sealed class WorkerPendingUpdateCoordinator(
         if (!updateGate.IsSafeToApply)
         {
             var (phase, monitoringActive) = updateGate.GetSnapshot();
-            _ = GlobalLogger.Instance.LogAsync(
-                $"Worker update: MSI {pending.Version} готов, установка отложена (фаза «{phase ?? "—"}», мониторинг={(monitoringActive ? "активен" : "остановлен")}).",
-                DeskLinkAuditLogLevel.Info,
-                memberName: nameof(TryApplyPendingInstallAtPause));
+            WorkerUpdateDeferLogger.LogDeferredInstall(
+                nameof(TryApplyPendingInstallAtPause),
+                pending.Version,
+                phase,
+                monitoringActive);
             return false;
         }
 
@@ -63,14 +64,14 @@ public sealed class WorkerPendingUpdateCoordinator(
                 DeskLinkAuditLogLevel.Warning,
                 memberName: nameof(TryApplyPendingInstallAtPause));
         }
-        else
+        else if (!shutdownService.IsShutdownInProgress)
         {
             _ = GlobalLogger.Instance.LogAsync(
-                $"Worker update: не удалось запустить установку {pending.Version} (возможно, уже идёт перезапуск).",
+                $"Worker update: не удалось запустить установку {pending.Version} (MSI: {pending.MsiPath}).",
                 DeskLinkAuditLogLevel.Warning,
                 memberName: nameof(TryApplyPendingInstallAtPause));
         }
 
-        return false;
+        return shutdownService.IsShutdownInProgress;
     }
 }

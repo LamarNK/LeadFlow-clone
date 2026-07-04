@@ -1,3 +1,4 @@
+using LeadFlow.Core.Logging.Audit;
 using LeadFlow.Core.Services.Worker;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -6,10 +7,12 @@ namespace Orbita.Worker.Services;
 
 public sealed class WorkerShutdownService(
     IServiceProvider services,
-    IHostApplicationLifetime lifetime)
+    IHostApplicationLifetime lifetime,
+    WorkerUpdateStore updateStore)
 {
     private readonly Lock _sync = new();
     private int _shutdownRequested;
+    private int _installScriptLaunched;
     private string? _pendingInstallPath;
     private bool _pendingRestart;
 
@@ -35,6 +38,10 @@ public sealed class WorkerShutdownService(
         }
     }
 
+    public bool IsShutdownInProgress => Volatile.Read(ref _shutdownRequested) == 1;
+
+    public bool InstallScriptLaunched => Volatile.Read(ref _installScriptLaunched) == 1;
+
     public bool RequestRestart()
     {
         if (!TryBeginShutdown())
@@ -58,6 +65,14 @@ public sealed class WorkerShutdownService(
             return false;
         }
 
+        if (Volatile.Read(ref _shutdownRequested) == 1)
+        {
+            lock (_sync)
+            {
+                return _pendingInstallPath is not null;
+            }
+        }
+
         if (!TryBeginShutdown())
         {
             return false;
@@ -68,8 +83,27 @@ public sealed class WorkerShutdownService(
             _pendingInstallPath = msiPath;
         }
 
+        PersistPendingInstallState();
+        WorkerRestartHelper.LaunchInstallScript(msiPath, Environment.ProcessId);
+        Volatile.Write(ref _installScriptLaunched, 1);
+        _ = GlobalLogger.Instance.LogAsync(
+            $"Worker update: фоновый установщик запущен, ожидание выхода процесса (PID {Environment.ProcessId}).",
+            DeskLinkAuditLogLevel.Info,
+            memberName: nameof(RequestInstall));
         _ = BeginShutdownAsync();
         return true;
+    }
+
+    private void PersistPendingInstallState()
+    {
+        var pendingMsi = updateStore.TryGetPendingMsi();
+        if (pendingMsi is null)
+        {
+            return;
+        }
+
+        updateStore.SavePendingInstall(pendingMsi.Version);
+        updateStore.ClearPendingMsi();
     }
 
     private bool TryBeginShutdown()
@@ -84,7 +118,13 @@ public sealed class WorkerShutdownService(
             var monitoringService = services.GetRequiredService<IWorkerMonitoringService>();
             if (monitoringService.IsActive)
             {
-                await monitoringService.StopAsync().ConfigureAwait(false);
+                var stopTask = monitoringService.StopAsync();
+                var completed = await Task.WhenAny(stopTask, Task.Delay(TimeSpan.FromSeconds(45)))
+                    .ConfigureAwait(false);
+                if (completed == stopTask)
+                {
+                    await stopTask.ConfigureAwait(false);
+                }
             }
 
             var candidateSink = services.GetRequiredService<OrbitaCandidateSink>();
@@ -103,5 +143,11 @@ public sealed class WorkerShutdownService(
         {
             Application.Exit();
         }
+
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(TimeSpan.FromSeconds(8)).ConfigureAwait(false);
+            Environment.Exit(0);
+        });
     }
 }

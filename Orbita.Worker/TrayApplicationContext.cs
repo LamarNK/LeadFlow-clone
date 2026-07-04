@@ -49,7 +49,14 @@ public sealed class TrayApplicationContext : ApplicationContext
         _trayIcon.DoubleClick += OnTrayDoubleClick;
 
         _runtimeState.Changed += (_, _) => UpdateUi();
+        Application.ApplicationExit += OnApplicationExit;
         UpdateUi();
+    }
+
+    private void OnApplicationExit(object? sender, EventArgs e)
+    {
+        _trayIcon.Visible = false;
+        ExitThread();
     }
 
     private void UpdateUi()

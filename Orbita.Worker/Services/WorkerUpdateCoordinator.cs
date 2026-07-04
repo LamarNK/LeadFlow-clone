@@ -25,6 +25,7 @@ public sealed class WorkerUpdateCoordinator(
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         await Task.Delay(InitialDelay, stoppingToken).ConfigureAwait(false);
+        PruneObsoletePendingOnStartup();
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -52,6 +53,20 @@ public sealed class WorkerUpdateCoordinator(
         var offer = offerSource.Current;
         if (offer is null)
         {
+            return;
+        }
+
+        var currentVersion = ApplicationVersionProvider.GetVersion();
+        if (!AppVersionHelper.IsNewer(offer.Version, currentVersion))
+        {
+            if (updateStore.TryPruneObsoletePendingMsi(out var prunedVersion))
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"Worker update: MSI {prunedVersion} уже не нужен (текущая версия {currentVersion}), ожидание снято.",
+                    DeskLinkAuditLogLevel.Info,
+                    memberName: nameof(TryProcessOfferAsync));
+            }
+
             return;
         }
 
@@ -113,10 +128,11 @@ public sealed class WorkerUpdateCoordinator(
         if (!updateGate.IsSafeToApply)
         {
             var (phase, monitoringActive) = updateGate.GetSnapshot();
-            _ = GlobalLogger.Instance.LogAsync(
-                $"Worker update: MSI {pending.Version} готов, установка отложена (фаза «{phase ?? "—"}», мониторинг={(monitoringActive ? "активен" : "остановлен")}).",
-                DeskLinkAuditLogLevel.Info,
-                memberName: nameof(TryApplyWhenReady));
+            WorkerUpdateDeferLogger.LogDeferredInstall(
+                nameof(TryApplyWhenReady),
+                pending.Version,
+                phase,
+                monitoringActive);
             return false;
         }
 
@@ -124,11 +140,15 @@ public sealed class WorkerUpdateCoordinator(
         runtimeState.Detail = $"Установка {pending.Version}";
         if (!shutdownService.RequestInstall(pending.MsiPath))
         {
-            _ = GlobalLogger.Instance.LogAsync(
-                $"Worker update: не удалось запустить установку {pending.Version} (MSI: {pending.MsiPath}).",
-                DeskLinkAuditLogLevel.Warning,
-                memberName: nameof(TryApplyWhenReady));
-            return false;
+            if (!shutdownService.IsShutdownInProgress)
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"Worker update: не удалось запустить установку {pending.Version} (MSI: {pending.MsiPath}).",
+                    DeskLinkAuditLogLevel.Warning,
+                    memberName: nameof(TryApplyWhenReady));
+            }
+
+            return shutdownService.IsShutdownInProgress;
         }
 
         _ = GlobalLogger.Instance.LogAsync(
@@ -144,6 +164,11 @@ public sealed class WorkerUpdateCoordinator(
     private async Task TryDownloadAsync(WorkerUpdateOfferDto offer, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(offer.Version) || string.IsNullOrWhiteSpace(offer.DownloadPath))
+        {
+            return;
+        }
+
+        if (!AppVersionHelper.IsNewer(offer.Version, ApplicationVersionProvider.GetVersion()))
         {
             return;
         }
@@ -199,6 +224,20 @@ public sealed class WorkerUpdateCoordinator(
         var hash = await SHA256.HashDataAsync(stream, ct).ConfigureAwait(false);
         var actual = Convert.ToHexString(hash);
         return string.Equals(actual, expectedSha256, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void PruneObsoletePendingOnStartup()
+    {
+        if (!updateStore.TryPruneObsoletePendingMsi(out var prunedVersion))
+        {
+            return;
+        }
+
+        var currentVersion = ApplicationVersionProvider.GetVersion();
+        _ = GlobalLogger.Instance.LogAsync(
+            $"Worker update: сброшен устаревший MSI {prunedVersion} (текущая версия {currentVersion}).",
+            DeskLinkAuditLogLevel.Info,
+            memberName: nameof(PruneObsoletePendingOnStartup));
     }
 
     private static void TryDeleteFile(string path)

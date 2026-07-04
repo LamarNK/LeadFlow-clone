@@ -23,5 +23,17 @@ public sealed class AvitoCandidatesPageScriptsTests
 
         Assert.Contains("Escape", script, StringComparison.Ordinal);
         Assert.Contains("styles-module-response", script, StringComparison.Ordinal);
+        Assert.Contains("download-report-button", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("[class*='overlay']", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildIsJobCrmResponsesPageScript_DetectsCrmMarkers()
+    {
+        var script = AvitoCandidatesPageScripts.BuildIsJobCrmResponsesPageScript();
+
+        Assert.Contains("filters/status-list-content", script, StringComparison.Ordinal);
+        Assert.Contains("download-report-button/download", script, StringComparison.Ordinal);
+        Assert.Contains("job-crm/response/cv-button", script, StringComparison.Ordinal);
     }
 }

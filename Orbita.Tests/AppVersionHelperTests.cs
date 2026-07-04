@@ -1,4 +1,4 @@
-using Orbita.Api.Helpers;
+using Orbita.Contracts;
 
 namespace Orbita.Tests;
 
