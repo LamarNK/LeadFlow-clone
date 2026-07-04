@@ -22,6 +22,7 @@ public sealed class ResponsesIndexViewModel
     public bool HasActiveFilters { get; init; }
     public IReadOnlyList<ActiveFilterChipViewModel> ActiveFilterChips { get; init; } = [];
     public int ActiveFilterCount => ActiveFilterChips.Count;
+    public TableSortState Sort { get; init; } = TableSortState.Create("time", descending: true);
 }
 
 public sealed record ResponsesFilterViewModel

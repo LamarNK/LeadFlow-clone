@@ -10,9 +10,9 @@ namespace Orbita.Web.Controllers;
 public sealed class WorkersController(IWorkersService workers) : Controller
 {
     [HttpGet]
-    public async Task<IActionResult> Snapshot(string? q, string? status, int page = 1, CancellationToken ct = default)
+    public async Task<IActionResult> Snapshot(string? q, string? status, int page = 1, string? sort = null, string? dir = null, CancellationToken ct = default)
     {
-        var model = await workers.GetIndexAsync(q, status, page, ct);
+        var model = await workers.GetIndexAsync(q, status, page, sort, dir, ct);
         return Json(new WorkersLiveSnapshotViewModel
         {
             UpdatedAtUtc = model.Header.UpdatedAtUtc,
@@ -23,11 +23,17 @@ public sealed class WorkersController(IWorkersService workers) : Controller
     }
 
     [HttpGet]
-    public async Task<IActionResult> DetailsSnapshot(Guid id, CancellationToken ct = default)
+    public async Task<IActionResult> DetailsSnapshot(
+        Guid id,
+        string? sort = null,
+        string? dir = null,
+        CancellationToken ct = default)
     {
         var model = await workers.GetDetailsAsync(
             id,
             includeLogs: false,
+            sort: sort,
+            sortDir: dir,
             ct: ct);
 
         if (model is null)
@@ -57,9 +63,9 @@ public sealed class WorkersController(IWorkersService workers) : Controller
     }
 
     [HttpGet]
-    public async Task<IActionResult> Index(string? q, string? status, int page = 1, CancellationToken ct = default)
+    public async Task<IActionResult> Index(string? q, string? status, int page = 1, string? sort = null, string? dir = null, CancellationToken ct = default)
     {
-        var model = await workers.GetIndexAsync(q, status, page, ct);
+        var model = await workers.GetIndexAsync(q, status, page, sort, dir, ct);
         return View(model);
     }
 
@@ -83,6 +89,8 @@ public sealed class WorkersController(IWorkersService workers) : Controller
         string? logsLevel,
         DateTime? logsDate,
         int logsPage = 1,
+        string? sort = null,
+        string? dir = null,
         CancellationToken ct = default)
     {
         var isAdmin = User.IsInRole(PanelRoles.Admin);
@@ -93,6 +101,8 @@ public sealed class WorkersController(IWorkersService workers) : Controller
             logsDate,
             logsPage,
             includeLogs: isAdmin,
+            sort: sort,
+            sortDir: dir,
             ct);
         return model is null ? NotFound() : View(model);
     }
@@ -245,6 +255,23 @@ public sealed class WorkersController(IWorkersService workers) : Controller
 
     [HttpPost]
     [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Toggle(Guid workerId, Guid accountId, bool enabled, CancellationToken ct)
+    {
+        var (success, error) = await workers.UpdateWorkerAccountAsync(workerId, accountId, enabled, ct);
+        if (!success)
+        {
+            return BadRequest(new { error = error ?? "Не удалось изменить статус аккаунта." });
+        }
+
+        return Ok(new
+        {
+            message = enabled ? "Аккаунт включён в панели." : "Аккаунт отключён в панели.",
+            isEnabledInPanel = enabled
+        });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> UpdateAccount(
         Guid workerId,
         Guid accountId,
@@ -267,11 +294,21 @@ public sealed class WorkersController(IWorkersService workers) : Controller
                 : "Аккаунт отключён в панели.";
         }
 
-        return RedirectToAction(nameof(Details), new { id = workerId });
+        return RedirectToAction(nameof(Details), WorkerDetailsRoute(workerId, Request.Form["sort"], Request.Form["dir"]));
     }
 
     private IActionResult RedirectAfterWorkerAction(Guid workerId, string? returnTo) =>
         string.Equals(returnTo, "index", StringComparison.OrdinalIgnoreCase)
             ? RedirectToAction(nameof(Index))
-            : RedirectToAction(nameof(Details), new { id = workerId });
+            : RedirectToAction(nameof(Details), WorkerDetailsRoute(workerId));
+
+    private object WorkerDetailsRoute(
+        Guid workerId,
+        string? sort = null,
+        string? dir = null) => new
+    {
+        id = workerId,
+        sort = sort ?? Request.Query["sort"].ToString(),
+        dir = dir ?? Request.Query["dir"].ToString()
+    };
 }

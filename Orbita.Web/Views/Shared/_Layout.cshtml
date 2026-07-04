@@ -2,6 +2,7 @@
 @using Orbita.Web.Authorization
 @using Orbita.Web.Options
 @inject Orbita.Web.Services.ThemeService Theme
+@inject Orbita.Web.Services.IOfficeContext OfficeContext
 @inject IOptions<DesignPreviewOptions> PreviewOptions
 @{
     var contentOnly = Context.Request.Headers.ContainsKey("X-Orbita-Content-Only") ||
@@ -42,7 +43,7 @@ else
     <link rel="stylesheet" href="~/lib/fontawesome/css/all.min.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/orbita.css" asp-append-version="true" />
 </head>
-<body>
+<body data-orbita-selected-office="@(OfficeContext.EffectiveOfficeId?.ToString("D") ?? "")">
 <div class="orbita-app">
     <aside class="orbita-sidebar">
         <div class="orbita-sidebar-header">

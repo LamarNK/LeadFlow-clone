@@ -40,6 +40,34 @@ public static class PageHeaderBuilder
         return header;
     }
 
+    public static PageHeaderViewModel WithOfficeScope(PageHeaderViewModel header, IOfficeContext office)
+    {
+        if (!office.IsAdmin || office.ShowAllOffices || string.IsNullOrWhiteSpace(office.ContextLabel))
+        {
+            return header;
+        }
+
+        var subtitle = string.IsNullOrWhiteSpace(header.Subtitle)
+            ? office.ContextLabel
+            : $"{header.Subtitle} · {office.ContextLabel}";
+
+        return new PageHeaderViewModel
+        {
+            Title = header.Title,
+            Subtitle = subtitle,
+            ShowRefresh = header.ShowRefresh,
+            ShowDateRange = header.ShowDateRange,
+            UpdatedAtUtc = header.UpdatedAtUtc,
+            DateRangeLabel = header.DateRangeLabel,
+            DateFrom = header.DateFrom,
+            DateTo = header.DateTo,
+            ActivePeriodPreset = header.ActivePeriodPreset,
+            UserDisplayName = header.UserDisplayName,
+            UserEmail = header.UserEmail,
+            UserInitial = header.UserInitial
+        };
+    }
+
     public static PageHeaderViewModel WorkersList() =>
         Create("Все воркеры", "Мониторинг и управление VDS-воркерами");
 

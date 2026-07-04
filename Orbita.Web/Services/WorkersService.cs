@@ -8,6 +8,7 @@ namespace Orbita.Web.Services;
 
 public sealed class WorkersService(
     OrbitaApiClient api,
+    IOfficeContext officeContext,
     IHttpContextAccessor httpContextAccessor,
     IOptions<DesignPreviewOptions> previewOptions) : IWorkersService
 {
@@ -17,13 +18,23 @@ public sealed class WorkersService(
         string? searchQuery = null,
         string? status = null,
         int page = 1,
+        string? sort = null,
+        string? sortDir = null,
         CancellationToken ct = default)
     {
         page = Math.Max(1, page);
         status = NormalizeStatusFilter(status);
 
         if (previewOptions.Value.Enabled)
-            return DesignPreviewData.BuildWorkersIndexViewModel(searchQuery, status, page, DefaultPageSize);
+            return DesignPreviewData.BuildWorkersIndexViewModel(
+                searchQuery,
+                status,
+                page,
+                DefaultPageSize,
+                sort,
+                sortDir,
+                officeContext.EffectiveOfficeId,
+                officeContext.ShowOfficeColumn);
 
         var workers = await api.GetWorkersAsync(ct) ?? [];
         var latestRelease = await api.GetLatestWorkerReleaseAsync(ct);
@@ -48,9 +59,12 @@ public sealed class WorkersService(
             status,
             page,
             DefaultPageSize,
+            sort,
+            sortDir,
             latestRelease,
             isAdmin,
-            offices);
+            offices,
+            officeContext.ShowOfficeColumn);
     }
 
     private static string? NormalizeStatusFilter(string? status) =>
@@ -76,13 +90,17 @@ public sealed class WorkersService(
         DateTime? logsDate = null,
         int logsPage = 1,
         bool includeLogs = false,
+        string? sort = null,
+        string? sortDir = null,
         CancellationToken ct = default)
     {
+        var tableSort = TableSort.Parse(sort, sortDir, TableSort.WorkerAccounts.Default, TableSort.WorkerAccounts.Columns);
+
         if (previewOptions.Value.Enabled)
         {
             if (!includeLogs)
             {
-                return DesignPreviewData.BuildWorkerDetailsViewModel(id);
+                return DesignPreviewData.BuildWorkerDetailsViewModel(id, sort, sortDir);
             }
 
             return DesignPreviewData.BuildWorkerDetailsViewModelWithLogs(
@@ -90,7 +108,9 @@ public sealed class WorkersService(
                 logsQ,
                 logsLevel,
                 logsDate,
-                logsPage);
+                logsPage,
+                sort,
+                sortDir);
         }
 
         var apiWorker = await api.GetWorkerAsync(id, ct);
@@ -105,13 +125,13 @@ public sealed class WorkersService(
             .ToList();
 
         var activeAccounts = apiWorker.ActiveAccounts ?? apiWorker.CurrentActivity?.ActiveAccounts;
-        var accountRows = accounts
-            .Select(a =>
+        var accountRows = TableSort.WorkerAccounts.Apply(
+            accounts.Select(a =>
             {
                 var balance = apiWorker.Balances.FirstOrDefault(b => b.AccountId == a.AccountId);
                 return WorkerDetailsBuilder.MapAccount(a, balance, activeAccounts, apiWorker.IsOnline);
-            })
-            .ToList();
+            }),
+            tableSort).ToList();
 
         WorkerLogsPanelViewModel? logsPanel = null;
         if (includeLogs)
@@ -149,7 +169,8 @@ public sealed class WorkersService(
                 OperatingSystem = string.IsNullOrWhiteSpace(apiWorker.OperatingSystem) ? "—" : apiWorker.OperatingSystem,
                 ConnectionCheck = apiWorker.IsOnline ? "Успешно" : "Нет связи"
             },
-            logs: logsPanel);
+            logs: logsPanel,
+            sort: tableSort);
     }
 
     public async Task<(CreateWorkerResultViewModel? Result, string? Error)> CreateWorkerAsync(
@@ -168,6 +189,7 @@ public sealed class WorkersService(
             }, null);
         }
 
+        officeId ??= officeContext.EffectiveOfficeId;
         var (result, error) = await api.CreateWorkerAsync(displayName, officeId, ct);
         if (error is not null || result is null)
         {
@@ -233,18 +255,23 @@ public sealed class WorkersService(
             ? Task.FromResult<(Stream?, string?, string?)>((null, null, "Режим предпросмотра."))
             : api.OpenLatestWorkerReleaseDownloadAsync(ct);
 
-    private static WorkersIndexViewModel BuildIndexViewModel(
+    private WorkersIndexViewModel BuildIndexViewModel(
         IReadOnlyList<WorkerRowViewModel> allRows,
         string? searchQuery,
         string? statusFilter,
         int page,
         int pageSize,
+        string? sort = null,
+        string? sortDir = null,
         WorkerReleaseLatestDto? latestRelease = null,
         bool canSelectOffice = false,
-        IReadOnlyList<OfficeDto>? offices = null)
+        IReadOnlyList<OfficeDto>? offices = null,
+        bool showOfficeColumn = false)
     {
-        var total = allRows.Count;
-        var paged = allRows
+        var tableSort = TableSort.Parse(sort, sortDir, TableSort.Workers.Default, TableSort.Workers.Columns);
+        var sorted = TableSort.Workers.Apply(allRows, tableSort).ToList();
+        var total = sorted.Count;
+        var paged = sorted
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToList();
@@ -257,7 +284,7 @@ public sealed class WorkersService(
 
         return new WorkersIndexViewModel
         {
-            Header = PageHeaderBuilder.WorkersList(),
+            Header = PageHeaderBuilder.WithOfficeScope(PageHeaderBuilder.WorkersList(), officeContext),
             SearchQuery = searchQuery,
             StatusFilter = statusFilter,
             KpiCards =
@@ -345,7 +372,9 @@ public sealed class WorkersService(
                 .Select(o => new EventFilterOptionViewModel { Value = o.Id.ToString(), Label = o.Name })
                 .ToList(),
             HasActiveFilters = !string.IsNullOrWhiteSpace(searchQuery) || !string.IsNullOrWhiteSpace(statusFilter),
-            ActiveFilterChips = FilterChipsBuilder.ForWorkers(searchQuery, statusFilter)
+            ActiveFilterChips = FilterChipsBuilder.ForWorkers(searchQuery, statusFilter),
+            Sort = tableSort,
+            ShowOfficeColumn = showOfficeColumn
         };
     }
 

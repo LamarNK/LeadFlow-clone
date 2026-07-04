@@ -2,6 +2,17 @@
 @{
     var pagination = Model.Pagination;
     var formAction = Url.Action("Index", "Events", new { view = "errors" });
+    var errorsSortRoute = new
+    {
+        view = "errors",
+        q = Model.Filters.SearchQuery,
+        severity = Model.Filters.Severity,
+        type = Model.Filters.Type,
+        workerId = Model.Filters.WorkerId,
+        accountId = Model.Filters.AccountId,
+        sort = Model.Sort.Column,
+        dir = Model.Sort.Dir
+    };
 }
 <div class="card card--errors-table">
     <div class="card-body card-body-table errors-table-wrap">
@@ -21,14 +32,14 @@
             <table class="data-table data-table--errors data-table--cards">
                 <thead>
                     <tr>
-                        <th>Время</th>
-                        <th>Уровень</th>
-                        <th>Тип ошибки</th>
-                        <th>Сообщение</th>
-                        <th>Аккаунт</th>
-                        <th>Воркер</th>
-                        <th class="cell-num">Повторений</th>
-                        <th>Последнее появление</th>
+                        <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Время", Column = "time", Sort = Model.Sort, Controller = "Events", Action = "Index", RouteValues = errorsSortRoute })" />
+                        <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Уровень", Column = "severity", Sort = Model.Sort, Controller = "Events", Action = "Index", RouteValues = errorsSortRoute })" />
+                        <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Тип ошибки", Column = "type", Sort = Model.Sort, Controller = "Events", Action = "Index", RouteValues = errorsSortRoute })" />
+                        <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Сообщение", Column = "message", Sort = Model.Sort, Controller = "Events", Action = "Index", RouteValues = errorsSortRoute })" />
+                        <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Аккаунт", Column = "account", Sort = Model.Sort, Controller = "Events", Action = "Index", RouteValues = errorsSortRoute })" />
+                        <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Воркер", Column = "worker", Sort = Model.Sort, Controller = "Events", Action = "Index", RouteValues = errorsSortRoute })" />
+                        <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Повторений", Column = "count", Sort = Model.Sort, Controller = "Events", Action = "Index", RouteValues = errorsSortRoute, Numeric = true })" />
+                        <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Последнее появление", Column = "last", Sort = Model.Sort, Controller = "Events", Action = "Index", RouteValues = errorsSortRoute })" />
                         <th aria-hidden="true">Действия</th>
                     </tr>
                 </thead>
@@ -94,15 +105,7 @@
             Pagination = pagination,
             Controller = "Events",
             Action = "Index",
-            RouteValues = new
-            {
-                view = "errors",
-                q = Model.Filters.SearchQuery,
-                severity = Model.Filters.Severity,
-                type = Model.Filters.Type,
-                workerId = Model.Filters.WorkerId,
-                accountId = Model.Filters.AccountId
-            }
+            RouteValues = errorsSortRoute
         })" />
     </div>
 </div>

@@ -5,13 +5,16 @@ using Orbita.Web.Options;
 
 namespace Orbita.Web.Services;
 
-public sealed class DashboardService(OrbitaApiClient api, IOptions<DesignPreviewOptions> previewOptions) : IDashboardService
+public sealed class DashboardService(
+    OrbitaApiClient api,
+    IOfficeContext officeContext,
+    IOptions<DesignPreviewOptions> previewOptions) : IDashboardService
 {
     public async Task<DashboardViewModel> GetDashboardAsync(DashboardPeriod period, CancellationToken ct = default)
     {
         if (previewOptions.Value.Enabled)
         {
-            return DesignPreviewData.BuildDashboardViewModel(period);
+            return DesignPreviewData.BuildDashboardViewModel(period, officeContext);
         }
 
         var summary = await api.GetSummaryAsync(ct);
@@ -63,22 +66,31 @@ public sealed class DashboardService(OrbitaApiClient api, IOptions<DesignPreview
                     LastActivityUtc = w.LastSeenAtUtc,
                     CurrentActivityLabel = activity.Label,
                     CurrentActivityTone = activity.Tone,
-                    IsActivityLive = activity.IsLive
+                    IsActivityLive = activity.IsLive,
+                    OfficeName = w.OfficeName
                 };
             }).ToList(),
             HourlyChart = responseChart,
             Events = events.Select(DashboardEventMapper.Map).ToList(),
             AccountStats = accountStats,
-            Charts = charts
+            Charts = charts,
+            ShowOfficeColumn = officeContext.ShowOfficeColumn
         };
     }
 
-    private static PageHeaderViewModel BuildHeader(DashboardPeriod period) =>
-        PageHeaderBuilder.Create(
-            "Панель управления",
-            "Общая сводка по всем воркерам",
-            showDateRange: true,
-            period: period);
+    private PageHeaderViewModel BuildHeader(DashboardPeriod period)
+    {
+        var subtitle = officeContext.ShowAllOffices
+            ? "Общая сводка по всем воркерам"
+            : "Сводка по выбранному офису";
+        return PageHeaderBuilder.WithOfficeScope(
+            PageHeaderBuilder.Create(
+                "Панель управления",
+                subtitle,
+                showDateRange: true,
+                period: period),
+            officeContext);
+    }
 
     private static DashboardPeriodStats AggregatePeriodStats(GlobalDashboardSummary summary, DashboardPeriod period)
     {

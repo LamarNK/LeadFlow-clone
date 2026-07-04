@@ -11,6 +11,8 @@ public interface IErrorsService
         Guid? workerId = null,
         Guid? accountId = null,
         int page = 1,
+        string? sort = null,
+        string? sortDir = null,
         CancellationToken ct = default);
 
     Task<(bool Success, string? Error)> DismissEventAsync(Guid eventId, CancellationToken ct = default);

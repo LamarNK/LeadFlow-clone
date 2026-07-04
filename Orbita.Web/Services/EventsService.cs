@@ -6,6 +6,7 @@ namespace Orbita.Web.Services;
 
 public sealed class EventsService(
     OrbitaApiClient api,
+    IOfficeContext officeContext,
     IErrorsService errors,
     IOptions<DesignPreviewOptions> previewOptions) : IEventsService
 {
@@ -18,16 +19,18 @@ public sealed class EventsService(
         string? view = null,
         string? severity = null,
         int page = 1,
+        string? sort = null,
+        string? sortDir = null,
         CancellationToken ct = default)
     {
         var journalView = NormalizeJournalView(view);
 
         if (journalView == "errors")
         {
-            var errorsPage = await errors.GetIndexAsync(q, severity, type, workerId, accountId, page, ct);
+            var errorsPage = await errors.GetIndexAsync(q, severity, type, workerId, accountId, page, sort, sortDir, ct);
             return new EventsIndexViewModel
             {
-                Header = PageHeaderBuilder.EventsList(),
+                Header = PageHeaderBuilder.WithOfficeScope(PageHeaderBuilder.EventsList(), officeContext),
                 JournalView = journalView,
                 ErrorsPage = errorsPage,
                 HasActiveFilters = errorsPage.HasActiveFilters,
@@ -51,16 +54,20 @@ public sealed class EventsService(
                 filters,
                 page,
                 EventsIndexBuilder.DefaultPageSize,
-                journalView);
+                journalView,
+                sort,
+                sortDir);
         }
 
-        return await GetFromApiAsync(filters, page, journalView, ct);
+        return await GetFromApiAsync(filters, page, journalView, sort, sortDir, ct);
     }
 
     private async Task<EventsIndexViewModel> GetFromApiAsync(
         EventsFilterViewModel filters,
         int page,
         string journalView,
+        string? sort,
+        string? sortDir,
         CancellationToken ct)
     {
         var items = await api.GetEventsAsync(limit: 500, ct: ct) ?? [];
@@ -68,7 +75,14 @@ public sealed class EventsService(
             .Select(e => EventsIndexBuilder.MapEvent(e))
             .ToList();
 
-        return EventsIndexBuilder.Build(rows, filters, page, journalView: journalView);
+        return EventsIndexBuilder.Build(
+            rows,
+            filters,
+            page,
+            journalView: journalView,
+            sort: sort,
+            sortDir: sortDir,
+            officeContext: officeContext);
     }
 
     public Task<(bool Success, string? Error)> DismissEventAsync(Guid eventId, CancellationToken ct = default) =>

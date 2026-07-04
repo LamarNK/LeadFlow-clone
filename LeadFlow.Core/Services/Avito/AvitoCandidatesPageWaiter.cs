@@ -32,6 +32,9 @@ public static class AvitoCandidatesPageWaiter
             await AvitoFirewallProbe.ThrowIfBlockedAsync(executeScript, fetchHtmlSnapshot, pageUrl, cancellationToken)
                 .ConfigureAwait(false);
 
+            await AvitoLoginProbe.ThrowIfLoginRequiredAsync(executeScript, cancellationToken)
+                .ConfigureAwait(false);
+
             var probe = await TryParseReadyProbeAsync(executeScript, cancellationToken).ConfigureAwait(false);
             if (probe is null)
             {
@@ -92,6 +95,9 @@ public static class AvitoCandidatesPageWaiter
         }
 
         await AvitoFirewallProbe.ThrowIfBlockedAsync(executeScript, fetchHtmlSnapshot, pageUrl, cancellationToken)
+            .ConfigureAwait(false);
+
+        await AvitoLoginProbe.ThrowIfLoginRequiredAsync(executeScript, cancellationToken)
             .ConfigureAwait(false);
 
         var finalProbe = await TryParseReadyProbeAsync(executeScript, cancellationToken).ConfigureAwait(false);

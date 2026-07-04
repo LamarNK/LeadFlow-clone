@@ -1,0 +1,47 @@
+@model OfficeSwitcherViewModel
+@if (Model.IsVisible)
+{
+    <div class="orbita-office-switcher" data-orbita-office-switcher>
+        <form asp-controller="Office" asp-action="Select" method="post" class="orbita-office-switcher-form">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="returnUrl" value="@Model.ReturnUrl" />
+            <label class="orbita-office-switcher-label" for="orbitaOfficeSelect">Офис</label>
+            <div class="orbita-office-switcher-control">
+                <i class="fa-solid fa-building orbita-office-switcher-icon" aria-hidden="true"></i>
+                <select id="orbitaOfficeSelect"
+                        name="officeId"
+                        class="orbita-office-switcher-select"
+                        data-orbita-office-select
+                        aria-label="Выбор офиса">
+                    @if (Model.IsAllOfficesSelected)
+                    {
+                        <option value="" selected>Все офисы</option>
+                    }
+                    else
+                    {
+                        <option value="">Все офисы</option>
+                    }
+                    @foreach (var office in Model.Offices)
+                    {
+                        if (Model.SelectedOfficeId == office.Id)
+                        {
+                            <option value="@office.Id" selected disabled="@(!office.IsEnabled)">
+                                @office.Name@(office.IsEnabled ? "" : " (отключён)")
+                            </option>
+                        }
+                        else if (!office.IsEnabled)
+                        {
+                            <option value="@office.Id" disabled>
+                                @office.Name (отключён)
+                            </option>
+                        }
+                        else
+                        {
+                            <option value="@office.Id">@office.Name</option>
+                        }
+                    }
+                </select>
+            </div>
+        </form>
+    </div>
+}

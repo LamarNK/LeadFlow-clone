@@ -4,7 +4,8 @@
     ViewData["Title"] = "Все воркеры";
     var pagination = Model.Pagination;
     var workersError = TempData["WorkersError"] as string;
-    var snapshotUrl = Url.Action("Snapshot", "Workers", new { q = Model.SearchQuery, status = Model.StatusFilter, page = pagination.Page })!;
+    var workersSortRoute = new { q = Model.SearchQuery, status = Model.StatusFilter, sort = Model.Sort.Column, dir = Model.Sort.Dir };
+    var snapshotUrl = Url.Action("Snapshot", "Workers", new { q = Model.SearchQuery, status = Model.StatusFilter, page = pagination.Page, sort = Model.Sort.Column, dir = Model.Sort.Dir })!;
 }
 <partial name="_PageHeader" model="Model.Header" />
 <div class="orbita-main workers-page"
@@ -13,7 +14,8 @@
      data-orbita-snapshot="@snapshotUrl"
      data-worker-details-url="@Url.Action("Details", "Workers", new { id = "__id__" })"
      data-settings-logs-url="@Url.Action("Index", "Settings", new { tab = "logs", workerId = "__id__" })"
-     data-show-admin-logs="@(User.IsInRole(PanelRoles.Admin) ? "true" : "false")">
+     data-show-admin-logs="@(User.IsInRole(PanelRoles.Admin) ? "true" : "false")"
+     data-show-office-column="@(Model.ShowOfficeColumn ? "true" : "false")">
     <div class="workers-page-head">
         <div class="workers-toolbar">
             <form class="workers-search" method="get" asp-action="Index" role="search">
@@ -21,6 +23,8 @@
                 {
                     <input type="hidden" name="status" value="@Model.StatusFilter" />
                 }
+                <input type="hidden" name="sort" value="@Model.Sort.Column" />
+                <input type="hidden" name="dir" value="@Model.Sort.Dir" />
                 <i class="fa-solid fa-magnifying-glass workers-search-icon" aria-hidden="true"></i>
                 <input type="search"
                        name="q"
@@ -125,14 +129,18 @@
             <table class="data-table data-table--workers data-table--cards">
                 <thead>
                     <tr>
-                        <th>Воркер</th>
-                        <th>Статус</th>
+                        <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Воркер", Column = "name", Sort = Model.Sort, Controller = "Workers", Action = "Index", RouteValues = workersSortRoute })" />
+                        @if (Model.ShowOfficeColumn)
+                        {
+                            <th>Офис</th>
+                        }
+                        <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Статус", Column = "status", Sort = Model.Sort, Controller = "Workers", Action = "Index", RouteValues = workersSortRoute })" />
                         <th>Сейчас</th>
-                        <th>Аккаунтов</th>
-                        <th>Откликов</th>
-                        <th>Дублей</th>
-                        <th>Ошибок</th>
-                        <th>Последняя активность</th>
+                        <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Аккаунтов", Column = "accounts", Sort = Model.Sort, Controller = "Workers", Action = "Index", RouteValues = workersSortRoute, Numeric = true })" />
+                        <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Откликов", Column = "responses", Sort = Model.Sort, Controller = "Workers", Action = "Index", RouteValues = workersSortRoute, Numeric = true })" />
+                        <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Дублей", Column = "duplicates", Sort = Model.Sort, Controller = "Workers", Action = "Index", RouteValues = workersSortRoute, Numeric = true })" />
+                        <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Ошибок", Column = "errors", Sort = Model.Sort, Controller = "Workers", Action = "Index", RouteValues = workersSortRoute, Numeric = true })" />
+                        <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Последняя активность", Column = "activity", Sort = Model.Sort, Controller = "Workers", Action = "Index", RouteValues = workersSortRoute })" />
                         <th aria-hidden="true">Действия</th>
                     </tr>
                 </thead>
@@ -152,6 +160,10 @@
                                 <span class="workers-update-badge" title="Доступна версия @(w.LatestReleaseVersion)">Обновление</span>
                             }
                         </td>
+                        @if (Model.ShowOfficeColumn)
+                        {
+                            <td data-label="Офис">@w.OfficeName</td>
+                        }
                         <td data-label="Статус">
                             @if (!w.IsEnabled)
                             {
@@ -247,7 +259,7 @@
                 Pagination = pagination,
                 Controller = "Workers",
                 Action = "Index",
-                RouteValues = new { q = Model.SearchQuery, status = Model.StatusFilter }
+                RouteValues = new { q = Model.SearchQuery, status = Model.StatusFilter, sort = Model.Sort.Column, dir = Model.Sort.Dir }
             })" />
         </div>
     </div>

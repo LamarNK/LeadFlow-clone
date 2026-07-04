@@ -45,6 +45,12 @@ public static class WorkerEventDetailsParser
 
     public static string FormatForDisplay(string message, string? details)
     {
+        message = AdsPowerErrorMessageNormalizer.NormalizeForDisplay(message);
+        if (!string.IsNullOrWhiteSpace(details) && !details.TrimStart().StartsWith('{'))
+        {
+            details = AdsPowerErrorMessageNormalizer.NormalizeForDisplay(details);
+        }
+
         if (string.IsNullOrWhiteSpace(details))
         {
             return message;

@@ -90,4 +90,9 @@ public static class MonitoringTiming
     /// Пока срок не истёк, воркер не открывает браузер, чтобы не долбить Avito.
     /// </summary>
     public const int AccountBlockingIssueRetryAfterHours = 6;
+
+    /// <summary>
+    /// Через сколько дней сбрасывать устаревшее сообщение об ошибке на аккаунте без блокирующего статуса.
+    /// </summary>
+    public const int AccountStaleErrorMessageMaxAgeDays = 3;
 }

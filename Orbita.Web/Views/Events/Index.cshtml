@@ -5,6 +5,17 @@
     var errorsPage = Model.ErrorsPage;
     var pagination = isErrorsView && errorsPage is not null ? errorsPage.Pagination : Model.Pagination;
     var formAction = Url.Action("Index", "Events");
+    var eventsSortRoute = new
+    {
+        view = Model.JournalView == "all" ? null : Model.JournalView,
+        q = Model.Filters.SearchQuery,
+        type = Model.Filters.Type,
+        workerId = Model.Filters.WorkerId,
+        accountId = Model.Filters.AccountId,
+        level = Model.Filters.Level,
+        sort = Model.Sort.Column,
+        dir = Model.Sort.Dir
+    };
     var snapshotUrl = isErrorsView && errorsPage is not null
         ? Url.Action("Snapshot", "Events", new
         {
@@ -14,17 +25,21 @@
             type = errorsPage.Filters.Type,
             workerId = errorsPage.Filters.WorkerId,
             accountId = errorsPage.Filters.AccountId,
-            page = pagination.Page
+            page = pagination.Page,
+            sort = errorsPage.Sort.Column,
+            dir = errorsPage.Sort.Dir
         })!
         : Url.Action("Snapshot", "Events", new
         {
-            view = Model.JournalView == "all" ? null : Model.JournalView,
-            q = Model.Filters.SearchQuery,
-            type = Model.Filters.Type,
-            workerId = Model.Filters.WorkerId,
-            accountId = Model.Filters.AccountId,
-            level = Model.Filters.Level,
-            page = pagination.Page
+            eventsSortRoute.view,
+            eventsSortRoute.q,
+            eventsSortRoute.type,
+            eventsSortRoute.workerId,
+            eventsSortRoute.accountId,
+            eventsSortRoute.level,
+            page = pagination.Page,
+            eventsSortRoute.sort,
+            eventsSortRoute.dir
         })!;
     var resetUrl = isErrorsView
         ? Url.Action("Index", "Events", new { view = "errors" })
@@ -44,7 +59,8 @@
             ActiveFilterChips = errorsPage.ActiveFilterChips,
             ResetUrl = resetUrl,
             FilterFieldsPartialName = "_ErrorsFilterFields",
-            FilterFieldsModel = errorsPage
+            FilterFieldsModel = errorsPage,
+            ExtraFormContent = $"<input type=\"hidden\" name=\"sort\" value=\"{errorsPage.Sort.Column}\" /><input type=\"hidden\" name=\"dir\" value=\"{errorsPage.Sort.Dir}\" />"
         }
         : new ListFiltersBarViewModel
         {
@@ -60,7 +76,8 @@
             ActiveFilterChips = Model.ActiveFilterChips,
             ResetUrl = resetUrl,
             FilterFieldsPartialName = "_EventsFilterFields",
-            FilterFieldsModel = Model
+            FilterFieldsModel = Model,
+            ExtraFormContent = $"<input type=\"hidden\" name=\"sort\" value=\"{Model.Sort.Column}\" /><input type=\"hidden\" name=\"dir\" value=\"{Model.Sort.Dir}\" />"
         };
 }
 <partial name="_PageHeader" model="Model.Header" />
@@ -120,12 +137,12 @@
                     <table class="data-table data-table--events data-table--cards">
                         <thead>
                             <tr>
-                                <th>Время</th>
-                                <th>Тип события</th>
-                                <th>Уровень</th>
-                                <th>Аккаунт</th>
-                                <th>Воркер</th>
-                                <th>Описание</th>
+                                <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Время", Column = "time", Sort = Model.Sort, Controller = "Events", Action = "Index", RouteValues = eventsSortRoute })" />
+                                <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Тип события", Column = "type", Sort = Model.Sort, Controller = "Events", Action = "Index", RouteValues = eventsSortRoute })" />
+                                <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Уровень", Column = "level", Sort = Model.Sort, Controller = "Events", Action = "Index", RouteValues = eventsSortRoute })" />
+                                <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Аккаунт", Column = "account", Sort = Model.Sort, Controller = "Events", Action = "Index", RouteValues = eventsSortRoute })" />
+                                <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Воркер", Column = "worker", Sort = Model.Sort, Controller = "Events", Action = "Index", RouteValues = eventsSortRoute })" />
+                                <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Описание", Column = "description", Sort = Model.Sort, Controller = "Events", Action = "Index", RouteValues = eventsSortRoute })" />
                                 <th aria-hidden="true">Действия</th>
                             </tr>
                         </thead>
@@ -194,15 +211,7 @@
                     Pagination = pagination,
                     Controller = "Events",
                     Action = "Index",
-                    RouteValues = new
-                    {
-                        view = Model.JournalView == "all" ? null : Model.JournalView,
-                        q = Model.Filters.SearchQuery,
-                        type = Model.Filters.Type,
-                        workerId = Model.Filters.WorkerId,
-                        accountId = Model.Filters.AccountId,
-                        level = Model.Filters.Level
-                    }
+                    RouteValues = eventsSortRoute
                 })" />
             </div>
         </div>

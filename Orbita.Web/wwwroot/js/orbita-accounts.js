@@ -141,9 +141,14 @@
                 : '<span class="worker-activity-pill worker-activity-pill--muted">—</span>';
             var rowClass = 'accounts-row' + (account.isProcessingNow ? ' accounts-row--processing' : '');
 
+            var officeCell = shared.getLiveAttr('data-show-office-column') === 'true'
+                ? '<td data-label="Офис">' + shared.escapeHtml(account.officeName || '—') + '</td>'
+                : '';
+
             return '<tr class="' + rowClass + '" data-href="' + shared.escapeHtml(accountUrl) + '" data-account-id="' + shared.escapeHtml(account.id) + '">' +
                 '<td class="cell-account" data-label="Аккаунт"><a href="' + shared.escapeHtml(accountUrl) + '">' + shared.escapeHtml(account.accountName) + '</a>' + subProfiles + '</td>' +
                 '<td class="cell-worker" data-label="Воркер"><a href="' + shared.escapeHtml(workerUrl) + '">' + shared.escapeHtml(account.workerName) + '</a></td>' +
+                officeCell +
                 '<td data-label="Статус">' + statusHtml + '</td>' +
                 '<td data-label="Сейчас">' + processingHtml + '</td>' +
                 '<td class="cell-num cell-balance" data-label="Баланс">' + shared.renderAccountBalance(account) + '</td>' +

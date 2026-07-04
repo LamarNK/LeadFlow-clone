@@ -23,6 +23,7 @@ public sealed class EventsIndexViewModel
     public int ActiveFilterCount => ActiveFilterChips.Count;
     public string JournalView { get; init; } = "all";
     public ErrorsIndexViewModel? ErrorsPage { get; init; }
+    public TableSortState Sort { get; init; } = TableSortState.Create("time", descending: true);
 }
 
 public sealed record EventsFilterViewModel

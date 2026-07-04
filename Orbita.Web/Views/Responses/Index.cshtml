@@ -5,7 +5,7 @@
     ViewData["Title"] = "Отклики";
     var formAction = Url.Action("Index", "Responses");
     var pagination = Model.Pagination;
-    var routeValues = new
+    var responsesSortRoute = new
     {
         from = Model.Filters.DateFrom.ToString("yyyy-MM-dd"),
         to = Model.Filters.DateTo.ToString("yyyy-MM-dd"),
@@ -14,9 +14,22 @@
         accountId = Model.Filters.AccountId,
         vacancy = Model.Filters.VacancyQuery,
         search = Model.Filters.SearchQuery,
-        page = Model.Filters.Page
+        sort = Model.Sort.Column,
+        dir = Model.Sort.Dir
     };
-    var snapshotUrl = Url.Action("Snapshot", "Responses", routeValues)!;
+    var snapshotUrl = Url.Action("Snapshot", "Responses", new
+    {
+        responsesSortRoute.from,
+        responsesSortRoute.to,
+        responsesSortRoute.status,
+        responsesSortRoute.workerId,
+        responsesSortRoute.accountId,
+        responsesSortRoute.vacancy,
+        responsesSortRoute.search,
+        page = pagination.Page,
+        responsesSortRoute.sort,
+        responsesSortRoute.dir
+    })!;
 }
 <partial name="_PageHeader" model="Model.Header" />
 <div class="orbita-main responses-page"
@@ -57,7 +70,7 @@
             ResetUrl = formAction,
             FilterFieldsPartialName = "_ResponsesFilterFields",
             FilterFieldsModel = Model,
-            ExtraFormContent = $"<input type=\"hidden\" name=\"from\" value=\"{Model.Filters.DateFrom:yyyy-MM-dd}\" data-period-form-from /><input type=\"hidden\" name=\"to\" value=\"{Model.Filters.DateTo:yyyy-MM-dd}\" data-period-form-to />"
+            ExtraFormContent = $"<input type=\"hidden\" name=\"from\" value=\"{Model.Filters.DateFrom:yyyy-MM-dd}\" data-period-form-from /><input type=\"hidden\" name=\"to\" value=\"{Model.Filters.DateTo:yyyy-MM-dd}\" data-period-form-to /><input type=\"hidden\" name=\"sort\" value=\"{Model.Sort.Column}\" /><input type=\"hidden\" name=\"dir\" value=\"{Model.Sort.Dir}\" />"
         };
     }
     <partial name="_ListFiltersBar" model="responsesFilterBar" />
@@ -80,11 +93,11 @@
             <table class="data-table data-table--responses data-table--cards">
                 <thead>
                     <tr>
-                        <th>Время</th>
-                        <th>Объявление</th>
-                        <th>Автор</th>
-                        <th>Аккаунт</th>
-                        <th>Статус</th>
+                        <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Время", Column = "time", Sort = Model.Sort, Controller = "Responses", Action = "Index", RouteValues = responsesSortRoute })" />
+                        <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Объявление", Column = "vacancy", Sort = Model.Sort, Controller = "Responses", Action = "Index", RouteValues = responsesSortRoute })" />
+                        <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Автор", Column = "author", Sort = Model.Sort, Controller = "Responses", Action = "Index", RouteValues = responsesSortRoute })" />
+                        <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Аккаунт", Column = "account", Sort = Model.Sort, Controller = "Responses", Action = "Index", RouteValues = responsesSortRoute })" />
+                        <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Статус", Column = "status", Sort = Model.Sort, Controller = "Responses", Action = "Index", RouteValues = responsesSortRoute })" />
                         <th aria-hidden="true">Действия</th>
                     </tr>
                 </thead>
@@ -176,16 +189,7 @@
                 Pagination = pagination,
                 Controller = "Responses",
                 Action = "Index",
-                RouteValues = new
-                {
-                    routeValues.from,
-                    routeValues.to,
-                    routeValues.status,
-                    routeValues.workerId,
-                    routeValues.accountId,
-                    routeValues.vacancy,
-                    routeValues.search,
-                }
+                RouteValues = responsesSortRoute
             })" />
         </div>
     </div>

@@ -35,14 +35,17 @@ internal static class ErrorsIndexBuilder
         IReadOnlyList<ErrorRowViewModel> allRows,
         ErrorsFilterViewModel filters,
         int page,
-        int pageSize = DefaultPageSize)
+        int pageSize = DefaultPageSize,
+        string? sort = null,
+        string? sortDir = null,
+        IOfficeContext? officeContext = null)
     {
         page = Math.Max(1, page);
+        var tableSort = TableSort.Parse(sort, sortDir, TableSort.Errors.Default, TableSort.Errors.Columns);
         var filtered = FilterRows(allRows, filters);
-        var total = filtered.Count;
-        var paged = filtered
-            .OrderByDescending(e => e.LastSeenUtc)
-            .ThenByDescending(e => e.OccurrenceCount)
+        var sorted = TableSort.Errors.Apply(filtered, tableSort).ToList();
+        var total = sorted.Count;
+        var paged = sorted
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToList();
@@ -54,7 +57,9 @@ internal static class ErrorsIndexBuilder
 
         return new ErrorsIndexViewModel
         {
-            Header = PageHeaderBuilder.ErrorsList(),
+            Header = officeContext is null
+                ? PageHeaderBuilder.ErrorsList()
+                : PageHeaderBuilder.WithOfficeScope(PageHeaderBuilder.ErrorsList(), officeContext),
             Filters = filters,
             SeverityOptions = SeverityOptions,
             ErrorTypes = ErrorTypeOptions,
@@ -69,7 +74,8 @@ internal static class ErrorsIndexBuilder
                 TotalItems = total
             },
             HasActiveFilters = HasActiveFilters(filters),
-            ActiveFilterChips = activeFilterChips
+            ActiveFilterChips = activeFilterChips,
+            Sort = tableSort
         };
     }
 
@@ -273,6 +279,9 @@ internal static class ErrorsIndexBuilder
         if (text.Contains("парс", StringComparison.OrdinalIgnoreCase)
             || text.Contains("parse", StringComparison.OrdinalIgnoreCase))
             return "parsing";
+        if (AdsPowerErrorMessageNormalizer.LooksLikeProfileInUse(text)
+            || text.Contains("профиль занят", StringComparison.OrdinalIgnoreCase))
+            return "api";
         if (text.Contains("лимит adspower", StringComparison.OrdinalIgnoreCase)
             || text.Contains("rate limit adspower", StringComparison.OrdinalIgnoreCase)
             || text.Contains("api", StringComparison.OrdinalIgnoreCase)

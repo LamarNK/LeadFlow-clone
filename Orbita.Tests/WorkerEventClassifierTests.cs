@@ -12,6 +12,7 @@ public sealed class WorkerEventClassifierTests
     [InlineData("таймаут", "error", "network")]
     [InlineData("лимит частоты AdsPower", "error", "api")]
     [InlineData("дневной лимит AdsPower", "error", "api")]
+    [InlineData("профиль занят", "error", "api")]
     [InlineData("проблема", "error", "automation")]
     public void IssueLabel_MapsToExpectedTypes(string label, string eventType, string errorType)
     {

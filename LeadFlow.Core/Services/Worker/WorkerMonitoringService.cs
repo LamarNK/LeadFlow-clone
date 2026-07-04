@@ -293,19 +293,31 @@ public sealed class WorkerMonitoringService(
             return (0, false, false);
         }
 
-        if (AccountIssueTracker.TryClearStaleBlockingState(account))
+        var staleStateCleared = AccountIssueTracker.TryClearStaleBlockingState(account);
+        var staleErrorCleared = AccountIssueTracker.TryClearStaleAccountErrorMessage(account);
+        if (staleStateCleared || staleErrorCleared)
         {
             await repository.SaveAccountAsync(account, cancellationToken).ConfigureAwait(false);
-            _ = GlobalLogger.Instance.LogAsync(
-                $"Worker account {account.DisplayName}: stale blocking status cleared, retrying monitoring.",
-                DeskLinkAuditLogLevel.Info);
-            await repository.AddLogAsync(new ProcessingLogItem
+            if (staleStateCleared)
             {
-                AccountId = account.Id,
-                Level = "Info",
-                Message = "Повторный проход после устаревшей блокировки",
-                Details = $"Статус сброшен, интервал {MonitoringTiming.AccountBlockingIssueRetryAfterHours} ч."
-            }, cancellationToken).ConfigureAwait(false);
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"Worker account {account.DisplayName}: stale blocking status cleared, retrying monitoring.",
+                    DeskLinkAuditLogLevel.Info);
+                await repository.AddLogAsync(new ProcessingLogItem
+                {
+                    AccountId = account.Id,
+                    Level = "Info",
+                    Message = "Повторный проход после устаревшей блокировки",
+                    Details = $"Статус сброшен, интервал {MonitoringTiming.AccountBlockingIssueRetryAfterHours} ч."
+                }, cancellationToken).ConfigureAwait(false);
+            }
+
+            if (staleErrorCleared)
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"Worker account {account.DisplayName}: stale account error message cleared.",
+                    DeskLinkAuditLogLevel.Info);
+            }
         }
 
         if (account.Status is AvitoAccountStatus.RequiresLogin
@@ -356,6 +368,11 @@ public sealed class WorkerMonitoringService(
             await HandleCaptchaForAccountAsync(account, captchaEx, cancellationToken).ConfigureAwait(false);
             return (0, true, false);
         }
+        catch (AvitoLoginRequiredException loginEx)
+        {
+            await HandleLoginRequiredForAccountAsync(account, loginEx, cancellationToken).ConfigureAwait(false);
+            return (0, true, false);
+        }
         catch (AdsPowerDailyOpenLimitExceededException limitEx)
         {
             await HandleAdsPowerDailyOpenLimitForAccountAsync(account, limitEx, cancellationToken).ConfigureAwait(false);
@@ -365,6 +382,11 @@ public sealed class WorkerMonitoringService(
         {
             await HandleAdsPowerRateLimitForAccountAsync(account, rateEx, cancellationToken).ConfigureAwait(false);
             return (0, false, false);
+        }
+        catch (AdsPowerProfileInUseException profileInUseEx)
+        {
+            await HandleAdsPowerProfileInUseForAccountAsync(account, profileInUseEx, cancellationToken).ConfigureAwait(false);
+            return (0, true, false);
         }
         catch (SessionDiagnosticException diagnosticEx)
         {
@@ -641,15 +663,28 @@ public sealed class WorkerMonitoringService(
                 {
                     throw;
                 }
+                catch (AvitoLoginRequiredException loginEx)
+                {
+                    throw new AvitoLoginRequiredException(
+                        loginEx.Url,
+                        loginEx.Title,
+                        loginEx.ScreenshotPng,
+                        sub.Id,
+                        sub.Name);
+                }
                 catch (Exception ex) when (ShouldHandleAsSubProfileAutomationFailure(ex))
                 {
-                    await HandleSubProfileAutomationFailureAsync(
+                    var blocking = await HandleSubProfileAutomationFailureAsync(
                         account,
                         session,
                         sub,
                         ex,
                         "сбор откликов",
                         cancellationToken).ConfigureAwait(false);
+                    if (blocking)
+                    {
+                        break;
+                    }
                 }
 
                 if (i < subProfiles.Count - 1 && !cancellationToken.IsCancellationRequested && !budgetExhausted)
@@ -979,6 +1014,46 @@ public sealed class WorkerMonitoringService(
         }
     }
 
+    private async Task HandleLoginRequiredForAccountAsync(
+        AvitoAccount account,
+        AvitoLoginRequiredException loginEx,
+        CancellationToken ct)
+    {
+        account.Status = AvitoAccountStatus.RequiresLogin;
+        var sub = FindSubProfile(account, loginEx.SubProfileId);
+        var detail = "требуется повторная авторизация в Avito — откройте браузер AdsPower и войдите (телефон/почта и пароль).";
+        account.LastErrorMessage = sub is not null
+            ? AccountIssueFormatting.FormatIssue(account, sub, AvitoSubProfileIssueKind.AuthRequired, detail)
+            : detail;
+        if (sub is not null)
+        {
+            AccountIssueTracker.ApplySubProfileIssue(account, sub, AvitoSubProfileIssueKind.AuthRequired, detail);
+        }
+
+        await repository.SaveAccountAsync(account, ct).ConfigureAwait(false);
+
+        var diagnostic = await WorkerDiagnosticEventDetailsBuilder.BuildAsync(
+            diagnosticsUploader,
+            account.Id,
+            AvitoSubProfileIssueKind.AuthRequired,
+            account.LastErrorMessage,
+            loginEx.Url,
+            loginEx.ScreenshotPng,
+            loginEx.SubProfileId,
+            loginEx.SubProfileName,
+            ct).ConfigureAwait(false);
+        StoreSubProfileDiagnosticAttachment(account, sub, diagnostic.AttachmentId);
+        await repository.SaveAccountAsync(account, ct).ConfigureAwait(false);
+        await PublishAccountEventAsync(
+            account,
+            "Warning",
+            sub is not null
+                ? account.LastErrorMessage
+                : $"Требуется вход в Avito для {account.DisplayName}",
+            diagnostic.Details,
+            ct).ConfigureAwait(false);
+    }
+
     private async Task HandleCaptchaForAccountAsync(
         AvitoAccount account,
         AvitoCaptchaDetectedException captchaEx,
@@ -1087,6 +1162,26 @@ public sealed class WorkerMonitoringService(
             "Warning",
             $"Rate limit AdsPower для {account.DisplayName}",
             account.LastErrorMessage,
+            ct).ConfigureAwait(false);
+    }
+
+    private async Task HandleAdsPowerProfileInUseForAccountAsync(
+        AvitoAccount account,
+        AdsPowerProfileInUseException profileInUseEx,
+        CancellationToken ct)
+    {
+        account.Status = AvitoAccountStatus.RequiresManualAction;
+        account.LastErrorMessage = AccountIssueFormatting.FormatIssue(
+            account,
+            null,
+            AvitoSubProfileIssueKind.ProfileInUse,
+            profileInUseEx.UserMessage);
+        await repository.SaveAccountAsync(account, ct).ConfigureAwait(false);
+        await PublishAccountEventAsync(
+            account,
+            "Warning",
+            $"Профиль AdsPower занят для {account.DisplayName}",
+            profileInUseEx.UserMessage,
             ct).ConfigureAwait(false);
     }
 
@@ -1249,6 +1344,7 @@ public sealed class WorkerMonitoringService(
         ex is not OperationCanceledException
         && ex is not AdsPowerRateLimitExceededException
         && ex is not AdsPowerDailyOpenLimitExceededException
+        && ex is not AdsPowerProfileInUseException
         && ex is not SessionDiagnosticException
         && !ShouldHandleAsSubProfileAutomationFailure(ex);
 
@@ -1280,7 +1376,7 @@ public sealed class WorkerMonitoringService(
         return AvitoAutomationFailureFormatter.IsAccountBlockingIssue(kind);
     }
 
-    private async Task HandleSubProfileAutomationFailureAsync(
+    private async Task<bool> HandleSubProfileAutomationFailureAsync(
         AvitoAccount account,
         IAdsPowerAccountSession session,
         AvitoSubProfile sub,
@@ -1289,17 +1385,23 @@ public sealed class WorkerMonitoringService(
         CancellationToken ct)
     {
         AvitoPageState? pageState = null;
+        if (ex is AvitoPageMismatchException mismatch && mismatch.ActualState is not null)
+        {
+            pageState = mismatch.ActualState;
+        }
+
         try
         {
-            pageState = await session.GetPageStateAsync(ct).ConfigureAwait(false);
+            var liveState = await session.GetPageStateAsync(ct).ConfigureAwait(false);
+            pageState = PreferPageState(pageState, liveState);
         }
         catch
         {
             // best effort
         }
 
-        var recoveryAttempts = ex is AvitoPageMismatchException mismatch
-            ? mismatch.RecoveryAttempts
+        var recoveryAttempts = ex is AvitoPageMismatchException mismatchEx
+            ? mismatchEx.RecoveryAttempts
             : null;
         var kind = AvitoAutomationFailureFormatter.MapDiagnosticKind(pageState, ex);
         var detail = AvitoAutomationFailureFormatter.Format(expectedStep, pageState, ex, recoveryAttempts);
@@ -1312,6 +1414,34 @@ public sealed class WorkerMonitoringService(
             ct,
             pageState: pageState,
             expectedStep: expectedStep).ConfigureAwait(false);
+
+        return AvitoAutomationFailureFormatter.IsAccountBlockingIssue(kind);
+    }
+
+    private static AvitoPageState? PreferPageState(AvitoPageState? primary, AvitoPageState? secondary)
+    {
+        if (primary is null)
+        {
+            return secondary;
+        }
+
+        if (secondary is null)
+        {
+            return primary;
+        }
+
+        if (AvitoAutomationFailureFormatter.SuggestsLogin(secondary)
+            && !AvitoAutomationFailureFormatter.SuggestsLogin(primary))
+        {
+            return secondary;
+        }
+
+        if (primary.PageKind == AvitoPageKind.Unknown && secondary.PageKind != AvitoPageKind.Unknown)
+        {
+            return secondary;
+        }
+
+        return primary;
     }
 
     private static async Task ThrowWithSessionDiagnosticAsync(

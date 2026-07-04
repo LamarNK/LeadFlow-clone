@@ -117,6 +117,25 @@ public sealed class AdsPowerApiClientTests
     }
 
     [Fact]
+    public async Task StartBrowserAsync_ThrowsAdsPowerProfileInUseException_WhenProfileAlreadyOpen()
+    {
+        var body =
+            """{"code":-1,"msg":"[k1cu2550] is being used by [a.pakin797@gmail.com] and is not allowed to open"}""";
+        var client = BuildClient((_, _) => Task.FromResult(StubHttpMessageHandler.Ok(body)));
+
+        var ex = await Assert.ThrowsAsync<AdsPowerProfileInUseException>(() =>
+            client.StartBrowserAsync(
+                new AdsPowerConnectionOptions("http://127.0.0.1:57610", null),
+                "user-1",
+                null,
+                CancellationToken.None));
+
+        Assert.Equal(-1, ex.ApiCode);
+        Assert.Contains("a.pakin797@gmail.com", ex.UserMessage);
+        Assert.Contains("k1cu2550", ex.UserMessage);
+    }
+
+    [Fact]
     public async Task StartBrowserAsync_ThrowsAdsPowerRateLimitExceededException_WhenRateLimitPersists()
     {
         var body = """{"code":-1,"msg":"Too many request per second, please check"}""";

@@ -99,6 +99,8 @@ public sealed class OrbitaAuthService(IHttpContextAccessor httpContextAccessor, 
         {
             await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
             context.Response.Cookies.Delete(AuthSession.TokenCookieName);
+            context.Response.Cookies.Delete(OfficeSelection.CookieName);
+            context.Response.Cookies.Delete(OfficeSelection.NameCookieName);
         }
     }
 }

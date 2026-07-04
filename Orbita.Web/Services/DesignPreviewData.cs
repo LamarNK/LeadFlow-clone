@@ -30,6 +30,8 @@ internal static class DesignPreviewData
     public static readonly Guid AccountAlphaId = Guid.Parse("22222222-2222-2222-2222-222222222201");
     public static readonly Guid AccountBetaId = Guid.Parse("22222222-2222-2222-2222-222222222202");
     public static readonly Guid AccountGammaId = Guid.Parse("22222222-2222-2222-2222-222222222203");
+    public static readonly Guid PreviewOfficeId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+    public static readonly Guid PreviewOffice2Id = Guid.Parse("22222222-2222-2222-2222-222222222201");
 
     private static readonly DateTime Now = DateTime.UtcNow;
 
@@ -55,9 +57,55 @@ internal static class DesignPreviewData
 
     public static IReadOnlyList<WorkerListItem> Workers => BuildWorkerListItems();
 
-    public static WorkersIndexViewModel BuildWorkersIndexViewModel(string? searchQuery, string? status, int page, int pageSize)
+    public static IReadOnlyList<WorkerListItem> GetWorkers(Guid? officeId) =>
+        FilterByOffice(BuildWorkerListItems(), officeId, x => x.OfficeId);
+
+    public static GlobalDashboardSummary GetSummary(Guid? officeId)
     {
-        var rows = BuildWorkerRows();
+        if (officeId is null)
+        {
+            return Summary;
+        }
+
+        var workers = GetWorkers(officeId);
+        var ratio = workers.Count / (double)Math.Max(1, BuildWorkerListItems().Count);
+        return Summary with
+        {
+            TotalWorkers = workers.Count,
+            OnlineWorkers = workers.Count(w => w.IsOnline),
+            TotalToday = (int)Math.Round(Summary.TotalToday * ratio),
+            SentToCrm = (int)Math.Round(Summary.SentToCrm * ratio),
+            InProgress = (int)Math.Round(Summary.InProgress * ratio),
+            Duplicates = (int)Math.Round(Summary.Duplicates * ratio),
+            Errors = (int)Math.Round(Summary.Errors * ratio),
+            ConnectedAccounts = (int)Math.Round(Summary.ConnectedAccounts * ratio),
+            TotalBalance = Math.Round(Summary.TotalBalance * (decimal)ratio, 2)
+        };
+    }
+
+    public static IReadOnlyList<WorkerEventListItem> GetEvents(Guid? officeId)
+    {
+        var workerIds = GetWorkers(officeId).Select(x => x.Id).ToHashSet();
+        return Events.Where(x => workerIds.Contains(x.WorkerId)).ToList();
+    }
+
+    public static ResponsesPageDto GetResponsesPage(string query, Guid? officeId) =>
+        new([], 0, 1, 10);
+
+    public static ResponsesSummaryDto GetResponsesSummary(Guid? officeId) =>
+        new(0, 0, 0, 0, null);
+
+    public static WorkersIndexViewModel BuildWorkersIndexViewModel(
+        string? searchQuery,
+        string? status,
+        int page,
+        int pageSize,
+        string? sort = null,
+        string? sortDir = null,
+        Guid? officeId = null,
+        bool showOfficeColumn = false)
+    {
+        var rows = FilterWorkerRowsByOffice(BuildWorkerRows(), officeId);
         if (!string.IsNullOrWhiteSpace(searchQuery))
         {
             var q = searchQuery.Trim();
@@ -83,9 +131,11 @@ internal static class DesignPreviewData
             rows = rows.Where(w => !w.IsOnline).ToList();
         }
 
-        var total = rows.Count;
-        var paged = rows.Skip((page - 1) * pageSize).Take(pageSize).ToList();
-        var online = rows.Count(w => w.IsOnline);
+        var tableSort = TableSort.Parse(sort, sortDir, TableSort.Workers.Default, TableSort.Workers.Columns);
+        var sorted = TableSort.Workers.Apply(rows, tableSort).ToList();
+        var total = sorted.Count;
+        var paged = sorted.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+        var online = sorted.Count(w => w.IsOnline);
         var offline = rows.Count - online;
 
         return new WorkersIndexViewModel
@@ -108,7 +158,9 @@ internal static class DesignPreviewData
             LatestWorkerDownloadUrl = "/Workers/DownloadLatest",
             CanCreateWorker = true,
             HasActiveFilters = !string.IsNullOrWhiteSpace(searchQuery) || !string.IsNullOrWhiteSpace(status),
-            ActiveFilterChips = FilterChipsBuilder.ForWorkers(searchQuery, status)
+            ActiveFilterChips = FilterChipsBuilder.ForWorkers(searchQuery, status),
+            Sort = tableSort,
+            ShowOfficeColumn = showOfficeColumn
         };
     }
 
@@ -129,8 +181,8 @@ internal static class DesignPreviewData
             w.Errors,
             w.UpdateAvailable,
             w.LatestReleaseVersion,
-            PreviewOfficeId,
-            "Основной",
+            i >= 6 ? PreviewOffice2Id : PreviewOfficeId,
+            i >= 6 ? "Сибирь" : "Основной",
             true,
             w.ActiveAccounts,
             BuildPreviewWorkerActivity(i, w.IsOnline))).ToList();
@@ -176,10 +228,26 @@ internal static class DesignPreviewData
                 LastActivityUtc = times[i],
                 CurrentActivityLabel = activity.Label,
                 CurrentActivityTone = activity.Tone,
-                IsActivityLive = activity.IsLive
+                IsActivityLive = activity.IsLive,
+                OfficeName = i >= 6 ? "Сибирь" : "Основной"
             };
         }).ToList();
     }
+
+    private static List<T> FilterByOffice<T>(IEnumerable<T> rows, Guid? officeId, Func<T, Guid> officeSelector) =>
+        officeId is Guid id
+            ? rows.Where(x => officeSelector(x) == id).ToList()
+            : rows.ToList();
+
+    private static IReadOnlyList<WorkerRowViewModel> FilterWorkerRowsByOffice(
+        IReadOnlyList<WorkerRowViewModel> rows,
+        Guid? officeId) =>
+        officeId is Guid id
+            ? rows.Where(x => string.Equals(
+                x.OfficeName,
+                id == PreviewOffice2Id ? "Сибирь" : "Основной",
+                StringComparison.Ordinal)).ToList()
+            : rows;
 
     private static WorkerActivityDto? BuildPreviewWorkerActivity(int index, bool isOnline)
     {
@@ -238,9 +306,10 @@ internal static class DesignPreviewData
         };
     }
 
-    public static DashboardViewModel BuildDashboardViewModel(DashboardPeriod? period = null)
+    public static DashboardViewModel BuildDashboardViewModel(DashboardPeriod? period = null, IOfficeContext? officeContext = null)
     {
         period ??= DashboardPeriod.Today;
+        officeContext ??= new OfficeContext();
         var updatedAt = Now;
         var hourlyChart = BuildHourlyChart();
         var previewResponses = HourlyResponsesGenerator.DailyValues.ToList();
@@ -345,7 +414,7 @@ internal static class DesignPreviewData
                 ActivePeriodPreset = period.ActivePreset
             },
             KpiCards = kpiCards,
-            Workers = BuildWorkerRows().Take(3).Select(w => new DashboardWorkerRowViewModel
+            Workers = FilterWorkerRowsByOffice(BuildWorkerRows(), officeContext.EffectiveOfficeId).Take(3).Select(w => new DashboardWorkerRowViewModel
             {
                 Id = w.Id,
                 DisplayName = w.DisplayName,
@@ -359,7 +428,8 @@ internal static class DesignPreviewData
                 LastActivityUtc = w.LastActivityUtc,
                 CurrentActivityLabel = w.CurrentActivityLabel,
                 CurrentActivityTone = w.CurrentActivityTone,
-                IsActivityLive = w.IsActivityLive
+                IsActivityLive = w.IsActivityLive,
+                OfficeName = w.OfficeName
             }).ToList(),
             HourlyChart = hourlyChart,
             Events = Events
@@ -373,7 +443,8 @@ internal static class DesignPreviewData
                 kpiCards,
                 hourlyChart,
                 accountStats,
-                useHourlyLabels: true)
+                useHourlyLabels: true),
+            ShowOfficeColumn = officeContext.ShowOfficeColumn
         };
     }
 
@@ -448,18 +519,23 @@ internal static class DesignPreviewData
             CurrentActivity: BuildPreviewWorkerActivity(index, row.IsOnline));
     }
 
-    public static WorkerDetailsViewModel? BuildWorkerDetailsViewModel(Guid id)
+    public static WorkerDetailsViewModel? BuildWorkerDetailsViewModel(
+        Guid id,
+        string? sort = null,
+        string? sortDir = null)
     {
         var worker = GetWorker(id);
         if (worker is null) return null;
 
+        var tableSort = TableSort.Parse(sort, sortDir, TableSort.WorkerAccounts.Default, TableSort.WorkerAccounts.Columns);
         var summary = BuildWorkerRows().FirstOrDefault(w => w.Id == id);
         return WorkerDetailsBuilder.Build(
             worker,
-            GetWorkerAccountRows(id),
+            TableSort.WorkerAccounts.Apply(GetWorkerAccountRows(id), tableSort).ToList(),
             GetWorkerEvents(id),
             GetWorkerMeta(id),
-            summary);
+            summary,
+            sort: tableSort);
     }
 
     public static WorkerDetailsViewModel? BuildWorkerDetailsViewModelWithLogs(
@@ -467,11 +543,14 @@ internal static class DesignPreviewData
         string? logsQ,
         string? logsLevel,
         DateTime? logsDate,
-        int logsPage)
+        int logsPage,
+        string? sort = null,
+        string? sortDir = null)
     {
         var worker = GetWorker(id);
         if (worker is null) return null;
 
+        var tableSort = TableSort.Parse(sort, sortDir, TableSort.WorkerAccounts.Default, TableSort.WorkerAccounts.Columns);
         var summary = BuildWorkerRows().FirstOrDefault(w => w.Id == id);
         var logsPageDto = BuildWorkerLogsPage(
             id,
@@ -483,7 +562,7 @@ internal static class DesignPreviewData
 
         return WorkerDetailsBuilder.Build(
             worker,
-            GetWorkerAccountRows(id),
+            TableSort.WorkerAccounts.Apply(GetWorkerAccountRows(id), tableSort).ToList(),
             GetWorkerEvents(id),
             GetWorkerMeta(id),
             summary,
@@ -492,7 +571,8 @@ internal static class DesignPreviewData
                 logsLevel,
                 logsDate,
                 logsPage,
-                logsPageDto));
+                logsPageDto),
+            sort: tableSort);
     }
 
     private static IReadOnlyList<WorkerBalanceDto> BuildWorkerBalances(Guid workerId) =>
@@ -765,8 +845,10 @@ internal static class DesignPreviewData
     public static ErrorsIndexViewModel BuildErrorsIndexViewModel(
         ErrorsFilterViewModel filters,
         int page,
-        int pageSize) =>
-        ErrorsIndexBuilder.Build(BuildPreviewErrorRows(), filters, page, pageSize);
+        int pageSize,
+        string? sort = null,
+        string? sortDir = null) =>
+        ErrorsIndexBuilder.Build(BuildPreviewErrorRows(), filters, page, pageSize, sort, sortDir);
 
     private static IReadOnlyList<ErrorRowViewModel> BuildPreviewErrorRows()
     {
@@ -849,13 +931,17 @@ internal static class DesignPreviewData
         EventsFilterViewModel filters,
         int page,
         int pageSize,
-        string? journalView = null) =>
+        string? journalView = null,
+        string? sort = null,
+        string? sortDir = null) =>
         EventsIndexBuilder.Build(
             BuildPreviewEventRows(),
             filters,
             page,
             pageSize: pageSize,
-            journalView: journalView);
+            journalView: journalView,
+            sort: sort,
+            sortDir: sortDir);
 
     private static IReadOnlyList<EventRowViewModel> BuildPreviewEventRows()
     {
@@ -1007,8 +1093,19 @@ internal static class DesignPreviewData
         string? searchQuery,
         string? tab,
         int page,
-        int pageSize) =>
-        AccountsIndexBuilder.Build(BuildPreviewAccountRows(), searchQuery, tab, page, pageSize);
+        int pageSize,
+        string? sort = null,
+        string? sortDir = null,
+        bool showOfficeColumn = false) =>
+        AccountsIndexBuilder.Build(
+            BuildPreviewAccountRows(),
+            searchQuery,
+            tab,
+            page,
+            sort,
+            sortDir,
+            pageSize,
+            showOfficeColumn);
 
     private static IReadOnlyList<AccountRowViewModel> BuildPreviewAccountRows()
     {
@@ -1021,6 +1118,7 @@ internal static class DesignPreviewData
             var workerIndex = (i - 1) % PreviewWorkerIds.Length;
             var workerId = PreviewWorkerIds[workerIndex];
             var workerName = $"Worker #{workerIndex + 1}";
+            var officeName = workerIndex >= 6 ? "Сибирь" : "Основной";
 
             var tone = i switch
             {
@@ -1086,6 +1184,7 @@ internal static class DesignPreviewData
                 accountDto,
                 workerId,
                 workerName,
+                officeName,
                 balanceDetail.TotalBalance > 0 ? balanceDetail.TotalBalance : balance,
                 balanceDetail,
                 activity,
@@ -1094,8 +1193,6 @@ internal static class DesignPreviewData
 
         return rows;
     }
-
-    public static readonly Guid PreviewOfficeId = Guid.Parse("11111111-1111-1111-1111-111111111111");
 
     public static IReadOnlyList<PanelUserDto> PanelUsers =>
     [
@@ -1108,7 +1205,8 @@ internal static class DesignPreviewData
 
     public static IReadOnlyList<OfficeDto> Offices =>
     [
-        new(PreviewOfficeId, "Основной", true, Now.AddDays(-30), 3, 1)
+        new(PreviewOfficeId, "Основной", true, Now.AddDays(-30), 6, 1),
+        new(PreviewOffice2Id, "Сибирь", true, Now.AddDays(-14), 6, 0)
     ];
 
     public static PasswordPolicyDto PasswordPolicy =>
@@ -1269,16 +1367,21 @@ internal static class DesignPreviewData
         return new WorkerLogsPageDto(items, list.Count, page, pageSize);
     }
 
-    public static ResponsesIndexViewModel BuildResponsesIndexViewModel(ResponsesFilterViewModel filters, Guid? selectedId = null)
+    public static ResponsesIndexViewModel BuildResponsesIndexViewModel(
+        ResponsesFilterViewModel filters,
+        Guid? selectedId = null,
+        string? sort = null,
+        string? sortDir = null)
     {
         var period = new DashboardPeriod(filters.DateFrom, filters.DateTo);
+        var tableSort = TableSort.Parse(sort, sortDir, TableSort.Responses.Default, TableSort.Responses.Columns);
         var allRows = BuildPreviewResponseRows();
         var filtered = FilterPreviewResponseRows(allRows, filters, period);
-        var total = filtered.Count;
+        var sorted = TableSort.Responses.Apply(filtered, tableSort).ToList();
+        var total = sorted.Count;
         var page = Math.Max(1, filters.Page);
         var pageSize = ResponsesIndexBuilder.DefaultPageSize;
-        var paged = filtered
-            .OrderByDescending(r => r.CreatedAtUtc)
+        var paged = sorted
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToList();
@@ -1325,7 +1428,8 @@ internal static class DesignPreviewData
                 period,
                 ResponsesIndexBuilder.StatusOptions,
                 BuildPreviewWorkerOptions(),
-                accountOptions)
+                accountOptions),
+            Sort = tableSort
         };
     }
 

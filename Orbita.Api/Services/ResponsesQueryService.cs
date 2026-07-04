@@ -21,8 +21,10 @@ public sealed class ResponsesQueryService(
         DateTime? toUtc,
         int page,
         int pageSize,
+        string? sort = null,
+        string? sortDir = null,
         CancellationToken ct = default) =>
-        GetPageInternalAsync(scope, officeFilter, status, search, vacancy, workerId, accountId, fromUtc, toUtc, page, pageSize, ct);
+        GetPageInternalAsync(scope, officeFilter, status, search, vacancy, workerId, accountId, fromUtc, toUtc, page, pageSize, sort, sortDir, ct);
 
     public async Task<ResponsesSummaryDto> GetSummaryAsync(
         OfficeScope scope,
@@ -120,6 +122,8 @@ public sealed class ResponsesQueryService(
         DateTime? toUtc,
         int page,
         int pageSize,
+        string? sort,
+        string? sortDir,
         CancellationToken ct)
     {
         page = Math.Max(1, page);
@@ -127,8 +131,7 @@ public sealed class ResponsesQueryService(
 
         var query = BuildFilteredQuery(scope, officeFilter, status, search, vacancy, workerId, accountId, fromUtc, toUtc);
         var total = await query.CountAsync(ct);
-        var rows = await query
-            .OrderByDescending(x => x.CreatedAt)
+        var rows = await ApplyOrdering(query, sort, sortDir)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .Select(x => new
@@ -215,6 +218,59 @@ public sealed class ResponsesQueryService(
             .ToList();
 
         return new ResponsesPageDto(items, total, page, pageSize);
+    }
+
+    private static readonly HashSet<string> AllowedSortColumns = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "time", "vacancy", "author", "account", "status"
+    };
+
+    private static IQueryable<CandidateResponseEntity> ApplyOrdering(
+        IQueryable<CandidateResponseEntity> query,
+        string? sort,
+        string? sortDir)
+    {
+        var column = NormalizeSortColumn(sort);
+        var descending = ResolveDescending(column, sortDir);
+
+        return column switch
+        {
+            "vacancy" => descending
+                ? query.OrderByDescending(x => x.Vacancy)
+                : query.OrderBy(x => x.Vacancy),
+            "author" => descending
+                ? query.OrderByDescending(x => x.FullName)
+                : query.OrderBy(x => x.FullName),
+            "account" => descending
+                ? query.OrderByDescending(x => x.AccountName)
+                : query.OrderBy(x => x.AccountName),
+            "status" => descending
+                ? query.OrderByDescending(x => x.Status)
+                : query.OrderBy(x => x.Status),
+            _ => descending
+                ? query.OrderByDescending(x => x.CreatedAt)
+                : query.OrderBy(x => x.CreatedAt)
+        };
+    }
+
+    private static string NormalizeSortColumn(string? sort) =>
+        !string.IsNullOrWhiteSpace(sort) && AllowedSortColumns.Contains(sort)
+            ? sort.ToLowerInvariant()
+            : "time";
+
+    private static bool ResolveDescending(string column, string? dir)
+    {
+        if (string.Equals(dir, "desc", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (string.Equals(dir, "asc", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return column == "time";
     }
 
     private IQueryable<CandidateResponseEntity> BuildFilteredQuery(

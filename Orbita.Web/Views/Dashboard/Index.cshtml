@@ -23,6 +23,7 @@
      data-orbita-snapshot="@snapshotUrl"
      data-dashboard-snapshot="@snapshotUrl"
      data-worker-details-url="@Url.Action("Details", "Workers", new { id = "__id__" })"
+     data-show-office-column="@(Model.ShowOfficeColumn ? "true" : "false")"
      data-account-search-url="@Url.Action("Index", "Accounts", new { q = "__q__" })"
      data-settings-logs-url="@Url.Action("Index", "Settings", new { tab = "logs", workerId = "__id__" })">
     @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
@@ -63,6 +64,10 @@
                         <thead>
                             <tr>
                                 <th>Воркер</th>
+                                @if (Model.ShowOfficeColumn)
+                                {
+                                    <th>Офис</th>
+                                }
                                 <th>Статус</th>
                                 <th>Сейчас</th>
                                 <th>Аккаунтов</th>
@@ -81,6 +86,10 @@
                                 <td class="cell-name" data-label="Воркер">
                                     <partial name="_WorkerNameCell" model="@(new WorkerNameCellViewModel { DisplayName = w.DisplayName, MachineName = w.MachineName, Url = workerDetailsUrl })" />
                                 </td>
+                                @if (Model.ShowOfficeColumn)
+                                {
+                                    <td data-label="Офис">@w.OfficeName</td>
+                                }
                                 <td data-label="Статус">
                                     <span class="status-dot @(w.IsOnline ? "" : "offline")">
                                         <i class="fa-solid fa-circle status-dot-icon" aria-hidden="true"></i>

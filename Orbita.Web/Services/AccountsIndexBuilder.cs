@@ -22,19 +22,31 @@ internal static class AccountsIndexBuilder
         string? searchQuery,
         string? tab,
         int page,
-        int pageSize = DefaultPageSize)
+        string? sort = null,
+        string? sortDir = null,
+        int pageSize = DefaultPageSize,
+        bool showOfficeColumn = false,
+        IOfficeContext? officeContext = null)
     {
         page = Math.Max(1, page);
         tab = NormalizeTab(tab);
+        var tableSort = TableSort.Parse(sort, sortDir, TableSort.Accounts.Default, TableSort.Accounts.Columns);
 
         var filtered = FilterRows(allRows, searchQuery, tab);
-        var total = filtered.Count;
-        var paged = filtered.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+        var sorted = TableSort.Accounts.Apply(filtered, tableSort).ToList();
+        var total = sorted.Count;
+        var paged = sorted.Skip((page - 1) * pageSize).Take(pageSize).ToList();
         var summary = Summarize(allRows);
+
+        var header = PageHeaderBuilder.AccountsList();
+        if (officeContext is not null)
+        {
+            header = PageHeaderBuilder.WithOfficeScope(header, officeContext);
+        }
 
         return new AccountsIndexViewModel
         {
-            Header = PageHeaderBuilder.AccountsList(),
+            Header = header,
             SearchQuery = searchQuery,
             ActiveTab = tab,
             Tabs = TabDefinitions,
@@ -45,7 +57,9 @@ internal static class AccountsIndexBuilder
                 Page = page,
                 PageSize = pageSize,
                 TotalItems = total
-            }
+            },
+            Sort = tableSort,
+            ShowOfficeColumn = showOfficeColumn
         };
     }
 
@@ -53,6 +67,7 @@ internal static class AccountsIndexBuilder
         WorkerAccountDto account,
         Guid workerId,
         string workerName,
+        string officeName = "",
         decimal balance = 0,
         WorkerBalanceDto? balanceDetail = null,
         WorkerActivityDto? workerActivity = null,
@@ -82,6 +97,7 @@ internal static class AccountsIndexBuilder
             AccountName = account.DisplayName,
             WorkerId = workerId,
             WorkerName = workerName,
+            OfficeName = officeName,
             StatusLabel = label,
             StatusTone = tone,
             Balance = balance,
@@ -95,7 +111,7 @@ internal static class AccountsIndexBuilder
             Errors = errors > 0 ? errors : hasError ? 1 : 0,
             LastActivityUtc = account.LastMonitoringAt,
             IsEnabledInPanel = account.IsEnabledInPanel,
-            LastErrorMessage = account.LastErrorMessage,
+            LastErrorMessage = AdsPowerErrorMessageNormalizer.NormalizeForDisplay(account.LastErrorMessage),
             SubProfiles = subProfiles,
             SubProfilesSummary = SubProfileViewModelMapper.BuildSummary(subProfiles),
             CanRefreshSubProfiles = !string.IsNullOrWhiteSpace(account.AdsPowerProfileId),
@@ -129,7 +145,7 @@ internal static class AccountsIndexBuilder
             "active" => query.Where(a => a.StatusTone == "active"),
             "inactive" => query.Where(a => a.StatusTone == "inactive"),
             "blocked" => query.Where(a => a.StatusTone == "blocked"),
-            "errors" => query.Where(a => a.StatusTone == "error" || a.Errors > 0),
+            "errors" => query.Where(HasErrors),
             _ => query
         };
 
@@ -142,8 +158,11 @@ internal static class AccountsIndexBuilder
         Active = rows.Count(a => a.StatusTone == "active"),
         Inactive = rows.Count(a => a.StatusTone == "inactive"),
         Blocked = rows.Count(a => a.StatusTone == "blocked"),
-        Errors = rows.Count(a => a.StatusTone == "error")
+        Errors = rows.Count(HasErrors)
     };
+
+    private static bool HasErrors(AccountRowViewModel account) =>
+        account.StatusTone == "error" || account.Errors > 0;
 
     private static IReadOnlyList<DashboardKpiCardViewModel> BuildKpiCards(AccountsSummaryViewModel summary)
     {

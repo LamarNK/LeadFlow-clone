@@ -59,6 +59,37 @@ public sealed class AccountIssueTrackerStaleRetryTests
     }
 
     [Fact]
+    public void TryClearStaleAccountErrorMessage_OldTransientError_OnAuthorizedAccount_ClearsMessage()
+    {
+        var account = new AvitoAccount
+        {
+            DisplayName = "Cabinet",
+            Status = AvitoAccountStatus.Authorized,
+            LastErrorMessage = "AdsPower: rate limit",
+            LastMonitoringAt = Now.AddDays(-4)
+        };
+
+        Assert.True(AccountIssueTracker.TryClearStaleAccountErrorMessage(account, Now));
+        Assert.Equal(string.Empty, account.LastErrorMessage);
+        Assert.Equal(AvitoAccountStatus.Authorized, account.Status);
+    }
+
+    [Fact]
+    public void TryClearStaleAccountErrorMessage_FreshError_StaysVisible()
+    {
+        var account = new AvitoAccount
+        {
+            DisplayName = "Cabinet",
+            Status = AvitoAccountStatus.Authorized,
+            LastErrorMessage = "AdsPower: rate limit",
+            LastMonitoringAt = Now.AddDays(-2)
+        };
+
+        Assert.False(AccountIssueTracker.TryClearStaleAccountErrorMessage(account, Now));
+        Assert.Equal("AdsPower: rate limit", account.LastErrorMessage);
+    }
+
+    [Fact]
     public void TryClearStaleBlockingState_NoTimestamp_StaysBlocked()
     {
         var account = new AvitoAccount

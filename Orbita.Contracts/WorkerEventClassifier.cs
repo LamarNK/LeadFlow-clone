@@ -32,7 +32,7 @@ public static class WorkerEventClassifier
             "нужен вход" => "auth",
             "не переключился" => "switch",
             "ошибка парсинга" or "таймаут" or "проблема" => "error",
-            "лимит частоты adspower" or "дневной лимит adspower" => "error",
+            "лимит частоты adspower" or "дневной лимит adspower" or "профиль занят" => "error",
             _ => null
         };
     }
@@ -50,7 +50,7 @@ public static class WorkerEventClassifier
             "не переключился" => "automation",
             "ошибка парсинга" => "parsing",
             "таймаут" => "network",
-            "лимит частоты adspower" or "дневной лимит adspower" => "api",
+            "лимит частоты adspower" or "дневной лимит adspower" or "профиль занят" => "api",
             "проблема" => "automation",
             _ => null
         };

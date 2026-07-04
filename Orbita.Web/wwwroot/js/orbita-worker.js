@@ -406,7 +406,6 @@
         var tbody = document.querySelector('[data-orbita-live-body="worker-accounts"]');
         if (!tbody || !shared) return;
         var workerId = getWorkerId();
-        var token = shared.getRequestVerificationToken();
         var expandedPanels = {};
         tbody.querySelectorAll('.subprofiles-toggle[aria-expanded="true"]').forEach(function (btn) {
             var panelId = btn.getAttribute('aria-controls');
@@ -432,13 +431,12 @@
 
             var rowClass = 'worker-account-row' + (account.isProcessingNow ? ' worker-account-row--processing' : '');
 
+            var toggleTitle = account.isEnabledInPanel ? 'Отключить аккаунт в панели' : 'Включить аккаунт в панели';
+
             return '<tr class="' + rowClass + '" data-account-id="' + shared.escapeHtml(account.id) + '">' +
-                '<td data-label="Вкл"><form action="/Workers/UpdateAccount" method="post" class="worker-account-toggle-form">' +
-                '<input type="hidden" name="__RequestVerificationToken" value="' + shared.escapeHtml(token) + '" />' +
-                '<input type="hidden" name="workerId" value="' + shared.escapeHtml(workerId) + '" />' +
-                '<input type="hidden" name="accountId" value="' + shared.escapeHtml(account.id) + '" />' +
-                '<label class="worker-toggle"><input type="checkbox" name="isEnabledInPanel" value="true"' + checked + ' onchange="this.form.submit()" />' +
-                '<span class="worker-toggle-slider"></span></label></form></td>' +
+                '<td data-label="Вкл"><label class="worker-toggle" title="' + shared.escapeHtml(toggleTitle) + '">' +
+                '<input type="checkbox" data-account-enable-toggle data-worker-id="' + shared.escapeHtml(workerId) + '" data-account-id="' + shared.escapeHtml(account.id) + '"' + checked + ' />' +
+                '<span class="worker-toggle-slider"></span></label></td>' +
                 '<td class="cell-name" data-label="Аккаунт"><a href="' + shared.escapeHtml(accountSearchUrl(account.displayName)) + '">' + shared.escapeHtml(account.displayName) + '</a>' + adsPower + subProfiles + '</td>' +
                 '<td data-label="Статус">' + statusHtml + '</td>' +
                 '<td data-label="Баланс"><span class="account-balance-multiline">' + shared.escapeHtml(account.balanceText || '—') + '</span></td>' +
@@ -463,6 +461,9 @@
             window.OrbitaTime.localizeAll(tbody);
         }
         shared.reinitLiveContent();
+        if (window.Orbita && typeof window.Orbita.initWorkerAccountEnableToggles === 'function') {
+            window.Orbita.initWorkerAccountEnableToggles();
+        }
         initAccountRowNavigation();
     }
 
@@ -557,6 +558,9 @@
         initKpiCounters();
         if (window.Orbita && typeof window.Orbita.initWorkerRestartButtons === 'function') {
             window.Orbita.initWorkerRestartButtons();
+        }
+        if (window.Orbita && typeof window.Orbita.initWorkerAccountEnableToggles === 'function') {
+            window.Orbita.initWorkerAccountEnableToggles();
         }
         initAccountRowNavigation();
         initActivityChart();

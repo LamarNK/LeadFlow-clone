@@ -1363,6 +1363,11 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 cancellationToken.ThrowIfCancellationRequested();
 
                 var state = await ProbePageStateAsync(page, cancellationToken).ConfigureAwait(false);
+                if (AvitoAutomationFailureFormatter.SuggestsLogin(state))
+                {
+                    throw new AvitoLoginRequiredException(state?.Url, state?.Title);
+                }
+
                 if (state?.IsOnCandidates == true && state.CandidatesItemCount > 0)
                 {
                     return;
@@ -1421,6 +1426,9 @@ public sealed partial class AdsPowerAvitoAutomationService(
                         .ConfigureAwait(false);
                 }
 
+                await AvitoLoginProbe.ThrowIfLoginRequiredAsync(executeScript, cancellationToken)
+                    .ConfigureAwait(false);
+
                 await AvitoCandidatesPageWaiter
                     .WaitForCandidatesOrThrowFirewallAsync(
                         executeScript,
@@ -1453,10 +1461,20 @@ public sealed partial class AdsPowerAvitoAutomationService(
             }
         }
 
+        await WaitForPageContentOrLoginAsync(page, cancellationToken).ConfigureAwait(false);
+
+        await AvitoLoginProbe.ThrowIfLoginRequiredAsync(executeScript, cancellationToken)
+            .ConfigureAwait(false);
+
         var finalState = await ProbePageStateAsync(page, cancellationToken).ConfigureAwait(false);
         if (finalState?.IsOnCandidates == true)
         {
             return;
+        }
+
+        if (AvitoAutomationFailureFormatter.SuggestsLogin(finalState))
+        {
+            throw new AvitoLoginRequiredException(finalState?.Url, finalState?.Title);
         }
 
         throw new AvitoPageMismatchException(
@@ -1464,6 +1482,38 @@ public sealed partial class AdsPowerAvitoAutomationService(
             AvitoPageKind.Candidates,
             finalState,
             recoveryAttempts);
+    }
+
+    private static async Task WaitForPageContentOrLoginAsync(IPage page, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await page.WaitForFunctionAsync(
+                    """
+                    () => {
+                        const bodyLen = (document.body?.innerText ?? '').trim().length;
+                        if (bodyLen > 80) return true;
+                        if (document.querySelector("[data-marker='login-form'], [data-marker='auth-app-root']")) return true;
+                        if (document.querySelector("[data-marker='job-application/item']")) return true;
+                        if (/\/profile\/login|\/profile\/auth|avito\.ru\/login|#login\b/i.test(location.href)) return true;
+                        return document.readyState === 'complete' && bodyLen > 0;
+                    }
+                    """,
+                    new WaitForFunctionOptions
+                    {
+                        Timeout = 10_000,
+                        PollingInterval = 500
+                    })
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            // Best effort — дальше сработает probe/login-detector.
+        }
     }
 
     /// <summary>

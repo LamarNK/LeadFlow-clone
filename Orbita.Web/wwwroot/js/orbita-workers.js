@@ -142,8 +142,13 @@
                 ? '<span class="workers-status-badge workers-status-badge--disabled">Приостановлен</span>'
                 : '';
 
+            var officeCell = shared.getLiveAttr('data-show-office-column') === 'true'
+                ? '<td data-label="Офис">' + shared.escapeHtml(w.officeName || '—') + '</td>'
+                : '';
+
             return '<tr class="workers-row' + disabledRow + '" data-href="' + shared.escapeHtml(detailsUrl) + '" data-worker-id="' + shared.escapeHtml(w.id) + '">' +
                 '<td class="cell-name" data-label="Воркер">' + renderWorkerNameCell(w) + pausedBadge + updateBadge + '</td>' +
+                officeCell +
                 '<td data-label="Статус"><span class="status-dot' + statusClass + '"><i class="fa-solid fa-circle status-dot-icon" aria-hidden="true"></i>' + statusText + '</span></td>' +
                 '<td data-label="Сейчас">' + shared.renderActivityPill(w.currentActivityLabel, w.currentActivityTone, w.isActivityLive) + '</td>' +
                 '<td data-label="Аккаунтов">' + w.activeAccounts + ' / ' + w.totalAccounts + '</td>' +

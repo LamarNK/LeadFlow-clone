@@ -378,6 +378,17 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
             throw new AdsPowerRateLimitExceededException(code, msg);
         }
 
+        if (AdsPowerProfileInUseException.LooksLikeProfileInUse(code, msg))
+        {
+            Log(
+                $"AdsPower API: профиль уже используется (code {code}): {msg}.",
+                DeskLinkAuditLogLevel.Warning,
+                memberName,
+                props,
+                AdsPowerProfileInUseException.ErrorKey);
+            throw new AdsPowerProfileInUseException(code, msg);
+        }
+
         Log(
             $"AdsPower API error {code}: {msg ?? "ошибка"}.",
             DeskLinkAuditLogLevel.Warning,

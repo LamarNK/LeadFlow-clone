@@ -1610,6 +1610,8 @@ panel.MapGet("/responses", async (
     DateTime? to,
     int? page,
     int? pageSize,
+    string? sort,
+    string? dir,
     CancellationToken ct) =>
 {
     var scope = await officeScope.ResolveAsync(principal, ct);
@@ -1630,6 +1632,8 @@ panel.MapGet("/responses", async (
         to,
         page ?? 1,
         pageSize ?? 10,
+        sort,
+        dir,
         ct));
 });
 

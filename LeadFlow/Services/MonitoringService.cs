@@ -723,19 +723,31 @@ public sealed class MonitoringService(
     /// <returns>Новые откликов с Авито, был ли опрос источника, есть ли необработанный «хвост» сверх лимита за цикл.</returns>
     internal async Task<(int NewResponsesDetected, bool PolledSource, bool HasUndischargedBacklog)> ProcessAccountAsync(AvitoAccount account, AppSettings settings, CancellationToken cancellationToken)
     {
-        if (AccountIssueTracker.TryClearStaleBlockingState(account))
+        var staleStateCleared = AccountIssueTracker.TryClearStaleBlockingState(account);
+        var staleErrorCleared = AccountIssueTracker.TryClearStaleAccountErrorMessage(account);
+        if (staleStateCleared || staleErrorCleared)
         {
             await repository.SaveAccountAsync(account, cancellationToken).ConfigureAwait(false);
-            _ = GlobalLogger.Instance.LogAsync(
-                $"Account {account.DisplayName}: stale blocking status cleared, retrying monitoring.",
-                DeskLinkAuditLogLevel.Info);
-            await repository.AddLogAsync(new ProcessingLogItem
+            if (staleStateCleared)
             {
-                AccountId = account.Id,
-                Level = "Info",
-                Message = "Повторный проход после устаревшей блокировки",
-                Details = $"Статус сброшен, интервал {MonitoringTiming.AccountBlockingIssueRetryAfterHours} ч."
-            }, cancellationToken);
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"Account {account.DisplayName}: stale blocking status cleared, retrying monitoring.",
+                    DeskLinkAuditLogLevel.Info);
+                await repository.AddLogAsync(new ProcessingLogItem
+                {
+                    AccountId = account.Id,
+                    Level = "Info",
+                    Message = "Повторный проход после устаревшей блокировки",
+                    Details = $"Статус сброшен, интервал {MonitoringTiming.AccountBlockingIssueRetryAfterHours} ч."
+                }, cancellationToken);
+            }
+
+            if (staleErrorCleared)
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"Account {account.DisplayName}: stale account error message cleared.",
+                    DeskLinkAuditLogLevel.Info);
+            }
         }
 
         if (account.Status is AvitoAccountStatus.RequiresLogin or AvitoAccountStatus.RequiresManualAction or AvitoAccountStatus.Paused)
@@ -812,6 +824,11 @@ public sealed class MonitoringService(
         {
             await HandleAdsPowerRateLimitForAccountAsync(account, rateEx, cancellationToken).ConfigureAwait(false);
             return (0, false, false);
+        }
+        catch (AdsPowerProfileInUseException profileInUseEx)
+        {
+            await HandleAdsPowerProfileInUseForAccountAsync(account, profileInUseEx, cancellationToken).ConfigureAwait(false);
+            return (0, true, false);
         }
         finally
         {
@@ -923,6 +940,53 @@ public sealed class MonitoringService(
                 ["accountName"] = account.DisplayName,
                 ["adsPower.apiCode"] = limitEx.ApiCode,
                 ["adsPower.apiMessage"] = limitEx.ApiMessage
+            });
+    }
+
+    private async Task HandleAdsPowerProfileInUseForAccountAsync(
+        AvitoAccount account,
+        AdsPowerProfileInUseException profileInUseEx,
+        CancellationToken ct)
+    {
+        account.Status = AvitoAccountStatus.RequiresManualAction;
+        account.LastErrorMessage = AccountIssueFormatting.FormatIssue(
+            account,
+            null,
+            AvitoSubProfileIssueKind.ProfileInUse,
+            profileInUseEx.UserMessage);
+
+        try
+        {
+            await repository.SaveAccountAsync(account, ct).ConfigureAwait(false);
+            await repository.AddLogAsync(new ProcessingLogItem
+            {
+                AccountId = account.Id,
+                Level = "Warning",
+                Message = "Профиль AdsPower занят",
+                Details = profileInUseEx.ApiMessage ?? profileInUseEx.Message
+            }, ct).ConfigureAwait(false);
+        }
+        catch (Exception persistEx)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Не удалось сохранить статус занятого профиля AdsPower для аккаунта {account.DisplayName}: {persistEx.Message}",
+                DeskLinkAuditLogLevel.Error);
+        }
+
+        UpdateStatus(MonitoringStatus.RequiresManualAction, account.LastErrorMessage);
+
+        _ = GlobalLogger.Instance.LogAsync(
+            $"AdsPower profile in use for account {account.DisplayName} (api code {profileInUseEx.ApiCode}): {profileInUseEx.ApiMessage}.",
+            DeskLinkAuditLogLevel.Warning,
+            memberName: nameof(HandleAdsPowerProfileInUseForAccountAsync),
+            filePath: "MonitoringService.cs",
+            errorKey: AdsPowerProfileInUseException.ErrorKey,
+            properties: new Dictionary<string, object?>
+            {
+                ["accountId"] = account.Id,
+                ["accountName"] = account.DisplayName,
+                ["adsPower.apiCode"] = profileInUseEx.ApiCode,
+                ["adsPower.apiMessage"] = profileInUseEx.ApiMessage
             });
     }
 

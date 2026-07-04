@@ -8,7 +8,8 @@
     var installCommand = TempData["CreatedWorkerInstallCommand"] as string;
     var workersError = TempData["WorkersError"] as string;
     var workersSuccess = TempData["WorkersSuccess"] as string;
-    var snapshotUrl = Url.Action("DetailsSnapshot", "Workers", new { id = Model.WorkerId })!;
+    var workerAccountsSortRoute = new { id = Model.WorkerId, sort = Model.Sort.Column, dir = Model.Sort.Dir };
+    var snapshotUrl = Url.Action("DetailsSnapshot", "Workers", workerAccountsSortRoute)!;
 }
 <partial name="_PageHeader" model="Model.Header" />
 <div class="orbita-main worker-detail-page"
@@ -331,12 +332,12 @@
                 <thead>
                     <tr>
                         <th>Вкл</th>
-                        <th>Аккаунт</th>
-                        <th>Статус</th>
-                        <th>Баланс</th>
-                        <th>Откликов</th>
-                        <th>Последняя активность</th>
-                        <th>Ошибок</th>
+                        <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Аккаунт", Column = "account", Sort = Model.Sort, Controller = "Workers", Action = "Details", RouteValues = workerAccountsSortRoute })" />
+                        <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Статус", Column = "status", Sort = Model.Sort, Controller = "Workers", Action = "Details", RouteValues = workerAccountsSortRoute })" />
+                        <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Баланс", Column = "balance", Sort = Model.Sort, Controller = "Workers", Action = "Details", RouteValues = workerAccountsSortRoute, Numeric = true })" />
+                        <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Откликов", Column = "responses", Sort = Model.Sort, Controller = "Workers", Action = "Details", RouteValues = workerAccountsSortRoute, Numeric = true })" />
+                        <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Последняя активность", Column = "activity", Sort = Model.Sort, Controller = "Workers", Action = "Details", RouteValues = workerAccountsSortRoute })" />
+                        <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Ошибок", Column = "errors", Sort = Model.Sort, Controller = "Workers", Action = "Details", RouteValues = workerAccountsSortRoute, Numeric = true })" />
                         <th aria-hidden="true">Действия</th>
                     </tr>
                 </thead>
@@ -347,19 +348,14 @@
                     var responsesUrl = Url.Action("Index", "Responses", new { accountId = account.Id });
                     <tr class="worker-account-row@(account.IsProcessingNow ? " worker-account-row--processing" : "")" data-account-id="@account.Id">
                         <td data-label="Вкл">
-                            <form asp-action="UpdateAccount" method="post" class="worker-account-toggle-form">
-                                @Html.AntiForgeryToken()
-                                <input type="hidden" name="workerId" value="@Model.WorkerId" />
-                                <input type="hidden" name="accountId" value="@account.Id" />
-                                <label class="worker-toggle">
-                                    <input type="checkbox"
-                                           name="isEnabledInPanel"
-                                           value="true"
-                                           @(account.IsEnabledInPanel ? "checked" : null)
-                                           onchange="this.form.submit()" />
-                                    <span class="worker-toggle-slider"></span>
-                                </label>
-                            </form>
+                            <label class="worker-toggle" title="@(account.IsEnabledInPanel ? "Отключить аккаунт в панели" : "Включить аккаунт в панели")">
+                                <input type="checkbox"
+                                       data-account-enable-toggle
+                                       data-worker-id="@Model.WorkerId"
+                                       data-account-id="@account.Id"
+                                       @(account.IsEnabledInPanel ? "checked" : null) />
+                                <span class="worker-toggle-slider"></span>
+                            </label>
                         </td>
                         <td class="cell-name" data-label="Аккаунт">
                             <a href="@accountSearchUrl">@account.DisplayName</a>

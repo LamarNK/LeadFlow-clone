@@ -4,7 +4,13 @@ namespace Orbita.Web.Services;
 
 public interface IWorkersService
 {
-    Task<WorkersIndexViewModel> GetIndexAsync(string? searchQuery = null, string? status = null, int page = 1, CancellationToken ct = default);
+    Task<WorkersIndexViewModel> GetIndexAsync(
+        string? searchQuery = null,
+        string? status = null,
+        int page = 1,
+        string? sort = null,
+        string? sortDir = null,
+        CancellationToken ct = default);
     Task<WorkerDetailsViewModel?> GetDetailsAsync(
         Guid id,
         string? logsQ = null,
@@ -12,6 +18,8 @@ public interface IWorkersService
         DateTime? logsDate = null,
         int logsPage = 1,
         bool includeLogs = false,
+        string? sort = null,
+        string? sortDir = null,
         CancellationToken ct = default);
     Task<(CreateWorkerResultViewModel? Result, string? Error)> CreateWorkerAsync(
         string displayName,

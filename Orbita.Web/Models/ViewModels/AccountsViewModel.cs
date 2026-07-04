@@ -15,6 +15,8 @@ public sealed class AccountsIndexViewModel
     public IReadOnlyList<AccountRowViewModel> Accounts { get; init; } = [];
     public PaginationViewModel Pagination { get; init; } = new();
     public string? SearchQuery { get; init; }
+    public TableSortState Sort { get; init; } = TableSortState.Create("account", descending: false);
+    public bool ShowOfficeColumn { get; init; }
 }
 
 public sealed class AccountTabViewModel
@@ -29,6 +31,7 @@ public sealed class AccountRowViewModel
     public string AccountName { get; init; } = string.Empty;
     public Guid WorkerId { get; init; }
     public string WorkerName { get; init; } = string.Empty;
+    public string OfficeName { get; init; } = string.Empty;
     public string StatusLabel { get; init; } = string.Empty;
     public string StatusTone { get; init; } = "active";
     public decimal Balance { get; init; }

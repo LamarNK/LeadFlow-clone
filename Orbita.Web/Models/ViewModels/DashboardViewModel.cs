@@ -17,6 +17,7 @@ public sealed class DashboardViewModel
     public AccountStatsViewModel AccountStats { get; init; } = AccountStatsViewModel.Empty;
     public DashboardChartsViewModel Charts { get; init; } = new();
     public string? ErrorMessage { get; init; }
+    public bool ShowOfficeColumn { get; init; }
 }
 
 public sealed class DashboardKpiCardViewModel
@@ -51,6 +52,7 @@ public sealed class DashboardWorkerRowViewModel
     public string? CurrentActivityLabel { get; init; }
     public string CurrentActivityTone { get; init; } = "muted";
     public bool IsActivityLive { get; init; }
+    public string OfficeName { get; init; } = string.Empty;
 }
 
 public sealed class DashboardChartPointViewModel

@@ -101,6 +101,45 @@ public static class AccountIssueTracker
     }
 
     /// <summary>
+    /// Сбрасывает устаревшее сообщение об ошибке на аккаунте без активных проблем суб-профилей,
+    /// если последняя попытка мониторинга была давно (см. <see cref="MonitoringTiming.AccountStaleErrorMessageMaxAgeDays"/>).
+    /// </summary>
+    public static bool TryClearStaleAccountErrorMessage(AvitoAccount account, DateTime? utcNow = null)
+    {
+        if (account.HasSubProfileIssues || string.IsNullOrWhiteSpace(account.LastErrorMessage))
+        {
+            return false;
+        }
+
+        if (account.Status is AvitoAccountStatus.RequiresLogin
+            or AvitoAccountStatus.RequiresManualAction
+            or AvitoAccountStatus.Paused)
+        {
+            return false;
+        }
+
+        var referenceAt = account.LastMonitoringAt ?? account.LastAuthCheckAt;
+        if (referenceAt is null)
+        {
+            return false;
+        }
+
+        var now = utcNow ?? DateTime.UtcNow;
+        if (now - referenceAt.Value < TimeSpan.FromDays(MonitoringTiming.AccountStaleErrorMessageMaxAgeDays))
+        {
+            return false;
+        }
+
+        account.LastErrorMessage = string.Empty;
+        if (account.Status == AvitoAccountStatus.Error)
+        {
+            account.Status = AvitoAccountStatus.Authorized;
+        }
+
+        return true;
+    }
+
+    /// <summary>
     /// Сбрасывает устаревший блокирующий статус (<see cref="AvitoAccountStatus.RequiresManualAction"/>,
     /// <see cref="AvitoAccountStatus.RequiresLogin"/>), чтобы воркер снова попробовал пройти аккаунт.
     /// </summary>

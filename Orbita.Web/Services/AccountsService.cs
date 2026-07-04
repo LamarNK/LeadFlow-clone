@@ -4,16 +4,28 @@ using Orbita.Web.Options;
 
 namespace Orbita.Web.Services;
 
-public sealed class AccountsService(OrbitaApiClient api, IOptions<DesignPreviewOptions> previewOptions) : IAccountsService
+public sealed class AccountsService(
+    OrbitaApiClient api,
+    IOfficeContext officeContext,
+    IOptions<DesignPreviewOptions> previewOptions) : IAccountsService
 {
     public async Task<AccountsIndexViewModel> GetIndexAsync(
         string? searchQuery = null,
         string? tab = null,
         int page = 1,
+        string? sort = null,
+        string? sortDir = null,
         CancellationToken ct = default)
     {
         if (previewOptions.Value.Enabled)
-            return DesignPreviewData.BuildAccountsIndexViewModel(searchQuery, tab, page, AccountsIndexBuilder.DefaultPageSize);
+            return DesignPreviewData.BuildAccountsIndexViewModel(
+                searchQuery,
+                tab,
+                page,
+                AccountsIndexBuilder.DefaultPageSize,
+                sort,
+                sortDir,
+                officeContext.ShowOfficeColumn);
 
         var rows = new List<AccountRowViewModel>();
         var workers = await api.GetWorkersAsync(ct) ?? [];
@@ -32,6 +44,7 @@ public sealed class AccountsService(OrbitaApiClient api, IOptions<DesignPreviewO
                     account,
                     worker.Id,
                     worker.DisplayName,
+                    worker.OfficeName,
                     balance,
                     balanceDetail,
                     worker.CurrentActivity,
@@ -40,6 +53,14 @@ public sealed class AccountsService(OrbitaApiClient api, IOptions<DesignPreviewO
             }
         }
 
-        return AccountsIndexBuilder.Build(rows, searchQuery, tab, page);
+        return AccountsIndexBuilder.Build(
+            rows,
+            searchQuery,
+            tab,
+            page,
+            sort,
+            sortDir,
+            showOfficeColumn: officeContext.ShowOfficeColumn,
+            officeContext: officeContext);
     }
 }

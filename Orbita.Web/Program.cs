@@ -52,6 +52,7 @@ builder.Services.AddScoped<IWorkersService, WorkersService>();
 builder.Services.AddScoped<IEventsService, EventsService>();
 builder.Services.AddScoped<IResponsesService, ResponsesService>();
 builder.Services.AddScoped<IErrorsService, ErrorsService>();
+builder.Services.AddScoped<IOfficeContext, OfficeContext>();
 builder.Services.AddScoped<IAccountsService, AccountsService>();
 builder.Services.AddScoped<NavBadgesService>();
 builder.Services.AddScoped<GlobalSearchService>();
@@ -129,6 +130,7 @@ app.UseRouting();
 app.UseMiddleware<ThemeMiddleware>();
 app.UseAuthentication();
 app.UseMiddleware<JwtCookieAuthenticationMiddleware>();
+app.UseMiddleware<OfficeContextMiddleware>();
 app.UseAuthorization();
 
 app.MapReverseProxy();

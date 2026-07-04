@@ -12,7 +12,8 @@ internal static class WorkerDetailsBuilder
         IReadOnlyList<DashboardEventRowViewModel> events,
         WorkerExtraInfoViewModel? extra = null,
         WorkerRowViewModel? summary = null,
-        WorkerLogsPanelViewModel? logs = null)
+        WorkerLogsPanelViewModel? logs = null,
+        TableSortState? sort = null)
     {
         extra ??= new WorkerExtraInfoViewModel();
         var stats = worker.LatestStats;
@@ -73,6 +74,7 @@ internal static class WorkerDetailsBuilder
             Events = events,
             PeriodStats = BuildPeriodStats(stats, responses, duplicates, errors),
             Accounts = accounts,
+            Sort = sort ?? TableSortState.Create("account", descending: false),
             MaxConcurrentAccounts = worker.MaxConcurrentAccounts,
             AdsPowerApiBaseUrl = worker.AdsPowerApiBaseUrl,
             AdsPowerApiKey = worker.AdsPowerApiKey,
@@ -111,6 +113,7 @@ internal static class WorkerDetailsBuilder
             AdsPowerProfileId = account.AdsPowerProfileId,
             StatusLabel = label,
             StatusTone = tone,
+            Balance = balance?.TotalBalance,
             BalanceText = balance is null
                 ? "—"
                 : FormatAccountBalanceText(balance),
@@ -118,7 +121,7 @@ internal static class WorkerDetailsBuilder
             LastActivityUtc = account.LastMonitoringAt,
             Errors = errors > 0 ? errors : !string.IsNullOrWhiteSpace(account.LastErrorMessage) ? 1 : 0,
             // TodayEventErrors from API; LastErrorMessage is legacy fallback
-            LastErrorMessage = account.LastErrorMessage,
+            LastErrorMessage = AdsPowerErrorMessageNormalizer.NormalizeForDisplay(account.LastErrorMessage),
             SubProfiles = subProfiles,
             SubProfilesSummary = SubProfileViewModelMapper.BuildSummary(subProfiles),
             CanRefreshSubProfiles = !string.IsNullOrWhiteSpace(account.AdsPowerProfileId),

@@ -562,6 +562,42 @@
         });
     }
 
+    function initWorkerAccountEnableToggles() {
+        document.querySelectorAll('[data-account-enable-toggle]').forEach(function (input) {
+            if (input.hasAttribute('data-account-enable-bound')) return;
+            input.setAttribute('data-account-enable-bound', '1');
+
+            input.addEventListener('change', async function (e) {
+                e.stopPropagation();
+                if (input.disabled) return;
+
+                var workerId = input.getAttribute('data-worker-id');
+                var accountId = input.getAttribute('data-account-id');
+                if (!workerId || !accountId) return;
+
+                var enabled = input.checked;
+                input.disabled = true;
+                var result = await postForm('/Workers/Toggle', {
+                    workerId: workerId,
+                    accountId: accountId,
+                    enabled: enabled ? 'true' : 'false'
+                });
+                input.disabled = false;
+
+                if (result.ok) {
+                    var label = input.closest('label');
+                    if (label) {
+                        label.title = enabled ? 'Отключить аккаунт в панели' : 'Включить аккаунт в панели';
+                    }
+                    showToast((result.payload && result.payload.message) || 'Сохранено', { variant: 'success' });
+                } else {
+                    input.checked = !enabled;
+                    showToast((result.payload && result.payload.error) || 'Не удалось сохранить', { variant: 'error' });
+                }
+            });
+        });
+    }
+
     function initSubProfileEnableToggles() {
         document.querySelectorAll('[data-subprofile-toggle]').forEach(function (input) {
             if (input.hasAttribute('data-subprofile-enable-bound')) return;
@@ -654,6 +690,7 @@
     initRowMenus();
     initSubProfilesToggles();
     initSubProfileEnableToggles();
+    initWorkerAccountEnableToggles();
     initSubProfilesRefreshButtons();
     initSubProfileScreenshotLinks();
     initUserMenu();
@@ -661,6 +698,17 @@
     initSidebarToggle();
     initMobileSidebar();
     initConfirmDialog();
+
+    function initOfficeSwitcher() {
+        document.querySelectorAll('[data-orbita-office-select]').forEach(function (select) {
+            if (select.hasAttribute('data-orbita-office-bound')) return;
+            select.setAttribute('data-orbita-office-bound', '1');
+            select.addEventListener('change', function () {
+                var form = select.closest('form');
+                if (form) form.submit();
+            });
+        });
+    }
 
     function initWorkerRestartButtons() {
         document.querySelectorAll('[data-worker-restart]').forEach(function (btn) {
@@ -692,6 +740,7 @@
         });
     }
 
+    initOfficeSwitcher();
     initWorkerRestartButtons();
 
     function updateNavBadges(payload) {
@@ -1378,8 +1427,10 @@
         initRowMenus();
         initSubProfilesToggles();
         initSubProfileEnableToggles();
+        initWorkerAccountEnableToggles();
         initSubProfilesRefreshButtons();
         initSubProfileScreenshotLinks();
+        initOfficeSwitcher();
         initWorkerRestartButtons();
         initFilterPanels();
         initDebouncedSearch();
@@ -1735,6 +1786,7 @@
     window.Orbita.confirm = showConfirm;
     window.Orbita.postForm = postForm;
     window.Orbita.initWorkerRestartButtons = initWorkerRestartButtons;
+    window.Orbita.initWorkerAccountEnableToggles = initWorkerAccountEnableToggles;
     window.Orbita.openDetailModal = openDetailModal;
     window.Orbita.initFilterPanels = initFilterPanels;
     window.Orbita.initDetailOpenButtons = initDetailOpenButtons;

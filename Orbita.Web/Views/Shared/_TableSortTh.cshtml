@@ -1,0 +1,24 @@
+@model TableSortThViewModel
+@{
+    var isActive = string.Equals(Model.Sort.Column, Model.Column, StringComparison.OrdinalIgnoreCase);
+    var nextDir = isActive && !Model.Sort.Descending ? "desc" : "asc";
+    var route = new RouteValueDictionary(Model.RouteValues ?? new { })
+    {
+        ["sort"] = Model.Column,
+        ["dir"] = nextDir,
+        ["page"] = 1
+    };
+    var ariaSort = isActive
+        ? Model.Sort.Descending ? "descending" : "ascending"
+        : "none";
+    var iconClass = isActive
+        ? Model.Sort.Descending ? "fa-arrow-down" : "fa-arrow-up"
+        : "fa-sort";
+    var thClass = "data-table-sort" + (isActive ? " is-active" : "") + (Model.Numeric ? " cell-num" : "");
+}
+<th class="@thClass" aria-sort="@ariaSort" scope="col">
+    <a class="data-table-sort-link" href="@Url.Action(Model.Action, Model.Controller, route)">
+        <span>@Model.Label</span>
+        <i class="fa-solid @iconClass data-table-sort-icon" aria-hidden="true"></i>
+    </a>
+</th>

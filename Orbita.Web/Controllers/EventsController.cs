@@ -18,9 +18,11 @@ public sealed class EventsController(IEventsService events) : Controller
         string? view,
         string? severity,
         int page = 1,
+        string? sort = null,
+        string? dir = null,
         CancellationToken ct = default)
     {
-        var model = await events.GetIndexAsync(q, type, workerId, accountId, level, view, severity, page, ct);
+        var model = await events.GetIndexAsync(q, type, workerId, accountId, level, view, severity, page, sort, dir, ct);
         if (model.JournalView == "errors" && model.ErrorsPage is not null)
         {
             return Json(new ErrorsLiveSnapshotViewModel
@@ -51,9 +53,11 @@ public sealed class EventsController(IEventsService events) : Controller
         string? view,
         string? severity,
         int page = 1,
+        string? sort = null,
+        string? dir = null,
         CancellationToken ct = default)
     {
-        var model = await events.GetIndexAsync(q, type, workerId, accountId, level, view, severity, page, ct: ct);
+        var model = await events.GetIndexAsync(q, type, workerId, accountId, level, view, severity, page, sort, dir, ct: ct);
         return View(model);
     }
 

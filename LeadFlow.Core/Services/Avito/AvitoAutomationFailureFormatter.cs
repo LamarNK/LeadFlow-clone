@@ -12,7 +12,7 @@ public static class AvitoAutomationFailureFormatter
         Exception? inner = null,
         IReadOnlyList<string>? recoveryAttempts = null)
     {
-        if (pageState?.HasLoginForm == true || pageState?.PageKind == AvitoPageKind.Login)
+        if (SuggestsLogin(pageState))
         {
             return "требуется повторная авторизация в Avito — откройте браузер AdsPower и войдите (телефон/почта и пароль).";
         }
@@ -68,6 +68,8 @@ public static class AvitoAutomationFailureFormatter
     public static string MapDiagnosticKind(AvitoPageState? pageState, Exception? inner) =>
         pageState switch
         {
+            _ when inner is AvitoLoginRequiredException => AvitoSubProfileIssueKind.AuthRequired,
+            _ when SuggestsLogin(pageState) => AvitoSubProfileIssueKind.AuthRequired,
             { HasLoginForm: true } or { PageKind: AvitoPageKind.Login } => AvitoSubProfileIssueKind.AuthRequired,
             { HasFirewallIp: true } or { HasCaptcha: true } or { PageKind: AvitoPageKind.Captcha } => AvitoSubProfileIssueKind.Captcha,
             { ProfileSwitchModalOpen: true } => AvitoSubProfileIssueKind.SwitchFailed,
@@ -83,4 +85,25 @@ public static class AvitoAutomationFailureFormatter
         recoveryAttempts is { Count: > 0 }
             ? $" Попытки: {string.Join("; ", recoveryAttempts)} — безуспешно."
             : string.Empty;
+
+    public static bool SuggestsLogin(AvitoPageState? pageState)
+    {
+        if (pageState?.HasLoginForm == true || pageState?.PageKind == AvitoPageKind.Login)
+        {
+            return true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(pageState?.Title)
+            && pageState.Title.Contains("Вход", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var url = pageState?.Url;
+        return !string.IsNullOrWhiteSpace(url)
+               && (url.Contains("/profile/login", StringComparison.OrdinalIgnoreCase)
+                   || url.Contains("/profile/auth", StringComparison.OrdinalIgnoreCase)
+                   || url.Contains("avito.ru/login", StringComparison.OrdinalIgnoreCase)
+                   || url.Contains("#login", StringComparison.OrdinalIgnoreCase));
+    }
 }

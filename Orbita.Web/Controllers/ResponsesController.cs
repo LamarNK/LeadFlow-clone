@@ -18,10 +18,12 @@ public sealed class ResponsesController(IResponsesService responses) : Controlle
         string? vacancy,
         string? search,
         int page = 1,
+        string? sort = null,
+        string? dir = null,
         CancellationToken ct = default)
     {
         var model = await responses.GetIndexAsync(
-            from, to, status, workerId, accountId, vacancy, search, selectedId: null, page, ct);
+            from, to, status, workerId, accountId, vacancy, search, selectedId: null, page, sort, dir, ct);
 
         return Json(new ResponsesLiveSnapshotViewModel
         {
@@ -55,10 +57,12 @@ public sealed class ResponsesController(IResponsesService responses) : Controlle
         string? search,
         Guid? id,
         int page = 1,
+        string? sort = null,
+        string? dir = null,
         CancellationToken ct = default)
     {
         var model = await responses.GetIndexAsync(
-            from, to, status, workerId, accountId, vacancy, search, id, page, ct);
+            from, to, status, workerId, accountId, vacancy, search, id, page, sort, dir, ct);
         return View(model);
     }
 
@@ -74,6 +78,8 @@ public sealed class ResponsesController(IResponsesService responses) : Controlle
         string? vacancy,
         string? search,
         int page = 1,
+        string? sort = null,
+        string? dir = null,
         CancellationToken ct = default)
     {
         var (success, error) = await responses.ResendToBitrixAsync(id, ct);
@@ -92,7 +98,9 @@ public sealed class ResponsesController(IResponsesService responses) : Controlle
             vacancy,
             search,
             page,
-            id
+            id,
+            sort,
+            dir
         });
     }
 }

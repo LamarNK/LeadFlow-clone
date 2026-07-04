@@ -99,6 +99,26 @@ public sealed class AvitoPageStateProbeTests
         Assert.NotNull(state);
         Assert.Equal(AvitoPageKind.Login, state!.PageKind);
         Assert.True(state.HasLoginForm);
+        Assert.Equal("форма входа", state.DescribeKindRu());
+    }
+
+    [Fact]
+    public void DescribeKindRu_Login_IsNotUnknownPage()
+    {
+        var state = new AvitoPageState(
+            AvitoPageKind.Login,
+            "https://www.avito.ru/profile/login",
+            "Вход",
+            false,
+            0,
+            null,
+            null,
+            0,
+            true,
+            false);
+
+        Assert.Equal("форма входа", state.DescribeKindRu());
+        Assert.DoesNotContain("неизвестная", state.DescribeKindRu(), StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

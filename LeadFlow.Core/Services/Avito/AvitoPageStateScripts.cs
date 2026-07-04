@@ -41,14 +41,27 @@ public static class AvitoPageStateScripts
             }
 
             const candidatesItemCount = document.querySelectorAll("[data-marker='job-application/item']").length;
-            const hasLoginForm = !!(
+            const urlSuggestsLogin =
+                /\/profile\/login|\/profile\/auth|avito\.ru\/login|#login\b|\/auth\b/i.test(url);
+            const titleSuggestsLogin = /^вход$/i.test(title);
+            const hasLoginDom = !!(
+                document.querySelector("[data-marker='auth-app-root']") ||
                 document.querySelector("form[data-marker='login-form']") ||
                 document.querySelector("[data-marker='login-form/login']") ||
                 document.querySelector("[data-marker='login-form/login/input']") ||
                 document.querySelector("[data-marker='login-form/password']") ||
+                document.querySelector("[data-marker='login-form/submit']") ||
+                document.querySelector("[data-marker='registration-link']") ||
+                document.querySelector("[data-marker='social-auth']") ||
                 document.querySelector("input[name='login'][autocomplete='username']") ||
+                document.querySelector("input[name='password'][autocomplete='current-password']") ||
                 document.querySelector("[class*='AuthorizationMainScreen']")
-            ) || /data-marker=['"]login-form|AuthorizationMainScreen-module|login-form\/login/i.test(htmlSnippet);
+            );
+            const hasLoginHtml = /data-marker=['"]auth-app-root|data-marker=['"]login-form|AuthorizationMainScreen-module|login-form\/login|login-form\/password/i.test(htmlSnippet);
+            const containsAuthText = (value) =>
+                /телефон или почта|забыли пароль|запомнить пароль|продолжить через|зарегистрироваться|нет аккаунта на/i.test(value ?? "");
+            const hasLoginText = containsAuthText(probeText);
+            const hasLoginForm = hasLoginDom || hasLoginHtml || hasLoginText || titleSuggestsLogin || urlSuggestsLogin;
 
             const hasFirewallDom = !!document.querySelector(
                 ".firewall-container, .js-firewall-form, .firewall-title, form.js-firewall-form, h2.firewall-title"

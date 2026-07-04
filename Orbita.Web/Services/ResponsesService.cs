@@ -5,7 +5,10 @@ using Orbita.Web.Options;
 
 namespace Orbita.Web.Services;
 
-public sealed class ResponsesService(OrbitaApiClient api, IOptions<DesignPreviewOptions> previewOptions) : IResponsesService
+public sealed class ResponsesService(
+    OrbitaApiClient api,
+    IOfficeContext officeContext,
+    IOptions<DesignPreviewOptions> previewOptions) : IResponsesService
 {
     public async Task<ResponsesIndexViewModel> GetIndexAsync(
         string? from,
@@ -17,10 +20,13 @@ public sealed class ResponsesService(OrbitaApiClient api, IOptions<DesignPreview
         string? search,
         Guid? selectedId,
         int page = 1,
+        string? sort = null,
+        string? sortDir = null,
         CancellationToken ct = default)
     {
         page = Math.Max(1, page);
         var period = DashboardPeriod.Parse(from, to);
+        var tableSort = TableSort.Parse(sort, sortDir, TableSort.Responses.Default, TableSort.Responses.Columns);
         var filters = new ResponsesFilterViewModel
         {
             Status = status,
@@ -35,11 +41,11 @@ public sealed class ResponsesService(OrbitaApiClient api, IOptions<DesignPreview
 
         if (previewOptions.Value.Enabled)
         {
-            return DesignPreviewData.BuildResponsesIndexViewModel(filters, selectedId);
+            return DesignPreviewData.BuildResponsesIndexViewModel(filters, selectedId, sort, sortDir);
         }
 
         var (fromUtc, toUtc) = ToUtcRange(period);
-        var query = BuildQueryParams(status, search, vacancy, workerId, accountId, fromUtc, toUtc, page, ResponsesIndexBuilder.DefaultPageSize);
+        var query = BuildQueryParams(status, search, vacancy, workerId, accountId, fromUtc, toUtc, page, ResponsesIndexBuilder.DefaultPageSize, sort, sortDir);
 
         var pageDto = await api.GetResponsesPageAsync(query, ct)
             ?? new ResponsesPageDto([], 0, page, ResponsesIndexBuilder.DefaultPageSize);
@@ -69,7 +75,7 @@ public sealed class ResponsesService(OrbitaApiClient api, IOptions<DesignPreview
 
         return new ResponsesIndexViewModel
         {
-            Header = PageHeaderBuilder.ResponsesList(period),
+            Header = PageHeaderBuilder.WithOfficeScope(PageHeaderBuilder.ResponsesList(period), officeContext),
             Filters = filters,
             PeriodLabel = period.Label,
             ActivePeriodPreset = period.ActivePreset,
@@ -86,7 +92,8 @@ public sealed class ResponsesService(OrbitaApiClient api, IOptions<DesignPreview
             },
             Selected = selected,
             HasActiveFilters = ResponsesIndexBuilder.HasActiveFilters(filters, period),
-            ActiveFilterChips = activeFilterChips
+            ActiveFilterChips = activeFilterChips,
+            Sort = tableSort
         };
     }
 
@@ -131,7 +138,9 @@ public sealed class ResponsesService(OrbitaApiClient api, IOptions<DesignPreview
         DateTime fromUtc,
         DateTime toUtc,
         int page,
-        int pageSize)
+        int pageSize,
+        string? sort = null,
+        string? sortDir = null)
     {
         var parts = new List<string>
         {
@@ -140,6 +149,16 @@ public sealed class ResponsesService(OrbitaApiClient api, IOptions<DesignPreview
             $"from={Uri.EscapeDataString(fromUtc.ToString("o"))}",
             $"to={Uri.EscapeDataString(toUtc.ToString("o"))}"
         };
+
+        if (!string.IsNullOrWhiteSpace(sort))
+        {
+            parts.Add($"sort={Uri.EscapeDataString(sort)}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(sortDir))
+        {
+            parts.Add($"dir={Uri.EscapeDataString(sortDir)}");
+        }
 
         if (!string.IsNullOrWhiteSpace(status))
         {

@@ -6,7 +6,11 @@ using Orbita.Web.Options;
 
 namespace Orbita.Web.Services;
 
-public sealed class OrbitaApiClient(HttpClient http, AuthSession session, IOptions<DesignPreviewOptions> previewOptions)
+public sealed class OrbitaApiClient(
+    HttpClient http,
+    AuthSession session,
+    IOfficeContext officeContext,
+    IOptions<DesignPreviewOptions> previewOptions)
 {
     private const string InvalidApiSessionError =
         "Сессия недействительна. Выйдите из панели и войдите снова.";
@@ -64,13 +68,13 @@ public sealed class OrbitaApiClient(HttpClient http, AuthSession session, IOptio
 
     public Task<GlobalDashboardSummary?> GetSummaryAsync(CancellationToken ct = default) =>
         _preview.Enabled
-            ? Task.FromResult<GlobalDashboardSummary?>(DesignPreviewData.Summary)
-            : GetAsync<GlobalDashboardSummary>("api/v1/dashboard/summary", ct);
+            ? Task.FromResult<GlobalDashboardSummary?>(DesignPreviewData.GetSummary(officeContext.EffectiveOfficeId))
+            : GetAsync<GlobalDashboardSummary>(WithOfficeQuery("api/v1/dashboard/summary"), ct);
 
     public Task<IReadOnlyList<WorkerListItem>?> GetWorkersAsync(CancellationToken ct = default) =>
         _preview.Enabled
-            ? Task.FromResult<IReadOnlyList<WorkerListItem>?>(DesignPreviewData.Workers)
-            : GetAsync<IReadOnlyList<WorkerListItem>>("api/v1/workers", ct);
+            ? Task.FromResult<IReadOnlyList<WorkerListItem>?>(DesignPreviewData.GetWorkers(officeContext.EffectiveOfficeId))
+            : GetAsync<IReadOnlyList<WorkerListItem>>(WithOfficeQuery("api/v1/workers"), ct);
 
     public Task<WorkerDetail?> GetWorkerAsync(Guid id, CancellationToken ct = default) =>
         _preview.Enabled
@@ -90,7 +94,7 @@ public sealed class OrbitaApiClient(HttpClient http, AuthSession session, IOptio
     {
         if (_preview.Enabled)
         {
-            var events = DesignPreviewData.Events;
+            var events = DesignPreviewData.GetEvents(officeContext.EffectiveOfficeId);
             if (workerId.HasValue)
             {
                 events = events.Where(e => e.WorkerId == workerId.Value).ToList();
@@ -116,6 +120,7 @@ public sealed class OrbitaApiClient(HttpClient http, AuthSession session, IOptio
             parts.Add($"since={Uri.EscapeDataString(sinceUtc.Value.ToString("o"))}");
         }
 
+        AppendOfficeQuery(parts);
         return GetAsync<IReadOnlyList<WorkerEventListItem>>($"api/v1/events?{string.Join('&', parts)}", ct);
     }
 
@@ -131,6 +136,25 @@ public sealed class OrbitaApiClient(HttpClient http, AuthSession session, IOptio
         var contentType = response.Content.Headers.ContentType?.MediaType;
         var buffer = await response.Content.ReadAsByteArrayAsync(ct);
         return buffer.Length == 0 ? (null, contentType) : (new MemoryStream(buffer), contentType);
+    }
+
+    private string WithOfficeQuery(string url)
+    {
+        if (officeContext.EffectiveOfficeId is not Guid officeId)
+        {
+            return url;
+        }
+
+        var separator = url.Contains('?', StringComparison.Ordinal) ? '&' : '?';
+        return $"{url}{separator}officeId={officeId:D}";
+    }
+
+    private void AppendOfficeQuery(List<string> parts)
+    {
+        if (officeContext.EffectiveOfficeId is Guid officeId)
+        {
+            parts.Add($"officeId={officeId:D}");
+        }
     }
 
     private async Task<T?> GetAsync<T>(string url, CancellationToken ct)
@@ -774,18 +798,20 @@ public sealed class OrbitaApiClient(HttpClient http, AuthSession session, IOptio
 
     public Task<ResponsesPageDto?> GetResponsesPageAsync(string query, CancellationToken ct = default) =>
         _preview.Enabled
-            ? Task.FromResult<ResponsesPageDto?>(new ResponsesPageDto([], 0, 1, 10))
-            : GetAsync<ResponsesPageDto>($"api/v1/panel/responses?{query}", ct);
+            ? Task.FromResult<ResponsesPageDto?>(DesignPreviewData.GetResponsesPage(query, officeContext.EffectiveOfficeId))
+            : GetAsync<ResponsesPageDto>(WithOfficeQuery($"api/v1/panel/responses?{query}"), ct);
 
     public Task<ResponsesSummaryDto?> GetResponsesSummaryAsync(string query, CancellationToken ct = default) =>
         _preview.Enabled
-            ? Task.FromResult<ResponsesSummaryDto?>(new ResponsesSummaryDto(0, 0, 0, 0, null))
-            : GetAsync<ResponsesSummaryDto>($"api/v1/panel/responses/summary?{query}", ct);
+            ? Task.FromResult<ResponsesSummaryDto?>(DesignPreviewData.GetResponsesSummary(officeContext.EffectiveOfficeId))
+            : GetAsync<ResponsesSummaryDto>(WithOfficeQuery($"api/v1/panel/responses/summary?{query}"), ct);
 
     public Task<IReadOnlyList<ResponseFilterAccountDto>?> GetResponseFilterAccountsAsync(CancellationToken ct = default) =>
         _preview.Enabled
             ? Task.FromResult<IReadOnlyList<ResponseFilterAccountDto>?>([])
-            : GetAsync<IReadOnlyList<ResponseFilterAccountDto>>("api/v1/panel/responses/filters/accounts", ct);
+            : GetAsync<IReadOnlyList<ResponseFilterAccountDto>>(
+                WithOfficeQuery("api/v1/panel/responses/filters/accounts"),
+                ct);
 
     public Task<ResponseDetailDto?> GetResponseDetailAsync(Guid id, CancellationToken ct = default) =>
         _preview.Enabled

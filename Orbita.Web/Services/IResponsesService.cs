@@ -14,6 +14,8 @@ public interface IResponsesService
         string? search,
         Guid? selectedId,
         int page = 1,
+        string? sort = null,
+        string? sortDir = null,
         CancellationToken ct = default);
 
     Task<(bool Success, string? Error)> ResendToBitrixAsync(Guid id, CancellationToken ct = default);

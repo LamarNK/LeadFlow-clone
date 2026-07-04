@@ -25,6 +25,8 @@ public sealed class WorkersIndexViewModel
     public bool HasActiveFilters { get; init; }
     public IReadOnlyList<ActiveFilterChipViewModel> ActiveFilterChips { get; init; } = [];
     public int ActiveFilterCount => ActiveFilterChips.Count;
+    public TableSortState Sort { get; init; } = TableSortState.Create("name", descending: false);
+    public bool ShowOfficeColumn { get; init; }
 }
 
 public sealed class BreadcrumbItemViewModel
@@ -166,6 +168,7 @@ public sealed class WorkerDetailsViewModel
     public IReadOnlyList<DashboardEventRowViewModel> Events { get; init; } = [];
     public IReadOnlyList<WorkerPeriodStatViewModel> PeriodStats { get; init; } = [];
     public IReadOnlyList<WorkerAccountRowViewModel> Accounts { get; init; } = [];
+    public TableSortState Sort { get; init; } = TableSortState.Create("account", descending: false);
     public WorkerLogsPanelViewModel? Logs { get; init; }
     public WorkerActivityViewModel CurrentActivity { get; init; } = new();
     public IReadOnlyList<WorkerActivityViewModel> ActiveAccountActivities { get; init; } = [];
@@ -218,6 +221,7 @@ public sealed class WorkerAccountRowViewModel
     public string StatusLabel { get; init; } = string.Empty;
     public string StatusTone { get; init; } = "success";
     public string BalanceText { get; init; } = "—";
+    public decimal? Balance { get; init; }
     public int Responses { get; init; }
     public DateTime? LastActivityUtc { get; init; }
     public int Errors { get; init; }

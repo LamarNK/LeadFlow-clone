@@ -37,7 +37,20 @@
         return root ? root.getAttribute('data-orbita-live-page') : null;
     }
 
+    function getSelectedOfficeId() {
+        return document.body.getAttribute('data-orbita-selected-office') || '';
+    }
+
+    function matchesOfficeScope(notification) {
+        var selected = getSelectedOfficeId();
+        if (!selected) return true;
+        var officeId = notification.officeId || notification.OfficeId;
+        if (!officeId) return true;
+        return String(officeId).toLowerCase() === selected.toLowerCase();
+    }
+
     function shouldHandle(notification) {
+        if (!matchesOfficeScope(notification)) return false;
         var page = getActivePage();
         if (!page || !handlers[page]) return false;
         var allowed = PAGE_KINDS[page] || [];
@@ -105,6 +118,10 @@
         kinds.forEach(function (k) {
             if (pendingKinds.indexOf(k) < 0) pendingKinds.push(k);
         });
+
+        if (!matchesOfficeScope(notification) && kinds.indexOf('NavBadges') < 0) {
+            return;
+        }
 
         if (!shouldHandle(notification) && kinds.indexOf('NavBadges') < 0) {
             return;

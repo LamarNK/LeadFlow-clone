@@ -670,8 +670,15 @@
                 '<a href="' + escapeHtml(detailsUrl) + '">' + escapeHtml(w.displayName) + '</a>' +
                 (showMachine ? '<span class="cell-name-machine">' + escapeHtml(machineName) + '</span>' : '') +
                 '</div>';
+            var officeCell = '';
+            var liveRoot = getLiveRoot();
+            if (liveRoot && liveRoot.getAttribute('data-show-office-column') === 'true') {
+                officeCell = '<td data-label="Офис">' + escapeHtml(w.officeName || '—') + '</td>';
+            }
+
             return '<tr data-href="' + escapeHtml(detailsUrl) + '">' +
                 '<td class="cell-name" data-label="Воркер">' + nameCell + '</td>' +
+                officeCell +
                 '<td data-label="Статус"><span class="status-dot' + statusClass + '"><i class="fa-solid fa-circle status-dot-icon" aria-hidden="true"></i>' + statusText + '</span></td>' +
                 '<td data-label="Сейчас">' + (window.OrbitaLiveShared ? window.OrbitaLiveShared.renderActivityPill(w.currentActivityLabel, w.currentActivityTone, w.isActivityLive) : escapeHtml(w.currentActivityLabel || '—')) + '</td>' +
                 '<td data-label="Аккаунтов">' + w.activeAccounts + ' / ' + w.totalAccounts + '</td>' +

@@ -38,14 +38,18 @@ internal static class EventsIndexBuilder
         IReadOnlyList<EventFilterOptionViewModel>? workerOptions = null,
         IReadOnlyList<EventFilterOptionViewModel>? accountOptions = null,
         int pageSize = DefaultPageSize,
-        string? journalView = null)
+        string? journalView = null,
+        string? sort = null,
+        string? sortDir = null,
+        IOfficeContext? officeContext = null)
     {
         page = Math.Max(1, page);
+        var tableSort = TableSort.Parse(sort, sortDir, TableSort.Events.Default, TableSort.Events.Columns);
 
         var filtered = FilterRows(allRows, filters);
-        var total = filtered.Count;
-        var paged = filtered
-            .OrderByDescending(e => e.OccurredAtUtc)
+        var sorted = TableSort.Events.Apply(filtered, tableSort).ToList();
+        var total = sorted.Count;
+        var paged = sorted
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToList();
@@ -57,7 +61,9 @@ internal static class EventsIndexBuilder
 
         return new EventsIndexViewModel
         {
-            Header = PageHeaderBuilder.EventsList(),
+            Header = officeContext is null
+                ? PageHeaderBuilder.EventsList()
+                : PageHeaderBuilder.WithOfficeScope(PageHeaderBuilder.EventsList(), officeContext),
             JournalView = journalView ?? "all",
             Filters = filters,
             EventTypes = EventTypeOptions,
@@ -73,7 +79,8 @@ internal static class EventsIndexBuilder
                 TotalItems = total
             },
             HasActiveFilters = HasActiveFilters(filters),
-            ActiveFilterChips = activeFilterChips
+            ActiveFilterChips = activeFilterChips,
+            Sort = tableSort
         };
     }
 
@@ -314,6 +321,7 @@ internal static class EventsIndexBuilder
                     "ошибка парсинга" => ("Ошибка парсинга", "fa-regular fa-circle-xmark", "error"),
                     "таймаут" => ("Таймаут", "fa-regular fa-circle-xmark", "error"),
                     "лимит частоты adspower" or "дневной лимит adspower" => ("Лимит AdsPower", "fa-regular fa-circle-xmark", "error"),
+                    "профиль занят" => ("Профиль AdsPower занят", "fa-regular fa-circle-xmark", "error"),
                     "проблема" => ("Сбой автоматизации", "fa-regular fa-circle-xmark", "error"),
                     _ => ("Сбой автоматизации", "fa-regular fa-circle-xmark", "error")
                 };
@@ -322,6 +330,9 @@ internal static class EventsIndexBuilder
             var lower = message.ToLowerInvariant();
             if (lower.Contains("лимит adspower") || lower.Contains("rate limit adspower"))
                 return ("Лимит AdsPower", "fa-regular fa-circle-xmark", "error");
+            if (AdsPowerErrorMessageNormalizer.LooksLikeProfileInUse(message)
+                || lower.Contains("профиль занят"))
+                return ("Профиль AdsPower занят", "fa-regular fa-circle-xmark", "error");
             if (lower.Contains("субпрофили ") || lower.Contains("не удалось") || lower.Contains("неизвестная страница"))
                 return ("Сбой автоматизации", "fa-regular fa-circle-xmark", "error");
         }
