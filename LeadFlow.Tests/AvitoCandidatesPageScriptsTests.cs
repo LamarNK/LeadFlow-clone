@@ -36,4 +36,13 @@ public sealed class AvitoCandidatesPageScriptsTests
         Assert.Contains("download-report-button/download", script, StringComparison.Ordinal);
         Assert.Contains("job-crm/response/cv-button", script, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void BuildExtractionScriptForPuppeteer_IncludesDomIndex()
+    {
+        var script = AvitoCandidatesPageScripts.BuildExtractionScriptForPuppeteer();
+
+        Assert.Contains("domIndex: rootIndex", script, StringComparison.Ordinal);
+        Assert.Contains("listItems.indexOf(root)", script, StringComparison.Ordinal);
+    }
 }

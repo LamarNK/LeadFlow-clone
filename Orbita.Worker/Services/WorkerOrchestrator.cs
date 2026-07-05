@@ -48,6 +48,11 @@ public sealed class WorkerOrchestrator(
         await dedupCache.InitializeAsync(stoppingToken).ConfigureAwait(false);
         await candidateOutbox.InitializeAsync(stoppingToken).ConfigureAwait(false);
 
+        await WorkerLifecycleLog.InfoAsync(
+            "Worker lifecycle: оркестратор запущен",
+            nameof(ExecuteAsync))
+            .ConfigureAwait(false);
+
         while (!stoppingToken.IsCancellationRequested)
         {
             try
@@ -70,7 +75,21 @@ public sealed class WorkerOrchestrator(
                 {
                     runtimeState.Status = "Перезапуск";
                     runtimeState.Detail = "По команде из панели";
-                    shutdownService.RequestRestart();
+                    await WorkerLifecycleLog.InfoAsync(
+                        "Worker lifecycle: получена команда перезапуска из панели",
+                        nameof(ExecuteAsync),
+                        new Dictionary<string, object?> { ["worker.id"] = config.WorkerId })
+                        .ConfigureAwait(false);
+
+                    if (!shutdownService.RequestRestart())
+                    {
+                        await WorkerLifecycleLog.WarningAsync(
+                            "Worker lifecycle: команда перезапуска не применена",
+                            nameof(ExecuteAsync),
+                            new Dictionary<string, object?> { ["worker.id"] = config.WorkerId })
+                            .ConfigureAwait(false);
+                    }
+
                     return;
                 }
 
@@ -113,6 +132,11 @@ public sealed class WorkerOrchestrator(
 
             await Task.Delay(TelemetryInterval, stoppingToken).ConfigureAwait(false);
         }
+
+        await WorkerLifecycleLog.InfoAsync(
+            "Worker lifecycle: оркестратор остановлен",
+            nameof(ExecuteAsync))
+            .ConfigureAwait(false);
 
         if (monitoringService.IsActive)
         {

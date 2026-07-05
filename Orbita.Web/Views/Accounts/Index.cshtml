@@ -1,6 +1,8 @@
 @model AccountsIndexViewModel
+@using System.Text.Json
 @{
     ViewData["Title"] = "Аккаунты";
+    var subProfileJsonOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
     var pagination = Model.Pagination;
     var accountsSortRoute = new { q = Model.SearchQuery, tab = Model.ActiveTab, sort = Model.Sort.Column, dir = Model.Sort.Dir };
     var snapshotUrl = Url.Action("Snapshot", "Accounts", new { q = Model.SearchQuery, tab = Model.ActiveTab, page = pagination.Page, sort = Model.Sort.Column, dir = Model.Sort.Dir })!;
@@ -89,7 +91,13 @@
                     var workerUrl = Url.Action("Details", "Workers", new { id = account.WorkerId });
                     var accountUrl = Url.Action("Index", "Accounts", new { q = account.AccountName });
                     var responsesUrl = Url.Action("Index", "Responses", new { accountId = account.Id });
-                    <tr class="accounts-row@(account.IsProcessingNow ? " accounts-row--processing" : "")" data-href="@accountUrl">
+                    <tr class="accounts-row@(account.IsProcessingNow ? " accounts-row--processing" : "")"
+                        data-href="@accountUrl"
+                        data-account-id="@account.Id"
+                        data-subprofiles-layout="accounts"
+                        data-subprofiles-show-office="@(Model.ShowOfficeColumn ? "true" : "false")"
+                        data-processing-subprofile-id="@(account.IsProcessingNow ? account.ProcessingSubProfileId : null)"
+                        data-subprofiles-json="@JsonSerializer.Serialize(account.SubProfiles, subProfileJsonOptions)">
                         <td class="cell-toggle" data-label="Вкл">
                             <label class="worker-toggle" title="@(account.IsEnabledInPanel ? "Отключить аккаунт в панели" : "Включить аккаунт в панели")">
                                 <input type="checkbox"
@@ -131,6 +139,10 @@
                             @if (!string.IsNullOrWhiteSpace(account.LastErrorMessage))
                             {
                                 <span class="account-error-hint" title="@account.LastErrorMessage">@account.LastErrorMessage</span>
+                            }
+                            else if (!string.IsNullOrWhiteSpace(account.ErrorHint))
+                            {
+                                <span class="account-error-hint" title="@account.ErrorHint">@account.ErrorHint</span>
                             }
                         </td>
                         <td data-label="Сейчас">
@@ -202,6 +214,19 @@
                             </div>
                         </td>
                     </tr>
+                    @if (account.HasSubProfiles)
+                    {
+                        <partial name="_SubProfileTableRows" model="@(new SubProfileTableRowsViewModel
+                        {
+                            WorkerId = account.WorkerId,
+                            AccountId = account.Id,
+                            PanelId = $"subprofiles-acc-{account.Id}",
+                            ProcessingSubProfileId = account.IsProcessingNow ? account.ProcessingSubProfileId : null,
+                            Layout = SubProfileTableLayout.Accounts,
+                            ShowOfficeColumn = Model.ShowOfficeColumn,
+                            Items = account.SubProfiles
+                        })" />
+                    }
                 }
                 </tbody>
             </table>
@@ -220,5 +245,16 @@
 </div>
 
 @section Scripts {
+    <script>
+        window.__ORBITA_SSR_SUBPROFILES__ = @Html.Raw(JsonSerializer.Serialize(
+            Model.Accounts
+                .Where(a => a.HasSubProfiles)
+                .Select(a => new {
+                    accountId = a.Id,
+                    items = a.SubProfiles.Select(s => new { s.Id, s.Name, s.BalanceText, s.Category }).ToList()
+                })
+                .ToList(),
+            subProfileJsonOptions));
+    </script>
     <script src="~/js/orbita-accounts.js" asp-append-version="true"></script>
 }

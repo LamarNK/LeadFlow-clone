@@ -45,7 +45,7 @@ public static class SubProfilesDisabledIdsHelper
 
         try
         {
-            var profiles = JsonSerializer.Deserialize<List<WorkerSubProfileDto>>(subProfilesJson, JsonOptions);
+            var profiles = JsonSerializer.Deserialize<List<WorkerSubProfileDto>>(subProfilesJson, SubProfileJsonOptions.Deserialize);
             return profiles?.Any(p => string.Equals(p.Id, subProfileId, StringComparison.Ordinal)) == true;
         }
         catch (JsonException)

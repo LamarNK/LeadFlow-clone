@@ -22,15 +22,14 @@ public sealed class SmsTimeComparisonTests
     }
 
     [Fact]
-    public void RealPlusofonSms_OnUtcServer_DisplayDiffersFromPlusofonLocal()
+    public void RealPlusofonSms_DisplayUsesMoscowTime()
     {
         var smsRaw = "2026-06-29 17:18:22+03:00";
         var parsedUtc = ParseLikeClient(smsRaw);
         Assert.NotNull(parsedUtc);
 
-        // Сервер/контейнер в UTC: ToLocalTime() покажет 14:18, не 17:18 из Plusofon
-        var displayOnUtcServer = parsedUtc.Value.ToLocalTime().ToString("dd.MM.yyyy HH:mm:ss", CultureInfo.InvariantCulture);
-        Assert.Equal("29.06.2026 14:18:22", displayOnUtcServer);
+        var display = NotifyBot.Application.Services.NotifyBotTime.FormatMoscow(parsedUtc.Value);
+        Assert.Equal("29.06.2026 17:18:22", display);
     }
 
     private static DateTimeOffset? ParseLikeClient(string value)

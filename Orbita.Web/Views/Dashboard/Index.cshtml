@@ -205,9 +205,11 @@
                             <div class="account-stats-row">
                                 <span class="account-stats-label">
                                     <span class="account-stats-dot" style="background:#f59e0b"></span>
-                                    Ошибки
+                                    <a class="account-stats-link" href="@Url.Action("Index", "Accounts", new { tab = "errors" })">Ошибки</a>
                                 </span>
-                                <span class="account-stats-value" data-account-stat="errors">@stats.Errors (@FmtPct(stats.Errors, total))</span>
+                                <span class="account-stats-value" data-account-stat="errors">
+                                    <a class="account-stats-link" href="@Url.Action("Index", "Accounts", new { tab = "errors" })">@stats.Errors (@FmtPct(stats.Errors, total))</a>
+                                </span>
                             </div>
                         </div>
                         <div class="account-stats-footer">

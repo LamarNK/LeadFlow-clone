@@ -89,6 +89,50 @@ internal static class WorkerActivityPresenter
             .ToList();
     }
 
+    public static AccountProcessingViewModel PresentForSubProfile(
+        WorkerActivityDto? activity,
+        bool workerIsOnline,
+        Guid accountId,
+        string subProfileId,
+        IReadOnlyList<WorkerActiveAccountDto>? activeAccounts = null,
+        DateTime? nowUtc = null)
+    {
+        if (!workerIsOnline || string.IsNullOrWhiteSpace(subProfileId))
+        {
+            return new AccountProcessingViewModel();
+        }
+
+        var match = GetLiveActiveAccounts(activeAccounts, nowUtc)
+            .FirstOrDefault(x => x.AccountId == accountId
+                && string.Equals(x.SubProfileId, subProfileId, StringComparison.Ordinal));
+        if (match is not null)
+        {
+            return new AccountProcessingViewModel
+            {
+                IsProcessingNow = true,
+                Label = FormatSubProfileLabelFromActive(match),
+                SubProfileId = subProfileId,
+                Tone = MapTone(match.Phase, isLive: true)
+            };
+        }
+
+        if (activity?.AccountId != accountId
+            || !string.Equals(activity.SubProfileId, subProfileId, StringComparison.Ordinal)
+            || string.IsNullOrWhiteSpace(activity.Message))
+        {
+            return new AccountProcessingViewModel();
+        }
+
+        var workerActivity = Present(activity, workerIsOnline, activeAccounts, nowUtc);
+        return new AccountProcessingViewModel
+        {
+            IsProcessingNow = workerActivity.IsLive,
+            Label = activity.Message,
+            SubProfileId = subProfileId,
+            Tone = workerActivity.Tone
+        };
+    }
+
     public static AccountProcessingViewModel PresentForAccount(
         WorkerActivityDto? activity,
         bool workerIsOnline,
@@ -194,6 +238,11 @@ internal static class WorkerActivityPresenter
 
         return active.Message;
     }
+
+    private static string FormatSubProfileLabelFromActive(WorkerActiveAccountDto active) =>
+        !string.IsNullOrWhiteSpace(active.SubProfileName)
+            ? $"«{active.SubProfileName}» · {active.Message}"
+            : active.Message;
 
     private static string FormatLabel(WorkerActivityDto activity, DateTime nowUtc)
     {

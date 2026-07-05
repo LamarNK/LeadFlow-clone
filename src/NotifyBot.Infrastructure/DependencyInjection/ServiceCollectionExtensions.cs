@@ -39,6 +39,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<INotificationDispatcher, NotificationDispatcher>();
         services.AddScoped<ISmsRoutingService, SmsRoutingService>();
         services.AddScoped<ISmsCheckService, SmsCheckService>();
+        services.AddSingleton<ISmsWatchCoordinator, SmsWatchCoordinator>();
+        services.AddHostedService<SmsWatchHostedService>();
         services.AddHttpClient<IPlusofonSmsClient, PlusofonSmsClient>((sp, client) =>
         {
             var plusofonOptions = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<PlusofonOptions>>().Value;

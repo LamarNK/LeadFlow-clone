@@ -1160,6 +1160,7 @@ public static class AvitoCandidatesPageScripts
                     vacancyUrl,
                     messengerUrl,
                     sourceResponseId,
+                    domIndex: rootIndex,
                     rawText
                 };
             }).filter((item) => {

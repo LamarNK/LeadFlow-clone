@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.Json;
 using Microsoft.Extensions.Options;
 using Orbita.Contracts;
 using Orbita.Web.Options;
@@ -14,6 +15,11 @@ public sealed class OrbitaApiClient(
 {
     private const string InvalidApiSessionError =
         "Сессия недействительна. Выйдите из панели и войдите снова.";
+
+    private static readonly JsonSerializerOptions ApiJsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        PropertyNameCaseInsensitive = true
+    };
 
     private readonly DesignPreviewOptions _preview = previewOptions.Value;
 
@@ -166,7 +172,7 @@ public sealed class OrbitaApiClient(
             return default;
         }
 
-        return await response.Content.ReadFromJsonAsync<T>(ct);
+        return await response.Content.ReadFromJsonAsync<T>(ApiJsonOptions, ct);
     }
 
     private async Task<HttpResponseMessage?> SendAuthenticatedAsync(

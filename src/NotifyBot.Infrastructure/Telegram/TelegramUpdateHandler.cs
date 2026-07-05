@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NotifyBot.Application.Abstractions;
+using NotifyBot.Application.Models;
 using NotifyBot.Application.Options;
 using NotifyBot.Domain.Entities;
 using NotifyBot.Domain.Enums;
@@ -16,12 +17,15 @@ public sealed class TelegramUpdateHandler(
     IAdminUserRepository adminUserRepository,
     ITelegramService telegramService,
     ISmsCheckService smsCheckService,
+    ISmsWatchCoordinator smsWatchCoordinator,
     TelegramAdminPanel adminPanel,
     TelegramUpdateDeduplicator updateDeduplicator,
     IOptions<TelegramOptions> options,
+    IOptions<PlusofonOptions> plusofonOptions,
     ILogger<TelegramUpdateHandler> logger) : ITelegramUpdateHandler
 {
     private readonly TelegramOptions _options = options.Value;
+    private readonly PlusofonOptions _plusofonOptions = plusofonOptions.Value;
     private string? _botUsername;
 
     public async Task HandleAsync(Update update, CancellationToken cancellationToken = default)
@@ -201,7 +205,14 @@ public sealed class TelegramUpdateHandler(
         var chatId = message.Chat.Id;
         try
         {
-            var reply = await smsCheckService.CheckAsync(chatId, cancellationToken);
+            var result = await smsCheckService.CheckAsync(chatId, cancellationToken);
+            var reply = result.Reply;
+
+            if (result.ShouldStartWatch)
+            {
+                reply += FormatWatchNotice(smsWatchCoordinator.TryRegister(chatId), _plusofonOptions.SmsWatchDurationMinutes);
+            }
+
             await botClient.SendMessage(chatId, reply, cancellationToken: cancellationToken);
         }
         catch (Exception ex)
@@ -212,6 +223,17 @@ public sealed class TelegramUpdateHandler(
                 "Ошибка при проверке SMS. Попробуйте снова.",
                 cancellationToken: cancellationToken);
         }
+    }
+
+    private static string FormatWatchNotice(SmsWatchRegistration registration, int durationMinutes)
+    {
+        return registration.Kind switch
+        {
+            SmsWatchRegistrationKind.AlreadyActive =>
+                "\n\n⏳ Уже мониторю SMS для этого чата — пришлю код автоматически.",
+            _ =>
+                $"\n\n⏳ Мониторю SMS в течение {Math.Max(1, durationMinutes)} мин — пришлю код автоматически, как только появится."
+        };
     }
 
     private async Task HandleSmsAllDebugAsync(Message message, CancellationToken cancellationToken)

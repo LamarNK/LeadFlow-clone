@@ -381,11 +381,81 @@ public sealed class DashboardQueryService(
                 .Select(g => new { AccountId = g.Key, Count = g.Count() })
                 .ToDictionaryAsync(x => x.AccountId, x => x.Count, ct);
 
+        var subProfileResponseRows = accountIds.Count == 0
+            ? []
+            : await db.CandidateResponses
+                .AsNoTracking()
+                .Where(x => x.WorkerId == workerId
+                    && accountIds.Contains(x.AccountId)
+                    && x.CreatedAt >= todayStart
+                    && x.AvitoSubProfileId != "")
+                .GroupBy(x => new { x.AccountId, x.AvitoSubProfileId })
+                .Select(g => new
+                {
+                    g.Key.AccountId,
+                    g.Key.AvitoSubProfileId,
+                    Total = g.Count(),
+                    Duplicates = g.Count(x => x.Status == ResponseStatuses.Duplicate),
+                    Errors = g.Count(x => x.Status == ResponseStatuses.Error || x.Status == ResponseStatuses.ActionRequired),
+                    LastActivity = g.Max(x => (DateTime?)x.CreatedAt)
+                })
+                .ToListAsync(ct);
+
+        var subProfileStats = SubProfileOperationalStatsHelper.MergeResponseStats(
+            subProfileResponseRows.Select(x => (
+                x.AccountId,
+                x.AvitoSubProfileId,
+                x.Total,
+                x.Duplicates,
+                x.Errors,
+                x.LastActivity)));
+
+        var deserializedProfiles = rows
+            .Select(x => (
+                x.AccountId,
+                Profiles: DeserializeSubProfiles(x.SubProfilesJson, x.SubProfilesDisabledIdsJson)))
+            .ToList();
+
+        var referencedAttachmentIds = SubProfileIssueHelper.CollectAttachmentIds(
+            deserializedProfiles.SelectMany(x => x.Profiles ?? []));
+        var existingAttachmentIds = referencedAttachmentIds.Count == 0
+            ? new HashSet<Guid>()
+            : await db.WorkerDiagnosticAttachments
+                .AsNoTracking()
+                .Where(x => referencedAttachmentIds.Contains(x.Id))
+                .Select(x => x.Id)
+                .ToHashSetAsync(ct);
+
+        if (accountIds.Count > 0)
+        {
+            var subProfileEventRows = await db.WorkerEvents
+                .AsNoTracking()
+                .Where(x => x.WorkerId == workerId
+                    && x.AccountId != null
+                    && accountIds.Contains(x.AccountId.Value)
+                    && !x.IsDismissed
+                    && x.CreatedAtUtc >= todayStart
+                    && (x.Level == "Error" || x.Level == "Warning"))
+                .Select(x => new { AccountId = x.AccountId!.Value, x.Details })
+                .ToListAsync(ct);
+
+            SubProfileOperationalStatsHelper.ApplyEventErrors(
+                subProfileStats,
+                subProfileEventRows.Select(x => (x.AccountId, x.Details)),
+                SubProfileOperationalStatsHelper.BuildNameLookup(deserializedProfiles));
+        }
+
         return rows
             .Select(x =>
             {
                 responseStats.TryGetValue(x.AccountId, out var responses);
                 eventStats.TryGetValue(x.AccountId, out var eventErrors);
+                var subProfiles = SubProfileOperationalStatsHelper.Enrich(
+                    SubProfileIssueHelper.StripMissingAttachmentIssues(
+                        DeserializeSubProfiles(x.SubProfilesJson, x.SubProfilesDisabledIdsJson),
+                        existingAttachmentIds),
+                    x.AccountId,
+                    subProfileStats);
                 return new WorkerAccountDto(
                     x.AccountId,
                     x.DisplayName,
@@ -398,7 +468,7 @@ public sealed class DashboardQueryService(
                     x.LastMonitoringAt,
                     x.IsEnabledInPanel,
                     x.AdsPowerProfileId,
-                    DeserializeSubProfiles(x.SubProfilesJson, x.SubProfilesDisabledIdsJson),
+                    subProfiles,
                     x.SubProfilesRefreshedAtUtc,
                     x.SubProfilesRefreshRequestedAtUtc,
                     responses.Total,
@@ -643,8 +713,9 @@ public sealed class DashboardQueryService(
                 g => g.Key,
                 g => (
                     Total: g.Count(),
-                    Active: g.Count(a => AccountDashboardStatusClassifier.Classify(a.Status, a.IsEnabledInPanel)
-                        == AccountDashboardCategory.Active)));
+                    Active: g.Count(a => AccountDashboardStatusClassifier.IsActiveInPanel(
+                        a.Status,
+                        a.IsEnabledInPanel))));
 
     private async Task<Dictionary<Guid, WorkerOperationalStats>> ComputeWorkerOperationalStatsAsync(
         IReadOnlyList<Guid> workerIds,
@@ -705,29 +776,6 @@ public sealed class DashboardQueryService(
 
     private static IReadOnlyList<WorkerSubProfileDto>? DeserializeSubProfiles(
         string? json,
-        string? disabledIdsJson = null)
-    {
-        if (string.IsNullOrWhiteSpace(json) || json == "[]")
-        {
-            return null;
-        }
-
-        try
-        {
-            var profiles = JsonSerializer.Deserialize<List<WorkerSubProfileDto>>(json, JsonOptions);
-            if (profiles is null || profiles.Count == 0)
-            {
-                return null;
-            }
-
-            var disabled = Parse(disabledIdsJson);
-            return profiles
-                .Select(p => p with { IsEnabledInPanel = IsEnabled(disabled, p.Id) })
-                .ToList();
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
-    }
+        string? disabledIdsJson = null) =>
+        SubProfileDeserializer.Deserialize(json, disabledIdsJson);
 }

@@ -122,52 +122,161 @@
             toggle);
     }
 
+    function subProfileHasIdentity(sub) {
+        if (!sub) return false;
+        return !!String(sub.name || sub.Name || sub.id || sub.Id || '').trim();
+    }
+
+    function enrichAccountsFromSsr(accounts) {
+        var ssr = window.__ORBITA_SSR_SUBPROFILES__;
+        if (!ssr || !ssr.length) return accounts || [];
+        var byId = {};
+        ssr.forEach(function (entry) {
+            if (entry && entry.accountId) byId[entry.accountId] = entry.items || [];
+        });
+        return (accounts || []).map(function (acc) {
+            if (!acc || !acc.hasSubProfiles) return acc;
+            var items = acc.subProfiles || [];
+            if (items.some(subProfileHasIdentity)) return acc;
+            var fallback = byId[acc.id];
+            if (!fallback || !fallback.length || !fallback.some(function (it) {
+                return !!String(it.name || it.Name || it.id || it.Id || '').trim();
+            })) {
+                return acc;
+            }
+            return Object.assign({}, acc, {
+                subProfiles: fallback.map(function (it) {
+                    return {
+                        id: it.id || it.Id || '',
+                        name: it.name || it.Name || it.id || it.Id || '',
+                        category: it.category || it.Category || '',
+                        balanceText: it.balanceText || it.BalanceText || '—',
+                        isEnabledInPanel: true
+                    };
+                })
+            });
+        });
+    }
+
+    function renderAccountRowHtml(account) {
+        var workerUrl = workerDetailsUrl(account.workerId);
+        var accountUrl = accountSearchUrl(account.accountName);
+        var statusHtml = '<span class="account-status account-status--' + shared.escapeHtml(account.statusTone || 'active') + '"><i class="fa-solid fa-circle account-status-dot" aria-hidden="true"></i>' + shared.escapeHtml(account.statusLabel || '') + '</span>';
+        if (account.lastErrorMessage) {
+            statusHtml += '<span class="account-error-hint" title="' + shared.escapeHtml(account.lastErrorMessage) + '">' + shared.escapeHtml(account.lastErrorMessage) + '</span>';
+        } else if (account.errorHint) {
+            statusHtml += '<span class="account-error-hint" title="' + shared.escapeHtml(account.errorHint) + '">' + shared.escapeHtml(account.errorHint) + '</span>';
+        }
+        var activityHtml = account.lastActivityUtc
+            ? '<time data-orbita-utc="' + shared.escapeHtml(account.lastActivityUtc) + '" data-orbita-format="activity"></time>'
+            : '—';
+        var subProfiles = shared.renderSubProfilesToolbar(account.workerId, account, 'subprofiles-acc');
+        var processingHtml = account.processingLabel
+            ? shared.renderActivityPill(account.processingLabel, account.processingTone, account.isProcessingNow)
+            : '<span class="worker-activity-pill worker-activity-pill--muted">—</span>';
+        var rowClass = 'accounts-row' + (account.isProcessingNow ? ' accounts-row--processing' : '');
+        var showOffice = shared.getLiveAttr('data-show-office-column') === 'true';
+        var officeCell = showOffice
+            ? '<td data-label="Офис">' + shared.escapeHtml(account.officeName || '—') + '</td>'
+            : '';
+        var toggleCell = shared.renderAccountEnableToggle(account.workerId, account.id, account.isEnabledInPanel, {
+            toggleUrl: '/Accounts/Toggle',
+            refreshKind: 'Accounts'
+        });
+        var subProfilesJson = shared.escapeHtml(JSON.stringify(account.subProfiles || []));
+        var processingSubProfileId = account.isProcessingNow && account.processingSubProfileId
+            ? shared.escapeHtml(account.processingSubProfileId)
+            : '';
+
+        return '<tr class="' + rowClass + '" data-href="' + shared.escapeHtml(accountUrl) + '"' +
+            ' data-account-id="' + shared.escapeHtml(account.id) + '"' +
+            ' data-subprofiles-layout="accounts"' +
+            ' data-subprofiles-show-office="' + (showOffice ? 'true' : 'false') + '"' +
+            (processingSubProfileId ? ' data-processing-subprofile-id="' + processingSubProfileId + '"' : '') +
+            ' data-subprofiles-json="' + subProfilesJson + '">' +
+            toggleCell +
+            '<td class="cell-account" data-label="Аккаунт"><a href="' + shared.escapeHtml(accountUrl) + '">' + shared.escapeHtml(account.accountName) + '</a>' + subProfiles + '</td>' +
+            '<td class="cell-worker" data-label="Воркер"><a href="' + shared.escapeHtml(workerUrl) + '">' + shared.escapeHtml(account.workerName) + '</a></td>' +
+            officeCell +
+            '<td data-label="Статус">' + statusHtml + '</td>' +
+            '<td data-label="Сейчас">' + processingHtml + '</td>' +
+            '<td class="cell-num cell-balance" data-label="Баланс">' + shared.renderAccountBalance(account) + '</td>' +
+            '<td class="cell-num" data-label="Откликов">' + (account.responses || 0) + '</td>' +
+            '<td class="cell-num" data-label="Уникальных">' + (account.uniqueResponses || 0) + '</td>' +
+            '<td class="cell-num" data-label="Ошибок">' + (account.errors || 0) + '</td>' +
+            '<td data-label="Последняя активность">' + activityHtml + '</td>' +
+            '<td class="data-table-menu" data-label="">' + renderAccountMenu(account, accountUrl, workerUrl) + '</td></tr>';
+    }
+
+    function insertSubProfileRowsAfter(accountRow, account, panelId, wasExpanded) {
+        if (!account.hasSubProfiles || !shared.accountSubProfilesRenderable(account)) {
+            shared.removeSubProfileTableRows(panelId);
+            return;
+        }
+        shared.removeSubProfileTableRows(panelId);
+        var showOffice = shared.getLiveAttr('data-show-office-column') === 'true';
+        var subRowsHtml = shared.renderSubProfileTableRows(
+            account.workerId,
+            account,
+            panelId,
+            'accounts',
+            account.isProcessingNow ? account.processingSubProfileId : null,
+            showOffice,
+            wasExpanded);
+        if (!subRowsHtml) return;
+        var temp = document.createElement('tbody');
+        temp.innerHTML = subRowsHtml;
+        var insertAfter = accountRow;
+        while (temp.firstChild) {
+            insertAfter.insertAdjacentElement('afterend', temp.firstChild);
+            insertAfter = insertAfter.nextElementSibling;
+        }
+    }
+
     function renderAccounts(rows) {
         var tbody = document.querySelector('[data-orbita-live-body="accounts"]');
         if (!tbody || !shared) return;
+        rows = enrichAccountsFromSsr(rows);
         var expandedPanels = shared.captureExpandedSubprofilePanels(tbody);
+        var nextIds = {};
+        (rows || []).forEach(function (account) {
+            nextIds[account.id] = true;
+            var panelId = 'subprofiles-acc-' + account.id;
+            var existingRow = tbody.querySelector('tr.accounts-row[data-account-id="' + account.id + '"]');
+            var temp = document.createElement('tbody');
+            temp.innerHTML = renderAccountRowHtml(account);
+            var newRow = temp.firstElementChild;
+            if (!newRow) return;
 
-        tbody.innerHTML = (rows || []).map(function (account) {
-            var workerUrl = workerDetailsUrl(account.workerId);
-            var accountUrl = accountSearchUrl(account.accountName);
-            var statusHtml = '<span class="account-status account-status--' + shared.escapeHtml(account.statusTone || 'active') + '"><i class="fa-solid fa-circle account-status-dot" aria-hidden="true"></i>' + shared.escapeHtml(account.statusLabel || '') + '</span>';
-            if (account.lastErrorMessage) {
-                statusHtml += '<span class="account-error-hint" title="' + shared.escapeHtml(account.lastErrorMessage) + '">' + shared.escapeHtml(account.lastErrorMessage) + '</span>';
+            var wasExpanded = !!expandedPanels[panelId];
+            if (existingRow) {
+                shared.removeSubProfileTableRows(panelId);
+                existingRow.replaceWith(newRow);
+            } else {
+                tbody.appendChild(newRow);
             }
-            var activityHtml = account.lastActivityUtc
-                ? '<time data-orbita-utc="' + shared.escapeHtml(account.lastActivityUtc) + '" data-orbita-format="activity"></time>'
-                : '—';
-            var subProfiles = shared.renderSubProfilesToolbar(account.workerId, account, 'subprofiles-acc');
-            var processingHtml = account.processingLabel
-                ? shared.renderActivityPill(account.processingLabel, account.processingTone, account.isProcessingNow)
-                : '<span class="worker-activity-pill worker-activity-pill--muted">—</span>';
-            var rowClass = 'accounts-row' + (account.isProcessingNow ? ' accounts-row--processing' : '');
 
-            var officeCell = shared.getLiveAttr('data-show-office-column') === 'true'
-                ? '<td data-label="Офис">' + shared.escapeHtml(account.officeName || '—') + '</td>'
-                : '';
+            if (account.hasSubProfiles) {
+                insertSubProfileRowsAfter(newRow, account, panelId, wasExpanded);
+            }
 
-            var toggleCell = shared.renderAccountEnableToggle(account.workerId, account.id, account.isEnabledInPanel, {
-                toggleUrl: '/Accounts/Toggle',
-                refreshKind: 'Accounts'
-            });
+            if (wasExpanded) {
+                var btn = newRow.querySelector('[aria-controls="' + panelId + '"]');
+                if (btn) {
+                    btn.setAttribute('aria-expanded', 'true');
+                    var icon = btn.querySelector('.subprofiles-toggle-icon');
+                    if (icon) icon.classList.add('subprofiles-toggle-icon--open');
+                }
+            }
+        });
 
-            return '<tr class="' + rowClass + '" data-href="' + shared.escapeHtml(accountUrl) + '" data-account-id="' + shared.escapeHtml(account.id) + '">' +
-                toggleCell +
-                '<td class="cell-account" data-label="Аккаунт"><a href="' + shared.escapeHtml(accountUrl) + '">' + shared.escapeHtml(account.accountName) + '</a>' + subProfiles + '</td>' +
-                '<td class="cell-worker" data-label="Воркер"><a href="' + shared.escapeHtml(workerUrl) + '">' + shared.escapeHtml(account.workerName) + '</a></td>' +
-                officeCell +
-                '<td data-label="Статус">' + statusHtml + '</td>' +
-                '<td data-label="Сейчас">' + processingHtml + '</td>' +
-                '<td class="cell-num cell-balance" data-label="Баланс">' + shared.renderAccountBalance(account) + '</td>' +
-                '<td class="cell-num" data-label="Откликов">' + (account.responses || 0) + '</td>' +
-                '<td class="cell-num" data-label="Уникальных">' + (account.uniqueResponses || 0) + '</td>' +
-                '<td class="cell-num" data-label="Ошибок">' + (account.errors || 0) + '</td>' +
-                '<td data-label="Последняя активность">' + activityHtml + '</td>' +
-                '<td class="data-table-menu" data-label="">' + renderAccountMenu(account, accountUrl, workerUrl) + '</td></tr>';
-        }).join('');
-
-        shared.restoreExpandedSubprofilePanels(tbody, expandedPanels);
+        tbody.querySelectorAll('tr.accounts-row[data-account-id]').forEach(function (row) {
+            var accountId = row.getAttribute('data-account-id');
+            if (!accountId || nextIds[accountId]) return;
+            var panelId = 'subprofiles-acc-' + accountId;
+            shared.removeSubProfileTableRows(panelId);
+            row.remove();
+        });
 
         if (window.OrbitaTime) {
             window.OrbitaTime.localizeAll(tbody);

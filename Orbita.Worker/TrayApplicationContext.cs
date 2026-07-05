@@ -51,10 +51,22 @@ public sealed class TrayApplicationContext : ApplicationContext
         _runtimeState.Changed += (_, _) => UpdateUi();
         Application.ApplicationExit += OnApplicationExit;
         UpdateUi();
+
+        _ = WorkerLifecycleLog.InfoAsync(
+            "Worker lifecycle: трей открыт",
+            nameof(TrayApplicationContext),
+            new Dictionary<string, object?>
+            {
+                ["worker.displayName"] = _credentials.DisplayName ?? Environment.MachineName,
+                ["worker.id"] = _credentials.WorkerId
+            });
     }
 
     private void OnApplicationExit(object? sender, EventArgs e)
     {
+        _ = WorkerLifecycleLog.InfoAsync(
+            "Worker lifecycle: Application.ApplicationExit",
+            nameof(OnApplicationExit));
         _trayIcon.Visible = false;
         ExitThread();
     }
@@ -122,6 +134,9 @@ public sealed class TrayApplicationContext : ApplicationContext
 
     private void OnExit(object? sender, EventArgs e)
     {
+        _ = WorkerLifecycleLog.InfoAsync(
+            "Worker lifecycle: выход из трея по запросу пользователя",
+            nameof(OnExit));
         _trayIcon.Visible = false;
         _trayIcon.Dispose();
         ExitThread();

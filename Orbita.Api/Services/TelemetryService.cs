@@ -251,7 +251,8 @@ public sealed class TelemetryService(
         target.LastMonitoringAt = DateTimeUtcHelper.EnsureUtc(account.LastMonitoringAt);
         target.TotalBalance = balance;
 
-        if (account.SubProfiles is not null)
+        if (account.SubProfiles is not null
+            && ShouldPersistSubProfiles(account.SubProfiles, target.SubProfilesJson))
         {
             target.SubProfilesJson = SerializeSubProfiles(account.SubProfiles);
         }
@@ -295,7 +296,32 @@ public sealed class TelemetryService(
     }
 
     private static string SerializeSubProfiles(IReadOnlyList<WorkerSubProfileDto>? subProfiles) =>
-        JsonSerializer.Serialize(subProfiles ?? [], JsonOptions);
+        JsonSerializer.Serialize(subProfiles ?? [], SubProfileJsonOptions.Serialize);
+
+    private static bool ShouldPersistSubProfiles(
+        IReadOnlyList<WorkerSubProfileDto> incoming,
+        string? existingJson)
+    {
+        if (incoming.Count == 0)
+        {
+            return false;
+        }
+
+        if (incoming.Any(static p => !string.IsNullOrWhiteSpace(p.Id) || !string.IsNullOrWhiteSpace(p.Name)))
+        {
+            return true;
+        }
+
+        if (string.IsNullOrWhiteSpace(existingJson) || existingJson == "[]")
+        {
+            return true;
+        }
+
+        var existing = SubProfileDeserializer.Deserialize(existingJson);
+        return existing is null
+            || existing.Count == 0
+            || existing.All(static p => string.IsNullOrWhiteSpace(p.Id) && string.IsNullOrWhiteSpace(p.Name));
+    }
 
     private static bool IsMostlyEmptySnapshot(WorkerSnapshotRequest req)
     {

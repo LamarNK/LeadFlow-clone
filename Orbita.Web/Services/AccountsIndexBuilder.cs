@@ -81,10 +81,25 @@ internal static class AccountsIndexBuilder
         var (label, tone) = AccountStatusMapper.ForAccountsPage(account.Status, account.IsEnabledInPanel);
         var responses = account.TodayResponses;
         var duplicates = account.TodayDuplicates;
-        var errors = account.TodayEventErrors;
         var unique = Math.Max(0, responses - duplicates);
-        var hasError = !string.IsNullOrWhiteSpace(account.LastErrorMessage);
-        var subProfiles = SubProfileViewModelMapper.Map(account.SubProfiles, balanceDetail?.SubProfiles);
+        var subProfiles = SubProfileViewModelMapper.Map(
+            account.SubProfiles,
+            balanceDetail?.SubProfiles,
+            account.AccountId,
+            workerIsOnline,
+            workerActivity,
+            activeAccounts);
+        var lastErrorMessage = AdsPowerErrorMessageNormalizer.NormalizeForDisplay(account.LastErrorMessage);
+        var errors = AccountErrorMetrics.ComputeErrorCount(
+            account.TodayEventErrors,
+            lastErrorMessage,
+            subProfiles,
+            tone);
+        var errorHint = AccountErrorMetrics.ComputeErrorHint(
+            account.TodayEventErrors,
+            lastErrorMessage,
+            subProfiles,
+            tone);
         var walletBalance = balanceDetail?.TotalWalletBalance ?? 0m;
         var durationHint = BalanceDisplay.ResolveAdvanceDurationHint(
             (balanceDetail?.SubProfiles ?? [])
@@ -107,10 +122,11 @@ internal static class AccountsIndexBuilder
                 durationHint),
             Responses = responses,
             UniqueResponses = unique,
-            Errors = errors > 0 ? errors : hasError ? 1 : 0,
+            Errors = errors,
             LastActivityUtc = account.LastMonitoringAt,
             IsEnabledInPanel = account.IsEnabledInPanel,
-            LastErrorMessage = AdsPowerErrorMessageNormalizer.NormalizeForDisplay(account.LastErrorMessage),
+            LastErrorMessage = lastErrorMessage,
+            ErrorHint = errorHint,
             SubProfiles = subProfiles,
             SubProfilesSummary = SubProfileViewModelMapper.BuildSummary(subProfiles),
             CanRefreshSubProfiles = !string.IsNullOrWhiteSpace(account.AdsPowerProfileId),
@@ -165,7 +181,7 @@ internal static class AccountsIndexBuilder
         && account.StatusTone != "inactive";
 
     private static bool HasErrors(AccountRowViewModel account) =>
-        account.StatusTone == "error" || account.Errors > 0;
+        AccountErrorMetrics.HasErrors(account);
 
     private static IReadOnlyList<DashboardKpiCardViewModel> BuildKpiCards(AccountsSummaryViewModel summary)
     {

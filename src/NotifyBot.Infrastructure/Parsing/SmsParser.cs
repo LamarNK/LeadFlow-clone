@@ -7,7 +7,7 @@ namespace NotifyBot.Infrastructure.Parsing;
 public sealed partial class SmsParser : ISmsParser
 {
     [GeneratedRegex(
-        @"Для оплаты в (?<merchant>\S+) (?<amount>[\d,]+\.\d+) RUB Карта \*(?<card>\d{4}); 3DS код: (?<code>\d+)",
+        @"Для оплаты в (?<merchant>.+?) (?<amount>[\d,]+\.\d+) RUB Карта \*(?<card>\d{4});\s*3DS код:\s*(?<code>\d+)",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex PaymentSmsRegex();
 
@@ -28,7 +28,7 @@ public sealed partial class SmsParser : ISmsParser
             CardLast4: match.Groups["card"].Value,
             Code: match.Groups["code"].Value,
             Amount: match.Groups["amount"].Value,
-            Merchant: match.Groups["merchant"].Value,
+            Merchant: match.Groups["merchant"].Value.Trim(),
             RawText: rawText.Trim());
     }
 }

@@ -7,7 +7,6 @@ using LeadFlow.Core.Models;
 using LeadFlow.Core.Services.AdsPower;
 using LeadFlow.Core.Services.Avito;
 using PuppeteerSharp;
-using System.Text.Json;
 
 namespace LeadFlow.Core.Services.Worker;
 
@@ -237,45 +236,57 @@ public sealed class WorkerMonitoringService(
         var launchSlot = 0;
         var running = new List<Task<(int NewCount, bool Polled, bool Backlog)>>();
         var lastLoggedParallelism = -1;
+        var parallelism = 1;
 
         while (nextIndex < accounts.Count || running.Count > 0)
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            var shuttingDown = cancellationToken.IsCancellationRequested;
 
-            configProvider.InvalidateConfigCache();
-            var config = await configProvider.GetConfigAsync(cancellationToken).ConfigureAwait(false);
-            var settings = ToAppSettings(config);
-            var parallelism = Math.Clamp(config.MaxConcurrentAccounts, 1, 10);
-
-            if (parallelism != lastLoggedParallelism)
+            if (!shuttingDown)
             {
-                lastLoggedParallelism = parallelism;
-                WorkerMonitoringLogger.CycleParallelism(parallelism);
-            }
+                configProvider.InvalidateConfigCache();
+                var config = await configProvider.GetConfigAsync(cancellationToken).ConfigureAwait(false);
+                var settings = ToAppSettings(config);
+                parallelism = Math.Clamp(config.MaxConcurrentAccounts, 1, 10);
 
-            while (running.Count < parallelism && nextIndex < accounts.Count)
-            {
-                var account = accounts[nextIndex++];
-                var slot = launchSlot++;
-                running.Add(RunAccountInCycleSlotAsync(account, settings, slot, cancellationToken));
+                if (parallelism != lastLoggedParallelism)
+                {
+                    lastLoggedParallelism = parallelism;
+                    WorkerMonitoringLogger.CycleParallelism(parallelism);
+                }
+
+                while (running.Count < parallelism && nextIndex < accounts.Count)
+                {
+                    var account = accounts[nextIndex++];
+                    var slot = launchSlot++;
+                    running.Add(RunAccountInCycleSlotAsync(account, settings, slot, cancellationToken));
+                }
             }
 
             if (running.Count == 0)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 break;
             }
 
             var completed = await Task.WhenAny(running).ConfigureAwait(false);
             running.Remove(completed);
-            var (newCount, polled, backlog) = await completed.ConfigureAwait(false);
-            if (polled)
+            try
             {
-                accountsPolled++;
-                newResponsesThisCycle += newCount;
-                hadUndischargedBacklog |= backlog;
+                var (newCount, polled, backlog) = await completed.ConfigureAwait(false);
+                if (polled)
+                {
+                    accountsPolled++;
+                    newResponsesThisCycle += newCount;
+                    hadUndischargedBacklog |= backlog;
+                }
+            }
+            catch (OperationCanceledException) when (shuttingDown)
+            {
+                // Аккаунт прерван при остановке мониторинга; браузер закрывается в finally ProcessAccountAsync.
             }
 
-            if (parallelism == 1 && nextIndex < accounts.Count)
+            if (!shuttingDown && parallelism == 1 && nextIndex < accounts.Count)
             {
                 await Task.Delay(
                         TimeSpan.FromSeconds(MonitoringTiming.DelayBetweenAccountsSeconds),
@@ -284,6 +295,7 @@ public sealed class WorkerMonitoringService(
             }
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
         return (newResponsesThisCycle, accountsPolled, hadUndischargedBacklog);
     }
 
@@ -426,6 +438,10 @@ public sealed class WorkerMonitoringService(
             await HandleSessionDiagnosticForAccountAsync(account, diagnosticEx, cancellationToken).ConfigureAwait(false);
             return (0, true, false);
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             account.LastErrorMessage = ex.Message;
@@ -565,6 +581,7 @@ public sealed class WorkerMonitoringService(
                     .ConfigureAwait(false);
                 WorkerMonitoringLogger.ExtractionSummary(account, null, singleParse.Summary);
                 var singleBatch = singleParse.Candidates;
+                _ = await ProcessBatchInlineAsync(singleBatch).ConfigureAwait(false);
                 if (account.Status == AvitoAccountStatus.RequiresLogin
                     || account.Status == AvitoAccountStatus.RequiresManualAction)
                 {
@@ -772,10 +789,14 @@ public sealed class WorkerMonitoringService(
         }
         finally
         {
-            await TryCloseAdsPowerBrowserForAccountAsync(account, adsOptions, cancellationToken).ConfigureAwait(false);
             if (browserOpened)
             {
-                WorkerMonitoringLogger.BrowserClosed(account);
+                var closed = await TryCloseAdsPowerBrowserForAccountAsync(account, adsOptions)
+                    .ConfigureAwait(false);
+                if (closed)
+                {
+                    WorkerMonitoringLogger.BrowserClosed(account);
+                }
             }
         }
     }
@@ -924,44 +945,6 @@ public sealed class WorkerMonitoringService(
         _telemetryPusher.RequestDebouncedPush(ct);
     }
 
-    private async Task<ProfileResult> CollectProfileItemsAsync(
-        AvitoAccount account,
-        AdsPowerConnectionOptions options,
-        CancellationToken cancellationToken)
-    {
-        var activeHtml = await adsPowerAvitoAutomationService
-            .LoadProfileItemsHtmlAsync(options, account.AdsPowerProfileId!, cancellationToken)
-            .ConfigureAwait(false);
-
-        if (string.IsNullOrWhiteSpace(activeHtml))
-        {
-            return new ProfileResult { ParseSuccess = false, ParseFailureReason = "empty_active_items_html" };
-        }
-
-        var part = avitoParser.ParseProfilePage(activeHtml, account.Id);
-        part.PageLoadedSuccessfully = true;
-        AvitoBalanceParser.ParseMoneySidebar(activeHtml)?.ApplyTo(part);
-
-        if (part.BlockedCount > 0)
-        {
-            try
-            {
-                var blockedHtml = await adsPowerAvitoAutomationService
-                    .LoadBlockedItemsHtmlAsync(options, account.AdsPowerProfileId!, cancellationToken)
-                    .ConfigureAwait(false);
-                part.BlockedAds.AddRange(avitoParser.ParseBlockedTabPage(blockedHtml, account.Id));
-            }
-            catch (Exception ex)
-            {
-                _ = GlobalLogger.Instance.LogAsync(
-                    $"Worker: blocked tab load failed for {account.DisplayName}: {ex.Message}",
-                    DeskLinkAuditLogLevel.Warning);
-            }
-        }
-
-        return part;
-    }
-
     private async Task<ProfileResult> CollectProfileItemsFromSessionAsync(
         AvitoAccount account,
         IAdsPowerAccountSession session,
@@ -1049,27 +1032,28 @@ public sealed class WorkerMonitoringService(
         _telemetryPusher.RequestDebouncedPush(cancellationToken);
     }
 
-    private async Task TryCloseAdsPowerBrowserForAccountAsync(
+    private async Task<bool> TryCloseAdsPowerBrowserForAccountAsync(
         AvitoAccount account,
-        AdsPowerConnectionOptions options,
-        CancellationToken cancellationToken)
+        AdsPowerConnectionOptions options)
     {
         if (string.IsNullOrWhiteSpace(account.AdsPowerProfileId))
         {
-            return;
+            return true;
         }
 
         try
         {
             await adsPowerAvitoAutomationService
-                .CloseBrowserAsync(options, account.AdsPowerProfileId!, cancellationToken)
+                .CloseBrowserAsync(options, account.AdsPowerProfileId!, CancellationToken.None)
                 .ConfigureAwait(false);
+            return true;
         }
         catch (Exception ex)
         {
             _ = GlobalLogger.Instance.LogAsync(
                 $"Worker: failed to close AdsPower browser for {account.DisplayName}: {ex.Message}",
                 DeskLinkAuditLogLevel.Warning);
+            return false;
         }
     }
 

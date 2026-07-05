@@ -21,8 +21,18 @@ internal static class Program
         Environment.SetEnvironmentVariable("LOG_SERVICE_NAME", "Orbita.Worker");
         ApplicationConfiguration.Initialize();
 
+        WorkerLifecycleLog.InfoAsync(
+            $"Worker lifecycle: запуск процесса (аргументы: {FormatArgs(args)})",
+            nameof(Main),
+            new Dictionary<string, object?> { ["worker.args"] = FormatArgs(args) })
+            .GetAwaiter().GetResult();
+
         if (TryHandleSilentInstall(args))
         {
+            WorkerLifecycleLog.InfoAsync(
+                "Worker lifecycle: тихая установка API-ключа завершена, выход",
+                nameof(Main))
+                .GetAwaiter().GetResult();
             return;
         }
 
@@ -32,11 +42,19 @@ internal static class Program
         {
             if (!SetupWizardForm.TryConfigure(store, store.Load()))
             {
+                WorkerLifecycleLog.InfoAsync(
+                    "Worker lifecycle: мастер настройки отменён, выход",
+                    nameof(Main))
+                    .GetAwaiter().GetResult();
                 return;
             }
         }
         else if (!EnsureConfigured(store))
         {
+            WorkerLifecycleLog.InfoAsync(
+                "Worker lifecycle: воркер не настроен, выход",
+                nameof(Main))
+                .GetAwaiter().GetResult();
             return;
         }
 
@@ -49,6 +67,11 @@ internal static class Program
         }
 
         RunTrayApplication(store);
+
+        WorkerLifecycleLog.InfoAsync(
+            "Worker lifecycle: процесс завершён",
+            nameof(Main))
+            .GetAwaiter().GetResult();
     }
 
     internal static bool EnsureConfigured(WorkerConfigStore store)
@@ -143,9 +166,31 @@ internal static class Program
         var shutdownService = builtHost.Services.GetRequiredService<WorkerShutdownService>();
         var updateStore = builtHost.Services.GetRequiredService<WorkerUpdateStore>();
 
+        WorkerLifecycleLog.InfoAsync(
+            "Worker lifecycle: хост запущен, открытие трея",
+            nameof(RunTrayApplication))
+            .GetAwaiter().GetResult();
+
         Application.Run(new TrayApplicationContext(orchestrator, runtimeState, store, credentials));
 
+        WorkerLifecycleLog.InfoAsync(
+            "Worker lifecycle: трей закрыт, остановка хоста",
+            nameof(RunTrayApplication),
+            new Dictionary<string, object?>
+            {
+                ["shutdown.pendingRestart"] = shutdownService.PendingRestart,
+                ["shutdown.pendingInstall"] = shutdownService.PendingInstallPath is not null,
+                ["shutdown.restartScriptLaunched"] = shutdownService.RestartScriptLaunched,
+                ["shutdown.installScriptLaunched"] = shutdownService.InstallScriptLaunched
+            })
+            .GetAwaiter().GetResult();
+
         builtHost.StopAsync().GetAwaiter().GetResult();
+
+        WorkerLifecycleLog.InfoAsync(
+            "Worker lifecycle: хост остановлен",
+            nameof(RunTrayApplication))
+            .GetAwaiter().GetResult();
 
         if (shutdownService.PendingInstallPath is { } installPath)
         {
@@ -158,15 +203,24 @@ internal static class Program
                     updateStore.ClearPendingMsi();
                 }
 
+                WorkerLifecycleLog.WarningAsync(
+                    "Worker lifecycle: fallback запуск установщика обновления",
+                    nameof(RunTrayApplication),
+                    new Dictionary<string, object?> { ["update.msiPath"] = installPath })
+                    .GetAwaiter().GetResult();
                 WorkerRestartHelper.LaunchInstallScript(installPath);
             }
 
             return;
         }
 
-        if (shutdownService.PendingRestart)
+        if (shutdownService.PendingRestart && !shutdownService.RestartScriptLaunched)
         {
-            WorkerRestartHelper.LaunchProcessRestart();
+            WorkerLifecycleLog.WarningAsync(
+                "Worker lifecycle: fallback запуск скрипта перезапуска",
+                nameof(RunTrayApplication))
+                .GetAwaiter().GetResult();
+            WorkerRestartHelper.LaunchProcessRestart(updateRestart: true);
         }
     }
 
@@ -180,6 +234,17 @@ internal static class Program
             var mutex = new Mutex(true, SingleInstanceMutexName, out var createdNew);
             if (createdNew)
             {
+                WorkerLifecycleLog.InfoAsync(
+                    updateRestart
+                        ? $"Worker lifecycle: mutex получен после перезапуска (попытка {attempt + 1})"
+                        : "Worker lifecycle: mutex получен, единственный экземпляр",
+                    nameof(AcquireSingleInstanceMutex),
+                    new Dictionary<string, object?>
+                    {
+                        ["mutex.updateRestart"] = updateRestart,
+                        ["mutex.attempt"] = attempt + 1
+                    })
+                    .GetAwaiter().GetResult();
                 return mutex;
             }
 
@@ -192,6 +257,14 @@ internal static class Program
             Thread.Sleep(retryDelayMs);
         }
 
+        WorkerLifecycleLog.WarningAsync(
+            updateRestart
+                ? "Worker lifecycle: не удалось получить mutex после перезапуска, выход"
+                : "Worker lifecycle: другой экземпляр уже запущен, выход",
+            nameof(AcquireSingleInstanceMutex),
+            new Dictionary<string, object?> { ["mutex.updateRestart"] = updateRestart })
+            .GetAwaiter().GetResult();
+
         MessageBox.Show(
             "Воркер Орбиты уже запущен.",
             WorkerSetupConstants.ProductName,
@@ -199,6 +272,9 @@ internal static class Program
             MessageBoxIcon.Information);
         return null;
     }
+
+    private static string FormatArgs(string[] args) =>
+        args.Length == 0 ? "(нет)" : string.Join(' ', args.Select(arg => $"\"{arg}\""));
 
     private static bool TryHandleSilentInstall(string[] args)
     {

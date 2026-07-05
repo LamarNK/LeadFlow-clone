@@ -28,6 +28,9 @@ services:
       Plusofon__ApiToken: ${PLUSOFON_API_TOKEN:-}
       Plusofon__SmsFetchLimit: ${PLUSOFON_SMS_FETCH_LIMIT:-20}
       Plusofon__SmsMaxAgeMinutes: ${PLUSOFON_SMS_MAX_AGE_MINUTES:-15}
+      Plusofon__SmsWatchDurationMinutes: ${PLUSOFON_SMS_WATCH_DURATION_MINUTES:-5}
+      Plusofon__SmsWatchPollIntervalSeconds: ${PLUSOFON_SMS_WATCH_POLL_INTERVAL_SECONDS:-5}
+      Plusofon__SmsWatchIdleIntervalSeconds: ${PLUSOFON_SMS_WATCH_IDLE_INTERVAL_SECONDS:-15}
       Plusofon__Secret: ${PLUSOFON_SECRET:-your-plusofon-secret}
       Plusofon__WebhookValidation: ${PLUSOFON_WEBHOOK_VALIDATION:-false}
     depends_on:

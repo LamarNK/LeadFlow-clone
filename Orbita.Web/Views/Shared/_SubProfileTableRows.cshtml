@@ -1,0 +1,98 @@
+@model SubProfileTableRowsViewModel
+@{
+    if (Model?.Items is null || Model.Items.Count == 0)
+    {
+        return;
+    }
+}
+@foreach (var sub in Model.Items)
+{
+    var isProcessing = Model.ProcessingSubProfileId is not null && sub.Id == Model.ProcessingSubProfileId;
+    <tr class="subprofiles-data-row subprofiles-data-row--collapsed@(sub.IsCurrent ? " subprofiles-data-row--current" : "")@(isProcessing ? " subprofiles-data-row--processing" : "")@(sub.HasIssue ? " subprofiles-data-row--issue" : "")@(!sub.IsEnabledInPanel ? " subprofiles-data-row--disabled" : "")"
+        data-subprofiles-panel="@Model.PanelId"
+        data-subprofile-id="@sub.Id">
+        <td class="cell-toggle" data-label="Вкл">
+            <label class="subprofiles-toggle-sm" title="@(sub.IsEnabledInPanel ? "Отключить субпрофиль" : "Включить субпрофиль")">
+                <input type="checkbox"
+                       data-subprofile-toggle
+                       data-worker-id="@Model.WorkerId"
+                       data-account-id="@Model.AccountId"
+                       data-subprofile-id="@sub.Id"
+                       @(sub.IsEnabledInPanel ? "checked" : null) />
+                <span class="subprofiles-toggle-sm-slider"></span>
+            </label>
+        </td>
+        <td class="cell-name subprofiles-data-name" data-label="Аккаунт">
+            <div class="subprofiles-data-indent">
+                <span class="subprofiles-name">@sub.Name</span>
+                @if (!string.IsNullOrWhiteSpace(sub.Category))
+                {
+                    <span class="subprofiles-tag">@sub.Category</span>
+                }
+                @if (!string.IsNullOrWhiteSpace(sub.RatingText))
+                {
+                    <span class="subprofiles-rating">@sub.RatingText</span>
+                }
+            </div>
+            @if (sub.HasIssue && !string.IsNullOrWhiteSpace(sub.IssueSummary))
+            {
+                <div class="subprofiles-item-alert">
+                    <span class="subprofiles-issue" title="@sub.IssueSummary">@sub.IssueSummary</span>
+                    @if (sub.DiagnosticAttachmentId is not null)
+                    {
+                        <button type="button"
+                                class="subprofiles-screenshot-btn"
+                                data-subprofile-screenshot
+                                data-screenshot-url="/Diagnostics/Image/@sub.DiagnosticAttachmentId"
+                                title="Посмотреть скриншот страницы при ошибке">скрин</button>
+                    }
+                </div>
+            }
+        </td>
+        @if (Model.Layout == SubProfileTableLayout.Accounts)
+        {
+            <td class="cell-worker subprofiles-data-empty" data-label="Воркер"></td>
+            @if (Model.ShowOfficeColumn)
+            {
+                <td class="subprofiles-data-empty" data-label="Офис"></td>
+            }
+        }
+        <td data-label="Статус">
+            <span class="account-status account-status--@sub.StatusTone">
+                <i class="fa-solid fa-circle account-status-dot" aria-hidden="true"></i>
+                @sub.StatusLabel
+            </span>
+        </td>
+        <td data-label="Сейчас">
+            @if (!string.IsNullOrWhiteSpace(sub.ProcessingLabel))
+            {
+                <partial name="_WorkerActivityPillFromRow" model="@(sub.ProcessingLabel, sub.ProcessingTone, sub.IsProcessingNow)" />
+            }
+            else
+            {
+                <span class="worker-activity-pill worker-activity-pill--muted">—</span>
+            }
+        </td>
+        <td class="cell-num cell-balance" data-label="Баланс">
+            <span class="subprofiles-balance">@sub.BalanceText</span>
+        </td>
+        <td class="cell-num" data-label="Откликов">@sub.Responses</td>
+        @if (Model.Layout == SubProfileTableLayout.Accounts)
+        {
+            <td class="cell-num" data-label="Уникальных">@sub.UniqueResponses</td>
+            <td class="cell-num" data-label="Ошибок">@sub.Errors</td>
+            <td data-label="Последняя активность">
+                <partial name="_UtcTime" model="@(new UtcTimeDisplayModel(sub.LastActivityUtc, "activity"))" />
+            </td>
+            <td class="data-table-menu subprofiles-data-empty" data-label=""></td>
+        }
+        else
+        {
+            <td data-label="Последняя активность">
+                <partial name="_UtcTime" model="@(new UtcTimeDisplayModel(sub.LastActivityUtc, "activity"))" />
+            </td>
+            <td class="cell-num" data-label="Ошибок">@sub.Errors</td>
+            <td class="data-table-menu subprofiles-data-empty" data-label=""></td>
+        }
+    </tr>
+}

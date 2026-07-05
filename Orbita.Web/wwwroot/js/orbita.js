@@ -677,16 +677,21 @@
             btn.addEventListener('click', function (e) {
                 e.preventDefault();
                 e.stopPropagation();
-                var panelId = btn.getAttribute('aria-controls');
-                var panel = panelId ? document.getElementById(panelId) : null;
-                if (!panel) return;
-                var expanded = btn.getAttribute('aria-expanded') === 'true';
-                btn.setAttribute('aria-expanded', expanded ? 'false' : 'true');
-                if (expanded) {
-                    panel.setAttribute('hidden', '');
-                } else {
-                    panel.removeAttribute('hidden');
+                var shared = window.OrbitaLiveShared;
+                if (shared && typeof shared.toggleSubprofiles === 'function') {
+                    shared.toggleSubprofiles(btn);
+                    return;
                 }
+                var panelId = btn.getAttribute('aria-controls');
+                if (!panelId) return;
+                var expanded = btn.getAttribute('aria-expanded') === 'true';
+                var willExpand = !expanded;
+                btn.setAttribute('aria-expanded', willExpand ? 'true' : 'false');
+                if (shared && typeof shared.setSubprofilePanelExpanded === 'function') {
+                    shared.setSubprofilePanelExpanded(panelId, willExpand);
+                }
+                var icon = btn.querySelector('.subprofiles-toggle-icon');
+                if (icon) icon.classList.toggle('subprofiles-toggle-icon--open', willExpand);
             });
         });
     }

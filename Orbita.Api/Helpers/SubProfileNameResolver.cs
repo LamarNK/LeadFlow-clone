@@ -5,11 +5,6 @@ namespace Orbita.Api.Helpers;
 
 public static class SubProfileNameResolver
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNameCaseInsensitive = true
-    };
-
     public static string? ResolveName(string? subProfilesJson, string? subProfileId)
     {
         if (string.IsNullOrWhiteSpace(subProfileId))
@@ -24,7 +19,7 @@ public static class SubProfileNameResolver
 
         try
         {
-            var profiles = JsonSerializer.Deserialize<List<WorkerSubProfileDto>>(subProfilesJson, JsonOptions);
+            var profiles = SubProfileDeserializer.Deserialize(subProfilesJson);
             if (profiles is null || profiles.Count == 0)
             {
                 return null;
@@ -58,7 +53,7 @@ public static class SubProfileNameResolver
 
             try
             {
-                var profiles = JsonSerializer.Deserialize<List<WorkerSubProfileDto>>(json, JsonOptions);
+                var profiles = SubProfileDeserializer.Deserialize(json);
                 if (profiles is null)
                 {
                     continue;

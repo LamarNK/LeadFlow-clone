@@ -31,6 +31,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
     /// <summary>Мини-чат Avito не открывается в углу при узком viewport — расширяем перед сбором переписки.</summary>
     private const int MessengerEnrichmentViewportWidth = 1440;
     private const int MessengerEnrichmentViewportHeight = 900;
+    private const int MessengerEnrichmentViewportResizeDelayMs = 800;
 
     public async Task<string> ExtractCandidatesJsonAsync(
         AdsPowerConnectionOptions options,
@@ -1746,17 +1747,6 @@ public sealed partial class AdsPowerAvitoAutomationService(
          ex.Message.Contains("frame got detached", StringComparison.OrdinalIgnoreCase) ||
          ex.Message.Contains("Response body is unavailable for redirect responses", StringComparison.OrdinalIgnoreCase));
 
-    private static bool LooksLikeAvitoMessengerChannelUrl(string? url)
-    {
-        if (string.IsNullOrWhiteSpace(url))
-        {
-            return false;
-        }
-
-        return url.Contains("/profile/messenger/", StringComparison.OrdinalIgnoreCase)
-            || url.Contains("messenger/channel", StringComparison.OrdinalIgnoreCase);
-    }
-
     private Func<IReadOnlyCollection<string>, CancellationToken, Task<IReadOnlySet<string>>>? BuildResolveExistingPhonesCallback(
         CandidatesMessengerEnrichmentHints? enrichmentHints)
     {
@@ -1783,6 +1773,19 @@ public sealed partial class AdsPowerAvitoAutomationService(
     /// <summary>Номер уже полностью на карточке (не «узнать в чате»): после <see cref="IPhoneNormalizer.Normalize"/> — типичный РФ-мобильный.</summary>
     private static bool LooksLikeCompleteRussianMobile(string normalized) =>
         normalized.Length == 11 && normalized.StartsWith("7", StringComparison.Ordinal);
+
+    private static int ReadCandidateDomIndex(JsonObject item, int jsonIndex)
+    {
+        if (item.TryGetPropertyValue("domIndex", out var domIndexNode)
+            && domIndexNode is JsonValue domIndexValue
+            && domIndexValue.TryGetValue<int>(out var domIndex)
+            && domIndex >= 0)
+        {
+            return domIndex;
+        }
+
+        return jsonIndex;
+    }
 
     private async Task<string> TryEnrichCandidatesJsonMessengerUrlsAsync(
         IPage page,
@@ -1812,9 +1815,11 @@ public sealed partial class AdsPowerAvitoAutomationService(
         }
 
         HashSet<string>? existingNormalizedFromDb = null;
+        HashSet<string>? existingSourceIdsFromDb = null;
         if (enrichmentHints is not null)
         {
-            var toQuery = new List<string>();
+            var phonesToQuery = new List<string>();
+            var sourceIdsToQuery = new List<string>();
             foreach (var node in candidates)
             {
                 var o = node?.AsObject();
@@ -1827,24 +1832,40 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 var n = phoneNormalizer.Normalize(phoneRaw);
                 if (LooksLikeCompleteRussianMobile(n))
                 {
-                    toQuery.Add(n);
+                    phonesToQuery.Add(n);
+                }
+
+                var sourceResponseId = o["sourceResponseId"]?.GetValue<string>() ?? string.Empty;
+                if (!string.IsNullOrWhiteSpace(sourceResponseId))
+                {
+                    sourceIdsToQuery.Add(sourceResponseId.Trim());
                 }
             }
 
-            if (toQuery.Count > 0)
+            if (phonesToQuery.Count > 0)
             {
                 existingNormalizedFromDb = await duplicateRepository
                     .GetExistingNormalizedPhonesAsync(
-                        toQuery,
+                        phonesToQuery,
                         enrichmentHints.DuplicateScope,
                         enrichmentHints.AccountId,
                         cancellationToken,
                         enrichmentHints.AvitoSubProfileId)
                     .ConfigureAwait(false);
             }
+
+            if (sourceIdsToQuery.Count > 0)
+            {
+                existingSourceIdsFromDb = await duplicateRepository
+                    .GetExistingSourceResponseIdsAsync(
+                        enrichmentHints.AccountId,
+                        sourceIdsToQuery,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
         }
 
-        var viewportRestore = await EnsureMessengerEnrichmentViewportAsync(page, cancellationToken)
+        await EnsureMessengerEnrichmentViewportAsync(page, cancellationToken)
             .ConfigureAwait(false);
 
         _ = await EvaluateWithRetryAsync<string>(
@@ -1858,75 +1879,74 @@ public sealed partial class AdsPowerAvitoAutomationService(
             ? page.Url
             : CandidatesPageUrl;
 
-        try
+        const int maxEnrich = 80;
+        for (var i = 0; i < candidates.Count && i < maxEnrich; i++)
         {
-            const int maxEnrich = 80;
-            for (var i = 0; i < candidates.Count && i < maxEnrich; i++)
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var item = candidates[i]?.AsObject();
+            if (item is null)
             {
-                cancellationToken.ThrowIfCancellationRequested();
+                continue;
+            }
 
-                var item = candidates[i]?.AsObject();
-                if (item is null)
-                {
-                    continue;
-                }
-
-                var phoneRawForSkip = item["phone"]?.GetValue<string>() ?? string.Empty;
-                var normalizedForSkip = phoneNormalizer.Normalize(phoneRawForSkip);
-                var isKnownPhone = existingNormalizedFromDb is not null
-                    && LooksLikeCompleteRussianMobile(normalizedForSkip)
-                    && existingNormalizedFromDb.Contains(normalizedForSkip);
-                if (isKnownPhone)
-                {
-                    var hasUnread = await TryReadCandidateChatUnreadAsync(page, i, cancellationToken)
-                        .ConfigureAwait(false);
-                    if (!hasUnread)
-                    {
-                        continue;
-                    }
-                }
-
-                var enrichment = await TryEnrichMessengerForCandidateCardAsync(
-                        page,
-                        i,
-                        candidatesReturnUrl,
-                        cancellationToken)
+            var domIndex = ReadCandidateDomIndex(item, i);
+            var phoneRawForSkip = item["phone"]?.GetValue<string>() ?? string.Empty;
+            var normalizedForSkip = phoneNormalizer.Normalize(phoneRawForSkip);
+            var isKnownPhone = existingNormalizedFromDb is not null
+                && LooksLikeCompleteRussianMobile(normalizedForSkip)
+                && existingNormalizedFromDb.Contains(normalizedForSkip);
+            var sourceResponseIdForSkip = item["sourceResponseId"]?.GetValue<string>() ?? string.Empty;
+            var isKnownSourceId = existingSourceIdsFromDb is not null
+                && !string.IsNullOrWhiteSpace(sourceResponseIdForSkip)
+                && existingSourceIdsFromDb.Contains(sourceResponseIdForSkip.Trim());
+            if (isKnownPhone || isKnownSourceId)
+            {
+                var hasUnread = await TryReadCandidateChatUnreadAsync(page, domIndex, cancellationToken)
                     .ConfigureAwait(false);
-                if (string.IsNullOrWhiteSpace(enrichment.ChannelUrl) && enrichment.ChatMessages.Count == 0)
+                if (!hasUnread)
                 {
-                    _ = GlobalLogger.Instance.LogAsync(
-                        $"AdsPower messenger enrich: no chat data for candidate index {i}.",
-                        DeskLinkAuditLogLevel.Warning,
-                        memberName: nameof(TryEnrichCandidatesJsonMessengerUrlsAsync),
-                        properties: new Dictionary<string, object?>
-                        {
-                            ["candidate.index"] = i,
-                            ["page.url"] = page.Url,
-                            ["page.innerWidth"] = await TryReadInnerWidthAsync(page).ConfigureAwait(false)
-                        });
                     continue;
-                }
-
-                if (!string.IsNullOrWhiteSpace(enrichment.ChannelUrl))
-                {
-                    item["messengerUrl"] = enrichment.ChannelUrl;
-                }
-
-                if (enrichment.ChatMessages.Count > 0)
-                {
-                    item["chatMessages"] = enrichment.ChatMessages;
                 }
             }
 
-            await CloseMiniMessengerPanelIfOpenAsync(page, cancellationToken).ConfigureAwait(false);
-
-            return root.ToJsonString();
-        }
-        finally
-        {
-            await RestoreMessengerEnrichmentViewportAsync(page, viewportRestore, cancellationToken)
+            var enrichment = await TryEnrichMessengerForCandidateCardAsync(
+                    page,
+                    domIndex,
+                    candidatesReturnUrl,
+                    cancellationToken)
                 .ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(enrichment.ChannelUrl) && enrichment.ChatMessages.Count == 0)
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"AdsPower messenger enrich: no chat data for candidate index {domIndex}.",
+                    DeskLinkAuditLogLevel.Warning,
+                    memberName: nameof(TryEnrichCandidatesJsonMessengerUrlsAsync),
+                    properties: new Dictionary<string, object?>
+                    {
+                        ["candidate.index"] = i,
+                        ["candidate.domIndex"] = domIndex,
+                        ["page.url"] = page.Url,
+                        ["page.innerWidth"] = await TryReadInnerWidthAsync(page).ConfigureAwait(false),
+                        ["page.innerHeight"] = await TryReadInnerHeightAsync(page).ConfigureAwait(false)
+                    });
+                continue;
+            }
+
+            if (!string.IsNullOrWhiteSpace(enrichment.ChannelUrl))
+            {
+                item["messengerUrl"] = enrichment.ChannelUrl;
+            }
+
+            if (enrichment.ChatMessages.Count > 0)
+            {
+                item["chatMessages"] = enrichment.ChatMessages;
+            }
         }
+
+        await CloseMiniMessengerPanelIfOpenAsync(page, cancellationToken).ConfigureAwait(false);
+
+        return root.ToJsonString();
     }
 
     private static async Task CloseMiniMessengerPanelIfOpenAsync(IPage page, CancellationToken cancellationToken)
@@ -2100,12 +2120,10 @@ public sealed partial class AdsPowerAvitoAutomationService(
         return new MessengerCardEnrichmentResult(channelUrl, chatMessages);
     }
 
-    private sealed record ViewportSnapshot(int Width, int Height);
-
     /// <summary>
-    /// На узком окне Avito открывает чат на отдельной странице вместо мини-панели — расширяем viewport перед enrichment.
+    /// На узком окне AdsPower мини-чат не рендерится — один раз расширяем окно и viewport перед enrichment.
     /// </summary>
-    private static async Task<ViewportSnapshot?> EnsureMessengerEnrichmentViewportAsync(
+    private static async Task EnsureMessengerEnrichmentViewportAsync(
         IPage page,
         CancellationToken cancellationToken)
     {
@@ -2113,12 +2131,14 @@ public sealed partial class AdsPowerAvitoAutomationService(
         var height = await TryReadInnerHeightAsync(page).ConfigureAwait(false);
         if (width >= MessengerEnrichmentViewportWidth && height >= MessengerEnrichmentViewportHeight)
         {
-            return null;
+            return;
         }
 
-        var snapshot = new ViewportSnapshot(
-            width > 0 ? width : MessengerEnrichmentViewportWidth,
-            height > 0 ? height : MessengerEnrichmentViewportHeight);
+        await TryResizeBrowserWindowAsync(
+                page,
+                MessengerEnrichmentViewportWidth,
+                MessengerEnrichmentViewportHeight)
+            .ConfigureAwait(false);
 
         await page.SetViewportAsync(new ViewPortOptions
         {
@@ -2134,32 +2154,33 @@ public sealed partial class AdsPowerAvitoAutomationService(
             // Не прерываем enrichment — layout может обновиться и без явного resize.
         }
 
-        await Task.Delay(450, cancellationToken).ConfigureAwait(false);
-        return snapshot;
+        await Task.Delay(MessengerEnrichmentViewportResizeDelayMs, cancellationToken).ConfigureAwait(false);
     }
 
-    private static async Task RestoreMessengerEnrichmentViewportAsync(
-        IPage page,
-        ViewportSnapshot? snapshot,
-        CancellationToken cancellationToken)
+    private static async Task TryResizeBrowserWindowAsync(IPage page, int width, int height)
     {
-        if (snapshot is null)
-        {
-            return;
-        }
-
         try
         {
-            await page.SetViewportAsync(new ViewPortOptions
+            var windowIdRaw = await page.WindowIdAsync().ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(windowIdRaw) || !int.TryParse(windowIdRaw, out var windowId))
             {
-                Width = snapshot.Width,
-                Height = snapshot.Height
+                return;
+            }
+
+            await page.Client.SendAsync("Browser.setWindowBounds", new
+            {
+                windowId,
+                bounds = new
+                {
+                    width,
+                    height,
+                    windowState = "normal"
+                }
             }).ConfigureAwait(false);
-            await Task.Delay(200, cancellationToken).ConfigureAwait(false);
         }
         catch
         {
-            // Не прерываем выдачу списка кандидатов.
+            // CDP resize is best-effort; SetViewportAsync still applies below.
         }
     }
 

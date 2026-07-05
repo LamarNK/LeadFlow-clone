@@ -52,9 +52,28 @@ public sealed class AccountDashboardStatusClassifierTests
         var breakdown = AccountDashboardStatusClassifier.Summarize(accounts);
 
         Assert.Equal(6, breakdown.Total);
-        Assert.Equal(2, breakdown.Active);
+        Assert.Equal(4, breakdown.Active);
         Assert.Equal(2, breakdown.Inactive);
         Assert.Equal(0, breakdown.Blocked);
         Assert.Equal(2, breakdown.Errors);
+    }
+
+    [Theory]
+    [InlineData("Active", true, true)]
+    [InlineData("Monitoring", true, true)]
+    [InlineData("Error", true, true)]
+    [InlineData("RequiresLogin", true, true)]
+    [InlineData("RequiresManualAction", true, true)]
+    [InlineData("Paused", true, false)]
+    [InlineData("Inactive", true, false)]
+    [InlineData("Blocked", true, false)]
+    [InlineData("Active", false, false)]
+    [InlineData("Error", false, false)]
+    public void IsActiveInPanel_MatchesAccountsPageActiveTab(
+        string status,
+        bool isEnabledInPanel,
+        bool expected)
+    {
+        Assert.Equal(expected, AccountDashboardStatusClassifier.IsActiveInPanel(status, isEnabledInPanel));
     }
 }

@@ -29,10 +29,4 @@
         }
         <partial name="_SubProfilesRefreshBtn" model="(Model.WorkerId, Model.AccountId, Model.CanRefreshSubProfiles, Model.IsSubProfilesRefreshPending)" />
     </div>
-    @if (Model.HasSubProfiles)
-    {
-        <div class="subprofiles-panel" id="@panelId" hidden>
-            <partial name="_SubProfilesList" model="@(new SubProfilesListViewModel { WorkerId = Model.WorkerId, AccountId = Model.AccountId, ProcessingSubProfileId = Model.ProcessingSubProfileId, Items = Model.Items })" />
-        </div>
-    }
 </div>

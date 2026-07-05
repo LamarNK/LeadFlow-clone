@@ -99,7 +99,13 @@ internal static class WorkerDetailsBuilder
         var (label, tone) = AccountStatusMapper.ForWorkerDetails(account.Status, account.IsEnabledInPanel);
         var responses = account.TodayResponses;
         var errors = account.TodayEventErrors;
-        var subProfiles = SubProfileViewModelMapper.Map(account.SubProfiles, balance?.SubProfiles);
+        var subProfiles = SubProfileViewModelMapper.Map(
+            account.SubProfiles,
+            balance?.SubProfiles,
+            account.AccountId,
+            workerIsOnline,
+            null,
+            activeAccounts);
         var processing = WorkerActivityPresenter.PresentForAccount(
             null,
             workerIsOnline,

@@ -1873,6 +1873,16 @@ html[data-theme="dark"] .orbita-office-switcher-select:focus {
     font-variant-numeric: tabular-nums;
 }
 
+.account-stats-link {
+    color: inherit;
+    text-decoration: none;
+}
+
+.account-stats-link:hover {
+    color: #2563eb;
+    text-decoration: underline;
+}
+
 [data-theme="dark"] .account-stats-label,
 [data-theme="dark"] .account-stats-value {
     color: var(--text-primary);
@@ -2937,6 +2947,57 @@ html[data-theme="dark"] .orbita-office-switcher-select:focus {
     border-left: 1px solid #eaecf0;
 }
 
+.subprofiles-data-row--collapsed {
+    display: none !important;
+}
+
+.subprofiles-data-row > td {
+    background: #f9fafb;
+    font-size: 12px;
+    vertical-align: top;
+}
+
+.subprofiles-data-row--disabled .subprofiles-name {
+    color: #98a2b3;
+    text-decoration: line-through;
+}
+
+.subprofiles-data-row--disabled .subprofiles-balance {
+    color: #98a2b3;
+}
+
+.subprofiles-data-row--processing .subprofiles-name {
+    font-weight: 600;
+}
+
+.subprofiles-data-name .subprofiles-data-indent {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 5px;
+    min-width: 0;
+    line-height: 1.4;
+    padding-left: 18px;
+    border-left: 2px solid #eaecf0;
+}
+
+.subprofiles-data-row--processing .subprofiles-data-name .subprofiles-data-indent {
+    border-left-color: #84caff;
+}
+
+.subprofiles-data-empty {
+    color: transparent;
+    user-select: none;
+}
+
+.data-table--accounts-list.data-table--cards .subprofiles-data-row::before,
+.data-table--accounts.data-table--cards .subprofiles-data-row::before,
+.data-table--accounts-list.data-table--cards .subprofiles-data-row::after,
+.data-table--accounts.data-table--cards .subprofiles-data-row::after {
+    display: none !important;
+    content: none !important;
+}
+
 .subprofiles-list {
     list-style: none;
     margin: 0;
@@ -3599,6 +3660,14 @@ html[data-theme="dark"] .orbita-office-switcher-select:focus {
 }
 
 [data-theme="dark"] .subprofiles-panel {
+    border-left-color: var(--border);
+}
+
+[data-theme="dark"] .subprofiles-data-row > td {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+[data-theme="dark"] .subprofiles-data-name .subprofiles-data-indent {
     border-left-color: var(--border);
 }
 
@@ -9219,6 +9288,24 @@ body.orbita-search-open {
         display: flex;
         align-items: center;
         justify-content: center;
+    }
+
+    .data-table--accounts-list.data-table--cards .subprofiles-data-row:not(.subprofiles-data-row--collapsed),
+    .data-table--accounts.data-table--cards .subprofiles-data-row:not(.subprofiles-data-row--collapsed) {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-start;
+    }
+
+    .data-table--accounts-list.data-table--cards .subprofiles-data-row .subprofiles-data-name,
+    .data-table--accounts.data-table--cards .subprofiles-data-row .subprofiles-data-name {
+        order: 1;
+        flex: 1 1 calc(100% - 52px);
+    }
+
+    .data-table--accounts-list.data-table--cards .subprofiles-data-row .cell-toggle,
+    .data-table--accounts.data-table--cards .subprofiles-data-row .cell-toggle {
+        order: 2;
     }
 
     .data-table--accounts-list td[data-label="Статус"],

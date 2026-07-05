@@ -8,7 +8,7 @@ public static class SmsMessageFormatter
     public static string Format3ds(SmsInfo smsInfo, DateTimeOffset? receivedAtUtc = null)
     {
         var time = receivedAtUtc is { } at
-            ? $"[{at.ToLocalTime():dd.MM.yyyy HH:mm:ss}]\n"
+            ? $"[{NotifyBotTime.FormatMoscow(at)}]\n"
             : string.Empty;
 
         return
@@ -20,7 +20,9 @@ public static class SmsMessageFormatter
 
     public static string FormatSmsBlock(PlusofonSmsMessage message)
     {
-        var when = message.ReceivedAtUtc?.ToLocalTime().ToString("dd.MM.yyyy HH:mm:ss") ?? "?";
+        var when = message.ReceivedAtUtc is { } at
+            ? NotifyBotTime.FormatMoscow(at)
+            : "?";
         var direction = message.Incoming ? "вх" : "исх";
         return
             $"[{when}] {direction}\n" +

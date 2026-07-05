@@ -43,6 +43,9 @@ public static class WorkerEventDetailsParser
     public static string? TryParseDiagnosticSubProfileName(string? details) =>
         TryParseStringProperty(details, "subProfileName");
 
+    public static string? TryParseDiagnosticSubProfileId(string? details) =>
+        TryParseStringProperty(details, "subProfileId");
+
     public static string FormatForDisplay(string message, string? details)
     {
         message = AdsPowerErrorMessageNormalizer.NormalizeForDisplay(message);

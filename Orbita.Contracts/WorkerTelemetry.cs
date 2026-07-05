@@ -75,7 +75,11 @@ public sealed record WorkerSubProfileDto(
     string? AdvanceDurationText = null,
     decimal? Rating = null,
     int? ReviewsCount = null,
-    string? ReviewsText = null);
+    string? ReviewsText = null,
+    int TodayResponses = 0,
+    int TodayDuplicates = 0,
+    int TodayEventErrors = 0,
+    DateTime? LastActivityUtc = null);
 
 public sealed record WorkerAccountDto(
     Guid AccountId,

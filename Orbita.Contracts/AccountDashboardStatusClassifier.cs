@@ -10,6 +10,27 @@ public enum AccountDashboardCategory
 
 public static class AccountDashboardStatusClassifier
 {
+    /// <summary>
+    /// Вкладка «Активные» на странице аккаунтов: включён в панели и не отключён по статусу.
+    /// Аккаунт с ошибкой остаётся активным, если он включён.
+    /// </summary>
+    public static bool IsActiveInPanel(string? status, bool isEnabledInPanel)
+    {
+        if (!isEnabledInPanel)
+            return false;
+
+        status ??= string.Empty;
+
+        if (status.Equals("Blocked", StringComparison.OrdinalIgnoreCase)
+            || status.Equals("Paused", StringComparison.OrdinalIgnoreCase)
+            || status.Equals("Offline", StringComparison.OrdinalIgnoreCase)
+            || status.Equals("Inactive", StringComparison.OrdinalIgnoreCase)
+            || string.IsNullOrWhiteSpace(status))
+            return false;
+
+        return true;
+    }
+
     public static AccountDashboardCategory Classify(string? status, bool isEnabledInPanel)
     {
         status ??= string.Empty;
@@ -48,11 +69,11 @@ public static class AccountDashboardStatusClassifier
         foreach (var (status, isEnabledInPanel) in accounts)
         {
             total++;
+            if (IsActiveInPanel(status, isEnabledInPanel))
+                active++;
+
             switch (Classify(status, isEnabledInPanel))
             {
-                case AccountDashboardCategory.Active:
-                    active++;
-                    break;
                 case AccountDashboardCategory.Inactive:
                     inactive++;
                     break;

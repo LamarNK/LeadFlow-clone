@@ -233,9 +233,186 @@
         return badges ? '<span class="subprofiles-status-badges">' + badges + '</span>' : '';
     }
 
+    function getSubprofilePanelRows(panelId) {
+        if (!panelId) return [];
+        return Array.prototype.slice.call(document.querySelectorAll('[data-subprofiles-panel="' + panelId + '"]'));
+    }
+
+    function setSubprofilePanelExpanded(panelId, expanded) {
+        getSubprofilePanelRows(panelId).forEach(function (row) {
+            row.classList.toggle('subprofiles-data-row--collapsed', !expanded);
+        });
+    }
+
+    function normalizeSubProfile(sub) {
+        if (!sub) return {};
+        var id = sub.id || sub.Id || '';
+        var name = sub.name || sub.Name || '';
+        if (!name) name = id;
+        if (!id && name) id = name;
+        return {
+            id: id,
+            name: name,
+            category: sub.category || sub.Category || '',
+            isCurrent: !!(sub.isCurrent || sub.IsCurrent),
+            isEnabledInPanel: sub.isEnabledInPanel !== false && sub.IsEnabledInPanel !== false,
+            statusLabel: sub.statusLabel || sub.StatusLabel || '',
+            statusTone: sub.statusTone || sub.StatusTone || 'success',
+            balanceText: sub.balanceText || sub.BalanceText || '—',
+            ratingText: sub.ratingText || sub.RatingText || '',
+            responses: sub.responses || sub.Responses || 0,
+            uniqueResponses: sub.uniqueResponses || sub.UniqueResponses || 0,
+            errors: sub.errors || sub.Errors || 0,
+            lastActivityUtc: sub.lastActivityUtc || sub.LastActivityUtc || null,
+            isProcessingNow: !!(sub.isProcessingNow || sub.IsProcessingNow),
+            processingLabel: sub.processingLabel || sub.ProcessingLabel || '',
+            processingTone: sub.processingTone || sub.ProcessingTone || 'live',
+            hasIssue: !!(sub.hasIssue || sub.HasIssue),
+            issueSummary: sub.issueSummary || sub.IssueSummary || '',
+            diagnosticAttachmentId: sub.diagnosticAttachmentId || sub.DiagnosticAttachmentId || null
+        };
+    }
+
+    function accountSubProfilesRenderable(account) {
+        var items = (account && account.subProfiles) || [];
+        if (!items.length) return false;
+        return items.some(function (sub) {
+            var normalized = normalizeSubProfile(sub);
+            return !!(normalized.id || normalized.name);
+        });
+    }
+
+    function renderSubProfileRowCells(rawSub, workerId, accountId, layout, showOfficeColumn) {
+        var sub = normalizeSubProfile(rawSub);
+        var category = sub.category
+            ? '<span class="subprofiles-tag">' + escapeHtml(sub.category) + '</span>'
+            : '';
+        var rating = sub.ratingText
+            ? '<span class="subprofiles-rating">' + escapeHtml(sub.ratingText) + '</span>'
+            : '';
+        var alert = '';
+        if (sub.hasIssue && sub.issueSummary) {
+            var screenshot = sub.diagnosticAttachmentId
+                ? '<button type="button" class="subprofiles-screenshot-btn" data-subprofile-screenshot data-screenshot-url="/Diagnostics/Image/' + escapeHtml(sub.diagnosticAttachmentId) + '" title="Посмотреть скриншот страницы при ошибке">скрин</button>'
+                : '';
+            alert = '<div class="subprofiles-item-alert">' +
+                '<span class="subprofiles-issue" title="' + escapeHtml(sub.issueSummary) + '">' + escapeHtml(sub.issueSummary) + '</span>' +
+                screenshot +
+                '</div>';
+        }
+        var statusHtml = '<span class="account-status account-status--' + escapeHtml(sub.statusTone || 'success') + '">' +
+            '<i class="fa-solid fa-circle account-status-dot" aria-hidden="true"></i>' +
+            escapeHtml(sub.statusLabel || '') + '</span>';
+        var processingHtml = sub.processingLabel
+            ? renderActivityPill(sub.processingLabel, sub.processingTone, sub.isProcessingNow)
+            : '<span class="worker-activity-pill worker-activity-pill--muted">—</span>';
+        var activityHtml = sub.lastActivityUtc
+            ? '<time data-orbita-utc="' + escapeHtml(sub.lastActivityUtc) + '" data-orbita-format="activity"></time>'
+            : '—';
+        var tail = layout === 'accounts'
+            ? '<td class="cell-num" data-label="Уникальных">' + (sub.uniqueResponses || 0) + '</td>' +
+            '<td class="cell-num" data-label="Ошибок">' + (sub.errors || 0) + '</td>' +
+            '<td data-label="Последняя активность">' + activityHtml + '</td>' +
+            '<td class="data-table-menu subprofiles-data-empty" data-label=""></td>'
+            : '<td data-label="Последняя активность">' + activityHtml + '</td>' +
+            '<td class="cell-num" data-label="Ошибок">' + (sub.errors || 0) + '</td>' +
+            '<td class="data-table-menu subprofiles-data-empty" data-label=""></td>';
+        var extraCols = layout === 'accounts'
+            ? '<td class="cell-worker subprofiles-data-empty" data-label="Воркер"></td>' +
+            (showOfficeColumn ? '<td class="subprofiles-data-empty" data-label="Офис"></td>' : '')
+            : '';
+        return '<td class="cell-toggle" data-label="Вкл">' +
+            '<label class="subprofiles-toggle-sm" title="' + (sub.isEnabledInPanel ? 'Отключить субпрофиль' : 'Включить субпрофиль') + '">' +
+            '<input type="checkbox" data-subprofile-toggle data-worker-id="' + escapeHtml(workerId) + '" data-account-id="' + escapeHtml(accountId) + '" data-subprofile-id="' + escapeHtml(sub.id) + '"' + (sub.isEnabledInPanel ? ' checked' : '') + ' />' +
+            '<span class="subprofiles-toggle-sm-slider"></span></label></td>' +
+            '<td class="cell-name subprofiles-data-name" data-label="Аккаунт">' +
+            '<div class="subprofiles-data-indent"><span class="subprofiles-name">' + escapeHtml(sub.name) + '</span>' + category + rating + '</div>' +
+            alert + '</td>' +
+            extraCols +
+            '<td data-label="Статус">' + statusHtml + '</td>' +
+            '<td data-label="Сейчас">' + processingHtml + '</td>' +
+            '<td class="cell-num cell-balance" data-label="Баланс"><span class="subprofiles-balance">' + escapeHtml(sub.balanceText || '—') + '</span></td>' +
+            '<td class="cell-num" data-label="Откликов">' + (sub.responses || 0) + '</td>' +
+            tail;
+    }
+
+    function renderSubProfileTableRows(workerId, account, panelId, layout, activeSubProfileId, showOfficeColumn, startExpanded) {
+        var items = (account && account.subProfiles) || [];
+        if (!items.length) return '';
+        return items.map(function (rawSub) {
+            var sub = normalizeSubProfile(rawSub);
+            var isProcessing = !!sub.isProcessingNow || !!(activeSubProfileId && sub.id === activeSubProfileId);
+            var classes = 'subprofiles-data-row';
+            if (sub.isCurrent) classes += ' subprofiles-data-row--current';
+            if (isProcessing) classes += ' subprofiles-data-row--processing';
+            if (sub.hasIssue) classes += ' subprofiles-data-row--issue';
+            if (!sub.isEnabledInPanel) classes += ' subprofiles-data-row--disabled';
+            if (!startExpanded) classes += ' subprofiles-data-row--collapsed';
+            return '<tr class="' + classes + '" data-subprofiles-panel="' + escapeHtml(panelId) + '" data-subprofile-id="' + escapeHtml(sub.id) + '">' +
+                renderSubProfileRowCells(rawSub, workerId, account.id, layout, showOfficeColumn) +
+                '</tr>';
+        }).join('');
+    }
+
+    function removeSubProfileTableRows(panelId) {
+        getSubprofilePanelRows(panelId).forEach(function (row) {
+            row.remove();
+        });
+    }
+
+    function toggleSubprofiles(btn) {
+        if (!btn) return;
+        var panelId = btn.getAttribute('aria-controls');
+        if (!panelId) return;
+
+        var expanded = btn.getAttribute('aria-expanded') === 'true';
+        var willExpand = !expanded;
+        btn.setAttribute('aria-expanded', willExpand ? 'true' : 'false');
+        var icon = btn.querySelector('.subprofiles-toggle-icon');
+        if (icon) icon.classList.toggle('subprofiles-toggle-icon--open', willExpand);
+
+        var rows = getSubprofilePanelRows(panelId);
+        if (rows.length) {
+            setSubprofilePanelExpanded(panelId, willExpand);
+            return;
+        }
+
+        if (willExpand) {
+            var accountRow = btn.closest('tr');
+            if (!accountRow) return;
+            var layout = accountRow.getAttribute('data-subprofiles-layout') || 'accounts';
+            var showOffice = accountRow.getAttribute('data-subprofiles-show-office') === 'true';
+            var accountId = accountRow.getAttribute('data-account-id');
+            var activeSubId = accountRow.getAttribute('data-processing-subprofile-id') || null;
+            var workerToggle = accountRow.querySelector('[data-account-enable-toggle]');
+            var workerId = workerToggle ? workerToggle.getAttribute('data-worker-id') : '';
+            var raw = accountRow.getAttribute('data-subprofiles-json');
+            var items = [];
+            if (raw) {
+                try { items = JSON.parse(raw); } catch (e) { items = []; }
+            }
+            if (!items.length) return;
+            var fakeAccount = { id: accountId, subProfiles: items };
+            var html = renderSubProfileTableRows(workerId, fakeAccount, panelId, layout, activeSubId, showOffice, true);
+            if (!html) return;
+            var temp = document.createElement('tbody');
+            temp.innerHTML = html;
+            var insertAfter = accountRow;
+            while (temp.firstChild) {
+                insertAfter.insertAdjacentElement('afterend', temp.firstChild);
+                insertAfter = insertAfter.nextElementSibling;
+            }
+            if (window.OrbitaTime) {
+                window.OrbitaTime.localizeAll(accountRow.parentElement);
+            }
+            reinitLiveContent();
+        }
+    }
+
     function renderSubProfilesList(workerId, accountId, items, activeSubProfileId) {
         if (!items || !items.length) return '';
-        return '<ul class="subprofiles-list">' + items.map(function (sub) {
+        return '<ul class="subprofiles-list">' + items.map(function (rawSub) {
+            var sub = normalizeSubProfile(rawSub);
             var isProcessing = !!(activeSubProfileId && sub.id === activeSubProfileId);
             var classes = 'subprofiles-item';
             if (sub.isCurrent) classes += ' subprofiles-item--current';
@@ -294,19 +471,16 @@
         var panel = '';
         if (account.hasSubProfiles) {
             var items = account.subProfiles || [];
-            var hasIssues = items.some(function (sub) { return sub.hasIssue; });
+            var hasIssues = items.some(function (sub) { return sub.hasIssue || sub.HasIssue; });
             var summaryClass = hasIssues ? ' subprofiles-summary--issue' : '';
             toggle = '<button type="button" class="subprofiles-toggle" data-subprofiles-toggle aria-expanded="false" aria-controls="' + escapeHtml(panelId) + '" title="' + escapeHtml(account.subProfilesSummary || '') + '">' +
                 '<i class="fa-solid fa-chevron-right subprofiles-toggle-icon" aria-hidden="true"></i>' +
                 '<span class="subprofiles-summary' + summaryClass + '">' + escapeHtml(account.subProfilesSummary || '') + '</span>' +
                 '</button>';
-            panel = '<div class="subprofiles-panel" id="' + escapeHtml(panelId) + '" hidden>' +
-                renderSubProfilesList(workerId, account.id, items, account.isProcessingNow ? account.processingSubProfileId : null) +
-                '</div>';
         } else if (account.canRefreshSubProfiles) {
             toggle = '<span class="subprofiles-empty-hint">Субпрофили не обнаружены</span>';
         }
-        return '<div class="subprofiles-section"><div class="subprofiles-toolbar">' + toggle + refreshBtn + '</div>' + panel + '</div>';
+        return '<div class="subprofiles-section"><div class="subprofiles-toolbar">' + toggle + refreshBtn + '</div></div>';
     }
 
     function reinitLiveContent() {
@@ -329,13 +503,11 @@
         if (!container || !expandedPanels) return;
         Object.keys(expandedPanels).forEach(function (panelId) {
             var btn = container.querySelector('[aria-controls="' + panelId + '"]');
-            var panel = document.getElementById(panelId);
-            if (btn && panel) {
-                btn.setAttribute('aria-expanded', 'true');
-                panel.removeAttribute('hidden');
-                var icon = btn.querySelector('.subprofiles-toggle-icon');
-                if (icon) icon.classList.add('subprofiles-toggle-icon--open');
-            }
+            if (!btn) return;
+            btn.setAttribute('aria-expanded', 'true');
+            var icon = btn.querySelector('.subprofiles-toggle-icon');
+            if (icon) icon.classList.add('subprofiles-toggle-icon--open');
+            setSubprofilePanelExpanded(panelId, true);
         });
     }
 
@@ -361,7 +533,13 @@
         renderAccountBalance: renderAccountBalance,
         updatePaginationInfo: updatePaginationInfo,
         renderActivityPill: renderActivityPill,
+        normalizeSubProfile: normalizeSubProfile,
+        accountSubProfilesRenderable: accountSubProfilesRenderable,
         renderSubProfilesList: renderSubProfilesList,
+        renderSubProfileTableRows: renderSubProfileTableRows,
+        removeSubProfileTableRows: removeSubProfileTableRows,
+        toggleSubprofiles: toggleSubprofiles,
+        setSubprofilePanelExpanded: setSubprofilePanelExpanded,
         renderSubProfilesToolbar: renderSubProfilesToolbar,
         renderAccountEnableToggle: renderAccountEnableToggle,
         captureExpandedSubprofilePanels: captureExpandedSubprofilePanels,

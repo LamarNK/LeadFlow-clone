@@ -385,8 +385,9 @@ public sealed class OfficeStatisticsQueryService(
                 g => g.Key,
                 g => (
                     Total: g.Count(),
-                    Active: g.Count(a => AccountDashboardStatusClassifier.Classify(a.Status, a.IsEnabledInPanel)
-                        == AccountDashboardCategory.Active)));
+                    Active: g.Count(a => AccountDashboardStatusClassifier.IsActiveInPanel(
+                        a.Status,
+                        a.IsEnabledInPanel))));
 
         var responseStats = await db.CandidateResponses
             .AsNoTracking()
@@ -490,7 +491,7 @@ public sealed class OfficeStatisticsQueryService(
 
         try
         {
-            var profiles = JsonSerializer.Deserialize<List<WorkerSubProfileDto>>(json, JsonOptions) ?? [];
+            var profiles = JsonSerializer.Deserialize<List<WorkerSubProfileDto>>(json, SubProfileJsonOptions.Deserialize) ?? [];
             return profiles
                 .Select(p => new SubProfileBalanceDto(
                     p.Name,

@@ -19,6 +19,15 @@ public sealed class PlusofonOptions
     /// <summary>Максимальный возраст 3DS-SMS для /sms (минуты).</summary>
     public int SmsMaxAgeMinutes { get; set; } = 15;
 
+    /// <summary>Сколько минут ждать SMS после /sms, если кода ещё нет.</summary>
+    public int SmsWatchDurationMinutes { get; set; } = 5;
+
+    /// <summary>Интервал опроса Plusofon, пока есть активные мониторинги (секунды).</summary>
+    public int SmsWatchPollIntervalSeconds { get; set; } = 5;
+
+    /// <summary>Пауза фонового цикла, когда мониторингов нет (секунды).</summary>
+    public int SmsWatchIdleIntervalSeconds { get; set; } = 15;
+
     public string Secret { get; set; } = string.Empty;
 
     public bool WebhookValidation { get; set; } = true;

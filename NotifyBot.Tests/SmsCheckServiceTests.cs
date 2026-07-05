@@ -33,11 +33,12 @@ public sealed class SmsCheckServiceTests
             ]);
 
         var service = CreateService(plusofon.Object, cards.Object);
-        var reply = await service.CheckAsync(-100333);
+        var result = await service.CheckAsync(-100333);
 
-        Assert.Contains("645755", reply);
-        Assert.Contains("*1062", reply);
-        Assert.Matches(@"\[\d{2}\.\d{2}\.\d{4} \d{2}:\d{2}:\d{2}\]", reply);
+        Assert.False(result.ShouldStartWatch);
+        Assert.Contains("645755", result.Reply);
+        Assert.Contains("*1062", result.Reply);
+        Assert.Matches(@"\[\d{2}\.\d{2}\.\d{4} \d{2}:\d{2}:\d{2}\]", result.Reply);
     }
 
     [Fact]
@@ -54,9 +55,10 @@ public sealed class SmsCheckServiceTests
             .ReturnsAsync([]);
 
         var service = CreateService(plusofon.Object, cards.Object);
-        var reply = await service.CheckAsync(-100333);
+        var result = await service.CheckAsync(-100333);
 
-        Assert.Contains("645755", reply);
+        Assert.False(result.ShouldStartWatch);
+        Assert.Contains("645755", result.Reply);
     }
 
     [Fact]
@@ -77,10 +79,11 @@ public sealed class SmsCheckServiceTests
             ]);
 
         var service = CreateService(plusofon.Object, cards.Object);
-        var reply = await service.CheckAsync(-100333);
+        var result = await service.CheckAsync(-100333);
 
-        Assert.Contains("15 мин", reply);
-        Assert.DoesNotContain("3DS код:", reply);
+        Assert.True(result.ShouldStartWatch);
+        Assert.Contains("15 мин", result.Reply);
+        Assert.DoesNotContain("3DS код:", result.Reply);
     }
 
     [Fact]
@@ -106,11 +109,12 @@ public sealed class SmsCheckServiceTests
             ]);
 
         var service = CreateService(plusofon.Object, cards.Object);
-        var reply = await service.CheckAsync(-100333);
+        var result = await service.CheckAsync(-100333);
 
-        Assert.Contains("645755", reply);
-        Assert.Contains("*1062", reply);
-        Assert.DoesNotContain("111111", reply);
+        Assert.False(result.ShouldStartWatch);
+        Assert.Contains("645755", result.Reply);
+        Assert.Contains("*1062", result.Reply);
+        Assert.DoesNotContain("111111", result.Reply);
     }
 
     [Fact]
@@ -129,10 +133,11 @@ public sealed class SmsCheckServiceTests
             ]);
 
         var service = CreateService(plusofon.Object, cards.Object);
-        var reply = await service.CheckAsync(-100333);
+        var result = await service.CheckAsync(-100333);
 
-        Assert.Contains("*3098", reply);
-        Assert.Contains("Нет SMS", reply);
+        Assert.True(result.ShouldStartWatch);
+        Assert.Contains("*3098", result.Reply);
+        Assert.Contains("Нет SMS", result.Reply);
     }
 
     [Fact]
@@ -163,9 +168,10 @@ public sealed class SmsCheckServiceTests
             new Mock<ICardRepository>().Object,
             apiToken: "");
 
-        var reply = await service.CheckAsync(-100333);
+        var result = await service.CheckAsync(-100333);
 
-        Assert.Contains("не настроен", reply, StringComparison.OrdinalIgnoreCase);
+        Assert.False(result.ShouldStartWatch);
+        Assert.Contains("не настроен", result.Reply, StringComparison.OrdinalIgnoreCase);
     }
 
     private static SmsCheckService CreateService(

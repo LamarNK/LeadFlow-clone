@@ -1,5 +1,6 @@
 using Orbita.Contracts;
 using Orbita.Web.Formatting;
+using Orbita.Web.Services;
 
 namespace Orbita.Web.Models.ViewModels;
 
@@ -10,11 +11,37 @@ public sealed class SubProfileRowViewModel
     public string Category { get; init; } = string.Empty;
     public bool IsCurrent { get; init; }
     public bool IsEnabledInPanel { get; init; } = true;
+    public string StatusLabel { get; init; } = string.Empty;
+    public string StatusTone { get; init; } = "success";
     public string BalanceText { get; init; } = "—";
     public string? RatingText { get; init; }
+    public int Responses { get; init; }
+    public int UniqueResponses { get; init; }
+    public int Errors { get; init; }
+    public DateTime? LastActivityUtc { get; init; }
+    public bool IsProcessingNow { get; init; }
+    public string? ProcessingLabel { get; init; }
+    public string ProcessingTone { get; init; } = "live";
     public bool HasIssue { get; init; }
     public string? IssueSummary { get; init; }
     public Guid? DiagnosticAttachmentId { get; init; }
+}
+
+public enum SubProfileTableLayout
+{
+    Accounts,
+    WorkerDetails
+}
+
+public sealed class SubProfileTableRowsViewModel
+{
+    public Guid WorkerId { get; init; }
+    public Guid AccountId { get; init; }
+    public string PanelId { get; init; } = string.Empty;
+    public string? ProcessingSubProfileId { get; init; }
+    public SubProfileTableLayout Layout { get; init; }
+    public bool ShowOfficeColumn { get; init; }
+    public IReadOnlyList<SubProfileRowViewModel> Items { get; init; } = [];
 }
 
 public sealed class SubProfilesListViewModel
@@ -44,52 +71,80 @@ public static class SubProfileViewModelMapper
         DateTime? refreshedAtUtc) =>
         requestedAtUtc is not null
         && (refreshedAtUtc is null || requestedAtUtc > refreshedAtUtc);
+
     public static IReadOnlyList<SubProfileRowViewModel> Map(
-        IReadOnlyList<Orbita.Contracts.WorkerSubProfileDto>? subProfiles,
-        IReadOnlyList<Orbita.Contracts.SubProfileBalanceDto>? balanceItems = null)
+        IReadOnlyList<WorkerSubProfileDto>? subProfiles,
+        IReadOnlyList<SubProfileBalanceDto>? balanceItems = null,
+        Guid? accountId = null,
+        bool workerIsOnline = false,
+        WorkerActivityDto? workerActivity = null,
+        IReadOnlyList<WorkerActiveAccountDto>? activeAccounts = null)
     {
         if (subProfiles is null || subProfiles.Count == 0)
         {
             return [];
         }
 
-        var balanceByName = balanceItems is null || balanceItems.Count == 0
-            ? null
-            : balanceItems
-                .Where(b => !string.IsNullOrWhiteSpace(b.SubProfileName))
-                .ToDictionary(
-                    b => b.SubProfileName.Trim(),
-                    b => b,
-                    StringComparer.OrdinalIgnoreCase);
-
         return subProfiles
-            .Select(sp =>
+            .Select((sp, index) =>
             {
-                var name = string.IsNullOrWhiteSpace(sp.Name) ? sp.Id : sp.Name;
-                SubProfileBalanceDto? balanceItem = null;
-                if (balanceByName is not null)
+                var id = sp.Id?.Trim() ?? string.Empty;
+                var name = string.IsNullOrWhiteSpace(sp.Name) ? id : sp.Name.Trim();
+                var balanceItem = ResolveBalanceItem(balanceItems, index, name);
+
+                if (string.IsNullOrWhiteSpace(name)
+                    && !string.IsNullOrWhiteSpace(balanceItem?.SubProfileName))
                 {
-                    balanceByName.TryGetValue(name, out balanceItem);
+                    name = balanceItem.SubProfileName.Trim();
+                }
+
+                if (string.IsNullOrWhiteSpace(id) && !string.IsNullOrWhiteSpace(name))
+                {
+                    id = name;
                 }
 
                 var advance = ResolveBalance(sp.Balance, balanceItem?.Balance);
                 var wallet = ResolveBalance(sp.WalletBalance, balanceItem?.WalletBalance);
                 var duration = ResolveDuration(sp.AdvanceDurationText, balanceItem?.AdvanceDurationText);
+                var hasIssue = !string.IsNullOrWhiteSpace(sp.LastIssueKind);
+                var responses = sp.TodayResponses;
+                var uniqueResponses = Math.Max(0, responses - sp.TodayDuplicates);
+                var errors = sp.TodayEventErrors > 0
+                    ? sp.TodayEventErrors
+                    : hasIssue ? 1 : 0;
+                var processing = accountId.HasValue
+                    ? WorkerActivityPresenter.PresentForSubProfile(
+                        workerActivity,
+                        workerIsOnline,
+                        accountId.Value,
+                        id,
+                        activeAccounts)
+                    : new AccountProcessingViewModel();
+                var (statusLabel, statusTone) = SubProfileStatusMapper.ForDto(sp);
                 return new SubProfileRowViewModel
-            {
-                Id = sp.Id,
-                Name = name,
-                Category = sp.Category,
-                IsCurrent = sp.IsCurrent,
-                IsEnabledInPanel = sp.IsEnabledInPanel,
-                BalanceText = BalanceDisplay.FormatSubProfile(wallet, advance, duration),
-                RatingText = RatingDisplay.FormatSubProfile(sp.Rating, sp.ReviewsCount, sp.ReviewsText),
-                HasIssue = !string.IsNullOrWhiteSpace(sp.LastIssueKind),
-                IssueSummary = string.IsNullOrWhiteSpace(sp.LastIssueMessage)
-                    ? null
-                    : sp.LastIssueMessage,
-                DiagnosticAttachmentId = sp.DiagnosticAttachmentId
-            };
+                {
+                    Id = id,
+                    Name = name,
+                    Category = sp.Category,
+                    IsCurrent = sp.IsCurrent,
+                    IsEnabledInPanel = sp.IsEnabledInPanel,
+                    StatusLabel = statusLabel,
+                    StatusTone = statusTone,
+                    BalanceText = BalanceDisplay.FormatSubProfile(wallet, advance, duration),
+                    RatingText = RatingDisplay.FormatSubProfile(sp.Rating, sp.ReviewsCount, sp.ReviewsText),
+                    Responses = responses,
+                    UniqueResponses = uniqueResponses,
+                    Errors = errors,
+                    LastActivityUtc = sp.LastActivityUtc,
+                    IsProcessingNow = processing.IsProcessingNow,
+                    ProcessingLabel = processing.Label,
+                    ProcessingTone = processing.Tone,
+                    HasIssue = hasIssue,
+                    IssueSummary = string.IsNullOrWhiteSpace(sp.LastIssueMessage)
+                        ? null
+                        : sp.LastIssueMessage,
+                    DiagnosticAttachmentId = sp.DiagnosticAttachmentId
+                };
             })
             .ToList();
     }
@@ -106,6 +161,30 @@ public static class SubProfileViewModelMapper
             .ToList();
 
         return parts.Count > 0 ? string.Join(" · ", parts) : null;
+    }
+
+    private static SubProfileBalanceDto? ResolveBalanceItem(
+        IReadOnlyList<SubProfileBalanceDto>? balanceItems,
+        int index,
+        string name)
+    {
+        if (balanceItems is not { Count: > 0 })
+        {
+            return null;
+        }
+
+        if (index >= 0 && index < balanceItems.Count)
+        {
+            return balanceItems[index];
+        }
+
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return null;
+        }
+
+        return balanceItems.FirstOrDefault(b =>
+            string.Equals(b.SubProfileName?.Trim(), name, StringComparison.OrdinalIgnoreCase));
     }
 
     private static decimal? ResolveBalance(decimal? profileValue, decimal? balanceItemValue) =>
