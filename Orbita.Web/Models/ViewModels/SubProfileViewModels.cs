@@ -72,6 +72,34 @@ public static class SubProfileViewModelMapper
         requestedAtUtc is not null
         && (refreshedAtUtc is null || requestedAtUtc > refreshedAtUtc);
 
+    public static IReadOnlyList<SubProfileRowViewModel> MapFromBalances(
+        IReadOnlyList<SubProfileBalanceDto>? balanceItems)
+    {
+        if (balanceItems is null || balanceItems.Count == 0)
+        {
+            return [];
+        }
+
+        return balanceItems
+            .Select((item, index) =>
+            {
+                var name = string.IsNullOrWhiteSpace(item.SubProfileName)
+                    ? balanceItems.Count == 1 ? "Субпрофиль" : $"Субпрофиль {index + 1}"
+                    : item.SubProfileName.Trim();
+
+                return new SubProfileRowViewModel
+                {
+                    Id = name,
+                    Name = name,
+                    BalanceText = BalanceDisplay.FormatSubProfile(
+                        item.WalletBalance,
+                        item.Balance,
+                        item.AdvanceDurationText)
+                };
+            })
+            .ToList();
+    }
+
     public static IReadOnlyList<SubProfileRowViewModel> Map(
         IReadOnlyList<WorkerSubProfileDto>? subProfiles,
         IReadOnlyList<SubProfileBalanceDto>? balanceItems = null,
@@ -82,7 +110,7 @@ public static class SubProfileViewModelMapper
     {
         if (subProfiles is null || subProfiles.Count == 0)
         {
-            return [];
+            return MapFromBalances(balanceItems);
         }
 
         return subProfiles

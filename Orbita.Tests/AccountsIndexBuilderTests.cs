@@ -79,6 +79,46 @@ public sealed class AccountsIndexBuilderTests
     }
 
     [Fact]
+    public void Build_WorkerFilter_LimitsRowsAndKpi()
+    {
+        var workerA = Guid.NewGuid();
+        var workerB = Guid.NewGuid();
+        var rows = new List<AccountRowViewModel>
+        {
+            new()
+            {
+                Id = Guid.NewGuid(),
+                AccountName = "worker-a",
+                WorkerId = workerA,
+                WorkerName = "Worker A",
+                StatusTone = "active",
+                IsEnabledInPanel = true
+            },
+            new()
+            {
+                Id = Guid.NewGuid(),
+                AccountName = "worker-b",
+                WorkerId = workerB,
+                WorkerName = "Worker B",
+                StatusTone = "active",
+                IsEnabledInPanel = true
+            }
+        };
+
+        var model = AccountsIndexBuilder.Build(
+            rows,
+            searchQuery: null,
+            tab: "all",
+            page: 1,
+            workerId: workerA);
+
+        Assert.Single(model.Accounts);
+        Assert.Equal("worker-a", model.Accounts[0].AccountName);
+        Assert.Equal(1, model.KpiCards.Single(k => k.Key == "total").CountValue);
+        Assert.True(model.HasActiveFilters);
+    }
+
+    [Fact]
     public void Build_ActiveTab_IncludesEnabledAccountWithErrorStatus()
     {
         var rows = new List<AccountRowViewModel>

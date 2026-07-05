@@ -42,10 +42,11 @@ public sealed class ResponsesQueryService(
         var total = await query.CountAsync(ct);
         if (total == 0)
         {
-            return new ResponsesSummaryDto(0, 0, 0, 0, null);
+            return new ResponsesSummaryDto(0, 0, 0, 0, 0, null);
         }
 
         var duplicates = await query.CountAsync(x => x.Status == ResponseStatuses.Duplicate, ct);
+        var sent = await query.CountAsync(x => x.Status == ResponseStatuses.Sent, ct);
         var unique = total - duplicates;
         var uniqueAuthors = await query
             .Where(x => !string.IsNullOrWhiteSpace(x.PhoneNormalized))
@@ -67,6 +68,7 @@ public sealed class ResponsesQueryService(
             total,
             unique,
             duplicates,
+            sent,
             uniqueAuthors,
             avgMinutes > 0 ? avgMinutes : null);
     }
@@ -143,7 +145,7 @@ public sealed class ResponsesQueryService(
                 x.Id,
                 x.OfficeId,
                 x.WorkerId,
-                WorkerName = x.Worker.DisplayName,
+                WorkerName = x.WorkerName != "" ? x.WorkerName : (x.Worker != null ? x.Worker.DisplayName : string.Empty),
                 x.AccountId,
                 x.AccountName,
                 x.Source,
@@ -197,7 +199,7 @@ public sealed class ResponsesQueryService(
                 return new ResponseListItemDto(
                     x.Id,
                     x.OfficeId,
-                    x.WorkerId,
+                    x.WorkerId ?? Guid.Empty,
                     x.WorkerName,
                     x.AccountId,
                     x.AccountName,
@@ -465,8 +467,10 @@ public sealed class ResponsesQueryService(
         return new(
             entity.Id,
             entity.OfficeId,
-            entity.WorkerId,
-            entity.Worker.DisplayName,
+            entity.WorkerId ?? Guid.Empty,
+            !string.IsNullOrEmpty(entity.WorkerName)
+                ? entity.WorkerName
+                : entity.Worker?.DisplayName ?? string.Empty,
             entity.AccountId,
             entity.AccountName,
             entity.Source,

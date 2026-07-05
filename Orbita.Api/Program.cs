@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
@@ -200,7 +201,19 @@ builder.Services.AddScoped<PanelBitrixIntegrationService>();
 builder.Services.Configure<LeadFlowImportOptions>(builder.Configuration.GetSection("LeadFlowImport"));
 builder.Services.AddSingleton<LeadFlowDatabaseReader>();
 builder.Services.AddScoped<LeadFlowImportService>();
-builder.Services.AddDataProtection();
+var dataProtectionPath = builder.Configuration["DataProtection:KeysPath"];
+if (!string.IsNullOrWhiteSpace(dataProtectionPath))
+{
+    Directory.CreateDirectory(dataProtectionPath);
+    builder.Services.AddDataProtection()
+        .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionPath))
+        .SetApplicationName("Orbita.Api");
+}
+else
+{
+    builder.Services.AddDataProtection()
+        .SetApplicationName("Orbita.Api");
+}
 builder.Services.AddHttpClient(nameof(BitrixWebhookValidator), client =>
 {
     client.Timeout = TimeSpan.FromSeconds(10);
@@ -1831,6 +1844,8 @@ panel.MapGet("/statistics", async (
     Guid? officeId,
     DateTime? from,
     DateTime? to,
+    Guid[]? workerIds,
+    Guid[]? accountIds,
     CancellationToken ct) =>
 {
     var scope = await officeScope.ResolveAsync(principal, ct);
@@ -1839,7 +1854,14 @@ panel.MapGet("/statistics", async (
         return Results.Forbid();
     }
 
-    return Results.Ok(await statistics.GetStatisticsAsync(scope, officeId, from, to, ct));
+    return Results.Ok(await statistics.GetStatisticsAsync(
+        scope,
+        officeId,
+        from,
+        to,
+        workerIds,
+        accountIds,
+        ct));
 });
 
 panel.MapGet("/responses/filters/accounts", async (

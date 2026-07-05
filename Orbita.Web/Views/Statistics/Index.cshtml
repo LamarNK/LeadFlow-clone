@@ -4,7 +4,15 @@
     ViewData["Title"] = "Статистика";
     var jsonOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
     var chartsJson = JsonSerializer.Serialize(Model.Charts, jsonOptions);
-    var snapshotUrl = Url.Action("Snapshot", "Statistics", new { from = Model.Header.DateFrom.ToString("yyyy-MM-dd"), to = Model.Header.DateTo.ToString("yyyy-MM-dd") })!;
+    var snapshotRoute = new
+    {
+        from = Model.Header.DateFrom.ToString("yyyy-MM-dd"),
+        to = Model.Header.DateTo.ToString("yyyy-MM-dd"),
+        workerIds = Model.Filters.WorkerIds,
+        accountIds = Model.Filters.AccountIds
+    };
+    var snapshotUrl = Url.Action("Snapshot", "Statistics", snapshotRoute)!;
+    var formAction = Url.Action("Index", "Statistics");
     var stats = Model.AccountStats;
     var totalAccounts = Math.Max(1, stats.Total);
 }
@@ -23,186 +31,91 @@
     else
     {
         <div class="statistics-stack">
-        <div class="kpi-row statistics-kpi-row">
-            @{ var kpiIdx = 0; }
-            @foreach (var kpi in Model.KpiCards)
-            {
-                <partial name="_KpiCard" model="@(new KpiCardPartialViewModel { Card = kpi, Index = kpiIdx, Layout = KpiCardLayout.StatDelta, ExtraClass = " kpi-card--stat" })" />
-                kpiIdx++;
+            @{
+                var statisticsFilterBar = new ListFiltersBarViewModel
+                {
+                    FormAction = formAction,
+                    FormClass = "orbita-filters-form statistics-filters",
+                    SearchName = null,
+                    SearchPlaceholder = "",
+                    FilterPanelId = "statisticsFilterPanel",
+                    FilterToggleClass = "orbita-filters-toggle statistics-filter-btn",
+                    HasActiveFilters = Model.HasActiveFilters,
+                    ActiveFilterCount = Model.ActiveFilterChips.Count,
+                    ActiveFilterChips = Model.ActiveFilterChips,
+                    ResetUrl = Url.Action("Index", "Statistics", new { from = Model.Header.DateFrom.ToString("yyyy-MM-dd"), to = Model.Header.DateTo.ToString("yyyy-MM-dd") })!,
+                    FilterFieldsPartialName = "_StatisticsFilterFields",
+                    FilterFieldsModel = Model,
+                    ShowApply = true,
+                    ExtraFormContent = $"<input type=\"hidden\" name=\"from\" value=\"{Model.Header.DateFrom:yyyy-MM-dd}\" data-period-form-from /><input type=\"hidden\" name=\"to\" value=\"{Model.Header.DateTo:yyyy-MM-dd}\" data-period-form-to />"
+                };
             }
-        </div>
+            <partial name="_ListFiltersBar" model="statisticsFilterBar" />
 
-        <div class="statistics-grid">
-            <div class="card card--statistics-balances">
-                <div class="card-header">
-                    <h2>Балансы аккаунтов</h2>
-                    <span class="card-header-meta">Текущий снимок с воркеров</span>
-                </div>
-                <div class="card-body" data-statistics-balances>
-                    @if (Model.BalanceRows.Count == 0)
-                    {
-                        <partial name="_TableEmptyState" model="@(new TableEmptyStateViewModel
-                        {
-                            IconClass = "fa-solid fa-wallet",
-                            Title = "Нет данных по балансам",
-                            Description = "Дождитесь синхронизации с воркерами или добавьте аккаунты.",
-                            CtaLabel = "Аккаунты",
-                            CtaUrl = Url.Action("Index", "Accounts")
-                        })" />
-                    }
-                    else
-                    {
-                        <div class="statistics-balance-list">
-                            @foreach (var row in Model.BalanceRows)
-                            {
-                                <div class="statistics-balance-row @(row.IsLowBalance ? "statistics-balance-row--low" : "")"
-                                     data-balance-account-id="@row.AccountId">
-                                    <div class="statistics-balance-head">
-                                        <div class="statistics-balance-title">
-                                            <a href="@Url.Action("Index", "Accounts", new { q = row.AccountName })" class="statistics-balance-name">@row.AccountName</a>
-                                            <span class="statistics-balance-meta">
-                                                @row.WorkerName
-                                                @if (Model.ShowOfficeColumn && !string.IsNullOrWhiteSpace(row.OfficeName))
-                                                {
-                                                    <span>· @row.OfficeName</span>
-                                                }
-                                            </span>
-                                        </div>
-                                        <div class="statistics-balance-amounts">
-                                            <span class="statistics-balance-advance" title="Аванс">@row.AdvanceText</span>
-                                            @if (row.Wallet > 0)
-                                            {
-                                                <span class="statistics-balance-wallet" title="Кошелёк">@row.WalletText</span>
-                                            }
-                                        </div>
-                                    </div>
-                                    <div class="statistics-balance-bar-track" aria-hidden="true">
-                                        <span class="statistics-balance-bar-fill" style="width: @((row.BarWidth * 100).ToString("0.####", System.Globalization.CultureInfo.InvariantCulture))%"></span>
-                                    </div>
-                                    @if (!string.IsNullOrWhiteSpace(row.BalanceBreakdown) || !string.IsNullOrWhiteSpace(row.BalanceSubtitle))
-                                    {
-                                        <div class="statistics-balance-foot">
-                                            @if (!string.IsNullOrWhiteSpace(row.BalanceBreakdown))
-                                            {
-                                                <span class="statistics-balance-breakdown">@row.BalanceBreakdown</span>
-                                            }
-                                            @if (!string.IsNullOrWhiteSpace(row.BalanceSubtitle))
-                                            {
-                                                <span class="statistics-balance-subtitle">@row.BalanceSubtitle</span>
-                                            }
-                                        </div>
-                                    }
-                                </div>
-                            }
-                        </div>
-                    }
-                </div>
+            <div class="kpi-row statistics-kpi-row">
+                @{ var kpiIdx = 0; }
+                @foreach (var kpi in Model.KpiCards)
+                {
+                    <partial name="_KpiCard" model="@(new KpiCardPartialViewModel { Card = kpi, Index = kpiIdx, Layout = KpiCardLayout.StatStacked, ExtraClass = " kpi-card--stat" })" />
+                    kpiIdx++;
+                }
             </div>
 
-            <div class="card card--statistics-trend">
-                <div class="card-header">
-                    <h2>Динамика откликов</h2>
-                    <span class="card-header-meta">@Model.Header.DateRangeLabel</span>
+            @{
+                var periodDays = (Model.Header.DateTo.Date - Model.Header.DateFrom.Date).Days + 1;
+            }
+            <div class="card card--statistics-trend card--statistics-trend-full">
+                <div class="card-header statistics-trend-header">
+                    <div class="statistics-trend-header-main">
+                        <h2>Динамика откликов</h2>
+                        <span class="chart-period-label">@Model.Header.DateRangeLabel</span>
+                    </div>
+                    <div class="statistics-trend-legend" aria-hidden="true">
+                        <span class="statistics-trend-legend-pill" data-series="sent"><i></i>В CRM</span>
+                        <span class="statistics-trend-legend-pill" data-series="inProgress"><i></i>В работе</span>
+                        <span class="statistics-trend-legend-pill" data-series="actionRequired"><i></i>Нужно действие</span>
+                        <span class="statistics-trend-legend-pill" data-series="duplicates"><i></i>Дубли</span>
+                        <span class="statistics-trend-legend-pill" data-series="errors"><i></i>Ошибки</span>
+                    </div>
+                </div>
+                <div class="statistics-trend-summary" data-statistics-trend-summary>
+                    <div class="statistics-trend-stat">
+                        <span class="statistics-trend-stat-label">Всего</span>
+                        <strong class="statistics-trend-stat-value" data-trend-total>0</strong>
+                    </div>
+                    <div class="statistics-trend-stat">
+                        <span class="statistics-trend-stat-label">Пик</span>
+                        <strong class="statistics-trend-stat-value" data-trend-peak>0</strong>
+                    </div>
+                    <div class="statistics-trend-stat">
+                        <span class="statistics-trend-stat-label">Среднее</span>
+                        <strong class="statistics-trend-stat-value" data-trend-avg>0</strong>
+                        <span class="statistics-trend-stat-suffix" data-trend-avg-suffix>/день</span>
+                    </div>
+                    <div class="statistics-trend-stat statistics-trend-stat--muted">
+                        <span class="statistics-trend-stat-label">Группировка</span>
+                        <strong class="statistics-trend-stat-value" data-trend-bucket>по дням</strong>
+                    </div>
                 </div>
                 <div class="card-body">
-                    <div class="chart-canvas-wrap chart-canvas-wrap--statistics-trend">
-                        <canvas id="chart-statistics-trend" aria-label="Динамика откликов по дням"></canvas>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="card card--statistics-hr">
-            <div class="card-header">
-                <h2>HR-инсайты</h2>
-                <span class="card-header-meta">
-                    Средний возраст: <span data-statistics-avg-age>@Model.HrInsights.AverageAgeText</span>
-                    · Мессенджер: <span data-statistics-messenger>@Model.HrInsights.MessengerCoverageText</span>
-                </span>
-            </div>
-            <div class="card-body">
-                <div class="statistics-hr-grid" data-statistics-hr>
-                    <partial name="_StatisticsHrTable" model="@("Города")" view-data="@(new ViewDataDictionary(ViewData) { ["Rows"] = Model.HrInsights.TopCities })" />
-                    <partial name="_StatisticsHrTable" model="@("Вакансии")" view-data="@(new ViewDataDictionary(ViewData) { ["Rows"] = Model.HrInsights.TopVacancies })" />
-                    <partial name="_StatisticsHrTable" model="@("Аккаунты")" view-data="@(new ViewDataDictionary(ViewData) { ["Rows"] = Model.HrInsights.TopAccounts })" />
-                    <div class="statistics-hr-panel">
-                        <h3 class="statistics-hr-title">Возраст</h3>
-                        <table class="data-table data-table--compact statistics-hr-table">
-                            <thead>
-                                <tr>
-                                    <th>Группа</th>
-                                    <th class="cell-num">Всего</th>
-                                    <th class="cell-num">CRM</th>
-                                    <th class="cell-num">Конв.</th>
-                                </tr>
-                            </thead>
-                            <tbody data-statistics-age-buckets>
-                                @foreach (var row in Model.HrInsights.AgeBuckets)
-                                {
-                                    <tr>
-                                        <td>@row.Bucket</td>
-                                        <td class="cell-num">@row.Total</td>
-                                        <td class="cell-num">@row.Sent</td>
-                                        <td class="cell-num">@row.ConversionText</td>
-                                    </tr>
-                                }
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="statistics-grid statistics-grid--bottom">
-            <div class="card card--account-stats card--statistics-accounts">
-                <div class="card-header">
-                    <h2>Состояние аккаунтов</h2>
-                    <span class="card-header-meta">@Model.Summary.ActiveAdsCount активных / @Model.Summary.BlockedAdsCount заблок. объявлений</span>
-                </div>
-                <div class="card-body">
-                <div class="account-stats-widget" data-statistics-account-stats>
-                    <div class="account-stats-chart">
-                        <div class="account-stats-donut">
-                            <div class="chart-canvas-wrap chart-canvas-wrap--account-donut">
-                                <canvas id="chart-statistics-account-status" aria-label="Состояние аккаунтов"></canvas>
-                            </div>
-                            <div class="account-stats-center">
-                                <span class="account-stats-total-num" data-account-stat="total">@stats.Total</span>
-                                <span class="account-stats-total-lbl">Всего</span>
-                            </div>
+                    <div class="statistics-trend-chart"
+                         data-chart-state="ready"
+                         data-period-days="@periodDays">
+                        <div class="chart-canvas-wrap chart-canvas-wrap--statistics-trend">
+                            <canvas id="chart-statistics-trend" aria-label="Динамика откликов по статусам"></canvas>
+                        </div>
+                        <div class="statistics-trend-empty" data-statistics-trend-empty>
+                            <i class="fa-regular fa-chart-bar" aria-hidden="true"></i>
+                            <span>Нет откликов за выбранный период</span>
                         </div>
                     </div>
-                    <div class="account-stats-legend">
-                        <div class="account-stats-list">
-                            <div class="account-stats-row">
-                                <span class="account-stats-label"><span class="account-stats-dot" style="background:#22c55e"></span>Активны</span>
-                                <span class="account-stats-value" data-account-stat="active">@stats.Active (@FmtPct(stats.Active, totalAccounts))</span>
-                            </div>
-                            <div class="account-stats-row">
-                                <span class="account-stats-label"><span class="account-stats-dot" style="background:#94a3b8"></span>Неактивны</span>
-                                <span class="account-stats-value" data-account-stat="inactive">@stats.Inactive (@FmtPct(stats.Inactive, totalAccounts))</span>
-                            </div>
-                            <div class="account-stats-row">
-                                <span class="account-stats-label"><span class="account-stats-dot" style="background:#ef4444"></span>Заблокированы</span>
-                                <span class="account-stats-value" data-account-stat="blocked">@stats.Blocked (@FmtPct(stats.Blocked, totalAccounts))</span>
-                            </div>
-                            <div class="account-stats-row">
-                                <span class="account-stats-label"><span class="account-stats-dot" style="background:#f59e0b"></span>Ошибки</span>
-                                <span class="account-stats-value" data-account-stat="errors">@stats.Errors (@FmtPct(stats.Errors, totalAccounts))</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
                 </div>
             </div>
 
             <div class="card card--statistics-workers">
                 <div class="card-header">
                     <h2>Воркеры за период</h2>
-                    @if (Model.Summary.AvgResponseMinutesText is not null)
-                    {
-                        <span class="card-header-meta">Среднее время отклика: @Model.Summary.AvgResponseMinutesText</span>
-                    }
+                    <a class="card-header-link" href="@Url.Action("Index", "Workers")">Все воркеры</a>
                 </div>
                 <div class="card-body card-body-table statistics-workers-table-wrap">
                     @if (Model.Workers.Count == 0)
@@ -228,6 +141,7 @@
                                     }
                                     <th>Статус</th>
                                     <th class="cell-num">Откл.</th>
+                                    <th class="cell-num">CRM</th>
                                     <th class="cell-num">Дубл.</th>
                                     <th class="cell-num">Ошиб.</th>
                                     <th class="cell-num">Акк.</th>
@@ -236,20 +150,23 @@
                             <tbody data-orbita-live-body="statistics-workers">
                                 @foreach (var worker in Model.Workers)
                                 {
-                                    <tr data-worker-id="@worker.Id">
-                                        <td data-label="Воркер">
-                                            <a href="@Url.Action("Details", "Workers", new { id = worker.Id })">@worker.DisplayName</a>
+                                    var workerDetailsUrl = Url.Action("Details", "Workers", new { id = worker.Id });
+                                    <tr class="statistics-worker-row" data-href="@workerDetailsUrl" data-worker-id="@worker.Id">
+                                        <td class="cell-name" data-label="Воркер">
+                                            <a href="@workerDetailsUrl">@worker.DisplayName</a>
                                         </td>
                                         @if (Model.ShowOfficeColumn)
                                         {
                                             <td data-label="Офис">@worker.OfficeName</td>
                                         }
                                         <td data-label="Статус">
-                                            <span class="status-pill status-pill--@(worker.IsOnline ? "online" : "offline")">
-                                                @(worker.IsOnline ? "Онлайн" : "Офлайн")
+                                            <span class="status-dot @(worker.IsOnline ? "" : "offline")">
+                                                <i class="fa-solid fa-circle status-dot-icon" aria-hidden="true"></i>
+                                                @(worker.IsOnline ? "Онлайн" : "Оффлайн")
                                             </span>
                                         </td>
                                         <td class="cell-num" data-label="Отклики">@worker.PeriodResponses</td>
+                                        <td class="cell-num" data-label="CRM">@worker.PeriodSent</td>
                                         <td class="cell-num" data-label="Дубли">@worker.PeriodDuplicates</td>
                                         <td class="cell-num" data-label="Ошибки">@worker.PeriodErrors</td>
                                         <td class="cell-num" data-label="Аккаунты">@worker.ActiveAccounts / @worker.TotalAccounts</td>
@@ -260,7 +177,188 @@
                     }
                 </div>
             </div>
-        </div>
+
+            <div class="statistics-grid statistics-grid--secondary">
+                <div class="card card--account-stats card--statistics-accounts">
+                    <div class="card-header">
+                        <h2>Состояние аккаунтов</h2>
+                        <span class="card-header-meta" data-statistics-ads-meta>
+                            @Model.Summary.ActiveAdsCount активных / @Model.Summary.BlockedAdsCount заблок.
+                        </span>
+                    </div>
+                    <div class="card-body">
+                        <div class="account-stats-widget" data-statistics-account-stats>
+                            <div class="account-stats-chart">
+                                <div class="account-stats-donut">
+                                    <div class="chart-canvas-wrap chart-canvas-wrap--account-donut">
+                                        <canvas id="chart-statistics-account-status" aria-label="Состояние аккаунтов"></canvas>
+                                    </div>
+                                    <div class="account-stats-center">
+                                        <span class="account-stats-total-num" data-account-stat="total">@stats.Total</span>
+                                        <span class="account-stats-total-lbl">Всего</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="account-stats-legend">
+                                <div class="account-stats-list">
+                                    <div class="account-stats-row">
+                                        <span class="account-stats-label"><span class="account-stats-dot" style="background:#22c55e"></span>Активны</span>
+                                        <span class="account-stats-value" data-account-stat="active">@stats.Active (@FmtPct(stats.Active, totalAccounts))</span>
+                                    </div>
+                                    <div class="account-stats-row">
+                                        <span class="account-stats-label"><span class="account-stats-dot" style="background:#94a3b8"></span>Неактивны</span>
+                                        <span class="account-stats-value" data-account-stat="inactive">@stats.Inactive (@FmtPct(stats.Inactive, totalAccounts))</span>
+                                    </div>
+                                    <div class="account-stats-row">
+                                        <span class="account-stats-label"><span class="account-stats-dot" style="background:#ef4444"></span>Заблокированы</span>
+                                        <span class="account-stats-value" data-account-stat="blocked">@stats.Blocked (@FmtPct(stats.Blocked, totalAccounts))</span>
+                                    </div>
+                                    <div class="account-stats-row">
+                                        <span class="account-stats-label"><span class="account-stats-dot" style="background:#f59e0b"></span>Ошибки</span>
+                                        <span class="account-stats-value" data-account-stat="errors">@stats.Errors (@FmtPct(stats.Errors, totalAccounts))</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card card--statistics-balances">
+                    <div class="card-header">
+                        <h2>Балансы</h2>
+                        <span class="card-header-meta">
+                            Аванс <span data-statistics-infra="advance">@Model.Summary.TotalAdvanceText</span>
+                            @if (Model.Summary.AvgResponseMinutesText is not null)
+                            {
+                                <span>· @Model.Summary.AvgResponseMinutesText</span>
+                            }
+                        </span>
+                    </div>
+                    <div class="card-body" data-statistics-balances>
+                        @if (Model.BalanceRows.Count == 0)
+                        {
+                            <partial name="_TableEmptyState" model="@(new TableEmptyStateViewModel
+                            {
+                                IconClass = "fa-solid fa-wallet",
+                                Title = "Нет данных по балансам",
+                                Description = "Дождитесь синхронизации с воркерами.",
+                                CtaLabel = "Аккаунты",
+                                CtaUrl = Url.Action("Index", "Accounts")
+                            })" />
+                        }
+                        else
+                        {
+                            <div class="statistics-balance-list">
+                                @foreach (var row in Model.BalanceRows)
+                                {
+                                    <div class="statistics-balance-row @(row.IsLowBalance ? "statistics-balance-row--low" : "")"
+                                         data-balance-account-id="@row.AccountId">
+                                        <div class="statistics-balance-head">
+                                            <div class="statistics-balance-title">
+                                                <a href="@Url.Action("Index", "Accounts", new { q = row.AccountName })" class="statistics-balance-name">@row.AccountName</a>
+                                                <span class="statistics-balance-meta">
+                                                    @row.WorkerName
+                                                    @if (Model.ShowOfficeColumn && !string.IsNullOrWhiteSpace(row.OfficeName))
+                                                    {
+                                                        <span>· @row.OfficeName</span>
+                                                    }
+                                                </span>
+                                            </div>
+                                            <div class="statistics-balance-amounts">
+                                                <span class="statistics-balance-advance" title="Аванс">@(row.SubProfiles.Count > 0 ? "суммарно " : "")@row.AdvanceText</span>
+                                                @if (row.Wallet > 0)
+                                                {
+                                                    <span class="statistics-balance-wallet" title="Кошелёк">@row.WalletText</span>
+                                                }
+                                            </div>
+                                        </div>
+                                        <div class="statistics-balance-bar-track" aria-hidden="true">
+                                            <span class="statistics-balance-bar-fill" style="width: @((row.BarWidth * 100).ToString("0.####", System.Globalization.CultureInfo.InvariantCulture))%"></span>
+                                        </div>
+                                        @if (row.SubProfiles.Count > 0)
+                                        {
+                                            <div class="statistics-balance-subprofiles">
+                                                @foreach (var subProfile in row.SubProfiles)
+                                                {
+                                                    <div class="statistics-balance-subprofile @(subProfile.IsLowBalance ? "statistics-balance-subprofile--low" : "")">
+                                                        <div class="statistics-balance-subprofile-head">
+                                                            <span class="statistics-balance-subprofile-name">@subProfile.Name</span>
+                                                            <div class="statistics-balance-subprofile-amounts">
+                                                                <span class="statistics-balance-subprofile-advance" title="Аванс">@subProfile.AdvanceText</span>
+                                                                @if (subProfile.WalletText is not null)
+                                                                {
+                                                                    <span class="statistics-balance-subprofile-wallet" title="Кошелёк">@subProfile.WalletText</span>
+                                                                }
+                                                            </div>
+                                                        </div>
+                                                        @if (!string.IsNullOrWhiteSpace(subProfile.DurationText))
+                                                        {
+                                                            <span class="statistics-balance-subprofile-duration">@subProfile.DurationText</span>
+                                                        }
+                                                        <div class="statistics-balance-bar-track statistics-balance-bar-track--sub" aria-hidden="true">
+                                                            <span class="statistics-balance-bar-fill" style="width: @((subProfile.BarWidth * 100).ToString("0.####", System.Globalization.CultureInfo.InvariantCulture))%"></span>
+                                                        </div>
+                                                    </div>
+                                                }
+                                            </div>
+                                        }
+                                        else if (!string.IsNullOrWhiteSpace(row.BalanceSubtitle))
+                                        {
+                                            <div class="statistics-balance-foot">
+                                                <span class="statistics-balance-subtitle">@row.BalanceSubtitle</span>
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <details class="card card--statistics-hr statistics-hr-details">
+                <summary class="card-header statistics-hr-summary">
+                    <div class="statistics-hr-summary-text">
+                        <h2>HR-инсайты</h2>
+                        <span class="card-header-meta">
+                            Средний возраст: <span data-statistics-avg-age>@Model.HrInsights.AverageAgeText</span>
+                            · Мессенджер: <span data-statistics-messenger>@Model.HrInsights.MessengerCoverageText</span>
+                        </span>
+                    </div>
+                    <i class="fa-solid fa-chevron-down statistics-hr-caret" aria-hidden="true"></i>
+                </summary>
+                <div class="card-body">
+                    <div class="statistics-hr-grid" data-statistics-hr>
+                        <partial name="_StatisticsHrTable" model="@("Города")" view-data="@(new ViewDataDictionary(ViewData) { ["Rows"] = Model.HrInsights.TopCities })" />
+                        <partial name="_StatisticsHrTable" model="@("Вакансии")" view-data="@(new ViewDataDictionary(ViewData) { ["Rows"] = Model.HrInsights.TopVacancies })" />
+                        <partial name="_StatisticsHrTable" model="@("Аккаунты")" view-data="@(new ViewDataDictionary(ViewData) { ["Rows"] = Model.HrInsights.TopAccounts })" />
+                        <div class="statistics-hr-panel">
+                            <h3 class="statistics-hr-title">Возраст</h3>
+                            <table class="data-table data-table--compact statistics-hr-table">
+                                <thead>
+                                    <tr>
+                                        <th>Группа</th>
+                                        <th class="cell-num">Всего</th>
+                                        <th class="cell-num">CRM</th>
+                                        <th class="cell-num">Конв.</th>
+                                    </tr>
+                                </thead>
+                                <tbody data-statistics-age-buckets>
+                                    @foreach (var row in Model.HrInsights.AgeBuckets)
+                                    {
+                                        <tr>
+                                            <td>@row.Bucket</td>
+                                            <td class="cell-num">@row.Total</td>
+                                            <td class="cell-num">@row.Sent</td>
+                                            <td class="cell-num">@row.ConversionText</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </details>
         </div>
 
         <script id="statistics-charts-data" type="application/json">@Html.Raw(chartsJson)</script>

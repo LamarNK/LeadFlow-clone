@@ -1,0 +1,22 @@
+@model AccountsIndexViewModel
+<div class="orbita-filters-fields accounts-filters-row" id="accountsFilterPanel" data-orbita-collapsible-filters hidden>
+    <label class="orbita-filters-field accounts-filter-field">
+        <span class="orbita-filters-label accounts-filter-label">Воркер</span>
+        <select name="workerId" class="orbita-filters-select accounts-select" aria-label="Воркер">
+            @foreach (var opt in Model.Workers)
+            {
+                <option value="@opt.Value" selected="@(opt.Value == (Model.WorkerId?.ToString() ?? ""))">@opt.Label</option>
+            }
+        </select>
+    </label>
+    <label class="orbita-filters-field accounts-filter-field">
+        <span class="orbita-filters-label accounts-filter-label">Категория</span>
+        <select name="tab" class="orbita-filters-select accounts-select" aria-label="Категория аккаунтов">
+            @foreach (var tab in Model.Tabs)
+            {
+                <option value="@tab.Id" selected="@(tab.Id == Model.ActiveTab)">@tab.Label</option>
+            }
+        </select>
+    </label>
+    <partial name="_PageSizeFilterField" model="Model.Pagination.PageSize" />
+</div>

@@ -37,6 +37,7 @@ services:
       Kestrel__Limits__MinRequestBodyDataRate__BytesPerSecond: "100"
       Kestrel__Limits__MinRequestBodyDataRate__GracePeriod: "00:10:00"
       WorkerReleases__MaxUploadBytes: "536870912"
+      DataProtection__KeysPath: /app/Data/dataprotection-api
     depends_on:
       postgres:
         condition: service_healthy
@@ -46,6 +47,7 @@ services:
       - orbita_logs:/app/Data/logs
       - orbita_releases:/app/Data/releases
       - orbita_diagnostics:/app/Data/diagnostics
+      - orbita_dataprotection_api:/app/Data/dataprotection-api
 
   web:
     image: orbita-web:prod
@@ -123,4 +125,5 @@ volumes:
   orbita_releases:
   orbita_diagnostics:
   orbita_dataprotection:
+  orbita_dataprotection_api:
   notifybot_pg:

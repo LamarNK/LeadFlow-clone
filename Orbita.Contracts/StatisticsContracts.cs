@@ -43,6 +43,7 @@ public sealed record WorkerStatisticsRowDto(
     string OfficeName,
     bool IsOnline,
     int PeriodResponses,
+    int PeriodSent,
     int PeriodDuplicates,
     int PeriodErrors,
     int ActiveAccounts,

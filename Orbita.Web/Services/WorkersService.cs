@@ -12,17 +12,17 @@ public sealed class WorkersService(
     IHttpContextAccessor httpContextAccessor,
     IOptions<DesignPreviewOptions> previewOptions) : IWorkersService
 {
-    private const int DefaultPageSize = 12;
-
     public async Task<WorkersIndexViewModel> GetIndexAsync(
         string? searchQuery = null,
         string? status = null,
         int page = 1,
+        int? pageSize = null,
         string? sort = null,
         string? sortDir = null,
         CancellationToken ct = default)
     {
         page = Math.Max(1, page);
+        pageSize = ListPageSizeDefaults.Normalize(pageSize, ListPageSizeDefaults.Workers);
         status = NormalizeStatusFilter(status);
 
         if (previewOptions.Value.Enabled)
@@ -30,7 +30,7 @@ public sealed class WorkersService(
                 searchQuery,
                 status,
                 page,
-                DefaultPageSize,
+                pageSize.Value,
                 sort,
                 sortDir,
                 officeContext.EffectiveOfficeId,
@@ -56,7 +56,7 @@ public sealed class WorkersService(
             searchQuery,
             status,
             page,
-            DefaultPageSize,
+            pageSize.Value,
             sort,
             sortDir,
             latestRelease,
@@ -370,7 +370,7 @@ public sealed class WorkersService(
                 .Select(o => new EventFilterOptionViewModel { Value = o.Id.ToString(), Label = o.Name })
                 .ToList(),
             HasActiveFilters = !string.IsNullOrWhiteSpace(searchQuery) || !string.IsNullOrWhiteSpace(statusFilter),
-            ActiveFilterChips = FilterChipsBuilder.ForWorkers(searchQuery, statusFilter),
+            ActiveFilterChips = FilterChipsBuilder.ForWorkers(searchQuery, statusFilter, pageSize),
             Sort = tableSort,
             ShowOfficeColumn = showOfficeColumn
         };

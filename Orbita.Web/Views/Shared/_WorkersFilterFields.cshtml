@@ -1,0 +1,12 @@
+@model WorkersIndexViewModel
+<div class="orbita-filters-fields workers-filters-row" id="workersFilterPanel" data-orbita-collapsible-filters hidden>
+    <label class="orbita-filters-field workers-filter-field">
+        <span class="orbita-filters-label workers-filter-label">Статус</span>
+        <select name="status" class="orbita-filters-select workers-select" aria-label="Статус">
+            <option value="" selected="@(string.IsNullOrWhiteSpace(Model.StatusFilter))">Все</option>
+            <option value="online" selected="@(Model.StatusFilter == "online")">Онлайн</option>
+            <option value="offline" selected="@(Model.StatusFilter == "offline")">Оффлайн</option>
+        </select>
+    </label>
+    <partial name="_PageSizeFilterField" model="Model.Pagination.PageSize" />
+</div>

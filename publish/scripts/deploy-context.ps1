@@ -33,6 +33,38 @@ if ([string]::IsNullOrWhiteSpace($StateDir)) {
     $StateDir = Get-DefaultStateDir
 }
 
+function Get-Sha256Hex {
+    param(
+        [byte[]]$Bytes
+    )
+
+    $hash = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        return ([BitConverter]::ToString($hash.ComputeHash($Bytes))).Replace("-", "").ToLowerInvariant()
+    }
+    finally {
+        $hash.Dispose()
+    }
+}
+
+function Get-FileSha256Hex {
+    param([string]$Path)
+
+    $stream = [System.IO.File]::OpenRead($Path)
+    try {
+        $hash = [System.Security.Cryptography.SHA256]::Create()
+        try {
+            return ([BitConverter]::ToString($hash.ComputeHash($stream))).Replace("-", "").ToLowerInvariant()
+        }
+        finally {
+            $hash.Dispose()
+        }
+    }
+    finally {
+        $stream.Dispose()
+    }
+}
+
 function Get-RelativePath {
     param(
         [string]$BasePath,
@@ -58,7 +90,7 @@ function Get-StageManifest {
     $files = @{}
     Get-ChildItem -LiteralPath $Root -Recurse -File | ForEach-Object {
         $relative = Get-RelativePath -BasePath $Root -FullPath $_.FullName
-        $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+        $hash = Get-FileSha256Hex -Path $_.FullName
         $files[$relative] = $hash
     }
 
@@ -69,13 +101,7 @@ function Get-StageManifest {
     else {
         $joined = [string]::Join("`n", $lines)
         $bytes = [System.Text.Encoding]::UTF8.GetBytes($joined)
-        $stream = [System.IO.MemoryStream]::new($bytes)
-        try {
-            (Get-FileHash -InputStream $stream -Algorithm SHA256).Hash.ToLowerInvariant()
-        }
-        finally {
-            $stream.Dispose()
-        }
+        Get-Sha256Hex -Bytes $bytes
     }
 
     return [pscustomobject]@{

@@ -194,35 +194,11 @@ public sealed class EphemeralDedupCache : IDisposable
                 command.Parameters.AddWithValue(name, phones[i]);
             }
 
-            var subProfileId = avitoSubProfileId?.Trim();
-            if (!string.IsNullOrWhiteSpace(subProfileId))
-            {
-                command.CommandText =
-                    $"""
-                     SELECT DISTINCT PhoneNormalized FROM DedupCache
-                     WHERE AccountId = $accountId AND AvitoSubProfileId = $avitoSubProfileId
-                       AND PhoneNormalized IN ({string.Join(", ", parameters)})
-                     """;
-                command.Parameters.AddWithValue("$accountId", accountId.ToString("D"));
-                command.Parameters.AddWithValue("$avitoSubProfileId", subProfileId);
-            }
-            else if (scope == DuplicateScope.PerAvitoAccount)
-            {
-                command.CommandText =
-                    $"""
-                     SELECT DISTINCT PhoneNormalized FROM DedupCache
-                     WHERE AccountId = $accountId AND PhoneNormalized IN ({string.Join(", ", parameters)})
-                     """;
-                command.Parameters.AddWithValue("$accountId", accountId.ToString("D"));
-            }
-            else
-            {
-                command.CommandText =
-                    $"""
-                     SELECT DISTINCT PhoneNormalized FROM DedupCache
-                     WHERE PhoneNormalized IN ({string.Join(", ", parameters)})
-                     """;
-            }
+            command.CommandText =
+                $"""
+                 SELECT DISTINCT PhoneNormalized FROM DedupCache
+                 WHERE PhoneNormalized IN ({string.Join(", ", parameters)})
+                 """;
 
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))

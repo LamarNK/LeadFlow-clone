@@ -5,7 +5,7 @@ namespace Orbita.Web.Services;
 
 internal static class ErrorsIndexBuilder
 {
-    public const int DefaultPageSize = 10;
+    public const int DefaultPageSize = ListPageSizeDefaults.Errors;
 
     public static readonly EventFilterOptionViewModel[] SeverityOptions =
     [
@@ -53,7 +53,7 @@ internal static class ErrorsIndexBuilder
         var summary = Summarize(allRows);
         var workers = BuildWorkerOptions(allRows);
         var accounts = BuildAccountOptions(allRows);
-        var activeFilterChips = FilterChipsBuilder.ForErrors(filters, SeverityOptions, ErrorTypeOptions, workers, accounts);
+        var activeFilterChips = FilterChipsBuilder.ForErrors(filters, SeverityOptions, ErrorTypeOptions, workers, accounts, pageSize);
 
         return new ErrorsIndexViewModel
         {

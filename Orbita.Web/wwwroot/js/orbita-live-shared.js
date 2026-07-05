@@ -321,6 +321,9 @@
             ? '<td class="cell-worker subprofiles-data-empty" data-label="Воркер"></td>' +
             (showOfficeColumn ? '<td class="subprofiles-data-empty" data-label="Офис"></td>' : '')
             : '';
+        var processingCol = layout === 'accounts'
+            ? '<td data-label="Сейчас">' + processingHtml + '</td>'
+            : '';
         return '<td class="cell-toggle" data-label="Вкл">' +
             '<label class="subprofiles-toggle-sm" title="' + (sub.isEnabledInPanel ? 'Отключить субпрофиль' : 'Включить субпрофиль') + '">' +
             '<input type="checkbox" data-subprofile-toggle data-worker-id="' + escapeHtml(workerId) + '" data-account-id="' + escapeHtml(accountId) + '" data-subprofile-id="' + escapeHtml(sub.id) + '"' + (sub.isEnabledInPanel ? ' checked' : '') + ' />' +
@@ -330,7 +333,7 @@
             alert + '</td>' +
             extraCols +
             '<td data-label="Статус">' + statusHtml + '</td>' +
-            '<td data-label="Сейчас">' + processingHtml + '</td>' +
+            processingCol +
             '<td class="cell-num cell-balance" data-label="Баланс"><span class="subprofiles-balance">' + escapeHtml(sub.balanceText || '—') + '</span></td>' +
             '<td class="cell-num" data-label="Откликов">' + (sub.responses || 0) + '</td>' +
             tail;
@@ -518,6 +521,7 @@
         updateUpdatedClock: updateUpdatedClock,
         setRefreshBusy: setRefreshBusy,
         updateKpiCards: updateKpiCards,
+        animateKpiValue: animateKpiValue,
         getLiveRoot: getLiveRoot,
         getLiveAttr: getLiveAttr,
         urlFromTemplate: urlFromTemplate,

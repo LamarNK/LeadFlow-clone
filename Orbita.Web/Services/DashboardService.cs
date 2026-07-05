@@ -34,13 +34,8 @@ public sealed class DashboardService(
         var accountStats = await BuildAccountStatsAsync(workers, summary, ct);
         var periodStats = AggregatePeriodStats(summary, period);
         var kpiCards = BuildKpiCards(summary, periodStats, period, accountStats);
-        var responseChart = BuildResponseChart(summary, period, periodStats);
-        var charts = DashboardChartsBuilder.FromPresentation(
-            kpiCards,
-            responseChart,
-            accountStats,
-            periodStats.DailyPoints,
-            period.IsTodayOnly);
+        var activityChart = BuildActivityChart(summary, period, periodStats);
+        var charts = DashboardChartsBuilder.FromPresentation(kpiCards, activityChart, accountStats);
 
         return new DashboardViewModel
         {
@@ -70,7 +65,7 @@ public sealed class DashboardService(
                     OfficeName = w.OfficeName
                 };
             }).ToList(),
-            HourlyChart = responseChart,
+            HourlyChart = DashboardChartsBuilder.ToResponsePoints(activityChart),
             Events = events.Select(DashboardEventMapper.Map).ToList(),
             AccountStats = accountStats,
             Charts = charts,
@@ -105,9 +100,11 @@ public sealed class DashboardService(
         {
             return new DashboardPeriodStats(
                 summary.TotalToday,
+                summary.SentToCrm,
                 summary.Duplicates,
                 summary.Errors,
                 summary.HourlyActivity.Select(p => p.NewCount).ToList(),
+                summary.HourlyActivity.Select(p => p.SentCount).ToList(),
                 summary.HourlyActivity.Select(p => p.DuplicateCount).ToList(),
                 summary.HourlyActivity.Select(p => p.ErrorCount).ToList(),
                 dailyPoints);
@@ -118,9 +115,11 @@ public sealed class DashboardService(
             var day = dailyPoints[0];
             return new DashboardPeriodStats(
                 day.NewCount,
+                day.SentCount,
                 day.DuplicateCount,
                 day.ErrorCount,
                 [day.NewCount],
+                [day.SentCount],
                 [day.DuplicateCount],
                 [day.ErrorCount],
                 dailyPoints);
@@ -128,15 +127,17 @@ public sealed class DashboardService(
 
         return new DashboardPeriodStats(
             dailyPoints.Sum(p => p.NewCount),
+            dailyPoints.Sum(p => p.SentCount),
             dailyPoints.Sum(p => p.DuplicateCount),
             dailyPoints.Sum(p => p.ErrorCount),
             dailyPoints.Select(p => p.NewCount).ToList(),
+            dailyPoints.Select(p => p.SentCount).ToList(),
             dailyPoints.Select(p => p.DuplicateCount).ToList(),
             dailyPoints.Select(p => p.ErrorCount).ToList(),
             dailyPoints);
     }
 
-    private static IReadOnlyList<DashboardChartPointViewModel> BuildResponseChart(
+    private static LineChartViewModel BuildActivityChart(
         GlobalDashboardSummary summary,
         DashboardPeriod period,
         DashboardPeriodStats periodStats)
@@ -156,8 +157,12 @@ public sealed class DashboardService(
         AccountStatsViewModel accountStats)
     {
         var responsesSeries = periodStats.ResponsesSeries;
+        var sentSeries = periodStats.SentSeries;
         var duplicatesSeries = periodStats.DuplicatesSeries;
         var errorsSeries = periodStats.ErrorsSeries;
+        var sentShare = periodStats.Responses == 0
+            ? "0%"
+            : $"{periodStats.Sent * 100.0 / periodStats.Responses:0.#}%";
 
         return
         [
@@ -174,6 +179,20 @@ public sealed class DashboardService(
                 IconTone = "blue",
                 Sparkline = SparklineGenerator.FromSeries(responsesSeries),
                 SparkColor = "#2563eb"
+            },
+            new()
+            {
+                Key = "sent",
+                Href = KpiCardLinks.Dashboard("sent", period.From, period.To),
+                Label = "В Битрикс24",
+                Value = periodStats.Sent.ToString(),
+                CountValue = periodStats.Sent,
+                Delta = sentShare,
+                DeltaTone = periodStats.Sent > 0 ? "good" : "neutral",
+                IconClass = "fa-solid fa-paper-plane",
+                IconTone = "green",
+                Sparkline = SparklineGenerator.FromSeries(sentSeries),
+                SparkColor = "#15803d"
             },
             new()
             {
@@ -255,9 +274,11 @@ public sealed class DashboardService(
 
     private sealed record DashboardPeriodStats(
         int Responses,
+        int Sent,
         int Duplicates,
         int Errors,
         IReadOnlyList<int> ResponsesSeries,
+        IReadOnlyList<int> SentSeries,
         IReadOnlyList<int> DuplicatesSeries,
         IReadOnlyList<int> ErrorsSeries,
         IReadOnlyList<ActivityPointDto> DailyPoints);

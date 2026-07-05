@@ -14,6 +14,7 @@
         accountId = Model.Filters.AccountId,
         vacancy = Model.Filters.VacancyQuery,
         search = Model.Filters.SearchQuery,
+        pageSize = pagination.PageSize,
         sort = Model.Sort.Column,
         dir = Model.Sort.Dir
     };
@@ -27,6 +28,7 @@
         responsesSortRoute.vacancy,
         responsesSortRoute.search,
         page = pagination.Page,
+        responsesSortRoute.pageSize,
         responsesSortRoute.sort,
         responsesSortRoute.dir
     })!;
@@ -116,7 +118,7 @@
                         data-response-id="@row.Id"
                         data-phone="@phoneDisplay"
                         data-detail-json-url="@Url.Action("DetailJson", "Responses", new { id = row.Id })">
-                        <td class="responses-time" data-label="Время">@ResponseDisplay.FormatCreatedAtLocal(row.CreatedAtUtc)</td>
+                        <td class="responses-time" data-label="Время"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(row.CreatedAtUtc, "datetime"))" /></td>
                         <td class="responses-author" data-label="Автор">@author</td>
                         <td class="responses-phone" data-label="Телефон">
                             @if (row.IsPhoneHidden)

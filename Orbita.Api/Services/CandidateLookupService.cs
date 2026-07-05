@@ -49,28 +49,12 @@ public sealed class CandidateLookupService(OrbitaDbContext db)
         }
 
         var existingPhones = new HashSet<string>(StringComparer.Ordinal);
-        var perAccount = string.Equals(
-            request.DuplicateScope,
-            "PerAvitoAccount",
-            StringComparison.OrdinalIgnoreCase);
 
         if (phones.Length > 0 || request.IncludeAllKnownPhones)
         {
             var phoneQuery = db.CandidateResponses
                 .AsNoTracking()
                 .Where(x => x.OfficeId == worker.OfficeId && x.PhoneNormalized != "");
-
-            var subProfileId = request.AvitoSubProfileId?.Trim();
-            if (!string.IsNullOrWhiteSpace(subProfileId))
-            {
-                phoneQuery = phoneQuery
-                    .Where(x => x.AccountId == request.AccountId)
-                    .Where(x => x.AvitoSubProfileId == subProfileId);
-            }
-            else if (perAccount)
-            {
-                phoneQuery = phoneQuery.Where(x => x.AccountId == request.AccountId);
-            }
 
             if (!request.IncludeAllKnownPhones)
             {

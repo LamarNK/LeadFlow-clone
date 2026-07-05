@@ -1,0 +1,29 @@
+@model StatisticsViewModel
+@{
+    var selectedWorkerId = Model.Filters.WorkerIds.FirstOrDefault();
+    var selectedAccountId = Model.Filters.AccountIds.FirstOrDefault();
+}
+<div class="orbita-filters-fields statistics-filters-row" id="statisticsFilterPanel" data-orbita-collapsible-filters hidden>
+    <label class="orbita-filters-field statistics-filter-field">
+        <span class="orbita-filters-label statistics-filter-label">Воркер</span>
+        <select name="workerIds" class="orbita-filters-select statistics-select" aria-label="Воркер">
+            <option value="" selected="@(selectedWorkerId == Guid.Empty)">Все воркеры</option>
+            @foreach (var opt in Model.WorkerOptions)
+            {
+                var selected = selectedWorkerId.ToString() == opt.Value;
+                <option value="@opt.Value" selected="@selected">@opt.Label</option>
+            }
+        </select>
+    </label>
+    <label class="orbita-filters-field statistics-filter-field statistics-filter-field--account">
+        <span class="orbita-filters-label statistics-filter-label">Аккаунт</span>
+        <partial name="_AccountCombobox" model="@(new AccountComboboxViewModel
+        {
+            FieldName = "accountIds",
+            Label = "Аккаунт",
+            Placeholder = "Все аккаунты",
+            SelectedValue = selectedAccountId == Guid.Empty ? "" : selectedAccountId.ToString(),
+            Options = Model.AccountOptions
+        })" />
+    </label>
+</div>

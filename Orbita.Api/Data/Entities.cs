@@ -175,7 +175,8 @@ public sealed class CandidateResponseEntity
 {
     public Guid Id { get; set; }
     public Guid OfficeId { get; set; }
-    public Guid WorkerId { get; set; }
+    public Guid? WorkerId { get; set; }
+    public string WorkerName { get; set; } = string.Empty;
     public Guid AccountId { get; set; }
     public string AccountName { get; set; } = string.Empty;
     public string Source { get; set; } = string.Empty;
@@ -208,7 +209,7 @@ public sealed class CandidateResponseEntity
     public DateTime? ProcessedAt { get; set; }
 
     public OfficeEntity Office { get; set; } = null!;
-    public WorkerEntity Worker { get; set; } = null!;
+    public WorkerEntity? Worker { get; set; }
 }
 
 public sealed class PanelAuditLogEntity

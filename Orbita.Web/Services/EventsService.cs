@@ -19,6 +19,7 @@ public sealed class EventsService(
         string? view = null,
         string? severity = null,
         int page = 1,
+        int? pageSize = null,
         string? sort = null,
         string? sortDir = null,
         CancellationToken ct = default)
@@ -27,7 +28,8 @@ public sealed class EventsService(
 
         if (journalView == "errors")
         {
-            var errorsPage = await errors.GetIndexAsync(q, severity, type, workerId, accountId, page, sort, sortDir, ct);
+            pageSize = ListPageSizeDefaults.Normalize(pageSize, ListPageSizeDefaults.Errors);
+            var errorsPage = await errors.GetIndexAsync(q, severity, type, workerId, accountId, page, pageSize, sort, sortDir, ct);
             return new EventsIndexViewModel
             {
                 Header = PageHeaderBuilder.WithOfficeScope(PageHeaderBuilder.EventsList(), officeContext),
@@ -48,23 +50,26 @@ public sealed class EventsService(
             Level = journalView == "warnings" ? "warning" : level
         };
 
+        pageSize = ListPageSizeDefaults.Normalize(pageSize, ListPageSizeDefaults.Events);
+
         if (previewOptions.Value.Enabled)
         {
             return DesignPreviewData.BuildEventsIndexViewModel(
                 filters,
                 page,
-                EventsIndexBuilder.DefaultPageSize,
+                pageSize.Value,
                 journalView,
                 sort,
                 sortDir);
         }
 
-        return await GetFromApiAsync(filters, page, journalView, sort, sortDir, ct);
+        return await GetFromApiAsync(filters, page, pageSize.Value, journalView, sort, sortDir, ct);
     }
 
     private async Task<EventsIndexViewModel> GetFromApiAsync(
         EventsFilterViewModel filters,
         int page,
+        int pageSize,
         string journalView,
         string? sort,
         string? sortDir,
@@ -79,6 +84,7 @@ public sealed class EventsService(
             rows,
             filters,
             page,
+            pageSize: pageSize,
             journalView: journalView,
             sort: sort,
             sortDir: sortDir,

@@ -1,0 +1,10 @@
+@model int
+<label class="orbita-filters-field orbita-page-size-field">
+    <span class="orbita-filters-label orbita-page-size-label">На странице</span>
+    <select name="pageSize" class="orbita-filters-select orbita-page-size-select" aria-label="Количество записей на странице">
+        @foreach (var size in ListPageSizeDefaults.Options)
+        {
+            <option value="@size" selected="@(size == Model)">@size</option>
+        }
+    </select>
+</label>

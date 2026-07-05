@@ -105,6 +105,27 @@ public sealed class AvitoAutomationFailureFormatterTests
     }
 
     [Fact]
+    public void Format_WhenCandidatesPageDuringSwitch_ReturnsLoadOrOverlayHint()
+    {
+        var state = new AvitoPageState(
+            AvitoPageKind.Candidates,
+            "https://www.avito.ru/profile/job/responses",
+            "Отклики",
+            false,
+            0,
+            "433959755",
+            "Работа вахта",
+            0,
+            false,
+            false);
+
+        var message = AvitoAutomationFailureFormatter.Format("переключение субпрофиля", state);
+
+        Assert.Contains("всплывающее окно", message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("звонить", message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void Format_JsonException_WithoutPageState_UsesGenericContextMessage()
     {
         var message = AvitoAutomationFailureFormatter.Format(

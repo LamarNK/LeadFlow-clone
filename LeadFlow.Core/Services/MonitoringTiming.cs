@@ -107,6 +107,9 @@ public static class MonitoringTiming
     /// </summary>
     public const int CandidatesBaselineStaleAcceptGraceMs = 12_000;
 
+    /// <summary>Сколько раз повторять переключение субпрофиля с восстановлением страницы между попытками.</summary>
+    public const int SubProfileSwitchMaxAttempts = 3;
+
     /// <summary>Максимум ожидания подтверждения активного суб-профиля после switch (мс).</summary>
     public const int VerifySubProfileMaxWaitMs = 20_000;
 

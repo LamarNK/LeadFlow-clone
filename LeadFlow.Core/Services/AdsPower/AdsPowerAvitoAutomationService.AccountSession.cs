@@ -164,10 +164,68 @@ public sealed partial class AdsPowerAvitoAutomationService
             return false;
         }
 
+        for (var attempt = 1; attempt <= MonitoringTiming.SubProfileSwitchMaxAttempts; attempt++)
+        {
+            if (await TrySwitchSubProfileOnPageOnceAsync(page, subProfileId, cancellationToken)
+                    .ConfigureAwait(false))
+            {
+                return true;
+            }
+
+            var postFailState = await ProbePageStateAsync(page, cancellationToken).ConfigureAwait(false);
+            if (postFailState?.HasLoginForm == true
+                || postFailState?.PageKind == AvitoPageKind.Login
+                || postFailState?.HasCaptcha == true
+                || postFailState?.PageKind == AvitoPageKind.Captcha)
+            {
+                return false;
+            }
+
+            if (attempt >= MonitoringTiming.SubProfileSwitchMaxAttempts)
+            {
+                break;
+            }
+
+            _ = GlobalLogger.Instance.LogAsync(
+                $"AdsPower profile-switch (session): attempt {attempt}/{MonitoringTiming.SubProfileSwitchMaxAttempts} failed for subProfile {subProfileId}, recovering before retry.",
+                DeskLinkAuditLogLevel.Warning,
+                memberName: nameof(SwitchSubProfileOnPageAsync),
+                properties: new Dictionary<string, object?>
+                {
+                    ["step"] = "switch_retry",
+                    ["attempt"] = attempt,
+                    ["avito.subProfileId"] = subProfileId,
+                    ["page.url"] = page.Url
+                });
+
+            await RecoverPageBeforeSubProfileSwitchRetryAsync(page, cancellationToken, attempt)
+                .ConfigureAwait(false);
+        }
+
+        return false;
+    }
+
+    private async Task RecoverPageBeforeSubProfileSwitchRetryAsync(
+        IPage page,
+        CancellationToken cancellationToken,
+        int attempt)
+    {
+        await DismissAvitoBlockingOverlaysAsync(page, cancellationToken).ConfigureAwait(false);
+        await DismissProfileSwitchModalAsync(page, cancellationToken).ConfigureAwait(false);
+        await BounceToDashboardBeforeSwitchAsync(page, cancellationToken, nameof(SwitchSubProfileOnPageAsync))
+            .ConfigureAwait(false);
+        await Task.Delay(attempt * 1200, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<bool> TrySwitchSubProfileOnPageOnceAsync(
+        IPage page,
+        string subProfileId,
+        CancellationToken cancellationToken)
+    {
         _ = GlobalLogger.Instance.LogAsync(
             $"AdsPower profile-switch click started (session): subProfile={subProfileId}.",
             DeskLinkAuditLogLevel.Info,
-            memberName: nameof(SwitchSubProfileOnPageAsync),
+            memberName: nameof(TrySwitchSubProfileOnPageOnceAsync),
             properties: new Dictionary<string, object?>
             {
                 ["step"] = "start",
@@ -188,6 +246,8 @@ public sealed partial class AdsPowerAvitoAutomationService
         {
             // не критично
         }
+
+        await DismissAvitoBlockingOverlaysAsync(page, cancellationToken).ConfigureAwait(false);
 
         var preSwitchState = await ProbePageStateAsync(page, cancellationToken).ConfigureAwait(false);
         if (preSwitchState?.HasLoginForm == true || preSwitchState?.PageKind == AvitoPageKind.Login)

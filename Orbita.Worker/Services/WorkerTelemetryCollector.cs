@@ -18,6 +18,7 @@ public sealed class WorkerTelemetryCollector(
         }
 
         var localAccounts = runtimeStore.GetAll().ToDictionary(x => x.Id);
+        var configByAccountId = config.Accounts.ToDictionary(x => x.AccountId);
 
         var accounts = config.Accounts
             .Select(cfg =>
@@ -31,7 +32,8 @@ public sealed class WorkerTelemetryCollector(
             .Select(a =>
             {
                 localAccounts.TryGetValue(a.AccountId, out var local);
-                return MapBalance(a, local);
+                configByAccountId.TryGetValue(a.AccountId, out var cfg);
+                return MapBalance(a, local, cfg);
             })
             .ToList();
 
@@ -81,9 +83,12 @@ public sealed class WorkerTelemetryCollector(
             SubProfilesRefreshRequestedAtUtc: cfg.SubProfilesRefreshRequestedAtUtc);
     }
 
-    private static WorkerBalanceDto MapBalance(WorkerAccountDto account, AvitoAccount? local)
+    private static WorkerBalanceDto MapBalance(
+        WorkerAccountDto account,
+        AvitoAccount? local,
+        WorkerAccountConfigDto? cfg)
     {
-        var subProfiles = account.SubProfiles ?? [];
+        var subProfiles = ResolveBalanceSubProfiles(account, local, cfg);
         if (subProfiles.Count == 0)
         {
             return new WorkerBalanceDto(
@@ -107,6 +112,52 @@ public sealed class WorkerTelemetryCollector(
             balanceItems.Sum(x => x.Balance ?? 0m),
             balanceItems,
             balanceItems.Sum(x => x.WalletBalance ?? 0m));
+    }
+
+    private static IReadOnlyList<WorkerSubProfileDto> ResolveBalanceSubProfiles(
+        WorkerAccountDto account,
+        AvitoAccount? local,
+        WorkerAccountConfigDto? cfg)
+    {
+        var current = account.SubProfiles ?? [];
+        if (current.Any(static sp => sp.Balance.HasValue || sp.WalletBalance.HasValue))
+        {
+            return current;
+        }
+
+        var persisted = MapSubProfiles(null, cfg) ?? [];
+        if (persisted.Count == 0)
+        {
+            return current;
+        }
+
+        if (current.Count == 0)
+        {
+            return persisted;
+        }
+
+        var persistedById = persisted.ToDictionary(
+            static sp => sp.Id,
+            static sp => sp,
+            StringComparer.Ordinal);
+        return current
+            .Select(sp =>
+            {
+                if (!persistedById.TryGetValue(sp.Id, out var stored))
+                {
+                    return sp;
+                }
+
+                return sp with
+                {
+                    Balance = sp.Balance ?? stored.Balance,
+                    WalletBalance = sp.WalletBalance ?? stored.WalletBalance,
+                    AdvanceDurationText = string.IsNullOrWhiteSpace(sp.AdvanceDurationText)
+                        ? stored.AdvanceDurationText
+                        : sp.AdvanceDurationText
+                };
+            })
+            .ToList();
     }
 
     private static IReadOnlyList<WorkerSubProfileDto>? MapSubProfiles(AvitoAccount? local, WorkerAccountConfigDto cfg)

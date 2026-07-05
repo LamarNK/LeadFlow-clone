@@ -63,16 +63,19 @@
                 @sub.StatusLabel
             </span>
         </td>
-        <td data-label="Сейчас">
-            @if (!string.IsNullOrWhiteSpace(sub.ProcessingLabel))
-            {
-                <partial name="_WorkerActivityPillFromRow" model="@(sub.ProcessingLabel, sub.ProcessingTone, sub.IsProcessingNow)" />
-            }
-            else
-            {
-                <span class="worker-activity-pill worker-activity-pill--muted">—</span>
-            }
-        </td>
+        @if (Model.Layout == SubProfileTableLayout.Accounts)
+        {
+            <td data-label="Сейчас">
+                @if (!string.IsNullOrWhiteSpace(sub.ProcessingLabel))
+                {
+                    <partial name="_WorkerActivityPillFromRow" model="@(sub.ProcessingLabel, sub.ProcessingTone, sub.IsProcessingNow)" />
+                }
+                else
+                {
+                    <span class="worker-activity-pill worker-activity-pill--muted">—</span>
+                }
+            </td>
+        }
         <td class="cell-num cell-balance" data-label="Баланс">
             <span class="subprofiles-balance">@sub.BalanceText</span>
         </td>

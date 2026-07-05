@@ -5,15 +5,18 @@
         {
             @Html.Raw(Model.ExtraFormContent)
         }
-        <div class="orbita-filters-toolbar">
-            <div class="orbita-filters-search">
-                <i class="fa-solid fa-magnifying-glass orbita-filters-search-icon" aria-hidden="true"></i>
-                <input type="search"
-                       name="@Model.SearchName"
-                       value="@Model.SearchValue"
-                       placeholder="@Model.SearchPlaceholder"
-                       aria-label="@Model.SearchPlaceholder" />
-            </div>
+        <div class="orbita-filters-toolbar@(string.IsNullOrWhiteSpace(Model.SearchName) ? " orbita-filters-toolbar--no-search" : "")">
+            @if (!string.IsNullOrWhiteSpace(Model.SearchName))
+            {
+                <div class="orbita-filters-search">
+                    <i class="fa-solid fa-magnifying-glass orbita-filters-search-icon" aria-hidden="true"></i>
+                    <input type="search"
+                           name="@Model.SearchName"
+                           value="@Model.SearchValue"
+                           placeholder="@Model.SearchPlaceholder"
+                           aria-label="@Model.SearchPlaceholder" />
+                </div>
+            }
             <div class="orbita-filters-toolbar-actions">
                 @if (!string.IsNullOrWhiteSpace(Model.FilterPanelId))
                 {

@@ -128,6 +128,7 @@ public sealed class CandidateIngestionService(
             Id = Guid.NewGuid(),
             OfficeId = worker.OfficeId,
             WorkerId = worker.Id,
+            WorkerName = worker.DisplayName,
             AccountId = candidate.AccountId,
             AccountName = candidate.AccountName,
             Source = string.IsNullOrWhiteSpace(candidate.Source) ? "Avito" : candidate.Source,

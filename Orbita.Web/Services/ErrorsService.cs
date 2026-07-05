@@ -16,10 +16,12 @@ public sealed class ErrorsService(
         Guid? workerId = null,
         Guid? accountId = null,
         int page = 1,
+        int? pageSize = null,
         string? sort = null,
         string? sortDir = null,
         CancellationToken ct = default)
     {
+        pageSize = ListPageSizeDefaults.Normalize(pageSize, ListPageSizeDefaults.Errors);
         var filters = new ErrorsFilterViewModel
         {
             SearchQuery = q,
@@ -30,14 +32,15 @@ public sealed class ErrorsService(
         };
 
         if (previewOptions.Value.Enabled)
-            return Task.FromResult(DesignPreviewData.BuildErrorsIndexViewModel(filters, page, ErrorsIndexBuilder.DefaultPageSize, sort, sortDir));
+            return Task.FromResult(DesignPreviewData.BuildErrorsIndexViewModel(filters, page, pageSize.Value, sort, sortDir));
 
-        return GetFromApiAsync(filters, page, sort, sortDir, ct);
+        return GetFromApiAsync(filters, page, pageSize.Value, sort, sortDir, ct);
     }
 
     private async Task<ErrorsIndexViewModel> GetFromApiAsync(
         ErrorsFilterViewModel filters,
         int page,
+        int pageSize,
         string? sort,
         string? sortDir,
         CancellationToken ct)
@@ -48,7 +51,7 @@ public sealed class ErrorsService(
             .Select(e => ErrorsIndexBuilder.MapEvent(e))
             .ToList();
 
-        return ErrorsIndexBuilder.Build(rows, filters, page, sort: sort, sortDir: sortDir, officeContext: officeContext);
+        return ErrorsIndexBuilder.Build(rows, filters, page, pageSize, sort: sort, sortDir: sortDir, officeContext: officeContext);
     }
 
     public Task<(bool Success, string? Error)> DismissEventAsync(Guid eventId, CancellationToken ct = default) =>

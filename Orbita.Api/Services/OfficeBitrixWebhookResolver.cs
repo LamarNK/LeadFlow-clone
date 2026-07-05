@@ -22,7 +22,7 @@ public sealed class OfficeBitrixWebhookResolver(
         var entries = await ListOfficeWebhooksAsync(officeId, ct);
         var primary = entries.FirstOrDefault(x =>
             x.IsPrimaryForIngestion
-            && string.Equals(x.ValidationStatus, BitrixValidationStatuses.Ok, StringComparison.Ordinal));
+            && BitrixValidationStatuses.AllowsWebhookUsage(x.ValidationStatus));
         return primary?.WebhookUrl;
     }
 
@@ -82,7 +82,7 @@ public sealed class OfficeBitrixWebhookResolver(
         }
 
         var primaryUserId = entries
-            .Where(x => string.Equals(x.ValidationStatus, BitrixValidationStatuses.Ok, StringComparison.Ordinal)
+            .Where(x => BitrixValidationStatuses.AllowsWebhookUsage(x.ValidationStatus)
                         && !string.IsNullOrWhiteSpace(x.WebhookUrl))
             .OrderBy(x => x.Email, StringComparer.OrdinalIgnoreCase)
             .Select(x => x.UserId)
@@ -116,7 +116,7 @@ public sealed class OfficeBitrixWebhookResolver(
             .FirstOrDefaultAsync(ct);
 
         if (office is not null
-            && string.Equals(office.BitrixValidationStatus, BitrixValidationStatuses.Ok, StringComparison.Ordinal)
+            && BitrixValidationStatuses.AllowsWebhookUsage(office.BitrixValidationStatus)
             && !string.IsNullOrWhiteSpace(office.BitrixPortalHost))
         {
             return office.BitrixPortalHost;

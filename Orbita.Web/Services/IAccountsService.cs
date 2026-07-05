@@ -7,7 +7,9 @@ public interface IAccountsService
     Task<AccountsIndexViewModel> GetIndexAsync(
         string? searchQuery = null,
         string? tab = null,
+        Guid? workerId = null,
         int page = 1,
+        int? pageSize = null,
         string? sort = null,
         string? sortDir = null,
         CancellationToken ct = default);

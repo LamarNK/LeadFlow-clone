@@ -368,16 +368,72 @@
         };
     }
 
+    function activityChartPointCount(chartData) {
+        if (!chartData) return 0;
+        if (chartData.labels && chartData.labels.length) return chartData.labels.length;
+        if (chartData.series && chartData.series.length && chartData.series[0].values) {
+            return chartData.series[0].values.length;
+        }
+        return chartData.values ? chartData.values.length : 0;
+    }
+
+    function activityChartSeries(chartData) {
+        if (chartData && chartData.series && chartData.series.length) {
+            return chartData.series;
+        }
+        return [{
+            label: 'Откликов',
+            color: '#2563eb',
+            values: chartData && chartData.values ? chartData.values : []
+        }];
+    }
+
+    function activityChartValues(chartData) {
+        var values = [];
+        activityChartSeries(chartData).forEach(function (series) {
+            (series.values || []).forEach(function (value) {
+                values.push(Number(value) || 0);
+            });
+        });
+        return values;
+    }
+
+    function buildHourlyDatasets(chartData) {
+        return activityChartSeries(chartData).map(function (series) {
+            var lineColor = series.color || '#2563eb';
+            return {
+                label: series.label || 'Значение',
+                data: series.values || [],
+                borderColor: lineColor,
+                backgroundColor: 'transparent',
+                fill: false,
+                tension: 0,
+                borderWidth: 2,
+                borderCapStyle: 'round',
+                borderJoinStyle: 'round',
+                pointRadius: 3,
+                pointBackgroundColor: lineColor,
+                pointBorderColor: '#ffffff',
+                pointBorderWidth: 0,
+                pointHoverRadius: 5,
+                pointHoverBackgroundColor: lineColor,
+                pointHoverBorderColor: '#ffffff',
+                pointHoverBorderWidth: 2,
+                pointHitRadius: 10
+            };
+        });
+    }
+
     function initHourlyChart(chartData) {
         var canvas = document.getElementById('chart-hourly-responses');
-        if (!canvas || !chartData || !chartData.values || chartData.values.length < 2) return;
+        if (!canvas || activityChartPointCount(chartData) < 2) return;
 
         destroyChartOnCanvas(canvas);
         chartRegistry.hourly = createHourlyChart(canvas, chartData);
     }
 
-    function hourlyYBounds(values) {
-        var nums = (values || []).map(function (v) { return Number(v) || 0; });
+    function hourlyYBounds(chartData) {
+        var nums = activityChartValues(chartData);
         if (!nums.length) {
             return { yMin: 0, yMax: 5, step: 1 };
         }
@@ -394,33 +450,13 @@
         chartData = localizeChartData(chartData);
         var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
         var labels = chartData.labels || [];
-        var lineColor = '#2563eb';
-        var yBounds = hourlyYBounds(chartData.values);
+        var yBounds = hourlyYBounds(chartData);
 
         return new Chart(canvas, {
             type: 'line',
             data: {
                 labels: labels,
-                datasets: [{
-                    label: 'Отклики',
-                    data: chartData.values,
-                    borderColor: lineColor,
-                    backgroundColor: 'transparent',
-                    fill: false,
-                    tension: 0,
-                    borderWidth: 2,
-                    borderCapStyle: 'round',
-                    borderJoinStyle: 'round',
-                    pointRadius: 3,
-                    pointBackgroundColor: lineColor,
-                    pointBorderColor: '#ffffff',
-                    pointBorderWidth: 0,
-                    pointHoverRadius: 5,
-                    pointHoverBackgroundColor: lineColor,
-                    pointHoverBorderColor: '#ffffff',
-                    pointHoverBorderWidth: 2,
-                    pointHitRadius: 10
-                }]
+                datasets: buildHourlyDatasets(chartData)
             },
             options: {
                 responsive: true,
@@ -462,16 +498,46 @@
                     }
                 },
                 plugins: {
-                    legend: { display: false },
-                    tooltip: dashboardTooltipOptions(
-                        'Откликов',
-                        null,
-                        function (items) {
-                            if (!items.length) return '';
-                            var chart = items[0].chart;
-                            var labels = chart.data && chart.data.labels ? chart.data.labels : [];
-                            return String(labels[items[0].dataIndex] || items[0].label || '');
-                        })
+                    legend: {
+                        display: true,
+                        position: 'bottom',
+                        labels: {
+                            boxWidth: 12,
+                            padding: 14,
+                            color: '#667085',
+                            font: { size: 12, weight: '500' },
+                            usePointStyle: true,
+                            pointStyle: 'line'
+                        }
+                    },
+                    tooltip: {
+                        enabled: true,
+                        mode: 'index',
+                        intersect: false,
+                        backgroundColor: '#ffffff',
+                        titleColor: '#101828',
+                        bodyColor: '#667085',
+                        borderColor: '#eef2f7',
+                        borderWidth: 1,
+                        padding: { top: 10, right: 14, bottom: 10, left: 14 },
+                        cornerRadius: 12,
+                        displayColors: true,
+                        titleFont: { size: 13, weight: '600' },
+                        bodyFont: { size: 13, weight: '400' },
+                        caretSize: 6,
+                        caretPadding: 10,
+                        callbacks: {
+                            title: function (items) {
+                                if (!items.length) return '';
+                                var chart = items[0].chart;
+                                var chartLabels = chart.data && chart.data.labels ? chart.data.labels : [];
+                                return String(chartLabels[items[0].dataIndex] || items[0].label || '');
+                            },
+                            label: function (ctx) {
+                                return (ctx.dataset.label || 'Значение') + ': ' + ctx.parsed.y;
+                            }
+                        }
+                    }
                 },
                 scales: {
                     x: {
@@ -882,7 +948,7 @@
     }
 
     function updateHourlyChart(chartData, highlightChanged) {
-        if (!chartData || !chartData.values || chartData.values.length < 2) return;
+        if (activityChartPointCount(chartData) < 2) return;
 
         var card = document.querySelector('.card--chart-hourly');
         var prev = payload.hourlyResponses;
@@ -891,9 +957,23 @@
         if (chartRegistry.hourly) {
             if (changed) {
                 var localized = localizeChartData(chartData);
-                var yBounds = hourlyYBounds(chartData.values);
+                var yBounds = hourlyYBounds(chartData);
+                var datasets = buildHourlyDatasets(chartData);
                 chartRegistry.hourly.data.labels = localized.labels;
-                chartRegistry.hourly.data.datasets[0].data = chartData.values;
+                datasets.forEach(function (dataset, index) {
+                    if (chartRegistry.hourly.data.datasets[index]) {
+                        chartRegistry.hourly.data.datasets[index].label = dataset.label;
+                        chartRegistry.hourly.data.datasets[index].data = dataset.data;
+                        chartRegistry.hourly.data.datasets[index].borderColor = dataset.borderColor;
+                        chartRegistry.hourly.data.datasets[index].pointBackgroundColor = dataset.pointBackgroundColor;
+                        chartRegistry.hourly.data.datasets[index].pointHoverBackgroundColor = dataset.pointHoverBackgroundColor;
+                    } else {
+                        chartRegistry.hourly.data.datasets.push(dataset);
+                    }
+                });
+                while (chartRegistry.hourly.data.datasets.length > datasets.length) {
+                    chartRegistry.hourly.data.datasets.pop();
+                }
                 chartRegistry.hourly.options.scales.y.min = yBounds.yMin;
                 chartRegistry.hourly.options.scales.y.max = yBounds.yMax;
                 chartRegistry.hourly.options.scales.y.ticks.stepSize = yBounds.step;

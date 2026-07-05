@@ -164,27 +164,30 @@
 
                         <form asp-action="SaveBitrix"
                               method="post"
-                              class="settings-create-form settings-bitrix-form"
-                              data-bitrix-settings-form
-                              data-bitrix-validate-url="@Url.Action("ValidateBitrix")">
+                              class="settings-create-form settings-bitrix-form">
                             @Html.AntiForgeryToken()
                             <label class="settings-field">
                                 <span class="settings-field-label">URL вебхука</span>
                                 <input type="url"
                                        name="WebhookUrl"
+                                       value="@bitrix.DraftWebhookUrl"
                                        placeholder="https://ваш-портал.bitrix24.ru/rest/1/xxxxxxxx/"
                                        autocomplete="off"
-                                       spellcheck="false"
-                                       data-bitrix-webhook-input />
+                                       spellcheck="false" />
                             </label>
-                            <p class="settings-bitrix-hint">Один вебхук на весь офис. Изменения видят все операторы этого офиса.</p>
+                            <p class="settings-bitrix-hint">Один вебхук на весь офис. Изменения видят все операторы этого офиса. Оставьте поле пустым и нажмите «Проверить», чтобы проверить уже сохранённый вебхук.</p>
                             <div class="settings-bitrix-actions">
-                                <button type="button" class="settings-secondary-btn" data-bitrix-validate-btn">Проверить</button>
+                                <button type="submit"
+                                        formaction="@Url.Action("ValidateBitrix", "MySettings")"
+                                        formnovalidate
+                                        class="settings-secondary-btn">Проверить</button>
                                 <button type="submit" class="settings-primary-btn">Сохранить</button>
                             </div>
+                            @if (bitrix.LiveValidation is not null)
+                            {
+                                <partial name="_BitrixValidationResults" model="bitrix.LiveValidation" />
+                            }
                         </form>
-
-                        <div class="settings-bitrix-validation" data-bitrix-validation-results hidden></div>
                     }
 
                     <details class="settings-bitrix-instructions">
@@ -202,6 +205,3 @@
     }
 </div>
 
-@section Scripts {
-    <script src="~/js/orbita-bitrix-settings.js" asp-append-version="true"></script>
-}

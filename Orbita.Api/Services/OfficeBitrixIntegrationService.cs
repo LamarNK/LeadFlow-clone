@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Orbita.Api.Data;
 using Orbita.Contracts;
+using Orbita.Logging.Audit;
 
 namespace Orbita.Api.Services;
 
@@ -140,7 +141,7 @@ public sealed class OfficeBitrixIntegrationService(
 
         if (office is null
             || string.IsNullOrWhiteSpace(office.BitrixWebhookUrlProtected)
-            || !string.Equals(office.BitrixValidationStatus, BitrixValidationStatuses.Ok, StringComparison.Ordinal))
+            || !BitrixValidationStatuses.AllowsWebhookUsage(office.BitrixValidationStatus))
         {
             return null;
         }
@@ -149,8 +150,18 @@ public sealed class OfficeBitrixIntegrationService(
         {
             return protector.Unprotect(office.BitrixWebhookUrlProtected);
         }
-        catch
+        catch (Exception ex)
         {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Не удалось расшифровать вебхук Bitrix24 для офиса {officeId}: {ex.Message}. "
+                + "Сохраните ссылку заново в настройках. Если ошибка повторяется после перезапуска API — проверьте DataProtection:KeysPath.",
+                DeskLinkAuditLogLevel.Error,
+                errorKey: "bitrix.webhook.unprotect_failed",
+                properties: new Dictionary<string, object?>
+                {
+                    ["office.id"] = officeId,
+                    ["bitrix.validation_status"] = office.BitrixValidationStatus
+                });
             return null;
         }
     }

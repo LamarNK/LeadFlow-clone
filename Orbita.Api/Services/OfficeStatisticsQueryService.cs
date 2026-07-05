@@ -18,7 +18,9 @@ public sealed class OfficeStatisticsQueryService(
         OfficeScope Scope,
         Guid? OfficeFilter,
         DateTime FromLocal,
-        DateTime ToLocal) _cache;
+        DateTime ToLocal,
+        string WorkerFilterKey,
+        string AccountFilterKey) _cache;
     private static readonly object CacheLock = new();
 
     public async Task<OfficeStatisticsDto> GetStatisticsAsync(
@@ -26,11 +28,18 @@ public sealed class OfficeStatisticsQueryService(
         Guid? officeFilter,
         DateTime? from,
         DateTime? to,
+        IReadOnlyList<Guid>? workerIdsFilter = null,
+        IReadOnlyList<Guid>? accountIdsFilter = null,
         CancellationToken ct = default)
     {
         var nowUtc = DateTime.UtcNow;
         var (startLocal, endLocal, utcStart, utcEnd) = LocalCalendarDateRange.Normalize(from, to);
+        var workerFilterSet = NormalizeFilter(workerIdsFilter);
+        var accountFilterSet = NormalizeFilter(accountIdsFilter);
+        var workerFilterKey = BuildFilterKey(workerFilterSet);
+        var accountFilterKey = BuildFilterKey(accountFilterSet);
 
+        OfficeStatisticsDto? cachedResult = null;
         lock (CacheLock)
         {
             if (_cache.Value is not null
@@ -38,13 +47,22 @@ public sealed class OfficeStatisticsQueryService(
                 && _cache.Scope.IsGlobalAdmin == scope.IsGlobalAdmin
                 && _cache.OfficeFilter == officeFilter
                 && _cache.FromLocal == startLocal
-                && _cache.ToLocal == endLocal)
+                && _cache.ToLocal == endLocal
+                && _cache.WorkerFilterKey == workerFilterKey
+                && _cache.AccountFilterKey == accountFilterKey)
             {
-                return _cache.Value with { AggregatedAtUtc = nowUtc };
+                cachedResult = _cache.Value;
             }
         }
 
-        var workersQuery = officeScope.ApplyWorkerFilter(db.Workers.AsNoTracking(), scope, officeFilter);
+        if (cachedResult is not null)
+        {
+            return await RefreshOnlineStatusAsync(cachedResult, ct);
+        }
+
+        var workersQuery = officeScope
+            .ApplyWorkerFilter(db.Workers.AsNoTracking(), scope, officeFilter)
+            .Where(x => x.MachineName != LeadFlowImportWorker.MachineName);
         var workers = await workersQuery
             .Select(w => new WorkerProjection(
                 w.Id,
@@ -53,6 +71,11 @@ public sealed class OfficeStatisticsQueryService(
                 w.Office.Name,
                 w.LastSeenAtUtc))
             .ToListAsync(ct);
+
+        if (workerFilterSet is not null)
+        {
+            workers = workers.Where(w => workerFilterSet.Contains(w.Id)).ToList();
+        }
 
         var workerIds = workers.Select(w => w.Id).ToHashSet();
         if (workerIds.Count == 0)
@@ -73,9 +96,10 @@ public sealed class OfficeStatisticsQueryService(
             .Cast<DashboardStatsDto>()
             .ToList();
 
-        var snapshotBalances = latestSnapshots
-            .SelectMany(s => JsonSerializer.Deserialize<List<WorkerBalanceDto>>(s.BalancesJson, JsonOptions) ?? [])
-            .ToDictionary(b => b.AccountId);
+        var snapshotBalancesByWorker = latestSnapshots
+            .ToDictionary(
+                s => s.WorkerId,
+                s => DeserializeSnapshotBalances(s.BalancesJson));
 
         var accountRows = await db.WorkerAccounts
             .AsNoTracking()
@@ -90,12 +114,22 @@ public sealed class OfficeStatisticsQueryService(
                 a.SubProfilesJson))
             .ToListAsync(ct);
 
+        if (accountFilterSet is not null)
+        {
+            accountRows = accountRows.Where(a => accountFilterSet.Contains(a.AccountId)).ToList();
+        }
+
         var workerLookup = workers.ToDictionary(w => w.Id);
-        var balances = BuildBalances(accountRows, snapshotBalances, workerLookup);
+        var balances = BuildBalances(accountRows, snapshotBalancesByWorker, workerLookup);
         var accountInfrastructure = BuildAccountInfrastructure(accountRows, statsList);
         var responsesQuery = db.CandidateResponses
             .AsNoTracking()
-            .Where(x => workerIds.Contains(x.WorkerId) && x.CreatedAt >= utcStart && x.CreatedAt < utcEnd);
+            .Where(x => x.WorkerId != null && workerIds.Contains(x.WorkerId.Value) && x.CreatedAt >= utcStart && x.CreatedAt < utcEnd);
+
+        if (accountFilterSet is not null)
+        {
+            responsesQuery = responsesQuery.Where(x => accountFilterSet.Contains(x.AccountId));
+        }
 
         var responses = await BuildResponsesPeriodAsync(responsesQuery, ct);
         var dailyTrend = await BuildDailyTrendAsync(responsesQuery, startLocal, endLocal, ct);
@@ -119,10 +153,53 @@ public sealed class OfficeStatisticsQueryService(
 
         lock (CacheLock)
         {
-            _cache = (nowUtc.AddSeconds(8), result, scope, officeFilter, startLocal, endLocal);
+            _cache = (nowUtc.AddSeconds(8), result, scope, officeFilter, startLocal, endLocal, workerFilterKey, accountFilterKey);
         }
 
-        return result;
+        return await RefreshOnlineStatusAsync(result, ct);
+    }
+
+    private static HashSet<Guid>? NormalizeFilter(IReadOnlyList<Guid>? ids) =>
+        ids is null or { Count: 0 } ? null : ids.ToHashSet();
+
+    private static string BuildFilterKey(HashSet<Guid>? ids) =>
+        ids is null ? string.Empty : string.Join(',', ids.OrderBy(x => x));
+
+    private async Task<OfficeStatisticsDto> RefreshOnlineStatusAsync(
+        OfficeStatisticsDto result,
+        CancellationToken ct)
+    {
+        var nowUtc = DateTime.UtcNow;
+        var workerIds = result.Workers.Items.Select(w => w.Id).ToList();
+        if (workerIds.Count == 0)
+        {
+            return result with { AggregatedAtUtc = nowUtc };
+        }
+
+        var lastSeenRows = await db.Workers
+            .AsNoTracking()
+            .Where(w => workerIds.Contains(w.Id))
+            .Select(w => new { w.Id, w.LastSeenAtUtc })
+            .ToListAsync(ct);
+        var lastSeenLookup = lastSeenRows.ToDictionary(x => x.Id, x => x.LastSeenAtUtc);
+
+        var refreshedItems = result.Workers.Items
+            .Select(w => w with
+            {
+                IsOnline = lastSeenLookup.TryGetValue(w.Id, out var seen)
+                    && WorkerOnlineRules.IsOnline(seen, nowUtc)
+            })
+            .ToList();
+
+        return result with
+        {
+            AggregatedAtUtc = nowUtc,
+            Workers = result.Workers with
+            {
+                Online = refreshedItems.Count(w => w.IsOnline),
+                Items = refreshedItems
+            }
+        };
     }
 
     private static OfficeStatisticsDto Empty(DateTime aggregatedAtUtc) =>
@@ -137,7 +214,7 @@ public sealed class OfficeStatisticsQueryService(
 
     private static BalanceStatisticsSection BuildBalances(
         IReadOnlyList<AccountProjection> accountRows,
-        IReadOnlyDictionary<Guid, WorkerBalanceDto> snapshotBalances,
+        IReadOnlyDictionary<Guid, Dictionary<Guid, WorkerBalanceDto>> snapshotBalancesByWorker,
         IReadOnlyDictionary<Guid, WorkerProjection> workerLookup)
     {
         var items = new List<AccountBalanceStatDto>(accountRows.Count);
@@ -153,7 +230,9 @@ public sealed class OfficeStatisticsQueryService(
             decimal wallet;
             IReadOnlyList<SubProfileBalanceDto> subProfiles;
 
-            if (snapshotBalances.TryGetValue(row.AccountId, out var snapshot))
+            if (snapshotBalancesByWorker.TryGetValue(row.WorkerId, out var workerBalances)
+                && workerBalances.TryGetValue(row.AccountId, out var snapshot)
+                && BalanceSnapshotHelper.HasMeaningfulBalanceData(snapshot))
             {
                 advance = snapshot.TotalBalance;
                 wallet = snapshot.TotalWalletBalance;
@@ -391,18 +470,21 @@ public sealed class OfficeStatisticsQueryService(
 
         var responseStats = await db.CandidateResponses
             .AsNoTracking()
-            .Where(x => workerIds.Contains(x.WorkerId) && x.CreatedAt >= utcStart && x.CreatedAt < utcEnd)
+            .Where(x => x.WorkerId != null && workerIds.Contains(x.WorkerId.Value) && x.CreatedAt >= utcStart && x.CreatedAt < utcEnd)
             .GroupBy(x => x.WorkerId)
             .Select(g => new
             {
                 WorkerId = g.Key,
                 Total = g.Count(),
+                Sent = g.Count(x => x.Status == ResponseStatuses.Sent),
                 Duplicates = g.Count(x => x.Status == ResponseStatuses.Duplicate),
                 Errors = g.Count(x => x.Status == ResponseStatuses.Error || x.Status == ResponseStatuses.ActionRequired)
             })
             .ToListAsync(ct);
 
-        var responseLookup = responseStats.ToDictionary(x => x.WorkerId);
+        var responseLookup = responseStats
+            .Where(x => x.WorkerId is not null)
+            .ToDictionary(x => x.WorkerId!.Value);
 
         var items = workers
             .Select(w =>
@@ -415,6 +497,7 @@ public sealed class OfficeStatisticsQueryService(
                     w.OfficeName,
                     WorkerOnlineRules.IsOnline(w.LastSeenAtUtc, nowUtc),
                     stats?.Total ?? 0,
+                    stats?.Sent ?? 0,
                     stats?.Duplicates ?? 0,
                     stats?.Errors ?? 0,
                     accounts.Active,
@@ -481,6 +564,11 @@ public sealed class OfficeStatisticsQueryService(
 
     private static string Normalize(string? value, string fallback) =>
         string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
+
+    private static Dictionary<Guid, WorkerBalanceDto> DeserializeSnapshotBalances(string? json) =>
+        (JsonSerializer.Deserialize<List<WorkerBalanceDto>>(json ?? "[]", JsonOptions) ?? [])
+            .GroupBy(b => b.AccountId)
+            .ToDictionary(g => g.Key, g => g.Last());
 
     private static IReadOnlyList<SubProfileBalanceDto> DeserializeSubProfileBalances(string? json)
     {

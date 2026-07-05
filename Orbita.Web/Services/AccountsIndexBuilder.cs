@@ -6,7 +6,7 @@ namespace Orbita.Web.Services;
 
 internal static class AccountsIndexBuilder
 {
-    public const int DefaultPageSize = 10;
+    public const int DefaultPageSize = ListPageSizeDefaults.Accounts;
 
     private static readonly AccountTabViewModel[] TabDefinitions =
     [
@@ -25,17 +25,20 @@ internal static class AccountsIndexBuilder
         string? sortDir = null,
         int pageSize = DefaultPageSize,
         bool showOfficeColumn = false,
-        IOfficeContext? officeContext = null)
+        IOfficeContext? officeContext = null,
+        Guid? workerId = null,
+        IReadOnlyList<EventFilterOptionViewModel>? workers = null)
     {
         page = Math.Max(1, page);
         tab = NormalizeTab(tab);
         var tableSort = TableSort.Parse(sort, sortDir, TableSort.Accounts.Default, TableSort.Accounts.Columns);
 
-        var filtered = FilterRows(allRows, searchQuery, tab);
+        var scopedRows = FilterByWorker(allRows, workerId);
+        var filtered = FilterRows(scopedRows, searchQuery, tab);
         var sorted = TableSort.Accounts.Apply(filtered, tableSort).ToList();
         var total = sorted.Count;
         var paged = sorted.Skip((page - 1) * pageSize).Take(pageSize).ToList();
-        var summary = Summarize(allRows);
+        var summary = Summarize(scopedRows);
 
         var header = PageHeaderBuilder.AccountsList();
         if (officeContext is not null)
@@ -58,7 +61,17 @@ internal static class AccountsIndexBuilder
                 TotalItems = total
             },
             Sort = tableSort,
-            ShowOfficeColumn = showOfficeColumn
+            ShowOfficeColumn = showOfficeColumn,
+            WorkerId = workerId,
+            Workers = workers ?? [],
+            HasActiveFilters = !string.IsNullOrWhiteSpace(searchQuery) || tab != "all" || workerId.HasValue,
+            ActiveFilterChips = FilterChipsBuilder.ForAccounts(
+                searchQuery,
+                tab,
+                TabDefinitions,
+                workerId,
+                workers ?? [],
+                pageSize)
         };
     }
 
@@ -138,6 +151,18 @@ internal static class AccountsIndexBuilder
             ProcessingTone = processing.Tone,
             ProcessingSubProfileId = processing.SubProfileId
         };
+    }
+
+    private static IReadOnlyList<AccountRowViewModel> FilterByWorker(
+        IReadOnlyList<AccountRowViewModel> rows,
+        Guid? workerId)
+    {
+        if (workerId is not Guid wid)
+        {
+            return rows;
+        }
+
+        return rows.Where(a => a.WorkerId == wid).ToList();
     }
 
     private static IReadOnlyList<AccountRowViewModel> FilterRows(

@@ -3,6 +3,7 @@
 @using Orbita.Contracts
 @{
     ViewData["Title"] = Model.DisplayName;
+    var subProfileJsonOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
     var chartJson = JsonSerializer.Serialize(Model.ActivityChart, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
     var createdApiKey = TempData["CreatedWorkerApiKey"] as string;
     var installCommand = TempData["CreatedWorkerInstallCommand"] as string;
@@ -346,7 +347,11 @@
                 {
                     var accountSearchUrl = Url.Action("Index", "Accounts", new { q = account.DisplayName });
                     var responsesUrl = Url.Action("Index", "Responses", new { accountId = account.Id });
-                    <tr class="worker-account-row@(account.IsProcessingNow ? " worker-account-row--processing" : "")" data-account-id="@account.Id">
+                    <tr class="worker-account-row@(account.IsProcessingNow ? " worker-account-row--processing" : "")"
+                        data-account-id="@account.Id"
+                        data-subprofiles-layout="worker"
+                        data-processing-subprofile-id="@(account.IsProcessingNow ? account.ProcessingSubProfileId : null)"
+                        data-subprofiles-json="@JsonSerializer.Serialize(account.SubProfiles, subProfileJsonOptions)">
                         <td class="cell-toggle" data-label="Вкл">
                             <label class="worker-toggle" title="@(account.IsEnabledInPanel ? "Отключить аккаунт в панели" : "Включить аккаунт в панели")">
                                 <input type="checkbox"
@@ -411,6 +416,18 @@
                             </div>
                         </td>
                     </tr>
+                    @if (account.HasSubProfiles)
+                    {
+                        <partial name="_SubProfileTableRows" model="@(new SubProfileTableRowsViewModel
+                        {
+                            WorkerId = Model.WorkerId,
+                            AccountId = account.Id,
+                            PanelId = $"subprofiles-{account.Id}",
+                            ProcessingSubProfileId = account.IsProcessingNow ? account.ProcessingSubProfileId : null,
+                            Layout = SubProfileTableLayout.WorkerDetails,
+                            Items = account.SubProfiles
+                        })" />
+                    }
                 }
                 </tbody>
             </table>

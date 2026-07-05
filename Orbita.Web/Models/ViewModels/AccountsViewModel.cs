@@ -15,8 +15,13 @@ public sealed class AccountsIndexViewModel
     public IReadOnlyList<AccountRowViewModel> Accounts { get; init; } = [];
     public PaginationViewModel Pagination { get; init; } = new();
     public string? SearchQuery { get; init; }
+    public Guid? WorkerId { get; init; }
+    public IReadOnlyList<EventFilterOptionViewModel> Workers { get; init; } = [];
     public TableSortState Sort { get; init; } = TableSortState.Create("account", descending: false);
     public bool ShowOfficeColumn { get; init; }
+    public bool HasActiveFilters { get; init; }
+    public IReadOnlyList<ActiveFilterChipViewModel> ActiveFilterChips { get; init; } = [];
+    public int ActiveFilterCount => ActiveFilterChips.Count;
 }
 
 public sealed class AccountTabViewModel

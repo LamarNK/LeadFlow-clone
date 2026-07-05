@@ -13,6 +13,7 @@
         workerId = Model.Filters.WorkerId,
         accountId = Model.Filters.AccountId,
         level = Model.Filters.Level,
+        pageSize = pagination.PageSize,
         sort = Model.Sort.Column,
         dir = Model.Sort.Dir
     };
@@ -26,6 +27,7 @@
             workerId = errorsPage.Filters.WorkerId,
             accountId = errorsPage.Filters.AccountId,
             page = pagination.Page,
+            pageSize = pagination.PageSize,
             sort = errorsPage.Sort.Column,
             dir = errorsPage.Sort.Dir
         })!
@@ -38,6 +40,7 @@
             eventsSortRoute.accountId,
             eventsSortRoute.level,
             page = pagination.Page,
+            eventsSortRoute.pageSize,
             eventsSortRoute.sort,
             eventsSortRoute.dir
         })!;

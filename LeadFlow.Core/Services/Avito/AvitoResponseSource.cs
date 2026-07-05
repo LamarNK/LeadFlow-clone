@@ -283,6 +283,17 @@ public sealed class AvitoResponseSource(
 
         var skippedExistingSourceId = candidates.Count - afterSourceId.Count;
         var skippedDuplicatePhoneInDb = afterSourceId.Count - afterDbPhone.Count;
+
+        CandidateDedupLog.LogParseDedupSummary(
+            account,
+            activeSubProfile,
+            settings.DuplicateScope,
+            candidates.Count,
+            skippedExistingSourceId,
+            phonesToQuery.Count,
+            skippedDuplicatePhoneInDb,
+            skippedDuplicatePhoneInBatch);
+
         var sampleNames = ordered
             .Take(4)
             .Select(x => FormatSampleName(x.FullName, x.Vacancy))

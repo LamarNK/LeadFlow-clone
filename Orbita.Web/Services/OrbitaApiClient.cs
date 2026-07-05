@@ -810,17 +810,43 @@ public sealed class OrbitaApiClient(
     public Task<OfficeStatisticsDto?> GetStatisticsAsync(
         DateTime from,
         DateTime to,
+        IReadOnlyList<Guid>? workerIds = null,
+        IReadOnlyList<Guid>? accountIds = null,
         CancellationToken ct = default)
     {
         if (_preview.Enabled)
         {
             return Task.FromResult<OfficeStatisticsDto?>(
-                DesignPreviewData.GetStatistics(officeContext.EffectiveOfficeId, from, to));
+                DesignPreviewData.GetStatistics(officeContext.EffectiveOfficeId, from, to, workerIds, accountIds));
         }
 
-        var query =
-            $"from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}";
+        var query = BuildStatisticsQuery(from, to, workerIds, accountIds);
         return GetAsync<OfficeStatisticsDto>(WithOfficeQuery($"api/v1/panel/statistics?{query}"), ct);
+    }
+
+    internal static string BuildStatisticsQuery(
+        DateTime from,
+        DateTime to,
+        IReadOnlyList<Guid>? workerIds,
+        IReadOnlyList<Guid>? accountIds)
+    {
+        var parts = new List<string>
+        {
+            $"from={from:yyyy-MM-dd}",
+            $"to={to:yyyy-MM-dd}"
+        };
+
+        if (workerIds is not null)
+        {
+            parts.AddRange(workerIds.Select(id => $"workerIds={id}"));
+        }
+
+        if (accountIds is not null)
+        {
+            parts.AddRange(accountIds.Select(id => $"accountIds={id}"));
+        }
+
+        return string.Join('&', parts);
     }
 
     public Task<IReadOnlyList<ResponseFilterAccountDto>?> GetResponseFilterAccountsAsync(CancellationToken ct = default) =>

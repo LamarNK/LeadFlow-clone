@@ -428,13 +428,41 @@
         return shared.rowMenuShell('', items);
     }
 
+    function insertWorkerSubProfileRowsAfter(accountRow, account, panelId, wasExpanded) {
+        if (!account.hasSubProfiles || !shared.accountSubProfilesRenderable(account)) {
+            shared.removeSubProfileTableRows(panelId);
+            return;
+        }
+        shared.removeSubProfileTableRows(panelId);
+        var subRowsHtml = shared.renderSubProfileTableRows(
+            getWorkerId(),
+            account,
+            panelId,
+            'worker',
+            account.isProcessingNow ? account.processingSubProfileId : null,
+            false,
+            wasExpanded);
+        if (!subRowsHtml) return;
+        var temp = document.createElement('tbody');
+        temp.innerHTML = subRowsHtml;
+        var insertAfter = accountRow;
+        while (temp.firstChild) {
+            insertAfter.insertAdjacentElement('afterend', temp.firstChild);
+            insertAfter = insertAfter.nextElementSibling;
+        }
+    }
+
     function renderWorkerAccounts(accounts) {
         var tbody = document.querySelector('[data-orbita-live-body="worker-accounts"]');
         if (!tbody || !shared) return;
         var workerId = getWorkerId();
         var expandedPanels = shared.captureExpandedSubprofilePanels(tbody);
+        var nextIds = {};
 
-        tbody.innerHTML = (accounts || []).map(function (account) {
+        (accounts || []).forEach(function (account) {
+            nextIds[account.id] = true;
+            var panelId = 'subprofiles-' + account.id;
+            var existingRow = tbody.querySelector('tr.worker-account-row[data-account-id="' + account.id + '"]');
             var statusHtml = '<span class="account-status account-status--' + shared.escapeHtml(account.statusTone || 'success') + '">' +
                 '<i class="fa-solid fa-circle account-status-dot" aria-hidden="true"></i>' +
                 shared.escapeHtml(account.statusLabel || '') + '</span>';
@@ -454,8 +482,15 @@
             var rowClass = 'worker-account-row' + (account.isProcessingNow ? ' worker-account-row--processing' : '');
 
             var toggleTitle = account.isEnabledInPanel ? 'Отключить аккаунт в панели' : 'Включить аккаунт в панели';
+            var subProfilesJson = shared.escapeHtml(JSON.stringify(account.subProfiles || []));
+            var processingSubProfileId = account.isProcessingNow && account.processingSubProfileId
+                ? shared.escapeHtml(account.processingSubProfileId)
+                : '';
 
-            return '<tr class="' + rowClass + '" data-account-id="' + shared.escapeHtml(account.id) + '">' +
+            var rowHtml = '<tr class="' + rowClass + '" data-account-id="' + shared.escapeHtml(account.id) + '"' +
+                ' data-subprofiles-layout="worker"' +
+                (processingSubProfileId ? ' data-processing-subprofile-id="' + processingSubProfileId + '"' : '') +
+                ' data-subprofiles-json="' + subProfilesJson + '">' +
                 '<td class="cell-toggle" data-label="Вкл"><label class="worker-toggle" title="' + shared.escapeHtml(toggleTitle) + '">' +
                 '<input type="checkbox" data-account-enable-toggle data-worker-id="' + shared.escapeHtml(workerId) + '" data-account-id="' + shared.escapeHtml(account.id) + '"' + checked + ' />' +
                 '<span class="worker-toggle-slider"></span></label></td>' +
@@ -466,9 +501,41 @@
                 '<td data-label="Последняя активность">' + activityHtml + '</td>' +
                 '<td class="cell-num" data-label="Ошибок">' + (account.errors || 0) + '</td>' +
                 '<td class="data-table-menu" data-label="">' + renderWorkerAccountMenu(account) + '</td></tr>';
-        }).join('');
 
-        shared.restoreExpandedSubprofilePanels(tbody, expandedPanels);
+            var temp = document.createElement('tbody');
+            temp.innerHTML = rowHtml;
+            var newRow = temp.firstElementChild;
+            if (!newRow) return;
+
+            var wasExpanded = !!expandedPanels[panelId];
+            if (existingRow) {
+                shared.removeSubProfileTableRows(panelId);
+                existingRow.replaceWith(newRow);
+            } else {
+                tbody.appendChild(newRow);
+            }
+
+            if (account.hasSubProfiles) {
+                insertWorkerSubProfileRowsAfter(newRow, account, panelId, wasExpanded);
+            }
+
+            if (wasExpanded) {
+                var btn = newRow.querySelector('[aria-controls="' + panelId + '"]');
+                if (btn) {
+                    btn.setAttribute('aria-expanded', 'true');
+                    var icon = btn.querySelector('.subprofiles-toggle-icon');
+                    if (icon) icon.classList.add('subprofiles-toggle-icon--open');
+                }
+            }
+        });
+
+        tbody.querySelectorAll('tr.worker-account-row[data-account-id]').forEach(function (row) {
+            var accountId = row.getAttribute('data-account-id');
+            if (!accountId || nextIds[accountId]) return;
+            var panelId = 'subprofiles-' + accountId;
+            shared.removeSubProfileTableRows(panelId);
+            row.remove();
+        });
 
         if (window.OrbitaTime) {
             window.OrbitaTime.localizeAll(tbody);

@@ -25,12 +25,14 @@ services:
       Cors__Origins__1: http://web:8080
       LOG_SERVICE_NAME: Orbita.Api
       Logs__SharedRoot: /app/Data/logs
+      DataProtection__KeysPath: /app/Data/dataprotection-api
     depends_on:
       - postgres
     ports:
       - "8080:8080"
     volumes:
       - orbita_logs:/app/Data/logs
+      - orbita_dataprotection_api:/app/Data/dataprotection-api
 
   web:
     build:
@@ -55,3 +57,4 @@ volumes:
   orbita_pg:
   orbita_logs:
   orbita_dataprotection:
+  orbita_dataprotection_api:

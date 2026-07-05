@@ -1,6 +1,14 @@
 (function () {
+    var shared = window.OrbitaLiveShared;
+
     function getLiveRoot() {
         return document.querySelector('[data-orbita-live-page="statistics"]');
+    }
+
+    function stableJson(value) {
+        return shared && typeof shared.stableJson === 'function'
+            ? shared.stableJson(value)
+            : JSON.stringify(value);
     }
 
     function readChartsPayload() {
@@ -18,6 +26,8 @@
         trend: null,
         donut: null
     };
+
+    var chartsFingerprint = '';
 
     function destroyChart(chart) {
         if (chart) {
@@ -38,54 +48,397 @@
         destroyChart(chartRegistry.donut);
         chartRegistry.trend = null;
         chartRegistry.donut = null;
+        chartsFingerprint = '';
         destroyChartOnCanvas(document.getElementById('chart-statistics-trend'));
         destroyChartOnCanvas(document.getElementById('chart-statistics-account-status'));
+    }
+
+    var TREND_SERIES = [
+        { key: 'sent', label: 'В CRM', color: '#22c55e' },
+        { key: 'inProgress', label: 'В работе', color: '#3b82f6' },
+        { key: 'actionRequired', label: 'Нужно действие', color: '#8b5cf6' },
+        { key: 'duplicates', label: 'Дубли', color: '#f59e0b' },
+        { key: 'errors', label: 'Ошибки', color: '#ef4444' }
+    ];
+
+    function readPeriodDays() {
+        var root = document.querySelector('.statistics-trend-chart');
+        var raw = root ? parseInt(root.getAttribute('data-period-days') || '0', 10) : 0;
+        return raw > 0 ? raw : 0;
+    }
+
+    function getBucketMeta(dayCount) {
+        if (dayCount > 90) {
+            return { size: 30, label: 'по месяцам', avgSuffix: '/мес' };
+        }
+        if (dayCount > 31) {
+            return { size: 7, label: 'по неделям', avgSuffix: '/нед' };
+        }
+        return { size: 1, label: 'по дням', avgSuffix: '/день' };
+    }
+
+    function sumSeriesSlice(trend, key, start, end) {
+        var values = trend[key] || [];
+        var sum = 0;
+        for (var i = start; i < end; i++) {
+            sum += values[i] || 0;
+        }
+        return sum;
+    }
+
+    function normalizeDailyTrend(trend) {
+        if (!trend) return null;
+        var labels = trend.labels || [];
+        if (!labels.length) return null;
+
+        var sent = (trend.sent || []).slice();
+        var inProgress = (trend.inProgress || []).slice();
+        var actionRequired = (trend.actionRequired || []).slice();
+        var duplicates = (trend.duplicates || []).slice();
+        var errors = (trend.errors || []).slice();
+        var totals = Array.isArray(trend.totals) ? trend.totals.slice() : [];
+
+        if (!totals.length || totals.every(function (v) { return !(v || 0); })) {
+            totals = labels.map(function (_, index) {
+                return (sent[index] || 0)
+                    + (inProgress[index] || 0)
+                    + (actionRequired[index] || 0)
+                    + (duplicates[index] || 0)
+                    + (errors[index] || 0);
+            });
+        }
+
+        return {
+            labels: labels,
+            totals: totals,
+            sent: sent,
+            inProgress: inProgress,
+            actionRequired: actionRequired,
+            duplicates: duplicates,
+            errors: errors
+        };
+    }
+
+    function aggregateTrend(trend, bucketSize) {
+        if (!trend || bucketSize <= 1) return trend;
+
+        var labels = [];
+        var aggregated = {
+            sent: [],
+            inProgress: [],
+            actionRequired: [],
+            duplicates: [],
+            errors: [],
+            totals: []
+        };
+
+        for (var i = 0; i < trend.labels.length; i += bucketSize) {
+            var end = Math.min(i + bucketSize, trend.labels.length);
+            var label = trend.labels[i];
+            if (end - i > 1) {
+                label = trend.labels[i] + '–' + trend.labels[end - 1];
+            }
+            labels.push(label);
+
+            var bucketTotal = 0;
+            TREND_SERIES.forEach(function (series) {
+                var value = sumSeriesSlice(trend, series.key, i, end);
+                aggregated[series.key].push(value);
+                bucketTotal += value;
+            });
+            aggregated.totals.push(bucketTotal);
+        }
+
+        aggregated.labels = labels;
+        return aggregated;
+    }
+
+    function prepareTrendForChart(trend) {
+        trend = normalizeDailyTrend(trend);
+        if (!trend) return null;
+
+        var dayCount = readPeriodDays() || trend.labels.length;
+        var bucket = getBucketMeta(dayCount);
+        var chartTrend = aggregateTrend(trend, bucket.size);
+        chartTrend._bucket = bucket;
+        return chartTrend;
+    }
+
+    function trendHasData(trend) {
+        trend = normalizeDailyTrend(trend);
+        if (!trend) return false;
+        return trend.totals.some(function (v) { return (v || 0) > 0; });
+    }
+
+    function stackedYBounds(trend) {
+        var maxStack = 0;
+        (trend.labels || []).forEach(function (_, index) {
+            var stack = 0;
+            TREND_SERIES.forEach(function (series) {
+                stack += (trend[series.key] || [])[index] || 0;
+            });
+            if (stack > maxStack) maxStack = stack;
+        });
+
+        if (maxStack === 0) {
+            return { yMin: 0, yMax: 5, step: 1 };
+        }
+
+        var padded = maxStack + Math.max(1, Math.ceil(maxStack * 0.12));
+        var step = Math.max(1, Math.ceil(padded / 5));
+        return { yMin: 0, yMax: Math.ceil(padded / step) * step, step: step };
+    }
+
+    function formatTrendNumber(value) {
+        var num = Number(value) || 0;
+        if (num >= 10000) {
+            return (num / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
+        }
+        return String(Math.round(num * 10) / 10);
+    }
+
+    function updateTrendSummary(trend) {
+        var summary = document.querySelector('[data-statistics-trend-summary]');
+        if (!summary || !trend) return;
+
+        var total = (trend.totals || []).reduce(function (acc, value) { return acc + (value || 0); }, 0);
+        var peak = (trend.totals || []).reduce(function (acc, value) { return Math.max(acc, value || 0); }, 0);
+        var bucketCount = Math.max(1, (trend.labels || []).length);
+        var avg = Math.round((total / bucketCount) * 10) / 10;
+        var bucket = trend._bucket || getBucketMeta(readPeriodDays() || bucketCount);
+
+        var totalEl = summary.querySelector('[data-trend-total]');
+        var peakEl = summary.querySelector('[data-trend-peak]');
+        var avgEl = summary.querySelector('[data-trend-avg]');
+        var avgSuffixEl = summary.querySelector('[data-trend-avg-suffix]');
+        var bucketEl = summary.querySelector('[data-trend-bucket]');
+
+        if (totalEl) totalEl.textContent = formatTrendNumber(total);
+        if (peakEl) peakEl.textContent = formatTrendNumber(peak);
+        if (avgEl) avgEl.textContent = formatTrendNumber(avg);
+        if (avgSuffixEl) avgSuffixEl.textContent = bucket.avgSuffix;
+        if (bucketEl) bucketEl.textContent = bucket.label;
+    }
+
+    function buildTrendDatasets(trend) {
+        var barCount = (trend.labels || []).length;
+        var maxBarThickness = barCount <= 12 ? 42 : barCount <= 24 ? 32 : barCount <= 52 ? 22 : 14;
+
+        return TREND_SERIES.map(function (series) {
+            return {
+                label: series.label,
+                data: trend[series.key] || [],
+                backgroundColor: series.color,
+                borderColor: series.color,
+                borderWidth: 0,
+                stack: 'responses',
+                maxBarThickness: maxBarThickness,
+                borderRadius: 2,
+                borderSkipped: false
+            };
+        });
+    }
+
+    function buildTrendOptions(trend) {
+        var labels = trend.labels || [];
+        var yBounds = stackedYBounds(trend);
+        var autoSkip = labels.length > 14;
+        return {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: false,
+            interaction: { mode: 'index', intersect: false },
+            datasets: {
+                bar: {
+                    categoryPercentage: 0.82,
+                    barPercentage: 0.9
+                }
+            },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    enabled: true,
+                    mode: 'index',
+                    intersect: false,
+                    backgroundColor: '#ffffff',
+                    titleColor: '#101828',
+                    bodyColor: '#667085',
+                    borderColor: '#eef2f7',
+                    borderWidth: 1,
+                    padding: { top: 10, right: 14, bottom: 10, left: 14 },
+                    cornerRadius: 12,
+                    displayColors: true,
+                    titleFont: { size: 13, weight: '600' },
+                    bodyFont: { size: 13, weight: '400' },
+                    caretSize: 6,
+                    caretPadding: 10,
+                    filter: function (item) {
+                        return (item.parsed.y || 0) > 0;
+                    },
+                    callbacks: {
+                        title: function (items) {
+                            if (!items.length) return '';
+                            return String(labels[items[0].dataIndex] || items[0].label || '');
+                        },
+                        label: function (ctx) {
+                            return (ctx.dataset.label || 'Значение') + ': ' + (ctx.parsed.y || 0);
+                        },
+                        footer: function (items) {
+                            if (!items.length || !trend) return '';
+                            var idx = items[0].dataIndex;
+                            var total = (trend.totals || [])[idx] || 0;
+                            return 'Всего: ' + total;
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    stacked: true,
+                    grid: { display: false },
+                    border: { display: false },
+                    ticks: {
+                        color: '#667085',
+                        font: { size: 11, weight: '500' },
+                        maxRotation: labels.length > 20 ? 45 : 0,
+                        autoSkip: autoSkip,
+                        maxTicksLimit: autoSkip ? 12 : labels.length
+                    }
+                },
+                y: {
+                    stacked: true,
+                    min: yBounds.yMin,
+                    max: yBounds.yMax,
+                    grid: { color: '#f2f4f7', lineWidth: 1 },
+                    border: { display: false },
+                    ticks: {
+                        stepSize: yBounds.step,
+                        color: '#98a2b3',
+                        font: { size: 11 },
+                        padding: 6,
+                        precision: 0
+                    }
+                }
+            },
+            layout: {
+                padding: { top: 8, right: 6, bottom: 0, left: 0 }
+            }
+        };
+    }
+
+    function setTrendChartState(state) {
+        var root = document.querySelector('.statistics-trend-chart');
+        if (root) root.setAttribute('data-chart-state', state);
+
+        var summary = document.querySelector('[data-statistics-trend-summary]');
+        if (summary) summary.hidden = state === 'empty';
+    }
+
+    function buildDonutOptions() {
+        return {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: false,
+            cutout: '68%',
+            plugins: { legend: { display: false } }
+        };
+    }
+
+    function updateTrendChart(chart, trend) {
+        if (!chart || !trend) return false;
+
+        if (!trendHasData(trend)) {
+            destroyChart(chart);
+            chartRegistry.trend = null;
+            setTrendChartState('empty');
+            return false;
+        }
+
+        var chartTrend = prepareTrendForChart(trend);
+        if (!chartTrend) {
+            setTrendChartState('empty');
+            return false;
+        }
+
+        setTrendChartState('ready');
+        updateTrendSummary(chartTrend);
+
+        var yBounds = stackedYBounds(chartTrend);
+        chart.data.labels = chartTrend.labels || [];
+        chart.data.datasets = buildTrendDatasets(chartTrend);
+        chart.options.scales.y.min = yBounds.yMin;
+        chart.options.scales.y.max = yBounds.yMax;
+        chart.options.scales.y.ticks.stepSize = yBounds.step;
+        chart.options.scales.x.ticks.autoSkip = chartTrend.labels.length > 14;
+        chart.options.scales.x.ticks.maxTicksLimit = chartTrend.labels.length > 14 ? 12 : chartTrend.labels.length;
+        chart.options.scales.x.ticks.maxRotation = chartTrend.labels.length > 20 ? 45 : 0;
+        chart.options.plugins.tooltip.callbacks.footer = function (items) {
+            if (!items.length) return '';
+            var idx = items[0].dataIndex;
+            var total = (chartTrend.totals || [])[idx] || 0;
+            return 'Всего: ' + total;
+        };
+        chart.options.plugins.tooltip.callbacks.title = function (items) {
+            if (!items.length) return '';
+            return String((chartTrend.labels || [])[items[0].dataIndex] || items[0].label || '');
+        };
+        chart.update('none');
+        return true;
+    }
+
+    function updateDonutChart(chart, stats) {
+        if (!chart || !stats) return false;
+
+        var values = [stats.active, stats.inactive, stats.blocked, stats.errors];
+        if (values.every(function (v) { return !v; })) {
+            values = [1];
+        }
+        chart.data.datasets[0].data = values;
+        chart.update('none');
+        return true;
     }
 
     function initTrendChart(payload) {
         var canvas = document.getElementById('chart-statistics-trend');
         if (!canvas || typeof Chart === 'undefined' || !payload || !payload.dailyTrend) return;
 
-        destroyChart(chartRegistry.trend);
+        var rawTrend = payload.dailyTrend;
+        if (!trendHasData(rawTrend)) {
+            destroyChart(chartRegistry.trend);
+            chartRegistry.trend = null;
+            destroyChartOnCanvas(canvas);
+            setTrendChartState('empty');
+            return;
+        }
 
-        var trend = payload.dailyTrend;
+        var chartTrend = prepareTrendForChart(rawTrend);
+        if (!chartTrend) {
+            setTrendChartState('empty');
+            return;
+        }
+
+        setTrendChartState('ready');
+        updateTrendSummary(chartTrend);
+
+        if (chartRegistry.trend) {
+            if (chartRegistry.trend.config.type !== 'bar') {
+                destroyChart(chartRegistry.trend);
+                chartRegistry.trend = null;
+                destroyChartOnCanvas(canvas);
+            } else {
+                updateTrendChart(chartRegistry.trend, rawTrend);
+                return;
+            }
+        }
+
+        destroyChartOnCanvas(canvas);
         chartRegistry.trend = new Chart(canvas, {
             type: 'bar',
             data: {
-                labels: trend.labels || [],
-                datasets: [
-                    { label: 'CRM', data: trend.sent || [], backgroundColor: '#22c55e', stack: 'stack' },
-                    { label: 'В работе', data: trend.inProgress || [], backgroundColor: '#3b82f6', stack: 'stack' },
-                    { label: 'Требует действия', data: trend.actionRequired || [], backgroundColor: '#a855f7', stack: 'stack' },
-                    { label: 'Дубли', data: trend.duplicates || [], backgroundColor: '#94a3b8', stack: 'stack' },
-                    { label: 'Ошибки', data: trend.errors || [], backgroundColor: '#f59e0b', stack: 'stack' }
-                ]
+                labels: chartTrend.labels || [],
+                datasets: buildTrendDatasets(chartTrend)
             },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        position: 'bottom',
-                        labels: { boxWidth: 10, padding: 12 }
-                    },
-                    tooltip: {
-                        mode: 'index',
-                        intersect: false
-                    }
-                },
-                scales: {
-                    x: {
-                        stacked: true,
-                        grid: { display: false }
-                    },
-                    y: {
-                        stacked: true,
-                        beginAtZero: true,
-                        ticks: { precision: 0 }
-                    }
-                }
-            }
+            options: buildTrendOptions(chartTrend)
         });
     }
 
@@ -93,14 +446,18 @@
         var canvas = document.getElementById('chart-statistics-account-status');
         if (!canvas || typeof Chart === 'undefined' || !payload || !payload.accountStatus) return;
 
-        destroyChart(chartRegistry.donut);
-
         var stats = payload.accountStatus;
+        if (chartRegistry.donut) {
+            updateDonutChart(chartRegistry.donut, stats);
+            return;
+        }
+
         var values = [stats.active, stats.inactive, stats.blocked, stats.errors];
         if (values.every(function (v) { return !v; })) {
             values = [1];
         }
 
+        destroyChartOnCanvas(canvas);
         chartRegistry.donut = new Chart(canvas, {
             type: 'doughnut',
             data: {
@@ -111,12 +468,31 @@
                     borderWidth: 0
                 }]
             },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                cutout: '68%',
-                plugins: { legend: { display: false } }
+            options: buildDonutOptions()
+        });
+    }
+
+    function initKpiCounters() {
+        var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+        document.querySelectorAll('.statistics-kpi-row [data-kpi-count]').forEach(function (el, index) {
+            var target = parseFloat(el.getAttribute('data-kpi-count'));
+            var suffix = el.getAttribute('data-kpi-suffix') || '';
+            if (isNaN(target)) return;
+
+            if (reduced) {
+                el.textContent = Math.round(target) + suffix;
+                el.setAttribute('data-kpi-suffix', suffix);
+                return;
             }
+
+            if (shared && typeof shared.animateKpiValue === 'function') {
+                shared.animateKpiValue(el, 0, target, suffix, 720, 80 + index * 70);
+                return;
+            }
+
+            el.textContent = Math.round(target) + suffix;
+            el.setAttribute('data-kpi-suffix', suffix);
         });
     }
 
@@ -145,48 +521,103 @@
     }
 
     function escapeHtml(text) {
-        return String(text)
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;');
+        return shared && typeof shared.escapeHtml === 'function'
+            ? shared.escapeHtml(text)
+            : String(text)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+    }
+
+    function workerDetailsUrl(workerId) {
+        var root = getLiveRoot();
+        var template = root ? root.getAttribute('data-worker-details-url') : '';
+        return shared && typeof shared.urlFromTemplate === 'function'
+            ? shared.urlFromTemplate(template, '__id__', workerId)
+            : template.split('__id__').join(encodeURIComponent(String(workerId)));
+    }
+
+    function accountSearchUrl(accountName) {
+        var root = getLiveRoot();
+        var base = root ? (root.getAttribute('data-accounts-url') || '/Accounts') : '/Accounts';
+        return base + (base.indexOf('?') > -1 ? '&' : '?') + 'q=' + encodeURIComponent(accountName || '');
+    }
+
+    function renderBalanceSubProfiles(subProfiles) {
+        if (!subProfiles || !subProfiles.length) {
+            return '';
+        }
+
+        return '<div class="statistics-balance-subprofiles">'
+            + subProfiles.map(function (subProfile) {
+                var wallet = subProfile.walletText
+                    ? '<span class="statistics-balance-subprofile-wallet" title="Кошелёк">' + escapeHtml(subProfile.walletText) + '</span>'
+                    : '';
+                var duration = subProfile.durationText
+                    ? '<span class="statistics-balance-subprofile-duration">' + escapeHtml(subProfile.durationText) + '</span>'
+                    : '';
+
+                return '<div class="statistics-balance-subprofile' + (subProfile.isLowBalance ? ' statistics-balance-subprofile--low' : '') + '">'
+                    + '<div class="statistics-balance-subprofile-head">'
+                    + '<span class="statistics-balance-subprofile-name">' + escapeHtml(subProfile.name) + '</span>'
+                    + '<div class="statistics-balance-subprofile-amounts">'
+                    + '<span class="statistics-balance-subprofile-advance" title="Аванс">' + escapeHtml(subProfile.advanceText) + '</span>'
+                    + wallet
+                    + '</div>'
+                    + '</div>'
+                    + duration
+                    + '<div class="statistics-balance-bar-track statistics-balance-bar-track--sub" aria-hidden="true">'
+                    + '<span class="statistics-balance-bar-fill" style="width:' + ((subProfile.barWidth || 0) * 100).toFixed(2) + '%"></span>'
+                    + '</div>'
+                    + '</div>';
+            }).join('')
+            + '</div>';
     }
 
     function renderBalanceRows(rows, showOfficeColumn) {
-        var container = document.querySelector('[data-statistics-balances] .statistics-balance-list');
+        var container = document.querySelector('[data-statistics-balances]');
         if (!container) return;
 
-        if (!rows || rows.length === 0) return;
+        if (!rows || rows.length === 0) {
+            return;
+        }
 
-        container.innerHTML = rows.map(function (row) {
+        var list = container.querySelector('.statistics-balance-list');
+        if (!list) return;
+
+        list.innerHTML = rows.map(function (row) {
             var office = showOfficeColumn && row.officeName
                 ? '<span>· ' + escapeHtml(row.officeName) + '</span>'
                 : '';
             var wallet = row.wallet > 0
                 ? '<span class="statistics-balance-wallet" title="Кошелёк">' + escapeHtml(row.walletText) + '</span>'
                 : '';
+            var subProfiles = renderBalanceSubProfiles(row.subProfiles);
             var foot = '';
-            if (row.balanceBreakdown || row.balanceSubtitle) {
+            if (!subProfiles && row.balanceSubtitle) {
                 foot = '<div class="statistics-balance-foot">'
-                    + (row.balanceBreakdown ? '<span class="statistics-balance-breakdown">' + escapeHtml(row.balanceBreakdown) + '</span>' : '')
-                    + (row.balanceSubtitle ? '<span class="statistics-balance-subtitle">' + escapeHtml(row.balanceSubtitle) + '</span>' : '')
+                    + '<span class="statistics-balance-subtitle">' + escapeHtml(row.balanceSubtitle) + '</span>'
                     + '</div>';
             }
 
             return '<div class="statistics-balance-row' + (row.isLowBalance ? ' statistics-balance-row--low' : '') + '" data-balance-account-id="' + row.accountId + '">'
                 + '<div class="statistics-balance-head">'
                 + '<div class="statistics-balance-title">'
-                + '<span class="statistics-balance-name">' + escapeHtml(row.accountName) + '</span>'
+                + '<a href="' + escapeHtml(accountSearchUrl(row.accountName)) + '" class="statistics-balance-name">' + escapeHtml(row.accountName) + '</a>'
                 + '<span class="statistics-balance-meta">' + escapeHtml(row.workerName) + office + '</span>'
                 + '</div>'
                 + '<div class="statistics-balance-amounts">'
-                + '<span class="statistics-balance-advance" title="Аванс">' + escapeHtml(row.advanceText) + '</span>'
+                + '<span class="statistics-balance-advance" title="Аванс">'
+                + ((row.subProfiles && row.subProfiles.length) ? 'суммарно ' : '')
+                + escapeHtml(row.advanceText) + '</span>'
                 + wallet
                 + '</div>'
                 + '</div>'
                 + '<div class="statistics-balance-bar-track" aria-hidden="true">'
                 + '<span class="statistics-balance-bar-fill" style="width:' + (row.barWidth * 100).toFixed(2) + '%"></span>'
                 + '</div>'
+                + subProfiles
                 + foot
                 + '</div>';
         }).join('');
@@ -240,37 +671,93 @@
         var tbody = document.querySelector('[data-orbita-live-body="statistics-workers"]');
         if (!tbody) return;
 
-        tbody.innerHTML = rows.map(function (worker) {
+        tbody.innerHTML = (rows || []).map(function (worker) {
+            var detailsUrl = workerDetailsUrl(worker.id);
             var officeCell = showOfficeColumn
                 ? '<td data-label="Офис">' + escapeHtml(worker.officeName || '') + '</td>'
                 : '';
-            var statusClass = worker.isOnline ? 'online' : 'offline';
-            var statusLabel = worker.isOnline ? 'Онлайн' : 'Офлайн';
-            return '<tr data-worker-id="' + worker.id + '">'
-                + '<td data-label="Воркер">' + escapeHtml(worker.displayName) + '</td>'
+            var statusClass = worker.isOnline ? '' : ' offline';
+            var statusLabel = worker.isOnline ? 'Онлайн' : 'Оффлайн';
+            return '<tr class="statistics-worker-row" data-href="' + escapeHtml(detailsUrl) + '" data-worker-id="' + worker.id + '">'
+                + '<td class="cell-name" data-label="Воркер"><a href="' + escapeHtml(detailsUrl) + '">' + escapeHtml(worker.displayName) + '</a></td>'
                 + officeCell
-                + '<td data-label="Статус"><span class="status-pill status-pill--' + statusClass + '">' + statusLabel + '</span></td>'
+                + '<td data-label="Статус"><span class="status-dot' + statusClass + '"><i class="fa-solid fa-circle status-dot-icon" aria-hidden="true"></i>' + statusLabel + '</span></td>'
                 + '<td class="cell-num" data-label="Отклики">' + worker.periodResponses + '</td>'
+                + '<td class="cell-num" data-label="CRM">' + (worker.periodSent || 0) + '</td>'
                 + '<td class="cell-num" data-label="Дубли">' + worker.periodDuplicates + '</td>'
                 + '<td class="cell-num" data-label="Ошибки">' + worker.periodErrors + '</td>'
                 + '<td class="cell-num" data-label="Аккаунты">' + worker.activeAccounts + ' / ' + worker.totalAccounts + '</td>'
                 + '</tr>';
         }).join('');
+
+        initRowNavigation();
+    }
+
+    function updateSummaryMeta(summary) {
+        if (!summary) return;
+
+        var advance = document.querySelector('[data-statistics-infra="advance"]');
+        if (advance && summary.totalAdvanceText) {
+            advance.textContent = summary.totalAdvanceText;
+        }
+
+        var adsMeta = document.querySelector('[data-statistics-ads-meta]');
+        if (adsMeta) {
+            adsMeta.textContent = (summary.activeAdsCount || 0) + ' активных / ' + (summary.blockedAdsCount || 0) + ' заблок.';
+        }
+    }
+
+    function initRowNavigation() {
+        document.querySelectorAll('.statistics-worker-row[data-href]').forEach(function (row) {
+            if (row.hasAttribute('data-statistics-row-bound')) return;
+            row.setAttribute('data-statistics-row-bound', '1');
+
+            row.addEventListener('click', function (e) {
+                if (e.target.closest('a') || e.target.closest('button') || e.target.closest('form')) return;
+                var href = row.getAttribute('data-href');
+                if (!href) return;
+                if (window.Orbita && typeof window.Orbita.navigateTo === 'function') {
+                    window.Orbita.navigateTo(href, true);
+                } else {
+                    window.location.href = href;
+                }
+            });
+        });
+    }
+
+    function applyCharts(payload) {
+        if (!payload) return;
+
+        var nextFingerprint = stableJson(payload);
+        if (nextFingerprint === chartsFingerprint && chartRegistry.trend && chartRegistry.donut) {
+            return;
+        }
+
+        chartsFingerprint = nextFingerprint;
+        var chartsEl = document.getElementById('statistics-charts-data');
+        if (chartsEl) chartsEl.textContent = JSON.stringify(payload);
+        updateAccountStats(payload.accountStatus);
+        initTrendChart(payload);
+        initDonutChart(payload);
     }
 
     function applySnapshot(snapshot) {
         if (!snapshot) return;
 
-        if (window.OrbitaLiveShared) {
-            window.OrbitaLiveShared.updateKpiCards(snapshot.kpiCards, true);
-            window.OrbitaLiveShared.updateUpdatedClock(snapshot.updatedAtUtc);
+        if (shared) {
+            shared.updateKpiCards(snapshot.kpiCards, true);
+            shared.updateUpdatedClock(snapshot.updatedAtUtc);
         }
 
         var root = getLiveRoot();
         var showOfficeColumn = root && root.getAttribute('data-show-office-column') === 'true';
 
-        renderBalanceRows(snapshot.balanceRows, showOfficeColumn);
+        if (snapshot.balanceRows && snapshot.balanceRows.length > 0) {
+            renderBalanceRows(snapshot.balanceRows, showOfficeColumn);
+        }
+
         renderWorkers(snapshot.workers || [], showOfficeColumn);
+        updateSummaryMeta(snapshot.summary);
 
         if (snapshot.hrInsights) {
             renderHrTable('Города', snapshot.hrInsights.topCities);
@@ -285,11 +772,7 @@
         }
 
         if (snapshot.charts) {
-            var chartsEl = document.getElementById('statistics-charts-data');
-            if (chartsEl) chartsEl.textContent = JSON.stringify(snapshot.charts);
-            updateAccountStats(snapshot.accountStats || snapshot.charts.accountStatus);
-            initTrendChart(snapshot.charts);
-            initDonutChart(snapshot.charts);
+            applyCharts(snapshot.charts);
         }
     }
 
@@ -315,18 +798,34 @@
         }
     }
 
+    function ensureChartRegistry() {
+        if (typeof Chart === 'undefined' || typeof Chart.getChart !== 'function') return;
+
+        var trendCanvas = document.getElementById('chart-statistics-trend');
+        if (chartRegistry.trend && (!trendCanvas || Chart.getChart(trendCanvas) !== chartRegistry.trend)) {
+            destroyChart(chartRegistry.trend);
+            chartRegistry.trend = null;
+        }
+
+        var donutCanvas = document.getElementById('chart-statistics-account-status');
+        if (chartRegistry.donut && (!donutCanvas || Chart.getChart(donutCanvas) !== chartRegistry.donut)) {
+            destroyChart(chartRegistry.donut);
+            chartRegistry.donut = null;
+        }
+    }
+
     function initStatisticsAll() {
         if (typeof Chart === 'undefined') return;
         if (!getLiveRoot()) return;
 
-        destroyAllCharts();
+        ensureChartRegistry();
 
         var payload = readChartsPayload();
         if (!payload) return;
 
-        updateAccountStats(payload.accountStatus);
-        initTrendChart(payload);
-        initDonutChart(payload);
+        initKpiCounters();
+        initRowNavigation();
+        applyCharts(payload);
         initLiveRefresh();
     }
 

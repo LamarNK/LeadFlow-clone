@@ -177,7 +177,7 @@
                                   method="post"
                                   class="settings-create-form settings-bitrix-form"
                                   data-bitrix-settings-form
-                                  data-bitrix-validate-url="@Url.Action("ValidateOfficeBitrix", new { officeId = selected.Id })">
+                                  data-bitrix-validate-url="@Url.Action("ValidateOfficeBitrix", "Settings", new { officeId = selected.Id })">
                                 @Html.AntiForgeryToken()
                                 <input type="hidden" name="OfficeId" value="@selected.Id" />
                                 <label class="settings-field">
@@ -193,8 +193,8 @@
                                     <button type="button" class="settings-secondary-btn" data-bitrix-validate-btn>Проверить</button>
                                     <button type="submit" class="settings-primary-btn">Сохранить</button>
                                 </div>
+                                <div class="settings-bitrix-validation" data-bitrix-validation-results hidden></div>
                             </form>
-                            <div class="settings-bitrix-validation" data-bitrix-validation-results hidden></div>
                         </section>
 
                         <section class="settings-office-section settings-office-section--secret">

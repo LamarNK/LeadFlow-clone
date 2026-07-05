@@ -1,3 +1,5 @@
+using Orbita.Contracts;
+
 namespace Orbita.Web.Models.ViewModels;
 
 public sealed record MySettingsIndexViewModel
@@ -26,6 +28,29 @@ public sealed class BitrixSettingsViewModel
     public bool CanManageWebhook { get; init; }
     public bool CanManageTransmission { get; init; }
     public bool TransmissionEnabled { get; init; } = true;
+    public string? DraftWebhookUrl { get; init; }
+    public BitrixWebhookValidationDto? LiveValidation { get; init; }
+
+    public BitrixSettingsViewModel WithLiveValidation(
+        string? draftWebhookUrl,
+        BitrixWebhookValidationDto? liveValidation) =>
+        new()
+        {
+            OfficeId = OfficeId,
+            OfficeName = OfficeName,
+            MaskedWebhookUrl = MaskedWebhookUrl,
+            PortalHost = PortalHost,
+            ValidationStatus = ValidationStatus,
+            ValidationMessage = ValidationMessage,
+            LastValidatedAtUtc = LastValidatedAtUtc,
+            ValidationStatusLabel = ValidationStatusLabel,
+            ValidationStatusTone = ValidationStatusTone,
+            CanManageWebhook = CanManageWebhook,
+            CanManageTransmission = CanManageTransmission,
+            TransmissionEnabled = TransmissionEnabled,
+            DraftWebhookUrl = draftWebhookUrl,
+            LiveValidation = liveValidation
+        };
 }
 
 public sealed class SaveBitrixTransmissionFormModel

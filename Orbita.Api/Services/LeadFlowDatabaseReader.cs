@@ -279,13 +279,16 @@ public sealed class LeadFlowCandidateRecord
         var value = reader.GetValue(ordinal);
         return value switch
         {
-            DateTime dt => dt,
-            string text when DateTime.TryParse(text, out var parsed) => parsed,
+            DateTime dt => ToUtc(dt),
+            string text when DateTime.TryParse(text, out var parsed) => ToUtc(parsed),
             long ticks => new DateTime(ticks, DateTimeKind.Utc),
-            double oaDate => DateTime.FromOADate(oaDate),
+            double oaDate => ToUtc(DateTime.FromOADate(oaDate)),
             _ => DateTime.UtcNow
         };
     }
+
+    private static DateTime ToUtc(DateTime value) =>
+        value.Kind == DateTimeKind.Utc ? value : DateTime.SpecifyKind(value, DateTimeKind.Utc);
 
     private static void SetStringProperty(LeadFlowCandidateRecord record, string column, string value)
     {

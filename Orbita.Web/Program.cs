@@ -42,6 +42,7 @@ builder.Services.Configure<DesignPreviewOptions>(
     builder.Configuration.GetSection(DesignPreviewOptions.SectionName));
 
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddMemoryCache();
 builder.Services.AddControllersWithViews();
 
 builder.Services.AddScoped<AuthSession>();
@@ -59,6 +60,7 @@ builder.Services.AddScoped<NavBadgesService>();
 builder.Services.AddScoped<GlobalSearchService>();
 builder.Services.AddScoped<ISettingsService, SettingsService>();
 builder.Services.AddScoped<IMySettingsService, MySettingsService>();
+builder.Services.AddSingleton<BitrixValidationResultCache>();
 
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>

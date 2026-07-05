@@ -40,6 +40,10 @@ public static class BitrixValidationStatuses
     public const string Ok = "ok";
     public const string Warning = "warning";
     public const string Error = "error";
+
+    public static bool AllowsWebhookUsage(string? status) =>
+        string.Equals(status, Ok, StringComparison.Ordinal)
+        || string.Equals(status, Warning, StringComparison.Ordinal);
 }
 
 public static class BitrixValidationStepStatuses

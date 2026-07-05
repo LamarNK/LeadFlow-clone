@@ -43,9 +43,9 @@ internal static class WorkerDetailsBuilder
             ? 0
             : activeAccounts * 100 / totalAccounts;
 
-        var hourly = stats?.HourlyActivity.Count > 0
+        var activityChart = stats?.HourlyActivity.Count > 0
             ? DashboardChartsBuilder.FromHourlyActivity(stats.HourlyActivity)
-            : HourlyResponsesGenerator.BuildEmptyDailyPoints();
+            : DashboardChartsBuilder.FromHourlyActivity([]);
 
         return new WorkerDetailsViewModel
         {
@@ -64,13 +64,7 @@ internal static class WorkerDetailsBuilder
             UpdatedAtUtc = DateTime.UtcNow,
             KpiCards = BuildKpiCards(worker.Id, activeAccounts, totalAccounts, activePct, responses, duplicates, errors, uptime),
             InfoItems = BuildInfoItems(worker, extra, lastActivity),
-            ActivityChart = new LineChartViewModel
-            {
-                Labels = hourly.Select(p => p.Label).ToList(),
-                Values = hourly.Select(p => p.Value).ToList(),
-                UtcHours = hourly.Select(p => p.UtcHour).ToList(),
-                ReferenceDayUtc = DateTime.UtcNow.ToString("yyyy-MM-dd")
-            },
+            ActivityChart = activityChart,
             Events = events,
             PeriodStats = BuildPeriodStats(stats, responses, duplicates, errors),
             Accounts = accounts,

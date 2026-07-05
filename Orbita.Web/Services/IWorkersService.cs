@@ -8,6 +8,7 @@ public interface IWorkersService
         string? searchQuery = null,
         string? status = null,
         int page = 1,
+        int? pageSize = null,
         string? sort = null,
         string? sortDir = null,
         CancellationToken ct = default);

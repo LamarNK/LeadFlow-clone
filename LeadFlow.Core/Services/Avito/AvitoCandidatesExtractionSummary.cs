@@ -94,12 +94,12 @@ public sealed record AvitoCandidatesExtractionSummary(
             var parts = new List<string>();
             if (SkippedExistingSourceId > 0)
             {
-                parts.Add($"{SkippedExistingSourceId} уже в базе");
+                parts.Add($"{SkippedExistingSourceId} уже по sourceResponseId (дедуп lookup)");
             }
 
             if (SkippedDuplicatePhoneInDb > 0)
             {
-                parts.Add($"{SkippedDuplicatePhoneInDb} дубль телефона в базе");
+                parts.Add($"{SkippedDuplicatePhoneInDb} дубль по телефону (дедуп lookup)");
             }
 
             if (SkippedDuplicatePhoneInBatch > 0)

@@ -6,7 +6,7 @@ namespace Orbita.Web.Services;
 
 internal static class ResponsesIndexBuilder
 {
-    public const int DefaultPageSize = 10;
+    public const int DefaultPageSize = ListPageSizeDefaults.Responses;
 
     public static readonly EventFilterOptionViewModel[] StatusOptions =
     [
@@ -65,6 +65,18 @@ internal static class ResponsesIndexBuilder
                 DeltaTone = "neutral",
                 IconClass = "fa-solid fa-clone",
                 IconTone = "orange"
+            },
+            new()
+            {
+                Key = "sent",
+                Href = KpiCardLinks.ResponsesCard("sent", from, to, workerId, accountId),
+                Label = "В Битрикс24",
+                Value = summary.Sent.ToString(),
+                CountValue = summary.Sent,
+                Delta = Pct(summary.Sent),
+                DeltaTone = summary.Sent > 0 ? "good" : "neutral",
+                IconClass = "fa-solid fa-paper-plane",
+                IconTone = "green"
             },
             new()
             {
@@ -241,7 +253,7 @@ internal static class ResponsesIndexBuilder
         || filters.AccountId.HasValue
         || !string.IsNullOrWhiteSpace(filters.VacancyQuery)
         || !string.IsNullOrWhiteSpace(filters.SearchQuery)
-        || !period.IsTodayOnly;
+        || (!period.IsTodayOnly && !period.IsAllTime);
 
     public static ResponseDetailJsonViewModel MapDetailJson(ResponseDetailViewModel detail)
     {

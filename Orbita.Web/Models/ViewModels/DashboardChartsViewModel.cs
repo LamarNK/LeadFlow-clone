@@ -27,13 +27,23 @@ public sealed class KpiChartSegmentViewModel
     public string Color { get; init; } = "#94a3b8";
 }
 
+public sealed class LineChartSeriesViewModel
+{
+    public string Label { get; init; } = string.Empty;
+    public string Color { get; init; } = "#2563eb";
+    public IReadOnlyList<int> Values { get; init; } = [];
+}
+
 public sealed class LineChartViewModel
 {
     public IReadOnlyList<string> Labels { get; init; } = [];
     public IReadOnlyList<int> Values { get; init; } = [];
+    public IReadOnlyList<LineChartSeriesViewModel> Series { get; init; } = [];
     public IReadOnlyList<int> UtcHours { get; init; } = [];
     public string? ReferenceDayUtc { get; init; }
-    public bool HasData => Values.Count > 0 && Values.Any(v => v > 0);
+    public bool HasData => Series.Count > 0
+        ? Series.Any(s => s.Values.Any(v => v > 0))
+        : Values.Count > 0 && Values.Any(v => v > 0);
 }
 
 public sealed class DonutChartViewModel

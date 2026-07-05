@@ -20,11 +20,13 @@ public sealed class ResponsesService(
         string? search,
         Guid? selectedId,
         int page = 1,
+        int? pageSize = null,
         string? sort = null,
         string? sortDir = null,
         CancellationToken ct = default)
     {
         page = Math.Max(1, page);
+        pageSize = ListPageSizeDefaults.Normalize(pageSize, ListPageSizeDefaults.Responses);
         var period = DashboardPeriod.Parse(from, to);
         var tableSort = TableSort.Parse(sort, sortDir, TableSort.Responses.Default, TableSort.Responses.Columns);
         var filters = new ResponsesFilterViewModel
@@ -41,16 +43,16 @@ public sealed class ResponsesService(
 
         if (previewOptions.Value.Enabled)
         {
-            return DesignPreviewData.BuildResponsesIndexViewModel(filters, selectedId, sort, sortDir);
+            return DesignPreviewData.BuildResponsesIndexViewModel(filters, selectedId, pageSize.Value, sort, sortDir);
         }
 
         var (fromUtc, toUtc) = ToUtcRange(period);
-        var query = BuildQueryParams(status, search, vacancy, workerId, accountId, fromUtc, toUtc, page, ResponsesIndexBuilder.DefaultPageSize, sort, sortDir);
+        var query = BuildQueryParams(status, search, vacancy, workerId, accountId, fromUtc, toUtc, page, pageSize.Value, sort, sortDir);
 
         var pageDto = await api.GetResponsesPageAsync(query, ct)
-            ?? new ResponsesPageDto([], 0, page, ResponsesIndexBuilder.DefaultPageSize);
+            ?? new ResponsesPageDto([], 0, page, pageSize.Value);
         var summary = await api.GetResponsesSummaryAsync(query, ct)
-            ?? new ResponsesSummaryDto(0, 0, 0, 0, null);
+            ?? new ResponsesSummaryDto(0, 0, 0, 0, 0, null);
         var workers = await api.GetWorkersAsync(ct) ?? [];
         var accounts = await api.GetResponseFilterAccountsAsync(ct) ?? [];
 
@@ -71,7 +73,8 @@ public sealed class ResponsesService(
             period,
             ResponsesIndexBuilder.StatusOptions,
             workerOptions,
-            accountOptions);
+            accountOptions,
+            pageSize.Value);
 
         return new ResponsesIndexViewModel
         {

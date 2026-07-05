@@ -14,6 +14,7 @@ public interface IResponsesService
         string? search,
         Guid? selectedId,
         int page = 1,
+        int? pageSize = null,
         string? sort = null,
         string? sortDir = null,
         CancellationToken ct = default);

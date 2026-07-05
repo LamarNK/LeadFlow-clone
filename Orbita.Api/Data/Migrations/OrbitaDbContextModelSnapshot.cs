@@ -342,8 +342,13 @@ namespace Orbita.Api.Data.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<Guid>("WorkerId")
+                    b.Property<Guid?>("WorkerId")
                         .HasColumnType("uuid");
+
+                    b.Property<string>("WorkerName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
 
                     b.HasKey("Id");
 
@@ -967,8 +972,7 @@ namespace Orbita.Api.Data.Migrations
                     b.HasOne("Orbita.Api.Data.WorkerEntity", "Worker")
                         .WithMany()
                         .HasForeignKey("WorkerId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.SetNull);
 
                     b.Navigation("Office");
 

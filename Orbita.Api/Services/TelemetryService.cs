@@ -165,26 +165,45 @@ public sealed class TelemetryService(
 
         var capturedAtUtc = DateTimeUtcHelper.EnsureUtc(request.CapturedAtUtc);
 
+        var existingAccounts = await db.WorkerAccounts
+            .Where(x => x.WorkerId == request.WorkerId)
+            .ToDictionaryAsync(x => x.AccountId, ct);
+
+        var previousBalances = await db.WorkerSnapshots
+            .AsNoTracking()
+            .Where(x => x.WorkerId == request.WorkerId)
+            .OrderByDescending(x => x.CapturedAtUtc)
+            .Select(x => x.BalancesJson)
+            .FirstOrDefaultAsync(ct);
+
+        var previousBalanceItems = string.IsNullOrWhiteSpace(previousBalances)
+            ? []
+            : JsonSerializer.Deserialize<List<WorkerBalanceDto>>(previousBalances, JsonOptions) ?? [];
+
+        var mergedBalances = BalanceSnapshotHelper.MergeWithPersisted(
+            request.Balances,
+            previousBalanceItems,
+            existingAccounts,
+            request.Accounts);
+
+        var balanceByAccount = mergedBalances.ToDictionary(x => x.AccountId);
+
         db.WorkerSnapshots.Add(new WorkerSnapshotEntity
         {
             Id = Guid.NewGuid(),
             WorkerId = request.WorkerId,
             CapturedAtUtc = capturedAtUtc,
             StatsJson = JsonSerializer.Serialize(request.Stats, JsonOptions),
-            BalancesJson = JsonSerializer.Serialize(request.Balances, JsonOptions)
+            BalancesJson = JsonSerializer.Serialize(mergedBalances, JsonOptions)
         });
-
-        var balanceByAccount = request.Balances.ToDictionary(x => x.AccountId, x => x.TotalBalance);
-        var existingAccounts = await db.WorkerAccounts
-            .Where(x => x.WorkerId == request.WorkerId)
-            .ToDictionaryAsync(x => x.AccountId, ct);
 
         foreach (var account in request.Accounts)
         {
-            balanceByAccount.TryGetValue(account.AccountId, out var balance);
+            balanceByAccount.TryGetValue(account.AccountId, out var balanceDto);
+            var balance = balanceDto?.TotalBalance ?? 0m;
             if (existingAccounts.TryGetValue(account.AccountId, out var existing))
             {
-                ApplyAccountSnapshot(existing, account, balance, capturedAtUtc);
+                ApplyAccountSnapshot(existing, account, balance, balanceDto, capturedAtUtc);
             }
             else
             {
@@ -193,7 +212,7 @@ public sealed class TelemetryService(
                     WorkerId = request.WorkerId,
                     AccountId = account.AccountId
                 };
-                ApplyAccountSnapshot(created, account, balance, capturedAtUtc);
+                ApplyAccountSnapshot(created, account, balance, balanceDto, capturedAtUtc);
                 db.WorkerAccounts.Add(created);
             }
         }
@@ -237,6 +256,7 @@ public sealed class TelemetryService(
         WorkerAccountEntity target,
         WorkerAccountDto account,
         decimal balance,
+        WorkerBalanceDto? balanceDto,
         DateTime capturedAtUtc)
     {
         target.DisplayName = account.DisplayName;
@@ -249,10 +269,14 @@ public sealed class TelemetryService(
         target.DraftsCount = account.DraftsCount;
         target.LastErrorMessage = account.LastErrorMessage;
         target.LastMonitoringAt = DateTimeUtcHelper.EnsureUtc(account.LastMonitoringAt);
-        target.TotalBalance = balance;
+        target.TotalBalance = BalanceSnapshotHelper.ResolveTotalBalance(
+            balance,
+            target,
+            balanceDto,
+            account);
 
         if (account.SubProfiles is not null
-            && ShouldPersistSubProfiles(account.SubProfiles, target.SubProfilesJson))
+            && BalanceSnapshotHelper.ShouldPersistSubProfiles(account.SubProfiles, target.SubProfilesJson))
         {
             target.SubProfilesJson = SerializeSubProfiles(account.SubProfiles);
         }
@@ -297,31 +321,6 @@ public sealed class TelemetryService(
 
     private static string SerializeSubProfiles(IReadOnlyList<WorkerSubProfileDto>? subProfiles) =>
         JsonSerializer.Serialize(subProfiles ?? [], SubProfileJsonOptions.Serialize);
-
-    private static bool ShouldPersistSubProfiles(
-        IReadOnlyList<WorkerSubProfileDto> incoming,
-        string? existingJson)
-    {
-        if (incoming.Count == 0)
-        {
-            return false;
-        }
-
-        if (incoming.Any(static p => !string.IsNullOrWhiteSpace(p.Id) || !string.IsNullOrWhiteSpace(p.Name)))
-        {
-            return true;
-        }
-
-        if (string.IsNullOrWhiteSpace(existingJson) || existingJson == "[]")
-        {
-            return true;
-        }
-
-        var existing = SubProfileDeserializer.Deserialize(existingJson);
-        return existing is null
-            || existing.Count == 0
-            || existing.All(static p => string.IsNullOrWhiteSpace(p.Id) && string.IsNullOrWhiteSpace(p.Name));
-    }
 
     private static bool IsMostlyEmptySnapshot(WorkerSnapshotRequest req)
     {

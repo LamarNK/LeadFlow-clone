@@ -25,6 +25,7 @@ public sealed class LeadFlowDatabaseReaderTests : IDisposable
         Assert.Equal("Пётр Петров", result.Rows[0].FullName);
         Assert.Equal("79004445566", result.Rows[0].PhoneNormalized);
         Assert.Contains(result.Rows, row => row.FullName == "Иван Иванов" && row.PhoneNormalized == "79001112233");
+        Assert.All(result.Rows, row => Assert.Equal(DateTimeKind.Utc, row.CreatedAt.Kind));
     }
 
     [Fact]

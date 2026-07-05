@@ -2,6 +2,7 @@ using System.Globalization;
 using LeadFlow.Core;
 using LeadFlow.Core.Models;
 using LeadFlow.Core.Services;
+using LeadFlow.Core.Services.Avito;
 using Microsoft.EntityFrameworkCore;
 
 namespace LeadFlow.Core.Data;
@@ -402,7 +403,17 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
             .Select(x => x.SourceResponseId)
             .ToListAsync(cancellationToken);
 
-        return existing.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var matched = existing.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        CandidateDedupLog.LogLocalDbLookup(
+            accountId,
+            DuplicateScope.PerAvitoAccount,
+            avitoSubProfileId: null,
+            normalizedIds.Length,
+            phonesQueried: 0,
+            matched.Count,
+            phonesMatched: 0,
+            []);
+        return matched;
     }
 
     public async Task<HashSet<string>> GetExistingBitrixEntityIdsAsync(IEnumerable<string> bitrixEntityIds, CancellationToken cancellationToken)
@@ -984,10 +995,21 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
             query = query.Where(x => x.AccountId == accountId);
         }
 
-        return await query
+        var matched = await query
             .Select(x => x.PhoneNormalized)
             .Distinct()
             .ToHashSetAsync(cancellationToken);
+
+        CandidateDedupLog.LogLocalDbLookup(
+            accountId,
+            scope,
+            avitoSubProfileId,
+            sourceIdsQueried: 0,
+            distinct.Count,
+            sourceIdsMatched: 0,
+            matched.Count,
+            matched);
+        return matched;
     }
 
     private static AvitoAccountEntity ToEntity(AvitoAccount model) => new()

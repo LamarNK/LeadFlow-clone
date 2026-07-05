@@ -12,10 +12,19 @@ public sealed class StatisticsController(
     OrbitaAuthService auth) : Controller
 {
     [HttpGet]
-    public async Task<IActionResult> Index(string? from, string? to, CancellationToken ct)
+    public async Task<IActionResult> Index(
+        string? from,
+        string? to,
+        Guid[]? workerIds,
+        Guid[]? accountIds,
+        CancellationToken ct)
     {
         var period = DashboardPeriod.Parse(from, to);
-        var model = await statistics.GetIndexAsync(period, ct);
+        var model = await statistics.GetIndexAsync(
+            period,
+            StatisticsService.NormalizeIds(workerIds),
+            StatisticsService.NormalizeIds(accountIds),
+            ct);
         if (!string.IsNullOrWhiteSpace(model.ErrorMessage) && IsApiSessionMissing())
         {
             await auth.SignOutAsync(ct);
@@ -26,10 +35,19 @@ public sealed class StatisticsController(
     }
 
     [HttpGet]
-    public async Task<IActionResult> Snapshot(string? from, string? to, CancellationToken ct)
+    public async Task<IActionResult> Snapshot(
+        string? from,
+        string? to,
+        Guid[]? workerIds,
+        Guid[]? accountIds,
+        CancellationToken ct)
     {
         var period = DashboardPeriod.Parse(from, to);
-        var model = await statistics.GetIndexAsync(period, ct);
+        var model = await statistics.GetIndexAsync(
+            period,
+            StatisticsService.NormalizeIds(workerIds),
+            StatisticsService.NormalizeIds(accountIds),
+            ct);
         if (!string.IsNullOrWhiteSpace(model.ErrorMessage))
         {
             return StatusCode(StatusCodes.Status503ServiceUnavailable, new { error = model.ErrorMessage });

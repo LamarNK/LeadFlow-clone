@@ -8,6 +8,8 @@ public sealed record DashboardPeriod(DateTime From, DateTime To)
 
     public static DashboardPeriod Today => new(DateTime.Today, DateTime.Today);
 
+    public static DashboardPeriod All => new(DateTime.Today.AddDays(-(MaxDays - 1)), DateTime.Today);
+
     public static DashboardPeriod Parse(string? from, string? to)
     {
         if (!TryParseDate(from, out var parsedFrom) || !TryParseDate(to, out var parsedTo))
@@ -31,11 +33,16 @@ public sealed record DashboardPeriod(DateTime From, DateTime To)
 
     public bool IsTodayOnly => From == DateTime.Today && To == DateTime.Today;
 
+    public bool IsAllTime => ActivePreset == "all";
+
     public bool IsSingleDay => From == To;
 
-    public string Label => IsSingleDay
-        ? From.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture)
-        : $"{From:dd.MM.yyyy} — {To:dd.MM.yyyy}";
+    public string Label => ActivePreset switch
+    {
+        "all" => "Все",
+        _ when IsSingleDay => From.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture),
+        _ => $"{From:dd.MM.yyyy} — {To:dd.MM.yyyy}"
+    };
 
     public string? ActivePreset
     {
@@ -47,6 +54,7 @@ public sealed record DashboardPeriod(DateTime From, DateTime To)
             if (From == today.AddDays(-6) && To == today) return "7d";
             if (From == today.AddDays(-13) && To == today) return "14d";
             if (From == today.AddDays(-29) && To == today) return "30d";
+            if (From == today.AddDays(-(MaxDays - 1)) && To == today) return "all";
             return null;
         }
     }

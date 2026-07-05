@@ -10,9 +10,9 @@ namespace Orbita.Web.Controllers;
 public sealed class WorkersController(IWorkersService workers) : Controller
 {
     [HttpGet]
-    public async Task<IActionResult> Snapshot(string? q, string? status, int page = 1, string? sort = null, string? dir = null, CancellationToken ct = default)
+    public async Task<IActionResult> Snapshot(string? q, string? status, int page = 1, int? pageSize = null, string? sort = null, string? dir = null, CancellationToken ct = default)
     {
-        var model = await workers.GetIndexAsync(q, status, page, sort, dir, ct);
+        var model = await workers.GetIndexAsync(q, status, page, pageSize, sort, dir, ct);
         return Json(new WorkersLiveSnapshotViewModel
         {
             UpdatedAtUtc = model.Header.UpdatedAtUtc,
@@ -63,9 +63,9 @@ public sealed class WorkersController(IWorkersService workers) : Controller
     }
 
     [HttpGet]
-    public async Task<IActionResult> Index(string? q, string? status, int page = 1, string? sort = null, string? dir = null, CancellationToken ct = default)
+    public async Task<IActionResult> Index(string? q, string? status, int page = 1, int? pageSize = null, string? sort = null, string? dir = null, CancellationToken ct = default)
     {
-        var model = await workers.GetIndexAsync(q, status, page, sort, dir, ct);
+        var model = await workers.GetIndexAsync(q, status, page, pageSize, sort, dir, ct);
         return View(model);
     }
 

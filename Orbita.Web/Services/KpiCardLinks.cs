@@ -1,3 +1,5 @@
+using Orbita.Web.Models.ViewModels;
+
 namespace Orbita.Web.Services;
 
 internal static class KpiCardLinks
@@ -5,6 +7,7 @@ internal static class KpiCardLinks
     public static string? Dashboard(string key, DateTime from, DateTime to) => key switch
     {
         "responses" => Responses(from, to),
+        "sent" => Responses(from, to, status: "sent"),
         "duplicates" => Responses(from, to, status: "duplicate"),
         "errors" => "/Errors",
         "accounts" => "/Accounts",
@@ -43,6 +46,7 @@ internal static class KpiCardLinks
         "total" => Responses(from, to, workerId: workerId, accountId: accountId),
         "unique" => Responses(from, to, status: "unique", workerId: workerId, accountId: accountId),
         "duplicates" => Responses(from, to, status: "duplicate", workerId: workerId, accountId: accountId),
+        "sent" => Responses(from, to, status: "sent", workerId: workerId, accountId: accountId),
         "unique_authors" => Responses(from, to, workerId: workerId, accountId: accountId),
         _ => null
     };
@@ -94,11 +98,44 @@ internal static class KpiCardLinks
         _ => null
     };
 
-    public static string? StatisticsCard(string key, DateTime? from = null, DateTime? to = null) => key switch
+    public static string? StatisticsCard(
+        string key,
+        DateTime? from = null,
+        DateTime? to = null,
+        StatisticsFiltersViewModel? filters = null) => key switch
     {
         "advance" or "wallet" or "accounts" => "/Accounts",
-        "responses" when from is not null && to is not null => Responses(from.Value, to.Value),
-        "workers" => "/Workers",
+        "responses" when from is not null && to is not null => Responses(from.Value, to.Value, workerId: filters?.WorkerIds.FirstOrDefault(), accountId: filters?.AccountIds.FirstOrDefault()),
+        "sent" when from is not null && to is not null => Responses(from.Value, to.Value, status: "sent", workerId: filters?.WorkerIds.FirstOrDefault(), accountId: filters?.AccountIds.FirstOrDefault()),
+        "duplicates" when from is not null && to is not null => Responses(from.Value, to.Value, status: "duplicate", workerId: filters?.WorkerIds.FirstOrDefault(), accountId: filters?.AccountIds.FirstOrDefault()),
+        "errors" when from is not null && to is not null => "/Errors",
+        "unique_authors" when from is not null && to is not null => Responses(from.Value, to.Value, workerId: filters?.WorkerIds.FirstOrDefault(), accountId: filters?.AccountIds.FirstOrDefault()),
+        "workers" => "/Workers?status=online",
         _ => "/Statistics"
     };
+
+    public static string Statistics(
+        DateTime from,
+        DateTime to,
+        IReadOnlyList<Guid>? workerIds = null,
+        IReadOnlyList<Guid>? accountIds = null)
+    {
+        var parts = new List<string>
+        {
+            $"from={from:yyyy-MM-dd}",
+            $"to={to:yyyy-MM-dd}"
+        };
+
+        if (workerIds is not null)
+        {
+            parts.AddRange(workerIds.Select(id => $"workerIds={id}"));
+        }
+
+        if (accountIds is not null)
+        {
+            parts.AddRange(accountIds.Select(id => $"accountIds={id}"));
+        }
+
+        return $"/Statistics?{string.Join("&", parts)}";
+    }
 }

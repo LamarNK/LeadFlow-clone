@@ -10,7 +10,11 @@ internal static class StatisticsIndexBuilder
     public static StatisticsViewModel Build(
         OfficeStatisticsDto data,
         DashboardPeriod period,
-        IOfficeContext officeContext)
+        IOfficeContext officeContext,
+        StatisticsFiltersViewModel filters,
+        IReadOnlyList<EventFilterOptionViewModel> workerOptions,
+        IReadOnlyList<EventFilterOptionViewModel> accountOptions,
+        IReadOnlyList<ActiveFilterChipViewModel> activeFilterChips)
     {
         var accountStats = new AccountStatsViewModel
         {
@@ -28,7 +32,7 @@ internal static class StatisticsIndexBuilder
         var balanceRows = data.Balances.Accounts
             .Select(a =>
             {
-                var subProfiles = SubProfileViewModelMapper.Map(null, a.SubProfiles);
+                var subProfiles = MapSubProfileBalances(a.SubProfiles);
                 var durationHint = BalanceDisplay.ResolveAdvanceDurationHint(
                     a.SubProfiles.Select(s => (s.Balance, s.AdvanceDurationText)).ToList());
                 return new StatisticsBalanceRowViewModel
@@ -42,16 +46,21 @@ internal static class StatisticsIndexBuilder
                     Wallet = a.Wallet,
                     AdvanceText = BalanceDisplay.FormatAmount(a.Advance),
                     WalletText = a.Wallet > 0 ? BalanceDisplay.FormatAmount(a.Wallet) : "—",
-                    BalanceBreakdown = SubProfileViewModelMapper.BuildBalanceBreakdown(subProfiles),
-                    BalanceSubtitle = BalanceDisplay.FormatAccountBreakdown(
-                        a.Wallet > 0 ? a.Wallet : null,
-                        durationHint),
+                    BalanceBreakdown = SubProfileViewModelMapper.BuildBalanceBreakdown(
+                        SubProfileViewModelMapper.MapFromBalances(a.SubProfiles)),
+                    BalanceSubtitle = subProfiles.Count == 0
+                        ? BalanceDisplay.FormatAccountBreakdown(
+                            a.Wallet > 0 ? a.Wallet : null,
+                            durationHint)
+                        : null,
+                    SubProfiles = subProfiles,
                     IsLowBalance = a.IsLowBalance,
                     BarWidth = (double)(a.Advance / maxBalance)
                 };
             })
             .ToList();
 
+        var periodErrors = data.Responses.Errors + data.Responses.ActionRequired;
         var summary = new StatisticsSummaryViewModel
         {
             ActiveAdsCount = data.Accounts.ActiveAdsCount,
@@ -59,8 +68,11 @@ internal static class StatisticsIndexBuilder
             PeriodTotal = data.Responses.Total,
             PeriodSent = data.Responses.Sent,
             PeriodDuplicates = data.Responses.Duplicates,
-            PeriodErrors = data.Responses.Errors + data.Responses.ActionRequired,
+            PeriodErrors = periodErrors,
             PeriodUniqueAuthors = data.Responses.UniqueAuthors,
+            WorkersOnline = data.Workers.Online,
+            WorkersTotal = data.Workers.Total,
+            TotalAdvanceText = BalanceDisplay.FormatAmount(data.Balances.TotalAdvance),
             AvgResponseMinutesText = data.Responses.AvgResponseMinutes is double minutes
                 ? $"{Math.Round(minutes, 0):0} мин"
                 : null
@@ -73,7 +85,12 @@ internal static class StatisticsIndexBuilder
         return new StatisticsViewModel
         {
             Header = header,
-            KpiCards = BuildKpiCards(data, period),
+            Filters = filters,
+            WorkerOptions = workerOptions,
+            AccountOptions = accountOptions,
+            HasActiveFilters = HasActiveFilters(filters),
+            ActiveFilterChips = activeFilterChips,
+            KpiCards = BuildKpiCards(data, period, filters),
             BalanceRows = balanceRows,
             Charts = BuildCharts(data, accountStats),
             AccountStats = accountStats,
@@ -85,6 +102,7 @@ internal static class StatisticsIndexBuilder
                     OfficeName = w.OfficeName,
                     IsOnline = w.IsOnline,
                     PeriodResponses = w.PeriodResponses,
+                    PeriodSent = w.PeriodSent,
                     PeriodDuplicates = w.PeriodDuplicates,
                     PeriodErrors = w.PeriodErrors,
                     ActiveAccounts = w.ActiveAccounts,
@@ -97,83 +115,84 @@ internal static class StatisticsIndexBuilder
         };
     }
 
+    public static bool HasActiveFilters(StatisticsFiltersViewModel filters) =>
+        filters.WorkerIds.Count > 0 || filters.AccountIds.Count > 0;
+
     private static IReadOnlyList<DashboardKpiCardViewModel> BuildKpiCards(
         OfficeStatisticsDto data,
-        DashboardPeriod period)
+        DashboardPeriod period,
+        StatisticsFiltersViewModel filters)
     {
-        var responsesSeries = data.DailyTrend.Select(d => d.Total).ToList();
-        var duplicatesSeries = data.DailyTrend.Select(d => d.Duplicates).ToList();
+        var totalResponses = Math.Max(1, data.Responses.Total);
+        var periodErrors = data.Responses.Errors + data.Responses.ActionRequired;
+        string Pct(int value) => $"{value * 100.0 / totalResponses:0.#}%";
+        var sentShare = data.Responses.Total == 0
+            ? "0%"
+            : Pct(data.Responses.Sent);
 
         return
         [
             new()
             {
-                Key = "advance",
-                Href = KpiCardLinks.StatisticsCard("advance"),
-                Label = "Аванс",
-                Value = BalanceDisplay.FormatAmount(data.Balances.TotalAdvance),
-                PreferTextValue = true,
-                Delta = "Сейчас",
+                Key = "responses",
+                Href = KpiCardLinks.StatisticsCard("responses", period.From, period.To, filters),
+                Label = "Откликов",
+                Value = data.Responses.Total.ToString(),
+                CountValue = data.Responses.Total,
+                Delta = period.Label,
                 DeltaTone = "neutral",
-                IconClass = "fa-solid fa-wallet",
-                IconTone = "green"
-            },
-            new()
-            {
-                Key = "wallet",
-                Href = KpiCardLinks.StatisticsCard("wallet"),
-                Label = "Кошелёк",
-                Value = BalanceDisplay.FormatAmount(data.Balances.TotalWallet),
-                PreferTextValue = true,
-                Delta = "Сейчас",
-                DeltaTone = "neutral",
-                IconClass = "fa-solid fa-coins",
+                IconClass = "fa-regular fa-comments",
                 IconTone = "blue"
             },
             new()
             {
-                Key = "accounts",
-                Href = KpiCardLinks.StatisticsCard("accounts"),
-                Label = "Аккаунты",
-                Value = $"{data.Accounts.StatusCounts.Active} / {data.Accounts.Total}",
-                CountValue = data.Accounts.StatusCounts.Active,
-                ValueSuffix = $" / {data.Accounts.Total}",
-                Delta = data.Balances.LowBalanceAccountCount > 0
-                    ? $"Низкий баланс: {data.Balances.LowBalanceAccountCount}"
-                    : "Сейчас",
-                DeltaTone = data.Balances.LowBalanceAccountCount > 0 ? "bad" : "good",
-                IconClass = "fa-regular fa-user",
-                IconTone = "purple"
+                Key = "sent",
+                Href = KpiCardLinks.StatisticsCard("sent", period.From, period.To, filters),
+                Label = "В Битрикс24",
+                Value = data.Responses.Sent.ToString(),
+                CountValue = data.Responses.Sent,
+                Delta = sentShare,
+                DeltaTone = data.Responses.Sent > 0 ? "good" : "neutral",
+                IconClass = "fa-solid fa-paper-plane",
+                IconTone = "green"
             },
             new()
             {
-                Key = "responses",
-                Href = KpiCardLinks.StatisticsCard("responses", period.From, period.To),
-                Label = "Отклики",
-                Value = data.Responses.Unique.ToString(),
-                CountValue = data.Responses.Unique,
-                ValueSuffix = data.Responses.Duplicates > 0 ? $" / {data.Responses.Duplicates} дубл." : null,
-                Delta = period.Label,
+                Key = "duplicates",
+                Href = KpiCardLinks.StatisticsCard("duplicates", period.From, period.To, filters),
+                Label = "Дублей",
+                Value = data.Responses.Duplicates.ToString(),
+                CountValue = data.Responses.Duplicates,
+                Delta = Pct(data.Responses.Duplicates),
                 DeltaTone = "neutral",
-                IconClass = "fa-regular fa-comments",
-                IconTone = "blue",
-                Sparkline = SparklineGenerator.FromSeries(responsesSeries),
-                SparkColor = "#2563eb"
+                IconClass = "fa-solid fa-clone",
+                IconTone = "orange"
             },
             new()
             {
-                Key = "workers",
-                Href = KpiCardLinks.StatisticsCard("workers"),
-                Label = "Воркеры",
-                Value = $"{data.Workers.Online} / {data.Workers.Total}",
-                CountValue = data.Workers.Online,
-                ValueSuffix = $" / {data.Workers.Total}",
-                Delta = "Онлайн",
-                DeltaTone = data.Workers.Online > 0 ? "good" : "neutral",
-                IconClass = "fa-solid fa-server",
-                IconTone = "orange",
-                Sparkline = SparklineGenerator.FromSeries(duplicatesSeries),
-                SparkColor = "#16a34a"
+                Key = "errors",
+                Href = KpiCardLinks.StatisticsCard("errors", period.From, period.To, filters),
+                Label = "Ошибок",
+                Value = periodErrors.ToString(),
+                CountValue = periodErrors,
+                Delta = Pct(periodErrors),
+                DeltaTone = periodErrors > 0 ? "bad" : "good",
+                IconClass = "fa-solid fa-triangle-exclamation",
+                IconTone = "orange"
+            },
+            new()
+            {
+                Key = "unique_authors",
+                Href = KpiCardLinks.StatisticsCard("unique_authors", period.From, period.To, filters),
+                Label = "Уникальных авторов",
+                Value = data.Responses.UniqueAuthors.ToString(),
+                CountValue = data.Responses.UniqueAuthors,
+                Delta = data.Responses.Total == 0
+                    ? "0%"
+                    : $"{data.Responses.UniqueAuthors * 100.0 / data.Responses.Total:0.#}% от откликов",
+                DeltaTone = "neutral",
+                IconClass = "fa-solid fa-user-group",
+                IconTone = "purple"
             }
         ];
     }
@@ -236,4 +255,40 @@ internal static class StatisticsIndexBuilder
             ConversionText = r.ConversionText,
             ShareText = r.ShareText
         }).ToList();
+
+    private static IReadOnlyList<StatisticsSubProfileBalanceViewModel> MapSubProfileBalances(
+        IReadOnlyList<SubProfileBalanceDto> items)
+    {
+        if (items.Count == 0)
+        {
+            return [];
+        }
+
+        var maxAdvance = Math.Max(1m, items.Max(s => s.Balance ?? 0m));
+
+        return items
+            .Select((item, index) =>
+            {
+                var name = string.IsNullOrWhiteSpace(item.SubProfileName)
+                    ? items.Count == 1 ? "Субпрофиль" : $"Субпрофиль {index + 1}"
+                    : item.SubProfileName.Trim();
+                var advance = item.Balance ?? 0m;
+                var wallet = item.WalletBalance ?? 0m;
+
+                return new StatisticsSubProfileBalanceViewModel
+                {
+                    Name = name,
+                    AdvanceText = item.Balance.HasValue ? BalanceDisplay.FormatAmount(item.Balance) : "—",
+                    WalletText = wallet > 0 ? BalanceDisplay.FormatAmount(wallet) : null,
+                    DurationText = string.IsNullOrWhiteSpace(item.AdvanceDurationText)
+                        ? null
+                        : item.AdvanceDurationText.Trim(),
+                    IsLowBalance = item.Balance is decimal balance
+                        && balance > 0
+                        && balance < BalanceDisplayRules.LowBalanceThresholdRub,
+                    BarWidth = (double)(advance / maxAdvance)
+                };
+            })
+            .ToList();
+    }
 }

@@ -12,24 +12,36 @@ public sealed class AccountsService(
     public async Task<AccountsIndexViewModel> GetIndexAsync(
         string? searchQuery = null,
         string? tab = null,
+        Guid? workerId = null,
         int page = 1,
+        int? pageSize = null,
         string? sort = null,
         string? sortDir = null,
         CancellationToken ct = default)
     {
+        pageSize = ListPageSizeDefaults.Normalize(pageSize, ListPageSizeDefaults.Accounts);
+
         if (previewOptions.Value.Enabled)
+        {
             return DesignPreviewData.BuildAccountsIndexViewModel(
                 searchQuery,
                 tab,
                 page,
-                AccountsIndexBuilder.DefaultPageSize,
+                pageSize.Value,
                 sort,
                 sortDir,
-                officeContext.ShowOfficeColumn);
+                officeContext.ShowOfficeColumn,
+                workerId);
+        }
+
+        var allWorkers = await api.GetWorkersAsync(ct) ?? [];
+        var workerOptions = ResponsesIndexBuilder.BuildWorkerOptions(allWorkers);
+
+        var workers = workerId is Guid wid
+            ? allWorkers.Where(w => w.Id == wid).ToList()
+            : allWorkers;
 
         var rows = new List<AccountRowViewModel>();
-        var workers = await api.GetWorkersAsync(ct) ?? [];
-
         foreach (var worker in workers)
         {
             var accounts = await api.GetWorkerAccountsAsync(worker.Id, ct);
@@ -60,7 +72,10 @@ public sealed class AccountsService(
             page,
             sort,
             sortDir,
+            pageSize: pageSize.Value,
             showOfficeColumn: officeContext.ShowOfficeColumn,
-            officeContext: officeContext);
+            officeContext: officeContext,
+            workerId: workerId,
+            workers: workerOptions);
     }
 }

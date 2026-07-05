@@ -751,6 +751,64 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 return !!el && /isCurrent/i.test(el.className || '');
             }})()");
 
+    /// <summary>
+    /// Закрывает всплывающие окна Avito (настройка звонков, промо и т.п.), которые перекрывают навигацию и модалку субпрофилей.
+    /// </summary>
+    private static async Task DismissAvitoBlockingOverlaysAsync(IPage page, CancellationToken cancellationToken)
+    {
+        const string dismissScript = """
+            (() => {
+              const tryClick = (el) => {
+                if (!el) return false;
+                try { el.click(); return true; } catch { return false; }
+              };
+              const isCloseButton = (btn) => {
+                const label = (btn.getAttribute("aria-label") || "").toLowerCase();
+                const text = (btn.textContent || "").trim();
+                return label.includes("закры") || /^[×✕xX]$/.test(text);
+              };
+              const containers = Array.from(document.querySelectorAll(
+                '[role="dialog"], [class*="modal" i], [class*="Modal"], [class*="popup" i], [class*="Popup"]'));
+              for (const box of containers) {
+                const close = Array.from(box.querySelectorAll("button")).find(isCloseButton)
+                  || box.querySelector('[data-marker*="close" i]');
+                if (tryClick(close)) return true;
+              }
+              const promo = Array.from(document.querySelectorAll("h1,h2,h3,h4,p,div"))
+                .find((el) => /звонить|рабочие часы/i.test((el.textContent || "").trim()));
+              if (promo) {
+                const box = promo.closest("div");
+                if (box) {
+                  const close = Array.from(box.querySelectorAll("button")).find(isCloseButton);
+                  if (tryClick(close)) return true;
+                }
+              }
+              return false;
+            })()
+            """;
+
+        for (var i = 0; i < 2; i++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (await PuppeteerJsonEvaluator.EvaluateBoolAsync(page, dismissScript, cancellationToken)
+                    .ConfigureAwait(false))
+            {
+                await Task.Delay(450, cancellationToken).ConfigureAwait(false);
+            }
+
+            try
+            {
+                await page.Keyboard.PressAsync("Escape").ConfigureAwait(false);
+            }
+            catch
+            {
+                // best effort
+            }
+
+            await Task.Delay(280, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
     /// <summary>Закрывает модалку «Выбор профиля», если она открыта (Escape, затем уход на /profile/pro/items).</summary>
     private static async Task DismissProfileSwitchModalAsync(IPage page, CancellationToken cancellationToken)
     {

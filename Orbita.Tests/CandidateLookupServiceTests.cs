@@ -8,17 +8,19 @@ namespace Orbita.Tests;
 public sealed class CandidateLookupServiceTests
 {
     private static readonly Guid OfficeId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+    private static readonly Guid OtherOfficeId = Guid.Parse("99999999-9999-9999-9999-999999999999");
     private static readonly Guid WorkerId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
     private static readonly Guid AccountId = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc");
 
     [Fact]
-    public async Task LookupAsync_BatchPhonesWithSubProfile_ReturnsOnlyMatchingSubProfile()
+    public async Task LookupAsync_BatchPhones_MatchesAcrossSubProfilesAndAccounts()
     {
         await using var db = CreateDb();
         SeedWorker(db);
+        var otherAccountId = Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd");
         db.CandidateResponses.AddRange(
             NewResponse("79001111111", "sub-a"),
-            NewResponse("79002222222", "sub-b"));
+            NewResponse("79002222222", "sub-b", otherAccountId));
         await db.SaveChangesAsync();
 
         var sut = new CandidateLookupService(db);
@@ -32,35 +34,11 @@ public sealed class CandidateLookupServiceTests
                 AvitoSubProfileId: "sub-a"));
 
         Assert.NotNull(result);
-        Assert.Equal(["79001111111"], result!.ExistingPhones);
+        Assert.Equal(["79001111111", "79002222222"], result!.ExistingPhones.OrderBy(static x => x).ToArray());
     }
 
     [Fact]
-    public async Task LookupAsync_BatchPhonesWithoutSubProfile_UsesDuplicateScope()
-    {
-        await using var db = CreateDb();
-        SeedWorker(db);
-        var otherAccountId = Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd");
-        db.CandidateResponses.AddRange(
-            NewResponse("79003333333", "sub-a", AccountId),
-            NewResponse("79003333333", "sub-b", otherAccountId));
-        await db.SaveChangesAsync();
-
-        var sut = new CandidateLookupService(db);
-        var result = await sut.LookupAsync(
-            WorkerId,
-            new WorkerCandidateLookupRequest(
-                AccountId,
-                "PerAvitoAccount",
-                [],
-                ["79003333333"]));
-
-        Assert.NotNull(result);
-        Assert.Equal(["79003333333"], result!.ExistingPhones);
-    }
-
-    [Fact]
-    public async Task LookupAsync_LegacyEmptySubProfile_DoesNotMatchSubProfileFilter()
+    public async Task LookupAsync_BatchPhones_MatchesLegacyEmptySubProfile()
     {
         await using var db = CreateDb();
         SeedWorker(db);
@@ -76,6 +54,27 @@ public sealed class CandidateLookupServiceTests
                 [],
                 ["79004444444"],
                 AvitoSubProfileId: "sub-a"));
+
+        Assert.NotNull(result);
+        Assert.Equal(["79004444444"], result!.ExistingPhones);
+    }
+
+    [Fact]
+    public async Task LookupAsync_BatchPhones_IgnoresOtherOffices()
+    {
+        await using var db = CreateDb();
+        SeedWorker(db);
+        db.CandidateResponses.Add(NewResponse("79005555555", "sub-a", officeId: OtherOfficeId));
+        await db.SaveChangesAsync();
+
+        var sut = new CandidateLookupService(db);
+        var result = await sut.LookupAsync(
+            WorkerId,
+            new WorkerCandidateLookupRequest(
+                AccountId,
+                "GlobalAcrossAllAccounts",
+                [],
+                ["79005555555"]));
 
         Assert.NotNull(result);
         Assert.Empty(result!.ExistingPhones);
@@ -116,11 +115,12 @@ public sealed class CandidateLookupServiceTests
     private static CandidateResponseEntity NewResponse(
         string phone,
         string subProfileId,
-        Guid? accountId = null) =>
+        Guid? accountId = null,
+        Guid? officeId = null) =>
         new()
         {
             Id = Guid.NewGuid(),
-            OfficeId = OfficeId,
+            OfficeId = officeId ?? OfficeId,
             WorkerId = WorkerId,
             AccountId = accountId ?? AccountId,
             AccountName = "acc",

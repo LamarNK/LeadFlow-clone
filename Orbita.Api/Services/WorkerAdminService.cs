@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Orbita.Api.Data;
+using Orbita.Api.Helpers;
 using Orbita.Contracts;
 
 namespace Orbita.Api.Services;
@@ -83,6 +84,7 @@ public sealed class WorkerAdminService(
             .ToListAsync(ct);
 
         return workers
+            .Where(x => !LeadFlowImportWorker.IsImportWorker(x.MachineName))
             .Where(x => scope.IsGlobalAdmin
                 ? officeFilter is null || x.OfficeId == officeFilter
                 : x.OfficeId == scope.OfficeId)
@@ -145,13 +147,20 @@ public sealed class WorkerAdminService(
             return (null, "Воркер не найден.");
         }
 
-        if (await db.CandidateResponses.AnyAsync(x => x.WorkerId == id, ct))
-        {
-            return (null, "Нельзя удалить воркер с откликами. Отключите его вместо удаления.");
-        }
-
         var displayName = worker.DisplayName;
         var officeId = worker.OfficeId;
+
+        await db.CandidateResponses
+            .Where(x => x.WorkerId == id && x.WorkerName == string.Empty)
+            .ExecuteUpdateAsync(
+                setters => setters.SetProperty(x => x.WorkerName, displayName),
+                ct);
+        await db.CandidateResponses
+            .Where(x => x.WorkerId == id)
+            .ExecuteUpdateAsync(
+                setters => setters.SetProperty(x => x.WorkerId, (Guid?)null),
+                ct);
+
         await diagnostics.DeleteAllForWorkerAsync(id, ct);
         await db.WorkerLogEntries.Where(x => x.WorkerId == id).ExecuteDeleteAsync(ct);
         await db.WorkerEvents.Where(x => x.WorkerId == id).ExecuteDeleteAsync(ct);

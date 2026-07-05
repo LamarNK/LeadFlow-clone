@@ -13,6 +13,7 @@ public interface IEventsService
         string? view = null,
         string? severity = null,
         int page = 1,
+        int? pageSize = null,
         string? sort = null,
         string? sortDir = null,
         CancellationToken ct = default);

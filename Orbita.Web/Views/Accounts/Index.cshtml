@@ -4,8 +4,25 @@
     ViewData["Title"] = "Аккаунты";
     var subProfileJsonOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
     var pagination = Model.Pagination;
-    var accountsSortRoute = new { q = Model.SearchQuery, tab = Model.ActiveTab, sort = Model.Sort.Column, dir = Model.Sort.Dir };
-    var snapshotUrl = Url.Action("Snapshot", "Accounts", new { q = Model.SearchQuery, tab = Model.ActiveTab, page = pagination.Page, sort = Model.Sort.Column, dir = Model.Sort.Dir })!;
+    var accountsSortRoute = new
+    {
+        q = Model.SearchQuery,
+        tab = Model.ActiveTab,
+        workerId = Model.WorkerId,
+        pageSize = pagination.PageSize,
+        sort = Model.Sort.Column,
+        dir = Model.Sort.Dir
+    };
+    var snapshotUrl = Url.Action("Snapshot", "Accounts", new
+    {
+        q = Model.SearchQuery,
+        tab = Model.ActiveTab,
+        workerId = Model.WorkerId,
+        page = pagination.Page,
+        pageSize = pagination.PageSize,
+        sort = Model.Sort.Column,
+        dir = Model.Sort.Dir
+    })!;
 }
 <partial name="_PageHeader" model="Model.Header" />
 <div class="orbita-main accounts-page"
@@ -25,30 +42,37 @@
         }
     </div>
 
-    <div class="accounts-control-bar">
-        <nav class="accounts-tabs" aria-label="Фильтр аккаунтов">
-            @foreach (var tab in Model.Tabs)
-            {
-                var isActive = tab.Id == Model.ActiveTab;
-                <a class="accounts-tab @(isActive ? "accounts-tab--active" : "")"
-                   href="@Url.Action("Index", new { tab = tab.Id, q = Model.SearchQuery, page = 1 })"
-                   aria-current="@(isActive ? "page" : null)">@tab.Label</a>
-            }
-        </nav>
-        <div class="accounts-toolbar">
-            <form class="accounts-search" method="get" asp-action="Index" role="search">
-                <input type="hidden" name="tab" value="@Model.ActiveTab" />
-                <input type="hidden" name="sort" value="@Model.Sort.Column" />
-                <input type="hidden" name="dir" value="@Model.Sort.Dir" />
-                <i class="fa-solid fa-magnifying-glass accounts-search-icon" aria-hidden="true"></i>
-                <input type="search"
-                       name="q"
-                       value="@Model.SearchQuery"
-                       placeholder="Поиск по аккаунтам..."
-                       aria-label="Поиск по аккаунтам" />
-            </form>
-        </div>
-    </div>
+    <nav class="accounts-tabs" aria-label="Фильтр аккаунтов">
+        @foreach (var tab in Model.Tabs)
+        {
+            var isActive = tab.Id == Model.ActiveTab;
+            <a class="accounts-tab @(isActive ? "accounts-tab--active" : "")"
+               href="@Url.Action("Index", new { tab = tab.Id, q = Model.SearchQuery, workerId = Model.WorkerId, pageSize = pagination.PageSize, sort = Model.Sort.Column, dir = Model.Sort.Dir, page = 1 })"
+               aria-current="@(isActive ? "page" : null)">@tab.Label</a>
+        }
+    </nav>
+
+    @{
+        var accountsFormAction = Url.Action("Index", "Accounts");
+        var accountsFilterBar = new ListFiltersBarViewModel
+        {
+            FormAction = accountsFormAction!,
+            FormClass = "orbita-filters-form accounts-filters",
+            SearchName = "q",
+            SearchPlaceholder = "Поиск по аккаунтам...",
+            SearchValue = Model.SearchQuery,
+            FilterPanelId = "accountsFilterPanel",
+            FilterToggleClass = "orbita-filters-toggle accounts-filter-btn",
+            HasActiveFilters = Model.HasActiveFilters,
+            ActiveFilterCount = Model.ActiveFilterCount,
+            ActiveFilterChips = Model.ActiveFilterChips,
+            ResetUrl = accountsFormAction!,
+            FilterFieldsPartialName = "_AccountsFilterFields",
+            FilterFieldsModel = Model,
+            ExtraFormContent = $"<input type=\"hidden\" name=\"sort\" value=\"{Model.Sort.Column}\" /><input type=\"hidden\" name=\"dir\" value=\"{Model.Sort.Dir}\" />"
+        };
+    }
+    <partial name="_ListFiltersBar" model="accountsFilterBar" />
 
     <div class="card card--accounts-table">
         <div class="card-body card-body-table accounts-table-wrap">
@@ -237,7 +261,7 @@
                 Pagination = pagination,
                 Controller = "Accounts",
                 Action = "Index",
-                RouteValues = new { q = Model.SearchQuery, tab = Model.ActiveTab, sort = Model.Sort.Column, dir = Model.Sort.Dir },
+                RouteValues = new { q = Model.SearchQuery, tab = Model.ActiveTab, pageSize = pagination.PageSize, sort = Model.Sort.Column, dir = Model.Sort.Dir },
                 ExtraClass = "orbita-live-pagination"
             })" />
         </div>

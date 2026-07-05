@@ -295,12 +295,17 @@
                     throw new Error(payload.error || 'Не удалось выполнить импорт.');
                 }
 
-                setStatus(
-                    'Импорт завершён: добавлено ' + payload.imported +
-                    (payload.skipped ? ', пропущено ' + payload.skipped : '') +
-                    (payload.failed ? ', ошибок ' + payload.failed : '') + '.',
-                    'success'
-                );
+                var statusParts = ['Импорт завершён: добавлено ' + payload.imported];
+                if (payload.skipped) {
+                    statusParts.push('пропущено ' + payload.skipped + ' (уже есть в Орбите)');
+                }
+                if (payload.failed) {
+                    statusParts.push('ошибок ' + payload.failed);
+                }
+                if (payload.imported === 0 && payload.skipped > 0) {
+                    statusParts.push('— все отклики из файла уже есть в базе Орбиты');
+                }
+                setStatus(statusParts.join(', ') + '.', payload.imported > 0 ? 'success' : null);
                 hidePreviewActions();
             } catch (error) {
                 setStatus(error.message || 'Ошибка импорта.', 'error');

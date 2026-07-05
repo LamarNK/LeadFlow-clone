@@ -39,6 +39,12 @@ public static class AvitoAutomationFailureFormatter
         }
 
         if (expectedStep.Contains("переключ", StringComparison.OrdinalIgnoreCase)
+            && pageState?.IsOnCandidates == true)
+        {
+            return "не удалось переключить субпрофиль: страница откликов открыта, но переключение не завершилось — возможно, Avito не успел загрузить интерфейс или мешает всплывающее окно (например, «когда вам можно звонить»).";
+        }
+
+        if (expectedStep.Contains("переключ", StringComparison.OrdinalIgnoreCase)
             && pageState is not null
             && pageState.PageKind == AvitoPageKind.Unknown)
         {

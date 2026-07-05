@@ -1,5 +1,6 @@
 using LeadFlow.Core.Data;
 using LeadFlow.Core.Models;
+using LeadFlow.Core.Services.Avito;
 using Orbita.Contracts;
 
 namespace Orbita.Worker.Services;
@@ -109,6 +110,7 @@ public sealed class OrbitaCandidateDuplicateRepository(
         string? avitoSubProfileId = null)
     {
         WorkerCandidateLookupResponse? apiResult = null;
+        var apiReached = false;
         try
         {
             apiResult = await apiClient.LookupCandidatesAsync(
@@ -120,6 +122,7 @@ public sealed class OrbitaCandidateDuplicateRepository(
                         AvitoSubProfileId: avitoSubProfileId),
                     cancellationToken)
                 .ConfigureAwait(false);
+            apiReached = apiResult is not null;
         }
         catch
         {
@@ -135,24 +138,41 @@ public sealed class OrbitaCandidateDuplicateRepository(
                 avitoSubProfileId)
             .ConfigureAwait(false);
 
-        var sourceIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var phones = new HashSet<string>(StringComparer.Ordinal);
-
+        var apiSourceIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var apiPhones = new HashSet<string>(StringComparer.Ordinal);
         if (apiResult is not null)
         {
             foreach (var id in apiResult.ExistingSourceResponseIds)
             {
-                sourceIds.Add(id);
+                apiSourceIds.Add(id);
             }
 
             foreach (var phone in apiResult.ExistingPhones)
             {
-                phones.Add(phone);
+                apiPhones.Add(phone);
             }
         }
 
+        var sourceIds = new HashSet<string>(apiSourceIds, StringComparer.OrdinalIgnoreCase);
+        var phones = new HashSet<string>(apiPhones, StringComparer.Ordinal);
         sourceIds.UnionWith(cacheResult.SourceIds);
         phones.UnionWith(cacheResult.Phones);
+
+        CandidateDedupLog.LogOrbitaApiLookup(
+            accountId,
+            scope,
+            avitoSubProfileId,
+            sourceResponseIds.Count,
+            phoneNormalized.Count,
+            apiReached,
+            apiSourceIds.Count,
+            apiPhones.Count,
+            cacheResult.SourceIds.Count,
+            cacheResult.Phones.Count,
+            sourceIds.Count,
+            phones.Count,
+            phones);
+
         return (sourceIds, phones);
     }
 }

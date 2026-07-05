@@ -5,38 +5,30 @@ namespace Orbita.Web.Services;
 
 internal static class DashboardChartsBuilder
 {
+    private static readonly (string Label, string Color, Func<ActivityPointDto, int> Select)[] ActivityMetrics =
+    [
+        ("Откликов", "#2563eb", p => p.NewCount),
+        ("В Битрикс24", "#15803d", p => p.SentCount),
+        ("Дублей", "#16a34a", p => p.DuplicateCount),
+        ("Ошибок", "#f59e0b", p => p.ErrorCount)
+    ];
+
     public static DashboardChartsViewModel FromPresentation(
         IReadOnlyList<DashboardKpiCardViewModel> kpiCards,
-        IReadOnlyList<DashboardChartPointViewModel> hourlyChart,
-        AccountStatsViewModel accountStats,
-        IReadOnlyList<ActivityPointDto>? dailyPoints = null,
-        bool useHourlyLabels = false)
+        LineChartViewModel activityChart,
+        AccountStatsViewModel accountStats)
     {
-        var useHourly = useHourlyLabels || dailyPoints is not { Count: > 0 };
-        var labelSource = useHourly
-            ? hourlyChart.Select(p => p.Label).ToList()
-            : dailyPoints!.Select(p => p.Label).ToList();
-        var utcHourSource = useHourly
-            ? hourlyChart.Select(p => p.UtcHour).ToList()
-            : [];
-        var referenceDayUtc = useHourly ? DateTime.UtcNow.ToString("yyyy-MM-dd") : null;
-        var sparklineLabels = ResampleLabels(labelSource, SparklineGenerator.PointCount);
-        var sparklineUtcHours = utcHourSource.Count > 0
-            ? ResampleUtcHours(utcHourSource, SparklineGenerator.PointCount)
+        var sparklineLabels = ResampleLabels(activityChart.Labels, SparklineGenerator.PointCount);
+        var sparklineUtcHours = activityChart.UtcHours.Count > 0
+            ? ResampleUtcHours(activityChart.UtcHours, SparklineGenerator.PointCount)
             : [];
 
         return new DashboardChartsViewModel
         {
             Sparklines = kpiCards
-                .Select(k => BuildKpiChart(k, sparklineLabels, sparklineUtcHours, referenceDayUtc))
+                .Select(k => BuildKpiChart(k, sparklineLabels, sparklineUtcHours, activityChart.ReferenceDayUtc))
                 .ToList(),
-            HourlyResponses = new LineChartViewModel
-            {
-                Labels = hourlyChart.Select(p => p.Label).ToList(),
-                Values = hourlyChart.Select(p => p.Value).ToList(),
-                UtcHours = hourlyChart.Select(p => p.UtcHour).ToList(),
-                ReferenceDayUtc = referenceDayUtc
-            },
+            HourlyResponses = activityChart,
             AccountStatus = new DonutChartViewModel
             {
                 Total = accountStats.Total,
@@ -105,50 +97,86 @@ internal static class DashboardChartsBuilder
             : [new() { Label = "Нет данных", Value = 1, Color = "#e5e7eb" }];
     }
 
-    public static IReadOnlyList<DashboardChartPointViewModel> FromDailyActivity(
-        IReadOnlyList<ActivityPointDto> daily,
-        int axisEvery = 1)
+    public static LineChartViewModel FromDailyActivity(IReadOnlyList<ActivityPointDto> daily)
     {
         if (daily.Count == 0)
-            return [];
+            return new LineChartViewModel();
 
-        return daily.Select((p, i) => new DashboardChartPointViewModel
+        var labels = daily
+            .Select((p, i) => string.IsNullOrWhiteSpace(p.Label) ? $"День {i + 1}" : p.Label)
+            .ToList();
+        var series = BuildActivitySeries(daily);
+
+        return new LineChartViewModel
         {
-            Label = string.IsNullOrWhiteSpace(p.Label) ? $"День {i + 1}" : p.Label,
-            Value = Math.Max(0, p.NewCount),
-            ShowAxisLabel = i % axisEvery == 0 || i == daily.Count - 1
-        }).ToList();
+            Labels = labels,
+            Values = series[0].Values,
+            Series = series
+        };
     }
 
-    public static IReadOnlyList<DashboardChartPointViewModel> FromHourlyActivity(
-        IReadOnlyList<ActivityPointDto> hourly,
-        int axisEvery = 4)
+    public static LineChartViewModel FromHourlyActivity(IReadOnlyList<ActivityPointDto> hourly)
     {
         if (hourly.Count == 0)
-            return HourlyResponsesGenerator.BuildEmptyDailyPoints();
+            hourly = BuildEmptyHourlyActivity();
 
-        var points = hourly.Select((p, i) => new DashboardChartPointViewModel
-        {
-            Label = string.IsNullOrWhiteSpace(p.Label) ? $"{i:00}:00" : p.Label,
-            Value = Math.Max(0, p.NewCount),
-            ShowAxisLabel = i % axisEvery == 0,
-            UtcHour = p.SlotStartHour is >= 0 and <= 23 ? p.SlotStartHour : i
-        }).ToList();
+        var labels = hourly
+            .Select((p, i) => string.IsNullOrWhiteSpace(p.Label) ? $"{i:00}:00" : p.Label)
+            .ToList();
+        var utcHours = hourly
+            .Select((p, i) => p.SlotStartHour is >= 0 and <= 23 ? p.SlotStartHour : i)
+            .ToList();
+        var series = BuildActivitySeries(hourly);
 
-        if (points.Count < 25 && points.Count >= 2)
+        if (labels.Count < 25 && labels.Count >= 2)
         {
-            var last = points[^1];
-            points.Add(new DashboardChartPointViewModel
-            {
-                Label = "24:00",
-                Value = last.Value,
-                ShowAxisLabel = true,
-                UtcHour = 24
-            });
+            labels.Add("24:00");
+            utcHours.Add(24);
+            series = series
+                .Select(s => new LineChartSeriesViewModel
+                {
+                    Label = s.Label,
+                    Color = s.Color,
+                    Values = s.Values.Concat([s.Values[^1]]).ToList()
+                })
+                .ToList();
         }
 
-        return points;
+        return new LineChartViewModel
+        {
+            Labels = labels,
+            Values = series[0].Values,
+            Series = series,
+            UtcHours = utcHours,
+            ReferenceDayUtc = DateTime.UtcNow.ToString("yyyy-MM-dd")
+        };
     }
+
+    public static IReadOnlyList<DashboardChartPointViewModel> ToResponsePoints(LineChartViewModel chart) =>
+        chart.Labels
+            .Select((label, i) => new DashboardChartPointViewModel
+            {
+                Label = label,
+                Value = chart.Values.Count > i ? chart.Values[i] : 0,
+                ShowAxisLabel = i % 4 == 0 || i == chart.Labels.Count - 1,
+                UtcHour = chart.UtcHours.Count > i ? chart.UtcHours[i] : i
+            })
+            .ToList();
+
+    private static IReadOnlyList<ActivityPointDto> BuildEmptyHourlyActivity() =>
+        Enumerable.Range(0, 24)
+            .Select(h => new ActivityPointDto($"{h:00}:00", 0, 0, 0, 0, h, 1, null))
+            .ToList();
+
+    private static IReadOnlyList<LineChartSeriesViewModel> BuildActivitySeries(IReadOnlyList<ActivityPointDto> points) =>
+        ActivityMetrics
+            .Select(metric => new LineChartSeriesViewModel
+            {
+                Label = metric.Label,
+                Color = metric.Color,
+                Values = points.Select(p => Math.Max(0, metric.Select(p))).ToList()
+            })
+            .ToList();
 
     private static IReadOnlyList<int> ResampleUtcHours(IReadOnlyList<int> source, int count)
     {
@@ -193,6 +221,7 @@ internal static class DashboardChartsBuilder
     private static string TooltipLabelFor(string kpiLabel) => kpiLabel switch
     {
         "Откликов всего" => "Откликов",
+        "В Битрикс24" => "В Битрикс24",
         "Дублей" => "Дублей",
         "Ошибок" => "Ошибок",
         "Аккаунтов активно" => "Аккаунтов",

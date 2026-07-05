@@ -3,6 +3,11 @@ namespace Orbita.Web.Models.ViewModels;
 public sealed class StatisticsViewModel
 {
     public PageHeaderViewModel Header { get; init; } = new() { Title = "Статистика" };
+    public StatisticsFiltersViewModel Filters { get; init; } = new();
+    public IReadOnlyList<EventFilterOptionViewModel> WorkerOptions { get; init; } = [];
+    public IReadOnlyList<EventFilterOptionViewModel> AccountOptions { get; init; } = [];
+    public bool HasActiveFilters { get; init; }
+    public IReadOnlyList<ActiveFilterChipViewModel> ActiveFilterChips { get; init; } = [];
     public IReadOnlyList<DashboardKpiCardViewModel> KpiCards { get; init; } = [];
     public IReadOnlyList<StatisticsBalanceRowViewModel> BalanceRows { get; init; } = [];
     public StatisticsChartsViewModel Charts { get; init; } = new();
@@ -35,6 +40,9 @@ public sealed class StatisticsSummaryViewModel
     public int PeriodDuplicates { get; init; }
     public int PeriodErrors { get; init; }
     public int PeriodUniqueAuthors { get; init; }
+    public int WorkersOnline { get; init; }
+    public int WorkersTotal { get; init; }
+    public string TotalAdvanceText { get; init; } = "—";
     public string? AvgResponseMinutesText { get; init; }
 }
 
@@ -51,8 +59,25 @@ public sealed class StatisticsBalanceRowViewModel
     public string WalletText { get; init; } = "—";
     public string? BalanceBreakdown { get; init; }
     public string? BalanceSubtitle { get; init; }
+    public IReadOnlyList<StatisticsSubProfileBalanceViewModel> SubProfiles { get; init; } = [];
     public bool IsLowBalance { get; init; }
     public double BarWidth { get; init; }
+}
+
+public sealed class StatisticsSubProfileBalanceViewModel
+{
+    public string Name { get; init; } = string.Empty;
+    public string AdvanceText { get; init; } = "—";
+    public string? WalletText { get; init; }
+    public string? DurationText { get; init; }
+    public bool IsLowBalance { get; init; }
+    public double BarWidth { get; init; }
+}
+
+public sealed class StatisticsFiltersViewModel
+{
+    public IReadOnlyList<Guid> WorkerIds { get; init; } = [];
+    public IReadOnlyList<Guid> AccountIds { get; init; } = [];
 }
 
 public sealed class StatisticsWorkerRowViewModel
@@ -62,6 +87,7 @@ public sealed class StatisticsWorkerRowViewModel
     public string OfficeName { get; init; } = string.Empty;
     public bool IsOnline { get; init; }
     public int PeriodResponses { get; init; }
+    public int PeriodSent { get; init; }
     public int PeriodDuplicates { get; init; }
     public int PeriodErrors { get; init; }
     public int ActiveAccounts { get; init; }

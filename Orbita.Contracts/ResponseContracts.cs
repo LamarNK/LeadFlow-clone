@@ -74,6 +74,7 @@ public sealed record ResponsesSummaryDto(
     int Total,
     int Unique,
     int Duplicates,
+    int Sent,
     int UniqueAuthors,
     double? AvgResponseMinutes);
 

@@ -69,6 +69,9 @@
                 <div class="orbita-period-dropdown" hidden>
                     <div class="orbita-period-presets" role="group" aria-label="Быстрый выбор периода">
                         <button type="button"
+                                class="orbita-period-preset@(Model.ActivePeriodPreset == "all" ? " is-active" : "")"
+                                data-period-preset="all">Все</button>
+                        <button type="button"
                                 class="orbita-period-preset@(Model.ActivePeriodPreset == "today" ? " is-active" : "")"
                                 data-period-preset="today">Сегодня</button>
                         <button type="button"

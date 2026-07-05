@@ -93,28 +93,24 @@ internal static class DesignPreviewData
         new([], 0, 1, 10);
 
     public static ResponsesSummaryDto GetResponsesSummary(Guid? officeId) =>
-        new(0, 0, 0, 0, null);
+        new(0, 0, 0, 0, 0, null);
 
-    public static OfficeStatisticsDto GetStatistics(Guid? officeId, DateTime from, DateTime to)
+    public static OfficeStatisticsDto GetStatistics(
+        Guid? officeId,
+        DateTime from,
+        DateTime to,
+        IReadOnlyList<Guid>? workerIds = null,
+        IReadOnlyList<Guid>? accountIds = null)
     {
         var summary = GetSummary(officeId);
         var workers = GetWorkers(officeId);
+        if (workerIds is { Count: > 0 })
+        {
+            var workerFilter = workerIds.ToHashSet();
+            workers = workers.Where(w => workerFilter.Contains(w.Id)).ToList();
+        }
         var days = Math.Max(1, (to.Date - from.Date).Days + 1);
-        var dailyTrend = Enumerable.Range(0, days)
-            .Select(i =>
-            {
-                var date = from.Date.AddDays(i);
-                var factor = 0.6 + (i % 5) * 0.1;
-                return new DailyResponseBucketDto(
-                    date,
-                    (int)Math.Round(summary.TotalToday * factor / days),
-                    (int)Math.Round(summary.SentToCrm * factor / days),
-                    (int)Math.Round(summary.InProgress * factor / days),
-                    0,
-                    (int)Math.Round(summary.Duplicates * factor / days),
-                    (int)Math.Round(summary.Errors * factor / days));
-            })
-            .ToList();
+        var dailyTrend = BuildStatisticsDailyTrend(from.Date, days, summary);
 
         var balanceAccounts = new List<AccountBalanceStatDto>
         {
@@ -134,6 +130,12 @@ internal static class DesignPreviewData
             balanceAccounts = balanceAccounts
                 .Where(a => workers.Any(w => w.Id == a.WorkerId))
                 .ToList();
+        }
+
+        if (accountIds is { Count: > 0 })
+        {
+            var accountFilter = accountIds.ToHashSet();
+            balanceAccounts = balanceAccounts.Where(a => accountFilter.Contains(a.AccountId)).ToList();
         }
 
         return new OfficeStatisticsDto(
@@ -156,6 +158,7 @@ internal static class DesignPreviewData
                     w.OfficeName,
                     w.IsOnline,
                     w.TotalToday,
+                    Math.Max(0, w.TotalToday - w.DuplicatesToday - w.Errors),
                     w.DuplicatesToday,
                     w.Errors,
                     w.ActiveAccountCount,
@@ -183,11 +186,28 @@ internal static class DesignPreviewData
 
     public static StatisticsViewModel BuildStatisticsIndexViewModel(
         DashboardPeriod period,
-        IOfficeContext officeContext) =>
+        IOfficeContext officeContext,
+        StatisticsFiltersViewModel filters) =>
         StatisticsIndexBuilder.Build(
-            GetStatistics(officeContext.EffectiveOfficeId, period.From, period.To),
+            GetStatistics(
+                officeContext.EffectiveOfficeId,
+                period.From,
+                period.To,
+                filters.WorkerIds,
+                filters.AccountIds),
             period,
-            officeContext);
+            officeContext,
+            filters,
+            GetWorkers(officeContext.EffectiveOfficeId)
+                .OrderBy(w => w.DisplayName)
+                .Select(w => new EventFilterOptionViewModel
+                {
+                    Value = w.Id.ToString(),
+                    Label = w.DisplayName
+                })
+                .ToList(),
+            [],
+            FilterChipsBuilder.ForStatistics(filters, period, [], []));
 
     public static WorkersIndexViewModel BuildWorkersIndexViewModel(
         string? searchQuery,
@@ -250,7 +270,7 @@ internal static class DesignPreviewData
             LatestWorkerDownloadUrl = "/Workers/DownloadLatest",
             CanCreateWorker = true,
             HasActiveFilters = !string.IsNullOrWhiteSpace(searchQuery) || !string.IsNullOrWhiteSpace(status),
-            ActiveFilterChips = FilterChipsBuilder.ForWorkers(searchQuery, status),
+            ActiveFilterChips = FilterChipsBuilder.ForWorkers(searchQuery, status, pageSize),
             Sort = tableSort,
             ShowOfficeColumn = showOfficeColumn
         };
@@ -403,8 +423,10 @@ internal static class DesignPreviewData
         period ??= DashboardPeriod.Today;
         officeContext ??= new OfficeContext();
         var updatedAt = Now;
-        var hourlyChart = BuildHourlyChart();
+        var activityChart = DashboardChartsBuilder.FromHourlyActivity(BuildHourly());
+        var hourlyChart = DashboardChartsBuilder.ToResponsePoints(activityChart);
         var previewResponses = HourlyResponsesGenerator.DailyValues.ToList();
+        var previewSent = previewResponses.Select(v => Math.Max(0, (int)Math.Round(v * 0.89))).ToList();
         var previewDuplicates = previewResponses.Select(v => Math.Max(0, v / 5)).ToList();
         var previewErrors = previewResponses.Select((v, i) => i == 14 ? 2 : (i % 9 == 0 ? 1 : 0)).ToList();
         var accountStats = new AccountStatsViewModel
@@ -430,6 +452,20 @@ internal static class DesignPreviewData
                     IconTone = "blue",
                     Sparkline = SparklineGenerator.FromSeries(previewResponses),
                     SparkColor = "#2563eb"
+                },
+                new()
+                {
+                    Key = "sent",
+                    Href = KpiCardLinks.Dashboard("sent", period.From, period.To),
+                    Label = "В Битрикс24",
+                    Value = "1100",
+                    CountValue = 1100,
+                    Delta = "89.1%",
+                    DeltaTone = "good",
+                    IconClass = "fa-solid fa-paper-plane",
+                    IconTone = "green",
+                    Sparkline = SparklineGenerator.FromSeries(previewSent),
+                    SparkColor = "#15803d"
                 },
                 new()
                 {
@@ -531,17 +567,10 @@ internal static class DesignPreviewData
                 .Select(DashboardEventMapper.Map)
                 .ToList(),
             AccountStats = accountStats,
-            Charts = DashboardChartsBuilder.FromPresentation(
-                kpiCards,
-                hourlyChart,
-                accountStats,
-                useHourlyLabels: true),
+            Charts = DashboardChartsBuilder.FromPresentation(kpiCards, activityChart, accountStats),
             ShowOfficeColumn = officeContext.ShowOfficeColumn
         };
     }
-
-    private static IReadOnlyList<DashboardChartPointViewModel> BuildHourlyChart() =>
-        HourlyResponsesGenerator.BuildDailyPoints();
 
     public static WorkerDetail? GetWorker(Guid id)
     {
@@ -898,6 +927,36 @@ internal static class DesignPreviewData
         new(Guid.Parse("33333333-3333-3333-3333-333333333308"), WorkerMoscowId, "VDS-Москва-01", Guid.Parse("22222222-2222-2222-2222-222222222204"), "user_04", "Warning", "Требуется авторизация", null, Now.AddHours(-2))
     ];
 
+    private static IReadOnlyList<DailyResponseBucketDto> BuildStatisticsDailyTrend(
+        DateTime fromDate,
+        int days,
+        GlobalDashboardSummary summary)
+    {
+        var weights = Enumerable.Range(0, days)
+            .Select(i => 0.75 + (i % 5) * 0.08 + ((i * 3) % 7) * 0.02)
+            .ToList();
+        var weightSum = Math.Max(0.01, weights.Sum());
+
+        return weights
+            .Select((weight, index) =>
+            {
+                var total = Math.Max(1, (int)Math.Round(summary.TotalToday * weight / weightSum));
+                var sent = Math.Max(0, Math.Min(total, (int)Math.Round(summary.SentToCrm * weight / weightSum)));
+                var inProgress = Math.Max(0, Math.Min(total - sent, (int)Math.Round(summary.InProgress * weight / weightSum)));
+                var duplicates = Math.Max(0, Math.Min(total - sent - inProgress, (int)Math.Round(summary.Duplicates * weight / weightSum)));
+                var errors = Math.Max(0, total - sent - inProgress - duplicates);
+                return new DailyResponseBucketDto(
+                    fromDate.AddDays(index),
+                    total,
+                    sent,
+                    inProgress,
+                    0,
+                    duplicates,
+                    errors);
+            })
+            .ToList();
+    }
+
     private static IReadOnlyList<ActivityPointDto> BuildHourly()
     {
         var profile = HourlyResponsesGenerator.DailyValues;
@@ -1188,7 +1247,8 @@ internal static class DesignPreviewData
         int pageSize,
         string? sort = null,
         string? sortDir = null,
-        bool showOfficeColumn = false) =>
+        bool showOfficeColumn = false,
+        Guid? workerId = null) =>
         AccountsIndexBuilder.Build(
             BuildPreviewAccountRows(),
             searchQuery,
@@ -1197,7 +1257,9 @@ internal static class DesignPreviewData
             sort,
             sortDir,
             pageSize,
-            showOfficeColumn);
+            showOfficeColumn,
+            workerId: workerId,
+            workers: ResponsesIndexBuilder.BuildWorkerOptions(GetWorkers(null)));
 
     private static IReadOnlyList<AccountRowViewModel> BuildPreviewAccountRows()
     {
@@ -1499,6 +1561,7 @@ internal static class DesignPreviewData
     public static ResponsesIndexViewModel BuildResponsesIndexViewModel(
         ResponsesFilterViewModel filters,
         Guid? selectedId = null,
+        int? pageSize = null,
         string? sort = null,
         string? sortDir = null)
     {
@@ -1509,13 +1572,14 @@ internal static class DesignPreviewData
         var sorted = TableSort.Responses.Apply(filtered, tableSort).ToList();
         var total = sorted.Count;
         var page = Math.Max(1, filters.Page);
-        var pageSize = ResponsesIndexBuilder.DefaultPageSize;
+        pageSize = ListPageSizeDefaults.Normalize(pageSize, ListPageSizeDefaults.Responses);
         var paged = sorted
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
+            .Skip((page - 1) * pageSize.Value)
+            .Take(pageSize.Value)
             .ToList();
 
         var duplicates = filtered.Count(r => r.Status == ResponseStatuses.Duplicate);
+        var sent = filtered.Count(r => r.Status == ResponseStatuses.Sent);
         var unique = total - duplicates;
         var uniqueAuthors = filtered
             .Where(r => !string.IsNullOrWhiteSpace(r.PhoneNormalized))
@@ -1523,7 +1587,7 @@ internal static class DesignPreviewData
             .Distinct(StringComparer.Ordinal)
             .Count();
 
-        var summary = new ResponsesSummaryDto(total, unique, duplicates, uniqueAuthors, 17);
+        var summary = new ResponsesSummaryDto(total, unique, duplicates, sent, uniqueAuthors, 17);
 
         var accountOptions = ResponsesIndexBuilder.BuildAccountOptions(
             filtered
@@ -1545,7 +1609,7 @@ internal static class DesignPreviewData
             Pagination = new PaginationViewModel
             {
                 Page = page,
-                PageSize = pageSize,
+                PageSize = pageSize.Value,
                 TotalItems = total
             },
             Selected = selectedId is Guid id
@@ -1557,7 +1621,8 @@ internal static class DesignPreviewData
                 period,
                 ResponsesIndexBuilder.StatusOptions,
                 BuildPreviewWorkerOptions(),
-                accountOptions),
+                accountOptions,
+                pageSize.Value),
             Sort = tableSort
         };
     }

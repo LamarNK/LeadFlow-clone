@@ -1,0 +1,51 @@
+@model BitrixWebhookValidationDto
+@{
+    var summaryTone = Model.Status switch
+    {
+        BitrixValidationStatuses.Ok => "success",
+        BitrixValidationStatuses.Warning => "warning",
+        _ => "error"
+    };
+
+    string StepLabel(string status) => status switch
+    {
+        BitrixValidationStepStatuses.Ok => "Готово",
+        BitrixValidationStepStatuses.Warning => "Внимание",
+        BitrixValidationStepStatuses.Error => "Ошибка",
+        BitrixValidationStepStatuses.Skipped => "Пропущено",
+        _ => status
+    };
+
+    string StepTone(string status) => status switch
+    {
+        BitrixValidationStepStatuses.Ok => "success",
+        BitrixValidationStepStatuses.Warning => "warning",
+        _ => "error"
+    };
+}
+<div class="settings-bitrix-validation" id="bitrix-validation-results">
+    <div class="settings-bitrix-validation-summary settings-bitrix-validation-summary--@summaryTone">
+        @Model.Message
+    </div>
+    @if (Model.Steps.Count > 0)
+    {
+        <p class="settings-bitrix-validation-caption">Подробности по шагам:</p>
+        <ul class="settings-bitrix-step-list">
+            @foreach (var step in Model.Steps)
+            {
+                var tone = StepTone(step.Status);
+                <li class="settings-bitrix-step settings-bitrix-step--@tone">
+                    <div class="settings-bitrix-step-head">
+                        <span class="settings-bitrix-step-name">@step.Title</span>
+                        <span class="settings-bitrix-step-status">@StepLabel(step.Status)</span>
+                    </div>
+                    <p class="settings-bitrix-step-message">@step.Message</p>
+                    @if (!string.IsNullOrWhiteSpace(step.Hint))
+                    {
+                        <p class="settings-bitrix-step-hint"><strong>Что сделать:</strong> @step.Hint</p>
+                    }
+                </li>
+            }
+        </ul>
+    }
+</div>

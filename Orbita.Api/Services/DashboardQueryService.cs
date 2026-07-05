@@ -40,7 +40,9 @@ public sealed class DashboardQueryService(
         }
 
         var todayStart = nowUtc.Date;
-        var workersQuery = officeScope.ApplyWorkerFilter(db.Workers.AsNoTracking(), scope, officeFilter);
+        var workersQuery = officeScope
+            .ApplyWorkerFilter(db.Workers.AsNoTracking(), scope, officeFilter)
+            .Where(x => x.MachineName != LeadFlowImportWorker.MachineName);
         var workers = await workersQuery.ToListAsync(ct);
         var workerIds = workers.Select(w => w.Id).ToHashSet();
         var onlineWorkers = workers.Count(w => WorkerOnlineRules.IsOnline(w.LastSeenAtUtc, nowUtc));
@@ -153,6 +155,7 @@ public sealed class DashboardQueryService(
         var todayStart = nowUtc.Date;
         var workers = await officeScope
             .ApplyWorkerFilter(db.Workers.AsNoTracking(), scope, officeFilter)
+            .Where(x => x.MachineName != LeadFlowImportWorker.MachineName)
             .OrderBy(x => x.DisplayName)
             .Select(w => new
             {
@@ -266,6 +269,7 @@ public sealed class DashboardQueryService(
         {
             stats = JsonSerializer.Deserialize<DashboardStatsDto>(latestSnapshot.StatsJson, JsonOptions);
             balances = JsonSerializer.Deserialize<List<WorkerBalanceDto>>(latestSnapshot.BalancesJson, JsonOptions) ?? [];
+            balances = await EnrichBalancesFromAccountsAsync(workerId, balances, ct);
         }
 
         var todayStart = nowUtc.Date;
@@ -491,7 +495,9 @@ public sealed class DashboardQueryService(
             return [];
         }
 
-        var workersQuery = officeScope.ApplyWorkerFilter(db.Workers.AsNoTracking(), scope, officeFilter);
+        var workersQuery = officeScope
+            .ApplyWorkerFilter(db.Workers.AsNoTracking(), scope, officeFilter)
+            .Where(x => x.MachineName != LeadFlowImportWorker.MachineName);
         var allowedWorkerIds = await workersQuery.Select(x => x.Id).ToListAsync(ct);
 
         var query = db.WorkerEvents.AsNoTracking()
@@ -541,7 +547,7 @@ public sealed class DashboardQueryService(
         {
             var rows = await db.CandidateResponses
                 .AsNoTracking()
-                .Where(x => workerIds.Contains(x.WorkerId) && x.CreatedAt >= todayStartUtc)
+                .Where(x => x.WorkerId != null && workerIds.Contains(x.WorkerId.Value) && x.CreatedAt >= todayStartUtc)
                 .Select(x => new { x.CreatedAt, x.Status })
                 .ToListAsync(ct);
 
@@ -668,7 +674,7 @@ public sealed class DashboardQueryService(
             return (0, 0, 0, 0, 0, 0);
 
         var query = db.CandidateResponses.AsNoTracking()
-            .Where(x => workerIds.Contains(x.WorkerId) && x.CreatedAt >= todayStartUtc);
+            .Where(x => x.WorkerId != null && workerIds.Contains(x.WorkerId.Value) && x.CreatedAt >= todayStartUtc);
 
         var totalToday = await query.CountAsync(ct);
         if (totalToday == 0)
@@ -754,7 +760,7 @@ public sealed class DashboardQueryService(
 
         var idSet = workerIds.ToHashSet();
         var rows = await db.CandidateResponses.AsNoTracking()
-            .Where(x => idSet.Contains(x.WorkerId) && x.CreatedAt >= todayStartUtc)
+            .Where(x => x.WorkerId != null && idSet.Contains(x.WorkerId.Value) && x.CreatedAt >= todayStartUtc)
             .GroupBy(x => x.WorkerId)
             .Select(g => new
             {
@@ -766,7 +772,14 @@ public sealed class DashboardQueryService(
             .ToListAsync(ct);
 
         foreach (var r in rows)
-            result[r.WorkerId] = (Total: r.Total, Duplicates: r.Duplicates, Errors: r.Errors);
+        {
+            if (r.WorkerId is not Guid workerId)
+            {
+                continue;
+            }
+
+            result[workerId] = (Total: r.Total, Duplicates: r.Duplicates, Errors: r.Errors);
+        }
 
         foreach (var wid in workerIds)
             if (!result.ContainsKey(wid)) result[wid] = (Total: 0, Duplicates: 0, Errors: 0);
@@ -778,4 +791,25 @@ public sealed class DashboardQueryService(
         string? json,
         string? disabledIdsJson = null) =>
         SubProfileDeserializer.Deserialize(json, disabledIdsJson);
+
+    private async Task<List<WorkerBalanceDto>> EnrichBalancesFromAccountsAsync(
+        Guid workerId,
+        IReadOnlyList<WorkerBalanceDto> balances,
+        CancellationToken ct)
+    {
+        if (balances.Count == 0)
+        {
+            return [];
+        }
+
+        var existingAccounts = await db.WorkerAccounts
+            .AsNoTracking()
+            .Where(x => x.WorkerId == workerId)
+            .ToDictionaryAsync(x => x.AccountId, ct);
+
+        return BalanceSnapshotHelper.MergeWithPersisted(
+            balances,
+            balances,
+            existingAccounts).ToList();
+    }
 }

@@ -35,6 +35,7 @@ services:
       Cors__Origins__0: ${CORS_ORIGIN_0:-http://163.5.153.207}
       Cors__Origins__1: ${CORS_ORIGIN_1:-http://localhost}
       Logs__SharedRoot: /app/Data/logs
+      DataProtection__KeysPath: /app/Data/dataprotection-api
     depends_on:
       postgres:
         condition: service_healthy
@@ -44,6 +45,7 @@ services:
       - orbita_logs:/app/Data/logs
       - orbita_releases:/app/Data/releases
       - orbita_diagnostics:/app/Data/diagnostics
+      - orbita_dataprotection_api:/app/Data/dataprotection-api
 
   web:
     build:
@@ -68,5 +70,6 @@ volumes:
   orbita_pg:
   orbita_logs:
   orbita_dataprotection:
+  orbita_dataprotection_api:
   orbita_releases:
   orbita_diagnostics:

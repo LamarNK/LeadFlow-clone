@@ -5,7 +5,7 @@ namespace Orbita.Web.Services;
 
 internal static class EventsIndexBuilder
 {
-    public const int DefaultPageSize = 10;
+    public const int DefaultPageSize = ListPageSizeDefaults.Events;
 
     public static readonly EventFilterOptionViewModel[] EventTypeOptions =
     [
@@ -57,7 +57,7 @@ internal static class EventsIndexBuilder
         var summary = Summarize(allRows);
         var workers = workerOptions ?? BuildWorkerOptions(allRows);
         var accounts = accountOptions ?? BuildAccountOptions(allRows);
-        var activeFilterChips = FilterChipsBuilder.ForEvents(filters, EventTypeOptions, workers, accounts, LevelOptions, journalView);
+        var activeFilterChips = FilterChipsBuilder.ForEvents(filters, EventTypeOptions, workers, accounts, LevelOptions, journalView, pageSize);
 
         return new EventsIndexViewModel
         {

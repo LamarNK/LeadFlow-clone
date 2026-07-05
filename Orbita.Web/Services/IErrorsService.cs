@@ -11,6 +11,7 @@ public interface IErrorsService
         Guid? workerId = null,
         Guid? accountId = null,
         int page = 1,
+        int? pageSize = null,
         string? sort = null,
         string? sortDir = null,
         CancellationToken ct = default);

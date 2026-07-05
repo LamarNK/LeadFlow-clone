@@ -305,6 +305,60 @@ public sealed class TelemetryServiceTests
     }
 
     [Fact]
+    public async Task SaveSnapshotAsync_PreservesExistingBalance_WhenIncomingSnapshotHasNoBalanceData()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db, disabledIdsJson: "[]");
+        var account = await db.WorkerAccounts.SingleAsync();
+        account.TotalBalance = 12500m;
+        account.SubProfilesJson = JsonSerializer.Serialize(new[]
+        {
+            new WorkerSubProfileDto("sp-1", "Alpha", "", true, 12500m, null, null, null, WalletBalance: 500m, AdvanceDurationText: "~ на 10 дней")
+        });
+        await db.SaveChangesAsync();
+
+        var sut = new TelemetryService(db, new OfficeAdminService(db), new NoopPanelRealtimeNotifier());
+        var capturedAt = DateTime.UtcNow;
+        var request = new WorkerSnapshotRequest(
+            WorkerId,
+            capturedAt,
+            CreateNonEmptyStats(),
+            [
+                new WorkerAccountDto(
+                    AccountId,
+                    "acc-1",
+                    "Ok",
+                    true,
+                    1,
+                    0,
+                    0,
+                    null,
+                    capturedAt,
+                    SubProfiles:
+                    [
+                        new WorkerSubProfileDto("sp-1", "Alpha", "", true, null, null, null, null)
+                    ])
+            ],
+            [
+                new WorkerBalanceDto(AccountId, "acc-1", 0m, [new SubProfileBalanceDto("Alpha", null)])
+            ]);
+
+        var saved = await sut.SaveSnapshotAsync(request, CancellationToken.None);
+
+        Assert.True(saved);
+        account = await db.WorkerAccounts.SingleAsync();
+        Assert.Equal(12500m, account.TotalBalance);
+        Assert.Contains("12500", account.SubProfilesJson, StringComparison.Ordinal);
+
+        var snapshot = await db.WorkerSnapshots.SingleAsync();
+        var balances = JsonSerializer.Deserialize<List<WorkerBalanceDto>>(
+            snapshot.BalancesJson,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web)) ?? [];
+        Assert.Single(balances);
+        Assert.Equal(12500m, balances[0].TotalBalance);
+    }
+
+    [Fact]
     public async Task SaveSnapshotAsync_PreservesSubProfilesDisabledIdsJson()
     {
         await using var db = CreateDb();

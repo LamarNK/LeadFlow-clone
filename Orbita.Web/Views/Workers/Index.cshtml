@@ -4,8 +4,8 @@
     ViewData["Title"] = "Все воркеры";
     var pagination = Model.Pagination;
     var workersError = TempData["WorkersError"] as string;
-    var workersSortRoute = new { q = Model.SearchQuery, status = Model.StatusFilter, sort = Model.Sort.Column, dir = Model.Sort.Dir };
-    var snapshotUrl = Url.Action("Snapshot", "Workers", new { q = Model.SearchQuery, status = Model.StatusFilter, page = pagination.Page, sort = Model.Sort.Column, dir = Model.Sort.Dir })!;
+    var workersSortRoute = new { q = Model.SearchQuery, status = Model.StatusFilter, pageSize = pagination.PageSize, sort = Model.Sort.Column, dir = Model.Sort.Dir };
+    var snapshotUrl = Url.Action("Snapshot", "Workers", new { q = Model.SearchQuery, status = Model.StatusFilter, page = pagination.Page, pageSize = pagination.PageSize, sort = Model.Sort.Column, dir = Model.Sort.Dir })!;
 }
 <partial name="_PageHeader" model="Model.Header" />
 <div class="orbita-main workers-page"
@@ -16,90 +16,6 @@
      data-settings-logs-url="@Url.Action("Index", "Settings", new { tab = "logs", workerId = "__id__" })"
      data-show-admin-logs="@(User.IsInRole(PanelRoles.Admin) ? "true" : "false")"
      data-show-office-column="@(Model.ShowOfficeColumn ? "true" : "false")">
-    <div class="workers-page-head">
-        <div class="workers-toolbar">
-            <form class="workers-search" method="get" asp-action="Index" role="search">
-                @if (!string.IsNullOrWhiteSpace(Model.StatusFilter))
-                {
-                    <input type="hidden" name="status" value="@Model.StatusFilter" />
-                }
-                <input type="hidden" name="sort" value="@Model.Sort.Column" />
-                <input type="hidden" name="dir" value="@Model.Sort.Dir" />
-                <i class="fa-solid fa-magnifying-glass workers-search-icon" aria-hidden="true"></i>
-                <input type="search"
-                       name="q"
-                       value="@Model.SearchQuery"
-                       placeholder="Поиск по воркерам..."
-                       aria-label="Поиск по воркерам" />
-            </form>
-            <button type="button"
-                    class="workers-filter-btn orbita-filters-toggle@(Model.HasActiveFilters ? " is-active" : "")"
-                    data-orbita-filter-toggle="workersFilterPanel"
-                    data-orbita-filter-count="@Model.ActiveFilterCount"
-                    aria-label="@(Model.ActiveFilterCount > 0 ? $"Фильтры ({Model.ActiveFilterCount})" : "Фильтры")"
-                    aria-expanded="false">
-                <i class="fa-solid fa-filter" aria-hidden="true"></i>
-                @if (Model.ActiveFilterCount > 0)
-                {
-                    <span class="orbita-filters-toggle-count">@Model.ActiveFilterCount</span>
-                }
-            </button>
-            <div class="orbita-filter-panel" id="workersFilterPanel" hidden>
-                <form method="get" asp-action="Index" class="orbita-filter-panel__form">
-                    <input type="hidden" name="q" value="@Model.SearchQuery" />
-                    <label class="orbita-filter-panel__field">
-                        <span class="orbita-filter-panel__label">Статус</span>
-                        <select name="status" class="orbita-filter-panel__select">
-                            @if (string.IsNullOrWhiteSpace(Model.StatusFilter))
-                            {
-                                <option value="" selected>Все</option>
-                            }
-                            else
-                            {
-                                <option value="">Все</option>
-                            }
-                            @if (Model.StatusFilter == "online")
-                            {
-                                <option value="online" selected>Онлайн</option>
-                            }
-                            else
-                            {
-                                <option value="online">Онлайн</option>
-                            }
-                            @if (Model.StatusFilter == "offline")
-                            {
-                                <option value="offline" selected>Оффлайн</option>
-                            }
-                            else
-                            {
-                                <option value="offline">Оффлайн</option>
-                            }
-                        </select>
-                    </label>
-                    <div class="orbita-filter-panel__actions">
-                        <a class="orbita-filter-panel__reset" href="@Url.Action("Index", new { q = Model.SearchQuery })">Сбросить</a>
-                        <button type="submit" class="orbita-filter-panel__apply" hidden>Применить</button>
-                    </div>
-                </form>
-            </div>
-            @if (Model.HasWorkerRelease && !string.IsNullOrWhiteSpace(Model.LatestWorkerDownloadUrl))
-            {
-                <a class="workers-download-btn" href="@Model.LatestWorkerDownloadUrl">
-                    <i class="fa-solid fa-download" aria-hidden="true"></i>
-                    <span>Скачать воркер v@(Model.LatestWorkerReleaseVersion)</span>
-                </a>
-            }
-            @if (Model.CanCreateWorker)
-            {
-                <button type="button" class="workers-add-btn" data-workers-add-open>
-                    <i class="fa-solid fa-plus" aria-hidden="true"></i>
-                    <span>Добавить воркер</span>
-                </button>
-            }
-        </div>
-    </div>
-    <partial name="_FilterChips" model="Model.ActiveFilterChips" />
-
     <div class="kpi-row workers-kpi-row">
         @{ var kpiIdx = 0; }
         @foreach (var kpi in Model.KpiCards)
@@ -108,6 +24,50 @@
             kpiIdx++;
         }
     </div>
+
+    @if ((Model.HasWorkerRelease && !string.IsNullOrWhiteSpace(Model.LatestWorkerDownloadUrl)) || Model.CanCreateWorker)
+    {
+        <div class="workers-page-toolbar">
+            <div class="workers-page-actions">
+                @if (Model.HasWorkerRelease && !string.IsNullOrWhiteSpace(Model.LatestWorkerDownloadUrl))
+                {
+                    <a class="workers-download-btn" href="@Model.LatestWorkerDownloadUrl">
+                        <i class="fa-solid fa-download" aria-hidden="true"></i>
+                        <span>Скачать воркер v@(Model.LatestWorkerReleaseVersion)</span>
+                    </a>
+                }
+                @if (Model.CanCreateWorker)
+                {
+                    <button type="button" class="workers-add-btn" data-workers-add-open>
+                        <i class="fa-solid fa-plus" aria-hidden="true"></i>
+                        <span>Добавить воркер</span>
+                    </button>
+                }
+            </div>
+        </div>
+    }
+
+    @{
+        var workersFormAction = Url.Action("Index", "Workers");
+        var workersFilterBar = new ListFiltersBarViewModel
+        {
+            FormAction = workersFormAction!,
+            FormClass = "orbita-filters-form workers-filters",
+            SearchName = "q",
+            SearchPlaceholder = "Поиск по воркерам...",
+            SearchValue = Model.SearchQuery,
+            FilterPanelId = "workersFilterPanel",
+            FilterToggleClass = "orbita-filters-toggle workers-filter-btn",
+            HasActiveFilters = Model.HasActiveFilters,
+            ActiveFilterCount = Model.ActiveFilterCount,
+            ActiveFilterChips = Model.ActiveFilterChips,
+            ResetUrl = workersFormAction!,
+            FilterFieldsPartialName = "_WorkersFilterFields",
+            FilterFieldsModel = Model,
+            ExtraFormContent = $"<input type=\"hidden\" name=\"sort\" value=\"{Model.Sort.Column}\" /><input type=\"hidden\" name=\"dir\" value=\"{Model.Sort.Dir}\" />"
+        };
+    }
+    <partial name="_ListFiltersBar" model="workersFilterBar" />
 
     <div class="card card--workers-table">
         <div class="card-body card-body-table workers-table-wrap">
@@ -259,7 +219,7 @@
                 Pagination = pagination,
                 Controller = "Workers",
                 Action = "Index",
-                RouteValues = new { q = Model.SearchQuery, status = Model.StatusFilter, sort = Model.Sort.Column, dir = Model.Sort.Dir }
+                RouteValues = new { q = Model.SearchQuery, status = Model.StatusFilter, pageSize = pagination.PageSize, sort = Model.Sort.Column, dir = Model.Sort.Dir }
             })" />
         </div>
     </div>

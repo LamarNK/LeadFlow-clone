@@ -56,6 +56,91 @@ public sealed class OfficeStatisticsQueryServiceTests
     }
 
     [Fact]
+    public async Task GetStatisticsAsync_DuplicateSnapshotBalances_DoesNotThrow()
+    {
+        await using var db = CreateDb();
+        var now = DateTime.UtcNow;
+        var duplicateAccountId = Guid.Parse("3b386125-8751-6cb2-7c9f-a2cfa238d7a6");
+
+        db.Offices.Add(new OfficeEntity
+        {
+            Id = OfficeA,
+            Name = "Office A",
+            RegistrationSecretHash = "hash",
+            CreatedAtUtc = now,
+            IsEnabled = true
+        });
+        db.Workers.Add(new WorkerEntity
+        {
+            Id = WorkerA,
+            OfficeId = OfficeA,
+            DisplayName = "worker-a",
+            MachineName = "pc-a",
+            ApiKeyHash = "hash",
+            AppVersion = "1.0",
+            MonitoringStatus = "Running",
+            LastSeenAtUtc = now,
+            CreatedAtUtc = now
+        });
+        db.WorkerAccounts.Add(new WorkerAccountEntity
+        {
+            WorkerId = WorkerA,
+            AccountId = duplicateAccountId,
+            DisplayName = "Duplicate Account",
+            Status = "Active",
+            IsEnabledInPanel = true,
+            TotalBalance = 5000m,
+            UpdatedAtUtc = now
+        });
+
+        var duplicateBalances = $$"""
+            [
+              {"accountId":"{{duplicateAccountId}}","accountName":"Dup","totalBalance":1000,"subProfiles":[],"totalWalletBalance":0},
+              {"accountId":"{{duplicateAccountId}}","accountName":"Dup","totalBalance":2000,"subProfiles":[],"totalWalletBalance":0}
+            ]
+            """;
+        db.WorkerSnapshots.Add(new WorkerSnapshotEntity
+        {
+            Id = Guid.NewGuid(),
+            WorkerId = WorkerA,
+            CapturedAtUtc = now,
+            StatsJson = """{"connectedAccounts":1,"activeAdsCount":0,"blockedAdsCount":0}""",
+            BalancesJson = duplicateBalances
+        });
+        db.SaveChanges();
+
+        var sut = CreateService(db);
+        var result = await sut.GetStatisticsAsync(
+            OfficeScope.ForOffice(OfficeA),
+            OfficeA,
+            DateTime.Today,
+            DateTime.Today);
+
+        Assert.Single(result.Balances.Accounts);
+        Assert.Equal(2000m, result.Balances.Accounts[0].Advance);
+    }
+
+    [Fact]
+    public async Task GetStatisticsAsync_WorkerFilter_LimitsResponsesAndWorkers()
+    {
+        await using var db = CreateDb();
+        SeedOfficeData(db);
+
+        var sut = CreateService(db);
+        var result = await sut.GetStatisticsAsync(
+            OfficeScope.GlobalAdmin,
+            null,
+            DateTime.Today.AddDays(-6),
+            DateTime.Today,
+            [WorkerA]);
+
+        Assert.Equal(1, result.Workers.Total);
+        Assert.Equal(2, result.Responses.Total);
+        Assert.Equal(1, result.Responses.Sent);
+        Assert.DoesNotContain(result.Balances.Accounts, a => a.AccountId == AccountB);
+    }
+
+    [Fact]
     public async Task GetStatisticsAsync_DailyTrend_FillsMissingDays()
     {
         await using var db = CreateDb();

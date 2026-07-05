@@ -98,6 +98,9 @@
 
     function resolvePresetRange(preset) {
         var today = formatIsoDate(new Date());
+        if (preset === 'all') {
+            return { from: formatIsoDate(addDays(new Date(), -365)), to: today };
+        }
         if (preset === 'today') {
             return { from: today, to: today };
         }
@@ -694,6 +697,130 @@
                 if (icon) icon.classList.toggle('subprofiles-toggle-icon--open', willExpand);
             });
         });
+    }
+
+    var bitrixValidationStatusLabels = {
+        ok: 'Готово',
+        warning: 'Внимание',
+        error: 'Ошибка',
+        skipped: 'Пропущено'
+    };
+
+    function escapeBitrixHtml(value) {
+        return String(value == null ? '' : value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    function findBitrixValidationResults(form) {
+        if (!form) return null;
+        return form.querySelector('[data-bitrix-validation-results]')
+            || (form.nextElementSibling && form.nextElementSibling.matches
+                && form.nextElementSibling.matches('[data-bitrix-validation-results]') ? form.nextElementSibling : null)
+            || (form.parentElement ? form.parentElement.querySelector('[data-bitrix-validation-results]') : null);
+    }
+
+    function renderBitrixValidation(container, validation) {
+        var steps = validation && Array.isArray(validation.steps) ? validation.steps : [];
+        var summaryTone = validation && validation.status === 'ok'
+            ? 'success'
+            : validation && validation.status === 'warning'
+                ? 'warning'
+                : 'error';
+        var stepsHtml = steps.map(function (step) {
+            var tone = step.status === 'ok' ? 'success' : step.status === 'warning' ? 'warning' : 'error';
+            var label = bitrixValidationStatusLabels[step.status] || step.status;
+            var title = step.title || step.name || step.id || 'Проверка';
+            var hintHtml = step.hint
+                ? '<p class="settings-bitrix-step-hint"><strong>Что сделать:</strong> ' + escapeBitrixHtml(step.hint) + '</p>'
+                : '';
+            return '<li class="settings-bitrix-step settings-bitrix-step--' + tone + '">' +
+                '<div class="settings-bitrix-step-head">' +
+                '<span class="settings-bitrix-step-name">' + escapeBitrixHtml(title) + '</span>' +
+                '<span class="settings-bitrix-step-status">' + escapeBitrixHtml(label) + '</span>' +
+                '</div>' +
+                '<p class="settings-bitrix-step-message">' + escapeBitrixHtml(step.message) + '</p>' +
+                hintHtml +
+                '</li>';
+        }).join('');
+
+        container.innerHTML =
+            '<div class="settings-bitrix-validation-summary settings-bitrix-validation-summary--' + summaryTone + '">' +
+            escapeBitrixHtml((validation && validation.message) || '') +
+            '</div>' +
+            '<p class="settings-bitrix-validation-caption">Подробности по шагам:</p>' +
+            '<ul class="settings-bitrix-step-list">' + stepsHtml + '</ul>';
+    }
+
+    async function validateBitrixWebhookFromButton(btn) {
+        var post = window.Orbita && window.Orbita.postForm;
+        if (!post) {
+            showToast('Проверка Bitrix24 недоступна. Обновите страницу.', { variant: 'error' });
+            return;
+        }
+
+        var form = btn.closest('[data-bitrix-settings-form]');
+        if (!form) {
+            showToast('Форма Bitrix24 не найдена. Обновите страницу.', { variant: 'error' });
+            return;
+        }
+
+        var validateUrl = form.getAttribute('data-bitrix-validate-url');
+        var input = form.querySelector('[data-bitrix-webhook-input]');
+        var resultsEl = findBitrixValidationResults(form);
+        if (!validateUrl || !input || !resultsEl) {
+            showToast('Не удалось инициализировать проверку. Обновите страницу.', { variant: 'error' });
+            return;
+        }
+
+        var webhookUrl = (input.value || '').trim();
+        var checkingSaved = !webhookUrl;
+
+        btn.disabled = true;
+        resultsEl.hidden = false;
+        resultsEl.innerHTML = '<p class="settings-bitrix-validation-loading">' +
+            (checkingSaved
+                ? 'Проверяем сохранённый вебхук офиса: связь с Bitrix24 и права CRM…'
+                : 'Проверяем ссылку: формат, связь с Bitrix24 и права CRM…') +
+            '</p>';
+
+        try {
+            var result = await post(validateUrl, { webhookUrl: webhookUrl });
+            if (!result.ok) {
+                var message = (result.payload && result.payload.error)
+                    || (result.status === 403
+                        ? 'Недостаточно прав для проверки вебхука.'
+                        : 'Не удалось выполнить проверку. Обновите страницу и попробуйте снова.');
+                resultsEl.innerHTML = '<div class="settings-bitrix-validation-summary settings-bitrix-validation-summary--error">' +
+                    escapeBitrixHtml(message) + '</div>';
+                return;
+            }
+
+            renderBitrixValidation(resultsEl, result.payload);
+        } catch (err) {
+            resultsEl.innerHTML =
+                '<div class="settings-bitrix-validation-summary settings-bitrix-validation-summary--error">' +
+                'Не удалось связаться с панелью. Проверьте интернет и попробуйте ещё раз.' +
+                '</div>';
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    function initBitrixValidateButtons() {
+        if (document.documentElement.dataset.orbitaBitrixValidateBound === '1') {
+            return;
+        }
+        document.documentElement.dataset.orbitaBitrixValidateBound = '1';
+        document.addEventListener('click', function (e) {
+            var btn = e.target.closest('[data-bitrix-validate-btn]');
+            if (!btn) return;
+            e.preventDefault();
+            e.stopPropagation();
+            validateBitrixWebhookFromButton(btn);
+        }, true);
     }
 
     initUpdatedClock();
@@ -1863,12 +1990,14 @@
     window.Orbita.copyText = copyText;
     window.Orbita.confirm = showConfirm;
     window.Orbita.postForm = postForm;
+    initBitrixValidateButtons();
     window.Orbita.initWorkerRestartButtons = initWorkerRestartButtons;
     window.Orbita.initWorkerAccountEnableToggles = initWorkerAccountEnableToggles;
     window.Orbita.openDetailModal = openDetailModal;
     window.Orbita.initFilterPanels = initFilterPanels;
     window.Orbita.initDetailOpenButtons = initDetailOpenButtons;
     window.Orbita.initRowMenus = initRowMenus;
+    window.Orbita.initBitrixValidateButtons = initBitrixValidateButtons;
     window.Orbita.closeAllRowMenus = closeAllRowMenus;
     window.Orbita.updateNavBadges = updateNavBadges;
     window.Orbita.fetchNavBadges = fetchNavBadges;

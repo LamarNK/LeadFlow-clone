@@ -6,14 +6,29 @@ using Orbita.Web.Services;
 namespace Orbita.Web.Controllers;
 
 [Authorize]
-public sealed class MySettingsController(IMySettingsService settings) : Controller
+public sealed class MySettingsController(
+    IMySettingsService settings,
+    BitrixValidationResultCache bitrixValidationCache) : Controller
 {
     [HttpGet]
     public async Task<IActionResult> Index(string? tab, CancellationToken ct = default)
     {
         var model = await settings.GetIndexAsync(tab, ct);
+        var bitrix = model.Bitrix;
+        if (model.ActiveTab == "bitrix"
+            && bitrix is not null
+            && TempData["BitrixValidationCacheKey"] is string cacheKey)
+        {
+            var cached = bitrixValidationCache.Take(cacheKey);
+            if (cached is not null)
+            {
+                bitrix = bitrix.WithLiveValidation(cached.DraftWebhookUrl, cached.Validation);
+            }
+        }
+
         model = model with
         {
+            Bitrix = bitrix,
             StatusMessage = TempData["MySettingsStatus"] as string ?? model.StatusMessage,
             ErrorMessage = TempData["MySettingsError"] as string ?? model.ErrorMessage
         };
@@ -64,17 +79,20 @@ public sealed class MySettingsController(IMySettingsService settings) : Controll
     [HttpPost]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> ValidateBitrix(
-        string? webhookUrl,
+        SaveBitrixIntegrationFormModel model,
         [FromServices] OrbitaApiClient api,
         CancellationToken ct = default)
     {
-        webhookUrl = string.IsNullOrWhiteSpace(webhookUrl) ? null : webhookUrl.Trim();
+        var draftWebhookUrl = model.WebhookUrl ?? string.Empty;
+        var webhookUrl = string.IsNullOrWhiteSpace(model.WebhookUrl) ? null : model.WebhookUrl.Trim();
+
         var (validation, error) = await api.ValidateOfficeBitrixIntegrationAsync(webhookUrl, ct);
+        TempData["BitrixValidationCacheKey"] = bitrixValidationCache.Store(draftWebhookUrl, validation);
         if (validation is null)
         {
-            return BadRequest(new { error });
+            TempData["MySettingsError"] = error ?? "Не удалось выполнить проверку вебхука.";
         }
 
-        return Json(validation);
+        return RedirectToAction(nameof(Index), new { tab = "bitrix" });
     }
 }
