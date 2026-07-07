@@ -54,7 +54,7 @@
     }
 
     var TREND_SERIES = [
-        { key: 'sent', label: 'В CRM', color: '#22c55e' },
+        { key: 'sent', label: 'Битрикс24', color: '#22c55e' },
         { key: 'inProgress', label: 'В работе', color: '#3b82f6' },
         { key: 'actionRequired', label: 'Нужно действие', color: '#8b5cf6' },
         { key: 'duplicates', label: 'Дубли', color: '#f59e0b' },
@@ -549,30 +549,36 @@
             return '';
         }
 
-        return '<div class="statistics-balance-subprofiles">'
-            + subProfiles.map(function (subProfile) {
-                var wallet = subProfile.walletText
-                    ? '<span class="statistics-balance-subprofile-wallet" title="Кошелёк">' + escapeHtml(subProfile.walletText) + '</span>'
-                    : '';
-                var duration = subProfile.durationText
-                    ? '<span class="statistics-balance-subprofile-duration">' + escapeHtml(subProfile.durationText) + '</span>'
-                    : '';
+        var items = subProfiles.map(function (subProfile) {
+            var wallet = subProfile.walletText
+                ? '<span class="statistics-balance-subprofile-wallet" title="Кошелёк">' + escapeHtml(subProfile.walletText) + '</span>'
+                : '';
+            var duration = subProfile.durationText
+                ? '<span class="statistics-balance-subprofile-duration">' + escapeHtml(subProfile.durationText) + '</span>'
+                : '';
 
-                return '<div class="statistics-balance-subprofile' + (subProfile.isLowBalance ? ' statistics-balance-subprofile--low' : '') + '">'
-                    + '<div class="statistics-balance-subprofile-head">'
-                    + '<span class="statistics-balance-subprofile-name">' + escapeHtml(subProfile.name) + '</span>'
-                    + '<div class="statistics-balance-subprofile-amounts">'
-                    + '<span class="statistics-balance-subprofile-advance" title="Аванс">' + escapeHtml(subProfile.advanceText) + '</span>'
-                    + wallet
-                    + '</div>'
-                    + '</div>'
-                    + duration
-                    + '<div class="statistics-balance-bar-track statistics-balance-bar-track--sub" aria-hidden="true">'
-                    + '<span class="statistics-balance-bar-fill" style="width:' + ((subProfile.barWidth || 0) * 100).toFixed(2) + '%"></span>'
-                    + '</div>'
-                    + '</div>';
-            }).join('')
-            + '</div>';
+            return '<div class="statistics-balance-subprofile' + (subProfile.isLowBalance ? ' statistics-balance-subprofile--low' : '') + '">'
+                + '<div class="statistics-balance-subprofile-head">'
+                + '<span class="statistics-balance-subprofile-name">' + escapeHtml(subProfile.name) + '</span>'
+                + '<div class="statistics-balance-subprofile-amounts">'
+                + '<span class="statistics-balance-subprofile-advance" title="Аванс">' + escapeHtml(subProfile.advanceText) + '</span>'
+                + wallet
+                + '</div>'
+                + '</div>'
+                + duration
+                + '<div class="statistics-balance-bar-track statistics-balance-bar-track--sub" aria-hidden="true">'
+                + '<span class="statistics-balance-bar-fill" style="width:' + ((subProfile.barWidth || 0) * 100).toFixed(2) + '%"></span>'
+                + '</div>'
+                + '</div>';
+        }).join('');
+
+        return '<details class="statistics-balance-subprofiles-details">'
+            + '<summary class="statistics-balance-subprofiles-summary">'
+            + '<i class="fa-solid fa-chevron-right statistics-balance-subprofiles-caret" aria-hidden="true"></i>'
+            + subProfiles.length + ' субпроф.'
+            + '</summary>'
+            + '<div class="statistics-balance-subprofiles">' + items + '</div>'
+            + '</details>';
     }
 
     function renderBalanceRows(rows, showOfficeColumn) {
@@ -615,12 +621,77 @@
                 + '</div>'
                 + '</div>'
                 + '<div class="statistics-balance-bar-track" aria-hidden="true">'
-                + '<span class="statistics-balance-bar-fill" style="width:' + (row.barWidth * 100).toFixed(2) + '%"></span>'
+                + '<span class="statistics-balance-bar-fill" style="width:' + ((row.barWidth || 0) * 100).toFixed(2) + '%"></span>'
                 + '</div>'
                 + subProfiles
                 + foot
                 + '</div>';
         }).join('');
+    }
+
+    function getMonitoringAccountDetailRow(row) {
+        if (!row) return null;
+        var accountName = row.getAttribute('data-monitoring-account') || '';
+        if (!accountName) return null;
+        var root = row.closest('[data-monitoring-accounts]');
+        if (!root) return null;
+        return root.querySelector('[data-monitoring-account-detail="' + accountName + '"]');
+    }
+
+    function setMonitoringAccountExpanded(row, expanded) {
+        var detailRow = getMonitoringAccountDetailRow(row);
+        row.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+        if (detailRow) {
+            detailRow.hidden = !expanded;
+        }
+    }
+
+    function initMonitoringAccountRows() {
+        document.querySelectorAll('[data-monitoring-account-toggle]').forEach(function (row) {
+            if (row.hasAttribute('data-monitoring-account-bound')) return;
+            row.setAttribute('data-monitoring-account-bound', '1');
+
+            row.addEventListener('click', function (e) {
+                if (e.target.closest('a') || e.target.closest('button') || e.target.closest('form')) return;
+                var expanded = row.getAttribute('aria-expanded') === 'true';
+                setMonitoringAccountExpanded(row, !expanded);
+            });
+        });
+    }
+
+    function initMonitoringSearch() {
+        var input = document.querySelector('[data-monitoring-search]');
+        var accountsRoot = document.querySelector('[data-monitoring-accounts]');
+        if (!input || !accountsRoot) return;
+        if (input.hasAttribute('data-monitoring-search-bound')) return;
+        input.setAttribute('data-monitoring-search-bound', '1');
+
+        var meta = document.querySelector('[data-monitoring-search-meta]');
+        var items = Array.prototype.slice.call(
+            accountsRoot.querySelectorAll('[data-monitoring-account]'));
+
+        function applyFilter() {
+            var query = (input.value || '').trim().toLowerCase();
+            var visible = 0;
+            items.forEach(function (item) {
+                var name = (item.getAttribute('data-monitoring-account') || '').toLowerCase();
+                var match = !query || name.indexOf(query) > -1;
+                item.hidden = !match;
+                var detailRow = getMonitoringAccountDetailRow(item);
+                if (detailRow) {
+                    detailRow.hidden = !match || item.getAttribute('aria-expanded') !== 'true';
+                }
+                if (match) visible++;
+            });
+            if (meta) {
+                meta.textContent = query
+                    ? visible + ' из ' + items.length
+                    : items.length + ' аккаунт(ов)';
+            }
+        }
+
+        input.addEventListener('input', applyFilter);
+        applyFilter();
     }
 
     function renderHrTable(title, rows) {
@@ -683,7 +754,7 @@
                 + officeCell
                 + '<td data-label="Статус"><span class="status-dot' + statusClass + '"><i class="fa-solid fa-circle status-dot-icon" aria-hidden="true"></i>' + statusLabel + '</span></td>'
                 + '<td class="cell-num" data-label="Отклики">' + worker.periodResponses + '</td>'
-                + '<td class="cell-num" data-label="CRM">' + (worker.periodSent || 0) + '</td>'
+                + '<td class="cell-num" data-label="Битрикс24">' + (worker.periodSent || 0) + '</td>'
                 + '<td class="cell-num" data-label="Дубли">' + worker.periodDuplicates + '</td>'
                 + '<td class="cell-num" data-label="Ошибки">' + worker.periodErrors + '</td>'
                 + '<td class="cell-num" data-label="Аккаунты">' + worker.activeAccounts + ' / ' + worker.totalAccounts + '</td>'
@@ -825,6 +896,8 @@
 
         initKpiCounters();
         initRowNavigation();
+        initMonitoringAccountRows();
+        initMonitoringSearch();
         applyCharts(payload);
         initLiveRefresh();
     }

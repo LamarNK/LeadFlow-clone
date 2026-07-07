@@ -31,6 +31,41 @@ public sealed class ErrorsIndexBuilderTests
     }
 
     [Fact]
+    public void MapEvent_AuthRequired_IsHighSeverity_NotMedium()
+    {
+        var row = ErrorsIndexBuilder.MapEvent(CreateEvent(
+            "Error",
+            "Ошибка аккаунта Avito 15: Avito требует повторный вход на странице https://www.avito.ru/#login?next=%2Fprofile.",
+            """{"kind":"auth_required","url":"https://www.avito.ru/#login?next=%2Fprofile"}"""));
+
+        Assert.Equal("high", row.Severity);
+        Assert.Equal("Высокий", row.SeverityLabel);
+    }
+
+    [Fact]
+    public void MapEvent_ProfileBusy_IsLowSeverity()
+    {
+        var row = ErrorsIndexBuilder.MapEvent(CreateEvent(
+            "Warning",
+            "Профиль AdsPower занят для Авито 45",
+            "Профиль AdsPower «k1dp9yar» уже открыт пользователем avitolog450@gmail.com."));
+
+        Assert.Equal("low", row.Severity);
+        Assert.Equal("Низкий", row.SeverityLabel);
+    }
+
+    [Fact]
+    public void MapEvent_SubprofileSwitchFailure_IsMediumSeverity()
+    {
+        var row = ErrorsIndexBuilder.MapEvent(CreateEvent(
+            "Warning",
+            "AdsPower «Avito 13» · аккаунт «Avito 13» — проблема: ошибка на шаге «переключение субпрофиля».",
+            """{"kind":"subprofile-other","url":"https://www.avito.ru/profile/candidates"}"""));
+
+        Assert.Equal("medium", row.Severity);
+    }
+
+    [Fact]
     public void InferErrorType_UrlOnly_DoesNotClassifyAsNetwork()
     {
         var type = ErrorsIndexBuilder.InferErrorType(
@@ -70,6 +105,14 @@ public sealed class WorkerEventDetailsParserTests
     public void TryParseAttachmentId_ReturnsNull_ForPlainText()
     {
         Assert.Null(WorkerEventDetailsParser.TryParseAttachmentId("captcha :: url"));
+    }
+
+    [Fact]
+    public void TryParseAttachmentId_ReturnsNull_WhenAttachmentIdIsJsonNull()
+    {
+        var details = """{"attachmentId":null,"kind":"other","text":"test"}""";
+
+        Assert.Null(WorkerEventDetailsParser.TryParseAttachmentId(details));
     }
 
     [Fact]

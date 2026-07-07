@@ -42,6 +42,22 @@ public sealed class SubProfileEnabledFilterTests
     }
 
     [Fact]
+    public void GetEnabled_ExcludesProfilesWithoutId()
+    {
+        var profiles = new List<AvitoSubProfile>
+        {
+            new() { Id = "a", Name = "Alpha" },
+            new() { Id = string.Empty, Name = string.Empty },
+            new() { Id = "b", Name = "Beta" }
+        };
+
+        var enabled = SubProfileEnabledFilter.GetEnabled(profiles, null);
+
+        Assert.Equal(2, enabled.Count);
+        Assert.Equal(["a", "b"], enabled.Select(x => x.Id).ToList());
+    }
+
+    [Fact]
     public void GetEnabled_ReturnsEmptyInput_WhenProfilesEmpty()
     {
         var enabled = SubProfileEnabledFilter.GetEnabled([], new HashSet<string> { "a" });

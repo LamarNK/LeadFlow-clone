@@ -244,6 +244,53 @@
         });
     }
 
+    function metricToday() {
+        return getLiveAttr('data-metric-today') || new Date().toISOString().slice(0, 10);
+    }
+
+    function normalizeMetricId(value) {
+        if (value == null || value === '') return '';
+        return String(value);
+    }
+
+    function accountMetricUrls(workerId, accountId) {
+        var wid = normalizeMetricId(workerId);
+        var aid = normalizeMetricId(accountId);
+        if (!wid || !aid) {
+            return { responses: null, unique: null, errors: null };
+        }
+
+        var today = metricToday();
+        var responsesBase = '/Responses?from=' + encodeURIComponent(today)
+            + '&to=' + encodeURIComponent(today)
+            + '&workerId=' + encodeURIComponent(wid)
+            + '&accountId=' + encodeURIComponent(aid);
+        return {
+            responses: responsesBase,
+            unique: responsesBase + '&status=unique',
+            errors: '/Errors?workerId=' + encodeURIComponent(wid) + '&accountId=' + encodeURIComponent(aid)
+        };
+    }
+
+    function resolveAccountMetricLinks(entity, workerId, accountId) {
+        var built = accountMetricUrls(
+            workerId || entity.workerId || entity.WorkerId,
+            accountId || entity.id || entity.Id || entity.accountId || entity.AccountId);
+        return {
+            responses: entity.responsesLink || entity.ResponsesLink || built.responses,
+            unique: entity.uniqueResponsesLink || entity.UniqueResponsesLink || built.unique,
+            errors: entity.errorsLink || entity.ErrorsLink || built.errors
+        };
+    }
+
+    function renderMetricLink(value, href, title) {
+        var count = value || 0;
+        if (count > 0 && href) {
+            return '<a href="' + escapeHtml(href) + '" class="cell-metric-link" title="' + escapeHtml(title || '') + '">' + count + '</a>';
+        }
+        return String(count);
+    }
+
     function normalizeSubProfile(sub) {
         if (!sub) return {};
         var id = sub.id || sub.Id || '';
@@ -264,6 +311,9 @@
             uniqueResponses: sub.uniqueResponses || sub.UniqueResponses || 0,
             errors: sub.errors || sub.Errors || 0,
             lastActivityUtc: sub.lastActivityUtc || sub.LastActivityUtc || null,
+            responsesLink: sub.responsesLink || sub.ResponsesLink || null,
+            uniqueResponsesLink: sub.uniqueResponsesLink || sub.UniqueResponsesLink || null,
+            errorsLink: sub.errorsLink || sub.ErrorsLink || null,
             isProcessingNow: !!(sub.isProcessingNow || sub.IsProcessingNow),
             processingLabel: sub.processingLabel || sub.ProcessingLabel || '',
             processingTone: sub.processingTone || sub.ProcessingTone || 'live',
@@ -309,13 +359,14 @@
         var activityHtml = sub.lastActivityUtc
             ? '<time data-orbita-utc="' + escapeHtml(sub.lastActivityUtc) + '" data-orbita-format="activity"></time>'
             : '—';
+        var metrics = resolveAccountMetricLinks(sub, workerId, accountId);
         var tail = layout === 'accounts'
-            ? '<td class="cell-num" data-label="Уникальных">' + (sub.uniqueResponses || 0) + '</td>' +
-            '<td class="cell-num" data-label="Ошибок">' + (sub.errors || 0) + '</td>' +
+            ? '<td class="cell-num" data-label="Уникальных">' + renderMetricLink(sub.uniqueResponses, metrics.unique, 'Уникальные отклики за сегодня') + '</td>' +
+            '<td class="cell-num" data-label="Ошибок">' + renderMetricLink(sub.errors, metrics.errors, 'Ошибки и предупреждения') + '</td>' +
             '<td data-label="Последняя активность">' + activityHtml + '</td>' +
             '<td class="data-table-menu subprofiles-data-empty" data-label=""></td>'
             : '<td data-label="Последняя активность">' + activityHtml + '</td>' +
-            '<td class="cell-num" data-label="Ошибок">' + (sub.errors || 0) + '</td>' +
+            '<td class="cell-num" data-label="Ошибок">' + renderMetricLink(sub.errors, metrics.errors, 'Ошибки и предупреждения') + '</td>' +
             '<td class="data-table-menu subprofiles-data-empty" data-label=""></td>';
         var extraCols = layout === 'accounts'
             ? '<td class="cell-worker subprofiles-data-empty" data-label="Воркер"></td>' +
@@ -335,7 +386,7 @@
             '<td data-label="Статус">' + statusHtml + '</td>' +
             processingCol +
             '<td class="cell-num cell-balance" data-label="Баланс"><span class="subprofiles-balance">' + escapeHtml(sub.balanceText || '—') + '</span></td>' +
-            '<td class="cell-num" data-label="Откликов">' + (sub.responses || 0) + '</td>' +
+            '<td class="cell-num" data-label="Откликов">' + renderMetricLink(sub.responses, metrics.responses, 'Отклики за сегодня') + '</td>' +
             tail;
     }
 
@@ -546,6 +597,9 @@
         setSubprofilePanelExpanded: setSubprofilePanelExpanded,
         renderSubProfilesToolbar: renderSubProfilesToolbar,
         renderAccountEnableToggle: renderAccountEnableToggle,
+        accountMetricUrls: accountMetricUrls,
+        resolveAccountMetricLinks: resolveAccountMetricLinks,
+        renderMetricLink: renderMetricLink,
         captureExpandedSubprofilePanels: captureExpandedSubprofilePanels,
         restoreExpandedSubprofilePanels: restoreExpandedSubprofilePanels,
         reinitLiveContent: reinitLiveContent

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Orbita.Api.Data;
@@ -133,7 +134,11 @@ public sealed class DashboardQueryService(
                 workerEventErrors.Hourly,
                 ct),
             WeeklyByDayActivity: WorkerEventErrorStatsHelper.MergeDailyErrors(
-                AggregateWeekly(statsList),
+                await ComputeDailyActivityFromDbAsync(
+                    workerIds,
+                    DateTime.Today.AddDays(-(LocalCalendarDateRange.MaxCalendarDays - 1)),
+                    DateTime.Today,
+                    ct),
                 workerEventErrors.Daily),
             AggregatedAtUtc: nowUtc);
 
@@ -412,7 +417,51 @@ public sealed class DashboardQueryService(
                 x.Total,
                 x.Duplicates,
                 x.Errors,
+                LastActivity: (DateTime?)null)));
+
+        var subProfileAllTimeActivityRows = accountIds.Count == 0
+            ? []
+            : await db.CandidateResponses
+                .AsNoTracking()
+                .Where(x => x.WorkerId == workerId
+                    && accountIds.Contains(x.AccountId)
+                    && x.AvitoSubProfileId != "")
+                .GroupBy(x => new { x.AccountId, x.AvitoSubProfileId })
+                .Select(g => new
+                {
+                    g.Key.AccountId,
+                    g.Key.AvitoSubProfileId,
+                    LastActivity = g.Max(x => (DateTime?)x.CreatedAt)
+                })
+                .ToListAsync(ct);
+
+        SubProfileOperationalStatsHelper.MergeAllTimeActivity(
+            subProfileStats,
+            subProfileAllTimeActivityRows.Select(x => (
+                x.AccountId,
+                x.AvitoSubProfileId,
                 x.LastActivity)));
+
+        var subProfileNameRows = accountIds.Count == 0
+            ? []
+            : await db.CandidateResponses
+                .AsNoTracking()
+                .Where(x => x.WorkerId == workerId
+                    && accountIds.Contains(x.AccountId)
+                    && x.AvitoSubProfileId != "")
+                .GroupBy(x => new { x.AccountId, x.AvitoSubProfileId })
+                .Select(g => new
+                {
+                    g.Key.AccountId,
+                    g.Key.AvitoSubProfileId,
+                    Name = g.OrderByDescending(x => x.CreatedAt)
+                        .Select(x => x.AvitoSubProfileName)
+                        .FirstOrDefault()
+                })
+                .ToListAsync(ct);
+
+        var responseNameLookup = SubProfileOperationalStatsHelper.BuildResponseNameLookup(
+            subProfileNameRows.Select(x => (x.AccountId, x.AvitoSubProfileId, (string?)x.Name)));
 
         var deserializedProfiles = rows
             .Select(x => (
@@ -430,6 +479,27 @@ public sealed class DashboardQueryService(
                 .Select(x => x.Id)
                 .ToHashSetAsync(ct);
 
+        var lastEventByAccount = accountIds.Count == 0
+            ? new Dictionary<Guid, DateTime>()
+            : await db.WorkerEvents
+                .AsNoTracking()
+                .Where(x => x.WorkerId == workerId
+                    && x.AccountId != null
+                    && accountIds.Contains(x.AccountId.Value)
+                    && !x.IsDismissed)
+                .GroupBy(x => x.AccountId!.Value)
+                .Select(g => new { AccountId = g.Key, LastAt = g.Max(x => x.CreatedAtUtc) })
+                .ToDictionaryAsync(x => x.AccountId, x => x.LastAt, ct);
+
+        var lastResponseByAccount = accountIds.Count == 0
+            ? new Dictionary<Guid, DateTime>()
+            : await db.CandidateResponses
+                .AsNoTracking()
+                .Where(x => x.WorkerId == workerId && accountIds.Contains(x.AccountId))
+                .GroupBy(x => x.AccountId)
+                .Select(g => new { AccountId = g.Key, LastAt = g.Max(x => x.CreatedAt) })
+                .ToDictionaryAsync(x => x.AccountId, x => x.LastAt, ct);
+
         if (accountIds.Count > 0)
         {
             var subProfileEventRows = await db.WorkerEvents
@@ -437,29 +507,37 @@ public sealed class DashboardQueryService(
                 .Where(x => x.WorkerId == workerId
                     && x.AccountId != null
                     && accountIds.Contains(x.AccountId.Value)
-                    && !x.IsDismissed
-                    && x.CreatedAtUtc >= todayStart
-                    && (x.Level == "Error" || x.Level == "Warning"))
-                .Select(x => new { AccountId = x.AccountId!.Value, x.Details })
+                    && !x.IsDismissed)
+                .Select(x => new
+                {
+                    AccountId = x.AccountId!.Value,
+                    x.Details,
+                    x.CreatedAtUtc,
+                    x.Level
+                })
                 .ToListAsync(ct);
 
-            SubProfileOperationalStatsHelper.ApplyEventErrors(
+            SubProfileOperationalStatsHelper.ApplyEvents(
                 subProfileStats,
-                subProfileEventRows.Select(x => (x.AccountId, x.Details)),
-                SubProfileOperationalStatsHelper.BuildNameLookup(deserializedProfiles));
+                subProfileEventRows.Select(x => (x.AccountId, x.Details, x.CreatedAtUtc, x.Level)),
+                SubProfileOperationalStatsHelper.BuildNameLookup(deserializedProfiles),
+                todayStart);
         }
 
-        return rows
+        var accountDtos = rows
             .Select(x =>
             {
                 responseStats.TryGetValue(x.AccountId, out var responses);
                 eventStats.TryGetValue(x.AccountId, out var eventErrors);
-                var subProfiles = SubProfileOperationalStatsHelper.Enrich(
+                lastEventByAccount.TryGetValue(x.AccountId, out var lastEventAt);
+                lastResponseByAccount.TryGetValue(x.AccountId, out var lastResponseAt);
+                var subProfiles = SubProfileOperationalStatsHelper.Resolve(
                     SubProfileIssueHelper.StripMissingAttachmentIssues(
                         DeserializeSubProfiles(x.SubProfilesJson, x.SubProfilesDisabledIdsJson),
                         existingAttachmentIds),
                     x.AccountId,
-                    subProfileStats);
+                    subProfileStats,
+                    responseNameLookup);
                 return new WorkerAccountDto(
                     x.AccountId,
                     x.DisplayName,
@@ -477,9 +555,23 @@ public sealed class DashboardQueryService(
                     x.SubProfilesRefreshRequestedAtUtc,
                     responses.Total,
                     responses.Duplicates,
-                    eventErrors);
+                    eventErrors,
+                    AccountLastActivityHelper.Resolve(
+                        x.LastMonitoringAt,
+                        lastEventAt,
+                        lastResponseAt));
             })
             .ToList();
+
+        await TryBackfillSubProfilesFromResponsesAsync(
+            workerId,
+            rows.Where(x => string.IsNullOrWhiteSpace(x.SubProfilesJson) || x.SubProfilesJson == "[]")
+                .Select(x => x.AccountId)
+                .ToList(),
+            accountDtos,
+            ct);
+
+        return accountDtos;
     }
 
     public async Task<IReadOnlyList<WorkerEventListItem>> GetWorkerEventsAsync(
@@ -531,6 +623,89 @@ public sealed class DashboardQueryService(
                 evt.Details,
                 evt.CreatedAtUtc))
             .ToListAsync(ct);
+    }
+
+    private async Task<IReadOnlyList<ActivityPointDto>> ComputeDailyActivityFromDbAsync(
+        HashSet<Guid> workerIds,
+        DateTime startLocal,
+        DateTime endLocal,
+        CancellationToken ct)
+    {
+        var (rangeStart, rangeEnd, utcStart, utcEnd) = LocalCalendarDateRange.Normalize(startLocal, endLocal);
+        if (workerIds.Count == 0)
+        {
+            return BuildEmptyDailyActivity(rangeStart, rangeEnd);
+        }
+
+        var rows = await db.CandidateResponses
+            .AsNoTracking()
+            .Where(x => x.WorkerId != null
+                && workerIds.Contains(x.WorkerId.Value)
+                && x.CreatedAt >= utcStart
+                && x.CreatedAt < utcEnd)
+            .Select(x => new { x.CreatedAt, x.Status })
+            .ToListAsync(ct);
+
+        var byDay = new Dictionary<DateTime, DailyResponseCounters>();
+        foreach (var row in rows)
+        {
+            var localDate = LocalCalendarDateRange.ToLocalDateFromStoredUtc(row.CreatedAt);
+            if (!byDay.TryGetValue(localDate, out var bucket))
+            {
+                bucket = new DailyResponseCounters();
+                byDay[localDate] = bucket;
+            }
+
+            bucket.Total++;
+            switch (row.Status)
+            {
+                case ResponseStatuses.Sent:
+                    bucket.Sent++;
+                    break;
+                case ResponseStatuses.Duplicate:
+                    bucket.Duplicates++;
+                    break;
+            }
+        }
+
+        return BuildDailyActivity(rangeStart, rangeEnd, byDay);
+    }
+
+    private static IReadOnlyList<ActivityPointDto> BuildEmptyDailyActivity(DateTime startLocal, DateTime endLocal)
+    {
+        return BuildDailyActivity(startLocal, endLocal, new Dictionary<DateTime, DailyResponseCounters>());
+    }
+
+    private static IReadOnlyList<ActivityPointDto> BuildDailyActivity(
+        DateTime startLocal,
+        DateTime endLocal,
+        IReadOnlyDictionary<DateTime, DailyResponseCounters> byDay)
+    {
+        var ru = CultureInfo.GetCultureInfo("ru-RU");
+        var list = new List<ActivityPointDto>((endLocal - startLocal).Days + 1);
+        for (var day = startLocal; day <= endLocal; day = day.AddDays(1))
+        {
+            byDay.TryGetValue(day, out var bucket);
+            bucket ??= new DailyResponseCounters();
+            list.Add(new ActivityPointDto(
+                day.ToString("ddd d.MM", ru),
+                bucket.Total,
+                bucket.Sent,
+                bucket.Duplicates,
+                0,
+                0,
+                1,
+                day));
+        }
+
+        return list;
+    }
+
+    private sealed class DailyResponseCounters
+    {
+        public int Total { get; set; }
+        public int Sent { get; set; }
+        public int Duplicates { get; set; }
     }
 
     private async Task<IReadOnlyList<ActivityPointDto>> ComputeHourlyActivityFromDbAsync(
@@ -630,39 +805,6 @@ public sealed class DashboardQueryService(
         }
 
         return buckets;
-    }
-
-    private static IReadOnlyList<ActivityPointDto> AggregateWeekly(IReadOnlyList<DashboardStatsDto> statsList)
-    {
-        var map = new Dictionary<DateTime, ActivityPointDto>();
-        foreach (var stats in statsList)
-        {
-            foreach (var point in stats.WeeklyByDayActivity)
-            {
-                if (!point.LocalDate.HasValue)
-                {
-                    continue;
-                }
-
-                var date = point.LocalDate.Value.Date;
-                if (!map.TryGetValue(date, out var existing))
-                {
-                    map[date] = point with { Label = date.ToString("ddd d.MM") };
-                }
-                else
-                {
-                    map[date] = existing with
-                    {
-                        NewCount = existing.NewCount + point.NewCount,
-                        SentCount = existing.SentCount + point.SentCount,
-                        DuplicateCount = existing.DuplicateCount + point.DuplicateCount,
-                        ErrorCount = existing.ErrorCount + point.ErrorCount
-                    };
-                }
-            }
-        }
-
-        return map.OrderBy(x => x.Key).Select(x => x.Value).ToList();
     }
 
     // Computes today response aggregates directly from CandidateResponses (source of truth).
@@ -811,5 +953,48 @@ public sealed class DashboardQueryService(
             balances,
             balances,
             existingAccounts).ToList();
+    }
+
+    private async Task TryBackfillSubProfilesFromResponsesAsync(
+        Guid workerId,
+        IReadOnlyList<Guid> emptyAccountIds,
+        IReadOnlyList<WorkerAccountDto> accountDtos,
+        CancellationToken ct)
+    {
+        if (emptyAccountIds.Count == 0)
+        {
+            return;
+        }
+
+        var backfillByAccount = accountDtos
+            .Where(x => emptyAccountIds.Contains(x.AccountId) && x.SubProfiles is { Count: > 0 })
+            .ToDictionary(x => x.AccountId, x => x.SubProfiles!);
+        if (backfillByAccount.Count == 0)
+        {
+            return;
+        }
+
+        var accounts = await db.WorkerAccounts
+            .Where(x => x.WorkerId == workerId
+                && backfillByAccount.Keys.Contains(x.AccountId)
+                && (x.SubProfilesJson == "[]" || x.SubProfilesJson == ""))
+            .ToListAsync(ct);
+
+        if (accounts.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var account in accounts)
+        {
+            if (!backfillByAccount.TryGetValue(account.AccountId, out var profiles))
+            {
+                continue;
+            }
+
+            account.SubProfilesJson = JsonSerializer.Serialize(profiles, SubProfileJsonOptions.Serialize);
+        }
+
+        await db.SaveChangesAsync(ct);
     }
 }

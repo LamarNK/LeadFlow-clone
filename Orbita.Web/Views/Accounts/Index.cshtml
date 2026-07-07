@@ -32,7 +32,11 @@
      data-show-office-column="@(Model.ShowOfficeColumn ? "true" : "false")"
      data-worker-details-url="@Url.Action("Details", "Workers", new { id = "__id__" })"
      data-account-search-url="@Url.Action("Index", "Accounts", new { q = "__q__" })"
-     data-responses-filter-url="@Url.Action("Index", "Responses", new { accountId = "__id__" })">
+     data-responses-filter-url="@Url.Action("Index", "Responses", new { accountId = "__id__" })"
+     data-metric-today="@DateTime.Today.ToString("yyyy-MM-dd")"
+     data-account-metric-responses-url="@($"/Responses?from=__today__&to=__today__&workerId=__workerId__&accountId=__accountId__")"
+     data-account-metric-unique-url="@($"/Responses?from=__today__&to=__today__&status=unique&workerId=__workerId__&accountId=__accountId__")"
+     data-account-metric-errors-url="@($"/Errors?workerId=__workerId__&accountId=__accountId__")">
     <div class="kpi-row accounts-kpi-row">
         @{ var kpiIdx = 0; }
         @foreach (var kpi in Model.KpiCards)
@@ -188,9 +192,15 @@
                                 }
                             </div>
                         </td>
-                        <td class="cell-num" data-label="Откликов">@account.Responses</td>
-                        <td class="cell-num" data-label="Уникальных">@account.UniqueResponses</td>
-                        <td class="cell-num" data-label="Ошибок">@account.Errors</td>
+                        <td class="cell-num" data-label="Откликов">
+                            <partial name="_MetricLink" model="@AccountMetricLinks.Responses(account.WorkerId, account.Id, account.Responses)" />
+                        </td>
+                        <td class="cell-num" data-label="Уникальных">
+                            <partial name="_MetricLink" model="@AccountMetricLinks.Unique(account.WorkerId, account.Id, account.UniqueResponses)" />
+                        </td>
+                        <td class="cell-num" data-label="Ошибок">
+                            <partial name="_MetricLink" model="@AccountMetricLinks.Errors(account.WorkerId, account.Id, account.Errors)" />
+                        </td>
                         <td data-label="Последняя активность"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(account.LastActivityUtc, "activity"))" /></td>
                         <td class="data-table-menu" data-label="">
                             <div class="row-menu" data-row-menu>

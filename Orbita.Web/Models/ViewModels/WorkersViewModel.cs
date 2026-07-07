@@ -225,7 +225,10 @@ public sealed class WorkerAccountRowViewModel
     public int Responses { get; init; }
     public DateTime? LastActivityUtc { get; init; }
     public int Errors { get; init; }
+    public string? ResponsesLink { get; init; }
+    public string? ErrorsLink { get; init; }
     public string? LastErrorMessage { get; init; }
+    public string? ErrorHint { get; init; }
     public IReadOnlyList<SubProfileRowViewModel> SubProfiles { get; init; } = [];
     public bool HasSubProfiles => SubProfiles.Count > 0;
     public string SubProfilesSummary { get; init; } = string.Empty;

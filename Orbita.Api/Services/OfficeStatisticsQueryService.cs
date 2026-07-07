@@ -141,6 +141,14 @@ public sealed class OfficeStatisticsQueryService(
             utcEnd,
             accountRows,
             ct);
+        var monitoringCycles = await BuildMonitoringCyclesAsync(
+            workerIds,
+            utcStart,
+            utcEnd,
+            startLocal,
+            endLocal,
+            accountRows,
+            ct);
 
         var result = new OfficeStatisticsDto(
             balances,
@@ -149,6 +157,7 @@ public sealed class OfficeStatisticsQueryService(
             responses,
             dailyTrend,
             hrInsights,
+            monitoringCycles,
             nowUtc);
 
         lock (CacheLock)
@@ -210,7 +219,75 @@ public sealed class OfficeStatisticsQueryService(
             new ResponsesPeriodSection(0, 0, 0, 0, 0, 0, 0, 0, null),
             [],
             new HrInsightsDto([], [], [], [], "н/д", "0%"),
+            MonitoringCycleReportBuilder.Build([], DateTime.Today, DateTime.Today),
             aggregatedAtUtc);
+
+    private async Task<MonitoringCycleReportDto> BuildMonitoringCyclesAsync(
+        HashSet<Guid> workerIds,
+        DateTime utcStart,
+        DateTime utcEnd,
+        DateTime startLocal,
+        DateTime endLocal,
+        IReadOnlyList<AccountProjection> accountRows,
+        CancellationToken ct)
+    {
+        var allowedAccountNames = accountRows
+            .Select(a => a.DisplayName.Trim())
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        if (allowedAccountNames.Count == 0)
+        {
+            return MonitoringCycleReportBuilder.Build([], startLocal, endLocal);
+        }
+
+        var logRows = await db.WorkerLogEntries
+            .AsNoTracking()
+            .Where(x => workerIds.Contains(x.WorkerId))
+            .Where(x => x.TimestampUtc >= utcStart && x.TimestampUtc < utcEnd)
+            .Where(x =>
+                EF.Functions.ILike(x.Message, "%переключаем суб-профиль%")
+                || EF.Functions.ILike(x.Message, "%переключение субпрофиля%")
+                || EF.Functions.ILike(x.Message, "%новых для LeadFlow%")
+                || EF.Functions.ILike(x.Message, "%обработано сейчас%")
+                || EF.Functions.ILike(x.Message, "%новых к публикации%")
+                || EF.Functions.ILike(x.Message, "%— отклики:%")
+                || EF.Functions.ILike(x.Message, "%— опубликовано%")
+                || (EF.Functions.ILike(x.Message, "%(объявления)%") && EF.Functions.ILike(x.Message, "%активных%"))
+                || EF.Functions.ILike(x.Message, "%Не удалось обработать суб-профиль%")
+                || EF.Functions.ILike(x.Message, "%— проблема (%")
+                || EF.Functions.ILike(x.Message, "%— не переключился:%"))
+            .OrderBy(x => x.TimestampUtc)
+            .Select(x => new { x.TimestampUtc, x.Message })
+            .ToListAsync(ct);
+
+        var rows = logRows
+            .Select(x => (x.TimestampUtc, x.Message, PropertiesJson: (string?)null))
+            .ToList();
+
+        var sentResponses = await db.CandidateResponses
+            .AsNoTracking()
+            .Where(x => x.WorkerId != null && workerIds.Contains(x.WorkerId.Value))
+            .Where(x => x.Status == ResponseStatuses.Sent)
+            .Where(x => x.CreatedAt >= utcStart && x.CreatedAt < utcEnd)
+            .Select(x => new
+            {
+                x.AccountName,
+                x.AvitoSubProfileName,
+                TimestampUtc = x.ProcessedAt ?? x.CreatedAt
+            })
+            .ToListAsync(ct);
+
+        var sentRows = sentResponses
+            .Select(x => new MonitoringCycleSentResponse(
+                x.AccountName.Trim(),
+                x.AvitoSubProfileName.Trim(),
+                x.TimestampUtc))
+            .Where(x => allowedAccountNames.Contains(x.AccountName))
+            .ToList();
+
+        return MonitoringCycleReportBuilder.Build(rows, startLocal, endLocal, allowedAccountNames, sentRows);
+    }
 
     private static BalanceStatisticsSection BuildBalances(
         IReadOnlyList<AccountProjection> accountRows,

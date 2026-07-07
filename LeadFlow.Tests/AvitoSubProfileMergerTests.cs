@@ -54,6 +54,25 @@ public sealed class AvitoSubProfileMergerTests
     }
 
     [Fact]
+    public void Merge_IgnoresExistingWithEmptyIds_AndUsesDiscovered()
+    {
+        var existing = Enumerable.Range(0, 3)
+            .Select(_ => new AvitoSubProfile { Id = string.Empty, Name = string.Empty, Balance = 10m })
+            .ToList();
+        var discovered = new List<AvitoSubProfile>
+        {
+            new() { Id = "101", Name = "Кадровый отдел", Category = "Работа", IsCurrent = true },
+            new() { Id = "102", Name = "Служба России", Category = "Работа" }
+        };
+
+        var merged = AvitoSubProfileMerger.Merge(existing, discovered);
+
+        Assert.Equal(2, merged.Count);
+        Assert.Equal(["101", "102"], merged.Select(static x => x.Id).ToList());
+        Assert.Null(merged[0].Balance);
+    }
+
+    [Fact]
     public void Merge_AddsNewProfiles_FromDiscovered()
     {
         var existing = new List<AvitoSubProfile>

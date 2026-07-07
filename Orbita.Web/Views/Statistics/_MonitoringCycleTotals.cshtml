@@ -1,0 +1,63 @@
+@model MonitoringCycleReportViewModel
+@{
+    var report = Model;
+    var periodDays = (ViewData["PeriodDays"] as int?) ?? 1;
+    var totalsLabel = periodDays == 1 ? "ДЕНЬ" : "ПЕРИОД";
+}
+@if (!report.HasData)
+{
+    <partial name="_TableEmptyState" model="@(new TableEmptyStateViewModel
+    {
+        IconClass = "fa-solid fa-rotate",
+        Title = "Нет данных за период",
+        Description = "Выберите день, когда воркер работал, и дождитесь синхронизации логов.",
+        CtaLabel = "Воркеры",
+        CtaUrl = Url.Action("Index", "Workers")
+    })" />
+}
+else
+{
+    <div class="monitoring-report-totals monitoring-report-totals--top">
+        @if (report.AccountsWithNotStarted > 0)
+        {
+            <section class="monitoring-report-total-block">
+                <h4 class="monitoring-report-total-title">
+                    ИТОГО ЗА @totalsLabel: @report.AccountsWithNotStarted аккаунт(ов) с не запущенными суб-профилями, всего @report.NotStartedPositions позиций
+                </h4>
+                <ul class="monitoring-report-total-list">
+                    @foreach (var line in report.NotStartedSummaries)
+                    {
+                        <li>@line.Trim()</li>
+                    }
+                </ul>
+            </section>
+        }
+
+        <section class="monitoring-report-total-block">
+            <h4 class="monitoring-report-total-title">
+                ИТОГО В БИТРИКС24 ЗА @totalsLabel: <span data-statistics-cycle-leads>@report.TotalLeads</span>
+            </h4>
+            <ul class="monitoring-report-total-list" data-statistics-cycle-leads-body>
+                @foreach (var row in report.LeadSummaries)
+                {
+                    <li>
+                        <strong>@row.AccountName:</strong> @row.TotalLeads — @row.BreakdownText
+                    </li>
+                }
+            </ul>
+            @if (report.ZeroLeadAccountCount > 0)
+            {
+                <p class="monitoring-report-zero-leads cell-muted" data-statistics-cycle-zero-leads>
+                    Ещё @report.ZeroLeadAccountCount аккаунт(ов) без отправок в Битрикс24 за период
+                </p>
+            }
+        </section>
+    </div>
+
+    @if (!report.IsDetailed)
+    {
+        <p class="monitoring-report-hint cell-muted">
+            Таблицы по аккаунтам доступны при выборе одного дня.
+        </p>
+    }
+}

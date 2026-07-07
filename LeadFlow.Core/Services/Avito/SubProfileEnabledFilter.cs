@@ -13,12 +13,13 @@ public static class SubProfileEnabledFilter
             return subProfiles;
         }
 
+        var valid = AvitoSubProfileRules.FilterValid(subProfiles);
         if (disabledIds is null || disabledIds.Count == 0)
         {
-            return subProfiles;
+            return valid;
         }
 
-        return subProfiles
+        return valid
             .Where(sp => !disabledIds.Contains(sp.Id))
             .ToList();
     }

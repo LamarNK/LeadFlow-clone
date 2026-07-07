@@ -65,4 +65,10 @@ public static class HumanDelay
             MonitoringTiming.HumanDelayAfterCandidateClickMinMs,
             MonitoringTiming.HumanDelayAfterCandidateClickMaxMs,
             cancellationToken);
+
+    public static Task BeforeMessengerAutoReplySendAsync(CancellationToken cancellationToken = default) =>
+        DelayAsync(
+            MonitoringTiming.MessengerAutoReplyAfterTypeMinMs,
+            MonitoringTiming.MessengerAutoReplyAfterTypeMaxMs,
+            cancellationToken);
 }

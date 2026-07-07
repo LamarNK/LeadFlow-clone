@@ -14,7 +14,7 @@ public static class AvitoAutomationFailureFormatter
     {
         if (SuggestsLogin(pageState))
         {
-            return "требуется повторная авторизация в Avito — откройте браузер AdsPower и войдите (телефон/почта и пароль).";
+            return "требуется повторная авторизация в Avito — автовход не удался, откройте браузер AdsPower и войдите (телефон/почта и пароль).";
         }
 
         if (pageState?.HasFirewallIp == true

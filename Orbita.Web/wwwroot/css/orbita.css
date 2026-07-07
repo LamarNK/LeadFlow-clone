@@ -4168,6 +4168,23 @@ html[data-theme="dark"] .orbita-office-switcher-select:focus {
     font-variant-numeric: tabular-nums;
 }
 
+.data-table--accounts-list .cell-metric-link,
+.data-table--accounts .cell-metric-link {
+    color: #2563eb;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.data-table--accounts-list .cell-metric-link:hover,
+.data-table--accounts .cell-metric-link:hover {
+    text-decoration: underline;
+}
+
+[data-theme="dark"] .data-table--accounts-list .cell-metric-link,
+[data-theme="dark"] .data-table--accounts .cell-metric-link {
+    color: #60a5fa;
+}
+
 .data-table--accounts-list .cell-balance {
     min-width: 120px;
 }
@@ -9607,7 +9624,7 @@ body.orbita-search-open {
     .data-table--dashboard-workers td[data-label="Ошибок"],
     .data-table--statistics-workers td.cell-num,
     .data-table--statistics-workers td[data-label="Отклики"],
-    .data-table--statistics-workers td[data-label="CRM"],
+    .data-table--statistics-workers td[data-label="Битрикс24"],
     .data-table--statistics-workers td[data-label="Дубли"],
     .data-table--statistics-workers td[data-label="Ошибки"],
     .data-table--statistics-workers td[data-label="Аккаунты"] {
@@ -9639,7 +9656,7 @@ body.orbita-search-open {
     .data-table--dashboard-workers td[data-label="Ошибок"]::before,
     .data-table--statistics-workers td.cell-num::before,
     .data-table--statistics-workers td[data-label="Отклики"]::before,
-    .data-table--statistics-workers td[data-label="CRM"]::before,
+    .data-table--statistics-workers td[data-label="Битрикс24"]::before,
     .data-table--statistics-workers td[data-label="Дубли"]::before,
     .data-table--statistics-workers td[data-label="Ошибки"]::before,
     .data-table--statistics-workers td[data-label="Аккаунты"]::before {
@@ -9696,7 +9713,7 @@ body.orbita-search-open {
     [data-theme="dark"] .data-table--dashboard-workers td[data-label="Ошибок"],
     [data-theme="dark"] .data-table--statistics-workers td.cell-num,
     [data-theme="dark"] .data-table--statistics-workers td[data-label="Отклики"],
-    [data-theme="dark"] .data-table--statistics-workers td[data-label="CRM"],
+    [data-theme="dark"] .data-table--statistics-workers td[data-label="Битрикс24"],
     [data-theme="dark"] .data-table--statistics-workers td[data-label="Дубли"],
     [data-theme="dark"] .data-table--statistics-workers td[data-label="Ошибки"],
     [data-theme="dark"] .data-table--statistics-workers td[data-label="Аккаунты"] {
@@ -9975,12 +9992,107 @@ body.orbita-search-open {
 .statistics-stack {
     display: flex;
     flex-direction: column;
-    gap: 20px;
+    gap: 24px;
 }
 
 .statistics-page .statistics-kpi-row {
     margin-bottom: 0;
     grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 14px;
+}
+
+.statistics-kpi-row .kpi-card {
+    padding: 18px 20px;
+    min-height: 0;
+    border-radius: 14px;
+}
+
+.statistics-kpi-row .kpi-card-head {
+    margin-bottom: 10px;
+}
+
+.statistics-kpi-row .kpi-icon-box {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    font-size: 15px;
+}
+
+.statistics-kpi-row .kpi-card-label {
+    font-size: 12px;
+}
+
+.statistics-kpi-row .kpi-value {
+    font-size: 26px;
+}
+
+.statistics-kpi-row .kpi-card-metric--stacked {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+    margin-bottom: 0;
+    min-height: 0;
+}
+
+.statistics-kpi-row .kpi-delta-pill {
+    height: auto;
+    min-height: 22px;
+    padding: 2px 8px;
+    font-size: 11px;
+}
+
+.statistics-hero-grid,
+.statistics-main-grid {
+    display: grid;
+    gap: 20px;
+    align-items: stretch;
+    min-width: 0;
+}
+
+.statistics-hero-grid {
+    grid-template-columns: minmax(0, 1.42fr) minmax(0, 0.58fr);
+}
+
+.statistics-main-grid {
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+    align-items: stretch;
+}
+
+.statistics-main-grid > .card--statistics-operations,
+.statistics-main-grid > .card--statistics-balances-wide {
+    height: 100%;
+    min-height: 0;
+    align-self: stretch;
+}
+
+.card--statistics-operations,
+.card--statistics-balances-wide {
+    display: flex;
+    flex-direction: column;
+}
+
+.statistics-hero-grid > .card,
+.statistics-main-grid > .card {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+}
+
+.statistics-hero-grid > .card > .card-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.statistics-main-grid > .card > .card-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
 }
 
 .statistics-filters-row {
@@ -10069,21 +10181,8 @@ body.orbita-search-open {
     }
 }
 
-.statistics-grid {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    gap: 20px;
-    margin-bottom: 0;
-    align-items: stretch;
-}
-
-.statistics-grid--secondary {
-    grid-template-columns: minmax(280px, 0.85fr) minmax(0, 1.15fr);
-}
-
 .statistics-stack > .card,
-.statistics-grid > .card,
-.statistics-grid--secondary > .card {
+.statistics-stack > details.card {
     display: flex;
     flex-direction: column;
     min-height: 0;
@@ -10113,18 +10212,139 @@ body.orbita-search-open {
 }
 
 .statistics-balance-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    max-height: none;
+    flex: 1;
+    overflow-y: auto;
+    padding-right: 2px;
+    align-content: start;
+}
+
+.card--statistics-balances-wide .card-body {
     display: flex;
     flex-direction: column;
-    gap: 10px;
-    max-height: 420px;
+    min-height: 0;
+    flex: 1;
+    overflow: hidden;
+}
+
+.statistics-balance-subprofiles-details {
+    margin-top: 6px;
+}
+
+.statistics-balance-subprofiles-summary {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    cursor: pointer;
+    list-style: none;
+    user-select: none;
+}
+
+.statistics-balance-subprofiles-summary::-webkit-details-marker {
+    display: none;
+}
+
+.statistics-balance-subprofiles-caret {
+    font-size: 10px;
+    transition: transform 0.15s ease;
+}
+
+.statistics-balance-subprofiles-details[open] .statistics-balance-subprofiles-caret {
+    transform: rotate(90deg);
+}
+
+.statistics-balance-subprofiles-details .statistics-balance-subprofiles {
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px dashed color-mix(in srgb, var(--border) 75%, transparent);
+}
+
+.statistics-operations-body {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    align-items: stretch;
+    gap: 0;
+    flex: 1;
+    min-height: 0;
+    overflow-x: hidden;
     overflow-y: auto;
-    padding-right: 4px;
+    padding-top: 0 !important;
+}
+
+.statistics-operations-section {
+    flex: 0 0 auto;
+    padding: 0 20px 12px;
+}
+
+.statistics-operations-section--workers {
+    padding-top: 14px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+}
+
+.statistics-operations-section--accounts {
+    padding-top: 14px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+}
+
+.statistics-operations-section--monitoring {
+    padding-top: 14px;
+    padding-bottom: 0;
+}
+
+.statistics-operations-section-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+
+.card--statistics-operations .statistics-workers-table-wrap,
+.card--statistics-operations .statistics-monitoring-accounts-wrap,
+.card--statistics-operations .statistics-operations-section-body {
+    overflow: visible;
+}
+
+.statistics-operations-section-title {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.statistics-operations-section-meta {
+    font-size: 12px;
+}
+
+.card--statistics-operations .monitoring-report-toolbar {
+    padding: 0;
+}
+
+.card--statistics-operations .monitoring-report-toolbar--card-top,
+.card--statistics-cycles .monitoring-report-toolbar--card-top {
+    flex: 0 0 auto;
+    padding: 14px 20px 12px;
+    margin: 0;
+    border-bottom: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+}
+
+.card--statistics-operations .statistics-operations-section--monitoring .monitoring-report-totals {
+    padding: 0;
 }
 
 .statistics-balance-row {
-    padding: 12px 14px;
+    padding: 8px 10px;
     border: 1px solid var(--border);
-    border-radius: 12px;
+    border-radius: 10px;
     background: var(--surface-elevated, var(--surface));
 }
 
@@ -10136,18 +10356,20 @@ body.orbita-search-open {
 .statistics-balance-head {
     display: flex;
     justify-content: space-between;
-    gap: 12px;
+    gap: 8px;
     align-items: flex-start;
 }
 
 .statistics-balance-title {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 2px;
     min-width: 0;
 }
 
 .statistics-balance-name {
+    font-size: 13px;
+    line-height: 1.25;
     font-weight: 600;
     color: var(--text);
     text-decoration: none;
@@ -10158,7 +10380,8 @@ body.orbita-search-open {
 }
 
 .statistics-balance-meta {
-    font-size: 12px;
+    font-size: 11px;
+    line-height: 1.3;
     color: var(--text-muted);
 }
 
@@ -10171,17 +10394,20 @@ body.orbita-search-open {
 }
 
 .statistics-balance-advance {
+    font-size: 13px;
+    line-height: 1.2;
     font-weight: 600;
+    font-variant-numeric: tabular-nums;
 }
 
 .statistics-balance-wallet {
-    font-size: 12px;
+    font-size: 11px;
     color: var(--text-muted);
 }
 
 .statistics-balance-bar-track {
-    margin-top: 10px;
-    height: 6px;
+    margin-top: 6px;
+    height: 4px;
     border-radius: 999px;
     background: color-mix(in srgb, var(--border) 70%, transparent);
     overflow: hidden;
@@ -10199,26 +10425,26 @@ body.orbita-search-open {
 }
 
 .statistics-balance-foot {
-    margin-top: 8px;
+    margin-top: 5px;
     display: flex;
     flex-wrap: wrap;
-    gap: 8px 12px;
-    font-size: 12px;
+    gap: 4px 8px;
+    font-size: 11px;
     color: var(--text-muted);
 }
 
 .statistics-balance-subprofiles {
-    margin-top: 12px;
+    margin-top: 8px;
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    padding-top: 12px;
+    gap: 6px;
+    padding-top: 8px;
     border-top: 1px dashed color-mix(in srgb, var(--border) 75%, transparent);
 }
 
 .statistics-balance-subprofile {
-    padding: 8px 10px;
-    border-radius: 10px;
+    padding: 6px 8px;
+    border-radius: 8px;
     background: color-mix(in srgb, var(--surface-elevated, #f8fafc) 88%, transparent);
 }
 
@@ -10233,12 +10459,12 @@ body.orbita-search-open {
 .statistics-balance-subprofile-head {
     display: flex;
     justify-content: space-between;
-    gap: 10px;
+    gap: 8px;
     align-items: flex-start;
 }
 
 .statistics-balance-subprofile-name {
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 600;
     color: var(--text);
 }
@@ -10252,61 +10478,109 @@ body.orbita-search-open {
 }
 
 .statistics-balance-subprofile-advance {
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 600;
     font-variant-numeric: tabular-nums;
 }
 
 .statistics-balance-subprofile-wallet {
-    font-size: 11px;
+    font-size: 10px;
     color: var(--text-muted);
     font-variant-numeric: tabular-nums;
 }
 
 .statistics-balance-subprofile-duration {
     display: block;
-    margin-top: 4px;
-    font-size: 11px;
+    margin-top: 2px;
+    font-size: 10px;
     color: var(--text-muted);
 }
 
 .statistics-balance-bar-track--sub {
-    margin-top: 8px;
-    height: 4px;
+    margin-top: 5px;
+    height: 3px;
 }
 
-.card--statistics-trend-full {
-    width: 100%;
+.card--statistics-trend .card-header {
+    margin-bottom: 14px;
 }
 
-.statistics-trend-header {
-    align-items: flex-start;
-    gap: 12px 20px;
-}
-
-.statistics-trend-header-main {
+.statistics-trend-toolbar {
     display: flex;
     flex-wrap: wrap;
-    align-items: baseline;
-    gap: 8px 14px;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 12px 16px;
+    margin: -4px 0 16px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid color-mix(in srgb, var(--border, #eef2f7) 75%, transparent);
+}
+
+.statistics-trend-metrics {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
     min-width: 0;
+}
+
+.statistics-trend-metric {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 72px;
+    padding: 8px 12px;
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--border, #eef2f7) 28%, transparent);
+}
+
+.statistics-trend-metric-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted, #667085);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.statistics-trend-metric-value {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text, #101828);
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+}
+
+.statistics-trend-metric-value--sm {
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.statistics-trend-metric-suffix {
+    font-size: 11px;
+    color: var(--text-muted, #98a2b3);
+}
+
+.statistics-trend-metric--muted {
+    background: transparent;
+    padding-left: 4px;
+    padding-right: 4px;
 }
 
 .statistics-trend-legend {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px 10px;
-    margin-left: auto;
+    gap: 5px 8px;
+    justify-content: flex-end;
 }
 
 .statistics-trend-legend-pill {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    padding: 4px 10px;
+    gap: 5px;
+    padding: 3px 8px;
     border-radius: 999px;
-    background: color-mix(in srgb, var(--border, #eef2f7) 55%, transparent);
-    font-size: 12px;
+    background: transparent;
+    border: 1px solid color-mix(in srgb, var(--border, #eef2f7) 90%, transparent);
+    font-size: 11px;
     font-weight: 500;
     color: var(--text-muted, #667085);
     white-space: nowrap;
@@ -10314,8 +10588,8 @@ body.orbita-search-open {
 
 .statistics-trend-legend-pill i {
     display: inline-block;
-    width: 8px;
-    height: 8px;
+    width: 7px;
+    height: 7px;
     border-radius: 2px;
     flex-shrink: 0;
 }
@@ -10326,50 +10600,14 @@ body.orbita-search-open {
 .statistics-trend-legend-pill[data-series="duplicates"] i { background: #f59e0b; }
 .statistics-trend-legend-pill[data-series="errors"] i { background: #ef4444; }
 
-.statistics-trend-summary {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px 24px;
-    padding: 0 20px 14px;
-    border-bottom: 1px solid color-mix(in srgb, var(--border, #eef2f7) 80%, transparent);
-}
-
-.statistics-trend-stat {
-    display: flex;
-    align-items: baseline;
-    gap: 6px;
-    font-size: 13px;
-    color: var(--text-muted, #667085);
-}
-
-.statistics-trend-stat-label {
-    font-weight: 500;
-}
-
-.statistics-trend-stat-value {
-    font-size: 18px;
-    font-weight: 700;
-    color: var(--text, #101828);
-    line-height: 1.1;
-}
-
-.statistics-trend-stat-suffix {
-    font-size: 12px;
-    color: var(--text-muted, #98a2b3);
-}
-
-.statistics-trend-stat--muted .statistics-trend-stat-value {
-    font-size: 14px;
-    font-weight: 600;
-}
-
 .statistics-trend-chart {
     position: relative;
-    min-height: 300px;
+    min-height: 260px;
+    flex: 1;
 }
 
 .statistics-trend-chart .chart-canvas-wrap--statistics-trend {
-    height: 300px;
+    height: 260px;
     width: 100%;
 }
 
@@ -10388,7 +10626,7 @@ body.orbita-search-open {
     align-items: center;
     justify-content: center;
     gap: 10px;
-    min-height: 300px;
+    min-height: 260px;
     color: var(--text-muted);
     font-size: 14px;
 }
@@ -10409,11 +10647,18 @@ body.orbita-search-open {
 }
 
 .statistics-hr-panel {
-    padding: 14px 16px;
-    border: 1px solid var(--border, #eef2f7);
-    border-radius: 12px;
-    background: color-mix(in srgb, var(--surface-elevated, #f8fafc) 80%, transparent);
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    background: transparent;
     min-width: 0;
+    border-top: 1px solid color-mix(in srgb, var(--border, #eef2f7) 70%, transparent);
+    padding-top: 14px;
+}
+
+.statistics-hr-grid .statistics-hr-panel:nth-child(-n+2) {
+    border-top: none;
+    padding-top: 0;
 }
 
 [data-theme="dark"] .statistics-hr-panel {
@@ -10433,6 +10678,10 @@ body.orbita-search-open {
     padding-bottom: 8px;
 }
 
+.card--statistics-accounts .card-header {
+    margin-bottom: 12px;
+}
+
 .card--statistics-accounts .card-body {
     flex: 1;
     display: flex;
@@ -10444,13 +10693,217 @@ body.orbita-search-open {
 .card--statistics-accounts .account-stats-widget {
     padding: 0;
     flex: 1;
+    gap: 20px;
+}
+
+.statistics-hero-grid .card--statistics-accounts .account-stats-widget {
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.statistics-hero-grid .card--statistics-accounts .account-stats-chart {
+    flex: 0 0 auto;
+}
+
+.statistics-hero-grid .card--statistics-accounts .account-stats-donut,
+.statistics-hero-grid .card--statistics-accounts .chart-canvas-wrap--account-donut {
+    width: 168px;
+    height: 168px;
+}
+
+.statistics-hero-grid .card--statistics-accounts .account-stats-total-num {
+    font-size: 34px;
+}
+
+.statistics-hero-grid .card--statistics-accounts .account-stats-total-lbl {
+    font-size: 13px;
+}
+
+.statistics-hero-grid .card--statistics-accounts .account-stats-legend {
+    width: 100%;
+    flex: 0 0 auto;
+}
+
+.statistics-hero-grid .card--statistics-accounts .account-stats-list {
+    gap: 6px;
+}
+
+.statistics-hero-grid .card--statistics-accounts .account-stats-row {
+    padding: 6px 0;
 }
 
 .card--statistics-hr .card-body,
 .card--statistics-balances .card-body,
 .card--statistics-trend .card-body,
-.card--statistics-workers .card-body {
+.card--statistics-workers .card-body,
+.card--statistics-cycles .card-body,
+.card--statistics-operations .card-body {
     padding-top: 0;
+}
+
+.card--statistics-cycles .card-body-table {
+    padding-top: 0;
+}
+
+.monitoring-report-totals--top {
+    margin-top: 0;
+    margin-bottom: 20px;
+    padding-top: 0;
+    border-top: none;
+}
+
+.monitoring-report-zero-leads {
+    margin: 8px 0 0;
+    font-size: 12px;
+}
+
+.monitoring-report-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 16px;
+    margin-bottom: 12px;
+    padding: 0 20px;
+}
+
+.monitoring-report-toolbar--card-top .monitoring-report-search {
+    max-width: none;
+}
+
+.monitoring-report-search {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    min-width: 180px;
+    max-width: 320px;
+    padding: 6px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface, #fff);
+    color: var(--text-muted);
+}
+
+.monitoring-report-search-input {
+    flex: 1;
+    min-width: 0;
+    border: none;
+    background: transparent;
+    font-size: 13px;
+    color: var(--text-primary);
+    outline: none;
+}
+
+.monitoring-report-search-meta {
+    font-size: 12px;
+    margin-left: auto;
+}
+
+.data-table--monitoring-accounts tbody tr.monitoring-account-row {
+    cursor: pointer;
+}
+
+.data-table--monitoring-accounts tbody tr.monitoring-account-row[hidden],
+.data-table--monitoring-accounts tbody tr.monitoring-account-detail-row[hidden] {
+    display: none;
+}
+
+.monitoring-account-row-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.monitoring-account-row-caret {
+    flex-shrink: 0;
+    font-size: 10px;
+    color: var(--text-muted);
+    transition: transform 0.15s ease;
+}
+
+.monitoring-account-row[aria-expanded="true"] .monitoring-account-row-caret {
+    transform: rotate(90deg);
+}
+
+.monitoring-account-detail-row > td {
+    padding: 0 0 8px;
+    background: color-mix(in srgb, var(--border) 8%, transparent);
+}
+
+.monitoring-account-detail-row .monitoring-report-table-wrap {
+    padding: 8px 12px 4px;
+}
+
+.monitoring-report-totals {
+    margin-top: 0;
+    padding: 0 20px 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+
+.monitoring-report-total-title {
+    margin: 0 0 8px;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.monitoring-report-total-list {
+    margin: 0;
+    padding-left: 0;
+    list-style: none;
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--text-secondary);
+}
+
+.monitoring-report-total-list li + li {
+    margin-top: 4px;
+}
+
+.monitoring-report-table-wrap {
+    overflow-x: auto;
+}
+
+.monitoring-report-table {
+    width: 100%;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+}
+
+.monitoring-report-table th,
+.monitoring-report-table td {
+    vertical-align: top;
+    white-space: normal;
+    word-break: break-word;
+}
+
+.monitoring-col-pos { width: 72px; }
+.monitoring-col-name { width: 160px; min-width: 120px; }
+.monitoring-col-times { min-width: 220px; }
+.monitoring-col-leads { width: 120px; }
+.monitoring-col-errors { min-width: 180px; }
+
+.monitoring-report-row--muted td {
+    opacity: 0.65;
+}
+
+.monitoring-report-hint {
+    margin: 0 0 16px;
+    font-size: 13px;
+}
+
+.monitoring-report-hint {
+    margin: 0 0 8px;
+    font-size: 12px;
+}
+
+.card--statistics-workers .card-body-table {
+    max-height: 380px;
+    overflow: auto;
 }
 
 .card--statistics-trend .card-body {
@@ -10469,9 +10922,34 @@ body.orbita-search-open {
     overflow: auto;
 }
 
+@media (max-width: 1400px) {
+    .statistics-hero-grid,
+    .statistics-main-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .statistics-main-grid > .card--statistics-operations,
+    .statistics-main-grid > .card--statistics-balances-wide {
+        height: auto;
+    }
+
+    .statistics-balance-list {
+        grid-template-columns: 1fr;
+    }
+
+    .statistics-hero-grid .card--statistics-accounts .account-stats-widget {
+        flex-direction: row;
+        align-items: stretch;
+    }
+
+    .statistics-hero-grid .card--statistics-accounts .account-stats-donut,
+    .statistics-hero-grid .card--statistics-accounts .chart-canvas-wrap--account-donut {
+        width: 190px;
+        height: 190px;
+    }
+}
+
 @media (max-width: 1200px) {
-    .statistics-grid,
-    .statistics-grid--secondary,
     .statistics-hr-grid {
         grid-template-columns: 1fr;
     }
@@ -10482,14 +10960,16 @@ body.orbita-search-open {
         text-align: left;
     }
 
-    .statistics-trend-legend {
-        margin-left: 0;
-        width: 100%;
+    .statistics-trend-toolbar {
+        flex-direction: column;
+        align-items: stretch;
     }
 
-    .statistics-trend-summary {
-        gap: 8px 16px;
-        padding-left: 16px;
-        padding-right: 16px;
+    .statistics-trend-legend {
+        justify-content: flex-start;
+    }
+
+    .card--statistics-operations .monitoring-report-toolbar--card-top {
+        padding-top: 12px;
     }
 }

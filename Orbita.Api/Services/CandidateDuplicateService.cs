@@ -20,10 +20,13 @@ public sealed class CandidateDuplicateService(
             return null;
         }
 
+        var duplicateCutoffUtc = CandidateDuplicateLookback.GetCutoffUtc(DateTime.UtcNow);
+
         return await db.CandidateResponses
             .AsNoTracking()
             .Where(x => x.OfficeId == officeId
                         && x.PhoneNormalized == phoneNormalized
+                        && x.CreatedAt >= duplicateCutoffUtc
                         && x.Id != excludeId)
             .OrderByDescending(x => x.CreatedAt)
             .FirstOrDefaultAsync(ct);

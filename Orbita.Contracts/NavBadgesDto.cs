@@ -2,6 +2,6 @@ namespace Orbita.Contracts;
 
 public sealed record NavBadgesDto(
     int ErrorsToday,
-    int ResponsesToday,
+    int SentToCrm,
     int ActionRequired,
     DateTime UpdatedAtUtc);

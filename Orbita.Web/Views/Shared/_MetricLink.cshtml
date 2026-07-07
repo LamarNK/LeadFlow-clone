@@ -1,0 +1,9 @@
+@model MetricLinkViewModel
+@if (Model.Value > 0 && !string.IsNullOrWhiteSpace(Model.Href))
+{
+    <a href="@Model.Href" class="cell-metric-link" title="@Model.Title">@Model.Value</a>
+}
+else
+{
+    @Model.Value
+}

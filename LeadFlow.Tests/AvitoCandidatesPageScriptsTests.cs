@@ -28,6 +28,16 @@ public sealed class AvitoCandidatesPageScriptsTests
     }
 
     [Fact]
+    public void BuildSendMiniMessengerReplyScript_TargetsReplyInput()
+    {
+        var script = AvitoCandidatesPageScripts.BuildSendMiniMessengerReplyScript("Hello");
+
+        Assert.Contains("[data-marker='reply/input']", script, StringComparison.Ordinal);
+        Assert.Contains("\"Hello\"", script, StringComparison.Ordinal);
+        Assert.Contains("reply/send", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void BuildIsJobCrmResponsesPageScript_DetectsCrmMarkers()
     {
         var script = AvitoCandidatesPageScripts.BuildIsJobCrmResponsesPageScript();

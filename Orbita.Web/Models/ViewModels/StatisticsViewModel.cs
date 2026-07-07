@@ -14,6 +14,7 @@ public sealed class StatisticsViewModel
     public AccountStatsViewModel AccountStats { get; init; } = AccountStatsViewModel.Empty;
     public IReadOnlyList<StatisticsWorkerRowViewModel> Workers { get; init; } = [];
     public HrInsightsViewModel HrInsights { get; init; } = HrInsightsViewModel.Empty;
+    public MonitoringCycleReportViewModel MonitoringCycles { get; init; } = MonitoringCycleReportViewModel.Empty;
     public StatisticsSummaryViewModel Summary { get; init; } = new();
     public string? ErrorMessage { get; init; }
     public bool ShowOfficeColumn { get; init; }
@@ -39,11 +40,14 @@ public sealed class StatisticsSummaryViewModel
     public int PeriodSent { get; init; }
     public int PeriodDuplicates { get; init; }
     public int PeriodErrors { get; init; }
-    public int PeriodUniqueAuthors { get; init; }
+    public int PeriodUnique { get; init; }
     public int WorkersOnline { get; init; }
     public int WorkersTotal { get; init; }
     public string TotalAdvanceText { get; init; } = "—";
     public string? AvgResponseMinutesText { get; init; }
+    public int BalanceAccountCount { get; init; }
+    public int LowBalanceAccountCount { get; init; }
+    public int LowBalanceHiddenCount { get; init; }
 }
 
 public sealed class StatisticsBalanceRowViewModel
@@ -127,6 +131,64 @@ public sealed class StatisticsChartsViewModel
 {
     public StackedDailyChartViewModel DailyTrend { get; init; } = new();
     public DonutChartViewModel AccountStatus { get; init; } = new();
+}
+
+public sealed class MonitoringCycleReportViewModel
+{
+    public static MonitoringCycleReportViewModel Empty { get; } = new();
+
+    public bool IsDetailed { get; init; }
+    public bool HasData { get; init; }
+    public int TotalLeads { get; init; }
+    public int AccountsWithNotStarted { get; init; }
+    public int NotStartedPositions { get; init; }
+    public int ZeroLeadAccountCount { get; init; }
+    public IReadOnlyList<string> NotStartedSummaries { get; init; } = [];
+    public IReadOnlyList<MonitoringCycleNotStartedRowViewModel> NotStartedRows { get; init; } = [];
+    public IReadOnlyList<MonitoringCycleLeadSummaryViewModel> LeadSummaries { get; init; } = [];
+    public IReadOnlyList<MonitoringCycleAccountReportViewModel> AccountReports { get; init; } = [];
+}
+
+public sealed class MonitoringCycleNotStartedRowViewModel
+{
+    public string AccountName { get; init; } = string.Empty;
+    public int NotStartedCount { get; init; }
+    public string PositionsText { get; init; } = string.Empty;
+}
+
+public sealed class MonitoringCycleLeadSummaryViewModel
+{
+    public string AccountName { get; init; } = string.Empty;
+    public int TotalLeads { get; init; }
+    public string BreakdownText { get; init; } = string.Empty;
+}
+
+public sealed class MonitoringCycleAccountReportViewModel
+{
+    public string AccountName { get; init; } = string.Empty;
+    public DateTime DateUtc { get; init; }
+    public string HeaderText { get; init; } = string.Empty;
+    public int SubProfileCount { get; init; }
+    public int CycleCount { get; init; }
+    public int TotalLeads { get; init; }
+    public IReadOnlyList<MonitoringCycleSubProfileRowViewModel> Rows { get; init; } = [];
+}
+
+public sealed class MonitoringCycleSubProfileRowViewModel
+{
+    public string PositionText { get; init; } = string.Empty;
+    public string Name { get; init; } = string.Empty;
+    public IReadOnlyList<DateTime> CompletionTimesUtc { get; init; } = [];
+    public string LeadsText { get; init; } = "—";
+    public IReadOnlyList<MonitoringCycleErrorViewModel> Errors { get; init; } = [];
+    public bool HasErrors { get; init; }
+    public bool HasNotStarted { get; init; }
+}
+
+public sealed class MonitoringCycleErrorViewModel
+{
+    public DateTime TimestampUtc { get; init; }
+    public string Detail { get; init; } = string.Empty;
 }
 
 public sealed class StackedDailyChartViewModel

@@ -61,7 +61,13 @@ public static class AvitoPageStateScripts
             const containsAuthText = (value) =>
                 /телефон или почта|забыли пароль|запомнить пароль|продолжить через|зарегистрироваться|нет аккаунта на/i.test(value ?? "");
             const hasLoginText = containsAuthText(probeText);
-            const hasLoginForm = hasLoginDom || hasLoginHtml || hasLoginText || titleSuggestsLogin || urlSuggestsLogin;
+            const hasGuestLoginButton = !!document.querySelector("[data-marker='header/login-button']");
+            const hasLoggedInProfile = !!(
+                document.querySelector("[data-marker='header/profile-name']") ||
+                document.querySelector("[data-marker='profile-switch/link']")
+            );
+            const guestNeedsLogin = hasGuestLoginButton && !hasLoggedInProfile && !hasLoginDom;
+            const hasLoginForm = hasLoginDom || hasLoginHtml || hasLoginText || titleSuggestsLogin || urlSuggestsLogin || guestNeedsLogin;
 
             const hasFirewallDom = !!document.querySelector(
                 ".firewall-container, .js-firewall-form, .firewall-title, form.js-firewall-form, h2.firewall-title"

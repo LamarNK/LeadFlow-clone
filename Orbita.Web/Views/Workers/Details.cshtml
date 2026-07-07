@@ -21,7 +21,11 @@
      data-account-search-url="@Url.Action("Index", "Accounts", new { q = "__q__" })"
      data-worker-details-url="@Url.Action("Details", "Workers", new { id = "__id__" })"
      data-settings-logs-url="@Url.Action("Index", "Settings", new { tab = "logs", workerId = "__id__" })"
-     data-responses-filter-url="@Url.Action("Index", "Responses", new { accountId = "__id__" })">
+     data-responses-filter-url="@Url.Action("Index", "Responses", new { accountId = "__id__" })"
+     data-metric-today="@DateTime.Today.ToString("yyyy-MM-dd")"
+     data-account-metric-responses-url="@($"/Responses?from=__today__&to=__today__&workerId=__workerId__&accountId=__accountId__")"
+     data-account-metric-unique-url="@($"/Responses?from=__today__&to=__today__&status=unique&workerId=__workerId__&accountId=__accountId__")"
+     data-account-metric-errors-url="@($"/Errors?workerId=__workerId__&accountId=__accountId__")">
     <nav class="orbita-breadcrumbs" aria-label="Навигация">
         @for (var i = 0; i < Model.Breadcrumbs.Count; i++)
         {
@@ -389,11 +393,19 @@
                             {
                                 <span class="account-error-hint" title="@account.LastErrorMessage">@account.LastErrorMessage</span>
                             }
+                            else if (!string.IsNullOrWhiteSpace(account.ErrorHint))
+                            {
+                                <span class="account-error-hint" title="@account.ErrorHint">@account.ErrorHint</span>
+                            }
                         </td>
                         <td class="cell-num cell-balance" data-label="Баланс"><span class="account-balance-multiline">@account.BalanceText</span></td>
-                        <td class="cell-num" data-label="Откликов">@account.Responses</td>
+                        <td class="cell-num" data-label="Откликов">
+                            <partial name="_MetricLink" model="@AccountMetricLinks.Responses(Model.WorkerId, account.Id, account.Responses)" />
+                        </td>
                         <td data-label="Последняя активность"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(account.LastActivityUtc, "activity"))" /></td>
-                        <td class="cell-num" data-label="Ошибок">@account.Errors</td>
+                        <td class="cell-num" data-label="Ошибок">
+                            <partial name="_MetricLink" model="@AccountMetricLinks.Errors(Model.WorkerId, account.Id, account.Errors)" />
+                        </td>
                         <td class="data-table-menu" data-label="">
                             <div class="row-menu" data-row-menu>
                                 <button type="button" class="row-menu-btn" aria-label="Действия" aria-expanded="false" aria-haspopup="true">

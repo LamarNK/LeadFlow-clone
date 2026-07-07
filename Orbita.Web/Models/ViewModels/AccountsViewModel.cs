@@ -47,6 +47,9 @@ public sealed class AccountRowViewModel
     public int Responses { get; init; }
     public int UniqueResponses { get; init; }
     public int Errors { get; init; }
+    public string? ResponsesLink { get; init; }
+    public string? UniqueResponsesLink { get; init; }
+    public string? ErrorsLink { get; init; }
     public DateTime? LastActivityUtc { get; init; }
     public bool IsEnabledInPanel { get; init; } = true;
     public string? LastErrorMessage { get; init; }

@@ -32,44 +32,67 @@ internal static class SubProfileOperationalStatsHelper
         return result;
     }
 
-    public static void ApplyEventErrors(
+    public static void MergeAllTimeActivity(
         Dictionary<(Guid AccountId, string SubProfileId), SubProfileOperationalStats> stats,
-        IEnumerable<(Guid AccountId, string? Details)> eventRows,
-        IReadOnlyDictionary<Guid, IReadOnlyDictionary<string, string>> subProfileIdsByAccount)
+        IEnumerable<(Guid AccountId, string SubProfileId, DateTime? LastActivity)> rows)
     {
-        foreach (var (accountId, details) in eventRows)
+        foreach (var row in rows)
         {
-            if (!subProfileIdsByAccount.TryGetValue(accountId, out var lookup))
+            if (string.IsNullOrWhiteSpace(row.SubProfileId))
             {
                 continue;
             }
 
-            var subProfileId = WorkerEventDetailsParser.TryParseDiagnosticSubProfileId(details);
-            if (string.IsNullOrWhiteSpace(subProfileId))
-            {
-                var subProfileName = WorkerEventDetailsParser.TryParseDiagnosticSubProfileName(details);
-                if (string.IsNullOrWhiteSpace(subProfileName))
-                {
-                    continue;
-                }
-
-                subProfileId = lookup.FirstOrDefault(x =>
-                    string.Equals(x.Value, subProfileName, StringComparison.OrdinalIgnoreCase)).Key;
-            }
-
-            if (string.IsNullOrWhiteSpace(subProfileId))
-            {
-                continue;
-            }
-
-            var key = (accountId, subProfileId.Trim());
+            var key = (row.AccountId, row.SubProfileId.Trim());
             if (stats.TryGetValue(key, out var existing))
             {
-                stats[key] = existing with { TodayEventErrors = existing.TodayEventErrors + 1 };
+                stats[key] = existing with
+                {
+                    LastActivityUtc = AccountLastActivityHelper.Resolve(
+                        existing.LastActivityUtc,
+                        row.LastActivity)
+                };
             }
             else
             {
-                stats[key] = new SubProfileOperationalStats(0, 0, 1, null);
+                stats[key] = new SubProfileOperationalStats(0, 0, 0, row.LastActivity);
+            }
+        }
+    }
+
+    public static void ApplyEvents(
+        Dictionary<(Guid AccountId, string SubProfileId), SubProfileOperationalStats> stats,
+        IEnumerable<(Guid AccountId, string? Details, DateTime CreatedAtUtc, string Level)> eventRows,
+        IReadOnlyDictionary<Guid, IReadOnlyDictionary<string, string>> subProfileIdsByAccount,
+        DateTime todayStartUtc)
+    {
+        foreach (var (accountId, details, createdAtUtc, level) in eventRows)
+        {
+            if (!TryResolveSubProfileId(accountId, details, subProfileIdsByAccount, out var subProfileId))
+            {
+                continue;
+            }
+
+            var key = (accountId, subProfileId);
+            var countsAsTodayError = createdAtUtc >= todayStartUtc
+                && WorkerEventErrorStatsHelper.IsErrorLevel(level);
+            if (stats.TryGetValue(key, out var existing))
+            {
+                stats[key] = existing with
+                {
+                    TodayEventErrors = existing.TodayEventErrors + (countsAsTodayError ? 1 : 0),
+                    LastActivityUtc = AccountLastActivityHelper.Resolve(
+                        existing.LastActivityUtc,
+                        createdAtUtc)
+                };
+            }
+            else
+            {
+                stats[key] = new SubProfileOperationalStats(
+                    0,
+                    0,
+                    countsAsTodayError ? 1 : 0,
+                    createdAtUtc);
             }
         }
     }
@@ -77,28 +100,132 @@ internal static class SubProfileOperationalStatsHelper
     public static IReadOnlyList<WorkerSubProfileDto>? Enrich(
         IReadOnlyList<WorkerSubProfileDto>? profiles,
         Guid accountId,
-        IReadOnlyDictionary<(Guid AccountId, string SubProfileId), SubProfileOperationalStats> stats)
+        IReadOnlyDictionary<(Guid AccountId, string SubProfileId), SubProfileOperationalStats> stats) =>
+        Resolve(profiles, accountId, stats, nameLookup: null);
+
+    public static IReadOnlyList<WorkerSubProfileDto>? Resolve(
+        IReadOnlyList<WorkerSubProfileDto>? profiles,
+        Guid accountId,
+        IReadOnlyDictionary<(Guid AccountId, string SubProfileId), SubProfileOperationalStats> stats,
+        IReadOnlyDictionary<(Guid AccountId, string SubProfileId), string>? nameLookup)
     {
-        if (profiles is null || profiles.Count == 0)
+        if (profiles is { Count: > 0 })
         {
-            return profiles;
+            return profiles
+                .Select(profile => ApplyOperationalStats(profile, accountId, stats))
+                .ToList();
         }
 
-        return profiles
-            .Select(profile =>
-            {
-                stats.TryGetValue((accountId, profile.Id), out var operational);
-                operational ??= new SubProfileOperationalStats(0, 0, 0, null);
-                var lastActivity = operational.LastActivityUtc ?? profile.LastIssueAt;
-                return profile with
-                {
-                    TodayResponses = operational.TodayResponses,
-                    TodayDuplicates = operational.TodayDuplicates,
-                    TodayEventErrors = operational.TodayEventErrors,
-                    LastActivityUtc = lastActivity
-                };
-            })
+        var synthesized = stats
+            .Where(x => x.Key.AccountId == accountId)
+            .OrderByDescending(x => x.Value.LastActivityUtc ?? DateTime.MinValue)
+            .ThenByDescending(x => x.Value.TodayResponses)
+            .Select(x => CreateFromOperationalStats(accountId, x.Key.SubProfileId, x.Value, nameLookup))
             .ToList();
+
+        return synthesized.Count == 0 ? profiles : synthesized;
+    }
+
+    public static Dictionary<(Guid AccountId, string SubProfileId), string> BuildResponseNameLookup(
+        IEnumerable<(Guid AccountId, string SubProfileId, string? SubProfileName)> rows)
+    {
+        var lookup = new Dictionary<(Guid, string), string>();
+        foreach (var (accountId, subProfileId, subProfileName) in rows)
+        {
+            if (string.IsNullOrWhiteSpace(subProfileId))
+            {
+                continue;
+            }
+
+            var id = subProfileId.Trim();
+            var name = string.IsNullOrWhiteSpace(subProfileName) ? id : subProfileName.Trim();
+            lookup[(accountId, id)] = name;
+        }
+
+        return lookup;
+    }
+
+    private static WorkerSubProfileDto ApplyOperationalStats(
+        WorkerSubProfileDto profile,
+        Guid accountId,
+        IReadOnlyDictionary<(Guid AccountId, string SubProfileId), SubProfileOperationalStats> stats)
+    {
+        stats.TryGetValue((accountId, profile.Id), out var operational);
+        operational ??= new SubProfileOperationalStats(0, 0, 0, null);
+        var lastActivity = AccountLastActivityHelper.Resolve(
+            operational.LastActivityUtc,
+            profile.LastIssueAt);
+        return profile with
+        {
+            TodayResponses = operational.TodayResponses,
+            TodayDuplicates = operational.TodayDuplicates,
+            TodayEventErrors = operational.TodayEventErrors,
+            LastActivityUtc = lastActivity
+        };
+    }
+
+    private static WorkerSubProfileDto CreateFromOperationalStats(
+        Guid accountId,
+        string subProfileId,
+        SubProfileOperationalStats operational,
+        IReadOnlyDictionary<(Guid AccountId, string SubProfileId), string>? nameLookup)
+    {
+        var id = subProfileId.Trim();
+        var name = id;
+        if (nameLookup is not null
+            && nameLookup.TryGetValue((accountId, id), out var resolvedName)
+            && !string.IsNullOrWhiteSpace(resolvedName))
+        {
+            name = resolvedName;
+        }
+
+        return new WorkerSubProfileDto(
+            id,
+            name,
+            Category: string.Empty,
+            IsCurrent: false,
+            Balance: null,
+            LastIssueKind: null,
+            LastIssueMessage: null,
+            LastIssueAt: null,
+            TodayResponses: operational.TodayResponses,
+            TodayDuplicates: operational.TodayDuplicates,
+            TodayEventErrors: operational.TodayEventErrors,
+            LastActivityUtc: operational.LastActivityUtc);
+    }
+
+    private static bool TryResolveSubProfileId(
+        Guid accountId,
+        string? details,
+        IReadOnlyDictionary<Guid, IReadOnlyDictionary<string, string>> subProfileIdsByAccount,
+        out string subProfileId)
+    {
+        subProfileId = string.Empty;
+        if (!subProfileIdsByAccount.TryGetValue(accountId, out var lookup))
+        {
+            return false;
+        }
+
+        var resolvedId = WorkerEventDetailsParser.TryParseDiagnosticSubProfileId(details);
+        if (string.IsNullOrWhiteSpace(resolvedId))
+        {
+            var subProfileName = WorkerEventDetailsParser.TryParseDiagnosticSubProfileName(details);
+            if (string.IsNullOrWhiteSpace(subProfileName))
+            {
+                return false;
+            }
+
+            resolvedId = lookup.FirstOrDefault(x =>
+                string.Equals(x.Value, subProfileName, StringComparison.OrdinalIgnoreCase)).Key;
+        }
+
+        if (string.IsNullOrWhiteSpace(resolvedId))
+        {
+            return false;
+        }
+
+        subProfileId = resolvedId.Trim();
+        return true;
     }
 
     public static IReadOnlyDictionary<Guid, IReadOnlyDictionary<string, string>> BuildNameLookup(

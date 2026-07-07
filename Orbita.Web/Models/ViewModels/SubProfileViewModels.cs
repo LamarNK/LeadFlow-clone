@@ -18,6 +18,9 @@ public sealed class SubProfileRowViewModel
     public int Responses { get; init; }
     public int UniqueResponses { get; init; }
     public int Errors { get; init; }
+    public string? ResponsesLink { get; init; }
+    public string? UniqueResponsesLink { get; init; }
+    public string? ErrorsLink { get; init; }
     public DateTime? LastActivityUtc { get; init; }
     public bool IsProcessingNow { get; init; }
     public string? ProcessingLabel { get; init; }
@@ -103,6 +106,7 @@ public static class SubProfileViewModelMapper
     public static IReadOnlyList<SubProfileRowViewModel> Map(
         IReadOnlyList<WorkerSubProfileDto>? subProfiles,
         IReadOnlyList<SubProfileBalanceDto>? balanceItems = null,
+        Guid? workerId = null,
         Guid? accountId = null,
         bool workerIsOnline = false,
         WorkerActivityDto? workerActivity = null,
@@ -149,6 +153,9 @@ public static class SubProfileViewModelMapper
                         activeAccounts)
                     : new AccountProcessingViewModel();
                 var (statusLabel, statusTone) = SubProfileStatusMapper.ForDto(sp);
+                var metricLinks = workerId is Guid wid && accountId is Guid aid
+                    ? AccountMetricLinks.Hrefs(wid, aid)
+                    : null;
                 return new SubProfileRowViewModel
                 {
                     Id = id,
@@ -163,6 +170,9 @@ public static class SubProfileViewModelMapper
                     Responses = responses,
                     UniqueResponses = uniqueResponses,
                     Errors = errors,
+                    ResponsesLink = metricLinks?.Responses,
+                    UniqueResponsesLink = metricLinks?.UniqueResponses,
+                    ErrorsLink = metricLinks?.Errors,
                     LastActivityUtc = sp.LastActivityUtc,
                     IsProcessingNow = processing.IsProcessingNow,
                     ProcessingLabel = processing.Label,

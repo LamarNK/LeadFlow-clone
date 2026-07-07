@@ -1,0 +1,14 @@
+@model MonitoringCycleReportViewModel
+@{
+    var periodDays = (ViewData["PeriodDays"] as int?) ?? 1;
+}
+<div class="card card--statistics-cycles">
+    <div class="card-header">
+        <h2>Мониторинг</h2>
+    </div>
+    <div class="card-body card-body-table" data-statistics-cycles>
+        <partial name="_MonitoringCycleBody"
+                 model="Model"
+                 view-data="@(new ViewDataDictionary(ViewData) { ["PeriodDays"] = periodDays })" />
+    </div>
+</div>

@@ -87,19 +87,32 @@ internal static class WorkerDetailsBuilder
     public static WorkerAccountRowViewModel MapAccount(
         WorkerAccountDto account,
         WorkerBalanceDto? balance,
+        Guid workerId,
         IReadOnlyList<WorkerActiveAccountDto>? activeAccounts = null,
         bool workerIsOnline = false)
     {
         var (label, tone) = AccountStatusMapper.ForWorkerDetails(account.Status, account.IsEnabledInPanel);
         var responses = account.TodayResponses;
-        var errors = account.TodayEventErrors;
+        var metricLinks = AccountMetricLinks.Hrefs(workerId, account.AccountId);
         var subProfiles = SubProfileViewModelMapper.Map(
             account.SubProfiles,
             balance?.SubProfiles,
+            workerId,
             account.AccountId,
             workerIsOnline,
             null,
             activeAccounts);
+        var lastErrorMessage = AdsPowerErrorMessageNormalizer.NormalizeForDisplay(account.LastErrorMessage);
+        var errors = AccountErrorMetrics.ComputeErrorCount(
+            account.TodayEventErrors,
+            lastErrorMessage,
+            subProfiles,
+            tone);
+        var errorHint = AccountErrorMetrics.ComputeErrorHint(
+            account.TodayEventErrors,
+            lastErrorMessage,
+            subProfiles,
+            tone);
         var processing = WorkerActivityPresenter.PresentForAccount(
             null,
             workerIsOnline,
@@ -118,10 +131,12 @@ internal static class WorkerDetailsBuilder
                 ? "—"
                 : FormatAccountBalanceText(balance),
             Responses = responses,
-            LastActivityUtc = account.LastMonitoringAt,
-            Errors = errors > 0 ? errors : !string.IsNullOrWhiteSpace(account.LastErrorMessage) ? 1 : 0,
-            // TodayEventErrors from API; LastErrorMessage is legacy fallback
-            LastErrorMessage = AdsPowerErrorMessageNormalizer.NormalizeForDisplay(account.LastErrorMessage),
+            LastActivityUtc = account.LastActivityUtc ?? account.LastMonitoringAt,
+            Errors = errors,
+            ResponsesLink = metricLinks.Responses,
+            ErrorsLink = metricLinks.Errors,
+            LastErrorMessage = lastErrorMessage,
+            ErrorHint = errorHint,
             SubProfiles = subProfiles,
             SubProfilesSummary = SubProfileViewModelMapper.BuildSummary(subProfiles),
             CanRefreshSubProfiles = !string.IsNullOrWhiteSpace(account.AdsPowerProfileId),

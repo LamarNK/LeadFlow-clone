@@ -77,6 +77,7 @@ public sealed class AvitoAutomationFailureFormatterTests
         var kind = AvitoAutomationFailureFormatter.MapDiagnosticKind(state, null);
 
         Assert.Equal(AvitoSubProfileIssueKind.AuthRequired, kind);
+        Assert.Contains("автовход", message, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("авторизац", message, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("не переключился", message, StringComparison.OrdinalIgnoreCase);
     }

@@ -181,7 +181,76 @@ internal static class DesignPreviewData
                 [new AgeBucketDto("18-24", 180, 120, "66.7%"), new AgeBucketDto("25-34", 260, 180, "69.2%"), new AgeBucketDto("35-44", 140, 90, "64.3%")],
                 "28.4 лет",
                 "76.5%"),
+            BuildMonitoringCyclePreview(from, to),
             Now);
+    }
+
+    private static MonitoringCycleReportDto BuildMonitoringCyclePreview(DateTime from, DateTime to)
+    {
+        var isDetailed = (to.Date - from.Date).Days == 0;
+        var leadSummaries = new List<MonitoringCycleLeadSummaryDto>
+        {
+            new("Авито 1", 12, ["4/10 (Контракт РФ 4) = 1", "7/10 (контракт РФ 7) = 6"]),
+            new("Авито 17", 34, ["10/10 (Контракт10) = 26"]),
+            new("Авито 30", 32, ["6/10 (Работа вахтой2) = 13", "9/10 (Кадровый отдел7) = 11"])
+        };
+
+        if (!isDetailed)
+        {
+            return new MonitoringCycleReportDto(
+                false,
+                leadSummaries.Sum(x => x.TotalLeads),
+                1,
+                10,
+                ["  Авито 34: 10 не запущены — 1/10 (Кадровый Отдел10), 2/10 (Кадровый отдел9)"],
+                leadSummaries,
+                []);
+        }
+
+        var previewDayUtc = DateTime.SpecifyKind(from.Date, DateTimeKind.Utc);
+        var accountReports = new List<MonitoringCycleAccountReportDto>
+        {
+            new(
+                "Авито 1",
+                previewDayUtc,
+                10,
+                8,
+                12,
+                [
+                    new MonitoringCycleSubProfileRowDto(
+                        7,
+                        10,
+                        "контракт РФ 7",
+                        [
+                            previewDayUtc.AddHours(2).AddMinutes(3).AddSeconds(16),
+                            previewDayUtc.AddHours(7).AddMinutes(22).AddSeconds(59),
+                            previewDayUtc.AddHours(15).AddMinutes(18).AddSeconds(9)
+                        ],
+                        ["2", "0", "1"],
+                        []),
+                    new MonitoringCycleSubProfileRowDto(
+                        10,
+                        10,
+                        "контракт РФ 10",
+                        [
+                            previewDayUtc.AddHours(2).AddMinutes(5).AddSeconds(50),
+                            previewDayUtc.AddHours(10).AddMinutes(7).AddSeconds(46),
+                            previewDayUtc.AddHours(20).AddMinutes(11).AddSeconds(35)
+                        ],
+                        ["0", "1", "0"],
+                        [])
+                ],
+                [])
+        };
+
+        return new MonitoringCycleReportDto(
+            true,
+            leadSummaries.Sum(x => x.TotalLeads),
+            1,
+            10,
+            ["  Авито 34: 10 не запущены — 1/10 (Кадровый Отдел10), 2/10 (Кадровый отдел9)"],
+            leadSummaries,
+            accountReports);
     }
 
     public static StatisticsViewModel BuildStatisticsIndexViewModel(
@@ -724,7 +793,7 @@ internal static class DesignPreviewData
             .Select(a =>
             {
                 var balance = BuildWorkerBalances(workerId).FirstOrDefault(b => b.AccountId == a.AccountId);
-                return WorkerDetailsBuilder.MapAccount(a, balance);
+                return WorkerDetailsBuilder.MapAccount(a, balance, workerId);
             })
             .ToList();
 

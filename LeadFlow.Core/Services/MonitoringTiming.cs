@@ -126,4 +126,40 @@ public static class MonitoringTiming
     /// Через сколько дней сбрасывать устаревшее сообщение об ошибке на аккаунте без блокирующего статуса.
     /// </summary>
     public const int AccountStaleErrorMessageMaxAgeDays = 3;
+
+    /// <summary>Пауза после обновления вкладки перед повторной проверкой сессии (мс).</summary>
+    public const int AutoLoginPreRefreshSettleMs = 900;
+
+    /// <summary>Пауза после перехода на dashboard перед повторной проверкой сессии (мс).</summary>
+    public const int AutoLoginDashboardNavSettleMs = 700;
+
+    /// <summary>Пауза после клика «Вход» до появления списка профилей или формы пароля (мс).</summary>
+    public const int AutoLoginAfterOpenLoginMs = 1400;
+
+    /// <summary>Пауза после выбора сохранённого профиля (мс).</summary>
+    public const int AutoLoginAfterUserSelectMs = 1200;
+
+    /// <summary>Сколько раз опрашивать автозаполнение пароля.</summary>
+    public const int AutoLoginPasswordAutofillPolls = 6;
+
+    /// <summary>Интервал опроса автозаполнения пароля (мс).</summary>
+    public const int AutoLoginPasswordAutofillPollMs = 500;
+
+    /// <summary>Максимум ожидания успешного входа после submit (мс).</summary>
+    public const int AutoLoginPostSubmitMaxWaitMs = 15_000;
+
+    /// <summary>Интервал опроса после submit (мс).</summary>
+    public const int AutoLoginPostSubmitPollMs = 650;
+
+    /// <summary>Пауза после ввода текста в мини-чат перед отправкой (мс).</summary>
+    public const int MessengerAutoReplyAfterTypeMinMs = 350;
+
+    /// <summary>Пауза после ввода текста в мини-чат перед отправкой (мс).</summary>
+    public const int MessengerAutoReplyAfterTypeMaxMs = 900;
+
+    /// <summary>Ожидание появления отправленного сообщения в истории чата (мс).</summary>
+    public const int MessengerAutoReplyPostSendMaxWaitMs = 8_000;
+
+    /// <summary>Интервал опроса истории после отправки (мс).</summary>
+    public const int MessengerAutoReplyPostSendPollMs = 450;
 }

@@ -127,7 +127,7 @@ public sealed class WorkersService(
             accounts.Select(a =>
             {
                 var balance = apiWorker.Balances.FirstOrDefault(b => b.AccountId == a.AccountId);
-                return WorkerDetailsBuilder.MapAccount(a, balance, activeAccounts, apiWorker.IsOnline);
+                return WorkerDetailsBuilder.MapAccount(a, balance, id, activeAccounts, apiWorker.IsOnline);
             }),
             tableSort).ToList();
 

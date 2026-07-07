@@ -11,25 +11,32 @@ public static class AvitoSubProfileMerger
         IReadOnlyList<AvitoSubProfile> existing,
         IReadOnlyList<AvitoSubProfile> discovered)
     {
-        if (discovered.Count == 0)
+        var validDiscovered = AvitoSubProfileRules.FilterValid(discovered);
+        if (validDiscovered.Count == 0)
         {
-            return existing;
+            return AvitoSubProfileRules.FilterValid(existing);
         }
 
-        var byId = existing.ToDictionary(x => x.Id, StringComparer.Ordinal);
-        var result = new List<AvitoSubProfile>(discovered.Count);
+        var byId = AvitoSubProfileRules.IndexById(existing);
+        var result = new List<AvitoSubProfile>(validDiscovered.Count);
 
-        foreach (var item in discovered)
+        foreach (var item in validDiscovered)
         {
-            if (byId.TryGetValue(item.Id, out var previous))
+            var id = item.Id.Trim();
+            if (byId.TryGetValue(id, out var previous))
             {
                 result.Add(new AvitoSubProfile
                 {
-                    Id = item.Id,
+                    Id = id,
                     Name = item.Name,
                     Category = item.Category,
                     IsCurrent = item.IsCurrent,
                     Balance = previous.Balance,
+                    WalletBalance = previous.WalletBalance,
+                    AdvanceDurationText = previous.AdvanceDurationText,
+                    Rating = previous.Rating,
+                    ReviewsCount = previous.ReviewsCount,
+                    ReviewsText = previous.ReviewsText,
                     LastIssueKind = previous.LastIssueKind,
                     LastIssueMessage = previous.LastIssueMessage,
                     LastIssueAt = previous.LastIssueAt,

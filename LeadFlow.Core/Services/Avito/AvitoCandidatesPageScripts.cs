@@ -707,6 +707,65 @@ public static class AvitoCandidatesPageScripts
         })();
         """;
 
+    /// <summary>Отправка ответа в мини-чат через поле <c>reply/input</c>.</summary>
+    public static string BuildSendMiniMessengerReplyScript(string messageText)
+    {
+        var jsonText = System.Text.Json.JsonSerializer.Serialize(messageText);
+        return $$"""
+        (() => {
+            const text = {{jsonText}};
+            const input = document.querySelector("[data-marker='reply/input']");
+            if (!input) {
+                return JSON.stringify({ ok: false, reason: "no_reply_input" });
+            }
+
+            const setNativeValue = (element, value) => {
+                const proto = element instanceof HTMLTextAreaElement
+                    ? HTMLTextAreaElement.prototype
+                    : HTMLInputElement.prototype;
+                const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
+                if (setter) {
+                    setter.call(element, value);
+                } else {
+                    element.value = value;
+                }
+            };
+
+            input.focus();
+            setNativeValue(input, text);
+            input.dispatchEvent(new Event("input", { bubbles: true }));
+            input.dispatchEvent(new Event("change", { bubbles: true }));
+
+            const sendSelectors = [
+                "[data-marker='reply/send']",
+                "[data-marker='reply/submit']",
+                "[data-marker='reply/sendButton']",
+                "form[data-marker='reply'] button[type='submit']"
+            ];
+
+            for (const selector of sendSelectors) {
+                const button = document.querySelector(selector);
+                if (!button || button.disabled) {
+                    continue;
+                }
+
+                // Одно нажатие: dispatchEvent + click() вместе отправляют сообщение дважды.
+                if (typeof button.click === "function") {
+                    button.click();
+                } else {
+                    button.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+                }
+
+                return JSON.stringify({ ok: true, method: "click", selector });
+            }
+
+            input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true }));
+            input.dispatchEvent(new KeyboardEvent("keyup", { key: "Enter", code: "Enter", bubbles: true }));
+            return JSON.stringify({ ok: true, method: "enter" });
+        })();
+        """;
+    }
+
     /// <summary>Есть ли на карточке признак непрочитанного чата (бейдж/точка у кнопки «Перейти в чат»).</summary>
     public static string BuildReadCandidateChatUnreadScript(int index) =>
         $$"""

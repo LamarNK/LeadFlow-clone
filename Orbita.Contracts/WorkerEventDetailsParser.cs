@@ -20,13 +20,28 @@ public static class WorkerEventDetailsParser
         try
         {
             using var doc = JsonDocument.Parse(trimmed);
-            if (doc.RootElement.TryGetProperty("attachmentId", out var idElement)
-                && Guid.TryParse(idElement.GetString(), out var attachmentId))
+            if (doc.RootElement.TryGetProperty("attachmentId", out var idElement))
             {
-                return attachmentId;
+                if (idElement.ValueKind == JsonValueKind.Null)
+                {
+                    return null;
+                }
+
+                if (idElement.ValueKind == JsonValueKind.String
+                    && Guid.TryParse(idElement.GetString(), out var attachmentId))
+                {
+                    return attachmentId;
+                }
+
+                if (idElement.ValueKind != JsonValueKind.Null
+                    && idElement.TryGetGuid(out var guidAttachmentId)
+                    && guidAttachmentId != Guid.Empty)
+                {
+                    return guidAttachmentId;
+                }
             }
         }
-        catch (JsonException)
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException)
         {
             return null;
         }

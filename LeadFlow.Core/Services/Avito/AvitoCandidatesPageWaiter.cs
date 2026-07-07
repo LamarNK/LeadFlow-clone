@@ -1,6 +1,7 @@
 using System.Text.Json;
 using LeadFlow.Core.Logging.Audit;
 using LeadFlow.Core.Services;
+using PuppeteerSharp;
 
 namespace LeadFlow.Core.Services.Avito;
 
@@ -15,7 +16,8 @@ public static class AvitoCandidatesPageWaiter
         Func<CancellationToken, Task<string?>>? fetchHtmlSnapshot,
         string? pageUrl,
         CancellationToken cancellationToken,
-        string? baselineListSignature = null)
+        string? baselineListSignature = null,
+        IPage? pageForRecovery = null)
     {
         var maxWaitMs = MonitoringTiming.CandidatesPageMaxWaitMs;
         var pollMs = MonitoringTiming.CandidatesPagePollMs;
@@ -32,7 +34,7 @@ public static class AvitoCandidatesPageWaiter
             await AvitoFirewallProbe.ThrowIfBlockedAsync(executeScript, fetchHtmlSnapshot, pageUrl, cancellationToken)
                 .ConfigureAwait(false);
 
-            await AvitoLoginProbe.ThrowIfLoginRequiredAsync(executeScript, cancellationToken)
+            await AvitoLoginProbe.ThrowIfLoginRequiredAsync(executeScript, cancellationToken, pageForRecovery)
                 .ConfigureAwait(false);
 
             var probe = await TryParseReadyProbeAsync(executeScript, cancellationToken).ConfigureAwait(false);
@@ -97,7 +99,7 @@ public static class AvitoCandidatesPageWaiter
         await AvitoFirewallProbe.ThrowIfBlockedAsync(executeScript, fetchHtmlSnapshot, pageUrl, cancellationToken)
             .ConfigureAwait(false);
 
-        await AvitoLoginProbe.ThrowIfLoginRequiredAsync(executeScript, cancellationToken)
+        await AvitoLoginProbe.ThrowIfLoginRequiredAsync(executeScript, cancellationToken, pageForRecovery)
             .ConfigureAwait(false);
 
         var finalProbe = await TryParseReadyProbeAsync(executeScript, cancellationToken).ConfigureAwait(false);

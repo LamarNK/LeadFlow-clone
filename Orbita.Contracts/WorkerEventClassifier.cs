@@ -142,5 +142,97 @@ public static class WorkerEventClassifier
         level.Equals("warning", StringComparison.OrdinalIgnoreCase)
         || level.Equals("error", StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Определяет приоритет ошибки для панели Орбита по уровню события и тексту.
+    /// Классификация основана на реальных паттернах WorkerEvents в продакшене.
+    /// </summary>
+    public static string InferSeverity(string level, string message, string? details = null)
+    {
+        var text = $"{message} {details}";
+        var lower = text.ToLowerInvariant();
+
+        if (IsCriticalFailure(lower))
+            return "critical";
+
+        if (IsHighPriorityIncident(lower, details))
+            return "high";
+
+        if (IsLowPriorityTransient(lower))
+            return "low";
+
+        if (level.Equals("Warning", StringComparison.OrdinalIgnoreCase)
+            && lower.Contains("err_aborted"))
+            return "low";
+
+        if (MapIssueLabelToSeverity(message, level) is { } labelSeverity)
+            return labelSeverity;
+
+        if (level.Equals("Error", StringComparison.OrdinalIgnoreCase)
+            && (lower.Contains("timeout") || lower.Contains("таймаут") || lower.Contains("err_timed_out")))
+            return "medium";
+
+        if (level.Equals("Warning", StringComparison.OrdinalIgnoreCase)
+            && (lower.Contains("не переключ")
+                || lower.Contains("модалк")
+                || lower.Contains("неизвестная страниц")
+                || lower.Contains("ошибка на шаге")
+                || lower.Contains("проблема:")))
+            return "medium";
+
+        if (level.Equals("Error", StringComparison.OrdinalIgnoreCase))
+            return "medium";
+
+        if (level.Equals("Warning", StringComparison.OrdinalIgnoreCase))
+            return "low";
+
+        return "low";
+    }
+
+    public static string? MapIssueLabelToSeverity(string message, string level)
+    {
+        var label = TryParseIssueLabel(message);
+        if (label is null)
+            return null;
+
+        return Normalize(label) switch
+        {
+            "капча / блок ip" or "нужен вход" => "high",
+            "профиль занят" or "лимит частоты adspower" or "дневной лимит adspower" => "low",
+            "таймаут" => level.Equals("Error", StringComparison.OrdinalIgnoreCase) ? "medium" : "low",
+            "не переключился" or "проблема" or "ошибка парсинга" => "medium",
+            _ => null
+        };
+    }
+
+    private static bool IsCriticalFailure(string lower) =>
+        lower.Contains("postgres")
+        || lower.Contains("база данных")
+        || lower.Contains("критич")
+        || lower.Contains("недоступ")
+        || lower.Contains("object reference not set")
+        || lower.Contains("targetcrashed")
+        || lower.Contains("session closed")
+        || lower.Contains("protocol error")
+        || lower.Contains("err_insufficient_resources");
+
+    private static bool IsHighPriorityIncident(string lower, string? details) =>
+        IsCaptcha(lower, details)
+        || lower.Contains("нужен вход")
+        || lower.Contains("повторная авторизация")
+        || lower.Contains("требуется повторная авторизация")
+        || lower.Contains("avito требует повторный вход")
+        || lower.Contains("доступ ограничен")
+        || lower.Contains("проблема с ip")
+        || lower.Contains("bitrix")
+        || lower.Contains("crm");
+
+    private static bool IsLowPriorityTransient(string lower) =>
+        lower.Contains("профиль занят")
+        || lower.Contains("профиль adspower занят")
+        || AdsPowerErrorMessageNormalizer.LooksLikeProfileInUse(lower)
+        || lower.Contains("лимит частоты adspower")
+        || lower.Contains("дневной лимит adspower")
+        || lower.Contains("rate limit adspower");
+
     private static string Normalize(string label) => label.Trim().ToLowerInvariant();
 }

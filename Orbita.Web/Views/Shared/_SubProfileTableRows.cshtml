@@ -79,11 +79,17 @@
         <td class="cell-num cell-balance" data-label="Баланс">
             <span class="subprofiles-balance">@sub.BalanceText</span>
         </td>
-        <td class="cell-num" data-label="Откликов">@sub.Responses</td>
+        <td class="cell-num" data-label="Откликов">
+            <partial name="_MetricLink" model="@AccountMetricLinks.Responses(Model.WorkerId, Model.AccountId, sub.Responses)" />
+        </td>
         @if (Model.Layout == SubProfileTableLayout.Accounts)
         {
-            <td class="cell-num" data-label="Уникальных">@sub.UniqueResponses</td>
-            <td class="cell-num" data-label="Ошибок">@sub.Errors</td>
+            <td class="cell-num" data-label="Уникальных">
+                <partial name="_MetricLink" model="@AccountMetricLinks.Unique(Model.WorkerId, Model.AccountId, sub.UniqueResponses)" />
+            </td>
+            <td class="cell-num" data-label="Ошибок">
+                <partial name="_MetricLink" model="@AccountMetricLinks.Errors(Model.WorkerId, Model.AccountId, sub.Errors)" />
+            </td>
             <td data-label="Последняя активность">
                 <partial name="_UtcTime" model="@(new UtcTimeDisplayModel(sub.LastActivityUtc, "activity"))" />
             </td>
@@ -94,7 +100,9 @@
             <td data-label="Последняя активность">
                 <partial name="_UtcTime" model="@(new UtcTimeDisplayModel(sub.LastActivityUtc, "activity"))" />
             </td>
-            <td class="cell-num" data-label="Ошибок">@sub.Errors</td>
+            <td class="cell-num" data-label="Ошибок">
+                <partial name="_MetricLink" model="@AccountMetricLinks.Errors(Model.WorkerId, Model.AccountId, sub.Errors)" />
+            </td>
             <td class="data-table-menu subprofiles-data-empty" data-label=""></td>
         }
     </tr>

@@ -63,6 +63,58 @@ public sealed class WorkerEventClassifierTests
         Assert.False(WorkerEventClassifier.IsAutomationFailure(message, "Warning"));
     }
 
+    [Theory]
+    [InlineData("Error", "Ошибка аккаунта Авито 32: Object reference not set to an instance of an object.", "critical")]
+    [InlineData("Error", "Ошибка аккаунта Авито 31: Protocol error (Runtime.evaluate): Session closed.", "critical")]
+    [InlineData(
+        "Warning",
+        "Субпрофиль «Кадровый Отдел10» · аккаунт «Авито 34» — проблема: net::ERR_INSUFFICIENT_RESOURCES at https://www.avito.ru/profile/pro/items",
+        "critical")]
+    [InlineData(
+        "Warning",
+        "Субпрофили Avito 15: требуется повторная авторизация в Avito — откройте браузер AdsPower и войдите (телефон/почта и пароль).",
+        "high")]
+    [InlineData(
+        "Error",
+        "Ошибка аккаунта Avito 15: Avito требует повторный вход на странице https://www.avito.ru/#login?next=%2Fprofile.",
+        "high")]
+    [InlineData(
+        "Warning",
+        "Субпрофиль «Контракт9» · аккаунт «Avito 14» — капча / блок IP: доступ ограничен: проблема с IP — откройте браузер AdsPower.",
+        "high")]
+    [InlineData("Warning", "Капча/firewall на аккаунте Avito 8", "high")]
+    [InlineData("Error", "Ошибка аккаунта Avito 2: Timeout of 180000 ms exceeded", "medium")]
+    [InlineData(
+        "Warning",
+        "AdsPower «Avito 13» · аккаунт «Avito 13» — проблема: ошибка на шаге «переключение субпрофиля».",
+        "medium")]
+    [InlineData(
+        "Warning",
+        "AdsPower «Avito19» · аккаунт «Avito19» — не переключился: не удалось перейти к «переключение субпрофиля»: открыта модалка",
+        "medium")]
+    [InlineData("Warning", "Профиль AdsPower занят для Авито 45", "low")]
+    [InlineData(
+        "Warning",
+        "Субпрофиль «Кадровый дом4» · аккаунт «Авито 28» — проблема: net::ERR_ABORTED at https://www.avito.ru/profile/pro/items",
+        "low")]
+    public void InferSeverity_ClassifiesProductionPatterns(string level, string message, string expected)
+    {
+        Assert.Equal(expected, WorkerEventClassifier.InferSeverity(level, message));
+    }
+
+    [Fact]
+    public void InferSeverity_UsesJsonDetails_ForAuthRequiredKind()
+    {
+        var details = """{"kind":"auth_required","url":"https://www.avito.ru/#login?next=%2Fprofile"}""";
+
+        Assert.Equal(
+            "high",
+            WorkerEventClassifier.InferSeverity(
+                "Error",
+                "Ошибка аккаунта Avito 21: Avito требует повторный вход на странице https://www.avito.ru/#login?next=%2Fprofile.",
+                details));
+    }
+
     private static string BuildIssueMessage(string label, string detail) =>
         $"Субпрофиль «контракт РФ 1» · аккаунт «Avito 1» — {label}: {detail}";
 }

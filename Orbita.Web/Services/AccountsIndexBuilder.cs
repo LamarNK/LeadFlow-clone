@@ -98,6 +98,7 @@ internal static class AccountsIndexBuilder
         var subProfiles = SubProfileViewModelMapper.Map(
             account.SubProfiles,
             balanceDetail?.SubProfiles,
+            workerId,
             account.AccountId,
             workerIsOnline,
             workerActivity,
@@ -118,6 +119,7 @@ internal static class AccountsIndexBuilder
             (balanceDetail?.SubProfiles ?? [])
                 .Select(s => (s.Balance, s.AdvanceDurationText))
                 .ToList());
+        var metricLinks = AccountMetricLinks.Hrefs(workerId, account.AccountId);
         return new AccountRowViewModel
         {
             Id = account.AccountId,
@@ -136,7 +138,10 @@ internal static class AccountsIndexBuilder
             Responses = responses,
             UniqueResponses = unique,
             Errors = errors,
-            LastActivityUtc = account.LastMonitoringAt,
+            ResponsesLink = metricLinks.Responses,
+            UniqueResponsesLink = metricLinks.UniqueResponses,
+            ErrorsLink = metricLinks.Errors,
+            LastActivityUtc = account.LastActivityUtc ?? account.LastMonitoringAt,
             IsEnabledInPanel = account.IsEnabledInPanel,
             LastErrorMessage = lastErrorMessage,
             ErrorHint = errorHint,

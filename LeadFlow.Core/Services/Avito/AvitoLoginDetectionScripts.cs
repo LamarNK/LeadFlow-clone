@@ -39,7 +39,14 @@ internal static class AvitoLoginDetectionScripts
 
             const hasLoginText = containsAuthText(probeText);
 
-            const hasLogin = hasLoginDom || hasLoginHtml || hasLoginText || titleSuggestsLogin || urlSuggestsLogin;
+            const hasGuestLoginButton = !!document.querySelector("[data-marker='header/login-button']");
+            const hasLoggedInProfile = !!(
+                document.querySelector("[data-marker='header/profile-name']") ||
+                document.querySelector("[data-marker='profile-switch/link']")
+            );
+            const guestNeedsLogin = hasGuestLoginButton && !hasLoggedInProfile && !hasLoginDom;
+
+            const hasLogin = hasLoginDom || hasLoginHtml || hasLoginText || titleSuggestsLogin || urlSuggestsLogin || guestNeedsLogin;
 
             return JSON.stringify({
                 hasLogin,

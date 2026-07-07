@@ -32,7 +32,7 @@ public sealed partial class AdsPowerAvitoAutomationService
             DefaultViewport = null
         }).ConfigureAwait(false);
 
-        // AdsPower открывает 2+ вкладки; Avito на второй подгружается с задержкой — не цепляемся к «:».
+        // AdsPower при старте поднимает несколько вкладок — даём браузеру подключиться, затем одна свежая вкладка.
         await Task.Delay(2000, cancellationToken).ConfigureAwait(false);
 
         IPage page;
@@ -44,30 +44,6 @@ public sealed partial class AdsPowerAvitoAutomationService
                     nameof(OpenAccountSessionAsync),
                     cancellationToken)
                 .ConfigureAwait(false);
-
-            for (var attempt = 1;
-                 attempt <= 4 && !IsAvitoProfileAutomationTab(page.Url);
-                 attempt++)
-            {
-                _ = GlobalLogger.Instance.LogAsync(
-                    $"AdsPower session warmup: Avito tab not ready (attempt {attempt}/4), url={page.Url ?? "<null>"}.",
-                    DeskLinkAuditLogLevel.Info,
-                    memberName: nameof(OpenAccountSessionAsync),
-                    properties: new Dictionary<string, object?>
-                    {
-                        ["step"] = "session_warmup_retry",
-                        ["attempt"] = attempt,
-                        ["page.url"] = page.Url
-                    });
-
-                await Task.Delay(1500, cancellationToken).ConfigureAwait(false);
-                page = await AcquireAutomationPageAsync(
-                        browser,
-                        ProfileItemsPageUrl,
-                        nameof(OpenAccountSessionAsync),
-                        cancellationToken)
-                    .ConfigureAwait(false);
-            }
 
             page = await WarmUpSessionPageAsync(page, adsPowerUserId, cancellationToken).ConfigureAwait(false);
         }
@@ -252,18 +228,34 @@ public sealed partial class AdsPowerAvitoAutomationService
         var preSwitchState = await ProbePageStateAsync(page, cancellationToken).ConfigureAwait(false);
         if (preSwitchState?.HasLoginForm == true || preSwitchState?.PageKind == AvitoPageKind.Login)
         {
-            _ = GlobalLogger.Instance.LogAsync(
-                $"AdsPower profile-switch (session): login page detected for subProfile {subProfileId}, skipping.",
-                DeskLinkAuditLogLevel.Warning,
-                memberName: nameof(SwitchSubProfileOnPageAsync),
-                properties: new Dictionary<string, object?>
-                {
-                    ["step"] = "login_page",
-                    ["avito.subProfileId"] = subProfileId,
-                    ["page.url"] = page.Url,
-                    ["pageState"] = preSwitchState.DescribeForDiagnostics()
-                });
-            return false;
+            if (await TryRecoverAvitoLoginAsync(page, cancellationToken).ConfigureAwait(false))
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"AdsPower profile-switch (session): auto-login recovered before switch for subProfile {subProfileId}.",
+                    DeskLinkAuditLogLevel.Info,
+                    memberName: nameof(SwitchSubProfileOnPageAsync),
+                    properties: new Dictionary<string, object?>
+                    {
+                        ["step"] = "login_recovered",
+                        ["avito.subProfileId"] = subProfileId,
+                        ["page.url"] = page.Url
+                    });
+            }
+            else
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"AdsPower profile-switch (session): login page detected for subProfile {subProfileId}, skipping.",
+                    DeskLinkAuditLogLevel.Warning,
+                    memberName: nameof(SwitchSubProfileOnPageAsync),
+                    properties: new Dictionary<string, object?>
+                    {
+                        ["step"] = "login_page",
+                        ["avito.subProfileId"] = subProfileId,
+                        ["page.url"] = page.Url,
+                        ["pageState"] = preSwitchState.DescribeForDiagnostics()
+                    });
+                return false;
+            }
         }
 
         if (preSwitchState?.HasCaptcha == true || preSwitchState?.PageKind == AvitoPageKind.Captcha)

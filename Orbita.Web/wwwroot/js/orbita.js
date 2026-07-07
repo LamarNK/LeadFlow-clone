@@ -885,10 +885,10 @@
         var errorsEl = document.querySelector('[data-nav-badge="errors"]');
         var responsesEl = document.querySelector('[data-nav-badge="responses"]');
         setBadge(errorsEl, payload.errorsToday);
-        setBadge(responsesEl, payload.actionRequired);
+        setBadge(responsesEl, payload.sentToCrm, ' в Битрикс24 за сегодня');
     }
 
-    function setBadge(el, value) {
+    function setBadge(el, value, suffix) {
         if (!el) return;
         var count = parseInt(value, 10) || 0;
         if (count <= 0) {
@@ -898,7 +898,7 @@
         }
         el.removeAttribute('hidden');
         el.textContent = count > 99 ? '99+' : String(count);
-        el.setAttribute('aria-label', count + ' новых');
+        el.setAttribute('aria-label', count + (suffix || ' новых'));
     }
 
     function fetchNavBadges() {

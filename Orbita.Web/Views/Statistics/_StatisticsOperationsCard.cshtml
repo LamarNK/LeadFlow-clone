@@ -1,0 +1,85 @@
+@model StatisticsViewModel
+@{
+    var periodDays = (ViewData["PeriodDays"] as int?) ?? 1;
+    var report = Model.MonitoringCycles;
+    var showAccountSearch = report.IsDetailed && report.AccountReports.Count > 0;
+}
+<div class="card card--statistics-operations">
+    <div class="card-header">
+        <h2>Воркеры и мониторинг</h2>
+        <span class="card-header-meta">
+            @Model.Summary.WorkersOnline / @Model.Summary.WorkersTotal онлайн
+            @if (report.HasData)
+            {
+                <span>· <span data-statistics-cycle-leads>@report.TotalLeads</span> в Битрикс24</span>
+            }
+        </span>
+        <a class="card-header-link" href="@Url.Action("Index", "Workers")">Все воркеры</a>
+    </div>
+    <div class="card-body statistics-operations-body">
+        @if (showAccountSearch)
+        {
+            <div class="monitoring-report-toolbar monitoring-report-toolbar--card-top">
+                <label class="monitoring-report-search">
+                    <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                    <input type="search"
+                           class="monitoring-report-search-input"
+                           data-monitoring-search
+                           placeholder="Поиск аккаунта…"
+                           autocomplete="off"
+                           spellcheck="false" />
+                </label>
+                <span class="monitoring-report-search-meta cell-muted" data-monitoring-search-meta>
+                    @report.AccountReports.Count аккаунт(ов)
+                </span>
+            </div>
+        }
+
+        <section class="statistics-operations-section statistics-operations-section--workers">
+            <div class="statistics-operations-section-head">
+                <h3 class="statistics-operations-section-title">Воркеры за период</h3>
+            </div>
+            <div class="statistics-workers-table-wrap">
+                <partial name="_StatisticsWorkersTable" model="Model" />
+            </div>
+        </section>
+
+        @if (showAccountSearch)
+        {
+            <section class="statistics-operations-section statistics-operations-section--accounts">
+                <div class="statistics-operations-section-head">
+                    <h3 class="statistics-operations-section-title">Аккаунты за период</h3>
+                    <span class="statistics-operations-section-meta cell-muted">
+                        @report.AccountReports.Count акк.
+                    </span>
+                </div>
+                <partial name="_MonitoringCycleAccounts" model="report" />
+            </section>
+        }
+
+        <section class="statistics-operations-section statistics-operations-section--monitoring card-body-table"
+                 data-statistics-cycles>
+            <div class="statistics-operations-section-head">
+                <h3 class="statistics-operations-section-title">Мониторинг циклов</h3>
+                @if (report.HasData)
+                {
+                    <span class="statistics-operations-section-meta cell-muted">
+                        @if (periodDays == 1)
+                        {
+                            <span>@report.AccountReports.Count акк.</span>
+                        }
+                        else
+                        {
+                            <span>@periodDays дн.</span>
+                        }
+                    </span>
+                }
+            </div>
+            <div class="statistics-operations-section-body">
+                <partial name="_MonitoringCycleTotals"
+                         model="report"
+                         view-data="@(new ViewDataDictionary(ViewData) { ["PeriodDays"] = periodDays })" />
+            </div>
+        </section>
+    </div>
+</div>

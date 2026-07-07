@@ -9,7 +9,7 @@ namespace Orbita.Tests;
 public sealed class StatisticsIndexBuilderTests
 {
     [Fact]
-    public void Build_MapsLowBalanceRows()
+    public void Build_MapsAllBalanceRowsWithSubProfiles()
     {
         var data = CreateData(lowBalanceCount: 2);
         var period = DashboardPeriod.Today;
@@ -17,19 +17,25 @@ public sealed class StatisticsIndexBuilderTests
 
         var model = BuildModel(data, period, office);
 
+        Assert.Equal(2, model.BalanceRows.Count);
         Assert.Single(model.BalanceRows, r => r.IsLowBalance);
+        var high = model.BalanceRows.Single(r => r.AccountName == "High");
+        Assert.Equal(2, high.SubProfiles.Count);
         Assert.Contains("9", model.Summary.TotalAdvanceText);
         Assert.Equal(1, model.Summary.WorkersOnline);
     }
 
     [Fact]
-    public void Build_OrdersBalanceRowsByAdvanceAscending()
+    public void Build_MapsSubProfileBalancesUnderAccounts()
     {
-        var data = CreateData(lowBalanceCount: 1);
+        var data = CreateData(lowBalanceCount: 0);
         var model = BuildModel(data, DashboardPeriod.Today, new FakeOfficeContext());
 
-        Assert.Equal(1000m, model.BalanceRows[0].Advance);
-        Assert.Equal(8000m, model.BalanceRows[^1].Advance);
+        var high = model.BalanceRows.Single(r => r.AccountName == "High");
+        Assert.Equal("Основной", high.SubProfiles[0].Name);
+        Assert.Equal($"{12000m.ToString("N0", CultureInfo.GetCultureInfo("ru-RU"))} ₽", high.SubProfiles[0].AdvanceText);
+        Assert.Equal("~ на 12 дней", high.SubProfiles[0].DurationText);
+        Assert.Equal("Доп.", high.SubProfiles[1].Name);
     }
 
     [Fact]
@@ -45,17 +51,48 @@ public sealed class StatisticsIndexBuilderTests
     }
 
     [Fact]
-    public void Build_MapsSubProfileBalancesUnderAccounts()
+    public void Build_ParsesMonitoringNotStartedRows()
     {
-        var data = CreateData(lowBalanceCount: 0);
+        var monitoring = new MonitoringCycleReportDto(
+            false,
+            0,
+            1,
+            2,
+            ["  Авито 34: 2 не запущены — 1/10 (A), 2/10 (B)"],
+            [],
+            []);
+
+        var data = CreateData(lowBalanceCount: 0, monitoringCycles: monitoring);
         var model = BuildModel(data, DashboardPeriod.Today, new FakeOfficeContext());
 
-        var high = model.BalanceRows.Single(r => r.AccountName == "High");
-        Assert.Equal(2, high.SubProfiles.Count);
-        Assert.Equal("Основной", high.SubProfiles[0].Name);
-        Assert.Equal($"{12000m.ToString("N0", CultureInfo.GetCultureInfo("ru-RU"))} ₽", high.SubProfiles[0].AdvanceText);
-        Assert.Equal("~ на 12 дней", high.SubProfiles[0].DurationText);
-        Assert.Equal("Доп.", high.SubProfiles[1].Name);
+        Assert.Single(model.MonitoringCycles.NotStartedRows);
+        Assert.Equal("Авито 34", model.MonitoringCycles.NotStartedRows[0].AccountName);
+        Assert.Equal(2, model.MonitoringCycles.NotStartedRows[0].NotStartedCount);
+        Assert.Contains("1/10 (A)", model.MonitoringCycles.NotStartedRows[0].PositionsText);
+        Assert.True(model.MonitoringCycles.HasData);
+    }
+
+    [Fact]
+    public void Build_FiltersMonitoringLeadSummariesToPositiveTotals()
+    {
+        var monitoring = new MonitoringCycleReportDto(
+            true,
+            5,
+            0,
+            0,
+            [],
+            [
+                new MonitoringCycleLeadSummaryDto("With leads", 3, ["1/10 (A) = 3"]),
+                new MonitoringCycleLeadSummaryDto("No leads", 0, [])
+            ],
+            []);
+
+        var data = CreateData(lowBalanceCount: 0, monitoringCycles: monitoring);
+        var model = BuildModel(data, DashboardPeriod.Today, new FakeOfficeContext());
+
+        Assert.Single(model.MonitoringCycles.LeadSummaries);
+        Assert.Equal("With leads", model.MonitoringCycles.LeadSummaries[0].AccountName);
+        Assert.Equal(1, model.MonitoringCycles.ZeroLeadAccountCount);
     }
 
     private static StatisticsViewModel BuildModel(
@@ -71,7 +108,9 @@ public sealed class StatisticsIndexBuilderTests
             [],
             []);
 
-    private static OfficeStatisticsDto CreateData(int lowBalanceCount)
+    private static OfficeStatisticsDto CreateData(
+        int lowBalanceCount,
+        MonitoringCycleReportDto? monitoringCycles = null)
     {
         var accounts = new List<AccountBalanceStatDto>
         {
@@ -98,6 +137,7 @@ public sealed class StatisticsIndexBuilderTests
             new ResponsesPeriodSection(10, 8, 2, 7, 1, 0, 1, 6, 12),
             [new DailyResponseBucketDto(DateTime.Today, 10, 7, 1, 0, 2, 1)],
             new HrInsightsDto([], [], [], [], "н/д", "0%"),
+            monitoringCycles ?? new MonitoringCycleReportDto(false, 0, 0, 0, [], [], []),
             DateTime.UtcNow);
     }
 

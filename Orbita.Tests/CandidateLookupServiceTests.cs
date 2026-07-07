@@ -60,6 +60,56 @@ public sealed class CandidateLookupServiceTests
     }
 
     [Fact]
+    public async Task LookupAsync_BatchPhones_IgnoresResponsesOlderThanSixMonths()
+    {
+        await using var db = CreateDb();
+        SeedWorker(db);
+        db.CandidateResponses.Add(NewResponse(
+            "79006666666",
+            "sub-a",
+            createdAt: DateTime.UtcNow.AddMonths(-7)));
+        await db.SaveChangesAsync();
+
+        var sut = new CandidateLookupService(db);
+        var result = await sut.LookupAsync(
+            WorkerId,
+            new WorkerCandidateLookupRequest(
+                AccountId,
+                "GlobalAcrossAllAccounts",
+                [],
+                ["79006666666"]));
+
+        Assert.NotNull(result);
+        Assert.Empty(result!.ExistingPhones);
+    }
+
+    [Fact]
+    public async Task LookupAsync_SourceResponseIds_IgnoresResponsesOlderThanSixMonths()
+    {
+        await using var db = CreateDb();
+        SeedWorker(db);
+        const string sourceResponseId = "avito-response-old";
+        db.CandidateResponses.Add(NewResponse(
+            "79007777777",
+            "sub-a",
+            sourceResponseId: sourceResponseId,
+            createdAt: DateTime.UtcNow.AddMonths(-7)));
+        await db.SaveChangesAsync();
+
+        var sut = new CandidateLookupService(db);
+        var result = await sut.LookupAsync(
+            WorkerId,
+            new WorkerCandidateLookupRequest(
+                AccountId,
+                "PerAvitoAccount",
+                [sourceResponseId],
+                []));
+
+        Assert.NotNull(result);
+        Assert.Empty(result!.ExistingSourceResponseIds);
+    }
+
+    [Fact]
     public async Task LookupAsync_BatchPhones_IgnoresOtherOffices()
     {
         await using var db = CreateDb();
@@ -116,7 +166,9 @@ public sealed class CandidateLookupServiceTests
         string phone,
         string subProfileId,
         Guid? accountId = null,
-        Guid? officeId = null) =>
+        Guid? officeId = null,
+        string? sourceResponseId = null,
+        DateTime? createdAt = null) =>
         new()
         {
             Id = Guid.NewGuid(),
@@ -125,12 +177,12 @@ public sealed class CandidateLookupServiceTests
             AccountId = accountId ?? AccountId,
             AccountName = "acc",
             Source = "Avito",
-            SourceResponseId = Guid.NewGuid().ToString("N"),
+            SourceResponseId = sourceResponseId ?? Guid.NewGuid().ToString("N"),
             FullName = "User",
             PhoneRaw = phone,
             PhoneNormalized = phone,
             AvitoSubProfileId = subProfileId,
             Status = ResponseStatuses.Sent,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = createdAt ?? DateTime.UtcNow
         };
 }

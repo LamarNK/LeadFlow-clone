@@ -61,6 +61,15 @@ internal static class KpiCardLinks
         _ => null
     };
 
+    public static string AccountTodayResponses(Guid workerId, Guid accountId) =>
+        Responses(DateTime.Today, DateTime.Today, workerId: workerId, accountId: accountId)!;
+
+    public static string AccountTodayUnique(Guid workerId, Guid accountId) =>
+        Responses(DateTime.Today, DateTime.Today, status: "unique", workerId: workerId, accountId: accountId)!;
+
+    public static string AccountErrors(Guid workerId, Guid accountId) =>
+        $"/Errors?workerId={workerId}&accountId={accountId}";
+
     public static string? WorkerDetailsCard(string key, Guid workerId) => key switch
     {
         "accounts" => "#worker-accounts",
@@ -109,6 +118,7 @@ internal static class KpiCardLinks
         "sent" when from is not null && to is not null => Responses(from.Value, to.Value, status: "sent", workerId: filters?.WorkerIds.FirstOrDefault(), accountId: filters?.AccountIds.FirstOrDefault()),
         "duplicates" when from is not null && to is not null => Responses(from.Value, to.Value, status: "duplicate", workerId: filters?.WorkerIds.FirstOrDefault(), accountId: filters?.AccountIds.FirstOrDefault()),
         "errors" when from is not null && to is not null => "/Errors",
+        "unique" when from is not null && to is not null => Responses(from.Value, to.Value, status: "unique", workerId: filters?.WorkerIds.FirstOrDefault(), accountId: filters?.AccountIds.FirstOrDefault()),
         "unique_authors" when from is not null && to is not null => Responses(from.Value, to.Value, workerId: filters?.WorkerIds.FirstOrDefault(), accountId: filters?.AccountIds.FirstOrDefault()),
         "workers" => "/Workers?status=online",
         _ => "/Statistics"

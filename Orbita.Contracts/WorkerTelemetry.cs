@@ -98,7 +98,8 @@ public sealed record WorkerAccountDto(
     DateTime? SubProfilesRefreshRequestedAtUtc = null,
     int TodayResponses = 0,
     int TodayDuplicates = 0,
-    int TodayEventErrors = 0);
+    int TodayEventErrors = 0,
+    DateTime? LastActivityUtc = null);
 
 public sealed record WorkerBalanceDto(
     Guid AccountId,

@@ -201,9 +201,12 @@
             '<td data-label="Статус">' + statusHtml + '</td>' +
             '<td data-label="Сейчас">' + processingHtml + '</td>' +
             '<td class="cell-num cell-balance" data-label="Баланс">' + shared.renderAccountBalance(account) + '</td>' +
-            '<td class="cell-num" data-label="Откликов">' + (account.responses || 0) + '</td>' +
-            '<td class="cell-num" data-label="Уникальных">' + (account.uniqueResponses || 0) + '</td>' +
-            '<td class="cell-num" data-label="Ошибок">' + (account.errors || 0) + '</td>' +
+            (function () {
+                var metrics = shared.resolveAccountMetricLinks(account);
+                return '<td class="cell-num" data-label="Откликов">' + shared.renderMetricLink(account.responses, metrics.responses, 'Отклики за сегодня') + '</td>' +
+                    '<td class="cell-num" data-label="Уникальных">' + shared.renderMetricLink(account.uniqueResponses, metrics.unique, 'Уникальные отклики за сегодня') + '</td>' +
+                    '<td class="cell-num" data-label="Ошибок">' + shared.renderMetricLink(account.errors, metrics.errors, 'Ошибки и предупреждения') + '</td>';
+            })() +
             '<td data-label="Последняя активность">' + activityHtml + '</td>' +
             '<td class="data-table-menu" data-label="">' + renderAccountMenu(account, accountUrl, workerUrl) + '</td></tr>';
     }

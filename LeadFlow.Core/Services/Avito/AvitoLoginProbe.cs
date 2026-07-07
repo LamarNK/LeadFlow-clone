@@ -1,4 +1,5 @@
 using System.Text.Json;
+using PuppeteerSharp;
 
 namespace LeadFlow.Core.Services.Avito;
 
@@ -18,8 +19,20 @@ public static class AvitoLoginProbe
 
     public static async Task ThrowIfLoginRequiredAsync(
         Func<string, CancellationToken, Task<string>> executeScript,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IPage? pageForRecovery = null)
     {
+        if (!await IsLoginRequiredAsync(executeScript, cancellationToken).ConfigureAwait(false))
+        {
+            return;
+        }
+
+        if (pageForRecovery is not null
+            && await TryRecoverLoginAsync(pageForRecovery, cancellationToken).ConfigureAwait(false))
+        {
+            return;
+        }
+
         var detection = await TryDetectAsync(executeScript, cancellationToken).ConfigureAwait(false);
         if (detection is not { HasLogin: true })
         {
@@ -27,6 +40,20 @@ public static class AvitoLoginProbe
         }
 
         throw new AvitoLoginRequiredException(detection.Url, detection.Title);
+    }
+
+    private static async Task<bool> IsLoginRequiredAsync(
+        Func<string, CancellationToken, Task<string>> executeScript,
+        CancellationToken cancellationToken)
+    {
+        var detection = await TryDetectAsync(executeScript, cancellationToken).ConfigureAwait(false);
+        return detection is { HasLogin: true };
+    }
+
+    private static async Task<bool> TryRecoverLoginAsync(IPage page, CancellationToken cancellationToken)
+    {
+        var recovery = await AvitoAutoLoginRecovery.TryRecoverAsync(page, cancellationToken).ConfigureAwait(false);
+        return recovery.Recovered;
     }
 
     public static Detection? TryParse(string? raw)

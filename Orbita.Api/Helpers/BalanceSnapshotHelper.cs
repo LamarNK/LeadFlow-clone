@@ -19,9 +19,15 @@ internal static class BalanceSnapshotHelper
             return true;
         }
 
-        if (balance.SubProfiles.Any(static s => s.Balance.HasValue || s.WalletBalance.HasValue))
+        if (balance.SubProfiles.Any(static s => HasMeaningfulBalanceSubProfile(s)))
         {
             return true;
+        }
+
+        if (balance.SubProfiles.Count > 0
+            && balance.SubProfiles.All(static s => IsPlaceholderBalanceSubProfile(s)))
+        {
+            return false;
         }
 
         if (account?.SubProfiles?.Any(static s => s.Balance.HasValue || s.WalletBalance.HasValue) == true)
@@ -97,12 +103,17 @@ internal static class BalanceSnapshotHelper
                 result.Add(fromAccount with { AccountName = item.AccountName });
                 continue;
             }
-
-            result.Add(item);
         }
 
         return result;
     }
+
+    private static bool HasMeaningfulBalanceSubProfile(SubProfileBalanceDto item) =>
+        item.Balance.HasValue || item.WalletBalance.HasValue;
+
+    private static bool IsPlaceholderBalanceSubProfile(SubProfileBalanceDto item) =>
+        !HasMeaningfulBalanceSubProfile(item)
+        && SubProfileSnapshotHelper.IsPlaceholderToken(item.SubProfileName);
 
     public static decimal ResolveTotalBalance(
         decimal incomingTotal,
@@ -115,35 +126,6 @@ internal static class BalanceSnapshotHelper
 
     public static bool ShouldPersistSubProfiles(
         IReadOnlyList<WorkerSubProfileDto> incoming,
-        string? existingJson)
-    {
-        if (incoming.Count == 0)
-        {
-            return false;
-        }
-
-        if (incoming.Any(static p => !string.IsNullOrWhiteSpace(p.Id) || !string.IsNullOrWhiteSpace(p.Name)))
-        {
-            if (incoming.All(static p => !p.Balance.HasValue && !p.WalletBalance.HasValue))
-            {
-                var existing = SubProfileDeserializer.Deserialize(existingJson);
-                if (existing?.Any(static p => p.Balance.HasValue || p.WalletBalance.HasValue) == true)
-                {
-                    return false;
-                }
-            }
-
-            return true;
-        }
-
-        if (string.IsNullOrWhiteSpace(existingJson) || existingJson == "[]")
-        {
-            return true;
-        }
-
-        var stored = SubProfileDeserializer.Deserialize(existingJson);
-        return stored is null
-            || stored.Count == 0
-            || stored.All(static p => string.IsNullOrWhiteSpace(p.Id) && string.IsNullOrWhiteSpace(p.Name));
-    }
+        string? existingJson) =>
+        SubProfileSnapshotHelper.ShouldPersistSubProfiles(incoming, existingJson);
 }

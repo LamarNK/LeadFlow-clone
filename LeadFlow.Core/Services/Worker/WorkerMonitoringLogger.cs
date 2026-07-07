@@ -13,9 +13,34 @@ internal static class WorkerMonitoringLogger
     public static void CycleParallelism(int parallelism) =>
         LogInfo($"Цикл: параллелизм — до {parallelism} аккаунт(ов) одновременно.");
 
-    public static void CycleFinished(double seconds, int newResponses, int accountsPolled, double nextDelayMinutes) =>
+    public static void CycleFinished(
+        double seconds,
+        int newResponses,
+        int accountsPolled,
+        int accountsTotal,
+        double nextDelayMinutes) =>
         LogInfo(
-            $"Цикл завершён за {seconds:F0} с: новых откликов {newResponses}, опрошено аккаунтов {accountsPolled}, пауза ~{nextDelayMinutes:F0} мин.");
+            $"Цикл завершён за {seconds:F0} с: новых откликов {newResponses}, опрошено аккаунтов {accountsPolled} из {accountsTotal}, пауза ~{nextDelayMinutes:F0} мин.");
+
+    public static void CycleNotPolledSummary(
+        int accountsTotal,
+        IReadOnlyList<(string DisplayName, string Reason)> notPolled)
+    {
+        if (notPolled.Count == 0)
+        {
+            return;
+        }
+
+        var grouped = notPolled
+            .GroupBy(static item => item.Reason, StringComparer.Ordinal)
+            .Select(static group =>
+            {
+                var names = string.Join(", ", group.Select(static item => $"«{item.DisplayName}»"));
+                return $"{names} — {group.Key}";
+            });
+        LogWarning(
+            $"Не опрошено {notPolled.Count} из {accountsTotal}: {string.Join("; ", grouped)}.");
+    }
 
     public static void CycleSkippedNoAccounts() =>
         LogInfo("Цикл пропущен: нет включённых аккаунтов AdsPower.");

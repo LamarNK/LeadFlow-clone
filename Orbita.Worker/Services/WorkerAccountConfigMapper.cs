@@ -35,7 +35,9 @@ internal static class WorkerAccountConfigMapper
         {
             try
             {
-                var profiles = System.Text.Json.JsonSerializer.Deserialize<List<AvitoSubProfile>>(dto.SubProfilesJson);
+                var profiles = System.Text.Json.JsonSerializer.Deserialize<List<AvitoSubProfile>>(
+                    dto.SubProfilesJson,
+                    WorkerSubProfileJsonOptions.Deserialize);
                 if (profiles is { Count: > 0 })
                 {
                     account.SetSubProfiles(profiles);

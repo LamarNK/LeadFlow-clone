@@ -145,6 +145,45 @@ public sealed class AvitoResponseSourceTests
     }
 
     [Fact]
+    public async Task ParseCandidatesDetailedFromRawAsync_SuccessfulParse_ClearsStaleSubProfileIssue()
+    {
+        var db = new EfInMemoryDatabase();
+        var repo = new AppRepository(db.Factory);
+        var account = NewAccount();
+        account.Status = AvitoAccountStatus.RequiresManualAction;
+        var sub = new AvitoSubProfile { Id = "sp-1", Name = "Служба 3" };
+        account.SetSubProfiles([sub]);
+        AccountIssueTracker.ApplySubProfileIssue(
+            account,
+            sub,
+            AvitoSubProfileIssueKind.Captcha,
+            "нужна проверка.");
+
+        var sut = new AvitoResponseSource(repo, new FakeAdsPowerAvitoAutomationService(), new PhoneNormalizer());
+        const string raw = """
+            {
+              "hasCaptcha": false,
+              "hasLogin": false,
+              "candidates": [
+                {"fullName":"Иван","phone":"+79001112233","sourceResponseId":"a"}
+              ]
+            }
+            """;
+
+        await sut.ParseCandidatesDetailedFromRawAsync(
+            account,
+            NewSettings(),
+            raw,
+            CancellationToken.None,
+            sub);
+
+        Assert.Equal(AvitoAccountStatus.Authorized, account.Status);
+        Assert.False(account.HasSubProfileIssues);
+        Assert.Equal(string.Empty, account.LastErrorMessage);
+        Assert.False(sub.HasIssue);
+    }
+
+    [Fact]
     public async Task ParseCandidatesDetailedFromRawAsync_ReturnsSummaryWithPageVariant()
     {
         var db = new EfInMemoryDatabase();

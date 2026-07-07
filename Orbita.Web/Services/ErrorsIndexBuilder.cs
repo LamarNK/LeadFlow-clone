@@ -88,9 +88,8 @@ internal static class ErrorsIndexBuilder
 
     public static ErrorRowViewModel MapEvent(WorkerEventListItem item, string? accountName = null)
     {
-        var text = $"{item.Message} {item.Details}";
         var errorType = InferErrorType(item.Message, item.Details);
-        var severity = InferSeverity(item.Level, text);
+        var severity = WorkerEventClassifier.InferSeverity(item.Level, item.Message, item.Details);
         var occurredAt = item.CreatedAtUtc;
 
         return new ErrorRowViewModel
@@ -307,20 +306,8 @@ internal static class ErrorsIndexBuilder
         _ => "Неизвестная ошибка"
     };
 
-    public static string InferSeverity(string level, string text)
-    {
-        var lower = text.ToLowerInvariant();
-        if (lower.Contains("postgres") || lower.Contains("критич") || lower.Contains("недоступ"))
-            return "critical";
-        if (level.Equals("Error", StringComparison.OrdinalIgnoreCase)
-            && (lower.Contains("bitrix") || lower.Contains("авториз") || lower.Contains("блок")))
-            return "high";
-        if (level.Equals("Error", StringComparison.OrdinalIgnoreCase))
-            return "medium";
-        if (level.Equals("Warning", StringComparison.OrdinalIgnoreCase))
-            return "medium";
-        return "low";
-    }
+    public static string InferSeverity(string level, string message, string? details = null) =>
+        WorkerEventClassifier.InferSeverity(level, message, details);
 
     public static string SeverityLabel(string severity) => severity switch
     {

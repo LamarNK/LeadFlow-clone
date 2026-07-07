@@ -1,0 +1,26 @@
+@model MonitoringCycleReportViewModel
+@{
+    var periodDays = (ViewData["PeriodDays"] as int?) ?? 1;
+    var showAccounts = Model.IsDetailed && Model.AccountReports.Count > 0;
+}
+@if (showAccounts)
+{
+    <div class="monitoring-report-toolbar monitoring-report-toolbar--card-top">
+        <label class="monitoring-report-search">
+            <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+            <input type="search"
+                   class="monitoring-report-search-input"
+                   data-monitoring-search
+                   placeholder="Поиск аккаунта…"
+                   autocomplete="off"
+                   spellcheck="false" />
+        </label>
+        <span class="monitoring-report-search-meta cell-muted" data-monitoring-search-meta>
+            @Model.AccountReports.Count аккаунт(ов)
+        </span>
+    </div>
+    <partial name="_MonitoringCycleAccounts" model="Model" />
+}
+<partial name="_MonitoringCycleTotals"
+         model="Model"
+         view-data="@(new ViewDataDictionary(ViewData) { ["PeriodDays"] = periodDays })" />

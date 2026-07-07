@@ -109,7 +109,7 @@ public sealed class WorkerMonitoringService(
                     activityReporter.ReportCycle(accounts.Count);
 
                     var cycleSw = Stopwatch.StartNew();
-                    var (newResponsesThisCycle, accountsPolled, hadUndischargedBacklog) =
+                    var (newResponsesThisCycle, accountsPolled, hadUndischargedBacklog, notPolled) =
                         await ProcessAccountsInCycleAsync(accounts, cancellationToken).ConfigureAwait(false);
 
                     cycleSw.Stop();
@@ -138,7 +138,9 @@ public sealed class WorkerMonitoringService(
                         cycleSw.Elapsed.TotalSeconds,
                         newResponsesThisCycle,
                         accountsPolled,
+                        accounts.Count,
                         delay.TotalMinutes);
+                    WorkerMonitoringLogger.CycleNotPolledSummary(accounts.Count, notPolled);
 
                     if (pendingUpdateCoordinator.HasPendingInstall)
                     {
@@ -225,16 +227,18 @@ public sealed class WorkerMonitoringService(
     /// Обход аккаунтов с динамическим параллелизмом: лимит перечитывается из конфига перед стартом каждого нового аккаунта.
     /// Уже запущенные браузеры не обрываются при снижении лимита в панели.
     /// </summary>
-    private async Task<(int NewResponses, int AccountsPolled, bool HadBacklog)> ProcessAccountsInCycleAsync(
+    private async Task<(int NewResponses, int AccountsPolled, bool HadBacklog, List<(string DisplayName, string Reason)> NotPolled)>
+        ProcessAccountsInCycleAsync(
         IReadOnlyList<AvitoAccount> accounts,
         CancellationToken cancellationToken)
     {
         var newResponsesThisCycle = 0;
         var accountsPolled = 0;
         var hadUndischargedBacklog = false;
+        var notPolled = new List<(string DisplayName, string Reason)>();
         var nextIndex = 0;
         var launchSlot = 0;
-        var running = new List<Task<(int NewCount, bool Polled, bool Backlog)>>();
+        var running = new List<AccountCycleJob>();
         var lastLoggedParallelism = -1;
         var parallelism = 1;
 
@@ -259,7 +263,9 @@ public sealed class WorkerMonitoringService(
                 {
                     var account = accounts[nextIndex++];
                     var slot = launchSlot++;
-                    running.Add(RunAccountInCycleSlotAsync(account, settings, slot, cancellationToken));
+                    running.Add(new AccountCycleJob(
+                        account,
+                        RunAccountInCycleSlotAsync(account, settings, slot, cancellationToken)));
                 }
             }
 
@@ -269,16 +275,21 @@ public sealed class WorkerMonitoringService(
                 break;
             }
 
-            var completed = await Task.WhenAny(running).ConfigureAwait(false);
-            running.Remove(completed);
+            var completed = await Task.WhenAny(running.Select(static job => job.Task)).ConfigureAwait(false);
+            var job = running.First(j => j.Task == completed);
+            running.Remove(job);
             try
             {
-                var (newCount, polled, backlog) = await completed.ConfigureAwait(false);
-                if (polled)
+                var outcome = await job.Task.ConfigureAwait(false);
+                if (outcome.PolledSource)
                 {
                     accountsPolled++;
-                    newResponsesThisCycle += newCount;
-                    hadUndischargedBacklog |= backlog;
+                    newResponsesThisCycle += outcome.NewResponses;
+                    hadUndischargedBacklog |= outcome.HasUndischargedBacklog;
+                }
+                else if (!string.IsNullOrWhiteSpace(outcome.NotPolledReason))
+                {
+                    notPolled.Add((job.Account.DisplayName, outcome.NotPolledReason));
                 }
             }
             catch (OperationCanceledException) when (shuttingDown)
@@ -296,10 +307,18 @@ public sealed class WorkerMonitoringService(
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        return (newResponsesThisCycle, accountsPolled, hadUndischargedBacklog);
+        return (newResponsesThisCycle, accountsPolled, hadUndischargedBacklog, notPolled);
     }
 
-    private async Task<(int NewCount, bool Polled, bool Backlog)> RunAccountInCycleSlotAsync(
+    private sealed record AccountCycleJob(AvitoAccount Account, Task<AccountCycleOutcome> Task);
+
+    private sealed record AccountCycleOutcome(
+        int NewResponses,
+        bool PolledSource,
+        bool HasUndischargedBacklog,
+        string? NotPolledReason = null);
+
+    private async Task<AccountCycleOutcome> RunAccountInCycleSlotAsync(
         AvitoAccount account,
         AppSettings settings,
         int launchSlot,
@@ -324,14 +343,14 @@ public sealed class WorkerMonitoringService(
         }
     }
 
-    private async Task<(int NewResponsesDetected, bool PolledSource, bool HasUndischargedBacklog)> ProcessAccountAsync(
+    private async Task<AccountCycleOutcome> ProcessAccountAsync(
         AvitoAccount account,
         AppSettings settings,
         CancellationToken cancellationToken)
     {
         if (!IsAdsPowerAccount(account))
         {
-            return (0, false, false);
+            return new AccountCycleOutcome(0, false, false, "не AdsPower профиль");
         }
 
         var accountSw = Stopwatch.StartNew();
@@ -372,7 +391,7 @@ public sealed class WorkerMonitoringService(
                 Message = "Аккаунт пропущен",
                 Details = skipReason
             }, cancellationToken).ConfigureAwait(false);
-            return (0, false, false);
+            return new AccountCycleOutcome(0, false, false, skipReason);
         }
 
         var enabledSubProfiles = SubProfileEnabledFilter
@@ -406,37 +425,40 @@ public sealed class WorkerMonitoringService(
                 detectedTotal,
                 accountSw.Elapsed.TotalSeconds,
                 subProfilesProcessed);
-            return (detectedTotal, true, backlog);
+            return new AccountCycleOutcome(detectedTotal, true, backlog);
         }
         catch (AvitoCaptchaDetectedException captchaEx)
         {
             await HandleCaptchaForAccountAsync(account, captchaEx, cancellationToken).ConfigureAwait(false);
-            return (0, true, false);
+            return new AccountCycleOutcome(0, true, false);
         }
         catch (AvitoLoginRequiredException loginEx)
         {
             await HandleLoginRequiredForAccountAsync(account, loginEx, cancellationToken).ConfigureAwait(false);
-            return (0, true, false);
+            return new AccountCycleOutcome(0, true, false);
         }
         catch (AdsPowerDailyOpenLimitExceededException limitEx)
         {
             await HandleAdsPowerDailyOpenLimitForAccountAsync(account, limitEx, cancellationToken).ConfigureAwait(false);
-            return (0, true, false);
+            return new AccountCycleOutcome(0, true, false);
         }
         catch (AdsPowerRateLimitExceededException rateEx)
         {
             await HandleAdsPowerRateLimitForAccountAsync(account, rateEx, cancellationToken).ConfigureAwait(false);
-            return (0, false, false);
+            var reason = string.IsNullOrWhiteSpace(account.LastErrorMessage)
+                ? rateEx.ApiMessage ?? rateEx.Message
+                : account.LastErrorMessage;
+            return new AccountCycleOutcome(0, false, false, $"AdsPower rate limit: {reason}");
         }
         catch (AdsPowerProfileInUseException profileInUseEx)
         {
             await HandleAdsPowerProfileInUseForAccountAsync(account, profileInUseEx, cancellationToken).ConfigureAwait(false);
-            return (0, true, false);
+            return new AccountCycleOutcome(0, true, false);
         }
         catch (SessionDiagnosticException diagnosticEx)
         {
             await HandleSessionDiagnosticForAccountAsync(account, diagnosticEx, cancellationToken).ConfigureAwait(false);
-            return (0, true, false);
+            return new AccountCycleOutcome(0, true, false);
         }
         catch (OperationCanceledException)
         {
@@ -454,7 +476,7 @@ public sealed class WorkerMonitoringService(
                 $"Ошибка аккаунта {account.DisplayName}: {ex.Message}",
                 ex.Message,
                 cancellationToken).ConfigureAwait(false);
-            return (0, true, false);
+            return new AccountCycleOutcome(0, true, false);
         }
     }
 
@@ -581,7 +603,14 @@ public sealed class WorkerMonitoringService(
                     .ConfigureAwait(false);
                 WorkerMonitoringLogger.ExtractionSummary(account, null, singleParse.Summary);
                 var singleBatch = singleParse.Candidates;
-                _ = await ProcessBatchInlineAsync(singleBatch).ConfigureAwait(false);
+                var singlePublishResult = await ProcessBatchInlineAsync(singleBatch).ConfigureAwait(false);
+                WorkerMonitoringLogger.ExtractionPublished(
+                    account,
+                    null,
+                    singlePublishResult.PublishedCount,
+                    singlePublishResult.ReadyCount,
+                    MonitoringTiming.MaxResponsesPerSubProfilePerCycle,
+                    singlePublishResult.DeferredByCycleLimit);
                 if (account.Status == AvitoAccountStatus.RequiresLogin
                     || account.Status == AvitoAccountStatus.RequiresManualAction)
                 {
@@ -605,7 +634,11 @@ public sealed class WorkerMonitoringService(
             var subProfiles = SubProfileEnabledFilter.GetEnabled(allSubProfiles, account.DisabledSubProfileIds);
             if (subProfiles.Count == 0)
             {
-                WorkerMonitoringLogger.AccountSkipped(account, "все субпрофили отключены в панели");
+                var skipReason = allSubProfiles.Count > 0
+                    && allSubProfiles.All(static sp => string.IsNullOrWhiteSpace(sp.Id))
+                    ? "субпрофили без id — не удалось обновить список из Avito"
+                    : "все субпрофили отключены в панели";
+                WorkerMonitoringLogger.AccountSkipped(account, skipReason);
                 activityReporter.ReportSkipped(
                     account.Id,
                     account.DisplayName,
@@ -710,7 +743,14 @@ public sealed class WorkerMonitoringService(
                         r.AvitoSubProfileName = sub.Name;
                     }
 
-                    _ = await ProcessBatchInlineAsync(batch).ConfigureAwait(false);
+                    var publishResult = await ProcessBatchInlineAsync(batch).ConfigureAwait(false);
+                    WorkerMonitoringLogger.ExtractionPublished(
+                        account,
+                        sub,
+                        publishResult.PublishedCount,
+                        publishResult.ReadyCount,
+                        MonitoringTiming.MaxResponsesPerSubProfilePerCycle,
+                        publishResult.DeferredByCycleLimit);
 
                     subProfilesProcessed++;
 
@@ -831,6 +871,11 @@ public sealed class WorkerMonitoringService(
             return true;
         }
 
+        if (SubProfileEnabledFilter.GetEnabled(account.SubProfiles, account.DisabledSubProfileIds).Count == 0)
+        {
+            return true;
+        }
+
         var last = account.SubProfilesRefreshedAt;
         if (last is null)
         {
@@ -849,7 +894,7 @@ public sealed class WorkerMonitoringService(
         try
         {
             var html = await session.CaptureProfileSwitchHtmlAsync(cancellationToken).ConfigureAwait(false);
-            var discovered = AvitoSubProfilesParser.Parse(html);
+            var discovered = AvitoSubProfileRules.FilterValid(AvitoSubProfilesParser.Parse(html));
             if (discovered.Count > 0)
             {
                 var merged = AvitoSubProfileMerger.Merge(account.SubProfiles, discovered);
@@ -866,12 +911,18 @@ public sealed class WorkerMonitoringService(
                 var detail = pageState?.ProfileSwitchModalOpen == true
                     ? $"модалка открыта, но парсер не нашёл карточки ({pageState.ProfileCardsCount} в DOM)."
                     : "парсер не обнаружил субпрофили в HTML модалки.";
-                await PublishAccountEventAsync(
+                var displayMessage = $"Субпрофили {account.DisplayName}: {detail}";
+                var issueKind = pageState?.ProfileSwitchModalOpen == true
+                    ? AvitoSubProfileIssueKind.SwitchFailed
+                    : AvitoSubProfileIssueKind.ParseFailed;
+                await PublishAccountDiagnosticFromSessionAsync(
                     account,
-                    "Warning",
-                    $"Субпрофили {account.DisplayName}: {detail}",
-                    detail,
-                    cancellationToken).ConfigureAwait(false);
+                    session,
+                    issueKind,
+                    displayMessage,
+                    cancellationToken,
+                    pageState,
+                    "обновление субпрофилей").ConfigureAwait(false);
             }
 
             await repository.SaveAccountAsync(account, cancellationToken).ConfigureAwait(false);
@@ -896,12 +947,16 @@ public sealed class WorkerMonitoringService(
             _ = GlobalLogger.Instance.LogAsync(
                 $"Worker {account.DisplayName}: sub-profiles refresh failed: {message}",
                 DeskLinkAuditLogLevel.Warning);
-            await PublishAccountEventAsync(
+            var displayMessage = $"Субпрофили {account.DisplayName}: {message}";
+            var issueKind = AvitoAutomationFailureFormatter.MapDiagnosticKind(pageState, ex);
+            await PublishAccountDiagnosticFromSessionAsync(
                 account,
-                "Warning",
-                $"Субпрофили {account.DisplayName}: {message}",
-                message,
-                cancellationToken).ConfigureAwait(false);
+                session,
+                issueKind,
+                displayMessage,
+                cancellationToken,
+                pageState,
+                "обновление субпрофилей").ConfigureAwait(false);
         }
     }
 
@@ -1064,7 +1119,7 @@ public sealed class WorkerMonitoringService(
     {
         account.Status = AvitoAccountStatus.RequiresLogin;
         var sub = FindSubProfile(account, loginEx.SubProfileId);
-        var detail = "требуется повторная авторизация в Avito — откройте браузер AdsPower и войдите (телефон/почта и пароль).";
+        var detail = "требуется повторная авторизация в Avito — автовход не удался, откройте браузер AdsPower и войдите (телефон/почта и пароль).";
         account.LastErrorMessage = sub is not null
             ? AccountIssueFormatting.FormatIssue(account, sub, AvitoSubProfileIssueKind.AuthRequired, detail)
             : detail;
@@ -1278,7 +1333,9 @@ public sealed class WorkerMonitoringService(
         IAdsPowerAccountSession session,
         string kind,
         string message,
-        CancellationToken ct)
+        CancellationToken ct,
+        AvitoPageState? pageState = null,
+        string? expectedStep = null)
     {
         var diagnostic = await BuildDiagnosticEventDetailsFromSessionAsync(
             account,
@@ -1287,7 +1344,9 @@ public sealed class WorkerMonitoringService(
             message,
             null,
             null,
-            ct).ConfigureAwait(false);
+            ct,
+            pageState,
+            expectedStep).ConfigureAwait(false);
         await PublishAccountEventAsync(account, "Warning", message, diagnostic.Details, ct).ConfigureAwait(false);
     }
 

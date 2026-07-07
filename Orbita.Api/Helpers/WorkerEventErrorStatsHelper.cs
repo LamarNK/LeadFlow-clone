@@ -21,7 +21,7 @@ internal static class WorkerEventErrorStatsHelper
 
         foreach (var (workerId, createdAtUtc) in events)
         {
-            var day = createdAtUtc.Date;
+            var day = LocalCalendarDateRange.ToLocalDateFromStoredUtc(createdAtUtc);
             daily[day] = daily.GetValueOrDefault(day) + 1;
 
             if (createdAtUtc < todayStartUtc)

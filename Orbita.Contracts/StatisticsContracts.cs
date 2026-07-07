@@ -7,6 +7,7 @@ public sealed record OfficeStatisticsDto(
     ResponsesPeriodSection Responses,
     IReadOnlyList<DailyResponseBucketDto> DailyTrend,
     HrInsightsDto HrInsights,
+    MonitoringCycleReportDto MonitoringCycles,
     DateTime AggregatedAtUtc);
 
 public sealed record BalanceStatisticsSection(
@@ -89,3 +90,38 @@ public sealed record AgeBucketDto(
     int Total,
     int Sent,
     string ConversionText);
+
+public sealed record MonitoringCycleErrorDto(
+    DateTime TimestampUtc,
+    string Detail);
+
+public sealed record MonitoringCycleSubProfileRowDto(
+    int Position,
+    int TotalPositions,
+    string Name,
+    IReadOnlyList<DateTime> CompletionTimesUtc,
+    IReadOnlyList<string> LeadsPerCycle,
+    IReadOnlyList<MonitoringCycleErrorDto> Errors);
+
+public sealed record MonitoringCycleAccountReportDto(
+    string AccountName,
+    DateTime DateUtc,
+    int SubProfileCount,
+    int CycleCount,
+    int TotalLeads,
+    IReadOnlyList<MonitoringCycleSubProfileRowDto> Rows,
+    IReadOnlyList<string> NotStartedPositions);
+
+public sealed record MonitoringCycleLeadSummaryDto(
+    string AccountName,
+    int TotalLeads,
+    IReadOnlyList<string> Breakdown);
+
+public sealed record MonitoringCycleReportDto(
+    bool IsDetailed,
+    int TotalLeads,
+    int AccountsWithNotStarted,
+    int NotStartedPositions,
+    IReadOnlyList<string> NotStartedSummaries,
+    IReadOnlyList<MonitoringCycleLeadSummaryDto> LeadSummaries,
+    IReadOnlyList<MonitoringCycleAccountReportDto> AccountReports);

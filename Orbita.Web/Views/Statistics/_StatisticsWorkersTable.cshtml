@@ -1,0 +1,58 @@
+@model StatisticsViewModel
+@if (Model.Workers.Count == 0)
+{
+    <partial name="_TableEmptyState" model="@(new TableEmptyStateViewModel
+    {
+        IconClass = "fa-solid fa-server",
+        Title = "Воркеры не найдены",
+        Description = "Добавьте воркер или дождитесь подключения агента.",
+        CtaLabel = "Все воркеры",
+        CtaUrl = Url.Action("Index", "Workers")
+    })" />
+}
+else
+{
+    <table class="data-table data-table--cards data-table--statistics-workers">
+        <thead>
+            <tr>
+                <th>Воркер</th>
+                @if (Model.ShowOfficeColumn)
+                {
+                    <th>Офис</th>
+                }
+                <th>Статус</th>
+                <th class="cell-num">Откл.</th>
+                <th class="cell-num">Битрикс24</th>
+                <th class="cell-num">Дубл.</th>
+                <th class="cell-num">Ошиб.</th>
+                <th class="cell-num">Акк.</th>
+            </tr>
+        </thead>
+        <tbody data-orbita-live-body="statistics-workers">
+            @foreach (var worker in Model.Workers)
+            {
+                var workerDetailsUrl = Url.Action("Details", "Workers", new { id = worker.Id });
+                <tr class="statistics-worker-row" data-href="@workerDetailsUrl" data-worker-id="@worker.Id">
+                    <td class="cell-name" data-label="Воркер">
+                        <a href="@workerDetailsUrl">@worker.DisplayName</a>
+                    </td>
+                    @if (Model.ShowOfficeColumn)
+                    {
+                        <td data-label="Офис">@worker.OfficeName</td>
+                    }
+                    <td data-label="Статус">
+                        <span class="status-dot @(worker.IsOnline ? "" : "offline")">
+                            <i class="fa-solid fa-circle status-dot-icon" aria-hidden="true"></i>
+                            @(worker.IsOnline ? "Онлайн" : "Оффлайн")
+                        </span>
+                    </td>
+                    <td class="cell-num" data-label="Отклики">@worker.PeriodResponses</td>
+                    <td class="cell-num" data-label="Битрикс24">@worker.PeriodSent</td>
+                    <td class="cell-num" data-label="Дубли">@worker.PeriodDuplicates</td>
+                    <td class="cell-num" data-label="Ошибки">@worker.PeriodErrors</td>
+                    <td class="cell-num" data-label="Аккаунты">@worker.ActiveAccounts / @worker.TotalAccounts</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}

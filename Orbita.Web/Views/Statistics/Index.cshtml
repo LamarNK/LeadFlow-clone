@@ -15,6 +15,7 @@
     var formAction = Url.Action("Index", "Statistics");
     var stats = Model.AccountStats;
     var totalAccounts = Math.Max(1, stats.Total);
+    var periodDays = (Model.Header.DateTo.Date - Model.Header.DateFrom.Date).Days + 1;
 }
 <partial name="_PageHeader" model="Model.Header" />
 <div class="orbita-main statistics-page"
@@ -31,6 +32,15 @@
     else
     {
         <div class="statistics-stack">
+            <div class="kpi-row statistics-kpi-row">
+                @{ var kpiIdx = 0; }
+                @foreach (var kpi in Model.KpiCards)
+                {
+                    <partial name="_KpiCard" model="@(new KpiCardPartialViewModel { Card = kpi, Index = kpiIdx, Layout = KpiCardLayout.StatStacked, ExtraClass = " kpi-card--stat" })" />
+                    kpiIdx++;
+                }
+            </div>
+
             @{
                 var statisticsFilterBar = new ListFiltersBarViewModel
                 {
@@ -52,138 +62,60 @@
             }
             <partial name="_ListFiltersBar" model="statisticsFilterBar" />
 
-            <div class="kpi-row statistics-kpi-row">
-                @{ var kpiIdx = 0; }
-                @foreach (var kpi in Model.KpiCards)
-                {
-                    <partial name="_KpiCard" model="@(new KpiCardPartialViewModel { Card = kpi, Index = kpiIdx, Layout = KpiCardLayout.StatStacked, ExtraClass = " kpi-card--stat" })" />
-                    kpiIdx++;
-                }
-            </div>
-
-            @{
-                var periodDays = (Model.Header.DateTo.Date - Model.Header.DateFrom.Date).Days + 1;
-            }
-            <div class="card card--statistics-trend card--statistics-trend-full">
-                <div class="card-header statistics-trend-header">
-                    <div class="statistics-trend-header-main">
+            <div class="statistics-hero-grid">
+                <div class="card card--statistics-trend">
+                    <div class="card-header">
                         <h2>Динамика откликов</h2>
                         <span class="chart-period-label">@Model.Header.DateRangeLabel</span>
                     </div>
-                    <div class="statistics-trend-legend" aria-hidden="true">
-                        <span class="statistics-trend-legend-pill" data-series="sent"><i></i>В CRM</span>
-                        <span class="statistics-trend-legend-pill" data-series="inProgress"><i></i>В работе</span>
-                        <span class="statistics-trend-legend-pill" data-series="actionRequired"><i></i>Нужно действие</span>
-                        <span class="statistics-trend-legend-pill" data-series="duplicates"><i></i>Дубли</span>
-                        <span class="statistics-trend-legend-pill" data-series="errors"><i></i>Ошибки</span>
-                    </div>
-                </div>
-                <div class="statistics-trend-summary" data-statistics-trend-summary>
-                    <div class="statistics-trend-stat">
-                        <span class="statistics-trend-stat-label">Всего</span>
-                        <strong class="statistics-trend-stat-value" data-trend-total>0</strong>
-                    </div>
-                    <div class="statistics-trend-stat">
-                        <span class="statistics-trend-stat-label">Пик</span>
-                        <strong class="statistics-trend-stat-value" data-trend-peak>0</strong>
-                    </div>
-                    <div class="statistics-trend-stat">
-                        <span class="statistics-trend-stat-label">Среднее</span>
-                        <strong class="statistics-trend-stat-value" data-trend-avg>0</strong>
-                        <span class="statistics-trend-stat-suffix" data-trend-avg-suffix>/день</span>
-                    </div>
-                    <div class="statistics-trend-stat statistics-trend-stat--muted">
-                        <span class="statistics-trend-stat-label">Группировка</span>
-                        <strong class="statistics-trend-stat-value" data-trend-bucket>по дням</strong>
-                    </div>
-                </div>
-                <div class="card-body">
-                    <div class="statistics-trend-chart"
-                         data-chart-state="ready"
-                         data-period-days="@periodDays">
-                        <div class="chart-canvas-wrap chart-canvas-wrap--statistics-trend">
-                            <canvas id="chart-statistics-trend" aria-label="Динамика откликов по статусам"></canvas>
+                    <div class="statistics-trend-toolbar" data-statistics-trend-summary>
+                        <div class="statistics-trend-metrics">
+                            <div class="statistics-trend-metric">
+                                <span class="statistics-trend-metric-label">Всего</span>
+                                <strong class="statistics-trend-metric-value" data-trend-total>0</strong>
+                            </div>
+                            <div class="statistics-trend-metric">
+                                <span class="statistics-trend-metric-label">Пик</span>
+                                <strong class="statistics-trend-metric-value" data-trend-peak>0</strong>
+                            </div>
+                            <div class="statistics-trend-metric">
+                                <span class="statistics-trend-metric-label">Среднее</span>
+                                <strong class="statistics-trend-metric-value" data-trend-avg>0</strong>
+                                <span class="statistics-trend-metric-suffix" data-trend-avg-suffix>/день</span>
+                            </div>
+                            <div class="statistics-trend-metric statistics-trend-metric--muted">
+                                <span class="statistics-trend-metric-label">Группировка</span>
+                                <strong class="statistics-trend-metric-value statistics-trend-metric-value--sm" data-trend-bucket>по дням</strong>
+                            </div>
                         </div>
-                        <div class="statistics-trend-empty" data-statistics-trend-empty>
-                            <i class="fa-regular fa-chart-bar" aria-hidden="true"></i>
-                            <span>Нет откликов за выбранный период</span>
+                        <div class="statistics-trend-legend" aria-hidden="true">
+                            <span class="statistics-trend-legend-pill" data-series="sent"><i></i>Битрикс24</span>
+                            <span class="statistics-trend-legend-pill" data-series="inProgress"><i></i>В работе</span>
+                            <span class="statistics-trend-legend-pill" data-series="actionRequired"><i></i>Действие</span>
+                            <span class="statistics-trend-legend-pill" data-series="duplicates"><i></i>Дубли</span>
+                            <span class="statistics-trend-legend-pill" data-series="errors"><i></i>Ошибки</span>
                         </div>
                     </div>
+                    <div class="card-body">
+                        <div class="statistics-trend-chart"
+                             data-chart-state="ready"
+                             data-period-days="@periodDays">
+                            <div class="chart-canvas-wrap chart-canvas-wrap--statistics-trend">
+                                <canvas id="chart-statistics-trend" aria-label="Динамика откликов по статусам"></canvas>
+                            </div>
+                            <div class="statistics-trend-empty" data-statistics-trend-empty>
+                                <i class="fa-regular fa-chart-bar" aria-hidden="true"></i>
+                                <span>Нет откликов за выбранный период</span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-            </div>
 
-            <div class="card card--statistics-workers">
-                <div class="card-header">
-                    <h2>Воркеры за период</h2>
-                    <a class="card-header-link" href="@Url.Action("Index", "Workers")">Все воркеры</a>
-                </div>
-                <div class="card-body card-body-table statistics-workers-table-wrap">
-                    @if (Model.Workers.Count == 0)
-                    {
-                        <partial name="_TableEmptyState" model="@(new TableEmptyStateViewModel
-                        {
-                            IconClass = "fa-solid fa-server",
-                            Title = "Воркеры не найдены",
-                            Description = "Добавьте воркер или дождитесь подключения агента.",
-                            CtaLabel = "Все воркеры",
-                            CtaUrl = Url.Action("Index", "Workers")
-                        })" />
-                    }
-                    else
-                    {
-                        <table class="data-table data-table--cards data-table--statistics-workers">
-                            <thead>
-                                <tr>
-                                    <th>Воркер</th>
-                                    @if (Model.ShowOfficeColumn)
-                                    {
-                                        <th>Офис</th>
-                                    }
-                                    <th>Статус</th>
-                                    <th class="cell-num">Откл.</th>
-                                    <th class="cell-num">CRM</th>
-                                    <th class="cell-num">Дубл.</th>
-                                    <th class="cell-num">Ошиб.</th>
-                                    <th class="cell-num">Акк.</th>
-                                </tr>
-                            </thead>
-                            <tbody data-orbita-live-body="statistics-workers">
-                                @foreach (var worker in Model.Workers)
-                                {
-                                    var workerDetailsUrl = Url.Action("Details", "Workers", new { id = worker.Id });
-                                    <tr class="statistics-worker-row" data-href="@workerDetailsUrl" data-worker-id="@worker.Id">
-                                        <td class="cell-name" data-label="Воркер">
-                                            <a href="@workerDetailsUrl">@worker.DisplayName</a>
-                                        </td>
-                                        @if (Model.ShowOfficeColumn)
-                                        {
-                                            <td data-label="Офис">@worker.OfficeName</td>
-                                        }
-                                        <td data-label="Статус">
-                                            <span class="status-dot @(worker.IsOnline ? "" : "offline")">
-                                                <i class="fa-solid fa-circle status-dot-icon" aria-hidden="true"></i>
-                                                @(worker.IsOnline ? "Онлайн" : "Оффлайн")
-                                            </span>
-                                        </td>
-                                        <td class="cell-num" data-label="Отклики">@worker.PeriodResponses</td>
-                                        <td class="cell-num" data-label="CRM">@worker.PeriodSent</td>
-                                        <td class="cell-num" data-label="Дубли">@worker.PeriodDuplicates</td>
-                                        <td class="cell-num" data-label="Ошибки">@worker.PeriodErrors</td>
-                                        <td class="cell-num" data-label="Аккаунты">@worker.ActiveAccounts / @worker.TotalAccounts</td>
-                                    </tr>
-                                }
-                            </tbody>
-                        </table>
-                    }
-                </div>
-            </div>
-
-            <div class="statistics-grid statistics-grid--secondary">
                 <div class="card card--account-stats card--statistics-accounts">
                     <div class="card-header">
-                        <h2>Состояние аккаунтов</h2>
+                        <h2>Аккаунты</h2>
                         <span class="card-header-meta" data-statistics-ads-meta>
-                            @Model.Summary.ActiveAdsCount активных / @Model.Summary.BlockedAdsCount заблок.
+                            @Model.Summary.ActiveAdsCount акт. / @Model.Summary.BlockedAdsCount заблок.
                         </span>
                     </div>
                     <div class="card-body">
@@ -222,8 +154,14 @@
                         </div>
                     </div>
                 </div>
+            </div>
 
-                <div class="card card--statistics-balances">
+            <div class="statistics-main-grid">
+                <partial name="_StatisticsOperationsCard"
+                         model="Model"
+                         view-data="@(new ViewDataDictionary(ViewData) { ["PeriodDays"] = periodDays })" />
+
+                <div class="card card--statistics-balances card--statistics-balances-wide">
                     <div class="card-header">
                         <h2>Балансы</h2>
                         <span class="card-header-meta">
@@ -277,30 +215,36 @@
                                         </div>
                                         @if (row.SubProfiles.Count > 0)
                                         {
-                                            <div class="statistics-balance-subprofiles">
-                                                @foreach (var subProfile in row.SubProfiles)
-                                                {
-                                                    <div class="statistics-balance-subprofile @(subProfile.IsLowBalance ? "statistics-balance-subprofile--low" : "")">
-                                                        <div class="statistics-balance-subprofile-head">
-                                                            <span class="statistics-balance-subprofile-name">@subProfile.Name</span>
-                                                            <div class="statistics-balance-subprofile-amounts">
-                                                                <span class="statistics-balance-subprofile-advance" title="Аванс">@subProfile.AdvanceText</span>
-                                                                @if (subProfile.WalletText is not null)
-                                                                {
-                                                                    <span class="statistics-balance-subprofile-wallet" title="Кошелёк">@subProfile.WalletText</span>
-                                                                }
+                                            <details class="statistics-balance-subprofiles-details">
+                                                <summary class="statistics-balance-subprofiles-summary">
+                                                    <i class="fa-solid fa-chevron-right statistics-balance-subprofiles-caret" aria-hidden="true"></i>
+                                                    @row.SubProfiles.Count субпроф.
+                                                </summary>
+                                                <div class="statistics-balance-subprofiles">
+                                                    @foreach (var subProfile in row.SubProfiles)
+                                                    {
+                                                        <div class="statistics-balance-subprofile @(subProfile.IsLowBalance ? "statistics-balance-subprofile--low" : "")">
+                                                            <div class="statistics-balance-subprofile-head">
+                                                                <span class="statistics-balance-subprofile-name">@subProfile.Name</span>
+                                                                <div class="statistics-balance-subprofile-amounts">
+                                                                    <span class="statistics-balance-subprofile-advance" title="Аванс">@subProfile.AdvanceText</span>
+                                                                    @if (subProfile.WalletText is not null)
+                                                                    {
+                                                                        <span class="statistics-balance-subprofile-wallet" title="Кошелёк">@subProfile.WalletText</span>
+                                                                    }
+                                                                </div>
+                                                            </div>
+                                                            @if (!string.IsNullOrWhiteSpace(subProfile.DurationText))
+                                                            {
+                                                                <span class="statistics-balance-subprofile-duration">@subProfile.DurationText</span>
+                                                            }
+                                                            <div class="statistics-balance-bar-track statistics-balance-bar-track--sub" aria-hidden="true">
+                                                                <span class="statistics-balance-bar-fill" style="width: @((subProfile.BarWidth * 100).ToString("0.####", System.Globalization.CultureInfo.InvariantCulture))%"></span>
                                                             </div>
                                                         </div>
-                                                        @if (!string.IsNullOrWhiteSpace(subProfile.DurationText))
-                                                        {
-                                                            <span class="statistics-balance-subprofile-duration">@subProfile.DurationText</span>
-                                                        }
-                                                        <div class="statistics-balance-bar-track statistics-balance-bar-track--sub" aria-hidden="true">
-                                                            <span class="statistics-balance-bar-fill" style="width: @((subProfile.BarWidth * 100).ToString("0.####", System.Globalization.CultureInfo.InvariantCulture))%"></span>
-                                                        </div>
-                                                    </div>
-                                                }
-                                            </div>
+                                                    }
+                                                </div>
+                                            </details>
                                         }
                                         else if (!string.IsNullOrWhiteSpace(row.BalanceSubtitle))
                                         {
@@ -321,8 +265,8 @@
                     <div class="statistics-hr-summary-text">
                         <h2>HR-инсайты</h2>
                         <span class="card-header-meta">
-                            Средний возраст: <span data-statistics-avg-age>@Model.HrInsights.AverageAgeText</span>
-                            · Мессенджер: <span data-statistics-messenger>@Model.HrInsights.MessengerCoverageText</span>
+                            Возраст <span data-statistics-avg-age>@Model.HrInsights.AverageAgeText</span>
+                            · Мессенджер <span data-statistics-messenger>@Model.HrInsights.MessengerCoverageText</span>
                         </span>
                     </div>
                     <i class="fa-solid fa-chevron-down statistics-hr-caret" aria-hidden="true"></i>
@@ -339,7 +283,7 @@
                                     <tr>
                                         <th>Группа</th>
                                         <th class="cell-num">Всего</th>
-                                        <th class="cell-num">CRM</th>
+                                        <th class="cell-num">Битрикс24</th>
                                         <th class="cell-num">Конв.</th>
                                     </tr>
                                 </thead>

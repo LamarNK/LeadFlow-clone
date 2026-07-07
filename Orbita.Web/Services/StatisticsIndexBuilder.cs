@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.RegularExpressions;
 using Orbita.Contracts;
 using Orbita.Web.Formatting;
 using Orbita.Web.Models.ViewModels;
@@ -30,34 +31,7 @@ internal static class StatisticsIndexBuilder
             : 1m;
 
         var balanceRows = data.Balances.Accounts
-            .Select(a =>
-            {
-                var subProfiles = MapSubProfileBalances(a.SubProfiles);
-                var durationHint = BalanceDisplay.ResolveAdvanceDurationHint(
-                    a.SubProfiles.Select(s => (s.Balance, s.AdvanceDurationText)).ToList());
-                return new StatisticsBalanceRowViewModel
-                {
-                    AccountId = a.AccountId,
-                    AccountName = a.AccountName,
-                    WorkerId = a.WorkerId,
-                    WorkerName = a.WorkerName,
-                    OfficeName = a.OfficeName,
-                    Advance = a.Advance,
-                    Wallet = a.Wallet,
-                    AdvanceText = BalanceDisplay.FormatAmount(a.Advance),
-                    WalletText = a.Wallet > 0 ? BalanceDisplay.FormatAmount(a.Wallet) : "—",
-                    BalanceBreakdown = SubProfileViewModelMapper.BuildBalanceBreakdown(
-                        SubProfileViewModelMapper.MapFromBalances(a.SubProfiles)),
-                    BalanceSubtitle = subProfiles.Count == 0
-                        ? BalanceDisplay.FormatAccountBreakdown(
-                            a.Wallet > 0 ? a.Wallet : null,
-                            durationHint)
-                        : null,
-                    SubProfiles = subProfiles,
-                    IsLowBalance = a.IsLowBalance,
-                    BarWidth = (double)(a.Advance / maxBalance)
-                };
-            })
+            .Select(a => MapBalanceRow(a, maxBalance, includeSubProfiles: true))
             .ToList();
 
         var periodErrors = data.Responses.Errors + data.Responses.ActionRequired;
@@ -69,13 +43,16 @@ internal static class StatisticsIndexBuilder
             PeriodSent = data.Responses.Sent,
             PeriodDuplicates = data.Responses.Duplicates,
             PeriodErrors = periodErrors,
-            PeriodUniqueAuthors = data.Responses.UniqueAuthors,
+            PeriodUnique = data.Responses.Unique,
             WorkersOnline = data.Workers.Online,
             WorkersTotal = data.Workers.Total,
             TotalAdvanceText = BalanceDisplay.FormatAmount(data.Balances.TotalAdvance),
             AvgResponseMinutesText = data.Responses.AvgResponseMinutes is double minutes
                 ? $"{Math.Round(minutes, 0):0} мин"
-                : null
+                : null,
+            BalanceAccountCount = data.Balances.Accounts.Count,
+            LowBalanceAccountCount = data.Balances.LowBalanceAccountCount,
+            LowBalanceHiddenCount = 0
         };
 
         var header = PageHeaderBuilder.WithOfficeScope(
@@ -110,6 +87,7 @@ internal static class StatisticsIndexBuilder
                 })
                 .ToList(),
             HrInsights = MapHrInsights(data.HrInsights),
+            MonitoringCycles = MapMonitoringCycles(data.MonitoringCycles),
             Summary = summary,
             ShowOfficeColumn = officeContext.ShowOfficeColumn
         };
@@ -182,17 +160,15 @@ internal static class StatisticsIndexBuilder
             },
             new()
             {
-                Key = "unique_authors",
-                Href = KpiCardLinks.StatisticsCard("unique_authors", period.From, period.To, filters),
-                Label = "Уникальных авторов",
-                Value = data.Responses.UniqueAuthors.ToString(),
-                CountValue = data.Responses.UniqueAuthors,
-                Delta = data.Responses.Total == 0
-                    ? "0%"
-                    : $"{data.Responses.UniqueAuthors * 100.0 / data.Responses.Total:0.#}% от откликов",
-                DeltaTone = "neutral",
-                IconClass = "fa-solid fa-user-group",
-                IconTone = "purple"
+                Key = "unique",
+                Href = KpiCardLinks.StatisticsCard("unique", period.From, period.To, filters),
+                Label = "Уникальных",
+                Value = data.Responses.Unique.ToString(),
+                CountValue = data.Responses.Unique,
+                Delta = Pct(data.Responses.Unique),
+                DeltaTone = "good",
+                IconClass = "fa-regular fa-circle-check",
+                IconTone = "green"
             }
         ];
     }
@@ -255,6 +231,158 @@ internal static class StatisticsIndexBuilder
             ConversionText = r.ConversionText,
             ShareText = r.ShareText
         }).ToList();
+
+    private static StatisticsBalanceRowViewModel MapBalanceRow(
+        AccountBalanceStatDto account,
+        decimal maxBalance,
+        bool includeSubProfiles)
+    {
+        var subProfiles = includeSubProfiles ? MapSubProfileBalances(account.SubProfiles) : [];
+        var durationHint = BalanceDisplay.ResolveAdvanceDurationHint(
+            account.SubProfiles.Select(s => (s.Balance, s.AdvanceDurationText)).ToList());
+
+        return new StatisticsBalanceRowViewModel
+        {
+            AccountId = account.AccountId,
+            AccountName = account.AccountName,
+            WorkerId = account.WorkerId,
+            WorkerName = account.WorkerName,
+            OfficeName = account.OfficeName,
+            Advance = account.Advance,
+            Wallet = account.Wallet,
+            AdvanceText = BalanceDisplay.FormatAmount(account.Advance),
+            WalletText = account.Wallet > 0 ? BalanceDisplay.FormatAmount(account.Wallet) : "—",
+            BalanceBreakdown = includeSubProfiles
+                ? SubProfileViewModelMapper.BuildBalanceBreakdown(
+                    SubProfileViewModelMapper.MapFromBalances(account.SubProfiles))
+                : null,
+            BalanceSubtitle = subProfiles.Count == 0
+                ? BalanceDisplay.FormatAccountBreakdown(
+                    account.Wallet > 0 ? account.Wallet : null,
+                    durationHint)
+                : null,
+            SubProfiles = subProfiles,
+            IsLowBalance = account.IsLowBalance,
+            BarWidth = (double)(account.Advance / maxBalance)
+        };
+    }
+
+    private static MonitoringCycleReportViewModel MapMonitoringCycles(MonitoringCycleReportDto report)
+    {
+        var leadSummaries = report.LeadSummaries
+            .Select(x => new MonitoringCycleLeadSummaryViewModel
+            {
+                AccountName = x.AccountName,
+                TotalLeads = x.TotalLeads,
+                BreakdownText = x.Breakdown.Count == 0 ? "без отправок в Битрикс24" : string.Join("; ", x.Breakdown)
+            })
+            .ToList();
+
+        return new MonitoringCycleReportViewModel
+        {
+            IsDetailed = report.IsDetailed,
+            HasData = report.LeadSummaries.Count > 0
+                || report.AccountReports.Count > 0
+                || report.NotStartedSummaries.Count > 0
+                || report.TotalLeads > 0,
+            TotalLeads = report.TotalLeads,
+            AccountsWithNotStarted = report.AccountsWithNotStarted,
+            NotStartedPositions = report.NotStartedPositions,
+            ZeroLeadAccountCount = leadSummaries.Count(x => x.TotalLeads == 0),
+            NotStartedSummaries = report.NotStartedSummaries,
+            NotStartedRows = ParseNotStartedSummaries(report.NotStartedSummaries),
+            LeadSummaries = leadSummaries
+                .Where(x => x.TotalLeads > 0)
+                .ToList(),
+            AccountReports = report.AccountReports
+                .Select(account => new MonitoringCycleAccountReportViewModel
+                {
+                    AccountName = account.AccountName,
+                    DateUtc = account.DateUtc,
+                    HeaderText = $"{account.AccountName} — {account.SubProfileCount} суб-профилей, {FormatCycleCount(account.CycleCount)}",
+                    SubProfileCount = account.SubProfileCount,
+                    CycleCount = account.CycleCount,
+                    TotalLeads = account.TotalLeads,
+                    Rows = account.Rows
+                        .Select(row => new MonitoringCycleSubProfileRowViewModel
+                        {
+                            PositionText = $"{row.Position}/{row.TotalPositions}",
+                            Name = row.Name,
+                            CompletionTimesUtc = row.CompletionTimesUtc,
+                            LeadsText = row.LeadsPerCycle.Count == 0
+                                ? "—"
+                                : string.Join(", ", row.LeadsPerCycle),
+                            Errors = row.Errors
+                                .Select(error => new MonitoringCycleErrorViewModel
+                                {
+                                    TimestampUtc = error.TimestampUtc,
+                                    Detail = error.Detail
+                                })
+                                .ToList(),
+                            HasErrors = row.Errors.Count > 0,
+                            HasNotStarted = row.CompletionTimesUtc.Count == 0
+                        })
+                        .ToList()
+                })
+                .ToList()
+        };
+    }
+
+    private static readonly Regex NotStartedSummaryRegex = new(
+        @"^(\d+)\s+не запущены\s+—\s*(.+)$",
+        RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+    private static IReadOnlyList<MonitoringCycleNotStartedRowViewModel> ParseNotStartedSummaries(
+        IReadOnlyList<string> summaries)
+    {
+        if (summaries.Count == 0)
+        {
+            return [];
+        }
+
+        return summaries
+            .Select(line =>
+            {
+                var trimmed = line.Trim();
+                var colonIndex = trimmed.IndexOf(':');
+                if (colonIndex < 0)
+                {
+                    return new MonitoringCycleNotStartedRowViewModel
+                    {
+                        AccountName = trimmed,
+                        PositionsText = string.Empty
+                    };
+                }
+
+                var accountName = trimmed[..colonIndex].Trim();
+                var rest = trimmed[(colonIndex + 1)..].Trim();
+                var match = NotStartedSummaryRegex.Match(rest);
+                if (!match.Success)
+                {
+                    return new MonitoringCycleNotStartedRowViewModel
+                    {
+                        AccountName = accountName,
+                        PositionsText = rest
+                    };
+                }
+
+                return new MonitoringCycleNotStartedRowViewModel
+                {
+                    AccountName = accountName,
+                    NotStartedCount = int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture),
+                    PositionsText = match.Groups[2].Value.Trim()
+                };
+            })
+            .ToList();
+    }
+
+    private static string FormatCycleCount(int count) =>
+        count switch
+        {
+            1 => "1 цикл",
+            >= 2 and <= 4 => $"{count} цикла",
+            _ => $"{count} циклов"
+        };
 
     private static IReadOnlyList<StatisticsSubProfileBalanceViewModel> MapSubProfileBalances(
         IReadOnlyList<SubProfileBalanceDto> items)

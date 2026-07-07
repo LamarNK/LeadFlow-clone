@@ -32,6 +32,8 @@ public sealed class CandidateLookupService(OrbitaDbContext db)
             .Distinct(StringComparer.Ordinal)
             .ToArray();
 
+        var duplicateCutoffUtc = CandidateDuplicateLookback.GetCutoffUtc(DateTime.UtcNow);
+
         var existingSourceIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         if (sourceIds.Length > 0)
         {
@@ -39,6 +41,7 @@ public sealed class CandidateLookupService(OrbitaDbContext db)
                 .AsNoTracking()
                 .Where(x => x.OfficeId == worker.OfficeId
                             && x.AccountId == request.AccountId
+                            && x.CreatedAt >= duplicateCutoffUtc
                             && sourceIds.Contains(x.SourceResponseId))
                 .Select(x => x.SourceResponseId)
                 .ToListAsync(ct);
@@ -54,7 +57,9 @@ public sealed class CandidateLookupService(OrbitaDbContext db)
         {
             var phoneQuery = db.CandidateResponses
                 .AsNoTracking()
-                .Where(x => x.OfficeId == worker.OfficeId && x.PhoneNormalized != "");
+                .Where(x => x.OfficeId == worker.OfficeId
+                            && x.CreatedAt >= duplicateCutoffUtc
+                            && x.PhoneNormalized != "");
 
             if (!request.IncludeAllKnownPhones)
             {

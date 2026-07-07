@@ -469,6 +469,9 @@
             if (account.lastErrorMessage) {
                 statusHtml += '<span class="account-error-hint" title="' + shared.escapeHtml(account.lastErrorMessage) + '">' +
                     shared.escapeHtml(account.lastErrorMessage) + '</span>';
+            } else if (account.errorHint) {
+                statusHtml += '<span class="account-error-hint" title="' + shared.escapeHtml(account.errorHint) + '">' +
+                    shared.escapeHtml(account.errorHint) + '</span>';
             }
             var activityHtml = account.lastActivityUtc
                 ? '<time data-orbita-utc="' + shared.escapeHtml(account.lastActivityUtc) + '" data-orbita-format="activity"></time>'
@@ -497,9 +500,12 @@
                 '<td class="cell-name" data-label="Аккаунт"><a href="' + shared.escapeHtml(accountSearchUrl(account.displayName)) + '">' + shared.escapeHtml(account.displayName) + '</a>' + adsPower + subProfiles + '</td>' +
                 '<td data-label="Статус">' + statusHtml + '</td>' +
                 '<td class="cell-num cell-balance" data-label="Баланс"><span class="account-balance-multiline">' + shared.escapeHtml(account.balanceText || '—') + '</span></td>' +
-                '<td class="cell-num" data-label="Откликов">' + (account.responses || 0) + '</td>' +
-                '<td data-label="Последняя активность">' + activityHtml + '</td>' +
-                '<td class="cell-num" data-label="Ошибок">' + (account.errors || 0) + '</td>' +
+                (function () {
+                    var metrics = shared.resolveAccountMetricLinks(account, workerId, account.id);
+                    return '<td class="cell-num" data-label="Откликов">' + shared.renderMetricLink(account.responses, metrics.responses, 'Отклики за сегодня') + '</td>' +
+                        '<td data-label="Последняя активность">' + activityHtml + '</td>' +
+                        '<td class="cell-num" data-label="Ошибок">' + shared.renderMetricLink(account.errors, metrics.errors, 'Ошибки и предупреждения') + '</td>';
+                })() +
                 '<td class="data-table-menu" data-label="">' + renderWorkerAccountMenu(account) + '</td></tr>';
 
             var temp = document.createElement('tbody');

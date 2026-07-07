@@ -275,10 +275,10 @@ public sealed class TelemetryService(
             balanceDto,
             account);
 
-        if (account.SubProfiles is not null
-            && BalanceSnapshotHelper.ShouldPersistSubProfiles(account.SubProfiles, target.SubProfilesJson))
+        if (SubProfileSnapshotHelper.MergeForPersist(account.SubProfiles, target.SubProfilesJson) is
+            { } mergedSubProfiles)
         {
-            target.SubProfilesJson = SerializeSubProfiles(account.SubProfiles);
+            target.SubProfilesJson = SerializeSubProfiles(mergedSubProfiles);
         }
 
         var refreshedAtUtc = DateTimeUtcHelper.EnsureUtc(account.SubProfilesRefreshedAtUtc);

@@ -307,22 +307,31 @@ public sealed class AdsPowerAvitoAuthService(
 
     private static async Task<IPage> GetOrCreateAvitoPageAsync(IBrowser browser)
     {
-        var pages = await browser.PagesAsync().ConfigureAwait(false);
-        var avito = pages.FirstOrDefault(p =>
-            !string.IsNullOrWhiteSpace(p.Url)
-            && p.Url.Contains("avito.ru", StringComparison.OrdinalIgnoreCase));
-        if (avito is not null)
+        var existingPages = (await browser.PagesAsync().ConfigureAwait(false)).ToList();
+        var worker = await browser.NewPageAsync().ConfigureAwait(false);
+
+        foreach (var page in existingPages)
         {
-            return avito;
+            try
+            {
+                await page.CloseAsync().ConfigureAwait(false);
+            }
+            catch
+            {
+                // best effort
+            }
         }
 
-        var any = pages.FirstOrDefault(p => !string.IsNullOrWhiteSpace(p.Url) && !p.Url.StartsWith("about:", StringComparison.Ordinal));
-        if (any is not null)
+        try
         {
-            return any;
+            await worker.BringToFrontAsync().ConfigureAwait(false);
+        }
+        catch
+        {
+            // не критично
         }
 
-        return pages.FirstOrDefault() ?? await browser.NewPageAsync().ConfigureAwait(false);
+        return worker;
     }
 
     /// <summary>

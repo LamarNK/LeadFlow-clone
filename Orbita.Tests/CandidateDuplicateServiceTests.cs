@@ -36,6 +36,29 @@ public sealed class CandidateDuplicateServiceTests
     }
 
     [Fact]
+    public async Task CheckAsync_PhoneDuplicateOlderThanSixMonths_IsNotLocalDuplicate()
+    {
+        await using var db = CreateDb();
+        SeedOffice(db, OfficeA, "Office A");
+
+        db.CandidateResponses.Add(CreateEntity(
+            OfficeA,
+            "79003333333",
+            Guid.NewGuid(),
+            DateTime.UtcNow.AddMonths(-7)));
+        await db.SaveChangesAsync();
+
+        var current = CreateEntity(OfficeA, "79003333333", Guid.NewGuid());
+        db.CandidateResponses.Add(current);
+        await db.SaveChangesAsync();
+
+        var sut = new CandidateDuplicateService(db, CreateBitrixClient());
+        var result = await sut.CheckAsync(current, null, checkDuplicatesInBitrix: false);
+
+        Assert.False(result.IsLocalDuplicate);
+    }
+
+    [Fact]
     public async Task CheckAsync_DifferentOfficeSamePhone_IsNotLocalDuplicate()
     {
         await using var db = CreateDb();
@@ -75,7 +98,11 @@ public sealed class CandidateDuplicateServiceTests
         });
     }
 
-    private static CandidateResponseEntity CreateEntity(Guid officeId, string phone, Guid id) => new()
+    private static CandidateResponseEntity CreateEntity(
+        Guid officeId,
+        string phone,
+        Guid id,
+        DateTime? createdAt = null) => new()
     {
         Id = id,
         OfficeId = officeId,
@@ -88,7 +115,7 @@ public sealed class CandidateDuplicateServiceTests
         PhoneRaw = phone,
         PhoneNormalized = phone,
         Status = ResponseStatuses.Sent,
-        CreatedAt = DateTime.UtcNow
+        CreatedAt = createdAt ?? DateTime.UtcNow
     };
 
     private static BitrixClient CreateBitrixClient() =>

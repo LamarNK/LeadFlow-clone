@@ -214,11 +214,14 @@ public sealed class AvitoResponseSource(
             return new AvitoCandidatesParseResult([], AvitoCandidatesExtractionSummary.Empty);
         }
 
-        account.Status = AvitoAccountStatus.Authorized;
-        if (!account.HasSubProfileIssues)
+        if (activeSubProfile is not null && activeSubProfile.HasIssue)
         {
-            account.LastErrorMessage = string.Empty;
+            AccountIssueTracker.ClearSubProfileIssue(activeSubProfile);
+            account.SetSubProfiles(account.SubProfiles.ToList());
         }
+
+        account.Status = AvitoAccountStatus.Authorized;
+        AccountIssueTracker.RefreshAccountIssueMessage(account);
 
         account.LastAuthCheckAt = DateTime.UtcNow;
 

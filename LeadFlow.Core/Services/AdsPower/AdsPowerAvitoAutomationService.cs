@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using LeadFlow.Core.Data;
+using LeadFlow.Core.Models;
 using LeadFlow.Core.Logging.Audit;
 using LeadFlow.Core.Services;
 using LeadFlow.Core.Services.Avito;
@@ -578,58 +579,113 @@ public sealed partial class AdsPowerAvitoAutomationService(
         ArgumentNullException.ThrowIfNull(page);
         ArgumentException.ThrowIfNullOrWhiteSpace(adsPowerUserId);
 
-        if (IsOnCandidatesResponsesPage(page.Url))
+        const int maxAttempts = 2;
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
-            await NavigateAwayFromCandidatesForSwitchAsync(page, cancellationToken, nameof(CaptureProfileSwitchHtmlInSessionAsync))
-                .ConfigureAwait(false);
-        }
+            cancellationToken.ThrowIfCancellationRequested();
 
-        await EnsureSwitchModalAsync(page, cancellationToken, nameof(CaptureProfileSwitchHtmlInSessionAsync))
-            .ConfigureAwait(false);
-        if (!await AwaitProfileSwitchModalContentAsync(page, cancellationToken, nameof(CaptureProfileSwitchHtmlInSessionAsync))
-                .ConfigureAwait(false))
-        {
-            throw new InvalidOperationException("AdsPower CDP: модалка переключения профилей не загрузилась.");
-        }
-
-        var html = await EvaluateWithRetryAsync<string>(
-                page,
-                "(() => document.documentElement?.outerHTML || '')()",
-                cancellationToken)
-            .ConfigureAwait(false);
-
-        if (string.IsNullOrWhiteSpace(html))
-        {
-            throw new InvalidOperationException("AdsPower CDP: страница переключения профилей вернула пустой HTML.");
-        }
-
-        await ThrowIfCaptchaAsync(page, html, cancellationToken).ConfigureAwait(false);
-
-        _ = GlobalLogger.Instance.LogAsync(
-            $"AdsPower profile-switch: HTML captured ({html.Length} chars).",
-            DeskLinkAuditLogLevel.Info,
-            memberName: nameof(CaptureProfileSwitchHtmlInSessionAsync),
-            
-            properties: new Dictionary<string, object?>
+            if (IsOnCandidatesResponsesPage(page.Url))
             {
-                ["step"] = "captured",
-                ["adsPower.userId"] = adsPowerUserId,
-                ["page.url"] = page.Url,
-                ["html.length"] = html.Length
-            });
+                await NavigateAwayFromCandidatesForSwitchAsync(page, cancellationToken, nameof(CaptureProfileSwitchHtmlInSessionAsync))
+                    .ConfigureAwait(false);
+            }
 
-        await DismissProfileSwitchModalAsync(page, cancellationToken).ConfigureAwait(false);
-        var postDismiss = await ProbePageStateAsync(page, cancellationToken).ConfigureAwait(false);
-        if (postDismiss?.ProfileSwitchModalOpen == true)
-        {
-            throw new AvitoPageMismatchException(
-                "закрытие модалки субпрофилей",
-                AvitoPageKind.Dashboard,
-                postDismiss,
-                ["закрыть модалку Escape/навигация"]);
+            var preSwitchState = await ProbePageStateAsync(page, cancellationToken).ConfigureAwait(false);
+            if (AvitoAutomationFailureFormatter.SuggestsLogin(preSwitchState))
+            {
+                if (!await TryRecoverAvitoLoginAsync(page, cancellationToken).ConfigureAwait(false))
+                {
+                    throw new AvitoLoginRequiredException(preSwitchState?.Url, preSwitchState?.Title);
+                }
+
+                if (attempt < maxAttempts)
+                {
+                    continue;
+                }
+            }
+
+            await EnsureSwitchModalAsync(page, cancellationToken, nameof(CaptureProfileSwitchHtmlInSessionAsync))
+                .ConfigureAwait(false);
+            if (!await AwaitProfileSwitchModalContentAsync(page, cancellationToken, nameof(CaptureProfileSwitchHtmlInSessionAsync))
+                    .ConfigureAwait(false))
+            {
+                var modalFailState = await ProbePageStateAsync(page, cancellationToken).ConfigureAwait(false);
+                if (attempt < maxAttempts)
+                {
+                    if (AvitoAutomationFailureFormatter.SuggestsLogin(modalFailState))
+                    {
+                        _ = await TryRecoverAvitoLoginAsync(page, cancellationToken).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        _ = await AvitoAutoLoginRecovery.TryRefreshSessionAsync(page, cancellationToken)
+                            .ConfigureAwait(false);
+                    }
+
+                    _ = GlobalLogger.Instance.LogAsync(
+                        "AdsPower profile-switch: modal not ready — retry after session refresh.",
+                        DeskLinkAuditLogLevel.Info,
+                        memberName: nameof(CaptureProfileSwitchHtmlInSessionAsync),
+                        properties: new Dictionary<string, object?>
+                        {
+                            ["step"] = "switch_modal_refresh_retry",
+                            ["attempt"] = attempt,
+                            ["page.url"] = page.Url,
+                            ["pageState"] = modalFailState?.DescribeForDiagnostics()
+                        });
+                    continue;
+                }
+
+                if (AvitoAutomationFailureFormatter.SuggestsLogin(modalFailState))
+                {
+                    throw new AvitoLoginRequiredException(modalFailState?.Url, modalFailState?.Title);
+                }
+
+                throw new InvalidOperationException("AdsPower CDP: модалка переключения профилей не загрузилась.");
+            }
+
+            var html = await EvaluateWithRetryAsync<string>(
+                    page,
+                    "(() => document.documentElement?.outerHTML || '')()",
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            if (string.IsNullOrWhiteSpace(html))
+            {
+                throw new InvalidOperationException("AdsPower CDP: страница переключения профилей вернула пустой HTML.");
+            }
+
+            await ThrowIfCaptchaAsync(page, html, cancellationToken).ConfigureAwait(false);
+
+            _ = GlobalLogger.Instance.LogAsync(
+                $"AdsPower profile-switch: HTML captured ({html.Length} chars).",
+                DeskLinkAuditLogLevel.Info,
+                memberName: nameof(CaptureProfileSwitchHtmlInSessionAsync),
+                
+                properties: new Dictionary<string, object?>
+                {
+                    ["step"] = "captured",
+                    ["adsPower.userId"] = adsPowerUserId,
+                    ["page.url"] = page.Url,
+                    ["html.length"] = html.Length,
+                    ["attempt"] = attempt
+                });
+
+            await DismissProfileSwitchModalAsync(page, cancellationToken).ConfigureAwait(false);
+            var postDismiss = await ProbePageStateAsync(page, cancellationToken).ConfigureAwait(false);
+            if (postDismiss?.ProfileSwitchModalOpen == true)
+            {
+                throw new AvitoPageMismatchException(
+                    "закрытие модалки субпрофилей",
+                    AvitoPageKind.Dashboard,
+                    postDismiss,
+                    ["закрыть модалку Escape/навигация"]);
+            }
+
+            return html;
         }
 
-        return html;
+        throw new InvalidOperationException("AdsPower CDP: не удалось снять HTML модалки переключения профилей.");
     }
 
     public async Task<bool> SwitchActiveProfileAsync(
@@ -1395,6 +1451,12 @@ public sealed partial class AdsPowerAvitoAutomationService(
             (script, ct) => EvaluateWithRetryAsync<string>(page, script, ct),
             cancellationToken);
 
+    private static async Task<bool> TryRecoverAvitoLoginAsync(IPage page, CancellationToken cancellationToken)
+    {
+        var recovery = await AvitoAutoLoginRecovery.TryRecoverAsync(page, cancellationToken).ConfigureAwait(false);
+        return recovery.Recovered;
+    }
+
     private async Task EnsureOnCandidatesPageAsync(
         IPage page,
         string adsPowerUserId,
@@ -1421,6 +1483,11 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 var state = await ProbePageStateAsync(page, cancellationToken).ConfigureAwait(false);
                 if (AvitoAutomationFailureFormatter.SuggestsLogin(state))
                 {
+                    if (await TryRecoverAvitoLoginAsync(page, cancellationToken).ConfigureAwait(false))
+                    {
+                        continue;
+                    }
+
                     throw new AvitoLoginRequiredException(state?.Url, state?.Title);
                 }
 
@@ -1482,7 +1549,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
                         .ConfigureAwait(false);
                 }
 
-                await AvitoLoginProbe.ThrowIfLoginRequiredAsync(executeScript, cancellationToken)
+                await AvitoLoginProbe.ThrowIfLoginRequiredAsync(executeScript, cancellationToken, page)
                     .ConfigureAwait(false);
 
                 await AvitoCandidatesPageWaiter
@@ -1501,7 +1568,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
                         },
                         page.Url,
                         cancellationToken,
-                        staleListSignature)
+                        staleListSignature,
+                        page)
                     .ConfigureAwait(false);
 
                 state = await ProbePageStateAsync(page, cancellationToken).ConfigureAwait(false);
@@ -1519,7 +1587,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
 
         await WaitForPageContentOrLoginAsync(page, cancellationToken).ConfigureAwait(false);
 
-        await AvitoLoginProbe.ThrowIfLoginRequiredAsync(executeScript, cancellationToken)
+        await AvitoLoginProbe.ThrowIfLoginRequiredAsync(executeScript, cancellationToken, page)
             .ConfigureAwait(false);
 
         var finalState = await ProbePageStateAsync(page, cancellationToken).ConfigureAwait(false);
@@ -1530,6 +1598,11 @@ public sealed partial class AdsPowerAvitoAutomationService(
 
         if (AvitoAutomationFailureFormatter.SuggestsLogin(finalState))
         {
+            if (await TryRecoverAvitoLoginAsync(page, cancellationToken).ConfigureAwait(false))
+            {
+                return;
+            }
+
             throw new AvitoLoginRequiredException(finalState?.Url, finalState?.Title);
         }
 
@@ -1619,8 +1692,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
     }
 
     /// <summary>
-    /// Одна рабочая вкладка на сессию CDP: иначе при нескольких вкладках Avito автоматизация идёт в фоне,
-    /// а пользователь смотрит на другую (типично «Мои объявления»), и кажется, что парсинг не работает.
+    /// Одна свежая рабочая вкладка на сессию CDP: открываем новую, остальные закрываем (экономия ОЗУ,
+    /// автоматизация не уходит в фоновую вкладку AdsPower).
     /// </summary>
     private static async Task<IPage> AcquireAutomationPageAsync(
         IBrowser browser,
@@ -1628,48 +1701,12 @@ public sealed partial class AdsPowerAvitoAutomationService(
         string callerMemberName,
         CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         var targetKind = ClassifyAutomationPageKind(preferredUrl);
-        var pages = (await browser.PagesAsync().ConfigureAwait(false)).ToList();
-
-        var worker =
-            pages.FirstOrDefault(p => PageMatchesAutomationKind(p.Url, targetKind))
-            ?? pages.FirstOrDefault(p => IsAvitoProfileAutomationTab(p.Url))
-            ?? pages.FirstOrDefault(p => IsUsableWorkerPageUrl(p.Url) && IsAvitoProfileAutomationTab(p.Url))
-            ?? pages.FirstOrDefault(p => IsUsableWorkerPageUrl(p.Url));
-
-        if (worker is null || !IsUsableWorkerPageUrl(worker.Url))
-        {
-            worker = await browser.NewPageAsync().ConfigureAwait(false);
-            pages = [worker];
-        }
-
-        var closed = 0;
-        foreach (var page in pages)
-        {
-            if (page == worker || !IsAvitoProfileAutomationTab(page.Url))
-            {
-                continue;
-            }
-
-            try
-            {
-                await page.CloseAsync().ConfigureAwait(false);
-                closed++;
-            }
-            catch (Exception ex)
-            {
-                _ = GlobalLogger.Instance.LogAsync(
-                    $"AdsPower CDP: не удалось закрыть лишнюю вкладку Avito ({page.Url}): {ex.Message}",
-                    DeskLinkAuditLogLevel.Debug,
-                    memberName: callerMemberName,
-                    
-                    properties: new Dictionary<string, object?>
-                    {
-                        ["page.url"] = page.Url,
-                        ["error.type"] = ex.GetType().FullName
-                    });
-            }
-        }
+        var existingPages = (await browser.PagesAsync().ConfigureAwait(false)).ToList();
+        var worker = await browser.NewPageAsync().ConfigureAwait(false);
+        var closed = await CloseBrowserPagesAsync(existingPages, callerMemberName).ConfigureAwait(false);
 
         try
         {
@@ -1680,26 +1717,49 @@ public sealed partial class AdsPowerAvitoAutomationService(
             // Не критично для парсинга.
         }
 
-        if (closed > 0 || pages.Count > 1)
+        _ = GlobalLogger.Instance.LogAsync(
+            $"AdsPower CDP: новая рабочая вкладка (закрыто лишних: {closed}, было: {existingPages.Count}).",
+            DeskLinkAuditLogLevel.Info,
+            memberName: callerMemberName,
+            properties: new Dictionary<string, object?>
+            {
+                ["automation.targetKind"] = targetKind.ToString(),
+                ["automation.preferredUrl"] = preferredUrl,
+                ["automation.workerUrl"] = worker.Url,
+                ["automation.tabsClosed"] = closed,
+                ["automation.tabsBefore"] = existingPages.Count
+            });
+
+        return worker;
+    }
+
+    private static async Task<int> CloseBrowserPagesAsync(
+        IReadOnlyList<IPage> pages,
+        string callerMemberName)
+    {
+        var closed = 0;
+        foreach (var page in pages)
         {
-            _ = GlobalLogger.Instance.LogAsync(
-                closed > 0
-                    ? $"AdsPower CDP: рабочая вкладка {worker.Url} (закрыто лишних вкладок кабинета: {closed})."
-                    : $"AdsPower CDP: рабочая вкладка {worker.Url} (всего вкладок в профиле: {pages.Count}).",
-                DeskLinkAuditLogLevel.Info,
-                memberName: callerMemberName,
-                
-                properties: new Dictionary<string, object?>
-                {
-                    ["automation.targetKind"] = targetKind.ToString(),
-                    ["automation.workerUrl"] = worker.Url,
-                    ["automation.tabsClosed"] = closed,
-                    ["automation.tabsBefore"] = pages.Count
-                });
+            try
+            {
+                await page.CloseAsync().ConfigureAwait(false);
+                closed++;
+            }
+            catch (Exception ex)
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"AdsPower CDP: не удалось закрыть лишнюю вкладку ({page.Url}): {ex.Message}",
+                    DeskLinkAuditLogLevel.Debug,
+                    memberName: callerMemberName,
+                    properties: new Dictionary<string, object?>
+                    {
+                        ["page.url"] = page.Url,
+                        ["error.type"] = ex.GetType().FullName
+                    });
+            }
         }
 
-        cancellationToken.ThrowIfCancellationRequested();
-        return worker;
+        return closed;
     }
 
     private static AvitoAutomationPageKind ClassifyAutomationPageKind(string preferredUrl)
@@ -2074,7 +2134,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
         }
     }
 
-    private static async Task<MessengerCardEnrichmentResult> TryEnrichMessengerForCandidateCardAsync(
+    private async Task<MessengerCardEnrichmentResult> TryEnrichMessengerForCandidateCardAsync(
         IPage page,
         int candidateIndex,
         string candidatesReturnUrl,
@@ -2135,22 +2195,13 @@ public sealed partial class AdsPowerAvitoAutomationService(
             // Ссылка канала может появиться позже, чем список сообщений.
         }
 
-        JsonArray chatMessages = new();
-        for (var round = 0; round < 4; round++)
+        var chatMessages = await CollectMiniMessengerMessagesAsync(page, cancellationToken).ConfigureAwait(false);
+        if (AvitoMessengerAutoReply.Enabled
+            && AvitoChatAutoReplyEvaluator.NeedsAutoReply(ParseMiniMessengerMessages(chatMessages)))
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            await Task.Delay(round == 0 ? 280 : 220, cancellationToken).ConfigureAwait(false);
-
-            var messagesRaw = await EvaluateWithRetryAsync<string>(
-                    page,
-                    AvitoCandidatesPageScripts.BuildScrollAndCollectMiniMessengerMessagesScript(),
-                    cancellationToken)
-                .ConfigureAwait(false);
-            var parsed = TryParseMiniMessengerMessages(messagesRaw);
-            if (parsed.Count > 0)
+            if (await TrySendMiniMessengerAutoReplyAsync(page, cancellationToken).ConfigureAwait(false))
             {
-                chatMessages = parsed;
-                break;
+                chatMessages = await CollectMiniMessengerMessagesAsync(page, cancellationToken).ConfigureAwait(false);
             }
         }
 
@@ -2300,6 +2351,137 @@ public sealed partial class AdsPowerAvitoAutomationService(
         catch
         {
             return 0;
+        }
+    }
+
+    private async Task<JsonArray> CollectMiniMessengerMessagesAsync(
+        IPage page,
+        CancellationToken cancellationToken)
+    {
+        for (var round = 0; round < 4; round++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await Task.Delay(round == 0 ? 280 : 220, cancellationToken).ConfigureAwait(false);
+
+            var messagesRaw = await EvaluateWithRetryAsync<string>(
+                    page,
+                    AvitoCandidatesPageScripts.BuildScrollAndCollectMiniMessengerMessagesScript(),
+                    cancellationToken)
+                .ConfigureAwait(false);
+            var parsed = TryParseMiniMessengerMessages(messagesRaw);
+            if (parsed.Count > 0)
+            {
+                return parsed;
+            }
+        }
+
+        return new JsonArray();
+    }
+
+    private static IReadOnlyList<AvitoChatMessage> ParseMiniMessengerMessages(JsonArray chatMessages) =>
+        AvitoChatMessagesJson.Parse(chatMessages.ToJsonString());
+
+    private async Task<bool> TrySendMiniMessengerAutoReplyAsync(
+        IPage page,
+        CancellationToken cancellationToken)
+    {
+        await HumanDelay.BeforeMessengerAutoReplySendAsync(cancellationToken).ConfigureAwait(false);
+
+        var sendRaw = await EvaluateWithRetryAsync<string>(
+                page,
+                AvitoCandidatesPageScripts.BuildSendMiniMessengerReplyScript(AvitoMessengerAutoReply.DefaultMessage),
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (!TryParseMessengerSendStep(sendRaw, out var sent, out var reason) || !sent)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"AdsPower messenger auto-reply failed: {reason ?? "unknown"}.",
+                DeskLinkAuditLogLevel.Warning,
+                memberName: nameof(TrySendMiniMessengerAutoReplyAsync),
+                properties: new Dictionary<string, object?>
+                {
+                    ["page.url"] = page.Url,
+                    ["messenger.autoReply.reason"] = reason
+                });
+            return false;
+        }
+
+        var appeared = await WaitForEmployerAutoReplyInChatAsync(page, cancellationToken).ConfigureAwait(false);
+        _ = GlobalLogger.Instance.LogAsync(
+            appeared
+                ? "AdsPower messenger auto-reply sent."
+                : "AdsPower messenger auto-reply submitted, but outgoing message was not confirmed in chat history.",
+            appeared ? DeskLinkAuditLogLevel.Info : DeskLinkAuditLogLevel.Warning,
+            memberName: nameof(TrySendMiniMessengerAutoReplyAsync),
+            properties: new Dictionary<string, object?>
+            {
+                ["page.url"] = page.Url,
+                ["messenger.autoReply.confirmed"] = appeared,
+                ["messenger.autoReply.method"] = reason
+            });
+
+        return appeared;
+    }
+
+    private async Task<bool> WaitForEmployerAutoReplyInChatAsync(
+        IPage page,
+        CancellationToken cancellationToken)
+    {
+        var expected = AvitoMessengerAutoReply.DefaultMessage.Trim();
+        for (var elapsed = 0;
+             elapsed < MonitoringTiming.MessengerAutoReplyPostSendMaxWaitMs;
+             elapsed += MonitoringTiming.MessengerAutoReplyPostSendPollMs)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await Task.Delay(MonitoringTiming.MessengerAutoReplyPostSendPollMs, cancellationToken)
+                .ConfigureAwait(false);
+
+            var messagesRaw = await EvaluateWithRetryAsync<string>(
+                    page,
+                    AvitoCandidatesPageScripts.BuildScrollAndCollectMiniMessengerMessagesScript(),
+                    cancellationToken)
+                .ConfigureAwait(false);
+            var messages = ParseMiniMessengerMessages(TryParseMiniMessengerMessages(messagesRaw));
+            if (messages.Any(m =>
+                    AvitoChatAutoReplyEvaluator.IsEmployerMessage(m)
+                    && string.Equals(m.Text.Trim(), expected, StringComparison.Ordinal)))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool TryParseMessengerSendStep(string? raw, out bool ok, out string? reason)
+    {
+        ok = false;
+        reason = null;
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            reason = "empty_send_result";
+            return false;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(UnwrapMessengerJson(raw));
+            ok = doc.RootElement.TryGetProperty("ok", out var okProp) && okProp.GetBoolean();
+            if (!ok && doc.RootElement.TryGetProperty("reason", out var reasonProp))
+            {
+                reason = reasonProp.GetString();
+            }
+            else if (ok && doc.RootElement.TryGetProperty("method", out var methodProp))
+            {
+                reason = methodProp.GetString();
+            }
+
+            return true;
+        }
+        catch
+        {
+            reason = "invalid_send_result";
+            return false;
         }
     }
 

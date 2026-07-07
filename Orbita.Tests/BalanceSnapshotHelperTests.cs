@@ -21,6 +21,22 @@ public sealed class BalanceSnapshotHelperTests
     }
 
     [Fact]
+    public void MergeWithPersisted_SkipsPlaceholderBalance_WhenNoPersistedDataExists()
+    {
+        var incoming = new[]
+        {
+            new WorkerBalanceDto(AccountId, "acc-1", 0m, [new SubProfileBalanceDto("—", null)])
+        };
+
+        var merged = BalanceSnapshotHelper.MergeWithPersisted(
+            incoming,
+            [],
+            new Dictionary<Guid, WorkerAccountEntity>());
+
+        Assert.Empty(merged);
+    }
+
+    [Fact]
     public void MergeWithPersisted_UsesPersistedAccount_WhenIncomingBalanceIsEmpty()
     {
         var incoming = new[]

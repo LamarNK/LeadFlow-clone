@@ -136,10 +136,16 @@ public sealed class WorkerTelemetryCollector(
             return persisted;
         }
 
-        var persistedById = persisted.ToDictionary(
-            static sp => sp.Id,
-            static sp => sp,
-            StringComparer.Ordinal);
+        var persistedById = new Dictionary<string, WorkerSubProfileDto>(StringComparer.Ordinal);
+        foreach (var sp in persisted)
+        {
+            if (string.IsNullOrWhiteSpace(sp.Id))
+            {
+                continue;
+            }
+
+            persistedById.TryAdd(sp.Id.Trim(), sp);
+        }
         return current
             .Select(sp =>
             {
@@ -190,7 +196,9 @@ public sealed class WorkerTelemetryCollector(
 
         try
         {
-            var profiles = System.Text.Json.JsonSerializer.Deserialize<List<AvitoSubProfile>>(cfg.SubProfilesJson);
+            var profiles = System.Text.Json.JsonSerializer.Deserialize<List<AvitoSubProfile>>(
+                cfg.SubProfilesJson,
+                WorkerSubProfileJsonOptions.Deserialize);
             if (profiles is not { Count: > 0 })
             {
                 return null;

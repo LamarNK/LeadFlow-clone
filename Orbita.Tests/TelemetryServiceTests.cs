@@ -305,6 +305,94 @@ public sealed class TelemetryServiceTests
     }
 
     [Fact]
+    public async Task SaveSnapshotAsync_DoesNotWipeSubProfiles_WithPlaceholderIncoming()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db, disabledIdsJson: "[]");
+        const string existingJson = """
+            [
+              {"Id":"sp-1","Name":"Alpha","Balance":4200,"WalletBalance":100},
+              {"Id":"sp-2","Name":"Beta","Balance":800,"WalletBalance":0}
+            ]
+            """;
+        var account = await db.WorkerAccounts.SingleAsync();
+        account.SubProfilesJson = existingJson;
+        await db.SaveChangesAsync();
+
+        var sut = new TelemetryService(db, new OfficeAdminService(db), new NoopPanelRealtimeNotifier());
+        var capturedAt = DateTime.UtcNow;
+        var request = new WorkerSnapshotRequest(
+            WorkerId,
+            capturedAt,
+            CreateNonEmptyStats(),
+            [
+                new WorkerAccountDto(
+                    AccountId,
+                    "acc-1",
+                    "Ok",
+                    true,
+                    1,
+                    0,
+                    0,
+                    null,
+                    capturedAt,
+                    SubProfiles:
+                    [
+                        new WorkerSubProfileDto("—", "—", "", false, null, null, null, null)
+                    ])
+            ],
+            [
+                new WorkerBalanceDto(AccountId, "acc-1", 0m, [new SubProfileBalanceDto("—", null)])
+            ]);
+
+        var saved = await sut.SaveSnapshotAsync(request, CancellationToken.None);
+
+        Assert.True(saved);
+        account = await db.WorkerAccounts.SingleAsync();
+        Assert.Equal(existingJson, account.SubProfilesJson);
+    }
+
+    [Fact]
+    public async Task SaveSnapshotAsync_DoesNotWipeSubProfiles_WithEmptyArrayIncoming()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db, disabledIdsJson: "[]");
+        const string existingJson = """[{"Id":"sp-1","Name":"Alpha","Balance":4200}]""";
+        var account = await db.WorkerAccounts.SingleAsync();
+        account.SubProfilesJson = existingJson;
+        await db.SaveChangesAsync();
+
+        var sut = new TelemetryService(db, new OfficeAdminService(db), new NoopPanelRealtimeNotifier());
+        var capturedAt = DateTime.UtcNow;
+        var request = new WorkerSnapshotRequest(
+            WorkerId,
+            capturedAt,
+            CreateNonEmptyStats(),
+            [
+                new WorkerAccountDto(
+                    AccountId,
+                    "acc-1",
+                    "Ok",
+                    true,
+                    1,
+                    0,
+                    0,
+                    null,
+                    capturedAt,
+                    SubProfiles: [])
+            ],
+            [
+                new WorkerBalanceDto(AccountId, "acc-1", 0m, [])
+            ]);
+
+        var saved = await sut.SaveSnapshotAsync(request, CancellationToken.None);
+
+        Assert.True(saved);
+        account = await db.WorkerAccounts.SingleAsync();
+        Assert.Equal(existingJson, account.SubProfilesJson);
+    }
+
+    [Fact]
     public async Task SaveSnapshotAsync_PreservesExistingBalance_WhenIncomingSnapshotHasNoBalanceData()
     {
         await using var db = CreateDb();
