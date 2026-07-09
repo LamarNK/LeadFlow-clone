@@ -1272,6 +1272,84 @@ public sealed class OrbitaApiClient(
         return "Не удалось выполнить операцию.";
     }
 
+    public async Task<(CaptchaSessionDto? Session, CaptchaSessionConflictDto? Conflict, string? Error)> CreateCaptchaSessionAsync(
+        CreateCaptchaSessionRequest request,
+        CancellationToken ct = default)
+    {
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, "api/v1/panel/captcha-sessions");
+        httpRequest.Content = JsonContent.Create(request);
+        using var response = await SendAuthenticatedAsync(httpRequest, ct);
+        if (response is null)
+        {
+            return (null, null, InvalidApiSessionError);
+        }
+
+        if (response.StatusCode == System.Net.HttpStatusCode.Conflict)
+        {
+            var conflict = await response.Content.ReadFromJsonAsync<CaptchaSessionConflictDto>(ApiJsonOptions, ct);
+            return (null, conflict, conflict?.Message);
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            return (null, null, await ReadApiErrorAsync(response, ct));
+        }
+
+        var session = await response.Content.ReadFromJsonAsync<CaptchaSessionDto>(ApiJsonOptions, ct);
+        return (session, null, session is null ? "Пустой ответ API." : null);
+    }
+
+    public async Task<(bool Success, string? Error)> CancelCaptchaSessionAsync(Guid sessionId, CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"api/v1/panel/captcha-sessions/{sessionId:D}/cancel");
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (false, InvalidApiSessionError);
+        }
+
+        return response.IsSuccessStatusCode
+            ? (true, null)
+            : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public Task<WorkerCaptchaLockDto?> GetWorkerCaptchaLockAsync(Guid workerId, CancellationToken ct = default) =>
+        GetAsync<WorkerCaptchaLockDto>($"api/v1/panel/workers/{workerId:D}/captcha-lock", ct);
+
+    public async Task<(BrowserMonitorSessionDto? Session, string? Error)> StartBrowserMonitorSessionAsync(
+        Guid workerId,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"api/v1/panel/browser-monitor-sessions?workerId={workerId:D}");
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (null, InvalidApiSessionError);
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            return (null, await ReadApiErrorAsync(response, ct));
+        }
+
+        var session = await response.Content.ReadFromJsonAsync<BrowserMonitorSessionDto>(ApiJsonOptions, ct);
+        return (session, session is null ? "Пустой ответ API." : null);
+    }
+
+    public async Task<(bool Success, string? Error)> StopBrowserMonitorSessionAsync(Guid sessionId, CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"api/v1/panel/browser-monitor-sessions/{sessionId:D}/stop");
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (false, InvalidApiSessionError);
+        }
+
+        return response.IsSuccessStatusCode
+            ? (true, null)
+            : (false, await ReadApiErrorAsync(response, ct));
+    }
+
     private sealed record ApiErrorResponse(string? Error);
 }
 

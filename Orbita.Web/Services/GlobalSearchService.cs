@@ -78,7 +78,7 @@ public sealed class GlobalSearchService(OrbitaApiClient api, IOptions<DesignPrev
             {
                 Title = e.Message,
                 Subtitle = e.WorkerDisplayName,
-                Url = $"/Errors?q={Uri.EscapeDataString(query)}",
+                Url = $"/Events?q={Uri.EscapeDataString(query)}",
                 IconClass = "fa-solid fa-triangle-exclamation"
             })
             .ToList();

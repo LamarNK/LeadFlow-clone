@@ -25,7 +25,7 @@
      data-metric-today="@DateTime.Today.ToString("yyyy-MM-dd")"
      data-account-metric-responses-url="@($"/Responses?from=__today__&to=__today__&workerId=__workerId__&accountId=__accountId__")"
      data-account-metric-unique-url="@($"/Responses?from=__today__&to=__today__&status=unique&workerId=__workerId__&accountId=__accountId__")"
-     data-account-metric-errors-url="@($"/Errors?workerId=__workerId__&accountId=__accountId__")">
+     data-account-metric-errors-url="@($"/Events?level=errors&workerId=__workerId__&accountId=__accountId__")">
     <nav class="orbita-breadcrumbs" aria-label="Навигация">
         @for (var i = 0; i < Model.Breadcrumbs.Count; i++)
         {
@@ -93,6 +93,13 @@
                     <i class="fa-solid fa-rotate-right" aria-hidden="true"></i>
                     <span>Перезапустить</span>
                 </button>
+                <a class="worker-refresh-btn worker-browsers-btn"
+                   href="@Url.Action("Browsers", "Workers", new { id = Model.WorkerId })"
+                   target="_blank"
+                   rel="noopener noreferrer">
+                    <i class="fa-solid fa-table-cells-large" aria-hidden="true"></i>
+                    <span>Просмотр всех браузеров</span>
+                </a>
             }
             <div class="worker-actions-menu" data-row-menu>
                 <button type="button" class="worker-actions-trigger row-menu-btn" aria-label="Действия с воркером" aria-expanded="false" aria-haspopup="true">

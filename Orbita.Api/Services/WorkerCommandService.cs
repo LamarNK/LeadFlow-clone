@@ -4,7 +4,10 @@ using Orbita.Contracts;
 
 namespace Orbita.Api.Services;
 
-public sealed class WorkerCommandService(OrbitaDbContext db, OfficeScopeService officeScope)
+public sealed class WorkerCommandService(
+    OrbitaDbContext db,
+    OfficeScopeService officeScope,
+    IWorkerPushNotifier pushNotifier)
 {
     private static readonly HashSet<string> AllowedCommands =
         new(StringComparer.OrdinalIgnoreCase) { WorkerCommands.Restart };
@@ -31,9 +34,11 @@ public sealed class WorkerCommandService(OrbitaDbContext db, OfficeScopeService 
             return (false, "Воркер не найден.");
         }
 
-        worker.PendingCommand = command.Trim().ToLowerInvariant();
+        var normalized = command.Trim().ToLowerInvariant();
+        worker.PendingCommand = normalized;
         worker.PendingCommandAtUtc = DateTime.UtcNow;
         await db.SaveChangesAsync(ct);
+        await pushNotifier.TryPushCommandAsync(workerId, normalized, ct).ConfigureAwait(false);
         return (true, null);
     }
 }

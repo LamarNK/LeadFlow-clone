@@ -9,7 +9,8 @@ public sealed class WorkerAdminService(
     OrbitaDbContext db,
     IConfiguration configuration,
     WorkerReleaseService releases,
-    IPanelRealtimeNotifier panelRealtime)
+    IPanelRealtimeNotifier panelRealtime,
+    WorkerConnectionRegistry connectionRegistry)
 {
     public async Task<(CreateWorkerResponse? Result, string? Error)> CreateAsync(
         string displayName,
@@ -88,7 +89,7 @@ public sealed class WorkerAdminService(
             .Where(x => scope.IsGlobalAdmin
                 ? officeFilter is null || x.OfficeId == officeFilter
                 : x.OfficeId == scope.OfficeId)
-            .Select(x => Map(x, now, latestReleaseVersion))
+            .Select(x => Map(x, connectionRegistry, now, latestReleaseVersion))
             .ToList();
     }
 
@@ -111,7 +112,7 @@ public sealed class WorkerAdminService(
 
         worker.DisplayName = displayName.Trim();
         await db.SaveChangesAsync(ct);
-        return (Map(worker), null);
+        return (Map(worker, connectionRegistry), null);
     }
 
     public async Task<(AdminWorkerListItemDto? Worker, string? Error)> SetEnabledAsync(
@@ -132,7 +133,7 @@ public sealed class WorkerAdminService(
             [PanelChangeKind.Workers, PanelChangeKind.Dashboard],
             worker.OfficeId,
             worker.Id);
-        return (Map(worker), null);
+        return (Map(worker, connectionRegistry), null);
     }
 
     public async Task<(string? DisplayName, string? Error)> DeleteAsync(
@@ -208,6 +209,7 @@ public sealed class WorkerAdminService(
 
     private static AdminWorkerListItemDto Map(
         WorkerEntity worker,
+        WorkerConnectionRegistry registry,
         DateTime? nowUtc = null,
         string? latestReleaseVersion = null)
     {
@@ -219,7 +221,7 @@ public sealed class WorkerAdminService(
             worker.MachineName,
             worker.AppVersion,
             worker.IsEnabled,
-            WorkerOnlineRules.IsOnline(worker.LastSeenAtUtc, now),
+            WorkerOnlineRules.IsOnline(worker.LastSeenAtUtc, now, registry.IsConnected(worker.Id)),
             worker.LastSeenAtUtc,
             worker.CreatedAtUtc,
             worker.ApiKeyRotatedAtUtc,

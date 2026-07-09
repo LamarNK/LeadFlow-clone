@@ -11,7 +11,10 @@ public sealed class WorkerConfigService(
     OrbitaDbContext db,
     OfficeScopeService officeScope,
     IPanelRealtimeNotifier panelRealtime,
-    WorkerReleaseService releases)
+    IWorkerPushNotifier workerPushNotifier,
+    WorkerReleaseService releases,
+    CaptchaSessionService captchaSessions,
+    BrowserMonitorService browserMonitorSessions)
 {
     public Task<WorkerConfigDto?> GetConfigForWorkerAsync(
         Guid workerId,
@@ -71,6 +74,14 @@ public sealed class WorkerConfigService(
                 updateCheck.ReleaseNotes);
         }
 
+        var pendingCaptcha = await captchaSessions
+            .GetPendingForWorkerAsync(worker.Id, ct)
+            .ConfigureAwait(false);
+
+        var pendingBrowserMonitor = await browserMonitorSessions
+            .GetPendingForWorkerAsync(worker.Id, ct)
+            .ConfigureAwait(false);
+
         return new WorkerConfigDto(
             worker.Id,
             worker.MaxConcurrentAccounts,
@@ -78,7 +89,9 @@ public sealed class WorkerConfigService(
             worker.AdsPowerApiKey,
             accounts,
             pendingCommand,
-            updateOffer);
+            updateOffer,
+            pendingCaptcha,
+            pendingBrowserMonitor);
     }
 
     public async Task<bool> SyncAccountsAsync(
@@ -177,6 +190,7 @@ public sealed class WorkerConfigService(
         worker.AdsPowerApiBaseUrl = normalizedBaseUrl;
         worker.AdsPowerApiKey = normalizedApiKey;
         await db.SaveChangesAsync(ct);
+        await workerPushNotifier.PushConfigChangedAsync(workerId, ct).ConfigureAwait(false);
         return (await GetConfigForWorkerAsync(workerId, scope, ct), null);
     }
 
@@ -279,6 +293,7 @@ public sealed class WorkerConfigService(
             [PanelChangeKind.Workers, PanelChangeKind.Accounts, PanelChangeKind.Dashboard],
             worker.OfficeId,
             workerId);
+        await workerPushNotifier.PushConfigChangedAsync(workerId, ct).ConfigureAwait(false);
 
         return (ToAccountConfigDto(account, worker.AdsPowerApiBaseUrl, worker.AdsPowerApiKey), null);
     }
@@ -363,6 +378,7 @@ public sealed class WorkerConfigService(
                 [PanelChangeKind.Workers, PanelChangeKind.Accounts],
                 worker.OfficeId,
                 workerId);
+            await workerPushNotifier.PushConfigChangedAsync(workerId, ct).ConfigureAwait(false);
         }
 
         return (true, null);
@@ -406,6 +422,7 @@ public sealed class WorkerConfigService(
                 [PanelChangeKind.Workers, PanelChangeKind.Accounts],
                 worker.OfficeId,
                 workerId);
+            await workerPushNotifier.PushConfigChangedAsync(workerId, ct).ConfigureAwait(false);
         }
 
         return (true, null);

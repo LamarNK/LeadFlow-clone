@@ -20,36 +20,37 @@ public sealed class WorkerApiKeyAuthenticationHandler(
 
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
     {
-        if (!Request.Headers.TryGetValue("Authorization", out var header) || header.Count == 0)
+        var (resolved, apiKey, failureReason, failureMessage) = TryResolveApiKey();
+        if (!resolved)
         {
+            if (failureReason is not null)
+            {
+                await LogAuthFailureAsync(failureReason, failureMessage!).ConfigureAwait(false);
+                return AuthenticateResult.Fail(failureMessage!);
+            }
+
             return AuthenticateResult.NoResult();
         }
 
-        var value = header.ToString();
-        if (!value.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
-        {
-            await LogAuthFailureAsync("invalid_authorization_header", "Worker auth failed: invalid authorization header.");
-            return AuthenticateResult.Fail("Invalid authorization header.");
-        }
-
-        var apiKey = value["Bearer ".Length..].Trim();
-        if (string.IsNullOrWhiteSpace(apiKey))
-        {
-            await LogAuthFailureAsync("empty_api_key", "Worker auth failed: API key is empty.");
-            return AuthenticateResult.Fail("API key is empty.");
-        }
-
-        var hash = ApiKeyService.HashApiKey(apiKey);
-        var worker = await db.Workers.AsNoTracking().FirstOrDefaultAsync(x => x.ApiKeyHash == hash);
+        var hash = ApiKeyService.HashApiKey(apiKey!);
+        var worker = await db.Workers.AsNoTracking().FirstOrDefaultAsync(x => x.ApiKeyHash == hash).ConfigureAwait(false);
         if (worker is null)
         {
-            await LogAuthFailureAsync("invalid_api_key", "Worker auth failed: invalid API key.");
+            var source = Request.Headers.ContainsKey("Authorization") ? "authorization_header" : "access_token_query";
+            await LogAuthFailureAsync(
+                "invalid_api_key",
+                "Worker auth failed: invalid API key.",
+                new Dictionary<string, object?>
+                {
+                    ["auth.source"] = source,
+                    ["auth.keyLength"] = apiKey!.Length
+                }).ConfigureAwait(false);
             return AuthenticateResult.Fail("Invalid API key.");
         }
 
         if (!worker.IsEnabled)
         {
-            await LogAuthFailureAsync("worker_disabled", $"Worker auth failed: worker disabled ({worker.Id}).");
+            await LogAuthFailureAsync("worker_disabled", $"Worker auth failed: worker disabled ({worker.Id}).").ConfigureAwait(false);
             return AuthenticateResult.Fail("Worker is disabled.");
         }
 
@@ -64,16 +65,79 @@ public sealed class WorkerApiKeyAuthenticationHandler(
         return AuthenticateResult.Success(ticket);
     }
 
-    private async Task LogAuthFailureAsync(string reason, string message)
+    private (bool Resolved, string? ApiKey, string? FailureReason, string? FailureMessage) TryResolveApiKey()
     {
+        if (Request.Headers.TryGetValue("Authorization", out var header) && header.Count > 0)
+        {
+            var value = header.ToString();
+            if (!value.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+            {
+                return (false, null, "invalid_authorization_header", "Worker auth failed: invalid authorization header.");
+            }
+
+            var apiKey = value["Bearer ".Length..].Trim();
+            if (string.IsNullOrWhiteSpace(apiKey))
+            {
+                return (false, null, "empty_api_key", "Worker auth failed: API key is empty.");
+            }
+
+            // JWT panel tokens also arrive as Bearer on hub negotiate; they are not worker API keys.
+            if (apiKey.Contains('.', StringComparison.Ordinal))
+            {
+                return (false, null, null, null);
+            }
+
+            return (true, apiKey, null, null);
+        }
+
+        if (!IsHubPath(Request.Path))
+        {
+            return (false, null, null, null);
+        }
+
+        if (!Request.Query.TryGetValue("access_token", out var accessToken))
+        {
+            return (false, null, null, null);
+        }
+
+        var token = accessToken.ToString().Trim();
+        if (string.IsNullOrWhiteSpace(token) || token.Contains('.', StringComparison.Ordinal))
+        {
+            return (false, null, null, null);
+        }
+
+        return (true, token, null, null);
+    }
+
+    private static bool IsHubPath(PathString path) =>
+        path.StartsWithSegments("/hubs/captcha", StringComparison.OrdinalIgnoreCase)
+        || path.StartsWithSegments("/hubs/panel", StringComparison.OrdinalIgnoreCase)
+        || path.StartsWithSegments("/hubs/worker", StringComparison.OrdinalIgnoreCase);
+
+    private async Task LogAuthFailureAsync(
+        string reason,
+        string message,
+        Dictionary<string, object?>? extra = null)
+    {
+        var properties = new Dictionary<string, object?>
+        {
+            ["http.path"] = Request.Path.Value,
+            ["auth.scheme"] = SchemeName
+        };
+        if (extra is not null)
+        {
+            foreach (var (key, value) in extra)
+            {
+                properties[key] = value;
+            }
+        }
+
+        var path = Request.Path.Value ?? "/";
+        var detail = $"{message} (path={path})";
         await GlobalLogger.Instance.LogAsync(
-            message,
+            detail,
             DeskLinkAuditLogLevel.Warning,
             errorKey: $"auth.worker.{reason}",
-            properties: new Dictionary<string, object?>
-            {
-                ["http.path"] = Request.Path.Value,
-                ["auth.scheme"] = SchemeName
-            });
+            properties: properties).ConfigureAwait(false);
     }
 }

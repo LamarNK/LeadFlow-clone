@@ -28,7 +28,8 @@ public sealed class WorkerMonitoringService(
     AvitoParserService avitoParser,
     IAdsPowerAvitoAutomationService adsPowerAvitoAutomationService,
     IWorkerActivityReporter activityReporter,
-    IWorkerPendingUpdateCoordinator pendingUpdateCoordinator) : IWorkerMonitoringService
+    IWorkerPendingUpdateCoordinator pendingUpdateCoordinator,
+    IBrowserMonitorSource browserMonitorSource) : IWorkerMonitoringService
 {
     private const int LoopRecoveryPauseMinutes = 12;
     private const int MaxLoopRecoveryFailuresBeforeStop = 10;
@@ -39,8 +40,26 @@ public sealed class WorkerMonitoringService(
     private Task? _loopTask;
     private int _consecutiveMonitoringLoopFailures;
     private int _consecutiveQuietMonitoringCycles;
+    private volatile bool _captchaHold;
 
     public bool IsActive { get; private set; }
+    public bool IsCaptchaHold => _captchaHold;
+
+    public void EnterCaptchaHold()
+    {
+        _captchaHold = true;
+        _ = GlobalLogger.Instance.LogAsync(
+            "Мониторинг приостановлен для сессии капчи (текущие браузеры не закрываются).",
+            DeskLinkAuditLogLevel.Info);
+    }
+
+    public void ExitCaptchaHold()
+    {
+        _captchaHold = false;
+        _ = GlobalLogger.Instance.LogAsync(
+            "Мониторинг возобновлён после сессии капчи.",
+            DeskLinkAuditLogLevel.Info);
+    }
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
@@ -84,6 +103,12 @@ public sealed class WorkerMonitoringService(
         {
             while (!cancellationToken.IsCancellationRequested)
             {
+                if (_captchaHold)
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken).ConfigureAwait(false);
+                    continue;
+                }
+
                 try
                 {
                     var config = await configProvider.GetConfigAsync(cancellationToken).ConfigureAwait(false);
@@ -559,6 +584,7 @@ public sealed class WorkerMonitoringService(
             string.IsNullOrWhiteSpace(account.AdsPowerApiKey) ? null : account.AdsPowerApiKey);
 
         var browserOpened = false;
+        var monitorContext = new BrowserMonitorRuntimeContext();
         try
         {
             await using var session = await adsPowerAvitoAutomationService
@@ -566,6 +592,23 @@ public sealed class WorkerMonitoringService(
                 .ConfigureAwait(false);
             browserOpened = true;
             WorkerMonitoringLogger.BrowserOpened(account);
+
+            if (browserMonitorSource.IsActive)
+            {
+                browserMonitorSource.Register(
+                    account.Id,
+                    account.DisplayName,
+                    account.AdsPowerProfileId!,
+                    async ct =>
+                    {
+                        var bytes = await session.CapturePageScreenshotAsync(ct).ConfigureAwait(false);
+                        return new BrowserMonitorCapture(
+                            bytes,
+                            session.CurrentPageUrl,
+                            monitorContext.SubProfileId,
+                            monitorContext.SubProfileName);
+                    });
+            }
 
             AvitoSubProfile? diagnosticSubProfile = null;
             try
@@ -660,6 +703,8 @@ public sealed class WorkerMonitoringService(
 
                 var sub = subProfiles[i];
                 diagnosticSubProfile = sub;
+                monitorContext.SubProfileId = sub.Id;
+                monitorContext.SubProfileName = sub.Name;
                 try
                 {
                     WorkerMonitoringLogger.SubProfileStep(
@@ -831,6 +876,11 @@ public sealed class WorkerMonitoringService(
         {
             if (browserOpened)
             {
+                if (browserMonitorSource.IsActive)
+                {
+                    browserMonitorSource.Unregister(account.Id);
+                }
+
                 var closed = await TryCloseAdsPowerBrowserForAccountAsync(account, adsOptions)
                     .ConfigureAwait(false);
                 if (closed)

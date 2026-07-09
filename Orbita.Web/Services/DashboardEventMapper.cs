@@ -26,13 +26,20 @@ internal static class DashboardEventMapper
                 WorkerName = error.WorkerName,
                 Level = level,
                 LevelLabel = error.SeverityLabel,
+                IconClass = "fa-regular fa-circle-xmark",
+                IconTone = "error",
+                AccountId = error.AccountId,
                 AccountName = error.AccountName,
                 DetailTitle = error.ErrorTypeLabel,
                 DetailSubtitle = $"{error.WorkerName} · {error.SeverityLabel}",
                 DetailBody = error.Message,
                 CopyText = error.CopyText,
                 AttachmentId = error.AttachmentId,
-                IsError = true
+                IsError = true,
+                CanSolveCaptcha = error.CanSolveCaptcha,
+                CaptchaUrl = error.CaptchaUrl,
+                CaptchaKind = string.IsNullOrWhiteSpace(error.CaptchaKind) ? "captcha" : error.CaptchaKind,
+                CaptchaSubProfileId = error.CaptchaSubProfileId
             };
         }
 
@@ -47,13 +54,20 @@ internal static class DashboardEventMapper
             WorkerName = evt.WorkerName,
             Level = level,
             LevelLabel = evt.LevelLabel,
+            IconClass = evt.EventTypeIcon,
+            IconTone = evt.EventTypeTone,
+            AccountId = evt.AccountId,
             AccountName = evt.AccountName,
             DetailTitle = evt.EventTypeLabel,
             DetailSubtitle = $"{evt.WorkerName} · {evt.LevelLabel}",
             DetailBody = evt.Description,
             CopyText = evt.CopyText,
             AttachmentId = evt.AttachmentId,
-            IsError = false
+            IsError = false,
+            CanSolveCaptcha = evt.CanSolveCaptcha,
+            CaptchaUrl = evt.CaptchaUrl,
+            CaptchaKind = string.IsNullOrWhiteSpace(evt.CaptchaKind) ? "captcha" : evt.CaptchaKind,
+            CaptchaSubProfileId = evt.CaptchaSubProfileId
         };
     }
 
@@ -86,6 +100,7 @@ internal static class DashboardEventMapper
     private static string NormalizeLevel(string level) =>
         level.Equals("Error", StringComparison.OrdinalIgnoreCase) ? "error"
         : level.Equals("Warning", StringComparison.OrdinalIgnoreCase) ? "warning"
+        : level.Equals("Info", StringComparison.OrdinalIgnoreCase) ? "info"
         : "success";
 
     private static string Truncate(string value, int maxLength)

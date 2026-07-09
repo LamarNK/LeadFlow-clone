@@ -815,6 +815,7 @@
     function eventIcon(level) {
         if (level === 'error') return 'fa-regular fa-circle-xmark';
         if (level === 'warning') return 'fa-solid fa-triangle-exclamation';
+        if (level === 'info') return 'fa-solid fa-circle-info';
         return 'fa-regular fa-circle-check';
     }
 
@@ -836,9 +837,18 @@
             var accountUrl = evt.accountName ? accountSearchUrl(evt.accountName) : '';
             var logUrl = settingsLogsUrl(evt.workerId);
             var attachmentUrl = evt.attachmentId ? '/Diagnostics/Image/' + evt.attachmentId : '';
+            var captchaAttrs = (evt.canSolveCaptcha && evt.captchaUrl && evt.accountId)
+                ? ' data-captcha-can-solve="1" data-captcha-url="' + escapeHtml(evt.captchaUrl) + '"' +
+                  ' data-captcha-kind="' + escapeHtml(evt.captchaKind || 'captcha') + '"' +
+                  ' data-captcha-account-id="' + escapeHtml(evt.accountId) + '"' +
+                  ' data-captcha-worker-id="' + escapeHtml(evt.workerId) + '"' +
+                  ' data-captcha-account-name="' + escapeHtml(evt.accountName || '') + '"' +
+                  (evt.captchaSubProfileId ? ' data-captcha-subprofile-id="' + escapeHtml(evt.captchaSubProfileId) + '"' : '')
+                : '';
 
             return '<div class="dash-event-row dash-event-row--detail" role="button" tabindex="0"' +
                 ' data-event-id="' + escapeHtml(evt.id || '') + '"' +
+                captchaAttrs +
                 ' data-copy="' + escapeHtml(evt.copyText || '') + '"' +
                 ' data-detail-title="' + escapeHtml(evt.detailTitle || 'Детали') + '"' +
                 ' data-detail-subtitle="' + escapeHtml(evt.detailSubtitle || '') + '"' +
@@ -848,7 +858,7 @@
                 ' data-detail-worker-url="' + escapeHtml(workerUrl) + '"' +
                 ' data-detail-account-url="' + escapeHtml(accountUrl) + '"' +
                 ' data-is-error="' + (evt.isError ? 'true' : 'false') + '">' +
-                '<div class="dash-event-icon dash-event-icon--' + escapeHtml(evt.level) + '"><i class="' + eventIcon(evt.level) + '" aria-hidden="true"></i></div>' +
+                '<div class="dash-event-icon dash-event-icon--' + escapeHtml(evt.iconTone || evt.level || 'success') + '"><i class="' + escapeHtml(evt.iconClass || eventIcon(evt.level)) + '" aria-hidden="true"></i></div>' +
                 '<div class="dash-event-body"><div class="dash-event-title" title="' + escapeHtml(evt.message) + '">' + escapeHtml(evt.message) + '</div>' + subtitle + '</div>' +
                 '<div class="dash-event-side">' +
                 '<div class="dash-event-time"><time data-orbita-utc="' + escapeHtml(iso) + '" data-orbita-format="time"></time></div>' +

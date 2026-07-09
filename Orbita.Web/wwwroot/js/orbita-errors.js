@@ -77,7 +77,15 @@
             var menu = shared.rowMenuShell('row-menu-dropdown--errors',
                 '<a class="row-menu-item" href="' + shared.escapeHtml(settingsLogsUrl(error.workerId)) + '"><i class="fa-regular fa-file-lines" aria-hidden="true"></i>Открыть лог</a>');
 
-            return '<tr class="errors-row" data-event-id="' + shared.escapeHtml(error.id) + '" data-copy="' + shared.escapeHtml(error.copyText || '') + '"' +
+            var captchaAttrs = (error.canSolveCaptcha && error.captchaUrl && error.accountId)
+                ? ' data-captcha-can-solve="1" data-captcha-url="' + shared.escapeHtml(error.captchaUrl) + '"' +
+                  ' data-captcha-kind="' + shared.escapeHtml(error.captchaKind || 'captcha') + '"' +
+                  ' data-captcha-account-id="' + shared.escapeHtml(error.accountId) + '"' +
+                  ' data-captcha-worker-id="' + shared.escapeHtml(error.workerId) + '"' +
+                  ' data-captcha-account-name="' + shared.escapeHtml(error.accountName || '') + '"' +
+                  (error.captchaSubProfileId ? ' data-captcha-subprofile-id="' + shared.escapeHtml(error.captchaSubProfileId) + '"' : '')
+                : '';
+            return '<tr class="errors-row" data-event-id="' + shared.escapeHtml(error.id) + '" data-copy="' + shared.escapeHtml(error.copyText || '') + '"' + captchaAttrs +
                 ' data-detail-title="' + shared.escapeHtml(error.errorTypeLabel || 'Детали') + '"' +
                 ' data-detail-subtitle="' + shared.escapeHtml((error.workerName || '') + ' · ' + (error.severityLabel || '')) + '"' +
                 ' data-detail-body="' + shared.escapeHtml(error.message || '') + '"' +

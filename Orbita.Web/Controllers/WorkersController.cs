@@ -83,6 +83,30 @@ public sealed class WorkersController(IWorkersService workers) : Controller
     }
 
     [HttpGet]
+    public async Task<IActionResult> Browsers(Guid id, CancellationToken ct = default)
+    {
+        var model = await workers.GetDetailsAsync(id, includeLogs: false, ct: ct);
+        if (model is null)
+        {
+            return NotFound();
+        }
+
+        return View(new WorkerBrowserMonitorViewModel
+        {
+            WorkerId = model.WorkerId,
+            WorkerName = model.DisplayName,
+            IsOnline = model.IsOnline,
+            IsEnabled = model.IsEnabled,
+            Breadcrumbs =
+            [
+                new BreadcrumbItemViewModel { Label = "Воркеры", Url = Url.Action(nameof(Index))! },
+                new BreadcrumbItemViewModel { Label = model.DisplayName, Url = Url.Action(nameof(Details), new { id })! },
+                new BreadcrumbItemViewModel { Label = "Просмотр браузеров", IsActive = true }
+            ]
+        });
+    }
+
+    [HttpGet]
     public async Task<IActionResult> Details(
         Guid id,
         string? logsQ,

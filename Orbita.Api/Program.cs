@@ -109,7 +109,11 @@ builder.Services.AddAuthentication(options =>
                 var accessToken = context.Request.Query["access_token"];
                 var path = context.HttpContext.Request.Path;
                 if (!string.IsNullOrEmpty(accessToken)
-                    && path.StartsWithSegments("/hubs", StringComparison.OrdinalIgnoreCase))
+                    && accessToken.ToString().Contains('.', StringComparison.Ordinal)
+                    && (path.StartsWithSegments("/hubs/panel", StringComparison.OrdinalIgnoreCase)
+                        || path.StartsWithSegments("/hubs/captcha", StringComparison.OrdinalIgnoreCase)
+                        || path.StartsWithSegments("/hubs/worker", StringComparison.OrdinalIgnoreCase)
+                        || path.StartsWithSegments("/hubs/browser-monitor", StringComparison.OrdinalIgnoreCase)))
                 {
                     context.Token = accessToken;
                 }
@@ -139,12 +143,36 @@ builder.Services.AddAuthorization(options =>
         policy.AddAuthenticationSchemes(JwtBearerDefaults.AuthenticationScheme);
         policy.RequireRole(PanelRoles.Admin);
     });
+    options.AddPolicy("WorkerOrPanel", policy =>
+    {
+        policy.AddAuthenticationSchemes(
+            JwtBearerDefaults.AuthenticationScheme,
+            WorkerApiKeyAuthenticationHandler.SchemeName);
+        policy.RequireAuthenticatedUser();
+    });
 });
 builder.Services.AddOpenApi();
-builder.Services.AddSignalR()
+builder.Services.AddSignalR(options =>
+    {
+        // MHTML captcha snapshots are far above the 32 KB default.
+        options.MaximumReceiveMessageSize = 16 * 1024 * 1024;
+        options.EnableDetailedErrors = builder.Environment.IsDevelopment();
+    })
     .AddJsonProtocol(options =>
-        options.PayloadSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
+    {
+        options.PayloadSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
+        options.PayloadSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
+    });
 builder.Services.AddSingleton<IPanelRealtimeNotifier, PanelRealtimeNotifier>();
+builder.Services.AddSingleton<WorkerConnectionRegistry>();
+builder.Services.AddSingleton<IWorkerPushNotifier, WorkerPushNotifier>();
+builder.Services.AddSingleton<CaptchaRelayRegistry>();
+builder.Services.AddSingleton<BrowserMonitorRegistry>();
+builder.Services.AddSingleton<BrowserMonitorService>();
+builder.Services.AddSingleton<ICaptchaSessionRelayNotifier, CaptchaSessionRelayNotifier>();
+builder.Services.AddScoped<CaptchaSessionService>();
+builder.Services.AddSingleton<ICaptchaLockNotifier, CaptchaLockNotifier>();
+builder.Services.AddHostedService<CaptchaSessionSweeperService>();
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("Web", policy =>
@@ -246,6 +274,9 @@ app.UseWebSockets();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapHub<PanelHub>("/hubs/panel");
+app.MapHub<CaptchaRelayHub>("/hubs/captcha");
+app.MapHub<BrowserMonitorHub>("/hubs/browser-monitor");
+app.MapHub<WorkerHub>("/hubs/worker");
 
 var workers = app.MapGroup("/api/v1/workers");
 workers.MapPost("/register", async (WorkerRegisterRequest request, TelemetryService telemetry, IConfiguration config, CancellationToken ct) =>
@@ -319,6 +350,36 @@ workers.MapGet("/config", async (WorkerConfigService configService, ClaimsPrinci
 
     var config = await configService.GetConfigForWorkerAsync(workerId, OfficeScope.GlobalAdmin, consumePendingCommand: true, ct);
     return config is null ? Results.NotFound() : Results.Ok(config);
+}).RequireAuthorization("Worker");
+
+workers.MapPost("/captcha-sessions/status", async (
+    UpdateCaptchaSessionStatusRequest request,
+    CaptchaSessionService captchaSessions,
+    ClaimsPrincipal user,
+    CancellationToken ct) =>
+{
+    if (!TryGetWorkerId(user, out var workerId))
+    {
+        return Results.Forbid();
+    }
+
+    var (success, error) = await captchaSessions.UpdateStatusFromWorkerAsync(workerId, request, ct);
+    return success ? Results.Ok() : Results.BadRequest(new { error });
+}).RequireAuthorization("Worker");
+
+workers.MapGet("/captcha-sessions/{id:guid}", async (
+    Guid id,
+    CaptchaSessionService captchaSessions,
+    ClaimsPrincipal user,
+    CancellationToken ct) =>
+{
+    if (!TryGetWorkerId(user, out var workerId))
+    {
+        return Results.Forbid();
+    }
+
+    var session = await captchaSessions.GetForWorkerAsync(workerId, id, ct);
+    return session is null ? Results.NotFound() : Results.Ok(session);
 }).RequireAuthorization("Worker");
 
 workers.MapPost("/accounts/sync", async (
@@ -1375,6 +1436,105 @@ admin.MapGet("/workers/{workerId:guid}/logs", async (
         ct)));
 
 var panel = app.MapGroup("/api/v1/panel").RequireAuthorization("Panel");
+panel.MapPost("/captcha-sessions", async (
+    CreateCaptchaSessionRequest request,
+    CaptchaSessionService captchaSessions,
+    ClaimsPrincipal principal,
+    CancellationToken ct) =>
+{
+    var (session, conflict) = await captchaSessions.CreateAsync(request, principal, ct);
+    if (conflict is not null)
+    {
+        return Results.Conflict(new
+        {
+            error = conflict.Message,
+            activeSessionId = conflict.ActiveSessionId,
+            activeOperatorDisplayName = conflict.ActiveOperatorDisplayName,
+            activeAccountName = conflict.ActiveAccountName
+        });
+    }
+
+    return session is null
+        ? Results.BadRequest(new { error = "Не удалось создать сессию." })
+        : Results.Ok(session);
+});
+
+panel.MapGet("/captcha-sessions/{id:guid}", async (
+    Guid id,
+    CaptchaSessionService captchaSessions,
+    ClaimsPrincipal principal,
+    CancellationToken ct) =>
+{
+    var session = await captchaSessions.GetAsync(id, principal, ct);
+    return session is null ? Results.NotFound() : Results.Ok(session);
+});
+
+panel.MapPost("/captcha-sessions/{id:guid}/cancel", async (
+    Guid id,
+    CaptchaSessionService captchaSessions,
+    ClaimsPrincipal principal,
+    CancellationToken ct) =>
+{
+    var (success, error) = await captchaSessions.CancelAsync(id, principal, ct);
+    return success ? Results.Ok() : Results.BadRequest(new { error });
+});
+
+panel.MapGet("/workers/{id:guid}/captcha-lock", async (
+    Guid id,
+    CaptchaSessionService captchaSessions,
+    ClaimsPrincipal principal,
+    CancellationToken ct) =>
+{
+    var lockState = await captchaSessions.GetWorkerLockAsync(id, principal, ct);
+    return lockState is null ? Results.NotFound() : Results.Ok(lockState);
+});
+
+panel.MapPost("/browser-monitor-sessions", async (
+    Guid workerId,
+    BrowserMonitorService browserMonitorSessions,
+    ClaimsPrincipal principal,
+    CancellationToken ct) =>
+{
+    var (session, error) = await browserMonitorSessions.StartAsync(workerId, principal, ct);
+    return session is null
+        ? Results.BadRequest(new { error = error ?? "Не удалось создать сессию просмотра." })
+        : Results.Ok(session);
+});
+
+panel.MapGet("/browser-monitor-sessions/{id:guid}", async (
+    Guid id,
+    BrowserMonitorService browserMonitorSessions,
+    ClaimsPrincipal principal,
+    CancellationToken ct) =>
+{
+    var session = await browserMonitorSessions.GetAsync(id, principal, ct);
+    return session is null ? Results.NotFound() : Results.Ok(session);
+});
+
+panel.MapPost("/browser-monitor-sessions/{id:guid}/stop", async (
+    Guid id,
+    BrowserMonitorService browserMonitorSessions,
+    ClaimsPrincipal principal,
+    CancellationToken ct) =>
+{
+    var (success, error) = await browserMonitorSessions.StopAsync(id, principal, ct);
+    return success ? Results.Ok() : Results.BadRequest(new { error });
+});
+
+workers.MapGet("/browser-monitor-sessions/{id:guid}/alive", (
+    Guid id,
+    BrowserMonitorService browserMonitorSessions,
+    ClaimsPrincipal user) =>
+{
+    if (!TryGetWorkerId(user, out var workerId)
+        || !browserMonitorSessions.TryAuthorizeWorker(id, workerId, out _))
+    {
+        return Results.NotFound();
+    }
+
+    return Results.Ok();
+});
+
 panel.MapPost("/workers/create", async (
     CreateWorkerRequest request,
     WorkerAdminService workers,

@@ -47,7 +47,7 @@ public sealed class ErrorsService(
     {
         var items = await api.GetEventsAsync(limit: 500, ct: ct) ?? [];
         var rows = items
-            .Where(e => e.Level is "Error" or "Warning")
+            .Where(e => e.Level is "Error")
             .Select(e => ErrorsIndexBuilder.MapEvent(e))
             .ToList();
 

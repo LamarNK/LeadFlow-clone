@@ -8,12 +8,6 @@ else
     <div class="dash-event-list">
         @foreach (var evt in Model)
         {
-            var icon = evt.Level switch
-            {
-                "error" => "fa-regular fa-circle-xmark",
-                "warning" => "fa-solid fa-triangle-exclamation",
-                _ => "fa-regular fa-circle-check"
-            };
             var workerUrl = Url.Action("Details", "Workers", new { id = evt.WorkerId });
             var accountUrl = string.IsNullOrWhiteSpace(evt.AccountName)
                 ? null
@@ -22,6 +16,19 @@ else
             var attachmentUrl = evt.AttachmentId is not null ? $"/Diagnostics/Image/{evt.AttachmentId}" : "";
             <div class="dash-event-row dash-event-row--detail" role="button" tabindex="0"
                  data-event-id="@evt.Id"
+                 @if (evt.CanSolveCaptcha && !string.IsNullOrWhiteSpace(evt.CaptchaUrl) && evt.AccountId is not null)
+                 {
+                     @:data-captcha-can-solve="1"
+                     @:data-captcha-url="@evt.CaptchaUrl"
+                     @:data-captcha-kind="@evt.CaptchaKind"
+                     @:data-captcha-account-id="@evt.AccountId"
+                     @:data-captcha-worker-id="@evt.WorkerId"
+                     @:data-captcha-account-name="@evt.AccountName"
+                     if (!string.IsNullOrWhiteSpace(evt.CaptchaSubProfileId))
+                     {
+                         @:data-captcha-subprofile-id="@evt.CaptchaSubProfileId"
+                     }
+                 }
                  data-copy="@evt.CopyText"
                  data-detail-title="@evt.DetailTitle"
                  data-detail-subtitle="@evt.DetailSubtitle"
@@ -31,8 +38,8 @@ else
                  data-detail-worker-url="@workerUrl"
                  data-detail-account-url="@(accountUrl ?? "")"
                  data-is-error="@(evt.IsError ? "true" : "false")">
-                <div class="dash-event-icon dash-event-icon--@evt.Level">
-                    <i class="@icon" aria-hidden="true"></i>
+                <div class="dash-event-icon dash-event-icon--@evt.IconTone">
+                    <i class="@evt.IconClass" aria-hidden="true"></i>
                 </div>
                 <div class="dash-event-body">
                     <div class="dash-event-title" title="@evt.Message">@evt.Message</div>

@@ -371,6 +371,81 @@ namespace Orbita.Api.Data.Migrations
                     b.ToTable("CandidateResponses");
                 });
 
+            modelBuilder.Entity("Orbita.Api.Data.CaptchaSessionEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("AccountId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("AccountName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("CaptchaKind")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTime?>("CompletedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("ExpiresAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("FailureMessage")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<Guid>("OfficeId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("OperatorDisplayName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<string>("OperatorUserId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<string>("PageUrl")
+                        .IsRequired()
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("SubProfileId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<int>("ViewportHeight")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("ViewportWidth")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("WorkerId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("WorkerId", "Status");
+
+                    b.ToTable("CaptchaSessions");
+                });
+
             modelBuilder.Entity("Orbita.Api.Data.OfficeEntity", b =>
                 {
                     b.Property<Guid>("Id")
@@ -643,6 +718,18 @@ namespace Orbita.Api.Data.Migrations
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
+
+                    b.Property<string>("ActiveCaptchaOperatorDisplayName")
+                        .HasColumnType("text");
+
+                    b.Property<string>("ActiveCaptchaOperatorUserId")
+                        .HasColumnType("text");
+
+                    b.Property<Guid?>("ActiveCaptchaSessionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("ActiveCaptchaSessionStartedAtUtc")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<Guid?>("ActivityAccountId")
                         .HasColumnType("uuid");
@@ -975,6 +1062,17 @@ namespace Orbita.Api.Data.Migrations
                         .OnDelete(DeleteBehavior.SetNull);
 
                     b.Navigation("Office");
+
+                    b.Navigation("Worker");
+                });
+
+            modelBuilder.Entity("Orbita.Api.Data.CaptchaSessionEntity", b =>
+                {
+                    b.HasOne("Orbita.Api.Data.WorkerEntity", "Worker")
+                        .WithMany()
+                        .HasForeignKey("WorkerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
 
                     b.Navigation("Worker");
                 });

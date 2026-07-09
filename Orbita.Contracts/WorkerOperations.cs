@@ -52,7 +52,9 @@ public sealed record WorkerConfigDto(
     string? AdsPowerApiKey,
     IReadOnlyList<WorkerAccountConfigDto> Accounts,
     string? PendingCommand = null,
-    WorkerUpdateOfferDto? UpdateOffer = null);
+    WorkerUpdateOfferDto? UpdateOffer = null,
+    WorkerPendingCaptchaSessionDto? PendingCaptchaSession = null,
+    WorkerPendingBrowserMonitorSessionDto? PendingBrowserMonitorSession = null);
 
 public sealed record WorkerAccountSyncItemDto(
     string AdsPowerProfileId,

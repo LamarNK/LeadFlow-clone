@@ -158,6 +158,19 @@
                                 : Url.Action("Index", "Accounts", new { q = evt.AccountName });
                             <tr class="events-row"
                                 data-event-id="@evt.Id"
+                                @if (evt.CanSolveCaptcha && !string.IsNullOrWhiteSpace(evt.CaptchaUrl) && evt.AccountId is not null)
+                                {
+                                    @:data-captcha-can-solve="1"
+                                    @:data-captcha-url="@evt.CaptchaUrl"
+                                    @:data-captcha-kind="@evt.CaptchaKind"
+                                    @:data-captcha-account-id="@evt.AccountId"
+                                    @:data-captcha-worker-id="@evt.WorkerId"
+                                    @:data-captcha-account-name="@evt.AccountName"
+                                    if (!string.IsNullOrWhiteSpace(evt.CaptchaSubProfileId))
+                                    {
+                                        @:data-captcha-subprofile-id="@evt.CaptchaSubProfileId"
+                                    }
+                                }
                                 data-copy="@evt.CopyText"
                                 data-detail-title="@evt.EventTypeLabel"
                                 data-detail-subtitle="@evt.WorkerName · @evt.LevelLabel"

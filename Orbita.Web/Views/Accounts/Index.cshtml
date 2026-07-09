@@ -36,7 +36,7 @@
      data-metric-today="@DateTime.Today.ToString("yyyy-MM-dd")"
      data-account-metric-responses-url="@($"/Responses?from=__today__&to=__today__&workerId=__workerId__&accountId=__accountId__")"
      data-account-metric-unique-url="@($"/Responses?from=__today__&to=__today__&status=unique&workerId=__workerId__&accountId=__accountId__")"
-     data-account-metric-errors-url="@($"/Errors?workerId=__workerId__&accountId=__accountId__")">
+     data-account-metric-errors-url="@($"/Events?level=errors&workerId=__workerId__&accountId=__accountId__")">
     <div class="kpi-row accounts-kpi-row">
         @{ var kpiIdx = 0; }
         @foreach (var kpi in Model.KpiCards)

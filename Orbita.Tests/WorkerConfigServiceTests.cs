@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Options;
 using Orbita.Api.Data;
 using Orbita.Api.Helpers;
@@ -96,7 +97,7 @@ public sealed class WorkerConfigServiceTests
             CancellationToken.None);
         Assert.Null(uploadError);
 
-        var sut = new WorkerConfigService(db, new OfficeScopeService(db), new NoopPanelRealtimeNotifier(), releases);
+        var sut = new WorkerConfigService(db, new OfficeScopeService(db), new NoopPanelRealtimeNotifier(), new NoopWorkerPushNotifier(), releases, CreateCaptchaSessions(db), CreateBrowserMonitorSessions(db));
         var config = await sut.GetConfigForWorkerAsync(WorkerId, OfficeScope.ForOffice(OfficeId));
 
         Assert.NotNull(config);
@@ -127,13 +128,32 @@ public sealed class WorkerConfigServiceTests
             DataPath = releaseRoot,
             MaxUploadBytes = 1024 * 1024
         }));
-        return new(db, new OfficeScopeService(db), new NoopPanelRealtimeNotifier(), releases);
+        return new(db, new OfficeScopeService(db), new NoopPanelRealtimeNotifier(), new NoopWorkerPushNotifier(), releases, CreateCaptchaSessions(db), CreateBrowserMonitorSessions(db));
+    }
+
+    private static BrowserMonitorService CreateBrowserMonitorSessions(OrbitaDbContext db) =>
+        new(db, new OfficeScopeService(db), new NoopWorkerPushNotifier(), new BrowserMonitorRegistry());
+
+    private static CaptchaSessionService CreateCaptchaSessions(OrbitaDbContext db) =>
+        new(
+            db,
+            new OfficeScopeService(db),
+            new NoopCaptchaLockNotifier(),
+            new NoopPanelRealtimeNotifier(),
+            new NoopWorkerPushNotifier(),
+            new NoopCaptchaSessionRelayNotifier());
+
+    private sealed class NoopCaptchaLockNotifier : ICaptchaLockNotifier
+    {
+        public Task NotifyLockChangedAsync(Guid workerId, Guid officeId, WorkerCaptchaLockDto lockState, CancellationToken ct = default) =>
+            Task.CompletedTask;
     }
 
     private static OrbitaDbContext CreateDb()
     {
         var options = new DbContextOptionsBuilder<OrbitaDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .ConfigureWarnings(w => w.Ignore(InMemoryEventId.TransactionIgnoredWarning))
             .Options;
         return new OrbitaDbContext(options);
     }

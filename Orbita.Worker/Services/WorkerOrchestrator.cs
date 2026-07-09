@@ -27,9 +27,13 @@ public sealed class WorkerOrchestrator(
     WorkerUpdateGate updateGate,
     WorkerShutdownService shutdownService,
     IWorkerPendingUpdateCoordinator pendingUpdateCoordinator,
-    IWorkerActivityReporter activityReporter) : BackgroundService
+    IWorkerActivityReporter activityReporter,
+    CaptchaSessionCoordinator captchaCoordinator,
+    BrowserMonitorCoordinator browserMonitorCoordinator,
+    IWorkerRealtimeChannel realtime) : BackgroundService
 {
     private bool _monitoringRequested = true;
+    private int _browserMonitorLaunching;
 
     public void RequestStartMonitoring() => _monitoringRequested = true;
     public void RequestStopMonitoring() => _monitoringRequested = false;
@@ -37,8 +41,13 @@ public sealed class WorkerOrchestrator(
     private DateTime _lastAccountSyncUtc = DateTime.MinValue;
     private string? _enabledAccountsFingerprint;
     private DateTime _enabledAccountsChangedAtUtc = DateTime.MinValue;
+    private string? _pushedCommand;
+    private WorkerPendingCaptchaSessionDto? _pushedCaptchaSession;
+    private WorkerPendingBrowserMonitorSessionDto? _pushedBrowserMonitorSession;
+
     private static readonly TimeSpan AccountSyncInterval = TimeSpan.FromMinutes(5);
-    private static readonly TimeSpan TelemetryInterval = TimeSpan.FromSeconds(60);
+    private static readonly TimeSpan ConnectedLoopInterval = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan DisconnectedLoopInterval = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan MonitoringStartDebounce =
         TimeSpan.FromSeconds(MonitoringTiming.MonitoringStartDebounceSeconds);
 
@@ -48,89 +57,117 @@ public sealed class WorkerOrchestrator(
         await dedupCache.InitializeAsync(stoppingToken).ConfigureAwait(false);
         await candidateOutbox.InitializeAsync(stoppingToken).ConfigureAwait(false);
 
+        realtime.CommandReceived += OnCommandReceived;
+        realtime.ConfigChanged += OnConfigChanged;
+        realtime.CaptchaSessionReceived += OnCaptchaSessionReceived;
+        realtime.BrowserMonitorSessionReceived += OnBrowserMonitorSessionReceived;
+
         await WorkerLifecycleLog.InfoAsync(
             "Worker lifecycle: оркестратор запущен",
             nameof(ExecuteAsync))
             .ConfigureAwait(false);
 
-        while (!stoppingToken.IsCancellationRequested)
+        try
         {
-            try
+            while (!stoppingToken.IsCancellationRequested)
             {
-                var config = await apiClient.GetConfigAsync(stoppingToken).ConfigureAwait(false);
-                if (config is null)
+                try
                 {
-                    runtimeState.Status = "Ошибка";
-                    runtimeState.Detail = "Нет связи с API";
-                    await Task.Delay(TimeSpan.FromSeconds(15), stoppingToken).ConfigureAwait(false);
-                    continue;
-                }
-
-                credentials.WorkerId ??= config.WorkerId;
-                credentials.DisplayName ??= Environment.MachineName;
-
-                updateOfferSource.SetOffer(config.UpdateOffer);
-
-                if (string.Equals(config.PendingCommand, WorkerCommands.Restart, StringComparison.OrdinalIgnoreCase))
-                {
-                    runtimeState.Status = "Перезапуск";
-                    runtimeState.Detail = "По команде из панели";
-                    await WorkerLifecycleLog.InfoAsync(
-                        "Worker lifecycle: получена команда перезапуска из панели",
-                        nameof(ExecuteAsync),
-                        new Dictionary<string, object?> { ["worker.id"] = config.WorkerId })
-                        .ConfigureAwait(false);
-
-                    if (!shutdownService.RequestRestart())
+                    if (TryConsumePushedCommand(out var pushedCommand)
+                        && await TryHandleRestartCommandAsync(pushedCommand, null, stoppingToken).ConfigureAwait(false))
                     {
-                        await WorkerLifecycleLog.WarningAsync(
-                            "Worker lifecycle: команда перезапуска не применена",
-                            nameof(ExecuteAsync),
-                            new Dictionary<string, object?> { ["worker.id"] = config.WorkerId })
-                            .ConfigureAwait(false);
+                        return;
                     }
 
-                    return;
+                    var config = await apiClient.GetConfigAsync(stoppingToken).ConfigureAwait(false);
+                    if (config is null)
+                    {
+                        if (apiClient.LastConfigWasUnauthorized)
+                        {
+                            WorkerConnectionErrors.TryApplyUnauthorized(runtimeState);
+                        }
+                        else
+                        {
+                            runtimeState.Status = WorkerConnectionErrors.ErrorStatus;
+                            runtimeState.Detail = apiClient.LastConfigError ?? "Нет связи с API";
+                        }
+
+                        await WaitNextIterationAsync(stoppingToken).ConfigureAwait(false);
+                        continue;
+                    }
+
+                    credentials.WorkerId ??= config.WorkerId;
+                    credentials.DisplayName ??= Environment.MachineName;
+
+                    updateOfferSource.SetOffer(config.UpdateOffer);
+
+                    var command = TryConsumePushedCommand(out var pushed) ? pushed : config.PendingCommand;
+                    if (await TryHandleRestartCommandAsync(command, config.WorkerId, stoppingToken).ConfigureAwait(false))
+                    {
+                        return;
+                    }
+
+                    var enabledCount = config.Accounts.Count(a => a.IsEnabled);
+                    runtimeState.Status = "Онлайн";
+
+                    if (DateTime.UtcNow - _lastAccountSyncUtc >= AccountSyncInterval)
+                    {
+                        await SyncAdsPowerProfilesAsync(config, stoppingToken).ConfigureAwait(false);
+                        _lastAccountSyncUtc = DateTime.UtcNow;
+                    }
+
+                    var pendingCaptcha = TryConsumePushedCaptchaSession() ?? config.PendingCaptchaSession;
+                    if (pendingCaptcha is not null
+                        && !captchaCoordinator.IsRunning)
+                    {
+                        runtimeState.Status = "Капча";
+                        runtimeState.Detail = "Решение капчи оператором";
+                        _ = await captchaCoordinator
+                            .TryRunPendingSessionAsync(pendingCaptcha, stoppingToken)
+                            .ConfigureAwait(false);
+                        configProvider.InvalidateCache();
+                        await WaitNextIterationAsync(stoppingToken).ConfigureAwait(false);
+                        continue;
+                    }
+
+                    TryLaunchBrowserMonitor(config.PendingBrowserMonitorSession, stoppingToken);
+
+                    await SyncMonitoringStateAsync(config, enabledCount, stoppingToken).ConfigureAwait(false);
+
+                    if (pendingUpdateCoordinator.HasPendingInstall
+                        && pendingUpdateCoordinator.TryApplyPendingInstallAtPause())
+                    {
+                        return;
+                    }
+
+                    if (updateStore.TryGetPendingMsi() is { } pendingMsi
+                        && !string.Equals(runtimeState.Status, "Обновление", StringComparison.Ordinal))
+                    {
+                        runtimeState.Detail = $"Обновление {pendingMsi.Version} скачано, ожидание паузы";
+                    }
+
+                    await SendHeartbeatAsync(config.WorkerId, stoppingToken).ConfigureAwait(false);
+                    await SendSnapshotAsync(config, stoppingToken).ConfigureAwait(false);
                 }
-
-                var enabledCount = config.Accounts.Count(a => a.IsEnabled);
-                runtimeState.Status = "Онлайн";
-
-                // Reduce expensive full profile sync chatter: only every ~5 min or on first run
-                if (DateTime.UtcNow - _lastAccountSyncUtc >= AccountSyncInterval)
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
-                    await SyncAdsPowerProfilesAsync(config, stoppingToken).ConfigureAwait(false);
-                    _lastAccountSyncUtc = DateTime.UtcNow;
+                    break;
                 }
-
-                await SyncMonitoringStateAsync(config, enabledCount, stoppingToken).ConfigureAwait(false);
-
-                if (pendingUpdateCoordinator.HasPendingInstall
-                    && pendingUpdateCoordinator.TryApplyPendingInstallAtPause())
+                catch (Exception ex)
                 {
-                    return;
+                    runtimeState.Status = "Ошибка";
+                    runtimeState.Detail = ex.Message;
                 }
 
-                if (updateStore.TryGetPendingMsi() is { } pendingMsi
-                    && !string.Equals(runtimeState.Status, "Обновление", StringComparison.Ordinal))
-                {
-                    runtimeState.Detail = $"Обновление {pendingMsi.Version} скачано, ожидание паузы";
-                }
-
-                await SendHeartbeatAsync(config.WorkerId, stoppingToken).ConfigureAwait(false);
-                await SendSnapshotAsync(config, stoppingToken).ConfigureAwait(false);
+                await WaitNextIterationAsync(stoppingToken).ConfigureAwait(false);
             }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                break;
-            }
-            catch (Exception ex)
-            {
-                runtimeState.Status = "Ошибка";
-                runtimeState.Detail = ex.Message;
-            }
-
-            await Task.Delay(TelemetryInterval, stoppingToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            realtime.CommandReceived -= OnCommandReceived;
+            realtime.ConfigChanged -= OnConfigChanged;
+            realtime.CaptchaSessionReceived -= OnCaptchaSessionReceived;
+            realtime.BrowserMonitorSessionReceived -= OnBrowserMonitorSessionReceived;
         }
 
         await WorkerLifecycleLog.InfoAsync(
@@ -141,6 +178,125 @@ public sealed class WorkerOrchestrator(
         if (monitoringService.IsActive)
         {
             await monitoringService.StopAsync().ConfigureAwait(false);
+        }
+    }
+
+    private void OnCommandReceived(string command) => _pushedCommand = command;
+
+    private void OnConfigChanged() => configProvider.InvalidateCache();
+
+    private void OnCaptchaSessionReceived(WorkerPendingCaptchaSessionDto session) =>
+        _pushedCaptchaSession = session;
+
+    private void OnBrowserMonitorSessionReceived(WorkerPendingBrowserMonitorSessionDto session)
+    {
+        _pushedBrowserMonitorSession = session;
+        browserMonitorCoordinator.CancelCurrentSession();
+        realtime.RequestWake();
+    }
+
+    private bool TryConsumePushedCommand(out string? command)
+    {
+        command = _pushedCommand;
+        _pushedCommand = null;
+        return !string.IsNullOrWhiteSpace(command);
+    }
+
+    private WorkerPendingCaptchaSessionDto? TryConsumePushedCaptchaSession()
+    {
+        var session = _pushedCaptchaSession;
+        _pushedCaptchaSession = null;
+        return session;
+    }
+
+    private WorkerPendingBrowserMonitorSessionDto? TryConsumePushedBrowserMonitorSession()
+    {
+        var session = _pushedBrowserMonitorSession;
+        _pushedBrowserMonitorSession = null;
+        return session;
+    }
+
+    private void TryLaunchBrowserMonitor(
+        WorkerPendingBrowserMonitorSessionDto? configPending,
+        CancellationToken stoppingToken)
+    {
+        var pending = TryConsumePushedBrowserMonitorSession() ?? configPending;
+        if (pending is null)
+        {
+            return;
+        }
+
+        if (Interlocked.CompareExchange(ref _browserMonitorLaunching, 1, 0) != 0)
+        {
+            return;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await browserMonitorCoordinator
+                    .TryRunSessionAsync(pending, stoppingToken)
+                    .ConfigureAwait(false);
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _browserMonitorLaunching, 0);
+            }
+        }, stoppingToken);
+    }
+
+    private async Task<bool> TryHandleRestartCommandAsync(
+        string? command,
+        Guid? workerId,
+        CancellationToken stoppingToken)
+    {
+        if (!string.Equals(command, WorkerCommands.Restart, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        runtimeState.Status = "Перезапуск";
+        runtimeState.Detail = "По команде из панели";
+        await WorkerLifecycleLog.InfoAsync(
+            "Worker lifecycle: получена команда перезапуска из панели",
+            nameof(ExecuteAsync),
+            new Dictionary<string, object?>
+            {
+                ["worker.id"] = workerId,
+                ["worker.realtime"] = realtime.IsConnected
+            })
+            .ConfigureAwait(false);
+
+        if (!shutdownService.RequestRestart())
+        {
+            await WorkerLifecycleLog.WarningAsync(
+                "Worker lifecycle: команда перезапуска не применена",
+                nameof(ExecuteAsync),
+                new Dictionary<string, object?> { ["worker.id"] = workerId })
+                .ConfigureAwait(false);
+        }
+        else if (realtime.IsConnected)
+        {
+            _ = realtime.TryAckCommandAsync(WorkerCommands.Restart, stoppingToken);
+        }
+
+        return true;
+    }
+
+    private async Task WaitNextIterationAsync(CancellationToken stoppingToken)
+    {
+        var timeout = realtime.IsConnected ? ConnectedLoopInterval : DisconnectedLoopInterval;
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+        timeoutCts.CancelAfter(timeout);
+
+        try
+        {
+            await realtime.WakeReader.ReadAsync(timeoutCts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!stoppingToken.IsCancellationRequested)
+        {
+            // Timeout elapsed — regular fallback poll cycle.
         }
     }
 
@@ -273,7 +429,10 @@ public sealed class WorkerOrchestrator(
             publicIp,
             agentVersion);
 
-        await apiClient.SendHeartbeatAsync(heartbeat, ct).ConfigureAwait(false);
+        if (!await realtime.TrySendHeartbeatAsync(heartbeat, ct).ConfigureAwait(false))
+        {
+            await apiClient.SendHeartbeatAsync(heartbeat, ct).ConfigureAwait(false);
+        }
     }
 
     private async Task SendSnapshotAsync(WorkerConfigDto config, CancellationToken ct)

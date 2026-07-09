@@ -58,6 +58,10 @@ public sealed class EventRowViewModel
     public string Description { get; init; } = string.Empty;
     public string CopyText { get; init; } = string.Empty;
     public Guid? AttachmentId { get; init; }
+    public bool CanSolveCaptcha { get; init; }
+    public string? CaptchaUrl { get; init; }
+    public string? CaptchaKind { get; init; }
+    public string? CaptchaSubProfileId { get; init; }
 }
 
 public sealed class EventsSummaryViewModel

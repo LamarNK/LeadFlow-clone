@@ -362,11 +362,11 @@
         var metrics = resolveAccountMetricLinks(sub, workerId, accountId);
         var tail = layout === 'accounts'
             ? '<td class="cell-num" data-label="Уникальных">' + renderMetricLink(sub.uniqueResponses, metrics.unique, 'Уникальные отклики за сегодня') + '</td>' +
-            '<td class="cell-num" data-label="Ошибок">' + renderMetricLink(sub.errors, metrics.errors, 'Ошибки и предупреждения') + '</td>' +
+            '<td class="cell-num" data-label="Ошибок">' + renderMetricLink(sub.errors, metrics.errors, 'Проблемы за сегодня') + '</td>' +
             '<td data-label="Последняя активность">' + activityHtml + '</td>' +
             '<td class="data-table-menu subprofiles-data-empty" data-label=""></td>'
             : '<td data-label="Последняя активность">' + activityHtml + '</td>' +
-            '<td class="cell-num" data-label="Ошибок">' + renderMetricLink(sub.errors, metrics.errors, 'Ошибки и предупреждения') + '</td>' +
+            '<td class="cell-num" data-label="Ошибок">' + renderMetricLink(sub.errors, metrics.errors, 'Проблемы за сегодня') + '</td>' +
             '<td class="data-table-menu subprofiles-data-empty" data-label=""></td>';
         var extraCols = layout === 'accounts'
             ? '<td class="cell-worker subprofiles-data-empty" data-label="Воркер"></td>' +

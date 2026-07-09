@@ -11,7 +11,7 @@ internal static class AccountMetricLinks
         Create(count, KpiCardLinks.AccountTodayUnique(workerId, accountId), "Уникальные отклики за сегодня");
 
     public static MetricLinkViewModel Errors(Guid workerId, Guid accountId, int count) =>
-        Create(count, KpiCardLinks.AccountErrors(workerId, accountId), "Ошибки и предупреждения");
+        Create(count, KpiCardLinks.AccountErrors(workerId, accountId), "Проблемы за сегодня");
 
     public static AccountMetricHrefViewModel Hrefs(Guid workerId, Guid accountId) => new(
         KpiCardLinks.AccountTodayResponses(workerId, accountId),

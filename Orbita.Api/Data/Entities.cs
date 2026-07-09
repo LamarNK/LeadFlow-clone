@@ -72,6 +72,10 @@ public sealed class WorkerEntity
     public DateTime? ActivityUpdatedAtUtc { get; set; }
     public DateTime? ActivityNextCycleAtUtc { get; set; }
     public string ActivityActiveAccountsJson { get; set; } = "[]";
+    public Guid? ActiveCaptchaSessionId { get; set; }
+    public string? ActiveCaptchaOperatorUserId { get; set; }
+    public string? ActiveCaptchaOperatorDisplayName { get; set; }
+    public DateTime? ActiveCaptchaSessionStartedAtUtc { get; set; }
 
     public OfficeEntity Office { get; set; } = null!;
     public ICollection<WorkerSnapshotEntity> Snapshots { get; set; } = [];
@@ -210,6 +214,29 @@ public sealed class CandidateResponseEntity
 
     public OfficeEntity Office { get; set; } = null!;
     public WorkerEntity? Worker { get; set; }
+}
+
+public sealed class CaptchaSessionEntity
+{
+    public Guid Id { get; set; }
+    public Guid WorkerId { get; set; }
+    public Guid AccountId { get; set; }
+    public string AccountName { get; set; } = string.Empty;
+    public Guid OfficeId { get; set; }
+    public string OperatorUserId { get; set; } = string.Empty;
+    public string OperatorDisplayName { get; set; } = string.Empty;
+    public string PageUrl { get; set; } = string.Empty;
+    public string CaptchaKind { get; set; } = string.Empty;
+    public string? SubProfileId { get; set; }
+    public string Status { get; set; } = CaptchaSessionStatuses.Pending;
+    public int ViewportWidth { get; set; } = CaptchaViewportDefaults.Width;
+    public int ViewportHeight { get; set; } = CaptchaViewportDefaults.Height;
+    public DateTime CreatedAtUtc { get; set; }
+    public DateTime ExpiresAtUtc { get; set; }
+    public DateTime? CompletedAtUtc { get; set; }
+    public string? FailureMessage { get; set; }
+
+    public WorkerEntity Worker { get; set; } = null!;
 }
 
 public sealed class PanelAuditLogEntity

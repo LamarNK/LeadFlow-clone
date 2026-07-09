@@ -1121,6 +1121,16 @@
     function getRowDetailOptions(row) {
         if (!row) return null;
 
+        var primaryActions = null;
+        if (window.OrbitaCaptchaSolver && window.OrbitaCaptchaSolver.canSolveRow(row)) {
+            primaryActions = [{
+                action: 'captcha-solve',
+                label: 'Пройти капчу',
+                tone: 'primary',
+                payload: window.OrbitaCaptchaSolver.payloadFromRow(row)
+            }];
+        }
+
         var options = {
             title: row.getAttribute('data-detail-title') || 'Детали',
             subtitle: row.getAttribute('data-detail-subtitle') || '',
@@ -1132,6 +1142,9 @@
 
         if (row.classList.contains('events-row')) {
             options.copyLabel = 'Копировать сообщение';
+            if (primaryActions) {
+                options.primaryActions = primaryActions;
+            }
             options.dismiss = {
                 eventId: row.getAttribute('data-event-id') || '',
                 url: '/Events/Dismiss',
@@ -1142,6 +1155,9 @@
             };
         } else if (row.classList.contains('errors-row')) {
             options.copyLabel = 'Копировать текст';
+            if (primaryActions) {
+                options.primaryActions = primaryActions;
+            }
             options.dismiss = {
                 eventId: row.getAttribute('data-event-id') || '',
                 url: '/Errors/Dismiss',
@@ -1173,6 +1189,10 @@
                     label: 'Отметить обработанным'
                 };
             }
+
+            if (primaryActions) {
+                options.primaryActions = primaryActions;
+            }
         }
 
         return options;
@@ -1194,6 +1214,19 @@
         }
 
         items.forEach(function (action) {
+            if (action.action === 'captcha-solve' && action.payload && window.OrbitaCaptchaSolver) {
+                var btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'orbita-detail-modal__action orbita-detail-modal__action--primary';
+                btn.textContent = action.label || 'Пройти капчу';
+                btn.addEventListener('click', function () {
+                    closeDetailModal();
+                    window.OrbitaCaptchaSolver.open(action.payload);
+                });
+                detailPrimary.appendChild(btn);
+                return;
+            }
+
             if (action.action === 'resend' && action.responseId) {
                 var form = document.createElement('form');
                 form.method = 'post';

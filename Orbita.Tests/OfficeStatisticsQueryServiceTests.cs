@@ -159,7 +159,7 @@ public sealed class OfficeStatisticsQueryServiceTests
     }
 
     private static OfficeStatisticsQueryService CreateService(OrbitaDbContext db) =>
-        new(db, new OfficeScopeService(db));
+        new(db, new OfficeScopeService(db), new WorkerConnectionRegistry());
 
     private static OrbitaDbContext CreateDb()
     {

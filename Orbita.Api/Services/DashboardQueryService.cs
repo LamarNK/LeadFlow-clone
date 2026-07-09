@@ -12,7 +12,8 @@ namespace Orbita.Api.Services;
 public sealed class DashboardQueryService(
     OrbitaDbContext db,
     WorkerReleaseService releases,
-    OfficeScopeService officeScope)
+    OfficeScopeService officeScope,
+    WorkerConnectionRegistry connectionRegistry)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -46,7 +47,8 @@ public sealed class DashboardQueryService(
             .Where(x => x.MachineName != LeadFlowImportWorker.MachineName);
         var workers = await workersQuery.ToListAsync(ct);
         var workerIds = workers.Select(w => w.Id).ToHashSet();
-        var onlineWorkers = workers.Count(w => WorkerOnlineRules.IsOnline(w.LastSeenAtUtc, nowUtc));
+        var onlineWorkers = workers.Count(w =>
+            WorkerOnlineRules.IsOnline(w.LastSeenAtUtc, nowUtc, connectionRegistry.IsConnected(w.Id)));
 
         // Compute response counts from source of truth (CandidateResponses) for accuracy
         // instead of relying on (often zero) pushed snapshots.
@@ -219,7 +221,7 @@ public sealed class DashboardQueryService(
                 w.MonitoringStatus,
                 w.MonitoringStatusMessage,
                 w.IsMonitoringActive,
-                WorkerOnlineRules.IsOnline(w.LastSeenAtUtc, nowUtc),
+                WorkerOnlineRules.IsOnline(w.LastSeenAtUtc, nowUtc, connectionRegistry.IsConnected(w.Id)),
                 w.LastSeenAtUtc,
                 op.TotalAccounts,
                 op.TodayResponses,
@@ -301,7 +303,7 @@ public sealed class DashboardQueryService(
             worker.MonitoringStatus,
             worker.MonitoringStatusMessage,
             worker.IsMonitoringActive,
-            WorkerOnlineRules.IsOnline(worker.LastSeenAtUtc, nowUtc),
+            WorkerOnlineRules.IsOnline(worker.LastSeenAtUtc, nowUtc, connectionRegistry.IsConnected(worker.Id)),
             worker.LastSeenAtUtc,
             worker.NextCycleCheckAtUtc,
             stats,

@@ -1,0 +1,59 @@
+@model WorkerBrowserMonitorViewModel
+@{
+    ViewData["Title"] = $"Просмотр браузеров — {Model.WorkerName}";
+    Layout = "_Layout";
+}
+@Html.AntiForgeryToken()
+<div class="orbita-browser-monitor-page"
+     data-browser-monitor-page
+     data-worker-id="@Model.WorkerId">
+    <header class="orbita-browser-monitor-page__head">
+        <nav class="orbita-breadcrumbs" aria-label="Навигация">
+            @for (var i = 0; i < Model.Breadcrumbs.Count; i++)
+            {
+                var crumb = Model.Breadcrumbs[i];
+                if (i > 0)
+                {
+                    <span class="orbita-breadcrumbs-sep" aria-hidden="true">&gt;</span>
+                }
+                if (crumb.IsActive || string.IsNullOrEmpty(crumb.Url))
+                {
+                    <span class="orbita-breadcrumbs-current">@crumb.Label</span>
+                }
+                else
+                {
+                    <a class="orbita-breadcrumbs-link" href="@crumb.Url">@crumb.Label</a>
+                }
+            }
+        </nav>
+        <div class="orbita-browser-monitor-page__title-row">
+            <div>
+                <h1 class="orbita-browser-monitor-page__title">Просмотр всех браузеров</h1>
+                <p class="orbita-browser-monitor-page__subtitle">
+                    @Model.WorkerName
+                    @if (!Model.IsEnabled)
+                    {
+                        <span class="status-dot offline">Приостановлен</span>
+                    }
+                    else
+                    {
+                        <span class="status-dot @(Model.IsOnline ? "" : "offline")">
+                            @(Model.IsOnline ? "Онлайн" : "Оффлайн")
+                        </span>
+                    }
+                </p>
+            </div>
+            <div class="orbita-browser-monitor-page__badge" aria-label="Режим просмотра">
+                <i class="fa-regular fa-eye" aria-hidden="true"></i>
+                Только просмотр
+            </div>
+        </div>
+        <p class="orbita-browser-monitor-page__status" data-browser-monitor-status>Инициализация…</p>
+    </header>
+    <div data-browser-monitor-grid></div>
+</div>
+@section Scripts {
+    <script src="~/js/orbita-browser-frame.js" asp-append-version="true"></script>
+    <script src="~/js/orbita-browser-grid.js" asp-append-version="true"></script>
+    <script src="~/js/orbita-browser-monitor.js" asp-append-version="true"></script>
+}

@@ -359,6 +359,7 @@
     function eventIcon(level) {
         if (level === 'error') return 'fa-regular fa-circle-xmark';
         if (level === 'warning') return 'fa-solid fa-triangle-exclamation';
+        if (level === 'info') return 'fa-solid fa-circle-info';
         return 'fa-regular fa-circle-check';
     }
 
@@ -382,9 +383,18 @@
                 : '';
             var logUrl = shared.urlFromTemplate(shared.getLiveAttr('data-settings-logs-url'), '__id__', evt.workerId);
             var attachmentUrl = evt.attachmentId ? '/Diagnostics/Image/' + evt.attachmentId : '';
+            var captchaAttrs = (evt.canSolveCaptcha && evt.captchaUrl && evt.accountId)
+                ? ' data-captcha-can-solve="1" data-captcha-url="' + shared.escapeHtml(evt.captchaUrl) + '"' +
+                  ' data-captcha-kind="' + shared.escapeHtml(evt.captchaKind || 'captcha') + '"' +
+                  ' data-captcha-account-id="' + shared.escapeHtml(evt.accountId) + '"' +
+                  ' data-captcha-worker-id="' + shared.escapeHtml(evt.workerId) + '"' +
+                  ' data-captcha-account-name="' + shared.escapeHtml(evt.accountName || '') + '"' +
+                  (evt.captchaSubProfileId ? ' data-captcha-subprofile-id="' + shared.escapeHtml(evt.captchaSubProfileId) + '"' : '')
+                : '';
 
             return '<div class="dash-event-row dash-event-row--detail" role="button" tabindex="0"' +
                 ' data-event-id="' + shared.escapeHtml(evt.id || '') + '"' +
+                captchaAttrs +
                 ' data-copy="' + shared.escapeHtml(evt.copyText || '') + '"' +
                 ' data-detail-title="' + shared.escapeHtml(evt.detailTitle || 'Детали') + '"' +
                 ' data-detail-subtitle="' + shared.escapeHtml(evt.detailSubtitle || '') + '"' +
@@ -394,8 +404,8 @@
                 ' data-detail-worker-url="' + shared.escapeHtml(workerUrl) + '"' +
                 ' data-detail-account-url="' + shared.escapeHtml(accountUrl) + '"' +
                 ' data-is-error="' + (evt.isError ? 'true' : 'false') + '">' +
-                '<div class="dash-event-icon dash-event-icon--' + shared.escapeHtml(evt.level || 'success') + '">' +
-                '<i class="' + eventIcon(evt.level) + '" aria-hidden="true"></i></div>' +
+                '<div class="dash-event-icon dash-event-icon--' + shared.escapeHtml(evt.iconTone || evt.level || 'success') + '">' +
+                '<i class="' + shared.escapeHtml(evt.iconClass || eventIcon(evt.level)) + '" aria-hidden="true"></i></div>' +
                 '<div class="dash-event-body"><div class="dash-event-title" title="' + shared.escapeHtml(evt.message || '') + '">' + shared.escapeHtml(evt.message || '') + '</div>' + subtitle + '</div>' +
                 '<div class="dash-event-side"><div class="dash-event-time">' +
                 '<time data-orbita-utc="' + shared.escapeHtml(iso) + '" data-orbita-format="time-short"></time></div></div></div>';
@@ -504,7 +514,7 @@
                     var metrics = shared.resolveAccountMetricLinks(account, workerId, account.id);
                     return '<td class="cell-num" data-label="Откликов">' + shared.renderMetricLink(account.responses, metrics.responses, 'Отклики за сегодня') + '</td>' +
                         '<td data-label="Последняя активность">' + activityHtml + '</td>' +
-                        '<td class="cell-num" data-label="Ошибок">' + shared.renderMetricLink(account.errors, metrics.errors, 'Ошибки и предупреждения') + '</td>';
+                        '<td class="cell-num" data-label="Ошибок">' + shared.renderMetricLink(account.errors, metrics.errors, 'Проблемы за сегодня') + '</td>';
                 })() +
                 '<td class="data-table-menu" data-label="">' + renderWorkerAccountMenu(account) + '</td></tr>';
 

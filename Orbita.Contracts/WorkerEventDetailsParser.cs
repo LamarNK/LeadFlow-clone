@@ -55,6 +55,9 @@ public static class WorkerEventDetailsParser
     public static string? TryParseDiagnosticUrl(string? details) =>
         TryParseStringProperty(details, "url");
 
+    public static string? TryParseDiagnosticKind(string? details) =>
+        TryParseStringProperty(details, "kind");
+
     public static string? TryParseDiagnosticSubProfileName(string? details) =>
         TryParseStringProperty(details, "subProfileName");
 

@@ -8,7 +8,8 @@ namespace Orbita.Api.Services;
 
 public sealed class OfficeStatisticsQueryService(
     OrbitaDbContext db,
-    OfficeScopeService officeScope)
+    OfficeScopeService officeScope,
+    WorkerConnectionRegistry connectionRegistry)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -195,8 +196,10 @@ public sealed class OfficeStatisticsQueryService(
         var refreshedItems = result.Workers.Items
             .Select(w => w with
             {
-                IsOnline = lastSeenLookup.TryGetValue(w.Id, out var seen)
-                    && WorkerOnlineRules.IsOnline(seen, nowUtc)
+                IsOnline = WorkerOnlineRules.IsOnline(
+                    lastSeenLookup.TryGetValue(w.Id, out var seen) ? seen : null,
+                    nowUtc,
+                    connectionRegistry.IsConnected(w.Id))
             })
             .ToList();
 
@@ -533,7 +536,8 @@ public sealed class OfficeStatisticsQueryService(
         CancellationToken ct)
     {
         var nowUtc = DateTime.UtcNow;
-        var online = workers.Count(w => WorkerOnlineRules.IsOnline(w.LastSeenAtUtc, nowUtc));
+        var online = workers.Count(w =>
+            WorkerOnlineRules.IsOnline(w.LastSeenAtUtc, nowUtc, connectionRegistry.IsConnected(w.Id)));
 
         var accountCounts = accountRows
             .GroupBy(a => a.WorkerId)
@@ -572,7 +576,7 @@ public sealed class OfficeStatisticsQueryService(
                     w.Id,
                     w.DisplayName,
                     w.OfficeName,
-                    WorkerOnlineRules.IsOnline(w.LastSeenAtUtc, nowUtc),
+                    WorkerOnlineRules.IsOnline(w.LastSeenAtUtc, nowUtc, connectionRegistry.IsConnected(w.Id)),
                     stats?.Total ?? 0,
                     stats?.Sent ?? 0,
                     stats?.Duplicates ?? 0,

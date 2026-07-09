@@ -205,7 +205,7 @@
                 var metrics = shared.resolveAccountMetricLinks(account);
                 return '<td class="cell-num" data-label="Откликов">' + shared.renderMetricLink(account.responses, metrics.responses, 'Отклики за сегодня') + '</td>' +
                     '<td class="cell-num" data-label="Уникальных">' + shared.renderMetricLink(account.uniqueResponses, metrics.unique, 'Уникальные отклики за сегодня') + '</td>' +
-                    '<td class="cell-num" data-label="Ошибок">' + shared.renderMetricLink(account.errors, metrics.errors, 'Ошибки и предупреждения') + '</td>';
+                    '<td class="cell-num" data-label="Ошибок">' + shared.renderMetricLink(account.errors, metrics.errors, 'Проблемы за сегодня') + '</td>';
             })() +
             '<td data-label="Последняя активность">' + activityHtml + '</td>' +
             '<td class="data-table-menu" data-label="">' + renderAccountMenu(account, accountUrl, workerUrl) + '</td></tr>';

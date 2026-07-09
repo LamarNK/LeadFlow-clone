@@ -72,7 +72,8 @@ public sealed class DashboardQueryServiceTests
         new(
             db,
             new WorkerReleaseService(Options.Create(new WorkerReleaseOptions())),
-            new OfficeScopeService(db));
+            new OfficeScopeService(db),
+            new WorkerConnectionRegistry());
 
     private static OrbitaDbContext CreateDb()
     {

@@ -73,7 +73,10 @@ public sealed class TrayApplicationContext : ApplicationContext
 
     private void UpdateUi()
     {
-        _statusItem.Text = $"Статус: {_runtimeState.Status}";
+        var detail = _runtimeState.Detail;
+        _statusItem.Text = string.IsNullOrWhiteSpace(detail)
+            ? $"Статус: {_runtimeState.Status}"
+            : $"Статус: {_runtimeState.Status} — {detail}";
         _toggleMonitoringItem.Text = _runtimeState.IsMonitoring
             ? "Остановить мониторинг"
             : "Запустить мониторинг";
@@ -143,7 +146,7 @@ public sealed class TrayApplicationContext : ApplicationContext
     }
 
     private static string TruncateTooltip(string text) =>
-        text.Length <= 63 ? text : text[..60] + "...";
+        text.Length <= 127 ? text : text[..124] + "...";
 
     protected override void Dispose(bool disposing)
     {

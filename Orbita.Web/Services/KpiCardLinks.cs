@@ -9,7 +9,7 @@ internal static class KpiCardLinks
         "responses" => Responses(from, to),
         "sent" => Responses(from, to, status: "sent"),
         "duplicates" => Responses(from, to, status: "duplicate"),
-        "errors" => "/Errors",
+        "errors" => "/Events?level=errors",
         "accounts" => "/Accounts",
         "workers" => "/Workers",
         _ => null
@@ -57,7 +57,7 @@ internal static class KpiCardLinks
         "online" => "/Workers?status=online",
         "offline" => "/Workers?status=offline",
         "responses" => "/Responses",
-        "errors" => "/Errors",
+        "errors" => "/Events?level=errors",
         _ => null
     };
 
@@ -68,14 +68,14 @@ internal static class KpiCardLinks
         Responses(DateTime.Today, DateTime.Today, status: "unique", workerId: workerId, accountId: accountId)!;
 
     public static string AccountErrors(Guid workerId, Guid accountId) =>
-        $"/Errors?workerId={workerId}&accountId={accountId}";
+        $"/Events?level=errors&workerId={workerId}&accountId={accountId}";
 
     public static string? WorkerDetailsCard(string key, Guid workerId) => key switch
     {
         "accounts" => "#worker-accounts",
         "responses" => Responses(DateTime.Today, DateTime.Today, workerId: workerId),
         "duplicates" => Responses(DateTime.Today, DateTime.Today, status: "duplicate", workerId: workerId),
-        "errors" => $"/Errors?workerId={workerId}",
+        "errors" => $"/Events?level=errors&workerId={workerId}",
         _ => null
     };
 
@@ -117,7 +117,7 @@ internal static class KpiCardLinks
         "responses" when from is not null && to is not null => Responses(from.Value, to.Value, workerId: filters?.WorkerIds.FirstOrDefault(), accountId: filters?.AccountIds.FirstOrDefault()),
         "sent" when from is not null && to is not null => Responses(from.Value, to.Value, status: "sent", workerId: filters?.WorkerIds.FirstOrDefault(), accountId: filters?.AccountIds.FirstOrDefault()),
         "duplicates" when from is not null && to is not null => Responses(from.Value, to.Value, status: "duplicate", workerId: filters?.WorkerIds.FirstOrDefault(), accountId: filters?.AccountIds.FirstOrDefault()),
-        "errors" when from is not null && to is not null => "/Errors",
+        "errors" when from is not null && to is not null => "/Events?level=errors",
         "unique" when from is not null && to is not null => Responses(from.Value, to.Value, status: "unique", workerId: filters?.WorkerIds.FirstOrDefault(), accountId: filters?.AccountIds.FirstOrDefault()),
         "unique_authors" when from is not null && to is not null => Responses(from.Value, to.Value, workerId: filters?.WorkerIds.FirstOrDefault(), accountId: filters?.AccountIds.FirstOrDefault()),
         "workers" => "/Workers?status=online",

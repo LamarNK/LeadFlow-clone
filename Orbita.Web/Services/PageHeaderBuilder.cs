@@ -89,7 +89,7 @@ public static class PageHeaderBuilder
         Create("События", "Журнал событий воркеров и аккаунтов");
 
     public static PageHeaderViewModel ErrorsList() =>
-        Create("Ошибки", "Агрегированные ошибки и предупреждения");
+        Create("Ошибки", "Сбои автоматизации и необработанные исключения воркера");
 
     public static PageHeaderViewModel MySettings() =>
         Create("Настройки", "Профиль и интеграция с Bitrix24", showRefresh: false);

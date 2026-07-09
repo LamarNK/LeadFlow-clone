@@ -21,6 +21,9 @@ public static class AvitoCaptchaDetector
         @"|\bjs-firewall-form\b" +
         @"|\bfirewall-title\b" +
         @"|id=""geetest_captcha""" +
+        @"|initGeetest" +
+        @"|geetest\.com" +
+        @"|gt_captcha" +
         @"|id=""inner-captcha""" +
         @"|id=""h-captcha""" +
         @"|class=""h-captcha""" +
@@ -89,7 +92,10 @@ public static class AvitoCaptchaDetector
             return "hCaptcha";
         }
 
-        if (Regex.IsMatch(html, @"id=""geetest_captcha""", RegexOptions.IgnoreCase))
+        if (Regex.IsMatch(
+                html,
+                @"id=""geetest_captcha""|initGeetest|geetest\.com|gt_captcha",
+                RegexOptions.IgnoreCase))
         {
             return "geetest";
         }

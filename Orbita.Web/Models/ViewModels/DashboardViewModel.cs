@@ -74,6 +74,9 @@ public sealed class DashboardEventRowViewModel
     public string WorkerName { get; init; } = string.Empty;
     public string Level { get; init; } = "success";
     public string LevelLabel { get; init; } = string.Empty;
+    public string IconClass { get; init; } = "fa-regular fa-circle-check";
+    public string IconTone { get; init; } = "success";
+    public Guid? AccountId { get; init; }
     public string? AccountName { get; init; }
     public string DetailTitle { get; init; } = string.Empty;
     public string DetailSubtitle { get; init; } = string.Empty;
@@ -81,6 +84,10 @@ public sealed class DashboardEventRowViewModel
     public string CopyText { get; init; } = string.Empty;
     public Guid? AttachmentId { get; init; }
     public bool IsError { get; init; }
+    public bool CanSolveCaptcha { get; init; }
+    public string? CaptchaUrl { get; init; }
+    public string CaptchaKind { get; init; } = "captcha";
+    public string? CaptchaSubProfileId { get; init; }
 }
 
 public sealed class AccountStatsViewModel

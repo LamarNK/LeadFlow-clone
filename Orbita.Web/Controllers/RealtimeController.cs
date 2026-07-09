@@ -21,22 +21,33 @@ public sealed class RealtimeController(IConfiguration configuration, AuthSession
         // OrbitaApi:BaseUrl is internal (http://api:8080 in Docker) and must not be sent to the browser.
         var hubUrl = BuildHubUrl();
 
+        var captchaHubUrl = BuildCaptchaHubUrl();
+        var browserMonitorHubUrl = BuildBrowserMonitorHubUrl();
+
         return Json(new
         {
             hubUrl,
+            captchaHubUrl,
+            browserMonitorHubUrl,
             accessToken = token
         });
     }
 
-    private string BuildHubUrl()
+    private string BuildHubUrl() => BuildHubUrl("/hubs/panel");
+
+    private string BuildCaptchaHubUrl() => BuildHubUrl("/hubs/captcha");
+
+    private string BuildBrowserMonitorHubUrl() => BuildHubUrl("/hubs/browser-monitor");
+
+    private string BuildHubUrl(string hubSuffix)
     {
         var publicApiBase = configuration["OrbitaApi:PublicBaseUrl"]?.Trim().TrimEnd('/');
         if (!string.IsNullOrWhiteSpace(publicApiBase))
         {
-            return $"{publicApiBase}/hubs/panel";
+            return $"{publicApiBase}{hubSuffix}";
         }
 
-        var hubPath = $"{Request.PathBase}/hubs/panel".Replace("//", "/");
+        var hubPath = $"{Request.PathBase}{hubSuffix}".Replace("//", "/");
         if (!hubPath.StartsWith('/'))
         {
             hubPath = "/" + hubPath;

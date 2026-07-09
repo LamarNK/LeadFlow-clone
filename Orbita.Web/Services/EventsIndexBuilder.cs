@@ -98,6 +98,7 @@ internal static class EventsIndexBuilder
         var (typeLabel, typeIcon, typeTone) = EventTypePresentation(type, item.Message);
         var description = BuildDescription(item.Message, item.Details);
 
+        var isCaptcha = WorkerEventClassifier.IsCaptcha(item.Message, item.Details);
         return new EventRowViewModel
         {
             Id = item.Id,
@@ -114,7 +115,11 @@ internal static class EventsIndexBuilder
             WorkerName = FormatWorkerName(item.WorkerDisplayName),
             Description = description,
             CopyText = description,
-            AttachmentId = WorkerEventDetailsParser.TryParseAttachmentId(item.Details)
+            AttachmentId = WorkerEventDetailsParser.TryParseAttachmentId(item.Details),
+            CanSolveCaptcha = isCaptcha && item.AccountId.HasValue,
+            CaptchaUrl = WorkerEventDetailsParser.TryParseDiagnosticUrl(item.Details),
+            CaptchaKind = WorkerEventDetailsParser.TryParseDiagnosticKind(item.Details),
+            CaptchaSubProfileId = WorkerEventDetailsParser.TryParseDiagnosticSubProfileId(item.Details)
         };
     }
 

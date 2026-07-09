@@ -10,6 +10,10 @@ public sealed class OrbitaApiClient
     private readonly HttpClient _http;
     private readonly WorkerCredentials _credentials;
 
+    public string? LastConfigError { get; private set; }
+
+    public bool LastConfigWasUnauthorized { get; private set; }
+
     public OrbitaApiClient(HttpClient http, WorkerCredentials credentials)
     {
         _http = http;
@@ -29,6 +33,9 @@ public sealed class OrbitaApiClient
         var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
+            LastConfigWasUnauthorized = WorkerConnectionErrors.IsUnauthorizedFailure((int)response.StatusCode);
+            LastConfigError = WorkerConnectionErrors.FormatConfigFailure((int)response.StatusCode)
+                ?? $"HTTP {(int)response.StatusCode}";
             _ = GlobalLogger.Instance.LogAsync(
                 $"Worker config request failed with HTTP {(int)response.StatusCode}.",
                 DeskLinkAuditLogLevel.Warning,
@@ -42,6 +49,8 @@ public sealed class OrbitaApiClient
             return null;
         }
 
+        LastConfigError = null;
+        LastConfigWasUnauthorized = false;
         return await response.Content.ReadFromJsonAsync<WorkerConfigDto>(ct).ConfigureAwait(false);
     }
 
@@ -97,6 +106,44 @@ public sealed class OrbitaApiClient
         }
 
         return await response.Content.ReadFromJsonAsync<WorkerCandidateIngestionResultDto>(ct).ConfigureAwait(false);
+    }
+
+    public async Task<(bool Success, string? Error)> UpdateCaptchaSessionStatusAsync(
+        UpdateCaptchaSessionStatusRequest request,
+        CancellationToken ct)
+    {
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, "api/v1/workers/captcha-sessions/status");
+        ApplyAuth(httpRequest);
+        httpRequest.Content = JsonContent.Create(request);
+        var response = await _http.SendAsync(httpRequest, ct).ConfigureAwait(false);
+        if (response.IsSuccessStatusCode)
+        {
+            return (true, null);
+        }
+
+        var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        return (false, string.IsNullOrWhiteSpace(body) ? $"HTTP {(int)response.StatusCode}" : body);
+    }
+
+    public async Task<CaptchaSessionDto?> GetCaptchaSessionAsync(Guid sessionId, CancellationToken ct)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"api/v1/workers/captcha-sessions/{sessionId:D}");
+        ApplyAuth(request);
+        var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            return null;
+        }
+
+        return await response.Content.ReadFromJsonAsync<CaptchaSessionDto>(cancellationToken: ct).ConfigureAwait(false);
+    }
+
+    public async Task<bool> IsBrowserMonitorSessionAliveAsync(Guid sessionId, CancellationToken ct)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"api/v1/workers/browser-monitor-sessions/{sessionId:D}/alive");
+        ApplyAuth(request);
+        var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
+        return response.IsSuccessStatusCode;
     }
 
     public async Task SendHeartbeatAsync(WorkerHeartbeatRequest heartbeat, CancellationToken ct)

@@ -18,6 +18,7 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
     public DbSet<PanelAuditLogEntity> PanelAuditLogs => Set<PanelAuditLogEntity>();
     public DbSet<PanelUserBitrixSettingsEntity> PanelUserBitrixSettings => Set<PanelUserBitrixSettingsEntity>();
     public DbSet<CandidateResponseEntity> CandidateResponses => Set<CandidateResponseEntity>();
+    public DbSet<CaptchaSessionEntity> CaptchaSessions => Set<CaptchaSessionEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -139,6 +140,21 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.Property(x => x.ValidationStatus).HasMaxLength(32);
             entity.Property(x => x.ValidationMessage).HasMaxLength(2000);
             entity.Property(x => x.UpdatedByUserId).HasMaxLength(128);
+        });
+
+        modelBuilder.Entity<CaptchaSessionEntity>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.WorkerId, x.Status });
+            entity.Property(x => x.AccountName).HasMaxLength(200);
+            entity.Property(x => x.OperatorUserId).HasMaxLength(128);
+            entity.Property(x => x.OperatorDisplayName).HasMaxLength(256);
+            entity.Property(x => x.PageUrl).HasMaxLength(2048);
+            entity.Property(x => x.CaptchaKind).HasMaxLength(64);
+            entity.Property(x => x.SubProfileId).HasMaxLength(128);
+            entity.Property(x => x.Status).HasMaxLength(32);
+            entity.Property(x => x.FailureMessage).HasMaxLength(2000);
+            entity.HasOne(x => x.Worker).WithMany().HasForeignKey(x => x.WorkerId);
         });
 
         modelBuilder.Entity<PanelAuditLogEntity>(entity =>

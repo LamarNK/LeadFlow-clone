@@ -92,6 +92,7 @@ internal static class ErrorsIndexBuilder
         var severity = WorkerEventClassifier.InferSeverity(item.Level, item.Message, item.Details);
         var occurredAt = item.CreatedAtUtc;
 
+        var isCaptcha = WorkerEventClassifier.IsCaptcha(item.Message, item.Details);
         return new ErrorRowViewModel
         {
             Id = item.Id,
@@ -108,7 +109,11 @@ internal static class ErrorsIndexBuilder
             WorkerName = FormatWorkerName(item.WorkerDisplayName),
             OccurrenceCount = 1,
             LastSeenUtc = occurredAt,
-            AttachmentId = WorkerEventDetailsParser.TryParseAttachmentId(item.Details)
+            AttachmentId = WorkerEventDetailsParser.TryParseAttachmentId(item.Details),
+            CanSolveCaptcha = isCaptcha && item.AccountId.HasValue,
+            CaptchaUrl = WorkerEventDetailsParser.TryParseDiagnosticUrl(item.Details),
+            CaptchaKind = WorkerEventDetailsParser.TryParseDiagnosticKind(item.Details),
+            CaptchaSubProfileId = WorkerEventDetailsParser.TryParseDiagnosticSubProfileId(item.Details)
         };
     }
 

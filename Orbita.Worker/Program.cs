@@ -140,6 +140,11 @@ internal static class Program
         host.Services.AddSingleton<ICandidateParser, CandidateParser>();
         host.Services.AddSingleton<IAdsPowerApiClient, AdsPowerApiClient>();
         host.Services.AddSingleton<IAdsPowerAvitoAutomationService, AdsPowerAvitoAutomationService>();
+        host.Services.AddSingleton<LeadFlow.Core.Services.Captcha.CaptchaSessionHost>();
+        host.Services.AddSingleton<CaptchaSessionCoordinator>();
+        host.Services.AddSingleton<BrowserMonitorSource>();
+        host.Services.AddSingleton<IBrowserMonitorSource>(sp => sp.GetRequiredService<BrowserMonitorSource>());
+        host.Services.AddSingleton<BrowserMonitorCoordinator>();
         host.Services.AddSingleton<AvitoDemoResponseSource>();
         host.Services.AddSingleton<AvitoParserService>();
         host.Services.AddSingleton<IAvitoResponseSource, AvitoResponseSource>();
@@ -154,6 +159,9 @@ internal static class Program
         host.Services.AddSingleton<IWorkerActivityReporter>(sp => sp.GetRequiredService<WorkerActivityReporter>());
         host.Services.AddSingleton<IWorkerMonitoringService, WorkerMonitoringService>();
 
+        host.Services.AddSingleton<WorkerHubConnection>();
+        host.Services.AddSingleton<IWorkerRealtimeChannel>(sp => sp.GetRequiredService<WorkerHubConnection>());
+        host.Services.AddHostedService(sp => sp.GetRequiredService<WorkerHubConnection>());
         host.Services.AddSingleton<WorkerOrchestrator>();
         host.Services.AddHostedService(sp => sp.GetRequiredService<WorkerOrchestrator>());
 
