@@ -333,6 +333,13 @@ public sealed class LeadFlowImportService(
             AccountName = record.AccountName,
             Source = string.IsNullOrWhiteSpace(record.Source) ? "Avito" : record.Source,
             SourceResponseId = record.SourceResponseId.Trim(),
+            CardFingerprint = AvitoResponseCardFingerprint.Build(
+                record.FullName,
+                record.Vacancy,
+                record.City,
+                string.IsNullOrWhiteSpace(record.VacancyUrl) ? record.SourceUrl : record.VacancyUrl,
+                record.MessengerUrl,
+                AvitoResponseCardFingerprint.NormalizeAgeText(null, record.Age)),
             FullName = record.FullName,
             FirstName = record.FirstName,
             LastName = record.LastName,

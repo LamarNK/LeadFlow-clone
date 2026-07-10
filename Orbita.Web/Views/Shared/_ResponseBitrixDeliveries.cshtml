@@ -1,0 +1,36 @@
+@model IReadOnlyList<ResponseBitrixDeliveryViewModel>
+@if (Model is { Count: > 0 })
+{
+    <div class="responses-bitrix-deliveries">
+        @foreach (var delivery in Model)
+        {
+            var title = delivery.ErrorMessage;
+            if (string.IsNullOrWhiteSpace(title))
+            {
+                title = delivery.OutcomeLabel;
+            }
+            @if (!string.IsNullOrWhiteSpace(delivery.BitrixEntityUrl))
+            {
+                <a class="responses-bitrix-chip responses-bitrix-chip--@delivery.ChipTone"
+                   href="@delivery.BitrixEntityUrl"
+                   target="_blank"
+                   rel="noopener"
+                   title="@title">
+                    <span class="responses-bitrix-chip-label">@delivery.BitrixLabel</span>
+                    <span class="responses-bitrix-chip-outcome">@delivery.OutcomeLabel</span>
+                </a>
+            }
+            else
+            {
+                <span class="responses-bitrix-chip responses-bitrix-chip--@delivery.ChipTone" title="@title">
+                    <span class="responses-bitrix-chip-label">@delivery.BitrixLabel</span>
+                    <span class="responses-bitrix-chip-outcome">@delivery.OutcomeLabel</span>
+                </span>
+            }
+        }
+    </div>
+}
+else
+{
+    <span class="responses-bitrix-empty">—</span>
+}

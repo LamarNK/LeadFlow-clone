@@ -32,6 +32,12 @@ public sealed class CandidateLookupService(OrbitaDbContext db)
             .Distinct(StringComparer.Ordinal)
             .ToArray();
 
+        var cardFingerprints = (request.CardFingerprints ?? [])
+            .Where(static x => !string.IsNullOrWhiteSpace(x))
+            .Select(static x => x.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
         var duplicateCutoffUtc = CandidateDuplicateLookback.GetCutoffUtc(DateTime.UtcNow);
 
         var existingSourceIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -76,8 +82,84 @@ public sealed class CandidateLookupService(OrbitaDbContext db)
             }
         }
 
+        var existingCardFingerprints = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (cardFingerprints.Length > 0)
+        {
+            var candidateSet = cardFingerprints.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var subProfileId = request.AvitoSubProfileId?.Trim();
+
+            var storedQuery = db.CandidateResponses
+                .AsNoTracking()
+                .Where(x => x.OfficeId == worker.OfficeId
+                            && x.AccountId == request.AccountId
+                            && x.CreatedAt >= duplicateCutoffUtc
+                            && x.CardFingerprint != "");
+            if (!string.IsNullOrWhiteSpace(subProfileId))
+            {
+                storedQuery = storedQuery.Where(x => x.AvitoSubProfileId == subProfileId);
+            }
+
+            var storedMatches = await storedQuery
+                .Where(x => candidateSet.Contains(x.CardFingerprint))
+                .Select(x => x.CardFingerprint)
+                .Distinct()
+                .ToListAsync(ct);
+            foreach (var fingerprint in storedMatches)
+            {
+                existingCardFingerprints.Add(fingerprint);
+            }
+
+            var remaining = candidateSet
+                .Where(x => !existingCardFingerprints.Contains(x))
+                .ToArray();
+            if (remaining.Length > 0)
+            {
+                var legacyQuery = db.CandidateResponses
+                    .AsNoTracking()
+                    .Where(x => x.OfficeId == worker.OfficeId
+                                && x.AccountId == request.AccountId
+                                && x.CreatedAt >= duplicateCutoffUtc
+                                && x.CardFingerprint == "");
+                if (!string.IsNullOrWhiteSpace(subProfileId))
+                {
+                    legacyQuery = legacyQuery.Where(x => x.AvitoSubProfileId == subProfileId);
+                }
+
+                var legacyRows = await legacyQuery
+                    .Select(x => new
+                    {
+                        x.FullName,
+                        x.Vacancy,
+                        x.City,
+                        x.VacancyUrl,
+                        x.SourceUrl,
+                        x.MessengerUrl,
+                        x.Age
+                    })
+                    .ToListAsync(ct);
+
+                var remainingSet = remaining.ToHashSet(StringComparer.OrdinalIgnoreCase);
+                foreach (var row in legacyRows)
+                {
+                    var vacancyUrl = string.IsNullOrWhiteSpace(row.VacancyUrl) ? row.SourceUrl : row.VacancyUrl;
+                    var fingerprint = AvitoResponseCardFingerprint.Build(
+                        row.FullName,
+                        row.Vacancy,
+                        row.City,
+                        vacancyUrl,
+                        row.MessengerUrl,
+                        AvitoResponseCardFingerprint.NormalizeAgeText(null, row.Age));
+                    if (remainingSet.Contains(fingerprint))
+                    {
+                        existingCardFingerprints.Add(fingerprint);
+                    }
+                }
+            }
+        }
+
         return new WorkerCandidateLookupResponse(
             existingSourceIds.ToList(),
-            existingPhones.ToList());
+            existingPhones.ToList(),
+            existingCardFingerprints.ToList());
     }
 }

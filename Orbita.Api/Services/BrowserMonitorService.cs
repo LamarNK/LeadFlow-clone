@@ -1,7 +1,9 @@
 using System.Collections.Concurrent;
 using System.Security.Claims;
+using Orbita.Logging.Audit;
 using Microsoft.EntityFrameworkCore;
 using Orbita.Api.Data;
+using Orbita.Api.Helpers;
 using Orbita.Contracts;
 
 namespace Orbita.Api.Services;
@@ -31,8 +33,8 @@ public sealed class BrowserMonitorService(
         }
 
         var worker = await db.Workers
-            .Include(x => x.Accounts)
             .AsNoTracking()
+            .Include(x => x.Accounts)
             .FirstOrDefaultAsync(x => x.Id == workerId, ct)
             .ConfigureAwait(false);
         if (worker is null || !await officeScope.CanAccessWorkerAsync(scope, worker.Id, ct).ConfigureAwait(false))
@@ -48,7 +50,7 @@ public sealed class BrowserMonitorService(
         await StopSessionsForWorkerAsync(workerId, ct).ConfigureAwait(false);
 
         var now = DateTime.UtcNow;
-        var browsers = BuildBrowserCatalog(worker);
+        var browsers = BuildInitialCatalog(worker);
         var session = new MonitorSession
         {
             Id = Guid.NewGuid(),
@@ -65,9 +67,23 @@ public sealed class BrowserMonitorService(
         _activeSessionByWorker[worker.Id] = session.Id;
 
         var pending = new WorkerPendingBrowserMonitorSessionDto(session.Id, worker.Id, browsers);
-        await workerPushNotifier.TryPushBrowserMonitorSessionAsync(worker.Id, pending, ct).ConfigureAwait(false);
+        var workerNotified = await workerPushNotifier
+            .TryPushBrowserMonitorSessionAsync(worker.Id, pending, ct)
+            .ConfigureAwait(false);
 
-        return (ToDto(session), null);
+        await GlobalLogger.Instance.LogAsync(
+            $"Browser monitor: сессия {session.Id:D} для воркера {worker.Id:D}, браузеров в каталоге: {browsers.Count}, push воркеру: {(workerNotified ? "да" : "нет")}.",
+            DeskLinkAuditLogLevel.Info,
+            errorKey: "browser.monitor.session.started",
+            properties: new Dictionary<string, object?>
+            {
+                ["browserMonitor.sessionId"] = session.Id,
+                ["browserMonitor.workerId"] = worker.Id,
+                ["browserMonitor.browserCount"] = browsers.Count,
+                ["browserMonitor.workerNotified"] = workerNotified
+            }).ConfigureAwait(false);
+
+        return (ToDto(session, workerNotified), null);
     }
 
     public Task<BrowserMonitorSessionDto?> GetAsync(
@@ -104,16 +120,23 @@ public sealed class BrowserMonitorService(
             return null;
         }
 
-        var worker = await db.Workers.AsNoTracking()
-            .Include(x => x.Accounts)
-            .FirstOrDefaultAsync(x => x.Id == workerId, ct)
-            .ConfigureAwait(false);
-        if (worker is null)
+        if (session.Browsers.Count == 0)
         {
-            return null;
+            var worker = await db.Workers
+                .AsNoTracking()
+                .Include(x => x.Accounts)
+                .FirstOrDefaultAsync(x => x.Id == workerId, ct)
+                .ConfigureAwait(false);
+            if (worker is not null)
+            {
+                var seededBrowsers = BuildInitialCatalog(worker);
+                if (seededBrowsers.Count > 0)
+                {
+                    session.Browsers = seededBrowsers;
+                }
+            }
         }
 
-        session.Browsers = BuildBrowserCatalog(worker);
         return new WorkerPendingBrowserMonitorSessionDto(session.Id, workerId, session.Browsers);
     }
 
@@ -197,7 +220,7 @@ public sealed class BrowserMonitorService(
         CancellationToken ct)
     {
         var session = await TryGetAuthorizedSessionEntityAsync(sessionId, principal, ct).ConfigureAwait(false);
-        return session is null ? null : ToDto(session);
+        return session is null ? null : ToDto(session, workerNotified: true);
     }
 
     private async Task<MonitorSession?> TryGetAuthorizedSessionEntityAsync(
@@ -234,42 +257,68 @@ public sealed class BrowserMonitorService(
         return session;
     }
 
-    private static IReadOnlyList<BrowserMonitorBrowserDto> BuildBrowserCatalog(WorkerEntity worker)
+    public void UpdateSessionCatalog(Guid sessionId, IReadOnlyList<BrowserMonitorBrowserDto> browsers)
     {
+        if (_sessions.TryGetValue(sessionId, out var session))
+        {
+            session.Browsers = browsers;
+        }
+    }
+
+    private static IReadOnlyList<BrowserMonitorBrowserDto> BuildInitialCatalog(WorkerEntity worker)
+    {
+        var activeAccounts = WorkerActivityMapper.DeserializeActiveAccounts(worker.ActivityActiveAccountsJson);
+        if (activeAccounts.Count == 0
+            && worker.ActivityAccountId is Guid legacyAccountId
+            && !string.IsNullOrWhiteSpace(worker.ActivityPhase)
+            && !string.Equals(worker.ActivityPhase, WorkerActivityPhases.Idle, StringComparison.Ordinal)
+            && !string.Equals(worker.ActivityPhase, WorkerActivityPhases.Waiting, StringComparison.Ordinal)
+            && !string.Equals(worker.ActivityPhase, WorkerActivityPhases.Stopped, StringComparison.Ordinal))
+        {
+            activeAccounts =
+            [
+                new WorkerActiveAccountDto(
+                    legacyAccountId,
+                    worker.ActivityAccountName ?? "Браузер",
+                    worker.ActivityPhase,
+                    worker.ActivityMessage ?? string.Empty,
+                    worker.ActivitySubProfileId,
+                    worker.ActivitySubProfileName)
+            ];
+        }
+
+        if (activeAccounts.Count == 0)
+        {
+            return [];
+        }
+
+        var accountsById = worker.Accounts
+            .GroupBy(account => account.AccountId)
+            .ToDictionary(group => group.Key, group => group.First());
+
         var index = 0;
-        return worker.Accounts
-            .Where(x => x.IsEnabledInPanel)
-            .OrderBy(x => x.DisplayName, StringComparer.OrdinalIgnoreCase)
-            .Select(account =>
+        return activeAccounts
+            .Select(active =>
             {
                 index++;
-                var status = ResolveCatalogStatus(account.Status, account.LastErrorMessage);
+                accountsById.TryGetValue(active.AccountId, out var account);
+
                 return new BrowserMonitorBrowserDto(
-                    account.AccountId,
-                    account.DisplayName,
-                    account.AdsPowerProfileId ?? string.Empty,
+                    active.AccountId,
+                    string.IsNullOrWhiteSpace(active.AccountName)
+                        ? account?.DisplayName ?? "Браузер"
+                        : active.AccountName,
+                    account?.AdsPowerProfileId ?? string.Empty,
                     index,
-                    status,
-                    StatusMessage: account.LastErrorMessage);
+                    BrowserMonitorStatuses.Running,
+                    StatusMessage: active.Message,
+                    SubProfileId: active.SubProfileId,
+                    SubProfileName: active.SubProfileName);
             })
             .ToList();
     }
 
-    private static string ResolveCatalogStatus(string? status, string? lastError)
-    {
-        if (!string.IsNullOrWhiteSpace(lastError))
-        {
-            return BrowserMonitorStatuses.Error;
-        }
-
-        return string.Equals(status, "error", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(status, "requires_login", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(status, "requires_manual_action", StringComparison.OrdinalIgnoreCase)
-            ? BrowserMonitorStatuses.Error
-            : BrowserMonitorStatuses.Stopped;
-    }
-
-    private static BrowserMonitorSessionDto ToDto(MonitorSession session) =>
+    private static BrowserMonitorSessionDto ToDto(MonitorSession session, bool workerNotified) =>
         new(
             session.Id,
             session.WorkerId,
@@ -278,7 +327,8 @@ public sealed class BrowserMonitorService(
             session.OperatorDisplayName,
             session.CreatedAtUtc,
             session.ExpiresAtUtc,
-            session.Browsers);
+            session.Browsers,
+            workerNotified);
 
     public sealed class MonitorSession
     {

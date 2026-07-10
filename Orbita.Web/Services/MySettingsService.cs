@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Extensions.Options;
 using Orbita.Contracts;
 using Orbita.Web.Models.ViewModels;
@@ -7,17 +8,22 @@ namespace Orbita.Web.Services;
 
 public sealed class MySettingsService(OrbitaApiClient api, IOptions<DesignPreviewOptions> previewOptions) : IMySettingsService
 {
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
     private static readonly IReadOnlyList<SettingsTabViewModel> Tabs =
     [
         new() { Id = "profile", Label = "Мой профиль" },
-        new() { Id = "bitrix", Label = "Bitrix24" }
+        new() { Id = "bitrix", Label = "Битриксы" },
+        new() { Id = "distribution", Label = "Связи" }
     ];
 
-    public async Task<MySettingsIndexViewModel> GetIndexAsync(string? tab, CancellationToken ct = default)
+    public async Task<MySettingsIndexViewModel> GetIndexAsync(
+        string? tab,
+        Guid? instanceId = null,
+        CancellationToken ct = default)
     {
-        var activeTab = string.Equals(tab, "bitrix", StringComparison.OrdinalIgnoreCase) ? "bitrix" : "profile";
+        var activeTab = NormalizeTab(tab);
         var profile = await BuildProfileAsync(ct);
-        var bitrix = activeTab == "bitrix" ? await BuildBitrixAsync(ct) : null;
 
         return new MySettingsIndexViewModel
         {
@@ -25,7 +31,8 @@ public sealed class MySettingsService(OrbitaApiClient api, IOptions<DesignPrevie
             ActiveTab = activeTab,
             Tabs = Tabs,
             Profile = profile,
-            Bitrix = bitrix
+            BitrixInstances = activeTab == "bitrix" ? await BuildBitrixInstancesAsync(instanceId, ct) : null,
+            Distribution = activeTab == "distribution" ? await BuildDistributionAsync(ct) : null
         };
     }
 
@@ -35,18 +42,78 @@ public sealed class MySettingsService(OrbitaApiClient api, IOptions<DesignPrevie
         CancellationToken ct = default) =>
         api.ChangeOwnPasswordAsync(currentPassword, newPassword, ct);
 
-    public async Task<(bool Success, string? Error)> SaveBitrixAsync(string webhookUrl, CancellationToken ct = default)
-    {
-        var (integration, error) = await api.SaveOfficeBitrixIntegrationAsync(webhookUrl, ct);
-        return integration is not null ? (true, null) : (false, error);
-    }
-
     public async Task<(bool Success, string? Error)> SaveBitrixTransmissionAsync(
         bool transmissionEnabled,
         CancellationToken ct = default)
     {
-        var (settings, error) = await api.UpdateOfficeBitrixSettingsAsync(transmissionEnabled, ct);
+        var (settings, error) = await api.UpdateOfficeBitrixSettingsAsync(transmissionEnabled, ct: ct);
         return settings is not null ? (true, null) : (false, error);
+    }
+
+    public async Task<(bool Success, string? Error, Guid? InstanceId)> SaveBitrixInstanceAsync(
+        SaveBitrixInstanceFormModel model,
+        CancellationToken ct = default)
+    {
+        if (previewOptions.Value.Enabled)
+        {
+            return (true, null, model.Id ?? DesignPreviewData.PreviewBitrixInstanceId);
+        }
+
+        if (model.Id is Guid existingId && existingId != Guid.Empty)
+        {
+            var (instance, error) = await api.UpdateBitrixInstanceAsync(
+                existingId,
+                new UpdateBitrixInstanceRequest(
+                    model.Name,
+                    model.Signature,
+                    string.IsNullOrWhiteSpace(model.WebhookUrl) ? null : model.WebhookUrl.Trim(),
+                    null,
+                    model.IsEnabled),
+                ct: ct);
+            return instance is null ? (false, error, null) : (true, null, instance.Id);
+        }
+
+        if (string.IsNullOrWhiteSpace(model.WebhookUrl))
+        {
+            return (false, "Укажите URL вебхука для нового Битрикса.", null);
+        }
+
+        var (created, createError) = await api.CreateBitrixInstanceAsync(
+            new CreateBitrixInstanceRequest(
+                model.Name,
+                model.Signature,
+                model.WebhookUrl.Trim(),
+                null,
+                model.IsEnabled),
+            ct: ct);
+        return created is null ? (false, createError, null) : (true, null, created.Id);
+    }
+
+    public async Task<(bool Success, string? Error)> DeleteBitrixInstanceAsync(Guid id, CancellationToken ct = default)
+    {
+        if (previewOptions.Value.Enabled)
+        {
+            return (true, null);
+        }
+
+        var (success, error) = await api.DeleteBitrixInstanceAsync(id, ct: ct);
+        return success ? (true, null) : (false, error);
+    }
+
+    public async Task<(bool Success, string? Error)> SaveDistributionRouteAsync(
+        bool isAutoDistributionEnabled,
+        IReadOnlyList<SaveDistributionNodeRequest> nodes,
+        CancellationToken ct = default)
+    {
+        if (previewOptions.Value.Enabled)
+        {
+            return (true, null);
+        }
+
+        var (route, error) = await api.SaveDistributionRouteAsync(
+            new SaveDistributionRouteRequest(isAutoDistributionEnabled, nodes),
+            ct: ct);
+        return route is not null ? (true, null) : (false, error);
     }
 
     private async Task<ProfileSettingsViewModel?> BuildProfileAsync(CancellationToken ct)
@@ -66,40 +133,122 @@ public sealed class MySettingsService(OrbitaApiClient api, IOptions<DesignPrevie
         };
     }
 
-    private async Task<BitrixSettingsViewModel?> BuildBitrixAsync(CancellationToken ct)
+    private async Task<BitrixInstancesRegistryViewModel?> BuildBitrixInstancesAsync(
+        Guid? instanceId,
+        CancellationToken ct)
     {
-        var integration = await api.GetOfficeBitrixIntegrationAsync(ct);
-        var officeBitrixSettings = await api.GetOfficeBitrixSettingsAsync(ct);
+        var officeBitrixSettings = await api.GetOfficeBitrixSettingsAsync(ct: ct);
+        var instances = await api.GetBitrixInstancesAsync(ct: ct) ?? [];
+        var canManage = officeBitrixSettings is not null;
 
-        if (integration is null)
+        BitrixInstanceEditorViewModel? editor = null;
+        if (instanceId == Guid.Empty)
         {
-            return new BitrixSettingsViewModel
+            editor = CreateNewEditor();
+        }
+        else if (instanceId is Guid selectedId)
+        {
+            var detail = await api.GetBitrixInstanceAsync(selectedId, ct: ct);
+            if (detail is not null)
             {
-                ValidationStatus = BitrixValidationStatuses.NotConfigured,
-                ValidationStatusLabel = "Не настроено",
-                ValidationStatusTone = "neutral",
-                CanManageWebhook = false,
-                CanManageTransmission = false
-            };
+                editor = MapEditor(detail);
+            }
         }
 
-        var (label, tone) = MapValidationStatus(integration.ValidationStatus);
-        return new BitrixSettingsViewModel
+        return new BitrixInstancesRegistryViewModel
         {
-            OfficeId = integration.OfficeId,
-            OfficeName = integration.OfficeName,
-            MaskedWebhookUrl = integration.MaskedWebhookUrl,
-            PortalHost = integration.PortalHost,
-            ValidationStatus = integration.ValidationStatus,
-            ValidationMessage = integration.ValidationMessage,
-            LastValidatedAtUtc = integration.LastValidatedAtUtc,
-            ValidationStatusLabel = label,
-            ValidationStatusTone = tone,
-            CanManageWebhook = true,
+            OfficeId = officeBitrixSettings?.OfficeId,
+            OfficeName = officeBitrixSettings?.OfficeName,
+            CanManage = canManage,
             CanManageTransmission = officeBitrixSettings is not null,
-            TransmissionEnabled = integration.TransmissionEnabled
+            TransmissionEnabled = officeBitrixSettings?.TransmissionEnabled ?? true,
+            Instances = instances.Select(MapListItem).ToList(),
+            Editor = editor
         };
     }
+
+    private async Task<DistributionEditorViewModel?> BuildDistributionAsync(CancellationToken ct)
+    {
+        var officeBitrixSettings = await api.GetOfficeBitrixSettingsAsync(ct: ct);
+        var canManage = officeBitrixSettings is not null;
+        var instances = await api.GetBitrixInstancesAsync(ct: ct) ?? [];
+        var route = await api.GetDistributionRouteAsync(ct: ct)
+            ?? new DistributionRouteDto(Guid.Empty, officeBitrixSettings?.OfficeId ?? Guid.Empty, false, [], null);
+
+        var instancePayload = instances
+            .Where(x => x.IsEnabled)
+            .Select(x => new
+            {
+                x.Id,
+                x.Name,
+                x.Signature,
+                Label = FormatBitrixLabel(x.Name, x.Signature)
+            })
+            .ToList();
+
+        return new DistributionEditorViewModel
+        {
+            OfficeId = officeBitrixSettings?.OfficeId,
+            OfficeName = officeBitrixSettings?.OfficeName,
+            CanManage = canManage,
+            IsAutoDistributionEnabled = route.IsAutoDistributionEnabled,
+            RouteJson = JsonSerializer.Serialize(route, JsonOptions),
+            InstancesJson = JsonSerializer.Serialize(instancePayload, JsonOptions)
+        };
+    }
+
+    internal static BitrixInstanceListItemViewModel MapListItem(BitrixInstanceListItemDto item)
+    {
+        var (label, tone) = MapValidationStatus(item.ValidationStatus);
+        return new BitrixInstanceListItemViewModel
+        {
+            Id = item.Id,
+            Name = item.Name,
+            Signature = item.Signature,
+            DisplayLabel = FormatBitrixLabel(item.Name, item.Signature),
+            PortalHost = item.PortalHost,
+            ValidationStatus = item.ValidationStatus,
+            ValidationMessage = item.ValidationMessage,
+            ValidationStatusLabel = label,
+            ValidationStatusTone = tone,
+            IsEnabled = item.IsEnabled
+        };
+    }
+
+    internal static BitrixInstanceEditorViewModel MapEditor(BitrixInstanceDto detail)
+    {
+        var (label, tone) = MapValidationStatus(detail.ValidationStatus);
+        return new BitrixInstanceEditorViewModel
+        {
+            Id = detail.Id,
+            IsNew = false,
+            Name = detail.Name,
+            Signature = detail.Signature,
+            DisplayLabel = FormatBitrixLabel(detail.Name, detail.Signature),
+            MaskedWebhookUrl = detail.MaskedWebhookUrl,
+            PortalHost = detail.PortalHost,
+            ValidationStatus = detail.ValidationStatus,
+            ValidationMessage = detail.ValidationMessage,
+            LastValidatedAtUtc = detail.LastValidatedAtUtc,
+            ValidationStatusLabel = label,
+            ValidationStatusTone = tone,
+            IsEnabled = detail.IsEnabled
+        };
+    }
+
+    internal static BitrixInstanceEditorViewModel CreateNewEditor() =>
+        new()
+        {
+            IsNew = true,
+            ValidationStatus = BitrixValidationStatuses.NotConfigured,
+            ValidationStatusLabel = "Новый",
+            ValidationStatusTone = "neutral"
+        };
+
+    internal static string FormatBitrixLabel(string name, string signature) =>
+        !string.IsNullOrWhiteSpace(signature) ? signature
+        : !string.IsNullOrWhiteSpace(name) ? name
+        : "—";
 
     private static PasswordPolicyViewModel MapPasswordPolicy(PasswordPolicyDto policy)
     {
@@ -129,5 +278,13 @@ public sealed class MySettingsService(OrbitaApiClient api, IOptions<DesignPrevie
             BitrixValidationStatuses.Warning => ("Ограничения", "warning"),
             BitrixValidationStatuses.Error => ("Ошибка", "error"),
             _ => ("Не настроено", "neutral")
+        };
+
+    private static string NormalizeTab(string? tab) =>
+        tab?.Trim().ToLowerInvariant() switch
+        {
+            "bitrix" => "bitrix",
+            "distribution" or "links" or "svyazi" => "distribution",
+            _ => "profile"
         };
 }

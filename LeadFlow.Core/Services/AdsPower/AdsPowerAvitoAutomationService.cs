@@ -88,7 +88,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
                     }
                 },
                 page.Url,
-                BuildResolveExistingPhonesCallback(messengerEnrichmentHints)).ConfigureAwait(false);
+                BuildResolveExistingPhonesCallback(messengerEnrichmentHints),
+                BuildResolveExistingCardFingerprintsCallback(messengerEnrichmentHints)).ConfigureAwait(false);
 
             var raw = await EvaluateWithRetryAsync<string>(page, ExtractionScript, cancellationToken).ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(raw))
@@ -1877,6 +1878,25 @@ public sealed partial class AdsPowerAvitoAutomationService(
             (IReadOnlySet<string>)await duplicateRepository
                 .GetExistingNormalizedPhonesAsync(
                     phoneCandidates,
+                    enrichmentHints.DuplicateScope,
+                    enrichmentHints.AccountId,
+                    cancellationToken,
+                    enrichmentHints.AvitoSubProfileId)
+                .ConfigureAwait(false);
+    }
+
+    private Func<IReadOnlyCollection<string>, CancellationToken, Task<IReadOnlySet<string>>>? BuildResolveExistingCardFingerprintsCallback(
+        CandidatesMessengerEnrichmentHints? enrichmentHints)
+    {
+        if (enrichmentHints is null)
+        {
+            return null;
+        }
+
+        return async (cardFingerprintCandidates, cancellationToken) =>
+            (IReadOnlySet<string>)await duplicateRepository
+                .GetExistingCardFingerprintsAsync(
+                    cardFingerprintCandidates,
                     enrichmentHints.DuplicateScope,
                     enrichmentHints.AccountId,
                     cancellationToken,

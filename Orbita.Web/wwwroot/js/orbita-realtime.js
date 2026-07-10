@@ -122,11 +122,22 @@
         }, 300);
     }
 
+    function showOperatorMessage(notification) {
+        var message = notification.operatorMessage || notification.OperatorMessage;
+        if (!message || !window.Orbita || typeof window.Orbita.toast !== 'function') return;
+        var variant = notification.operatorMessageVariant || notification.OperatorMessageVariant || 'error';
+        window.Orbita.toast(message, { variant: variant });
+    }
+
     function scheduleRefresh(notification) {
         var kinds = normalizeKinds(notification.kinds || notification.Kinds);
         kinds.forEach(function (k) {
             if (pendingKinds.indexOf(k) < 0) pendingKinds.push(k);
         });
+
+        if (matchesOfficeScope(notification)) {
+            showOperatorMessage(notification);
+        }
 
         if (!matchesOfficeScope(notification)) {
             return;

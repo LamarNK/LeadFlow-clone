@@ -22,7 +22,8 @@ public static class AvitoCandidatesListPreparer
         CancellationToken cancellationToken,
         Func<CancellationToken, Task<string?>>? fetchHtmlSnapshot = null,
         string? pageUrl = null,
-        Func<IReadOnlyCollection<string>, CancellationToken, Task<IReadOnlySet<string>>>? resolveExistingPhonesAsync = null)
+        Func<IReadOnlyCollection<string>, CancellationToken, Task<IReadOnlySet<string>>>? resolveExistingPhonesAsync = null,
+        Func<IReadOnlyCollection<string>, CancellationToken, Task<IReadOnlySet<string>>>? resolveExistingCardFingerprintsAsync = null)
     {
         await AvitoFirewallProbe.ThrowIfBlockedAsync(executeScript, fetchHtmlSnapshot, pageUrl, cancellationToken)
             .ConfigureAwait(false);
@@ -70,6 +71,11 @@ public static class AvitoCandidatesListPreparer
         var phoneRevealLimit = domItems == 0 ? MaxPhoneRevealRoundsWhenNoItems : MaxPhoneRevealRounds;
         var phoneRevealRounds = 0;
         var phoneClicksTotal = 0;
+        var cardFingerprintSkipCount = await TryApplyKnownCardFingerprintSkipsAsync(
+                executeScript,
+                resolveExistingCardFingerprintsAsync,
+                cancellationToken)
+            .ConfigureAwait(false);
         PhonesReadyProbe? phonesProbe = null;
 
         await TryEnableClipboardGuardAsync(executeScript, cancellationToken).ConfigureAwait(false);
@@ -87,13 +93,21 @@ public static class AvitoCandidatesListPreparer
                     await Task.Delay(420, cancellationToken).ConfigureAwait(false);
                 }
 
+                var popupStep = await TryRevealNextContactsPopupPhoneAsync(executeScript, cancellationToken)
+                    .ConfigureAwait(false);
+                if (popupStep?.Clicked == true)
+                {
+                    phoneClicksTotal++;
+                    await Task.Delay(popupStep.Revealed ? 260 : 420, cancellationToken).ConfigureAwait(false);
+                }
+
                 phonesProbe = await TryParsePhonesReadyAsync(executeScript, cancellationToken).ConfigureAwait(false);
                 if (phonesProbe?.Ready == true || phonesProbe?.Items == 0)
                 {
                     break;
                 }
 
-                if (revealStep?.Masked == 0)
+                if (revealStep?.Masked == 0 && popupStep?.Pending == 0)
                 {
                     await Task.Delay(280, cancellationToken).ConfigureAwait(false);
                 }
@@ -142,13 +156,14 @@ public static class AvitoCandidatesListPreparer
             phoneClicksTotal,
             detailEnrichClicks,
             detailEnrichSkipped,
-            detailEnrichHits);
+            detailEnrichHits,
+            cardFingerprintSkipCount);
 
         var detailEnrichNote = isJobCrmPage
             ? "detailEnrich=skipped (CRM page)"
             : $"detailEnrich={result.DetailEnrichHits}/{result.DetailEnrichClicks} (skipped {result.DetailEnrichSkipped})";
         _ = GlobalLogger.Instance.LogAsync(
-            $"Candidates list prepared for {logContext}: scrollRounds={result.ScrollRounds}, domItems={result.DomItemCount}, phonesReady={result.PhonesReady} ({result.CardsWithPhone}/{result.DomItemCount}), maskedLeft={result.MaskedPhonesLeft}, phoneRevealRounds={result.PhoneRevealRounds}, phoneClicks={result.PhoneRevealClicks}, {detailEnrichNote}.",
+            $"Candidates list prepared for {logContext}: scrollRounds={result.ScrollRounds}, domItems={result.DomItemCount}, phonesReady={result.PhonesReady} ({result.CardsWithPhone}/{result.DomItemCount}), maskedLeft={result.MaskedPhonesLeft}, cardFingerprintSkips={result.CardFingerprintSkips}, phoneRevealRounds={result.PhoneRevealRounds}, phoneClicks={result.PhoneRevealClicks}, {detailEnrichNote}.",
             DeskLinkAuditLogLevel.Info,
             properties: new Dictionary<string, object?>
             {
@@ -162,7 +177,8 @@ public static class AvitoCandidatesListPreparer
                 ["candidates.prepare.phoneRevealClicks"] = result.PhoneRevealClicks,
                 ["candidates.prepare.detailEnrichClicks"] = result.DetailEnrichClicks,
                 ["candidates.prepare.detailEnrichSkipped"] = result.DetailEnrichSkipped,
-                ["candidates.prepare.detailEnrichHits"] = result.DetailEnrichHits
+                ["candidates.prepare.detailEnrichHits"] = result.DetailEnrichHits,
+                ["candidates.prepare.cardFingerprintSkips"] = result.CardFingerprintSkips
             });
 
         return result;
@@ -446,6 +462,94 @@ public static class AvitoCandidatesListPreparer
         }
     }
 
+    private static async Task<int> TryApplyKnownCardFingerprintSkipsAsync(
+        Func<string, CancellationToken, Task<string>> executeScript,
+        Func<IReadOnlyCollection<string>, CancellationToken, Task<IReadOnlySet<string>>>? resolveExistingCardFingerprintsAsync,
+        CancellationToken cancellationToken)
+    {
+        if (resolveExistingCardFingerprintsAsync is null)
+        {
+            return 0;
+        }
+
+        var fingerprintsByIndex = await TryParseCardFingerprintsAsync(executeScript, cancellationToken)
+            .ConfigureAwait(false);
+        if (fingerprintsByIndex.Count == 0)
+        {
+            return 0;
+        }
+
+        var existing = await resolveExistingCardFingerprintsAsync(
+                fingerprintsByIndex.Values.Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (existing.Count == 0)
+        {
+            return 0;
+        }
+
+        var skipIndices = fingerprintsByIndex
+            .Where(kv => existing.Contains(kv.Value))
+            .Select(kv => kv.Key)
+            .ToArray();
+        if (skipIndices.Length == 0)
+        {
+            return 0;
+        }
+
+        _ = await executeScript(
+                AvitoCandidatesPageScripts.BuildApplyPhoneRevealSkipScript(skipIndices),
+                cancellationToken)
+            .ConfigureAwait(false);
+        return skipIndices.Length;
+    }
+
+    private static async Task<Dictionary<int, string>> TryParseCardFingerprintsAsync(
+        Func<string, CancellationToken, Task<string>> executeScript,
+        CancellationToken cancellationToken)
+    {
+        var raw = await executeScript(AvitoCandidatesPageScripts.BuildCollectListItemCardFingerprintsScript(), cancellationToken)
+            .ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return [];
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(UnwrapJsonString(raw));
+            if (doc.RootElement.ValueKind != JsonValueKind.Array)
+            {
+                return [];
+            }
+
+            var map = new Dictionary<int, string>();
+            foreach (var item in doc.RootElement.EnumerateArray())
+            {
+                if (!item.TryGetProperty("index", out var indexProp))
+                {
+                    continue;
+                }
+
+                var fingerprint = item.TryGetProperty("cardFingerprint", out var fpProp)
+                    ? fpProp.GetString() ?? string.Empty
+                    : string.Empty;
+                if (string.IsNullOrWhiteSpace(fingerprint))
+                {
+                    continue;
+                }
+
+                map[indexProp.GetInt32()] = fingerprint.Trim();
+            }
+
+            return map;
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
     private static async Task<RevealPhonesStepProbe?> TryRevealMaskedPhonesAsync(
         Func<string, CancellationToken, Task<string>> executeScript,
         CancellationToken cancellationToken)
@@ -465,6 +569,35 @@ public static class AvitoCandidatesListPreparer
                 root.TryGetProperty("items", out var i) ? i.GetInt32() : 0,
                 root.TryGetProperty("masked", out var m) ? m.GetInt32() : 0,
                 root.TryGetProperty("clicked", out var c) ? c.GetInt32() : 0);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static async Task<ContactsPopupRevealProbe?> TryRevealNextContactsPopupPhoneAsync(
+        Func<string, CancellationToken, Task<string>> executeScript,
+        CancellationToken cancellationToken)
+    {
+        var raw = await executeScript(
+                AvitoCandidatesPageScripts.BuildRevealNextContactsPopupPhoneScript(),
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(UnwrapJsonString(raw));
+            var root = doc.RootElement;
+            return new ContactsPopupRevealProbe(
+                root.TryGetProperty("items", out var i) ? i.GetInt32() : 0,
+                root.TryGetProperty("pending", out var p) ? p.GetInt32() : 0,
+                root.TryGetProperty("clicked", out var c) && c.ValueKind == JsonValueKind.True,
+                root.TryGetProperty("revealed", out var r) && r.GetBoolean());
         }
         catch
         {
@@ -497,6 +630,8 @@ public static class AvitoCandidatesListPreparer
 
     private sealed record RevealPhonesStepProbe(int Items, int Masked, int Clicked);
 
+    private sealed record ContactsPopupRevealProbe(int Items, int Pending, bool Clicked, bool Revealed);
+
     private sealed record DetailPanelProbe(string PhoneDigits, string VacancyUrl, string Vacancy, string City, string Age);
 
     private sealed record DetailEnrichmentResult(Dictionary<string, object> Entries, int Clicks, int Skipped, int Hits);
@@ -512,4 +647,5 @@ public sealed record CandidatesListPrepareResult(
     int PhoneRevealClicks = 0,
     int DetailEnrichClicks = 0,
     int DetailEnrichSkipped = 0,
-    int DetailEnrichHits = 0);
+    int DetailEnrichHits = 0,
+    int CardFingerprintSkips = 0);

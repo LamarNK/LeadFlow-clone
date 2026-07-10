@@ -25,6 +25,48 @@ public static class BrowserDiagnosticsCapture
         }
     }
 
+    public static Task<byte[]?> CaptureJpegAsync(
+        IPage page,
+        int quality = 70,
+        CancellationToken cancellationToken = default) =>
+        CaptureJpegAsync(page, quality, waitForContent: true, cancellationToken);
+
+    public static async Task<byte[]?> CaptureJpegFastAsync(
+        IPage page,
+        int quality = 70,
+        CancellationToken cancellationToken = default) =>
+        await CaptureJpegAsync(page, quality, waitForContent: false, cancellationToken).ConfigureAwait(false);
+
+    private static async Task<byte[]?> CaptureJpegAsync(
+        IPage page,
+        int quality,
+        bool waitForContent,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (waitForContent)
+            {
+                await WaitForRenderableContentAsync(page, cancellationToken).ConfigureAwait(false);
+            }
+
+            return await page.ScreenshotDataAsync(new ScreenshotOptions
+            {
+                FullPage = false,
+                Type = ScreenshotType.Jpeg,
+                Quality = quality
+            }).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     private static async Task WaitForRenderableContentAsync(IPage page, CancellationToken cancellationToken)
     {
         try

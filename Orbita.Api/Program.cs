@@ -209,6 +209,16 @@ builder.Services.Configure<FormOptions>(options =>
     options.MultipartHeadersLengthLimit = int.MaxValue;
 });
 builder.Services.AddScoped<CandidateIngestionService>();
+builder.Services.AddScoped<BitrixInstanceService>();
+builder.Services.AddScoped<DistributionRouteService>();
+builder.Services.AddScoped<DistributionEngine>();
+builder.Services.AddScoped<CandidateAutoDistributionService>();
+builder.Services.AddScoped<BitrixDuplicateCheckAllService>();
+builder.Services.AddScoped<CandidateBitrixSendService>();
+builder.Services.AddScoped<ResponseBitrixDeliveryService>();
+builder.Services.AddScoped<ManualBitrixSendService>();
+builder.Services.AddScoped<BulkResponsesBitrixSendService>();
+builder.Services.AddScoped<BitrixLegacyMigrationService>();
 builder.Services.AddScoped<CandidateLookupService>();
 builder.Services.AddScoped<WorkerMonitoringStatsService>();
 builder.Services.AddScoped<CandidateDuplicateService>();
@@ -1882,6 +1892,7 @@ panel.MapGet("/office/bitrix-settings", async (
     OfficeBitrixSettingsService bitrixSettings,
     OfficeScopeService officeScope,
     ClaimsPrincipal principal,
+    Guid? officeId,
     CancellationToken ct) =>
 {
     var scope = await officeScope.ResolveAsync(principal, ct);
@@ -1890,7 +1901,7 @@ panel.MapGet("/office/bitrix-settings", async (
         return Results.Forbid();
     }
 
-    var settings = await bitrixSettings.GetForScopeAsync(scope, ct);
+    var settings = await bitrixSettings.GetForScopeAsync(scope, officeId, ct);
     return settings is null
         ? Results.BadRequest(new { error = "Офис не назначен." })
         : Results.Ok(settings);
@@ -1902,6 +1913,7 @@ panel.MapPut("/office/bitrix-settings", async (
     OfficeScopeService officeScope,
     ClaimsPrincipal principal,
     HttpContext http,
+    Guid? officeId,
     CancellationToken ct) =>
 {
     var scope = await officeScope.ResolveAsync(principal, ct);
@@ -1916,6 +1928,7 @@ panel.MapPut("/office/bitrix-settings", async (
         principal.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty,
         principal.FindFirstValue(ClaimTypes.Email),
         http.Connection.RemoteIpAddress?.ToString(),
+        officeId,
         ct);
 
     return error is not null
@@ -2071,6 +2084,213 @@ panel.MapPost("/responses/{id:guid}/resend-bitrix", async (
     }
 
     return Results.Ok(await ingestion.ResendToBitrixAsync(id, scope, ct));
+});
+
+panel.MapGet("/bitrix-instances", async (
+    BitrixInstanceService bitrixInstances,
+    OfficeScopeService officeScope,
+    ClaimsPrincipal principal,
+    Guid? officeId,
+    CancellationToken ct) =>
+{
+    var scope = await officeScope.ResolveAsync(principal, ct);
+    if (!scope.HasAccess)
+    {
+        return Results.Forbid();
+    }
+
+    return Results.Ok(await bitrixInstances.ListAsync(scope, officeId, ct));
+});
+
+panel.MapPost("/bitrix-instances", async (
+    CreateBitrixInstanceRequest request,
+    BitrixInstanceService bitrixInstances,
+    OfficeScopeService officeScope,
+    ClaimsPrincipal principal,
+    Guid? officeId,
+    CancellationToken ct) =>
+{
+    var scope = await officeScope.ResolveAsync(principal, ct);
+    if (!scope.HasAccess)
+    {
+        return Results.Forbid();
+    }
+
+    var actorUserId = principal.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+    var (instance, error) = await bitrixInstances.CreateAsync(scope, officeId, request, actorUserId, ct);
+    return error is not null ? Results.BadRequest(new { error }) : Results.Ok(instance);
+});
+
+panel.MapGet("/bitrix-instances/{id:guid}", async (
+    Guid id,
+    BitrixInstanceService bitrixInstances,
+    OfficeScopeService officeScope,
+    ClaimsPrincipal principal,
+    Guid? officeId,
+    CancellationToken ct) =>
+{
+    var scope = await officeScope.ResolveAsync(principal, ct);
+    if (!scope.HasAccess)
+    {
+        return Results.Forbid();
+    }
+
+    var instance = await bitrixInstances.GetAsync(id, scope, officeId, ct);
+    return instance is null ? Results.NotFound() : Results.Ok(instance);
+});
+
+panel.MapPut("/bitrix-instances/{id:guid}", async (
+    Guid id,
+    UpdateBitrixInstanceRequest request,
+    BitrixInstanceService bitrixInstances,
+    OfficeScopeService officeScope,
+    ClaimsPrincipal principal,
+    Guid? officeId,
+    CancellationToken ct) =>
+{
+    var scope = await officeScope.ResolveAsync(principal, ct);
+    if (!scope.HasAccess)
+    {
+        return Results.Forbid();
+    }
+
+    var actorUserId = principal.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+    var (instance, error) = await bitrixInstances.UpdateAsync(id, scope, officeId, request, actorUserId, ct);
+    return error is not null ? Results.BadRequest(new { error }) : Results.Ok(instance);
+});
+
+panel.MapDelete("/bitrix-instances/{id:guid}", async (
+    Guid id,
+    BitrixInstanceService bitrixInstances,
+    OfficeScopeService officeScope,
+    ClaimsPrincipal principal,
+    Guid? officeId,
+    CancellationToken ct) =>
+{
+    var scope = await officeScope.ResolveAsync(principal, ct);
+    if (!scope.HasAccess)
+    {
+        return Results.Forbid();
+    }
+
+    var (success, error) = await bitrixInstances.DeleteAsync(id, scope, officeId, ct);
+    return error is not null ? Results.BadRequest(new { error }) : Results.NoContent();
+});
+
+panel.MapPost("/bitrix-instances/validate-webhook", async (
+    ValidateBitrixInstanceRequest request,
+    BitrixWebhookValidator validator,
+    OfficeScopeService officeScope,
+    ClaimsPrincipal principal,
+    CancellationToken ct) =>
+{
+    var scope = await officeScope.ResolveAsync(principal, ct);
+    if (!scope.HasAccess)
+    {
+        return Results.Forbid();
+    }
+
+    var validation = await validator.ValidateAsync(request.WebhookUrl, ct);
+    return Results.Ok(validation);
+});
+
+panel.MapPost("/bitrix-instances/{id:guid}/validate", async (
+    Guid id,
+    ValidateBitrixInstanceRequest request,
+    BitrixInstanceService bitrixInstances,
+    OfficeScopeService officeScope,
+    ClaimsPrincipal principal,
+    Guid? officeId,
+    CancellationToken ct) =>
+{
+    var scope = await officeScope.ResolveAsync(principal, ct);
+    if (!scope.HasAccess)
+    {
+        return Results.Forbid();
+    }
+
+    var actorUserId = principal.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+    var (validation, error) = await bitrixInstances.ValidateAsync(
+        id,
+        scope,
+        officeId,
+        request.WebhookUrl,
+        actorUserId,
+        persistResult: true,
+        ct);
+    return error is not null ? Results.BadRequest(new { error }) : Results.Ok(validation);
+});
+
+panel.MapGet("/distribution-route", async (
+    DistributionRouteService distributionRoute,
+    OfficeScopeService officeScope,
+    ClaimsPrincipal principal,
+    Guid? officeId,
+    CancellationToken ct) =>
+{
+    var scope = await officeScope.ResolveAsync(principal, ct);
+    if (!scope.HasAccess)
+    {
+        return Results.Forbid();
+    }
+
+    var route = await distributionRoute.GetAsync(scope, officeId, ct);
+    return route is null ? Results.BadRequest(new { error = "Офис не назначен." }) : Results.Ok(route);
+});
+
+panel.MapPut("/distribution-route", async (
+    SaveDistributionRouteRequest request,
+    DistributionRouteService distributionRoute,
+    OfficeScopeService officeScope,
+    ClaimsPrincipal principal,
+    Guid? officeId,
+    CancellationToken ct) =>
+{
+    var scope = await officeScope.ResolveAsync(principal, ct);
+    if (!scope.HasAccess)
+    {
+        return Results.Forbid();
+    }
+
+    var actorUserId = principal.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+    var (route, error) = await distributionRoute.SaveAsync(scope, officeId, request, actorUserId, ct);
+    return error is not null ? Results.BadRequest(new { error }) : Results.Ok(route);
+});
+
+panel.MapPost("/responses/{id:guid}/send-bitrix", async (
+    Guid id,
+    SendResponseToBitrixRequest request,
+    ManualBitrixSendService manualSend,
+    OfficeScopeService officeScope,
+    ClaimsPrincipal principal,
+    CancellationToken ct) =>
+{
+    var scope = await officeScope.ResolveAsync(principal, ct);
+    if (!scope.HasAccess)
+    {
+        return Results.Forbid();
+    }
+
+    return Results.Ok(await manualSend.SendAsync(id, request.BitrixInstanceId, scope, ct));
+});
+
+panel.MapPost("/responses/send-bitrix-bulk", async (
+    BulkSendResponsesToBitrixRequest request,
+    BulkResponsesBitrixSendService bulkSend,
+    OfficeScopeService officeScope,
+    ClaimsPrincipal principal,
+    CancellationToken ct) =>
+{
+    var scope = await officeScope.ResolveAsync(principal, ct);
+    if (!scope.HasAccess)
+    {
+        return Results.Forbid();
+    }
+
+    var (result, error) = await bulkSend.SendAsync(request.ResponseIds, request.BitrixInstanceId, scope, ct);
+    return error is not null
+        ? Results.BadRequest(new { error })
+        : Results.Ok(result);
 });
 
 panel.MapPut("/me/integrations/bitrix", async (
@@ -2363,6 +2583,9 @@ static async Task SeedAsync(WebApplication app)
     using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<OrbitaDbContext>();
     await db.Database.MigrateAsync();
+
+    var legacyMigration = scope.ServiceProvider.GetRequiredService<BitrixLegacyMigrationService>();
+    await legacyMigration.MigrateAsync();
 
     var users = scope.ServiceProvider.GetRequiredService<UserManager<IdentityUser>>();
     var roles = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();

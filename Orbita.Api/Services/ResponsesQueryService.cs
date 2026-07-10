@@ -7,7 +7,7 @@ namespace Orbita.Api.Services;
 
 public sealed class ResponsesQueryService(
     OrbitaDbContext db,
-    OfficeBitrixWebhookResolver bitrixWebhooks)
+    ResponseBitrixDeliveryService deliveries)
 {
     public Task<ResponsesPageDto> GetPageAsync(
         OfficeScope scope,
@@ -95,13 +95,15 @@ public sealed class ResponsesQueryService(
         var entity = await db.CandidateResponses
             .AsNoTracking()
             .Include(x => x.Worker)
+            .Include(x => x.BitrixInstance)
+            .Include(x => x.DuplicateBitrixInstance)
             .FirstOrDefaultAsync(x => x.Id == id, ct);
         if (entity is null || !scope.CanAccessOffice(entity.OfficeId))
         {
             return null;
         }
 
-        var portalHost = await bitrixWebhooks.ResolvePortalHostAsync(entity.OfficeId, ct);
+        var portalHost = entity.BitrixInstance?.PortalHost;
         var subProfilesJson = await db.WorkerAccounts
             .AsNoTracking()
             .Where(a => a.AccountId == entity.AccountId)
@@ -113,7 +115,11 @@ public sealed class ResponsesQueryService(
             nameLookup,
             entity.AccountId,
             entity.AvitoSubProfileId);
-        return MapDetail(entity, portalHost, subProfileName);
+        var deliveryLookup = await deliveries.LoadByResponseIdsAsync([entity.Id], ct);
+        var bitrixDeliveries = deliveryLookup.TryGetValue(entity.Id, out var loaded)
+            ? loaded
+            : [];
+        return MapDetail(entity, portalHost, subProfileName, bitrixDeliveries);
     }
 
     private async Task<ResponsesPageDto> GetPageInternalAsync(
@@ -137,7 +143,11 @@ public sealed class ResponsesQueryService(
 
         var query = BuildFilteredQuery(scope, officeFilter, status, search, vacancy, workerId, accountId, fromUtc, toUtc);
         var total = await query.CountAsync(ct);
-        var rows = await ApplyOrdering(query, sort, sortDir)
+        var orderedQuery = ApplyOrdering(query, sort, sortDir);
+        orderedQuery = orderedQuery
+            .Include(x => x.BitrixInstance)
+            .Include(x => x.DuplicateBitrixInstance);
+        var rows = await orderedQuery
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .Select(x => new
@@ -163,18 +173,20 @@ public sealed class ResponsesQueryService(
                 x.IsBitrixDuplicate,
                 x.BitrixEntityId,
                 x.BitrixEntityType,
+                x.BitrixInstanceId,
+                BitrixInstanceName = x.BitrixInstance != null ? x.BitrixInstance.Name : null,
+                BitrixInstanceSignature = x.BitrixInstance != null ? x.BitrixInstance.Signature : null,
+                BitrixPortalHost = x.BitrixInstance != null ? x.BitrixInstance.PortalHost : null,
+                x.DuplicateBitrixInstanceId,
+                DuplicateBitrixInstanceName = x.DuplicateBitrixInstance != null
+                    ? (x.DuplicateBitrixInstance.Signature != "" ? x.DuplicateBitrixInstance.Signature : x.DuplicateBitrixInstance.Name)
+                    : null,
                 x.AvitoSubProfileId,
                 x.AvitoSubProfileName,
                 x.CreatedAt,
                 x.ProcessedAt
             })
             .ToListAsync(ct);
-
-        var portalByOffice = new Dictionary<Guid, string?>();
-        foreach (var officeId in rows.Select(x => x.OfficeId).Distinct())
-        {
-            portalByOffice[officeId] = await bitrixWebhooks.ResolvePortalHostAsync(officeId, ct);
-        }
 
         var accountIds = rows.Select(x => x.AccountId).Distinct().ToList();
         var subProfileRows = accountIds.Count == 0
@@ -188,14 +200,19 @@ public sealed class ResponsesQueryService(
         var nameLookup = SubProfileNameResolver.BuildLookup(
             subProfileRows.Select(x => (x.AccountId, x.SubProfilesJson)));
 
+        var responseIds = rows.Select(x => x.Id).ToList();
+        var deliveryLookup = await deliveries.LoadByResponseIdsAsync(responseIds, ct);
+
         var items = rows
             .Select(x =>
             {
-                portalByOffice.TryGetValue(x.OfficeId, out var portalHost);
                 var bitrixEntityUrl = BitrixPortalLinks.TryBuildEntityDetailsUrl(
-                    portalHost,
+                    x.BitrixPortalHost,
                     x.BitrixEntityType,
                     x.BitrixEntityId);
+                var bitrixDeliveries = deliveryLookup.TryGetValue(x.Id, out var loaded)
+                    ? loaded
+                    : [];
                 return new ResponseListItemDto(
                     x.Id,
                     x.OfficeId,
@@ -219,6 +236,11 @@ public sealed class ResponsesQueryService(
                     x.BitrixEntityId,
                     string.IsNullOrWhiteSpace(x.BitrixEntityType) ? null : x.BitrixEntityType,
                     bitrixEntityUrl,
+                    x.BitrixInstanceId,
+                    x.BitrixInstanceName,
+                    x.BitrixInstanceSignature,
+                    x.DuplicateBitrixInstanceId,
+                    x.DuplicateBitrixInstanceName,
                     x.AvitoSubProfileId,
                     CoalesceSubProfileName(
                         x.AvitoSubProfileName,
@@ -226,7 +248,8 @@ public sealed class ResponsesQueryService(
                         x.AccountId,
                         x.AvitoSubProfileId),
                     x.CreatedAt,
-                    x.ProcessedAt);
+                    x.ProcessedAt,
+                    bitrixDeliveries);
             })
             .ToList();
 
@@ -458,7 +481,8 @@ public sealed class ResponsesQueryService(
     private static ResponseDetailDto MapDetail(
         CandidateResponseEntity entity,
         string? portalHost,
-        string? subProfileName = null)
+        string? subProfileName = null,
+        IReadOnlyList<ResponseBitrixDeliveryDto>? bitrixDeliveries = null)
     {
         var bitrixEntityUrl = BitrixPortalLinks.TryBuildEntityDetailsUrl(
             portalHost,
@@ -498,8 +522,19 @@ public sealed class ResponsesQueryService(
             string.IsNullOrWhiteSpace(entity.BitrixEntityType) ? null : entity.BitrixEntityType,
             bitrixEntityUrl,
             entity.BitrixContactId,
+            entity.BitrixInstanceId,
+            entity.BitrixInstance?.Name,
+            entity.BitrixInstance?.Signature,
+            entity.DuplicateBitrixInstanceId,
+            entity.DuplicateBitrixInstance is null
+                ? null
+                : (!string.IsNullOrWhiteSpace(entity.DuplicateBitrixInstance.Signature)
+                    ? entity.DuplicateBitrixInstance.Signature
+                    : entity.DuplicateBitrixInstance.Name),
+            string.IsNullOrWhiteSpace(entity.DistributionMode) ? null : entity.DistributionMode,
             entity.ErrorMessage,
             entity.CreatedAt,
-            entity.ProcessedAt);
+            entity.ProcessedAt,
+            bitrixDeliveries ?? []);
     }
 }

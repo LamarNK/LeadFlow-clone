@@ -53,4 +53,12 @@ internal sealed class FakeDuplicateRepository : ICandidateDuplicateRepository
         IEnumerable<string> sourceResponseIds,
         CancellationToken cancellationToken) =>
         Task.FromResult(new HashSet<string>(StringComparer.Ordinal));
+
+    public Task<HashSet<string>> GetExistingCardFingerprintsAsync(
+        IEnumerable<string> cardFingerprintCandidates,
+        DuplicateScope scope,
+        Guid accountId,
+        CancellationToken cancellationToken,
+        string? avitoSubProfileId = null) =>
+        Task.FromResult(new HashSet<string>(StringComparer.OrdinalIgnoreCase));
 }

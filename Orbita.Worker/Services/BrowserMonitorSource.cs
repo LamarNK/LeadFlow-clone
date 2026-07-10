@@ -17,10 +17,9 @@ public sealed class BrowserMonitorSource : IBrowserMonitorSource
 
     public void EndSession()
     {
-        if (Interlocked.Decrement(ref _activeSessions) <= 0)
+        if (Interlocked.Decrement(ref _activeSessions) < 0)
         {
             Interlocked.Exchange(ref _activeSessions, 0);
-            _registrations.Clear();
         }
     }
 
@@ -30,11 +29,6 @@ public sealed class BrowserMonitorSource : IBrowserMonitorSource
         string adsPowerProfileId,
         Func<CancellationToken, Task<BrowserMonitorCapture?>> captureAsync)
     {
-        if (!IsActive)
-        {
-            return;
-        }
-
         _registrations[accountId] = new BrowserRegistration(
             accountId,
             accountName,

@@ -18,7 +18,7 @@ internal static class SettingsIndexBuilder
         new() { Id = "worker-releases", Label = "Обновления воркера" },
         new() { Id = "audit", Label = "Аудит" },
         new() { Id = "logs", Label = "Логи сервиса" },
-        new() { Id = "integrations", Label = "Интеграции Bitrix" }
+        new() { Id = "integrations", Label = "Битриксы и связи" }
     ];
 
     public static readonly IReadOnlyList<EventFilterOptionViewModel> ProfileOptions =
@@ -79,15 +79,26 @@ internal static class SettingsIndexBuilder
         string? currentUserId = null) =>
         Build(users, offices, "profiles", currentUserId);
 
-    public static SettingsIndexViewModel BuildIntegrationsTab(IReadOnlyList<OfficeDto> offices) =>
+    public static SettingsIndexViewModel BuildIntegrationsTab(
+        IReadOnlyList<OfficeDto> offices,
+        BitrixDistributionSettingsViewModel? bitrixDistribution = null) =>
         new()
         {
             ActiveTab = "integrations",
             Tabs = Tabs,
             ProfileOptions = ProfileOptions,
-            Integrations = new BitrixIntegrationsSettingsViewModel
+            OfficeOptions = offices.Select(o => new EventFilterOptionViewModel
             {
-                Rows = offices.Select(MapOfficeIntegrationRow).ToList()
+                Value = o.Id.ToString(),
+                Label = o.Name
+            }).ToList(),
+            BitrixDistribution = bitrixDistribution ?? new BitrixDistributionSettingsViewModel
+            {
+                OfficeOptions = offices.Select(o => new EventFilterOptionViewModel
+                {
+                    Value = o.Id.ToString(),
+                    Label = o.Name
+                }).ToList()
             }
         };
 

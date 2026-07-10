@@ -209,6 +209,17 @@
         }
 
         if (e.target.closest('.row-menu-dropdown')) {
+            var sendBitrix = e.target.closest('[data-send-bitrix]');
+            if (sendBitrix) {
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+                closeAllRowMenus();
+                var responseId = sendBitrix.getAttribute('data-response-id');
+                if (responseId && window.OrbitaResponses && typeof window.OrbitaResponses.openSendBitrixModal === 'function') {
+                    window.OrbitaResponses.openSendBitrixModal(responseId);
+                }
+            }
             return;
         }
 
@@ -236,6 +247,22 @@
             var detailRow = e.target.closest('.events-row, .errors-row, .dash-event-row--detail');
             if (detailRow && !e.target.closest('a, button, .row-menu, input, select, label')) {
                 openDetailFromRow(detailRow);
+                return;
+            }
+
+            var copyResponseCard = e.target.closest('[data-copy-response-card]');
+            if (copyResponseCard) {
+                e.stopPropagation();
+                var cardRow = copyResponseCard.closest('.responses-row');
+                var cardText = '';
+                if (cardRow) {
+                    cardText = cardRow.getAttribute('data-response-card') || '';
+                    if (!cardText && window.OrbitaResponses && typeof window.OrbitaResponses.getRowCardCopy === 'function') {
+                        cardText = window.OrbitaResponses.getRowCardCopy(cardRow);
+                    }
+                }
+                if (cardText) copyText(cardText, 'Карточка скопирована');
+                closeAllRowMenus();
                 return;
             }
 
@@ -723,7 +750,15 @@
     }
 
     function renderBitrixValidation(container, validation) {
-        var steps = validation && Array.isArray(validation.steps) ? validation.steps : [];
+        if (!validation) {
+            container.innerHTML =
+                '<div class="settings-bitrix-validation-summary settings-bitrix-validation-summary--error">' +
+                'Не удалось прочитать результат проверки. Обновите страницу и попробуйте снова.' +
+                '</div>';
+            return;
+        }
+
+        var steps = Array.isArray(validation.steps) ? validation.steps : [];
         var summaryTone = validation && validation.status === 'ok'
             ? 'success'
             : validation && validation.status === 'warning'
@@ -787,7 +822,16 @@
             '</p>';
 
         try {
-            var result = await post(validateUrl, { webhookUrl: webhookUrl });
+            var fields = { webhookUrl: webhookUrl };
+            var idInput = form.querySelector('input[name="Id"]');
+            if (idInput && idInput.value) {
+                fields.id = idInput.value;
+            }
+            var officeIdInput = form.querySelector('input[name="officeId"]');
+            if (officeIdInput && officeIdInput.value) {
+                fields.officeId = officeIdInput.value;
+            }
+            var result = await post(validateUrl, fields);
             if (!result.ok) {
                 var message = (result.payload && result.payload.error)
                     || (result.status === 403
@@ -1224,6 +1268,21 @@
                     window.OrbitaCaptchaSolver.open(action.payload);
                 });
                 detailPrimary.appendChild(btn);
+                return;
+            }
+
+            if (action.action === 'send-bitrix' && action.responseId) {
+                var sendBtn = document.createElement('button');
+                sendBtn.type = 'button';
+                sendBtn.className = 'orbita-detail-modal__action orbita-detail-modal__action--primary';
+                sendBtn.textContent = action.label || 'Отправить в Bitrix';
+                sendBtn.addEventListener('click', function () {
+                    closeDetailModal();
+                    if (window.OrbitaResponses && typeof window.OrbitaResponses.openSendBitrixModal === 'function') {
+                        window.OrbitaResponses.openSendBitrixModal(action.responseId);
+                    }
+                });
+                detailPrimary.appendChild(sendBtn);
                 return;
             }
 
@@ -1710,11 +1769,19 @@
         } else if (key === 'responses') {
             scripts = ['/js/orbita-responses.js'];
         } else if (key === 'mysettings') {
-            scripts = ['/js/orbita-bitrix-settings.js'];
+            scripts = [
+                '/js/orbita-bitrix-instances.js',
+                '/js/orbita-bitrix-settings.js',
+                '/lib/drawflow/dist/drawflow.min.js',
+                '/js/orbita-distribution-editor.js'
+            ];
         } else if (key === 'settings') {
             scripts = [
                 '/js/orbita-settings.js',
+                '/js/orbita-bitrix-instances.js',
                 '/js/orbita-bitrix-settings.js',
+                '/lib/drawflow/dist/drawflow.min.js',
+                '/js/orbita-distribution-editor.js',
                 '/js/orbita-worker-releases.js',
                 '/js/orbita-leadflow-import.js'
             ];

@@ -55,4 +55,45 @@ public sealed class AvitoCandidatesPageScriptsTests
         Assert.Contains("domIndex: rootIndex", script, StringComparison.Ordinal);
         Assert.Contains("listItems.indexOf(root)", script, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void BuildRevealMaskedPhonesStepScript_RespectsSkipList()
+    {
+        var script = AvitoCandidatesPageScripts.BuildRevealMaskedPhonesStepScript();
+
+        Assert.Contains("shouldSkipPhoneReveal", script, StringComparison.Ordinal);
+        Assert.Contains("__leadflowSkipPhoneReveal", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildRevealNextContactsPopupPhoneScript_TargetsCallButtonAndRetriesLoadError()
+    {
+        var script = AvitoCandidatesPageScripts.BuildRevealNextContactsPopupPhoneScript();
+
+        Assert.Contains("[data-marker='job-application/call-button']", script, StringComparison.Ordinal);
+        Assert.Contains("job-application/response/contacts-popup/popup", script, StringComparison.Ordinal);
+        Assert.Contains("временн", script, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("не\\s+удалось\\s+загрузить\\s+контактные\\s+данные", script, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("maxRetries = 3", script, StringComparison.Ordinal);
+        Assert.Contains("__leadflowRevealedPhones", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildPhonesReadyProbeScript_UsesRevealedPhoneCache()
+    {
+        var script = AvitoCandidatesPageScripts.BuildPhonesReadyProbeScript();
+
+        Assert.Contains("__leadflowRevealedPhones", script, StringComparison.Ordinal);
+        Assert.Contains("needsPhoneReveal", script, StringComparison.Ordinal);
+        Assert.Contains("readItemPhone", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildExtractionScript_ReadsPhoneFromRevealedCache()
+    {
+        var script = AvitoCandidatesPageScripts.BuildExtractionScript();
+
+        Assert.Contains("readItemPhone(root, rootIndex)", script, StringComparison.Ordinal);
+        Assert.Contains("__leadflowRevealedPhones", script, StringComparison.Ordinal);
+    }
 }

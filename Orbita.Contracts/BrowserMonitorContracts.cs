@@ -27,7 +27,8 @@ public sealed record BrowserMonitorSessionDto(
     string OperatorDisplayName,
     DateTime CreatedAtUtc,
     DateTime ExpiresAtUtc,
-    IReadOnlyList<BrowserMonitorBrowserDto> Browsers);
+    IReadOnlyList<BrowserMonitorBrowserDto> Browsers,
+    bool WorkerNotified = true);
 
 public sealed record WorkerPendingBrowserMonitorSessionDto(
     Guid SessionId,
@@ -49,4 +50,5 @@ public sealed record BrowserMonitorFrameMessage(
     string? PageUrl = null,
     string? SubProfileId = null,
     string? SubProfileName = null,
-    string ContentType = "image/jpeg");
+    string ContentType = "image/jpeg",
+    string? AccountName = null);

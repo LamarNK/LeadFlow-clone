@@ -168,6 +168,39 @@ function Reset-WindowsInstallerService {
     }
 }
 
+function Get-FileSha256 {
+    param([string]$Path)
+    return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+}
+
+function Copy-FileVerified {
+    param(
+        [string]$SourcePath,
+        [string]$DestinationPath,
+        [string]$Label
+    )
+
+    $destParent = Split-Path -Parent $DestinationPath
+    if ($destParent -and -not (Test-Path $destParent)) {
+        New-Item -Path $destParent -ItemType Directory -Force | Out-Null
+    }
+
+    $sourceHash = Get-FileSha256 $SourcePath
+    Copy-Item -LiteralPath $SourcePath -Destination $DestinationPath -Force
+    $destHash = Get-FileSha256 $DestinationPath
+    if ($sourceHash -ne $destHash) {
+        Remove-Item -LiteralPath $DestinationPath -Force -ErrorAction SilentlyContinue
+        throw @"
+$Label copy failed integrity check (SHA256 mismatch).
+Source: $SourcePath
+Destination: $DestinationPath
+This often happens when publish\out is on a network drive (e.g. mapped Z:). Use the verified local package path printed above, or build with the repo on a local disk (C:).
+"@
+    }
+
+    return $sourceHash
+}
+
 function Get-BuiltMsiCandidate {
     param(
         [string[]]$SearchRoots,
@@ -316,13 +349,33 @@ function Build-OrbitaWorkerMsi {
         throw "MSI was not produced by WiX build."
     }
 
-    Copy-Item -LiteralPath $builtMsi.FullName -Destination $msiPath -Force
-    $msiMb = [math]::Round((Get-Item $msiPath).Length / 1MB, 2)
-    Write-Host "MSI: $msiPath ($msiMb MB)" -ForegroundColor Green
+    $localPackageDir = Join-Path $env:LOCALAPPDATA "Orbita\WorkerPackages\$VersionText"
+    $localPackagePath = Join-Path $localPackageDir $msiName
+    $msiHash = Copy-FileVerified -SourcePath $builtMsi.FullName -DestinationPath $localPackagePath -Label "Local worker package"
+    $localMb = [math]::Round((Get-Item $localPackagePath).Length / 1MB, 2)
+    Write-Host "Verified MSI (install from here): $localPackagePath ($localMb MB)" -ForegroundColor Green
+    Write-Host "SHA256: $msiHash" -ForegroundColor DarkGray
+
+    $publishedPath = $null
+    $publishWarning = $null
+    try {
+        Copy-FileVerified -SourcePath $builtMsi.FullName -DestinationPath $msiPath -Label "publish\out worker package" | Out-Null
+        $publishedPath = $msiPath
+        $msiMb = [math]::Round((Get-Item $msiPath).Length / 1MB, 2)
+        Write-Host "MSI copy in publish\out: $msiPath ($msiMb MB)" -ForegroundColor Green
+    } catch {
+        $publishWarning = $_.Exception.Message
+        Write-Host $publishWarning -ForegroundColor Yellow
+        Write-Host "Skipping corrupt publish\out copy. Use the verified local MSI path above." -ForegroundColor Yellow
+    }
 
     Write-BuildManifest -TargetOut $TargetOut -Name "orbita-worker" -VersionText $VersionText -Configuration $Configuration -Runtime $targetRuntime -SourceProject $Info.Project -Extra @{
         msiProductVersion = $msiVersion
         packageFile = $msiName
+        packageSha256 = $msiHash
+        verifiedPackagePath = $localPackagePath
+        publishedPackagePath = $publishedPath
+        publishWarning = $publishWarning
     }
 }
 

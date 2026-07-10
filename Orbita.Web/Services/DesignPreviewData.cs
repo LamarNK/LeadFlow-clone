@@ -1494,6 +1494,73 @@ internal static class DesignPreviewData
                 new("duplicate_check", "Проверка дублей", BitrixValidationStepStatuses.Ok, "Поиск дублей работает.")
             ]);
 
+    public static readonly Guid PreviewBitrixInstanceId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+
+    private static readonly BitrixInstanceIntegrationSettingsDto PreviewIntegrationSettings = new(
+        "Deal",
+        1,
+        "Авито",
+        string.Empty,
+        "UF_CRM_1777753181424",
+        "UF_CRM_1777753209215",
+        "UF_CRM_1777753293892",
+        true);
+
+    public static IReadOnlyList<BitrixInstanceListItemDto> PreviewBitrixInstances =>
+    [
+        new(
+            PreviewBitrixInstanceId,
+            "Основной",
+            "B24-1",
+            "demo.bitrix24.ru",
+            BitrixValidationStatuses.Ok,
+            "Вебхук настроен корректно.",
+            true)
+    ];
+
+    public static BitrixInstanceDto? GetPreviewBitrixInstance(Guid id)
+    {
+        var listItem = PreviewBitrixInstances.FirstOrDefault(x => x.Id == id || id == Guid.Empty);
+        if (listItem is null)
+        {
+            return null;
+        }
+
+        return new BitrixInstanceDto(
+            listItem.Id,
+            PreviewOfficeId,
+            listItem.Name,
+            listItem.Signature,
+            "https://demo.bitrix24.ru/rest/1/***/",
+            listItem.PortalHost,
+            listItem.ValidationStatus,
+            listItem.ValidationMessage,
+            Now.AddHours(-2),
+            listItem.IsEnabled,
+            PreviewIntegrationSettings,
+            Now.AddDays(-7),
+            Now.AddHours(-2));
+    }
+
+    public static DistributionRouteDto PreviewDistributionRoute =>
+        new(
+            Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
+            PreviewOfficeId,
+            true,
+            [
+                new(
+                    Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc"),
+                    null,
+                    PreviewBitrixInstanceId,
+                    "Основной",
+                    "B24-1",
+                    0,
+                    120,
+                    80,
+                    false)
+            ],
+            Now.AddHours(-1));
+
     public static IReadOnlyList<BitrixIntegrationListItemDto> BitrixIntegrations =>
     [
         new("preview-admin", "admin@orbita.local", PanelRoles.Admin, null, BitrixValidationStatuses.NotConfigured, null, null),
@@ -1675,6 +1742,7 @@ internal static class DesignPreviewData
             Workers = BuildPreviewWorkerOptions(),
             Accounts = accountOptions,
             Responses = paged,
+            SendBitrixInstances = ResponsesIndexBuilder.MapSendBitrixInstances(PreviewBitrixInstances),
             Pagination = new PaginationViewModel
             {
                 Page = page,
@@ -1776,11 +1844,21 @@ internal static class DesignPreviewData
                 StatusLabel = status switch
                 {
                     ResponseStatuses.Duplicate => "Дубль",
-                    ResponseStatuses.Sent => "Отправлен",
+                    ResponseStatuses.Sent => "Отправлен · B24-1",
                     ResponseStatuses.ActionRequired => "Ожидает CRM",
                     ResponseStatuses.Error => "Ошибка Bitrix",
                     _ => "Уникальный"
                 },
+                BitrixLabel = status switch
+                {
+                    ResponseStatuses.Sent => "B24-1",
+                    ResponseStatuses.Duplicate when i % 5 == 0 => "B24-1",
+                    ResponseStatuses.Error => "B24-1",
+                    _ => null
+                },
+                CanSend = status is ResponseStatuses.Error
+                    or ResponseStatuses.ActionRequired
+                    or ResponseStatuses.InProgress,
                 StatusTone = status switch
                 {
                     ResponseStatuses.Duplicate => "duplicate",

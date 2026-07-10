@@ -5,6 +5,244 @@ namespace LeadFlow.Core.Services.Avito;
 /// </summary>
 public static class AvitoCandidatesPageScripts
 {
+    /// <summary>Общие хелперы: кэш раскрытых номеров и чтение popup «Временный номер».</summary>
+    private const string ContactsPhoneHelpersJs =
+        """
+        const initRevealedPhonesStore = () => {
+            if (!window.__leadflowRevealedPhones || typeof window.__leadflowRevealedPhones !== "object") {
+                window.__leadflowRevealedPhones = {};
+            }
+
+            return window.__leadflowRevealedPhones;
+        };
+
+        const normalizePhoneText = (text) => (text ?? "").replace(/\s+/g, " ").trim();
+
+        const isRevealedPhoneText = (raw) => {
+            const text = normalizePhoneText(raw);
+            if (!text || /\*/.test(text)) {
+                return false;
+            }
+
+            const digits = text.replace(/\D/g, "");
+            return digits.length >= 10;
+        };
+
+        const getCachedPhone = (index) => {
+            const store = window.__leadflowRevealedPhones;
+            if (!store || typeof store !== "object") {
+                return "";
+            }
+
+            return normalizePhoneText(store[String(index)] ?? store[index] ?? "");
+        };
+
+        const readInlinePhone = (item) => {
+            const phoneEl = item.querySelector("[data-marker='job-application/phone']");
+            if (!phoneEl) {
+                return "";
+            }
+
+            return normalizePhoneText(phoneEl.textContent ?? "");
+        };
+
+        const readItemPhone = (item, index) => {
+            const cached = getCachedPhone(index);
+            if (isRevealedPhoneText(cached)) {
+                return cached;
+            }
+
+            const inline = readInlinePhone(item);
+            if (isRevealedPhoneText(inline)) {
+                return inline;
+            }
+
+            const callBtn = item.querySelector("[data-marker='job-application/call-button']");
+            if (callBtn) {
+                const callText = normalizePhoneText(callBtn.textContent ?? "");
+                if (isRevealedPhoneText(callText)) {
+                    return callText;
+                }
+            }
+
+            return "";
+        };
+
+        const shouldSkipPhoneReveal = (index) => {
+            const skips = window.__leadflowSkipPhoneReveal;
+            if (!skips || typeof skips !== "object") {
+                return false;
+            }
+
+            return !!(skips[String(index)] || skips[index]);
+        };
+
+        const needsPhoneReveal = (item, index) =>
+            !shouldSkipPhoneReveal(index) && !isRevealedPhoneText(readItemPhone(item, index));
+
+        const readContactsPopupPhone = () => {
+            const popup = document.querySelector("[data-marker='job-application/response/contacts-popup/popup']");
+            if (!popup) {
+                return "";
+            }
+
+            const paragraphs = Array.from(popup.querySelectorAll("p"));
+            for (const paragraph of paragraphs) {
+                if (!/временн(?:ый|ого)?\s+номер/i.test(normalizePhoneText(paragraph.textContent))) {
+                    continue;
+                }
+
+                let section = paragraph.parentElement;
+                while (section && section !== popup) {
+                    for (const h3 of section.querySelectorAll("h3")) {
+                        const text = normalizePhoneText(h3.textContent ?? "");
+                        if (isRevealedPhoneText(text)) {
+                            return text;
+                        }
+                    }
+
+                    section = section.parentElement;
+                }
+            }
+
+            for (const h3 of popup.querySelectorAll("h3")) {
+                const text = normalizePhoneText(h3.textContent ?? "");
+                if (isRevealedPhoneText(text)) {
+                    return text;
+                }
+            }
+
+            return "";
+        };
+
+        const hasContactsPopupLoadError = () => {
+            const popup = document.querySelector("[data-marker='job-application/response/contacts-popup/popup']");
+            const scope = popup ?? document;
+            return /не\s+удалось\s+загрузить\s+контактные\s+данные/i.test(scope.textContent ?? "");
+        };
+
+        const isContactsPopupOpen = () =>
+            !!document.querySelector("[data-marker='job-application/response/contacts-popup/popup']")
+            || hasContactsPopupLoadError();
+
+        const closeContactsPopup = () => {
+            const closeBtn = document.querySelector("[data-marker='job-application/response/contacts-popup/close']");
+            if (closeBtn) {
+                closeBtn.click();
+                return true;
+            }
+
+            document.dispatchEvent(new KeyboardEvent("keydown", {
+                key: "Escape",
+                code: "Escape",
+                bubbles: true,
+                cancelable: true
+            }));
+            return false;
+        };
+
+        const clickPhoneRevealTarget = (item) => {
+            const callBtn = item.querySelector("[data-marker='job-application/call-button']");
+            if (callBtn) {
+                try {
+                    callBtn.scrollIntoView({ block: "center", inline: "nearest" });
+                } catch {
+                }
+
+                callBtn.click();
+                return { clicked: true, kind: "call-button" };
+            }
+
+            const phoneBtn = item.querySelector("[data-marker='job-application/phone']");
+            const raw = phoneBtn?.textContent ?? "";
+            if (phoneBtn && /\*/.test(raw)) {
+                try {
+                    phoneBtn.scrollIntoView({ block: "center", inline: "nearest" });
+                } catch {
+                }
+
+                const text = phoneBtn.querySelector(".styles-module-text");
+                (text ?? phoneBtn).click();
+                return { clicked: true, kind: "masked-phone" };
+            }
+
+            return { clicked: false, kind: "none" };
+        };
+
+        const waitForContactsPopup = (timeoutMs) => {
+            const started = Date.now();
+            while (Date.now() - started < timeoutMs) {
+                if (isContactsPopupOpen()) {
+                    if (hasContactsPopupLoadError()) {
+                        return "error";
+                    }
+
+                    const phone = readContactsPopupPhone();
+                    if (phone) {
+                        return "ready";
+                    }
+                }
+
+                const sliceEnd = Date.now() + 50;
+                while (Date.now() < sliceEnd) {
+                }
+            }
+
+            if (hasContactsPopupLoadError()) {
+                return "error";
+            }
+
+            if (isContactsPopupOpen()) {
+                const phone = readContactsPopupPhone();
+                return phone ? "ready" : "timeout";
+            }
+
+            return "timeout";
+        };
+        """;
+
+    private const string CardFingerprintJs =
+        """
+        const normalizeCardText = (text) => (text ?? "").replace(/\s+/g, " ").trim();
+
+        const fnv1a32HexCard = (text) => {
+            let h = 2166136261 >>> 0;
+            for (let i = 0; i < text.length; i++) {
+                h ^= text.charCodeAt(i);
+                h = Math.imul(h, 16777619) >>> 0;
+            }
+
+            return h.toString(16);
+        };
+
+            const extractVacancyIdFromUrl = (vacancyUrl) => {
+                const match = (vacancyUrl ?? "").trim().match(/(?:\/|_)(\d{5,})(?:\?|$|\/|$)/);
+                return match ? match[1] : "";
+            };
+
+        const extractMessengerChannelKey = (messengerUrl) => {
+            const match = (messengerUrl ?? "").trim().match(/\/profile\/messenger\/channel\/([^/?#]+)/i);
+            return match ? match[1].trim().toLowerCase() : "";
+        };
+
+        const buildCardFingerprint = (fullName, vacancy, city, vacancyUrl, messengerUrl, ageText) => {
+            const messengerKey = extractMessengerChannelKey(messengerUrl);
+            if (messengerKey) {
+                return `avito-card:msg:${messengerKey}`;
+            }
+
+            const vacancyId = extractVacancyIdFromUrl(vacancyUrl);
+            const payload = [
+                normalizeCardText(fullName),
+                vacancyId || normalizeCardText(vacancy),
+                normalizeCardText(city),
+                normalizeCardText(ageText ?? "")
+            ].join("\u001f");
+
+            return `avito-card:${fnv1a32HexCard(payload)}`;
+        };
+        """;
+
     /// <summary>Быстрый детект firewall/капчи (без ожидания списка откликов).</summary>
     public static string BuildFirewallProbeScript() =>
         """
@@ -187,24 +425,12 @@ public static class AvitoCandidatesPageScripts
         })();
         """;
 
-    /// <summary>Телефон раскрыт: в кнопке нет маски «**» и достаточно цифр для РФ-номера.</summary>
+    /// <summary>Телефон раскрыт: inline, в кэше после popup или в кнопке без маски «**».</summary>
     public static string BuildPhonesReadyProbeScript() =>
-        """
+        $$"""
         (() => {
-            const isRevealedPhone = (raw) => {
-                const text = (raw ?? "").trim();
-                if (!text || /\*/.test(text)) {
-                    return false;
-                }
-
-                const digits = text.replace(/\D/g, "");
-                return digits.length >= 10;
-            };
-
-            const getPhoneRaw = (item) =>
-                item.querySelector("[data-marker='job-application/phone']")?.textContent ??
-                item.querySelector("[data-marker='job-application/call-button']")?.textContent ??
-                "";
+        {{ContactsPhoneHelpersJs}}
+            initRevealedPhonesStore();
 
             const items = Array.from(document.querySelectorAll("[data-marker='job-application/item']"));
             if (items.length === 0) {
@@ -213,16 +439,14 @@ public static class AvitoCandidatesPageScripts
 
             let withPhone = 0;
             let masked = 0;
-            for (const item of items) {
-                const raw = getPhoneRaw(item);
-                if (/\*/.test(raw)) {
+            for (let index = 0; index < items.length; index++) {
+                const item = items[index];
+                if (needsPhoneReveal(item, index)) {
                     masked++;
                     continue;
                 }
 
-                if (isRevealedPhone(raw)) {
-                    withPhone++;
-                }
+                withPhone++;
             }
 
             const ratio = withPhone / items.length;
@@ -390,8 +614,11 @@ public static class AvitoCandidatesPageScripts
 
     /// <summary>Снимок открытой панели отклика: ссылка «на вакансию», возраст и т.д.</summary>
     public static string BuildReadDetailPanelScript() =>
-        """
+        $$"""
         (() => {
+        {{ContactsPhoneHelpersJs}}
+            initRevealedPhonesStore();
+
             const normalize = (text) => (text ?? "").replace(/\s+/g, " ").trim();
             const normalizeUrl = (href) => {
                 if (!href) {
@@ -414,10 +641,14 @@ public static class AvitoCandidatesPageScripts
                 return t;
             };
 
+            const popupPhone = readContactsPopupPhone();
             const phoneEl =
-                document.querySelector("[data-marker='job-application/call-button']") ??
-                document.querySelector("[data-marker='job-application/phone']");
-            const phone = normalize(phoneEl?.textContent ?? "");
+                document.querySelector("[data-marker='job-application/phone']") ??
+                document.querySelector("[data-marker='job-application/call-button']");
+            const inlinePhone = normalize(phoneEl?.textContent ?? "");
+            const phone = isRevealedPhoneText(popupPhone)
+                ? popupPhone
+                : (isRevealedPhoneText(inlinePhone) ? inlinePhone : "");
             const phoneDigits = phone.replace(/\D/g, "");
 
             const responseRoot =
@@ -480,17 +711,14 @@ public static class AvitoCandidatesPageScripts
     public static string BuildApplyDetailEnrichmentScript(string enrichmentJson) =>
         $"window.__leadflowDetailEnrichment = {enrichmentJson}; JSON.stringify({{ ok: true, count: Object.keys(window.__leadflowDetailEnrichment || {{}}).length }});";
 
-    /// <summary>Телефоны из списка карточек (без клика в детальную панель).</summary>
+    /// <summary>Телефоны из списка карточек (inline, кэш popup, без клика в детальную панель).</summary>
     public static string BuildCollectListItemPhonesScript() =>
-        """
+        $$"""
         (() => {
-            const readPhone = (item) => {
-                const raw =
-                    item.querySelector("[data-marker='job-application/phone']")?.textContent ??
-                    item.querySelector("[data-marker='job-application/call-button']")?.textContent ??
-                    "";
-                return (raw ?? "").replace(/\D/g, "");
-            };
+        {{ContactsPhoneHelpersJs}}
+            initRevealedPhonesStore();
+
+            const readPhone = (item, index) => readItemPhone(item, index).replace(/\D/g, "");
 
             const normalizePhoneKey = (digits) => {
                 if (!digits) {
@@ -512,11 +740,181 @@ public static class AvitoCandidatesPageScripts
             return JSON.stringify(
                 items.map((item, index) => ({
                     index,
-                    phoneDigits: normalizePhoneKey(readPhone(item))
+                    phoneDigits: normalizePhoneKey(readPhone(item, index))
                 }))
             );
         })();
         """;
+
+    /// <summary>Ключи карточек откликов без телефона (для сравнения с локальной базой до popup).</summary>
+    public static string BuildCollectListItemCardFingerprintsScript() =>
+        $$"""
+        (() => {
+        {{CardFingerprintJs}}
+            const normalizeUrl = (href) => {
+                if (!href) {
+                    return "";
+                }
+
+                const t = href.trim();
+                if (!t || t === "#") {
+                    return "";
+                }
+
+                if (t.startsWith("//")) {
+                    return `https:${t}`;
+                }
+
+                if (t.startsWith("/")) {
+                    return `${window.location.origin}${t}`;
+                }
+
+                return t;
+            };
+
+            const resolveMessengerUrl = (root) => {
+                const pick = (href) => normalizeUrl(href ?? "");
+                const attrCandidates = ["href", "data-href", "data-url", "data-to", "data-link", "data-state", "onclick"];
+                const fromAttributes = (element) => {
+                    if (!element) {
+                        return "";
+                    }
+
+                    for (const attr of attrCandidates) {
+                        const raw = element.getAttribute?.(attr);
+                        if (!raw) {
+                            continue;
+                        }
+
+                        const direct = pick(raw);
+                        if (direct && /(messenger|chat|dialog)/i.test(direct)) {
+                            return direct;
+                        }
+
+                        const match = String(raw).match(/https?:\/\/[^"'\\\s]*(messenger|chat|dialog)[^"'\\\s]*/i);
+                        if (match?.[0]) {
+                            return pick(match[0]);
+                        }
+                    }
+
+                    return "";
+                };
+
+                const chatEl = root.querySelector("[data-marker='job-application/link/to-chat']");
+                if (chatEl) {
+                    const ownUrl = fromAttributes(chatEl);
+                    if (ownUrl) {
+                        return ownUrl;
+                    }
+
+                    const parentA = chatEl.closest("a");
+                    if (parentA) {
+                        const h = pick(parentA.getAttribute("href"));
+                        if (h && /(messenger|chat|dialog)/i.test(h)) {
+                            return h;
+                        }
+                    }
+                }
+
+                for (const element of root.querySelectorAll("[href],[data-href],[data-url],[data-to],[data-link],[data-state],[onclick]")) {
+                    const h = fromAttributes(element);
+                    if (h) {
+                        return h;
+                    }
+                }
+
+                return "";
+            };
+
+            const parseVacancyLink = (root, vacancyListingAnchor) => {
+                const directHref = normalizeUrl(vacancyListingAnchor?.getAttribute("href") ?? "");
+                if (
+                    directHref
+                    && /\/\d{5,}/.test(directHref)
+                    && !/\/profile\/candidates(?:[/?#]|$)/i.test(directHref)
+                ) {
+                    return directHref;
+                }
+
+                for (const paragraph of root.querySelectorAll("p")) {
+                    const text = normalizeCardText(paragraph.textContent);
+                    if (!/на вакансию/i.test(text)) {
+                        continue;
+                    }
+
+                    const anchor = paragraph.querySelector("a[href]");
+                    if (!anchor) {
+                        continue;
+                    }
+
+                    const href = normalizeUrl(anchor.getAttribute("href") ?? "");
+                    if (href && /\/\d{5,}/.test(href)) {
+                        return href;
+                    }
+                }
+
+                return directHref;
+            };
+
+            const parseVacancyAndCity = (root, vacancyListingAnchor) => {
+                const fromAnchor = normalizeCardText(vacancyListingAnchor?.textContent ?? "");
+                if (fromAnchor) {
+                    const vacancyParts = fromAnchor.split("·").map((x) => x.trim()).filter(Boolean);
+                    return {
+                        vacancy: vacancyParts[0] ?? "",
+                        city: vacancyParts.length > 1 ? vacancyParts[1] : ""
+                    };
+                }
+
+                return { vacancy: "", city: "" };
+            };
+
+            const parseAgeText = (root) => {
+                const agePattern = /(\d{1,2})\s*(?:лет|года|год)/i;
+                for (const line of Array.from(root.querySelectorAll("p"))) {
+                    const match = normalizeCardText(line.textContent).match(agePattern);
+                    if (match) {
+                        return `${match[1]} лет`;
+                    }
+                }
+
+                return "";
+            };
+
+            const items = Array.from(document.querySelectorAll("[data-marker='job-application/item']"));
+            return JSON.stringify(
+                items.map((item, index) => {
+                    const fullName = normalizeCardText(item.querySelector("h3, h4")?.textContent ?? "");
+                    const vacancyListingAnchor = item.querySelector("[data-marker='job-application/link/to-resume']");
+                    const vacancyUrl = parseVacancyLink(item, vacancyListingAnchor);
+                    const vacancyAndCity = parseVacancyAndCity(item, vacancyListingAnchor);
+                    const messengerUrl = resolveMessengerUrl(item);
+                    const age = parseAgeText(item);
+                    const cardFingerprint = buildCardFingerprint(
+                        fullName,
+                        vacancyAndCity.vacancy,
+                        vacancyAndCity.city,
+                        vacancyUrl,
+                        messengerUrl,
+                        age
+                    );
+
+                    return {
+                        index,
+                        fullName,
+                        cardFingerprint
+                    };
+                })
+            );
+        })();
+        """;
+
+    public static string BuildApplyPhoneRevealSkipScript(IReadOnlyCollection<int> skipIndices)
+    {
+        var skipJson = System.Text.Json.JsonSerializer.Serialize(
+            skipIndices.Distinct().ToDictionary(static x => x.ToString(), static _ => true));
+        return $"window.__leadflowSkipPhoneReveal = {skipJson}; JSON.stringify({{ ok: true, skipped: Object.keys(window.__leadflowSkipPhoneReveal || {{}}).length }});";
+    }
 
     /// <summary>CRM-страница откликов <c>/profile/job/responses</c> (фильтры, cv-button, «Скачать отчёт»).</summary>
     public static string BuildIsJobCrmResponsesPageScript() =>
@@ -533,8 +931,9 @@ public static class AvitoCandidatesPageScripts
 
     /// <summary>Закрыть панель «Данные» справа, если она осталась открытой после detail-enrich.</summary>
     public static string BuildDismissCandidateDetailPanelScript() =>
-        """
+        $$"""
         (() => {
+        {{ContactsPhoneHelpersJs}}
             const dispatchEscape = () => {
                 document.dispatchEvent(new KeyboardEvent("keydown", {
                     key: "Escape",
@@ -587,6 +986,7 @@ public static class AvitoCandidatesPageScripts
             };
 
             dispatchEscape();
+            closeContactsPopup();
 
             const responsePanel = document.querySelector("[class*='styles-module-response']");
             if (responsePanel) {
@@ -805,10 +1205,11 @@ public static class AvitoCandidatesPageScripts
         })();
         """;
 
-    /// <summary>Клик по кнопкам с замаскированным номером, чтобы Avito подставил полный телефон.</summary>
+    /// <summary>Клик по inline-кнопкам с маской «**» (старый UX без popup).</summary>
     public static string BuildRevealMaskedPhonesStepScript() =>
-        """
+        $$"""
         (() => {
+        {{ContactsPhoneHelpersJs}}
             const pickPhoneClickTarget = (btn) => {
                 const text = btn.querySelector(".styles-module-text");
                 if (text) {
@@ -824,23 +1225,17 @@ public static class AvitoCandidatesPageScripts
                 return btn;
             };
 
-            const getPhoneButton = (item) => {
-                const btn =
-                    item.querySelector("[data-marker='job-application/phone']") ??
-                    item.querySelector("[data-marker='job-application/call-button']");
-                if (!btn || btn.closest?.("[data-marker^='download-report-button']")) {
-                    return null;
-                }
-
-                return btn;
-            };
-
             const items = Array.from(document.querySelectorAll("[data-marker='job-application/item']"));
             let masked = 0;
             let clicked = 0;
-            for (const item of items) {
-                const btn = getPhoneButton(item);
-                if (!btn) {
+            for (let index = 0; index < items.length; index++) {
+                const item = items[index];
+                if (shouldSkipPhoneReveal(index)) {
+                    continue;
+                }
+
+                const btn = item.querySelector("[data-marker='job-application/phone']");
+                if (!btn || btn.closest?.("[data-marker^='download-report-button']")) {
                     continue;
                 }
 
@@ -867,9 +1262,124 @@ public static class AvitoCandidatesPageScripts
         })();
         """;
 
-    public static string BuildExtractionScript() =>
-        """
+    /// <summary>
+    /// Раскрывает один номер через popup «Показать номер телефона» (новый UX: call-button → contacts-popup).
+    /// При ошибке «Не удалось загрузить контактные данные» повторяет клик.
+    /// </summary>
+    public static string BuildRevealNextContactsPopupPhoneScript() =>
+        $$"""
         (() => {
+        {{ContactsPhoneHelpersJs}}
+            const store = initRevealedPhonesStore();
+            const items = Array.from(document.querySelectorAll("[data-marker='job-application/item']"));
+            let pending = 0;
+            for (let index = 0; index < items.length; index++) {
+                if (needsPhoneReveal(items[index], index)) {
+                    pending++;
+                }
+            }
+
+            if (pending === 0) {
+                return JSON.stringify({
+                    items: items.length,
+                    pending: 0,
+                    clicked: false,
+                    revealed: false
+                });
+            }
+
+            if (isContactsPopupOpen()) {
+                closeContactsPopup();
+                const settleEnd = Date.now() + 120;
+                while (Date.now() < settleEnd) {
+                }
+            }
+
+            let targetIndex = -1;
+            let targetItem = null;
+            for (let index = 0; index < items.length; index++) {
+                const item = items[index];
+                if (!needsPhoneReveal(item, index)) {
+                    continue;
+                }
+
+                if (!item.querySelector("[data-marker='job-application/call-button']")
+                    && !/\*/.test(item.querySelector("[data-marker='job-application/phone']")?.textContent ?? "")) {
+                    continue;
+                }
+
+                targetIndex = index;
+                targetItem = item;
+                break;
+            }
+
+            if (!targetItem) {
+                return JSON.stringify({
+                    items: items.length,
+                    pending,
+                    clicked: false,
+                    revealed: false,
+                    reason: "no_popup_target"
+                });
+            }
+
+            let retries = 0;
+            let phone = "";
+            let lastState = "timeout";
+            const maxRetries = 3;
+            while (retries < maxRetries && !phone) {
+                retries++;
+                const clickResult = clickPhoneRevealTarget(targetItem);
+                if (!clickResult.clicked) {
+                    break;
+                }
+
+                lastState = waitForContactsPopup(3500);
+                if (lastState === "error") {
+                    closeContactsPopup();
+                    const settleEnd = Date.now() + 180;
+                    while (Date.now() < settleEnd) {
+                    }
+
+                    continue;
+                }
+
+                if (lastState === "ready") {
+                    phone = readContactsPopupPhone();
+                }
+
+                if (!phone) {
+                    closeContactsPopup();
+                    const settleEnd = Date.now() + 180;
+                    while (Date.now() < settleEnd) {
+                    }
+                }
+            }
+
+            if (phone) {
+                store[String(targetIndex)] = phone;
+                closeContactsPopup();
+            }
+
+            return JSON.stringify({
+                items: items.length,
+                pending,
+                clicked: true,
+                index: targetIndex,
+                revealed: !!phone,
+                phone,
+                retries,
+                state: lastState
+            });
+        })();
+        """;
+
+    public static string BuildExtractionScript() =>
+        $$"""
+        (() => {
+        {{ContactsPhoneHelpersJs}}
+            initRevealedPhonesStore();
+
             const itemCount = document.querySelectorAll("[data-marker='job-application/item']").length;
             const statusCount = document.querySelectorAll("[data-marker='job-application/response/status-select-button']").length;
             const title = (document.title ?? "").trim();
@@ -1078,7 +1588,7 @@ public static class AvitoCandidatesPageScripts
 
             const buildSourceResponseId = (name, phone, vacancy, city, vacancyUrl) => {
                 const phoneKey = normalizePhoneKey(phone);
-                const vacancyIdMatch = (vacancyUrl ?? "").match(/\/(\d{5,})(?:\?|$|\/)/);
+                const vacancyIdMatch = (vacancyUrl ?? "").match(/(?:\/|_)(\d{5,})(?:\?|$|\/)/);
                 if (vacancyIdMatch && phoneKey.length >= 10) {
                     return `avito:${vacancyIdMatch[1]}:${phoneKey}`;
                 }
@@ -1175,7 +1685,8 @@ public static class AvitoCandidatesPageScripts
             const listItems = Array.from(document.querySelectorAll("[data-marker='job-application/item']"));
             const candidates = roots.map((root) => {
                 const name = getNameNode(root)?.textContent?.trim() ?? "";
-                const phone = getPhoneNode(root)?.textContent?.trim() ?? "";
+                const rootIndex = listItems.indexOf(root);
+                const phone = readItemPhone(root, rootIndex);
                 const vacancyListingAnchor = getVacancyAnchor(root);
                 let vacancyUrl = parseVacancyLink(root, vacancyListingAnchor);
                 const rawText = root.innerText?.replace(/\s+/g, " ").trim() ?? "";
@@ -1185,7 +1696,6 @@ public static class AvitoCandidatesPageScripts
                 let city = vacancyAndCity.city;
 
                 const phoneKey = phone.replace(/\D/g, "");
-                const rootIndex = listItems.indexOf(root);
                 const enriched =
                     (typeof window !== "undefined" && window.__leadflowDetailEnrichment)
                         ? (window.__leadflowDetailEnrichment[phoneKey] ?? window.__leadflowDetailEnrichment[String(rootIndex)])

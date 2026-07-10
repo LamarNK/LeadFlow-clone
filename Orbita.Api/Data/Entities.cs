@@ -185,6 +185,7 @@ public sealed class CandidateResponseEntity
     public string AccountName { get; set; } = string.Empty;
     public string Source { get; set; } = string.Empty;
     public string SourceResponseId { get; set; } = string.Empty;
+    public string CardFingerprint { get; set; } = string.Empty;
     public string FullName { get; set; } = string.Empty;
     public string FirstName { get; set; } = string.Empty;
     public string LastName { get; set; } = string.Empty;
@@ -207,6 +208,9 @@ public sealed class CandidateResponseEntity
     public string BitrixEntityType { get; set; } = string.Empty;
     public string BitrixEntityId { get; set; } = string.Empty;
     public string BitrixContactId { get; set; } = string.Empty;
+    public Guid? BitrixInstanceId { get; set; }
+    public Guid? DuplicateBitrixInstanceId { get; set; }
+    public string DistributionMode { get; set; } = string.Empty;
     public string ErrorMessage { get; set; } = string.Empty;
     public string RawText { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
@@ -214,6 +218,84 @@ public sealed class CandidateResponseEntity
 
     public OfficeEntity Office { get; set; } = null!;
     public WorkerEntity? Worker { get; set; }
+    public BitrixInstanceEntity? BitrixInstance { get; set; }
+    public BitrixInstanceEntity? DuplicateBitrixInstance { get; set; }
+    public ICollection<ResponseBitrixDeliveryEntity> BitrixDeliveries { get; set; } = [];
+}
+
+public sealed class ResponseBitrixDeliveryEntity
+{
+    public Guid Id { get; set; }
+    public Guid ResponseId { get; set; }
+    public Guid BitrixInstanceId { get; set; }
+    public string Outcome { get; set; } = string.Empty;
+    public string BitrixEntityId { get; set; } = string.Empty;
+    public string BitrixEntityType { get; set; } = string.Empty;
+    public string BitrixContactId { get; set; } = string.Empty;
+    public string ErrorMessage { get; set; } = string.Empty;
+    public string Source { get; set; } = string.Empty;
+    public DateTime CreatedAtUtc { get; set; }
+
+    public CandidateResponseEntity Response { get; set; } = null!;
+    public BitrixInstanceEntity BitrixInstance { get; set; } = null!;
+}
+
+public sealed class BitrixInstanceEntity
+{
+    public Guid Id { get; set; }
+    public Guid OfficeId { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string Signature { get; set; } = string.Empty;
+    public string WebhookUrlProtected { get; set; } = string.Empty;
+    public string? PortalHost { get; set; }
+    public string ValidationStatus { get; set; } = BitrixValidationStatuses.NotConfigured;
+    public string? ValidationMessage { get; set; }
+    public DateTime? LastValidatedAtUtc { get; set; }
+    public string IntegrationSettingsJson { get; set; } = string.Empty;
+    public bool IsEnabled { get; set; } = true;
+    public DateTime CreatedAtUtc { get; set; }
+    public DateTime UpdatedAtUtc { get; set; }
+    public string? UpdatedByUserId { get; set; }
+
+    public OfficeEntity Office { get; set; } = null!;
+}
+
+public sealed class DistributionRouteEntity
+{
+    public Guid Id { get; set; }
+    public Guid OfficeId { get; set; }
+    public bool IsAutoDistributionEnabled { get; set; }
+    public DateTime UpdatedAtUtc { get; set; }
+    public string? UpdatedByUserId { get; set; }
+
+    public OfficeEntity Office { get; set; } = null!;
+    public ICollection<DistributionNodeEntity> Nodes { get; set; } = [];
+}
+
+public sealed class DistributionNodeEntity
+{
+    public Guid Id { get; set; }
+    public Guid RouteId { get; set; }
+    public Guid? ParentNodeId { get; set; }
+    public Guid BitrixInstanceId { get; set; }
+    public int SortOrder { get; set; }
+    public double EditorPositionX { get; set; }
+    public double EditorPositionY { get; set; }
+
+    public DistributionRouteEntity Route { get; set; } = null!;
+    public DistributionNodeEntity? ParentNode { get; set; }
+    public BitrixInstanceEntity BitrixInstance { get; set; } = null!;
+    public ICollection<DistributionNodeEntity> Children { get; set; } = [];
+}
+
+public sealed class DistributionRoundRobinStateEntity
+{
+    public long Id { get; set; }
+    public Guid RouteId { get; set; }
+    public Guid? ParentNodeId { get; set; }
+    public int NextChildIndex { get; set; }
+
+    public DistributionRouteEntity Route { get; set; } = null!;
 }
 
 public sealed class CaptchaSessionEntity

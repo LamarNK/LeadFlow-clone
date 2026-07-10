@@ -101,7 +101,7 @@ public sealed class WorkersController(IWorkersService workers) : Controller
             [
                 new BreadcrumbItemViewModel { Label = "Воркеры", Url = Url.Action(nameof(Index))! },
                 new BreadcrumbItemViewModel { Label = model.DisplayName, Url = Url.Action(nameof(Details), new { id })! },
-                new BreadcrumbItemViewModel { Label = "Просмотр браузеров", IsActive = true }
+                new BreadcrumbItemViewModel { Label = "Активные браузеры", IsActive = true }
             ]
         });
     }

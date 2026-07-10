@@ -87,6 +87,48 @@ public sealed class OrbitaCandidateDuplicateRepository(
         return existing;
     }
 
+    public async Task<HashSet<string>> GetExistingCardFingerprintsAsync(
+        IEnumerable<string> cardFingerprintCandidates,
+        DuplicateScope scope,
+        Guid accountId,
+        CancellationToken cancellationToken,
+        string? avitoSubProfileId = null)
+    {
+        var fingerprints = cardFingerprintCandidates
+            .Where(static x => !string.IsNullOrWhiteSpace(x))
+            .Select(static x => x.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (fingerprints.Length == 0)
+        {
+            return [];
+        }
+
+        WorkerCandidateLookupResponse? apiResult = null;
+        try
+        {
+            apiResult = await apiClient.LookupCandidatesAsync(
+                    new WorkerCandidateLookupRequest(
+                        accountId,
+                        scope.ToString(),
+                        [],
+                        [],
+                        AvitoSubProfileId: avitoSubProfileId,
+                        CardFingerprints: fingerprints),
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch
+        {
+            // Fingerprints are API-only; EphemeralDedupCache does not store them.
+        }
+
+        var existing = apiResult?.ExistingCardFingerprints
+            .ToHashSet(StringComparer.OrdinalIgnoreCase)
+            ?? [];
+        return existing;
+    }
+
     public Task RecordSeenAsync(
         Guid accountId,
         string? sourceResponseId,

@@ -18,6 +18,11 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
     public DbSet<PanelAuditLogEntity> PanelAuditLogs => Set<PanelAuditLogEntity>();
     public DbSet<PanelUserBitrixSettingsEntity> PanelUserBitrixSettings => Set<PanelUserBitrixSettingsEntity>();
     public DbSet<CandidateResponseEntity> CandidateResponses => Set<CandidateResponseEntity>();
+    public DbSet<ResponseBitrixDeliveryEntity> ResponseBitrixDeliveries => Set<ResponseBitrixDeliveryEntity>();
+    public DbSet<BitrixInstanceEntity> BitrixInstances => Set<BitrixInstanceEntity>();
+    public DbSet<DistributionRouteEntity> DistributionRoutes => Set<DistributionRouteEntity>();
+    public DbSet<DistributionNodeEntity> DistributionNodes => Set<DistributionNodeEntity>();
+    public DbSet<DistributionRoundRobinStateEntity> DistributionRoundRobinStates => Set<DistributionRoundRobinStateEntity>();
     public DbSet<CaptchaSessionEntity> CaptchaSessions => Set<CaptchaSessionEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -91,14 +96,70 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.HasIndex(x => x.PhoneNormalized);
             entity.HasIndex(x => new { x.OfficeId, x.PhoneNormalized });
             entity.HasIndex(x => new { x.OfficeId, x.AccountId, x.AvitoSubProfileId, x.PhoneNormalized });
+            entity.HasIndex(x => new { x.OfficeId, x.AccountId, x.AvitoSubProfileId, x.CardFingerprint });
             entity.HasIndex(x => new { x.OfficeId, x.CreatedAt });
             entity.HasIndex(x => new { x.AccountId, x.SourceResponseId })
                 .IsUnique()
                 .HasFilter("\"SourceResponseId\" <> ''");
             entity.Property(x => x.DuplicateSummary).HasMaxLength(2000);
             entity.Property(x => x.WorkerName).HasMaxLength(200);
+            entity.Property(x => x.DistributionMode).HasMaxLength(16);
             entity.HasOne(x => x.Office).WithMany().HasForeignKey(x => x.OfficeId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(x => x.Worker).WithMany().HasForeignKey(x => x.WorkerId).OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(x => x.BitrixInstance).WithMany().HasForeignKey(x => x.BitrixInstanceId).OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(x => x.DuplicateBitrixInstance).WithMany().HasForeignKey(x => x.DuplicateBitrixInstanceId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<ResponseBitrixDeliveryEntity>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => x.ResponseId);
+            entity.HasIndex(x => new { x.ResponseId, x.CreatedAtUtc });
+            entity.Property(x => x.Outcome).HasMaxLength(16);
+            entity.Property(x => x.Source).HasMaxLength(16);
+            entity.Property(x => x.ErrorMessage).HasMaxLength(2000);
+            entity.HasOne(x => x.Response).WithMany(x => x.BitrixDeliveries).HasForeignKey(x => x.ResponseId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.BitrixInstance).WithMany().HasForeignKey(x => x.BitrixInstanceId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<BitrixInstanceEntity>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => x.OfficeId);
+            entity.Property(x => x.Name).HasMaxLength(200);
+            entity.Property(x => x.Signature).HasMaxLength(200);
+            entity.Property(x => x.WebhookUrlProtected).HasMaxLength(2048);
+            entity.Property(x => x.PortalHost).HasMaxLength(256);
+            entity.Property(x => x.ValidationStatus).HasMaxLength(32);
+            entity.Property(x => x.ValidationMessage).HasMaxLength(2000);
+            entity.Property(x => x.IntegrationSettingsJson).HasMaxLength(4000);
+            entity.Property(x => x.UpdatedByUserId).HasMaxLength(128);
+            entity.HasOne(x => x.Office).WithMany().HasForeignKey(x => x.OfficeId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<DistributionRouteEntity>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => x.OfficeId).IsUnique();
+            entity.Property(x => x.UpdatedByUserId).HasMaxLength(128);
+            entity.HasOne(x => x.Office).WithMany().HasForeignKey(x => x.OfficeId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<DistributionNodeEntity>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => x.RouteId);
+            entity.HasIndex(x => new { x.RouteId, x.ParentNodeId, x.SortOrder });
+            entity.HasOne(x => x.Route).WithMany(x => x.Nodes).HasForeignKey(x => x.RouteId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.ParentNode).WithMany(x => x.Children).HasForeignKey(x => x.ParentNodeId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.BitrixInstance).WithMany().HasForeignKey(x => x.BitrixInstanceId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<DistributionRoundRobinStateEntity>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.RouteId, x.ParentNodeId }).IsUnique();
+            entity.HasOne(x => x.Route).WithMany().HasForeignKey(x => x.RouteId).OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<WorkerEventEntity>(entity =>

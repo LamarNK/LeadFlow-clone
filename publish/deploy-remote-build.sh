@@ -21,19 +21,38 @@ prune_docker_artifacts() {
   fi
 }
 
+compute_cache_bust() {
+  if [[ -n "${LEADFLOW_CACHE_BUST:-}" ]]; then
+    echo "$LEADFLOW_CACHE_BUST"
+    return
+  fi
+
+  if command -v sha256sum >/dev/null 2>&1; then
+    find Orbita.Api Orbita.Contracts Orbita.Logging Orbita.Web -type f 2>/dev/null \
+      | LC_ALL=C sort \
+      | xargs -r sha256sum \
+      | sha256sum \
+      | awk '{print $1}'
+    return
+  fi
+
+  date +%s
+}
+
 build_docker_image() {
   export DOCKER_BUILDKIT=1
 
+  local cache_bust
+  cache_bust="$(compute_cache_bust)"
+
   local -a build_args=(
     --build-arg BUILDKIT_INLINE_CACHE=1
+    --build-arg "CACHE_BUST=${cache_bust}"
     -f "$dockerfile_rel"
     -t "$image_tag"
   )
 
-  if docker image inspect "$image_tag" >/dev/null 2>&1; then
-    build_args+=(--cache-from "$image_tag")
-  fi
-
+  echo "Docker build cache-bust=${cache_bust}"
   docker build "${build_args[@]}" .
 }
 

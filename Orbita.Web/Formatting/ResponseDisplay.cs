@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Net;
 using System.Text.RegularExpressions;
 
 namespace Orbita.Web.Formatting;
@@ -56,6 +57,19 @@ public static partial class ResponseDisplay
 
     public static string FormatAverageResponseMinutes(double? minutes) =>
         minutes is > 0 and var avg ? $"{(int)Math.Round(avg)} минут" : "—";
+
+    public static string HtmlAttributeValue(string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return string.Empty;
+        }
+
+        return WebUtility.HtmlEncode(value)
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n')
+            .Replace("\n", "&#10;", StringComparison.Ordinal);
+    }
 
     [GeneratedRegex(@"/(\d{6,})(?:\?|$)", RegexOptions.CultureInvariant)]
     private static partial Regex AvitoItemIdRegex();

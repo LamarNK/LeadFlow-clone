@@ -70,4 +70,9 @@ public static class PanelAuditOfficeActions
     public const string BitrixTransmissionUpdated = "office.bitrix_transmission_updated";
     public const string BitrixWebhookUpdated = "office.bitrix_webhook_updated";
     public const string BitrixWebhookValidated = "office.bitrix_webhook_validated";
+    public const string BitrixInstanceCreated = "bitrix.instance_created";
+    public const string BitrixInstanceUpdated = "bitrix.instance_updated";
+    public const string BitrixInstanceDeleted = "bitrix.instance_deleted";
+    public const string BitrixInstanceValidated = "bitrix.instance_validated";
+    public const string DistributionRouteUpdated = "distribution.route_updated";
 }

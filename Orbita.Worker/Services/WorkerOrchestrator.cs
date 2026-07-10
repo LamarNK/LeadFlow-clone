@@ -30,6 +30,7 @@ public sealed class WorkerOrchestrator(
     IWorkerActivityReporter activityReporter,
     CaptchaSessionCoordinator captchaCoordinator,
     BrowserMonitorCoordinator browserMonitorCoordinator,
+    BrowserMonitorSource browserMonitorSource,
     IWorkerRealtimeChannel realtime) : BackgroundService
 {
     private bool _monitoringRequested = true;
@@ -191,6 +192,7 @@ public sealed class WorkerOrchestrator(
     private void OnBrowserMonitorSessionReceived(WorkerPendingBrowserMonitorSessionDto session)
     {
         _pushedBrowserMonitorSession = session;
+        configProvider.InvalidateCache();
         browserMonitorCoordinator.CancelCurrentSession();
         realtime.RequestWake();
     }
@@ -209,18 +211,11 @@ public sealed class WorkerOrchestrator(
         return session;
     }
 
-    private WorkerPendingBrowserMonitorSessionDto? TryConsumePushedBrowserMonitorSession()
-    {
-        var session = _pushedBrowserMonitorSession;
-        _pushedBrowserMonitorSession = null;
-        return session;
-    }
-
     private void TryLaunchBrowserMonitor(
         WorkerPendingBrowserMonitorSessionDto? configPending,
         CancellationToken stoppingToken)
     {
-        var pending = TryConsumePushedBrowserMonitorSession() ?? configPending;
+        var pending = _pushedBrowserMonitorSession ?? configPending;
         if (pending is null)
         {
             return;
@@ -231,10 +226,25 @@ public sealed class WorkerOrchestrator(
             return;
         }
 
+        if (ReferenceEquals(pending, _pushedBrowserMonitorSession))
+        {
+            _pushedBrowserMonitorSession = null;
+        }
+
         _ = Task.Run(async () =>
         {
             try
             {
+                await BrowserMonitorWorkerLog.InfoAsync(
+                    $"Browser monitor: оркестратор запускает стрим сессии {pending.SessionId:D}, браузеров в pending: {pending.Browsers.Count}, регистраций на воркере: {browserMonitorSource.GetRegistrations().Count}.",
+                    nameof(TryLaunchBrowserMonitor),
+                    new Dictionary<string, object?>
+                    {
+                        ["browserMonitor.sessionId"] = pending.SessionId,
+                        ["browserMonitor.pendingBrowserCount"] = pending.Browsers.Count,
+                        ["browserMonitor.registrationCount"] = browserMonitorSource.GetRegistrations().Count
+                    }).ConfigureAwait(false);
+
                 await browserMonitorCoordinator
                     .TryRunSessionAsync(pending, stoppingToken)
                     .ConfigureAwait(false);
@@ -242,6 +252,7 @@ public sealed class WorkerOrchestrator(
             finally
             {
                 Interlocked.Exchange(ref _browserMonitorLaunching, 0);
+                realtime.RequestWake();
             }
         }, stoppingToken);
     }

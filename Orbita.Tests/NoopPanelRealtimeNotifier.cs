@@ -5,7 +5,12 @@ namespace Orbita.Tests;
 
 internal sealed class NoopPanelRealtimeNotifier : IPanelRealtimeNotifier
 {
-    public void Notify(IReadOnlyList<PanelChangeKind> kinds, Guid? officeId = null, Guid? workerId = null)
+    public void Notify(
+        IReadOnlyList<PanelChangeKind> kinds,
+        Guid? officeId = null,
+        Guid? workerId = null,
+        string? operatorMessage = null,
+        string? operatorMessageVariant = null)
     {
     }
 }

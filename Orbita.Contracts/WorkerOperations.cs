@@ -68,6 +68,7 @@ public sealed record WorkerCandidateDto(
     string AccountName,
     string Source,
     string SourceResponseId,
+    string CardFingerprint,
     string FullName,
     int? Age,
     string PhoneRaw,
@@ -90,11 +91,13 @@ public sealed record WorkerCandidateLookupRequest(
     IReadOnlyList<string> SourceResponseIds,
     IReadOnlyList<string> PhoneNormalized,
     bool IncludeAllKnownPhones = false,
-    string? AvitoSubProfileId = null);
+    string? AvitoSubProfileId = null,
+    IReadOnlyList<string>? CardFingerprints = null);
 
 public sealed record WorkerCandidateLookupResponse(
     IReadOnlyList<string> ExistingSourceResponseIds,
-    IReadOnlyList<string> ExistingPhones);
+    IReadOnlyList<string> ExistingPhones,
+    IReadOnlyList<string> ExistingCardFingerprints);
 
 public sealed record WorkerMonitoringStatsDto(
     double HistoricalHeatScore,

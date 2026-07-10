@@ -6,6 +6,7 @@ using LeadFlow.Core.Logging.Audit;
 using LeadFlow.Core.Models;
 using LeadFlow.Core.Services.AdsPower;
 using LeadFlow.Core.Services.Avito;
+using LeadFlow.Core.Services.Browser;
 using PuppeteerSharp;
 
 namespace LeadFlow.Core.Services.Worker;
@@ -584,6 +585,7 @@ public sealed class WorkerMonitoringService(
             string.IsNullOrWhiteSpace(account.AdsPowerApiKey) ? null : account.AdsPowerApiKey);
 
         var browserOpened = false;
+        BrowserMonitorScreencastCapture? monitorScreencast = null;
         var monitorContext = new BrowserMonitorRuntimeContext();
         try
         {
@@ -593,22 +595,50 @@ public sealed class WorkerMonitoringService(
             browserOpened = true;
             WorkerMonitoringLogger.BrowserOpened(account);
 
-            if (browserMonitorSource.IsActive)
-            {
-                browserMonitorSource.Register(
-                    account.Id,
-                    account.DisplayName,
-                    account.AdsPowerProfileId!,
-                    async ct =>
+            browserMonitorSource.Register(
+                account.Id,
+                account.DisplayName,
+                account.AdsPowerProfileId!,
+                async ct =>
+                {
+                    try
                     {
-                        var bytes = await session.CapturePageScreenshotAsync(ct).ConfigureAwait(false);
+                        if (monitorScreencast is null)
+                        {
+                            monitorScreencast = await session
+                                .CreateMonitorScreencastCaptureAsync(ct)
+                                .ConfigureAwait(false);
+                            await monitorScreencast
+                                .WaitForFirstFrameAsync(TimeSpan.FromSeconds(4), ct)
+                                .ConfigureAwait(false);
+                        }
+
+                        var bytes = monitorScreencast.TryGetLatestJpeg();
+                        if (bytes is null || bytes.Length == 0)
+                        {
+                            bytes = await session.CapturePageJpegScreenshotAsync(ct).ConfigureAwait(false);
+                        }
+
+                        if (bytes is null || bytes.Length == 0)
+                        {
+                            return null;
+                        }
+
                         return new BrowserMonitorCapture(
                             bytes,
                             session.CurrentPageUrl,
                             monitorContext.SubProfileId,
                             monitorContext.SubProfileName);
-                    });
-            }
+                    }
+                    catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                    {
+                        throw;
+                    }
+                    catch
+                    {
+                        return null;
+                    }
+                });
 
             AvitoSubProfile? diagnosticSubProfile = null;
             try
@@ -876,9 +906,10 @@ public sealed class WorkerMonitoringService(
         {
             if (browserOpened)
             {
-                if (browserMonitorSource.IsActive)
+                browserMonitorSource.Unregister(account.Id);
+                if (monitorScreencast is not null)
                 {
-                    browserMonitorSource.Unregister(account.Id);
+                    await monitorScreencast.DisposeAsync().ConfigureAwait(false);
                 }
 
                 var closed = await TryCloseAdsPowerBrowserForAccountAsync(account, adsOptions)

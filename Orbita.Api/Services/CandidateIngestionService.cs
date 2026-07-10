@@ -12,9 +12,10 @@ public sealed class CandidateIngestionService(
     PhoneNormalizer phoneNormalizer,
     CandidateParser candidateParser,
     CandidateDuplicateService duplicateService,
-    OfficeBitrixWebhookResolver webhookResolver,
-    OfficeBitrixSettingsService officeBitrixSettings,
-    BitrixClient bitrixClient,
+    DistributionRouteService distributionRoute,
+    DistributionEngine distributionEngine,
+    CandidateAutoDistributionService autoDistribution,
+    ManualBitrixSendService manualBitrixSend,
     IOptions<OrbitaBitrixSettings> bitrixOptions,
     IPanelRealtimeNotifier panelRealtime)
 {
@@ -30,8 +31,7 @@ public sealed class CandidateIngestionService(
             return EmptyResult(request.Candidates.Count);
         }
 
-        var webhookUrl = await webhookResolver.ResolvePrimaryForIngestionAsync(worker.OfficeId, ct);
-        var bitrixTransmissionEnabled = await officeBitrixSettings.IsTransmissionEnabledAsync(worker.OfficeId, ct);
+        var autoEnabled = await distributionRoute.IsAutoDistributionEnabledAsync(worker.OfficeId, ct);
         var received = request.Candidates.Count;
         var ingested = 0;
         var skippedDuplicates = 0;
@@ -40,7 +40,7 @@ public sealed class CandidateIngestionService(
 
         foreach (var candidate in request.Candidates)
         {
-            var item = await IngestOneAsync(worker, candidate, webhookUrl, bitrixTransmissionEnabled, ct);
+            var item = await IngestOneAsync(worker, candidate, autoEnabled, ct);
             items.Add(item);
 
             switch (item.Status)
@@ -76,8 +76,7 @@ public sealed class CandidateIngestionService(
     private async Task<WorkerCandidateIngestionItemResultDto> IngestOneAsync(
         WorkerEntity worker,
         WorkerCandidateDto candidate,
-        string? webhookUrl,
-        bool bitrixTransmissionEnabled,
+        bool autoEnabled,
         CancellationToken ct)
     {
         var phoneNormalized = phoneNormalizer.Normalize(candidate.PhoneRaw);
@@ -133,6 +132,7 @@ public sealed class CandidateIngestionService(
             AccountName = candidate.AccountName,
             Source = string.IsNullOrWhiteSpace(candidate.Source) ? "Avito" : candidate.Source,
             SourceResponseId = candidate.SourceResponseId,
+            CardFingerprint = ResolveCardFingerprint(candidate),
             FullName = candidate.FullName,
             FirstName = firstName,
             LastName = lastName,
@@ -156,21 +156,18 @@ public sealed class CandidateIngestionService(
         db.CandidateResponses.Add(entity);
         await db.SaveChangesAsync(ct);
 
-        var checkBitrixDuplicates = bitrixTransmissionEnabled && bitrixOptions.Value.CheckDuplicatesInBitrix;
-        var duplicate = await duplicateService.CheckAsync(
-            entity,
-            webhookUrl,
-            checkBitrixDuplicates,
+        var localDuplicate = await duplicateService.FindLocalDuplicateAsync(
+            entity.OfficeId,
+            entity.PhoneNormalized,
+            entity.Id,
             ct);
-
-        entity.IsLocalDuplicate = duplicate.IsLocalDuplicate;
-        entity.IsBitrixDuplicate = duplicate.IsBitrixDuplicate;
-        entity.DuplicateSummary = duplicate.Summary;
+        entity.IsLocalDuplicate = localDuplicate is not null;
         entity.ProcessedAt = DateTime.UtcNow;
 
-        if (duplicate.IsDuplicate)
+        if (localDuplicate is not null)
         {
             entity.Status = ResponseStatuses.Duplicate;
+            entity.DuplicateSummary = "Локальный дубль в Орбите";
             await db.SaveChangesAsync(ct);
             return new WorkerCandidateIngestionItemResultDto(
                 entity.Id,
@@ -179,10 +176,10 @@ public sealed class CandidateIngestionService(
                 entity.DuplicateSummary);
         }
 
-        if (duplicate.ShouldDeferBitrixSend)
+        if (!autoEnabled)
         {
             entity.Status = ResponseStatuses.ActionRequired;
-            entity.ErrorMessage = duplicate.BitrixCheckUnavailableReason ?? duplicate.Summary;
+            entity.ErrorMessage = "Ожидает действия оператора.";
             await db.SaveChangesAsync(ct);
             return new WorkerCandidateIngestionItemResultDto(
                 entity.Id,
@@ -191,44 +188,16 @@ public sealed class CandidateIngestionService(
                 entity.ErrorMessage);
         }
 
-        if (!bitrixTransmissionEnabled)
+        var plan = await distributionEngine.GetPlanAsync(worker.OfficeId, ct);
+        var distributionResult = await autoDistribution.DistributeAsync(entity, plan, ct);
+        ApplyDistributionResult(entity, distributionResult);
+        if (distributionResult.Status == ResponseStatuses.Error)
         {
-            entity.Status = ResponseStatuses.ActionRequired;
-            entity.ErrorMessage = "Передача в Bitrix24 отключена.";
-            await db.SaveChangesAsync(ct);
-            return new WorkerCandidateIngestionItemResultDto(
-                entity.Id,
-                candidate.SourceResponseId,
-                entity.Status,
+            panelRealtime.Notify(
+                [PanelChangeKind.Responses, PanelChangeKind.NavBadges],
+                worker.OfficeId,
+                worker.Id,
                 entity.ErrorMessage);
-        }
-
-        if (string.IsNullOrWhiteSpace(webhookUrl))
-        {
-            entity.Status = ResponseStatuses.ActionRequired;
-            entity.ErrorMessage = "Не настроен валидный вебхук Bitrix24 для офиса.";
-            await db.SaveChangesAsync(ct);
-            return new WorkerCandidateIngestionItemResultDto(
-                entity.Id,
-                candidate.SourceResponseId,
-                entity.Status,
-                entity.ErrorMessage);
-        }
-
-        var lead = MapLead(entity);
-        var bitrixResult = await bitrixClient.CreateLeadAsync(lead, webhookUrl, bitrixOptions.Value, ct);
-        if (bitrixResult.IsSuccess)
-        {
-            entity.Status = ResponseStatuses.Sent;
-            entity.BitrixEntityId = bitrixResult.EntityId;
-            entity.BitrixContactId = bitrixResult.ContactId;
-            entity.ErrorMessage = string.Empty;
-        }
-        else
-        {
-            entity.Status = ResponseStatuses.Error;
-            entity.ErrorMessage = bitrixResult.Error;
-            entity.BitrixContactId = bitrixResult.ContactId;
         }
 
         await db.SaveChangesAsync(ct);
@@ -244,9 +213,7 @@ public sealed class CandidateIngestionService(
         OfficeScope scope,
         CancellationToken ct = default)
     {
-        var entity = await db.CandidateResponses
-            .Include(x => x.Worker)
-            .FirstOrDefaultAsync(x => x.Id == responseId, ct);
+        var entity = await db.CandidateResponses.FirstOrDefaultAsync(x => x.Id == responseId, ct);
         if (entity is null)
         {
             return new ResendBitrixResultDto(false, ResponseStatuses.Error, null, "Отклик не найден.");
@@ -257,95 +224,59 @@ public sealed class CandidateIngestionService(
             return new ResendBitrixResultDto(false, ResponseStatuses.Error, null, "Нет доступа к отклику.");
         }
 
-        if (!await officeBitrixSettings.IsTransmissionEnabledAsync(entity.OfficeId, ct))
+        if (entity.BitrixInstanceId is Guid)
         {
-            entity.Status = ResponseStatuses.ActionRequired;
-            entity.ErrorMessage = "Передача в Bitrix24 отключена.";
-            entity.ProcessedAt = DateTime.UtcNow;
-            await db.SaveChangesAsync(ct);
-            return new ResendBitrixResultDto(false, entity.Status, null, entity.ErrorMessage);
+            var result = await manualBitrixSend.SendAsync(responseId, entity.BitrixInstanceId.Value, scope, ct);
+            return new ResendBitrixResultDto(
+                result.Success,
+                result.Status,
+                result.BitrixEntityId,
+                result.ErrorMessage);
         }
 
-        var webhookUrl = await webhookResolver.ResolvePrimaryForIngestionAsync(entity.OfficeId, ct);
-        if (string.IsNullOrWhiteSpace(webhookUrl))
-        {
-            entity.Status = ResponseStatuses.ActionRequired;
-            entity.ErrorMessage = "Не настроен валидный вебхук Bitrix24 для офиса.";
-            entity.ProcessedAt = DateTime.UtcNow;
-            await db.SaveChangesAsync(ct);
-            return new ResendBitrixResultDto(false, entity.Status, null, entity.ErrorMessage);
-        }
-
-        var duplicate = await duplicateService.CheckAsync(
-            entity,
-            webhookUrl,
-            bitrixOptions.Value.CheckDuplicatesInBitrix,
-            ct);
-        entity.IsLocalDuplicate = duplicate.IsLocalDuplicate;
-        entity.IsBitrixDuplicate = duplicate.IsBitrixDuplicate;
-        entity.DuplicateSummary = duplicate.Summary;
-
-        if (duplicate.IsDuplicate)
-        {
-            entity.Status = ResponseStatuses.Duplicate;
-            entity.ProcessedAt = DateTime.UtcNow;
-            await db.SaveChangesAsync(ct);
-            return new ResendBitrixResultDto(false, entity.Status, null, entity.DuplicateSummary);
-        }
-
-        if (duplicate.ShouldDeferBitrixSend)
-        {
-            entity.Status = ResponseStatuses.ActionRequired;
-            entity.ErrorMessage = duplicate.BitrixCheckUnavailableReason ?? duplicate.Summary;
-            entity.ProcessedAt = DateTime.UtcNow;
-            await db.SaveChangesAsync(ct);
-            return new ResendBitrixResultDto(false, entity.Status, null, entity.ErrorMessage);
-        }
-
-        var bitrixResult = await bitrixClient.CreateLeadAsync(
-            MapLead(entity),
-            webhookUrl,
-            bitrixOptions.Value,
-            ct);
+        var plan = await distributionEngine.GetPlanAsync(entity.OfficeId, ct);
+        var distributionResult = await autoDistribution.DistributeAsync(entity, plan, ct);
+        ApplyDistributionResult(entity, distributionResult);
         entity.ProcessedAt = DateTime.UtcNow;
-        if (bitrixResult.IsSuccess)
-        {
-            entity.Status = ResponseStatuses.Sent;
-            entity.BitrixEntityId = bitrixResult.EntityId;
-            entity.BitrixContactId = bitrixResult.ContactId;
-            entity.ErrorMessage = string.Empty;
-            await db.SaveChangesAsync(ct);
-            return new ResendBitrixResultDto(true, entity.Status, entity.BitrixEntityId, null);
-        }
-
-        entity.Status = ResponseStatuses.Error;
-        entity.ErrorMessage = bitrixResult.Error;
-        entity.BitrixContactId = bitrixResult.ContactId;
         await db.SaveChangesAsync(ct);
-        return new ResendBitrixResultDto(false, entity.Status, null, entity.ErrorMessage);
+
+        return new ResendBitrixResultDto(
+            distributionResult.Status == ResponseStatuses.Sent,
+            distributionResult.Status,
+            distributionResult.BitrixEntityId,
+            distributionResult.ErrorMessage);
     }
 
-    private static CandidateLead MapLead(CandidateResponseEntity entity) => new()
+    private static void ApplyDistributionResult(CandidateResponseEntity entity, AutoDistributionResult result)
     {
-        AccountId = entity.AccountId,
-        AccountName = entity.AccountName,
-        Source = entity.Source,
-        SourceResponseId = entity.SourceResponseId,
-        FullName = entity.FullName,
-        FirstName = entity.FirstName,
-        LastName = entity.LastName,
-        MiddleName = entity.MiddleName,
-        Age = entity.Age,
-        PhoneRaw = entity.PhoneRaw,
-        PhoneNormalized = entity.PhoneNormalized,
-        City = entity.City,
-        Vacancy = entity.Vacancy,
-        VacancyUrl = entity.VacancyUrl,
-        MessengerUrl = entity.MessengerUrl,
-        AvitoSubProfileId = entity.AvitoSubProfileId,
-        RawText = entity.RawText,
-        CreatedAt = entity.CreatedAt
-    };
+        entity.Status = result.Status;
+        entity.BitrixInstanceId = result.BitrixInstanceId;
+        entity.BitrixEntityId = result.BitrixEntityId ?? string.Empty;
+        entity.BitrixContactId = result.BitrixContactId ?? string.Empty;
+        entity.DistributionMode = string.IsNullOrWhiteSpace(result.DistributionMode)
+            ? DistributionModes.Auto
+            : result.DistributionMode;
+        entity.IsBitrixDuplicate = result.IsBitrixDuplicate;
+        entity.DuplicateBitrixInstanceId = result.DuplicateBitrixInstanceId;
+        entity.DuplicateSummary = result.DuplicateSummary ?? string.Empty;
+        entity.ErrorMessage = result.ErrorMessage ?? string.Empty;
+    }
+
+    private static string ResolveCardFingerprint(WorkerCandidateDto candidate)
+    {
+        if (!string.IsNullOrWhiteSpace(candidate.CardFingerprint))
+        {
+            return candidate.CardFingerprint.Trim();
+        }
+
+        return AvitoResponseCardFingerprint.Build(
+            candidate.FullName,
+            candidate.Vacancy,
+            candidate.City,
+            candidate.VacancyUrl,
+            candidate.MessengerUrl,
+            AvitoResponseCardFingerprint.NormalizeAgeText(null, candidate.Age));
+    }
 
     private static WorkerCandidateIngestionResultDto EmptyResult(int received) =>
         new(received, 0, 0, received, []);

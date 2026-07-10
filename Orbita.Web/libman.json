@@ -28,6 +28,15 @@
       "files": [
         "dist/browser/signalr.min.js"
       ]
+    },
+    {
+      "provider": "jsdelivr",
+      "library": "drawflow@0.0.60",
+      "destination": "wwwroot/lib/drawflow/",
+      "files": [
+        "dist/drawflow.min.css",
+        "dist/drawflow.min.js"
+      ]
     }
   ]
 }

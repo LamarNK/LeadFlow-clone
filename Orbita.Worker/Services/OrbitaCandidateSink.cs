@@ -122,6 +122,7 @@ public sealed class OrbitaCandidateSink(
             candidate.AccountName,
             candidate.Source,
             candidate.SourceResponseId,
+            candidate.CardFingerprint,
             candidate.FullName,
             candidate.Age,
             candidate.PhoneRaw,

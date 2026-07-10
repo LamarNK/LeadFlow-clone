@@ -16,6 +16,7 @@ public sealed record SettingsIndexViewModel
     public ProfileSettingsViewModel? Profile { get; init; }
     public ServiceLogsViewModel? Logs { get; init; }
     public BitrixIntegrationsSettingsViewModel? Integrations { get; init; }
+    public BitrixDistributionSettingsViewModel? BitrixDistribution { get; init; }
     public WorkerReleasesSettingsViewModel? WorkerReleases { get; init; }
     public OfficesSettingsViewModel? Offices { get; init; }
     public LeadFlowImportSettingsViewModel? LeadFlowImport { get; init; }
@@ -265,6 +266,15 @@ public sealed class RenameAdminWorkerFormModel
 public sealed class BitrixIntegrationsSettingsViewModel
 {
     public IReadOnlyList<BitrixIntegrationRowViewModel> Rows { get; init; } = [];
+}
+
+public sealed class BitrixDistributionSettingsViewModel
+{
+    public Guid? SelectedOfficeId { get; init; }
+    public string? SelectedOfficeName { get; init; }
+    public IReadOnlyList<EventFilterOptionViewModel> OfficeOptions { get; init; } = [];
+    public BitrixInstancesRegistryViewModel? BitrixInstances { get; init; }
+    public DistributionEditorViewModel? Distribution { get; init; }
 }
 
 public sealed class BitrixIntegrationRowViewModel

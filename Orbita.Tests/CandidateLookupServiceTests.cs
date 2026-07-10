@@ -110,6 +110,97 @@ public sealed class CandidateLookupServiceTests
     }
 
     [Fact]
+    public async Task LookupAsync_CardFingerprints_MatchesStoredFingerprint()
+    {
+        await using var db = CreateDb();
+        SeedWorker(db);
+        const string fingerprint = "avito-card:msg:test-channel";
+        db.CandidateResponses.Add(NewResponse(
+            "79008888888",
+            "sub-a",
+            cardFingerprint: fingerprint));
+        await db.SaveChangesAsync();
+
+        var sut = new CandidateLookupService(db);
+        var result = await sut.LookupAsync(
+            WorkerId,
+            new WorkerCandidateLookupRequest(
+                AccountId,
+                "PerAvitoAccount",
+                [],
+                [],
+                AvitoSubProfileId: "sub-a",
+                CardFingerprints: [fingerprint, "avito-card:unknown"]));
+
+        Assert.NotNull(result);
+        Assert.Equal([fingerprint], result!.ExistingCardFingerprints);
+    }
+
+    [Fact]
+    public async Task LookupAsync_CardFingerprints_FiltersBySubProfile()
+    {
+        await using var db = CreateDb();
+        SeedWorker(db);
+        const string fingerprint = "avito-card:msg:sub-b-only";
+        db.CandidateResponses.Add(NewResponse(
+            "79009999999",
+            "sub-b",
+            cardFingerprint: fingerprint));
+        await db.SaveChangesAsync();
+
+        var sut = new CandidateLookupService(db);
+        var result = await sut.LookupAsync(
+            WorkerId,
+            new WorkerCandidateLookupRequest(
+                AccountId,
+                "PerAvitoAccount",
+                [],
+                [],
+                AvitoSubProfileId: "sub-a",
+                CardFingerprints: [fingerprint]));
+
+        Assert.NotNull(result);
+        Assert.Empty(result!.ExistingCardFingerprints);
+    }
+
+    [Fact]
+    public async Task LookupAsync_CardFingerprints_RecomputesLegacyRowsWithNormalizedAge()
+    {
+        await using var db = CreateDb();
+        SeedWorker(db);
+        var legacyFingerprint = AvitoResponseCardFingerprint.Build(
+            "Иван Иванов",
+            "Слесарь",
+            "Москва",
+            "https://www.avito.ru/moskva/vakansii/slesar_8072057107",
+            null,
+            AvitoResponseCardFingerprint.NormalizeAgeText(null, 42));
+        db.CandidateResponses.Add(NewResponse(
+            "79001010101",
+            "sub-a",
+            fullName: "Иван Иванов",
+            vacancy: "Слесарь",
+            city: "Москва",
+            vacancyUrl: "https://www.avito.ru/moskva/vakansii/slesar_8072057107",
+            age: 42));
+        await db.SaveChangesAsync();
+
+        var sut = new CandidateLookupService(db);
+        var result = await sut.LookupAsync(
+            WorkerId,
+            new WorkerCandidateLookupRequest(
+                AccountId,
+                "PerAvitoAccount",
+                [],
+                [],
+                AvitoSubProfileId: "sub-a",
+                CardFingerprints: [legacyFingerprint]));
+
+        Assert.NotNull(result);
+        Assert.Equal([legacyFingerprint], result!.ExistingCardFingerprints);
+    }
+
+    [Fact]
     public async Task LookupAsync_BatchPhones_IgnoresOtherOffices()
     {
         await using var db = CreateDb();
@@ -168,7 +259,13 @@ public sealed class CandidateLookupServiceTests
         Guid? accountId = null,
         Guid? officeId = null,
         string? sourceResponseId = null,
-        DateTime? createdAt = null) =>
+        DateTime? createdAt = null,
+        string? cardFingerprint = null,
+        string? fullName = null,
+        string? vacancy = null,
+        string? city = null,
+        string? vacancyUrl = null,
+        int? age = null) =>
         new()
         {
             Id = Guid.NewGuid(),
@@ -178,9 +275,14 @@ public sealed class CandidateLookupServiceTests
             AccountName = "acc",
             Source = "Avito",
             SourceResponseId = sourceResponseId ?? Guid.NewGuid().ToString("N"),
-            FullName = "User",
+            CardFingerprint = cardFingerprint ?? string.Empty,
+            FullName = fullName ?? "User",
             PhoneRaw = phone,
             PhoneNormalized = phone,
+            Vacancy = vacancy ?? string.Empty,
+            City = city ?? string.Empty,
+            VacancyUrl = vacancyUrl ?? string.Empty,
+            Age = age,
             AvitoSubProfileId = subProfileId,
             Status = ResponseStatuses.Sent,
             CreatedAt = createdAt ?? DateTime.UtcNow

@@ -1,4 +1,5 @@
 using LeadFlow.Core.Services.Avito;
+using LeadFlow.Core.Services.Browser;
 
 namespace LeadFlow.Core.Services.AdsPower;
 
@@ -32,4 +33,9 @@ public interface IAdsPowerAccountSession : IAsyncDisposable
     Task<AvitoPageState?> GetPageStateAsync(CancellationToken cancellationToken = default);
 
     Task<byte[]?> CapturePageScreenshotAsync(CancellationToken cancellationToken = default);
+
+    Task<byte[]?> CapturePageJpegScreenshotAsync(CancellationToken cancellationToken = default);
+
+    Task<BrowserMonitorScreencastCapture> CreateMonitorScreencastCaptureAsync(
+        CancellationToken cancellationToken = default);
 }

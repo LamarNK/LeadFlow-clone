@@ -28,9 +28,9 @@
         </nav>
         <div class="orbita-browser-monitor-page__title-row">
             <div>
-                <h1 class="orbita-browser-monitor-page__title">Просмотр всех браузеров</h1>
+                <h1 class="orbita-browser-monitor-page__title">Активные браузеры</h1>
                 <p class="orbita-browser-monitor-page__subtitle">
-                    @Model.WorkerName
+                    @Model.WorkerName — только открытые на воркере сессии
                     @if (!Model.IsEnabled)
                     {
                         <span class="status-dot offline">Приостановлен</span>
@@ -48,7 +48,7 @@
                 Только просмотр
             </div>
         </div>
-        <p class="orbita-browser-monitor-page__status" data-browser-monitor-status>Инициализация…</p>
+        <p class="orbita-browser-monitor-page__status" data-browser-monitor-status aria-live="polite" aria-atomic="true">Инициализация…</p>
     </header>
     <div data-browser-monitor-grid></div>
 </div>

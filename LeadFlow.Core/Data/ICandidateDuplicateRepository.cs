@@ -26,4 +26,14 @@ public interface ICandidateDuplicateRepository
         Guid accountId,
         IEnumerable<string> sourceResponseIds,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Какие из ключей карточек Avito (без телефона) уже есть в локальной базе для аккаунта / суб-профиля.
+    /// </summary>
+    Task<HashSet<string>> GetExistingCardFingerprintsAsync(
+        IEnumerable<string> cardFingerprintCandidates,
+        DuplicateScope scope,
+        Guid accountId,
+        CancellationToken cancellationToken,
+        string? avitoSubProfileId = null);
 }

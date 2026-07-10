@@ -109,10 +109,7 @@ public sealed class WorkerApiKeyAuthenticationHandler(
         return (true, token, null, null);
     }
 
-    private static bool IsHubPath(PathString path) =>
-        path.StartsWithSegments("/hubs/captcha", StringComparison.OrdinalIgnoreCase)
-        || path.StartsWithSegments("/hubs/panel", StringComparison.OrdinalIgnoreCase)
-        || path.StartsWithSegments("/hubs/worker", StringComparison.OrdinalIgnoreCase);
+    private static bool IsHubPath(PathString path) => WorkerHubPaths.IsWorkerHubPath(path);
 
     private async Task LogAuthFailureAsync(
         string reason,

@@ -17,6 +17,7 @@ public sealed class ResponsesIndexViewModel
     public IReadOnlyList<EventFilterOptionViewModel> Workers { get; init; } = [];
     public IReadOnlyList<EventFilterOptionViewModel> Accounts { get; init; } = [];
     public IReadOnlyList<ResponseRowViewModel> Responses { get; init; } = [];
+    public IReadOnlyList<SendBitrixInstanceOptionViewModel> SendBitrixInstances { get; init; } = [];
     public PaginationViewModel Pagination { get; init; } = new();
     public ResponseDetailViewModel? Selected { get; init; }
     public bool HasActiveFilters { get; init; }
@@ -63,7 +64,30 @@ public sealed class ResponseRowViewModel
     public bool HasMessenger { get; init; }
     public string? BitrixEntityId { get; init; }
     public string? BitrixEntityUrl { get; init; }
+    public string? BitrixLabel { get; init; }
+    public IReadOnlyList<ResponseBitrixDeliveryViewModel> BitrixDeliveries { get; init; } = [];
+    public string CardCopy { get; init; } = string.Empty;
+    public bool CanSend { get; init; }
     public bool CanResend { get; init; }
+}
+
+public sealed class ResponseBitrixDeliveryViewModel
+{
+    public Guid Id { get; init; }
+    public string BitrixLabel { get; init; } = string.Empty;
+    public string Outcome { get; init; } = string.Empty;
+    public string OutcomeLabel { get; init; } = string.Empty;
+    public string ChipTone { get; init; } = "muted";
+    public string? BitrixEntityUrl { get; init; }
+    public string? ErrorMessage { get; init; }
+    public DateTime CreatedAtUtc { get; init; }
+}
+
+public sealed class SendBitrixInstanceOptionViewModel
+{
+    public required Guid Id { get; init; }
+    public required string Label { get; init; }
+    public string? PortalHost { get; init; }
 }
 
 public sealed class ResponseDetailViewModel
@@ -94,10 +118,38 @@ public sealed class ResponseDetailViewModel
     public string? DuplicateSummary { get; init; }
     public string? BitrixEntityId { get; init; }
     public string? BitrixEntityUrl { get; init; }
+    public string? BitrixInstanceName { get; init; }
+    public string? BitrixInstanceSignature { get; init; }
+    public string? DuplicateBitrixInstanceName { get; init; }
     public string? ErrorMessage { get; init; }
     public string RawText { get; init; } = string.Empty;
     public IReadOnlyList<Formatting.ResponseChatMessageViewModel> ChatMessages { get; init; } = [];
     public DateTime CreatedAtUtc { get; init; }
     public DateTime? ProcessedAtUtc { get; init; }
+    public IReadOnlyList<ResponseBitrixDeliveryViewModel> BitrixDeliveries { get; init; } = [];
+    public string CardCopy { get; init; } = string.Empty;
+    public bool CanSend { get; init; }
     public bool CanResend { get; init; }
+}
+
+public sealed class BulkSendResponsesToBitrixFormModel
+{
+    public List<Guid> ResponseIds { get; set; } = [];
+    public Guid BitrixInstanceId { get; set; }
+}
+
+public sealed class SendResponseToBitrixFormModel
+{
+    public Guid Id { get; set; }
+    public Guid BitrixInstanceId { get; set; }
+    public string? From { get; set; }
+    public string? To { get; set; }
+    public string? Status { get; set; }
+    public Guid? WorkerId { get; set; }
+    public Guid? AccountId { get; set; }
+    public string? Vacancy { get; set; }
+    public string? Search { get; set; }
+    public int Page { get; set; } = 1;
+    public string? Sort { get; set; }
+    public string? Dir { get; set; }
 }

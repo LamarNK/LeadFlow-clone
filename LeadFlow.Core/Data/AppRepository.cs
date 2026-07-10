@@ -3,6 +3,7 @@ using LeadFlow.Core;
 using LeadFlow.Core.Models;
 using LeadFlow.Core.Services;
 using LeadFlow.Core.Services.Avito;
+using Orbita.Contracts;
 using Microsoft.EntityFrameworkCore;
 
 namespace LeadFlow.Core.Data;
@@ -413,6 +414,75 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
             matched.Count,
             phonesMatched: 0,
             []);
+        return matched;
+    }
+
+    public async Task<HashSet<string>> GetExistingCardFingerprintsAsync(
+        IEnumerable<string> cardFingerprintCandidates,
+        DuplicateScope scope,
+        Guid accountId,
+        CancellationToken cancellationToken,
+        string? avitoSubProfileId = null)
+    {
+        var distinct = cardFingerprintCandidates
+            .Where(static x => !string.IsNullOrWhiteSpace(x))
+            .Select(static x => x.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (distinct.Count == 0)
+        {
+            return [];
+        }
+
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        IQueryable<CandidateResponseEntity> query = db.CandidateResponses.AsNoTracking();
+
+        var subProfileId = avitoSubProfileId?.Trim();
+        if (!string.IsNullOrWhiteSpace(subProfileId))
+        {
+            query = query
+                .Where(x => x.AccountId == accountId)
+                .Where(x => x.AvitoSubProfileId == subProfileId);
+        }
+        else if (scope == DuplicateScope.PerAvitoAccount)
+        {
+            query = query.Where(x => x.AccountId == accountId);
+        }
+
+        var rows = await query
+            .Select(x => new
+            {
+                x.CardFingerprint,
+                x.FullName,
+                x.Vacancy,
+                x.City,
+                x.VacancyUrl,
+                x.SourceUrl,
+                x.MessengerUrl,
+                x.Age
+            })
+            .ToListAsync(cancellationToken);
+
+        var candidateSet = distinct.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var matched = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var row in rows)
+        {
+            var fingerprint = !string.IsNullOrWhiteSpace(row.CardFingerprint)
+                ? row.CardFingerprint.Trim()
+                : AvitoResponseCardFingerprint.Build(
+                    row.FullName,
+                    row.Vacancy,
+                    row.City,
+                    string.IsNullOrWhiteSpace(row.VacancyUrl) ? row.SourceUrl : row.VacancyUrl,
+                    row.MessengerUrl,
+                    AvitoResponseCardFingerprint.NormalizeAgeText(null, row.Age));
+
+            if (candidateSet.Contains(fingerprint))
+            {
+                matched.Add(fingerprint);
+            }
+        }
+
         return matched;
     }
 
@@ -1312,6 +1382,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         AccountName = model.AccountName,
         Source = model.Source,
         SourceResponseId = model.SourceResponseId,
+        CardFingerprint = model.CardFingerprint,
         FullName = model.FullName,
         FirstName = model.FirstName,
         LastName = model.LastName,
@@ -1344,6 +1415,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         AccountName = entity.AccountName,
         Source = entity.Source,
         SourceResponseId = entity.SourceResponseId,
+        CardFingerprint = entity.CardFingerprint,
         FullName = entity.FullName,
         FirstName = entity.FirstName,
         LastName = entity.LastName,
@@ -1374,6 +1446,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         target.AccountName = source.AccountName;
         target.Source = source.Source;
         target.SourceResponseId = source.SourceResponseId;
+        target.CardFingerprint = source.CardFingerprint;
         target.FullName = source.FullName;
         target.FirstName = source.FirstName;
         target.LastName = source.LastName;
@@ -1540,6 +1613,14 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         {
             await db.Database.ExecuteSqlRawAsync(
                 "ALTER TABLE CandidateResponses ADD COLUMN AvitoSubProfileName TEXT NOT NULL DEFAULT '';",
+                cancellationToken);
+        }
+
+        existingColumns = await GetTableColumnsAsync(db, "CandidateResponses", cancellationToken);
+        if (!existingColumns.Contains("CardFingerprint"))
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                "ALTER TABLE CandidateResponses ADD COLUMN CardFingerprint TEXT NOT NULL DEFAULT '';",
                 cancellationToken);
         }
     }

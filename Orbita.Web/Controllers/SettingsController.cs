@@ -1,7 +1,9 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
+using Orbita.Contracts;
 using Orbita.Web.Authorization;
+using Orbita.Web.Helpers;
 using Orbita.Web.Models.ViewModels;
 using Orbita.Web.Services;
 
@@ -21,12 +23,13 @@ public sealed class SettingsController(
         string? action,
         string? userId,
         Guid? officeId,
+        Guid? instanceId,
         Guid? workerId,
         DateTime? date,
         int page = 1,
         CancellationToken ct = default)
     {
-        var model = await settings.GetIndexAsync(tab, q, level, service, date, action, userId, officeId, workerId, page, ct);
+        var model = await settings.GetIndexAsync(tab, q, level, service, date, action, userId, officeId, instanceId, workerId, page, ct);
         model = model with
         {
             StatusMessage = TempData["SettingsStatus"] as string ?? model.StatusMessage,
@@ -276,13 +279,10 @@ public sealed class SettingsController(
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> SaveOfficeBitrix(SaveOfficeBitrixIntegrationFormModel model, CancellationToken ct = default)
+    public Task<IActionResult> SaveOfficeBitrix(SaveOfficeBitrixIntegrationFormModel model, CancellationToken ct = default)
     {
-        var (success, error) = await settings.SaveOfficeBitrixAsync(model.OfficeId, model.WebhookUrl, ct);
-        TempData[success ? "SettingsStatus" : "SettingsError"] = success
-            ? "Вебхук Bitrix24 офиса сохранён и проверен."
-            : error;
-        return RedirectToAction(nameof(Index), new { tab = "offices", officeId = model.OfficeId });
+        TempData["SettingsError"] = "Настройка вебхука перенесена на вкладку «Битриксы и связи». Добавьте или обновите Битрикс в реестре интеграций.";
+        return Task.FromResult<IActionResult>(RedirectToAction(nameof(Index), new { tab = "bitrix", officeId = model.OfficeId }));
     }
 
     [HttpPost]
@@ -353,6 +353,114 @@ public sealed class SettingsController(
         }
 
         return Json(result);
+    }
+
+    [HttpGet]
+    public IActionResult CreateBitrixInstance(Guid officeId, string? tab = "integrations") =>
+        RedirectToAction(nameof(Index), new { tab, officeId, instanceId = Guid.Empty });
+
+    [HttpGet]
+    public IActionResult EditBitrixInstance(Guid officeId, Guid id, string? tab = "integrations") =>
+        RedirectToAction(nameof(Index), new { tab, officeId, instanceId = id });
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SaveBitrixInstance(
+        SaveBitrixInstanceFormModel model,
+        Guid officeId,
+        CancellationToken ct = default)
+    {
+        var (success, error, instanceId) = await settings.SaveBitrixInstanceAsync(model, officeId, ct);
+        TempData[success ? "SettingsStatus" : "SettingsError"] = success
+            ? model.Id is Guid existingId && existingId != Guid.Empty
+                ? "Битрикс обновлён."
+                : "Битрикс создан."
+            : error;
+        return RedirectToAction(nameof(Index), new
+        {
+            tab = "integrations",
+            officeId,
+            instanceId = success ? instanceId : model.Id
+        });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> DeleteBitrixInstance(Guid id, Guid officeId, CancellationToken ct = default)
+    {
+        var (success, error) = await settings.DeleteBitrixInstanceAsync(id, officeId, ct);
+        TempData[success ? "SettingsStatus" : "SettingsError"] = success
+            ? "Битрикс удалён."
+            : error;
+        return RedirectToAction(nameof(Index), new { tab = "integrations", officeId });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ValidateAdminBitrixInstance(
+        ValidateBitrixInstanceFormModel model,
+        Guid officeId,
+        [FromServices] OrbitaApiClient api,
+        CancellationToken ct = default)
+    {
+        var webhookUrl = string.IsNullOrWhiteSpace(model.WebhookUrl) ? null : model.WebhookUrl.Trim();
+        var (validation, error) = model.Id != Guid.Empty
+            ? await api.ValidateBitrixInstanceAsync(model.Id, webhookUrl, officeId, ct)
+            : await api.ValidateBitrixWebhookAsync(webhookUrl, officeId, ct);
+        if (validation is null)
+        {
+            return BadRequest(new { error = error ?? "Не удалось выполнить проверку вебхука." });
+        }
+
+        return Json(validation);
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SaveBitrixTransmission(
+        SaveBitrixTransmissionFormModel model,
+        Guid officeId,
+        CancellationToken ct = default)
+    {
+        var transmissionEnabled = FormBindingHelper.ReadCheckbox(Request.Form, "TransmissionEnabled");
+        var (success, error) = await settings.SaveBitrixTransmissionAsync(officeId, transmissionEnabled, ct);
+        TempData[success ? "SettingsStatus" : "SettingsError"] = success
+            ? transmissionEnabled
+                ? "Автораспределение откликов включено."
+                : "Автораспределение откликов отключено."
+            : error;
+        return RedirectToAction(nameof(Index), new { tab = "integrations", officeId });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SaveAdminDistributionRoute(
+        SaveDistributionRouteFormModel model,
+        Guid officeId,
+        CancellationToken ct = default)
+    {
+        IReadOnlyList<SaveDistributionNodeRequest> nodes;
+        try
+        {
+            nodes = System.Text.Json.JsonSerializer.Deserialize<List<SaveDistributionNodeRequest>>(model.NodesJson)
+                ?? [];
+        }
+        catch
+        {
+            TempData["SettingsError"] = "Некорректная схема связей.";
+            return RedirectToAction(nameof(Index), new { tab = "integrations", officeId });
+        }
+
+        var autoEnabled = FormBindingHelper.ReadCheckbox(Request.Form, "IsAutoDistributionEnabled");
+        var (success, error) = await settings.SaveDistributionRouteAsync(
+            autoEnabled,
+            nodes,
+            officeId,
+            ct);
+        TempData[success ? "SettingsStatus" : "SettingsError"] = success
+            ? "Схема связей сохранена."
+            : error;
+        return RedirectToAction(nameof(Index), new { tab = "integrations", officeId });
     }
 
     [HttpPost]

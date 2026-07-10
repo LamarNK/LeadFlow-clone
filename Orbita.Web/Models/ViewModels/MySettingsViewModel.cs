@@ -9,15 +9,44 @@ public sealed record MySettingsIndexViewModel
     public required string ActiveTab { get; init; }
     public required IReadOnlyList<SettingsTabViewModel> Tabs { get; init; }
     public ProfileSettingsViewModel? Profile { get; init; }
-    public BitrixSettingsViewModel? Bitrix { get; init; }
+    public BitrixInstancesRegistryViewModel? BitrixInstances { get; init; }
+    public DistributionEditorViewModel? Distribution { get; init; }
     public string? StatusMessage { get; init; }
     public string? ErrorMessage { get; init; }
 }
 
-public sealed class BitrixSettingsViewModel
+public sealed class BitrixInstancesRegistryViewModel
 {
     public Guid? OfficeId { get; init; }
     public string? OfficeName { get; init; }
+    public bool CanManage { get; init; }
+    public bool CanManageTransmission { get; init; }
+    public bool TransmissionEnabled { get; init; } = true;
+    public IReadOnlyList<BitrixInstanceListItemViewModel> Instances { get; init; } = [];
+    public BitrixInstanceEditorViewModel? Editor { get; init; }
+}
+
+public sealed class BitrixInstanceListItemViewModel
+{
+    public required Guid Id { get; init; }
+    public required string Name { get; init; }
+    public string Signature { get; init; } = string.Empty;
+    public string DisplayLabel { get; init; } = string.Empty;
+    public string? PortalHost { get; init; }
+    public required string ValidationStatus { get; init; }
+    public string? ValidationMessage { get; init; }
+    public string ValidationStatusLabel { get; init; } = string.Empty;
+    public string ValidationStatusTone { get; init; } = "neutral";
+    public bool IsEnabled { get; init; } = true;
+}
+
+public sealed class BitrixInstanceEditorViewModel
+{
+    public Guid? Id { get; init; }
+    public bool IsNew { get; init; }
+    public string Name { get; init; } = string.Empty;
+    public string Signature { get; init; } = string.Empty;
+    public string DisplayLabel { get; init; } = string.Empty;
     public string? MaskedWebhookUrl { get; init; }
     public string? PortalHost { get; init; }
     public required string ValidationStatus { get; init; }
@@ -25,19 +54,20 @@ public sealed class BitrixSettingsViewModel
     public DateTime? LastValidatedAtUtc { get; init; }
     public string ValidationStatusLabel { get; init; } = string.Empty;
     public string ValidationStatusTone { get; init; } = "neutral";
-    public bool CanManageWebhook { get; init; }
-    public bool CanManageTransmission { get; init; }
-    public bool TransmissionEnabled { get; init; } = true;
+    public bool IsEnabled { get; init; } = true;
     public string? DraftWebhookUrl { get; init; }
     public BitrixWebhookValidationDto? LiveValidation { get; init; }
 
-    public BitrixSettingsViewModel WithLiveValidation(
+    public BitrixInstanceEditorViewModel WithLiveValidation(
         string? draftWebhookUrl,
         BitrixWebhookValidationDto? liveValidation) =>
         new()
         {
-            OfficeId = OfficeId,
-            OfficeName = OfficeName,
+            Id = Id,
+            IsNew = IsNew,
+            Name = Name,
+            Signature = Signature,
+            DisplayLabel = DisplayLabel,
             MaskedWebhookUrl = MaskedWebhookUrl,
             PortalHost = PortalHost,
             ValidationStatus = ValidationStatus,
@@ -45,20 +75,44 @@ public sealed class BitrixSettingsViewModel
             LastValidatedAtUtc = LastValidatedAtUtc,
             ValidationStatusLabel = ValidationStatusLabel,
             ValidationStatusTone = ValidationStatusTone,
-            CanManageWebhook = CanManageWebhook,
-            CanManageTransmission = CanManageTransmission,
-            TransmissionEnabled = TransmissionEnabled,
+            IsEnabled = IsEnabled,
             DraftWebhookUrl = draftWebhookUrl,
             LiveValidation = liveValidation
         };
 }
 
-public sealed class SaveBitrixTransmissionFormModel
+public sealed class DistributionEditorViewModel
 {
-    public bool TransmissionEnabled { get; set; } = true;
+    public Guid? OfficeId { get; init; }
+    public string? OfficeName { get; init; }
+    public bool CanManage { get; init; }
+    public bool IsAutoDistributionEnabled { get; init; }
+    public required string RouteJson { get; init; }
+    public required string InstancesJson { get; init; }
 }
 
-public sealed class SaveBitrixIntegrationFormModel
+public sealed class SaveBitrixTransmissionFormModel
 {
-    public string WebhookUrl { get; set; } = string.Empty;
+    public bool TransmissionEnabled { get; set; }
+}
+
+public sealed class SaveBitrixInstanceFormModel
+{
+    public Guid? Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string Signature { get; set; } = string.Empty;
+    public string? WebhookUrl { get; set; }
+    public bool IsEnabled { get; set; } = true;
+}
+
+public sealed class ValidateBitrixInstanceFormModel
+{
+    public Guid Id { get; set; }
+    public string? WebhookUrl { get; set; }
+}
+
+public sealed class SaveDistributionRouteFormModel
+{
+    public bool IsAutoDistributionEnabled { get; set; }
+    public string NodesJson { get; set; } = "[]";
 }

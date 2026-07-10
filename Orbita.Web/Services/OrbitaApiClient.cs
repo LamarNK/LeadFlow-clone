@@ -144,22 +144,24 @@ public sealed class OrbitaApiClient(
         return buffer.Length == 0 ? (null, contentType) : (new MemoryStream(buffer), contentType);
     }
 
-    private string WithOfficeQuery(string url)
+    private string WithOfficeQuery(string url, Guid? officeId = null)
     {
-        if (officeContext.EffectiveOfficeId is not Guid officeId)
+        var resolvedOfficeId = officeId ?? officeContext.EffectiveOfficeId;
+        if (resolvedOfficeId is not Guid effectiveOfficeId)
         {
             return url;
         }
 
         var separator = url.Contains('?', StringComparison.Ordinal) ? '&' : '?';
-        return $"{url}{separator}officeId={officeId:D}";
+        return $"{url}{separator}officeId={effectiveOfficeId:D}";
     }
 
-    private void AppendOfficeQuery(List<string> parts)
+    private void AppendOfficeQuery(List<string> parts, Guid? officeId = null)
     {
-        if (officeContext.EffectiveOfficeId is Guid officeId)
+        var resolvedOfficeId = officeId ?? officeContext.EffectiveOfficeId;
+        if (resolvedOfficeId is Guid effectiveOfficeId)
         {
-            parts.Add($"officeId={officeId:D}");
+            parts.Add($"officeId={effectiveOfficeId:D}");
         }
     }
 
@@ -763,16 +765,21 @@ public sealed class OrbitaApiClient(
             ? Task.FromResult<OfficeBitrixIntegrationDto?>(DesignPreviewData.OfficeBitrixIntegration)
             : GetAsync<OfficeBitrixIntegrationDto>("api/v1/panel/office/integrations/bitrix", ct);
 
-    public Task<OfficeBitrixSettingsDto?> GetOfficeBitrixSettingsAsync(CancellationToken ct = default) =>
+    public Task<OfficeBitrixSettingsDto?> GetOfficeBitrixSettingsAsync(
+        Guid? officeId = null,
+        CancellationToken ct = default) =>
         _preview.Enabled
             ? Task.FromResult<OfficeBitrixSettingsDto?>(new OfficeBitrixSettingsDto(
                 DesignPreviewData.PreviewOfficeId,
                 "Основной",
                 true))
-            : GetAsync<OfficeBitrixSettingsDto>("api/v1/panel/office/bitrix-settings", ct);
+            : GetAsync<OfficeBitrixSettingsDto>(
+                WithOfficeQuery("api/v1/panel/office/bitrix-settings", officeId),
+                ct);
 
     public async Task<(OfficeBitrixSettingsDto? Settings, string? Error)> UpdateOfficeBitrixSettingsAsync(
         bool transmissionEnabled,
+        Guid? officeId = null,
         CancellationToken ct = default)
     {
         if (_preview.Enabled)
@@ -780,7 +787,9 @@ public sealed class OrbitaApiClient(
             return (new OfficeBitrixSettingsDto(DesignPreviewData.PreviewOfficeId, "Основной", transmissionEnabled), null);
         }
 
-        using var request = new HttpRequestMessage(HttpMethod.Put, "api/v1/panel/office/bitrix-settings");
+        using var request = new HttpRequestMessage(
+            HttpMethod.Put,
+            WithOfficeQuery("api/v1/panel/office/bitrix-settings", officeId));
         request.Content = JsonContent.Create(new UpdateOfficeBitrixSettingsRequest(transmissionEnabled));
         using var response = await SendAuthenticatedAsync(request, ct);
         if (response is null)
@@ -876,6 +885,240 @@ public sealed class OrbitaApiClient(
         }
 
         return await response.Content.ReadFromJsonAsync<ResendBitrixResultDto>(ct);
+    }
+
+    public Task<IReadOnlyList<BitrixInstanceListItemDto>?> GetBitrixInstancesAsync(
+        Guid? officeId = null,
+        CancellationToken ct = default) =>
+        _preview.Enabled
+            ? Task.FromResult<IReadOnlyList<BitrixInstanceListItemDto>?>(DesignPreviewData.PreviewBitrixInstances)
+            : GetAsync<IReadOnlyList<BitrixInstanceListItemDto>>(
+                WithOfficeQuery("api/v1/panel/bitrix-instances", officeId),
+                ct);
+
+    public Task<BitrixInstanceDto?> GetBitrixInstanceAsync(
+        Guid id,
+        Guid? officeId = null,
+        CancellationToken ct = default) =>
+        _preview.Enabled
+            ? Task.FromResult(DesignPreviewData.GetPreviewBitrixInstance(id))
+            : GetAsync<BitrixInstanceDto>(WithOfficeQuery($"api/v1/panel/bitrix-instances/{id:D}", officeId), ct);
+
+    public async Task<(BitrixInstanceDto? Instance, string? Error)> CreateBitrixInstanceAsync(
+        CreateBitrixInstanceRequest request,
+        Guid? officeId = null,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return (DesignPreviewData.GetPreviewBitrixInstance(Guid.Empty), null);
+        }
+
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, WithOfficeQuery("api/v1/panel/bitrix-instances", officeId));
+        httpRequest.Content = JsonContent.Create(request);
+        using var response = await SendAuthenticatedAsync(httpRequest, ct);
+        if (response is null)
+        {
+            return (null, InvalidApiSessionError);
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            return (null, await ReadApiErrorAsync(response, ct));
+        }
+
+        var instance = await response.Content.ReadFromJsonAsync<BitrixInstanceDto>(ApiJsonOptions, ct);
+        return instance is null ? (null, "Не удалось прочитать ответ API.") : (instance, null);
+    }
+
+    public async Task<(BitrixInstanceDto? Instance, string? Error)> UpdateBitrixInstanceAsync(
+        Guid id,
+        UpdateBitrixInstanceRequest request,
+        Guid? officeId = null,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return (DesignPreviewData.GetPreviewBitrixInstance(id), null);
+        }
+
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Put, WithOfficeQuery($"api/v1/panel/bitrix-instances/{id:D}", officeId));
+        httpRequest.Content = JsonContent.Create(request);
+        using var response = await SendAuthenticatedAsync(httpRequest, ct);
+        if (response is null)
+        {
+            return (null, InvalidApiSessionError);
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            return (null, await ReadApiErrorAsync(response, ct));
+        }
+
+        var instance = await response.Content.ReadFromJsonAsync<BitrixInstanceDto>(ApiJsonOptions, ct);
+        return instance is null ? (null, "Не удалось прочитать ответ API.") : (instance, null);
+    }
+
+    public async Task<(bool Success, string? Error)> DeleteBitrixInstanceAsync(
+        Guid id,
+        Guid? officeId = null,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return (true, null);
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Delete, WithOfficeQuery($"api/v1/panel/bitrix-instances/{id:D}", officeId));
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (false, InvalidApiSessionError);
+        }
+
+        return response.IsSuccessStatusCode
+            ? (true, null)
+            : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(BitrixWebhookValidationDto? Validation, string? Error)> ValidateBitrixWebhookAsync(
+        string? webhookUrl,
+        Guid? officeId = null,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return (DesignPreviewData.BitrixValidationOk, null);
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, WithOfficeQuery("api/v1/panel/bitrix-instances/validate-webhook", officeId));
+        request.Content = JsonContent.Create(new ValidateBitrixInstanceRequest(webhookUrl));
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (null, InvalidApiSessionError);
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            return (null, await ReadApiErrorAsync(response, ct));
+        }
+
+        var validation = await response.Content.ReadFromJsonAsync<BitrixWebhookValidationDto>(ApiJsonOptions, ct);
+        return validation is null ? (null, "Не удалось прочитать ответ API.") : (validation, null);
+    }
+
+    public async Task<(BitrixWebhookValidationDto? Validation, string? Error)> ValidateBitrixInstanceAsync(
+        Guid id,
+        string? webhookUrl,
+        Guid? officeId = null,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return (DesignPreviewData.BitrixValidationOk, null);
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, WithOfficeQuery($"api/v1/panel/bitrix-instances/{id:D}/validate", officeId));
+        request.Content = JsonContent.Create(new ValidateBitrixInstanceRequest(webhookUrl));
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (null, InvalidApiSessionError);
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            return (null, await ReadApiErrorAsync(response, ct));
+        }
+
+        var validation = await response.Content.ReadFromJsonAsync<BitrixWebhookValidationDto>(ApiJsonOptions, ct);
+        return validation is null ? (null, "Не удалось прочитать ответ API.") : (validation, null);
+    }
+
+    public Task<DistributionRouteDto?> GetDistributionRouteAsync(
+        Guid? officeId = null,
+        CancellationToken ct = default) =>
+        _preview.Enabled
+            ? Task.FromResult<DistributionRouteDto?>(DesignPreviewData.PreviewDistributionRoute)
+            : GetAsync<DistributionRouteDto>(WithOfficeQuery("api/v1/panel/distribution-route", officeId), ct);
+
+    public async Task<(DistributionRouteDto? Route, string? Error)> SaveDistributionRouteAsync(
+        SaveDistributionRouteRequest request,
+        Guid? officeId = null,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return (DesignPreviewData.PreviewDistributionRoute, null);
+        }
+
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Put, WithOfficeQuery("api/v1/panel/distribution-route", officeId));
+        httpRequest.Content = JsonContent.Create(request);
+        using var response = await SendAuthenticatedAsync(httpRequest, ct);
+        if (response is null)
+        {
+            return (null, InvalidApiSessionError);
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            return (null, await ReadApiErrorAsync(response, ct));
+        }
+
+        var route = await response.Content.ReadFromJsonAsync<DistributionRouteDto>(ApiJsonOptions, ct);
+        return route is null ? (null, "Не удалось прочитать ответ API.") : (route, null);
+    }
+
+    public async Task<SendBitrixResultDto?> SendResponseToBitrixAsync(
+        Guid id,
+        Guid bitrixInstanceId,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return new SendBitrixResultDto(true, ResponseStatuses.Sent, "1", bitrixInstanceId, "Основной", null);
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"api/v1/panel/responses/{id:D}/send-bitrix");
+        request.Content = JsonContent.Create(new SendResponseToBitrixRequest(bitrixInstanceId));
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null || !response.IsSuccessStatusCode)
+        {
+            return null;
+        }
+
+        return await response.Content.ReadFromJsonAsync<SendBitrixResultDto>(ApiJsonOptions, ct);
+    }
+
+    public async Task<(BulkSendBitrixResultDto? Result, string? Error)> BulkSendResponsesToBitrixAsync(
+        IReadOnlyList<Guid> responseIds,
+        Guid bitrixInstanceId,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            var items = responseIds
+                .Select(id => new BulkSendBitrixItemResultDto(id, true, ResponseStatuses.Sent, null))
+                .ToList();
+            return (new BulkSendBitrixResultDto(responseIds.Count, responseIds.Count, 0, items), null);
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/panel/responses/send-bitrix-bulk");
+        request.Content = JsonContent.Create(new BulkSendResponsesToBitrixRequest(responseIds, bitrixInstanceId));
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (null, InvalidApiSessionError);
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            return (null, await ReadApiErrorAsync(response, ct));
+        }
+
+        var result = await response.Content.ReadFromJsonAsync<BulkSendBitrixResultDto>(ApiJsonOptions, ct);
+        return result is null ? (null, "Не удалось прочитать ответ API.") : (result, null);
     }
 
     public async Task<(OfficeBitrixIntegrationDto? Integration, string? Error)> SaveOfficeBitrixIntegrationAsync(
@@ -1348,6 +1591,11 @@ public sealed class OrbitaApiClient(
         return response.IsSuccessStatusCode
             ? (true, null)
             : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<BrowserMonitorSessionDto?> GetBrowserMonitorSessionAsync(Guid sessionId, CancellationToken ct = default)
+    {
+        return await GetAsync<BrowserMonitorSessionDto>($"api/v1/panel/browser-monitor-sessions/{sessionId:D}", ct);
     }
 
     private sealed record ApiErrorResponse(string? Error);

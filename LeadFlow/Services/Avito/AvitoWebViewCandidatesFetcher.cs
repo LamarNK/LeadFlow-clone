@@ -71,6 +71,11 @@ public sealed class AvitoWebViewCandidatesFetcher(
                         account.Id,
                         settings.DuplicateScope,
                         phones,
+                        ct),
+                    async (fingerprints, ct) => (IReadOnlySet<string>)await avitoResponseSource.ResolveExistingCardFingerprintsAsync(
+                        account.Id,
+                        settings.DuplicateScope,
+                        fingerprints,
                         ct)).ConfigureAwait(false);
 
                 var raw = await automationService.ExecuteScriptAsync(

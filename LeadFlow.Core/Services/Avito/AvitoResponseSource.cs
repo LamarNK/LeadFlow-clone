@@ -32,6 +32,19 @@ public sealed class AvitoResponseSource(
             cancellationToken,
             avitoSubProfileId);
 
+    public Task<HashSet<string>> ResolveExistingCardFingerprintsAsync(
+        Guid accountId,
+        DuplicateScope duplicateScope,
+        IEnumerable<string> cardFingerprintCandidates,
+        CancellationToken cancellationToken,
+        string? avitoSubProfileId = null) =>
+        duplicateRepository.GetExistingCardFingerprintsAsync(
+            cardFingerprintCandidates,
+            duplicateScope,
+            accountId,
+            cancellationToken,
+            avitoSubProfileId);
+
     public async Task<IReadOnlyList<CandidateResponse>> ParseCandidatesFromRawAsync(
         AvitoAccount account,
         AppSettings settings,

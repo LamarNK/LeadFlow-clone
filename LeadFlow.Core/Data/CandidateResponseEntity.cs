@@ -7,6 +7,7 @@ public sealed class CandidateResponseEntity
     public string AccountName { get; set; } = string.Empty;
     public string Source { get; set; } = string.Empty;
     public string SourceResponseId { get; set; } = string.Empty;
+    public string CardFingerprint { get; set; } = string.Empty;
     public string FullName { get; set; } = string.Empty;
     public string FirstName { get; set; } = string.Empty;
     public string LastName { get; set; } = string.Empty;

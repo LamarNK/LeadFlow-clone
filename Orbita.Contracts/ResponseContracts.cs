@@ -1,5 +1,17 @@
 namespace Orbita.Contracts;
 
+public sealed record ResponseBitrixDeliveryDto(
+    Guid Id,
+    Guid BitrixInstanceId,
+    string BitrixLabel,
+    string Outcome,
+    string? BitrixEntityId,
+    string? BitrixEntityType,
+    string? BitrixEntityUrl,
+    string? ErrorMessage,
+    string Source,
+    DateTime CreatedAtUtc);
+
 public sealed record ResponseListItemDto(
     Guid Id,
     Guid OfficeId,
@@ -23,10 +35,16 @@ public sealed record ResponseListItemDto(
     string? BitrixEntityId,
     string? BitrixEntityType,
     string? BitrixEntityUrl,
+    Guid? BitrixInstanceId,
+    string? BitrixInstanceName,
+    string? BitrixInstanceSignature,
+    Guid? DuplicateBitrixInstanceId,
+    string? DuplicateBitrixInstanceName,
     string AvitoSubProfileId,
     string? AvitoSubProfileName,
     DateTime CreatedAt,
-    DateTime? ProcessedAt);
+    DateTime? ProcessedAt,
+    IReadOnlyList<ResponseBitrixDeliveryDto> BitrixDeliveries);
 
 public sealed record ResponseDetailDto(
     Guid Id,
@@ -60,9 +78,16 @@ public sealed record ResponseDetailDto(
     string? BitrixEntityType,
     string? BitrixEntityUrl,
     string? BitrixContactId,
+    Guid? BitrixInstanceId,
+    string? BitrixInstanceName,
+    string? BitrixInstanceSignature,
+    Guid? DuplicateBitrixInstanceId,
+    string? DuplicateBitrixInstanceName,
+    string? DistributionMode,
     string? ErrorMessage,
     DateTime CreatedAt,
-    DateTime? ProcessedAt);
+    DateTime? ProcessedAt,
+    IReadOnlyList<ResponseBitrixDeliveryDto> BitrixDeliveries);
 
 public sealed record ResponsesPageDto(
     IReadOnlyList<ResponseListItemDto> Items,
@@ -94,3 +119,27 @@ public sealed record ResendBitrixResultDto(
     string Status,
     string? BitrixEntityId,
     string? ErrorMessage);
+
+public sealed record SendBitrixResultDto(
+    bool Success,
+    string Status,
+    string? BitrixEntityId,
+    Guid? BitrixInstanceId,
+    string? BitrixInstanceName,
+    string? ErrorMessage);
+
+public sealed record BulkSendResponsesToBitrixRequest(
+    IReadOnlyList<Guid> ResponseIds,
+    Guid BitrixInstanceId);
+
+public sealed record BulkSendBitrixItemResultDto(
+    Guid ResponseId,
+    bool Success,
+    string Status,
+    string? ErrorMessage);
+
+public sealed record BulkSendBitrixResultDto(
+    int Total,
+    int Succeeded,
+    int Failed,
+    IReadOnlyList<BulkSendBitrixItemResultDto> Items);

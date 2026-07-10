@@ -37,6 +37,5 @@ public sealed class BrowserMonitorRegistry
         public string? OperatorConnectionId { get; set; }
         public string? WorkerConnectionId { get; set; }
         public BrowserMonitorCatalogMessage? LastCatalog { get; set; }
-        public readonly ConcurrentDictionary<Guid, BrowserMonitorFrameMessage> LastFrames = new();
     }
 }

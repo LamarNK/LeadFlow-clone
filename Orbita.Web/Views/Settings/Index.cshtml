@@ -2,7 +2,6 @@
 @using Orbita.Contracts
 @{
     ViewData["Title"] = "Администрирование";
-    var integrations = Model.Integrations;
     var logs = Model.Logs;
     var audit = Model.Audit;
     var workers = Model.Workers;
@@ -156,45 +155,14 @@
                         <section class="settings-office-section settings-office-section--bitrix">
                             <div class="settings-office-section-head">
                                 <div>
-                                    <h3 class="settings-office-section-title">Вебхук Bitrix24</h3>
-                                    <p class="settings-office-section-hint">Один входящий вебхук портала офиса для отправки откликов и проверки дублей в CRM.</p>
+                                    <h3 class="settings-office-section-title">Bitrix24</h3>
+                                    <p class="settings-office-section-hint">Вебхуки и схема распределения настраиваются на вкладке «Битриксы и связи».</p>
                                 </div>
-                                <span class="settings-bitrix-status settings-bitrix-status--@selected.BitrixValidationStatusTone">@selected.BitrixValidationStatusLabel</span>
                             </div>
-                            @if (!string.IsNullOrWhiteSpace(selected.MaskedBitrixWebhookUrl))
-                            {
-                                <p class="settings-bitrix-current">Текущий вебхук: <code>@selected.MaskedBitrixWebhookUrl</code></p>
-                            }
-                            @if (!string.IsNullOrWhiteSpace(selected.BitrixValidationMessage))
-                            {
-                                <p class="settings-bitrix-message">@selected.BitrixValidationMessage</p>
-                            }
-                            @if (selected.BitrixLastValidatedAtUtc is not null)
-                            {
-                                <p class="settings-bitrix-checked">Последняя проверка: <span data-orbita-utc="@selected.BitrixLastValidatedAtUtc.Value.ToString("O")"></span></p>
-                            }
-                            <form asp-action="SaveOfficeBitrix"
-                                  method="post"
-                                  class="settings-create-form settings-bitrix-form"
-                                  data-bitrix-settings-form
-                                  data-bitrix-validate-url="@Url.Action("ValidateOfficeBitrix", "Settings", new { officeId = selected.Id })">
-                                @Html.AntiForgeryToken()
-                                <input type="hidden" name="OfficeId" value="@selected.Id" />
-                                <label class="settings-field">
-                                    <span class="settings-field-label">URL вебхука</span>
-                                    <input type="url"
-                                           name="WebhookUrl"
-                                           placeholder="https://ваш-портал.bitrix24.ru/rest/1/xxxxxxxx/"
-                                           autocomplete="off"
-                                           spellcheck="false"
-                                           data-bitrix-webhook-input />
-                                </label>
-                                <div class="settings-bitrix-actions">
-                                    <button type="button" class="settings-secondary-btn" data-bitrix-validate-btn>Проверить</button>
-                                    <button type="submit" class="settings-primary-btn">Сохранить</button>
-                                </div>
-                                <div class="settings-bitrix-validation" data-bitrix-validation-results hidden></div>
-                            </form>
+                            <a class="settings-primary-btn settings-primary-btn--compact"
+                               href="@Url.Action(nameof(Index), new { tab = "bitrix", officeId = selected.Id })">
+                                Открыть «Битриксы и связи»
+                            </a>
                         </section>
 
                         <section class="settings-office-section settings-office-section--secret">
@@ -1105,52 +1073,54 @@
             }
         </div>
     }
-    else if (Model.ActiveTab == "integrations" && integrations is not null)
+    else if (Model.ActiveTab == "integrations")
     {
-        <div class="card card--settings-integrations-list">
-            <div class="card-header settings-card-header">
-                <div>
-                    <h2 class="settings-card-title">Интеграции Bitrix24</h2>
-                    <p class="settings-card-subtitle">Вебхук настраивается на уровне офиса — один портал CRM на офис</p>
-                </div>
-            </div>
-            <div class="card-body card-body-table settings-table-wrap">
-                <table class="data-table data-table--settings-integrations data-table--cards">
-                    <thead>
-                    <tr>
-                        <th>Офис</th>
-                        <th>Портал</th>
-                        <th>Статус</th>
-                        <th></th>
-                    </tr>
-                    </thead>
-                    <tbody>
-                    @if (integrations.Rows.Count == 0)
-                    {
-                        <tr>
-                            <td colspan="4" class="settings-empty-cell">Интеграции не настроены — выберите офис на вкладке «Офисы».</td>
-                        </tr>
-                    }
-                    else
-                    {
-                    @foreach (var row in integrations.Rows)
-                    {
-                        <tr>
-                            <td class="cell-name" data-label="Офис">@row.OfficeName</td>
-                            <td data-label="Портал">@(row.PortalHost ?? "—")</td>
-                            <td data-label="Статус">
-                                <span class="settings-bitrix-status settings-bitrix-status--@row.ValidationStatusTone">@row.ValidationStatusLabel</span>
-                            </td>
-                            <td class="data-table-actions-col" data-label="">
-                                <a class="settings-link-btn" href="@Url.Action("Index", new { tab = "offices", officeId = row.OfficeId })">Настроить</a>
-                            </td>
-                        </tr>
-                    }
-                    }
-                    </tbody>
-                </table>
+        var bitrixDistribution = Model.BitrixDistribution;
+        <div class="card card--settings-integrations-office">
+            <div class="card-body settings-integrations-office-body">
+                <form method="get" asp-action="Index" class="settings-logs-filters">
+                    <input type="hidden" name="tab" value="integrations" />
+                    <label class="settings-filter-field">
+                        <span class="settings-filter-label">Офис</span>
+                        <select name="officeId" class="settings-select" aria-label="Офис" onchange="this.form.submit()">
+                            <option value="">Выберите офис</option>
+                            @foreach (var opt in Model.OfficeOptions)
+                            {
+                                var selected = bitrixDistribution?.SelectedOfficeId?.ToString() == opt.Value;
+                                if (selected)
+                                {
+                                    <option value="@opt.Value" selected>@opt.Label</option>
+                                }
+                                else
+                                {
+                                    <option value="@opt.Value">@opt.Label</option>
+                                }
+                            }
+                        </select>
+                    </label>
+                </form>
             </div>
         </div>
+
+        @if (bitrixDistribution?.SelectedOfficeId is Guid)
+        {
+            @if (bitrixDistribution.BitrixInstances is not null)
+            {
+                ViewData["BitrixController"] = "Settings";
+                <partial name="_BitrixInstancesRegistry" model="bitrixDistribution.BitrixInstances" />
+            }
+            @if (bitrixDistribution.Distribution is not null)
+            {
+                ViewData["DistributionController"] = "Settings";
+                <partial name="_DistributionEditor" model="bitrixDistribution.Distribution" />
+            }
+        }
+        else
+        {
+            <div class="card card--settings-integrations-empty">
+                <div class="card-body settings-empty-cell">Выберите офис, чтобы настроить Битриксы и схему связей.</div>
+            </div>
+        }
     }
 
     <dialog class="settings-dialog" id="resetPasswordDialog">
@@ -1171,11 +1141,26 @@
     </dialog>
 </div>
 
+@section Styles {
+    @if (Model.ActiveTab == "integrations")
+    {
+        <link rel="stylesheet" href="~/lib/drawflow/dist/drawflow.min.css" asp-append-version="true" />
+        <link rel="stylesheet" href="~/css/orbita-distribution.css" asp-append-version="true" />
+    }
+}
+
 @section Scripts {
     <script src="~/js/orbita-settings.js" asp-append-version="true"></script>
-    @if (Model.ActiveTab == "integrations" || Model.ActiveTab == "offices")
+    @if (Model.ActiveTab == "offices")
     {
         <script src="~/js/orbita-bitrix-settings.js" asp-append-version="true"></script>
+    }
+    @if (Model.ActiveTab == "integrations")
+    {
+        <script src="~/js/orbita-bitrix-instances.js" asp-append-version="true"></script>
+        <script src="~/js/orbita-bitrix-settings.js" asp-append-version="true"></script>
+        <script src="~/lib/drawflow/dist/drawflow.min.js" asp-append-version="true"></script>
+        <script src="~/js/orbita-distribution-editor.js" asp-append-version="true"></script>
     }
     @if (Model.ActiveTab == "leadflow-import")
     {

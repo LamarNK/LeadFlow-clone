@@ -44,6 +44,7 @@ public sealed class CandidateIngestionServiceTests
                 "acc",
                 "Avito",
                 "new-source-id",
+                "",
                 "New User",
                 25,
                 "+7 (900) 111-11-11",
@@ -68,10 +69,10 @@ public sealed class CandidateIngestionServiceTests
     }
 
     [Fact]
-    public async Task IngestBatchAsync_BitrixTransmissionDisabled_StoresActionRequired()
+    public async Task IngestBatchAsync_AutoDistributionDisabled_StoresActionRequired()
     {
         await using var db = CreateDb();
-        SeedWorker(db, bitrixTransmissionEnabled: false);
+        SeedWorker(db, autoDistributionEnabled: false);
 
         var sut = CreateService(db);
         var request = new WorkerCandidateBatchRequest([
@@ -79,7 +80,8 @@ public sealed class CandidateIngestionServiceTests
                 Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc"),
                 "acc",
                 "Avito",
-                "disabled-bitrix-source",
+                "disabled-auto-source",
+                "",
                 "New User",
                 25,
                 "+7 (900) 222-22-22",
@@ -97,28 +99,39 @@ public sealed class CandidateIngestionServiceTests
 
         Assert.Equal(0, result.Ingested);
         Assert.Equal(ResponseStatuses.ActionRequired, result.Items[0].Status);
-        Assert.Equal("Передача в Bitrix24 отключена.", result.Items[0].ErrorMessage);
+        Assert.Equal("Ожидает действия оператора.", result.Items[0].ErrorMessage);
 
-        var stored = await db.CandidateResponses.SingleAsync(x => x.SourceResponseId == "disabled-bitrix-source");
+        var stored = await db.CandidateResponses.SingleAsync(x => x.SourceResponseId == "disabled-auto-source");
         Assert.Equal(ResponseStatuses.ActionRequired, stored.Status);
-        Assert.Equal("Передача в Bitrix24 отключена.", stored.ErrorMessage);
+        Assert.Equal("Ожидает действия оператора.", stored.ErrorMessage);
     }
 
     private static CandidateIngestionService CreateService(OrbitaDbContext db)
     {
+        var bitrixOptions = Options.Create(new OrbitaBitrixSettings { CheckDuplicatesInBitrix = false });
         var duplicateService = new CandidateDuplicateService(db, new BitrixClient(new HttpClientFactoryStub(), new CandidateParser()));
-        var officeBitrixIntegration = new OfficeBitrixIntegrationService(db, null!, null!, null!);
-        var webhookResolver = new OfficeBitrixWebhookResolver(db, null!, null!, officeBitrixIntegration);
-        var officeBitrixSettings = new OfficeBitrixSettingsService(db, null!);
+        var audit = new PanelAuditService(db);
+        var bitrixInstanceService = new BitrixInstanceService(db, null!, null!, bitrixOptions, audit);
+        var distributionRoute = new DistributionRouteService(db, audit);
+        var distributionEngine = new DistributionEngine(db);
+        var bitrixDuplicateCheck = new BitrixDuplicateCheckAllService(
+            bitrixInstanceService,
+            new BitrixClient(new HttpClientFactoryStub(), new CandidateParser()));
+        var bitrixSend = new CandidateBitrixSendService(bitrixInstanceService, new BitrixClient(new HttpClientFactoryStub(), new CandidateParser()), bitrixOptions);
+        var deliveries = new ResponseBitrixDeliveryService(db);
+        var autoDistribution = new CandidateAutoDistributionService(bitrixDuplicateCheck, bitrixSend, deliveries);
+        var manualSend = new ManualBitrixSendService(db, duplicateService, bitrixDuplicateCheck, bitrixSend, deliveries, new NoopPanelRealtimeNotifier());
+
         return new CandidateIngestionService(
             db,
             new PhoneNormalizer(),
             new CandidateParser(),
             duplicateService,
-            webhookResolver,
-            officeBitrixSettings,
-            new BitrixClient(new HttpClientFactoryStub(), new CandidateParser()),
-            Options.Create(new OrbitaBitrixSettings { CheckDuplicatesInBitrix = false }),
+            distributionRoute,
+            distributionEngine,
+            autoDistribution,
+            manualSend,
+            bitrixOptions,
             new NoopPanelRealtimeNotifier());
     }
 
@@ -130,7 +143,7 @@ public sealed class CandidateIngestionServiceTests
         return new OrbitaDbContext(options);
     }
 
-    private static void SeedWorker(OrbitaDbContext db, bool bitrixTransmissionEnabled = true)
+    private static void SeedWorker(OrbitaDbContext db, bool autoDistributionEnabled = true)
     {
         db.Offices.Add(new OfficeEntity
         {
@@ -139,7 +152,7 @@ public sealed class CandidateIngestionServiceTests
             RegistrationSecretHash = "hash",
             CreatedAtUtc = DateTime.UtcNow,
             IsEnabled = true,
-            BitrixTransmissionEnabled = bitrixTransmissionEnabled
+            BitrixTransmissionEnabled = autoDistributionEnabled
         });
         db.Workers.Add(new WorkerEntity
         {
@@ -152,6 +165,14 @@ public sealed class CandidateIngestionServiceTests
             MonitoringStatus = "Stopped",
             CreatedAtUtc = DateTime.UtcNow
         });
+        db.DistributionRoutes.Add(new DistributionRouteEntity
+        {
+            Id = Guid.NewGuid(),
+            OfficeId = OfficeId,
+            IsAutoDistributionEnabled = autoDistributionEnabled,
+            UpdatedAtUtc = DateTime.UtcNow
+        });
+
         db.SaveChanges();
     }
 

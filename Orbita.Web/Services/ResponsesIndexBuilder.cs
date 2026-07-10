@@ -104,8 +104,12 @@ internal static class ResponsesIndexBuilder
         ];
     }
 
-    public static ResponseRowViewModel MapRow(ResponseListItemDto item) =>
-        new()
+    public static ResponseRowViewModel MapRow(ResponseListItemDto item)
+    {
+        var canSend = CanSendToBitrix(item.Status);
+        var statusLabel = MapStatusLabel(item);
+        var bitrixDeliveries = MapDeliveries(item.BitrixDeliveries);
+        return new()
         {
             Id = item.Id,
             CreatedAtUtc = item.CreatedAt,
@@ -125,20 +129,73 @@ internal static class ResponsesIndexBuilder
             WorkerName = FormatWorkerName(item.WorkerName),
             Source = string.IsNullOrWhiteSpace(item.Source) ? "Avito" : item.Source,
             Status = item.Status,
-            StatusLabel = MapStatusLabel(item.Status),
+            StatusLabel = statusLabel,
             StatusTone = MapStatusTone(item.Status),
             IsPhoneHidden = ResponseDisplay.IsPhoneHidden(item.PhoneRaw, item.PhoneNormalized),
             HasMessenger = !string.IsNullOrWhiteSpace(item.MessengerUrl),
             BitrixEntityId = item.BitrixEntityId,
             BitrixEntityUrl = item.BitrixEntityUrl,
-            CanResend = item.Status is ResponseStatuses.Error
-                or ResponseStatuses.ActionRequired
-                or ResponseStatuses.InProgress
+            BitrixLabel = MapBitrixColumn(item),
+            BitrixDeliveries = bitrixDeliveries,
+            CardCopy = BuildCardCopy(
+                item.FullName,
+                item.PhoneRaw,
+                item.PhoneNormalized,
+                item.City,
+                item.Age,
+                item.Vacancy,
+                item.AccountName,
+                item.AvitoSubProfileName,
+                statusLabel,
+                item.CreatedAt,
+                item.ProcessedAt,
+                item.VacancyUrl,
+                item.MessengerUrl,
+                item.BitrixDeliveries,
+                item.BitrixEntityType,
+                item.BitrixEntityId),
+            CanSend = canSend,
+            CanResend = canSend
         };
+    }
 
     public static ResponseDetailViewModel MapDetail(ResponseDetailDto detail)
     {
-        var (label, tone) = (MapStatusLabel(detail.Status), MapStatusTone(detail.Status));
+        var listItem = new ResponseListItemDto(
+            detail.Id,
+            detail.OfficeId,
+            detail.WorkerId,
+            detail.WorkerName,
+            detail.AccountId,
+            detail.AccountName,
+            detail.Source,
+            detail.SourceResponseId,
+            detail.FullName,
+            detail.Age,
+            detail.PhoneRaw,
+            detail.PhoneNormalized,
+            detail.Vacancy,
+            detail.VacancyUrl,
+            detail.MessengerUrl,
+            detail.City,
+            detail.Status,
+            detail.IsLocalDuplicate,
+            detail.IsBitrixDuplicate,
+            detail.BitrixEntityId,
+            detail.BitrixEntityType,
+            detail.BitrixEntityUrl,
+            detail.BitrixInstanceId,
+            detail.BitrixInstanceName,
+            detail.BitrixInstanceSignature,
+            detail.DuplicateBitrixInstanceId,
+            detail.DuplicateBitrixInstanceName,
+            detail.AvitoSubProfileId,
+            detail.AvitoSubProfileName,
+            detail.CreatedAt,
+            detail.ProcessedAt,
+            detail.BitrixDeliveries);
+        var canSend = CanSendToBitrix(detail.Status);
+        var statusLabel = MapStatusLabel(listItem);
         return new ResponseDetailViewModel
         {
             Id = detail.Id,
@@ -162,19 +219,40 @@ internal static class ResponsesIndexBuilder
             Source = string.IsNullOrWhiteSpace(detail.Source) ? "Avito" : detail.Source,
             SourceResponseId = detail.SourceResponseId,
             Status = detail.Status,
-            StatusLabel = label,
-            StatusTone = tone,
+            StatusLabel = statusLabel,
+            StatusTone = MapStatusTone(detail.Status),
             DuplicateSummary = detail.DuplicateSummary,
             BitrixEntityId = detail.BitrixEntityId,
             BitrixEntityUrl = detail.BitrixEntityUrl,
+            BitrixInstanceName = detail.BitrixInstanceName,
+            BitrixInstanceSignature = detail.BitrixInstanceSignature,
+            DuplicateBitrixInstanceName = detail.DuplicateBitrixInstanceName,
             ErrorMessage = detail.ErrorMessage,
             RawText = detail.RawText,
             ChatMessages = ResponseChatDisplay.ParseMessages(detail.ChatMessagesJson),
             CreatedAtUtc = detail.CreatedAt,
             ProcessedAtUtc = detail.ProcessedAt,
-            CanResend = detail.Status is ResponseStatuses.Error
-                or ResponseStatuses.ActionRequired
-                or ResponseStatuses.InProgress
+            BitrixDeliveries = MapDeliveries(detail.BitrixDeliveries),
+            CardCopy = BuildCardCopy(
+                detail.FullName,
+                detail.PhoneRaw,
+                detail.PhoneNormalized,
+                detail.City,
+                detail.Age,
+                detail.Vacancy,
+                detail.AccountName,
+                detail.AvitoSubProfileName,
+                statusLabel,
+                detail.CreatedAt,
+                detail.ProcessedAt,
+                detail.VacancyUrl,
+                detail.MessengerUrl,
+                detail.BitrixDeliveries,
+                detail.BitrixEntityType,
+                detail.BitrixEntityId,
+                detail.ErrorMessage),
+            CanSend = canSend,
+            CanResend = canSend
         };
     }
 
@@ -218,14 +296,140 @@ internal static class ResponsesIndexBuilder
         _ => "Сообщение"
     };
 
-    private static string MapStatusLabel(string status) => status switch
+    public static IReadOnlyList<SendBitrixInstanceOptionViewModel> MapSendBitrixInstances(
+        IReadOnlyList<BitrixInstanceListItemDto> instances) =>
+        instances
+            .Where(x => x.IsEnabled)
+            .OrderBy(x => x.Name)
+            .Select(x => new SendBitrixInstanceOptionViewModel
+            {
+                Id = x.Id,
+                Label = FormatBitrixLabel(x.Name, x.Signature),
+                PortalHost = x.PortalHost
+            })
+            .ToList();
+
+    private static bool CanSendToBitrix(string _) => true;
+
+    private static string? MapBitrixColumn(ResponseListItemDto item)
     {
-        ResponseStatuses.Duplicate => "Дубль",
-        ResponseStatuses.Sent => "Отправлен",
+        if (item.BitrixDeliveries.Count > 0)
+        {
+            return null;
+        }
+
+        return item.Status switch
+        {
+            ResponseStatuses.Sent => FormatBitrixLabel(item.BitrixInstanceName, item.BitrixInstanceSignature),
+            ResponseStatuses.Duplicate when item.IsBitrixDuplicate => item.DuplicateBitrixInstanceName,
+            ResponseStatuses.Error => FormatBitrixLabel(item.BitrixInstanceName, item.BitrixInstanceSignature),
+            _ => null
+        };
+    }
+
+    private static IReadOnlyList<ResponseBitrixDeliveryViewModel> MapDeliveries(
+        IReadOnlyList<ResponseBitrixDeliveryDto> deliveries) =>
+        deliveries
+            .Select(d => new ResponseBitrixDeliveryViewModel
+            {
+                Id = d.Id,
+                BitrixLabel = d.BitrixLabel,
+                Outcome = d.Outcome,
+                OutcomeLabel = MapDeliveryOutcomeLabel(d.Outcome),
+                ChipTone = MapDeliveryChipTone(d.Outcome),
+                BitrixEntityUrl = d.BitrixEntityUrl,
+                ErrorMessage = d.ErrorMessage,
+                CreatedAtUtc = d.CreatedAtUtc
+            })
+            .ToList();
+
+    private static string MapDeliveryOutcomeLabel(string outcome) => outcome switch
+    {
+        ResponseBitrixDeliveryOutcomes.Sent => "отправлен",
+        ResponseBitrixDeliveryOutcomes.Duplicate => "дубль",
+        ResponseBitrixDeliveryOutcomes.Error => "ошибка",
+        ResponseBitrixDeliveryOutcomes.Unavailable => "недоступен",
+        _ => outcome
+    };
+
+    private static string MapDeliveryChipTone(string outcome) => outcome switch
+    {
+        ResponseBitrixDeliveryOutcomes.Sent => "sent",
+        ResponseBitrixDeliveryOutcomes.Duplicate => "duplicate",
+        ResponseBitrixDeliveryOutcomes.Error => "error",
+        ResponseBitrixDeliveryOutcomes.Unavailable => "unavailable",
+        _ => "muted"
+    };
+
+    private static string MapStatusLabel(ResponseListItemDto item) => item.Status switch
+    {
+        ResponseStatuses.Duplicate => FormatWithBitrix("Дубль", item.DuplicateBitrixInstanceName),
+        ResponseStatuses.Sent => FormatWithBitrix("Отправлен", FormatBitrixLabel(item.BitrixInstanceName, item.BitrixInstanceSignature)),
         ResponseStatuses.ActionRequired => "Ожидает CRM",
-        ResponseStatuses.Error => "Ошибка Bitrix",
+        ResponseStatuses.Error => FormatWithBitrix("Ошибка Bitrix", FormatBitrixLabel(item.BitrixInstanceName, item.BitrixInstanceSignature)),
         _ => "Уникальный"
     };
+
+    private static string FormatBitrixLabel(string? name, string? signature) =>
+        !string.IsNullOrWhiteSpace(signature) ? signature
+        : !string.IsNullOrWhiteSpace(name) ? name
+        : string.Empty;
+
+    private static string FormatWithBitrix(string baseLabel, string? bitrixLabel) =>
+        string.IsNullOrWhiteSpace(bitrixLabel) ? baseLabel : $"{baseLabel} · {bitrixLabel}";
+
+    private static string FormatDeliveriesSummary(IReadOnlyList<ResponseBitrixDeliveryViewModel> deliveries) =>
+        string.Join("\n", deliveries.Select(d =>
+        {
+            var line = $"{d.BitrixLabel} — {d.OutcomeLabel}";
+            if (!string.IsNullOrWhiteSpace(d.ErrorMessage))
+            {
+                line += $" ({d.ErrorMessage})";
+            }
+
+            return line;
+        }));
+
+    private static string BuildCardCopy(
+        string fullName,
+        string phoneRaw,
+        string phoneNormalized,
+        string? city,
+        int? age,
+        string vacancy,
+        string accountName,
+        string? avitoSubProfileName,
+        string statusLabel,
+        DateTime createdAtUtc,
+        DateTime? processedAtUtc,
+        string? vacancyUrl,
+        string? messengerUrl,
+        IReadOnlyList<ResponseBitrixDeliveryDto> bitrixDeliveries,
+        string? bitrixEntityType,
+        string? bitrixEntityId,
+        string? errorMessage = null)
+    {
+        var phoneHidden = ResponseDisplay.IsPhoneHidden(phoneRaw, phoneNormalized);
+        var phoneDisplay = phoneHidden
+            ? "Скрыт"
+            : ResponseDisplay.FormatPhone(phoneRaw, phoneNormalized);
+        return ResponseCardText.Format(
+            ResponseDisplay.DisplayAuthor(fullName),
+            phoneDisplay,
+            city,
+            age,
+            vacancy,
+            ResponseDisplay.FormatAccountWithSubProfile(accountName, avitoSubProfileName),
+            statusLabel,
+            createdAtUtc,
+            processedAtUtc,
+            vacancyUrl,
+            messengerUrl,
+            bitrixDeliveries,
+            bitrixEntityType,
+            bitrixEntityId,
+            errorMessage);
+    }
 
     private static string MapStatusTone(string status) => status switch
     {
@@ -270,7 +474,33 @@ internal static class ResponsesIndexBuilder
             new() { Label = "ID отклика", Value = detail.SourceResponseId }
         };
 
-        if (!string.IsNullOrWhiteSpace(detail.BitrixEntityId))
+        if (detail.BitrixDeliveries.Count > 0)
+        {
+            sections.Add(new DetailSectionItemViewModel
+            {
+                Label = "Отправки в Bitrix",
+                Value = FormatDeliveriesSummary(detail.BitrixDeliveries)
+            });
+        }
+        else
+        {
+            var bitrixLabel = FormatBitrixLabel(detail.BitrixInstanceName, detail.BitrixInstanceSignature);
+            if (!string.IsNullOrWhiteSpace(bitrixLabel))
+            {
+                sections.Add(new DetailSectionItemViewModel { Label = "Битрикс", Value = bitrixLabel });
+            }
+
+            if (!string.IsNullOrWhiteSpace(detail.DuplicateBitrixInstanceName))
+            {
+                sections.Add(new DetailSectionItemViewModel
+                {
+                    Label = "Дубль в Битриксе",
+                    Value = detail.DuplicateBitrixInstanceName
+                });
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(detail.BitrixEntityId) && detail.BitrixDeliveries.Count == 0)
         {
             sections.Add(new DetailSectionItemViewModel
             {
@@ -280,7 +510,7 @@ internal static class ResponsesIndexBuilder
             });
         }
 
-        if (!string.IsNullOrWhiteSpace(detail.DuplicateSummary))
+        if (!string.IsNullOrWhiteSpace(detail.DuplicateSummary) && detail.BitrixDeliveries.Count == 0)
         {
             sections.Add(new DetailSectionItemViewModel { Label = "Дубль", Value = detail.DuplicateSummary });
         }
@@ -299,19 +529,32 @@ internal static class ResponsesIndexBuilder
         {
             links.Add(new DetailActionLinkViewModel { Label = "Объявление", Href = detail.VacancyUrl, External = true });
         }
-        if (!string.IsNullOrWhiteSpace(detail.BitrixEntityUrl))
+        foreach (var delivery in detail.BitrixDeliveries.Where(d =>
+                     d.Outcome == ResponseBitrixDeliveryOutcomes.Sent &&
+                     !string.IsNullOrWhiteSpace(d.BitrixEntityUrl)))
+        {
+            links.Add(new DetailActionLinkViewModel
+            {
+                Label = $"Bitrix24 · {delivery.BitrixLabel}",
+                Href = delivery.BitrixEntityUrl!,
+                External = true
+            });
+        }
+
+        if (links.All(l => !l.Label.StartsWith("Bitrix24", StringComparison.Ordinal)) &&
+            !string.IsNullOrWhiteSpace(detail.BitrixEntityUrl))
         {
             links.Add(new DetailActionLinkViewModel { Label = "Bitrix24", Href = detail.BitrixEntityUrl, External = true });
         }
 
         var primaryActions = new List<DetailActionLinkViewModel>();
-        if (detail.CanResend)
+        if (detail.CanSend)
         {
             primaryActions.Add(new DetailActionLinkViewModel
             {
                 Label = "Отправить в Bitrix",
                 Tone = "primary",
-                Action = "resend",
+                Action = "send-bitrix",
                 ResponseId = detail.Id
             });
         }
@@ -331,8 +574,8 @@ internal static class ResponsesIndexBuilder
                 .ToList(),
             Links = links,
             PrimaryActions = primaryActions,
-            CopyText = phone.Length > 0 ? phone : null,
-            CopyLabel = "Копировать телефон"
+            CopyText = detail.CardCopy,
+            CopyLabel = "Копировать карточку"
         };
     }
 }

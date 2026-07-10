@@ -246,6 +246,10 @@ namespace Orbita.Api.Data.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("CardFingerprint")
+                        .IsRequired()
+                        .HasColumnType("text");
+
                     b.Property<string>("BitrixEntityId")
                         .IsRequired()
                         .HasColumnType("text");
@@ -253,6 +257,9 @@ namespace Orbita.Api.Data.Migrations
                     b.Property<string>("BitrixEntityType")
                         .IsRequired()
                         .HasColumnType("text");
+
+                    b.Property<Guid?>("BitrixInstanceId")
+                        .HasColumnType("uuid");
 
                     b.Property<string>("ChatMessagesJson")
                         .IsRequired()
@@ -269,6 +276,14 @@ namespace Orbita.Api.Data.Migrations
                         .IsRequired()
                         .HasMaxLength(2000)
                         .HasColumnType("character varying(2000)");
+
+                    b.Property<Guid?>("DuplicateBitrixInstanceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("DistributionMode")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
 
                     b.Property<string>("ErrorMessage")
                         .IsRequired()
@@ -352,7 +367,11 @@ namespace Orbita.Api.Data.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("BitrixInstanceId");
+
                     b.HasIndex("CreatedAt");
+
+                    b.HasIndex("DuplicateBitrixInstanceId");
 
                     b.HasIndex("PhoneNormalized");
 
@@ -368,7 +387,216 @@ namespace Orbita.Api.Data.Migrations
 
                     b.HasIndex("OfficeId", "AccountId", "AvitoSubProfileId", "PhoneNormalized");
 
+                    b.HasIndex("OfficeId", "AccountId", "AvitoSubProfileId", "CardFingerprint");
+
                     b.ToTable("CandidateResponses");
+                });
+
+            modelBuilder.Entity("Orbita.Api.Data.ResponseBitrixDeliveryEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("BitrixInstanceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("BitrixContactId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("BitrixEntityId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("BitrixEntityType")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ErrorMessage")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<Guid>("ResponseId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BitrixInstanceId");
+
+                    b.HasIndex("ResponseId");
+
+                    b.HasIndex("ResponseId", "CreatedAtUtc");
+
+                    b.ToTable("ResponseBitrixDeliveries");
+                });
+
+            modelBuilder.Entity("Orbita.Api.Data.BitrixInstanceEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("IntegrationSettingsJson")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<bool>("IsEnabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("LastValidatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<Guid>("OfficeId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("PortalHost")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<string>("Signature")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("UpdatedByUserId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<string>("ValidationMessage")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<string>("ValidationStatus")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("WebhookUrlProtected")
+                        .IsRequired()
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OfficeId");
+
+                    b.ToTable("BitrixInstances");
+                });
+
+            modelBuilder.Entity("Orbita.Api.Data.DistributionNodeEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("BitrixInstanceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<double>("EditorPositionX")
+                        .HasColumnType("double precision");
+
+                    b.Property<double>("EditorPositionY")
+                        .HasColumnType("double precision");
+
+                    b.Property<Guid?>("ParentNodeId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("RouteId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BitrixInstanceId");
+
+                    b.HasIndex("ParentNodeId");
+
+                    b.HasIndex("RouteId");
+
+                    b.HasIndex("RouteId", "ParentNodeId", "SortOrder");
+
+                    b.ToTable("DistributionNodes");
+                });
+
+            modelBuilder.Entity("Orbita.Api.Data.DistributionRouteEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsAutoDistributionEnabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid>("OfficeId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("UpdatedByUserId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OfficeId")
+                        .IsUnique();
+
+                    b.ToTable("DistributionRoutes");
+                });
+
+            modelBuilder.Entity("Orbita.Api.Data.DistributionRoundRobinStateEntity", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<int>("NextChildIndex")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid?>("ParentNodeId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("RouteId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RouteId", "ParentNodeId")
+                        .IsUnique();
+
+                    b.ToTable("DistributionRoundRobinStates");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.CaptchaSessionEntity", b =>
@@ -1048,8 +1276,29 @@ namespace Orbita.Api.Data.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Orbita.Api.Data.BitrixInstanceEntity", b =>
+                {
+                    b.HasOne("Orbita.Api.Data.OfficeEntity", "Office")
+                        .WithMany()
+                        .HasForeignKey("OfficeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Office");
+                });
+
             modelBuilder.Entity("Orbita.Api.Data.CandidateResponseEntity", b =>
                 {
+                    b.HasOne("Orbita.Api.Data.BitrixInstanceEntity", "BitrixInstance")
+                        .WithMany()
+                        .HasForeignKey("BitrixInstanceId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Orbita.Api.Data.BitrixInstanceEntity", "DuplicateBitrixInstance")
+                        .WithMany()
+                        .HasForeignKey("DuplicateBitrixInstanceId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("Orbita.Api.Data.OfficeEntity", "Office")
                         .WithMany()
                         .HasForeignKey("OfficeId")
@@ -1061,9 +1310,80 @@ namespace Orbita.Api.Data.Migrations
                         .HasForeignKey("WorkerId")
                         .OnDelete(DeleteBehavior.SetNull);
 
+                    b.Navigation("BitrixInstance");
+
+                    b.Navigation("DuplicateBitrixInstance");
+
                     b.Navigation("Office");
 
                     b.Navigation("Worker");
+                });
+
+            modelBuilder.Entity("Orbita.Api.Data.ResponseBitrixDeliveryEntity", b =>
+                {
+                    b.HasOne("Orbita.Api.Data.BitrixInstanceEntity", "BitrixInstance")
+                        .WithMany()
+                        .HasForeignKey("BitrixInstanceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Orbita.Api.Data.CandidateResponseEntity", "Response")
+                        .WithMany("BitrixDeliveries")
+                        .HasForeignKey("ResponseId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("BitrixInstance");
+
+                    b.Navigation("Response");
+                });
+
+            modelBuilder.Entity("Orbita.Api.Data.DistributionNodeEntity", b =>
+                {
+                    b.HasOne("Orbita.Api.Data.BitrixInstanceEntity", "BitrixInstance")
+                        .WithMany()
+                        .HasForeignKey("BitrixInstanceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Orbita.Api.Data.DistributionNodeEntity", "ParentNode")
+                        .WithMany("Children")
+                        .HasForeignKey("ParentNodeId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.HasOne("Orbita.Api.Data.DistributionRouteEntity", "Route")
+                        .WithMany("Nodes")
+                        .HasForeignKey("RouteId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("BitrixInstance");
+
+                    b.Navigation("ParentNode");
+
+                    b.Navigation("Route");
+                });
+
+            modelBuilder.Entity("Orbita.Api.Data.DistributionRouteEntity", b =>
+                {
+                    b.HasOne("Orbita.Api.Data.OfficeEntity", "Office")
+                        .WithMany()
+                        .HasForeignKey("OfficeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Office");
+                });
+
+            modelBuilder.Entity("Orbita.Api.Data.DistributionRoundRobinStateEntity", b =>
+                {
+                    b.HasOne("Orbita.Api.Data.DistributionRouteEntity", "Route")
+                        .WithMany()
+                        .HasForeignKey("RouteId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Route");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.CaptchaSessionEntity", b =>
@@ -1151,6 +1471,11 @@ namespace Orbita.Api.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Worker");
+                });
+
+            modelBuilder.Entity("Orbita.Api.Data.CandidateResponseEntity", b =>
+                {
+                    b.Navigation("BitrixDeliveries");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.OfficeEntity", b =>

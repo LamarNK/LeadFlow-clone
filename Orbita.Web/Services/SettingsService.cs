@@ -9,6 +9,7 @@ namespace Orbita.Web.Services;
 public sealed class SettingsService(
     OrbitaApiClient api,
     IHttpContextAccessor httpContextAccessor,
+    IOfficeContext officeContext,
     IOptions<DesignPreviewOptions> previewOptions) : ISettingsService
 {
     public async Task<SettingsIndexViewModel> GetIndexAsync(
@@ -20,6 +21,7 @@ public sealed class SettingsService(
         string? action,
         string? userId = null,
         Guid? officeId = null,
+        Guid? instanceId = null,
         Guid? workerId = null,
         int page = 1,
         CancellationToken ct = default)
@@ -53,7 +55,9 @@ public sealed class SettingsService(
                     action,
                     date,
                     DesignPreviewData.BuildPanelAuditPage(q, action, date, page)),
-                "integrations" => SettingsIndexBuilder.BuildIntegrationsTab(previewOffices),
+                "integrations" => SettingsIndexBuilder.BuildIntegrationsTab(
+                    previewOffices,
+                    BuildPreviewBitrixDistribution(previewOffices, officeId, instanceId)),
                 "leadflow-import" => SettingsIndexBuilder.BuildLeadFlowImportTab(previewOffices),
                 "worker-releases" => SettingsIndexBuilder.BuildWorkerReleasesTab(DesignPreviewData.WorkerReleases),
                 _ => SettingsIndexBuilder.BuildUsersTab(
@@ -78,7 +82,7 @@ public sealed class SettingsService(
                 offices,
                 await api.GetWorkerRegistrationInfoAsync(ct)),
             "audit" => await BuildAuditTabAsync(q, action, date, page, ct),
-            "integrations" => SettingsIndexBuilder.BuildIntegrationsTab(offices),
+            "integrations" => await BuildIntegrationsTabAsync(officeId, instanceId, offices, ct),
             "leadflow-import" => SettingsIndexBuilder.BuildLeadFlowImportTab(offices),
             "worker-releases" => await BuildWorkerReleasesTabAsync(ct),
             _ => SettingsIndexBuilder.BuildUsersTab(
@@ -101,6 +105,99 @@ public sealed class SettingsService(
 
         var (integration, error) = await api.SaveAdminOfficeBitrixIntegrationAsync(officeId, webhookUrl, ct);
         return integration is not null ? (true, null) : (false, error);
+    }
+
+    public async Task<(bool Success, string? Error, Guid? InstanceId)> SaveBitrixInstanceAsync(
+        SaveBitrixInstanceFormModel model,
+        Guid officeId,
+        CancellationToken ct = default)
+    {
+        if (previewOptions.Value.Enabled)
+        {
+            return (true, null, model.Id ?? DesignPreviewData.PreviewBitrixInstanceId);
+        }
+
+        if (model.Id is Guid existingId && existingId != Guid.Empty)
+        {
+            var (instance, error) = await api.UpdateBitrixInstanceAsync(
+                existingId,
+                new UpdateBitrixInstanceRequest(
+                    model.Name,
+                    model.Signature,
+                    string.IsNullOrWhiteSpace(model.WebhookUrl) ? null : model.WebhookUrl.Trim(),
+                    null,
+                    model.IsEnabled),
+                officeId,
+                ct);
+            return instance is null ? (false, error, null) : (true, null, instance.Id);
+        }
+
+        if (string.IsNullOrWhiteSpace(model.WebhookUrl))
+        {
+            return (false, "Укажите URL вебхука для нового Битрикса.", null);
+        }
+
+        var (created, createError) = await api.CreateBitrixInstanceAsync(
+            new CreateBitrixInstanceRequest(
+                model.Name,
+                model.Signature,
+                model.WebhookUrl.Trim(),
+                null,
+                model.IsEnabled),
+            officeId,
+            ct);
+        return created is null ? (false, createError, null) : (true, null, created.Id);
+    }
+
+    public async Task<(bool Success, string? Error)> DeleteBitrixInstanceAsync(
+        Guid id,
+        Guid officeId,
+        CancellationToken ct = default)
+    {
+        if (previewOptions.Value.Enabled)
+        {
+            return (true, null);
+        }
+
+        var (success, error) = await api.DeleteBitrixInstanceAsync(id, officeId, ct);
+        return success ? (true, null) : (false, error);
+    }
+
+    public async Task<(bool Success, string? Error)> SaveDistributionRouteAsync(
+        bool isAutoDistributionEnabled,
+        IReadOnlyList<SaveDistributionNodeRequest> nodes,
+        Guid officeId,
+        CancellationToken ct = default)
+    {
+        if (previewOptions.Value.Enabled)
+        {
+            return (true, null);
+        }
+
+        var (route, error) = await api.SaveDistributionRouteAsync(
+            new SaveDistributionRouteRequest(isAutoDistributionEnabled, nodes),
+            officeId,
+            ct);
+        return route is not null ? (true, null) : (false, error);
+    }
+
+    public async Task<(bool Success, string? Error)> SaveBitrixTransmissionAsync(
+        Guid officeId,
+        bool transmissionEnabled,
+        CancellationToken ct = default)
+    {
+        if (previewOptions.Value.Enabled)
+        {
+            return (true, null);
+        }
+
+        var office = await api.GetOfficeAsync(officeId, ct);
+        if (office is null)
+        {
+            return (false, "Офис не найден.");
+        }
+
+        return await UpdateOfficeAsync(officeId, office.Name, office.IsEnabled, transmissionEnabled, ct);
     }
 
     public Task<(bool Success, string? Error)> CreateUserAsync(
@@ -369,6 +466,149 @@ public sealed class SettingsService(
         }
 
         return SettingsIndexBuilder.BuildOfficesTab(offices, selected);
+    }
+
+    private async Task<SettingsIndexViewModel> BuildIntegrationsTabAsync(
+        Guid? officeId,
+        Guid? instanceId,
+        IReadOnlyList<OfficeDto> offices,
+        CancellationToken ct)
+    {
+        var selectedOfficeId = officeId ?? officeContext.EffectiveOfficeId ?? offices.FirstOrDefault()?.Id;
+        var bitrixDistribution = await BuildBitrixDistributionAsync(selectedOfficeId, offices, instanceId, ct);
+        return SettingsIndexBuilder.BuildIntegrationsTab(offices, bitrixDistribution);
+    }
+
+    private static BitrixDistributionSettingsViewModel BuildPreviewBitrixDistribution(
+        IReadOnlyList<OfficeDto> offices,
+        Guid? officeId,
+        Guid? instanceId)
+    {
+        var selectedOfficeId = officeId ?? offices.FirstOrDefault()?.Id;
+        var selectedOffice = offices.FirstOrDefault(x => x.Id == selectedOfficeId);
+        BitrixInstanceEditorViewModel? editor = null;
+        if (instanceId == Guid.Empty)
+        {
+            editor = MySettingsService.CreateNewEditor();
+        }
+        else if (instanceId is Guid selectedInstanceId)
+        {
+            editor = DesignPreviewData.GetPreviewBitrixInstance(selectedInstanceId) is { } detail
+                ? MySettingsService.MapEditor(detail)
+                : null;
+        }
+
+        return new BitrixDistributionSettingsViewModel
+        {
+            SelectedOfficeId = selectedOfficeId,
+            SelectedOfficeName = selectedOffice?.Name,
+            OfficeOptions = offices.Select(o => new EventFilterOptionViewModel
+            {
+                Value = o.Id.ToString(),
+                Label = o.Name
+            }).ToList(),
+            BitrixInstances = new BitrixInstancesRegistryViewModel
+            {
+                OfficeId = selectedOfficeId,
+                OfficeName = selectedOffice?.Name,
+                CanManage = selectedOfficeId.HasValue,
+                CanManageTransmission = false,
+                Instances = DesignPreviewData.PreviewBitrixInstances
+                    .Select(MySettingsService.MapListItem)
+                    .ToList(),
+                Editor = editor
+            },
+            Distribution = new DistributionEditorViewModel
+            {
+                OfficeId = selectedOfficeId,
+                OfficeName = selectedOffice?.Name,
+                CanManage = selectedOfficeId.HasValue,
+                IsAutoDistributionEnabled = DesignPreviewData.PreviewDistributionRoute.IsAutoDistributionEnabled,
+                RouteJson = System.Text.Json.JsonSerializer.Serialize(DesignPreviewData.PreviewDistributionRoute),
+                InstancesJson = System.Text.Json.JsonSerializer.Serialize(
+                    DesignPreviewData.PreviewBitrixInstances.Select(x => new
+                    {
+                        x.Id,
+                        x.Name,
+                        x.Signature,
+                        Label = MySettingsService.FormatBitrixLabel(x.Name, x.Signature)
+                    }))
+            }
+        };
+    }
+
+    private async Task<BitrixDistributionSettingsViewModel> BuildBitrixDistributionAsync(
+        Guid? officeId,
+        IReadOnlyList<OfficeDto> offices,
+        Guid? instanceId,
+        CancellationToken ct)
+    {
+        var officeOptions = offices.Select(o => new EventFilterOptionViewModel
+        {
+            Value = o.Id.ToString(),
+            Label = o.Name
+        }).ToList();
+
+        if (officeId is not Guid selectedOfficeId)
+        {
+            return new BitrixDistributionSettingsViewModel { OfficeOptions = officeOptions };
+        }
+
+        var selectedOffice = offices.FirstOrDefault(x => x.Id == selectedOfficeId);
+        var instances = await api.GetBitrixInstancesAsync(selectedOfficeId, ct) ?? [];
+        var route = await api.GetDistributionRouteAsync(selectedOfficeId, ct)
+            ?? new DistributionRouteDto(Guid.Empty, selectedOfficeId, false, [], null);
+
+        BitrixInstanceEditorViewModel? editor = null;
+        if (instanceId == Guid.Empty)
+        {
+            editor = MySettingsService.CreateNewEditor();
+        }
+        else if (instanceId is Guid selectedInstanceId)
+        {
+            var detail = await api.GetBitrixInstanceAsync(selectedInstanceId, selectedOfficeId, ct);
+            if (detail is not null)
+            {
+                editor = MySettingsService.MapEditor(detail);
+            }
+        }
+
+        var instancePayload = instances
+            .Where(x => x.IsEnabled)
+            .Select(x => new
+            {
+                x.Id,
+                x.Name,
+                x.Signature,
+                Label = MySettingsService.FormatBitrixLabel(x.Name, x.Signature)
+            })
+            .ToList();
+
+        return new BitrixDistributionSettingsViewModel
+        {
+            SelectedOfficeId = selectedOfficeId,
+            SelectedOfficeName = selectedOffice?.Name,
+            OfficeOptions = officeOptions,
+            BitrixInstances = new BitrixInstancesRegistryViewModel
+            {
+                OfficeId = selectedOfficeId,
+                OfficeName = selectedOffice?.Name,
+                CanManage = true,
+                CanManageTransmission = true,
+                TransmissionEnabled = route.IsAutoDistributionEnabled,
+                Instances = instances.Select(MySettingsService.MapListItem).ToList(),
+                Editor = editor
+            },
+            Distribution = new DistributionEditorViewModel
+            {
+                OfficeId = selectedOfficeId,
+                OfficeName = selectedOffice?.Name,
+                CanManage = true,
+                IsAutoDistributionEnabled = route.IsAutoDistributionEnabled,
+                RouteJson = System.Text.Json.JsonSerializer.Serialize(route),
+                InstancesJson = System.Text.Json.JsonSerializer.Serialize(instancePayload)
+            }
+        };
     }
 
     private static string NormalizeTab(string? tab) =>

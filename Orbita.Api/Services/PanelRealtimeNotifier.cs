@@ -9,16 +9,17 @@ public sealed class PanelRealtimeNotifier(IHubContext<PanelHub> hub) : IPanelRea
     private static readonly TimeSpan FlushDelay = TimeSpan.FromMilliseconds(500);
 
     private readonly object _sync = new();
-    private readonly Dictionary<string, (Guid? OfficeId, HashSet<PanelChangeKind> Kinds)> _pending = new();
-    private Guid? _workerId;
+    private readonly Dictionary<string, PendingNotification> _pending = new();
     private Timer? _flushTimer;
 
     public void Notify(
         IReadOnlyList<PanelChangeKind> kinds,
         Guid? officeId = null,
-        Guid? workerId = null)
+        Guid? workerId = null,
+        string? operatorMessage = null,
+        string? operatorMessageVariant = null)
     {
-        if (kinds.Count == 0)
+        if (kinds.Count == 0 && string.IsNullOrWhiteSpace(operatorMessage))
         {
             return;
         }
@@ -28,7 +29,7 @@ public sealed class PanelRealtimeNotifier(IHubContext<PanelHub> hub) : IPanelRea
             var key = officeId?.ToString("D") ?? "none";
             if (!_pending.TryGetValue(key, out var entry))
             {
-                entry = (officeId, []);
+                entry = new PendingNotification(officeId, [], null, null, null);
                 _pending[key] = entry;
             }
 
@@ -37,13 +38,21 @@ public sealed class PanelRealtimeNotifier(IHubContext<PanelHub> hub) : IPanelRea
                 entry.Kinds.Add(kind);
             }
 
-            _pending[key] = (officeId, entry.Kinds);
-
             if (workerId is not null)
             {
-                _workerId = workerId;
+                entry = entry with { WorkerId = workerId };
             }
 
+            if (!string.IsNullOrWhiteSpace(operatorMessage))
+            {
+                entry = entry with
+                {
+                    OperatorMessage = operatorMessage,
+                    OperatorMessageVariant = operatorMessageVariant ?? "error"
+                };
+            }
+
+            _pending[key] = entry;
             ScheduleFlushLocked();
         }
     }
@@ -59,8 +68,7 @@ public sealed class PanelRealtimeNotifier(IHubContext<PanelHub> hub) : IPanelRea
 
     private async void FlushAsync()
     {
-        List<(Guid? OfficeId, HashSet<PanelChangeKind> Kinds)> snapshot;
-        Guid? workerId;
+        List<PendingNotification> snapshot;
 
         lock (_sync)
         {
@@ -71,32 +79,30 @@ public sealed class PanelRealtimeNotifier(IHubContext<PanelHub> hub) : IPanelRea
                 return;
             }
 
-            snapshot = _pending.Values
-                .Select(static x => (x.OfficeId, x.Kinds.ToHashSet()))
-                .ToList();
-            workerId = _workerId;
+            snapshot = _pending.Values.ToList();
             _pending.Clear();
-            _workerId = null;
             _flushTimer?.Dispose();
             _flushTimer = null;
         }
 
         var occurredAtUtc = DateTime.UtcNow;
 
-        foreach (var (officeId, kinds) in snapshot)
+        foreach (var entry in snapshot)
         {
-            if (kinds.Count == 0)
+            if (entry.Kinds.Count == 0 && string.IsNullOrWhiteSpace(entry.OperatorMessage))
             {
                 continue;
             }
 
             var notification = new PanelChangeNotification(
-                kinds.OrderBy(static x => x).ToArray(),
-                officeId,
-                workerId,
-                occurredAtUtc);
+                entry.Kinds.OrderBy(static x => x).ToArray(),
+                entry.OfficeId,
+                entry.WorkerId,
+                occurredAtUtc,
+                entry.OperatorMessage,
+                entry.OperatorMessageVariant);
 
-            if (officeId is Guid resolvedOfficeId)
+            if (entry.OfficeId is Guid resolvedOfficeId)
             {
                 await hub.Clients
                     .Group(PanelHub.OfficeGroup(resolvedOfficeId))
@@ -117,4 +123,11 @@ public sealed class PanelRealtimeNotifier(IHubContext<PanelHub> hub) : IPanelRea
             _flushTimer = null;
         }
     }
+
+    private sealed record PendingNotification(
+        Guid? OfficeId,
+        HashSet<PanelChangeKind> Kinds,
+        Guid? WorkerId,
+        string? OperatorMessage,
+        string? OperatorMessageVariant);
 }

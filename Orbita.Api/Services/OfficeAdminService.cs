@@ -96,6 +96,25 @@ public sealed class OfficeAdminService(OrbitaDbContext db)
         office.Name = trimmedName;
         office.IsEnabled = isEnabled;
         office.BitrixTransmissionEnabled = bitrixTransmissionEnabled;
+
+        var route = await db.DistributionRoutes.FirstOrDefaultAsync(x => x.OfficeId == office.Id, ct);
+        var now = DateTime.UtcNow;
+        if (route is null)
+        {
+            db.DistributionRoutes.Add(new DistributionRouteEntity
+            {
+                Id = Guid.NewGuid(),
+                OfficeId = office.Id,
+                IsAutoDistributionEnabled = bitrixTransmissionEnabled,
+                UpdatedAtUtc = now
+            });
+        }
+        else
+        {
+            route.IsAutoDistributionEnabled = bitrixTransmissionEnabled;
+            route.UpdatedAtUtc = now;
+        }
+
         await db.SaveChangesAsync(ct);
         return (MapDetail(office), null);
     }

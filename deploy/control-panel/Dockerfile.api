@@ -7,6 +7,9 @@ COPY Orbita.Api/*.csproj Orbita.Api/
 RUN --mount=type=cache,target=/root/.nuget/packages \
     dotnet restore Orbita.Api/Orbita.Api.csproj
 
+ARG CACHE_BUST=1
+RUN echo "cache-bust=$CACHE_BUST"
+
 COPY Orbita.Contracts/ Orbita.Contracts/
 COPY Orbita.Logging/ Orbita.Logging/
 COPY Orbita.Api/ Orbita.Api/

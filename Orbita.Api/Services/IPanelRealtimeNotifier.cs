@@ -7,5 +7,7 @@ public interface IPanelRealtimeNotifier
     void Notify(
         IReadOnlyList<PanelChangeKind> kinds,
         Guid? officeId = null,
-        Guid? workerId = null);
+        Guid? workerId = null,
+        string? operatorMessage = null,
+        string? operatorMessageVariant = null);
 }

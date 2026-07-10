@@ -55,6 +55,7 @@ public sealed class ResponsesService(
             ?? new ResponsesSummaryDto(0, 0, 0, 0, 0, null);
         var workers = await api.GetWorkersAsync(ct) ?? [];
         var accounts = await api.GetResponseFilterAccountsAsync(ct) ?? [];
+        var bitrixInstances = await api.GetBitrixInstancesAsync(ct: ct) ?? [];
 
         ResponseDetailViewModel? selected = null;
         if (selectedId is Guid id)
@@ -87,6 +88,7 @@ public sealed class ResponsesService(
             Workers = workerOptions,
             Accounts = accountOptions,
             Responses = pageDto.Items.Select(ResponsesIndexBuilder.MapRow).ToList(),
+            SendBitrixInstances = ResponsesIndexBuilder.MapSendBitrixInstances(bitrixInstances),
             Pagination = new PaginationViewModel
             {
                 Page = pageDto.Page,
@@ -130,6 +132,43 @@ public sealed class ResponsesService(
         return result.Success
             ? (true, null)
             : (false, result.ErrorMessage ?? "Отправка не удалась.");
+    }
+
+    public async Task<(bool Success, string? Error)> SendToBitrixAsync(
+        Guid id,
+        Guid bitrixInstanceId,
+        CancellationToken ct = default)
+    {
+        if (previewOptions.Value.Enabled)
+        {
+            return (true, null);
+        }
+
+        var result = await api.SendResponseToBitrixAsync(id, bitrixInstanceId, ct);
+        if (result is null)
+        {
+            return (false, "Не удалось выполнить запрос.");
+        }
+
+        return result.Success
+            ? (true, null)
+            : (false, result.ErrorMessage ?? "Отправка не удалась.");
+    }
+
+    public async Task<(BulkSendBitrixResultDto? Result, string? Error)> BulkSendToBitrixAsync(
+        IReadOnlyList<Guid> responseIds,
+        Guid bitrixInstanceId,
+        CancellationToken ct = default)
+    {
+        if (previewOptions.Value.Enabled)
+        {
+            var items = responseIds
+                .Select(id => new BulkSendBitrixItemResultDto(id, true, ResponseStatuses.Sent, null))
+                .ToList();
+            return (new BulkSendBitrixResultDto(responseIds.Count, responseIds.Count, 0, items), null);
+        }
+
+        return await api.BulkSendResponsesToBitrixAsync(responseIds, bitrixInstanceId, ct);
     }
 
     internal static string BuildQueryParams(

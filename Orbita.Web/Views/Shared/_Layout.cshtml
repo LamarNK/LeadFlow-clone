@@ -42,6 +42,7 @@ else
     </script>
     <link rel="stylesheet" href="~/lib/fontawesome/css/all.min.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/orbita.css" asp-append-version="true" />
+    @await RenderSectionAsync("Styles", required: false)
 </head>
 <body data-orbita-selected-office="@(OfficeContext.EffectiveOfficeId?.ToString("D") ?? "")">
 <div class="orbita-app">

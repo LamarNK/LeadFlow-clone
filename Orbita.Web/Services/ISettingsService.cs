@@ -1,3 +1,4 @@
+using Orbita.Contracts;
 using Orbita.Web.Models.ViewModels;
 
 namespace Orbita.Web.Services;
@@ -13,6 +14,7 @@ public interface ISettingsService
         string? action,
         string? userId = null,
         Guid? officeId = null,
+        Guid? instanceId = null,
         Guid? workerId = null,
         int page = 1,
         CancellationToken ct = default);
@@ -20,6 +22,24 @@ public interface ISettingsService
     Task<(bool Success, string? Error)> SaveOfficeBitrixAsync(
         Guid officeId,
         string webhookUrl,
+        CancellationToken ct = default);
+
+    Task<(bool Success, string? Error, Guid? InstanceId)> SaveBitrixInstanceAsync(
+        SaveBitrixInstanceFormModel model,
+        Guid officeId,
+        CancellationToken ct = default);
+
+    Task<(bool Success, string? Error)> DeleteBitrixInstanceAsync(Guid id, Guid officeId, CancellationToken ct = default);
+
+    Task<(bool Success, string? Error)> SaveDistributionRouteAsync(
+        bool isAutoDistributionEnabled,
+        IReadOnlyList<SaveDistributionNodeRequest> nodes,
+        Guid officeId,
+        CancellationToken ct = default);
+
+    Task<(bool Success, string? Error)> SaveBitrixTransmissionAsync(
+        Guid officeId,
+        bool transmissionEnabled,
         CancellationToken ct = default);
 
     Task<(bool Success, string? Error)> CreateUserAsync(

@@ -5,12 +5,20 @@
         return JSON.stringify(value);
     }
 
+    function normalizeGuid(value) {
+        return String(value || '').trim().toLowerCase();
+    }
+
     function escapeHtml(text) {
         return String(text)
             .replace(/&/g, '&amp;')
             .replace(/</g, '&lt;')
             .replace(/>/g, '&gt;')
             .replace(/"/g, '&quot;');
+    }
+
+    function escapeAttr(text) {
+        return escapeHtml(text).replace(/\r\n|\r|\n/g, '&#10;');
     }
 
     function highlightCard(el) {
@@ -567,7 +575,9 @@
 
     window.OrbitaLiveShared = {
         stableJson: stableJson,
+        normalizeGuid: normalizeGuid,
         escapeHtml: escapeHtml,
+        escapeAttr: escapeAttr,
         highlightCard: highlightCard,
         updateUpdatedClock: updateUpdatedClock,
         setRefreshBusy: setRefreshBusy,

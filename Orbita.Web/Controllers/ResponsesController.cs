@@ -70,6 +70,69 @@ public sealed class ResponsesController(IResponsesService responses) : Controlle
 
     [HttpPost]
     [ValidateAntiForgeryToken]
+    public async Task<IActionResult> BulkSend(BulkSendResponsesToBitrixFormModel model, CancellationToken ct = default)
+    {
+        if (model.ResponseIds.Count == 0 || model.BitrixInstanceId == Guid.Empty)
+        {
+            return BadRequest(new { error = "Выберите отклики и Битрикс для отправки." });
+        }
+
+        var (result, error) = await responses.BulkSendToBitrixAsync(model.ResponseIds, model.BitrixInstanceId, ct);
+        if (result is null)
+        {
+            return BadRequest(new { error = error ?? "Не удалось выполнить массовую отправку." });
+        }
+
+        return Json(result);
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Send(SendResponseToBitrixFormModel model, CancellationToken ct = default)
+    {
+        if (model.Id == Guid.Empty || model.BitrixInstanceId == Guid.Empty)
+        {
+            TempData["ResponsesError"] = "Укажите отклик и Битрикс для отправки.";
+            return RedirectToAction(nameof(Index), new
+            {
+                model.From,
+                model.To,
+                status = model.Status,
+                workerId = model.WorkerId,
+                accountId = model.AccountId,
+                vacancy = model.Vacancy,
+                search = model.Search,
+                page = model.Page,
+                id = model.Id == Guid.Empty ? (Guid?)null : model.Id,
+                sort = model.Sort,
+                dir = model.Dir
+            });
+        }
+
+        var (success, error) = await responses.SendToBitrixAsync(model.Id, model.BitrixInstanceId, ct);
+        if (!success)
+        {
+            TempData["ResponsesError"] = error;
+        }
+
+        return RedirectToAction(nameof(Index), new
+        {
+            model.From,
+            model.To,
+            status = model.Status,
+            workerId = model.WorkerId,
+            accountId = model.AccountId,
+            vacancy = model.Vacancy,
+            search = model.Search,
+            page = model.Page,
+            id = model.Id,
+            sort = model.Sort,
+            dir = model.Dir
+        });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> Resend(
         Guid id,
         string? from,

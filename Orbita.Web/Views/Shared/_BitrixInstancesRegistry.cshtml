@@ -1,0 +1,236 @@
+@model BitrixInstancesRegistryViewModel
+@{
+    var registry = Model;
+    var editor = registry.Editor;
+    var controller = ViewData["BitrixController"] as string ?? "MySettings";
+    var officeId = registry.OfficeId;
+}
+<div class="settings-grid settings-grid--bitrix-instances">
+    <div class="card card--settings-bitrix-list">
+        <div class="card-header settings-card-header">
+            <div>
+                <h2 class="settings-card-title">Битриксы</h2>
+                <p class="settings-card-subtitle">
+                    @if (!string.IsNullOrWhiteSpace(registry.OfficeName))
+                    {
+                        <text>Реестр CRM-интеграций офиса «@registry.OfficeName»</text>
+                    }
+                    else
+                    {
+                        <text>Реестр CRM-интеграций офиса</text>
+                    }
+                </p>
+            </div>
+            @if (registry.CanManage)
+            {
+                <a class="settings-primary-btn settings-primary-btn--compact"
+                   href="@Url.Action("CreateBitrixInstance", controller, controller == "Settings" ? new { officeId } : null)">
+                    <i class="fa-solid fa-plus" aria-hidden="true"></i>
+                    <span>Добавить</span>
+                </a>
+            }
+        </div>
+        @if (registry.CanManageTransmission)
+        {
+            <div class="card-body settings-bitrix-transmission-bar">
+                <div class="settings-option">
+                    <div class="settings-option-text">
+                        <span class="settings-option-label">Автораспределение откликов</span>
+                        <span class="settings-option-desc">Синхронизировано с вкладкой «Связи»: отдельные узлы — во все Битриксы, цепочка — по порядку с пропуском дублей</span>
+                    </div>
+                    <form asp-controller="@controller" asp-action="SaveBitrixTransmission" method="post" class="settings-bitrix-transmission-form">
+                        @Html.AntiForgeryToken()
+                        @if (controller == "Settings" && officeId is Guid officeGuid)
+                        {
+                            <input type="hidden" name="officeId" value="@officeGuid" />
+                        }
+                        <input type="hidden"
+                               name="TransmissionEnabled"
+                               value="@(registry.TransmissionEnabled ? "true" : "false")"
+                               data-transmission-enabled-input />
+                        <label class="worker-toggle" title="Автораспределение откликов">
+                            <input type="checkbox"
+                                   @(registry.TransmissionEnabled ? "checked" : null)
+                                   onchange="var input=this.form.querySelector('[data-transmission-enabled-input]');input.value=this.checked?'true':'false';this.form.submit();" />
+                            <span class="worker-toggle-slider"></span>
+                        </label>
+                    </form>
+                </div>
+            </div>
+        }
+        <div class="card-body card-body-table settings-table-wrap">
+            <table class="data-table data-table--settings-bitrix data-table--cards">
+                <thead>
+                <tr>
+                    <th>Название</th>
+                    <th>Портал</th>
+                    <th>Статус</th>
+                    <th></th>
+                </tr>
+                </thead>
+                <tbody>
+                @if (registry.Instances.Count == 0)
+                {
+                    <tr>
+                        <td colspan="4" class="settings-empty-cell">Битриксы не настроены — добавьте первый.</td>
+                    </tr>
+                }
+                else
+                {
+                    @foreach (var item in registry.Instances)
+                    {
+                        var isSelected = editor?.Id == item.Id;
+                        <tr class="@(isSelected ? "settings-bitrix-row--selected" : null) @(!item.IsEnabled ? "settings-bitrix-row--disabled" : null)">
+                            <td class="cell-name" data-label="Название">
+                                <a class="settings-bitrix-link @(isSelected ? "settings-bitrix-link--active" : null)"
+                                   href="@Url.Action("EditBitrixInstance", controller, controller == "Settings"
+                                       ? new { officeId, id = item.Id }
+                                       : new { id = item.Id })">
+                                    <strong>@item.DisplayLabel</strong>
+                                    @if (!string.IsNullOrWhiteSpace(item.Signature) && item.Signature != item.Name)
+                                    {
+                                        <span class="settings-bitrix-signature">@item.Name</span>
+                                    }
+                                </a>
+                                @if (!item.IsEnabled)
+                                {
+                                    <span class="settings-status-pill settings-status-pill--disabled">Отключён</span>
+                                }
+                            </td>
+                            <td data-label="Портал">@(item.PortalHost ?? "—")</td>
+                            <td data-label="Статус">
+                                <span class="settings-bitrix-status settings-bitrix-status--@item.ValidationStatusTone">@item.ValidationStatusLabel</span>
+                            </td>
+                            <td class="data-table-actions-col" data-label="">
+                                <a class="settings-link-btn"
+                                   href="@Url.Action("EditBitrixInstance", controller, controller == "Settings"
+                                       ? new { officeId, id = item.Id }
+                                       : new { id = item.Id })">Настроить</a>
+                            </td>
+                        </tr>
+                    }
+                }
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    @if (editor is not null)
+    {
+        <div class="card card--settings-bitrix-editor">
+            <div class="card-header settings-card-header">
+                <div>
+                    <h2 class="settings-card-title">@(editor.IsNew ? "Новый Битрикс" : editor.DisplayLabel ?? editor.Name)</h2>
+                    <p class="settings-card-subtitle">Вебхук для подключения к порталу</p>
+                </div>
+                <span class="settings-bitrix-status settings-bitrix-status--@editor.ValidationStatusTone">@editor.ValidationStatusLabel</span>
+            </div>
+            <div class="card-body">
+                @if (!registry.CanManage)
+                {
+                    <p class="settings-bitrix-hint">Офис не назначен. Обратитесь к администратору.</p>
+                }
+                else
+                {
+                    @if (!editor.IsNew && !string.IsNullOrWhiteSpace(editor.MaskedWebhookUrl))
+                    {
+                        <p class="settings-bitrix-current">Текущий вебхук: <code>@editor.MaskedWebhookUrl</code></p>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(editor.PortalHost))
+                    {
+                        <p class="settings-bitrix-hint">Портал: @editor.PortalHost</p>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(editor.ValidationMessage))
+                    {
+                        <p class="settings-bitrix-message">@editor.ValidationMessage</p>
+                    }
+                    @if (editor.LastValidatedAtUtc is not null)
+                    {
+                        <p class="settings-bitrix-checked">Последняя проверка: <span data-orbita-utc="@editor.LastValidatedAtUtc.Value.ToString("O")"></span></p>
+                    }
+
+                    <form asp-controller="@controller"
+                          asp-action="SaveBitrixInstance"
+                          method="post"
+                          class="settings-create-form settings-bitrix-form"
+                          data-bitrix-settings-form
+                          data-bitrix-validate-url="@Url.Action(controller == "Settings" ? "ValidateAdminBitrixInstance" : "ValidateBitrixInstance", controller, controller == "Settings" ? new { officeId } : null)">
+                        @Html.AntiForgeryToken()
+                        @if (controller == "Settings" && officeId is Guid officeGuid)
+                        {
+                            <input type="hidden" name="officeId" value="@officeGuid" />
+                        }
+                        @if (!editor.IsNew && editor.Id is Guid editorId)
+                        {
+                            <input type="hidden" name="Id" value="@editorId" />
+                        }
+                        <div class="settings-release-upload-grid">
+                            <label class="settings-field">
+                                <span class="settings-field-label">Название</span>
+                                <input type="text" name="Name" value="@editor.Name" required maxlength="200" />
+                            </label>
+                            <label class="settings-field">
+                                <span class="settings-field-label">Подпись</span>
+                                <input type="text" name="Signature" value="@editor.Signature" maxlength="100" placeholder="B24-1" />
+                            </label>
+                        </div>
+                        <label class="settings-field">
+                            <span class="settings-field-label">URL вебхука</span>
+                            <input type="url"
+                                   name="WebhookUrl"
+                                   value="@editor.DraftWebhookUrl"
+                                   placeholder="https://ваш-портал.bitrix24.ru/rest/1/xxxxxxxx/"
+                                   autocomplete="off"
+                                   spellcheck="false"
+                                   data-bitrix-webhook-input
+                                   @(editor.IsNew ? "required" : null) />
+                        </label>
+                        <details class="settings-bitrix-instructions">
+                            <summary>Где взять ссылку вебхука</summary>
+                            <ol>
+                                <li>В Bitrix24 откройте <strong>Приложения</strong> → <strong>Ресурсы разработчика</strong>.</li>
+                                <li>Перейдите на вкладку <strong>Готовые сценарии</strong> → <strong>Другое</strong> → <strong>Входящий вебхук</strong>.</li>
+                                <li>Создайте вебхук и включите право <strong>CRM</strong> (контакты и сделки).</li>
+                                <li>Скопируйте всю ссылку целиком — от <code>https://</code> до секретного кода в конце — и вставьте в поле выше.</li>
+                            </ol>
+                        </details>
+                        <div class="settings-options">
+                            <div class="settings-option">
+                                <div class="settings-option-text">
+                                    <span class="settings-option-label">Битрикс активен</span>
+                                    <span class="settings-option-desc">Отключённые Битриксы недоступны для отправки и схемы связей</span>
+                                </div>
+                                <label class="worker-toggle" title="Битрикс активен">
+                                    <input type="checkbox" name="IsEnabled" value="true" @(editor.IsEnabled ? "checked" : null) />
+                                    <span class="worker-toggle-slider"></span>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="settings-bitrix-actions">
+                            <button type="button" class="settings-secondary-btn" data-bitrix-validate-btn>Проверить</button>
+                            <button type="submit" class="settings-primary-btn">Сохранить</button>
+                            @if (!editor.IsNew && editor.Id is Guid deleteId)
+                            {
+                                <button type="submit"
+                                        formaction="@Url.Action("DeleteBitrixInstance", controller, controller == "Settings" ? new { id = deleteId, officeId } : new { id = deleteId })"
+                                        formnovalidate
+                                        class="settings-link-btn settings-link-btn--danger"
+                                        onclick="return confirm('Удалить Битрикс «@editor.DisplayLabel»?');">
+                                    Удалить
+                                </button>
+                            }
+                        </div>
+                        @if (editor.LiveValidation is not null)
+                        {
+                            <partial name="_BitrixValidationResults" model="editor.LiveValidation" />
+                        }
+                        else
+                        {
+                            <div class="settings-bitrix-validation" data-bitrix-validation-results hidden></div>
+                        }
+                    </form>
+                }
+            </div>
+        </div>
+    }
+</div>

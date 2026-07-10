@@ -10,11 +10,19 @@ internal sealed class CapturingPanelRealtimeNotifier : IPanelRealtimeNotifier
     public Guid? LastWorkerId { get; private set; }
     public int NotifyCount { get; private set; }
 
-    public void Notify(IReadOnlyList<PanelChangeKind> kinds, Guid? officeId = null, Guid? workerId = null)
+    public string? LastOperatorMessage { get; private set; }
+
+    public void Notify(
+        IReadOnlyList<PanelChangeKind> kinds,
+        Guid? officeId = null,
+        Guid? workerId = null,
+        string? operatorMessage = null,
+        string? operatorMessageVariant = null)
     {
         NotifyCount++;
         LastKinds = kinds;
         LastOfficeId = officeId;
         LastWorkerId = workerId;
+        LastOperatorMessage = operatorMessage;
     }
 }

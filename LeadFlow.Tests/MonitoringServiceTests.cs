@@ -4,6 +4,7 @@ using LeadFlow.Core.Models;
 using LeadFlow.Core.Services;
 using LeadFlow.Core.Services.AdsPower;
 using LeadFlow.Core.Services.Avito;
+using LeadFlow.Core.Services.Browser;
 using LeadFlow.Services;
 using LeadFlow.Services.Bitrix;
 using LeadFlow.Tests.Support;
@@ -826,6 +827,13 @@ public sealed class MonitoringServiceTests
 
             public Task<byte[]?> CapturePageScreenshotAsync(CancellationToken cancellationToken = default) =>
                 Task.FromResult<byte[]?>(null);
+
+            public Task<byte[]?> CapturePageJpegScreenshotAsync(CancellationToken cancellationToken = default) =>
+                Task.FromResult<byte[]?>(null);
+
+            public Task<BrowserMonitorScreencastCapture> CreateMonitorScreencastCaptureAsync(
+                CancellationToken cancellationToken = default) =>
+                throw new NotSupportedException("Screencast is not available in test doubles.");
 
             public ValueTask DisposeAsync() => ValueTask.CompletedTask;
         }

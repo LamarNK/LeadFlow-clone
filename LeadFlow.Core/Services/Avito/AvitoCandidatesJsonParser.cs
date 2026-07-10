@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using LeadFlow.Core.Models;
+using Orbita.Contracts;
 
 namespace LeadFlow.Core.Services.Avito;
 
@@ -46,6 +47,14 @@ public static class AvitoCandidatesJsonParser
             var age = ParseAge(item.TryGetProperty("age", out var ageProp) ? ageProp.GetString() : null);
             var chatMessages = AvitoChatMessagesJson.ParseFromCandidateJson(item);
             var chatMessagesJson = AvitoChatMessagesJson.Serialize(chatMessages);
+            var ageText = item.TryGetProperty("age", out var ageTextProp) ? ageTextProp.GetString() : null;
+            var cardFingerprint = AvitoResponseCardFingerprint.Build(
+                fullName,
+                vacancy,
+                city,
+                vacancyUrl,
+                messengerUrl,
+                ageText);
 
             results.Add(new CandidateResponse
             {
@@ -54,6 +63,7 @@ public static class AvitoCandidatesJsonParser
                 AccountName = account.DisplayName,
                 Source = "Avito",
                 SourceResponseId = sourceResponseId,
+                CardFingerprint = cardFingerprint,
                 FullName = fullName,
                 PhoneRaw = phone,
                 City = city,

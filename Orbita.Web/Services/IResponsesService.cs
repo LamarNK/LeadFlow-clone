@@ -1,3 +1,4 @@
+using Orbita.Contracts;
 using Orbita.Web.Models.ViewModels;
 
 namespace Orbita.Web.Services;
@@ -20,6 +21,16 @@ public interface IResponsesService
         CancellationToken ct = default);
 
     Task<(bool Success, string? Error)> ResendToBitrixAsync(Guid id, CancellationToken ct = default);
+
+    Task<(bool Success, string? Error)> SendToBitrixAsync(
+        Guid id,
+        Guid bitrixInstanceId,
+        CancellationToken ct = default);
+
+    Task<(BulkSendBitrixResultDto? Result, string? Error)> BulkSendToBitrixAsync(
+        IReadOnlyList<Guid> responseIds,
+        Guid bitrixInstanceId,
+        CancellationToken ct = default);
 
     Task<ResponseDetailJsonViewModel?> GetDetailJsonAsync(Guid id, CancellationToken ct = default);
 }

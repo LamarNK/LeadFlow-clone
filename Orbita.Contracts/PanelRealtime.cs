@@ -16,4 +16,6 @@ public sealed record PanelChangeNotification(
     IReadOnlyList<PanelChangeKind> Kinds,
     Guid? OfficeId,
     Guid? WorkerId,
-    DateTime OccurredAtUtc);
+    DateTime OccurredAtUtc,
+    string? OperatorMessage = null,
+    string? OperatorMessageVariant = null);

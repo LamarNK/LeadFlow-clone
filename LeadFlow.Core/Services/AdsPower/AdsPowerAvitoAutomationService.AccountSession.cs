@@ -436,7 +436,8 @@ public sealed partial class AdsPowerAvitoAutomationService
                 }
             },
             page.Url,
-            BuildResolveExistingPhonesCallback(messengerEnrichmentHints)).ConfigureAwait(false);
+            BuildResolveExistingPhonesCallback(messengerEnrichmentHints),
+            BuildResolveExistingCardFingerprintsCallback(messengerEnrichmentHints)).ConfigureAwait(false);
 
         var raw = await EvaluateWithRetryAsync<string>(page, ExtractionScript, cancellationToken).ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(raw))
@@ -764,6 +765,13 @@ public sealed partial class AdsPowerAvitoAutomationService
 
         public Task<byte[]?> CapturePageScreenshotAsync(CancellationToken cancellationToken = default) =>
             BrowserDiagnosticsCapture.CapturePageScreenshotAsync(page, cancellationToken);
+
+        public Task<byte[]?> CapturePageJpegScreenshotAsync(CancellationToken cancellationToken = default) =>
+            BrowserDiagnosticsCapture.CaptureJpegFastAsync(page, cancellationToken: cancellationToken);
+
+        public Task<BrowserMonitorScreencastCapture> CreateMonitorScreencastCaptureAsync(
+            CancellationToken cancellationToken = default) =>
+            BrowserMonitorScreencastCapture.StartAsync(page, cancellationToken);
 
         public Task<bool> SwitchSubProfileAsync(string subProfileId, CancellationToken cancellationToken = default) =>
             owner.SwitchSubProfileOnPageAsync(page, subProfileId, cancellationToken);

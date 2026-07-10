@@ -1,0 +1,83 @@
+@model DistributionEditorViewModel
+@{
+    var editor = Model;
+    var controller = ViewData["DistributionController"] as string ?? "MySettings";
+    var officeId = editor.OfficeId;
+}
+<div class="card card--settings-distribution">
+    <div class="card-header settings-card-header">
+        <div>
+            <h2 class="settings-card-title">Схема связей</h2>
+            <p class="settings-card-subtitle">
+                @if (!string.IsNullOrWhiteSpace(editor.OfficeName))
+                {
+                    <text>Схема офиса «@editor.OfficeName»: отдельные узлы — во все Битриксы, цепочка B1→B2 — по очереди с пропуском дублей</text>
+                }
+                else
+                {
+                    <text>Отдельные узлы — рассылка во все Битриксы. Цепочка B1→B2→B3 — попытка по порядку, дубль пропускается</text>
+                }
+            </p>
+        </div>
+    </div>
+    <div class="card-body settings-distribution-body">
+        @if (!editor.CanManage)
+        {
+            <p class="settings-bitrix-hint">Офис не назначен. Выберите офис или обратитесь к администратору.</p>
+        }
+        else
+        {
+            <form asp-controller="@controller"
+                  asp-action="@(controller == "Settings" ? "SaveAdminDistributionRoute" : "SaveDistributionRoute")"
+                  method="post"
+                  class="settings-distribution-form"
+                  data-distribution-form>
+                @Html.AntiForgeryToken()
+                @if (controller == "Settings" && officeId is Guid officeGuid)
+                {
+                    <input type="hidden" name="officeId" value="@officeGuid" />
+                }
+                <input type="hidden" name="NodesJson" value="[]" data-distribution-nodes-json />
+                <div class="settings-options settings-options--distribution">
+                    <div class="settings-option">
+                        <div class="settings-option-text">
+                            <span class="settings-option-label">Автораспределение</span>
+                            <span class="settings-option-desc">Уникальные отклики автоматически идут по схеме связей</span>
+                        </div>
+                        <input type="hidden"
+                               name="IsAutoDistributionEnabled"
+                               value="@(editor.IsAutoDistributionEnabled ? "true" : "false")"
+                               data-distribution-auto-input />
+                        <label class="worker-toggle" title="Автораспределение">
+                            <input type="checkbox"
+                                   data-distribution-auto-toggle
+                                   @(editor.IsAutoDistributionEnabled ? "checked" : null)
+                                   onchange="var input=this.form.querySelector('[data-distribution-auto-input]');if(input){input.value=this.checked?'true':'false';}" />
+                            <span class="worker-toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+                <div class="settings-distribution-layout"
+                     data-distribution-editor
+                     data-route-json="@editor.RouteJson"
+                     data-instances-json="@editor.InstancesJson"
+                     data-save-url="@(controller == "Settings"
+                         ? Url.Action("SaveAdminDistributionRoute", "Settings", new { officeId })
+                         : Url.Action("SaveDistributionRouteJson", "MySettings"))">
+                    <aside class="settings-distribution-palette" data-distribution-palette>
+                        <h3 class="settings-distribution-palette-title">Битриксы</h3>
+                        <p class="settings-distribution-palette-hint">Перетащите на схему или нажмите «Добавить»</p>
+                        <div class="settings-distribution-palette-list" data-distribution-palette-list></div>
+                    </aside>
+                    <div class="settings-distribution-canvas-wrap">
+                        <div id="distributionDrawflow" class="settings-distribution-canvas" data-distribution-canvas></div>
+                    </div>
+                </div>
+                <div class="settings-distribution-actions">
+                    <button type="button" class="settings-secondary-btn" data-distribution-reset>Сбросить</button>
+                    <button type="submit" class="settings-primary-btn" data-distribution-save>Сохранить схему</button>
+                </div>
+            </form>
+        }
+    </div>
+</div>

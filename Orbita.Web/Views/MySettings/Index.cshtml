@@ -2,7 +2,8 @@
 @{
     ViewData["Title"] = "Настройки";
     var profile = Model.Profile;
-    var bitrix = Model.Bitrix;
+    var bitrixInstances = Model.BitrixInstances;
+    var distribution = Model.Distribution;
 }
 <partial name="_PageHeader" model="Model.Header" />
 <div class="orbita-main settings-page">
@@ -89,119 +90,30 @@
             </div>
         </div>
     }
-    else if (Model.ActiveTab == "bitrix" && bitrix is not null)
+    else if (Model.ActiveTab == "bitrix" && bitrixInstances is not null)
     {
-        <div class="settings-grid settings-grid--bitrix">
-            <div class="card card--settings-bitrix">
-                <div class="card-header settings-card-header">
-                    <div>
-                        <h2 class="settings-card-title">Bitrix24 офиса</h2>
-                        <p class="settings-card-subtitle">
-                            @if (!string.IsNullOrWhiteSpace(bitrix.OfficeName))
-                            {
-                                <text>Вебхук офиса «@bitrix.OfficeName» для отправки откликов и проверки дублей в CRM</text>
-                            }
-                            else
-                            {
-                                <text>Вебхук офиса для отправки откликов и проверки дублей в CRM</text>
-                            }
-                        </p>
-                    </div>
-                    <span class="settings-bitrix-status settings-bitrix-status--@bitrix.ValidationStatusTone">
-                        @bitrix.ValidationStatusLabel
-                    </span>
-                </div>
-                <div class="card-body">
-                    @if (!bitrix.CanManageWebhook)
-                    {
-                        <p class="settings-bitrix-hint">Офис не назначен. Обратитесь к администратору — без офиса вебхук Bitrix24 недоступен.</p>
-                    }
-                    else
-                    {
-                        @if (!string.IsNullOrWhiteSpace(bitrix.MaskedWebhookUrl))
-                        {
-                            <p class="settings-bitrix-current">Текущий вебхук: <code>@bitrix.MaskedWebhookUrl</code></p>
-                        }
-                        @if (!string.IsNullOrWhiteSpace(bitrix.PortalHost))
-                        {
-                            <p class="settings-bitrix-hint">Портал: @bitrix.PortalHost</p>
-                        }
-                        @if (!string.IsNullOrWhiteSpace(bitrix.ValidationMessage))
-                        {
-                            <p class="settings-bitrix-message">@bitrix.ValidationMessage</p>
-                        }
-                        @if (bitrix.LastValidatedAtUtc is not null)
-                        {
-                            <p class="settings-bitrix-checked">Последняя проверка: <span data-orbita-utc="@bitrix.LastValidatedAtUtc.Value.ToString("O")"></span></p>
-                        }
-
-                        @if (bitrix.CanManageTransmission)
-                        {
-                            <div class="settings-options settings-options--bitrix-transmission">
-                                <div class="settings-option">
-                                    <div class="settings-option-text">
-                                        <span class="settings-option-label">Передача откликов в Bitrix24</span>
-                                        <span class="settings-option-desc">
-                                            @(bitrix.TransmissionEnabled
-                                                ? "Новые отклики автоматически отправляются в CRM после проверки дублей."
-                                                : "Отклики сохраняются в Орбите, но в Bitrix24 не передаются.")
-                                        </span>
-                                    </div>
-                                    <form asp-action="SaveBitrixTransmission" method="post" class="settings-bitrix-transmission-form">
-                                        @Html.AntiForgeryToken()
-                                        <label class="worker-toggle" title="Передача в Bitrix24">
-                                            <input type="checkbox"
-                                                   name="TransmissionEnabled"
-                                                   value="true"
-                                                   @(bitrix.TransmissionEnabled ? "checked" : null)
-                                                   onchange="this.form.submit()" />
-                                            <span class="worker-toggle-slider"></span>
-                                        </label>
-                                    </form>
-                                </div>
-                            </div>
-                        }
-
-                        <form asp-action="SaveBitrix"
-                              method="post"
-                              class="settings-create-form settings-bitrix-form">
-                            @Html.AntiForgeryToken()
-                            <label class="settings-field">
-                                <span class="settings-field-label">URL вебхука</span>
-                                <input type="url"
-                                       name="WebhookUrl"
-                                       value="@bitrix.DraftWebhookUrl"
-                                       placeholder="https://ваш-портал.bitrix24.ru/rest/1/xxxxxxxx/"
-                                       autocomplete="off"
-                                       spellcheck="false" />
-                            </label>
-                            <p class="settings-bitrix-hint">Один вебхук на весь офис. Изменения видят все операторы этого офиса. Оставьте поле пустым и нажмите «Проверить», чтобы проверить уже сохранённый вебхук.</p>
-                            <div class="settings-bitrix-actions">
-                                <button type="submit"
-                                        formaction="@Url.Action("ValidateBitrix", "MySettings")"
-                                        formnovalidate
-                                        class="settings-secondary-btn">Проверить</button>
-                                <button type="submit" class="settings-primary-btn">Сохранить</button>
-                            </div>
-                            @if (bitrix.LiveValidation is not null)
-                            {
-                                <partial name="_BitrixValidationResults" model="bitrix.LiveValidation" />
-                            }
-                        </form>
-                    }
-
-                    <details class="settings-bitrix-instructions">
-                        <summary>Как получить вебхук и какие права выдать</summary>
-                        <ol>
-                            <li>Откройте Bitrix24 → <strong>Приложения</strong> → <strong>Вебхуки</strong> → <strong>Добавить вебхук</strong> → <strong>Входящий вебхук</strong>.</li>
-                            <li>Выдайте право <strong>CRM</strong> (<code>crm</code>) — контакты, сделки, поиск дублей.</li>
-                            <li>Скопируйте полный URL вида <code>https://ваш-портал.bitrix24.ru/rest/1/xxxxxxxx/</code>.</li>
-                            <li>Вставьте URL выше и нажмите <strong>Проверить</strong>, затем <strong>Сохранить</strong>.</li>
-                        </ol>
-                    </details>
-                </div>
-            </div>
-        </div>
+        <partial name="_BitrixInstancesRegistry" model="bitrixInstances" />
+    }
+    else if (Model.ActiveTab == "distribution" && distribution is not null)
+    {
+        <partial name="_DistributionEditor" model="distribution" />
     }
 </div>
 
+@section Styles {
+    <link rel="stylesheet" href="~/lib/drawflow/dist/drawflow.min.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/orbita-distribution.css" asp-append-version="true" />
+}
+
+@section Scripts {
+    <script src="~/js/orbita-bitrix-instances.js" asp-append-version="true"></script>
+    @if (Model.ActiveTab == "bitrix")
+    {
+        <script src="~/js/orbita-bitrix-settings.js" asp-append-version="true"></script>
+    }
+    @if (Model.ActiveTab == "distribution")
+    {
+        <script src="~/lib/drawflow/dist/drawflow.min.js" asp-append-version="true"></script>
+        <script src="~/js/orbita-distribution-editor.js" asp-append-version="true"></script>
+    }
+}

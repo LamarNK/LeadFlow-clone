@@ -9,7 +9,7 @@ public sealed class ResponseDetailJsonViewModel
     public IReadOnlyList<DetailActionLinkViewModel> Links { get; init; } = [];
     public IReadOnlyList<DetailActionLinkViewModel> PrimaryActions { get; init; } = [];
     public string? CopyText { get; init; }
-    public string CopyLabel { get; init; } = "Копировать телефон";
+    public string CopyLabel { get; init; } = "Копировать карточку";
 }
 
 public sealed class DetailSectionItemViewModel
