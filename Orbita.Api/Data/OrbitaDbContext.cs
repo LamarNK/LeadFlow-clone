@@ -17,6 +17,8 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
     public DbSet<WorkerLogEntryEntity> WorkerLogEntries => Set<WorkerLogEntryEntity>();
     public DbSet<PanelAuditLogEntity> PanelAuditLogs => Set<PanelAuditLogEntity>();
     public DbSet<PanelUserBitrixSettingsEntity> PanelUserBitrixSettings => Set<PanelUserBitrixSettingsEntity>();
+    public DbSet<CandidatePersonEntity> CandidatePersons => Set<CandidatePersonEntity>();
+    public DbSet<CandidatePhoneHistoryEntity> CandidatePhoneHistory => Set<CandidatePhoneHistoryEntity>();
     public DbSet<CandidateResponseEntity> CandidateResponses => Set<CandidateResponseEntity>();
     public DbSet<ResponseBitrixDeliveryEntity> ResponseBitrixDeliveries => Set<ResponseBitrixDeliveryEntity>();
     public DbSet<BitrixInstanceEntity> BitrixInstances => Set<BitrixInstanceEntity>();
@@ -89,9 +91,36 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.HasOne(x => x.Worker).WithMany(x => x.Accounts).HasForeignKey(x => x.WorkerId);
         });
 
+        modelBuilder.Entity<CandidatePersonEntity>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.OfficeId, x.LastName, x.FirstName, x.MiddleName });
+            entity.HasIndex(x => x.OfficeId);
+            entity.Property(x => x.FullName).HasMaxLength(500);
+            entity.Property(x => x.FirstName).HasMaxLength(200);
+            entity.Property(x => x.LastName).HasMaxLength(200);
+            entity.Property(x => x.MiddleName).HasMaxLength(200);
+            entity.Property(x => x.City).HasMaxLength(500);
+            entity.Property(x => x.PhoneRaw).HasMaxLength(64);
+            entity.Property(x => x.PhoneNormalized).HasMaxLength(32);
+            entity.HasOne(x => x.Office).WithMany().HasForeignKey(x => x.OfficeId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<CandidatePhoneHistoryEntity>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => x.PersonId);
+            entity.HasIndex(x => new { x.PersonId, x.RecordedAtUtc });
+            entity.Property(x => x.PhoneRaw).HasMaxLength(64);
+            entity.Property(x => x.PhoneNormalized).HasMaxLength(32);
+            entity.HasOne(x => x.Person).WithMany(x => x.PhoneHistory).HasForeignKey(x => x.PersonId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.Response).WithMany().HasForeignKey(x => x.ResponseId).OnDelete(DeleteBehavior.SetNull);
+        });
+
         modelBuilder.Entity<CandidateResponseEntity>(entity =>
         {
             entity.HasKey(x => x.Id);
+            entity.HasIndex(x => x.PersonId);
             entity.HasIndex(x => x.CreatedAt);
             entity.HasIndex(x => x.PhoneNormalized);
             entity.HasIndex(x => new { x.OfficeId, x.PhoneNormalized });
@@ -104,6 +133,7 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.Property(x => x.DuplicateSummary).HasMaxLength(2000);
             entity.Property(x => x.WorkerName).HasMaxLength(200);
             entity.Property(x => x.DistributionMode).HasMaxLength(16);
+            entity.HasOne(x => x.Person).WithMany(x => x.Responses).HasForeignKey(x => x.PersonId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(x => x.Office).WithMany().HasForeignKey(x => x.OfficeId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(x => x.Worker).WithMany().HasForeignKey(x => x.WorkerId).OnDelete(DeleteBehavior.SetNull);
             entity.HasOne(x => x.BitrixInstance).WithMany().HasForeignKey(x => x.BitrixInstanceId).OnDelete(DeleteBehavior.SetNull);

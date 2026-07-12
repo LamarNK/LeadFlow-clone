@@ -2,20 +2,22 @@ using Microsoft.EntityFrameworkCore;
 using Orbita.Api.Data;
 using Orbita.Api.Models;
 using Orbita.Api.Services.Bitrix;
+using Orbita.Contracts;
 
 namespace Orbita.Api.Services;
 
 public sealed class CandidateDuplicateService(
     OrbitaDbContext db,
+    CandidatePersonMatchService personMatch,
     BitrixClient bitrixClient)
 {
     public async Task<CandidateResponseEntity?> FindLocalDuplicateAsync(
         Guid officeId,
-        string phoneNormalized,
+        Guid personId,
         Guid excludeId,
         CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(phoneNormalized))
+        if (personId == Guid.Empty)
         {
             return null;
         }
@@ -25,12 +27,18 @@ public sealed class CandidateDuplicateService(
         return await db.CandidateResponses
             .AsNoTracking()
             .Where(x => x.OfficeId == officeId
-                        && x.PhoneNormalized == phoneNormalized
-                        && x.CreatedAt >= duplicateCutoffUtc
-                        && x.Id != excludeId)
-            .OrderByDescending(x => x.CreatedAt)
+                        && x.PersonId == personId
+                        && x.Id != excludeId
+                        && x.CreatedAt >= duplicateCutoffUtc)
+            .OrderBy(x => x.CreatedAt)
             .FirstOrDefaultAsync(ct);
     }
+
+    public async Task<CandidatePersonEntity?> FindMatchingPersonAsync(
+        Guid officeId,
+        CandidateMatchProfile profile,
+        CancellationToken ct = default) =>
+        await personMatch.FindMatchingPersonAsync(officeId, profile, ct);
 
     public async Task<DuplicateCheckResult> CheckAsync(
         CandidateResponseEntity response,
@@ -46,7 +54,7 @@ public sealed class CandidateDuplicateService(
 
         var local = await FindLocalDuplicateAsync(
             response.OfficeId,
-            response.PhoneNormalized,
+            response.PersonId,
             response.Id,
             ct);
         result.IsLocalDuplicate = local is not null;
@@ -56,7 +64,8 @@ public sealed class CandidateDuplicateService(
             return result;
         }
 
-        var bitrixLookup = await bitrixClient.HasDuplicateAsync(response.PhoneNormalized, webhookUrl, ct);
+        var profile = CandidatePersonMatchService.ToProfile(response);
+        var bitrixLookup = await bitrixClient.HasDuplicateAsync(profile, webhookUrl, ct);
         if (bitrixLookup.IsUnavailable)
         {
             result.IsBitrixCheckUnavailable = true;

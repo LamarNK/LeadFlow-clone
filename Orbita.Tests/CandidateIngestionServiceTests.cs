@@ -15,26 +15,31 @@ public sealed class CandidateIngestionServiceTests
     private static readonly Guid WorkerId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
 
     [Fact]
-    public async Task IngestBatchAsync_LocalDuplicate_StoresDuplicateStatus()
+    public async Task IngestBatchAsync_SamePersonDifferentPhone_StoresDuplicateStatus()
     {
         await using var db = CreateDb();
         SeedWorker(db);
 
-        db.CandidateResponses.Add(new CandidateResponseEntity
-        {
-            Id = Guid.NewGuid(),
-            OfficeId = OfficeId,
-            WorkerId = WorkerId,
-            AccountId = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc"),
-            AccountName = "acc",
-            Source = "Avito",
-            SourceResponseId = "existing-source",
-            FullName = "Existing User",
-            PhoneRaw = "+7 (900) 111-11-11",
-            PhoneNormalized = "79001111111",
-            Status = ResponseStatuses.Sent,
-            CreatedAt = DateTime.UtcNow.AddHours(-1)
-        });
+        var person = TestCandidatePersonFactory.CreatePerson(
+            OfficeId,
+            fullName: "Гор Олег Александрович",
+            firstName: "Олег",
+            lastName: "Гор",
+            middleName: "Александрович",
+            age: 66,
+            city: "рабочий поселок Чик",
+            phoneRaw: "+79930099416",
+            phoneNormalized: "79930099416");
+        db.CandidatePersons.Add(person);
+        db.CandidateResponses.Add(TestCandidatePersonFactory.CreateResponse(
+            OfficeId,
+            person.Id,
+            WorkerId,
+            phone: "79930099416",
+            sourceResponseId: "existing-source",
+            fullName: "Гор Олег Александрович",
+            age: 66,
+            city: "рабочий поселок Чик"));
         await db.SaveChangesAsync();
 
         var sut = CreateService(db);
@@ -45,10 +50,10 @@ public sealed class CandidateIngestionServiceTests
                 "Avito",
                 "new-source-id",
                 "",
-                "New User",
-                25,
-                "+7 (900) 111-11-11",
-                "Москва",
+                "Гор Олег Александрович",
+                66,
+                "+79910001122",
+                "рабочий поселок Чик",
                 "Курьер",
                 "",
                 "",
@@ -66,6 +71,7 @@ public sealed class CandidateIngestionServiceTests
         var stored = await db.CandidateResponses.SingleAsync(x => x.SourceResponseId == "new-source-id");
         Assert.Equal(ResponseStatuses.Duplicate, stored.Status);
         Assert.True(stored.IsLocalDuplicate);
+        Assert.Equal(person.Id, stored.PersonId);
     }
 
     [Fact]
@@ -104,13 +110,16 @@ public sealed class CandidateIngestionServiceTests
         var stored = await db.CandidateResponses.SingleAsync(x => x.SourceResponseId == "disabled-auto-source");
         Assert.Equal(ResponseStatuses.ActionRequired, stored.Status);
         Assert.Equal("Ожидает действия оператора.", stored.ErrorMessage);
+        Assert.NotEqual(Guid.Empty, stored.PersonId);
     }
 
     private static CandidateIngestionService CreateService(OrbitaDbContext db)
     {
         var bitrixOptions = Options.Create(new OrbitaBitrixSettings { CheckDuplicatesInBitrix = false });
-        var duplicateService = new CandidateDuplicateService(db, new BitrixClient(new HttpClientFactoryStub(), new CandidateParser()));
+        var personMatch = new CandidatePersonMatchService(db);
+        var personPhone = new CandidatePersonPhoneService(db);
         var audit = new PanelAuditService(db);
+        var duplicateService = new CandidateDuplicateService(db, personMatch, new BitrixClient(new HttpClientFactoryStub(), new CandidateParser()));
         var bitrixInstanceService = new BitrixInstanceService(db, null!, null!, bitrixOptions, audit);
         var distributionRoute = new DistributionRouteService(db, audit);
         var distributionEngine = new DistributionEngine(db);
@@ -126,7 +135,8 @@ public sealed class CandidateIngestionServiceTests
             db,
             new PhoneNormalizer(),
             new CandidateParser(),
-            duplicateService,
+            personMatch,
+            personPhone,
             distributionRoute,
             distributionEngine,
             autoDistribution,

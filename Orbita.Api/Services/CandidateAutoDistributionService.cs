@@ -158,7 +158,7 @@ public sealed class CandidateAutoDistributionService(
     {
         var (isDuplicate, unavailableReason) = await duplicateCheck.CheckInInstanceAsync(
             instance,
-            entity.PhoneNormalized,
+            CandidatePersonMatchService.ToProfile(entity),
             ct);
         if (unavailableReason is not null)
         {

@@ -12,6 +12,7 @@ public sealed class LeadFlowImportService(
     OrbitaDbContext db,
     LeadFlowDatabaseReader databaseReader,
     PhoneNormalizer phoneNormalizer,
+    CandidatePersonMatchService personMatch,
     IOptions<LeadFlowImportOptions> options)
 {
     private const string SessionManifestFileName = "session.json";
@@ -182,7 +183,36 @@ public sealed class LeadFlowImportService(
                     continue;
                 }
 
-                var entity = MapEntity(record, session.OfficeId, worker);
+                var phoneNormalized = ResolveImportedPhoneNormalized(record);
+                var profile = CandidatePersonMatchService.ToProfile(
+                    record.FullName,
+                    record.Age,
+                    record.City,
+                    phoneNormalized);
+                var matchedPerson = await personMatch.FindMatchingPersonAsync(session.OfficeId, profile, ct);
+
+                CandidatePersonEntity person;
+                if (matchedPerson is not null)
+                {
+                    person = await db.CandidatePersons.FirstAsync(x => x.Id == matchedPerson.Id, ct);
+                }
+                else
+                {
+                    person = personMatch.CreatePerson(
+                        session.OfficeId,
+                        record.FullName,
+                        record.FirstName,
+                        record.LastName,
+                        record.MiddleName,
+                        record.Age,
+                        record.City,
+                        record.PhoneRaw,
+                        phoneNormalized,
+                        EnsureUtc(record.CreatedAt));
+                    db.CandidatePersons.Add(person);
+                }
+
+                var entity = MapEntity(record, session.OfficeId, worker, person.Id);
                 db.CandidateResponses.Add(entity);
                 await db.Database.ExecuteSqlRawAsync("SAVEPOINT leadflow_import_row", ct);
                 try
@@ -197,6 +227,10 @@ public sealed class LeadFlowImportService(
                 {
                     await db.Database.ExecuteSqlRawAsync("ROLLBACK TO SAVEPOINT leadflow_import_row", ct);
                     db.Entry(entity).State = EntityState.Detached;
+                    if (db.Entry(person).State == EntityState.Added)
+                    {
+                        db.Entry(person).State = EntityState.Detached;
+                    }
                     if (imported == 0 && failed == 0)
                     {
                         throw new InvalidOperationException(
@@ -316,7 +350,8 @@ public sealed class LeadFlowImportService(
     private CandidateResponseEntity MapEntity(
         LeadFlowCandidateRecord record,
         Guid officeId,
-        WorkerEntity worker)
+        WorkerEntity worker,
+        Guid personId)
     {
         var status = string.IsNullOrWhiteSpace(record.Status)
             ? ResponseStatuses.Sent
@@ -326,6 +361,7 @@ public sealed class LeadFlowImportService(
         return new CandidateResponseEntity
         {
             Id = record.Id,
+            PersonId = personId,
             OfficeId = officeId,
             WorkerId = worker.Id,
             WorkerName = worker.DisplayName,

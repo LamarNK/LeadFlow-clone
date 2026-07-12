@@ -175,9 +175,43 @@ public sealed class PanelUserBitrixSettingsEntity
     public string? UpdatedByUserId { get; set; }
 }
 
+public sealed class CandidatePersonEntity
+{
+    public Guid Id { get; set; }
+    public Guid OfficeId { get; set; }
+    public string FullName { get; set; } = string.Empty;
+    public string FirstName { get; set; } = string.Empty;
+    public string LastName { get; set; } = string.Empty;
+    public string MiddleName { get; set; } = string.Empty;
+    public int? Age { get; set; }
+    public string City { get; set; } = string.Empty;
+    public string PhoneRaw { get; set; } = string.Empty;
+    public string PhoneNormalized { get; set; } = string.Empty;
+    public DateTime CreatedAtUtc { get; set; }
+    public DateTime UpdatedAtUtc { get; set; }
+
+    public OfficeEntity Office { get; set; } = null!;
+    public ICollection<CandidateResponseEntity> Responses { get; set; } = [];
+    public ICollection<CandidatePhoneHistoryEntity> PhoneHistory { get; set; } = [];
+}
+
+public sealed class CandidatePhoneHistoryEntity
+{
+    public Guid Id { get; set; }
+    public Guid PersonId { get; set; }
+    public Guid? ResponseId { get; set; }
+    public string PhoneRaw { get; set; } = string.Empty;
+    public string PhoneNormalized { get; set; } = string.Empty;
+    public DateTime RecordedAtUtc { get; set; }
+
+    public CandidatePersonEntity Person { get; set; } = null!;
+    public CandidateResponseEntity? Response { get; set; }
+}
+
 public sealed class CandidateResponseEntity
 {
     public Guid Id { get; set; }
+    public Guid PersonId { get; set; }
     public Guid OfficeId { get; set; }
     public Guid? WorkerId { get; set; }
     public string WorkerName { get; set; } = string.Empty;
@@ -216,6 +250,7 @@ public sealed class CandidateResponseEntity
     public DateTime CreatedAt { get; set; }
     public DateTime? ProcessedAt { get; set; }
 
+    public CandidatePersonEntity Person { get; set; } = null!;
     public OfficeEntity Office { get; set; } = null!;
     public WorkerEntity? Worker { get; set; }
     public BitrixInstanceEntity? BitrixInstance { get; set; }

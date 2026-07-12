@@ -104,28 +104,55 @@ public sealed class BitrixWebhookValidator(IHttpClientFactory httpClientFactory)
                 "Контакты в CRM читаются — отправка кандидатов возможна."));
         }
 
-        var duplicateStep = await CallAsync(
+        var contactListStep = await CallAsync(
             client,
             baseUrl,
-            "crm.duplicate.findbycomm",
-            new { type = "PHONE", values = new[] { "+70000000000" } },
+            "crm.contact.list",
+            new
+            {
+                filter = new { LAST_NAME = "Тест" },
+                select = new[] { "ID" },
+                start = 0
+            },
             ct);
-        if (duplicateStep.Status == BitrixValidationStepStatuses.Error)
+        if (contactListStep.Status == BitrixValidationStepStatuses.Error)
         {
             steps.Add(Step(
                 "duplicate_check",
                 "Проверка дублей",
                 BitrixValidationStepStatuses.Warning,
-                duplicateStep.Message,
-                duplicateStep.Hint ?? HintEnableCrm));
+                contactListStep.Message,
+                contactListStep.Hint ?? HintEnableCrm));
         }
         else
         {
-            steps.Add(Step(
-                "duplicate_check",
-                "Проверка дублей",
-                BitrixValidationStepStatuses.Ok,
-                "Поиск дублей по телефону в CRM работает."));
+            var dealListStep = await CallAsync(
+                client,
+                baseUrl,
+                "crm.deal.list",
+                new
+                {
+                    select = new[] { "ID", "COMMENTS" },
+                    start = 0
+                },
+                ct);
+            if (dealListStep.Status == BitrixValidationStepStatuses.Error)
+            {
+                steps.Add(Step(
+                    "duplicate_check",
+                    "Проверка дублей",
+                    BitrixValidationStepStatuses.Warning,
+                    dealListStep.Message,
+                    dealListStep.Hint ?? HintEnableCrm));
+            }
+            else
+            {
+                steps.Add(Step(
+                    "duplicate_check",
+                    "Проверка дублей",
+                    BitrixValidationStepStatuses.Ok,
+                    "Поиск дублей по ФИО и данным сделок в CRM работает."));
+            }
         }
 
         return Finalize(steps);
@@ -229,14 +256,14 @@ public sealed class BitrixWebhookValidator(IHttpClientFactory httpClientFactory)
                 : await client.PostAsJsonAsync(endpoint, body, JsonOptions, ct);
 
             var content = await response.Content.ReadAsStringAsync(ct);
-            if (!TryParseJson(content, out var json))
+            if (!TryParseJson(content, out var json) || json is null)
             {
                 return !response.IsSuccessStatusCode
                     ? HumanizeHttpError((int)response.StatusCode, method)
                     : (BitrixValidationStepStatuses.Error, "Bitrix24 вернул непонятный ответ — попробуйте ещё раз позже.", null);
             }
 
-            using (json!)
+            using (json)
             {
                 if (TryGetBitrixApiError(json.RootElement, out var errorCode, out var errorDescription))
                 {
@@ -340,7 +367,7 @@ public sealed class BitrixWebhookValidator(IHttpClientFactory httpClientFactory)
                     BitrixValidationStepStatuses.Error,
                     "Вебхук не может даже сообщить свои права — ссылка, скорее всего, недействительна.",
                     HintRecreateWebhook),
-                "crm.contact.fields" or "crm.duplicate.findbycomm" => (
+                "crm.contact.fields" or "crm.contact.list" or "crm.deal.list" => (
                     BitrixValidationStepStatuses.Error,
                     "У вебхука нет доступа к CRM — без права CRM контакты не отправить.",
                     HintEnableCrm),
@@ -390,7 +417,7 @@ public sealed class BitrixWebhookValidator(IHttpClientFactory httpClientFactory)
         {
             "scope" => "проверка связи",
             "crm.contact.fields" => "доступ к контактам",
-            "crm.duplicate.findbycomm" => "проверка дублей",
+            "crm.contact.list" or "crm.deal.list" => "проверка дублей",
             _ => "запрос к CRM"
         };
 

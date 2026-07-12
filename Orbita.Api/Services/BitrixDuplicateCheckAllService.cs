@@ -10,7 +10,7 @@ public sealed class BitrixDuplicateCheckAllService(
 {
     public async Task<(bool IsDuplicate, BitrixInstanceEntity? DuplicateIn, string? UnavailableReason)> CheckAllEnabledAsync(
         Guid officeId,
-        string phoneNormalized,
+        CandidateMatchProfile profile,
         CancellationToken ct = default)
     {
         var instances = await bitrixInstances.GetEnabledForOfficeAsync(officeId, ct);
@@ -33,7 +33,7 @@ public sealed class BitrixDuplicateCheckAllService(
                 return (Instance: instance, IsDuplicate: false, Unavailable: $"Битрикс «{instance.Name}»: не настроен валидный вебхук.");
             }
 
-            var lookup = await bitrixClient.HasDuplicateAsync(phoneNormalized, webhookUrl, ct);
+            var lookup = await bitrixClient.HasDuplicateAsync(profile, webhookUrl, ct);
             if (lookup.IsUnavailable)
             {
                 return (Instance: instance, IsDuplicate: false, Unavailable: lookup.ErrorMessage ?? $"Битрикс «{instance.Name}» недоступен для проверки дублей.");
@@ -66,7 +66,7 @@ public sealed class BitrixDuplicateCheckAllService(
 
     public async Task<(bool IsDuplicate, string? UnavailableReason)> CheckInInstanceAsync(
         BitrixInstanceEntity instance,
-        string phoneNormalized,
+        CandidateMatchProfile profile,
         CancellationToken ct = default)
     {
         if (!BitrixValidationStatuses.AllowsWebhookUsage(instance.ValidationStatus))
@@ -80,7 +80,7 @@ public sealed class BitrixDuplicateCheckAllService(
             return (false, "Не настроен валидный вебхук Bitrix24.");
         }
 
-        var lookup = await bitrixClient.HasDuplicateAsync(phoneNormalized, webhookUrl, ct);
+        var lookup = await bitrixClient.HasDuplicateAsync(profile, webhookUrl, ct);
         if (lookup.IsUnavailable)
         {
             return (false, lookup.ErrorMessage);

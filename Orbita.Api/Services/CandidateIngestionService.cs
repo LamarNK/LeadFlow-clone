@@ -11,7 +11,8 @@ public sealed class CandidateIngestionService(
     OrbitaDbContext db,
     PhoneNormalizer phoneNormalizer,
     CandidateParser candidateParser,
-    CandidateDuplicateService duplicateService,
+    CandidatePersonMatchService personMatch,
+    CandidatePersonPhoneService personPhone,
     DistributionRouteService distributionRoute,
     DistributionEngine distributionEngine,
     CandidateAutoDistributionService autoDistribution,
@@ -96,35 +97,46 @@ public sealed class CandidateIngestionService(
                 ct);
         if (existing is not null)
         {
-            if (!string.IsNullOrWhiteSpace(candidate.ChatMessagesJson)
-                && !string.Equals(candidate.ChatMessagesJson, existing.ChatMessagesJson, StringComparison.Ordinal))
-            {
-                var tracked = await db.CandidateResponses.FirstAsync(x => x.Id == existing.Id, ct);
-                tracked.ChatMessagesJson = candidate.ChatMessagesJson;
-                if (string.IsNullOrWhiteSpace(tracked.MessengerUrl)
-                    && !string.IsNullOrWhiteSpace(candidate.MessengerUrl))
-                {
-                    tracked.MessengerUrl = candidate.MessengerUrl;
-                }
-
-                await db.SaveChangesAsync(ct);
-                panelRealtime.Notify(
-                    [PanelChangeKind.Responses, PanelChangeKind.NavBadges],
-                    worker.OfficeId,
-                    worker.Id);
-            }
-
-            return new WorkerCandidateIngestionItemResultDto(
-                existing.Id,
-                candidate.SourceResponseId,
-                existing.Status,
-                existing.ErrorMessage);
+            return await UpdateExistingResponseAsync(worker, candidate, existing, phoneNormalized, ct);
         }
 
         var (firstName, lastName, middleName) = candidateParser.ParseName(candidate.FullName);
+        var profile = CandidatePersonMatchService.ToProfile(
+            candidate.FullName,
+            candidate.Age,
+            candidate.City,
+            phoneNormalized);
+
+        var matchedPerson = await personMatch.FindMatchingPersonAsync(worker.OfficeId, profile, ct);
+        var isLocalDuplicate = matchedPerson is not null;
+        var utcNow = candidate.CreatedAt == default ? DateTime.UtcNow : candidate.CreatedAt;
+
+        CandidatePersonEntity person;
+        if (matchedPerson is not null)
+        {
+            person = await db.CandidatePersons.FirstAsync(x => x.Id == matchedPerson.Id, ct);
+        }
+        else
+        {
+            person = personMatch.CreatePerson(
+                worker.OfficeId,
+                candidate.FullName,
+                firstName,
+                lastName,
+                middleName,
+                candidate.Age,
+                candidate.City,
+                candidate.PhoneRaw,
+                phoneNormalized,
+                utcNow);
+            db.CandidatePersons.Add(person);
+            await db.SaveChangesAsync(ct);
+        }
+
         var entity = new CandidateResponseEntity
         {
             Id = Guid.NewGuid(),
+            PersonId = person.Id,
             OfficeId = worker.OfficeId,
             WorkerId = worker.Id,
             WorkerName = worker.DisplayName,
@@ -148,7 +160,7 @@ public sealed class CandidateIngestionService(
             AvitoSubProfileName = candidate.AvitoSubProfileName,
             RawText = candidate.RawText,
             ChatMessagesJson = candidate.ChatMessagesJson,
-            CreatedAt = candidate.CreatedAt == default ? DateTime.UtcNow : candidate.CreatedAt,
+            CreatedAt = utcNow,
             Status = ResponseStatuses.InProgress,
             BitrixEntityType = bitrixOptions.Value.EntityType
         };
@@ -156,18 +168,15 @@ public sealed class CandidateIngestionService(
         db.CandidateResponses.Add(entity);
         await db.SaveChangesAsync(ct);
 
-        var localDuplicate = await duplicateService.FindLocalDuplicateAsync(
-            entity.OfficeId,
-            entity.PhoneNormalized,
-            entity.Id,
-            ct);
-        entity.IsLocalDuplicate = localDuplicate is not null;
+        await personPhone.ApplyPhoneFromResponseAsync(person, candidate.PhoneRaw, phoneNormalized, entity.Id, ct);
+
+        entity.IsLocalDuplicate = isLocalDuplicate;
         entity.ProcessedAt = DateTime.UtcNow;
 
-        if (localDuplicate is not null)
+        if (isLocalDuplicate)
         {
             entity.Status = ResponseStatuses.Duplicate;
-            entity.DuplicateSummary = "Локальный дубль в Орбите";
+            entity.DuplicateSummary = "Локальный дубль: найден существующий кандидат по ФИО.";
             await db.SaveChangesAsync(ct);
             return new WorkerCandidateIngestionItemResultDto(
                 entity.Id,
@@ -206,6 +215,75 @@ public sealed class CandidateIngestionService(
             candidate.SourceResponseId,
             entity.Status,
             entity.ErrorMessage);
+    }
+
+    private async Task<WorkerCandidateIngestionItemResultDto> UpdateExistingResponseAsync(
+        WorkerEntity worker,
+        WorkerCandidateDto candidate,
+        CandidateResponseEntity existing,
+        string phoneNormalized,
+        CancellationToken ct)
+    {
+        var tracked = await db.CandidateResponses
+            .Include(x => x.BitrixDeliveries)
+            .FirstAsync(x => x.Id == existing.Id, ct);
+
+        var changed = false;
+        if (!string.IsNullOrWhiteSpace(candidate.ChatMessagesJson)
+            && !string.Equals(candidate.ChatMessagesJson, tracked.ChatMessagesJson, StringComparison.Ordinal))
+        {
+            tracked.ChatMessagesJson = candidate.ChatMessagesJson;
+            changed = true;
+        }
+
+        if (string.IsNullOrWhiteSpace(tracked.MessengerUrl)
+            && !string.IsNullOrWhiteSpace(candidate.MessengerUrl))
+        {
+            tracked.MessengerUrl = candidate.MessengerUrl;
+            changed = true;
+        }
+
+        var phoneChanged = !string.Equals(tracked.PhoneNormalized, phoneNormalized, StringComparison.Ordinal);
+        if (phoneChanged && CanUpdateResponsePhone(tracked))
+        {
+            tracked.PhoneRaw = candidate.PhoneRaw;
+            tracked.PhoneNormalized = phoneNormalized;
+            changed = true;
+
+            var person = await db.CandidatePersons.FirstAsync(x => x.Id == tracked.PersonId, ct);
+            await personPhone.ApplyPhoneFromResponseAsync(
+                person,
+                candidate.PhoneRaw,
+                phoneNormalized,
+                tracked.Id,
+                ct);
+        }
+
+        if (changed)
+        {
+            await db.SaveChangesAsync(ct);
+            panelRealtime.Notify(
+                [PanelChangeKind.Responses, PanelChangeKind.NavBadges],
+                worker.OfficeId,
+                worker.Id);
+        }
+
+        return new WorkerCandidateIngestionItemResultDto(
+            tracked.Id,
+            candidate.SourceResponseId,
+            tracked.Status,
+            tracked.ErrorMessage);
+    }
+
+    private static bool CanUpdateResponsePhone(CandidateResponseEntity response)
+    {
+        if (string.Equals(response.Status, ResponseStatuses.Sent, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return !response.BitrixDeliveries.Any(x =>
+            string.Equals(x.Outcome, ResponseBitrixDeliveryOutcomes.Sent, StringComparison.Ordinal));
     }
 
     public async Task<ResendBitrixResultDto> ResendToBitrixAsync(

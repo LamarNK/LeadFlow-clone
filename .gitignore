@@ -372,6 +372,10 @@ mcps/
 terminals/
 tmp-cookies.txt
 tmp-login.html
+.verify-build/
+tmp/
+build-out.txt
+tmp-schema.sql
 publish/$null
 
 # publish/ — скрипты в git, артефакты и секреты локально

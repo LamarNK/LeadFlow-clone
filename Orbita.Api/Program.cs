@@ -31,7 +31,10 @@ builder.WebHost.ConfigureKestrel(options =>
 });
 
 builder.Services.AddDbContext<OrbitaDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("Default")));
+{
+    options.UseNpgsql(builder.Configuration.GetConnectionString("Default"));
+    options.ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning));
+});
 
 builder.Services
     .AddIdentity<IdentityUser, IdentityRole>(options =>
@@ -221,6 +224,8 @@ builder.Services.AddScoped<BulkResponsesBitrixSendService>();
 builder.Services.AddScoped<BitrixLegacyMigrationService>();
 builder.Services.AddScoped<CandidateLookupService>();
 builder.Services.AddScoped<WorkerMonitoringStatsService>();
+builder.Services.AddScoped<CandidatePersonMatchService>();
+builder.Services.AddScoped<CandidatePersonPhoneService>();
 builder.Services.AddScoped<CandidateDuplicateService>();
 builder.Services.AddScoped<OfficeBitrixWebhookResolver>();
 builder.Services.AddScoped<OfficeBitrixSettingsService>();

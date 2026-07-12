@@ -1,7 +1,9 @@
 using System.Globalization;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Orbita.Api.Models;
+using Orbita.Contracts;
 using Orbita.Logging.Audit;
 
 namespace Orbita.Api.Services.Bitrix;
@@ -154,7 +156,72 @@ public sealed class BitrixClient(IHttpClientFactory httpClientFactory, Candidate
         }
     }
 
-    public async Task<BitrixDuplicateLookupResult> HasDuplicateAsync(
+    public Task<BitrixDuplicateLookupResult> HasDuplicateAsync(
+        CandidateMatchProfile profile,
+        string? webhookUrl,
+        CancellationToken cancellationToken) =>
+        HasDuplicateByProfileAsync(profile, webhookUrl, cancellationToken);
+
+    private async Task<BitrixDuplicateLookupResult> HasDuplicateByProfileAsync(
+        CandidateMatchProfile profile,
+        string? webhookUrl,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(webhookUrl))
+        {
+            return new BitrixDuplicateLookupResult(
+                BitrixDuplicateLookupOutcome.Unavailable,
+                $"{MissingWebhookMessage} Проверка дублей в CRM недоступна.");
+        }
+
+        var (firstName, lastName, middleName) = candidateParser.ParseName(profile.FullName);
+        if (string.IsNullOrWhiteSpace(lastName) || string.IsNullOrWhiteSpace(firstName))
+        {
+            return await HasDuplicateByPhoneAsync(profile.PhoneNormalized, webhookUrl, cancellationToken);
+        }
+
+        var client = httpClientFactory.CreateClient(nameof(BitrixClient));
+        var webhookBase = webhookUrl.TrimEnd('/');
+
+        try
+        {
+            var contacts = await ListContactsByNameAsync(
+                client,
+                webhookBase,
+                lastName,
+                firstName,
+                middleName,
+                cancellationToken);
+
+            foreach (var contact in contacts)
+            {
+                var (age, city) = await LoadDealProfileHintsAsync(client, webhookBase, contact.Id, cancellationToken);
+                var existingProfile = new CandidateMatchProfile(
+                    contact.FullName,
+                    age,
+                    city,
+                    contact.PhoneNormalized);
+
+                if (CandidateMatchScorer.IsMatch(existingProfile, profile))
+                {
+                    return new BitrixDuplicateLookupResult(BitrixDuplicateLookupOutcome.Duplicate);
+                }
+            }
+
+            return new BitrixDuplicateLookupResult(BitrixDuplicateLookupOutcome.NoDuplicate);
+        }
+        catch (Exception ex)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Bitrix duplicate profile check failed for {profile.FullName}.{Environment.NewLine}{ex}",
+                DeskLinkAuditLogLevel.Error);
+            return new BitrixDuplicateLookupResult(
+                BitrixDuplicateLookupOutcome.Unavailable,
+                $"Проверка дублей в Bitrix24 недоступна: {ex.Message}");
+        }
+    }
+
+    private async Task<BitrixDuplicateLookupResult> HasDuplicateByPhoneAsync(
         string phoneNormalized,
         string? webhookUrl,
         CancellationToken cancellationToken)
@@ -179,42 +246,218 @@ public sealed class BitrixClient(IHttpClientFactory httpClientFactory, Candidate
             values = BuildDuplicateLookupValues(phoneNormalized)
         };
 
-        try
+        using var result = await client.PostAsJsonAsync(endpoint, request, RestJsonPreserveFieldNames, cancellationToken);
+        if (!result.IsSuccessStatusCode)
         {
-            using var result = await client.PostAsJsonAsync(endpoint, request, RestJsonPreserveFieldNames, cancellationToken);
-            if (!result.IsSuccessStatusCode)
-            {
-                var body = await result.Content.ReadAsStringAsync(cancellationToken);
-                _ = GlobalLogger.Instance.LogAsync(
-                    $"Bitrix duplicate check HTTP {(int)result.StatusCode} for {phoneNormalized}. Body: {body}",
-                    DeskLinkAuditLogLevel.Error);
-                return new BitrixDuplicateLookupResult(
-                    BitrixDuplicateLookupOutcome.Unavailable,
-                    $"Bitrix24 вернул код {(int)result.StatusCode}. Проверка дублей недоступна.");
-            }
-
-            await using var stream = await result.Content.ReadAsStreamAsync(cancellationToken);
-            using var json = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
-            var root = json.RootElement;
-            if (TryGetBitrixApiError(root, out var apiError))
-            {
-                return new BitrixDuplicateLookupResult(BitrixDuplicateLookupOutcome.Unavailable, apiError);
-            }
-
-            var hasDuplicate = HasDuplicateResult(root);
-            return new BitrixDuplicateLookupResult(
-                hasDuplicate ? BitrixDuplicateLookupOutcome.Duplicate : BitrixDuplicateLookupOutcome.NoDuplicate);
-        }
-        catch (Exception ex)
-        {
+            var body = await result.Content.ReadAsStringAsync(cancellationToken);
             _ = GlobalLogger.Instance.LogAsync(
-                $"Bitrix duplicate check failed for {phoneNormalized}.{Environment.NewLine}{ex}",
+                $"Bitrix duplicate check HTTP {(int)result.StatusCode} for {phoneNormalized}. Body: {body}",
                 DeskLinkAuditLogLevel.Error);
             return new BitrixDuplicateLookupResult(
                 BitrixDuplicateLookupOutcome.Unavailable,
-                $"Проверка дублей в Bitrix24 недоступна: {ex.Message}");
+                $"Bitrix24 вернул код {(int)result.StatusCode}. Проверка дублей недоступна.");
         }
+
+        await using var stream = await result.Content.ReadAsStreamAsync(cancellationToken);
+        using var json = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+        var root = json.RootElement;
+        if (TryGetBitrixApiError(root, out var apiError))
+        {
+            return new BitrixDuplicateLookupResult(BitrixDuplicateLookupOutcome.Unavailable, apiError);
+        }
+
+        var hasDuplicate = HasDuplicateResult(root);
+        return new BitrixDuplicateLookupResult(
+            hasDuplicate ? BitrixDuplicateLookupOutcome.Duplicate : BitrixDuplicateLookupOutcome.NoDuplicate);
     }
+
+    private async Task<IReadOnlyList<BitrixContactProfile>> ListContactsByNameAsync(
+        HttpClient client,
+        string webhookBase,
+        string lastName,
+        string firstName,
+        string middleName,
+        CancellationToken cancellationToken)
+    {
+        var filter = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["LAST_NAME"] = lastName,
+            ["NAME"] = firstName
+        };
+        if (!string.IsNullOrWhiteSpace(middleName))
+        {
+            filter["SECOND_NAME"] = middleName;
+        }
+
+        var request = new
+        {
+            filter,
+            select = new[] { "ID", "NAME", "LAST_NAME", "SECOND_NAME", "PHONE" }
+        };
+
+        using var result = await client.PostAsJsonAsync(
+            $"{webhookBase}/crm.contact.list.json",
+            request,
+            RestJsonPreserveFieldNames,
+            cancellationToken);
+        result.EnsureSuccessStatusCode();
+
+        await using var stream = await result.Content.ReadAsStreamAsync(cancellationToken);
+        using var json = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+        if (TryGetBitrixApiError(json.RootElement, out var apiError))
+        {
+            throw new InvalidOperationException($"Bitrix contact list failed: {apiError}");
+        }
+
+        if (!json.RootElement.TryGetProperty("result", out var resultElement)
+            || resultElement.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+
+        var contacts = new List<BitrixContactProfile>();
+        foreach (var item in resultElement.EnumerateArray())
+        {
+            var id = GetString(item, "ID");
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                continue;
+            }
+
+            var contactLastName = GetString(item, "LAST_NAME");
+            var contactFirstName = GetString(item, "NAME");
+            var contactMiddleName = GetString(item, "SECOND_NAME");
+            var fullName = string.Join(' ',
+                new[] { contactLastName, contactFirstName, contactMiddleName }
+                    .Where(static x => !string.IsNullOrWhiteSpace(x)));
+
+            contacts.Add(new BitrixContactProfile(
+                id,
+                fullName,
+                ExtractPrimaryPhone(item)));
+        }
+
+        return contacts;
+    }
+
+    private static async Task<(int? Age, string City)> LoadDealProfileHintsAsync(
+        HttpClient client,
+        string webhookBase,
+        string contactId,
+        CancellationToken cancellationToken)
+    {
+        var request = new
+        {
+            filter = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["CONTACT_ID"] = contactId
+            },
+            select = new[] { "ID", "COMMENTS" },
+            order = new Dictionary<string, string>(StringComparer.Ordinal) { ["ID"] = "DESC" },
+            start = 0
+        };
+
+        using var result = await client.PostAsJsonAsync(
+            $"{webhookBase}/crm.deal.list.json",
+            request,
+            RestJsonPreserveFieldNames,
+            cancellationToken);
+        if (!result.IsSuccessStatusCode)
+        {
+            return (null, string.Empty);
+        }
+
+        await using var stream = await result.Content.ReadAsStreamAsync(cancellationToken);
+        using var json = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+        if (!json.RootElement.TryGetProperty("result", out var resultElement)
+            || resultElement.ValueKind != JsonValueKind.Array)
+        {
+            return (null, string.Empty);
+        }
+
+        foreach (var item in resultElement.EnumerateArray())
+        {
+            var comments = GetString(item, "COMMENTS");
+            if (string.IsNullOrWhiteSpace(comments))
+            {
+                continue;
+            }
+
+            return (ExtractAge(comments), ExtractFieldValue(comments, "Город"));
+        }
+
+        return (null, string.Empty);
+    }
+
+    private static string ExtractPrimaryPhone(JsonElement contactElement)
+    {
+        if (!contactElement.TryGetProperty("PHONE", out var phoneElement)
+            || phoneElement.ValueKind != JsonValueKind.Array)
+        {
+            return string.Empty;
+        }
+
+        foreach (var phone in phoneElement.EnumerateArray())
+        {
+            var value = GetString(phone, "VALUE");
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                return NormalizePhoneDigits(value);
+            }
+        }
+
+        return string.Empty;
+    }
+
+    private static string NormalizePhoneDigits(string value)
+    {
+        var digits = new string(value.Where(char.IsDigit).ToArray());
+        if (digits.Length == 11 && digits.StartsWith('8'))
+        {
+            digits = "7" + digits[1..];
+        }
+
+        return digits;
+    }
+
+    private static int? ExtractAge(string comments)
+    {
+        var value = ExtractFieldValue(comments, "Возраст");
+        if (string.IsNullOrWhiteSpace(value) || string.Equals(value, "-", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        return int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var age) ? age : null;
+    }
+
+    private static string ExtractFieldValue(string text, string fieldName)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return string.Empty;
+        }
+
+        var match = Regex.Match(
+            text,
+            $@"{Regex.Escape(fieldName)}\s*:\s*(.+)",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (!match.Success)
+        {
+            return string.Empty;
+        }
+
+        var line = match.Groups[1].Value;
+        var newlineIndex = line.IndexOf('\n');
+        if (newlineIndex >= 0)
+        {
+            line = line[..newlineIndex];
+        }
+
+        return line.Trim();
+    }
+
+    private sealed record BitrixContactProfile(string Id, string FullName, string PhoneNormalized);
 
     private static string[] BuildDuplicateLookupValues(string phoneNormalized)
     {

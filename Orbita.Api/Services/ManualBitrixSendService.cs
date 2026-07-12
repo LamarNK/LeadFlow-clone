@@ -40,7 +40,7 @@ public sealed class ManualBitrixSendService(
 
         var localDuplicate = await duplicateService.FindLocalDuplicateAsync(
             entity.OfficeId,
-            entity.PhoneNormalized,
+            entity.PersonId,
             entity.Id,
             ct);
         if (localDuplicate is not null)
@@ -55,7 +55,7 @@ public sealed class ManualBitrixSendService(
 
         var (isDuplicate, unavailableReason) = await bitrixDuplicateCheck.CheckInInstanceAsync(
             instance,
-            entity.PhoneNormalized,
+            CandidatePersonMatchService.ToProfile(entity),
             ct);
         if (unavailableReason is not null)
         {

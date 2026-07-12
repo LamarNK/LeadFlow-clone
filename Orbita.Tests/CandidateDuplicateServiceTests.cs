@@ -14,69 +14,99 @@ public sealed class CandidateDuplicateServiceTests
     private static readonly Guid OfficeB = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
 
     [Fact]
-    public async Task CheckAsync_LocalDuplicate_IsScopedToOffice()
+    public async Task CheckAsync_LocalDuplicate_IsScopedToPersonWithinOffice()
     {
         await using var db = CreateDb();
         SeedOffice(db, OfficeA, "Office A");
         SeedOffice(db, OfficeB, "Office B");
 
-        db.CandidateResponses.Add(CreateEntity(OfficeA, "79001111111", Guid.NewGuid()));
-        db.CandidateResponses.Add(CreateEntity(OfficeB, "79001111111", Guid.NewGuid()));
+        var personA = TestCandidatePersonFactory.CreatePerson(OfficeA);
+        var personB = TestCandidatePersonFactory.CreatePerson(OfficeB);
+        db.CandidatePersons.AddRange(personA, personB);
+        db.CandidateResponses.Add(TestCandidatePersonFactory.CreateResponse(OfficeA, personA.Id));
+        db.CandidateResponses.Add(TestCandidatePersonFactory.CreateResponse(OfficeB, personB.Id));
         await db.SaveChangesAsync();
 
-        var current = CreateEntity(OfficeA, "79001111111", Guid.NewGuid());
+        var currentPerson = TestCandidatePersonFactory.CreatePerson(OfficeA, fullName: "Another User", lastName: "Another");
+        db.CandidatePersons.Add(currentPerson);
+        var current = TestCandidatePersonFactory.CreateResponse(OfficeA, currentPerson.Id, fullName: "Another User");
         db.CandidateResponses.Add(current);
         await db.SaveChangesAsync();
 
-        var sut = new CandidateDuplicateService(db, CreateBitrixClient());
+        var sut = CreateService(db);
         var result = await sut.CheckAsync(current, null, checkDuplicatesInBitrix: false);
 
-        Assert.True(result.IsLocalDuplicate);
-        Assert.False(result.IsBitrixDuplicate);
+        Assert.False(result.IsLocalDuplicate);
     }
 
     [Fact]
-    public async Task CheckAsync_PhoneDuplicateOlderThanSixMonths_IsNotLocalDuplicate()
+    public async Task FindMatchingPersonAsync_SameFioAgeCityDifferentPhone_FindsExistingPerson()
     {
         await using var db = CreateDb();
         SeedOffice(db, OfficeA, "Office A");
 
-        db.CandidateResponses.Add(CreateEntity(
+        var person = TestCandidatePersonFactory.CreatePerson(
             OfficeA,
-            "79003333333",
-            Guid.NewGuid(),
-            DateTime.UtcNow.AddMonths(-7)));
+            fullName: "Гор Олег Александрович",
+            firstName: "Олег",
+            lastName: "Гор",
+            middleName: "Александрович",
+            age: 66,
+            city: "рабочий поселок Чик",
+            phoneRaw: "+79930099416",
+            phoneNormalized: "79930099416");
+        db.CandidatePersons.Add(person);
+        db.CandidateResponses.Add(TestCandidatePersonFactory.CreateResponse(
+            OfficeA,
+            person.Id,
+            phone: "79930099416",
+            fullName: "Гор Олег Александрович",
+            age: 66,
+            city: "рабочий поселок Чик"));
         await db.SaveChangesAsync();
 
-        var current = CreateEntity(OfficeA, "79003333333", Guid.NewGuid());
-        db.CandidateResponses.Add(current);
-        await db.SaveChangesAsync();
+        var sut = CreateService(db);
+        var profile = new CandidateMatchProfile(
+            "Гор Олег Александрович",
+            66,
+            "рабочий поселок Чик",
+            "79910001122");
+        var matched = await sut.FindMatchingPersonAsync(OfficeA, profile);
 
-        var sut = new CandidateDuplicateService(db, CreateBitrixClient());
-        var result = await sut.CheckAsync(current, null, checkDuplicatesInBitrix: false);
-
-        Assert.False(result.IsLocalDuplicate);
+        Assert.NotNull(matched);
+        Assert.Equal(person.Id, matched!.Id);
     }
 
     [Fact]
-    public async Task CheckAsync_DifferentOfficeSamePhone_IsNotLocalDuplicate()
+    public async Task FindLocalDuplicateAsync_SamePersonDifferentResponse_ReturnsEarlierResponse()
     {
         await using var db = CreateDb();
         SeedOffice(db, OfficeA, "Office A");
-        SeedOffice(db, OfficeB, "Office B");
 
-        db.CandidateResponses.Add(CreateEntity(OfficeB, "79002222222", Guid.NewGuid()));
+        var person = TestCandidatePersonFactory.CreatePerson(OfficeA);
+        db.CandidatePersons.Add(person);
+        var first = TestCandidatePersonFactory.CreateResponse(
+            OfficeA,
+            person.Id,
+            sourceResponseId: "first",
+            createdAt: DateTime.UtcNow.AddHours(-2));
+        var second = TestCandidatePersonFactory.CreateResponse(
+            OfficeA,
+            person.Id,
+            sourceResponseId: "second",
+            createdAt: DateTime.UtcNow.AddHours(-1));
+        db.CandidateResponses.AddRange(first, second);
         await db.SaveChangesAsync();
 
-        var current = CreateEntity(OfficeA, "79002222222", Guid.NewGuid());
-        db.CandidateResponses.Add(current);
-        await db.SaveChangesAsync();
+        var sut = CreateService(db);
+        var duplicate = await sut.FindLocalDuplicateAsync(OfficeA, person.Id, second.Id);
 
-        var sut = new CandidateDuplicateService(db, CreateBitrixClient());
-        var result = await sut.CheckAsync(current, null, checkDuplicatesInBitrix: false);
-
-        Assert.False(result.IsLocalDuplicate);
+        Assert.NotNull(duplicate);
+        Assert.Equal(first.Id, duplicate!.Id);
     }
+
+    private static CandidateDuplicateService CreateService(OrbitaDbContext db) =>
+        new(db, new CandidatePersonMatchService(db), CreateBitrixClient());
 
     private static OrbitaDbContext CreateDb()
     {
@@ -97,26 +127,6 @@ public sealed class CandidateDuplicateServiceTests
             IsEnabled = true
         });
     }
-
-    private static CandidateResponseEntity CreateEntity(
-        Guid officeId,
-        string phone,
-        Guid id,
-        DateTime? createdAt = null) => new()
-    {
-        Id = id,
-        OfficeId = officeId,
-        WorkerId = Guid.NewGuid(),
-        AccountId = Guid.NewGuid(),
-        AccountName = "acc",
-        Source = "Avito",
-        SourceResponseId = Guid.NewGuid().ToString("N"),
-        FullName = "Test User",
-        PhoneRaw = phone,
-        PhoneNormalized = phone,
-        Status = ResponseStatuses.Sent,
-        CreatedAt = createdAt ?? DateTime.UtcNow
-    };
 
     private static BitrixClient CreateBitrixClient() =>
         new(new HttpClientFactoryStub(), new CandidateParser());

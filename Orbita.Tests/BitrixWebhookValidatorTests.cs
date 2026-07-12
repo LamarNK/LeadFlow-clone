@@ -96,9 +96,10 @@ public sealed class BitrixWebhookValidatorTests
             return JsonResponse("""{"result":{"ID":{}}}""");
         }
 
-        if (path.Contains("crm.duplicate.findbycomm", StringComparison.Ordinal))
+        if (path.Contains("crm.contact.list", StringComparison.Ordinal)
+            || path.Contains("crm.deal.list", StringComparison.Ordinal))
         {
-            return JsonResponse("""{"result":{}}""");
+            return JsonResponse("""{"result":[]}""");
         }
 
         return new HttpResponseMessage(HttpStatusCode.NotFound);

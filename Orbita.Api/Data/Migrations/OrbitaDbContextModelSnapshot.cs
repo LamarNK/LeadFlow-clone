@@ -318,6 +318,9 @@ namespace Orbita.Api.Data.Migrations
                     b.Property<Guid>("OfficeId")
                         .HasColumnType("uuid");
 
+                    b.Property<Guid>("PersonId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("PhoneNormalized")
                         .IsRequired()
                         .HasColumnType("text");
@@ -389,7 +392,105 @@ namespace Orbita.Api.Data.Migrations
 
                     b.HasIndex("OfficeId", "AccountId", "AvitoSubProfileId", "CardFingerprint");
 
+                    b.HasIndex("PersonId");
+
                     b.ToTable("CandidateResponses");
+                });
+
+            modelBuilder.Entity("Orbita.Api.Data.CandidatePersonEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int?>("Age")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("City")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("FirstName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("FullName")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("LastName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("MiddleName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<Guid>("OfficeId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("PhoneNormalized")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("PhoneRaw")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OfficeId");
+
+                    b.HasIndex("OfficeId", "LastName", "FirstName", "MiddleName");
+
+                    b.ToTable("CandidatePersons");
+                });
+
+            modelBuilder.Entity("Orbita.Api.Data.CandidatePhoneHistoryEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("PersonId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("PhoneNormalized")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("PhoneRaw")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTime>("RecordedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("ResponseId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PersonId");
+
+                    b.HasIndex("PersonId", "RecordedAtUtc");
+
+                    b.ToTable("CandidatePhoneHistory");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.ResponseBitrixDeliveryEntity", b =>
@@ -1305,6 +1406,12 @@ namespace Orbita.Api.Data.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("Orbita.Api.Data.CandidatePersonEntity", "Person")
+                        .WithMany("Responses")
+                        .HasForeignKey("PersonId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.HasOne("Orbita.Api.Data.WorkerEntity", "Worker")
                         .WithMany()
                         .HasForeignKey("WorkerId")
@@ -1316,7 +1423,38 @@ namespace Orbita.Api.Data.Migrations
 
                     b.Navigation("Office");
 
+                    b.Navigation("Person");
+
                     b.Navigation("Worker");
+                });
+
+            modelBuilder.Entity("Orbita.Api.Data.CandidatePersonEntity", b =>
+                {
+                    b.HasOne("Orbita.Api.Data.OfficeEntity", "Office")
+                        .WithMany()
+                        .HasForeignKey("OfficeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Office");
+                });
+
+            modelBuilder.Entity("Orbita.Api.Data.CandidatePhoneHistoryEntity", b =>
+                {
+                    b.HasOne("Orbita.Api.Data.CandidatePersonEntity", "Person")
+                        .WithMany("PhoneHistory")
+                        .HasForeignKey("PersonId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Orbita.Api.Data.CandidateResponseEntity", "Response")
+                        .WithMany()
+                        .HasForeignKey("ResponseId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Person");
+
+                    b.Navigation("Response");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.ResponseBitrixDeliveryEntity", b =>
@@ -1471,6 +1609,13 @@ namespace Orbita.Api.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Worker");
+                });
+
+            modelBuilder.Entity("Orbita.Api.Data.CandidatePersonEntity", b =>
+                {
+                    b.Navigation("PhoneHistory");
+
+                    b.Navigation("Responses");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.CandidateResponseEntity", b =>
