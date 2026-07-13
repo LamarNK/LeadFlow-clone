@@ -15,6 +15,7 @@ public sealed class CandidateResponse
     public string LastName { get; set; } = string.Empty;
     public string MiddleName { get; set; } = string.Empty;
     public int? Age { get; set; }
+    public string Gender { get; set; } = string.Empty;
     public string PhoneRaw { get; set; } = string.Empty;
     public string PhoneNormalized { get; set; } = string.Empty;
     public string City { get; set; } = string.Empty;

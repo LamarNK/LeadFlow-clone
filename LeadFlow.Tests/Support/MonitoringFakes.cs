@@ -97,13 +97,11 @@ internal sealed class FakeAvitoResponseSource : IAvitoResponseSource
         return Task.FromResult(new AvitoCandidatesParseResult(list, AvitoCandidatesExtractionSummary.Empty));
     }
 
-    public Task<HashSet<string>> ResolveExistingPhonesAsync(
+    public Task<HashSet<string>> ResolveExistingSourceResponseIdsAsync(
         Guid accountId,
-        DuplicateScope duplicateScope,
-        IEnumerable<string> phoneCandidates,
-        CancellationToken cancellationToken,
-        string? avitoSubProfileId = null) =>
-        Task.FromResult(new HashSet<string>(StringComparer.Ordinal));
+        IEnumerable<string> sourceResponseIdCandidates,
+        CancellationToken cancellationToken) =>
+        Task.FromResult(new HashSet<string>(StringComparer.OrdinalIgnoreCase));
 }
 
 internal sealed class StubBrowserSessionService : IBrowserSessionService

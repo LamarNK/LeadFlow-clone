@@ -16,6 +16,10 @@ public sealed class ResponsesService(
         string? status,
         Guid? workerId,
         Guid? accountId,
+        string? bitrixDestination,
+        string? gender,
+        int? ageFrom,
+        int? ageTo,
         string? vacancy,
         string? search,
         Guid? selectedId,
@@ -34,6 +38,10 @@ public sealed class ResponsesService(
             Status = status,
             WorkerId = workerId,
             AccountId = accountId,
+            BitrixDestination = bitrixDestination,
+            Gender = CandidateGenders.NormalizeFilterValue(gender),
+            AgeFrom = NormalizeAgeFilter(ageFrom),
+            AgeTo = NormalizeAgeFilter(ageTo),
             VacancyQuery = vacancy,
             SearchQuery = search,
             DateFrom = period.From,
@@ -47,7 +55,22 @@ public sealed class ResponsesService(
         }
 
         var (fromUtc, toUtc) = ToUtcRange(period);
-        var query = BuildQueryParams(status, search, vacancy, workerId, accountId, fromUtc, toUtc, page, pageSize.Value, sort, sortDir);
+        var query = BuildQueryParams(
+            status,
+            search,
+            vacancy,
+            workerId,
+            accountId,
+            bitrixDestination,
+            filters.Gender,
+            filters.AgeFrom,
+            filters.AgeTo,
+            fromUtc,
+            toUtc,
+            page,
+            pageSize.Value,
+            sort,
+            sortDir);
 
         var pageDto = await api.GetResponsesPageAsync(query, ct)
             ?? new ResponsesPageDto([], 0, page, pageSize.Value);
@@ -56,6 +79,7 @@ public sealed class ResponsesService(
         var workers = await api.GetWorkersAsync(ct) ?? [];
         var accounts = await api.GetResponseFilterAccountsAsync(ct) ?? [];
         var bitrixInstances = await api.GetBitrixInstancesAsync(ct: ct) ?? [];
+        var vacancyOptions = await api.GetResponseFilterVacanciesAsync(fromUtc, toUtc, ct) ?? [];
 
         ResponseDetailViewModel? selected = null;
         if (selectedId is Guid id)
@@ -69,12 +93,17 @@ public sealed class ResponsesService(
 
         var workerOptions = ResponsesIndexBuilder.BuildWorkerOptions(workers);
         var accountOptions = ResponsesIndexBuilder.BuildAccountOptions(accounts);
+        var bitrixDestinationOptions = ResponsesIndexBuilder.BuildBitrixDestinationOptions(bitrixInstances);
+        var genderOptions = ResponsesIndexBuilder.GenderOptions;
+        var vacancyFilterOptions = ResponsesIndexBuilder.BuildVacancyOptions(vacancyOptions);
         var activeFilterChips = FilterChipsBuilder.ForResponses(
             filters,
             period,
             ResponsesIndexBuilder.StatusOptions,
             workerOptions,
             accountOptions,
+            bitrixDestinationOptions,
+            genderOptions,
             pageSize.Value);
 
         return new ResponsesIndexViewModel
@@ -87,6 +116,9 @@ public sealed class ResponsesService(
             Statuses = ResponsesIndexBuilder.StatusOptions,
             Workers = workerOptions,
             Accounts = accountOptions,
+            BitrixDestinations = bitrixDestinationOptions,
+            Genders = genderOptions,
+            Vacancies = vacancyFilterOptions,
             Responses = pageDto.Items.Select(ResponsesIndexBuilder.MapRow).ToList(),
             SendBitrixInstances = ResponsesIndexBuilder.MapSendBitrixInstances(bitrixInstances),
             Pagination = new PaginationViewModel
@@ -177,6 +209,10 @@ public sealed class ResponsesService(
         string? vacancy,
         Guid? workerId,
         Guid? accountId,
+        string? bitrixDestination,
+        string? gender,
+        int? ageFrom,
+        int? ageTo,
         DateTime fromUtc,
         DateTime toUtc,
         int page,
@@ -227,8 +263,31 @@ public sealed class ResponsesService(
             parts.Add($"accountId={aid}");
         }
 
+        if (!string.IsNullOrWhiteSpace(bitrixDestination))
+        {
+            parts.Add($"bitrixDestination={Uri.EscapeDataString(bitrixDestination)}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(gender))
+        {
+            parts.Add($"gender={Uri.EscapeDataString(gender)}");
+        }
+
+        if (ageFrom is int fromAge)
+        {
+            parts.Add($"ageFrom={fromAge}");
+        }
+
+        if (ageTo is int toAge)
+        {
+            parts.Add($"ageTo={toAge}");
+        }
+
         return string.Join('&', parts);
     }
+
+    private static int? NormalizeAgeFilter(int? value) =>
+        value is >= 0 and <= 120 ? value : null;
 
     private static (DateTime FromUtc, DateTime ToUtcExclusive) ToUtcRange(DashboardPeriod period)
     {

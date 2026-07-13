@@ -112,7 +112,7 @@ public sealed class AvitoResponseSourceTests
     }
 
     [Fact]
-    public async Task GetNewResponsesAsync_NewSourceResponseIdSamePhoneAsJournal_SkipsDuplicateRow()
+    public async Task GetNewResponsesAsync_NewSourceResponseIdSamePhoneAsJournal_ReturnsCandidate()
     {
         var db = new EfInMemoryDatabase();
         var repo = new AppRepository(db.Factory);
@@ -141,7 +141,8 @@ public sealed class AvitoResponseSourceTests
         var sut = CreateSut(repo, automation);
         var list = await sut.GetNewResponsesAsync(account, NewSettings(), CancellationToken.None);
 
-        Assert.Empty(list);
+        Assert.Single(list);
+        Assert.Equal("https://www.avito.ru/profile/messenger/channel/new", list[0].SourceResponseId);
     }
 
     [Fact]
@@ -218,7 +219,7 @@ public sealed class AvitoResponseSourceTests
     }
 
     [Fact]
-    public async Task GetNewResponsesAsync_TwoCardsSamePhoneSameFetch_ReturnsOne()
+    public async Task GetNewResponsesAsync_TwoCardsSamePhoneSameFetch_ReturnsBothWhenSourceIdsDiffer()
     {
         var db = new EfInMemoryDatabase();
         var repo = new AppRepository(db.Factory);
@@ -230,7 +231,7 @@ public sealed class AvitoResponseSourceTests
         var sut = CreateSut(repo, automation);
         var list = await sut.GetNewResponsesAsync(account, NewSettings(), CancellationToken.None);
 
-        Assert.Single(list);
+        Assert.Equal(2, list.Count);
     }
 
     private static AvitoResponseSource CreateSut(AppRepository repo, AvitoCandidatesPageAutomationStub automation)

@@ -60,6 +60,7 @@ public sealed record ResponseDetailDto(
     string LastName,
     string MiddleName,
     int? Age,
+    string? Gender,
     string PhoneRaw,
     string PhoneNormalized,
     string City,
@@ -106,6 +107,10 @@ public sealed record ResponsesSummaryDto(
 public sealed record ResponseFilterAccountDto(
     Guid AccountId,
     string AccountName);
+
+public sealed record ResponseFilterVacancyDto(
+    string Vacancy,
+    int Count);
 
 public sealed record OfficeBitrixWebhookDto(
     string UserId,

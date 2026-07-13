@@ -21,7 +21,8 @@ public sealed class OfficeStatisticsQueryService(
         DateTime FromLocal,
         DateTime ToLocal,
         string WorkerFilterKey,
-        string AccountFilterKey) _cache;
+        string AccountFilterKey,
+        string VacancyFilterKey) _cache;
     private static readonly object CacheLock = new();
 
     public async Task<OfficeStatisticsDto> GetStatisticsAsync(
@@ -31,6 +32,7 @@ public sealed class OfficeStatisticsQueryService(
         DateTime? to,
         IReadOnlyList<Guid>? workerIdsFilter = null,
         IReadOnlyList<Guid>? accountIdsFilter = null,
+        string? vacancyFilter = null,
         CancellationToken ct = default)
     {
         var nowUtc = DateTime.UtcNow;
@@ -39,6 +41,7 @@ public sealed class OfficeStatisticsQueryService(
         var accountFilterSet = NormalizeFilter(accountIdsFilter);
         var workerFilterKey = BuildFilterKey(workerFilterSet);
         var accountFilterKey = BuildFilterKey(accountFilterSet);
+        var vacancyFilterKey = string.IsNullOrWhiteSpace(vacancyFilter) ? string.Empty : vacancyFilter.Trim();
 
         OfficeStatisticsDto? cachedResult = null;
         lock (CacheLock)
@@ -50,7 +53,8 @@ public sealed class OfficeStatisticsQueryService(
                 && _cache.FromLocal == startLocal
                 && _cache.ToLocal == endLocal
                 && _cache.WorkerFilterKey == workerFilterKey
-                && _cache.AccountFilterKey == accountFilterKey)
+                && _cache.AccountFilterKey == accountFilterKey
+                && _cache.VacancyFilterKey == vacancyFilterKey)
             {
                 cachedResult = _cache.Value;
             }
@@ -132,8 +136,11 @@ public sealed class OfficeStatisticsQueryService(
             responsesQuery = responsesQuery.Where(x => accountFilterSet.Contains(x.AccountId));
         }
 
+        responsesQuery = ApplyVacancyFilter(responsesQuery, vacancyFilterKey);
+
         var responses = await BuildResponsesPeriodAsync(responsesQuery, ct);
         var dailyTrend = await BuildDailyTrendAsync(responsesQuery, startLocal, endLocal, ct);
+        var bitrixDeliveries = await BuildBitrixDeliveryStatsAsync(responsesQuery, scope, officeFilter, ct);
         var hrInsights = await BuildHrInsightsAsync(responsesQuery, ct);
         var workerInfrastructure = await BuildWorkerInfrastructureAsync(
             workers,
@@ -157,13 +164,14 @@ public sealed class OfficeStatisticsQueryService(
             workerInfrastructure,
             responses,
             dailyTrend,
+            bitrixDeliveries,
             hrInsights,
             monitoringCycles,
             nowUtc);
 
         lock (CacheLock)
         {
-            _cache = (nowUtc.AddSeconds(8), result, scope, officeFilter, startLocal, endLocal, workerFilterKey, accountFilterKey);
+            _cache = (nowUtc.AddSeconds(8), result, scope, officeFilter, startLocal, endLocal, workerFilterKey, accountFilterKey, vacancyFilterKey);
         }
 
         return await RefreshOnlineStatusAsync(result, ct);
@@ -174,6 +182,22 @@ public sealed class OfficeStatisticsQueryService(
 
     private static string BuildFilterKey(HashSet<Guid>? ids) =>
         ids is null ? string.Empty : string.Join(',', ids.OrderBy(x => x));
+
+    private static IQueryable<CandidateResponseEntity> ApplyVacancyFilter(
+        IQueryable<CandidateResponseEntity> query,
+        string? vacancy)
+    {
+        foreach (var token in SearchQueryNormalizer.Tokenize(vacancy))
+        {
+            var pattern = SearchQueryNormalizer.ToILikePattern(token);
+            query = query.Where(x =>
+                EF.Functions.ILike(x.Vacancy, pattern)
+                || EF.Functions.ILike(x.SourceResponseId, pattern)
+                || EF.Functions.ILike(x.VacancyUrl, pattern));
+        }
+
+        return query;
+    }
 
     private async Task<OfficeStatisticsDto> RefreshOnlineStatusAsync(
         OfficeStatisticsDto result,
@@ -220,6 +244,7 @@ public sealed class OfficeStatisticsQueryService(
             new AccountInfrastructureSection(0, new DashboardAccountStatusCounts(0, 0, 0, 0), 0, 0),
             new WorkerInfrastructureSection(0, 0, []),
             new ResponsesPeriodSection(0, 0, 0, 0, 0, 0, 0, 0, null),
+            [],
             [],
             new HrInsightsDto([], [], [], [], "н/д", "0%"),
             MonitoringCycleReportBuilder.Build([], DateTime.Today, DateTime.Today),
@@ -412,6 +437,69 @@ public sealed class OfficeStatisticsQueryService(
             errors,
             uniqueAuthors,
             avgMinutes > 0 ? avgMinutes : null);
+    }
+
+    private async Task<IReadOnlyList<BitrixDeliveryStatDto>> BuildBitrixDeliveryStatsAsync(
+        IQueryable<CandidateResponseEntity> responsesQuery,
+        OfficeScope scope,
+        Guid? officeFilter,
+        CancellationToken ct)
+    {
+        var deliveryCounts = await db.ResponseBitrixDeliveries
+            .AsNoTracking()
+            .Where(d => d.Outcome == ResponseBitrixDeliveryOutcomes.Sent)
+            .Where(d => responsesQuery.Any(r => r.Id == d.ResponseId))
+            .GroupBy(d => d.BitrixInstanceId)
+            .Select(g => new { BitrixInstanceId = g.Key, Count = g.Count() })
+            .ToListAsync(ct);
+
+        var legacyCounts = await responsesQuery
+            .Where(x => x.BitrixInstanceId != null && x.Status == ResponseStatuses.Sent)
+            .Where(x => !db.ResponseBitrixDeliveries.Any(d => d.ResponseId == x.Id))
+            .GroupBy(x => x.BitrixInstanceId!.Value)
+            .Select(g => new { BitrixInstanceId = g.Key, Count = g.Count() })
+            .ToListAsync(ct);
+
+        var merged = new Dictionary<Guid, int>();
+        foreach (var row in deliveryCounts)
+        {
+            merged[row.BitrixInstanceId] = row.Count;
+        }
+
+        foreach (var row in legacyCounts)
+        {
+            merged[row.BitrixInstanceId] = merged.GetValueOrDefault(row.BitrixInstanceId) + row.Count;
+        }
+
+        if (merged.Count == 0)
+        {
+            return [];
+        }
+
+        var instancesQuery = db.BitrixInstances.AsNoTracking();
+        var effectiveOfficeId = scope.ResolveFilter(officeFilter);
+        if (effectiveOfficeId is Guid officeId)
+        {
+            instancesQuery = instancesQuery.Where(x => x.OfficeId == officeId);
+        }
+        else if (!scope.IsGlobalAdmin)
+        {
+            return [];
+        }
+
+        var instances = await instancesQuery
+            .Where(x => merged.Keys.Contains(x.Id))
+            .Select(x => new { x.Id, x.Name, x.Signature })
+            .ToListAsync(ct);
+
+        return instances
+            .Select(x => new BitrixDeliveryStatDto(
+                x.Id,
+                ResponseBitrixDeliveryService.FormatBitrixLabel(x.Name, x.Signature),
+                merged[x.Id]))
+            .OrderByDescending(x => x.SentCount)
+            .ThenBy(x => x.Label, StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     private static async Task<IReadOnlyList<DailyResponseBucketDto>> BuildDailyTrendAsync(

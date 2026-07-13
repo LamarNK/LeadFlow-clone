@@ -24,9 +24,7 @@ public sealed class AvitoCandidatesExtractionSummaryTests
             10,
             8,
             7,
-            4,
             1,
-            0,
             2,
             ["Иван Иванов (Водитель)", "Мария Петрова (Курьер)"]);
 
@@ -35,7 +33,7 @@ public sealed class AvitoCandidatesExtractionSummaryTests
         Assert.Contains("CRM (/profile/job/responses)", text);
         Assert.Contains("в DOM 12 карточек", text);
         Assert.Contains("скрипт извлёк 8, валидных 7", text);
-        Assert.Contains("отфильтровано 5", text);
+        Assert.Contains("отфильтровано 1", text);
         Assert.Contains("новых к публикации 2", text);
         Assert.Contains("Иван Иванов", text);
     }

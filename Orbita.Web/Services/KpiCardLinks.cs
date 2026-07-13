@@ -15,7 +15,13 @@ internal static class KpiCardLinks
         _ => null
     };
 
-    public static string? Responses(DateTime from, DateTime to, string? status = null, Guid? workerId = null, Guid? accountId = null)
+    public static string? Responses(
+        DateTime from,
+        DateTime to,
+        string? status = null,
+        Guid? workerId = null,
+        Guid? accountId = null,
+        string? bitrixDestination = null)
     {
         var parts = new List<string>
         {
@@ -36,6 +42,11 @@ internal static class KpiCardLinks
         if (accountId is not null)
         {
             parts.Add($"accountId={accountId.Value}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(bitrixDestination))
+        {
+            parts.Add($"bitrixDestination={Uri.EscapeDataString(bitrixDestination)}");
         }
 
         return $"/Responses?{string.Join("&", parts)}";

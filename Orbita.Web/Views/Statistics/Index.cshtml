@@ -9,7 +9,8 @@
         from = Model.Header.DateFrom.ToString("yyyy-MM-dd"),
         to = Model.Header.DateTo.ToString("yyyy-MM-dd"),
         workerIds = Model.Filters.WorkerIds,
-        accountIds = Model.Filters.AccountIds
+        accountIds = Model.Filters.AccountIds,
+        vacancy = Model.Filters.VacancyQuery
     };
     var snapshotUrl = Url.Action("Snapshot", "Statistics", snapshotRoute)!;
     var formAction = Url.Action("Index", "Statistics");
@@ -155,6 +156,8 @@
                     </div>
                 </div>
             </div>
+
+            <partial name="_StatisticsBitrixDeliveries" model="Model" />
 
             <div class="statistics-main-grid">
                 <partial name="_StatisticsOperationsCard"

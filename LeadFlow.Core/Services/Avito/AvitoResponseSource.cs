@@ -19,18 +19,14 @@ public sealed class AvitoResponseSource(
 
     public const string JobResponsesPageUrl = AvitoCandidatesPageUrls.JobResponsesCrm;
 
-    public Task<HashSet<string>> ResolveExistingPhonesAsync(
+    public Task<HashSet<string>> ResolveExistingSourceResponseIdsAsync(
         Guid accountId,
-        DuplicateScope duplicateScope,
-        IEnumerable<string> phoneCandidates,
-        CancellationToken cancellationToken,
-        string? avitoSubProfileId = null) =>
-        duplicateRepository.GetExistingNormalizedPhonesAsync(
-            phoneCandidates,
-            duplicateScope,
+        IEnumerable<string> sourceResponseIdCandidates,
+        CancellationToken cancellationToken) =>
+        duplicateRepository.GetExistingSourceResponseIdsAsync(
             accountId,
-            cancellationToken,
-            avitoSubProfileId);
+            sourceResponseIdCandidates,
+            cancellationToken);
 
     public Task<HashSet<string>> ResolveExistingCardFingerprintsAsync(
         Guid accountId,
@@ -246,69 +242,31 @@ public sealed class AvitoResponseSource(
         var candidates = AvitoCandidatesJsonParser.ParseCandidates(root, account);
         var parsedCount = candidates.Count;
 
-        var existingIds = await duplicateRepository.GetExistingSourceResponseIdsAsync(
-            account.Id,
-            candidates.Select(x => x.SourceResponseId),
-            cancellationToken);
-
-        var afterSourceId = candidates
-            .Where(x => !existingIds.Contains(x.SourceResponseId))
-            .ToList();
-
-        var phonesToQuery = afterSourceId
-            .Select(c => phoneNormalizer.Normalize(c.PhoneRaw))
-            .Where(p => !string.IsNullOrWhiteSpace(p))
-            .Distinct(StringComparer.Ordinal)
-            .ToList();
-
-        var existingPhones = phonesToQuery.Count == 0
-            ? []
-            : await duplicateRepository.GetExistingNormalizedPhonesAsync(
-                phonesToQuery,
-                settings.DuplicateScope,
-                account.Id,
-                cancellationToken);
-
-        var afterDbPhone = afterSourceId
-            .Where(c =>
-            {
-                var n = phoneNormalizer.Normalize(c.PhoneRaw);
-                return string.IsNullOrWhiteSpace(n) || !existingPhones.Contains(n);
-            })
-            .ToList();
-
-        var seenPhoneThisFetch = new HashSet<string>(StringComparer.Ordinal);
+        var seenSourceIdsThisFetch = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var deduped = new List<CandidateResponse>();
-        var skippedDuplicatePhoneInBatch = 0;
-        foreach (var c in afterDbPhone)
+        var skippedDuplicateInBatch = 0;
+        foreach (var candidate in candidates)
         {
-            var n = phoneNormalizer.Normalize(c.PhoneRaw);
-            if (!string.IsNullOrWhiteSpace(n) && !seenPhoneThisFetch.Add(n))
+            if (!seenSourceIdsThisFetch.Add(candidate.SourceResponseId))
             {
-                skippedDuplicatePhoneInBatch++;
+                skippedDuplicateInBatch++;
                 continue;
             }
 
-            deduped.Add(c);
+            deduped.Add(candidate);
         }
 
         var ordered = deduped
-            .OrderBy(x => phoneNormalizer.Normalize(x.PhoneRaw), StringComparer.Ordinal)
-            .ThenBy(x => x.FullName, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(x => x.FullName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(x => phoneNormalizer.Normalize(x.PhoneRaw), StringComparer.Ordinal)
             .ToList();
-
-        var skippedExistingSourceId = candidates.Count - afterSourceId.Count;
-        var skippedDuplicatePhoneInDb = afterSourceId.Count - afterDbPhone.Count;
 
         CandidateDedupLog.LogParseDedupSummary(
             account,
             activeSubProfile,
             settings.DuplicateScope,
-            candidates.Count,
-            skippedExistingSourceId,
-            phonesToQuery.Count,
-            skippedDuplicatePhoneInDb,
-            skippedDuplicatePhoneInBatch);
+            parsedCount,
+            skippedDuplicateInBatch);
 
         var sampleNames = ordered
             .Take(4)
@@ -322,9 +280,7 @@ public sealed class AvitoResponseSource(
             domStatusCount,
             scriptCandidatesCount,
             parsedCount,
-            skippedExistingSourceId,
-            skippedDuplicatePhoneInDb,
-            skippedDuplicatePhoneInBatch,
+            skippedDuplicateInBatch,
             ordered.Count,
             sampleNames);
 

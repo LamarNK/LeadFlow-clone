@@ -88,7 +88,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
                     }
                 },
                 page.Url,
-                BuildResolveExistingPhonesCallback(messengerEnrichmentHints),
+                BuildResolveExistingSourceResponseIdsCallback(messengerEnrichmentHints),
                 BuildResolveExistingCardFingerprintsCallback(messengerEnrichmentHints)).ConfigureAwait(false);
 
             var raw = await EvaluateWithRetryAsync<string>(page, ExtractionScript, cancellationToken).ConfigureAwait(false);
@@ -1866,7 +1866,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
          ex.Message.Contains("frame got detached", StringComparison.OrdinalIgnoreCase) ||
          ex.Message.Contains("Response body is unavailable for redirect responses", StringComparison.OrdinalIgnoreCase));
 
-    private Func<IReadOnlyCollection<string>, CancellationToken, Task<IReadOnlySet<string>>>? BuildResolveExistingPhonesCallback(
+    private Func<IReadOnlyCollection<string>, CancellationToken, Task<IReadOnlySet<string>>>? BuildResolveExistingSourceResponseIdsCallback(
         CandidatesMessengerEnrichmentHints? enrichmentHints)
     {
         if (enrichmentHints is null)
@@ -1874,14 +1874,12 @@ public sealed partial class AdsPowerAvitoAutomationService(
             return null;
         }
 
-        return async (phoneCandidates, cancellationToken) =>
+        return async (sourceResponseIdCandidates, cancellationToken) =>
             (IReadOnlySet<string>)await duplicateRepository
-                .GetExistingNormalizedPhonesAsync(
-                    phoneCandidates,
-                    enrichmentHints.DuplicateScope,
+                .GetExistingSourceResponseIdsAsync(
                     enrichmentHints.AccountId,
-                    cancellationToken,
-                    enrichmentHints.AvitoSubProfileId)
+                    sourceResponseIdCandidates,
+                    cancellationToken)
                 .ConfigureAwait(false);
     }
 
@@ -1952,11 +1950,9 @@ public sealed partial class AdsPowerAvitoAutomationService(
             return rawJson;
         }
 
-        HashSet<string>? existingNormalizedFromDb = null;
         HashSet<string>? existingSourceIdsFromDb = null;
         if (enrichmentHints is not null)
         {
-            var phonesToQuery = new List<string>();
             var sourceIdsToQuery = new List<string>();
             foreach (var node in candidates)
             {
@@ -1966,30 +1962,11 @@ public sealed partial class AdsPowerAvitoAutomationService(
                     continue;
                 }
 
-                var phoneRaw = o["phone"]?.GetValue<string>() ?? string.Empty;
-                var n = phoneNormalizer.Normalize(phoneRaw);
-                if (LooksLikeCompleteRussianMobile(n))
-                {
-                    phonesToQuery.Add(n);
-                }
-
                 var sourceResponseId = o["sourceResponseId"]?.GetValue<string>() ?? string.Empty;
                 if (!string.IsNullOrWhiteSpace(sourceResponseId))
                 {
                     sourceIdsToQuery.Add(sourceResponseId.Trim());
                 }
-            }
-
-            if (phonesToQuery.Count > 0)
-            {
-                existingNormalizedFromDb = await duplicateRepository
-                    .GetExistingNormalizedPhonesAsync(
-                        phonesToQuery,
-                        enrichmentHints.DuplicateScope,
-                        enrichmentHints.AccountId,
-                        cancellationToken,
-                        enrichmentHints.AvitoSubProfileId)
-                    .ConfigureAwait(false);
             }
 
             if (sourceIdsToQuery.Count > 0)
@@ -2029,16 +2006,11 @@ public sealed partial class AdsPowerAvitoAutomationService(
             }
 
             var domIndex = ReadCandidateDomIndex(item, i);
-            var phoneRawForSkip = item["phone"]?.GetValue<string>() ?? string.Empty;
-            var normalizedForSkip = phoneNormalizer.Normalize(phoneRawForSkip);
-            var isKnownPhone = existingNormalizedFromDb is not null
-                && LooksLikeCompleteRussianMobile(normalizedForSkip)
-                && existingNormalizedFromDb.Contains(normalizedForSkip);
             var sourceResponseIdForSkip = item["sourceResponseId"]?.GetValue<string>() ?? string.Empty;
             var isKnownSourceId = existingSourceIdsFromDb is not null
                 && !string.IsNullOrWhiteSpace(sourceResponseIdForSkip)
                 && existingSourceIdsFromDb.Contains(sourceResponseIdForSkip.Trim());
-            if (isKnownPhone || isKnownSourceId)
+            if (isKnownSourceId)
             {
                 var hasUnread = await TryReadCandidateChatUnreadAsync(page, domIndex, cancellationToken)
                     .ConfigureAwait(false);

@@ -6,9 +6,15 @@ public sealed record OfficeStatisticsDto(
     WorkerInfrastructureSection Workers,
     ResponsesPeriodSection Responses,
     IReadOnlyList<DailyResponseBucketDto> DailyTrend,
+    IReadOnlyList<BitrixDeliveryStatDto> BitrixDeliveries,
     HrInsightsDto HrInsights,
     MonitoringCycleReportDto MonitoringCycles,
     DateTime AggregatedAtUtc);
+
+public sealed record BitrixDeliveryStatDto(
+    Guid BitrixInstanceId,
+    string Label,
+    int SentCount);
 
 public sealed record BalanceStatisticsSection(
     decimal TotalAdvance,

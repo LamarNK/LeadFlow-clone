@@ -1,10 +1,13 @@
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Orbita.Api.Data;
 
 #nullable disable
 
 namespace Orbita.Api.Data.Migrations;
 
-/// <inheritdoc />
+[DbContext(typeof(OrbitaDbContext))]
+[Migration("20260711120000_CandidatePerson")]
 public partial class CandidatePerson : Migration
 {
     /// <inheritdoc />

@@ -204,6 +204,7 @@ internal static class ResponsesIndexBuilder
             LastName = detail.LastName,
             MiddleName = detail.MiddleName,
             Age = detail.Age,
+            Gender = detail.Gender,
             PhoneRaw = detail.PhoneRaw,
             PhoneNormalized = detail.PhoneNormalized,
             City = detail.City,
@@ -288,6 +289,44 @@ internal static class ResponsesIndexBuilder
             }));
         return options;
     }
+
+    public static IReadOnlyList<EventFilterOptionViewModel> BuildBitrixDestinationOptions(
+        IReadOnlyList<BitrixInstanceListItemDto> instances)
+    {
+        var options = new List<EventFilterOptionViewModel>
+        {
+            new() { Value = "", Label = "Все Битриксы" },
+            new() { Value = "not_sent", Label = "Не отправлен" }
+        };
+        options.AddRange(instances
+            .Where(x => x.IsEnabled)
+            .OrderBy(x => x.Name)
+            .Select(x => new EventFilterOptionViewModel
+            {
+                Value = x.Id.ToString(),
+                Label = FormatBitrixLabel(x.Name, x.Signature)
+            }));
+        return options;
+    }
+
+    public static readonly EventFilterOptionViewModel[] GenderOptions =
+    [
+        new() { Value = "", Label = "Любой пол" },
+        new() { Value = CandidateGenders.Male, Label = "Мужчина" },
+        new() { Value = CandidateGenders.Female, Label = "Женщина" },
+        new() { Value = CandidateGenders.Unknown, Label = "Не указан" }
+    ];
+
+    public static IReadOnlyList<EventFilterOptionViewModel> BuildVacancyOptions(
+        IReadOnlyList<ResponseFilterVacancyDto> vacancies) =>
+        vacancies
+            .Where(x => !string.IsNullOrWhiteSpace(x.Vacancy))
+            .Select(x => new EventFilterOptionViewModel
+            {
+                Value = x.Vacancy,
+                Label = x.Count > 0 ? $"{x.Vacancy} ({x.Count})" : x.Vacancy
+            })
+            .ToList();
 
     public static string MapStatusMessageLabel(string status) => status switch
     {
@@ -455,6 +494,10 @@ internal static class ResponsesIndexBuilder
         !string.IsNullOrWhiteSpace(filters.Status)
         || filters.WorkerId.HasValue
         || filters.AccountId.HasValue
+        || !string.IsNullOrWhiteSpace(filters.BitrixDestination)
+        || !string.IsNullOrWhiteSpace(filters.Gender)
+        || filters.AgeFrom.HasValue
+        || filters.AgeTo.HasValue
         || !string.IsNullOrWhiteSpace(filters.VacancyQuery)
         || !string.IsNullOrWhiteSpace(filters.SearchQuery)
         || (!period.IsTodayOnly && !period.IsAllTime);
@@ -466,6 +509,7 @@ internal static class ResponsesIndexBuilder
         {
             new() { Label = "Телефон", Value = phone.Length > 0 ? phone : "Скрыт" },
             new() { Label = "Возраст", Value = detail.Age?.ToString() ?? "—" },
+            new() { Label = "Пол", Value = CandidateGenders.FormatLabel(detail.Gender) },
             new() { Label = "Город", Value = detail.City },
             new() { Label = "Объявление", Value = detail.Vacancy, Href = detail.VacancyUrl },
             new() { Label = "Аккаунт", Value = ResponseDisplay.FormatAccountWithSubProfile(detail.AccountName, detail.AvitoSubProfileName) },

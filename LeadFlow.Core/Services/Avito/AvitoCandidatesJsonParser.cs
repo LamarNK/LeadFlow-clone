@@ -45,6 +45,9 @@ public static class AvitoCandidatesJsonParser
             var messengerUrl = item.TryGetProperty("messengerUrl", out var messengerProp) ? messengerProp.GetString() ?? string.Empty : string.Empty;
             var rawText = item.TryGetProperty("rawText", out var rawTextProp) ? rawTextProp.GetString() ?? string.Empty : string.Empty;
             var age = ParseAge(item.TryGetProperty("age", out var ageProp) ? ageProp.GetString() : null);
+            var gender = ParseGender(item.TryGetProperty("gender", out var genderProp) ? genderProp.GetString() : null)
+                ?? CandidateGenders.ParseFromText(rawText)
+                ?? string.Empty;
             var chatMessages = AvitoChatMessagesJson.ParseFromCandidateJson(item);
             var chatMessagesJson = AvitoChatMessagesJson.Serialize(chatMessages);
             var ageText = item.TryGetProperty("age", out var ageTextProp) ? ageTextProp.GetString() : null;
@@ -69,6 +72,7 @@ public static class AvitoCandidatesJsonParser
                 City = city,
                 Vacancy = vacancy,
                 Age = age,
+                Gender = gender,
                 VacancyUrl = vacancyUrl,
                 MessengerUrl = messengerUrl,
                 ChatMessagesJson = chatMessagesJson,
@@ -78,6 +82,17 @@ public static class AvitoCandidatesJsonParser
         }
 
         return results;
+    }
+
+    public static string ParseGender(string? value)
+    {
+        var normalized = CandidateGenders.NormalizeFilterValue(value);
+        if (normalized is CandidateGenders.Male or CandidateGenders.Female)
+        {
+            return normalized;
+        }
+
+        return CandidateGenders.ParseFromText(value) ?? string.Empty;
     }
 
     public static int? ParseAge(string? value)

@@ -78,6 +78,44 @@ public sealed class CandidateDuplicateServiceTests
     }
 
     [Fact]
+    public async Task FindMatchingPersonAsync_SameFioAgePhoneDifferentCity_FindsExistingPerson()
+    {
+        await using var db = CreateDb();
+        SeedOffice(db, OfficeA, "Office A");
+
+        var person = TestCandidatePersonFactory.CreatePerson(
+            OfficeA,
+            fullName: "Узбеков Шовкат Джумазарович",
+            firstName: "Шовкат",
+            lastName: "Узбеков",
+            middleName: "Джумазарович",
+            age: 42,
+            city: "Серпухов",
+            phoneRaw: "+79999213355",
+            phoneNormalized: "79999213355");
+        db.CandidatePersons.Add(person);
+        db.CandidateResponses.Add(TestCandidatePersonFactory.CreateResponse(
+            OfficeA,
+            person.Id,
+            phone: "79999213355",
+            fullName: "Узбеков Шовкат Джумазарович",
+            age: 42,
+            city: "Серпухов"));
+        await db.SaveChangesAsync();
+
+        var sut = CreateService(db);
+        var profile = new CandidateMatchProfile(
+            "Узбеков Шовкат Джумазарович",
+            42,
+            "Протвино",
+            "79999213355");
+        var matched = await sut.FindMatchingPersonAsync(OfficeA, profile);
+
+        Assert.NotNull(matched);
+        Assert.Equal(person.Id, matched!.Id);
+    }
+
+    [Fact]
     public async Task FindLocalDuplicateAsync_SamePersonDifferentResponse_ReturnsEarlierResponse()
     {
         await using var db = CreateDb();

@@ -66,7 +66,7 @@ publish\publish.bat all
 |------------|--------------|
 | `LEADFLOW_SERVER` | `root@163.5.153.207` |
 | `LEADFLOW_SSH_PORT` | `22` |
-| `LEADFLOW_SSH_KEY` | не задан — используется стандартный SSH (`~/.ssh/config`, ssh-agent) |
+| `LEADFLOW_SSH_KEY` | не задан — `Z:\servers\.ssh\home`, иначе стандартный SSH (`~/.ssh/config`, ssh-agent) |
 | `LEADFLOW_SECRET_FILE` | `publish\secrets\orbita.env` |
 | `LEADFLOW_SKIP_SECRETS_SYNC` | `0` — поставьте `1`, чтобы не копировать `.env` |
 | `LEADFLOW_FORCE_PUBLISH` | `0` — поставьте `1`, чтобы принудительно залить всё, даже если файлы не менялись |

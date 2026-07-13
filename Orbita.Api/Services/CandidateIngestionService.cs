@@ -150,6 +150,9 @@ public sealed class CandidateIngestionService(
             LastName = lastName,
             MiddleName = middleName,
             Age = candidate.Age,
+            Gender = CandidateGenders.ParseFromText(candidate.Gender)
+                ?? CandidateGenders.ParseFromText(candidate.RawText)
+                ?? string.Empty,
             PhoneRaw = candidate.PhoneRaw,
             PhoneNormalized = phoneNormalized,
             City = candidate.City,

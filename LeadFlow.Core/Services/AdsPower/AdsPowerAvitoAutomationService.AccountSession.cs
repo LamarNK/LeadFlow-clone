@@ -436,7 +436,7 @@ public sealed partial class AdsPowerAvitoAutomationService
                 }
             },
             page.Url,
-            BuildResolveExistingPhonesCallback(messengerEnrichmentHints),
+            BuildResolveExistingSourceResponseIdsCallback(messengerEnrichmentHints),
             BuildResolveExistingCardFingerprintsCallback(messengerEnrichmentHints)).ConfigureAwait(false);
 
         var raw = await EvaluateWithRetryAsync<string>(page, ExtractionScript, cancellationToken).ConfigureAwait(false);

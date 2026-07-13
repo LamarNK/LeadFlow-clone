@@ -86,6 +86,7 @@ internal static class StatisticsIndexBuilder
                     TotalAccounts = w.TotalAccounts
                 })
                 .ToList(),
+            BitrixDeliveries = MapBitrixDeliveries(data.BitrixDeliveries, period, filters),
             HrInsights = MapHrInsights(data.HrInsights),
             MonitoringCycles = MapMonitoringCycles(data.MonitoringCycles),
             Summary = summary,
@@ -94,7 +95,9 @@ internal static class StatisticsIndexBuilder
     }
 
     public static bool HasActiveFilters(StatisticsFiltersViewModel filters) =>
-        filters.WorkerIds.Count > 0 || filters.AccountIds.Count > 0;
+        filters.WorkerIds.Count > 0
+        || filters.AccountIds.Count > 0
+        || !string.IsNullOrWhiteSpace(filters.VacancyQuery);
 
     private static IReadOnlyList<DashboardKpiCardViewModel> BuildKpiCards(
         OfficeStatisticsDto data,
@@ -202,6 +205,24 @@ internal static class StatisticsIndexBuilder
             }
         };
     }
+
+    private static IReadOnlyList<BitrixDeliveryStatRowViewModel> MapBitrixDeliveries(
+        IReadOnlyList<BitrixDeliveryStatDto> rows,
+        DashboardPeriod period,
+        StatisticsFiltersViewModel filters) =>
+        rows.Select(row => new BitrixDeliveryStatRowViewModel
+        {
+            BitrixInstanceId = row.BitrixInstanceId,
+            Label = row.Label,
+            SentCount = row.SentCount,
+            ResponsesUrl = KpiCardLinks.Responses(
+                period.From,
+                period.To,
+                status: "sent",
+                workerId: filters.WorkerIds.FirstOrDefault(),
+                accountId: filters.AccountIds.FirstOrDefault(),
+                bitrixDestination: row.BitrixInstanceId.ToString()) ?? "/Responses"
+        }).ToList();
 
     private static HrInsightsViewModel MapHrInsights(HrInsightsDto insights) =>
         new()

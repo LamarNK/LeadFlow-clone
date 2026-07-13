@@ -13,6 +13,7 @@ public sealed class StatisticsViewModel
     public StatisticsChartsViewModel Charts { get; init; } = new();
     public AccountStatsViewModel AccountStats { get; init; } = AccountStatsViewModel.Empty;
     public IReadOnlyList<StatisticsWorkerRowViewModel> Workers { get; init; } = [];
+    public IReadOnlyList<BitrixDeliveryStatRowViewModel> BitrixDeliveries { get; init; } = [];
     public HrInsightsViewModel HrInsights { get; init; } = HrInsightsViewModel.Empty;
     public MonitoringCycleReportViewModel MonitoringCycles { get; init; } = MonitoringCycleReportViewModel.Empty;
     public StatisticsSummaryViewModel Summary { get; init; } = new();
@@ -28,8 +29,17 @@ public sealed class StatisticsLiveSnapshotViewModel
     public StatisticsChartsViewModel Charts { get; init; } = new();
     public AccountStatsViewModel AccountStats { get; init; } = AccountStatsViewModel.Empty;
     public IReadOnlyList<StatisticsWorkerRowViewModel> Workers { get; init; } = [];
+    public IReadOnlyList<BitrixDeliveryStatRowViewModel> BitrixDeliveries { get; init; } = [];
     public HrInsightsViewModel HrInsights { get; init; } = HrInsightsViewModel.Empty;
     public StatisticsSummaryViewModel Summary { get; init; } = new();
+}
+
+public sealed class BitrixDeliveryStatRowViewModel
+{
+    public Guid BitrixInstanceId { get; init; }
+    public string Label { get; init; } = string.Empty;
+    public int SentCount { get; init; }
+    public string ResponsesUrl { get; init; } = string.Empty;
 }
 
 public sealed class StatisticsSummaryViewModel
@@ -82,6 +92,7 @@ public sealed class StatisticsFiltersViewModel
 {
     public IReadOnlyList<Guid> WorkerIds { get; init; } = [];
     public IReadOnlyList<Guid> AccountIds { get; init; } = [];
+    public string? VacancyQuery { get; init; }
 }
 
 public sealed class StatisticsWorkerRowViewModel

@@ -132,6 +132,16 @@ if /i "%~1"=="--target" (
 
 :cli_collect
 if "%~1"=="" goto cli_collect_done
+if /i "%~1"=="-Force" (
+    set "LEADFLOW_FORCE_PUBLISH=1"
+    shift
+    goto cli_collect
+)
+if /i "%~1"=="--force" (
+    set "LEADFLOW_FORCE_PUBLISH=1"
+    shift
+    goto cli_collect
+)
 if defined CLI_TARGETS (
     set "CLI_TARGETS=!CLI_TARGETS!,%~1"
 ) else (
@@ -227,6 +237,9 @@ for %%P in (!CONTEXT_ITEMS!) do (
 set "PLAN_FILE=!TARGET_ROOT!\deploy-plan.json"
 set "DEPLOY_MODE=full"
 
+if "!LEADFLOW_FORCE_PUBLISH!"=="1" (
+    echo == Force publish enabled for !TARGET! ==
+)
 echo == Checking !TARGET! changes ==
 powershell -NoProfile -ExecutionPolicy Bypass -File "!DEPLOY_CONTEXT_SCRIPT!" -Action plan -Target "!TARGET!" -StageDir "!STAGE_DIR!" -StateDir "!STATE_ROOT!" -PlanPath "!PLAN_FILE!"
 if errorlevel 1 exit /b 1
@@ -451,10 +464,11 @@ exit /b 0
 set "SSH_KEY="
 if defined LEADFLOW_SSH_KEY if exist "%LEADFLOW_SSH_KEY%" set "SSH_KEY=%LEADFLOW_SSH_KEY%"
 if not defined SSH_KEY if defined ORBITA_SSH_KEY if exist "%ORBITA_SSH_KEY%" set "SSH_KEY=%ORBITA_SSH_KEY%"
+if not defined SSH_KEY if exist "Z:\servers\.ssh\home" set "SSH_KEY=Z:\servers\.ssh\home"
 exit /b 0
 
 :build_transport_args
-set "SSH_ARGS=-p !LEADFLOW_SSH_PORT! -o BatchMode=yes -o StrictHostKeyChecking=accept-new"
+set "SSH_ARGS=-p !LEADFLOW_SSH_PORT! -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 -o ServerAliveCountMax=120"
 set "SCP_ARGS=-P !LEADFLOW_SSH_PORT! -o BatchMode=yes -o StrictHostKeyChecking=accept-new"
 if defined SSH_KEY (
     set "SSH_ARGS=-i !SSH_KEY! !SSH_ARGS!"

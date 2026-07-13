@@ -11,9 +11,7 @@ public sealed record AvitoCandidatesExtractionSummary(
     int DomStatusCount,
     int ScriptCandidatesCount,
     int ParsedValidCount,
-    int SkippedExistingSourceId,
-    int SkippedDuplicatePhoneInDb,
-    int SkippedDuplicatePhoneInBatch,
+    int SkippedDuplicateInBatch,
     int NewUniqueCount,
     IReadOnlyList<string> SampleNames)
 {
@@ -22,8 +20,6 @@ public sealed record AvitoCandidatesExtractionSummary(
     public static AvitoCandidatesExtractionSummary Empty { get; } = new(
         null,
         "unknown",
-        0,
-        0,
         0,
         0,
         0,
@@ -87,27 +83,9 @@ public sealed record AvitoCandidatesExtractionSummary(
             sb.Append($"; в DOM больше карточек, чем валидных — возможно неполный скролл");
         }
 
-        var filtered = SkippedExistingSourceId + SkippedDuplicatePhoneInDb + SkippedDuplicatePhoneInBatch;
-        if (filtered > 0)
+        if (SkippedDuplicateInBatch > 0)
         {
-            sb.Append($"; отфильтровано {filtered}");
-            var parts = new List<string>();
-            if (SkippedExistingSourceId > 0)
-            {
-                parts.Add($"{SkippedExistingSourceId} уже по sourceResponseId (дедуп lookup)");
-            }
-
-            if (SkippedDuplicatePhoneInDb > 0)
-            {
-                parts.Add($"{SkippedDuplicatePhoneInDb} дубль по телефону (дедуп lookup)");
-            }
-
-            if (SkippedDuplicatePhoneInBatch > 0)
-            {
-                parts.Add($"{SkippedDuplicatePhoneInBatch} повтор в этой выборке");
-            }
-
-            sb.Append($" ({string.Join(", ", parts)})");
+            sb.Append($"; отфильтровано {SkippedDuplicateInBatch} (повтор sourceResponseId в этой выборке)");
         }
 
         sb.Append($"; новых к публикации {NewUniqueCount}");

@@ -14,6 +14,13 @@ public static class CandidateMatchScorer
             return 0;
         }
 
+        if (!string.IsNullOrWhiteSpace(existing.PhoneNormalized)
+            && !string.IsNullOrWhiteSpace(incoming.PhoneNormalized)
+            && string.Equals(existing.PhoneNormalized, incoming.PhoneNormalized, StringComparison.Ordinal))
+        {
+            return MatchScore;
+        }
+
         var total = 0;
 
         if (existing.Age.HasValue
@@ -26,13 +33,6 @@ public static class CandidateMatchScorer
         if (CityNormalizer.IsMatch(existing.City, incoming.City))
         {
             total += 30;
-        }
-
-        if (!string.IsNullOrWhiteSpace(existing.PhoneNormalized)
-            && !string.IsNullOrWhiteSpace(incoming.PhoneNormalized)
-            && string.Equals(existing.PhoneNormalized, incoming.PhoneNormalized, StringComparison.Ordinal))
-        {
-            total += 20;
         }
 
         return total;

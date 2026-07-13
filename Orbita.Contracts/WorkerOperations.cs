@@ -71,6 +71,7 @@ public sealed record WorkerCandidateDto(
     string CardFingerprint,
     string FullName,
     int? Age,
+    string? Gender,
     string PhoneRaw,
     string City,
     string Vacancy,

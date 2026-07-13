@@ -821,6 +821,7 @@ public sealed class OrbitaApiClient(
         DateTime to,
         IReadOnlyList<Guid>? workerIds = null,
         IReadOnlyList<Guid>? accountIds = null,
+        string? vacancy = null,
         CancellationToken ct = default)
     {
         if (_preview.Enabled)
@@ -829,7 +830,7 @@ public sealed class OrbitaApiClient(
                 DesignPreviewData.GetStatistics(officeContext.EffectiveOfficeId, from, to, workerIds, accountIds));
         }
 
-        var query = BuildStatisticsQuery(from, to, workerIds, accountIds);
+        var query = BuildStatisticsQuery(from, to, workerIds, accountIds, vacancy);
         return GetAsync<OfficeStatisticsDto>(WithOfficeQuery($"api/v1/panel/statistics?{query}"), ct);
     }
 
@@ -837,7 +838,8 @@ public sealed class OrbitaApiClient(
         DateTime from,
         DateTime to,
         IReadOnlyList<Guid>? workerIds,
-        IReadOnlyList<Guid>? accountIds)
+        IReadOnlyList<Guid>? accountIds,
+        string? vacancy = null)
     {
         var parts = new List<string>
         {
@@ -855,8 +857,24 @@ public sealed class OrbitaApiClient(
             parts.AddRange(accountIds.Select(id => $"accountIds={id}"));
         }
 
+        if (!string.IsNullOrWhiteSpace(vacancy))
+        {
+            parts.Add($"vacancy={Uri.EscapeDataString(vacancy)}");
+        }
+
         return string.Join('&', parts);
     }
+
+    public Task<IReadOnlyList<ResponseFilterVacancyDto>?> GetResponseFilterVacanciesAsync(
+        DateTime fromUtc,
+        DateTime toUtc,
+        CancellationToken ct = default) =>
+        _preview.Enabled
+            ? Task.FromResult<IReadOnlyList<ResponseFilterVacancyDto>?>([])
+            : GetAsync<IReadOnlyList<ResponseFilterVacancyDto>>(
+                WithOfficeQuery(
+                    $"api/v1/panel/responses/filters/vacancies?from={Uri.EscapeDataString(fromUtc.ToString("o"))}&to={Uri.EscapeDataString(toUtc.ToString("o"))}"),
+                ct);
 
     public Task<IReadOnlyList<ResponseFilterAccountDto>?> GetResponseFilterAccountsAsync(CancellationToken ct = default) =>
         _preview.Enabled

@@ -381,6 +381,7 @@ public sealed class LeadFlowImportService(
             LastName = record.LastName,
             MiddleName = record.MiddleName,
             Age = record.Age,
+            Gender = CandidateGenders.ParseFromText(record.RawText) ?? string.Empty,
             PhoneRaw = record.PhoneRaw,
             PhoneNormalized = ResolveImportedPhoneNormalized(record),
             City = record.City,

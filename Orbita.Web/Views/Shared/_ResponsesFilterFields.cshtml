@@ -18,13 +18,54 @@
         })" />
     </label>
     <label class="responses-filter-field responses-filter-field--grow">
-        <span class="responses-filter-label">Объявление</span>
+        <span class="responses-filter-label">Вакансия</span>
         <input type="search"
                name="vacancy"
                class="responses-input"
                value="@Model.Filters.VacancyQuery"
-               placeholder="ID или название объявления..."
-               aria-label="Поиск по объявлению" />
+               placeholder="Название или ID объявления..."
+               list="responsesVacancySuggestions"
+               aria-label="Фильтр по вакансии" />
+        @if (Model.Vacancies.Count > 0)
+        {
+            <datalist id="responsesVacancySuggestions">
+                @foreach (var opt in Model.Vacancies)
+                {
+                    <option value="@opt.Value">@opt.Label</option>
+                }
+            </datalist>
+        }
+    </label>
+    <label class="responses-filter-field">
+        <span class="responses-filter-label">Пол</span>
+        <select name="gender" class="responses-select" aria-label="Пол">
+            @foreach (var opt in Model.Genders)
+            {
+                <option value="@opt.Value" selected="@(opt.Value == (Model.Filters.Gender ?? ""))">@opt.Label</option>
+            }
+        </select>
+    </label>
+    <label class="responses-filter-field responses-filter-field--age">
+        <span class="responses-filter-label">Возраст</span>
+        <div class="responses-age-range">
+            <input type="number"
+                   name="ageFrom"
+                   class="responses-input responses-input--age"
+                   value="@(Model.Filters.AgeFrom?.ToString() ?? "")"
+                   min="0"
+                   max="120"
+                   placeholder="от"
+                   aria-label="Возраст от" />
+            <span class="responses-age-range-sep" aria-hidden="true">—</span>
+            <input type="number"
+                   name="ageTo"
+                   class="responses-input responses-input--age"
+                   value="@(Model.Filters.AgeTo?.ToString() ?? "")"
+                   min="0"
+                   max="120"
+                   placeholder="до"
+                   aria-label="Возраст до" />
+        </div>
     </label>
     <label class="responses-filter-field">
         <span class="responses-filter-label">Статус</span>
@@ -32,6 +73,15 @@
             @foreach (var opt in Model.Statuses)
             {
                 <option value="@opt.Value" selected="@(opt.Value == (Model.Filters.Status ?? ""))">@opt.Label</option>
+            }
+        </select>
+    </label>
+    <label class="responses-filter-field">
+        <span class="responses-filter-label">Битрикс</span>
+        <select name="bitrixDestination" class="responses-select" aria-label="Куда отправлен">
+            @foreach (var opt in Model.BitrixDestinations)
+            {
+                <option value="@opt.Value" selected="@(opt.Value == (Model.Filters.BitrixDestination ?? ""))">@opt.Label</option>
             }
         </select>
     </label>

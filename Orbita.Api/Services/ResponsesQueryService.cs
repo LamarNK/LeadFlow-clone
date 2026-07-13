@@ -17,6 +17,10 @@ public sealed class ResponsesQueryService(
         string? vacancy,
         Guid? workerId,
         Guid? accountId,
+        string? bitrixDestination,
+        string? gender,
+        int? ageFrom,
+        int? ageTo,
         DateTime? fromUtc,
         DateTime? toUtc,
         int page,
@@ -24,7 +28,25 @@ public sealed class ResponsesQueryService(
         string? sort = null,
         string? sortDir = null,
         CancellationToken ct = default) =>
-        GetPageInternalAsync(scope, officeFilter, status, search, vacancy, workerId, accountId, fromUtc, toUtc, page, pageSize, sort, sortDir, ct);
+        GetPageInternalAsync(
+            scope,
+            officeFilter,
+            status,
+            search,
+            vacancy,
+            workerId,
+            accountId,
+            bitrixDestination,
+            gender,
+            ageFrom,
+            ageTo,
+            fromUtc,
+            toUtc,
+            page,
+            pageSize,
+            sort,
+            sortDir,
+            ct);
 
     public async Task<ResponsesSummaryDto> GetSummaryAsync(
         OfficeScope scope,
@@ -34,11 +56,28 @@ public sealed class ResponsesQueryService(
         string? vacancy,
         Guid? workerId,
         Guid? accountId,
+        string? bitrixDestination,
+        string? gender,
+        int? ageFrom,
+        int? ageTo,
         DateTime? fromUtc,
         DateTime? toUtc,
         CancellationToken ct = default)
     {
-        var query = BuildFilteredQuery(scope, officeFilter, status, search, vacancy, workerId, accountId, fromUtc, toUtc);
+        var query = BuildFilteredQuery(
+            scope,
+            officeFilter,
+            status,
+            search,
+            vacancy,
+            workerId,
+            accountId,
+            bitrixDestination,
+            gender,
+            ageFrom,
+            ageTo,
+            fromUtc,
+            toUtc);
         var total = await query.CountAsync(ct);
         if (total == 0)
         {
@@ -87,6 +126,37 @@ public sealed class ResponsesQueryService(
         return rows.Select(x => new ResponseFilterAccountDto(x.AccountId, x.AccountName)).ToList();
     }
 
+    public async Task<IReadOnlyList<ResponseFilterVacancyDto>> GetFilterVacanciesAsync(
+        OfficeScope scope,
+        Guid? officeFilter,
+        DateTime? fromUtc,
+        DateTime? toUtc,
+        CancellationToken ct = default)
+    {
+        var query = ApplyOfficeFilter(db.CandidateResponses.AsNoTracking(), scope, officeFilter)
+            .Where(x => x.Vacancy != "");
+
+        if (fromUtc is not null)
+        {
+            query = query.Where(x => x.CreatedAt >= fromUtc.Value);
+        }
+
+        if (toUtc is not null)
+        {
+            query = query.Where(x => x.CreatedAt < toUtc.Value);
+        }
+
+        var rows = await query
+            .GroupBy(x => x.Vacancy)
+            .Select(g => new { Vacancy = g.Key, Count = g.Count() })
+            .OrderByDescending(x => x.Count)
+            .ThenBy(x => x.Vacancy)
+            .Take(100)
+            .ToListAsync(ct);
+
+        return rows.Select(x => new ResponseFilterVacancyDto(x.Vacancy, x.Count)).ToList();
+    }
+
     public async Task<ResponseDetailDto?> GetDetailAsync(
         Guid id,
         OfficeScope scope,
@@ -130,6 +200,10 @@ public sealed class ResponsesQueryService(
         string? vacancy,
         Guid? workerId,
         Guid? accountId,
+        string? bitrixDestination,
+        string? gender,
+        int? ageFrom,
+        int? ageTo,
         DateTime? fromUtc,
         DateTime? toUtc,
         int page,
@@ -141,7 +215,20 @@ public sealed class ResponsesQueryService(
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 200);
 
-        var query = BuildFilteredQuery(scope, officeFilter, status, search, vacancy, workerId, accountId, fromUtc, toUtc);
+        var query = BuildFilteredQuery(
+            scope,
+            officeFilter,
+            status,
+            search,
+            vacancy,
+            workerId,
+            accountId,
+            bitrixDestination,
+            gender,
+            ageFrom,
+            ageTo,
+            fromUtc,
+            toUtc);
         var total = await query.CountAsync(ct);
         var orderedQuery = ApplyOrdering(query, sort, sortDir);
         orderedQuery = orderedQuery
@@ -335,6 +422,10 @@ public sealed class ResponsesQueryService(
         string? vacancy,
         Guid? workerId,
         Guid? accountId,
+        string? bitrixDestination,
+        string? gender,
+        int? ageFrom,
+        int? ageTo,
         DateTime? fromUtc,
         DateTime? toUtc)
     {
@@ -356,6 +447,7 @@ public sealed class ResponsesQueryService(
         }
 
         query = ApplyStatusFilter(query, status);
+        query = ApplyBitrixDestinationFilter(query, bitrixDestination);
 
         if (fromUtc is not null)
         {
@@ -369,8 +461,79 @@ public sealed class ResponsesQueryService(
 
         query = ApplySearchFilter(query, search);
         query = ApplyVacancyFilter(query, vacancy);
+        query = ApplyGenderFilter(query, gender);
+        query = ApplyAgeFilter(query, ageFrom, ageTo);
 
         return query;
+    }
+
+    private static IQueryable<CandidateResponseEntity> ApplyGenderFilter(
+        IQueryable<CandidateResponseEntity> query,
+        string? gender)
+    {
+        var normalized = CandidateGenders.NormalizeFilterValue(gender);
+        if (string.IsNullOrEmpty(normalized))
+        {
+            return query;
+        }
+
+        return normalized switch
+        {
+            CandidateGenders.Male => query.Where(x => x.Gender == CandidateGenders.Male),
+            CandidateGenders.Female => query.Where(x => x.Gender == CandidateGenders.Female),
+            CandidateGenders.Unknown => query.Where(x => x.Gender == null || x.Gender == string.Empty),
+            _ => query
+        };
+    }
+
+    private static IQueryable<CandidateResponseEntity> ApplyAgeFilter(
+        IQueryable<CandidateResponseEntity> query,
+        int? ageFrom,
+        int? ageTo)
+    {
+        if (ageFrom is int from)
+        {
+            query = query.Where(x => x.Age.HasValue && x.Age.Value >= from);
+        }
+
+        if (ageTo is int to)
+        {
+            query = query.Where(x => x.Age.HasValue && x.Age.Value <= to);
+        }
+
+        return query;
+    }
+
+    private IQueryable<CandidateResponseEntity> ApplyBitrixDestinationFilter(
+        IQueryable<CandidateResponseEntity> query,
+        string? bitrixDestination)
+    {
+        if (string.IsNullOrWhiteSpace(bitrixDestination))
+        {
+            return query;
+        }
+
+        if (string.Equals(bitrixDestination, "not_sent", StringComparison.OrdinalIgnoreCase))
+        {
+            return query.Where(x =>
+                x.Status != ResponseStatuses.Sent
+                && x.BitrixInstanceId == null
+                && !db.ResponseBitrixDeliveries.Any(d =>
+                    d.ResponseId == x.Id
+                    && d.Outcome == ResponseBitrixDeliveryOutcomes.Sent));
+        }
+
+        if (!Guid.TryParse(bitrixDestination, out var instanceId))
+        {
+            return query;
+        }
+
+        return query.Where(x =>
+            (x.BitrixInstanceId == instanceId && x.Status == ResponseStatuses.Sent)
+            || db.ResponseBitrixDeliveries.Any(d =>
+                d.ResponseId == x.Id
+                && d.BitrixInstanceId == instanceId
+                && d.Outcome == ResponseBitrixDeliveryOutcomes.Sent));
     }
 
     private static IQueryable<CandidateResponseEntity> ApplySearchFilter(
@@ -504,6 +667,7 @@ public sealed class ResponsesQueryService(
             entity.LastName,
             entity.MiddleName,
             entity.Age,
+            string.IsNullOrWhiteSpace(entity.Gender) ? null : entity.Gender,
             entity.PhoneRaw,
             entity.PhoneNormalized,
             entity.City,

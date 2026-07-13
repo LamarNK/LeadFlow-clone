@@ -15,6 +15,10 @@ public sealed class ResponsesController(IResponsesService responses) : Controlle
         string? status,
         Guid? workerId,
         Guid? accountId,
+        string? bitrixDestination,
+        string? gender,
+        int? ageFrom,
+        int? ageTo,
         string? vacancy,
         string? search,
         int page = 1,
@@ -24,7 +28,7 @@ public sealed class ResponsesController(IResponsesService responses) : Controlle
         CancellationToken ct = default)
     {
         var model = await responses.GetIndexAsync(
-            from, to, status, workerId, accountId, vacancy, search, selectedId: null, page, pageSize, sort, dir, ct);
+            from, to, status, workerId, accountId, bitrixDestination, gender, ageFrom, ageTo, vacancy, search, selectedId: null, page, pageSize, sort, dir, ct);
 
         return Json(new ResponsesLiveSnapshotViewModel
         {
@@ -54,6 +58,10 @@ public sealed class ResponsesController(IResponsesService responses) : Controlle
         string? status,
         Guid? workerId,
         Guid? accountId,
+        string? bitrixDestination,
+        string? gender,
+        int? ageFrom,
+        int? ageTo,
         string? vacancy,
         string? search,
         Guid? id,
@@ -64,7 +72,7 @@ public sealed class ResponsesController(IResponsesService responses) : Controlle
         CancellationToken ct = default)
     {
         var model = await responses.GetIndexAsync(
-            from, to, status, workerId, accountId, vacancy, search, id, page, pageSize, sort, dir, ct);
+            from, to, status, workerId, accountId, bitrixDestination, gender, ageFrom, ageTo, vacancy, search, id, page, pageSize, sort, dir, ct);
         return View(model);
     }
 
@@ -100,6 +108,10 @@ public sealed class ResponsesController(IResponsesService responses) : Controlle
                 status = model.Status,
                 workerId = model.WorkerId,
                 accountId = model.AccountId,
+                bitrixDestination = model.BitrixDestination,
+                gender = model.Gender,
+                ageFrom = model.AgeFrom,
+                ageTo = model.AgeTo,
                 vacancy = model.Vacancy,
                 search = model.Search,
                 page = model.Page,
@@ -122,6 +134,10 @@ public sealed class ResponsesController(IResponsesService responses) : Controlle
             status = model.Status,
             workerId = model.WorkerId,
             accountId = model.AccountId,
+            bitrixDestination = model.BitrixDestination,
+            gender = model.Gender,
+            ageFrom = model.AgeFrom,
+            ageTo = model.AgeTo,
             vacancy = model.Vacancy,
             search = model.Search,
             page = model.Page,
@@ -140,6 +156,10 @@ public sealed class ResponsesController(IResponsesService responses) : Controlle
         string? status,
         Guid? workerId,
         Guid? accountId,
+        string? bitrixDestination,
+        string? gender,
+        int? ageFrom,
+        int? ageTo,
         string? vacancy,
         string? search,
         int page = 1,
@@ -160,6 +180,10 @@ public sealed class ResponsesController(IResponsesService responses) : Controlle
             status,
             workerId,
             accountId,
+            bitrixDestination,
+            gender,
+            ageFrom,
+            ageTo,
             vacancy,
             search,
             page,

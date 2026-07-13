@@ -360,6 +360,7 @@
             '<input type="hidden" name="Status" data-send-bitrix-status />' +
             '<input type="hidden" name="WorkerId" data-send-bitrix-worker-id />' +
             '<input type="hidden" name="AccountId" data-send-bitrix-account-id />' +
+            '<input type="hidden" name="BitrixDestination" data-send-bitrix-destination />' +
             '<input type="hidden" name="Vacancy" data-send-bitrix-vacancy />' +
             '<input type="hidden" name="Search" data-send-bitrix-search />' +
             '<input type="hidden" name="Page" data-send-bitrix-page />' +
@@ -387,6 +388,7 @@
             ['status', 'Status'],
             ['workerId', 'WorkerId'],
             ['accountId', 'AccountId'],
+            ['bitrixDestination', 'BitrixDestination'],
             ['vacancy', 'Vacancy'],
             ['search', 'Search'],
             ['page', 'Page'],

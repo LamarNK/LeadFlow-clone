@@ -721,6 +721,33 @@
         }).join('');
     }
 
+    function renderBitrixDeliveries(rows) {
+        var container = document.querySelector('[data-statistics-bitrix-deliveries]');
+        if (!container) return;
+
+        if (!rows || rows.length === 0) {
+            container.innerHTML = '<div class="table-empty-state">'
+                + '<i class="fa-solid fa-paper-plane" aria-hidden="true"></i>'
+                + '<p class="table-empty-title">Нет отправок за период</p>'
+                + '<p class="table-empty-desc">Отклики ещё не отправлялись в Битрикс24 за выбранный период.</p>'
+                + '</div>';
+            return;
+        }
+
+        container.innerHTML = '<table class="data-table data-table--compact statistics-bitrix-table">'
+            + '<thead><tr><th>Битрикс</th><th class="cell-num">Отправлено</th></tr></thead><tbody>'
+            + rows.map(function (row) {
+                var url = row.responsesUrl || row.ResponsesUrl || '#';
+                var label = row.label || row.Label || 'Битрикс';
+                var count = row.sentCount != null ? row.sentCount : row.SentCount;
+                return '<tr>'
+                    + '<td><a href="' + escapeHtml(url) + '" class="statistics-bitrix-link">' + escapeHtml(label) + '</a></td>'
+                    + '<td class="cell-num">' + count + '</td>'
+                    + '</tr>';
+            }).join('')
+            + '</tbody></table>';
+    }
+
     function renderAgeBuckets(rows) {
         var tbody = document.querySelector('[data-statistics-age-buckets]');
         if (!tbody) return;
@@ -829,6 +856,7 @@
 
         renderWorkers(snapshot.workers || [], showOfficeColumn);
         updateSummaryMeta(snapshot.summary);
+        renderBitrixDeliveries(snapshot.bitrixDeliveries || []);
 
         if (snapshot.hrInsights) {
             renderHrTable('Города', snapshot.hrInsights.topCities);

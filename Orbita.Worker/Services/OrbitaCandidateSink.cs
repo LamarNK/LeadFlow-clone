@@ -125,6 +125,7 @@ public sealed class OrbitaCandidateSink(
             candidate.CardFingerprint,
             candidate.FullName,
             candidate.Age,
+            string.IsNullOrWhiteSpace(candidate.Gender) ? null : candidate.Gender,
             candidate.PhoneRaw,
             candidate.City,
             candidate.Vacancy,

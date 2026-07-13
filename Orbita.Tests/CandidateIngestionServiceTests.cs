@@ -52,6 +52,7 @@ public sealed class CandidateIngestionServiceTests
                 "",
                 "Гор Олег Александрович",
                 66,
+                null,
                 "+79910001122",
                 "рабочий поселок Чик",
                 "Курьер",
@@ -75,6 +76,67 @@ public sealed class CandidateIngestionServiceTests
     }
 
     [Fact]
+    public async Task IngestBatchAsync_SamePersonDifferentCitySamePhone_StoresDuplicateStatus()
+    {
+        await using var db = CreateDb();
+        SeedWorker(db);
+
+        var person = TestCandidatePersonFactory.CreatePerson(
+            OfficeId,
+            fullName: "Узбеков Шовкат Джумазарович",
+            firstName: "Шовкат",
+            lastName: "Узбеков",
+            middleName: "Джумазарович",
+            age: 42,
+            city: "Серпухов",
+            phoneRaw: "+79999213355",
+            phoneNormalized: "79999213355");
+        db.CandidatePersons.Add(person);
+        db.CandidateResponses.Add(TestCandidatePersonFactory.CreateResponse(
+            OfficeId,
+            person.Id,
+            WorkerId,
+            phone: "79999213355",
+            sourceResponseId: "serpukhov-source",
+            fullName: "Узбеков Шовкат Джумазарович",
+            age: 42,
+            city: "Серпухов"));
+        await db.SaveChangesAsync();
+
+        var sut = CreateService(db);
+        var request = new WorkerCandidateBatchRequest([
+            new WorkerCandidateDto(
+                Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd"),
+                "acc-2",
+                "Avito",
+                "protvino-source",
+                "",
+                "Узбеков Шовкат Джумазарович",
+                42,
+                null,
+                "+7 999 921-33-55",
+                "Протвино",
+                "Разнорабочий",
+                "",
+                "",
+                "",
+                "",
+                "",
+                DateTime.UtcNow)
+        ]);
+
+        var result = await sut.IngestBatchAsync(WorkerId, request);
+
+        Assert.Equal(1, result.SkippedDuplicates);
+        Assert.Equal(ResponseStatuses.Duplicate, result.Items[0].Status);
+
+        var stored = await db.CandidateResponses.SingleAsync(x => x.SourceResponseId == "protvino-source");
+        Assert.Equal(ResponseStatuses.Duplicate, stored.Status);
+        Assert.True(stored.IsLocalDuplicate);
+        Assert.Equal(person.Id, stored.PersonId);
+    }
+
+    [Fact]
     public async Task IngestBatchAsync_AutoDistributionDisabled_StoresActionRequired()
     {
         await using var db = CreateDb();
@@ -90,6 +152,7 @@ public sealed class CandidateIngestionServiceTests
                 "",
                 "New User",
                 25,
+                null,
                 "+7 (900) 222-22-22",
                 "Москва",
                 "Курьер",

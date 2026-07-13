@@ -16,6 +16,9 @@ public sealed class ResponsesIndexViewModel
     public IReadOnlyList<EventFilterOptionViewModel> Statuses { get; init; } = [];
     public IReadOnlyList<EventFilterOptionViewModel> Workers { get; init; } = [];
     public IReadOnlyList<EventFilterOptionViewModel> Accounts { get; init; } = [];
+    public IReadOnlyList<EventFilterOptionViewModel> BitrixDestinations { get; init; } = [];
+    public IReadOnlyList<EventFilterOptionViewModel> Genders { get; init; } = [];
+    public IReadOnlyList<EventFilterOptionViewModel> Vacancies { get; init; } = [];
     public IReadOnlyList<ResponseRowViewModel> Responses { get; init; } = [];
     public IReadOnlyList<SendBitrixInstanceOptionViewModel> SendBitrixInstances { get; init; } = [];
     public PaginationViewModel Pagination { get; init; } = new();
@@ -31,6 +34,10 @@ public sealed record ResponsesFilterViewModel
     public string? Status { get; init; }
     public Guid? WorkerId { get; init; }
     public Guid? AccountId { get; init; }
+    public string? BitrixDestination { get; init; }
+    public string? Gender { get; init; }
+    public int? AgeFrom { get; init; }
+    public int? AgeTo { get; init; }
     public string? VacancyQuery { get; init; }
     public string? SearchQuery { get; init; }
     public DateTime DateFrom { get; init; } = DateTime.Today;
@@ -98,6 +105,7 @@ public sealed class ResponseDetailViewModel
     public string LastName { get; init; } = string.Empty;
     public string MiddleName { get; init; } = string.Empty;
     public int? Age { get; init; }
+    public string? Gender { get; init; }
     public string PhoneRaw { get; init; } = string.Empty;
     public string PhoneNormalized { get; init; } = string.Empty;
     public string City { get; init; } = string.Empty;
@@ -147,6 +155,10 @@ public sealed class SendResponseToBitrixFormModel
     public string? Status { get; set; }
     public Guid? WorkerId { get; set; }
     public Guid? AccountId { get; set; }
+    public string? BitrixDestination { get; set; }
+    public string? Gender { get; set; }
+    public int? AgeFrom { get; set; }
+    public int? AgeTo { get; set; }
     public string? Vacancy { get; set; }
     public string? Search { get; set; }
     public int Page { get; set; } = 1;

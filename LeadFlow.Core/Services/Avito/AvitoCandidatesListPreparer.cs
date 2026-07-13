@@ -22,7 +22,7 @@ public static class AvitoCandidatesListPreparer
         CancellationToken cancellationToken,
         Func<CancellationToken, Task<string?>>? fetchHtmlSnapshot = null,
         string? pageUrl = null,
-        Func<IReadOnlyCollection<string>, CancellationToken, Task<IReadOnlySet<string>>>? resolveExistingPhonesAsync = null,
+        Func<IReadOnlyCollection<string>, CancellationToken, Task<IReadOnlySet<string>>>? resolveExistingSourceResponseIdsAsync = null,
         Func<IReadOnlyCollection<string>, CancellationToken, Task<IReadOnlySet<string>>>? resolveExistingCardFingerprintsAsync = null)
     {
         await AvitoFirewallProbe.ThrowIfBlockedAsync(executeScript, fetchHtmlSnapshot, pageUrl, cancellationToken)
@@ -130,7 +130,7 @@ public static class AvitoCandidatesListPreparer
             var enrichment = await TryCollectDetailEnrichmentAsync(
                     executeScript,
                     Math.Min(domItems, MaxDetailEnrichClicks),
-                    resolveExistingPhonesAsync,
+                    resolveExistingSourceResponseIdsAsync,
                     cancellationToken)
                 .ConfigureAwait(false);
             detailEnrichClicks = enrichment.Clicks;
@@ -263,31 +263,31 @@ public static class AvitoCandidatesListPreparer
     private static async Task<DetailEnrichmentResult> TryCollectDetailEnrichmentAsync(
         Func<string, CancellationToken, Task<string>> executeScript,
         int itemCount,
-        Func<IReadOnlyCollection<string>, CancellationToken, Task<IReadOnlySet<string>>>? resolveExistingPhonesAsync,
+        Func<IReadOnlyCollection<string>, CancellationToken, Task<IReadOnlySet<string>>>? resolveExistingSourceResponseIdsAsync,
         CancellationToken cancellationToken)
     {
         var entries = new Dictionary<string, object>(StringComparer.Ordinal);
         var clicks = 0;
         var skipped = 0;
         var hits = 0;
-        var listPhones = await TryParseListItemPhonesAsync(executeScript, cancellationToken).ConfigureAwait(false);
+        var listItems = await TryParseListItemSkipKeysAsync(executeScript, cancellationToken).ConfigureAwait(false);
 
         IReadOnlySet<string>? existingOnPage = null;
-        if (resolveExistingPhonesAsync is not null)
+        if (resolveExistingSourceResponseIdsAsync is not null)
         {
-            var candidates = new HashSet<string>(StringComparer.Ordinal);
+            var candidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             for (var index = 0; index < itemCount; index++)
             {
-                if (listPhones.TryGetValue(index, out var listPhoneDigits)
-                    && !string.IsNullOrWhiteSpace(listPhoneDigits))
+                if (listItems.TryGetValue(index, out var listItem)
+                    && !string.IsNullOrWhiteSpace(listItem.SourceResponseId))
                 {
-                    candidates.Add(listPhoneDigits);
+                    candidates.Add(listItem.SourceResponseId);
                 }
             }
 
             if (candidates.Count > 0)
             {
-                existingOnPage = await resolveExistingPhonesAsync(candidates, cancellationToken)
+                existingOnPage = await resolveExistingSourceResponseIdsAsync(candidates, cancellationToken)
                     .ConfigureAwait(false);
             }
         }
@@ -296,10 +296,10 @@ public static class AvitoCandidatesListPreparer
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (listPhones.TryGetValue(index, out var listPhoneDigits)
-                && !string.IsNullOrWhiteSpace(listPhoneDigits)
+            if (listItems.TryGetValue(index, out var listItem)
+                && !string.IsNullOrWhiteSpace(listItem.SourceResponseId)
                 && existingOnPage is not null
-                && existingOnPage.Contains(listPhoneDigits))
+                && existingOnPage.Contains(listItem.SourceResponseId))
             {
                 skipped++;
                 continue;
@@ -351,11 +351,11 @@ public static class AvitoCandidatesListPreparer
         return new DetailEnrichmentResult(entries, clicks, skipped, hits);
     }
 
-    private static async Task<Dictionary<int, string>> TryParseListItemPhonesAsync(
+    private static async Task<Dictionary<int, ListItemSkipKeys>> TryParseListItemSkipKeysAsync(
         Func<string, CancellationToken, Task<string>> executeScript,
         CancellationToken cancellationToken)
     {
-        var raw = await executeScript(AvitoCandidatesPageScripts.BuildCollectListItemPhonesScript(), cancellationToken)
+        var raw = await executeScript(AvitoCandidatesPageScripts.BuildCollectListItemSkipKeysScript(), cancellationToken)
             .ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(raw))
         {
@@ -370,7 +370,7 @@ public static class AvitoCandidatesListPreparer
                 return [];
             }
 
-            var map = new Dictionary<int, string>();
+            var map = new Dictionary<int, ListItemSkipKeys>();
             foreach (var item in doc.RootElement.EnumerateArray())
             {
                 if (!item.TryGetProperty("index", out var indexProp))
@@ -382,7 +382,10 @@ public static class AvitoCandidatesListPreparer
                 var phoneDigits = item.TryGetProperty("phoneDigits", out var phoneProp)
                     ? phoneProp.GetString() ?? string.Empty
                     : string.Empty;
-                map[index] = phoneDigits;
+                var sourceResponseId = item.TryGetProperty("sourceResponseId", out var sourceIdProp)
+                    ? sourceIdProp.GetString() ?? string.Empty
+                    : string.Empty;
+                map[index] = new ListItemSkipKeys(phoneDigits, sourceResponseId);
             }
 
             return map;
@@ -392,6 +395,8 @@ public static class AvitoCandidatesListPreparer
             return [];
         }
     }
+
+    private sealed record ListItemSkipKeys(string PhoneDigits, string SourceResponseId);
 
     private static bool TryParseClickStep(string? raw, out bool ok)
     {

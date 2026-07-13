@@ -10,37 +10,24 @@ public static class CandidateDedupLog
         AvitoAccount account,
         AvitoSubProfile? subProfile,
         DuplicateScope scope,
-        int sourceIdsQueried,
-        int sourceIdsMatched,
-        int phonesQueried,
-        int phonesMatched,
+        int parsedCount,
         int skippedInBatch)
     {
-        if (sourceIdsQueried == 0 && phonesQueried == 0 && skippedInBatch == 0)
+        if (parsedCount == 0 && skippedInBatch == 0)
         {
             return;
         }
 
         var who = FormatWho(account, subProfile);
-        var parts = new List<string>();
-        if (sourceIdsQueried > 0)
-        {
-            parts.Add($"sourceResponseId: запрошено {sourceIdsQueried}, дублей {sourceIdsMatched}");
-        }
-
-        if (phonesQueried > 0)
-        {
-            parts.Add($"телефоны: запрошено {phonesQueried}, дублей {phonesMatched}");
-        }
-
+        var parts = new List<string> { $"разобрано {parsedCount}" };
         if (skippedInBatch > 0)
         {
-            parts.Add($"повтор в выборке: {skippedInBatch}");
+            parts.Add($"повтор sourceResponseId в выборке: {skippedInBatch}");
         }
 
         LogInfo(
             $"{who} — дедуп при разборе (scope {DescribeScope(scope)}): {string.Join("; ", parts)}. " +
-            "Источник проверки — см. лог «Дедуп lookup» выше.");
+            "Совпадение кандидатов выполняется на Orbita API по ФИО, не по телефону.");
     }
 
     public static void LogOrbitaApiLookup(

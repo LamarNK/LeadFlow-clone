@@ -17,6 +17,7 @@ public sealed class StatisticsController(
         string? to,
         Guid[]? workerIds,
         Guid[]? accountIds,
+        string? vacancy,
         CancellationToken ct)
     {
         var period = DashboardPeriod.Parse(from, to);
@@ -24,6 +25,7 @@ public sealed class StatisticsController(
             period,
             StatisticsService.NormalizeIds(workerIds),
             StatisticsService.NormalizeIds(accountIds),
+            vacancy,
             ct);
         if (!string.IsNullOrWhiteSpace(model.ErrorMessage) && IsApiSessionMissing())
         {
@@ -40,6 +42,7 @@ public sealed class StatisticsController(
         string? to,
         Guid[]? workerIds,
         Guid[]? accountIds,
+        string? vacancy,
         CancellationToken ct)
     {
         var period = DashboardPeriod.Parse(from, to);
@@ -47,6 +50,7 @@ public sealed class StatisticsController(
             period,
             StatisticsService.NormalizeIds(workerIds),
             StatisticsService.NormalizeIds(accountIds),
+            vacancy,
             ct);
         if (!string.IsNullOrWhiteSpace(model.ErrorMessage))
         {
@@ -61,6 +65,7 @@ public sealed class StatisticsController(
             Charts = model.Charts,
             AccountStats = model.AccountStats,
             Workers = model.Workers,
+            BitrixDeliveries = model.BitrixDeliveries,
             HrInsights = model.HrInsights,
             Summary = model.Summary
         });

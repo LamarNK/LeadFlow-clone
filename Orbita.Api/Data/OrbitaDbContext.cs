@@ -131,6 +131,7 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
                 .IsUnique()
                 .HasFilter("\"SourceResponseId\" <> ''");
             entity.Property(x => x.DuplicateSummary).HasMaxLength(2000);
+            entity.Property(x => x.Gender).HasMaxLength(16);
             entity.Property(x => x.WorkerName).HasMaxLength(200);
             entity.Property(x => x.DistributionMode).HasMaxLength(16);
             entity.HasOne(x => x.Person).WithMany(x => x.Responses).HasForeignKey(x => x.PersonId).OnDelete(DeleteBehavior.Restrict);

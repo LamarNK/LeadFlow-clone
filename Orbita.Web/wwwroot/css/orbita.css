@@ -6410,6 +6410,27 @@ html[data-theme="dark"] .orbita-office-switcher-select:focus {
     flex: 2 1 240px;
 }
 
+.responses-filter-field--age {
+    min-width: 180px;
+    flex: 1.2 1 180px;
+}
+
+.responses-age-range {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.responses-age-range-sep {
+    color: #98a2b3;
+    flex: 0 0 auto;
+}
+
+.responses-input--age {
+    min-width: 0;
+    flex: 1 1 0;
+}
+
 .responses-filter-label {
     font-size: 12px;
     font-weight: 500;
@@ -10240,6 +10261,11 @@ body.orbita-search-open {
     font-size: 14px;
 }
 
+.statistics-filter-field--vacancy {
+    min-width: 220px;
+    flex: 2 1 240px;
+}
+
 .orbita-filters-toolbar--no-search .orbita-filters-toolbar-actions {
     margin-left: auto;
 }
@@ -10629,6 +10655,21 @@ body.orbita-search-open {
 .statistics-balance-bar-track--sub {
     margin-top: 5px;
     height: 3px;
+}
+
+.card--statistics-bitrix .statistics-bitrix-table {
+    width: 100%;
+}
+
+.card--statistics-bitrix .statistics-bitrix-link {
+    color: inherit;
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.card--statistics-bitrix .statistics-bitrix-link:hover {
+    color: var(--orbita-accent, #2563eb);
+    text-decoration: underline;
 }
 
 .card--statistics-trend .card-header {

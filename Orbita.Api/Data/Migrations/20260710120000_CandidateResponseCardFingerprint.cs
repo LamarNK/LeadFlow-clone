@@ -1,10 +1,13 @@
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Orbita.Api.Data;
 
 #nullable disable
 
 namespace Orbita.Api.Data.Migrations;
 
-/// <inheritdoc />
+[DbContext(typeof(OrbitaDbContext))]
+[Migration("20260710120000_CandidateResponseCardFingerprint")]
 public partial class CandidateResponseCardFingerprint : Migration
 {
     /// <inheritdoc />

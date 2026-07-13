@@ -1,3 +1,4 @@
+using Orbita.Contracts;
 using Orbita.Web.Models.ViewModels;
 
 namespace Orbita.Web.Services;
@@ -235,12 +236,44 @@ internal static class FilterChipsBuilder
         return chips;
     }
 
+    private static (string Key, string? Value)[] ResponsesFilterPairs(
+        ResponsesFilterViewModel filters,
+        string from,
+        string to,
+        params (string Key, string? Value)[] overrides)
+    {
+        var pairs = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["from"] = from,
+            ["to"] = to,
+            ["status"] = filters.Status,
+            ["workerId"] = filters.WorkerId?.ToString(),
+            ["accountId"] = filters.AccountId?.ToString(),
+            ["bitrixDestination"] = filters.BitrixDestination,
+            ["gender"] = filters.Gender,
+            ["ageFrom"] = filters.AgeFrom?.ToString(),
+            ["ageTo"] = filters.AgeTo?.ToString(),
+            ["vacancy"] = filters.VacancyQuery,
+            ["search"] = filters.SearchQuery,
+            ["page"] = "1"
+        };
+
+        foreach (var (key, value) in overrides)
+        {
+            pairs[key] = value;
+        }
+
+        return pairs.Select(p => (p.Key, p.Value)).ToArray();
+    }
+
     public static IReadOnlyList<ActiveFilterChipViewModel> ForResponses(
         ResponsesFilterViewModel filters,
         DashboardPeriod period,
         IReadOnlyList<EventFilterOptionViewModel> statuses,
         IReadOnlyList<EventFilterOptionViewModel> workers,
         IReadOnlyList<EventFilterOptionViewModel> accounts,
+        IReadOnlyList<EventFilterOptionViewModel> bitrixDestinations,
+        IReadOnlyList<EventFilterOptionViewModel> genders,
         int pageSize = ListPageSizeDefaults.Responses)
     {
         const string path = "/Responses";
@@ -253,15 +286,14 @@ internal static class FilterChipsBuilder
             chips.Add(new ActiveFilterChipViewModel
             {
                 Label = $"Период: {period.Label}",
-                RemoveUrl = BuildListUrl(path, pageSize, ListPageSizeDefaults.Responses,
-                    ("from", DateTime.Today.ToString("yyyy-MM-dd")),
-                    ("to", DateTime.Today.ToString("yyyy-MM-dd")),
-                    ("status", filters.Status),
-                    ("workerId", filters.WorkerId?.ToString()),
-                    ("accountId", filters.AccountId?.ToString()),
-                    ("vacancy", filters.VacancyQuery),
-                    ("search", filters.SearchQuery),
-                    ("page", "1"))
+                RemoveUrl = BuildListUrl(
+                    path,
+                    pageSize,
+                    ListPageSizeDefaults.Responses,
+                    ResponsesFilterPairs(
+                        filters,
+                        DateTime.Today.ToString("yyyy-MM-dd"),
+                        DateTime.Today.ToString("yyyy-MM-dd")))
             });
         }
 
@@ -270,14 +302,11 @@ internal static class FilterChipsBuilder
             chips.Add(new ActiveFilterChipViewModel
             {
                 Label = $"Поиск: {filters.SearchQuery}",
-                RemoveUrl = BuildListUrl(path, pageSize, ListPageSizeDefaults.Responses,
-                    ("from", from),
-                    ("to", to),
-                    ("status", filters.Status),
-                    ("workerId", filters.WorkerId?.ToString()),
-                    ("accountId", filters.AccountId?.ToString()),
-                    ("vacancy", filters.VacancyQuery),
-                    ("page", "1"))
+                RemoveUrl = BuildListUrl(
+                    path,
+                    pageSize,
+                    ListPageSizeDefaults.Responses,
+                    ResponsesFilterPairs(filters, from, to, ("search", null)))
             });
         }
 
@@ -286,14 +315,11 @@ internal static class FilterChipsBuilder
             chips.Add(new ActiveFilterChipViewModel
             {
                 Label = OptionLabel(statuses, filters.Status) ?? filters.Status,
-                RemoveUrl = BuildListUrl(path, pageSize, ListPageSizeDefaults.Responses,
-                    ("from", from),
-                    ("to", to),
-                    ("workerId", filters.WorkerId?.ToString()),
-                    ("accountId", filters.AccountId?.ToString()),
-                    ("vacancy", filters.VacancyQuery),
-                    ("search", filters.SearchQuery),
-                    ("page", "1"))
+                RemoveUrl = BuildListUrl(
+                    path,
+                    pageSize,
+                    ListPageSizeDefaults.Responses,
+                    ResponsesFilterPairs(filters, from, to, ("status", null)))
             });
         }
 
@@ -302,14 +328,11 @@ internal static class FilterChipsBuilder
             chips.Add(new ActiveFilterChipViewModel
             {
                 Label = $"Воркер: {OptionLabel(workers, workerId.ToString()) ?? workerId.ToString()[..8]}",
-                RemoveUrl = BuildListUrl(path, pageSize, ListPageSizeDefaults.Responses,
-                    ("from", from),
-                    ("to", to),
-                    ("status", filters.Status),
-                    ("accountId", filters.AccountId?.ToString()),
-                    ("vacancy", filters.VacancyQuery),
-                    ("search", filters.SearchQuery),
-                    ("page", "1"))
+                RemoveUrl = BuildListUrl(
+                    path,
+                    pageSize,
+                    ListPageSizeDefaults.Responses,
+                    ResponsesFilterPairs(filters, from, to, ("workerId", null)))
             });
         }
 
@@ -318,14 +341,57 @@ internal static class FilterChipsBuilder
             chips.Add(new ActiveFilterChipViewModel
             {
                 Label = $"Аккаунт: {OptionLabel(accounts, accountId.ToString()) ?? accountId.ToString()[..8]}",
-                RemoveUrl = BuildListUrl(path, pageSize, ListPageSizeDefaults.Responses,
-                    ("from", from),
-                    ("to", to),
-                    ("status", filters.Status),
-                    ("workerId", filters.WorkerId?.ToString()),
-                    ("vacancy", filters.VacancyQuery),
-                    ("search", filters.SearchQuery),
-                    ("page", "1"))
+                RemoveUrl = BuildListUrl(
+                    path,
+                    pageSize,
+                    ListPageSizeDefaults.Responses,
+                    ResponsesFilterPairs(filters, from, to, ("accountId", null)))
+            });
+        }
+
+        if (!string.IsNullOrWhiteSpace(filters.BitrixDestination))
+        {
+            chips.Add(new ActiveFilterChipViewModel
+            {
+                Label = $"Битрикс: {OptionLabel(bitrixDestinations, filters.BitrixDestination) ?? filters.BitrixDestination}",
+                RemoveUrl = BuildListUrl(
+                    path,
+                    pageSize,
+                    ListPageSizeDefaults.Responses,
+                    ResponsesFilterPairs(filters, from, to, ("bitrixDestination", null)))
+            });
+        }
+
+        if (!string.IsNullOrWhiteSpace(filters.Gender))
+        {
+            chips.Add(new ActiveFilterChipViewModel
+            {
+                Label = $"Пол: {OptionLabel(genders, filters.Gender) ?? CandidateGenders.FormatFilterLabel(filters.Gender)}",
+                RemoveUrl = BuildListUrl(
+                    path,
+                    pageSize,
+                    ListPageSizeDefaults.Responses,
+                    ResponsesFilterPairs(filters, from, to, ("gender", null)))
+            });
+        }
+
+        if (filters.AgeFrom.HasValue || filters.AgeTo.HasValue)
+        {
+            var ageLabel = (filters.AgeFrom, filters.AgeTo) switch
+            {
+                (int fromAge, int toAge) => $"Возраст: {fromAge}–{toAge}",
+                (int fromAge, null) => $"Возраст: от {fromAge}",
+                (null, int toAge) => $"Возраст: до {toAge}",
+                _ => "Возраст"
+            };
+            chips.Add(new ActiveFilterChipViewModel
+            {
+                Label = ageLabel,
+                RemoveUrl = BuildListUrl(
+                    path,
+                    pageSize,
+                    ListPageSizeDefaults.Responses,
+                    ResponsesFilterPairs(filters, from, to, ("ageFrom", null), ("ageTo", null)))
             });
         }
 
@@ -333,15 +399,12 @@ internal static class FilterChipsBuilder
         {
             chips.Add(new ActiveFilterChipViewModel
             {
-                Label = $"Объявление: {filters.VacancyQuery}",
-                RemoveUrl = BuildListUrl(path, pageSize, ListPageSizeDefaults.Responses,
-                    ("from", from),
-                    ("to", to),
-                    ("status", filters.Status),
-                    ("workerId", filters.WorkerId?.ToString()),
-                    ("accountId", filters.AccountId?.ToString()),
-                    ("search", filters.SearchQuery),
-                    ("page", "1"))
+                Label = $"Вакансия: {filters.VacancyQuery}",
+                RemoveUrl = BuildListUrl(
+                    path,
+                    pageSize,
+                    ListPageSizeDefaults.Responses,
+                    ResponsesFilterPairs(filters, from, to, ("vacancy", null)))
             });
         }
 
@@ -494,6 +557,23 @@ internal static class FilterChipsBuilder
             chips.Add(new ActiveFilterChipViewModel
             {
                 Label = $"Аккаунт: {OptionLabel(accounts, accountId.ToString()) ?? accountId.ToString()[..8]}",
+                RemoveUrl = BuildUrl(path, pairs.ToArray())
+            });
+        }
+
+        if (!string.IsNullOrWhiteSpace(filters.VacancyQuery))
+        {
+            var pairs = new List<(string Key, string? Value)>
+            {
+                ("from", from),
+                ("to", to)
+            };
+            pairs.AddRange(filters.WorkerIds.Select(id => ("workerIds", (string?)id.ToString())));
+            pairs.AddRange(filters.AccountIds.Select(id => ("accountIds", (string?)id.ToString())));
+
+            chips.Add(new ActiveFilterChipViewModel
+            {
+                Label = $"Вакансия: {filters.VacancyQuery}",
                 RemoveUrl = BuildUrl(path, pairs.ToArray())
             });
         }

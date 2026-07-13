@@ -136,6 +136,7 @@ public sealed class StatisticsIndexBuilderTests
             new WorkerInfrastructureSection(1, 1, []),
             new ResponsesPeriodSection(10, 8, 2, 7, 1, 0, 1, 6, 12),
             [new DailyResponseBucketDto(DateTime.Today, 10, 7, 1, 0, 2, 1)],
+            [],
             new HrInsightsDto([], [], [], [], "н/д", "0%"),
             monitoringCycles ?? new MonitoringCycleReportDto(false, 0, 0, 0, [], [], []),
             DateTime.UtcNow);

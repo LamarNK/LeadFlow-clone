@@ -1,6 +1,7 @@
 using System.Text.Json;
 using LeadFlow.Core.Models;
 using LeadFlow.Core.Services.Avito;
+using Orbita.Contracts;
 using Xunit;
 
 namespace LeadFlow.Tests;
@@ -93,6 +94,15 @@ public sealed class AvitoCandidatesJsonParserTests
     {
         Assert.Equal(expected, AvitoCandidatesJsonParser.ParseAgeFromCardText(input));
     }
+
+    [Theory]
+    [InlineData("male", CandidateGenders.Male)]
+    [InlineData("Мужчина · 54 года", CandidateGenders.Male)]
+    [InlineData("female", CandidateGenders.Female)]
+    [InlineData("Женщина · 37 лет", CandidateGenders.Female)]
+    [InlineData("", "")]
+    public void ParseGender_NormalizesValues(string? input, string expected) =>
+        Assert.Equal(expected, AvitoCandidatesJsonParser.ParseGender(input));
 
     [Fact]
     public void ParseVacancyLineFromDetailText_ExtractsVacancyAndCity()

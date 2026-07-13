@@ -25,6 +25,24 @@ public sealed class CandidateMatchScorerTests
     }
 
     [Fact]
+    public void CalculateScore_SamePersonDifferentCitySamePhone_IsMatch()
+    {
+        var existing = new CandidateMatchProfile(
+            "Узбеков Шовкат Джумазарович",
+            42,
+            "Серпухов",
+            "79999213355");
+        var incoming = new CandidateMatchProfile(
+            "Узбеков Шовкат Джумазарович",
+            42,
+            "Протвино",
+            "79999213355");
+
+        Assert.Equal(CandidateMatchScorer.MatchScore, CandidateMatchScorer.CalculateScore(existing, incoming));
+        Assert.True(CandidateMatchScorer.IsMatch(existing, incoming));
+    }
+
+    [Fact]
     public void CalculateScore_DifferentAge_IsBelowThreshold()
     {
         var existing = new CandidateMatchProfile("Гор Олег Александрович", 66, "рабочий поселок Чик", "79930099416");

@@ -14,12 +14,14 @@ public sealed class StatisticsService(
         DashboardPeriod period,
         IReadOnlyList<Guid>? workerIds = null,
         IReadOnlyList<Guid>? accountIds = null,
+        string? vacancy = null,
         CancellationToken ct = default)
     {
         var filters = new StatisticsFiltersViewModel
         {
             WorkerIds = NormalizeIds(workerIds),
-            AccountIds = NormalizeIds(accountIds)
+            AccountIds = NormalizeIds(accountIds),
+            VacancyQuery = string.IsNullOrWhiteSpace(vacancy) ? null : vacancy.Trim()
         };
 
         if (previewOptions.Value.Enabled)
@@ -33,7 +35,7 @@ public sealed class StatisticsService(
         var accountOptions = BuildAccountOptions(accounts);
         var activeFilterChips = FilterChipsBuilder.ForStatistics(filters, period, workerOptions, accountOptions);
 
-        var data = await api.GetStatisticsAsync(period.From, period.To, filters.WorkerIds, filters.AccountIds, ct);
+        var data = await api.GetStatisticsAsync(period.From, period.To, filters.WorkerIds, filters.AccountIds, filters.VacancyQuery, ct);
         if (data is null)
         {
             return new StatisticsViewModel

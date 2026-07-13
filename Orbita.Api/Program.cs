@@ -1950,6 +1950,10 @@ panel.MapGet("/responses", async (
     string? vacancy,
     Guid? workerId,
     Guid? accountId,
+    string? bitrixDestination,
+    string? gender,
+    int? ageFrom,
+    int? ageTo,
     Guid? officeId,
     DateTime? from,
     DateTime? to,
@@ -1973,6 +1977,10 @@ panel.MapGet("/responses", async (
         vacancy,
         workerId,
         accountId,
+        bitrixDestination,
+        gender,
+        ageFrom,
+        ageTo,
         from,
         to,
         page ?? 1,
@@ -1991,6 +1999,10 @@ panel.MapGet("/responses/summary", async (
     string? vacancy,
     Guid? workerId,
     Guid? accountId,
+    string? bitrixDestination,
+    string? gender,
+    int? ageFrom,
+    int? ageTo,
     Guid? officeId,
     DateTime? from,
     DateTime? to,
@@ -2010,6 +2022,10 @@ panel.MapGet("/responses/summary", async (
         vacancy,
         workerId,
         accountId,
+        bitrixDestination,
+        gender,
+        ageFrom,
+        ageTo,
         from,
         to,
         ct));
@@ -2024,6 +2040,7 @@ panel.MapGet("/statistics", async (
     DateTime? to,
     Guid[]? workerIds,
     Guid[]? accountIds,
+    string? vacancy,
     CancellationToken ct) =>
 {
     var scope = await officeScope.ResolveAsync(principal, ct);
@@ -2039,6 +2056,7 @@ panel.MapGet("/statistics", async (
         to,
         workerIds,
         accountIds,
+        vacancy,
         ct));
 });
 
@@ -2056,6 +2074,24 @@ panel.MapGet("/responses/filters/accounts", async (
     }
 
     return Results.Ok(await responses.GetFilterAccountsAsync(scope, officeId, ct));
+});
+
+panel.MapGet("/responses/filters/vacancies", async (
+    ResponsesQueryService responses,
+    OfficeScopeService officeScope,
+    ClaimsPrincipal principal,
+    Guid? officeId,
+    DateTime? from,
+    DateTime? to,
+    CancellationToken ct) =>
+{
+    var scope = await officeScope.ResolveAsync(principal, ct);
+    if (!scope.HasAccess)
+    {
+        return Results.Forbid();
+    }
+
+    return Results.Ok(await responses.GetFilterVacanciesAsync(scope, officeId, from, to, ct));
 });
 
 panel.MapGet("/responses/{id:guid}", async (

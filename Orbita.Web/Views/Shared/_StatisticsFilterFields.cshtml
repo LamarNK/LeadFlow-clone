@@ -26,4 +26,13 @@
             Options = Model.AccountOptions
         })" />
     </label>
+    <label class="orbita-filters-field statistics-filter-field statistics-filter-field--vacancy">
+        <span class="orbita-filters-label statistics-filter-label">Вакансия</span>
+        <input type="search"
+               name="vacancy"
+               class="orbita-filters-input statistics-input"
+               value="@Model.Filters.VacancyQuery"
+               placeholder="Название или ID объявления..."
+               aria-label="Фильтр по вакансии" />
+    </label>
 </div>

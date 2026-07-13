@@ -243,6 +243,33 @@ public static class AvitoCandidatesPageScripts
         };
         """;
 
+    private const string SourceResponseIdJs =
+        """
+        const normalizePhoneKeyForSourceId = (phone) => {
+            let digits = (phone ?? "").replace(/\D/g, "");
+            if (digits.length === 11 && digits.startsWith("8")) {
+                digits = `7${digits.slice(1)}`;
+            } else if (digits.length === 10) {
+                digits = `7${digits}`;
+            }
+
+            return digits;
+        };
+
+        const buildSourceResponseId = (name, phone, vacancy, city, vacancyUrl) => {
+            const phoneKey = normalizePhoneKeyForSourceId(phone);
+            const vacancyIdMatch = (vacancyUrl ?? "").match(/(?:\/|_)(\d{5,})(?:\?|$|\/)/);
+            if (vacancyIdMatch && phoneKey.length >= 10) {
+                return `avito:${vacancyIdMatch[1]}:${phoneKey}`;
+            }
+
+            const stablePayload = [name, phone, vacancy, city]
+                .map((x) => (x ?? "").trim().replace(/\s+/g, " "))
+                .join("\u001f");
+            return `avito:${fnv1a32HexCard(stablePayload)}`;
+        };
+        """;
+
     /// <summary>Быстрый детект firewall/капчи (без ожидания списка откликов).</summary>
     public static string BuildFirewallProbeScript() =>
         """
@@ -711,37 +738,86 @@ public static class AvitoCandidatesPageScripts
     public static string BuildApplyDetailEnrichmentScript(string enrichmentJson) =>
         $"window.__leadflowDetailEnrichment = {enrichmentJson}; JSON.stringify({{ ok: true, count: Object.keys(window.__leadflowDetailEnrichment || {{}}).length }});";
 
-    /// <summary>Телефоны из списка карточек (inline, кэш popup, без клика в детальную панель).</summary>
-    public static string BuildCollectListItemPhonesScript() =>
+    /// <summary>Ключи карточек списка для пропуска detail-enrich (sourceResponseId + телефон для enrichment map).</summary>
+    public static string BuildCollectListItemSkipKeysScript() =>
         $$"""
         (() => {
         {{ContactsPhoneHelpersJs}}
+        {{CardFingerprintJs}}
+        {{SourceResponseIdJs}}
             initRevealedPhonesStore();
 
-            const readPhone = (item, index) => readItemPhone(item, index).replace(/\D/g, "");
-
-            const normalizePhoneKey = (digits) => {
-                if (!digits) {
+            const normalizeUrl = (href) => {
+                if (!href) {
                     return "";
                 }
 
-                if (digits.length === 11 && digits.startsWith("8")) {
-                    return `7${digits.slice(1)}`;
+                const t = href.trim();
+                if (!t || t === "#") {
+                    return "";
                 }
 
-                if (digits.length === 10) {
-                    return `7${digits}`;
+                if (t.startsWith("//")) {
+                    return `https:${t}`;
                 }
 
-                return digits;
+                if (t.startsWith("/")) {
+                    return `${window.location.origin}${t}`;
+                }
+
+                return t;
             };
+
+            const parseVacancyLink = (root, vacancyListingAnchor) => {
+                const directHref = normalizeUrl(vacancyListingAnchor?.getAttribute("href") ?? "");
+                if (
+                    directHref
+                    && /\/\d{5,}/.test(directHref)
+                    && !/\/profile\/candidates(?:[/?#]|$)/i.test(directHref)
+                ) {
+                    return directHref;
+                }
+
+                return directHref;
+            };
+
+            const parseVacancyAndCity = (root, vacancyListingAnchor) => {
+                const fromAnchor = normalizeCardText(vacancyListingAnchor?.textContent ?? "");
+                if (fromAnchor) {
+                    const vacancyParts = fromAnchor.split("·").map((x) => x.trim()).filter(Boolean);
+                    return {
+                        vacancy: vacancyParts[0] ?? "",
+                        city: vacancyParts.length > 1 ? vacancyParts[1] : ""
+                    };
+                }
+
+                return { vacancy: "", city: "" };
+            };
+
+            const readPhone = (item, index) => readItemPhone(item, index);
 
             const items = Array.from(document.querySelectorAll("[data-marker='job-application/item']"));
             return JSON.stringify(
-                items.map((item, index) => ({
-                    index,
-                    phoneDigits: normalizePhoneKey(readPhone(item, index))
-                }))
+                items.map((item, index) => {
+                    const fullName = normalizeCardText(item.querySelector("h3, h4")?.textContent ?? "");
+                    const vacancyListingAnchor = item.querySelector("[data-marker='job-application/link/to-resume']");
+                    const vacancyUrl = parseVacancyLink(item, vacancyListingAnchor);
+                    const vacancyAndCity = parseVacancyAndCity(item, vacancyListingAnchor);
+                    const phone = readPhone(item, index);
+                    const phoneDigits = normalizePhoneKeyForSourceId(phone);
+                    const sourceResponseId = buildSourceResponseId(
+                        fullName,
+                        phone,
+                        vacancyAndCity.vacancy,
+                        vacancyAndCity.city,
+                        vacancyUrl);
+
+                    return {
+                        index,
+                        phoneDigits,
+                        sourceResponseId
+                    };
+                })
             );
         })();
         """;
@@ -1660,6 +1736,34 @@ public static class AvitoCandidatesPageScripts
                 return { vacancy: "", city: "" };
             };
 
+            const parseGender = (root, rawText) => {
+                const normalize = (text) => (text ?? "").replace(/\s+/g, " ").trim();
+                const malePattern = /мужчина/i;
+                const femalePattern = /женщина/i;
+
+                for (const line of Array.from(root.querySelectorAll("p"))) {
+                    const text = normalize(line.textContent);
+                    if (malePattern.test(text)) {
+                        return "male";
+                    }
+
+                    if (femalePattern.test(text)) {
+                        return "female";
+                    }
+                }
+
+                const raw = normalize(rawText);
+                if (malePattern.test(raw)) {
+                    return "male";
+                }
+
+                if (femalePattern.test(raw)) {
+                    return "female";
+                }
+
+                return "";
+            };
+
             const parseAgeText = (root, rawText) => {
                 const oldAge = root.querySelector("p[data-marker='undefined/container'] span")?.textContent?.trim();
                 if (oldAge) {
@@ -1691,6 +1795,7 @@ public static class AvitoCandidatesPageScripts
                 let vacancyUrl = parseVacancyLink(root, vacancyListingAnchor);
                 const rawText = root.innerText?.replace(/\s+/g, " ").trim() ?? "";
                 let ageText = parseAgeText(root, rawText);
+                let gender = parseGender(root, rawText);
                 const vacancyAndCity = parseVacancyAndCity(root, vacancyListingAnchor);
                 let vacancy = vacancyAndCity.vacancy;
                 let city = vacancyAndCity.city;
@@ -1716,6 +1821,10 @@ public static class AvitoCandidatesPageScripts
                     if (enriched.age && !ageText) {
                         ageText = enriched.age;
                     }
+
+                    if (enriched.gender && !gender) {
+                        gender = enriched.gender;
+                    }
                 }
                 const messengerUrl = resolveMessengerUrl(root);
                 const sourceResponseId = buildSourceResponseId(name, phone, vacancy, city, vacancyUrl);
@@ -1724,6 +1833,7 @@ public static class AvitoCandidatesPageScripts
                     fullName: name,
                     phone,
                     age: ageText,
+                    gender,
                     vacancy,
                     city,
                     vacancyUrl,

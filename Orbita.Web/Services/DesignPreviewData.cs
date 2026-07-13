@@ -174,6 +174,10 @@ internal static class DesignPreviewData
                 84,
                 17.5),
             dailyTrend,
+            [
+                new BitrixDeliveryStatDto(Guid.Parse("11111111-1111-1111-1111-111111111101"), "HR Москва", 186),
+                new BitrixDeliveryStatDto(Guid.Parse("11111111-1111-1111-1111-111111111102"), "Кадры СПб", 124)
+            ],
             new HrInsightsDto(
                 [new HrMetricDto("Москва", 420, 310, "73.8%", "34.1%"), new HrMetricDto("Санкт-Петербург", 280, 190, "67.9%", "22.7%")],
                 [new HrMetricDto("Курьер", 360, 250, "69.4%", "29.2%"), new HrMetricDto("Водитель", 210, 140, "66.7%", "17.0%")],
@@ -1741,6 +1745,16 @@ internal static class DesignPreviewData
             Statuses = ResponsesIndexBuilder.StatusOptions,
             Workers = BuildPreviewWorkerOptions(),
             Accounts = accountOptions,
+            BitrixDestinations = ResponsesIndexBuilder.BuildBitrixDestinationOptions(PreviewBitrixInstances),
+            Genders = ResponsesIndexBuilder.GenderOptions,
+            Vacancies = ResponsesIndexBuilder.BuildVacancyOptions(
+                filtered
+                    .Where(r => !string.IsNullOrWhiteSpace(r.Vacancy))
+                    .GroupBy(r => r.Vacancy)
+                    .Select(g => new ResponseFilterVacancyDto(g.Key, g.Count()))
+                    .OrderByDescending(x => x.Count)
+                    .Take(20)
+                    .ToList()),
             Responses = paged,
             SendBitrixInstances = ResponsesIndexBuilder.MapSendBitrixInstances(PreviewBitrixInstances),
             Pagination = new PaginationViewModel
@@ -1759,6 +1773,8 @@ internal static class DesignPreviewData
                 ResponsesIndexBuilder.StatusOptions,
                 BuildPreviewWorkerOptions(),
                 accountOptions,
+                ResponsesIndexBuilder.BuildBitrixDestinationOptions(PreviewBitrixInstances),
+                ResponsesIndexBuilder.GenderOptions,
                 pageSize.Value),
             Sort = tableSort
         };

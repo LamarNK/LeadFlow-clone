@@ -67,10 +67,9 @@ public sealed class AvitoWebViewCandidatesFetcher(
                     cancellationToken,
                     ct => FetchPageHtmlSnapshotAsync(execute, ct),
                     AvitoResponseSource.CandidatesPageUrl,
-                    async (phones, ct) => (IReadOnlySet<string>)await avitoResponseSource.ResolveExistingPhonesAsync(
+                    async (sourceResponseIds, ct) => (IReadOnlySet<string>)await avitoResponseSource.ResolveExistingSourceResponseIdsAsync(
                         account.Id,
-                        settings.DuplicateScope,
-                        phones,
+                        sourceResponseIds,
                         ct),
                     async (fingerprints, ct) => (IReadOnlySet<string>)await avitoResponseSource.ResolveExistingCardFingerprintsAsync(
                         account.Id,
