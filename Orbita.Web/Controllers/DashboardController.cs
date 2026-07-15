@@ -8,6 +8,7 @@ namespace Orbita.Web.Controllers;
 [Authorize]
 public sealed class DashboardController(
     IDashboardService dashboard,
+    IWorkersService workers,
     AuthSession session,
     OrbitaAuthService auth) : Controller
 {
@@ -46,7 +47,68 @@ public sealed class DashboardController(
             Workers = model.Workers,
             Events = model.Events,
             AccountStats = model.AccountStats,
-            Charts = model.Charts
+            Charts = model.Charts,
+            EnabledWorkersCount = model.EnabledWorkersCount,
+            DisabledWorkersCount = model.DisabledWorkersCount,
+            ShowWorkersMonitoringControls = model.ShowWorkersMonitoringControls
         });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> EnableAllWorkers(CancellationToken ct)
+    {
+        var (result, error) = await workers.SetAllWorkersMonitoringAsync(true, ct);
+        if (error is not null || result is null)
+        {
+            return BadRequest(new { error = error ?? "Не удалось включить мониторинг." });
+        }
+
+        return Ok(new
+        {
+            message = result.UpdatedCount > 0
+                ? $"Мониторинг включён на {result.UpdatedCount} воркерах."
+                : "Все воркеры уже были включены.",
+            result
+        });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> DisableAllWorkers(CancellationToken ct)
+    {
+        var (result, error) = await workers.SetAllWorkersMonitoringAsync(false, ct);
+        if (error is not null || result is null)
+        {
+            return BadRequest(new { error = error ?? "Не удалось остановить мониторинг." });
+        }
+
+        return Ok(new
+        {
+            message = result.UpdatedCount > 0
+                ? $"Мониторинг остановлен на {result.UpdatedCount} воркерах."
+                : "Все воркеры уже были приостановлены.",
+            result
+        });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> EnableWorker(Guid workerId, CancellationToken ct)
+    {
+        var (success, error) = await workers.SetWorkerEnabledAsync(workerId, true, ct);
+        return success
+            ? Ok(new { message = "Воркер включён." })
+            : BadRequest(new { error = error ?? "Не удалось включить воркер." });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> DisableWorker(Guid workerId, CancellationToken ct)
+    {
+        var (success, error) = await workers.SetWorkerEnabledAsync(workerId, false, ct);
+        return success
+            ? Ok(new { message = "Воркер приостановлен." })
+            : BadRequest(new { error = error ?? "Не удалось приостановить воркер." });
     }
 }

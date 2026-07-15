@@ -10,7 +10,9 @@ public sealed class WorkerAdminService(
     IConfiguration configuration,
     WorkerReleaseService releases,
     IPanelRealtimeNotifier panelRealtime,
-    WorkerConnectionRegistry connectionRegistry)
+    WorkerConnectionRegistry connectionRegistry,
+    IWorkerPushNotifier workerPushNotifier,
+    LeadExportQuotaService leadExportQuota)
 {
     public async Task<(CreateWorkerResponse? Result, string? Error)> CreateAsync(
         string displayName,
@@ -127,13 +129,101 @@ public sealed class WorkerAdminService(
             return (null, "Воркер не найден.");
         }
 
+        if (enabled)
+        {
+            var otherEnabled = await db.Workers
+                .CountAsync(x => x.OfficeId == worker.OfficeId && x.IsEnabled && x.Id != id, ct)
+                .ConfigureAwait(false);
+            if (otherEnabled == 0)
+            {
+                await leadExportQuota.ResetSessionsForOfficeAsync(worker.OfficeId, ct).ConfigureAwait(false);
+            }
+        }
+
         worker.IsEnabled = enabled;
         await db.SaveChangesAsync(ct);
+        if (enabled)
+        {
+            await workerPushNotifier.PushConfigChangedAsync(worker.Id, ct).ConfigureAwait(false);
+        }
+        else
+        {
+            await workerPushNotifier.TryPushCommandAsync(worker.Id, WorkerCommands.Pause, ct)
+                .ConfigureAwait(false);
+        }
+
         panelRealtime.Notify(
             [PanelChangeKind.Workers, PanelChangeKind.Dashboard],
             worker.OfficeId,
             worker.Id);
         return (Map(worker, connectionRegistry), null);
+    }
+
+    public async Task<(BulkWorkersMonitoringResultDto? Result, string? Error)> SetAllEnabledAsync(
+        bool enabled,
+        OfficeScope scope,
+        CancellationToken ct = default)
+    {
+        if (!scope.HasAccess)
+        {
+            return (null, "Нет доступа.");
+        }
+
+        var workers = await db.Workers
+            .Where(x => !LeadFlowImportWorker.IsImportWorker(x.MachineName))
+            .Where(x => scope.IsGlobalAdmin || x.OfficeId == scope.OfficeId)
+            .ToListAsync(ct);
+
+        var changed = new List<WorkerEntity>();
+        var officesToReset = new HashSet<Guid>();
+        foreach (var worker in workers)
+        {
+            if (!scope.CanAccessOffice(worker.OfficeId) || worker.IsEnabled == enabled)
+            {
+                continue;
+            }
+
+            if (enabled
+                && workers.Count(x => x.OfficeId == worker.OfficeId && x.IsEnabled) == 0)
+            {
+                officesToReset.Add(worker.OfficeId);
+            }
+
+            worker.IsEnabled = enabled;
+            changed.Add(worker);
+        }
+
+        if (changed.Count > 0)
+        {
+            if (enabled && officesToReset.Count > 0)
+            {
+                await leadExportQuota.ResetSessionsForOfficesAsync(officesToReset, ct).ConfigureAwait(false);
+            }
+
+            await db.SaveChangesAsync(ct);
+            foreach (var worker in changed)
+            {
+                if (enabled)
+                {
+                    await workerPushNotifier.PushConfigChangedAsync(worker.Id, ct).ConfigureAwait(false);
+                }
+                else
+                {
+                    await workerPushNotifier.TryPushCommandAsync(worker.Id, WorkerCommands.Pause, ct)
+                        .ConfigureAwait(false);
+                }
+            }
+
+            var officeIds = changed.Select(x => x.OfficeId).Distinct().ToList();
+            foreach (var officeId in officeIds)
+            {
+                panelRealtime.Notify(
+                    [PanelChangeKind.Workers, PanelChangeKind.Dashboard],
+                    officeId);
+            }
+        }
+
+        return (new BulkWorkersMonitoringResultDto(changed.Count, workers.Count - changed.Count, workers.Count), null);
     }
 
     public async Task<(string? DisplayName, string? Error)> DeleteAsync(

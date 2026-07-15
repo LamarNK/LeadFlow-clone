@@ -4,7 +4,9 @@ using Orbita.Contracts;
 
 namespace Orbita.Api.Services;
 
-public sealed class CandidateLookupService(OrbitaDbContext db)
+public sealed class CandidateLookupService(
+    OrbitaDbContext db,
+    CandidatePersonMatchService personMatch)
 {
     public async Task<WorkerCandidateLookupResponse?> LookupAsync(
         Guid workerId,
@@ -157,9 +159,27 @@ public sealed class CandidateLookupService(OrbitaDbContext db)
             }
         }
 
+        var matchedProfileIndexes = new List<int>();
+        var profiles = request.Profiles ?? [];
+        for (var i = 0; i < profiles.Count; i++)
+        {
+            var item = profiles[i];
+            var profile = new CandidateMatchProfile(
+                item.FullName,
+                item.Age,
+                item.City,
+                item.PhoneNormalized);
+            var matchedPerson = await personMatch.FindMatchingPersonAsync(worker.OfficeId, profile, ct);
+            if (matchedPerson is not null)
+            {
+                matchedProfileIndexes.Add(i);
+            }
+        }
+
         return new WorkerCandidateLookupResponse(
             existingSourceIds.ToList(),
             existingPhones.ToList(),
-            existingCardFingerprints.ToList());
+            existingCardFingerprints.ToList(),
+            matchedProfileIndexes);
     }
 }

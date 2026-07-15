@@ -103,6 +103,7 @@ public sealed class MySettingsService(OrbitaApiClient api, IOptions<DesignPrevie
     public async Task<(bool Success, string? Error)> SaveDistributionRouteAsync(
         bool isAutoDistributionEnabled,
         IReadOnlyList<SaveDistributionNodeRequest> nodes,
+        IReadOnlyList<SaveBitrixLeadQuotaRequest>? bitrixLeadQuotas = null,
         CancellationToken ct = default)
     {
         if (previewOptions.Value.Enabled)
@@ -111,7 +112,7 @@ public sealed class MySettingsService(OrbitaApiClient api, IOptions<DesignPrevie
         }
 
         var (route, error) = await api.SaveDistributionRouteAsync(
-            new SaveDistributionRouteRequest(isAutoDistributionEnabled, nodes),
+            new SaveDistributionRouteRequest(isAutoDistributionEnabled, nodes, bitrixLeadQuotas),
             ct: ct);
         return route is not null ? (true, null) : (false, error);
     }
@@ -182,7 +183,9 @@ public sealed class MySettingsService(OrbitaApiClient api, IOptions<DesignPrevie
                 x.Id,
                 x.Name,
                 x.Signature,
-                Label = FormatBitrixLabel(x.Name, x.Signature)
+                Label = FormatBitrixLabel(x.Name, x.Signature),
+                x.LeadExportLimit,
+                x.LeadExportSessionCount
             })
             .ToList();
 

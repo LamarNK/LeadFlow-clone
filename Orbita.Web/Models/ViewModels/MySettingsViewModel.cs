@@ -115,4 +115,5 @@ public sealed class SaveDistributionRouteFormModel
 {
     public bool IsAutoDistributionEnabled { get; set; }
     public string NodesJson { get; set; } = "[]";
+    public string BitrixQuotasJson { get; set; } = "[]";
 }

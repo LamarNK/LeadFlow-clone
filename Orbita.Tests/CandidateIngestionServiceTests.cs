@@ -191,7 +191,8 @@ public sealed class CandidateIngestionServiceTests
             new BitrixClient(new HttpClientFactoryStub(), new CandidateParser()));
         var bitrixSend = new CandidateBitrixSendService(bitrixInstanceService, new BitrixClient(new HttpClientFactoryStub(), new CandidateParser()), bitrixOptions);
         var deliveries = new ResponseBitrixDeliveryService(db);
-        var autoDistribution = new CandidateAutoDistributionService(bitrixDuplicateCheck, bitrixSend, deliveries);
+        var leadExportQuota = new LeadExportQuotaService(db);
+        var autoDistribution = new CandidateAutoDistributionService(bitrixDuplicateCheck, bitrixSend, deliveries, leadExportQuota);
         var manualSend = new ManualBitrixSendService(db, duplicateService, bitrixDuplicateCheck, bitrixSend, deliveries, new NoopPanelRealtimeNotifier());
 
         return new CandidateIngestionService(

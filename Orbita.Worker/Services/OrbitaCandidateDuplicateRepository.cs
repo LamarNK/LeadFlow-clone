@@ -129,6 +129,85 @@ public sealed class OrbitaCandidateDuplicateRepository(
         return existing;
     }
 
+    public async Task<HashSet<int>> GetMatchedProfileIndicesAsync(
+        IReadOnlyList<CandidateLookupProfileDto> profiles,
+        Guid accountId,
+        CancellationToken cancellationToken)
+    {
+        if (profiles.Count == 0)
+        {
+            return [];
+        }
+
+        var phones = profiles
+            .Select(static p => p.PhoneNormalized)
+            .Where(static x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        WorkerCandidateLookupResponse? apiResult = null;
+        var apiReached = false;
+        try
+        {
+            apiResult = await apiClient.LookupCandidatesAsync(
+                    new WorkerCandidateLookupRequest(
+                        accountId,
+                        DuplicateScope.GlobalAcrossAllAccounts.ToString(),
+                        [],
+                        phones,
+                        Profiles: profiles),
+                    cancellationToken)
+                .ConfigureAwait(false);
+            apiReached = apiResult is not null;
+        }
+        catch
+        {
+            // fallback to cache phones below
+        }
+
+        var cacheResult = await dedupCache.LookupAsync(
+                accountId,
+                [],
+                phones,
+                DuplicateScope.GlobalAcrossAllAccounts,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        var matched = new HashSet<int>();
+        var existingPhones = new HashSet<string>(StringComparer.Ordinal);
+        if (apiResult is not null)
+        {
+            foreach (var index in apiResult.MatchedProfileIndexes)
+            {
+                matched.Add(index);
+            }
+
+            foreach (var phone in apiResult.ExistingPhones)
+            {
+                existingPhones.Add(phone);
+            }
+        }
+
+        existingPhones.UnionWith(cacheResult.Phones);
+        for (var i = 0; i < profiles.Count; i++)
+        {
+            var phone = profiles[i].PhoneNormalized;
+            if (!string.IsNullOrWhiteSpace(phone) && existingPhones.Contains(phone))
+            {
+                matched.Add(i);
+            }
+        }
+
+        CandidateDedupLog.LogPersonProfileLookup(
+            accountId,
+            profiles.Count,
+            apiReached,
+            apiResult?.MatchedProfileIndexes.Count ?? 0,
+            matched.Count);
+
+        return matched;
+    }
+
     public Task RecordSeenAsync(
         Guid accountId,
         string? sourceResponseId,

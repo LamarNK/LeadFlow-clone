@@ -106,14 +106,18 @@ internal static class WorkerMonitoringLogger
         int published,
         int readyToPublish,
         int cycleLimit,
-        int deferredByCycleLimit = 0)
+        int deferredByCycleLimit = 0,
+        int skippedPersonDuplicates = 0)
     {
         var who = sub is null
             ? FormatAccount(account)
             : $"{FormatAccount(account)} · «{sub.Name}»";
+        var duplicateNote = skippedPersonDuplicates > 0
+            ? $" {skippedPersonDuplicates} пропущено (дубль кандидата)."
+            : string.Empty;
         var message = deferredByCycleLimit > 0
-            ? $"{who} — опубликовано {published} из {readyToPublish} готовых; {deferredByCycleLimit} отложено (лимит {cycleLimit} на субпрофиль за проход)."
-            : $"{who} — опубликовано {published} из {readyToPublish} готовых (лимит {cycleLimit} на субпрофиль за проход).";
+            ? $"{who} — опубликовано {published} из {readyToPublish} готовых; {deferredByCycleLimit} отложено (лимит {cycleLimit} на субпрофиль за проход).{duplicateNote}"
+            : $"{who} — опубликовано {published} из {readyToPublish} готовых (лимит {cycleLimit} на субпрофиль за проход).{duplicateNote}";
         LogInfo(message);
     }
 

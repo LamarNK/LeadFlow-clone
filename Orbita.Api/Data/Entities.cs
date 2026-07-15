@@ -289,6 +289,9 @@ public sealed class BitrixInstanceEntity
     public DateTime? LastValidatedAtUtc { get; set; }
     public string IntegrationSettingsJson { get; set; } = string.Empty;
     public bool IsEnabled { get; set; } = true;
+    public int? LeadExportLimit { get; set; }
+    public int LeadExportSessionCount { get; set; }
+    public DateTime? LeadExportSessionStartedAtUtc { get; set; }
     public DateTime CreatedAtUtc { get; set; }
     public DateTime UpdatedAtUtc { get; set; }
     public string? UpdatedByUserId { get; set; }

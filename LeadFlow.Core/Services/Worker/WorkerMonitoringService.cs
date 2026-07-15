@@ -7,6 +7,7 @@ using LeadFlow.Core.Models;
 using LeadFlow.Core.Services.AdsPower;
 using LeadFlow.Core.Services.Avito;
 using LeadFlow.Core.Services.Browser;
+using Orbita.Contracts;
 using PuppeteerSharp;
 
 namespace LeadFlow.Core.Services.Worker;
@@ -23,6 +24,7 @@ public sealed class WorkerMonitoringService(
     IWorkerTelemetrySink telemetrySink,
     IWorkerDiagnosticsUploader diagnosticsUploader,
     IPhoneNormalizer phoneNormalizer,
+    ICandidateDuplicateRepository duplicateRepository,
     ICandidateParser candidateParser,
     IAvitoResponseSource avitoResponseSource,
     AvitoDemoResponseSource avitoDemoResponseSource,
@@ -522,8 +524,7 @@ public sealed class WorkerMonitoringService(
                 return CandidateBatchPublishResult.Empty;
             }
 
-            var readyCount = 0;
-            var publishedCount = 0;
+            var readyCandidates = new List<CandidateResponse>();
             foreach (var response in batch)
             {
                 if (cancellationToken.IsCancellationRequested)
@@ -543,9 +544,41 @@ public sealed class WorkerMonitoringService(
                     continue;
                 }
 
-                readyCount++;
+                readyCandidates.Add(response);
+            }
 
-                await PublishCandidateAsync(response, cancellationToken).ConfigureAwait(false);
+            if (readyCandidates.Count == 0)
+            {
+                return CandidateBatchPublishResult.Empty;
+            }
+
+            var profiles = readyCandidates
+                .Select(response => new CandidateLookupProfileDto(
+                    response.FullName,
+                    response.Age,
+                    response.City ?? string.Empty,
+                    phoneNormalizer.Normalize(response.PhoneRaw) ?? string.Empty))
+                .ToList();
+            var matchedProfiles = await duplicateRepository
+                .GetMatchedProfileIndicesAsync(profiles, account.Id, cancellationToken)
+                .ConfigureAwait(false);
+
+            var publishedCount = 0;
+            var skippedPersonDuplicates = 0;
+            for (var i = 0; i < readyCandidates.Count; i++)
+            {
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    break;
+                }
+
+                if (matchedProfiles.Contains(i))
+                {
+                    skippedPersonDuplicates++;
+                    continue;
+                }
+
+                await PublishCandidateAsync(readyCandidates[i], cancellationToken).ConfigureAwait(false);
                 publishedCount++;
                 publishedTotal++;
 
@@ -555,7 +588,11 @@ public sealed class WorkerMonitoringService(
                 }
             }
 
-            return new CandidateBatchPublishResult(readyCount, publishedCount, DeferredByCycleLimit: 0);
+            return new CandidateBatchPublishResult(
+                readyCandidates.Count,
+                publishedCount,
+                DeferredByCycleLimit: 0,
+                skippedPersonDuplicates);
         }
 
         if (settings.DemoModeEnabled)
@@ -683,7 +720,8 @@ public sealed class WorkerMonitoringService(
                     singlePublishResult.PublishedCount,
                     singlePublishResult.ReadyCount,
                     MonitoringTiming.MaxResponsesPerSubProfilePerCycle,
-                    singlePublishResult.DeferredByCycleLimit);
+                    singlePublishResult.DeferredByCycleLimit,
+                    singlePublishResult.SkippedPersonDuplicates);
                 if (account.Status == AvitoAccountStatus.RequiresLogin
                     || account.Status == AvitoAccountStatus.RequiresManualAction)
                 {
@@ -825,7 +863,8 @@ public sealed class WorkerMonitoringService(
                         publishResult.PublishedCount,
                         publishResult.ReadyCount,
                         MonitoringTiming.MaxResponsesPerSubProfilePerCycle,
-                        publishResult.DeferredByCycleLimit);
+                        publishResult.DeferredByCycleLimit,
+                        publishResult.SkippedPersonDuplicates);
 
                     subProfilesProcessed++;
 

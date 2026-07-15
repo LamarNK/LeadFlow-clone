@@ -109,6 +109,8 @@ public static class PanelAuditActions
     public const string WorkerRenamed = "worker.renamed";
     public const string WorkerDisabled = "worker.disabled";
     public const string WorkerEnabled = "worker.enabled";
+    public const string WorkersMonitoringDisabledAll = "workers.monitoring_disabled_all";
+    public const string WorkersMonitoringEnabledAll = "workers.monitoring_enabled_all";
     public const string WorkerKeyRotated = "worker.key_rotated";
     public const string WorkerCreated = "worker.created";
     public const string WorkerDeleted = "worker.deleted";

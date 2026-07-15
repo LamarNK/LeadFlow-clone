@@ -528,6 +528,30 @@ public sealed class OrbitaApiClient(
         CancellationToken ct = default) =>
         await PostPanelActionAsync($"api/v1/panel/workers/{workerId}/{(enabled ? "enable" : "disable")}", ct);
 
+    public async Task<(BulkWorkersMonitoringResultDto? Result, string? Error)> SetAllWorkersEnabledAsync(
+        bool enabled,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"api/v1/panel/workers/{(enabled ? "enable-all" : "disable-all")}");
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (null, InvalidApiSessionError);
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            return (null, await ReadApiErrorAsync(response, ct));
+        }
+
+        var result = await response.Content.ReadFromJsonAsync<BulkWorkersMonitoringResultDto>(ct);
+        return result is null
+            ? (null, "Не удалось прочитать ответ API.")
+            : (result, null);
+    }
+
     public async Task<(bool Success, string? Error)> DeleteWorkerAsync(Guid workerId, CancellationToken ct = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Delete, $"api/v1/panel/workers/{workerId}");

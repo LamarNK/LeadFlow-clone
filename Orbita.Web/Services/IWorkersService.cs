@@ -1,3 +1,4 @@
+using Orbita.Contracts;
 using Orbita.Web.Models.ViewModels;
 
 namespace Orbita.Web.Services;
@@ -42,6 +43,9 @@ public interface IWorkersService
         CancellationToken ct = default);
     Task<(bool Success, string? Error)> SendWorkerCommandAsync(Guid workerId, string command, CancellationToken ct = default);
     Task<(bool Success, string? Error)> SetWorkerEnabledAsync(Guid workerId, bool enabled, CancellationToken ct = default);
+    Task<(BulkWorkersMonitoringResultDto? Result, string? Error)> SetAllWorkersMonitoringAsync(
+        bool enabled,
+        CancellationToken ct = default);
     Task<(bool Success, string? Error)> DeleteWorkerAsync(Guid workerId, CancellationToken ct = default);
     Task<(string? ApiKey, string? Error)> RotateWorkerApiKeyAsync(Guid workerId, CancellationToken ct = default);
 

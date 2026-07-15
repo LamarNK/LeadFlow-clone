@@ -164,9 +164,11 @@ public sealed class MySettingsController(
         }
 
         var autoEnabled = FormBindingHelper.ReadCheckbox(Request.Form, "IsAutoDistributionEnabled");
+        var bitrixLeadQuotas = FormBindingHelper.ParseBitrixLeadQuotas(model.BitrixQuotasJson);
         var (success, error) = await settings.SaveDistributionRouteAsync(
             autoEnabled,
             nodes,
+            bitrixLeadQuotas,
             ct);
         TempData[success ? "MySettingsStatus" : "MySettingsError"] = success
             ? "Схема связей сохранена."

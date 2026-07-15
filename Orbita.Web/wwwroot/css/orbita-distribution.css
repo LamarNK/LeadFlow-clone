@@ -68,9 +68,15 @@
     color: #667085;
 }
 
+.settings-distribution-quota-hint {
+    margin: 0 0 1rem;
+    font-size: 0.85rem;
+    color: #667085;
+}
+
 .settings-distribution-palette-item {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: space-between;
     gap: 0.5rem;
     padding: 0.55rem 0.65rem;
@@ -81,8 +87,43 @@
     cursor: grab;
 }
 
+.settings-distribution-palette-item-main {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    min-width: 0;
+    flex: 1;
+}
+
 .settings-distribution-palette-item strong {
     font-size: 0.9rem;
+}
+
+.settings-distribution-palette-quota {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+}
+
+.settings-distribution-palette-quota-label {
+    font-size: 0.75rem;
+    color: #667085;
+}
+
+.settings-distribution-palette-quota-input {
+    width: 72px;
+    height: 30px;
+    padding: 0 8px;
+    border: 1px solid #d0d5dd;
+    border-radius: 8px;
+    font-size: 0.82rem;
+}
+
+.settings-distribution-palette-quota-progress {
+    font-size: 0.75rem;
+    color: #475467;
+    font-variant-numeric: tabular-nums;
 }
 
 .settings-distribution-palette-add {
@@ -107,6 +148,29 @@
 .settings-distribution-canvas {
     width: 100%;
     height: 420px;
+}
+
+.settings-option--lead-quota {
+    align-items: flex-start;
+}
+
+.settings-field--quota {
+    min-width: 120px;
+    margin: 0;
+}
+
+.settings-input--quota {
+    width: 120px;
+    height: 40px;
+    padding: 0 12px;
+    border: 1px solid #d0d5dd;
+    border-radius: 10px;
+    font-size: 14px;
+    font-family: inherit;
+}
+
+.settings-option-desc--quota {
+    margin-top: 6px;
 }
 
 .settings-distribution-actions {

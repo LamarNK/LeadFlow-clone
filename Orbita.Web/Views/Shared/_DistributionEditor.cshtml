@@ -38,6 +38,7 @@
                     <input type="hidden" name="officeId" value="@officeGuid" />
                 }
                 <input type="hidden" name="NodesJson" value="[]" data-distribution-nodes-json />
+                <input type="hidden" name="BitrixQuotasJson" value="[]" data-distribution-bitrix-quotas-json />
                 <div class="settings-options settings-options--distribution">
                     <div class="settings-option">
                         <div class="settings-option-text">
@@ -57,6 +58,9 @@
                         </label>
                     </div>
                 </div>
+                <p class="settings-distribution-quota-hint">
+                    У каждого Битрикса свой лимит лидов на сессию. Дубли в лимит не входят. Пустое поле — без ограничения.
+                </p>
                 <div class="settings-distribution-layout"
                      data-distribution-editor
                      data-route-json="@editor.RouteJson"

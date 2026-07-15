@@ -167,6 +167,7 @@ public sealed class SettingsService(
         bool isAutoDistributionEnabled,
         IReadOnlyList<SaveDistributionNodeRequest> nodes,
         Guid officeId,
+        IReadOnlyList<SaveBitrixLeadQuotaRequest>? bitrixLeadQuotas = null,
         CancellationToken ct = default)
     {
         if (previewOptions.Value.Enabled)
@@ -175,7 +176,7 @@ public sealed class SettingsService(
         }
 
         var (route, error) = await api.SaveDistributionRouteAsync(
-            new SaveDistributionRouteRequest(isAutoDistributionEnabled, nodes),
+            new SaveDistributionRouteRequest(isAutoDistributionEnabled, nodes, bitrixLeadQuotas),
             officeId,
             ct);
         return route is not null ? (true, null) : (false, error);
@@ -531,7 +532,9 @@ public sealed class SettingsService(
                         x.Id,
                         x.Name,
                         x.Signature,
-                        Label = MySettingsService.FormatBitrixLabel(x.Name, x.Signature)
+                        Label = MySettingsService.FormatBitrixLabel(x.Name, x.Signature),
+                        x.LeadExportLimit,
+                        x.LeadExportSessionCount
                     }))
             }
         };
@@ -580,7 +583,9 @@ public sealed class SettingsService(
                 x.Id,
                 x.Name,
                 x.Signature,
-                Label = MySettingsService.FormatBitrixLabel(x.Name, x.Signature)
+                Label = MySettingsService.FormatBitrixLabel(x.Name, x.Signature),
+                x.LeadExportLimit,
+                x.LeadExportSessionCount
             })
             .ToList();
 

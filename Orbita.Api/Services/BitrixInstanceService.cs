@@ -35,7 +35,9 @@ public sealed class BitrixInstanceService(
                 x.PortalHost,
                 x.ValidationStatus,
                 x.ValidationMessage,
-                x.IsEnabled))
+                x.IsEnabled,
+                x.LeadExportLimit,
+                x.LeadExportSessionCount))
             .ToListAsync(ct);
     }
 
@@ -306,6 +308,9 @@ public sealed class BitrixInstanceService(
             entity.LastValidatedAtUtc,
             entity.IsEnabled,
             integration.ToDto(),
+            entity.LeadExportLimit,
+            entity.LeadExportSessionCount,
+            entity.LeadExportSessionStartedAtUtc,
             entity.CreatedAtUtc,
             entity.UpdatedAtUtc);
     }

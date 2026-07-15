@@ -37,39 +37,45 @@ public sealed class DashboardService(
         var activityChart = BuildActivityChart(summary, period, periodStats);
         var charts = DashboardChartsBuilder.FromPresentation(kpiCards, activityChart, accountStats);
 
+        var workerRows = workers.Select(w =>
+        {
+            var activity = WorkerActivityPresenter.Present(
+                w.CurrentActivity,
+                w.IsOnline,
+                w.ActiveAccounts ?? w.CurrentActivity?.ActiveAccounts);
+            return new DashboardWorkerRowViewModel
+            {
+                Id = w.Id,
+                DisplayName = w.DisplayName,
+                MachineName = w.MachineName,
+                IsOnline = w.IsOnline,
+                IsEnabled = w.IsEnabled,
+                ActiveAccounts = w.ActiveAccountCount,
+                TotalAccounts = w.AccountCount,
+                Responses = w.TotalToday,
+                Duplicates = w.DuplicatesToday,
+                Errors = w.Errors,
+                LastActivityUtc = w.LastSeenAtUtc,
+                CurrentActivityLabel = activity.Label,
+                CurrentActivityTone = activity.Tone,
+                IsActivityLive = activity.IsLive,
+                OfficeName = w.OfficeName
+            };
+        }).ToList();
+
         return new DashboardViewModel
         {
             Header = BuildHeader(period),
             KpiCards = kpiCards,
-            Workers = workers.Select(w =>
-            {
-                var activity = WorkerActivityPresenter.Present(
-                    w.CurrentActivity,
-                    w.IsOnline,
-                    w.ActiveAccounts ?? w.CurrentActivity?.ActiveAccounts);
-                return new DashboardWorkerRowViewModel
-                {
-                    Id = w.Id,
-                    DisplayName = w.DisplayName,
-                    MachineName = w.MachineName,
-                    IsOnline = w.IsOnline,
-                    ActiveAccounts = w.ActiveAccountCount,
-                    TotalAccounts = w.AccountCount,
-                    Responses = w.TotalToday,
-                    Duplicates = w.DuplicatesToday,
-                    Errors = w.Errors,
-                    LastActivityUtc = w.LastSeenAtUtc,
-                    CurrentActivityLabel = activity.Label,
-                    CurrentActivityTone = activity.Tone,
-                    IsActivityLive = activity.IsLive,
-                    OfficeName = w.OfficeName
-                };
-            }).ToList(),
+            Workers = workerRows,
             HourlyChart = DashboardChartsBuilder.ToResponsePoints(activityChart),
             Events = events.Select(DashboardEventMapper.Map).ToList(),
             AccountStats = accountStats,
             Charts = charts,
-            ShowOfficeColumn = officeContext.ShowOfficeColumn
+            ShowOfficeColumn = officeContext.ShowOfficeColumn,
+            EnabledWorkersCount = workerRows.Count(w => w.IsEnabled),
+            DisabledWorkersCount = workerRows.Count(w => !w.IsEnabled),
+            ShowWorkersMonitoringControls = workerRows.Count > 0
         };
     }
 

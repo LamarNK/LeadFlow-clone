@@ -26,8 +26,27 @@ public static class CandidateDedupLog
         }
 
         LogInfo(
-            $"{who} — дедуп при разборе (scope {DescribeScope(scope)}): {string.Join("; ", parts)}. " +
-            "Совпадение кандидатов выполняется на Orbita API по ФИО, не по телефону.");
+            $"{who} — дедуп при разборе (scope {DescribeScope(scope)}): {string.Join("; ", parts)}.");
+    }
+
+    public static void LogPersonProfileLookup(
+        Guid accountId,
+        int profilesQueried,
+        bool apiReached,
+        int apiProfileMatches,
+        int totalProfileMatches)
+    {
+        if (profilesQueried == 0)
+        {
+            return;
+        }
+
+        var apiStatus = apiReached
+            ? "Orbita API — ответ получен"
+            : "Orbita API — недоступен, только локальный кэш телефонов";
+        LogInfo(
+            $"Дедуп person-match — {apiStatus}; accountId={accountId:D}; " +
+            $"профилей {profilesQueried}; API match {apiProfileMatches}; итого пропусков {totalProfileMatches}.");
     }
 
     public static void LogOrbitaApiLookup(

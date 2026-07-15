@@ -1082,6 +1082,39 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         return matched;
     }
 
+    public async Task<HashSet<int>> GetMatchedProfileIndicesAsync(
+        IReadOnlyList<Orbita.Contracts.CandidateLookupProfileDto> profiles,
+        Guid accountId,
+        CancellationToken cancellationToken)
+    {
+        if (profiles.Count == 0)
+        {
+            return [];
+        }
+
+        var phones = profiles
+            .Select(static p => p.PhoneNormalized)
+            .Where(static x => !string.IsNullOrWhiteSpace(x))
+            .ToArray();
+        var existingPhones = await GetExistingNormalizedPhonesAsync(
+            phones,
+            DuplicateScope.GlobalAcrossAllAccounts,
+            accountId,
+            cancellationToken);
+
+        var matched = new HashSet<int>();
+        for (var i = 0; i < profiles.Count; i++)
+        {
+            var phone = profiles[i].PhoneNormalized;
+            if (!string.IsNullOrWhiteSpace(phone) && existingPhones.Contains(phone))
+            {
+                matched.Add(i);
+            }
+        }
+
+        return matched;
+    }
+
     private static AvitoAccountEntity ToEntity(AvitoAccount model) => new()
     {
         Id = model.Id,

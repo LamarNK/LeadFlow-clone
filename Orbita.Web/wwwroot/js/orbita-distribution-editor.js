@@ -78,12 +78,31 @@
         return drawflowId;
     }
 
+    function formatQuotaProgress(instance) {
+        var count = typeof instance.leadExportSessionCount === 'number' ? instance.leadExportSessionCount : 0;
+        if (instance.leadExportLimit > 0) {
+            return count + ' / ' + instance.leadExportLimit;
+        }
+        return count > 0 ? String(count) : '';
+    }
+
     function renderPalette(root) {
         var list = root.querySelector('[data-distribution-palette-list]');
         if (!list) return;
         list.innerHTML = instances.map(function (instance) {
+            var progress = formatQuotaProgress(instance);
+            var limitValue = instance.leadExportLimit > 0 ? String(instance.leadExportLimit) : '';
             return '<div class="settings-distribution-palette-item" draggable="true" data-bitrix-instance-id="' + escapeHtml(instance.id) + '">' +
+                '<div class="settings-distribution-palette-item-main">' +
                 '<strong>' + escapeHtml(instance.label || instance.name) + '</strong>' +
+                '<label class="settings-distribution-palette-quota">' +
+                '<span class="settings-distribution-palette-quota-label">Лимит</span>' +
+                '<input type="number" class="settings-distribution-palette-quota-input" min="1" max="100000" step="1" ' +
+                'data-bitrix-lead-limit data-bitrix-id="' + escapeHtml(instance.id) + '" ' +
+                'value="' + escapeHtml(limitValue) + '" placeholder="∞" aria-label="Лимит лидов для ' + escapeHtml(instance.label || instance.name) + '" />' +
+                (progress ? '<span class="settings-distribution-palette-quota-progress" title="Текущая сессия">' + escapeHtml(progress) + '</span>' : '') +
+                '</label>' +
+                '</div>' +
                 '<button type="button" class="settings-distribution-palette-add" data-distribution-add-instance="' + escapeHtml(instance.id) + '">Добавить</button>' +
                 '</div>';
         }).join('');
@@ -169,21 +188,44 @@
         }).filter(function (node) { return !!node.bitrixInstanceId; });
     }
 
+    function collectBitrixQuotas() {
+        return instances.map(function (instance) {
+            var input = document.querySelector('[data-bitrix-lead-limit][data-bitrix-id="' + instance.id + '"]');
+            var raw = input ? String(input.value || '').trim() : '';
+            var limit = raw === '' ? null : parseInt(raw, 10);
+            return {
+                bitrixInstanceId: instance.id,
+                leadExportLimit: Number.isFinite(limit) && limit > 0 ? limit : null
+            };
+        });
+    }
+
     function syncNodesJson(form) {
         var input = form.querySelector('[data-distribution-nodes-json]');
         if (!input) return;
         input.value = JSON.stringify(collectNodes());
     }
 
+    function syncBitrixQuotasJson(form) {
+        var input = form.querySelector('[data-distribution-bitrix-quotas-json]');
+        if (!input) return;
+        input.value = JSON.stringify(collectBitrixQuotas());
+    }
+
+    function syncFormPayload(form) {
+        syncNodesJson(form);
+        syncBitrixQuotasJson(form);
+    }
+
     function bindForm(form, root) {
         form.addEventListener('submit', function () {
-            syncNodesJson(form);
+            syncFormPayload(form);
         });
 
         var saveBtn = form.querySelector('[data-distribution-save]');
         if (saveBtn) {
             saveBtn.addEventListener('click', function () {
-                syncNodesJson(form);
+                syncFormPayload(form);
             });
         }
 

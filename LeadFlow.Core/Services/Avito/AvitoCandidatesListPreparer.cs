@@ -1,7 +1,9 @@
 using System.Collections.Generic;
+using System.Text;
 using System.Text.Json;
 using LeadFlow.Core.Logging.Audit;
 using LeadFlow.Core.Services;
+using Orbita.Contracts;
 
 namespace LeadFlow.Core.Services.Avito;
 
@@ -23,7 +25,9 @@ public static class AvitoCandidatesListPreparer
         Func<CancellationToken, Task<string?>>? fetchHtmlSnapshot = null,
         string? pageUrl = null,
         Func<IReadOnlyCollection<string>, CancellationToken, Task<IReadOnlySet<string>>>? resolveExistingSourceResponseIdsAsync = null,
-        Func<IReadOnlyCollection<string>, CancellationToken, Task<IReadOnlySet<string>>>? resolveExistingCardFingerprintsAsync = null)
+        Func<IReadOnlyCollection<string>, CancellationToken, Task<IReadOnlySet<string>>>? resolveExistingCardFingerprintsAsync = null,
+        Func<IReadOnlyCollection<string>, CancellationToken, Task<IReadOnlySet<string>>>? resolveExistingPhonesAsync = null,
+        Func<IReadOnlyList<CandidateLookupProfileDto>, CancellationToken, Task<IReadOnlySet<int>>>? resolveExistingMatchedProfileIndicesAsync = null)
     {
         await AvitoFirewallProbe.ThrowIfBlockedAsync(executeScript, fetchHtmlSnapshot, pageUrl, cancellationToken)
             .ConfigureAwait(false);
@@ -74,6 +78,16 @@ public static class AvitoCandidatesListPreparer
         var cardFingerprintSkipCount = await TryApplyKnownCardFingerprintSkipsAsync(
                 executeScript,
                 resolveExistingCardFingerprintsAsync,
+                cancellationToken)
+            .ConfigureAwait(false);
+        var phoneSkipCount = await TryApplyKnownPhoneSkipsAsync(
+                executeScript,
+                resolveExistingPhonesAsync,
+                cancellationToken)
+            .ConfigureAwait(false);
+        var profileSkipCount = await TryApplyKnownProfileSkipsAsync(
+                executeScript,
+                resolveExistingMatchedProfileIndicesAsync,
                 cancellationToken)
             .ConfigureAwait(false);
         PhonesReadyProbe? phonesProbe = null;
@@ -131,6 +145,7 @@ public static class AvitoCandidatesListPreparer
                     executeScript,
                     Math.Min(domItems, MaxDetailEnrichClicks),
                     resolveExistingSourceResponseIdsAsync,
+                    resolveExistingPhonesAsync,
                     cancellationToken)
                 .ConfigureAwait(false);
             detailEnrichClicks = enrichment.Clicks;
@@ -157,13 +172,15 @@ public static class AvitoCandidatesListPreparer
             detailEnrichClicks,
             detailEnrichSkipped,
             detailEnrichHits,
-            cardFingerprintSkipCount);
+            cardFingerprintSkipCount,
+            phoneSkipCount,
+            profileSkipCount);
 
         var detailEnrichNote = isJobCrmPage
             ? "detailEnrich=skipped (CRM page)"
             : $"detailEnrich={result.DetailEnrichHits}/{result.DetailEnrichClicks} (skipped {result.DetailEnrichSkipped})";
         _ = GlobalLogger.Instance.LogAsync(
-            $"Candidates list prepared for {logContext}: scrollRounds={result.ScrollRounds}, domItems={result.DomItemCount}, phonesReady={result.PhonesReady} ({result.CardsWithPhone}/{result.DomItemCount}), maskedLeft={result.MaskedPhonesLeft}, cardFingerprintSkips={result.CardFingerprintSkips}, phoneRevealRounds={result.PhoneRevealRounds}, phoneClicks={result.PhoneRevealClicks}, {detailEnrichNote}.",
+            $"Candidates list prepared for {logContext}: scrollRounds={result.ScrollRounds}, domItems={result.DomItemCount}, phonesReady={result.PhonesReady} ({result.CardsWithPhone}/{result.DomItemCount}), maskedLeft={result.MaskedPhonesLeft}, cardFingerprintSkips={result.CardFingerprintSkips}, phoneSkips={result.PhoneSkips}, profileSkips={result.ProfileSkips}, phoneRevealRounds={result.PhoneRevealRounds}, phoneClicks={result.PhoneRevealClicks}, {detailEnrichNote}.",
             DeskLinkAuditLogLevel.Info,
             properties: new Dictionary<string, object?>
             {
@@ -178,7 +195,9 @@ public static class AvitoCandidatesListPreparer
                 ["candidates.prepare.detailEnrichClicks"] = result.DetailEnrichClicks,
                 ["candidates.prepare.detailEnrichSkipped"] = result.DetailEnrichSkipped,
                 ["candidates.prepare.detailEnrichHits"] = result.DetailEnrichHits,
-                ["candidates.prepare.cardFingerprintSkips"] = result.CardFingerprintSkips
+                ["candidates.prepare.cardFingerprintSkips"] = result.CardFingerprintSkips,
+                ["candidates.prepare.phoneSkips"] = result.PhoneSkips,
+                ["candidates.prepare.profileSkips"] = result.ProfileSkips
             });
 
         return result;
@@ -264,6 +283,7 @@ public static class AvitoCandidatesListPreparer
         Func<string, CancellationToken, Task<string>> executeScript,
         int itemCount,
         Func<IReadOnlyCollection<string>, CancellationToken, Task<IReadOnlySet<string>>>? resolveExistingSourceResponseIdsAsync,
+        Func<IReadOnlyCollection<string>, CancellationToken, Task<IReadOnlySet<string>>>? resolveExistingPhonesAsync,
         CancellationToken cancellationToken)
     {
         var entries = new Dictionary<string, object>(StringComparer.Ordinal);
@@ -292,6 +312,21 @@ public static class AvitoCandidatesListPreparer
             }
         }
 
+        IReadOnlySet<string>? existingPhones = null;
+        if (resolveExistingPhonesAsync is not null)
+        {
+            var phoneCandidates = listItems.Values
+                .Select(static x => x.PhoneDigits)
+                .Where(static x => !string.IsNullOrWhiteSpace(x))
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+            if (phoneCandidates.Length > 0)
+            {
+                existingPhones = await resolveExistingPhonesAsync(phoneCandidates, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+        }
+
         for (var index = 0; index < itemCount; index++)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -300,6 +335,15 @@ public static class AvitoCandidatesListPreparer
                 && !string.IsNullOrWhiteSpace(listItem.SourceResponseId)
                 && existingOnPage is not null
                 && existingOnPage.Contains(listItem.SourceResponseId))
+            {
+                skipped++;
+                continue;
+            }
+
+            if (listItems.TryGetValue(index, out var phoneListItem)
+                && !string.IsNullOrWhiteSpace(phoneListItem.PhoneDigits)
+                && existingPhones is not null
+                && existingPhones.Contains(phoneListItem.PhoneDigits))
             {
                 skipped++;
                 continue;
@@ -397,6 +441,97 @@ public static class AvitoCandidatesListPreparer
     }
 
     private sealed record ListItemSkipKeys(string PhoneDigits, string SourceResponseId);
+
+    private sealed record ListItemProfileKeys(
+        int Index,
+        string FullName,
+        string City,
+        string Age,
+        string PhoneDigits);
+
+    private static async Task<IReadOnlyList<ListItemProfileKeys>> TryParseListItemProfilesAsync(
+        Func<string, CancellationToken, Task<string>> executeScript,
+        CancellationToken cancellationToken)
+    {
+        var raw = await executeScript(AvitoCandidatesPageScripts.BuildCollectListItemCardFingerprintsScript(), cancellationToken)
+            .ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return [];
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(UnwrapJsonString(raw));
+            if (doc.RootElement.ValueKind != JsonValueKind.Array)
+            {
+                return [];
+            }
+
+            var items = new List<ListItemProfileKeys>();
+            var index = 0;
+            foreach (var element in doc.RootElement.EnumerateArray())
+            {
+                var itemIndex = element.TryGetProperty("index", out var indexProp) ? indexProp.GetInt32() : index;
+                items.Add(new ListItemProfileKeys(
+                    itemIndex,
+                    element.TryGetProperty("fullName", out var nameProp) ? nameProp.GetString() ?? string.Empty : string.Empty,
+                    element.TryGetProperty("city", out var cityProp) ? cityProp.GetString() ?? string.Empty : string.Empty,
+                    element.TryGetProperty("age", out var ageProp) ? ageProp.GetString() ?? string.Empty : string.Empty,
+                    element.TryGetProperty("phoneDigits", out var phoneProp) ? phoneProp.GetString() ?? string.Empty : string.Empty));
+                index++;
+            }
+
+            return items;
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    private static int? ParseAge(string? ageText)
+    {
+        if (string.IsNullOrWhiteSpace(ageText))
+        {
+            return null;
+        }
+
+        var digits = new StringBuilder();
+        foreach (var ch in ageText)
+        {
+            if (char.IsDigit(ch))
+            {
+                digits.Append(ch);
+                if (digits.Length >= 2)
+                {
+                    break;
+                }
+            }
+        }
+
+        return digits.Length > 0 && int.TryParse(digits.ToString(), out var age) ? age : null;
+    }
+
+    private static string NormalizePhoneDigits(string? phoneDigits)
+    {
+        if (string.IsNullOrWhiteSpace(phoneDigits))
+        {
+            return string.Empty;
+        }
+
+        var value = phoneDigits.Trim();
+        if (value.Length == 11 && value.StartsWith("8", StringComparison.Ordinal))
+        {
+            value = $"7{value[1..]}";
+        }
+        else if (value.Length == 10)
+        {
+            value = $"7{value}";
+        }
+
+        return value;
+    }
 
     private static bool TryParseClickStep(string? raw, out bool ok)
     {
@@ -496,6 +631,101 @@ public static class AvitoCandidatesListPreparer
         var skipIndices = fingerprintsByIndex
             .Where(kv => existing.Contains(kv.Value))
             .Select(kv => kv.Key)
+            .ToArray();
+        if (skipIndices.Length == 0)
+        {
+            return 0;
+        }
+
+        _ = await executeScript(
+                AvitoCandidatesPageScripts.BuildApplyPhoneRevealSkipScript(skipIndices),
+                cancellationToken)
+            .ConfigureAwait(false);
+        return skipIndices.Length;
+    }
+
+    private static async Task<int> TryApplyKnownPhoneSkipsAsync(
+        Func<string, CancellationToken, Task<string>> executeScript,
+        Func<IReadOnlyCollection<string>, CancellationToken, Task<IReadOnlySet<string>>>? resolveExistingPhonesAsync,
+        CancellationToken cancellationToken)
+    {
+        if (resolveExistingPhonesAsync is null)
+        {
+            return 0;
+        }
+
+        var phonesByIndex = await TryParseListItemSkipKeysAsync(executeScript, cancellationToken).ConfigureAwait(false);
+        if (phonesByIndex.Count == 0)
+        {
+            return 0;
+        }
+
+        var phoneCandidates = phonesByIndex.Values
+            .Select(static x => x.PhoneDigits)
+            .Where(static x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (phoneCandidates.Length == 0)
+        {
+            return 0;
+        }
+
+        var existing = await resolveExistingPhonesAsync(phoneCandidates, cancellationToken).ConfigureAwait(false);
+        if (existing.Count == 0)
+        {
+            return 0;
+        }
+
+        var skipIndices = phonesByIndex
+            .Where(kv => !string.IsNullOrWhiteSpace(kv.Value.PhoneDigits)
+                         && existing.Contains(kv.Value.PhoneDigits))
+            .Select(static kv => kv.Key)
+            .ToArray();
+        if (skipIndices.Length == 0)
+        {
+            return 0;
+        }
+
+        _ = await executeScript(
+                AvitoCandidatesPageScripts.BuildApplyPhoneRevealSkipScript(skipIndices),
+                cancellationToken)
+            .ConfigureAwait(false);
+        return skipIndices.Length;
+    }
+
+    private static async Task<int> TryApplyKnownProfileSkipsAsync(
+        Func<string, CancellationToken, Task<string>> executeScript,
+        Func<IReadOnlyList<CandidateLookupProfileDto>, CancellationToken, Task<IReadOnlySet<int>>>? resolveExistingMatchedProfileIndicesAsync,
+        CancellationToken cancellationToken)
+    {
+        if (resolveExistingMatchedProfileIndicesAsync is null)
+        {
+            return 0;
+        }
+
+        var listItems = await TryParseListItemProfilesAsync(executeScript, cancellationToken).ConfigureAwait(false);
+        if (listItems.Count == 0)
+        {
+            return 0;
+        }
+
+        var profiles = listItems
+            .Select(item => new CandidateLookupProfileDto(
+                item.FullName,
+                ParseAge(item.Age),
+                item.City,
+                NormalizePhoneDigits(item.PhoneDigits)))
+            .ToList();
+        var matched = await resolveExistingMatchedProfileIndicesAsync(profiles, cancellationToken)
+            .ConfigureAwait(false);
+        if (matched.Count == 0)
+        {
+            return 0;
+        }
+
+        var skipIndices = matched
+            .Where(i => i >= 0 && i < listItems.Count)
+            .Select(i => listItems[i].Index)
             .ToArray();
         if (skipIndices.Length == 0)
         {
@@ -653,4 +883,6 @@ public sealed record CandidatesListPrepareResult(
     int DetailEnrichClicks = 0,
     int DetailEnrichSkipped = 0,
     int DetailEnrichHits = 0,
-    int CardFingerprintSkips = 0);
+    int CardFingerprintSkips = 0,
+    int PhoneSkips = 0,
+    int ProfileSkips = 0);

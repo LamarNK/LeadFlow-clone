@@ -105,6 +105,22 @@ public sealed class DistributionRouteService(OrbitaDbContext db, PanelAuditServi
             });
         }
 
+        if (request.BitrixLeadQuotas is { Count: > 0 })
+        {
+            var bitrixIds = request.BitrixLeadQuotas.Select(x => x.BitrixInstanceId).Distinct().ToList();
+            var instances = await db.BitrixInstances
+                .Where(x => x.OfficeId == resolvedOfficeId && bitrixIds.Contains(x.Id))
+                .ToListAsync(ct);
+            foreach (var quota in request.BitrixLeadQuotas)
+            {
+                var instance = instances.FirstOrDefault(x => x.Id == quota.BitrixInstanceId);
+                if (instance is not null)
+                {
+                    instance.LeadExportLimit = NormalizeLeadExportLimit(quota.LeadExportLimit);
+                }
+            }
+        }
+
         await db.SaveChangesAsync(ct);
 
         await audit.LogAsync(
@@ -303,4 +319,7 @@ public sealed class DistributionRouteService(OrbitaDbContext db, PanelAuditServi
             nodes,
             route.UpdatedAtUtc);
     }
+
+    private static int? NormalizeLeadExportLimit(int? limit) =>
+        limit is > 0 ? limit : null;
 }

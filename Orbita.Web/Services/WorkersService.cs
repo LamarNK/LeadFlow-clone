@@ -412,6 +412,13 @@ public sealed class WorkersService(
             ? Task.FromResult<(bool, string?)>((true, null))
             : api.SetWorkerEnabledAsync(workerId, enabled, ct);
 
+    public Task<(BulkWorkersMonitoringResultDto? Result, string? Error)> SetAllWorkersMonitoringAsync(
+        bool enabled,
+        CancellationToken ct = default) =>
+        previewOptions.Value.Enabled
+            ? Task.FromResult<(BulkWorkersMonitoringResultDto?, string?)>((new BulkWorkersMonitoringResultDto(1, 0, 1), null))
+            : api.SetAllWorkersEnabledAsync(enabled, ct);
+
     public Task<(bool Success, string? Error)> DeleteWorkerAsync(
         Guid workerId,
         CancellationToken ct = default) =>

@@ -18,6 +18,9 @@ public sealed class DashboardViewModel
     public DashboardChartsViewModel Charts { get; init; } = new();
     public string? ErrorMessage { get; init; }
     public bool ShowOfficeColumn { get; init; }
+    public int EnabledWorkersCount { get; init; }
+    public int DisabledWorkersCount { get; init; }
+    public bool ShowWorkersMonitoringControls { get; init; }
 }
 
 public sealed class DashboardKpiCardViewModel
@@ -44,6 +47,7 @@ public sealed class DashboardWorkerRowViewModel
     public string DisplayName { get; init; } = string.Empty;
     public string MachineName { get; init; } = string.Empty;
     public bool IsOnline { get; init; }
+    public bool IsEnabled { get; init; } = true;
     public int ActiveAccounts { get; init; }
     public int TotalAccounts { get; init; }
     public int Responses { get; init; }

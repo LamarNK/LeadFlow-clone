@@ -826,7 +826,10 @@ public static class AvitoCandidatesPageScripts
     public static string BuildCollectListItemCardFingerprintsScript() =>
         $$"""
         (() => {
+        {{ContactsPhoneHelpersJs}}
         {{CardFingerprintJs}}
+            initRevealedPhonesStore();
+
             const normalizeUrl = (href) => {
                 if (!href) {
                     return "";
@@ -975,10 +978,16 @@ public static class AvitoCandidatesPageScripts
                         age
                     );
 
+                    const phone = readItemPhone(item, index);
+                    const phoneDigits = normalizePhoneKeyForSourceId(phone);
+
                     return {
                         index,
                         fullName,
-                        cardFingerprint
+                        cardFingerprint,
+                        city: vacancyAndCity.city,
+                        age,
+                        phoneDigits
                     };
                 })
             );

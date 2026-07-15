@@ -714,13 +714,29 @@
         return template ? template.replace('__id__', workerId) : '';
     }
 
+    function renderWorkerToggleCell(w) {
+        if (w.isEnabled) {
+            return '<td class="dashboard-worker-toggle" data-label="">' +
+                '<button type="button" class="dashboard-worker-toggle-btn dashboard-worker-toggle-btn--pause" ' +
+                'data-dashboard-disable-worker data-worker-id="' + escapeHtml(w.id) + '" ' +
+                'title="Приостановить воркер" aria-label="Приостановить ' + escapeHtml(w.displayName) + '">' +
+                '<i class="fa-solid fa-circle-pause" aria-hidden="true"></i></button></td>';
+        }
+
+        return '<td class="dashboard-worker-toggle" data-label="">' +
+            '<button type="button" class="dashboard-worker-toggle-btn dashboard-worker-toggle-btn--play" ' +
+            'data-dashboard-enable-worker data-worker-id="' + escapeHtml(w.id) + '" ' +
+            'title="Запустить воркер" aria-label="Запустить ' + escapeHtml(w.displayName) + '">' +
+            '<i class="fa-solid fa-circle-play" aria-hidden="true"></i></button></td>';
+    }
+
     function renderWorkers(workers) {
         var tbody = document.querySelector('[data-dashboard-workers-body]');
         if (!tbody) return;
 
         tbody.innerHTML = workers.map(function (w) {
-            var statusClass = w.isOnline ? '' : ' offline';
-            var statusText = w.isOnline ? 'Онлайн' : 'Оффлайн';
+            var statusClass = !w.isEnabled ? ' offline' : (w.isOnline ? '' : ' offline');
+            var statusText = !w.isEnabled ? 'Приостановлен' : (w.isOnline ? 'Онлайн' : 'Оффлайн');
             var iso = w.lastActivityUtc || '';
             var timeHtml = iso
                 ? '<time class="" data-orbita-utc="' + escapeHtml(iso) + '" data-orbita-format="activity"></time>'
@@ -750,13 +766,14 @@
                 '<td class="cell-num" data-label="Дублей">' + w.duplicates + '</td>' +
                 '<td class="cell-num" data-label="Ошибок">' + w.errors + '</td>' +
                 '<td data-label="Последняя активность">' + timeHtml + '</td>' +
+                renderWorkerToggleCell(w) +
                 '<td class="data-table-menu" data-label="">' +
                 '<div class="row-menu" data-row-menu>' +
                 '<button type="button" class="row-menu-btn" aria-label="Действия" aria-expanded="false" aria-haspopup="true"><i class="fa-solid fa-ellipsis-vertical" aria-hidden="true"></i></button>' +
                 '<div class="row-menu-dropdown" hidden>' +
                 '<a class="row-menu-item" href="' + escapeHtml(detailsUrl) + '">Открыть</a>' +
                 '<button type="button" class="row-menu-item" data-worker-restart data-worker-id="' + escapeHtml(w.id) + '">Перезапустить</button>' +
-                '<a class="row-menu-item" href="/Settings?tab=logs">Просмотреть логи</a>' +
+                '<a class="row-menu-item" href="' + escapeHtml(settingsLogsUrl(w.id)) + '">Просмотреть логи</a>' +
                 '<a class="row-menu-item" href="' + escapeHtml(detailsUrl) + '#worker-settings">Настройки</a>' +
                 '</div></div></td>' +
                 '</tr>';
@@ -768,9 +785,140 @@
 
         initDashboardRowMenus();
         initDashboardRowNavigation();
+        initDashboardWorkerToggleButtons();
         if (window.Orbita && window.Orbita.initWorkerRestartButtons) {
             window.Orbita.initWorkerRestartButtons();
         }
+    }
+
+    function initDashboardWorkerToggleButtons() {
+        var liveRoot = getLiveRoot();
+        if (!liveRoot) return;
+
+        var enableUrl = liveRoot.getAttribute('data-dashboard-enable-worker-url');
+        var disableUrl = liveRoot.getAttribute('data-dashboard-disable-worker-url');
+        var postForm = window.Orbita && window.Orbita.postForm;
+        var showToast = window.Orbita && window.Orbita.showToast;
+
+        function bindToggle(selector, url) {
+            document.querySelectorAll(selector).forEach(function (btn) {
+                if (btn.hasAttribute('data-dashboard-worker-toggle-bound')) return;
+                btn.setAttribute('data-dashboard-worker-toggle-bound', '1');
+                btn.addEventListener('click', async function (e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    var workerId = btn.getAttribute('data-worker-id');
+                    if (!workerId || !url || !postForm) return;
+                    btn.disabled = true;
+                    var result = await postForm(url, { workerId: workerId });
+                    if (result.ok) {
+                        if (showToast) {
+                            showToast((result.payload && result.payload.message) || 'Готово', { variant: 'success' });
+                        }
+                        fetchSnapshot();
+                    } else {
+                        if (showToast) {
+                            showToast((result.payload && result.payload.error) || 'Не удалось изменить статус воркера', { variant: 'error' });
+                        }
+                        btn.disabled = false;
+                    }
+                });
+            });
+        }
+
+        bindToggle('[data-dashboard-enable-worker]', enableUrl);
+        bindToggle('[data-dashboard-disable-worker]', disableUrl);
+    }
+
+    function updateMonitoringControls(snapshot) {
+        var enableBtn = document.querySelector('[data-dashboard-enable-all]');
+        var disableBtn = document.querySelector('[data-dashboard-disable-all]');
+        if (!enableBtn && !disableBtn) return;
+
+        var disabledCount = snapshot && typeof snapshot.disabledWorkersCount === 'number'
+            ? snapshot.disabledWorkersCount
+            : 0;
+        var enabledCount = snapshot && typeof snapshot.enabledWorkersCount === 'number'
+            ? snapshot.enabledWorkersCount
+            : 0;
+
+        if (enableBtn) {
+            enableBtn.disabled = disabledCount === 0;
+        }
+        if (disableBtn) {
+            disableBtn.disabled = enabledCount === 0;
+        }
+    }
+
+    function initDashboardMonitoringButtons() {
+        var liveRoot = getLiveRoot();
+        if (!liveRoot) return;
+
+        var enableUrl = liveRoot.getAttribute('data-dashboard-enable-all-url');
+        var disableUrl = liveRoot.getAttribute('data-dashboard-disable-all-url');
+        var postForm = window.Orbita && window.Orbita.postForm;
+        var confirmDialog = window.Orbita && window.Orbita.confirm;
+        var showToast = window.Orbita && window.Orbita.showToast;
+
+        document.querySelectorAll('[data-dashboard-enable-all]').forEach(function (btn) {
+            if (btn.hasAttribute('data-dashboard-monitoring-bound')) return;
+            btn.setAttribute('data-dashboard-monitoring-bound', '1');
+            btn.addEventListener('click', async function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                if (!enableUrl || !postForm) return;
+                if (confirmDialog) {
+                    var confirmed = await confirmDialog({
+                        title: 'Запустить мониторинг?',
+                        message: 'Все воркеры в вашем офисе будут включены и начнут обработку аккаунтов.',
+                        confirmLabel: 'Запустить',
+                        variant: 'primary'
+                    });
+                    if (!confirmed) return;
+                }
+                btn.disabled = true;
+                var result = await postForm(enableUrl, {});
+                if (result.ok) {
+                    if (showToast) {
+                        showToast((result.payload && result.payload.message) || 'Мониторинг запущен', { variant: 'success' });
+                    }
+                    fetchSnapshot();
+                } else if (showToast) {
+                    showToast((result.payload && result.payload.error) || 'Не удалось запустить мониторинг', { variant: 'error' });
+                    btn.disabled = false;
+                }
+            });
+        });
+
+        document.querySelectorAll('[data-dashboard-disable-all]').forEach(function (btn) {
+            if (btn.hasAttribute('data-dashboard-monitoring-bound')) return;
+            btn.setAttribute('data-dashboard-monitoring-bound', '1');
+            btn.addEventListener('click', async function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                if (!disableUrl || !postForm) return;
+                if (confirmDialog) {
+                    var confirmed = await confirmDialog({
+                        title: 'Остановить мониторинг?',
+                        message: 'Все воркеры будут приостановлены: мониторинг остановится, открытые браузеры закроются.',
+                        confirmLabel: 'Остановить',
+                        variant: 'danger'
+                    });
+                    if (!confirmed) return;
+                }
+                btn.disabled = true;
+                var result = await postForm(disableUrl, {});
+                if (result.ok) {
+                    if (showToast) {
+                        showToast((result.payload && result.payload.message) || 'Мониторинг остановлен', { variant: 'success' });
+                    }
+                    fetchSnapshot();
+                } else if (showToast) {
+                    showToast((result.payload && result.payload.error) || 'Не удалось остановить мониторинг', { variant: 'error' });
+                    btn.disabled = false;
+                }
+            });
+        });
     }
 
     function initDashboardRowNavigation() {
@@ -779,7 +927,11 @@
             row.setAttribute('data-dash-row-nav-bound', '1');
 
             row.addEventListener('click', function (e) {
-                if (e.target.closest('[data-row-menu]') || e.target.closest('a') || e.target.closest('form')) return;
+                if (e.target.closest('[data-row-menu]')
+                    || e.target.closest('[data-dashboard-enable-worker]')
+                    || e.target.closest('[data-dashboard-disable-worker]')
+                    || e.target.closest('a')
+                    || e.target.closest('form')) return;
                 var href = row.getAttribute('data-href');
                 if (!href) return;
                 if (window.Orbita && typeof window.Orbita.navigateTo === 'function') {
@@ -1035,6 +1187,7 @@
 
         if (!prevFp || prevFp.workers !== nextFp.workers) {
             renderWorkers(snapshot.workers || []);
+            updateMonitoringControls(snapshot);
             if (highlightChanged) highlightCard(document.querySelector('.card--dashboard-workers'));
         }
 
@@ -1148,6 +1301,11 @@
         initDashboardRowNavigation();
         if (window.Orbita && window.Orbita.initWorkerRestartButtons) {
             window.Orbita.initWorkerRestartButtons();
+        }
+        initDashboardMonitoringButtons();
+        initDashboardWorkerToggleButtons();
+        if (liveState) {
+            updateMonitoringControls(liveState);
         }
     }
 

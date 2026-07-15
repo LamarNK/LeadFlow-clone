@@ -34,6 +34,7 @@ public sealed record UpdateWorkerSubProfileRequest(bool IsEnabledInPanel);
 public static class WorkerCommands
 {
     public const string Restart = "restart";
+    public const string Pause = "pause";
 }
 
 public sealed record WorkerCommandRequest(string Command);
@@ -86,6 +87,12 @@ public sealed record WorkerCandidateDto(
 public sealed record WorkerCandidateBatchRequest(
     IReadOnlyList<WorkerCandidateDto> Candidates);
 
+public sealed record CandidateLookupProfileDto(
+    string FullName,
+    int? Age,
+    string City,
+    string PhoneNormalized);
+
 public sealed record WorkerCandidateLookupRequest(
     Guid AccountId,
     string DuplicateScope,
@@ -93,12 +100,14 @@ public sealed record WorkerCandidateLookupRequest(
     IReadOnlyList<string> PhoneNormalized,
     bool IncludeAllKnownPhones = false,
     string? AvitoSubProfileId = null,
-    IReadOnlyList<string>? CardFingerprints = null);
+    IReadOnlyList<string>? CardFingerprints = null,
+    IReadOnlyList<CandidateLookupProfileDto>? Profiles = null);
 
 public sealed record WorkerCandidateLookupResponse(
     IReadOnlyList<string> ExistingSourceResponseIds,
     IReadOnlyList<string> ExistingPhones,
-    IReadOnlyList<string> ExistingCardFingerprints);
+    IReadOnlyList<string> ExistingCardFingerprints,
+    IReadOnlyList<int> MatchedProfileIndexes);
 
 public sealed record WorkerMonitoringStatsDto(
     double HistoricalHeatScore,
@@ -123,3 +132,8 @@ public sealed record UpdateWorkerSettingsRequest(
     string? AdsPowerApiKey = null);
 
 public sealed record UpdateWorkerAccountRequest(bool IsEnabledInPanel);
+
+public sealed record BulkWorkersMonitoringResultDto(
+    int UpdatedCount,
+    int UnchangedCount,
+    int TotalCount);

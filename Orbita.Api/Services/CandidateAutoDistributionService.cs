@@ -6,7 +6,8 @@ namespace Orbita.Api.Services;
 public sealed class CandidateAutoDistributionService(
     BitrixDuplicateCheckAllService duplicateCheck,
     CandidateBitrixSendService bitrixSend,
-    ResponseBitrixDeliveryService deliveries)
+    ResponseBitrixDeliveryService deliveries,
+    LeadExportQuotaService leadExportQuota)
 {
     public async Task<AutoDistributionResult> DistributeAsync(
         CandidateResponseEntity entity,
@@ -35,6 +36,7 @@ public sealed class CandidateAutoDistributionService(
         var sent = new List<string>();
         var duplicates = new List<string>();
         var failures = new List<string>();
+        var quotaReached = new List<string>();
         BitrixInstanceEntity? firstSuccess = null;
         string? firstEntityId = null;
         string? firstContactId = null;
@@ -52,6 +54,9 @@ public sealed class CandidateAutoDistributionService(
                     break;
                 case SendAttemptOutcome.Duplicate:
                     duplicates.Add(CandidateBitrixSendService.FormatBitrixDisplayName(instance));
+                    break;
+                case SendAttemptOutcome.QuotaReached:
+                    quotaReached.Add(CandidateBitrixSendService.FormatBitrixDisplayName(instance));
                     break;
                 default:
                     failures.Add($"{CandidateBitrixSendService.FormatBitrixDisplayName(instance)}: {attempt.Error}");
@@ -90,6 +95,14 @@ public sealed class CandidateAutoDistributionService(
                 $"Дубль: {string.Join(", ", duplicates)}");
         }
 
+        if (quotaReached.Count > 0)
+        {
+            return AutoDistributionResult.ActionRequired(
+                quotaReached.Count == targets.Count
+                    ? $"Все Битриксы достигли лимита выгрузки: {string.Join(", ", quotaReached)}."
+                    : $"Лимит выгрузки достигнут: {string.Join(", ", quotaReached)}.");
+        }
+
         return AutoDistributionResult.Error(string.Join("; ", failures));
     }
 
@@ -100,6 +113,7 @@ public sealed class CandidateAutoDistributionService(
     {
         var duplicates = new List<string>();
         var failures = new List<string>();
+        var quotaReached = new List<string>();
 
         foreach (var instance in targets)
         {
@@ -116,6 +130,9 @@ public sealed class CandidateAutoDistributionService(
                 case SendAttemptOutcome.Duplicate:
                     duplicates.Add(CandidateBitrixSendService.FormatBitrixDisplayName(instance));
                     break;
+                case SendAttemptOutcome.QuotaReached:
+                    quotaReached.Add(CandidateBitrixSendService.FormatBitrixDisplayName(instance));
+                    break;
                 case SendAttemptOutcome.Unavailable:
                     failures.Add($"{CandidateBitrixSendService.FormatBitrixDisplayName(instance)}: {attempt.Error}");
                     break;
@@ -123,6 +140,12 @@ public sealed class CandidateAutoDistributionService(
                     failures.Add($"{CandidateBitrixSendService.FormatBitrixDisplayName(instance)}: {attempt.Error}");
                     break;
             }
+        }
+
+        if (quotaReached.Count == targets.Count)
+        {
+            return AutoDistributionResult.ActionRequired(
+                $"Все Битриксы достигли лимита выгрузки: {string.Join(" → ", quotaReached)}.");
         }
 
         if (duplicates.Count == targets.Count)
@@ -156,6 +179,21 @@ public sealed class CandidateAutoDistributionService(
         string source,
         CancellationToken ct)
     {
+        if (!await leadExportQuota.CanExportToBitrixAsync(instance.Id, ct).ConfigureAwait(false))
+        {
+            var limit = instance.LeadExportLimit ?? 0;
+            var message = LeadExportQuotaService.BuildLimitReachedMessage(
+                limit,
+                CandidateBitrixSendService.FormatBitrixDisplayName(instance));
+            deliveries.Stage(
+                entity.Id,
+                instance,
+                ResponseBitrixDeliveryOutcomes.Unavailable,
+                source,
+                errorMessage: message);
+            return SendAttemptResult.QuotaReached(message);
+        }
+
         var (isDuplicate, unavailableReason) = await duplicateCheck.CheckInInstanceAsync(
             instance,
             CandidatePersonMatchService.ToProfile(entity),
@@ -193,6 +231,7 @@ public sealed class CandidateAutoDistributionService(
                 entityId,
                 entity.BitrixEntityType,
                 contactId);
+            await leadExportQuota.RecordSuccessfulExportAsync(instance.Id, ct).ConfigureAwait(false);
             return SendAttemptResult.Sent(entityId, contactId);
         }
 
@@ -241,6 +280,7 @@ public sealed class CandidateAutoDistributionService(
     {
         Sent,
         Duplicate,
+        QuotaReached,
         Unavailable,
         Failed
     }
@@ -255,6 +295,9 @@ public sealed class CandidateAutoDistributionService(
             new(SendAttemptOutcome.Sent, EntityId: entityId, ContactId: contactId);
 
         public static SendAttemptResult Duplicate() => new(SendAttemptOutcome.Duplicate);
+
+        public static SendAttemptResult QuotaReached(string message) =>
+            new(SendAttemptOutcome.QuotaReached, message);
 
         public static SendAttemptResult Unavailable(string error) =>
             new(SendAttemptOutcome.Unavailable, error);

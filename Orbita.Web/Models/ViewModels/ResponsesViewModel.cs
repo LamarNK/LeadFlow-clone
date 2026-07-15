@@ -48,6 +48,7 @@ public sealed record ResponsesFilterViewModel
 public sealed class ResponseRowViewModel
 {
     public Guid Id { get; init; }
+    public Guid PersonId { get; init; }
     public DateTime CreatedAtUtc { get; init; }
     public string FullName { get; init; } = string.Empty;
     public int? Age { get; init; }

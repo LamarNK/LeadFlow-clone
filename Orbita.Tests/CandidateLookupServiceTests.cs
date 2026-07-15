@@ -23,7 +23,7 @@ public sealed class CandidateLookupServiceTests
             NewResponse("79002222222", "sub-b", otherAccountId));
         await db.SaveChangesAsync();
 
-        var sut = new CandidateLookupService(db);
+        var sut = CreateSut(db);
         var result = await sut.LookupAsync(
             WorkerId,
             new WorkerCandidateLookupRequest(
@@ -35,6 +35,7 @@ public sealed class CandidateLookupServiceTests
 
         Assert.NotNull(result);
         Assert.Equal(["79001111111", "79002222222"], result!.ExistingPhones.OrderBy(static x => x).ToArray());
+        Assert.Empty(result.MatchedProfileIndexes);
     }
 
     [Fact]
@@ -45,7 +46,7 @@ public sealed class CandidateLookupServiceTests
         db.CandidateResponses.Add(NewResponse("79004444444", ""));
         await db.SaveChangesAsync();
 
-        var sut = new CandidateLookupService(db);
+        var sut = CreateSut(db);
         var result = await sut.LookupAsync(
             WorkerId,
             new WorkerCandidateLookupRequest(
@@ -70,7 +71,7 @@ public sealed class CandidateLookupServiceTests
             createdAt: DateTime.UtcNow.AddMonths(-7)));
         await db.SaveChangesAsync();
 
-        var sut = new CandidateLookupService(db);
+        var sut = CreateSut(db);
         var result = await sut.LookupAsync(
             WorkerId,
             new WorkerCandidateLookupRequest(
@@ -96,7 +97,7 @@ public sealed class CandidateLookupServiceTests
             createdAt: DateTime.UtcNow.AddMonths(-7)));
         await db.SaveChangesAsync();
 
-        var sut = new CandidateLookupService(db);
+        var sut = CreateSut(db);
         var result = await sut.LookupAsync(
             WorkerId,
             new WorkerCandidateLookupRequest(
@@ -121,7 +122,7 @@ public sealed class CandidateLookupServiceTests
             cardFingerprint: fingerprint));
         await db.SaveChangesAsync();
 
-        var sut = new CandidateLookupService(db);
+        var sut = CreateSut(db);
         var result = await sut.LookupAsync(
             WorkerId,
             new WorkerCandidateLookupRequest(
@@ -148,7 +149,7 @@ public sealed class CandidateLookupServiceTests
             cardFingerprint: fingerprint));
         await db.SaveChangesAsync();
 
-        var sut = new CandidateLookupService(db);
+        var sut = CreateSut(db);
         var result = await sut.LookupAsync(
             WorkerId,
             new WorkerCandidateLookupRequest(
@@ -185,7 +186,7 @@ public sealed class CandidateLookupServiceTests
             age: 42));
         await db.SaveChangesAsync();
 
-        var sut = new CandidateLookupService(db);
+        var sut = CreateSut(db);
         var result = await sut.LookupAsync(
             WorkerId,
             new WorkerCandidateLookupRequest(
@@ -208,7 +209,7 @@ public sealed class CandidateLookupServiceTests
         db.CandidateResponses.Add(NewResponse("79005555555", "sub-a", officeId: OtherOfficeId));
         await db.SaveChangesAsync();
 
-        var sut = new CandidateLookupService(db);
+        var sut = CreateSut(db);
         var result = await sut.LookupAsync(
             WorkerId,
             new WorkerCandidateLookupRequest(
@@ -220,6 +221,135 @@ public sealed class CandidateLookupServiceTests
         Assert.NotNull(result);
         Assert.Empty(result!.ExistingPhones);
     }
+
+    [Fact]
+    public async Task LookupAsync_Profiles_SamePhone_ReturnsMatchedIndex()
+    {
+        await using var db = CreateDb();
+        SeedWorker(db);
+        var person = TestCandidatePersonFactory.CreatePerson(
+            OfficeId,
+            fullName: "Игорь мокрушин",
+            firstName: "мокрушин",
+            lastName: "игорь",
+            phoneNormalized: "79339313951");
+        db.CandidatePersons.Add(person);
+        db.CandidateResponses.Add(TestCandidatePersonFactory.CreateResponse(
+            OfficeId,
+            person.Id,
+            phone: "79339313951",
+            fullName: "Игорь мокрушин"));
+        await db.SaveChangesAsync();
+
+        var sut = CreateSut(db);
+        var result = await sut.LookupAsync(
+            WorkerId,
+            new WorkerCandidateLookupRequest(
+                AccountId,
+                "GlobalAcrossAllAccounts",
+                [],
+                [],
+                Profiles:
+                [
+                    new CandidateLookupProfileDto("Игорь мокрушин", 30, "Электросталь", "79339313951")
+                ]));
+
+        Assert.NotNull(result);
+        Assert.Equal([0], result!.MatchedProfileIndexes);
+    }
+
+    [Fact]
+    public async Task LookupAsync_Profiles_DifferentPhoneSameAgeCity_ReturnsMatchedIndex()
+    {
+        await using var db = CreateDb();
+        SeedWorker(db);
+        var person = TestCandidatePersonFactory.CreatePerson(
+            OfficeId,
+            fullName: "Гор Олег Александрович",
+            firstName: "Олег",
+            lastName: "Гор",
+            middleName: "Александрович",
+            age: 66,
+            city: "рабочий поселок Чик",
+            phoneNormalized: "79930099416");
+        db.CandidatePersons.Add(person);
+        db.CandidateResponses.Add(TestCandidatePersonFactory.CreateResponse(
+            OfficeId,
+            person.Id,
+            phone: "79930099416",
+            fullName: "Гор Олег Александрович",
+            age: 66,
+            city: "рабочий поселок Чик"));
+        await db.SaveChangesAsync();
+
+        var sut = CreateSut(db);
+        var result = await sut.LookupAsync(
+            WorkerId,
+            new WorkerCandidateLookupRequest(
+                AccountId,
+                "GlobalAcrossAllAccounts",
+                [],
+                [],
+                Profiles:
+                [
+                    new CandidateLookupProfileDto(
+                        "Гор Олег Александрович",
+                        66,
+                        "рабочий поселок Чик",
+                        "79910001122")
+                ]));
+
+        Assert.NotNull(result);
+        Assert.Equal([0], result!.MatchedProfileIndexes);
+    }
+
+    [Fact]
+    public async Task LookupAsync_Profiles_InsufficientScore_ReturnsEmpty()
+    {
+        await using var db = CreateDb();
+        SeedWorker(db);
+        var person = TestCandidatePersonFactory.CreatePerson(
+            OfficeId,
+            fullName: "Гор Олег Александрович",
+            firstName: "Олег",
+            lastName: "Гор",
+            middleName: "Александрович",
+            age: 66,
+            city: "рабочий поселок Чик",
+            phoneNormalized: "79930099416");
+        db.CandidatePersons.Add(person);
+        db.CandidateResponses.Add(TestCandidatePersonFactory.CreateResponse(
+            OfficeId,
+            person.Id,
+            phone: "79930099416",
+            fullName: "Гор Олег Александрович",
+            age: 66,
+            city: "рабочий поселок Чик"));
+        await db.SaveChangesAsync();
+
+        var sut = CreateSut(db);
+        var result = await sut.LookupAsync(
+            WorkerId,
+            new WorkerCandidateLookupRequest(
+                AccountId,
+                "GlobalAcrossAllAccounts",
+                [],
+                [],
+                Profiles:
+                [
+                    new CandidateLookupProfileDto(
+                        "Гор Олег Александрович",
+                        40,
+                        "рабочий поселок Чик",
+                        "79910001122")
+                ]));
+
+        Assert.NotNull(result);
+        Assert.Empty(result!.MatchedProfileIndexes);
+    }
+
+    private static CandidateLookupService CreateSut(OrbitaDbContext db) =>
+        new(db, new CandidatePersonMatchService(db));
 
     private static OrbitaDbContext CreateDb()
     {

@@ -214,6 +214,7 @@ builder.Services.Configure<FormOptions>(options =>
 builder.Services.AddScoped<CandidateIngestionService>();
 builder.Services.AddScoped<BitrixInstanceService>();
 builder.Services.AddScoped<DistributionRouteService>();
+builder.Services.AddScoped<LeadExportQuotaService>();
 builder.Services.AddScoped<DistributionEngine>();
 builder.Services.AddScoped<CandidateAutoDistributionService>();
 builder.Services.AddScoped<BitrixDuplicateCheckAllService>();
@@ -1654,6 +1655,72 @@ panel.MapPost("/workers/{id:guid}/disable", async (
         ct);
 
     return Results.Ok(worker);
+});
+
+panel.MapPost("/workers/enable-all", async (
+    WorkerAdminService workers,
+    PanelAuditService audit,
+    OfficeScopeService officeScope,
+    ClaimsPrincipal principal,
+    HttpContext http,
+    CancellationToken ct) =>
+{
+    var scope = await officeScope.ResolveAsync(principal, ct);
+    if (!scope.HasAccess)
+    {
+        return Results.Forbid();
+    }
+
+    var (result, error) = await workers.SetAllEnabledAsync(true, scope, ct);
+    if (error is not null)
+    {
+        return Results.BadRequest(new { error });
+    }
+
+    await audit.LogAsync(
+        principal.FindFirstValue(ClaimTypes.NameIdentifier),
+        principal.FindFirstValue(ClaimTypes.Email),
+        PanelAuditActions.WorkersMonitoringEnabledAll,
+        "workers",
+        "bulk",
+        $"enabled:{result!.UpdatedCount}",
+        http.Connection.RemoteIpAddress?.ToString(),
+        ct);
+
+    return Results.Ok(result);
+});
+
+panel.MapPost("/workers/disable-all", async (
+    WorkerAdminService workers,
+    PanelAuditService audit,
+    OfficeScopeService officeScope,
+    ClaimsPrincipal principal,
+    HttpContext http,
+    CancellationToken ct) =>
+{
+    var scope = await officeScope.ResolveAsync(principal, ct);
+    if (!scope.HasAccess)
+    {
+        return Results.Forbid();
+    }
+
+    var (result, error) = await workers.SetAllEnabledAsync(false, scope, ct);
+    if (error is not null)
+    {
+        return Results.BadRequest(new { error });
+    }
+
+    await audit.LogAsync(
+        principal.FindFirstValue(ClaimTypes.NameIdentifier),
+        principal.FindFirstValue(ClaimTypes.Email),
+        PanelAuditActions.WorkersMonitoringDisabledAll,
+        "workers",
+        "bulk",
+        $"disabled:{result!.UpdatedCount}",
+        http.Connection.RemoteIpAddress?.ToString(),
+        ct);
+
+    return Results.Ok(result);
 });
 
 panel.MapPost("/workers/{id:guid}/rotate-key", async (

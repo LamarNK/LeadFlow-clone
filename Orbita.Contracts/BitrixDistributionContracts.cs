@@ -22,6 +22,9 @@ public sealed record BitrixInstanceDto(
     DateTime? LastValidatedAtUtc,
     bool IsEnabled,
     BitrixInstanceIntegrationSettingsDto IntegrationSettings,
+    int? LeadExportLimit,
+    int LeadExportSessionCount,
+    DateTime? LeadExportSessionStartedAtUtc,
     DateTime CreatedAtUtc,
     DateTime UpdatedAtUtc);
 
@@ -32,7 +35,9 @@ public sealed record BitrixInstanceListItemDto(
     string? PortalHost,
     string ValidationStatus,
     string? ValidationMessage,
-    bool IsEnabled);
+    bool IsEnabled,
+    int? LeadExportLimit = null,
+    int LeadExportSessionCount = 0);
 
 public sealed record CreateBitrixInstanceRequest(
     string Name,
@@ -68,9 +73,14 @@ public sealed record DistributionRouteDto(
     IReadOnlyList<DistributionNodeDto> Nodes,
     DateTime? UpdatedAtUtc);
 
+public sealed record SaveBitrixLeadQuotaRequest(
+    Guid BitrixInstanceId,
+    int? LeadExportLimit = null);
+
 public sealed record SaveDistributionRouteRequest(
     bool IsAutoDistributionEnabled,
-    IReadOnlyList<SaveDistributionNodeRequest> Nodes);
+    IReadOnlyList<SaveDistributionNodeRequest> Nodes,
+    IReadOnlyList<SaveBitrixLeadQuotaRequest>? BitrixLeadQuotas = null);
 
 public sealed record SaveDistributionNodeRequest(
     Guid? Id,

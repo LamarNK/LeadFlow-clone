@@ -1,4 +1,5 @@
 using LeadFlow.Core.Models;
+using Orbita.Contracts;
 
 namespace LeadFlow.Core.Data;
 
@@ -36,4 +37,12 @@ public interface ICandidateDuplicateRepository
         Guid accountId,
         CancellationToken cancellationToken,
         string? avitoSubProfileId = null);
+
+    /// <summary>
+    /// Batch lookup: индексы профилей, для которых в офисе уже есть кандидат (score &gt;= 70).
+    /// </summary>
+    Task<HashSet<int>> GetMatchedProfileIndicesAsync(
+        IReadOnlyList<CandidateLookupProfileDto> profiles,
+        Guid accountId,
+        CancellationToken cancellationToken);
 }

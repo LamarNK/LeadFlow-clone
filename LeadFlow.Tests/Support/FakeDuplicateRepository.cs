@@ -1,5 +1,6 @@
 using LeadFlow.Core.Data;
 using LeadFlow.Core.Models;
+using Orbita.Contracts;
 
 namespace LeadFlow.Tests.Support;
 
@@ -61,4 +62,13 @@ internal sealed class FakeDuplicateRepository : ICandidateDuplicateRepository
         CancellationToken cancellationToken,
         string? avitoSubProfileId = null) =>
         Task.FromResult(new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+
+    public Func<IReadOnlyList<CandidateLookupProfileDto>, Guid, HashSet<int>> ProfileMatch { get; set; }
+        = (_, _) => [];
+
+    public Task<HashSet<int>> GetMatchedProfileIndicesAsync(
+        IReadOnlyList<CandidateLookupProfileDto> profiles,
+        Guid accountId,
+        CancellationToken cancellationToken) =>
+        Task.FromResult(ProfileMatch(profiles, accountId));
 }

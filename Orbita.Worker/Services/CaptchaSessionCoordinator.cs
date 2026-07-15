@@ -13,9 +13,19 @@ public sealed class CaptchaSessionCoordinator(
     IWorkerMonitoringService monitoringService)
 {
     private static readonly SemaphoreSlim SessionMutex = new(1, 1);
+    private readonly object _sync = new();
+    private CancellationTokenSource? _sessionCts;
     private volatile bool _isRunning;
 
     public bool IsRunning => _isRunning;
+
+    public void CancelCurrentSession()
+    {
+        lock (_sync)
+        {
+            _sessionCts?.Cancel();
+        }
+    }
 
     public async Task<bool> TryRunPendingSessionAsync(
         WorkerPendingCaptchaSessionDto pending,
@@ -32,6 +42,7 @@ public sealed class CaptchaSessionCoordinator(
         }
 
         monitoringService.EnterCaptchaHold();
+        CancellationTokenSource? activeSessionCts = null;
         try
         {
             _isRunning = true;
@@ -51,7 +62,16 @@ public sealed class CaptchaSessionCoordinator(
                 SingleWriter = false
             });
 
-            using var sessionControlCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            CancellationTokenSource linkedCts;
+            lock (_sync)
+            {
+                _sessionCts?.Dispose();
+                linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                _sessionCts = linkedCts;
+            }
+
+            activeSessionCts = linkedCts;
+            using var sessionControlCts = linkedCts;
             string? externalTerminalStatus = null;
             string? externalTerminalMessage = null;
 
@@ -359,6 +379,14 @@ public sealed class CaptchaSessionCoordinator(
         }
         finally
         {
+            lock (_sync)
+            {
+                if (ReferenceEquals(_sessionCts, activeSessionCts))
+                {
+                    _sessionCts = null;
+                }
+            }
+
             _isRunning = false;
             monitoringService.ExitCaptchaHold();
             SessionMutex.Release();

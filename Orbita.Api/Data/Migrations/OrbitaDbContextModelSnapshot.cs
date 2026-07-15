@@ -563,6 +563,15 @@ namespace Orbita.Api.Data.Migrations
                     b.Property<bool>("IsEnabled")
                         .HasColumnType("boolean");
 
+                    b.Property<int?>("LeadExportLimit")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("LeadExportSessionCount")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("LeadExportSessionStartedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateTime?>("LastValidatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 

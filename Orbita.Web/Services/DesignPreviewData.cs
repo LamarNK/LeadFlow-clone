@@ -392,6 +392,7 @@ internal static class DesignPreviewData
         var duplicates = new[] { 98, 87, 71, 64, 58, 52, 47, 41, 36, 29, 18, 0 };
         var errors = new[] { 5, 8, 5, 4, 6, 3, 2, 4, 1, 2, 3, 0 };
         var online = new[] { true, true, true, true, true, true, true, true, true, true, true, false };
+        var enabled = new[] { true, true, true, true, true, true, true, true, true, true, true, false };
 
         return Enumerable.Range(0, 12).Select(i =>
         {
@@ -403,6 +404,7 @@ internal static class DesignPreviewData
                 DisplayName = $"Worker #{i + 1}",
                 MachineName = $"WIN-W{(i + 1):D2}",
                 IsOnline = online[i],
+                IsEnabled = enabled[i],
                 UpdateAvailable = i < 3,
                 LatestReleaseVersion = "1.0.0.2",
                 ActiveAccounts = accounts[i].Active,
@@ -621,6 +623,7 @@ internal static class DesignPreviewData
                 DisplayName = w.DisplayName,
                 MachineName = w.MachineName,
                 IsOnline = w.IsOnline,
+                IsEnabled = w.IsEnabled,
                 ActiveAccounts = w.ActiveAccounts,
                 TotalAccounts = w.TotalAccounts,
                 Responses = w.Responses,
@@ -641,7 +644,10 @@ internal static class DesignPreviewData
                 .ToList(),
             AccountStats = accountStats,
             Charts = DashboardChartsBuilder.FromPresentation(kpiCards, activityChart, accountStats),
-            ShowOfficeColumn = officeContext.ShowOfficeColumn
+            ShowOfficeColumn = officeContext.ShowOfficeColumn,
+            EnabledWorkersCount = FilterWorkerRowsByOffice(BuildWorkerRows(), officeContext.EffectiveOfficeId).Count(w => w.IsEnabled),
+            DisabledWorkersCount = FilterWorkerRowsByOffice(BuildWorkerRows(), officeContext.EffectiveOfficeId).Count(w => !w.IsEnabled),
+            ShowWorkersMonitoringControls = FilterWorkerRowsByOffice(BuildWorkerRows(), officeContext.EffectiveOfficeId).Count > 0
         };
     }
 
@@ -1519,7 +1525,9 @@ internal static class DesignPreviewData
             "demo.bitrix24.ru",
             BitrixValidationStatuses.Ok,
             "Вебхук настроен корректно.",
-            true)
+            true,
+            40,
+            12)
     ];
 
     public static BitrixInstanceDto? GetPreviewBitrixInstance(Guid id)
@@ -1542,6 +1550,9 @@ internal static class DesignPreviewData
             Now.AddHours(-2),
             listItem.IsEnabled,
             PreviewIntegrationSettings,
+            listItem.LeadExportLimit,
+            listItem.LeadExportSessionCount,
+            Now.AddHours(-2),
             Now.AddDays(-7),
             Now.AddHours(-2));
     }
@@ -1722,9 +1733,9 @@ internal static class DesignPreviewData
         var sent = filtered.Count(r => r.Status == ResponseStatuses.Sent);
         var unique = total - duplicates;
         var uniqueAuthors = filtered
-            .Where(r => !string.IsNullOrWhiteSpace(r.PhoneNormalized))
-            .Select(r => r.PhoneNormalized)
-            .Distinct(StringComparer.Ordinal)
+            .Where(r => r.PersonId != Guid.Empty)
+            .Select(r => r.PersonId)
+            .Distinct()
             .Count();
 
         var summary = new ResponsesSummaryDto(total, unique, duplicates, sent, uniqueAuthors, 17);
@@ -1835,11 +1846,13 @@ internal static class DesignPreviewData
 
             var bitrixEntityId = status == ResponseStatuses.Sent ? rng.Next(1000, 99999).ToString() : null;
             var age = i % 11 == 0 ? (int?)null : rng.Next(19, 56);
+            var nameIndex = i % names.Length;
             rows.Add(new ResponseRowViewModel
             {
                 Id = Guid.Parse($"55555555-5555-5555-5555-{(i + 1):D12}"),
+                PersonId = Guid.Parse($"77777777-7777-7777-7777-{(nameIndex + 1):D12}"),
                 CreatedAtUtc = createdAt,
-                FullName = names[i % names.Length],
+                FullName = names[nameIndex],
                 Age = age,
                 PhoneRaw = hidePhone ? string.Empty : $"+{phoneDigits}",
                 PhoneNormalized = hidePhone ? string.Empty : phoneDigits,

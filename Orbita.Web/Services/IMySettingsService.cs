@@ -23,5 +23,6 @@ public interface IMySettingsService
     Task<(bool Success, string? Error)> SaveDistributionRouteAsync(
         bool isAutoDistributionEnabled,
         IReadOnlyList<SaveDistributionNodeRequest> nodes,
+        IReadOnlyList<SaveBitrixLeadQuotaRequest>? bitrixLeadQuotas = null,
         CancellationToken ct = default);
 }

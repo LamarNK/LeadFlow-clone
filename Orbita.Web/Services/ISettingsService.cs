@@ -35,6 +35,7 @@ public interface ISettingsService
         bool isAutoDistributionEnabled,
         IReadOnlyList<SaveDistributionNodeRequest> nodes,
         Guid officeId,
+        IReadOnlyList<SaveBitrixLeadQuotaRequest>? bitrixLeadQuotas = null,
         CancellationToken ct = default);
 
     Task<(bool Success, string? Error)> SaveBitrixTransmissionAsync(

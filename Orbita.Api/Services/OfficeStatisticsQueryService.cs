@@ -411,11 +411,7 @@ public sealed class OfficeStatisticsQueryService(
         var actionRequired = await query.CountAsync(x => x.Status == ResponseStatuses.ActionRequired, ct);
         var inProgress = await query.CountAsync(x => x.Status == ResponseStatuses.InProgress, ct);
         var unique = total - duplicates;
-        var uniqueAuthors = await query
-            .Where(x => !string.IsNullOrWhiteSpace(x.PhoneNormalized))
-            .Select(x => x.PhoneNormalized)
-            .Distinct()
-            .CountAsync(ct);
+        var uniqueAuthors = await ResponseSummaryMetrics.CountUniqueAuthorsAsync(query, ct);
 
         double? avgMinutes = null;
         var processed = await query

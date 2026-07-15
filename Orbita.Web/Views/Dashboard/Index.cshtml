@@ -11,7 +11,10 @@
         Workers = Model.Workers,
         Events = Model.Events,
         AccountStats = Model.AccountStats,
-        Charts = Model.Charts
+        Charts = Model.Charts,
+        EnabledWorkersCount = Model.EnabledWorkersCount,
+        DisabledWorkersCount = Model.DisabledWorkersCount,
+        ShowWorkersMonitoringControls = Model.ShowWorkersMonitoringControls
     }, jsonOptions);
     var snapshotUrl = Url.Action("Snapshot", "Dashboard", new { from = Model.Header.DateFrom.ToString("yyyy-MM-dd"), to = Model.Header.DateTo.ToString("yyyy-MM-dd") })!;
 }
@@ -25,7 +28,11 @@
      data-worker-details-url="@Url.Action("Details", "Workers", new { id = "__id__" })"
      data-show-office-column="@(Model.ShowOfficeColumn ? "true" : "false")"
      data-account-search-url="@Url.Action("Index", "Accounts", new { q = "__q__" })"
-     data-settings-logs-url="@Url.Action("Index", "Settings", new { tab = "logs", workerId = "__id__" })">
+     data-settings-logs-url="@Url.Action("Index", "Settings", new { tab = "logs", workerId = "__id__" })"
+     data-dashboard-enable-all-url="@Url.Action("EnableAllWorkers", "Dashboard")"
+     data-dashboard-disable-all-url="@Url.Action("DisableAllWorkers", "Dashboard")"
+     data-dashboard-enable-worker-url="@Url.Action("EnableWorker", "Dashboard")"
+     data-dashboard-disable-worker-url="@Url.Action("DisableWorker", "Dashboard")">
     @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
     {
         <p class="error-text">@Model.ErrorMessage</p>
@@ -45,6 +52,27 @@
             <div class="card card--dashboard-workers">
                 <div class="card-header">
                     <h2>Воркеры</h2>
+                    @if (Model.ShowWorkersMonitoringControls)
+                    {
+                        <div class="dashboard-workers-actions" data-dashboard-monitoring-controls>
+                            <button type="button"
+                                    class="dashboard-monitoring-btn dashboard-monitoring-btn--start"
+                                    data-dashboard-enable-all
+                                    @(Model.DisabledWorkersCount == 0 ? "disabled" : null)
+                                    title="Включить мониторинг на всех воркерах">
+                                <i class="fa-solid fa-circle-play" aria-hidden="true"></i>
+                                <span>Запустить</span>
+                            </button>
+                            <button type="button"
+                                    class="dashboard-monitoring-btn dashboard-monitoring-btn--stop"
+                                    data-dashboard-disable-all
+                                    @(Model.EnabledWorkersCount == 0 ? "disabled" : null)
+                                    title="Остановить мониторинг на всех воркерах">
+                                <i class="fa-solid fa-circle-pause" aria-hidden="true"></i>
+                                <span>Остановить</span>
+                            </button>
+                        </div>
+                    }
                 </div>
                 <div class="card-body dashboard-workers-table-wrap">
                     <div class="dashboard-workers-table-scroll">
@@ -76,6 +104,7 @@
                                 <th class="cell-num" title="Дублей">Дубл.</th>
                                 <th class="cell-num" title="Ошибок">Ошиб.</th>
                                 <th title="Последняя активность">Активность</th>
+                                <th class="dashboard-worker-toggle-th" aria-label="Управление"></th>
                                 <th aria-hidden="true"></th>
                             </tr>
                         </thead>
@@ -92,9 +121,13 @@
                                     <td data-label="Офис">@w.OfficeName</td>
                                 }
                                 <td data-label="Статус">
-                                    <span class="status-dot @(w.IsOnline ? "" : "offline")">
+                                    @{
+                                        var statusClass = !w.IsEnabled ? " offline" : (w.IsOnline ? "" : " offline");
+                                        var statusText = !w.IsEnabled ? "Приостановлен" : (w.IsOnline ? "Онлайн" : "Оффлайн");
+                                    }
+                                    <span class="status-dot@statusClass">
                                         <i class="fa-solid fa-circle status-dot-icon" aria-hidden="true"></i>
-                                        @(w.IsOnline ? "Онлайн" : "Оффлайн")
+                                        @statusText
                                     </span>
                                 </td>
                                 <td data-label="Сейчас">
@@ -105,6 +138,30 @@
                                 <td class="cell-num" data-label="Дублей">@w.Duplicates</td>
                                 <td class="cell-num" data-label="Ошибок">@w.Errors</td>
                                 <td data-label="Последняя активность"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(w.LastActivityUtc, "activity"))" /></td>
+                                <td class="dashboard-worker-toggle" data-label="">
+                                    @if (w.IsEnabled)
+                                    {
+                                        <button type="button"
+                                                class="dashboard-worker-toggle-btn dashboard-worker-toggle-btn--pause"
+                                                data-dashboard-disable-worker
+                                                data-worker-id="@w.Id"
+                                                title="Приостановить воркер"
+                                                aria-label="Приостановить @w.DisplayName">
+                                            <i class="fa-solid fa-circle-pause" aria-hidden="true"></i>
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <button type="button"
+                                                class="dashboard-worker-toggle-btn dashboard-worker-toggle-btn--play"
+                                                data-dashboard-enable-worker
+                                                data-worker-id="@w.Id"
+                                                title="Запустить воркер"
+                                                aria-label="Запустить @w.DisplayName">
+                                            <i class="fa-solid fa-circle-play" aria-hidden="true"></i>
+                                        </button>
+                                    }
+                                </td>
                                 <td class="data-table-menu" data-label="">
                                     <div class="row-menu" data-row-menu>
                                         <button type="button" class="row-menu-btn" aria-label="Действия" aria-expanded="false" aria-haspopup="true">

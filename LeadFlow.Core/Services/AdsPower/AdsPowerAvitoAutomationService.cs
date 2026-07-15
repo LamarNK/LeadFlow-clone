@@ -8,6 +8,7 @@ using LeadFlow.Core.Logging.Audit;
 using LeadFlow.Core.Services;
 using LeadFlow.Core.Services.Avito;
 using LeadFlow.Core.Services.Browser;
+using Orbita.Contracts;
 using PuppeteerSharp;
 
 namespace LeadFlow.Core.Services.AdsPower;
@@ -89,7 +90,9 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 },
                 page.Url,
                 BuildResolveExistingSourceResponseIdsCallback(messengerEnrichmentHints),
-                BuildResolveExistingCardFingerprintsCallback(messengerEnrichmentHints)).ConfigureAwait(false);
+                BuildResolveExistingCardFingerprintsCallback(messengerEnrichmentHints),
+                BuildResolveExistingPhonesCallback(messengerEnrichmentHints),
+                BuildResolveExistingMatchedProfileIndicesCallback(messengerEnrichmentHints)).ConfigureAwait(false);
 
             var raw = await EvaluateWithRetryAsync<string>(page, ExtractionScript, cancellationToken).ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(raw))
@@ -1899,6 +1902,77 @@ public sealed partial class AdsPowerAvitoAutomationService(
                     enrichmentHints.AccountId,
                     cancellationToken,
                     enrichmentHints.AvitoSubProfileId)
+                .ConfigureAwait(false);
+    }
+
+    private Func<IReadOnlyCollection<string>, CancellationToken, Task<IReadOnlySet<string>>>? BuildResolveExistingPhonesCallback(
+        CandidatesMessengerEnrichmentHints? enrichmentHints)
+    {
+        if (enrichmentHints is null)
+        {
+            return null;
+        }
+
+        return async (phoneCandidates, cancellationToken) =>
+        {
+            var normalizedToRaw = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var raw in phoneCandidates)
+            {
+                if (string.IsNullOrWhiteSpace(raw))
+                {
+                    continue;
+                }
+
+                var normalized = phoneNormalizer.Normalize(raw);
+                if (string.IsNullOrWhiteSpace(normalized))
+                {
+                    continue;
+                }
+
+                normalizedToRaw.TryAdd(normalized, raw.Trim());
+            }
+
+            if (normalizedToRaw.Count == 0)
+            {
+                return (IReadOnlySet<string>)new HashSet<string>(StringComparer.Ordinal);
+            }
+
+            var existing = await duplicateRepository
+                .GetExistingNormalizedPhonesAsync(
+                    normalizedToRaw.Keys,
+                    enrichmentHints.DuplicateScope,
+                    enrichmentHints.AccountId,
+                    cancellationToken,
+                    enrichmentHints.AvitoSubProfileId)
+                .ConfigureAwait(false);
+
+            var matchedRaw = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var normalized in existing)
+            {
+                if (normalizedToRaw.TryGetValue(normalized, out var raw))
+                {
+                    matchedRaw.Add(raw);
+                }
+            }
+
+            return matchedRaw;
+        };
+    }
+
+    private Func<IReadOnlyList<CandidateLookupProfileDto>, CancellationToken, Task<IReadOnlySet<int>>>? BuildResolveExistingMatchedProfileIndicesCallback(
+        CandidatesMessengerEnrichmentHints? enrichmentHints)
+    {
+        if (enrichmentHints is null)
+        {
+            return null;
+        }
+
+        return async (profiles, cancellationToken) =>
+            (IReadOnlySet<int>)await duplicateRepository
+                .GetMatchedProfileIndicesAsync(
+                    profiles,
+                    enrichmentHints.AccountId,
+                    cancellationToken)
                 .ConfigureAwait(false);
     }
 
