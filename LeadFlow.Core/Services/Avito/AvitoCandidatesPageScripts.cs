@@ -828,6 +828,7 @@ public static class AvitoCandidatesPageScripts
         (() => {
         {{ContactsPhoneHelpersJs}}
         {{CardFingerprintJs}}
+        {{SourceResponseIdJs}}
             initRevealedPhonesStore();
 
             const normalizeUrl = (href) => {
