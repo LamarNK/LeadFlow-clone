@@ -842,10 +842,15 @@
             ? snapshot.enabledWorkersCount
             : 0;
 
+        // Все включены → только «Остановить»; иначе обе кнопки.
+        var allEnabled = disabledCount === 0 && enabledCount > 0;
+
         if (enableBtn) {
+            enableBtn.hidden = allEnabled;
             enableBtn.disabled = disabledCount === 0;
         }
         if (disableBtn) {
+            disableBtn.hidden = false;
             disableBtn.disabled = enabledCount === 0;
         }
     }
@@ -882,9 +887,16 @@
                     if (showToast) {
                         showToast((result.payload && result.payload.message) || 'Мониторинг запущен', { variant: 'success' });
                     }
-                    fetchSnapshot();
-                } else if (showToast) {
-                    showToast((result.payload && result.payload.error) || 'Не удалось запустить мониторинг', { variant: 'error' });
+                    try {
+                        await fetchSnapshot();
+                    } finally {
+                        if (liveState) updateMonitoringControls(liveState);
+                        else btn.disabled = false;
+                    }
+                } else {
+                    if (showToast) {
+                        showToast((result.payload && result.payload.error) || 'Не удалось запустить мониторинг', { variant: 'error' });
+                    }
                     btn.disabled = false;
                 }
             });
@@ -912,9 +924,16 @@
                     if (showToast) {
                         showToast((result.payload && result.payload.message) || 'Мониторинг остановлен', { variant: 'success' });
                     }
-                    fetchSnapshot();
-                } else if (showToast) {
-                    showToast((result.payload && result.payload.error) || 'Не удалось остановить мониторинг', { variant: 'error' });
+                    try {
+                        await fetchSnapshot();
+                    } finally {
+                        if (liveState) updateMonitoringControls(liveState);
+                        else btn.disabled = false;
+                    }
+                } else {
+                    if (showToast) {
+                        showToast((result.payload && result.payload.error) || 'Не удалось остановить мониторинг', { variant: 'error' });
+                    }
                     btn.disabled = false;
                 }
             });

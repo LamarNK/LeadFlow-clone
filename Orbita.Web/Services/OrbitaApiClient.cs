@@ -543,10 +543,16 @@ public sealed class OrbitaApiClient(
 
         if (!response.IsSuccessStatusCode)
         {
-            return (null, await ReadApiErrorAsync(response, ct));
+            var apiError = await ReadApiErrorAsync(response, ct);
+            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                return (null, "bulk-endpoint-missing");
+            }
+
+            return (null, apiError);
         }
 
-        var result = await response.Content.ReadFromJsonAsync<BulkWorkersMonitoringResultDto>(ct);
+        var result = await response.Content.ReadFromJsonAsync<BulkWorkersMonitoringResultDto>(ApiJsonOptions, ct);
         return result is null
             ? (null, "Не удалось прочитать ответ API.")
             : (result, null);

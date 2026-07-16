@@ -54,20 +54,23 @@
                     <h2>Воркеры</h2>
                     @if (Model.ShowWorkersMonitoringControls)
                     {
+                        // Все включены → только «Остановить»; иначе обе кнопки.
+                        var allWorkersEnabled = Model.DisabledWorkersCount == 0 && Model.EnabledWorkersCount > 0;
                         <div class="dashboard-workers-actions" data-dashboard-monitoring-controls>
                             <button type="button"
                                     class="dashboard-monitoring-btn dashboard-monitoring-btn--start"
                                     data-dashboard-enable-all
-                                    @(Model.DisabledWorkersCount == 0 ? "disabled" : null)
-                                    title="Включить мониторинг на всех воркерах">
+                                    title="Включить мониторинг на всех воркерах"
+                                    @(allWorkersEnabled ? "hidden" : null)
+                                    @(Model.DisabledWorkersCount == 0 ? "disabled" : null)>
                                 <i class="fa-solid fa-circle-play" aria-hidden="true"></i>
                                 <span>Запустить</span>
                             </button>
                             <button type="button"
                                     class="dashboard-monitoring-btn dashboard-monitoring-btn--stop"
                                     data-dashboard-disable-all
-                                    @(Model.EnabledWorkersCount == 0 ? "disabled" : null)
-                                    title="Остановить мониторинг на всех воркерах">
+                                    title="Остановить мониторинг на всех воркерах"
+                                    @(Model.EnabledWorkersCount == 0 ? "disabled" : null)>
                                 <i class="fa-solid fa-circle-pause" aria-hidden="true"></i>
                                 <span>Остановить</span>
                             </button>

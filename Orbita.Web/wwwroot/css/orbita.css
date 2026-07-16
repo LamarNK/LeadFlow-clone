@@ -1204,6 +1204,10 @@ a.kpi-card:focus-visible {
     cursor: not-allowed;
 }
 
+.dashboard-monitoring-btn[hidden] {
+    display: none !important;
+}
+
 .dashboard-monitoring-btn--start {
     border-color: #bfdbfe;
     background: #eff6ff;

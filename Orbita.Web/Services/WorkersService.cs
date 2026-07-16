@@ -412,12 +412,63 @@ public sealed class WorkersService(
             ? Task.FromResult<(bool, string?)>((true, null))
             : api.SetWorkerEnabledAsync(workerId, enabled, ct);
 
-    public Task<(BulkWorkersMonitoringResultDto? Result, string? Error)> SetAllWorkersMonitoringAsync(
+    public async Task<(BulkWorkersMonitoringResultDto? Result, string? Error)> SetAllWorkersMonitoringAsync(
         bool enabled,
-        CancellationToken ct = default) =>
-        previewOptions.Value.Enabled
-            ? Task.FromResult<(BulkWorkersMonitoringResultDto?, string?)>((new BulkWorkersMonitoringResultDto(1, 0, 1), null))
-            : api.SetAllWorkersEnabledAsync(enabled, ct);
+        CancellationToken ct = default)
+    {
+        if (previewOptions.Value.Enabled)
+        {
+            return (new BulkWorkersMonitoringResultDto(1, 0, 1), null);
+        }
+
+        var (result, error) = await api.SetAllWorkersEnabledAsync(enabled, ct);
+        if (result is not null)
+        {
+            return (result, null);
+        }
+
+        // Невалидная сессия — fallback бессмысленен.
+        if (error is not null
+            && error.Contains("Сессия недействительна", StringComparison.Ordinal))
+        {
+            return (null, error);
+        }
+
+        // Bulk-эндпоинты могут отсутствовать (частичный деплой) или падать — включаем/выключаем по одному.
+        return await SetAllWorkersMonitoringFallbackAsync(enabled, ct);
+    }
+
+    private async Task<(BulkWorkersMonitoringResultDto? Result, string? Error)> SetAllWorkersMonitoringFallbackAsync(
+        bool enabled,
+        CancellationToken ct)
+    {
+        var workers = await api.GetWorkersAsync(ct);
+        if (workers is null)
+        {
+            return (null, "Не удалось получить список воркеров.");
+        }
+
+        var updated = 0;
+        var unchanged = 0;
+        foreach (var worker in workers)
+        {
+            if (worker.IsEnabled == enabled)
+            {
+                unchanged++;
+                continue;
+            }
+
+            var (success, workerError) = await api.SetWorkerEnabledAsync(worker.Id, enabled, ct);
+            if (!success)
+            {
+                return (null, workerError ?? $"Не удалось изменить воркер «{worker.DisplayName}».");
+            }
+
+            updated++;
+        }
+
+        return (new BulkWorkersMonitoringResultDto(updated, unchanged, workers.Count), null);
+    }
 
     public Task<(bool Success, string? Error)> DeleteWorkerAsync(
         Guid workerId,
