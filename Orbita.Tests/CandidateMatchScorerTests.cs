@@ -5,7 +5,7 @@ namespace Orbita.Tests;
 public sealed class CandidateMatchScorerTests
 {
     [Fact]
-    public void CalculateScore_SamePersonDifferentPhone_ReachesThreshold()
+    public void CalculateScore_SameFullNameDifferentPhone_IsMatch()
     {
         var existing = new CandidateMatchProfile(
             "Гор Олег Александрович",
@@ -20,7 +20,28 @@ public sealed class CandidateMatchScorerTests
 
         var score = CandidateMatchScorer.CalculateScore(existing, incoming);
 
-        Assert.Equal(70, score);
+        Assert.Equal(90, score);
+        Assert.True(CandidateMatchScorer.IsMatch(existing, incoming));
+    }
+
+    [Fact]
+    public void CalculateScore_SameFullNameNoAgeDifferentPhone_IsMatch()
+    {
+        // Куприй-case: same person, new phone every day, age missing on Avito card.
+        var existing = new CandidateMatchProfile(
+            "Куприй Илья Александрович",
+            null,
+            "Алушта",
+            "79885585794");
+        var incoming = new CandidateMatchProfile(
+            "Куприй Илья Александрович",
+            null,
+            "Алушта",
+            "79883608380");
+
+        var score = CandidateMatchScorer.CalculateScore(existing, incoming);
+
+        Assert.Equal(80, score);
         Assert.True(CandidateMatchScorer.IsMatch(existing, incoming));
     }
 
@@ -43,13 +64,15 @@ public sealed class CandidateMatchScorerTests
     }
 
     [Fact]
-    public void CalculateScore_DifferentAge_IsBelowThreshold()
+    public void CalculateScore_SameFullNameDifferentAge_IsStillMatch()
     {
         var existing = new CandidateMatchProfile("Гор Олег Александрович", 66, "рабочий поселок Чик", "79930099416");
         var incoming = new CandidateMatchProfile("Гор Олег Александрович", 40, "рабочий поселок Чик", "79910001122");
 
-        Assert.Equal(30, CandidateMatchScorer.CalculateScore(existing, incoming));
-        Assert.False(CandidateMatchScorer.IsMatch(existing, incoming));
+        var score = CandidateMatchScorer.CalculateScore(existing, incoming);
+
+        Assert.Equal(80, score);
+        Assert.True(CandidateMatchScorer.IsMatch(existing, incoming));
     }
 
     [Fact]
@@ -59,5 +82,6 @@ public sealed class CandidateMatchScorerTests
         var incoming = new CandidateMatchProfile("Иванов Иван Иванович", 66, "Чик", "79930099416");
 
         Assert.Equal(0, CandidateMatchScorer.CalculateScore(existing, incoming));
+        Assert.False(CandidateMatchScorer.IsMatch(existing, incoming));
     }
 }

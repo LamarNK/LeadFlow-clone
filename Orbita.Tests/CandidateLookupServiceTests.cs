@@ -304,7 +304,7 @@ public sealed class CandidateLookupServiceTests
     }
 
     [Fact]
-    public async Task LookupAsync_Profiles_InsufficientScore_ReturnsEmpty()
+    public async Task LookupAsync_Profiles_SameFullNameDifferentAge_IsMatch()
     {
         await using var db = CreateDb();
         SeedWorker(db);
@@ -342,6 +342,51 @@ public sealed class CandidateLookupServiceTests
                         40,
                         "рабочий поселок Чик",
                         "79910001122")
+                ]));
+
+        Assert.NotNull(result);
+        Assert.Equal([0], result!.MatchedProfileIndexes);
+    }
+
+    [Fact]
+    public async Task LookupAsync_Profiles_DifferentFullName_ReturnsEmpty()
+    {
+        await using var db = CreateDb();
+        SeedWorker(db);
+        var person = TestCandidatePersonFactory.CreatePerson(
+            OfficeId,
+            fullName: "Гор Олег Александрович",
+            firstName: "Олег",
+            lastName: "Гор",
+            middleName: "Александрович",
+            age: 66,
+            city: "рабочий поселок Чик",
+            phoneNormalized: "79930099416");
+        db.CandidatePersons.Add(person);
+        db.CandidateResponses.Add(TestCandidatePersonFactory.CreateResponse(
+            OfficeId,
+            person.Id,
+            phone: "79930099416",
+            fullName: "Гор Олег Александрович",
+            age: 66,
+            city: "рабочий поселок Чик"));
+        await db.SaveChangesAsync();
+
+        var sut = CreateSut(db);
+        var result = await sut.LookupAsync(
+            WorkerId,
+            new WorkerCandidateLookupRequest(
+                AccountId,
+                "GlobalAcrossAllAccounts",
+                [],
+                [],
+                Profiles:
+                [
+                    new CandidateLookupProfileDto(
+                        "Иванов Иван Иванович",
+                        66,
+                        "рабочий поселок Чик",
+                        "79930099416")
                 ]));
 
         Assert.NotNull(result);
