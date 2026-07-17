@@ -120,6 +120,49 @@ public sealed class WorkerConfigServiceTests
         Assert.Equal(["sp-2"], config.Accounts[0].DisabledSubProfileIds);
     }
 
+    [Fact]
+    public async Task UpdateSettingsAsync_PersistsResponseCollectionFilters()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+
+        var sut = CreateService(db);
+        var (config, error) = await sut.UpdateSettingsAsync(
+            WorkerId,
+            new UpdateWorkerSettingsRequest(
+                MaxConcurrentAccounts: 2,
+                ResponseFilterEnabled: true,
+                ResponseFilterExcludeFemale: true,
+                ResponseFilterMaxAge: 62),
+            OfficeScope.ForOffice(OfficeId));
+
+        Assert.Null(error);
+        Assert.NotNull(config);
+        Assert.True(config!.ResponseFilterEnabled);
+        Assert.True(config.ResponseFilterExcludeFemale);
+        Assert.Equal(62, config.ResponseFilterMaxAge);
+
+        var worker = await db.Workers.SingleAsync();
+        Assert.True(worker.ResponseFilterEnabled);
+        Assert.True(worker.ResponseFilterExcludeFemale);
+        Assert.Equal(62, worker.ResponseFilterMaxAge);
+    }
+
+    [Fact]
+    public async Task GetConfigForWorkerAsync_ResponseFiltersDefaultOff()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+
+        var sut = CreateService(db);
+        var config = await sut.GetConfigForWorkerAsync(WorkerId, OfficeScope.ForOffice(OfficeId));
+
+        Assert.NotNull(config);
+        Assert.False(config!.ResponseFilterEnabled);
+        Assert.False(config.ResponseFilterExcludeFemale);
+        Assert.Null(config.ResponseFilterMaxAge);
+    }
+
     private static WorkerConfigService CreateService(OrbitaDbContext db)
     {
         var releaseRoot = Path.Combine(Path.GetTempPath(), $"orbita-releases-{Guid.NewGuid():N}");

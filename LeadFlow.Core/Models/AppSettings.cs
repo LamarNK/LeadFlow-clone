@@ -1,3 +1,5 @@
+using Orbita.Contracts;
+
 namespace LeadFlow.Core.Models;
 
 public sealed class AppSettings
@@ -12,4 +14,7 @@ public sealed class AppSettings
     public BitrixSettings Bitrix { get; set; } = new();
     public AvitoSelectorOptions AvitoSelectors { get; set; } = new();
     public AvitoSettings Avito { get; set; } = new();
+
+    /// <summary>Фильтры сбора откликов (пол/возраст). На desktop по умолчанию выключены; воркер берёт из панели.</summary>
+    public ResponseCollectionFilters ResponseFilters { get; set; } = ResponseCollectionFilters.Disabled;
 }

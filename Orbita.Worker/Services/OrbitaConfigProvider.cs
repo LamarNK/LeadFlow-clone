@@ -41,7 +41,8 @@ public sealed class OrbitaConfigProvider(
         return new WorkerMonitoringConfig
         {
             MaxConcurrentAccounts = _cached.MaxConcurrentAccounts,
-            Accounts = accounts
+            Accounts = accounts,
+            ResponseFilters = _cached.ResponseFilters
         };
     }
 

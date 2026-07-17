@@ -219,12 +219,63 @@
                     </div>
 
                     <div class="worker-settings-section">
+                        <span class="worker-settings-section-title">Фильтры сбора откликов</span>
+                        <div class="settings-options worker-settings-options">
+                            <div class="settings-option">
+                                <div class="settings-option-text">
+                                    <span class="settings-option-label">Включить фильтры сбора</span>
+                                    <span class="settings-option-desc">Отсекает карточки до раскрытия телефона и не отправляет их в панель</span>
+                                </div>
+                                <label class="worker-toggle" title="Включить фильтры сбора">
+                                    <input type="checkbox"
+                                           id="responseFilterEnabled"
+                                           name="responseFilterEnabled"
+                                           value="true"
+                                           @(Model.ResponseFilterEnabled ? "checked" : null) />
+                                    <span class="worker-toggle-slider"></span>
+                                </label>
+                            </div>
+                            <div class="settings-option">
+                                <div class="settings-option-text">
+                                    <span class="settings-option-label">Исключать женщин</span>
+                                    <span class="settings-option-desc">По метке «Женщина» или женскому ФИО; ники и неоднозначные имена не отсекаем</span>
+                                </div>
+                                <label class="worker-toggle" title="Исключать женщин">
+                                    <input type="checkbox"
+                                           id="responseFilterExcludeFemale"
+                                           name="responseFilterExcludeFemale"
+                                           value="true"
+                                           @(Model.ResponseFilterExcludeFemale ? "checked" : null) />
+                                    <span class="worker-toggle-slider"></span>
+                                </label>
+                            </div>
+                        </div>
+                        <label class="worker-settings-field" for="responseFilterMaxAge">
+                            <span class="worker-settings-label">Макс. возраст</span>
+                            <input type="number"
+                                   id="responseFilterMaxAge"
+                                   name="responseFilterMaxAge"
+                                   class="worker-settings-input"
+                                   min="1"
+                                   max="120"
+                                   step="1"
+                                   value="@(Model.ResponseFilterMaxAge?.ToString() ?? "")"
+                                   placeholder="Не задан — без фильтра"
+                                   inputmode="numeric" />
+                            <span class="worker-settings-hint">
+                                Включительно: 62 означает отсечь 63+. Пусто — не фильтровать. Без возраста в карточке — оставляем.
+                            </span>
+                        </label>
+                    </div>
+
+                    <div class="worker-settings-section">
                         <span class="worker-settings-section-title">AdsPower Local API</span>
                         <label class="worker-settings-field" for="adsPowerApiBaseUrl">
                             <span class="worker-settings-label">URL API</span>
                             <input type="url"
                                    id="adsPowerApiBaseUrl"
                                    name="adsPowerApiBaseUrl"
+                                   class="worker-settings-input"
                                    value="@Model.AdsPowerApiBaseUrl"
                                    placeholder="@WorkerDetailsViewModel.DefaultAdsPowerApiBaseUrl"
                                    autocomplete="off"
@@ -238,6 +289,7 @@
                             <input type="password"
                                    id="adsPowerApiKey"
                                    name="adsPowerApiKey"
+                                   class="worker-settings-input"
                                    value="@Model.AdsPowerApiKey"
                                    placeholder="@(string.IsNullOrWhiteSpace(Model.AdsPowerApiKey) ? "Не задан — запросы без Authorization" : "Ключ задан")"
                                    autocomplete="new-password"

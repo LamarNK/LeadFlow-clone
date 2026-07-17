@@ -2898,31 +2898,47 @@ html[data-theme="dark"] .orbita-office-switcher-select:focus {
 }
 
 .worker-settings-label {
-    color: #667085;
+    color: var(--text-secondary, #667085);
     font-size: 13px;
+    font-weight: 500;
 }
 
 .worker-settings-field input[type="url"],
-.worker-settings-field input[type="password"] {
+.worker-settings-field input[type="password"],
+.worker-settings-field input[type="number"],
+.worker-settings-field input[type="text"],
+.worker-settings-input {
     width: 100%;
-    padding: 10px 12px;
-    border: 1px solid #d0d5dd;
-    border-radius: 8px;
+    height: 44px;
+    padding: 0 14px;
+    border: 1px solid var(--border, #d0d5dd);
+    border-radius: 10px;
     font-size: 14px;
-    color: #101828;
-    background: #fff;
+    font-family: inherit;
+    color: var(--text-primary, #101828);
+    background: var(--bg-card, #fff);
+    box-sizing: border-box;
 }
 
-.worker-settings-field input:focus {
+.worker-settings-field input:focus,
+.worker-settings-input:focus {
     outline: none;
-    border-color: #84adff;
-    box-shadow: 0 0 0 3px rgba(41, 112, 255, 0.12);
+    border-color: #2563eb;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
 }
 
 .worker-settings-hint {
-    color: #98a2b3;
+    color: var(--text-muted, #98a2b3);
     font-size: 12px;
     line-height: 1.4;
+}
+
+.worker-settings-options {
+    margin: 0;
+}
+
+.worker-settings-options .settings-option {
+    padding: 12px 0;
 }
 
 .worker-settings-effective {
@@ -2933,12 +2949,16 @@ html[data-theme="dark"] .orbita-office-switcher-select:focus {
 
 .worker-settings-effective-value {
     display: inline-block;
-    padding: 8px 10px;
-    border-radius: 8px;
-    background: #f8fafc;
-    color: #344054;
+    padding: 10px 14px;
+    min-height: 44px;
+    border-radius: 10px;
+    border: 1px solid var(--border, #eef2f7);
+    background: var(--bg-muted, #f8fafc);
+    color: var(--text-secondary, #344054);
     font-size: 13px;
     word-break: break-all;
+    box-sizing: border-box;
+    line-height: 1.4;
 }
 
 .worker-settings-actions {
@@ -3884,20 +3904,24 @@ html[data-theme="dark"] .orbita-office-switcher-select:focus {
     50% { opacity: 0.55; transform: scale(0.85); }
 }
 
-[data-theme="dark"] .worker-settings-section-title,
-[data-theme="dark"] .worker-settings-effective-value {
-    color: var(--text-primary);
+[data-theme="dark"] .worker-settings-section-title {
+    color: var(--text-secondary, var(--text-primary));
 }
 
 [data-theme="dark"] .worker-settings-field input[type="url"],
-[data-theme="dark"] .worker-settings-field input[type="password"] {
-    background: var(--surface-secondary);
-    border-color: var(--border-subtle);
+[data-theme="dark"] .worker-settings-field input[type="password"],
+[data-theme="dark"] .worker-settings-field input[type="number"],
+[data-theme="dark"] .worker-settings-field input[type="text"],
+[data-theme="dark"] .worker-settings-input {
+    background: var(--surface-secondary, var(--bg-card));
+    border-color: var(--border-subtle, var(--border));
     color: var(--text-primary);
 }
 
 [data-theme="dark"] .worker-settings-effective-value {
-    background: var(--surface-secondary);
+    background: var(--surface-secondary, var(--bg-muted));
+    border-color: var(--border-subtle, var(--border));
+    color: var(--text-secondary, var(--text-primary));
 }
 
 .worker-detail-toolbar {

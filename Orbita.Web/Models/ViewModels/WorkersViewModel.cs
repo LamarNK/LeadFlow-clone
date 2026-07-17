@@ -152,6 +152,9 @@ public sealed class WorkerDetailsViewModel
     public int MaxConcurrentAccounts { get; init; } = 1;
     public string? AdsPowerApiBaseUrl { get; init; }
     public string? AdsPowerApiKey { get; init; }
+    public bool ResponseFilterEnabled { get; init; }
+    public bool ResponseFilterExcludeFemale { get; init; }
+    public int? ResponseFilterMaxAge { get; init; }
     public string EffectiveAdsPowerApiBaseUrl =>
         string.IsNullOrWhiteSpace(AdsPowerApiBaseUrl) ? DefaultAdsPowerApiBaseUrl : AdsPowerApiBaseUrl;
     public WorkerSystemPanelViewModel System { get; init; } = new();

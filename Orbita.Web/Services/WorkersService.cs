@@ -210,8 +210,19 @@ public sealed class WorkersService(
         int maxConcurrentAccounts,
         string? adsPowerApiBaseUrl,
         string? adsPowerApiKey,
+        bool responseFilterEnabled = false,
+        bool responseFilterExcludeFemale = false,
+        int? responseFilterMaxAge = null,
         CancellationToken ct = default) =>
-        api.UpdateWorkerSettingsAsync(workerId, maxConcurrentAccounts, adsPowerApiBaseUrl, adsPowerApiKey, ct);
+        api.UpdateWorkerSettingsAsync(
+            workerId,
+            maxConcurrentAccounts,
+            adsPowerApiBaseUrl,
+            adsPowerApiKey,
+            responseFilterEnabled,
+            responseFilterExcludeFemale,
+            responseFilterMaxAge,
+            ct);
 
     public Task<(bool Success, string? Error)> UpdateWorkerAccountAsync(
         Guid workerId,

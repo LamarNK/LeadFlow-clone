@@ -1,4 +1,5 @@
 using LeadFlow.Core.Models;
+using Orbita.Contracts;
 
 namespace LeadFlow.Core.Services.Worker;
 
@@ -18,4 +19,5 @@ public sealed class WorkerMonitoringConfig
     public int MaxConcurrentAccounts { get; init; } = 1;
     public bool DemoModeEnabled { get; init; }
     public IReadOnlyList<AvitoAccount> Accounts { get; init; } = [];
+    public ResponseCollectionFilters ResponseFilters { get; init; } = ResponseCollectionFilters.Disabled;
 }

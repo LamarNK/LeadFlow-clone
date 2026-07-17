@@ -47,6 +47,16 @@ public sealed class WorkerEntity
     public bool IsEnabled { get; set; } = true;
     public DateTime? ApiKeyRotatedAtUtc { get; set; }
     public int MaxConcurrentAccounts { get; set; } = 1;
+
+    /// <summary>Включить фильтры сбора откликов (пол/возраст) на воркере.</summary>
+    public bool ResponseFilterEnabled { get; set; }
+
+    /// <summary>Отсекать карточки с женским полом (card/ФИО).</summary>
+    public bool ResponseFilterExcludeFemale { get; set; }
+
+    /// <summary>Макс. возраст включительно (62 ⇒ отсекаем 63+). null — не фильтровать возраст.</summary>
+    public int? ResponseFilterMaxAge { get; set; }
+
     public double? LastCpuPercent { get; set; }
     public double? LastRamPercent { get; set; }
     public long? LastRamUsedMb { get; set; }

@@ -155,13 +155,19 @@ public sealed class WorkersController(IWorkersService workers) : Controller
         int maxConcurrentAccounts,
         string? adsPowerApiBaseUrl,
         string? adsPowerApiKey,
-        CancellationToken ct)
+        bool responseFilterEnabled = false,
+        bool responseFilterExcludeFemale = false,
+        int? responseFilterMaxAge = null,
+        CancellationToken ct = default)
     {
         var (success, error) = await workers.UpdateWorkerSettingsAsync(
             workerId,
             maxConcurrentAccounts,
             adsPowerApiBaseUrl,
             adsPowerApiKey,
+            responseFilterEnabled,
+            responseFilterExcludeFemale,
+            responseFilterMaxAge,
             ct);
         if (!success)
         {

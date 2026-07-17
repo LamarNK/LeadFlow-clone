@@ -1,0 +1,12 @@
+Russian name gender lexicon embedded in Orbita.Contracts
+
+Source project: https://github.com/datacoon/russiannames
+License: BSD-3-Clause (see upstream LICENSE)
+
+The file russian-name-gender.tsv.gz is a compact export of first names,
+middle names (patronymics), and a frequency-limited surname list used only
+for offline gender hints on Avito candidate cards.
+
+Regenerate:
+  python tools/russiannames-export/export_lexicon.py
+  (requires parquet downloads in tools/russiannames-export/)

@@ -600,13 +600,19 @@ public sealed class OrbitaApiClient(
         int maxConcurrentAccounts,
         string? adsPowerApiBaseUrl,
         string? adsPowerApiKey,
+        bool responseFilterEnabled = false,
+        bool responseFilterExcludeFemale = false,
+        int? responseFilterMaxAge = null,
         CancellationToken ct = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Patch, $"api/v1/workers/{workerId}/settings");
         request.Content = JsonContent.Create(new UpdateWorkerSettingsRequest(
             maxConcurrentAccounts,
             adsPowerApiBaseUrl,
-            adsPowerApiKey));
+            adsPowerApiKey,
+            responseFilterEnabled,
+            responseFilterExcludeFemale,
+            responseFilterMaxAge));
         using var response = await SendAuthenticatedAsync(request, ct);
         if (response is null)
         {

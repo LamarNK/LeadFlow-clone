@@ -91,7 +91,10 @@ public sealed class WorkerConfigService(
             pendingCommand,
             updateOffer,
             pendingCaptcha,
-            pendingBrowserMonitor);
+            pendingBrowserMonitor,
+            worker.ResponseFilterEnabled,
+            worker.ResponseFilterExcludeFemale,
+            worker.ResponseFilterMaxAge);
     }
 
     public async Task<bool> SyncAccountsAsync(
@@ -186,9 +189,17 @@ public sealed class WorkerConfigService(
             return (null, apiKeyError);
         }
 
+        var filters = ResponseCollectionFilters.Normalize(
+            request.ResponseFilterEnabled,
+            request.ResponseFilterExcludeFemale,
+            request.ResponseFilterMaxAge);
+
         worker.MaxConcurrentAccounts = request.MaxConcurrentAccounts;
         worker.AdsPowerApiBaseUrl = normalizedBaseUrl;
         worker.AdsPowerApiKey = normalizedApiKey;
+        worker.ResponseFilterEnabled = filters.Enabled;
+        worker.ResponseFilterExcludeFemale = filters.ExcludeFemale;
+        worker.ResponseFilterMaxAge = filters.MaxAgeInclusive;
         await db.SaveChangesAsync(ct);
         await workerPushNotifier.PushConfigChangedAsync(workerId, ct).ConfigureAwait(false);
         return (await GetConfigForWorkerAsync(workerId, scope, ct), null);

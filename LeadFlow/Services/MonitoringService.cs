@@ -1390,7 +1390,8 @@ public sealed class MonitoringService(
                 var messengerHints = new CandidatesMessengerEnrichmentHints(
                     account.Id,
                     settings.DuplicateScope,
-                    sub.Id);
+                    sub.Id,
+                    settings.ResponseFilters);
                 IReadOnlyList<CandidateResponse> batch;
                 try
                 {

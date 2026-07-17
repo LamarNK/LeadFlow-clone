@@ -326,7 +326,10 @@ public sealed class DashboardQueryService(
             op.ActiveAccounts,
             op.TotalAccounts,
             WorkerActivityMapper.ToDto(worker),
-            WorkerActivityMapper.DeserializeActiveAccounts(worker.ActivityActiveAccountsJson));
+            WorkerActivityMapper.DeserializeActiveAccounts(worker.ActivityActiveAccountsJson),
+            worker.ResponseFilterEnabled,
+            worker.ResponseFilterExcludeFemale,
+            worker.ResponseFilterMaxAge);
     }
 
     public async Task<IReadOnlyList<WorkerAccountDto>> GetWorkerAccountsAsync(

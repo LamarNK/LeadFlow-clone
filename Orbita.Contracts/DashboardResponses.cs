@@ -80,7 +80,10 @@ public sealed record WorkerDetail(
     int ActiveAccountCount = 0,
     int TotalAccountCount = 0,
     WorkerActivityDto? CurrentActivity = null,
-    IReadOnlyList<WorkerActiveAccountDto>? ActiveAccounts = null);
+    IReadOnlyList<WorkerActiveAccountDto>? ActiveAccounts = null,
+    bool ResponseFilterEnabled = false,
+    bool ResponseFilterExcludeFemale = false,
+    int? ResponseFilterMaxAge = null);
 
 public sealed record WorkerEventListItem(
     Guid Id,

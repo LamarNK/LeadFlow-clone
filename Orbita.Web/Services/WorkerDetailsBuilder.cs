@@ -72,6 +72,9 @@ internal static class WorkerDetailsBuilder
             MaxConcurrentAccounts = worker.MaxConcurrentAccounts,
             AdsPowerApiBaseUrl = worker.AdsPowerApiBaseUrl,
             AdsPowerApiKey = worker.AdsPowerApiKey,
+            ResponseFilterEnabled = worker.ResponseFilterEnabled,
+            ResponseFilterExcludeFemale = worker.ResponseFilterExcludeFemale,
+            ResponseFilterMaxAge = worker.ResponseFilterMaxAge,
             System = BuildSystemPanel(worker, extra),
             Logs = logs,
             CurrentActivity = WorkerActivityPresenter.Present(

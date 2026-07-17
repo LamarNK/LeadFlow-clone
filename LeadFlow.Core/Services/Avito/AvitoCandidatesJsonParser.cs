@@ -45,9 +45,9 @@ public static class AvitoCandidatesJsonParser
             var messengerUrl = item.TryGetProperty("messengerUrl", out var messengerProp) ? messengerProp.GetString() ?? string.Empty : string.Empty;
             var rawText = item.TryGetProperty("rawText", out var rawTextProp) ? rawTextProp.GetString() ?? string.Empty : string.Empty;
             var age = ParseAge(item.TryGetProperty("age", out var ageProp) ? ageProp.GetString() : null);
-            var gender = ParseGender(item.TryGetProperty("gender", out var genderProp) ? genderProp.GetString() : null)
-                ?? CandidateGenders.ParseFromText(rawText)
-                ?? string.Empty;
+            var cardGender = ParseGender(item.TryGetProperty("gender", out var genderProp) ? genderProp.GetString() : null);
+            var gender = CandidateGenderResolver.ToStoredGender(
+                CandidateGenderResolver.Resolve(fullName, cardGender, rawText));
             var chatMessages = AvitoChatMessagesJson.ParseFromCandidateJson(item);
             var chatMessagesJson = AvitoChatMessagesJson.Serialize(chatMessages);
             var ageText = item.TryGetProperty("age", out var ageTextProp) ? ageTextProp.GetString() : null;

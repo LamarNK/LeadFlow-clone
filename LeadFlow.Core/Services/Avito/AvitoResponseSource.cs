@@ -82,7 +82,10 @@ public sealed class AvitoResponseSource(
             var options = new AdsPowerConnectionOptions(
                 account.AdsPowerApiBaseUrl,
                 string.IsNullOrWhiteSpace(account.AdsPowerApiKey) ? null : account.AdsPowerApiKey);
-            var messengerHints = new CandidatesMessengerEnrichmentHints(account.Id, settings.DuplicateScope);
+            var messengerHints = new CandidatesMessengerEnrichmentHints(
+                account.Id,
+                settings.DuplicateScope,
+                ResponseFilters: settings.ResponseFilters);
 
             const int adsPowerMaxAttempts = 3;
             for (var attempt = 1; attempt <= adsPowerMaxAttempts; attempt++)

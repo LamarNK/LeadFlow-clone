@@ -101,6 +101,30 @@ public sealed class CandidateIngestionService(
         }
 
         var (firstName, lastName, middleName) = candidateParser.ParseName(candidate.FullName);
+        var genderResolution = CandidateGenderResolver.Resolve(
+            candidate.FullName,
+            candidate.Gender,
+            candidate.RawText);
+        var storedGender = CandidateGenderResolver.ToStoredGender(genderResolution);
+
+        var workerFilters = ResponseCollectionFilters.Normalize(
+            worker.ResponseFilterEnabled,
+            worker.ResponseFilterExcludeFemale,
+            worker.ResponseFilterMaxAge);
+        var filterResult = ResponseCollectionFilter.Evaluate(
+            candidate.Age,
+            genderResolution.Gender is CandidateGenders.Unknown ? null : genderResolution.Gender,
+            workerFilters);
+        if (!filterResult.Pass)
+        {
+            // Не пишем в CandidateResponses; статус вне ResponseStatuses — не считается error/duplicate в counters.
+            return new WorkerCandidateIngestionItemResultDto(
+                null,
+                candidate.SourceResponseId,
+                "Filtered",
+                $"Отсечён фильтром сбора: {filterResult.RejectReason}.");
+        }
+
         var profile = CandidatePersonMatchService.ToProfile(
             candidate.FullName,
             candidate.Age,
@@ -150,9 +174,7 @@ public sealed class CandidateIngestionService(
             LastName = lastName,
             MiddleName = middleName,
             Age = candidate.Age,
-            Gender = CandidateGenders.ParseFromText(candidate.Gender)
-                ?? CandidateGenders.ParseFromText(candidate.RawText)
-                ?? string.Empty,
+            Gender = storedGender,
             PhoneRaw = candidate.PhoneRaw,
             PhoneNormalized = phoneNormalized,
             City = candidate.City,

@@ -1,4 +1,5 @@
 using LeadFlow.Core.Models;
+using Orbita.Contracts;
 
 namespace LeadFlow.Core.Services.AdsPower;
 
@@ -6,4 +7,5 @@ namespace LeadFlow.Core.Services.AdsPower;
 public sealed record CandidatesMessengerEnrichmentHints(
     Guid AccountId,
     DuplicateScope DuplicateScope,
-    string? AvitoSubProfileId = null);
+    string? AvitoSubProfileId = null,
+    ResponseCollectionFilters? ResponseFilters = null);

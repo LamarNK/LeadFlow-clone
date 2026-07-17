@@ -55,7 +55,17 @@ public sealed record WorkerConfigDto(
     string? PendingCommand = null,
     WorkerUpdateOfferDto? UpdateOffer = null,
     WorkerPendingCaptchaSessionDto? PendingCaptchaSession = null,
-    WorkerPendingBrowserMonitorSessionDto? PendingBrowserMonitorSession = null);
+    WorkerPendingBrowserMonitorSessionDto? PendingBrowserMonitorSession = null,
+    bool ResponseFilterEnabled = false,
+    bool ResponseFilterExcludeFemale = false,
+    int? ResponseFilterMaxAge = null)
+{
+    public ResponseCollectionFilters ResponseFilters =>
+        ResponseCollectionFilters.Normalize(
+            ResponseFilterEnabled,
+            ResponseFilterExcludeFemale,
+            ResponseFilterMaxAge);
+}
 
 public sealed record WorkerAccountSyncItemDto(
     string AdsPowerProfileId,
@@ -129,7 +139,10 @@ public sealed record WorkerCandidateIngestionResultDto(
 public sealed record UpdateWorkerSettingsRequest(
     int MaxConcurrentAccounts,
     string? AdsPowerApiBaseUrl = null,
-    string? AdsPowerApiKey = null);
+    string? AdsPowerApiKey = null,
+    bool ResponseFilterEnabled = false,
+    bool ResponseFilterExcludeFemale = false,
+    int? ResponseFilterMaxAge = null);
 
 public sealed record UpdateWorkerAccountRequest(bool IsEnabledInPanel);
 

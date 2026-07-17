@@ -961,6 +961,23 @@ public static class AvitoCandidatesPageScripts
                 return "";
             };
 
+            const parseGenderText = (root) => {
+                const malePattern = /мужчина/i;
+                const femalePattern = /женщина/i;
+                for (const line of Array.from(root.querySelectorAll("p"))) {
+                    const text = normalizeCardText(line.textContent);
+                    if (malePattern.test(text)) {
+                        return "male";
+                    }
+
+                    if (femalePattern.test(text)) {
+                        return "female";
+                    }
+                }
+
+                return "";
+            };
+
             const items = Array.from(document.querySelectorAll("[data-marker='job-application/item']"));
             return JSON.stringify(
                 items.map((item, index) => {
@@ -970,6 +987,7 @@ public static class AvitoCandidatesPageScripts
                     const vacancyAndCity = parseVacancyAndCity(item, vacancyListingAnchor);
                     const messengerUrl = resolveMessengerUrl(item);
                     const age = parseAgeText(item);
+                    const gender = parseGenderText(item);
                     const cardFingerprint = buildCardFingerprint(
                         fullName,
                         vacancyAndCity.vacancy,
@@ -988,6 +1006,7 @@ public static class AvitoCandidatesPageScripts
                         cardFingerprint,
                         city: vacancyAndCity.city,
                         age,
+                        gender,
                         phoneDigits
                     };
                 })
@@ -999,7 +1018,8 @@ public static class AvitoCandidatesPageScripts
     {
         var skipJson = System.Text.Json.JsonSerializer.Serialize(
             skipIndices.Distinct().ToDictionary(static x => x.ToString(), static _ => true));
-        return $"window.__leadflowSkipPhoneReveal = {skipJson}; JSON.stringify({{ ok: true, skipped: Object.keys(window.__leadflowSkipPhoneReveal || {{}}).length }});";
+        // Merge: fingerprint / phone / profile / collection-filter skips must accumulate, not overwrite.
+        return $"window.__leadflowSkipPhoneReveal = Object.assign(window.__leadflowSkipPhoneReveal && typeof window.__leadflowSkipPhoneReveal === 'object' ? window.__leadflowSkipPhoneReveal : {{}}, {skipJson}); JSON.stringify({{ ok: true, skipped: Object.keys(window.__leadflowSkipPhoneReveal || {{}}).length }});";
     }
 
     /// <summary>CRM-страница откликов <c>/profile/job/responses</c> (фильтры, cv-button, «Скачать отчёт»).</summary>

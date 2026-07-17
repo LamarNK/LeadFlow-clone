@@ -565,6 +565,9 @@ public sealed class WorkerMonitoringService(
 
             var publishedCount = 0;
             var skippedPersonDuplicates = 0;
+            var filteredAge = 0;
+            var filteredGender = 0;
+            var filterSamples = new List<string>(5);
             for (var i = 0; i < readyCandidates.Count; i++)
             {
                 if (cancellationToken.IsCancellationRequested)
@@ -578,7 +581,42 @@ public sealed class WorkerMonitoringService(
                     continue;
                 }
 
-                await PublishCandidateAsync(readyCandidates[i], cancellationToken).ConfigureAwait(false);
+                var candidate = readyCandidates[i];
+                var genderResolution = CandidateGenderResolver.Resolve(
+                    candidate.FullName,
+                    candidate.Gender,
+                    candidate.RawText);
+                candidate.Gender = CandidateGenderResolver.ToStoredGender(genderResolution);
+
+                var filterResult = ResponseCollectionFilter.Evaluate(
+                    candidate.Age,
+                    genderResolution.Gender is CandidateGenders.Unknown ? null : genderResolution.Gender,
+                    settings.ResponseFilters);
+                if (!filterResult.Pass)
+                {
+                    if (filterResult.RejectReason == ResponseCollectionFilterReasons.AgeAboveMax)
+                    {
+                        filteredAge++;
+                    }
+                    else if (filterResult.RejectReason == ResponseCollectionFilterReasons.GenderFemale)
+                    {
+                        filteredGender++;
+                    }
+
+                    if (filterSamples.Count < 5)
+                    {
+                        filterSamples.Add(
+                            $"{candidate.FullName}|age={candidate.Age?.ToString() ?? "-"}|gender={genderResolution.Gender}|src={genderResolution.Source}|{filterResult.RejectReason}");
+                    }
+
+                    _ = GlobalLogger.Instance.LogAsync(
+                        $"Response collection filter skipped «{candidate.FullName}»: {filterResult.RejectReason} (gender={genderResolution.Gender}, source={genderResolution.Source}, age={candidate.Age?.ToString() ?? "n/a"}).",
+                        DeskLinkAuditLogLevel.Info,
+                        memberName: nameof(StreamProcessAccountResponsesAsync));
+                    continue;
+                }
+
+                await PublishCandidateAsync(candidate, cancellationToken).ConfigureAwait(false);
                 publishedCount++;
                 publishedTotal++;
 
@@ -586,6 +624,14 @@ public sealed class WorkerMonitoringService(
                 {
                     await HumanDelay.BetweenResponsesAsync(cancellationToken).ConfigureAwait(false);
                 }
+            }
+
+            if (filteredAge > 0 || filteredGender > 0)
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"Response filters for {account.DisplayName}: filtered_age={filteredAge}, filtered_gender={filteredGender}. Samples: {string.Join("; ", filterSamples)}",
+                    DeskLinkAuditLogLevel.Info,
+                    memberName: nameof(StreamProcessAccountResponsesAsync));
             }
 
             return new CandidateBatchPublishResult(
@@ -704,7 +750,10 @@ public sealed class WorkerMonitoringService(
                     _telemetryPusher.RequestDebouncedPush(cancellationToken);
                 }
 
-                var singleProfileHints = new CandidatesMessengerEnrichmentHints(account.Id, settings.DuplicateScope);
+                var singleProfileHints = new CandidatesMessengerEnrichmentHints(
+                    account.Id,
+                    settings.DuplicateScope,
+                    ResponseFilters: settings.ResponseFilters);
                 var rawJson = await session
                     .ExtractCandidatesJsonAsync(singleProfileHints, cancellationToken)
                     .ConfigureAwait(false);
@@ -828,7 +877,8 @@ public sealed class WorkerMonitoringService(
                     var messengerHints = new CandidatesMessengerEnrichmentHints(
                         account.Id,
                         settings.DuplicateScope,
-                        sub.Id);
+                        sub.Id,
+                        settings.ResponseFilters);
                     var rawJson = await session
                         .ExtractCandidatesJsonAsync(messengerHints, cancellationToken)
                         .ConfigureAwait(false);
@@ -1095,7 +1145,8 @@ public sealed class WorkerMonitoringService(
     {
         DemoModeEnabled = config.DemoModeEnabled,
         DuplicateScope = config.DuplicateScope,
-        MonitoringSafety = new MonitoringSafetyOptions { MaxConcurrentAccounts = config.MaxConcurrentAccounts }
+        MonitoringSafety = new MonitoringSafetyOptions { MaxConcurrentAccounts = config.MaxConcurrentAccounts },
+        ResponseFilters = config.ResponseFilters ?? ResponseCollectionFilters.Disabled
     };
 
     private async Task ApplyStatsSnapshotAsync(
