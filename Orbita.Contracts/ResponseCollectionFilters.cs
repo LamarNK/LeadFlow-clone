@@ -1,29 +1,65 @@
+using System.Text.Json.Serialization;
+
 namespace Orbita.Contracts;
 
 /// <summary>Фильтры сбора откликов на воркере (пол/возраст до и после раскрытия телефона).</summary>
 public sealed record ResponseCollectionFilters(
     bool Enabled = false,
     bool ExcludeFemale = false,
+    bool ExcludeMale = false,
+    int? MaxAgeMaleInclusive = null,
+    int? MaxAgeFemaleInclusive = null,
+    /// <summary>Устаревший единый лимит (JSON/старые клиенты). Если раздельные не заданы — применяется к обоим полам.</summary>
     int? MaxAgeInclusive = null)
 {
     public static ResponseCollectionFilters Disabled { get; } = new(Enabled: false);
 
-    /// <summary>Нормализация и валидация значений из UI/API.</summary>
+    [JsonIgnore]
+    public int? EffectiveMaxAgeMaleInclusive => ClampAge(MaxAgeMaleInclusive ?? MaxAgeInclusive);
+
+    [JsonIgnore]
+    public int? EffectiveMaxAgeFemaleInclusive => ClampAge(MaxAgeFemaleInclusive ?? MaxAgeInclusive);
+
+    /// <summary>Нормализация и валидация значений из UI/API (без legacy-поля).</summary>
     public static ResponseCollectionFilters Normalize(
         bool enabled,
         bool excludeFemale,
-        int? maxAgeInclusive)
+        bool excludeMale = false,
+        int? maxAgeMaleInclusive = null,
+        int? maxAgeFemaleInclusive = null)
     {
-        int? maxAge = null;
-        if (maxAgeInclusive is int age)
+        return new ResponseCollectionFilters(
+            enabled,
+            excludeFemale,
+            excludeMale,
+            ClampAge(maxAgeMaleInclusive),
+            ClampAge(maxAgeFemaleInclusive));
+    }
+
+    /// <summary>
+    /// Совместимость: старый единый MaxAge → оба пола, если раздельные не заданы.
+    /// </summary>
+    public static ResponseCollectionFilters NormalizeLegacy(
+        bool enabled,
+        bool excludeFemale,
+        int? maxAgeInclusive,
+        bool excludeMale = false,
+        int? maxAgeMaleInclusive = null,
+        int? maxAgeFemaleInclusive = null)
+    {
+        var male = maxAgeMaleInclusive ?? maxAgeInclusive;
+        var female = maxAgeFemaleInclusive ?? maxAgeInclusive;
+        return Normalize(enabled, excludeFemale, excludeMale, male, female);
+    }
+
+    internal static int? ClampAge(int? age)
+    {
+        if (age is int value && value is >= 1 and <= 120)
         {
-            if (age is >= 1 and <= 120)
-            {
-                maxAge = age;
-            }
+            return value;
         }
 
-        return new ResponseCollectionFilters(enabled, excludeFemale, maxAge);
+        return null;
     }
 }
 
@@ -31,6 +67,7 @@ public static class ResponseCollectionFilterReasons
 {
     public const string AgeAboveMax = "age_above_max";
     public const string GenderFemale = "gender_female";
+    public const string GenderMale = "gender_male";
 }
 
 public readonly record struct ResponseCollectionFilterResult(bool Pass, string? RejectReason)
@@ -53,17 +90,52 @@ public static class ResponseCollectionFilter
             return ResponseCollectionFilterResult.Allowed;
         }
 
-        if (filters.MaxAgeInclusive is int maxAge
-            && age is int knownAge
-            && knownAge > maxAge)
-        {
-            return ResponseCollectionFilterResult.Rejected(ResponseCollectionFilterReasons.AgeAboveMax);
-        }
-
         if (filters.ExcludeFemale
             && string.Equals(resolvedGender, CandidateGenders.Female, StringComparison.Ordinal))
         {
             return ResponseCollectionFilterResult.Rejected(ResponseCollectionFilterReasons.GenderFemale);
+        }
+
+        if (filters.ExcludeMale
+            && string.Equals(resolvedGender, CandidateGenders.Male, StringComparison.Ordinal))
+        {
+            return ResponseCollectionFilterResult.Rejected(ResponseCollectionFilterReasons.GenderMale);
+        }
+
+        if (age is not int knownAge)
+        {
+            return ResponseCollectionFilterResult.Allowed;
+        }
+
+        if (string.Equals(resolvedGender, CandidateGenders.Male, StringComparison.Ordinal))
+        {
+            if (filters.EffectiveMaxAgeMaleInclusive is int maxMale && knownAge > maxMale)
+            {
+                return ResponseCollectionFilterResult.Rejected(ResponseCollectionFilterReasons.AgeAboveMax);
+            }
+
+            return ResponseCollectionFilterResult.Allowed;
+        }
+
+        if (string.Equals(resolvedGender, CandidateGenders.Female, StringComparison.Ordinal))
+        {
+            if (filters.EffectiveMaxAgeFemaleInclusive is int maxFemale && knownAge > maxFemale)
+            {
+                return ResponseCollectionFilterResult.Rejected(ResponseCollectionFilterReasons.AgeAboveMax);
+            }
+
+            return ResponseCollectionFilterResult.Allowed;
+        }
+
+        // Пол неизвестен: отсекаем по возрасту только если кандидат превысил бы лимит
+        // при любом из заданных полов (оба лимита заданы и age выше обоих).
+        var maleLimit = filters.EffectiveMaxAgeMaleInclusive;
+        var femaleLimit = filters.EffectiveMaxAgeFemaleInclusive;
+        if (maleLimit is int m && femaleLimit is int f
+            && knownAge > m
+            && knownAge > f)
+        {
+            return ResponseCollectionFilterResult.Rejected(ResponseCollectionFilterReasons.AgeAboveMax);
         }
 
         return ResponseCollectionFilterResult.Allowed;

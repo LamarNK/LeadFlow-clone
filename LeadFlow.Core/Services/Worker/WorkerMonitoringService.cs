@@ -598,7 +598,8 @@ public sealed class WorkerMonitoringService(
                     {
                         filteredAge++;
                     }
-                    else if (filterResult.RejectReason == ResponseCollectionFilterReasons.GenderFemale)
+                    else if (filterResult.RejectReason is ResponseCollectionFilterReasons.GenderFemale
+                             or ResponseCollectionFilterReasons.GenderMale)
                     {
                         filteredGender++;
                     }

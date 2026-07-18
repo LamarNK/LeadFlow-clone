@@ -154,7 +154,9 @@ public sealed class WorkerDetailsViewModel
     public string? AdsPowerApiKey { get; init; }
     public bool ResponseFilterEnabled { get; init; }
     public bool ResponseFilterExcludeFemale { get; init; }
-    public int? ResponseFilterMaxAge { get; init; }
+    public bool ResponseFilterExcludeMale { get; init; }
+    public int? ResponseFilterMaxAgeMale { get; init; }
+    public int? ResponseFilterMaxAgeFemale { get; init; }
     public string EffectiveAdsPowerApiBaseUrl =>
         string.IsNullOrWhiteSpace(AdsPowerApiBaseUrl) ? DefaultAdsPowerApiBaseUrl : AdsPowerApiBaseUrl;
     public WorkerSystemPanelViewModel System { get; init; } = new();

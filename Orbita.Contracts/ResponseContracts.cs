@@ -23,6 +23,7 @@ public sealed record ResponseListItemDto(
     string SourceResponseId,
     string FullName,
     int? Age,
+    string? Gender,
     string PhoneRaw,
     string PhoneNormalized,
     string Vacancy,

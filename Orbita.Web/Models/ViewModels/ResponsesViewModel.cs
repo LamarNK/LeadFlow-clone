@@ -52,6 +52,7 @@ public sealed class ResponseRowViewModel
     public DateTime CreatedAtUtc { get; init; }
     public string FullName { get; init; } = string.Empty;
     public int? Age { get; init; }
+    public string? Gender { get; init; }
     public string PhoneRaw { get; init; } = string.Empty;
     public string PhoneNormalized { get; init; } = string.Empty;
     public string Vacancy { get; init; } = string.Empty;

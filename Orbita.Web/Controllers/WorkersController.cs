@@ -157,7 +157,9 @@ public sealed class WorkersController(IWorkersService workers) : Controller
         string? adsPowerApiKey,
         bool responseFilterEnabled = false,
         bool responseFilterExcludeFemale = false,
-        int? responseFilterMaxAge = null,
+        bool responseFilterExcludeMale = false,
+        int? responseFilterMaxAgeMale = null,
+        int? responseFilterMaxAgeFemale = null,
         CancellationToken ct = default)
     {
         var (success, error) = await workers.UpdateWorkerSettingsAsync(
@@ -167,7 +169,9 @@ public sealed class WorkersController(IWorkersService workers) : Controller
             adsPowerApiKey,
             responseFilterEnabled,
             responseFilterExcludeFemale,
-            responseFilterMaxAge,
+            responseFilterExcludeMale,
+            responseFilterMaxAgeMale,
+            responseFilterMaxAgeFemale,
             ct);
         if (!success)
         {

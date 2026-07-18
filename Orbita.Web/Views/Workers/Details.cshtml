@@ -220,11 +220,14 @@
 
                     <div class="worker-settings-section">
                         <span class="worker-settings-section-title">Фильтры сбора откликов</span>
+                        <p class="worker-settings-hint worker-settings-section-hint">
+                            Отсекают карточки до раскрытия телефона и не отправляют их в панель. Пустые лимиты возраста — без ограничения.
+                        </p>
                         <div class="settings-options worker-settings-options">
                             <div class="settings-option">
                                 <div class="settings-option-text">
                                     <span class="settings-option-label">Включить фильтры сбора</span>
-                                    <span class="settings-option-desc">Отсекает карточки до раскрытия телефона и не отправляет их в панель</span>
+                                    <span class="settings-option-desc">Без этого переключателя правила ниже не применяются</span>
                                 </div>
                                 <label class="worker-toggle" title="Включить фильтры сбора">
                                     <input type="checkbox"
@@ -232,6 +235,24 @@
                                            name="responseFilterEnabled"
                                            value="true"
                                            @(Model.ResponseFilterEnabled ? "checked" : null) />
+                                    <span class="worker-toggle-slider"></span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <span class="worker-settings-subsection-title">Пол — кого не собирать</span>
+                        <div class="settings-options worker-settings-options">
+                            <div class="settings-option">
+                                <div class="settings-option-text">
+                                    <span class="settings-option-label">Исключать мужчин</span>
+                                    <span class="settings-option-desc">По метке «Мужчина» или мужскому ФИО; ники и неоднозначные имена не отсекаем</span>
+                                </div>
+                                <label class="worker-toggle" title="Исключать мужчин">
+                                    <input type="checkbox"
+                                           id="responseFilterExcludeMale"
+                                           name="responseFilterExcludeMale"
+                                           value="true"
+                                           @(Model.ResponseFilterExcludeMale ? "checked" : null) />
                                     <span class="worker-toggle-slider"></span>
                                 </label>
                             </div>
@@ -250,22 +271,39 @@
                                 </label>
                             </div>
                         </div>
-                        <label class="worker-settings-field" for="responseFilterMaxAge">
-                            <span class="worker-settings-label">Макс. возраст</span>
-                            <input type="number"
-                                   id="responseFilterMaxAge"
-                                   name="responseFilterMaxAge"
-                                   class="worker-settings-input"
-                                   min="1"
-                                   max="120"
-                                   step="1"
-                                   value="@(Model.ResponseFilterMaxAge?.ToString() ?? "")"
-                                   placeholder="Не задан — без фильтра"
-                                   inputmode="numeric" />
-                            <span class="worker-settings-hint">
-                                Включительно: 62 означает отсечь 63+. Пусто — не фильтровать. Без возраста в карточке — оставляем.
-                            </span>
-                        </label>
+
+                        <span class="worker-settings-subsection-title">Макс. возраст по полу</span>
+                        <div class="worker-settings-age-grid">
+                            <label class="worker-settings-field" for="responseFilterMaxAgeMale">
+                                <span class="worker-settings-label">Мужчины, до (лет)</span>
+                                <input type="number"
+                                       id="responseFilterMaxAgeMale"
+                                       name="responseFilterMaxAgeMale"
+                                       class="worker-settings-input"
+                                       min="1"
+                                       max="120"
+                                       step="1"
+                                       value="@(Model.ResponseFilterMaxAgeMale?.ToString() ?? "")"
+                                       placeholder="Без лимита"
+                                       inputmode="numeric" />
+                            </label>
+                            <label class="worker-settings-field" for="responseFilterMaxAgeFemale">
+                                <span class="worker-settings-label">Женщины, до (лет)</span>
+                                <input type="number"
+                                       id="responseFilterMaxAgeFemale"
+                                       name="responseFilterMaxAgeFemale"
+                                       class="worker-settings-input"
+                                       min="1"
+                                       max="120"
+                                       step="1"
+                                       value="@(Model.ResponseFilterMaxAgeFemale?.ToString() ?? "")"
+                                       placeholder="Без лимита"
+                                       inputmode="numeric" />
+                            </label>
+                        </div>
+                        <span class="worker-settings-hint">
+                            Включительно: «62» оставляет 62 и отсекает 63+. Разные лимиты для мужчин и женщин. Без возраста в карточке — оставляем.
+                        </span>
                     </div>
 
                     <div class="worker-settings-section">

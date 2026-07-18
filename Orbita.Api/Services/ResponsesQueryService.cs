@@ -245,6 +245,7 @@ public sealed class ResponsesQueryService(
                 x.SourceResponseId,
                 x.FullName,
                 x.Age,
+                x.Gender,
                 x.PhoneRaw,
                 x.PhoneNormalized,
                 x.Vacancy,
@@ -307,6 +308,7 @@ public sealed class ResponsesQueryService(
                     x.SourceResponseId,
                     x.FullName,
                     x.Age,
+                    string.IsNullOrWhiteSpace(x.Gender) ? null : x.Gender,
                     x.PhoneRaw,
                     x.PhoneNormalized,
                     x.Vacancy,
@@ -341,7 +343,7 @@ public sealed class ResponsesQueryService(
 
     private static readonly HashSet<string> AllowedSortColumns = new(StringComparer.OrdinalIgnoreCase)
     {
-        "time", "author", "phone", "city", "age", "vacancy", "account", "status", "source"
+        "time", "author", "phone", "city", "age", "gender", "vacancy", "account", "status", "source"
     };
 
     private static IQueryable<CandidateResponseEntity> ApplyOrdering(
@@ -366,6 +368,9 @@ public sealed class ResponsesQueryService(
             "age" => descending
                 ? query.OrderByDescending(x => x.Age)
                 : query.OrderBy(x => x.Age),
+            "gender" => descending
+                ? query.OrderByDescending(x => x.Gender)
+                : query.OrderBy(x => x.Gender),
             "vacancy" => descending
                 ? query.OrderByDescending(x => x.Vacancy)
                 : query.OrderBy(x => x.Vacancy),

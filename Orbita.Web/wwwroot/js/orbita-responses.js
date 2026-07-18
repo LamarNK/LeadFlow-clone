@@ -41,6 +41,15 @@
         return !!readRowValue(row, camelKey);
     }
 
+    /** Matches CandidateGenders.FormatLabel on the server. */
+    function formatGenderLabel(gender) {
+        if (!gender) return '—';
+        var g = String(gender).trim().toLowerCase();
+        if (g === 'male') return 'Мужчина';
+        if (g === 'female') return 'Женщина';
+        return '—';
+    }
+
     function workerDetailsUrl(id) {
         var shared = getShared();
         if (!shared) return '#';
@@ -814,6 +823,7 @@
             var cityDisplay = city && String(city).trim() ? shared.escapeHtml(city) : '—';
             var age = readRowValue(row, 'age');
             var ageDisplay = age > 0 ? String(age) : '—';
+            var genderDisplay = formatGenderLabel(readRowValue(row, 'gender'));
             var canSend = readRowBool(row, 'canSend');
             var createdAtUtc = readRowValue(row, 'createdAtUtc');
             var statusTone = readRowValue(row, 'statusTone') || 'unique';
@@ -827,6 +837,7 @@
                 '<td class="responses-phone" data-label="Телефон">' + phoneCell + '</td>' +
                 '<td class="responses-city" data-label="Город">' + cityDisplay + '</td>' +
                 '<td class="responses-age" data-label="Возраст">' + ageDisplay + '</td>' +
+                '<td class="responses-gender" data-label="Пол">' + shared.escapeHtml(genderDisplay) + '</td>' +
                 '<td class="responses-ad" data-label="Объявление">' + adHtml + '</td>' +
                 '<td class="cell-link responses-account" data-label="Аккаунт">' + shared.renderResponseAccountCell(readRowValue(row, 'accountName'), readRowValue(row, 'avitoSubProfileName'), accountUrl) + '</td>' +
                 '<td data-label="Статус"><span class="response-status-badge response-status-badge--' + shared.escapeHtml(statusTone) + '">' + shared.escapeHtml(statusLabel) + '</span></td>' +

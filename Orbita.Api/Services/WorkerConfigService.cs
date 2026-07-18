@@ -94,7 +94,10 @@ public sealed class WorkerConfigService(
             pendingBrowserMonitor,
             worker.ResponseFilterEnabled,
             worker.ResponseFilterExcludeFemale,
-            worker.ResponseFilterMaxAge);
+            worker.ResponseFilterMaxAge,
+            worker.ResponseFilterExcludeMale,
+            worker.ResponseFilterMaxAgeMale,
+            worker.ResponseFilterMaxAgeFemale);
     }
 
     public async Task<bool> SyncAccountsAsync(
@@ -189,17 +192,29 @@ public sealed class WorkerConfigService(
             return (null, apiKeyError);
         }
 
-        var filters = ResponseCollectionFilters.Normalize(
+        var filters = ResponseCollectionFilters.NormalizeLegacy(
             request.ResponseFilterEnabled,
             request.ResponseFilterExcludeFemale,
-            request.ResponseFilterMaxAge);
+            request.ResponseFilterMaxAge,
+            request.ResponseFilterExcludeMale,
+            request.ResponseFilterMaxAgeMale,
+            request.ResponseFilterMaxAgeFemale);
 
         worker.MaxConcurrentAccounts = request.MaxConcurrentAccounts;
         worker.AdsPowerApiBaseUrl = normalizedBaseUrl;
         worker.AdsPowerApiKey = normalizedApiKey;
         worker.ResponseFilterEnabled = filters.Enabled;
         worker.ResponseFilterExcludeFemale = filters.ExcludeFemale;
-        worker.ResponseFilterMaxAge = filters.MaxAgeInclusive;
+        worker.ResponseFilterExcludeMale = filters.ExcludeMale;
+        worker.ResponseFilterMaxAgeMale = filters.MaxAgeMaleInclusive;
+        worker.ResponseFilterMaxAgeFemale = filters.MaxAgeFemaleInclusive;
+        // Legacy field: keep only when both genders share the same limit (old workers / DTO).
+        worker.ResponseFilterMaxAge =
+            filters.MaxAgeMaleInclusive is int m
+            && filters.MaxAgeFemaleInclusive is int f
+            && m == f
+                ? m
+                : filters.MaxAgeMaleInclusive ?? filters.MaxAgeFemaleInclusive;
         await db.SaveChangesAsync(ct);
         await workerPushNotifier.PushConfigChangedAsync(workerId, ct).ConfigureAwait(false);
         return (await GetConfigForWorkerAsync(workerId, scope, ct), null);

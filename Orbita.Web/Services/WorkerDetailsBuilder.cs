@@ -74,7 +74,9 @@ internal static class WorkerDetailsBuilder
             AdsPowerApiKey = worker.AdsPowerApiKey,
             ResponseFilterEnabled = worker.ResponseFilterEnabled,
             ResponseFilterExcludeFemale = worker.ResponseFilterExcludeFemale,
-            ResponseFilterMaxAge = worker.ResponseFilterMaxAge,
+            ResponseFilterExcludeMale = worker.ResponseFilterExcludeMale,
+            ResponseFilterMaxAgeMale = worker.ResponseFilterMaxAgeMale ?? worker.ResponseFilterMaxAge,
+            ResponseFilterMaxAgeFemale = worker.ResponseFilterMaxAgeFemale ?? worker.ResponseFilterMaxAge,
             System = BuildSystemPanel(worker, extra),
             Logs = logs,
             CurrentActivity = WorkerActivityPresenter.Present(

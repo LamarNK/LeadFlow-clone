@@ -2891,6 +2891,32 @@ html[data-theme="dark"] .orbita-office-switcher-select:focus {
     letter-spacing: 0.04em;
 }
 
+.worker-settings-subsection-title {
+    display: block;
+    margin: 0.85rem 0 0.45rem;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: #667085;
+}
+
+.worker-settings-section-hint {
+    margin: 0 0 0.75rem;
+}
+
+.worker-settings-age-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem 1rem;
+}
+
+@media (max-width: 640px) {
+    .worker-settings-age-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
 .worker-settings-field {
     display: flex;
     flex-direction: column;
@@ -3906,6 +3932,10 @@ html[data-theme="dark"] .orbita-office-switcher-select:focus {
 
 [data-theme="dark"] .worker-settings-section-title {
     color: var(--text-secondary, var(--text-primary));
+}
+
+[data-theme="dark"] .worker-settings-subsection-title {
+    color: var(--text-muted, var(--text-secondary));
 }
 
 [data-theme="dark"] .worker-settings-field input[type="url"],
@@ -6829,7 +6859,8 @@ html[data-theme="dark"] .orbita-office-switcher-select:focus {
 }
 
 .responses-city,
-.responses-age {
+.responses-age,
+.responses-gender {
     font-size: 14px;
     color: #344054;
     white-space: nowrap;
@@ -10215,6 +10246,7 @@ body.orbita-search-open {
     .data-table--responses .responses-time,
     .data-table--responses .responses-city,
     .data-table--responses .responses-age,
+    .data-table--responses .responses-gender,
     .data-table--responses td[data-label="Аккаунт"],
     .data-table--responses td[data-label="Статус"] {
         order: 4;
@@ -10254,6 +10286,7 @@ body.orbita-search-open {
     [data-theme="dark"] .data-table--responses .responses-time,
     [data-theme="dark"] .data-table--responses .responses-city,
     [data-theme="dark"] .data-table--responses .responses-age,
+    [data-theme="dark"] .data-table--responses .responses-gender,
     [data-theme="dark"] .data-table--responses td[data-label="Аккаунт"],
     [data-theme="dark"] .data-table--responses td[data-label="Статус"] {
         background: rgba(255, 255, 255, 0.06);

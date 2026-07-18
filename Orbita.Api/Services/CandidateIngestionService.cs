@@ -107,10 +107,13 @@ public sealed class CandidateIngestionService(
             candidate.RawText);
         var storedGender = CandidateGenderResolver.ToStoredGender(genderResolution);
 
-        var workerFilters = ResponseCollectionFilters.Normalize(
+        var workerFilters = ResponseCollectionFilters.NormalizeLegacy(
             worker.ResponseFilterEnabled,
             worker.ResponseFilterExcludeFemale,
-            worker.ResponseFilterMaxAge);
+            worker.ResponseFilterMaxAge,
+            worker.ResponseFilterExcludeMale,
+            worker.ResponseFilterMaxAgeMale,
+            worker.ResponseFilterMaxAgeFemale);
         var filterResult = ResponseCollectionFilter.Evaluate(
             candidate.Age,
             genderResolution.Gender is CandidateGenders.Unknown ? null : genderResolution.Gender,

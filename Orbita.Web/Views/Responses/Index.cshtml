@@ -136,6 +136,7 @@
                         <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Телефон", Column = "phone", Sort = Model.Sort, Controller = "Responses", Action = "Index", RouteValues = responsesSortRoute })" />
                         <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Город", Column = "city", Sort = Model.Sort, Controller = "Responses", Action = "Index", RouteValues = responsesSortRoute })" />
                         <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Возраст", Column = "age", Sort = Model.Sort, Controller = "Responses", Action = "Index", RouteValues = responsesSortRoute })" />
+                        <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Пол", Column = "gender", Sort = Model.Sort, Controller = "Responses", Action = "Index", RouteValues = responsesSortRoute })" />
                         <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Объявление", Column = "vacancy", Sort = Model.Sort, Controller = "Responses", Action = "Index", RouteValues = responsesSortRoute })" />
                         <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Аккаунт", Column = "account", Sort = Model.Sort, Controller = "Responses", Action = "Index", RouteValues = responsesSortRoute })" />
                         <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Статус", Column = "status", Sort = Model.Sort, Controller = "Responses", Action = "Index", RouteValues = responsesSortRoute })" />
@@ -179,6 +180,7 @@
                         </td>
                         <td class="responses-city" data-label="Город">@ResponseDisplay.FormatCity(row.City)</td>
                         <td class="responses-age" data-label="Возраст">@ResponseDisplay.FormatAge(row.Age)</td>
+                        <td class="responses-gender" data-label="Пол">@CandidateGenders.FormatLabel(row.Gender)</td>
                         <td class="responses-ad" data-label="Объявление">
                             @if (!string.IsNullOrWhiteSpace(row.VacancyUrl))
                             {

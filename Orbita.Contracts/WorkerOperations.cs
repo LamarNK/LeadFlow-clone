@@ -58,13 +58,19 @@ public sealed record WorkerConfigDto(
     WorkerPendingBrowserMonitorSessionDto? PendingBrowserMonitorSession = null,
     bool ResponseFilterEnabled = false,
     bool ResponseFilterExcludeFemale = false,
-    int? ResponseFilterMaxAge = null)
+    int? ResponseFilterMaxAge = null,
+    bool ResponseFilterExcludeMale = false,
+    int? ResponseFilterMaxAgeMale = null,
+    int? ResponseFilterMaxAgeFemale = null)
 {
     public ResponseCollectionFilters ResponseFilters =>
-        ResponseCollectionFilters.Normalize(
+        ResponseCollectionFilters.NormalizeLegacy(
             ResponseFilterEnabled,
             ResponseFilterExcludeFemale,
-            ResponseFilterMaxAge);
+            ResponseFilterMaxAge,
+            ResponseFilterExcludeMale,
+            ResponseFilterMaxAgeMale,
+            ResponseFilterMaxAgeFemale);
 }
 
 public sealed record WorkerAccountSyncItemDto(
@@ -142,7 +148,10 @@ public sealed record UpdateWorkerSettingsRequest(
     string? AdsPowerApiKey = null,
     bool ResponseFilterEnabled = false,
     bool ResponseFilterExcludeFemale = false,
-    int? ResponseFilterMaxAge = null);
+    int? ResponseFilterMaxAge = null,
+    bool ResponseFilterExcludeMale = false,
+    int? ResponseFilterMaxAgeMale = null,
+    int? ResponseFilterMaxAgeFemale = null);
 
 public sealed record UpdateWorkerAccountRequest(bool IsEnabledInPanel);
 

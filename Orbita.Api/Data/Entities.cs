@@ -54,8 +54,17 @@ public sealed class WorkerEntity
     /// <summary>Отсекать карточки с женским полом (card/ФИО).</summary>
     public bool ResponseFilterExcludeFemale { get; set; }
 
-    /// <summary>Макс. возраст включительно (62 ⇒ отсекаем 63+). null — не фильтровать возраст.</summary>
+    /// <summary>Отсекать карточки с мужским полом (card/ФИО).</summary>
+    public bool ResponseFilterExcludeMale { get; set; }
+
+    /// <summary>Устаревший единый макс. возраст; используется как fallback, если раздельные не заданы.</summary>
     public int? ResponseFilterMaxAge { get; set; }
+
+    /// <summary>Макс. возраст мужчин включительно (62 ⇒ отсечь 63+). null — без лимита.</summary>
+    public int? ResponseFilterMaxAgeMale { get; set; }
+
+    /// <summary>Макс. возраст женщин включительно. null — без лимита.</summary>
+    public int? ResponseFilterMaxAgeFemale { get; set; }
 
     public double? LastCpuPercent { get; set; }
     public double? LastRamPercent { get; set; }

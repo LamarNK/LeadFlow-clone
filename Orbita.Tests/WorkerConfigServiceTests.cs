@@ -133,19 +133,27 @@ public sealed class WorkerConfigServiceTests
                 MaxConcurrentAccounts: 2,
                 ResponseFilterEnabled: true,
                 ResponseFilterExcludeFemale: true,
-                ResponseFilterMaxAge: 62),
+                ResponseFilterExcludeMale: false,
+                ResponseFilterMaxAgeMale: 62,
+                ResponseFilterMaxAgeFemale: 55),
             OfficeScope.ForOffice(OfficeId));
 
         Assert.Null(error);
         Assert.NotNull(config);
         Assert.True(config!.ResponseFilterEnabled);
         Assert.True(config.ResponseFilterExcludeFemale);
-        Assert.Equal(62, config.ResponseFilterMaxAge);
+        Assert.False(config.ResponseFilterExcludeMale);
+        Assert.Equal(62, config.ResponseFilterMaxAgeMale);
+        Assert.Equal(55, config.ResponseFilterMaxAgeFemale);
+        Assert.Equal(62, config.ResponseFilters.MaxAgeMaleInclusive);
+        Assert.Equal(55, config.ResponseFilters.MaxAgeFemaleInclusive);
 
         var worker = await db.Workers.SingleAsync();
         Assert.True(worker.ResponseFilterEnabled);
         Assert.True(worker.ResponseFilterExcludeFemale);
-        Assert.Equal(62, worker.ResponseFilterMaxAge);
+        Assert.False(worker.ResponseFilterExcludeMale);
+        Assert.Equal(62, worker.ResponseFilterMaxAgeMale);
+        Assert.Equal(55, worker.ResponseFilterMaxAgeFemale);
     }
 
     [Fact]
@@ -160,7 +168,9 @@ public sealed class WorkerConfigServiceTests
         Assert.NotNull(config);
         Assert.False(config!.ResponseFilterEnabled);
         Assert.False(config.ResponseFilterExcludeFemale);
-        Assert.Null(config.ResponseFilterMaxAge);
+        Assert.False(config.ResponseFilterExcludeMale);
+        Assert.Null(config.ResponseFilterMaxAgeMale);
+        Assert.Null(config.ResponseFilterMaxAgeFemale);
     }
 
     private static WorkerConfigService CreateService(OrbitaDbContext db)

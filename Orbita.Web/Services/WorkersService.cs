@@ -212,7 +212,9 @@ public sealed class WorkersService(
         string? adsPowerApiKey,
         bool responseFilterEnabled = false,
         bool responseFilterExcludeFemale = false,
-        int? responseFilterMaxAge = null,
+        bool responseFilterExcludeMale = false,
+        int? responseFilterMaxAgeMale = null,
+        int? responseFilterMaxAgeFemale = null,
         CancellationToken ct = default) =>
         api.UpdateWorkerSettingsAsync(
             workerId,
@@ -221,7 +223,9 @@ public sealed class WorkersService(
             adsPowerApiKey,
             responseFilterEnabled,
             responseFilterExcludeFemale,
-            responseFilterMaxAge,
+            responseFilterExcludeMale,
+            responseFilterMaxAgeMale,
+            responseFilterMaxAgeFemale,
             ct);
 
     public Task<(bool Success, string? Error)> UpdateWorkerAccountAsync(

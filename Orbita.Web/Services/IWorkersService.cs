@@ -34,7 +34,9 @@ public interface IWorkersService
         string? adsPowerApiKey,
         bool responseFilterEnabled = false,
         bool responseFilterExcludeFemale = false,
-        int? responseFilterMaxAge = null,
+        bool responseFilterExcludeMale = false,
+        int? responseFilterMaxAgeMale = null,
+        int? responseFilterMaxAgeFemale = null,
         CancellationToken ct = default);
     Task<(bool Success, string? Error)> UpdateWorkerAccountAsync(Guid workerId, Guid accountId, bool isEnabled, CancellationToken ct = default);
     Task<(bool Success, string? Error)> RequestSubProfilesRefreshAsync(Guid workerId, Guid accountId, CancellationToken ct = default);

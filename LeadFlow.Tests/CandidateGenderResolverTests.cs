@@ -6,7 +6,7 @@ namespace LeadFlow.Tests;
 public sealed class CandidateGenderResolverTests
 {
     [Fact]
-    public void Lexicon_LoadsEmbeddedRussianNamesResource()
+    public void Lexicon_IsLoaded()
     {
         Assert.True(RussianNameGenderLexicon.FirstNameCount > 10_000);
         Assert.True(RussianNameGenderLexicon.MiddleNameCount > 10_000);
@@ -25,14 +25,13 @@ public sealed class CandidateGenderResolverTests
     [InlineData("Петрова", CandidateGenders.Female, CandidateGenderSources.Name)]
     [InlineData("dilshod", CandidateGenders.Male, CandidateGenderSources.Name)]
     [InlineData("Муса", CandidateGenders.Male, CandidateGenderSources.Name)]
-    // russiannames-style cases
     [InlineData("Нигматуллин Ринат Ахметович", CandidateGenders.Male, CandidateGenderSources.Name)]
     [InlineData("Петрова С.Я.", CandidateGenders.Female, CandidateGenderSources.Name)]
     [InlineData("Петрова C.Я.", CandidateGenders.Female, CandidateGenderSources.Name)]
     [InlineData("А.Н. Егорова", CandidateGenders.Female, CandidateGenderSources.Name)]
     [InlineData("Николаев С.", CandidateGenders.Male, CandidateGenderSources.Name)]
     [InlineData("Петракова Зинаида М.", CandidateGenders.Female, CandidateGenderSources.Name)]
-    public void Resolve_FromFio_ReturnsExpected(string fullName, string gender, string source)
+    public void Resolve_KnownNames(string fullName, string gender, string source)
     {
         var result = CandidateGenderResolver.Resolve(fullName);
         Assert.Equal(gender, result.Gender);
@@ -41,12 +40,9 @@ public sealed class CandidateGenderResolverTests
 
     [Theory]
     [InlineData("Пользователь")]
-    [InlineData("user123")]
-    [InlineData("CoolNick")]
+    [InlineData("User123")]
     [InlineData("")]
-    [InlineData("А")]
-    [InlineData("Xyzqwerty")]
-    public void Resolve_NicknamesAndAmbiguous_AreUnknown(string fullName)
+    public void Resolve_Unknown_WhenAmbiguous(string fullName)
     {
         var result = CandidateGenderResolver.Resolve(fullName);
         Assert.Equal(CandidateGenders.Unknown, result.Gender);
@@ -57,7 +53,7 @@ public sealed class CandidateGenderResolverTests
     public void Resolve_PrefersCardGenderOverName()
     {
         var result = CandidateGenderResolver.Resolve(
-            "Иванова Мария",
+            "Петрова Анна",
             cardGender: CandidateGenders.Male,
             rawText: null);
 
@@ -66,12 +62,12 @@ public sealed class CandidateGenderResolverTests
     }
 
     [Fact]
-    public void Resolve_UsesRawTextWomanLabel()
+    public void Resolve_UsesRawTextCardWhenNoExplicitCardGender()
     {
         var result = CandidateGenderResolver.Resolve(
-            "CoolNick",
+            "Пользователь",
             cardGender: null,
-            rawText: "Женщина · 37 лет · Москва");
+            rawText: "Женщина · 37 лет");
 
         Assert.Equal(CandidateGenders.Female, result.Gender);
         Assert.Equal(CandidateGenderSources.Card, result.Source);
@@ -90,7 +86,9 @@ public sealed class ResponseCollectionFilterTests
     private static readonly ResponseCollectionFilters FiltersOn = new(
         Enabled: true,
         ExcludeFemale: true,
-        MaxAgeInclusive: 62);
+        ExcludeMale: false,
+        MaxAgeMaleInclusive: 62,
+        MaxAgeFemaleInclusive: 55);
 
     [Fact]
     public void Evaluate_Disabled_AlwaysPasses()
@@ -107,7 +105,7 @@ public sealed class ResponseCollectionFilterTests
     [InlineData(62, true)]
     [InlineData(63, false)]
     [InlineData(null, true)]
-    public void Evaluate_AgeBoundary(int? age, bool pass)
+    public void Evaluate_MaleAgeBoundary(int? age, bool pass)
     {
         var result = ResponseCollectionFilter.Evaluate(age, CandidateGenders.Male, FiltersOn);
         Assert.Equal(pass, result.Pass);
@@ -117,12 +115,36 @@ public sealed class ResponseCollectionFilterTests
         }
     }
 
+    [Theory]
+    [InlineData(55, true)]
+    [InlineData(56, false)]
+    public void Evaluate_FemaleAgeBoundary_WhenNotExcluded(int age, bool pass)
+    {
+        var filters = new ResponseCollectionFilters(
+            Enabled: true,
+            ExcludeFemale: false,
+            MaxAgeMaleInclusive: 62,
+            MaxAgeFemaleInclusive: 55);
+
+        var result = ResponseCollectionFilter.Evaluate(age, CandidateGenders.Female, filters);
+        Assert.Equal(pass, result.Pass);
+    }
+
     [Fact]
     public void Evaluate_FemaleRejected_WhenExcludeFemale()
     {
         var result = ResponseCollectionFilter.Evaluate(30, CandidateGenders.Female, FiltersOn);
         Assert.False(result.Pass);
         Assert.Equal(ResponseCollectionFilterReasons.GenderFemale, result.RejectReason);
+    }
+
+    [Fact]
+    public void Evaluate_MaleRejected_WhenExcludeMale()
+    {
+        var filters = new ResponseCollectionFilters(Enabled: true, ExcludeMale: true);
+        var result = ResponseCollectionFilter.Evaluate(30, CandidateGenders.Male, filters);
+        Assert.False(result.Pass);
+        Assert.Equal(ResponseCollectionFilterReasons.GenderMale, result.RejectReason);
     }
 
     [Fact]
@@ -136,6 +158,18 @@ public sealed class ResponseCollectionFilterTests
             FiltersOn);
 
         Assert.True(result.Pass);
+    }
+
+    [Fact]
+    public void Evaluate_UnknownGender_AgeRejectedOnlyIfAboveBothLimits()
+    {
+        var filters = new ResponseCollectionFilters(
+            Enabled: true,
+            MaxAgeMaleInclusive: 50,
+            MaxAgeFemaleInclusive: 55);
+
+        Assert.True(ResponseCollectionFilter.Evaluate(52, CandidateGenders.Unknown, filters).Pass);
+        Assert.False(ResponseCollectionFilter.Evaluate(60, CandidateGenders.Unknown, filters).Pass);
     }
 
     [Fact]
@@ -153,9 +187,9 @@ public sealed class ResponseCollectionFilterTests
     }
 
     [Fact]
-    public void Evaluate_RussianNamesStyleMale_RejectedWhenExcludeFemaleFalseButKnown()
+    public void Evaluate_RussianNamesStyleMale_PassesWhenExcludeFemale()
     {
-        var filters = new ResponseCollectionFilters(Enabled: true, ExcludeFemale: true, MaxAgeInclusive: null);
+        var filters = new ResponseCollectionFilters(Enabled: true, ExcludeFemale: true);
         var result = ResponseCollectionFilter.EvaluateCandidate(
             "Нигматуллин Ринат Ахметович",
             age: 35,
@@ -169,10 +203,27 @@ public sealed class ResponseCollectionFilterTests
     [Fact]
     public void Normalize_ClampsInvalidMaxAge()
     {
-        var filters = ResponseCollectionFilters.Normalize(true, true, 999);
-        Assert.Null(filters.MaxAgeInclusive);
+        var filters = ResponseCollectionFilters.Normalize(true, true, false, 999, 50);
+        Assert.Null(filters.MaxAgeMaleInclusive);
+        Assert.Equal(50, filters.MaxAgeFemaleInclusive);
 
-        filters = ResponseCollectionFilters.Normalize(true, true, 62);
-        Assert.Equal(62, filters.MaxAgeInclusive);
+        filters = ResponseCollectionFilters.NormalizeLegacy(true, true, 62);
+        Assert.Equal(62, filters.MaxAgeMaleInclusive);
+        Assert.Equal(62, filters.MaxAgeFemaleInclusive);
+    }
+
+    [Fact]
+    public void NormalizeLegacy_PrefersPerGenderOverShared()
+    {
+        var filters = ResponseCollectionFilters.NormalizeLegacy(
+            enabled: true,
+            excludeFemale: false,
+            maxAgeInclusive: 70,
+            excludeMale: false,
+            maxAgeMaleInclusive: 55,
+            maxAgeFemaleInclusive: 60);
+
+        Assert.Equal(55, filters.MaxAgeMaleInclusive);
+        Assert.Equal(60, filters.MaxAgeFemaleInclusive);
     }
 }

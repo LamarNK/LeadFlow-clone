@@ -602,7 +602,9 @@ public sealed class OrbitaApiClient(
         string? adsPowerApiKey,
         bool responseFilterEnabled = false,
         bool responseFilterExcludeFemale = false,
-        int? responseFilterMaxAge = null,
+        bool responseFilterExcludeMale = false,
+        int? responseFilterMaxAgeMale = null,
+        int? responseFilterMaxAgeFemale = null,
         CancellationToken ct = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Patch, $"api/v1/workers/{workerId}/settings");
@@ -612,7 +614,10 @@ public sealed class OrbitaApiClient(
             adsPowerApiKey,
             responseFilterEnabled,
             responseFilterExcludeFemale,
-            responseFilterMaxAge));
+            ResponseFilterMaxAge: null,
+            responseFilterExcludeMale,
+            responseFilterMaxAgeMale,
+            responseFilterMaxAgeFemale));
         using var response = await SendAuthenticatedAsync(request, ct);
         if (response is null)
         {
