@@ -1518,11 +1518,24 @@ public static class AvitoCandidatesPageScripts
                 return rect.width > 0 && rect.height > 0;
             };
 
+            // Структурные маркеры формы входа; текстовые — только без кабинета (баннеры «Зарегистрироваться» не считаем).
+            const hasLoginDom = !!(
+                document.querySelector("[data-marker='auth-app-root']") ||
+                document.querySelector("form[data-marker='login-form']") ||
+                document.querySelector("[data-marker='login-form/login']") ||
+                document.querySelector("[data-marker='login-form/password']") ||
+                document.querySelector("input[name='password'][autocomplete='current-password']")
+            );
+            const hasLoggedInProfile = !!(
+                document.querySelector("[data-marker='header/profile-name']") ||
+                document.querySelector("[data-marker='profile-switch/link']") ||
+                document.querySelector("[data-marker='osp-sidebar/tools/profile/name']") ||
+                document.querySelector("[data-marker='osp-sidebar/tools/money']")
+            );
             const containsAuthText = (value) =>
-                /телефон или почта|пароль|забыли пароль|регистрац|войти|вход/i.test(value ?? "");
-
-            const loginCandidates = Array.from(document.querySelectorAll("input, button, a, h1, h2, h3, label, span, div"));
-            const hasLogin = loginCandidates.some((element) => {
+                /телефон или почта|забыли пароль|запомнить пароль|войти в авито|нет аккаунта на/i.test(value ?? "");
+            const loginCandidates = Array.from(document.querySelectorAll("input, button, a, h1, h2, h3, label, form"));
+            const hasLoginText = !hasLoggedInProfile && loginCandidates.some((element) => {
                 if (!isVisible(element)) {
                     return false;
                 }
@@ -1531,6 +1544,7 @@ public static class AvitoCandidatesPageScripts
                     containsAuthText(element.getAttribute?.("placeholder")) ||
                     containsAuthText(element.getAttribute?.("aria-label"));
             });
+            const hasLogin = hasLoginDom || hasLoginText;
 
             const statusButtons = Array.from(document.querySelectorAll("[data-marker='job-application/response/status-select-button']"));
             const roots = [];

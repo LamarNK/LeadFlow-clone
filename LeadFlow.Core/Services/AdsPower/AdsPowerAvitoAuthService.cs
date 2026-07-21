@@ -556,12 +556,25 @@ public sealed class AdsPowerAvitoAuthService(
                 !!document.getElementById('h-captcha') ||
                 !!document.getElementById('geetest_captcha') ||
                 !!document.getElementById('inner-captcha');
-            const hasLoginForm =
-                !!document.querySelector("input[type='password']") ||
-                !!document.querySelector("[data-marker='login/password']") ||
-                !!document.querySelector("form[action*='login']") ||
+            // Pro-кабинет: сайдбар с именем/кошельком — уже авторизован; не путать с баннером «Зарегистрироваться».
+            const hasLoggedInProfile = !!(
+                document.querySelector("[data-marker='header/profile-name']") ||
+                document.querySelector("[data-marker='profile-switch/link']") ||
+                document.querySelector("[data-marker='osp-sidebar/tools/profile/name']") ||
+                document.querySelector("[data-marker='osp-sidebar/tools/profile/avatar']") ||
+                document.querySelector("[data-marker='osp-sidebar/tools/money']")
+            );
+            const hasLoginDom = !!(
+                document.querySelector("input[type='password']") ||
+                document.querySelector("[data-marker='login/password']") ||
+                document.querySelector("[data-marker='auth-app-root']") ||
+                document.querySelector("form[data-marker='login-form']") ||
+                document.querySelector("form[action*='login']")
+            );
+            const softLoginSignals =
                 /\/login(?:[/?#]|$)|\/profile\/login(?:[/?#]|$)/i.test(url) ||
-                /телефон или почт|войти в авито|зарегистрир/i.test(bodyText.slice(0, 4000));
+                /телефон или почт|войти в авито|забыли пароль|нет аккаунта на/i.test(bodyText.slice(0, 4000));
+            const hasLoginForm = hasLoginDom || (softLoginSignals && !hasLoggedInProfile);
 
             // Точные селекторы Avito Pro имеют наивысший приоритет; остальные — на случай редизайна и обычного /profile.
             const selectors = [

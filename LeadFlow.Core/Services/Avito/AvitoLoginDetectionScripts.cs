@@ -34,19 +34,26 @@ internal static class AvitoLoginDetectionScripts
 
             const hasLoginHtml = /data-marker=['"]auth-app-root|data-marker=['"]login-form|AuthorizationMainScreen-module|login-form\/login|login-form\/password/i.test(htmlSnippet);
 
+            // Тексты именно формы входа (не промо-кнопки баннеров в Pro-кабинете).
             const containsAuthText = (value) =>
-                /телефон или почта|забыли пароль|запомнить пароль|продолжить через|зарегистрироваться|нет аккаунта на/i.test(value ?? "");
+                /телефон или почта|забыли пароль|запомнить пароль|продолжить через|нет аккаунта на|войти в авито/i.test(value ?? "");
 
             const hasLoginText = containsAuthText(probeText);
 
             const hasGuestLoginButton = !!document.querySelector("[data-marker='header/login-button']");
+            // Pro: osp-sidebar/* — основной маркер кабинета; header/profile-name — обычный профиль.
             const hasLoggedInProfile = !!(
                 document.querySelector("[data-marker='header/profile-name']") ||
-                document.querySelector("[data-marker='profile-switch/link']")
+                document.querySelector("[data-marker='profile-switch/link']") ||
+                document.querySelector("[data-marker='osp-sidebar/tools/profile/name']") ||
+                document.querySelector("[data-marker='osp-sidebar/tools/profile/avatar']") ||
+                document.querySelector("[data-marker='osp-sidebar/tools/money']")
             );
             const guestNeedsLogin = hasGuestLoginButton && !hasLoggedInProfile && !hasLoginDom;
 
-            const hasLogin = hasLoginDom || hasLoginHtml || hasLoginText || titleSuggestsLogin || urlSuggestsLogin || guestNeedsLogin;
+            // Soft-сигналы (URL/title/текст/HTML-сниппет) не перебивают уже открытый кабинет.
+            const softLoginSignals = hasLoginHtml || hasLoginText || titleSuggestsLogin || urlSuggestsLogin;
+            const hasLogin = hasLoginDom || guestNeedsLogin || (softLoginSignals && !hasLoggedInProfile);
 
             return JSON.stringify({
                 hasLogin,
@@ -56,7 +63,8 @@ internal static class AvitoLoginDetectionScripts
                 titleSuggestsLogin,
                 hasLoginDom,
                 hasLoginHtml,
-                hasLoginText
+                hasLoginText,
+                hasLoggedInProfile
             });
         })();
         """;

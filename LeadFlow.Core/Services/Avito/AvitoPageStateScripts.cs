@@ -58,16 +58,23 @@ public static class AvitoPageStateScripts
                 document.querySelector("[class*='AuthorizationMainScreen']")
             );
             const hasLoginHtml = /data-marker=['"]auth-app-root|data-marker=['"]login-form|AuthorizationMainScreen-module|login-form\/login|login-form\/password/i.test(htmlSnippet);
+            // Тексты именно формы входа (не промо-кнопки баннеров в Pro-кабинете).
             const containsAuthText = (value) =>
-                /телефон или почта|забыли пароль|запомнить пароль|продолжить через|зарегистрироваться|нет аккаунта на/i.test(value ?? "");
+                /телефон или почта|забыли пароль|запомнить пароль|продолжить через|нет аккаунта на|войти в авито/i.test(value ?? "");
             const hasLoginText = containsAuthText(probeText);
             const hasGuestLoginButton = !!document.querySelector("[data-marker='header/login-button']");
+            // Pro: osp-sidebar/* — основной маркер кабинета; header/profile-name — обычный профиль.
             const hasLoggedInProfile = !!(
                 document.querySelector("[data-marker='header/profile-name']") ||
-                document.querySelector("[data-marker='profile-switch/link']")
+                document.querySelector("[data-marker='profile-switch/link']") ||
+                document.querySelector("[data-marker='osp-sidebar/tools/profile/name']") ||
+                document.querySelector("[data-marker='osp-sidebar/tools/profile/avatar']") ||
+                document.querySelector("[data-marker='osp-sidebar/tools/money']")
             );
             const guestNeedsLogin = hasGuestLoginButton && !hasLoggedInProfile && !hasLoginDom;
-            const hasLoginForm = hasLoginDom || hasLoginHtml || hasLoginText || titleSuggestsLogin || urlSuggestsLogin || guestNeedsLogin;
+            // Soft-сигналы не перебивают уже открытый кабинет (промо-баннеры и т.п.).
+            const softLoginSignals = hasLoginHtml || hasLoginText || titleSuggestsLogin || urlSuggestsLogin;
+            const hasLoginForm = hasLoginDom || guestNeedsLogin || (softLoginSignals && !hasLoggedInProfile);
 
             const hasFirewallDom = !!document.querySelector(
                 ".firewall-container, .js-firewall-form, .firewall-title, form.js-firewall-form, h2.firewall-title"

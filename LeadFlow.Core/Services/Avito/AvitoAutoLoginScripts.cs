@@ -37,7 +37,10 @@ internal static class AvitoAutoLoginScripts
             const hasGuestLoginButton = !!document.querySelector("[data-marker='header/login-button']");
             const hasLoggedInProfile = !!(
                 document.querySelector("[data-marker='header/profile-name']") ||
-                document.querySelector("[data-marker='profile-switch/link']")
+                document.querySelector("[data-marker='profile-switch/link']") ||
+                document.querySelector("[data-marker='osp-sidebar/tools/profile/name']") ||
+                document.querySelector("[data-marker='osp-sidebar/tools/profile/avatar']") ||
+                document.querySelector("[data-marker='osp-sidebar/tools/money']")
             );
             const urlSuggestsLogin =
                 /\/profile\/login|\/profile\/auth|avito\.ru\/login|#login\b|\/auth\b/i.test(url);
