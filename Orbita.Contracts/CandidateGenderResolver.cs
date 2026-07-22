@@ -44,6 +44,9 @@ public static class CandidateGenderResolver
         "фома", "эдуард", "юрий", "ярослав", "лёва", "лева", "саня", "дима", "коля", "вова", "толя",
         "ваня", "петя", "костя", "миша", "паша", "сережа", "серёжа", "глеб", "захар", "тарас", "платон",
         "марк", "назар", "давид", "адам", "савва", "лука",
+        // Male diminutives (often missing or wrong-gender in russiannames)
+        "сеня", "сенёк", "сенек", "рома", "ромка", "вася", "лёша", "леша", "алёша", "алеша",
+        "андрюша", "серёга", "серега", "юра", "жека", "митя", "стёпа", "степа", "тоха", "гоша", "гриша",
         "абдулло", "абдулла", "азиз", "азизбек", "айбек", "айрат", "акбар", "акмал", "али", "алишер",
         "аман", "амир", "анвар", "ахмад", "ахмед", "бахтиёр", "бахтияр", "бобур", "болат", "далер",
         "джамшид", "дилшод", "дониёр", "ерлан", "жамшид", "зафар", "иброхим", "ислом", "карим", "комил",
@@ -53,7 +56,8 @@ public static class CandidateGenderResolver
         "баир", "бато", "батыр", "батор", "булат", "даши", "доржи", "жаргал", "цырен", "алдар",
         "армен", "арам", "гарик", "левон", "сурен", "тигран", "магомед", "шамиль", "рамиль", "леван",
         "ali", "alisher", "aziz", "dilshod", "farhod", "jamshid", "rustam", "timur", "umar", "yusuf",
-        "magomed", "shamil", "tigran", "armen", "bair", "bulat"
+        "magomed", "shamil", "tigran", "armen", "bair", "bulat",
+        "roma", "roman", "senya", "sena", "igor", "ivan", "dima", "sanya", "pasha", "misha"
     };
 
     private static readonly HashSet<string> FemaleFirstNames = new(StringComparer.OrdinalIgnoreCase)
@@ -77,7 +81,9 @@ public static class CandidateGenderResolver
     {
         "илья", "никита", "кузьма", "фома", "данила", "лёва", "лева", "савва", "лука", "муса",
         "мустафа", "иса", "костя", "ваня", "петя", "миша", "паша", "гриша", "гоша", "тоша",
-        "боря", "витя", "вова", "толя", "дима", "коля"
+        "боря", "витя", "вова", "толя", "дима", "коля",
+        "сеня", "рома", "вася", "лёша", "леша", "алёша", "алеша", "андрюша", "юра", "митя",
+        "стёпа", "степа", "саня"
     };
 
     private static readonly Regex MalePatronymic = new(
@@ -113,25 +119,86 @@ public static class CandidateGenderResolver
         string? cardGender = null,
         string? rawText = null)
     {
+        var fromName = InferFromFullName(fullName);
+
         var fromCard = CandidateGenders.NormalizeFilterValue(cardGender);
         if (fromCard is CandidateGenders.Male or CandidateGenders.Female)
         {
+            // Strong FIO (patronymic / known first+second token) beats a conflicting card label.
+            // Fixes cases like «Ковалев Игорь Анатольевич» when Avito/rawText wrongly says «Женщина».
+            if (fromName is CandidateGenders.Male or CandidateGenders.Female
+                && !string.Equals(fromName, fromCard, StringComparison.Ordinal)
+                && HasStrongNameGenderSignal(fullName, fromName))
+            {
+                return new CandidateGenderResolution(fromName, CandidateGenderSources.Name);
+            }
+
             return new CandidateGenderResolution(fromCard, CandidateGenderSources.Card);
         }
 
         var fromText = CandidateGenders.ParseFromText(rawText);
         if (fromText is CandidateGenders.Male or CandidateGenders.Female)
         {
+            if (fromName is CandidateGenders.Male or CandidateGenders.Female
+                && !string.Equals(fromName, fromText, StringComparison.Ordinal)
+                && HasStrongNameGenderSignal(fullName, fromName))
+            {
+                return new CandidateGenderResolution(fromName, CandidateGenderSources.Name);
+            }
+
             return new CandidateGenderResolution(fromText, CandidateGenderSources.Card);
         }
 
-        var fromName = InferFromFullName(fullName);
         if (fromName is CandidateGenders.Male or CandidateGenders.Female)
         {
             return new CandidateGenderResolution(fromName, CandidateGenderSources.Name);
         }
 
         return CandidateGenderResolution.Unknown;
+    }
+
+    /// <summary>
+    /// True when name gender is backed by patronymic and/or multi-token known first name —
+    /// not a single ambiguous nickname token.
+    /// </summary>
+    internal static bool HasStrongNameGenderSignal(string? fullName, string gender)
+    {
+        if (gender is not (CandidateGenders.Male or CandidateGenders.Female))
+        {
+            return false;
+        }
+
+        var tokens = Tokenize(fullName);
+        if (tokens.Count == 0)
+        {
+            return false;
+        }
+
+        var (surname, firstName, middleName) = AssignParts(tokens);
+
+        if (!string.IsNullOrEmpty(middleName)
+            && string.Equals(LookupMiddle(middleName), gender, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        // Known first name (incl. single-token diminutives: Сеня, Рома, Roma).
+        if (!string.IsNullOrEmpty(firstName)
+            && string.Equals(LookupFirst(firstName), gender, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        // Surname-only strong morphology (Петрова) — only when single-token surname assignment.
+        if (tokens.Count == 1
+            && !string.IsNullOrEmpty(surname)
+            && string.IsNullOrEmpty(firstName)
+            && string.Equals(LookupSurname(surname), gender, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return false;
     }
 
     public static string? InferFromFullName(string? fullName)
@@ -345,8 +412,9 @@ public static class CandidateGenderResolver
             return null;
         }
 
-        return RussianNameGenderLexicon.LookupFirstName(token)
-            ?? SeedLookupFirst(token);
+        // Curated seeds win over russiannames (e.g. «рома» is wrongly female in the dataset).
+        return SeedLookupFirst(token)
+            ?? RussianNameGenderLexicon.LookupFirstName(token);
     }
 
     private static string? LookupSurname(string? token)

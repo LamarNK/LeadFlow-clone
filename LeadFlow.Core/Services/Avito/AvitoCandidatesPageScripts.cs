@@ -962,15 +962,21 @@ public static class AvitoCandidatesPageScripts
             };
 
             const parseGenderText = (root) => {
-                const malePattern = /мужчина/i;
-                const femalePattern = /женщина/i;
+                // Demographic line only: «Мужчина · 54 года» / bare «Мужчина» — not vacancy prose.
+                const malePattern = /(?:^|[\s·•|,\-—])мужчина(?![а-яё])(?:\s*[·•|,\-—]\s*|\s+(?=\d{1,2}\s*(?:лет|года|год))|$)/i;
+                const femalePattern = /(?:^|[\s·•|,\-—])женщина(?![а-яё])(?:\s*[·•|,\-—]\s*|\s+(?=\d{1,2}\s*(?:лет|года|год))|$)/i;
+                const bareMale = /^мужчина$/i;
+                const bareFemale = /^женщина$/i;
                 for (const line of Array.from(root.querySelectorAll("p"))) {
                     const text = normalizeCardText(line.textContent);
-                    if (malePattern.test(text)) {
+                    if (!text) {
+                        continue;
+                    }
+                    if (bareMale.test(text) || malePattern.test(text)) {
                         return "male";
                     }
 
-                    if (femalePattern.test(text)) {
+                    if (bareFemale.test(text) || femalePattern.test(text)) {
                         return "female";
                     }
                 }
@@ -1782,16 +1788,22 @@ public static class AvitoCandidatesPageScripts
 
             const parseGender = (root, rawText) => {
                 const normalize = (text) => (text ?? "").replace(/\s+/g, " ").trim();
-                const malePattern = /мужчина/i;
-                const femalePattern = /женщина/i;
+                // Demographic line only: «Мужчина · 54 года» / bare «Мужчина» — not vacancy prose.
+                const malePattern = /(?:^|[\s·•|,\-—])мужчина(?![а-яё])(?:\s*[·•|,\-—]\s*|\s+(?=\d{1,2}\s*(?:лет|года|год))|$)/i;
+                const femalePattern = /(?:^|[\s·•|,\-—])женщина(?![а-яё])(?:\s*[·•|,\-—]\s*|\s+(?=\d{1,2}\s*(?:лет|года|год))|$)/i;
+                const bareMale = /^мужчина$/i;
+                const bareFemale = /^женщина$/i;
 
                 for (const line of Array.from(root.querySelectorAll("p"))) {
                     const text = normalize(line.textContent);
-                    if (malePattern.test(text)) {
+                    if (!text) {
+                        continue;
+                    }
+                    if (bareMale.test(text) || malePattern.test(text)) {
                         return "male";
                     }
 
-                    if (femalePattern.test(text)) {
+                    if (bareFemale.test(text) || femalePattern.test(text)) {
                         return "female";
                     }
                 }

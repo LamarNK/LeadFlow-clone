@@ -31,6 +31,10 @@ public sealed class CandidateGenderResolverTests
     [InlineData("А.Н. Егорова", CandidateGenders.Female, CandidateGenderSources.Name)]
     [InlineData("Николаев С.", CandidateGenders.Male, CandidateGenderSources.Name)]
     [InlineData("Петракова Зинаида М.", CandidateGenders.Female, CandidateGenderSources.Name)]
+    [InlineData("Сеня", CandidateGenders.Male, CandidateGenderSources.Name)]
+    [InlineData("Рома", CandidateGenders.Male, CandidateGenderSources.Name)]
+    [InlineData("Roma", CandidateGenders.Male, CandidateGenderSources.Name)]
+    [InlineData("Ковалев Игорь Анатольевич", CandidateGenders.Male, CandidateGenderSources.Name)]
     public void Resolve_KnownNames(string fullName, string gender, string source)
     {
         var result = CandidateGenderResolver.Resolve(fullName);
@@ -50,15 +54,51 @@ public sealed class CandidateGenderResolverTests
     }
 
     [Fact]
-    public void Resolve_PrefersCardGenderOverName()
+    public void Resolve_PrefersCardGenderWhenNameIsWeak()
+    {
+        var result = CandidateGenderResolver.Resolve(
+            "Пользователь",
+            cardGender: CandidateGenders.Male,
+            rawText: null);
+
+        Assert.Equal(CandidateGenders.Male, result.Gender);
+        Assert.Equal(CandidateGenderSources.Card, result.Source);
+    }
+
+    [Fact]
+    public void Resolve_StrongFioOverridesConflictingCardGender()
+    {
+        var result = CandidateGenderResolver.Resolve(
+            "Ковалев Игорь Анатольевич",
+            cardGender: CandidateGenders.Female,
+            rawText: null);
+
+        Assert.Equal(CandidateGenders.Male, result.Gender);
+        Assert.Equal(CandidateGenderSources.Name, result.Source);
+    }
+
+    [Fact]
+    public void Resolve_StrongFioOverridesConflictingRawTextGender()
+    {
+        var result = CandidateGenderResolver.Resolve(
+            "Ковалев Игорь Анатольевич",
+            cardGender: null,
+            rawText: "Женщина · 59 лет");
+
+        Assert.Equal(CandidateGenders.Male, result.Gender);
+        Assert.Equal(CandidateGenderSources.Name, result.Source);
+    }
+
+    [Fact]
+    public void Resolve_StrongFemaleFioOverridesConflictingCardMale()
     {
         var result = CandidateGenderResolver.Resolve(
             "Петрова Анна",
             cardGender: CandidateGenders.Male,
             rawText: null);
 
-        Assert.Equal(CandidateGenders.Male, result.Gender);
-        Assert.Equal(CandidateGenderSources.Card, result.Source);
+        Assert.Equal(CandidateGenders.Female, result.Gender);
+        Assert.Equal(CandidateGenderSources.Name, result.Source);
     }
 
     [Fact]
@@ -71,6 +111,29 @@ public sealed class CandidateGenderResolverTests
 
         Assert.Equal(CandidateGenders.Female, result.Gender);
         Assert.Equal(CandidateGenderSources.Card, result.Source);
+    }
+
+    [Fact]
+    public void Resolve_MaleDiminutiveNotFlippedByFemaleMorphology()
+    {
+        Assert.Equal(CandidateGenders.Male, CandidateGenderResolver.Resolve("Сеня").Gender);
+        Assert.Equal(CandidateGenders.Male, CandidateGenderResolver.Resolve("Рома").Gender);
+        Assert.Equal(CandidateGenders.Male, CandidateGenderResolver.Resolve("Roma").Gender);
+    }
+
+    [Theory]
+    [InlineData("Сеня")]
+    [InlineData("Рома")]
+    [InlineData("Roma")]
+    public void Resolve_KnownMaleDiminutiveOverridesConflictingCard(string name)
+    {
+        var result = CandidateGenderResolver.Resolve(
+            name,
+            cardGender: CandidateGenders.Female,
+            rawText: "Женщина · 42 года");
+
+        Assert.Equal(CandidateGenders.Male, result.Gender);
+        Assert.Equal(CandidateGenderSources.Name, result.Source);
     }
 
     [Fact]

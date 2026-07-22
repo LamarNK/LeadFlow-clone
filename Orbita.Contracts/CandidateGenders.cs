@@ -8,12 +8,25 @@ public static class CandidateGenders
     public const string Female = "female";
     public const string Unknown = "unknown";
 
-    private static readonly Regex MaleRegex = new(
-        @"(?<![а-яё])мужчина(?![а-яё])",
+    /// <summary>
+    /// Avito demographic line: «Мужчина · 54 года», optional trailing fields.
+    /// Requires gender word next to a separator/age so vacancy prose is less likely to match.
+    /// </summary>
+    private static readonly Regex MaleCardLineRegex = new(
+        @"(?<![а-яё])мужчина(?![а-яё])(?:\s*[·•|,\-—]\s*|\s+(?=\d{1,2}\s*(?:лет|года|год)))",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
-    private static readonly Regex FemaleRegex = new(
-        @"(?<![а-яё])женщина(?![а-яё])",
+    private static readonly Regex FemaleCardLineRegex = new(
+        @"(?<![а-яё])женщина(?![а-яё])(?:\s*[·•|,\-—]\s*|\s+(?=\d{1,2}\s*(?:лет|года|год)))",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+    /// <summary>Bare label on its own short line (legacy cards).</summary>
+    private static readonly Regex MaleBareRegex = new(
+        @"^(?<![а-яё])мужчина(?![а-яё])$",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+    private static readonly Regex FemaleBareRegex = new(
+        @"^(?<![а-яё])женщина(?![а-яё])$",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     public static string? ParseFromText(string? text)
@@ -24,12 +37,12 @@ public static class CandidateGenders
         }
 
         var normalized = Regex.Replace(text.Trim(), @"\s+", " ");
-        if (MaleRegex.IsMatch(normalized))
+        if (MaleCardLineRegex.IsMatch(normalized) || MaleBareRegex.IsMatch(normalized))
         {
             return Male;
         }
 
-        if (FemaleRegex.IsMatch(normalized))
+        if (FemaleCardLineRegex.IsMatch(normalized) || FemaleBareRegex.IsMatch(normalized))
         {
             return Female;
         }
