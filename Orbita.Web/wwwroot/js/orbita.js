@@ -592,6 +592,163 @@
         });
     }
 
+    function ensureAvitoCredentialsModal() {
+        var existing = document.getElementById('orbita-avito-credentials-modal');
+        if (existing) return existing;
+
+        var wrap = document.createElement('div');
+        wrap.id = 'orbita-avito-credentials-modal';
+        wrap.className = 'orbita-avito-cred-modal';
+        wrap.hidden = true;
+        wrap.innerHTML =
+            '<div class="orbita-avito-cred-modal__backdrop" data-avito-cred-close></div>' +
+            '<div class="orbita-avito-cred-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="orbita-avito-cred-title">' +
+            '  <h3 id="orbita-avito-cred-title" class="orbita-avito-cred-modal__title">Логин и пароль Avito</h3>' +
+            '  <p class="orbita-avito-cred-modal__hint" data-avito-cred-account></p>' +
+            '  <label class="orbita-avito-cred-modal__label">Логин / телефон' +
+            '    <input type="text" class="orbita-avito-cred-modal__input" data-avito-cred-login autocomplete="username" />' +
+            '  </label>' +
+            '  <label class="orbita-avito-cred-modal__label">Пароль' +
+            '    <input type="password" class="orbita-avito-cred-modal__input" data-avito-cred-password autocomplete="new-password" placeholder="Оставьте пустым, чтобы не менять" />' +
+            '  </label>' +
+            '  <p class="orbita-avito-cred-modal__status" data-avito-cred-status></p>' +
+            '  <div class="orbita-avito-cred-modal__actions">' +
+            '    <button type="button" class="orbita-avito-cred-modal__btn orbita-avito-cred-modal__btn--ghost" data-avito-cred-clear>Удалить</button>' +
+            '    <button type="button" class="orbita-avito-cred-modal__btn" data-avito-cred-close>Отмена</button>' +
+            '    <button type="button" class="orbita-avito-cred-modal__btn orbita-avito-cred-modal__btn--primary" data-avito-cred-save>Сохранить</button>' +
+            '  </div>' +
+            '</div>';
+        document.body.appendChild(wrap);
+        return wrap;
+    }
+
+    function openAvitoCredentialsModal(opts) {
+        var modal = ensureAvitoCredentialsModal();
+        var loginInput = modal.querySelector('[data-avito-cred-login]');
+        var passwordInput = modal.querySelector('[data-avito-cred-password]');
+        var statusEl = modal.querySelector('[data-avito-cred-status]');
+        var accountEl = modal.querySelector('[data-avito-cred-account]');
+        var saveBtn = modal.querySelector('[data-avito-cred-save]');
+        var clearBtn = modal.querySelector('[data-avito-cred-clear]');
+
+        accountEl.textContent = opts.accountName
+            ? ('Аккаунт: ' + opts.accountName)
+            : '';
+        loginInput.value = opts.login || '';
+        passwordInput.value = '';
+        passwordInput.placeholder = opts.hasPassword
+            ? 'Пароль сохранён — оставьте пустым, чтобы не менять'
+            : 'Введите пароль Avito';
+        statusEl.textContent = opts.hasPassword
+            ? 'Пароль уже сохранён в Орбите (шифруется).'
+            : 'Пароль ещё не задан — воркер не сможет войти автоматически.';
+        modal.hidden = false;
+
+        function close() {
+            modal.hidden = true;
+            saveBtn.onclick = null;
+            clearBtn.onclick = null;
+            modal.querySelectorAll('[data-avito-cred-close]').forEach(function (el) {
+                el.onclick = null;
+            });
+        }
+
+        modal.querySelectorAll('[data-avito-cred-close]').forEach(function (el) {
+            el.onclick = close;
+        });
+
+        saveBtn.onclick = async function () {
+            var login = (loginInput.value || '').trim();
+            var password = passwordInput.value || '';
+            if (!login) {
+                showToast('Укажите логин Avito', { variant: 'error' });
+                return;
+            }
+            if (!password && !opts.hasPassword) {
+                showToast('Укажите пароль Avito', { variant: 'error' });
+                return;
+            }
+
+            saveBtn.disabled = true;
+            clearBtn.disabled = true;
+            var result = await postForm(opts.postUrl, {
+                workerId: opts.workerId,
+                accountId: opts.accountId,
+                login: login,
+                password: password,
+                clear: 'false'
+            });
+            saveBtn.disabled = false;
+            clearBtn.disabled = false;
+
+            if (result.ok) {
+                showToast((result.payload && result.payload.message) || 'Сохранено', { variant: 'success' });
+                close();
+                if (window.OrbitaLive && window.OrbitaLive.scheduleRefresh) {
+                    window.OrbitaLive.scheduleRefresh({ kinds: ['Accounts', 'Workers'] });
+                }
+            } else {
+                showToast((result.payload && result.payload.error) || 'Не удалось сохранить', { variant: 'error' });
+            }
+        };
+
+        clearBtn.onclick = async function () {
+            var confirmed = true;
+            if (window.Orbita && window.Orbita.confirm) {
+                confirmed = await window.Orbita.confirm({
+                    title: 'Удалить логин и пароль?',
+                    message: 'Воркер больше не сможет входить в этот аккаунт по credentials из Орбиты.',
+                    confirmLabel: 'Удалить',
+                    variant: 'danger'
+                });
+            }
+            if (!confirmed) return;
+
+            clearBtn.disabled = true;
+            saveBtn.disabled = true;
+            var result = await postForm(opts.postUrl, {
+                workerId: opts.workerId,
+                accountId: opts.accountId,
+                login: '',
+                password: '',
+                clear: 'true'
+            });
+            clearBtn.disabled = false;
+            saveBtn.disabled = false;
+
+            if (result.ok) {
+                showToast((result.payload && result.payload.message) || 'Удалено', { variant: 'success' });
+                close();
+                if (window.OrbitaLive && window.OrbitaLive.scheduleRefresh) {
+                    window.OrbitaLive.scheduleRefresh({ kinds: ['Accounts', 'Workers'] });
+                }
+            } else {
+                showToast((result.payload && result.payload.error) || 'Не удалось удалить', { variant: 'error' });
+            }
+        };
+    }
+
+    function initAvitoCredentialsButtons() {
+        document.querySelectorAll('[data-avito-credentials]').forEach(function (btn) {
+            if (btn.hasAttribute('data-avito-credentials-bound')) return;
+            btn.setAttribute('data-avito-credentials-bound', '1');
+
+            btn.addEventListener('click', function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                closeAllRowMenus();
+                openAvitoCredentialsModal({
+                    workerId: btn.getAttribute('data-worker-id'),
+                    accountId: btn.getAttribute('data-account-id'),
+                    accountName: btn.getAttribute('data-account-name') || '',
+                    login: btn.getAttribute('data-login') || '',
+                    hasPassword: btn.getAttribute('data-has-password') === 'true',
+                    postUrl: btn.getAttribute('data-post-url') || '/Workers/UpdateAccountCredentials'
+                });
+            });
+        });
+    }
+
     function initWorkerAccountEnableToggles() {
         document.querySelectorAll('[data-account-enable-toggle]').forEach(function (input) {
             if (input.hasAttribute('data-account-enable-bound')) return;
@@ -872,6 +1029,7 @@
     initSubProfilesToggles();
     initSubProfileEnableToggles();
     initWorkerAccountEnableToggles();
+    initAvitoCredentialsButtons();
     initSubProfilesRefreshButtons();
     initSubProfileScreenshotLinks();
     initUserMenu();
@@ -1710,6 +1868,7 @@
         initSubProfilesToggles();
         initSubProfileEnableToggles();
         initWorkerAccountEnableToggles();
+        initAvitoCredentialsButtons();
         initSubProfilesRefreshButtons();
         initSubProfileScreenshotLinks();
         initOfficeSwitcher();
@@ -2093,6 +2252,7 @@
     initBitrixValidateButtons();
     window.Orbita.initWorkerRestartButtons = initWorkerRestartButtons;
     window.Orbita.initWorkerAccountEnableToggles = initWorkerAccountEnableToggles;
+    window.Orbita.initAvitoCredentialsButtons = initAvitoCredentialsButtons;
     window.Orbita.openDetailModal = openDetailModal;
     window.Orbita.initFilterPanels = initFilterPanels;
     window.Orbita.initDetailOpenButtons = initDetailOpenButtons;

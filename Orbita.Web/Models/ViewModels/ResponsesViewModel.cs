@@ -49,6 +49,7 @@ public sealed class ResponseRowViewModel
 {
     public Guid Id { get; init; }
     public Guid PersonId { get; init; }
+    public DateTime CollectedAtUtc { get; init; }
     public DateTime CreatedAtUtc { get; init; }
     public string FullName { get; init; } = string.Empty;
     public int? Age { get; init; }
@@ -134,6 +135,7 @@ public sealed class ResponseDetailViewModel
     public string? ErrorMessage { get; init; }
     public string RawText { get; init; } = string.Empty;
     public IReadOnlyList<Formatting.ResponseChatMessageViewModel> ChatMessages { get; init; } = [];
+    public DateTime CollectedAtUtc { get; init; }
     public DateTime CreatedAtUtc { get; init; }
     public DateTime? ProcessedAtUtc { get; init; }
     public IReadOnlyList<ResponseBitrixDeliveryViewModel> BitrixDeliveries { get; init; } = [];

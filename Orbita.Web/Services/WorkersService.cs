@@ -235,6 +235,15 @@ public sealed class WorkersService(
         CancellationToken ct = default) =>
         api.UpdateWorkerAccountAsync(workerId, accountId, isEnabled, ct);
 
+    public Task<(bool Success, string? Error)> UpdateWorkerAccountCredentialsAsync(
+        Guid workerId,
+        Guid accountId,
+        string? login,
+        string? password,
+        bool clear,
+        CancellationToken ct = default) =>
+        api.UpdateWorkerAccountCredentialsAsync(workerId, accountId, login, password, clear, ct);
+
     public Task<(bool Success, string? Error)> RequestSubProfilesRefreshAsync(
         Guid workerId,
         Guid accountId,

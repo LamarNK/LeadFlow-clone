@@ -78,9 +78,9 @@ public sealed class TableSortTests
     {
         var rows = new[]
         {
-            new ResponseRowViewModel { FullName = "a", City = "Казань", CreatedAtUtc = DateTime.UtcNow },
-            new ResponseRowViewModel { FullName = "b", City = "Москва", CreatedAtUtc = DateTime.UtcNow },
-            new ResponseRowViewModel { FullName = "c", City = "Екатеринбург", CreatedAtUtc = DateTime.UtcNow }
+            new ResponseRowViewModel { FullName = "a", City = "Казань", CollectedAtUtc = DateTime.UtcNow, CreatedAtUtc = DateTime.UtcNow },
+            new ResponseRowViewModel { FullName = "b", City = "Москва", CollectedAtUtc = DateTime.UtcNow, CreatedAtUtc = DateTime.UtcNow },
+            new ResponseRowViewModel { FullName = "c", City = "Екатеринбург", CollectedAtUtc = DateTime.UtcNow, CreatedAtUtc = DateTime.UtcNow }
         };
 
         var sorted = TableSort.Responses

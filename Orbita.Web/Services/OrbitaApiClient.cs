@@ -736,6 +736,29 @@ public sealed class OrbitaApiClient(
             : (false, await ReadApiErrorAsync(response, ct));
     }
 
+    public async Task<(bool Success, string? Error)> UpdateWorkerAccountCredentialsAsync(
+        Guid workerId,
+        Guid accountId,
+        string? login,
+        string? password,
+        bool clear,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Put,
+            $"api/v1/workers/{workerId}/accounts/{accountId}/credentials");
+        request.Content = JsonContent.Create(new UpdateWorkerAccountCredentialsRequest(login, password, clear));
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (false, InvalidApiSessionError);
+        }
+
+        return response.IsSuccessStatusCode
+            ? (true, null)
+            : (false, await ReadApiErrorAsync(response, ct));
+    }
+
     public async Task<(RotateWorkerApiKeyResponse? Result, string? Error)> RotateWorkerApiKeyAsync(
         Guid workerId,
         CancellationToken ct = default)

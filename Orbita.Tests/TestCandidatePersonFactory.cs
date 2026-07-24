@@ -65,6 +65,7 @@ internal static class TestCandidatePersonFactory
         PhoneRaw = phone,
         PhoneNormalized = phone,
         Status = ResponseStatuses.Sent,
-        CreatedAt = createdAt ?? DateTime.UtcNow
+        CreatedAt = createdAt ?? DateTime.UtcNow,
+        CollectedAt = createdAt ?? DateTime.UtcNow
     };
 }

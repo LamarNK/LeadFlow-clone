@@ -12,12 +12,15 @@ public sealed class CandidatePersonMatchService(OrbitaDbContext db)
         CancellationToken ct = default)
     {
         var incomingName = CandidateNameNormalizer.Normalize(incoming.FullName);
-        if (incomingName.LastName.Length == 0 || incomingName.FirstName.Length == 0)
+        // Хотя бы один токен (в т.ч. «только Иван»). Полное ФИО матчится по имени;
+        // неполное — только если scorer наберёт порог за счёт age/city (или phone)
+        // и есть отклик в узком временном окне (~неделя).
+        if (!CandidateNameNormalizer.HasAnyNamePart(incomingName))
         {
             return null;
         }
 
-        var duplicateCutoffUtc = CandidateDuplicateLookback.GetCutoffUtc(DateTime.UtcNow);
+        var isCompleteFio = CandidateNameNormalizer.IsCompleteFio(incomingName);
         var nameMatches = await db.CandidatePersons
             .AsNoTracking()
             .Where(x => x.OfficeId == officeId
@@ -32,14 +35,34 @@ public sealed class CandidatePersonMatchService(OrbitaDbContext db)
         }
 
         var candidatePersonIds = nameMatches.Select(x => x.Id).ToArray();
-        var activePersonIds = await db.CandidateResponses
-            .AsNoTracking()
-            .Where(x => x.OfficeId == officeId
-                        && x.CreatedAt >= duplicateCutoffUtc
-                        && candidatePersonIds.Contains(x.PersonId))
-            .Select(x => x.PersonId)
-            .Distinct()
-            .ToListAsync(ct);
+        List<Guid> activePersonIds;
+        if (isCompleteFio)
+        {
+            var duplicateCutoffUtc = CandidateDuplicateLookback.GetCutoffUtc(DateTime.UtcNow);
+            activePersonIds = await db.CandidateResponses
+                .AsNoTracking()
+                .Where(x => x.OfficeId == officeId
+                            && x.CreatedAt >= duplicateCutoffUtc
+                            && candidatePersonIds.Contains(x.PersonId))
+                .Select(x => x.PersonId)
+                .Distinct()
+                .ToListAsync(ct);
+        }
+        else
+        {
+            // Неполное имя: только отклики около даты этого отклика (±7 дней).
+            var (windowStart, windowEnd) = CandidateDuplicateLookback.GetIncompleteNameWindow(
+                incoming.ResponseAtUtc);
+            activePersonIds = await db.CandidateResponses
+                .AsNoTracking()
+                .Where(x => x.OfficeId == officeId
+                            && x.CreatedAt >= windowStart
+                            && x.CreatedAt <= windowEnd
+                            && candidatePersonIds.Contains(x.PersonId))
+                .Select(x => x.PersonId)
+                .Distinct()
+                .ToListAsync(ct);
+        }
 
         var activeMatches = nameMatches
             .Where(x => activePersonIds.Contains(x.Id))
@@ -90,11 +113,12 @@ public sealed class CandidatePersonMatchService(OrbitaDbContext db)
         string fullName,
         int? age,
         string city,
-        string phoneNormalized) =>
-        new(fullName, age, city, phoneNormalized);
+        string phoneNormalized,
+        DateTime? responseAtUtc = null) =>
+        new(fullName, age, city, phoneNormalized, responseAtUtc);
 
     public static CandidateMatchProfile ToProfile(CandidateResponseEntity entity) =>
-        new(entity.FullName, entity.Age, entity.City, entity.PhoneNormalized);
+        new(entity.FullName, entity.Age, entity.City, entity.PhoneNormalized, entity.CreatedAt);
 
     public static CandidateMatchProfile ToProfile(CandidatePersonEntity entity) =>
         new(entity.FullName, entity.Age, entity.City, entity.PhoneNormalized);

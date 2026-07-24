@@ -71,6 +71,15 @@ internal static class WorkerMonitoringLogger
     public static void BrowserClosed(AvitoAccount account) =>
         LogInfo($"{FormatAccount(account)} — браузер AdsPower закрыт.");
 
+    public static void BrowserHousekeepingStarted(string reason, int profileCount) =>
+        LogInfo($"Уборка браузеров AdsPower ({reason}): закрываем {profileCount} профиль(ей).");
+
+    public static void BrowserHousekeepingFinished(int closedOk, int profileCount) =>
+        LogInfo($"Уборка браузеров AdsPower завершена: stop отправлен для {closedOk} из {profileCount}.");
+
+    public static void BrowserHousekeepingSkipped(string reason) =>
+        LogInfo($"Уборка браузеров AdsPower пропущена: {reason}.");
+
     public static void SubProfileTelemetrySaved(AvitoAccount account, AvitoSubProfile sub) =>
         LogInfo(
             $"{FormatAccount(account)} · «{sub.Name}» — баланс/рейтинг сохранены; snapshot на сайт в течение ~8 с (или сразу при завершении аккаунта).");

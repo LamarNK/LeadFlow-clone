@@ -31,10 +31,36 @@ public sealed class CandidateGenderResolverTests
     [InlineData("А.Н. Егорова", CandidateGenders.Female, CandidateGenderSources.Name)]
     [InlineData("Николаев С.", CandidateGenders.Male, CandidateGenderSources.Name)]
     [InlineData("Петракова Зинаида М.", CandidateGenders.Female, CandidateGenderSources.Name)]
+    // Production regressions: male diminutives / FIO mislabeled as female
     [InlineData("Сеня", CandidateGenders.Male, CandidateGenderSources.Name)]
     [InlineData("Рома", CandidateGenders.Male, CandidateGenderSources.Name)]
     [InlineData("Roma", CandidateGenders.Male, CandidateGenderSources.Name)]
     [InlineData("Ковалев Игорь Анатольевич", CandidateGenders.Male, CandidateGenderSources.Name)]
+    [InlineData("Серёга", CandidateGenders.Male, CandidateGenderSources.Name)]
+    [InlineData("Серега", CandidateGenders.Male, CandidateGenderSources.Name)]
+    [InlineData("Дима", CandidateGenders.Male, CandidateGenderSources.Name)]
+    [InlineData("Дима Матвиенко", CandidateGenders.Male, CandidateGenderSources.Name)]
+    [InlineData("Матвиенко Дима", CandidateGenders.Male, CandidateGenderSources.Name)]
+    [InlineData("Саня", CandidateGenders.Male, CandidateGenderSources.Name)]
+    [InlineData("Вася", CandidateGenders.Male, CandidateGenderSources.Name)]
+    [InlineData("Коля", CandidateGenders.Male, CandidateGenderSources.Name)]
+    [InlineData("Миша", CandidateGenders.Male, CandidateGenderSources.Name)]
+    [InlineData("Паша", CandidateGenders.Male, CandidateGenderSources.Name)]
+    [InlineData("Серёжа", CandidateGenders.Male, CandidateGenderSources.Name)]
+    [InlineData("Сережа", CandidateGenders.Male, CandidateGenderSources.Name)]
+    [InlineData("Юра", CandidateGenders.Male, CandidateGenderSources.Name)]
+    [InlineData("Лёша", CandidateGenders.Male, CandidateGenderSources.Name)]
+    [InlineData("Андрюша", CandidateGenders.Male, CandidateGenderSources.Name)]
+    [InlineData("Вова", CandidateGenders.Male, CandidateGenderSources.Name)]
+    [InlineData("Толя", CandidateGenders.Male, CandidateGenderSources.Name)]
+    [InlineData("Петя", CandidateGenders.Male, CandidateGenderSources.Name)]
+    [InlineData("Ваня", CandidateGenders.Male, CandidateGenderSources.Name)]
+    [InlineData("Костя", CandidateGenders.Male, CandidateGenderSources.Name)]
+    [InlineData("Боря", CandidateGenders.Male, CandidateGenderSources.Name)]
+    [InlineData("Витя", CandidateGenders.Male, CandidateGenderSources.Name)]
+    [InlineData("Гриша", CandidateGenders.Male, CandidateGenderSources.Name)]
+    [InlineData("Стёпа", CandidateGenders.Male, CandidateGenderSources.Name)]
+    [InlineData("dima", CandidateGenders.Male, CandidateGenderSources.Name)]
     public void Resolve_KnownNames(string fullName, string gender, string source)
     {
         var result = CandidateGenderResolver.Resolve(fullName);
@@ -121,10 +147,22 @@ public sealed class CandidateGenderResolverTests
         Assert.Equal(CandidateGenders.Male, CandidateGenderResolver.Resolve("Roma").Gender);
     }
 
+    /// <summary>
+    /// Lexicon wrongly marks some male diminutives as female (дима/рома/саня);
+    /// curated seeds must win, including when Avito card says «Женщина».
+    /// </summary>
     [Theory]
     [InlineData("Сеня")]
     [InlineData("Рома")]
     [InlineData("Roma")]
+    [InlineData("Дима")]
+    [InlineData("dima")]
+    [InlineData("Серёга")]
+    [InlineData("Серега")]
+    [InlineData("Саня")]
+    [InlineData("Дима Матвиенко")]
+    [InlineData("Матвиенко Дима")]
+    [InlineData("Ковалев Игорь Анатольевич")]
     public void Resolve_KnownMaleDiminutiveOverridesConflictingCard(string name)
     {
         var result = CandidateGenderResolver.Resolve(
@@ -136,11 +174,83 @@ public sealed class CandidateGenderResolverTests
         Assert.Equal(CandidateGenderSources.Name, result.Source);
     }
 
+    [Theory]
+    [InlineData("Дима", "female", "Женщина · 26 лет")]
+    [InlineData("Серёга", "female", "Женщина · 26 лет")]
+    [InlineData("Дима Матвиенко", "female", "Женщина · 43 года")]
+    [InlineData("Сеня", null, "Женщина · 30 лет")]
+    [InlineData("Рома", "female", null)]
+    public void Resolve_ProductionRegression_MaleNotStoredAsFemale(
+        string fullName,
+        string? cardGender,
+        string? rawText)
+    {
+        var result = CandidateGenderResolver.Resolve(fullName, cardGender, rawText);
+        Assert.Equal(CandidateGenders.Male, result.Gender);
+        Assert.Equal(CandidateGenders.Male, CandidateGenderResolver.ToStoredGender(result));
+    }
+
+    [Theory]
+    [InlineData("Петрова Анна", "male", null, CandidateGenders.Female)]
+    [InlineData("Смирнова", null, "Мужчина · 40 лет", CandidateGenders.Female)]
+    [InlineData("Мария", "male", "Мужчина · 25 лет", CandidateGenders.Female)]
+    public void Resolve_StrongFemaleNameOverridesConflictingCardMale(
+        string fullName,
+        string? cardGender,
+        string? rawText,
+        string expected)
+    {
+        var result = CandidateGenderResolver.Resolve(fullName, cardGender, rawText);
+        Assert.Equal(expected, result.Gender);
+        Assert.Equal(CandidateGenderSources.Name, result.Source);
+    }
+
+    [Fact]
+    public void Resolve_MultilineFullName_DimaMatvienko()
+    {
+        var result = CandidateGenderResolver.Resolve(
+            "Дима\nМатвиенко",
+            cardGender: CandidateGenders.Female,
+            rawText: "Женщина · 43 года");
+
+        Assert.Equal(CandidateGenders.Male, result.Gender);
+        Assert.Equal(CandidateGenderSources.Name, result.Source);
+    }
+
+    [Fact]
+    public void InferFromFullName_SeedOverridesLexiconFemaleDima()
+    {
+        // russiannames has n\tдима\tf — seed must still report male
+        Assert.Equal(CandidateGenders.Female, RussianNameGenderLexicon.LookupFirstName("дима"));
+        Assert.Equal(CandidateGenders.Male, CandidateGenderResolver.InferFromFullName("Дима"));
+        Assert.Equal(CandidateGenders.Female, RussianNameGenderLexicon.LookupFirstName("рома"));
+        Assert.Equal(CandidateGenders.Male, CandidateGenderResolver.InferFromFullName("Рома"));
+        Assert.Equal(CandidateGenders.Female, RussianNameGenderLexicon.LookupFirstName("саня"));
+        Assert.Equal(CandidateGenders.Male, CandidateGenderResolver.InferFromFullName("Саня"));
+    }
+
+    [Theory]
+    [InlineData("оглы", CandidateGenders.Male)]
+    [InlineData("уулу", CandidateGenders.Male)]
+    [InlineData("кызы", CandidateGenders.Female)]
+    public void Resolve_CentralAsiaHonorific(string honorific, string gender)
+    {
+        var result = CandidateGenderResolver.Resolve($"Али {honorific}");
+        Assert.Equal(gender, result.Gender);
+    }
+
     [Fact]
     public void Tokenize_DropsInitials()
     {
         var tokens = CandidateGenderResolver.Tokenize("Петрова С.Я.");
         Assert.Equal(["петрова"], tokens);
+    }
+
+    [Fact]
+    public void Tokenize_KeepsDiminutivesAndSplitsWhitespace()
+    {
+        var tokens = CandidateGenderResolver.Tokenize("Дима\nМатвиенко");
+        Assert.Equal(["дима", "матвиенко"], tokens);
     }
 }
 
@@ -261,6 +371,43 @@ public sealed class ResponseCollectionFilterTests
             filters);
 
         Assert.True(result.Pass);
+    }
+
+    [Theory]
+    [InlineData("Дима", 26)]
+    [InlineData("Серёга", 26)]
+    [InlineData("Дима Матвиенко", 43)]
+    [InlineData("Сеня", 30)]
+    [InlineData("Рома", 42)]
+    [InlineData("Ковалев Игорь Анатольевич", 59)]
+    public void EvaluateCandidate_MaleDiminutive_PassesExcludeFemale_EvenWithFemaleCard(
+        string fullName,
+        int age)
+    {
+        var filters = new ResponseCollectionFilters(Enabled: true, ExcludeFemale: true);
+        var result = ResponseCollectionFilter.EvaluateCandidate(
+            fullName,
+            age,
+            cardGender: CandidateGenders.Female,
+            rawText: $"Женщина · {age} лет",
+            filters);
+
+        Assert.True(result.Pass, $"Expected pass for male name «{fullName}», got reject={result.RejectReason}");
+    }
+
+    [Fact]
+    public void EvaluateCandidate_RealFemale_RejectedWhenExcludeFemale()
+    {
+        var filters = new ResponseCollectionFilters(Enabled: true, ExcludeFemale: true);
+        var result = ResponseCollectionFilter.EvaluateCandidate(
+            "Петрова Анна",
+            age: 30,
+            cardGender: CandidateGenders.Female,
+            rawText: "Женщина · 30 лет",
+            filters);
+
+        Assert.False(result.Pass);
+        Assert.Equal(ResponseCollectionFilterReasons.GenderFemale, result.RejectReason);
     }
 
     [Fact]

@@ -143,6 +143,8 @@ internal static class AccountsIndexBuilder
             ErrorsLink = metricLinks.Errors,
             LastActivityUtc = account.LastActivityUtc ?? account.LastMonitoringAt,
             IsEnabledInPanel = account.IsEnabledInPanel,
+            HasAvitoCredentials = account.HasAvitoCredentials,
+            AvitoLogin = account.AvitoLogin,
             LastErrorMessage = lastErrorMessage,
             ErrorHint = errorHint,
             SubProfiles = subProfiles,

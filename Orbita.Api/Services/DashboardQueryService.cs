@@ -365,7 +365,9 @@ public sealed class DashboardQueryService(
                 x.SubProfilesJson,
                 x.SubProfilesRefreshedAtUtc,
                 x.SubProfilesRefreshRequestedAtUtc,
-                x.SubProfilesDisabledIdsJson
+                x.SubProfilesDisabledIdsJson,
+                x.AvitoLogin,
+                x.AvitoPasswordProtected
             })
             .ToListAsync(ct);
 
@@ -374,7 +376,7 @@ public sealed class DashboardQueryService(
             ? new Dictionary<Guid, (int Total, int Duplicates)>()
             : await db.CandidateResponses
                 .AsNoTracking()
-                .Where(x => x.WorkerId == workerId && accountIds.Contains(x.AccountId) && x.CreatedAt >= todayStart)
+                .Where(x => x.WorkerId == workerId && accountIds.Contains(x.AccountId) && x.CollectedAt >= todayStart)
                 .GroupBy(x => x.AccountId)
                 .Select(g => new
                 {
@@ -404,7 +406,7 @@ public sealed class DashboardQueryService(
                 .AsNoTracking()
                 .Where(x => x.WorkerId == workerId
                     && accountIds.Contains(x.AccountId)
-                    && x.CreatedAt >= todayStart
+                    && x.CollectedAt >= todayStart
                     && x.AvitoSubProfileId != "")
                 .GroupBy(x => new { x.AccountId, x.AvitoSubProfileId })
                 .Select(g => new
@@ -414,7 +416,7 @@ public sealed class DashboardQueryService(
                     Total = g.Count(),
                     Duplicates = g.Count(x => x.Status == ResponseStatuses.Duplicate),
                     Errors = g.Count(x => x.Status == ResponseStatuses.Error || x.Status == ResponseStatuses.ActionRequired),
-                    LastActivity = g.Max(x => (DateTime?)x.CreatedAt)
+                    LastActivity = g.Max(x => (DateTime?)x.CollectedAt)
                 })
                 .ToListAsync(ct);
 
@@ -439,7 +441,7 @@ public sealed class DashboardQueryService(
                 {
                     g.Key.AccountId,
                     g.Key.AvitoSubProfileId,
-                    LastActivity = g.Max(x => (DateTime?)x.CreatedAt)
+                    LastActivity = g.Max(x => (DateTime?)x.CollectedAt)
                 })
                 .ToListAsync(ct);
 
@@ -505,7 +507,7 @@ public sealed class DashboardQueryService(
                 .AsNoTracking()
                 .Where(x => x.WorkerId == workerId && accountIds.Contains(x.AccountId))
                 .GroupBy(x => x.AccountId)
-                .Select(g => new { AccountId = g.Key, LastAt = g.Max(x => x.CreatedAt) })
+                .Select(g => new { AccountId = g.Key, LastAt = g.Max(x => x.CollectedAt) })
                 .ToDictionaryAsync(x => x.AccountId, x => x.LastAt, ct);
 
         if (accountIds.Count > 0)
@@ -546,6 +548,8 @@ public sealed class DashboardQueryService(
                     x.AccountId,
                     subProfileStats,
                     responseNameLookup);
+                var hasCredentials = !string.IsNullOrWhiteSpace(x.AvitoLogin)
+                    && !string.IsNullOrWhiteSpace(x.AvitoPasswordProtected);
                 return new WorkerAccountDto(
                     x.AccountId,
                     x.DisplayName,
@@ -567,7 +571,9 @@ public sealed class DashboardQueryService(
                     AccountLastActivityHelper.Resolve(
                         x.LastMonitoringAt,
                         lastEventAt,
-                        lastResponseAt));
+                        lastResponseAt),
+                    hasCredentials,
+                    string.IsNullOrWhiteSpace(x.AvitoLogin) ? null : x.AvitoLogin.Trim());
             })
             .ToList();
 
@@ -649,15 +655,15 @@ public sealed class DashboardQueryService(
             .AsNoTracking()
             .Where(x => x.WorkerId != null
                 && workerIds.Contains(x.WorkerId.Value)
-                && x.CreatedAt >= utcStart
-                && x.CreatedAt < utcEnd)
-            .Select(x => new { x.CreatedAt, x.Status })
+                && x.CollectedAt >= utcStart
+                && x.CollectedAt < utcEnd)
+            .Select(x => new { x.CollectedAt, x.Status })
             .ToListAsync(ct);
 
         var byDay = new Dictionary<DateTime, DailyResponseCounters>();
         foreach (var row in rows)
         {
-            var localDate = LocalCalendarDateRange.ToLocalDateFromStoredUtc(row.CreatedAt);
+            var localDate = LocalCalendarDateRange.ToLocalDateFromStoredUtc(row.CollectedAt);
             if (!byDay.TryGetValue(localDate, out var bucket))
             {
                 bucket = new DailyResponseCounters();
@@ -730,13 +736,13 @@ public sealed class DashboardQueryService(
         {
             var rows = await db.CandidateResponses
                 .AsNoTracking()
-                .Where(x => x.WorkerId != null && workerIds.Contains(x.WorkerId.Value) && x.CreatedAt >= todayStartUtc)
-                .Select(x => new { x.CreatedAt, x.Status })
+                .Where(x => x.WorkerId != null && workerIds.Contains(x.WorkerId.Value) && x.CollectedAt >= todayStartUtc)
+                .Select(x => new { x.CollectedAt, x.Status })
                 .ToListAsync(ct);
 
             foreach (var row in rows)
             {
-                var hour = UtcHour(row.CreatedAt);
+                var hour = UtcHour(row.CollectedAt);
                 if (hour is < 0 or > 23)
                 {
                     continue;
@@ -824,7 +830,7 @@ public sealed class DashboardQueryService(
             return (0, 0, 0, 0, 0, 0);
 
         var query = db.CandidateResponses.AsNoTracking()
-            .Where(x => x.WorkerId != null && workerIds.Contains(x.WorkerId.Value) && x.CreatedAt >= todayStartUtc);
+            .Where(x => x.WorkerId != null && workerIds.Contains(x.WorkerId.Value) && x.CollectedAt >= todayStartUtc);
 
         var totalToday = await query.CountAsync(ct);
         if (totalToday == 0)
@@ -910,7 +916,7 @@ public sealed class DashboardQueryService(
 
         var idSet = workerIds.ToHashSet();
         var rows = await db.CandidateResponses.AsNoTracking()
-            .Where(x => x.WorkerId != null && idSet.Contains(x.WorkerId.Value) && x.CreatedAt >= todayStartUtc)
+            .Where(x => x.WorkerId != null && idSet.Contains(x.WorkerId.Value) && x.CollectedAt >= todayStartUtc)
             .GroupBy(x => x.WorkerId)
             .Select(g => new
             {

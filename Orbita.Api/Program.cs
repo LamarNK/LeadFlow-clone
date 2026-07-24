@@ -240,6 +240,7 @@ builder.Services.AddScoped<PasswordPolicyService>();
 builder.Services.AddScoped<ServiceLogsQueryService>();
 builder.Services.AddHostedService<ServiceLogsCleanupService>();
 builder.Services.AddScoped<WebhookSecretProtector>();
+builder.Services.AddScoped<AvitoAccountSecretProtector>();
 builder.Services.AddScoped<BitrixWebhookValidator>();
 builder.Services.AddScoped<PanelBitrixIntegrationService>();
 builder.Services.Configure<LeadFlowImportOptions>(builder.Configuration.GetSection("LeadFlowImport"));
@@ -2521,6 +2522,33 @@ workerPanel.MapPatch("/{id:guid}/accounts/{accountId:guid}", async (
     }
 
     return Results.Ok(account);
+});
+
+workerPanel.MapPut("/{id:guid}/accounts/{accountId:guid}/credentials", async (
+    Guid id,
+    Guid accountId,
+    UpdateWorkerAccountCredentialsRequest request,
+    WorkerConfigService configService,
+    OfficeScopeService officeScope,
+    ClaimsPrincipal principal,
+    CancellationToken ct) =>
+{
+    var scope = await officeScope.ResolveAsync(principal, ct);
+    if (!scope.HasAccess)
+    {
+        return Results.Forbid();
+    }
+
+    var (credentials, error) = await configService.UpdateAccountCredentialsAsync(
+        id, accountId, request, scope, ct);
+    if (error is not null)
+    {
+        return error.Contains("не найден", StringComparison.OrdinalIgnoreCase)
+            ? Results.NotFound(new { error })
+            : Results.BadRequest(new { error });
+    }
+
+    return Results.Ok(credentials);
 });
 
 workerPanel.MapPost("/{id:guid}/accounts/{accountId:guid}/refresh-subprofiles", async (

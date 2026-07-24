@@ -89,6 +89,16 @@ public sealed partial class AvitoAccount : ObservableObject
     [ObservableProperty] private string? adsPowerApiKey;
 
     /// <summary>
+    /// Логин Avito из панели Орбиты (не сохраняется в SQLite воркера, только runtime из config).
+    /// </summary>
+    public string? AvitoLogin { get; set; }
+
+    /// <summary>
+    /// Пароль Avito из панели Орбиты (не сохраняется в SQLite воркера, только runtime из config).
+    /// </summary>
+    public string? AvitoPassword { get; set; }
+
+    /// <summary>
     /// Имя пользователя, прочитанное со страницы Avito при последней проверке авторизации.
     /// DisplayName при этом не перезаписываем — показываем оба значения в UI.
     /// </summary>

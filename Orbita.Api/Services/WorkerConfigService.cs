@@ -14,7 +14,8 @@ public sealed class WorkerConfigService(
     IWorkerPushNotifier workerPushNotifier,
     WorkerReleaseService releases,
     CaptchaSessionService captchaSessions,
-    BrowserMonitorService browserMonitorSessions)
+    BrowserMonitorService browserMonitorSessions,
+    AvitoAccountSecretProtector avitoSecrets)
 {
     public Task<WorkerConfigDto?> GetConfigForWorkerAsync(
         Guid workerId,
@@ -56,7 +57,7 @@ public sealed class WorkerConfigService(
             .ToListAsync(ct);
 
         var accounts = accountRows
-            .Select(x => ToAccountConfigDto(x, worker.AdsPowerApiBaseUrl, worker.AdsPowerApiKey))
+            .Select(x => ToAccountConfigDto(x, worker.AdsPowerApiBaseUrl, worker.AdsPowerApiKey, includeCredentials: true))
             .ToList();
 
         var updateCheck = await releases.CheckUpdateAsync(worker.AppVersion, ct);
@@ -321,14 +322,110 @@ public sealed class WorkerConfigService(
             workerId);
         await workerPushNotifier.PushConfigChangedAsync(workerId, ct).ConfigureAwait(false);
 
-        return (ToAccountConfigDto(account, worker.AdsPowerApiBaseUrl, worker.AdsPowerApiKey), null);
+        return (ToAccountConfigDto(account, worker.AdsPowerApiBaseUrl, worker.AdsPowerApiKey, includeCredentials: false), null);
     }
 
-    private static WorkerAccountConfigDto ToAccountConfigDto(
+    public async Task<(WorkerAccountCredentialsDto? Credentials, string? Error)> UpdateAccountCredentialsAsync(
+        Guid workerId,
+        Guid accountId,
+        UpdateWorkerAccountCredentialsRequest request,
+        OfficeScope scope,
+        CancellationToken ct = default)
+    {
+        if (!await officeScope.CanAccessWorkerAsync(scope, workerId, ct))
+        {
+            return (null, "Воркер не найден.");
+        }
+
+        var worker = await db.Workers.AsNoTracking().FirstOrDefaultAsync(x => x.Id == workerId, ct);
+        if (worker is null)
+        {
+            return (null, "Воркер не найден.");
+        }
+
+        var account = await db.WorkerAccounts.FirstOrDefaultAsync(
+            x => x.WorkerId == workerId && x.AccountId == accountId,
+            ct);
+        if (account is null)
+        {
+            return (null, "Аккаунт не найден.");
+        }
+
+        if (request.Clear)
+        {
+            account.AvitoLogin = null;
+            account.AvitoPasswordProtected = null;
+        }
+        else
+        {
+            var login = string.IsNullOrWhiteSpace(request.Login) ? null : request.Login.Trim();
+            if (login is { Length: > 256 })
+            {
+                return (null, "Логин Avito не должен превышать 256 символов.");
+            }
+
+            if (login is not null)
+            {
+                account.AvitoLogin = login;
+            }
+
+            if (!string.IsNullOrEmpty(request.Password))
+            {
+                if (request.Password.Length > 256)
+                {
+                    return (null, "Пароль Avito не должен превышать 256 символов.");
+                }
+
+                if (string.IsNullOrWhiteSpace(account.AvitoLogin) && login is null)
+                {
+                    return (null, "Укажите логин Avito вместе с паролем.");
+                }
+
+                account.AvitoPasswordProtected = avitoSecrets.Protect(request.Password);
+            }
+
+            if (string.IsNullOrWhiteSpace(account.AvitoLogin)
+                || string.IsNullOrWhiteSpace(account.AvitoPasswordProtected))
+            {
+                // partial credentials are useless for worker auto-login
+                if (!string.IsNullOrWhiteSpace(account.AvitoLogin)
+                    && string.IsNullOrWhiteSpace(account.AvitoPasswordProtected))
+                {
+                    return (null, "Укажите пароль Avito (или очистите учётные данные).");
+                }
+            }
+        }
+
+        account.UpdatedAtUtc = DateTime.UtcNow;
+        await db.SaveChangesAsync(ct);
+
+        panelRealtime.Notify(
+            [PanelChangeKind.Workers, PanelChangeKind.Accounts, PanelChangeKind.Dashboard],
+            worker.OfficeId,
+            workerId);
+        await workerPushNotifier.PushConfigChangedAsync(workerId, ct).ConfigureAwait(false);
+
+        return (ToCredentialsDto(account), null);
+    }
+
+    private WorkerAccountConfigDto ToAccountConfigDto(
         WorkerAccountEntity account,
         string? adsPowerApiBaseUrl,
-        string? adsPowerApiKey) =>
-        new(
+        string? adsPowerApiKey,
+        bool includeCredentials)
+    {
+        string? avitoLogin = null;
+        string? avitoPassword = null;
+        if (includeCredentials
+            && !string.IsNullOrWhiteSpace(account.AvitoLogin)
+            && avitoSecrets.TryUnprotect(account.AvitoPasswordProtected, out var password)
+            && !string.IsNullOrEmpty(password))
+        {
+            avitoLogin = account.AvitoLogin.Trim();
+            avitoPassword = password;
+        }
+
+        return new(
             account.AccountId,
             account.AdsPowerProfileId,
             account.DisplayName,
@@ -345,7 +442,16 @@ public sealed class WorkerConfigService(
             account.SubProfilesRefreshedAtUtc,
             account.ActiveAdsCount,
             account.BlockedCount,
-            account.DraftsCount);
+            account.DraftsCount,
+            avitoLogin,
+            avitoPassword);
+    }
+
+    private static WorkerAccountCredentialsDto ToCredentialsDto(WorkerAccountEntity account) =>
+        new(
+            account.AccountId,
+            string.IsNullOrWhiteSpace(account.AvitoLogin) ? null : account.AvitoLogin.Trim(),
+            !string.IsNullOrWhiteSpace(account.AvitoPasswordProtected));
 
     public async Task<(bool Success, string? Error)> UpdateSubProfileEnabledAsync(
         Guid workerId,

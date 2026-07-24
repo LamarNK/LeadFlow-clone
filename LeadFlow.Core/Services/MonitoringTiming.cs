@@ -37,6 +37,14 @@ public static class MonitoringTiming
 
     /// <summary>Сдвиг старта параллельных аккаунтов (мс), чтобы не бить в AdsPower Local API пачкой browser/start.</summary>
     public const int ParallelAccountLaunchStaggerMs = 2000;
+
+    /// <summary>
+    /// После стольких полных циклов мониторинга (с browser/start…browser/stop)
+    /// воркер принудительно закрывает все известные браузеры AdsPower —
+    /// чтобы окна, открытые оператором «посмотреть», не висели бесконечно.
+    /// Также уборка срабатывает при смене локального календарного дня и при остановке мониторинга.
+    /// </summary>
+    public const int BrowserHousekeepingEveryNCycles = 3;
     public const int DelayBetweenResponsesSeconds = 8;
 
     /// <summary>

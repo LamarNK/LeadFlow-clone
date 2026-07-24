@@ -92,4 +92,36 @@ public sealed class AccountsController(IAccountsService accounts, IWorkersServic
 
         return Ok(new { message = enabled ? "Аккаунт включён в панели." : "Аккаунт отключён в панели." });
     }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> UpdateCredentials(
+        Guid workerId,
+        Guid accountId,
+        string? login,
+        string? password,
+        bool clear,
+        CancellationToken ct)
+    {
+        var (success, error) = await workers.UpdateWorkerAccountCredentialsAsync(
+            workerId,
+            accountId,
+            login,
+            password,
+            clear,
+            ct);
+        if (!success)
+        {
+            return BadRequest(new { error = error ?? "Не удалось сохранить логин/пароль Avito." });
+        }
+
+        return Ok(new
+        {
+            message = clear
+                ? "Логин и пароль Avito удалены."
+                : "Логин и пароль Avito сохранены. Воркер подхватит их при следующей синхронизации.",
+            hasCredentials = !clear,
+            login = string.IsNullOrWhiteSpace(login) ? null : login.Trim()
+        });
+    }
 }

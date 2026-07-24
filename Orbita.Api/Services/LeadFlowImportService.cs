@@ -402,6 +402,7 @@ public sealed class LeadFlowImportService(
             ErrorMessage = record.ErrorMessage,
             RawText = record.RawText,
             CreatedAt = EnsureUtc(record.CreatedAt),
+            CollectedAt = EnsureUtc(record.CollectedAt == default ? record.CreatedAt : record.CollectedAt),
             ProcessedAt = record.ProcessedAt is null ? null : EnsureUtc(record.ProcessedAt.Value)
         };
     }

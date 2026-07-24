@@ -131,7 +131,8 @@
                                    aria-label="Выбрать все на странице"
                                    title="Выбрать все на странице" />
                         </th>
-                        <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Время", Column = "time", Sort = Model.Sort, Controller = "Responses", Action = "Index", RouteValues = responsesSortRoute })" />
+                        <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Сбор", Column = "time", Sort = Model.Sort, Controller = "Responses", Action = "Index", RouteValues = responsesSortRoute })" />
+                        <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Отклик", Column = "responded", Sort = Model.Sort, Controller = "Responses", Action = "Index", RouteValues = responsesSortRoute })" />
                         <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Автор", Column = "author", Sort = Model.Sort, Controller = "Responses", Action = "Index", RouteValues = responsesSortRoute })" />
                         <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Телефон", Column = "phone", Sort = Model.Sort, Controller = "Responses", Action = "Index", RouteValues = responsesSortRoute })" />
                         <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Город", Column = "city", Sort = Model.Sort, Controller = "Responses", Action = "Index", RouteValues = responsesSortRoute })" />
@@ -166,7 +167,8 @@
                                    value="@row.Id"
                                    aria-label="Выбрать отклик" />
                         </td>
-                        <td class="responses-time" data-label="Время"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(row.CreatedAtUtc, "datetime"))" /></td>
+                        <td class="responses-time" data-label="Сбор"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(row.CollectedAtUtc, "datetime"))" /></td>
+                        <td class="responses-time responses-time--responded" data-label="Отклик"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(row.CreatedAtUtc, "datetime"))" /></td>
                         <td class="responses-author" data-label="Автор">@author</td>
                         <td class="responses-phone" data-label="Телефон">
                             @if (row.IsPhoneHidden)

@@ -88,6 +88,8 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
         {
             entity.HasKey(x => new { x.WorkerId, x.AccountId });
             entity.Property(x => x.AdsPowerProfileId).HasMaxLength(128);
+            entity.Property(x => x.AvitoLogin).HasMaxLength(256);
+            entity.Property(x => x.AvitoPasswordProtected).HasMaxLength(2048);
             entity.HasOne(x => x.Worker).WithMany(x => x.Accounts).HasForeignKey(x => x.WorkerId);
         });
 
@@ -122,11 +124,13 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.HasKey(x => x.Id);
             entity.HasIndex(x => x.PersonId);
             entity.HasIndex(x => x.CreatedAt);
+            entity.HasIndex(x => x.CollectedAt);
             entity.HasIndex(x => x.PhoneNormalized);
             entity.HasIndex(x => new { x.OfficeId, x.PhoneNormalized });
             entity.HasIndex(x => new { x.OfficeId, x.AccountId, x.AvitoSubProfileId, x.PhoneNormalized });
             entity.HasIndex(x => new { x.OfficeId, x.AccountId, x.AvitoSubProfileId, x.CardFingerprint });
             entity.HasIndex(x => new { x.OfficeId, x.CreatedAt });
+            entity.HasIndex(x => new { x.OfficeId, x.CollectedAt });
             entity.HasIndex(x => new { x.AccountId, x.SourceResponseId })
                 .IsUnique()
                 .HasFilter("\"SourceResponseId\" <> ''");

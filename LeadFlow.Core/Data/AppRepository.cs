@@ -376,7 +376,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
         return await db.CandidateResponses
             .AsNoTracking()
-            .OrderByDescending(x => x.CreatedAt)
+            .OrderByDescending(x => x.CollectedAt)
             .Take(take)
             .Select(x => ToModel(x))
             .ToListAsync(cancellationToken);
@@ -580,8 +580,8 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
         var timestamps = await db.CandidateResponses
             .AsNoTracking()
-            .Where(c => c.CreatedAt >= cut)
-            .Select(c => c.CreatedAt)
+            .Where(c => c.CollectedAt >= cut)
+            .Select(c => c.CollectedAt)
             .ToListAsync(cancellationToken);
 
         return MonitoringHistoricalHeat.ComputeScore(timestamps, utcNow, TimeZoneInfo.Local);
@@ -613,7 +613,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         var (utcStart, utcEnd) = DateTimeAssumedUtc.GetUtcRangeForLocalToday();
         var statusCounts = await db.CandidateResponses
             .AsNoTracking()
-            .Where(x => x.CreatedAt >= utcStart && x.CreatedAt < utcEnd)
+            .Where(x => x.CollectedAt >= utcStart && x.CollectedAt < utcEnd)
             .GroupBy(x => x.Status)
             .Select(g => new StatusCountRow(g.Key, g.Count()))
             .ToListAsync(cancellationToken);
@@ -628,8 +628,8 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
 
         var hourlyGroupsUtc = await db.CandidateResponses
             .AsNoTracking()
-            .Where(x => x.CreatedAt >= utcStart && x.CreatedAt < utcEnd)
-            .GroupBy(x => new { x.CreatedAt.Year, x.CreatedAt.Month, x.CreatedAt.Day, x.CreatedAt.Hour })
+            .Where(x => x.CollectedAt >= utcStart && x.CollectedAt < utcEnd)
+            .GroupBy(x => new { x.CollectedAt.Year, x.CollectedAt.Month, x.CollectedAt.Day, x.CollectedAt.Hour })
             .Select(g => new HourlyStatusAggregateRow(
                 g.Key.Year,
                 g.Key.Month,
@@ -778,8 +778,8 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
 
         var groupedByUtcHour = await db.CandidateResponses
             .AsNoTracking()
-            .Where(x => x.CreatedAt >= utcStart && x.CreatedAt < utcEnd)
-            .GroupBy(x => new { x.CreatedAt.Year, x.CreatedAt.Month, x.CreatedAt.Day, x.CreatedAt.Hour })
+            .Where(x => x.CollectedAt >= utcStart && x.CollectedAt < utcEnd)
+            .GroupBy(x => new { x.CollectedAt.Year, x.CollectedAt.Month, x.CollectedAt.Day, x.CollectedAt.Hour })
             .Select(g => new HourlyStatusAggregateRow(
                 g.Key.Year,
                 g.Key.Month,
@@ -877,7 +877,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
 
         var baseQuery = db.CandidateResponses
             .AsNoTracking()
-            .Where(x => x.CreatedAt >= utcStart && x.CreatedAt < utcEnd);
+            .Where(x => x.CollectedAt >= utcStart && x.CollectedAt < utcEnd);
 
         var total = await baseQuery.CountAsync(cancellationToken);
         if (total == 0)
@@ -1438,6 +1438,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         ErrorMessage = model.ErrorMessage,
         RawText = model.RawText,
         CreatedAt = model.CreatedAt,
+        CollectedAt = model.CollectedAt == default ? model.CreatedAt : model.CollectedAt,
         ProcessedAt = model.ProcessedAt
     };
 
@@ -1470,6 +1471,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         ErrorMessage = entity.ErrorMessage,
         RawText = entity.RawText,
         CreatedAt = entity.CreatedAt,
+        CollectedAt = entity.CollectedAt == default ? entity.CreatedAt : entity.CollectedAt,
         ProcessedAt = entity.ProcessedAt
     };
 
@@ -1502,6 +1504,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         target.ErrorMessage = source.ErrorMessage;
         target.RawText = source.RawText;
         target.CreatedAt = source.CreatedAt;
+        target.CollectedAt = source.CollectedAt == default ? source.CreatedAt : source.CollectedAt;
         target.ProcessedAt = source.ProcessedAt;
     }
 
@@ -1656,6 +1659,21 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
                 "ALTER TABLE CandidateResponses ADD COLUMN CardFingerprint TEXT NOT NULL DEFAULT '';",
                 cancellationToken);
         }
+
+        existingColumns = await GetTableColumnsAsync(db, "CandidateResponses", cancellationToken);
+        if (!existingColumns.Contains("CollectedAt"))
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                "ALTER TABLE CandidateResponses ADD COLUMN CollectedAt TEXT NOT NULL DEFAULT '';",
+                cancellationToken);
+            await db.Database.ExecuteSqlRawAsync(
+                "UPDATE CandidateResponses SET CollectedAt = CreatedAt WHERE CollectedAt = '' OR CollectedAt IS NULL;",
+                cancellationToken);
+        }
+
+        await db.Database.ExecuteSqlRawAsync(
+            "CREATE INDEX IF NOT EXISTS IX_CandidateResponses_CollectedAt ON CandidateResponses (CollectedAt);",
+            cancellationToken);
     }
 
     private static async Task<HashSet<string>> GetTableColumnsAsync(

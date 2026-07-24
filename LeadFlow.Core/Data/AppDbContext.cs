@@ -12,6 +12,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     {
         modelBuilder.Entity<CandidateResponseEntity>().HasKey(x => x.Id);
         modelBuilder.Entity<CandidateResponseEntity>().HasIndex(x => x.CreatedAt);
+        modelBuilder.Entity<CandidateResponseEntity>().HasIndex(x => x.CollectedAt);
         modelBuilder.Entity<CandidateResponseEntity>().HasIndex(x => x.PhoneNormalized);
         modelBuilder.Entity<CandidateResponseEntity>().HasIndex(x => new { x.AccountId, x.PhoneNormalized });
         // Уникальность только для непустого SourceResponseId (после trim), иначе несколько откликов без ID источника на один аккаунт невозможны.

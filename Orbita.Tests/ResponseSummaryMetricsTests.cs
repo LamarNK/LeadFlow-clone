@@ -145,6 +145,7 @@ public sealed class ResponseSummaryMetricsTests
         PhoneRaw = phone,
         PhoneNormalized = phone,
         Status = ResponseStatuses.Sent,
-        CreatedAt = createdAt ?? DateTime.UtcNow
+        CreatedAt = createdAt ?? DateTime.UtcNow,
+        CollectedAt = createdAt ?? DateTime.UtcNow
     };
 }

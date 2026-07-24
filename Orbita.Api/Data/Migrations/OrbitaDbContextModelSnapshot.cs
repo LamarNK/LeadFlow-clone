@@ -269,6 +269,9 @@ namespace Orbita.Api.Data.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<DateTime>("CollectedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -372,6 +375,8 @@ namespace Orbita.Api.Data.Migrations
 
                     b.HasIndex("BitrixInstanceId");
 
+                    b.HasIndex("CollectedAt");
+
                     b.HasIndex("CreatedAt");
 
                     b.HasIndex("DuplicateBitrixInstanceId");
@@ -383,6 +388,8 @@ namespace Orbita.Api.Data.Migrations
                     b.HasIndex("AccountId", "SourceResponseId")
                         .IsUnique()
                         .HasFilter("\"SourceResponseId\" <> ''");
+
+                    b.HasIndex("OfficeId", "CollectedAt");
 
                     b.HasIndex("OfficeId", "CreatedAt");
 
@@ -960,6 +967,14 @@ namespace Orbita.Api.Data.Migrations
                         .IsRequired()
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)");
+
+                    b.Property<string>("AvitoLogin")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<string>("AvitoPasswordProtected")
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)");
 
                     b.Property<int>("BlockedCount")
                         .HasColumnType("integer");

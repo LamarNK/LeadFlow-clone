@@ -129,7 +129,7 @@ public sealed class OfficeStatisticsQueryService(
         var accountInfrastructure = BuildAccountInfrastructure(accountRows, statsList);
         var responsesQuery = db.CandidateResponses
             .AsNoTracking()
-            .Where(x => x.WorkerId != null && workerIds.Contains(x.WorkerId.Value) && x.CreatedAt >= utcStart && x.CreatedAt < utcEnd);
+            .Where(x => x.WorkerId != null && workerIds.Contains(x.WorkerId.Value) && x.CollectedAt >= utcStart && x.CollectedAt < utcEnd);
 
         if (accountFilterSet is not null)
         {
@@ -297,12 +297,12 @@ public sealed class OfficeStatisticsQueryService(
             .AsNoTracking()
             .Where(x => x.WorkerId != null && workerIds.Contains(x.WorkerId.Value))
             .Where(x => x.Status == ResponseStatuses.Sent)
-            .Where(x => x.CreatedAt >= utcStart && x.CreatedAt < utcEnd)
+            .Where(x => x.CollectedAt >= utcStart && x.CollectedAt < utcEnd)
             .Select(x => new
             {
                 x.AccountName,
                 x.AvitoSubProfileName,
-                TimestampUtc = x.ProcessedAt ?? x.CreatedAt
+                TimestampUtc = x.ProcessedAt ?? x.CollectedAt
             })
             .ToListAsync(ct);
 
@@ -416,11 +416,11 @@ public sealed class OfficeStatisticsQueryService(
         double? avgMinutes = null;
         var processed = await query
             .Where(x => x.ProcessedAt != null)
-            .Select(x => new { x.CreatedAt, ProcessedAt = x.ProcessedAt!.Value })
+            .Select(x => new { x.CollectedAt, ProcessedAt = x.ProcessedAt!.Value })
             .ToListAsync(ct);
         if (processed.Count > 0)
         {
-            avgMinutes = processed.Average(x => (x.ProcessedAt - x.CreatedAt).TotalMinutes);
+            avgMinutes = processed.Average(x => (x.ProcessedAt - x.CollectedAt).TotalMinutes);
         }
 
         return new ResponsesPeriodSection(
@@ -505,13 +505,13 @@ public sealed class OfficeStatisticsQueryService(
         CancellationToken ct)
     {
         var rows = await query
-            .Select(x => new { x.CreatedAt, x.Status })
+            .Select(x => new { x.CollectedAt, x.Status })
             .ToListAsync(ct);
 
         var byDay = new Dictionary<DateTime, DailyCounters>();
         foreach (var row in rows)
         {
-            var localDate = LocalCalendarDateRange.ToLocalDateFromStoredUtc(row.CreatedAt);
+            var localDate = LocalCalendarDateRange.ToLocalDateFromStoredUtc(row.CollectedAt);
             if (!byDay.TryGetValue(localDate, out var bucket))
             {
                 bucket = new DailyCounters();
@@ -635,7 +635,7 @@ public sealed class OfficeStatisticsQueryService(
 
         var responseStats = await db.CandidateResponses
             .AsNoTracking()
-            .Where(x => x.WorkerId != null && workerIds.Contains(x.WorkerId.Value) && x.CreatedAt >= utcStart && x.CreatedAt < utcEnd)
+            .Where(x => x.WorkerId != null && workerIds.Contains(x.WorkerId.Value) && x.CollectedAt >= utcStart && x.CollectedAt < utcEnd)
             .GroupBy(x => x.WorkerId)
             .Select(g => new
             {

@@ -168,7 +168,8 @@ public sealed class CandidateLookupService(
                 item.FullName,
                 item.Age,
                 item.City,
-                item.PhoneNormalized);
+                item.PhoneNormalized,
+                item.ResponseAtUtc);
             var matchedPerson = await personMatch.FindMatchingPersonAsync(worker.OfficeId, profile, ct);
             if (matchedPerson is not null)
             {

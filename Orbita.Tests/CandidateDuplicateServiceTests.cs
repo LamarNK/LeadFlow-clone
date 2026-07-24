@@ -116,6 +116,144 @@ public sealed class CandidateDuplicateServiceTests
     }
 
     [Fact]
+    public async Task FindMatchingPersonAsync_SingleNameWithAgeAndCity_FindsExistingPerson()
+    {
+        await using var db = CreateDb();
+        SeedOffice(db, OfficeA, "Office A");
+
+        var responseAt = DateTime.UtcNow.AddDays(-1);
+        var person = TestCandidatePersonFactory.CreatePerson(
+            OfficeA,
+            fullName: "Иван",
+            firstName: "",
+            lastName: "Иван",
+            middleName: "",
+            age: 35,
+            city: "Москва",
+            phoneRaw: "+79930099416",
+            phoneNormalized: "79930099416");
+        db.CandidatePersons.Add(person);
+        db.CandidateResponses.Add(TestCandidatePersonFactory.CreateResponse(
+            OfficeA,
+            person.Id,
+            phone: "79930099416",
+            fullName: "Иван",
+            age: 35,
+            city: "Москва",
+            createdAt: responseAt));
+        await db.SaveChangesAsync();
+
+        var sut = CreateService(db);
+        var profile = new CandidateMatchProfile("Иван", 35, "Москва", "79910001122", responseAt);
+        var matched = await sut.FindMatchingPersonAsync(OfficeA, profile);
+
+        Assert.NotNull(matched);
+        Assert.Equal(person.Id, matched!.Id);
+    }
+
+    [Fact]
+    public async Task FindMatchingPersonAsync_SingleNameOutsideWeekWindow_ReturnsNull()
+    {
+        await using var db = CreateDb();
+        SeedOffice(db, OfficeA, "Office A");
+
+        var oldAt = DateTime.UtcNow.AddDays(-20);
+        var person = TestCandidatePersonFactory.CreatePerson(
+            OfficeA,
+            fullName: "Иван",
+            firstName: "",
+            lastName: "Иван",
+            middleName: "",
+            age: 35,
+            city: "Москва",
+            phoneRaw: "+79930099416",
+            phoneNormalized: "79930099416");
+        db.CandidatePersons.Add(person);
+        db.CandidateResponses.Add(TestCandidatePersonFactory.CreateResponse(
+            OfficeA,
+            person.Id,
+            phone: "79930099416",
+            fullName: "Иван",
+            age: 35,
+            city: "Москва",
+            createdAt: oldAt));
+        await db.SaveChangesAsync();
+
+        var sut = CreateService(db);
+        // Новый отклик «сейчас»: старый за 20 дней вне ±7 дней.
+        var profile = new CandidateMatchProfile("Иван", 35, "Москва", "79910001122", DateTime.UtcNow);
+        var matched = await sut.FindMatchingPersonAsync(OfficeA, profile);
+
+        Assert.Null(matched);
+    }
+
+    [Fact]
+    public async Task FindMatchingPersonAsync_SingleNameWithoutSupportingParams_ReturnsNull()
+    {
+        await using var db = CreateDb();
+        SeedOffice(db, OfficeA, "Office A");
+
+        var person = TestCandidatePersonFactory.CreatePerson(
+            OfficeA,
+            fullName: "Иван",
+            firstName: "",
+            lastName: "Иван",
+            middleName: "",
+            age: null,
+            city: "",
+            phoneRaw: "+79930099416",
+            phoneNormalized: "79930099416");
+        db.CandidatePersons.Add(person);
+        db.CandidateResponses.Add(TestCandidatePersonFactory.CreateResponse(
+            OfficeA,
+            person.Id,
+            phone: "79930099416",
+            fullName: "Иван",
+            age: null,
+            city: ""));
+        await db.SaveChangesAsync();
+
+        var sut = CreateService(db);
+        var profile = new CandidateMatchProfile("Иван", null, "", "79910001122");
+        var matched = await sut.FindMatchingPersonAsync(OfficeA, profile);
+
+        Assert.Null(matched);
+    }
+
+    [Fact]
+    public async Task FindMatchingPersonAsync_LastAndFirstOnlyWithoutSupporting_ReturnsNull()
+    {
+        await using var db = CreateDb();
+        SeedOffice(db, OfficeA, "Office A");
+
+        var person = TestCandidatePersonFactory.CreatePerson(
+            OfficeA,
+            fullName: "Иванов Иван",
+            firstName: "Иван",
+            lastName: "Иванов",
+            middleName: "",
+            age: null,
+            city: "",
+            phoneRaw: "+79930099416",
+            phoneNormalized: "79930099416");
+        db.CandidatePersons.Add(person);
+        db.CandidateResponses.Add(TestCandidatePersonFactory.CreateResponse(
+            OfficeA,
+            person.Id,
+            phone: "79930099416",
+            fullName: "Иванов Иван",
+            age: null,
+            city: ""));
+        await db.SaveChangesAsync();
+
+        var sut = CreateService(db);
+        var profile = new CandidateMatchProfile("Иванов Иван", null, "", "79910001122");
+        var matched = await sut.FindMatchingPersonAsync(OfficeA, profile);
+
+        Assert.Null(matched);
+    }
+
+    [Fact]
     public async Task FindLocalDuplicateAsync_SamePersonDifferentResponse_ReturnsEarlierResponse()
     {
         await using var db = CreateDb();

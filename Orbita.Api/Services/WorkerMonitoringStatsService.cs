@@ -25,8 +25,8 @@ public sealed class WorkerMonitoringStatsService(OrbitaDbContext db)
         var heatCutoff = utcNow.AddDays(-HeatLookbackDays);
         var timestamps = await db.CandidateResponses
             .AsNoTracking()
-            .Where(x => x.OfficeId == worker.OfficeId && x.CreatedAt >= heatCutoff)
-            .Select(x => x.CreatedAt)
+            .Where(x => x.OfficeId == worker.OfficeId && x.CollectedAt >= heatCutoff)
+            .Select(x => x.CollectedAt)
             .ToListAsync(ct);
 
         var heat = ComputeHeatScore(timestamps, utcNow, TimeZoneInfo.Local);
@@ -35,7 +35,7 @@ public sealed class WorkerMonitoringStatsService(OrbitaDbContext db)
         var utcEnd = utcStart.AddDays(1);
         var today = await db.CandidateResponses
             .AsNoTracking()
-            .Where(x => x.OfficeId == worker.OfficeId && x.CreatedAt >= utcStart && x.CreatedAt < utcEnd)
+            .Where(x => x.OfficeId == worker.OfficeId && x.CollectedAt >= utcStart && x.CollectedAt < utcEnd)
             .GroupBy(x => x.Status)
             .Select(g => new { Status = g.Key, Count = g.Count() })
             .ToListAsync(ct);

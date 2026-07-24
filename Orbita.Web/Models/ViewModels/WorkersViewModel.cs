@@ -223,6 +223,8 @@ public sealed class WorkerAccountRowViewModel
     public string DisplayName { get; init; } = string.Empty;
     public bool IsEnabledInPanel { get; init; }
     public string AdsPowerProfileId { get; init; } = string.Empty;
+    public bool HasAvitoCredentials { get; init; }
+    public string? AvitoLogin { get; init; }
     public string StatusLabel { get; init; } = string.Empty;
     public string StatusTone { get; init; } = "success";
     public string BalanceText { get; init; } = "—";

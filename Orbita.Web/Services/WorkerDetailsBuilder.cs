@@ -129,6 +129,8 @@ internal static class WorkerDetailsBuilder
             DisplayName = account.DisplayName,
             IsEnabledInPanel = account.IsEnabledInPanel,
             AdsPowerProfileId = account.AdsPowerProfileId,
+            HasAvitoCredentials = account.HasAvitoCredentials,
+            AvitoLogin = account.AvitoLogin,
             StatusLabel = label,
             StatusTone = tone,
             Balance = balance?.TotalBalance,

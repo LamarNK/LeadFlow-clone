@@ -13,6 +13,7 @@ public static class ResponseCardText
         string vacancy,
         string accountDisplay,
         string statusLabel,
+        DateTime collectedAtUtc,
         DateTime createdAtUtc,
         DateTime? processedAtUtc,
         string? vacancyUrl = null,
@@ -30,7 +31,8 @@ public static class ResponseCardText
         sb.AppendLine($"Вакансия: {ValueOrDash(vacancy)}");
         sb.AppendLine($"Аккаунт: {ValueOrDash(accountDisplay)}");
         sb.AppendLine($"Статус: {ValueOrDash(statusLabel)}");
-        sb.AppendLine($"Создан: {createdAtUtc.ToLocalTime():dd.MM.yyyy HH:mm}");
+        sb.AppendLine($"Сбор: {collectedAtUtc.ToLocalTime():dd.MM.yyyy HH:mm}");
+        sb.AppendLine($"Отклик: {createdAtUtc.ToLocalTime():dd.MM.yyyy HH:mm}");
         sb.AppendLine($"Обработан: {FormatProcessedAt(processedAtUtc)}");
 
         if (!string.IsNullOrWhiteSpace(messengerUrl))

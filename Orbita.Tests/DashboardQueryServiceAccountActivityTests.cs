@@ -133,7 +133,8 @@ public sealed class DashboardQueryServiceAccountActivityTests
             AvitoSubProfileId = "438814802",
             AvitoSubProfileName = "Работа вахтой2",
             Status = ResponseStatuses.Sent,
-            CreatedAt = now
+            CreatedAt = now,
+            CollectedAt = now
         });
         await db.SaveChangesAsync();
 

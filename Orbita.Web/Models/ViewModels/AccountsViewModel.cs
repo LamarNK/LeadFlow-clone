@@ -52,6 +52,8 @@ public sealed class AccountRowViewModel
     public string? ErrorsLink { get; init; }
     public DateTime? LastActivityUtc { get; init; }
     public bool IsEnabledInPanel { get; init; } = true;
+    public bool HasAvitoCredentials { get; init; }
+    public string? AvitoLogin { get; init; }
     public string? LastErrorMessage { get; init; }
     public string? ErrorHint { get; init; }
     public IReadOnlyList<SubProfileRowViewModel> SubProfiles { get; init; } = [];

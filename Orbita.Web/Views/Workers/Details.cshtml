@@ -469,6 +469,12 @@
                             {
                                 <span class="worker-account-sub">AdsPower @account.AdsPowerProfileId</span>
                             }
+                            @if (account.HasAvitoCredentials)
+                            {
+                                <span class="worker-account-sub worker-account-sub--ok" title="@(account.AvitoLogin ?? "логин задан")">
+                                    <i class="fa-solid fa-key" aria-hidden="true"></i> логин Avito
+                                </span>
+                            }
                             <partial name="_SubProfilesSection" model="@(new SubProfilesSectionViewModel
                             {
                                 WorkerId = Model.WorkerId,
@@ -517,6 +523,18 @@
                                         <i class="fa-regular fa-pen-to-square" aria-hidden="true"></i>
                                         Настройки на воркере
                                     </a>
+                                    <button type="button"
+                                            class="row-menu-item"
+                                            data-avito-credentials
+                                            data-worker-id="@Model.WorkerId"
+                                            data-account-id="@account.Id"
+                                            data-account-name="@account.DisplayName"
+                                            data-login="@(account.AvitoLogin ?? "")"
+                                            data-has-password="@(account.HasAvitoCredentials ? "true" : "false")"
+                                            data-post-url="@Url.Action("UpdateAccountCredentials", "Workers")">
+                                        <i class="fa-solid fa-key" aria-hidden="true"></i>
+                                        Логин / пароль Avito
+                                    </button>
                                     <a class="row-menu-item" href="@responsesUrl">
                                         <i class="fa-regular fa-clock" aria-hidden="true"></i>
                                         История откликов

@@ -54,7 +54,8 @@ public sealed class DashboardQueryServiceTests
             PhoneRaw = "+79001111111",
             PhoneNormalized = "79001111111",
             Status = ResponseStatuses.Sent,
-            CreatedAt = utcStart.AddHours(3)
+            CreatedAt = utcStart.AddHours(3),
+            CollectedAt = utcStart.AddHours(3)
         });
         await db.SaveChangesAsync();
 

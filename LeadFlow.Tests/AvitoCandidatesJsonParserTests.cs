@@ -90,16 +90,94 @@ public sealed class AvitoCandidatesJsonParserTests
     [InlineData("Женщина · 37 лет · Гражданство: Россия · Опыт: Нет", 37)]
     [InlineData("Опыт: Нет", null)]
     [InlineData("3 июня в 14:25 · «Разнорабочий вахта» · Фрязино", null)]
+    [InlineData("Слесарь по сборке мк 5 разряд, опыт 8 лет.", null)]
+    [InlineData("опыт 8 лет", null)]
+    [InlineData("Опыт работы: 15 лет", null)]
+    [InlineData("стаж 10 лет", null)]
+    [InlineData("Мужчина · 53 года · Гражданство: Россия · Опыт: 8 лет", 53)]
+    [InlineData("Возраст — 53 года", 53)]
+    [InlineData("Кандидат соответствует требованиям вакансии Гражданство — Россия Возраст — 53 года ФИО — Ушаков Виктор Владимирович", 53)]
+    [InlineData("54 года", 54)]
     public void ParseAgeFromCardText_ExtractsAgeFromNewCandidateCardFormat(string? input, int? expected)
     {
         Assert.Equal(expected, AvitoCandidatesJsonParser.ParseAgeFromCardText(input));
     }
 
+    [Fact]
+    public void ResolveAge_DoesNotTreatWorkExperienceAsAge_UsesChatAgeInstead()
+    {
+        var chat = new[]
+        {
+            new AvitoChatMessage
+            {
+                Text = "✔ Кандидат соответствует требованиям вакансии Гражданство — Россия Возраст — 53 года ФИО — Ушаков Виктор Владимирович",
+                Side = "right",
+                IsPlatform = false
+            },
+            new AvitoChatMessage
+            {
+                Text = "Вот его резюме Слесарь по сборке мк 5 разряд, опыт 8 лет.",
+                Side = "left",
+                IsPlatform = false
+            }
+        };
+
+        var age = AvitoCandidatesJsonParser.ResolveAge(
+            ageText: "8 лет",
+            rawText: "Мужчина Слесарь по сборке мк 5 разряд, опыт 8 лет. деревня Горбунки",
+            chatMessages: chat);
+
+        Assert.Equal(53, age);
+    }
+
+    [Fact]
+    public void ParseCandidates_ExperienceInResume_NotStoredAsAge()
+    {
+        var account = new AvitoAccount { Id = Guid.NewGuid(), DisplayName = "CRM" };
+        using var doc = JsonDocument.Parse(
+            """
+            {
+              "candidates": [
+                {
+                  "fullName": "Ушаков Виктор Владимирович",
+                  "phone": "+7 910 932-98-14",
+                  "sourceResponseId": "avito:c359c065",
+                  "vacancy": "Слесарь вахта с питанием и проживанием",
+                  "city": "деревня Горбунки",
+                  "age": "8 лет",
+                  "gender": "male",
+                  "rawText": "Ушаков Виктор Владимирович Мужчина Слесарь по сборке мк 5 разряд, опыт 8 лет. деревня Горбунки",
+                  "chatMessages": [
+                    {
+                      "text": "✔ Кандидат соответствует требованиям вакансии Гражданство — Россия Возраст — 53 года ФИО — Ушаков Виктор Владимирович",
+                      "side": "right",
+                      "isPlatform": false
+                    },
+                    {
+                      "text": "Вот его резюме Слесарь по сборке мк 5 разряд, опыт 8 лет.",
+                      "side": "left",
+                      "isPlatform": false
+                    }
+                  ]
+                }
+              ]
+            }
+            """);
+
+        var list = AvitoCandidatesJsonParser.ParseCandidates(doc.RootElement, account);
+
+        Assert.Single(list);
+        Assert.Equal(53, list[0].Age);
+    }
+
     [Theory]
     [InlineData("male", CandidateGenders.Male)]
     [InlineData("Мужчина · 54 года", CandidateGenders.Male)]
+    [InlineData("Мужчина · 26 лет", CandidateGenders.Male)]
     [InlineData("female", CandidateGenders.Female)]
     [InlineData("Женщина · 37 лет", CandidateGenders.Female)]
+    [InlineData("Женщина · 43 года", CandidateGenders.Female)]
+    [InlineData("вакансия для женщин", "")]
     [InlineData("", "")]
     public void ParseGender_NormalizesValues(string? input, string expected) =>
         Assert.Equal(expected, AvitoCandidatesJsonParser.ParseGender(input));
@@ -306,6 +384,9 @@ public sealed class AvitoCandidatesJsonParserTests
         Assert.Equal(2, messages.Count);
         Assert.Equal("Здравствуйте вакансия открыта", messages[0].Text);
         Assert.Equal("Доброго времени суток", messages[1].Text);
+        Assert.Equal(AvitoChatMessagesJson.TryGetResponseAtUtc(messages), list[0].CreatedAt);
+        Assert.True(list[0].CollectedAt >= DateTime.UtcNow.AddMinutes(-1));
+        Assert.NotEqual(list[0].CollectedAt, list[0].CreatedAt);
     }
 
     [Fact]

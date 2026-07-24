@@ -35,7 +35,8 @@ public sealed class AvitoDemoResponseSource
                 Source = "Avito Demo",
                 VacancyUrl = account.AvitoResponsesUrl,
                 SourceResponseId = $"demo-{_offset}",
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = DateTime.UtcNow,
+                CollectedAt = DateTime.UtcNow
             });
         }
 

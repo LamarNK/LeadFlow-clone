@@ -163,7 +163,7 @@ internal static class TableSort
     {
         public static readonly HashSet<string> Columns = new(StringComparer.OrdinalIgnoreCase)
         {
-            "time", "vacancy", "author", "phone", "city", "age", "account", "status"
+            "time", "responded", "vacancy", "author", "phone", "city", "age", "account", "status"
         };
 
         public static readonly TableSortState Default = TableSortState.Create("time", descending: true);
@@ -181,16 +181,19 @@ internal static class TableSort
                 "age" => OrderNullableInt(rows, x => x.Age, sort.Descending),
                 "account" => OrderString(rows, x => x.AccountName, sort.Descending),
                 "status" => OrderString(rows, x => x.StatusLabel, sort.Descending),
-                _ => sort.Descending
+                "responded" => sort.Descending
                     ? rows.OrderByDescending(x => x.CreatedAtUtc)
-                    : rows.OrderBy(x => x.CreatedAtUtc)
+                    : rows.OrderBy(x => x.CreatedAtUtc),
+                _ => sort.Descending
+                    ? rows.OrderByDescending(x => x.CollectedAtUtc)
+                    : rows.OrderBy(x => x.CollectedAtUtc)
             };
 
-            return sort.Column is "time"
+            return sort.Column is "time" or "responded"
                 ? ordered
                 : sort.Descending
-                    ? ordered.ThenByDescending(x => x.CreatedAtUtc)
-                    : ordered.ThenBy(x => x.CreatedAtUtc);
+                    ? ordered.ThenByDescending(x => x.CollectedAtUtc)
+                    : ordered.ThenBy(x => x.CollectedAtUtc);
         }
     }
 

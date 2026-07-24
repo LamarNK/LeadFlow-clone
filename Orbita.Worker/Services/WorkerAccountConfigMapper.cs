@@ -28,7 +28,9 @@ internal static class WorkerAccountConfigMapper
             ActiveAdsCount = dto.ActiveAdsCount,
             BlockedCount = dto.BlockedCount,
             DraftsCount = dto.DraftsCount,
-            SubProfilesJson = string.IsNullOrWhiteSpace(dto.SubProfilesJson) ? "[]" : dto.SubProfilesJson
+            SubProfilesJson = string.IsNullOrWhiteSpace(dto.SubProfilesJson) ? "[]" : dto.SubProfilesJson,
+            AvitoLogin = string.IsNullOrWhiteSpace(dto.AvitoLogin) ? null : dto.AvitoLogin.Trim(),
+            AvitoPassword = string.IsNullOrEmpty(dto.AvitoPassword) ? null : dto.AvitoPassword
         };
 
         if (!string.IsNullOrWhiteSpace(dto.SubProfilesJson))

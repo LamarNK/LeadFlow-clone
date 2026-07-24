@@ -54,6 +54,7 @@ public sealed class WorkerAccountRuntimeStore
         target.ActiveAdsSnapshotJson = source.ActiveAdsSnapshotJson;
         target.BlockedAdsSnapshotJson = source.BlockedAdsSnapshotJson;
         target.ForceSubProfilesRefresh = source.ForceSubProfilesRefresh;
+        // AvitoLogin/AvitoPassword always come from panel config (target), not runtime store.
         if (source.SubProfiles.Count > 0)
         {
             target.SetSubProfiles(source.SubProfiles);
@@ -72,6 +73,8 @@ public sealed class WorkerAccountRuntimeStore
             AdsPowerProfileName = source.AdsPowerProfileName,
             AdsPowerApiBaseUrl = source.AdsPowerApiBaseUrl,
             AdsPowerApiKey = source.AdsPowerApiKey,
+            AvitoLogin = source.AvitoLogin,
+            AvitoPassword = source.AvitoPassword,
             Status = source.Status,
             LastErrorMessage = source.LastErrorMessage,
             LastMonitoringAt = source.LastMonitoringAt,

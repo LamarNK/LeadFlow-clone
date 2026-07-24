@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Options;
@@ -97,13 +98,81 @@ public sealed class WorkerConfigServiceTests
             CancellationToken.None);
         Assert.Null(uploadError);
 
-        var sut = new WorkerConfigService(db, new OfficeScopeService(db), new NoopPanelRealtimeNotifier(), new NoopWorkerPushNotifier(), releases, CreateCaptchaSessions(db), CreateBrowserMonitorSessions(db));
+        var sut = new WorkerConfigService(db, new OfficeScopeService(db), new NoopPanelRealtimeNotifier(), new NoopWorkerPushNotifier(), releases, CreateCaptchaSessions(db), CreateBrowserMonitorSessions(db), CreateAvitoSecrets());
         var config = await sut.GetConfigForWorkerAsync(WorkerId, OfficeScope.ForOffice(OfficeId));
 
         Assert.NotNull(config);
         Assert.NotNull(config!.UpdateOffer);
         Assert.Equal("1.0.0.5", config.UpdateOffer!.Version);
         Assert.Contains("1.0.0.5", config.UpdateOffer.DownloadPath, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task UpdateAccountCredentialsAsync_ProtectsPasswordAndReturnsToWorkerConfig()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+
+        var secrets = CreateAvitoSecrets();
+        var sut = new WorkerConfigService(
+            db,
+            new OfficeScopeService(db),
+            new NoopPanelRealtimeNotifier(),
+            new NoopWorkerPushNotifier(),
+            CreateReleases(),
+            CreateCaptchaSessions(db),
+            CreateBrowserMonitorSessions(db),
+            secrets);
+
+        var (creds, error) = await sut.UpdateAccountCredentialsAsync(
+            WorkerId,
+            AccountId,
+            new UpdateWorkerAccountCredentialsRequest("+79991234567", "secret-pass"),
+            OfficeScope.ForOffice(OfficeId));
+
+        Assert.Null(error);
+        Assert.NotNull(creds);
+        Assert.Equal("+79991234567", creds!.Login);
+        Assert.True(creds.HasPassword);
+
+        var account = await db.WorkerAccounts.SingleAsync();
+        Assert.Equal("+79991234567", account.AvitoLogin);
+        Assert.False(string.Equals(account.AvitoPasswordProtected, "secret-pass", StringComparison.Ordinal));
+        Assert.True(secrets.TryUnprotect(account.AvitoPasswordProtected, out var plain));
+        Assert.Equal("secret-pass", plain);
+
+        var config = await sut.GetConfigForWorkerAsync(WorkerId, OfficeScope.ForOffice(OfficeId));
+        Assert.NotNull(config);
+        Assert.Equal("+79991234567", config!.Accounts[0].AvitoLogin);
+        Assert.Equal("secret-pass", config.Accounts[0].AvitoPassword);
+    }
+
+    [Fact]
+    public async Task UpdateAccountCredentialsAsync_Clear_RemovesStoredSecrets()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+        var secrets = CreateAvitoSecrets();
+        var account = await db.WorkerAccounts.SingleAsync();
+        account.AvitoLogin = "user@avito";
+        account.AvitoPasswordProtected = secrets.Protect("old");
+        await db.SaveChangesAsync();
+
+        var sut = CreateService(db, secrets);
+        var (creds, error) = await sut.UpdateAccountCredentialsAsync(
+            WorkerId,
+            AccountId,
+            new UpdateWorkerAccountCredentialsRequest(null, Clear: true),
+            OfficeScope.ForOffice(OfficeId));
+
+        Assert.Null(error);
+        Assert.NotNull(creds);
+        Assert.Null(creds!.Login);
+        Assert.False(creds.HasPassword);
+
+        var reloaded = await db.WorkerAccounts.SingleAsync();
+        Assert.Null(reloaded.AvitoLogin);
+        Assert.Null(reloaded.AvitoPasswordProtected);
     }
 
     [Fact]
@@ -173,15 +242,34 @@ public sealed class WorkerConfigServiceTests
         Assert.Null(config.ResponseFilterMaxAgeFemale);
     }
 
-    private static WorkerConfigService CreateService(OrbitaDbContext db)
+    private static WorkerConfigService CreateService(OrbitaDbContext db, AvitoAccountSecretProtector? secrets = null)
+    {
+        var releases = CreateReleases();
+        return new(
+            db,
+            new OfficeScopeService(db),
+            new NoopPanelRealtimeNotifier(),
+            new NoopWorkerPushNotifier(),
+            releases,
+            CreateCaptchaSessions(db),
+            CreateBrowserMonitorSessions(db),
+            secrets ?? CreateAvitoSecrets());
+    }
+
+    private static WorkerReleaseService CreateReleases()
     {
         var releaseRoot = Path.Combine(Path.GetTempPath(), $"orbita-releases-{Guid.NewGuid():N}");
-        var releases = new WorkerReleaseService(Options.Create(new WorkerReleaseOptions
+        return new WorkerReleaseService(Options.Create(new WorkerReleaseOptions
         {
             DataPath = releaseRoot,
             MaxUploadBytes = 1024 * 1024
         }));
-        return new(db, new OfficeScopeService(db), new NoopPanelRealtimeNotifier(), new NoopWorkerPushNotifier(), releases, CreateCaptchaSessions(db), CreateBrowserMonitorSessions(db));
+    }
+
+    private static AvitoAccountSecretProtector CreateAvitoSecrets()
+    {
+        var provider = DataProtectionProvider.Create(Path.Combine(Path.GetTempPath(), $"orbita-dp-{Guid.NewGuid():N}"));
+        return new AvitoAccountSecretProtector(provider);
     }
 
     private static BrowserMonitorService CreateBrowserMonitorSessions(OrbitaDbContext db) =>

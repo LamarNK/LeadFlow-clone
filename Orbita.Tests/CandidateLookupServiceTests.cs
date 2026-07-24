@@ -460,6 +460,7 @@ public sealed class CandidateLookupServiceTests
             Age = age,
             AvitoSubProfileId = subProfileId,
             Status = ResponseStatuses.Sent,
-            CreatedAt = createdAt ?? DateTime.UtcNow
+            CreatedAt = createdAt ?? DateTime.UtcNow,
+            CollectedAt = createdAt ?? DateTime.UtcNow
         };
 }

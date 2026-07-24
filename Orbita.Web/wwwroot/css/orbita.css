@@ -3040,6 +3040,115 @@ html[data-theme="dark"] .orbita-office-switcher-select:focus {
     color: #667085;
 }
 
+.worker-account-sub--ok {
+    color: #027a48;
+}
+
+.orbita-avito-cred-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 1200;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+}
+
+.orbita-avito-cred-modal[hidden] {
+    display: none !important;
+}
+
+.orbita-avito-cred-modal__backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(16, 24, 40, 0.45);
+}
+
+.orbita-avito-cred-modal__dialog {
+    position: relative;
+    width: min(420px, 100%);
+    background: #fff;
+    border-radius: 14px;
+    box-shadow: 0 20px 48px rgba(16, 24, 40, 0.18);
+    padding: 20px 20px 16px;
+    display: grid;
+    gap: 12px;
+}
+
+.orbita-avito-cred-modal__title {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+    color: #101828;
+}
+
+.orbita-avito-cred-modal__hint,
+.orbita-avito-cred-modal__status {
+    margin: 0;
+    font-size: 13px;
+    color: #667085;
+}
+
+.orbita-avito-cred-modal__label {
+    display: grid;
+    gap: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    color: #344054;
+}
+
+.orbita-avito-cred-modal__input {
+    width: 100%;
+    border: 1px solid #d0d5dd;
+    border-radius: 10px;
+    padding: 10px 12px;
+    font-size: 14px;
+    color: #101828;
+    background: #fff;
+}
+
+.orbita-avito-cred-modal__input:focus {
+    outline: none;
+    border-color: #84adff;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+
+.orbita-avito-cred-modal__actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+.orbita-avito-cred-modal__btn {
+    border: 1px solid #d0d5dd;
+    background: #fff;
+    color: #344054;
+    border-radius: 10px;
+    padding: 8px 14px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+}
+
+.orbita-avito-cred-modal__btn--primary {
+    background: #2563eb;
+    border-color: #2563eb;
+    color: #fff;
+}
+
+.orbita-avito-cred-modal__btn--ghost {
+    margin-right: auto;
+    border-color: transparent;
+    color: #b42318;
+}
+
+.orbita-avito-cred-modal__btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
 .visually-hidden {
     position: absolute;
     width: 1px;
@@ -6829,6 +6938,11 @@ html[data-theme="dark"] .orbita-office-switcher-select:focus {
     white-space: nowrap;
 }
 
+.responses-time--responded {
+    font-weight: 400;
+    color: #667085;
+}
+
 .responses-ad {
     min-width: 180px;
 }
@@ -6872,14 +6986,25 @@ html[data-theme="dark"] .orbita-office-switcher-select:focus {
 }
 
 .responses-account {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 2px;
+    min-width: 120px;
+}
+
+.responses-account > a {
+    display: block;
+    font-size: 14px;
+    font-weight: 600;
+    color: #2563eb;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.responses-account > a:hover {
+    text-decoration: underline;
 }
 
 .responses-account-sub {
     display: block;
+    margin-top: 2px;
     font-size: 12px;
     font-weight: 500;
     color: #667085;

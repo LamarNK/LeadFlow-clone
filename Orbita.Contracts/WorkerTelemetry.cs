@@ -99,7 +99,10 @@ public sealed record WorkerAccountDto(
     int TodayResponses = 0,
     int TodayDuplicates = 0,
     int TodayEventErrors = 0,
-    DateTime? LastActivityUtc = null);
+    DateTime? LastActivityUtc = null,
+    /// <summary>Заданы логин и пароль Avito для автологина воркера (пароль в DTO не отдаётся).</summary>
+    bool HasAvitoCredentials = false,
+    string? AvitoLogin = null);
 
 public sealed record WorkerBalanceDto(
     Guid AccountId,

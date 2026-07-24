@@ -44,6 +44,7 @@ public sealed record ResponseListItemDto(
     string AvitoSubProfileId,
     string? AvitoSubProfileName,
     DateTime CreatedAt,
+    DateTime CollectedAt,
     DateTime? ProcessedAt,
     IReadOnlyList<ResponseBitrixDeliveryDto> BitrixDeliveries);
 
@@ -88,6 +89,7 @@ public sealed record ResponseDetailDto(
     string? DistributionMode,
     string? ErrorMessage,
     DateTime CreatedAt,
+    DateTime CollectedAt,
     DateTime? ProcessedAt,
     IReadOnlyList<ResponseBitrixDeliveryDto> BitrixDeliveries);
 

@@ -27,7 +27,11 @@ public sealed record WorkerAccountConfigDto(
     DateTime? SubProfilesRefreshedAtUtc = null,
     int ActiveAdsCount = 0,
     int BlockedCount = 0,
-    int DraftsCount = 0);
+    int DraftsCount = 0,
+    /// <summary>Логин/телефон Avito для автологина воркера (только worker config, не в телеметрии панели).</summary>
+    string? AvitoLogin = null,
+    /// <summary>Пароль Avito (plaintext только в защищённом worker config channel).</summary>
+    string? AvitoPassword = null);
 
 public sealed record UpdateWorkerSubProfileRequest(bool IsEnabledInPanel);
 
@@ -98,7 +102,8 @@ public sealed record WorkerCandidateDto(
     string RawText,
     string ChatMessagesJson,
     DateTime CreatedAt,
-    string AvitoSubProfileName = "");
+    string AvitoSubProfileName = "",
+    DateTime CollectedAt = default);
 
 public sealed record WorkerCandidateBatchRequest(
     IReadOnlyList<WorkerCandidateDto> Candidates);
@@ -107,7 +112,9 @@ public sealed record CandidateLookupProfileDto(
     string FullName,
     int? Age,
     string City,
-    string PhoneNormalized);
+    string PhoneNormalized,
+    /// <summary>Дата отклика (чат); для неполного имени — окно ~неделя на API.</summary>
+    DateTime? ResponseAtUtc = null);
 
 public sealed record WorkerCandidateLookupRequest(
     Guid AccountId,
@@ -154,6 +161,20 @@ public sealed record UpdateWorkerSettingsRequest(
     int? ResponseFilterMaxAgeFemale = null);
 
 public sealed record UpdateWorkerAccountRequest(bool IsEnabledInPanel);
+
+/// <summary>
+/// Обновление логина/пароля Avito для аккаунта.
+/// <paramref name="Password"/> = null/пусто — не менять сохранённый пароль (если <paramref name="Clear"/> = false).
+/// </summary>
+public sealed record UpdateWorkerAccountCredentialsRequest(
+    string? Login,
+    string? Password = null,
+    bool Clear = false);
+
+public sealed record WorkerAccountCredentialsDto(
+    Guid AccountId,
+    string? Login,
+    bool HasPassword);
 
 public sealed record BulkWorkersMonitoringResultDto(
     int UpdatedCount,

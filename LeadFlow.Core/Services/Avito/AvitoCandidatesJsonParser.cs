@@ -44,13 +44,13 @@ public static class AvitoCandidatesJsonParser
 
             var messengerUrl = item.TryGetProperty("messengerUrl", out var messengerProp) ? messengerProp.GetString() ?? string.Empty : string.Empty;
             var rawText = item.TryGetProperty("rawText", out var rawTextProp) ? rawTextProp.GetString() ?? string.Empty : string.Empty;
-            var age = ParseAge(item.TryGetProperty("age", out var ageProp) ? ageProp.GetString() : null);
+            var ageText = item.TryGetProperty("age", out var ageTextProp) ? ageTextProp.GetString() : null;
             var cardGender = ParseGender(item.TryGetProperty("gender", out var genderProp) ? genderProp.GetString() : null);
             var gender = CandidateGenderResolver.ToStoredGender(
                 CandidateGenderResolver.Resolve(fullName, cardGender, rawText));
             var chatMessages = AvitoChatMessagesJson.ParseFromCandidateJson(item);
             var chatMessagesJson = AvitoChatMessagesJson.Serialize(chatMessages);
-            var ageText = item.TryGetProperty("age", out var ageTextProp) ? ageTextProp.GetString() : null;
+            var age = ResolveAge(ageText, rawText, chatMessages);
             var cardFingerprint = AvitoResponseCardFingerprint.Build(
                 fullName,
                 vacancy,
@@ -58,6 +58,9 @@ public static class AvitoCandidatesJsonParser
                 vacancyUrl,
                 messengerUrl,
                 ageText);
+            // Дата отклика из чата (platform/раннее сообщение); иначе момент сбора.
+            var collectedAt = DateTime.UtcNow;
+            var createdAt = AvitoChatMessagesJson.TryGetResponseAtUtc(chatMessages) ?? collectedAt;
 
             results.Add(new CandidateResponse
             {
@@ -77,7 +80,8 @@ public static class AvitoCandidatesJsonParser
                 MessengerUrl = messengerUrl,
                 ChatMessagesJson = chatMessagesJson,
                 RawText = rawText,
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = createdAt,
+                CollectedAt = collectedAt
             });
         }
 
@@ -107,7 +111,8 @@ public static class AvitoCandidatesJsonParser
     }
 
     /// <summary>
-    /// Извлекает возраст из текста карточки отклика (оба формата Avito: старый и «Мужчина · N лет · …»).
+    /// Извлекает возраст из текста карточки/чата (форматы Avito: «Мужчина · N лет», «Возраст — N», «N лет»).
+    /// Не принимает «опыт N лет» / «стаж N лет» — это стаж, не возраст.
     /// </summary>
     public static int? ParseAgeFromCardText(string? value)
     {
@@ -117,13 +122,119 @@ public static class AvitoCandidatesJsonParser
         }
 
         var normalized = Regex.Replace(value.Trim(), @"\s+", " ");
-        var match = Regex.Match(normalized, @"(\d{1,2})\s*(?:лет|года|год)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-        if (!match.Success)
+
+        var explicitAge = Regex.Match(
+            normalized,
+            @"возраст\s*[—\-:]\s*(\d{1,2})\b",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (explicitAge.Success && int.TryParse(explicitAge.Groups[1].Value, out var fromLabel))
         {
-            return null;
+            return fromLabel;
         }
 
-        return int.TryParse(match.Groups[1].Value, out var age) ? age : null;
+        // Демографическая строка: «Мужчина · 54 года» / «Женщина 37 лет».
+        var demographic = Regex.Match(
+            normalized,
+            @"(?:мужчина|женщина)\s*[·•|,]?\s*(\d{1,2})\s*(?:лет|года|год)",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (demographic.Success && int.TryParse(demographic.Groups[1].Value, out var fromDemo))
+        {
+            return fromDemo;
+        }
+
+        foreach (Match match in Regex.Matches(
+                     normalized,
+                     @"(\d{1,2})\s*(?:лет|года|год)",
+                     RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
+        {
+            if (IsExperienceYearsContext(normalized, match.Index))
+            {
+                continue;
+            }
+
+            if (int.TryParse(match.Groups[1].Value, out var age))
+            {
+                return age;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Возраст: поле карточки, затем умный разбор rawText/чата.
+    /// Если в age попал стаж («опыт 8 лет»), отбрасываем и ищем настоящий возраст.
+    /// </summary>
+    public static int? ResolveAge(
+        string? ageText,
+        string? rawText,
+        IReadOnlyList<AvitoChatMessage>? chatMessages = null)
+    {
+        var fromRaw = ParseAgeFromCardText(rawText);
+        var fromField = ParseAge(ageText);
+
+        if (fromRaw is int rawAge)
+        {
+            return rawAge;
+        }
+
+        if (fromField is int fieldAge)
+        {
+            // age="8 лет" при rawText с «опыт 8 лет» без демографии — это стаж, не возраст.
+            if (IsExperienceOnlyAgeField(rawText, fieldAge))
+            {
+                fromField = null;
+            }
+            else
+            {
+                return fieldAge;
+            }
+        }
+
+        if (chatMessages is { Count: > 0 })
+        {
+            foreach (var message in chatMessages)
+            {
+                var fromChat = ParseAgeFromCardText(message.Text);
+                if (fromChat is not null)
+                {
+                    return fromChat;
+                }
+            }
+        }
+
+        return fromField;
+    }
+
+    private static bool IsExperienceYearsContext(string normalizedText, int matchIndex)
+    {
+        var prefixStart = Math.Max(0, matchIndex - 40);
+        var before = normalizedText[prefixStart..matchIndex];
+        return Regex.IsMatch(
+            before,
+            @"(?:опыт(?:\s+работы)?|стаж)\s*[:\-]?\s*$",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    }
+
+    private static bool IsExperienceOnlyAgeField(string? rawText, int age)
+    {
+        if (string.IsNullOrWhiteSpace(rawText))
+        {
+            return false;
+        }
+
+        var normalized = Regex.Replace(rawText.Trim(), @"\s+", " ");
+        var experienceHit = Regex.IsMatch(
+            normalized,
+            $@"(?:опыт(?:\s+работы)?|стаж)\s*[:\-]?\s*{age}\s*(?:лет|года|год)",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (!experienceHit)
+        {
+            return false;
+        }
+
+        // Если в тексте есть явный/демографический возраст — поле age не считаем «только стажем».
+        return ParseAgeFromCardText(normalized) is null;
     }
 
     /// <summary>Парсит название и город вакансии из textContent строки «… на вакансию …» в панели отклика.</summary>

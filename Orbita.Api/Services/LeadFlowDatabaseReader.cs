@@ -185,6 +185,7 @@ public sealed class LeadFlowCandidateRecord
         "ErrorMessage",
         "RawText",
         "CreatedAt",
+        "CollectedAt",
         "ProcessedAt"
     ];
 
@@ -215,6 +216,7 @@ public sealed class LeadFlowCandidateRecord
     public string ErrorMessage { get; set; } = string.Empty;
     public string RawText { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
+    public DateTime CollectedAt { get; set; }
     public DateTime? ProcessedAt { get; set; }
 
     public bool IsValidForImport =>
@@ -245,6 +247,9 @@ public sealed class LeadFlowCandidateRecord
                 case "CreatedAt":
                     record.CreatedAt = ReadDateTime(reader, i);
                     break;
+                case "CollectedAt":
+                    record.CollectedAt = ReadDateTime(reader, i);
+                    break;
                 case "ProcessedAt":
                     record.ProcessedAt = ReadDateTime(reader, i);
                     break;
@@ -257,6 +262,11 @@ public sealed class LeadFlowCandidateRecord
         if (record.Id == Guid.Empty)
         {
             record.Id = Guid.NewGuid();
+        }
+
+        if (record.CollectedAt == default)
+        {
+            record.CollectedAt = record.CreatedAt;
         }
 
         return record;

@@ -132,6 +132,10 @@ public sealed class WorkerAccountEntity
     public DateTime? SubProfilesRefreshedAtUtc { get; set; }
     public DateTime? SubProfilesRefreshRequestedAtUtc { get; set; }
     public string SubProfilesDisabledIdsJson { get; set; } = "[]";
+    /// <summary>Логин/телефон Avito (plaintext). Пароль — только в <see cref="AvitoPasswordProtected"/>.</summary>
+    public string? AvitoLogin { get; set; }
+    /// <summary>Пароль Avito, защищённый Data Protection.</summary>
+    public string? AvitoPasswordProtected { get; set; }
     public DateTime UpdatedAtUtc { get; set; }
 
     public WorkerEntity Worker { get; set; } = null!;
@@ -267,7 +271,10 @@ public sealed class CandidateResponseEntity
     public string DistributionMode { get; set; } = string.Empty;
     public string ErrorMessage { get; set; } = string.Empty;
     public string RawText { get; set; } = string.Empty;
+    /// <summary>Дата отклика на Avito (из чата); при отсутствии — совпадает со сбором.</summary>
     public DateTime CreatedAt { get; set; }
+    /// <summary>Момент сбора отклика воркером / записи в Орбиту.</summary>
+    public DateTime CollectedAt { get; set; }
     public DateTime? ProcessedAt { get; set; }
 
     public CandidatePersonEntity Person { get; set; } = null!;

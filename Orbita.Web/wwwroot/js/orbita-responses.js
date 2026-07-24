@@ -263,9 +263,13 @@
             if (sub) account = account + ' · ' + sub;
         }
         var statusLabel = snapshotRow ? (readRowValue(snapshotRow, 'statusLabel') || '') : (domRow?.querySelector('.response-status-badge')?.textContent?.trim() || '');
-        var createdUtc = snapshotRow ? readRowValue(snapshotRow, 'createdAtUtc') : domRow?.querySelector('[data-orbita-utc]')?.getAttribute('data-orbita-utc');
-        var createdText = createdUtc && window.OrbitaTime
-            ? window.OrbitaTime.formatUtc(createdUtc, 'datetime').replace(',', '')
+        var collectedUtc = snapshotRow ? (readRowValue(snapshotRow, 'collectedAtUtc') || readRowValue(snapshotRow, 'createdAtUtc')) : domRow?.querySelector('[data-label="Сбор"] [data-orbita-utc]')?.getAttribute('data-orbita-utc');
+        var respondedUtc = snapshotRow ? readRowValue(snapshotRow, 'createdAtUtc') : domRow?.querySelector('[data-label="Отклик"] [data-orbita-utc]')?.getAttribute('data-orbita-utc');
+        var collectedText = collectedUtc && window.OrbitaTime
+            ? window.OrbitaTime.formatUtc(collectedUtc, 'datetime').replace(',', '')
+            : '—';
+        var respondedText = respondedUtc && window.OrbitaTime
+            ? window.OrbitaTime.formatUtc(respondedUtc, 'datetime').replace(',', '')
             : '—';
         var vacancyUrl = snapshotRow ? readRowValue(snapshotRow, 'vacancyUrl') : '';
         var messengerUrl = snapshotRow ? readRowValue(snapshotRow, 'messengerUrl') : '';
@@ -280,7 +284,8 @@
             'Вакансия: ' + (vacancy || '—'),
             'Аккаунт: ' + (account || '—'),
             'Статус: ' + (statusLabel || '—'),
-            'Создан: ' + createdText,
+            'Сбор: ' + collectedText,
+            'Отклик: ' + respondedText,
             'Обработан: Ещё не обработан'
         ];
         if (messengerUrl) lines.push('Чат: ' + messengerUrl);
@@ -825,14 +830,16 @@
             var ageDisplay = age > 0 ? String(age) : '—';
             var genderDisplay = formatGenderLabel(readRowValue(row, 'gender'));
             var canSend = readRowBool(row, 'canSend');
-            var createdAtUtc = readRowValue(row, 'createdAtUtc');
+            var collectedAtUtc = readRowValue(row, 'collectedAtUtc') || readRowValue(row, 'createdAtUtc');
+            var respondedAtUtc = readRowValue(row, 'createdAtUtc');
             var statusTone = readRowValue(row, 'statusTone') || 'unique';
             var statusLabel = readRowValue(row, 'statusLabel') || '';
 
             var cardCopy = readRowValue(row, 'cardCopy') || '';
             return '<tr class="responses-row" data-response-id="' + shared.escapeHtml(rowId) + '" data-phone="' + shared.escapeHtml(phoneDisplay) + '" data-can-send="' + (canSend ? 'true' : 'false') + '" data-phone-hidden="' + (phoneHidden ? 'true' : 'false') + '" data-response-card="' + shared.escapeAttr(cardCopy) + '" data-detail-json-url="' + shared.escapeHtml(detailJsonUrl(rowId)) + '">' +
                 renderSelectCell(row) +
-                '<td class="responses-time" data-label="Время"><time data-orbita-utc="' + shared.escapeHtml(createdAtUtc) + '" data-orbita-format="datetime"></time></td>' +
+                '<td class="responses-time" data-label="Сбор"><time data-orbita-utc="' + shared.escapeHtml(collectedAtUtc) + '" data-orbita-format="datetime"></time></td>' +
+                '<td class="responses-time responses-time--responded" data-label="Отклик"><time data-orbita-utc="' + shared.escapeHtml(respondedAtUtc) + '" data-orbita-format="datetime"></time></td>' +
                 '<td class="responses-author" data-label="Автор">' + shared.escapeHtml(author) + '</td>' +
                 '<td class="responses-phone" data-label="Телефон">' + phoneCell + '</td>' +
                 '<td class="responses-city" data-label="Город">' + cityDisplay + '</td>' +

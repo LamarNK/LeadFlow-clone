@@ -39,6 +39,13 @@ public interface IWorkersService
         int? responseFilterMaxAgeFemale = null,
         CancellationToken ct = default);
     Task<(bool Success, string? Error)> UpdateWorkerAccountAsync(Guid workerId, Guid accountId, bool isEnabled, CancellationToken ct = default);
+    Task<(bool Success, string? Error)> UpdateWorkerAccountCredentialsAsync(
+        Guid workerId,
+        Guid accountId,
+        string? login,
+        string? password,
+        bool clear,
+        CancellationToken ct = default);
     Task<(bool Success, string? Error)> RequestSubProfilesRefreshAsync(Guid workerId, Guid accountId, CancellationToken ct = default);
     Task<(bool Success, string? Error)> UpdateSubProfileEnabledAsync(
         Guid workerId,

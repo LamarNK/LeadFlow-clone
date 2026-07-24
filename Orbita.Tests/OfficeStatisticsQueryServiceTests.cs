@@ -278,6 +278,7 @@ public sealed class OfficeStatisticsQueryServiceTests
                 MessengerUrl = "https://t.me/test",
                 Status = ResponseStatuses.Sent,
                 CreatedAt = now.AddHours(-2),
+                CollectedAt = now.AddHours(-2),
                 ProcessedAt = now.AddHours(-1)
             },
             new CandidateResponseEntity
@@ -296,7 +297,8 @@ public sealed class OfficeStatisticsQueryServiceTests
                 City = "Москва",
                 Vacancy = "Водитель",
                 Status = ResponseStatuses.Duplicate,
-                CreatedAt = now.AddDays(-1)
+                CreatedAt = now.AddDays(-1),
+                CollectedAt = now.AddDays(-1)
             },
             new CandidateResponseEntity
             {
@@ -313,7 +315,8 @@ public sealed class OfficeStatisticsQueryServiceTests
                 City = "Казань",
                 Vacancy = "Сборщик",
                 Status = ResponseStatuses.Sent,
-                CreatedAt = now.AddHours(-1)
+                CreatedAt = now.AddHours(-1),
+                CollectedAt = now.AddHours(-1)
             });
 
         db.SaveChanges();

@@ -6,7 +6,8 @@ using PuppeteerSharp;
 namespace LeadFlow.Core.Services.Avito;
 
 /// <summary>
-/// Пытается восстановить сессию Avito через UI входа: «Вход» → сохранённый профиль → пароль из браузера.
+/// Пытается восстановить сессию Avito через UI входа:
+/// сохранённый профиль → пароль (Орбита/браузер); если профиля нет — полный логин/пароль.
 /// </summary>
 public static class AvitoAutoLoginRecovery
 {
@@ -18,6 +19,10 @@ public static class AvitoAutoLoginRecovery
         bool HasCaptcha,
         bool HasLoginForm,
         bool HasUsersList,
+        bool HasSavedUserCard,
+        bool HasOtherProfileLink,
+        bool HasProfileChooser,
+        bool HasCredentialInputs,
         bool HasGuestLoginButton,
         bool HasLoggedInProfile,
         bool HasPasswordValue,
@@ -49,6 +54,10 @@ public static class AvitoAutoLoginRecovery
                 HasCaptcha: root.TryGetProperty("hasCaptcha", out var cap) && cap.ValueKind == JsonValueKind.True,
                 HasLoginForm: root.TryGetProperty("hasLoginForm", out var lf) && lf.ValueKind == JsonValueKind.True,
                 HasUsersList: root.TryGetProperty("hasUsersList", out var ul) && ul.ValueKind == JsonValueKind.True,
+                HasSavedUserCard: root.TryGetProperty("hasSavedUserCard", out var su) && su.ValueKind == JsonValueKind.True,
+                HasOtherProfileLink: root.TryGetProperty("hasOtherProfileLink", out var op) && op.ValueKind == JsonValueKind.True,
+                HasProfileChooser: root.TryGetProperty("hasProfileChooser", out var pc) && pc.ValueKind == JsonValueKind.True,
+                HasCredentialInputs: root.TryGetProperty("hasCredentialInputs", out var ci) && ci.ValueKind == JsonValueKind.True,
                 HasGuestLoginButton: root.TryGetProperty("hasGuestLoginButton", out var gl) && gl.ValueKind == JsonValueKind.True,
                 HasLoggedInProfile: root.TryGetProperty("hasLoggedInProfile", out var lp) && lp.ValueKind == JsonValueKind.True,
                 HasPasswordValue: root.TryGetProperty("hasPasswordValue", out var pv) && pv.ValueKind == JsonValueKind.True,
@@ -63,8 +72,15 @@ public static class AvitoAutoLoginRecovery
 
     public static async Task<RecoveryResult> TryRecoverAsync(
         IPage page,
+        CancellationToken cancellationToken = default) =>
+        await TryRecoverAsync(page, credentials: null, cancellationToken).ConfigureAwait(false);
+
+    public static async Task<RecoveryResult> TryRecoverAsync(
+        IPage page,
+        AvitoLoginCredentials? credentials,
         CancellationToken cancellationToken = default)
     {
+        credentials ??= AvitoAutoLoginContext.Credentials;
         var steps = new List<string>();
         const int maxIterations = 10;
 
@@ -104,7 +120,58 @@ public static class AvitoAutoLoginRecovery
             }
 
             var progressed = false;
+            var hasOrbitCredentials = credentials is { IsUsable: true };
 
+            // 1) Есть сохранённый профиль («База») — кликаем его, затем вводим пароль.
+            // «Войти в другой профиль» на этом экране не трогаем, пока есть карточка.
+            if (!state.HasCredentialInputs &&
+                (state.HasUsersList || state.HasSavedUserCard || state.HasProfileChooser))
+            {
+                var selected = await TrySelectSavedUserAsync(page, cancellationToken).ConfigureAwait(false);
+                steps.Add(selected ? "выбран сохранённый профиль" : "не удалось выбрать профиль");
+                if (selected)
+                {
+                    progressed = true;
+                    await Task.Delay(MonitoringTiming.AutoLoginAfterUserSelectMs, cancellationToken).ConfigureAwait(false);
+                    continue;
+                }
+
+                // Карточки нет / клик не сработал — только тогда полный вход.
+                if (state.HasOtherProfileLink)
+                {
+                    var switched = await TrySwitchToOtherProfileAsync(page, cancellationToken).ConfigureAwait(false);
+                    steps.Add(switched
+                        ? "открыт вход в другой профиль"
+                        : "не удалось открыть вход в другой профиль");
+                    if (switched)
+                    {
+                        progressed = true;
+                        await Task.Delay(MonitoringTiming.AutoLoginAfterUserSelectMs, cancellationToken).ConfigureAwait(false);
+                        continue;
+                    }
+                }
+            }
+
+            // 2) Поле пароля (после выбора профиля) или полная форма — credentials из Орбиты.
+            if (state.HasCredentialInputs && hasOrbitCredentials)
+            {
+                var submitted = await TryFillCredentialsAndSubmitAsync(
+                        page,
+                        credentials!,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                steps.Add(submitted
+                    ? "введены логин/пароль из Орбиты"
+                    : "не удалось ввести логин/пароль из Орбиты");
+                if (submitted)
+                {
+                    progressed = true;
+                    await WaitForAuthSettleAsync(page, cancellationToken).ConfigureAwait(false);
+                    continue;
+                }
+            }
+
+            // 3) Пароль уже в браузере — просто submit.
             if (state.HasLoginForm && state.HasPasswordValue && state.HasSubmitButton)
             {
                 var submitted = await TrySubmitPasswordFormAsync(page, cancellationToken).ConfigureAwait(false);
@@ -117,11 +184,17 @@ public static class AvitoAutoLoginRecovery
                 }
             }
 
-            if (state.HasUsersList)
+            // 4) Нет сохранённого профиля, только ссылка на полный вход.
+            if (!state.HasCredentialInputs &&
+                state.HasOtherProfileLink &&
+                !state.HasUsersList &&
+                !state.HasSavedUserCard)
             {
-                var selected = await TrySelectSavedUserAsync(page, cancellationToken).ConfigureAwait(false);
-                steps.Add(selected ? "выбран сохранённый профиль" : "не удалось выбрать профиль");
-                if (selected)
+                var switched = await TrySwitchToOtherProfileAsync(page, cancellationToken).ConfigureAwait(false);
+                steps.Add(switched
+                    ? "открыт вход в другой профиль"
+                    : "не удалось открыть вход в другой профиль");
+                if (switched)
                 {
                     progressed = true;
                     await Task.Delay(MonitoringTiming.AutoLoginAfterUserSelectMs, cancellationToken).ConfigureAwait(false);
@@ -129,7 +202,8 @@ public static class AvitoAutoLoginRecovery
                 }
             }
 
-            if (state.HasLoginForm && !state.HasPasswordValue)
+            // 5) Autofill пароля в браузере (без credentials Орбиты).
+            if (state.HasLoginForm && !state.HasPasswordValue && state.HasCredentialInputs)
             {
                 await TryTriggerPasswordAutofillAsync(page, cancellationToken).ConfigureAwait(false);
                 var afterAutofill = await ProbeAsync(page, cancellationToken).ConfigureAwait(false);
@@ -144,13 +218,14 @@ public static class AvitoAutoLoginRecovery
                         continue;
                     }
                 }
-                else
+                else if (!hasOrbitCredentials)
                 {
-                    steps.Add("пароль не сохранён в браузере");
+                    steps.Add("пароль не сохранён в браузере и нет credentials в Орбите");
                 }
             }
 
-            if (state.HasGuestLoginButton || (!state.HasLoginForm && !state.HasUsersList))
+            if (state.HasGuestLoginButton ||
+                (!state.HasLoginForm && !state.HasUsersList && !state.HasSavedUserCard && !state.HasOtherProfileLink))
             {
                 var opened = await TryOpenLoginAsync(page, cancellationToken).ConfigureAwait(false);
                 steps.Add(opened ? "открыта форма входа" : "кнопка входа не найдена");
@@ -180,7 +255,10 @@ public static class AvitoAutoLoginRecovery
         var reason = finalState switch
         {
             { HasCaptcha: true } => "captcha",
-            { HasLoginForm: true, HasPasswordValue: false } => "no_saved_password",
+            { HasLoginForm: true, HasPasswordValue: false } when credentials is not { IsUsable: true }
+                => "no_saved_password",
+            { HasLoginForm: true } when credentials is { IsUsable: true }
+                => "credentials_login_failed",
             _ => "login_ui_stuck"
         };
 
@@ -293,9 +371,32 @@ public static class AvitoAutoLoginRecovery
         return TryReadBoolProperty(raw, "clicked");
     }
 
+    private static async Task<bool> TrySwitchToOtherProfileAsync(IPage page, CancellationToken cancellationToken)
+    {
+        var raw = await EvaluateJsonStringAsync(
+                page,
+                AvitoAutoLoginScripts.BuildSwitchToOtherProfileScript(),
+                cancellationToken)
+            .ConfigureAwait(false);
+        return TryReadBoolProperty(raw, "clicked");
+    }
+
     private static async Task<bool> TrySubmitPasswordFormAsync(IPage page, CancellationToken cancellationToken)
     {
         var raw = await EvaluateJsonStringAsync(page, AvitoAutoLoginScripts.BuildSubmitPasswordFormScript(), cancellationToken)
+            .ConfigureAwait(false);
+        return TryReadBoolProperty(raw, "submitted");
+    }
+
+    private static async Task<bool> TryFillCredentialsAndSubmitAsync(
+        IPage page,
+        AvitoLoginCredentials credentials,
+        CancellationToken cancellationToken)
+    {
+        var raw = await EvaluateJsonStringAsync(
+                page,
+                AvitoAutoLoginScripts.BuildFillCredentialsAndSubmitScript(credentials.Login, credentials.Password),
+                cancellationToken)
             .ConfigureAwait(false);
         return TryReadBoolProperty(raw, "submitted");
     }

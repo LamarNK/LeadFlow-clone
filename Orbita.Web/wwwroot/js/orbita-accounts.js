@@ -115,9 +115,21 @@
         var toggle = account.isEnabledInPanel
             ? '<button type="button" class="row-menu-item row-menu-item--danger" data-account-toggle data-worker-id="' + shared.escapeHtml(account.workerId) + '" data-account-id="' + shared.escapeHtml(account.id) + '" data-enabled="false"><i class="fa-solid fa-ban" aria-hidden="true"></i>Отключить в панели</button>'
             : '<button type="button" class="row-menu-item" data-account-toggle data-worker-id="' + shared.escapeHtml(account.workerId) + '" data-account-id="' + shared.escapeHtml(account.id) + '" data-enabled="true"><i class="fa-solid fa-circle-check" aria-hidden="true"></i>Включить в панели</button>';
+        var hasPassword = !!account.hasAvitoCredentials;
+        var login = account.avitoLogin || '';
+        var credentials =
+            '<button type="button" class="row-menu-item" data-avito-credentials' +
+            ' data-worker-id="' + shared.escapeHtml(account.workerId) + '"' +
+            ' data-account-id="' + shared.escapeHtml(account.id) + '"' +
+            ' data-account-name="' + shared.escapeHtml(account.accountName || '') + '"' +
+            ' data-login="' + shared.escapeHtml(login) + '"' +
+            ' data-has-password="' + (hasPassword ? 'true' : 'false') + '"' +
+            ' data-post-url="/Accounts/UpdateCredentials">' +
+            '<i class="fa-solid fa-key" aria-hidden="true"></i>Логин / пароль Avito</button>';
         return shared.rowMenuShell('row-menu-dropdown--accounts',
             '<a class="row-menu-item" href="' + shared.escapeHtml(accountUrl) + '"><i class="fa-regular fa-eye" aria-hidden="true"></i>Просмотр</a>' +
             '<a class="row-menu-item" href="' + shared.escapeHtml(workerUrl + '#worker-accounts') + '"><i class="fa-regular fa-pen-to-square" aria-hidden="true"></i>Настройки на воркере</a>' +
+            credentials +
             '<a class="row-menu-item" href="' + shared.escapeHtml(responsesFilterUrl(account.id)) + '"><i class="fa-regular fa-clock" aria-hidden="true"></i>История откликов</a>' +
             toggle);
     }
@@ -195,7 +207,13 @@
             (processingSubProfileId ? ' data-processing-subprofile-id="' + processingSubProfileId + '"' : '') +
             ' data-subprofiles-json="' + subProfilesJson + '">' +
             toggleCell +
-            '<td class="cell-account" data-label="Аккаунт"><a href="' + shared.escapeHtml(accountUrl) + '">' + shared.escapeHtml(account.accountName) + '</a>' + subProfiles + '</td>' +
+            '<td class="cell-account" data-label="Аккаунт"><a href="' + shared.escapeHtml(accountUrl) + '">' + shared.escapeHtml(account.accountName) + '</a>' +
+            (account.hasAvitoCredentials
+                ? '<span class="worker-account-sub worker-account-sub--ok" title="' +
+                    shared.escapeHtml(account.avitoLogin || 'логин задан') +
+                    '"><i class="fa-solid fa-key" aria-hidden="true"></i> логин Avito</span>'
+                : '') +
+            subProfiles + '</td>' +
             '<td class="cell-worker" data-label="Воркер"><a href="' + shared.escapeHtml(workerUrl) + '">' + shared.escapeHtml(account.workerName) + '</a></td>' +
             officeCell +
             '<td data-label="Статус">' + statusHtml + '</td>' +

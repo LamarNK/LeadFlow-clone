@@ -128,15 +128,17 @@ public sealed class CandidateIngestionService(
                 $"Отсечён фильтром сбора: {filterResult.RejectReason}.");
         }
 
+        var collectedAt = candidate.CollectedAt == default ? DateTime.UtcNow : candidate.CollectedAt;
+        var responseAt = candidate.CreatedAt == default ? collectedAt : candidate.CreatedAt;
         var profile = CandidatePersonMatchService.ToProfile(
             candidate.FullName,
             candidate.Age,
             candidate.City,
-            phoneNormalized);
+            phoneNormalized,
+            responseAt);
 
         var matchedPerson = await personMatch.FindMatchingPersonAsync(worker.OfficeId, profile, ct);
         var isLocalDuplicate = matchedPerson is not null;
-        var utcNow = candidate.CreatedAt == default ? DateTime.UtcNow : candidate.CreatedAt;
 
         CandidatePersonEntity person;
         if (matchedPerson is not null)
@@ -155,7 +157,7 @@ public sealed class CandidateIngestionService(
                 candidate.City,
                 candidate.PhoneRaw,
                 phoneNormalized,
-                utcNow);
+                collectedAt);
             db.CandidatePersons.Add(person);
             await db.SaveChangesAsync(ct);
         }
@@ -188,7 +190,8 @@ public sealed class CandidateIngestionService(
             AvitoSubProfileName = candidate.AvitoSubProfileName,
             RawText = candidate.RawText,
             ChatMessagesJson = candidate.ChatMessagesJson,
-            CreatedAt = utcNow,
+            CreatedAt = responseAt,
+            CollectedAt = collectedAt,
             Status = ResponseStatuses.InProgress,
             BitrixEntityType = bitrixOptions.Value.EntityType
         };

@@ -6,8 +6,11 @@ public static class CandidateMatchScorer
     public const int MatchThreshold = 70;
 
     /// <summary>
-    /// Exact full-name match is enough to treat candidates as the same person.
-    /// Phone still gives the strongest score (100). Age/city only refine ranking among name matches.
+    /// Полное ФИО (Ф+И+О): совпадение имени достаточно (телефон может меняться).
+    /// Неполное имя (только имя или Ф+И без отчества): одного имени мало —
+    /// нужны доп. параметры. Ф+И — возраст или город; одно слово — возраст и город.
+    /// Временное окно (~неделя по дате отклика) применяется в CandidatePersonMatchService.
+    /// Совпадение телефона при том же тексте имени по-прежнему даёт максимальный score.
     /// </summary>
     public static int CalculateScore(CandidateMatchProfile existing, CandidateMatchProfile incoming)
     {
@@ -25,23 +28,50 @@ public static class CandidateMatchScorer
             return MatchScore;
         }
 
-        // Same ФИО within office lookback: enough for a match even when the person
-        // changes phone and age/city are missing from Avito cards.
-        var total = MatchThreshold;
-
-        if (existing.Age.HasValue
+        var ageMatches = existing.Age.HasValue
             && incoming.Age.HasValue
-            && existing.Age.Value == incoming.Age.Value)
+            && existing.Age.Value == incoming.Age.Value;
+        var cityMatches = CityNormalizer.IsMatch(existing.City, incoming.City);
+
+        // Полное ФИО с обеих сторон — имя само по себе = match.
+        if (CandidateNameNormalizer.IsCompleteFio(existingName)
+            && CandidateNameNormalizer.IsCompleteFio(incomingName))
         {
-            total += 10;
+            var total = MatchThreshold;
+            if (ageMatches)
+            {
+                total += 10;
+            }
+
+            if (cityMatches)
+            {
+                total += 10;
+            }
+
+            return total;
         }
 
-        if (CityNormalizer.IsMatch(existing.City, incoming.City))
+        // Неполное имя: без доп. параметров не матчим.
+        var tokenCount = incomingName.Tokens.Count;
+        var supportingCount = (ageMatches ? 1 : 0) + (cityMatches ? 1 : 0);
+        var requiredSupporting = tokenCount <= 1 ? 2 : 1;
+        if (supportingCount < requiredSupporting)
         {
-            total += 10;
+            return 0;
         }
 
-        return total;
+        var incompleteTotal = MatchThreshold;
+        if (ageMatches)
+        {
+            incompleteTotal += 10;
+        }
+
+        if (cityMatches)
+        {
+            incompleteTotal += 10;
+        }
+
+        return incompleteTotal;
     }
 
     public static bool IsMatch(CandidateMatchProfile existing, CandidateMatchProfile incoming) =>

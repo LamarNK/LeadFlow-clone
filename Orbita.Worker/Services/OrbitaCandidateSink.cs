@@ -135,7 +135,8 @@ public sealed class OrbitaCandidateSink(
             candidate.RawText,
             candidate.ChatMessagesJson,
             candidate.CreatedAt,
-            candidate.AvitoSubProfileName);
+            candidate.AvitoSubProfileName,
+            candidate.CollectedAt);
 
     private static string? NormalizePhone(string phoneRaw) =>
         string.IsNullOrWhiteSpace(phoneRaw) ? null : phoneRaw.Trim();

@@ -92,11 +92,11 @@ public sealed class ResponsesQueryService(
         double? avgMinutes = null;
         var processed = await query
             .Where(x => x.ProcessedAt != null)
-            .Select(x => new { x.CreatedAt, ProcessedAt = x.ProcessedAt!.Value })
+            .Select(x => new { x.CollectedAt, ProcessedAt = x.ProcessedAt!.Value })
             .ToListAsync(ct);
         if (processed.Count > 0)
         {
-            avgMinutes = processed.Average(x => (x.ProcessedAt - x.CreatedAt).TotalMinutes);
+            avgMinutes = processed.Average(x => (x.ProcessedAt - x.CollectedAt).TotalMinutes);
         }
 
         return new ResponsesSummaryDto(
@@ -134,12 +134,12 @@ public sealed class ResponsesQueryService(
 
         if (fromUtc is not null)
         {
-            query = query.Where(x => x.CreatedAt >= fromUtc.Value);
+            query = query.Where(x => x.CollectedAt >= fromUtc.Value);
         }
 
         if (toUtc is not null)
         {
-            query = query.Where(x => x.CreatedAt < toUtc.Value);
+            query = query.Where(x => x.CollectedAt < toUtc.Value);
         }
 
         var rows = await query
@@ -268,6 +268,7 @@ public sealed class ResponsesQueryService(
                 x.AvitoSubProfileId,
                 x.AvitoSubProfileName,
                 x.CreatedAt,
+                x.CollectedAt,
                 x.ProcessedAt
             })
             .ToListAsync(ct);
@@ -333,6 +334,7 @@ public sealed class ResponsesQueryService(
                         x.AccountId,
                         x.AvitoSubProfileId),
                     x.CreatedAt,
+                    x.CollectedAt,
                     x.ProcessedAt,
                     bitrixDeliveries);
             })
@@ -343,7 +345,7 @@ public sealed class ResponsesQueryService(
 
     private static readonly HashSet<string> AllowedSortColumns = new(StringComparer.OrdinalIgnoreCase)
     {
-        "time", "author", "phone", "city", "age", "gender", "vacancy", "account", "status", "source"
+        "time", "responded", "author", "phone", "city", "age", "gender", "vacancy", "account", "status", "source"
     };
 
     private static IQueryable<CandidateResponseEntity> ApplyOrdering(
@@ -383,16 +385,19 @@ public sealed class ResponsesQueryService(
             "source" => descending
                 ? query.OrderByDescending(x => x.Source)
                 : query.OrderBy(x => x.Source),
-            _ => descending
+            "responded" => descending
                 ? query.OrderByDescending(x => x.CreatedAt)
-                : query.OrderBy(x => x.CreatedAt)
+                : query.OrderBy(x => x.CreatedAt),
+            _ => descending
+                ? query.OrderByDescending(x => x.CollectedAt)
+                : query.OrderBy(x => x.CollectedAt)
         };
 
-        return column == "time"
+        return column is "time" or "responded"
             ? ordered
             : descending
-                ? ordered.ThenByDescending(x => x.CreatedAt)
-                : ordered.ThenBy(x => x.CreatedAt);
+                ? ordered.ThenByDescending(x => x.CollectedAt)
+                : ordered.ThenBy(x => x.CollectedAt);
     }
 
     private static string NormalizeSortColumn(string? sort) =>
@@ -412,7 +417,7 @@ public sealed class ResponsesQueryService(
             return false;
         }
 
-        return column == "time";
+        return column is "time" or "responded";
     }
 
     private IQueryable<CandidateResponseEntity> BuildFilteredQuery(
@@ -452,12 +457,12 @@ public sealed class ResponsesQueryService(
 
         if (fromUtc is not null)
         {
-            query = query.Where(x => x.CreatedAt >= fromUtc.Value);
+            query = query.Where(x => x.CollectedAt >= fromUtc.Value);
         }
 
         if (toUtc is not null)
         {
-            query = query.Where(x => x.CreatedAt < toUtc.Value);
+            query = query.Where(x => x.CollectedAt < toUtc.Value);
         }
 
         query = ApplySearchFilter(query, search);
@@ -699,6 +704,7 @@ public sealed class ResponsesQueryService(
             string.IsNullOrWhiteSpace(entity.DistributionMode) ? null : entity.DistributionMode,
             entity.ErrorMessage,
             entity.CreatedAt,
+            entity.CollectedAt,
             entity.ProcessedAt,
             bitrixDeliveries ?? []);
     }

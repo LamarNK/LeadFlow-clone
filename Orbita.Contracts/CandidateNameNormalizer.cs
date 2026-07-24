@@ -33,6 +33,18 @@ public static class CandidateNameNormalizer
     public static bool IsFullNameMatch(NormalizedCandidateName left, NormalizedCandidateName right) =>
         string.Equals(left.FullName, right.FullName, StringComparison.Ordinal);
 
+    /// <summary>
+    /// Полное ФИО: фамилия + имя + отчество. Только при нём имя само по себе достаточно для match.
+    /// </summary>
+    public static bool IsCompleteFio(NormalizedCandidateName name) =>
+        name.LastName.Length > 0
+        && name.FirstName.Length > 0
+        && name.MiddleName.Length > 0;
+
+    /// <summary>Есть хотя бы один токен имени (в т.ч. «только Иван» → LastName).</summary>
+    public static bool HasAnyNamePart(NormalizedCandidateName name) =>
+        name.LastName.Length > 0;
+
     private static string NormalizePart(string? value) =>
         string.IsNullOrWhiteSpace(value)
             ? string.Empty

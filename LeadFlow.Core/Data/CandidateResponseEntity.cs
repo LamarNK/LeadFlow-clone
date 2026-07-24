@@ -31,5 +31,6 @@ public sealed class CandidateResponseEntity
     public string ErrorMessage { get; set; } = string.Empty;
     public string RawText { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
+    public DateTime CollectedAt { get; set; }
     public DateTime? ProcessedAt { get; set; }
 }

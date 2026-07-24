@@ -112,6 +112,7 @@ internal static class ResponsesIndexBuilder
         return new()
         {
             Id = item.Id,
+            CollectedAtUtc = item.CollectedAt,
             CreatedAtUtc = item.CreatedAt,
             FullName = item.FullName,
             Age = item.Age,
@@ -148,6 +149,7 @@ internal static class ResponsesIndexBuilder
                 item.AccountName,
                 item.AvitoSubProfileName,
                 statusLabel,
+                item.CollectedAt,
                 item.CreatedAt,
                 item.ProcessedAt,
                 item.VacancyUrl,
@@ -194,6 +196,7 @@ internal static class ResponsesIndexBuilder
             detail.AvitoSubProfileId,
             detail.AvitoSubProfileName,
             detail.CreatedAt,
+            detail.CollectedAt,
             detail.ProcessedAt,
             detail.BitrixDeliveries);
         var canSend = CanSendToBitrix(detail.Status);
@@ -233,6 +236,7 @@ internal static class ResponsesIndexBuilder
             ErrorMessage = detail.ErrorMessage,
             RawText = detail.RawText,
             ChatMessages = ResponseChatDisplay.ParseMessages(detail.ChatMessagesJson),
+            CollectedAtUtc = detail.CollectedAt,
             CreatedAtUtc = detail.CreatedAt,
             ProcessedAtUtc = detail.ProcessedAt,
             BitrixDeliveries = MapDeliveries(detail.BitrixDeliveries),
@@ -246,6 +250,7 @@ internal static class ResponsesIndexBuilder
                 detail.AccountName,
                 detail.AvitoSubProfileName,
                 statusLabel,
+                detail.CollectedAt,
                 detail.CreatedAt,
                 detail.ProcessedAt,
                 detail.VacancyUrl,
@@ -441,6 +446,7 @@ internal static class ResponsesIndexBuilder
         string accountName,
         string? avitoSubProfileName,
         string statusLabel,
+        DateTime collectedAtUtc,
         DateTime createdAtUtc,
         DateTime? processedAtUtc,
         string? vacancyUrl,
@@ -462,6 +468,7 @@ internal static class ResponsesIndexBuilder
             vacancy,
             ResponseDisplay.FormatAccountWithSubProfile(accountName, avitoSubProfileName),
             statusLabel,
+            collectedAtUtc,
             createdAtUtc,
             processedAtUtc,
             vacancyUrl,
@@ -517,7 +524,9 @@ internal static class ResponsesIndexBuilder
             new() { Label = "Аккаунт", Value = ResponseDisplay.FormatAccountWithSubProfile(detail.AccountName, detail.AvitoSubProfileName) },
             new() { Label = "Воркер", Value = detail.WorkerName },
             new() { Label = "Источник", Value = detail.Source },
-            new() { Label = "ID отклика", Value = detail.SourceResponseId }
+            new() { Label = "ID отклика", Value = detail.SourceResponseId },
+            new() { Label = "Сбор", Value = ResponseDisplay.FormatCreatedAtLocal(detail.CollectedAtUtc) },
+            new() { Label = "Отклик", Value = ResponseDisplay.FormatCreatedAtLocal(detail.CreatedAtUtc) }
         };
 
         if (detail.BitrixDeliveries.Count > 0)
@@ -608,7 +617,7 @@ internal static class ResponsesIndexBuilder
         return new ResponseDetailJsonViewModel
         {
             Title = ResponseDisplay.DisplayAuthor(detail.FullName),
-            Subtitle = $"{detail.StatusLabel} · {ResponseDisplay.FormatCreatedAtLocal(detail.CreatedAtUtc)}",
+            Subtitle = $"{detail.StatusLabel} · сбор {ResponseDisplay.FormatCreatedAtLocal(detail.CollectedAtUtc)} · отклик {ResponseDisplay.FormatCreatedAtLocal(detail.CreatedAtUtc)}",
             Sections = sections,
             ChatMessages = detail.ChatMessages
                 .Select(m => new DetailChatMessageViewModel

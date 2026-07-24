@@ -201,6 +201,48 @@ public static class AvitoCandidatesPageScripts
         };
         """;
 
+    /// <summary>
+    /// Возраст из текста карточки/панели: не путать «опыт N лет» / «стаж N лет» с возрастом.
+    /// </summary>
+    private const string AgeParseHelpersJs =
+        """
+        const normalizeAgeSourceText = (text) => (text ?? "").replace(/\s+/g, " ").trim();
+
+        const isExperienceYearsContext = (text, matchIndex) => {
+            const before = text.slice(Math.max(0, matchIndex - 40), matchIndex);
+            return /(?:опыт(?:\s+работы)?|стаж)\s*[:\-]?\s*$/i.test(before);
+        };
+
+        const extractAgeYearsFromText = (text) => {
+            const normalized = normalizeAgeSourceText(text);
+            if (!normalized) {
+                return "";
+            }
+
+            const explicit = normalized.match(/возраст\s*[—\-:]\s*(\d{1,2})\b/i);
+            if (explicit) {
+                return `${explicit[1]} лет`;
+            }
+
+            const demographic = normalized.match(/(?:мужчина|женщина)\s*[·•|,]?\s*(\d{1,2})\s*(?:лет|года|год)/i);
+            if (demographic) {
+                return `${demographic[1]} лет`;
+            }
+
+            const agePattern = /(\d{1,2})\s*(?:лет|года|год)/gi;
+            let match;
+            while ((match = agePattern.exec(normalized)) !== null) {
+                if (isExperienceYearsContext(normalized, match.index)) {
+                    continue;
+                }
+
+                return `${match[1]} лет`;
+            }
+
+            return "";
+        };
+        """;
+
     private const string CardFingerprintJs =
         """
         const normalizeCardText = (text) => (text ?? "").replace(/\s+/g, " ").trim();
@@ -644,6 +686,7 @@ public static class AvitoCandidatesPageScripts
         $$"""
         (() => {
         {{ContactsPhoneHelpersJs}}
+        {{AgeParseHelpersJs}}
             initRevealedPhonesStore();
 
             const normalize = (text) => (text ?? "").replace(/\s+/g, " ").trim();
@@ -713,12 +756,11 @@ public static class AvitoCandidatesPageScripts
                 break;
             }
 
-            const agePattern = /(\d{1,2})\s*(?:лет|года|год)/i;
             let age = "";
             for (const paragraph of searchRoot.querySelectorAll("p")) {
-                const match = normalize(paragraph.textContent).match(agePattern);
-                if (match) {
-                    age = `${match[1]} лет`;
+                const found = extractAgeYearsFromText(paragraph.textContent);
+                if (found) {
+                    age = found;
                     break;
                 }
             }
@@ -827,6 +869,7 @@ public static class AvitoCandidatesPageScripts
         $$"""
         (() => {
         {{ContactsPhoneHelpersJs}}
+        {{AgeParseHelpersJs}}
         {{CardFingerprintJs}}
         {{SourceResponseIdJs}}
             initRevealedPhonesStore();
@@ -950,11 +993,10 @@ public static class AvitoCandidatesPageScripts
             };
 
             const parseAgeText = (root) => {
-                const agePattern = /(\d{1,2})\s*(?:лет|года|год)/i;
                 for (const line of Array.from(root.querySelectorAll("p"))) {
-                    const match = normalizeCardText(line.textContent).match(agePattern);
-                    if (match) {
-                        return `${match[1]} лет`;
+                    const found = extractAgeYearsFromText(line.textContent);
+                    if (found) {
+                        return found;
                     }
                 }
 
@@ -1490,6 +1532,7 @@ public static class AvitoCandidatesPageScripts
         $$"""
         (() => {
         {{ContactsPhoneHelpersJs}}
+        {{AgeParseHelpersJs}}
             initRevealedPhonesStore();
 
             const itemCount = document.querySelectorAll("[data-marker='job-application/item']").length;
@@ -1823,23 +1866,22 @@ public static class AvitoCandidatesPageScripts
             const parseAgeText = (root, rawText) => {
                 const oldAge = root.querySelector("p[data-marker='undefined/container'] span")?.textContent?.trim();
                 if (oldAge) {
-                    return oldAge;
-                }
-
-                // Новый формат карточки: «Мужчина · 54 года · …» / «Женщина · 37 лет · …».
-                // \b в JS не работает с кириллицей; «лет» — отдельное слово, не «г»+«лет».
-                const agePattern = /(\d{1,2})\s*(?:лет|года|год)/i;
-                const normalize = (text) => (text ?? "").replace(/\s+/g, " ").trim();
-
-                for (const line of Array.from(root.querySelectorAll("p"))) {
-                    const match = normalize(line.textContent).match(agePattern);
-                    if (match) {
-                        return `${match[1]} лет`;
+                    const fromOld = extractAgeYearsFromText(oldAge);
+                    if (fromOld) {
+                        return fromOld;
                     }
                 }
 
-                const ageMatch = normalize(rawText).match(agePattern);
-                return ageMatch ? `${ageMatch[1]} лет` : "";
+                // Новый формат карточки: «Мужчина · 54 года · …» / «Женщина · 37 лет · …».
+                // «опыт N лет» / «стаж N лет» не считаем возрастом (см. extractAgeYearsFromText).
+                for (const line of Array.from(root.querySelectorAll("p"))) {
+                    const found = extractAgeYearsFromText(line.textContent);
+                    if (found) {
+                        return found;
+                    }
+                }
+
+                return extractAgeYearsFromText(rawText);
             };
 
             const listItems = Array.from(document.querySelectorAll("[data-marker='job-application/item']"));

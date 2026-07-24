@@ -1851,7 +1851,8 @@ internal static class DesignPreviewData
             {
                 Id = Guid.Parse($"55555555-5555-5555-5555-{(i + 1):D12}"),
                 PersonId = Guid.Parse($"77777777-7777-7777-7777-{(nameIndex + 1):D12}"),
-                CreatedAtUtc = createdAt,
+                CollectedAtUtc = createdAt,
+                CreatedAtUtc = createdAt.AddMinutes(-rng.Next(5, 180)),
                 FullName = names[nameIndex],
                 Age = age,
                 PhoneRaw = hidePhone ? string.Empty : $"+{phoneDigits}",
@@ -2015,9 +2016,10 @@ internal static class DesignPreviewData
                 ? "Соискатель скрыл номер — узнать в чате"
                 : $"{row.FullName} · {row.City} · отклик на «{row.Vacancy}»",
             ChatMessages = BuildPreviewChatMessages(rowIndex, row.CreatedAtUtc),
+            CollectedAtUtc = row.CollectedAtUtc,
             CreatedAtUtc = row.CreatedAtUtc,
             ProcessedAtUtc = row.Status == ResponseStatuses.Sent
-                ? row.CreatedAtUtc.AddMinutes(3)
+                ? row.CollectedAtUtc.AddMinutes(3)
                 : null,
             CanResend = row.CanResend
         };

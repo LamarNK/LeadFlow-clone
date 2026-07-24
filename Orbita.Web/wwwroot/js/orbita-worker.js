@@ -429,10 +429,21 @@
     }
 
     function renderWorkerAccountMenu(account) {
+        var workerId = getWorkerId();
+        var hasPassword = !!account.hasAvitoCredentials;
+        var login = account.avitoLogin || '';
         var items = '<a class="row-menu-item" href="' + shared.escapeHtml(accountSearchUrl(account.displayName)) + '">' +
             '<i class="fa-regular fa-eye" aria-hidden="true"></i>Просмотр</a>' +
             '<a class="row-menu-item" href="#worker-accounts">' +
             '<i class="fa-regular fa-pen-to-square" aria-hidden="true"></i>Настройки на воркере</a>' +
+            '<button type="button" class="row-menu-item" data-avito-credentials' +
+            ' data-worker-id="' + shared.escapeHtml(workerId) + '"' +
+            ' data-account-id="' + shared.escapeHtml(account.id) + '"' +
+            ' data-account-name="' + shared.escapeHtml(account.displayName || '') + '"' +
+            ' data-login="' + shared.escapeHtml(login) + '"' +
+            ' data-has-password="' + (hasPassword ? 'true' : 'false') + '"' +
+            ' data-post-url="/Workers/UpdateAccountCredentials">' +
+            '<i class="fa-solid fa-key" aria-hidden="true"></i>Логин / пароль Avito</button>' +
             '<a class="row-menu-item" href="' + shared.escapeHtml(responsesFilterUrl(account.id)) + '">' +
             '<i class="fa-regular fa-clock" aria-hidden="true"></i>История откликов</a>';
         return shared.rowMenuShell('', items);
@@ -489,6 +500,11 @@
             var adsPower = account.adsPowerProfileId
                 ? '<span class="worker-account-sub">AdsPower ' + shared.escapeHtml(account.adsPowerProfileId) + '</span>'
                 : '';
+            var avitoCreds = account.hasAvitoCredentials
+                ? '<span class="worker-account-sub worker-account-sub--ok" title="' +
+                    shared.escapeHtml(account.avitoLogin || 'логин задан') +
+                    '"><i class="fa-solid fa-key" aria-hidden="true"></i> логин Avito</span>'
+                : '';
             var subProfiles = shared.renderSubProfilesToolbar(workerId, account, 'subprofiles');
             var checked = account.isEnabledInPanel ? ' checked' : '';
 
@@ -507,7 +523,7 @@
                 '<td class="cell-toggle" data-label="Вкл"><label class="worker-toggle" title="' + shared.escapeHtml(toggleTitle) + '">' +
                 '<input type="checkbox" data-account-enable-toggle data-worker-id="' + shared.escapeHtml(workerId) + '" data-account-id="' + shared.escapeHtml(account.id) + '"' + checked + ' />' +
                 '<span class="worker-toggle-slider"></span></label></td>' +
-                '<td class="cell-name" data-label="Аккаунт"><a href="' + shared.escapeHtml(accountSearchUrl(account.displayName)) + '">' + shared.escapeHtml(account.displayName) + '</a>' + adsPower + subProfiles + '</td>' +
+                '<td class="cell-name" data-label="Аккаунт"><a href="' + shared.escapeHtml(accountSearchUrl(account.displayName)) + '">' + shared.escapeHtml(account.displayName) + '</a>' + adsPower + avitoCreds + subProfiles + '</td>' +
                 '<td data-label="Статус">' + statusHtml + '</td>' +
                 '<td class="cell-num cell-balance" data-label="Баланс"><span class="account-balance-multiline">' + shared.escapeHtml(account.balanceText || '—') + '</span></td>' +
                 (function () {

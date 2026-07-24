@@ -43,6 +43,9 @@ public sealed class WorkerMonitoringService(
     private Task? _loopTask;
     private int _consecutiveMonitoringLoopFailures;
     private int _consecutiveQuietMonitoringCycles;
+    /// <summary>Полные циклы (browser/start…stop) с последней принудительной уборки браузеров.</summary>
+    private int _completedCyclesSinceBrowserHousekeeping;
+    private DateOnly? _lastBrowserHousekeepingLocalDate;
     private volatile bool _captchaHold;
 
     public bool IsActive { get; private set; }
@@ -74,6 +77,8 @@ public sealed class WorkerMonitoringService(
         _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         IsActive = true;
         _consecutiveQuietMonitoringCycles = 0;
+        // После stop/start счётчик циклов обнуляется; календарный день учитывается отдельно.
+        _completedCyclesSinceBrowserHousekeeping = 0;
         _ = GlobalLogger.Instance.LogAsync("Мониторинг воркера запущен.", DeskLinkAuditLogLevel.Info);
         _loopTask = RunAsync(_cts.Token);
         return Task.CompletedTask;
@@ -97,6 +102,25 @@ public sealed class WorkerMonitoringService(
         _cts = null;
         _ = GlobalLogger.Instance.LogAsync("Мониторинг воркера остановлен.", DeskLinkAuditLogLevel.Info);
         activityReporter.ReportStopped();
+
+        // При остановке мониторинга закрываем все известные браузеры (в т.ч. открытые оператором).
+        try
+        {
+            var config = await configProvider.GetConfigAsync(CancellationToken.None).ConfigureAwait(false);
+            await CloseAllKnownAdsPowerBrowsersAsync(
+                    config.Accounts,
+                    reason: "остановка мониторинга",
+                    cancellationToken: CancellationToken.None,
+                    ignoreCancellation: true)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Worker: уборка браузеров при остановке не удалась: {ex.Message}",
+                DeskLinkAuditLogLevel.Warning);
+        }
+
         await _telemetryPusher.PushNowAsync(CancellationToken.None).ConfigureAwait(false);
     }
 
@@ -169,6 +193,11 @@ public sealed class WorkerMonitoringService(
                         accounts.Count,
                         delay.TotalMinutes);
                     WorkerMonitoringLogger.CycleNotPolledSummary(accounts.Count, notPolled);
+
+                    // Полный цикл: аккаунты прошли browser/start…browser/stop (или были пропущены).
+                    // Раз в N циклов или при смене календарного дня — закрыть осиротевшие окна.
+                    await MaybeHousekeepBrowsersAfterCycleAsync(config, cancellationToken)
+                        .ConfigureAwait(false);
 
                     if (pendingUpdateCoordinator.HasPendingInstall)
                     {
@@ -557,7 +586,8 @@ public sealed class WorkerMonitoringService(
                     response.FullName,
                     response.Age,
                     response.City ?? string.Empty,
-                    phoneNormalizer.Normalize(response.PhoneRaw) ?? string.Empty))
+                    phoneNormalizer.Normalize(response.PhoneRaw) ?? string.Empty,
+                    response.CreatedAt == default ? null : response.CreatedAt))
                 .ToList();
             var matchedProfiles = await duplicateRepository
                 .GetMatchedProfileIndicesAsync(profiles, account.Id, cancellationToken)
@@ -671,6 +701,8 @@ public sealed class WorkerMonitoringService(
         var browserOpened = false;
         BrowserMonitorScreencastCapture? monitorScreencast = null;
         var monitorContext = new BrowserMonitorRuntimeContext();
+        var loginCredentials = AvitoLoginCredentials.TryCreate(account.AvitoLogin, account.AvitoPassword);
+        using var loginScope = AvitoAutoLoginContext.Use(loginCredentials);
         try
         {
             await using var session = await adsPowerAvitoAutomationService
@@ -1020,7 +1052,13 @@ public sealed class WorkerMonitoringService(
         response.MiddleName = names.MiddleName;
         response.PhoneNormalized = phoneNormalizer.Normalize(response.PhoneRaw);
         response.Status = ResponseStatus.InProgress;
-        response.CreatedAt = response.CreatedAt == default ? DateTime.UtcNow : response.CreatedAt;
+        var now = DateTime.UtcNow;
+        if (response.CollectedAt == default)
+        {
+            response.CollectedAt = now;
+        }
+
+        response.CreatedAt = response.CreatedAt == default ? response.CollectedAt : response.CreatedAt;
 
         await candidateSink.PublishAsync(response, cancellationToken).ConfigureAwait(false);
     }
@@ -1282,6 +1320,82 @@ public sealed class WorkerMonitoringService(
                 DeskLinkAuditLogLevel.Warning);
             return false;
         }
+    }
+
+    /// <summary>
+    /// После полного цикла: каждые N проходов или при смене локального дня закрыть все известные браузеры.
+    /// Не трогаем во время hold капчи (браузер нужен оператору).
+    /// </summary>
+    private async Task MaybeHousekeepBrowsersAfterCycleAsync(
+        WorkerMonitoringConfig config,
+        CancellationToken cancellationToken)
+    {
+        if (_captchaHold)
+        {
+            WorkerMonitoringLogger.BrowserHousekeepingSkipped("активна сессия капчи");
+            return;
+        }
+
+        _completedCyclesSinceBrowserHousekeeping++;
+        var todayLocal = DateOnly.FromDateTime(DateTime.Now);
+        if (!AdsPowerBrowserHousekeeping.ShouldSweep(
+                _completedCyclesSinceBrowserHousekeeping,
+                _lastBrowserHousekeepingLocalDate,
+                todayLocal))
+        {
+            return;
+        }
+
+        var reason = _lastBrowserHousekeepingLocalDate is not null
+                     && todayLocal != _lastBrowserHousekeepingLocalDate.Value
+            ? "конец/смена дня"
+            : $"каждые {MonitoringTiming.BrowserHousekeepingEveryNCycles} цикла";
+
+        await CloseAllKnownAdsPowerBrowsersAsync(config.Accounts, reason, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async Task CloseAllKnownAdsPowerBrowsersAsync(
+        IReadOnlyList<AvitoAccount> accounts,
+        string reason,
+        CancellationToken cancellationToken,
+        bool ignoreCancellation = false)
+    {
+        // Дедуп по profile id: один профиль — один browser/stop.
+        var targets = accounts
+            .Where(IsAdsPowerAccount)
+            .GroupBy(static a => a.AdsPowerProfileId!, StringComparer.Ordinal)
+            .Select(static g => g.First())
+            .ToList();
+
+        if (targets.Count == 0)
+        {
+            _completedCyclesSinceBrowserHousekeeping = 0;
+            _lastBrowserHousekeepingLocalDate = DateOnly.FromDateTime(DateTime.Now);
+            return;
+        }
+
+        WorkerMonitoringLogger.BrowserHousekeepingStarted(reason, targets.Count);
+        var closedOk = 0;
+        foreach (var account in targets)
+        {
+            if (!ignoreCancellation && cancellationToken.IsCancellationRequested)
+            {
+                break;
+            }
+
+            var options = new AdsPowerConnectionOptions(
+                account.AdsPowerApiBaseUrl!,
+                string.IsNullOrWhiteSpace(account.AdsPowerApiKey) ? null : account.AdsPowerApiKey);
+            if (await TryCloseAdsPowerBrowserForAccountAsync(account, options).ConfigureAwait(false))
+            {
+                closedOk++;
+            }
+        }
+
+        WorkerMonitoringLogger.BrowserHousekeepingFinished(closedOk, targets.Count);
+        _completedCyclesSinceBrowserHousekeeping = 0;
+        _lastBrowserHousekeepingLocalDate = DateOnly.FromDateTime(DateTime.Now);
     }
 
     private async Task HandleLoginRequiredForAccountAsync(

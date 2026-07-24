@@ -46,6 +46,9 @@ public sealed class CandidateResponse
 
     public string ErrorMessage { get; set; } = string.Empty;
     public string RawText { get; set; } = string.Empty;
+    /// <summary>Дата отклика на Avito (из чата); при отсутствии — совпадает со сбором.</summary>
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    /// <summary>Момент сбора отклика воркером.</summary>
+    public DateTime CollectedAt { get; set; } = DateTime.UtcNow;
     public DateTime? ProcessedAt { get; set; }
 }
