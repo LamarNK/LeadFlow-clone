@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Orbita.Contracts;
 using Orbita.Web.Models.ViewModels;
 using Orbita.Web.Services;
+using System.Linq;
 
 namespace Orbita.Web.Controllers;
 
@@ -160,8 +161,24 @@ public sealed class WorkersController(IWorkersService workers) : Controller
         bool responseFilterExcludeMale = false,
         int? responseFilterMaxAgeMale = null,
         int? responseFilterMaxAgeFemale = null,
+        int? responseFilterMaxAgeDays = null,
+        bool responseHighlightEnabled = false,
+        string[]? responseHighlightAgeBuckets = null,
+        bool autoScheduleEnabled = false,
+        string[]? autoScheduleDays = null,
+        string? autoScheduleFromLocalTime = null,
+        string? autoScheduleToLocalTime = null,
+        bool messengerAutoReplyEnabled = false,
+        string? messengerAutoReplyMessage = null,
         CancellationToken ct = default)
     {
+        var responseHighlightAgeBucketsCsv = responseHighlightAgeBuckets is { Length: > 0 }
+            ? string.Join(',', responseHighlightAgeBuckets.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim()))
+            : null;
+        var autoScheduleDaysCsv = autoScheduleDays is { Length: > 0 }
+            ? string.Join(',', autoScheduleDays.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim()))
+            : null;
+
         var (success, error) = await workers.UpdateWorkerSettingsAsync(
             workerId,
             maxConcurrentAccounts,
@@ -172,6 +189,15 @@ public sealed class WorkersController(IWorkersService workers) : Controller
             responseFilterExcludeMale,
             responseFilterMaxAgeMale,
             responseFilterMaxAgeFemale,
+            responseFilterMaxAgeDays,
+            responseHighlightEnabled,
+            responseHighlightAgeBucketsCsv,
+            autoScheduleEnabled,
+            autoScheduleDaysCsv,
+            autoScheduleFromLocalTime,
+            autoScheduleToLocalTime,
+            messengerAutoReplyEnabled,
+            messengerAutoReplyMessage,
             ct);
         if (!success)
         {

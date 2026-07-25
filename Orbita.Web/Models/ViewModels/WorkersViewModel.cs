@@ -157,6 +157,18 @@ public sealed class WorkerDetailsViewModel
     public bool ResponseFilterExcludeMale { get; init; }
     public int? ResponseFilterMaxAgeMale { get; init; }
     public int? ResponseFilterMaxAgeFemale { get; init; }
+    /// <summary>Пропускать отклики старше N дней (по дате отклика из чата Avito). null — без ограничения.</summary>
+    public int? ResponseFilterMaxAgeDays { get; init; }
+    public bool ResponseHighlightEnabled { get; init; }
+    public string ResponseHighlightAgeBuckets { get; init; } = string.Empty;
+    public IReadOnlyList<string> ResponseHighlightBucketOptions { get; init; } = [];
+    public bool AutoScheduleEnabled { get; init; }
+    public string AutoScheduleDays { get; init; } = string.Empty;
+    public string? AutoScheduleFromLocalTime { get; init; }
+    public string? AutoScheduleToLocalTime { get; init; }
+    public IReadOnlyList<string> AutoScheduleDayOptions { get; init; } = [];
+    public bool MessengerAutoReplyEnabled { get; init; }
+    public string? MessengerAutoReplyMessage { get; init; }
     public string EffectiveAdsPowerApiBaseUrl =>
         string.IsNullOrWhiteSpace(AdsPowerApiBaseUrl) ? DefaultAdsPowerApiBaseUrl : AdsPowerApiBaseUrl;
     public WorkerSystemPanelViewModel System { get; init; } = new();

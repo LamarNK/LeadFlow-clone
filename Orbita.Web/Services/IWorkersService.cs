@@ -37,6 +37,15 @@ public interface IWorkersService
         bool responseFilterExcludeMale = false,
         int? responseFilterMaxAgeMale = null,
         int? responseFilterMaxAgeFemale = null,
+        int? responseFilterMaxAgeDays = null,
+        bool responseHighlightEnabled = false,
+        string? responseHighlightAgeBuckets = null,
+        bool autoScheduleEnabled = false,
+        string? autoScheduleDays = null,
+        string? autoScheduleFromLocalTime = null,
+        string? autoScheduleToLocalTime = null,
+        bool messengerAutoReplyEnabled = false,
+        string? messengerAutoReplyMessage = null,
         CancellationToken ct = default);
     Task<(bool Success, string? Error)> UpdateWorkerAccountAsync(Guid workerId, Guid accountId, bool isEnabled, CancellationToken ct = default);
     Task<(bool Success, string? Error)> UpdateWorkerAccountCredentialsAsync(

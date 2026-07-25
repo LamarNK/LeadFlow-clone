@@ -215,6 +215,15 @@ public sealed class WorkersService(
         bool responseFilterExcludeMale = false,
         int? responseFilterMaxAgeMale = null,
         int? responseFilterMaxAgeFemale = null,
+        int? responseFilterMaxAgeDays = null,
+        bool responseHighlightEnabled = false,
+        string? responseHighlightAgeBuckets = null,
+        bool autoScheduleEnabled = false,
+        string? autoScheduleDays = null,
+        string? autoScheduleFromLocalTime = null,
+        string? autoScheduleToLocalTime = null,
+        bool messengerAutoReplyEnabled = false,
+        string? messengerAutoReplyMessage = null,
         CancellationToken ct = default) =>
         api.UpdateWorkerSettingsAsync(
             workerId,
@@ -226,6 +235,15 @@ public sealed class WorkersService(
             responseFilterExcludeMale,
             responseFilterMaxAgeMale,
             responseFilterMaxAgeFemale,
+            responseFilterMaxAgeDays,
+            responseHighlightEnabled,
+            responseHighlightAgeBuckets,
+            autoScheduleEnabled,
+            autoScheduleDays,
+            autoScheduleFromLocalTime,
+            autoScheduleToLocalTime,
+            messengerAutoReplyEnabled,
+            messengerAutoReplyMessage,
             ct);
 
     public Task<(bool Success, string? Error)> UpdateWorkerAccountAsync(

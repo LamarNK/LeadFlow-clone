@@ -157,6 +157,8 @@ internal static class ResponsesIndexBuilder
                 item.BitrixDeliveries,
                 item.BitrixEntityType,
                 item.BitrixEntityId),
+            IsHighlighted = item.IsHighlighted,
+            HighlightLabel = item.HighlightLabel,
             CanSend = canSend,
             CanResend = canSend
         };
@@ -195,6 +197,8 @@ internal static class ResponsesIndexBuilder
             detail.DuplicateBitrixInstanceName,
             detail.AvitoSubProfileId,
             detail.AvitoSubProfileName,
+            false,
+            null,
             detail.CreatedAt,
             detail.CollectedAt,
             detail.ProcessedAt,

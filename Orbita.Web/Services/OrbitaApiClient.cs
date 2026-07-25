@@ -605,6 +605,15 @@ public sealed class OrbitaApiClient(
         bool responseFilterExcludeMale = false,
         int? responseFilterMaxAgeMale = null,
         int? responseFilterMaxAgeFemale = null,
+        int? responseFilterMaxAgeDays = null,
+        bool responseHighlightEnabled = false,
+        string? responseHighlightAgeBuckets = null,
+        bool autoScheduleEnabled = false,
+        string? autoScheduleDays = null,
+        string? autoScheduleFromLocalTime = null,
+        string? autoScheduleToLocalTime = null,
+        bool messengerAutoReplyEnabled = false,
+        string? messengerAutoReplyMessage = null,
         CancellationToken ct = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Patch, $"api/v1/workers/{workerId}/settings");
@@ -617,7 +626,16 @@ public sealed class OrbitaApiClient(
             ResponseFilterMaxAge: null,
             responseFilterExcludeMale,
             responseFilterMaxAgeMale,
-            responseFilterMaxAgeFemale));
+            responseFilterMaxAgeFemale,
+            responseFilterMaxAgeDays,
+            responseHighlightEnabled,
+            responseHighlightAgeBuckets,
+            autoScheduleEnabled,
+            autoScheduleDays,
+            autoScheduleFromLocalTime,
+            autoScheduleToLocalTime,
+            messengerAutoReplyEnabled,
+            messengerAutoReplyMessage));
         using var response = await SendAuthenticatedAsync(request, ct);
         if (response is null)
         {

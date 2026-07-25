@@ -668,7 +668,13 @@ internal static class DesignPreviewData
                 TodayErrors: 5,
                 ActiveAccountCount: 8,
                 TotalAccountCount: 10,
-                CurrentActivity: BuildPreviewWorkerActivity(0, true));
+                CurrentActivity: BuildPreviewWorkerActivity(0, true),
+                ResponseHighlightEnabled: true,
+                ResponseHighlightAgeBuckets: "63+",
+                AutoScheduleEnabled: true,
+                AutoScheduleDays: "Mon,Tue,Wed,Thu,Fri",
+                AutoScheduleFromLocalTime: "07:00",
+                AutoScheduleToLocalTime: "19:00");
         }
 
         if (id == WorkerSpbId)

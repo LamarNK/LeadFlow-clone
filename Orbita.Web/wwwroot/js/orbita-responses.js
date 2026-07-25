@@ -828,6 +828,11 @@
             var cityDisplay = city && String(city).trim() ? shared.escapeHtml(city) : '—';
             var age = readRowValue(row, 'age');
             var ageDisplay = age > 0 ? String(age) : '—';
+            var isHighlighted = readRowBool(row, 'isHighlighted');
+            var highlightLabel = readRowValue(row, 'highlightLabel') || '';
+            var ageBadge = isHighlighted && highlightLabel
+                ? '<span class="responses-age-highlight-badge">' + shared.escapeHtml(highlightLabel) + '</span>'
+                : '';
             var genderDisplay = formatGenderLabel(readRowValue(row, 'gender'));
             var canSend = readRowBool(row, 'canSend');
             var collectedAtUtc = readRowValue(row, 'collectedAtUtc') || readRowValue(row, 'createdAtUtc');
@@ -836,14 +841,14 @@
             var statusLabel = readRowValue(row, 'statusLabel') || '';
 
             var cardCopy = readRowValue(row, 'cardCopy') || '';
-            return '<tr class="responses-row" data-response-id="' + shared.escapeHtml(rowId) + '" data-phone="' + shared.escapeHtml(phoneDisplay) + '" data-can-send="' + (canSend ? 'true' : 'false') + '" data-phone-hidden="' + (phoneHidden ? 'true' : 'false') + '" data-response-card="' + shared.escapeAttr(cardCopy) + '" data-detail-json-url="' + shared.escapeHtml(detailJsonUrl(rowId)) + '">' +
+            return '<tr class="responses-row' + (isHighlighted ? ' responses-row--highlighted' : '') + '" data-response-id="' + shared.escapeHtml(rowId) + '" data-phone="' + shared.escapeHtml(phoneDisplay) + '" data-can-send="' + (canSend ? 'true' : 'false') + '" data-phone-hidden="' + (phoneHidden ? 'true' : 'false') + '" data-highlighted="' + (isHighlighted ? 'true' : 'false') + '" data-highlight-label="' + shared.escapeAttr(highlightLabel) + '" data-response-card="' + shared.escapeAttr(cardCopy) + '" data-detail-json-url="' + shared.escapeHtml(detailJsonUrl(rowId)) + '">' +
                 renderSelectCell(row) +
                 '<td class="responses-time" data-label="Сбор"><time data-orbita-utc="' + shared.escapeHtml(collectedAtUtc) + '" data-orbita-format="datetime"></time></td>' +
                 '<td class="responses-time responses-time--responded" data-label="Отклик"><time data-orbita-utc="' + shared.escapeHtml(respondedAtUtc) + '" data-orbita-format="datetime"></time></td>' +
                 '<td class="responses-author" data-label="Автор">' + shared.escapeHtml(author) + '</td>' +
                 '<td class="responses-phone" data-label="Телефон">' + phoneCell + '</td>' +
                 '<td class="responses-city" data-label="Город">' + cityDisplay + '</td>' +
-                '<td class="responses-age" data-label="Возраст">' + ageDisplay + '</td>' +
+                '<td class="responses-age" data-label="Возраст">' + ageDisplay + ageBadge + '</td>' +
                 '<td class="responses-gender" data-label="Пол">' + shared.escapeHtml(genderDisplay) + '</td>' +
                 '<td class="responses-ad" data-label="Объявление">' + adHtml + '</td>' +
                 '<td class="cell-link responses-account" data-label="Аккаунт">' + shared.renderResponseAccountCell(readRowValue(row, 'accountName'), readRowValue(row, 'avitoSubProfileName'), accountUrl) + '</td>' +

@@ -77,6 +77,8 @@ public sealed class ResponseRowViewModel
     public string? BitrixLabel { get; init; }
     public IReadOnlyList<ResponseBitrixDeliveryViewModel> BitrixDeliveries { get; init; } = [];
     public string CardCopy { get; init; } = string.Empty;
+    public bool IsHighlighted { get; init; }
+    public string? HighlightLabel { get; init; }
     public bool CanSend { get; init; }
     public bool CanResend { get; init; }
 }

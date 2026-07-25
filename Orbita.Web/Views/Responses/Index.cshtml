@@ -153,11 +153,13 @@
                     var phoneDisplay = ResponseDisplay.FormatPhone(row.PhoneRaw, row.PhoneNormalized);
                     var adId = ResponseDisplay.DisplayAdId(row.SourceResponseId, row.VacancyUrl);
                     var author = ResponseDisplay.DisplayAuthor(row.FullName);
-                    <tr class="responses-row"
+                    <tr class="responses-row @(row.IsHighlighted ? "responses-row--highlighted" : null)"
                         data-response-id="@row.Id"
                         data-phone="@phoneDisplay"
                         data-can-send="@(row.CanSend ? "true" : "false")"
                         data-phone-hidden="@(row.IsPhoneHidden ? "true" : "false")"
+                        data-highlighted="@(row.IsHighlighted ? "true" : "false")"
+                        data-highlight-label="@row.HighlightLabel"
                         data-response-card="@ResponseDisplay.HtmlAttributeValue(row.CardCopy)"
                         data-detail-json-url="@Url.Action("DetailJson", "Responses", new { id = row.Id })">
                         <td class="responses-select-col" data-label="">
@@ -181,7 +183,13 @@
                             }
                         </td>
                         <td class="responses-city" data-label="Город">@ResponseDisplay.FormatCity(row.City)</td>
-                        <td class="responses-age" data-label="Возраст">@ResponseDisplay.FormatAge(row.Age)</td>
+                        <td class="responses-age" data-label="Возраст">
+                            @ResponseDisplay.FormatAge(row.Age)
+                            @if (row.IsHighlighted && !string.IsNullOrWhiteSpace(row.HighlightLabel))
+                            {
+                                <span class="responses-age-highlight-badge">@row.HighlightLabel</span>
+                            }
+                        </td>
                         <td class="responses-gender" data-label="Пол">@CandidateGenders.FormatLabel(row.Gender)</td>
                         <td class="responses-ad" data-label="Объявление">
                             @if (!string.IsNullOrWhiteSpace(row.VacancyUrl))
