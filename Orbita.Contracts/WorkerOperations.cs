@@ -65,7 +65,17 @@ public sealed record WorkerConfigDto(
     int? ResponseFilterMaxAge = null,
     bool ResponseFilterExcludeMale = false,
     int? ResponseFilterMaxAgeMale = null,
-    int? ResponseFilterMaxAgeFemale = null)
+    int? ResponseFilterMaxAgeFemale = null,
+    /// <summary>Пропускать отклики старше N дней (по дате отклика из чата Avito). null — без ограничения.</summary>
+    int? ResponseFilterMaxResponseAgeDays = null,
+    bool ResponseHighlightEnabled = false,
+    string? ResponseHighlightAgeBuckets = null,
+    bool AutoScheduleEnabled = false,
+    string? AutoScheduleDays = null,
+    string? AutoScheduleFromLocalTime = null,
+    string? AutoScheduleToLocalTime = null,
+    bool MessengerAutoReplyEnabled = false,
+    string? MessengerAutoReplyMessage = null)
 {
     public ResponseCollectionFilters ResponseFilters =>
         ResponseCollectionFilters.NormalizeLegacy(
@@ -74,7 +84,8 @@ public sealed record WorkerConfigDto(
             ResponseFilterMaxAge,
             ResponseFilterExcludeMale,
             ResponseFilterMaxAgeMale,
-            ResponseFilterMaxAgeFemale);
+            ResponseFilterMaxAgeFemale,
+            ResponseFilterMaxResponseAgeDays);
 }
 
 public sealed record WorkerAccountSyncItemDto(
@@ -158,7 +169,17 @@ public sealed record UpdateWorkerSettingsRequest(
     int? ResponseFilterMaxAge = null,
     bool ResponseFilterExcludeMale = false,
     int? ResponseFilterMaxAgeMale = null,
-    int? ResponseFilterMaxAgeFemale = null);
+    int? ResponseFilterMaxAgeFemale = null,
+    /// <summary>Пропускать отклики старше N дней (по дате отклика из чата Avito). null — без ограничения.</summary>
+    int? ResponseFilterMaxResponseAgeDays = null,
+    bool ResponseHighlightEnabled = false,
+    string? ResponseHighlightAgeBuckets = null,
+    bool AutoScheduleEnabled = false,
+    string? AutoScheduleDays = null,
+    string? AutoScheduleFromLocalTime = null,
+    string? AutoScheduleToLocalTime = null,
+    bool MessengerAutoReplyEnabled = false,
+    string? MessengerAutoReplyMessage = null);
 
 public sealed record UpdateWorkerAccountRequest(bool IsEnabledInPanel);
 

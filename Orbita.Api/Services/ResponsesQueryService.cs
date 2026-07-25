@@ -267,6 +267,8 @@ public sealed class ResponsesQueryService(
                     : null,
                 x.AvitoSubProfileId,
                 x.AvitoSubProfileName,
+                ResponseHighlightEnabled = x.Worker != null && x.Worker.ResponseHighlightEnabled,
+                ResponseHighlightAgeBuckets = x.Worker != null ? x.Worker.ResponseHighlightAgeBuckets : null,
                 x.CreatedAt,
                 x.CollectedAt,
                 x.ProcessedAt
@@ -295,6 +297,11 @@ public sealed class ResponsesQueryService(
                     x.BitrixPortalHost,
                     x.BitrixEntityType,
                     x.BitrixEntityId);
+                var isHighlighted = ResponseHighlightRules.IsHighlighted(
+                    x.Age,
+                    x.ResponseHighlightEnabled,
+                    x.ResponseHighlightAgeBuckets,
+                    out var highlightLabel);
                 var bitrixDeliveries = deliveryLookup.TryGetValue(x.Id, out var loaded)
                     ? loaded
                     : [];
@@ -333,6 +340,8 @@ public sealed class ResponsesQueryService(
                         nameLookup,
                         x.AccountId,
                         x.AvitoSubProfileId),
+                    isHighlighted,
+                    highlightLabel,
                     x.CreatedAt,
                     x.CollectedAt,
                     x.ProcessedAt,

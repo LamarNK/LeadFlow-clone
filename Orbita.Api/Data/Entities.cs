@@ -66,6 +66,33 @@ public sealed class WorkerEntity
     /// <summary>Макс. возраст женщин включительно. null — без лимита.</summary>
     public int? ResponseFilterMaxAgeFemale { get; set; }
 
+    /// <summary>Пропускать отклики старше N дней (по дате отклика из чата Avito). null — без ограничения.</summary>
+    public int? ResponseFilterMaxAgeDays { get; set; }
+
+    /// <summary>Включить пометку откликов по возрастным группам для этого воркера.</summary>
+    public bool ResponseHighlightEnabled { get; set; }
+
+    /// <summary>CSV возрастных групп для подсветки на панели, например "45+,63+".</summary>
+    public string? ResponseHighlightAgeBuckets { get; set; }
+
+    /// <summary>Автоматически включать/выключать воркер по локальному расписанию сервера.</summary>
+    public bool AutoScheduleEnabled { get; set; }
+
+    /// <summary>CSV дней недели Mon..Sun.</summary>
+    public string? AutoScheduleDays { get; set; }
+
+    /// <summary>Локальное время старта окна, формат HH:mm.</summary>
+    public string? AutoScheduleFromLocalTime { get; set; }
+
+    /// <summary>Локальное время окончания окна, формат HH:mm.</summary>
+    public string? AutoScheduleToLocalTime { get; set; }
+
+    /// <summary>Включить автоответ в чатах Avito.</summary>
+    public bool MessengerAutoReplyEnabled { get; set; }
+
+    /// <summary>Текст автоответа в чатах Avito.</summary>
+    public string? MessengerAutoReplyMessage { get; set; }
+
     public double? LastCpuPercent { get; set; }
     public double? LastRamPercent { get; set; }
     public long? LastRamUsedMb { get; set; }

@@ -2,7 +2,7 @@ using System.Text.Json.Serialization;
 
 namespace Orbita.Contracts;
 
-/// <summary>Фильтры сбора откликов на воркере (пол/возраст до и после раскрытия телефона).</summary>
+/// <summary>Фильтры сбора откликов на воркере (пол/возраст + давность отклика).</summary>
 public sealed record ResponseCollectionFilters(
     bool Enabled = false,
     bool ExcludeFemale = false,
@@ -10,7 +10,9 @@ public sealed record ResponseCollectionFilters(
     int? MaxAgeMaleInclusive = null,
     int? MaxAgeFemaleInclusive = null,
     /// <summary>Устаревший единый лимит (JSON/старые клиенты). Если раздельные не заданы — применяется к обоим полам.</summary>
-    int? MaxAgeInclusive = null)
+    int? MaxAgeInclusive = null,
+    /// <summary>Пропускать отклики старше N дней (по дате отклика из чата Avito). null — без ограничения.</summary>
+    int? MaxResponseAgeDays = null)
 {
     public static ResponseCollectionFilters Disabled { get; } = new(Enabled: false);
 
@@ -20,20 +22,36 @@ public sealed record ResponseCollectionFilters(
     [JsonIgnore]
     public int? EffectiveMaxAgeFemaleInclusive => ClampAge(MaxAgeFemaleInclusive ?? MaxAgeInclusive);
 
+    /// <summary>Максимальный возраст отклика в днях (null — без ограничения).</summary>
+    [JsonIgnore]
+    public int? EffectiveMaxResponseAgeDays => ClampResponseAgeDays(MaxResponseAgeDays);
+
     /// <summary>Нормализация и валидация значений из UI/API (без legacy-поля).</summary>
     public static ResponseCollectionFilters Normalize(
         bool enabled,
         bool excludeFemale,
         bool excludeMale = false,
         int? maxAgeMaleInclusive = null,
-        int? maxAgeFemaleInclusive = null)
+        int? maxAgeFemaleInclusive = null,
+        int? maxResponseAgeDays = null)
     {
+        var normalizedMale = ClampAge(maxAgeMaleInclusive);
+        var normalizedFemale = ClampAge(maxAgeFemaleInclusive);
+        var normalizedResponseAgeDays = ClampResponseAgeDays(maxResponseAgeDays);
+        var effectiveEnabled = enabled
+            || excludeFemale
+            || excludeMale
+            || normalizedMale is not null
+            || normalizedFemale is not null
+            || normalizedResponseAgeDays is not null;
+
         return new ResponseCollectionFilters(
-            enabled,
+            effectiveEnabled,
             excludeFemale,
             excludeMale,
-            ClampAge(maxAgeMaleInclusive),
-            ClampAge(maxAgeFemaleInclusive));
+            normalizedMale,
+            normalizedFemale,
+            MaxResponseAgeDays: normalizedResponseAgeDays);
     }
 
     /// <summary>
@@ -45,16 +63,27 @@ public sealed record ResponseCollectionFilters(
         int? maxAgeInclusive,
         bool excludeMale = false,
         int? maxAgeMaleInclusive = null,
-        int? maxAgeFemaleInclusive = null)
+        int? maxAgeFemaleInclusive = null,
+        int? maxResponseAgeDays = null)
     {
         var male = maxAgeMaleInclusive ?? maxAgeInclusive;
         var female = maxAgeFemaleInclusive ?? maxAgeInclusive;
-        return Normalize(enabled, excludeFemale, excludeMale, male, female);
+        return Normalize(enabled, excludeFemale, excludeMale, male, female, maxResponseAgeDays);
     }
 
     internal static int? ClampAge(int? age)
     {
         if (age is int value && value is >= 1 and <= 120)
+        {
+            return value;
+        }
+
+        return null;
+    }
+
+    public static int? ClampResponseAgeDays(int? days)
+    {
+        if (days is int value && value >= 1)
         {
             return value;
         }
@@ -68,6 +97,7 @@ public static class ResponseCollectionFilterReasons
     public const string AgeAboveMax = "age_above_max";
     public const string GenderFemale = "gender_female";
     public const string GenderMale = "gender_male";
+    public const string ResponseAgeAboveMaxDays = "response_age_above_max_days";
 }
 
 public readonly record struct ResponseCollectionFilterResult(bool Pass, string? RejectReason)
@@ -155,5 +185,24 @@ public static class ResponseCollectionFilter
 
         var resolved = CandidateGenderResolver.Resolve(fullName, cardGender, rawText);
         return Evaluate(age, resolved.Gender, filters);
+    }
+
+    /// <summary>Проверить, не старше ли отклик N дней (по дате отклика из чата Avito).</summary>
+    public static ResponseCollectionFilterResult EvaluateResponseAge(
+        DateTime responseCreatedAt,
+        ResponseCollectionFilters filters)
+    {
+        if (filters.EffectiveMaxResponseAgeDays is not int maxDays)
+        {
+            return ResponseCollectionFilterResult.Allowed;
+        }
+
+        var age = DateTime.UtcNow - responseCreatedAt;
+        if (age.TotalDays > maxDays)
+        {
+            return ResponseCollectionFilterResult.Rejected(ResponseCollectionFilterReasons.ResponseAgeAboveMaxDays);
+        }
+
+        return ResponseCollectionFilterResult.Allowed;
     }
 }

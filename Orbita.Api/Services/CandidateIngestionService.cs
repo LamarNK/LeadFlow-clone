@@ -113,7 +113,8 @@ public sealed class CandidateIngestionService(
             worker.ResponseFilterMaxAge,
             worker.ResponseFilterExcludeMale,
             worker.ResponseFilterMaxAgeMale,
-            worker.ResponseFilterMaxAgeFemale);
+            worker.ResponseFilterMaxAgeFemale,
+            worker.ResponseFilterMaxAgeDays);
         var filterResult = ResponseCollectionFilter.Evaluate(
             candidate.Age,
             genderResolution.Gender is CandidateGenders.Unknown ? null : genderResolution.Gender,
@@ -128,8 +129,18 @@ public sealed class CandidateIngestionService(
                 $"Отсечён фильтром сбора: {filterResult.RejectReason}.");
         }
 
+        // Проверка давности отклика (пропускать старше N дней).
         var collectedAt = candidate.CollectedAt == default ? DateTime.UtcNow : candidate.CollectedAt;
         var responseAt = candidate.CreatedAt == default ? collectedAt : candidate.CreatedAt;
+        var ageFilterResult = ResponseCollectionFilter.EvaluateResponseAge(responseAt, workerFilters);
+        if (!ageFilterResult.Pass)
+        {
+            return new WorkerCandidateIngestionItemResultDto(
+                null,
+                candidate.SourceResponseId,
+                "Filtered",
+                $"Отсечён фильтром давности: {ageFilterResult.RejectReason}.");
+        }
         var profile = CandidatePersonMatchService.ToProfile(
             candidate.FullName,
             candidate.Age,

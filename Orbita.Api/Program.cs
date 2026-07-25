@@ -194,6 +194,7 @@ builder.Services.AddScoped<OfficeScopeService>();
 builder.Services.AddScoped<OfficeAdminService>();
 builder.Services.AddScoped<WorkerAdminService>();
 builder.Services.AddScoped<WorkerConfigService>();
+builder.Services.AddScoped<WorkerScheduleService>();
 builder.Services.AddScoped<WorkerCommandService>();
 builder.Services.AddScoped<WorkerEventService>();
 builder.Services.Configure<WorkerReleaseOptions>(builder.Configuration.GetSection(WorkerReleaseOptions.SectionName));
@@ -239,6 +240,7 @@ builder.Services.Configure<OrbitaBitrixSettings>(builder.Configuration.GetSectio
 builder.Services.AddScoped<PasswordPolicyService>();
 builder.Services.AddScoped<ServiceLogsQueryService>();
 builder.Services.AddHostedService<ServiceLogsCleanupService>();
+builder.Services.AddHostedService<WorkerScheduleHostedService>();
 builder.Services.AddScoped<WebhookSecretProtector>();
 builder.Services.AddScoped<AvitoAccountSecretProtector>();
 builder.Services.AddScoped<BitrixWebhookValidator>();

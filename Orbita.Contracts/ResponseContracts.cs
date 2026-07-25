@@ -43,6 +43,8 @@ public sealed record ResponseListItemDto(
     string? DuplicateBitrixInstanceName,
     string AvitoSubProfileId,
     string? AvitoSubProfileName,
+    bool IsHighlighted,
+    string? HighlightLabel,
     DateTime CreatedAt,
     DateTime CollectedAt,
     DateTime? ProcessedAt,

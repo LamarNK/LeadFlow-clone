@@ -226,6 +226,68 @@ public sealed class WorkerConfigServiceTests
     }
 
     [Fact]
+    public async Task UpdateSettingsAsync_AutoEnablesFiltersAndPersistsHighlightSettings()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+
+        var sut = CreateService(db);
+        var (config, error) = await sut.UpdateSettingsAsync(
+            WorkerId,
+            new UpdateWorkerSettingsRequest(
+                MaxConcurrentAccounts: 2,
+                ResponseFilterEnabled: false,
+                ResponseFilterExcludeMale: true,
+                ResponseHighlightEnabled: true,
+                ResponseHighlightAgeBuckets: "63+,bad,45+"),
+            OfficeScope.ForOffice(OfficeId));
+
+        Assert.Null(error);
+        Assert.NotNull(config);
+        Assert.True(config!.ResponseFilterEnabled);
+        Assert.True(config.ResponseFilterExcludeMale);
+        Assert.True(config.ResponseHighlightEnabled);
+        Assert.Equal("63+,45+", config.ResponseHighlightAgeBuckets);
+
+        var worker = await db.Workers.SingleAsync();
+        Assert.True(worker.ResponseFilterEnabled);
+        Assert.True(worker.ResponseFilterExcludeMale);
+        Assert.True(worker.ResponseHighlightEnabled);
+        Assert.Equal("63+,45+", worker.ResponseHighlightAgeBuckets);
+    }
+
+    [Fact]
+    public async Task UpdateSettingsAsync_PersistsAutoScheduleSettings()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+
+        var sut = CreateService(db);
+        var (config, error) = await sut.UpdateSettingsAsync(
+            WorkerId,
+            new UpdateWorkerSettingsRequest(
+                MaxConcurrentAccounts: 2,
+                AutoScheduleEnabled: true,
+                AutoScheduleDays: "Mon,Tue,Wed,Thu,Fri",
+                AutoScheduleFromLocalTime: "07:00",
+                AutoScheduleToLocalTime: "19:00"),
+            OfficeScope.ForOffice(OfficeId));
+
+        Assert.Null(error);
+        Assert.NotNull(config);
+        Assert.True(config!.AutoScheduleEnabled);
+        Assert.Equal("Mon,Tue,Wed,Thu,Fri", config.AutoScheduleDays);
+        Assert.Equal("07:00", config.AutoScheduleFromLocalTime);
+        Assert.Equal("19:00", config.AutoScheduleToLocalTime);
+
+        var worker = await db.Workers.SingleAsync();
+        Assert.True(worker.AutoScheduleEnabled);
+        Assert.Equal("Mon,Tue,Wed,Thu,Fri", worker.AutoScheduleDays);
+        Assert.Equal("07:00", worker.AutoScheduleFromLocalTime);
+        Assert.Equal("19:00", worker.AutoScheduleToLocalTime);
+    }
+
+    [Fact]
     public async Task GetConfigForWorkerAsync_ResponseFiltersDefaultOff()
     {
         await using var db = CreateDb();

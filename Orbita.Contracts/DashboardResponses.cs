@@ -86,7 +86,16 @@ public sealed record WorkerDetail(
     int? ResponseFilterMaxAge = null,
     bool ResponseFilterExcludeMale = false,
     int? ResponseFilterMaxAgeMale = null,
-    int? ResponseFilterMaxAgeFemale = null);
+    int? ResponseFilterMaxAgeFemale = null,
+    int? ResponseFilterMaxResponseAgeDays = null,
+    bool ResponseHighlightEnabled = false,
+    string? ResponseHighlightAgeBuckets = null,
+    bool AutoScheduleEnabled = false,
+    string? AutoScheduleDays = null,
+    string? AutoScheduleFromLocalTime = null,
+    string? AutoScheduleToLocalTime = null,
+    bool MessengerAutoReplyEnabled = false,
+    string? MessengerAutoReplyMessage = null);
 
 public sealed record WorkerEventListItem(
     Guid Id,

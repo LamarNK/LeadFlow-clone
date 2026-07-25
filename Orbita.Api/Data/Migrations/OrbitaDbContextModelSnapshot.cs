@@ -1121,6 +1121,35 @@ namespace Orbita.Api.Data.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)");
 
+                    b.Property<string>("AutoScheduleDays")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<bool>("AutoScheduleEnabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("AutoScheduleFromLocalTime")
+                        .HasMaxLength(5)
+                        .HasColumnType("character varying(5)");
+
+                    b.Property<string>("AutoScheduleToLocalTime")
+                        .HasMaxLength(5)
+                        .HasColumnType("character varying(5)");
+
+                    b.Property<bool>("MessengerAutoReplyEnabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("MessengerAutoReplyMessage")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<string>("ResponseHighlightAgeBuckets")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<bool>("ResponseHighlightEnabled")
+                        .HasColumnType("boolean");
+
                     b.Property<string>("AgentVersion")
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");

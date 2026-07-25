@@ -69,6 +69,11 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.Property(x => x.ActivityPhase).HasMaxLength(32);
             entity.Property(x => x.AdsPowerApiBaseUrl).HasMaxLength(512);
             entity.Property(x => x.AdsPowerApiKey).HasMaxLength(256);
+            entity.Property(x => x.ResponseHighlightAgeBuckets).HasMaxLength(256);
+            entity.Property(x => x.AutoScheduleDays).HasMaxLength(64);
+            entity.Property(x => x.AutoScheduleFromLocalTime).HasMaxLength(5);
+            entity.Property(x => x.AutoScheduleToLocalTime).HasMaxLength(5);
+            entity.Property(x => x.MessengerAutoReplyMessage).HasMaxLength(2000);
             entity.Property(x => x.LastUpdateVersion).HasMaxLength(50);
             entity.Property(x => x.LastUpdateMessage).HasMaxLength(2000);
             entity.Property(x => x.IpAddress).HasMaxLength(64);

@@ -98,7 +98,16 @@ public sealed class WorkerConfigService(
             worker.ResponseFilterMaxAge,
             worker.ResponseFilterExcludeMale,
             worker.ResponseFilterMaxAgeMale,
-            worker.ResponseFilterMaxAgeFemale);
+            worker.ResponseFilterMaxAgeFemale,
+            worker.ResponseFilterMaxAgeDays,
+            worker.ResponseHighlightEnabled,
+            worker.ResponseHighlightAgeBuckets,
+            worker.AutoScheduleEnabled,
+            worker.AutoScheduleDays,
+            worker.AutoScheduleFromLocalTime,
+            worker.AutoScheduleToLocalTime,
+            worker.MessengerAutoReplyEnabled,
+            worker.MessengerAutoReplyMessage);
     }
 
     public async Task<bool> SyncAccountsAsync(
@@ -193,13 +202,25 @@ public sealed class WorkerConfigService(
             return (null, apiKeyError);
         }
 
+        var maxResponseAgeDays = ResponseCollectionFilters.ClampResponseAgeDays(request.ResponseFilterMaxResponseAgeDays);
         var filters = ResponseCollectionFilters.NormalizeLegacy(
             request.ResponseFilterEnabled,
             request.ResponseFilterExcludeFemale,
             request.ResponseFilterMaxAge,
             request.ResponseFilterExcludeMale,
             request.ResponseFilterMaxAgeMale,
-            request.ResponseFilterMaxAgeFemale);
+            request.ResponseFilterMaxAgeFemale,
+            maxResponseAgeDays);
+        var normalizedHighlightBuckets = ResponseHighlightRules.NormalizeBucketsCsv(request.ResponseHighlightAgeBuckets);
+        var highlightEnabled = request.ResponseHighlightEnabled && !string.IsNullOrWhiteSpace(normalizedHighlightBuckets);
+        var normalizedScheduleDays = WorkerScheduleRules.NormalizeDaysCsv(request.AutoScheduleDays);
+        var normalizedScheduleFrom = WorkerScheduleRules.NormalizeTime(request.AutoScheduleFromLocalTime);
+        var normalizedScheduleTo = WorkerScheduleRules.NormalizeTime(request.AutoScheduleToLocalTime);
+        var autoScheduleEnabled = request.AutoScheduleEnabled
+            && !string.IsNullOrWhiteSpace(normalizedScheduleDays)
+            && normalizedScheduleFrom is not null
+            && normalizedScheduleTo is not null
+            && !string.Equals(normalizedScheduleFrom, normalizedScheduleTo, StringComparison.Ordinal);
 
         worker.MaxConcurrentAccounts = request.MaxConcurrentAccounts;
         worker.AdsPowerApiBaseUrl = normalizedBaseUrl;
@@ -209,6 +230,18 @@ public sealed class WorkerConfigService(
         worker.ResponseFilterExcludeMale = filters.ExcludeMale;
         worker.ResponseFilterMaxAgeMale = filters.MaxAgeMaleInclusive;
         worker.ResponseFilterMaxAgeFemale = filters.MaxAgeFemaleInclusive;
+        worker.ResponseFilterMaxAgeDays = filters.EffectiveMaxResponseAgeDays;
+        worker.ResponseHighlightEnabled = highlightEnabled;
+        worker.ResponseHighlightAgeBuckets = string.IsNullOrWhiteSpace(normalizedHighlightBuckets) ? null : normalizedHighlightBuckets;
+        worker.AutoScheduleEnabled = autoScheduleEnabled;
+        worker.AutoScheduleDays = string.IsNullOrWhiteSpace(normalizedScheduleDays) ? null : normalizedScheduleDays;
+        worker.AutoScheduleFromLocalTime = normalizedScheduleFrom;
+        worker.AutoScheduleToLocalTime = normalizedScheduleTo;
+
+        var autoReplyMessage = NormalizeAutoReplyMessage(request.MessengerAutoReplyMessage);
+        worker.MessengerAutoReplyEnabled = request.MessengerAutoReplyEnabled && !string.IsNullOrWhiteSpace(autoReplyMessage);
+        worker.MessengerAutoReplyMessage = autoReplyMessage;
+
         // Legacy field: keep only when both genders share the same limit (old workers / DTO).
         worker.ResponseFilterMaxAge =
             filters.MaxAgeMaleInclusive is int m
@@ -277,6 +310,17 @@ public sealed class WorkerConfigService(
         normalized = trimmed;
         error = null;
         return true;
+    }
+
+    private static string? NormalizeAutoReplyMessage(string? message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            return null;
+        }
+
+        var trimmed = message.Trim();
+        return trimmed.Length > 2000 ? trimmed[..2000] : trimmed;
     }
 
     public async Task<(WorkerAccountConfigDto? Account, string? Error)> UpdateAccountEnabledAsync(

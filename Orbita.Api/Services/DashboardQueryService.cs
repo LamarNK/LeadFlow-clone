@@ -332,7 +332,16 @@ public sealed class DashboardQueryService(
             worker.ResponseFilterMaxAge,
             worker.ResponseFilterExcludeMale,
             worker.ResponseFilterMaxAgeMale,
-            worker.ResponseFilterMaxAgeFemale);
+            worker.ResponseFilterMaxAgeFemale,
+            worker.ResponseFilterMaxAgeDays,
+            worker.ResponseHighlightEnabled,
+            worker.ResponseHighlightAgeBuckets,
+            worker.AutoScheduleEnabled,
+            worker.AutoScheduleDays,
+            worker.AutoScheduleFromLocalTime,
+            worker.AutoScheduleToLocalTime,
+            worker.MessengerAutoReplyEnabled,
+            worker.MessengerAutoReplyMessage);
     }
 
     public async Task<IReadOnlyList<WorkerAccountDto>> GetWorkerAccountsAsync(
