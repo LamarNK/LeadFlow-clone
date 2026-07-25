@@ -20,4 +20,5 @@ public sealed class WorkerMonitoringConfig
     public bool DemoModeEnabled { get; init; }
     public IReadOnlyList<AvitoAccount> Accounts { get; init; } = [];
     public ResponseCollectionFilters ResponseFilters { get; init; } = ResponseCollectionFilters.Disabled;
+    public AvitoMessengerAutoReplySettings? MessengerAutoReply { get; init; }
 }

@@ -85,7 +85,8 @@ public sealed class AvitoResponseSource(
             var messengerHints = new CandidatesMessengerEnrichmentHints(
                 account.Id,
                 settings.DuplicateScope,
-                ResponseFilters: settings.ResponseFilters);
+                ResponseFilters: settings.ResponseFilters,
+                MessengerAutoReply: settings.Avito.MessengerAutoReply);
 
             const int adsPowerMaxAttempts = 3;
             for (var attempt = 1; attempt <= adsPowerMaxAttempts; attempt++)

@@ -8,4 +8,5 @@ public sealed record CandidatesMessengerEnrichmentHints(
     Guid AccountId,
     DuplicateScope DuplicateScope,
     string? AvitoSubProfileId = null,
-    ResponseCollectionFilters? ResponseFilters = null);
+    ResponseCollectionFilters? ResponseFilters = null,
+    AvitoMessengerAutoReplySettings? MessengerAutoReply = null);

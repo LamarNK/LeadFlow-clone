@@ -127,6 +127,10 @@ public sealed class WorkerAppSettingsStore
                 StopOnCaptcha = settings.MonitoringSafety.StopOnCaptcha,
                 StopOnAuthRequired = settings.MonitoringSafety.StopOnAuthRequired,
                 MaxConcurrentAccounts = settings.MonitoringSafety.MaxConcurrentAccounts
+            },
+            Avito = new AvitoSettings
+            {
+                MessengerAutoReply = settings.Avito.MessengerAutoReply.Clone()
             }
         };
 
@@ -140,6 +144,11 @@ public sealed class WorkerAppSettingsStore
         settings.MonitoringSafety.CheckIntervalSeconds =
             Math.Clamp(settings.MonitoringSafety.CheckIntervalSeconds, 30, 3600);
         settings.Avito ??= new AvitoSettings();
+        settings.Avito.MessengerAutoReply ??= new AvitoMessengerAutoReplySettings();
+        settings.Avito.MessengerAutoReply.Message =
+            string.IsNullOrWhiteSpace(settings.Avito.MessengerAutoReply.Message)
+                ? AvitoMessengerAutoReplySettings.DefaultMessage
+                : settings.Avito.MessengerAutoReply.Message.Trim();
         settings.Bitrix ??= new BitrixSettings();
     }
 }

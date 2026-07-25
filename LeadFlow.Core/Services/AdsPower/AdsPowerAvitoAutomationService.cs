@@ -2099,6 +2099,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
                     page,
                     domIndex,
                     candidatesReturnUrl,
+                    enrichmentHints?.MessengerAutoReply,
                     cancellationToken)
                 .ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(enrichment.ChannelUrl) && enrichment.ChatMessages.Count == 0)
@@ -2205,6 +2206,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
         IPage page,
         int candidateIndex,
         string candidatesReturnUrl,
+        AvitoMessengerAutoReplySettings? autoReply,
         CancellationToken cancellationToken)
     {
         await CloseMiniMessengerPanelIfOpenAsync(page, cancellationToken).ConfigureAwait(false);
@@ -2263,10 +2265,13 @@ public sealed partial class AdsPowerAvitoAutomationService(
         }
 
         var chatMessages = await CollectMiniMessengerMessagesAsync(page, cancellationToken).ConfigureAwait(false);
-        if (AvitoMessengerAutoReply.Enabled
-            && AvitoChatAutoReplyEvaluator.NeedsAutoReply(ParseMiniMessengerMessages(chatMessages)))
+        autoReply ??= new AvitoMessengerAutoReplySettings();
+        if (autoReply.Enabled
+            && AvitoChatAutoReplyEvaluator.NeedsAutoReply(
+                ParseMiniMessengerMessages(chatMessages),
+                autoReply.Message))
         {
-            if (await TrySendMiniMessengerAutoReplyAsync(page, cancellationToken).ConfigureAwait(false))
+            if (await TrySendMiniMessengerAutoReplyAsync(page, autoReply.Message, cancellationToken).ConfigureAwait(false))
             {
                 chatMessages = await CollectMiniMessengerMessagesAsync(page, cancellationToken).ConfigureAwait(false);
             }
@@ -2450,13 +2455,14 @@ public sealed partial class AdsPowerAvitoAutomationService(
 
     private async Task<bool> TrySendMiniMessengerAutoReplyAsync(
         IPage page,
+        string autoReplyMessage,
         CancellationToken cancellationToken)
     {
         await HumanDelay.BeforeMessengerAutoReplySendAsync(cancellationToken).ConfigureAwait(false);
 
         var sendRaw = await EvaluateWithRetryAsync<string>(
                 page,
-                AvitoCandidatesPageScripts.BuildSendMiniMessengerReplyScript(AvitoMessengerAutoReply.DefaultMessage),
+                AvitoCandidatesPageScripts.BuildSendMiniMessengerReplyScript(autoReplyMessage),
                 cancellationToken)
             .ConfigureAwait(false);
         if (!TryParseMessengerSendStep(sendRaw, out var sent, out var reason) || !sent)
@@ -2473,7 +2479,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
             return false;
         }
 
-        var appeared = await WaitForEmployerAutoReplyInChatAsync(page, cancellationToken).ConfigureAwait(false);
+        var appeared = await WaitForEmployerAutoReplyInChatAsync(page, autoReplyMessage, cancellationToken).ConfigureAwait(false);
         _ = GlobalLogger.Instance.LogAsync(
             appeared
                 ? "AdsPower messenger auto-reply sent."
@@ -2492,9 +2498,10 @@ public sealed partial class AdsPowerAvitoAutomationService(
 
     private async Task<bool> WaitForEmployerAutoReplyInChatAsync(
         IPage page,
+        string autoReplyMessage,
         CancellationToken cancellationToken)
     {
-        var expected = AvitoMessengerAutoReply.DefaultMessage.Trim();
+        var expected = autoReplyMessage.Trim();
         for (var elapsed = 0;
              elapsed < MonitoringTiming.MessengerAutoReplyPostSendMaxWaitMs;
              elapsed += MonitoringTiming.MessengerAutoReplyPostSendPollMs)

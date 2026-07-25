@@ -10,6 +10,8 @@ public sealed class TrayApplicationContext : ApplicationContext
     private readonly WorkerRuntimeState _runtimeState;
     private readonly WorkerConfigStore _configStore;
     private readonly WorkerCredentials _credentials;
+    private readonly WorkerAppSettingsStore _appSettingsStore;
+    private readonly LeadFlow.Core.Models.AppSettings _appSettings;
     private readonly ToolStripMenuItem _statusItem;
     private readonly ToolStripMenuItem _toggleMonitoringItem;
 
@@ -17,12 +19,16 @@ public sealed class TrayApplicationContext : ApplicationContext
         WorkerOrchestrator orchestrator,
         WorkerRuntimeState runtimeState,
         WorkerConfigStore configStore,
-        WorkerCredentials credentials)
+        WorkerCredentials credentials,
+        WorkerAppSettingsStore appSettingsStore,
+        LeadFlow.Core.Models.AppSettings appSettings)
     {
         _orchestrator = orchestrator;
         _runtimeState = runtimeState;
         _configStore = configStore;
         _credentials = credentials;
+        _appSettingsStore = appSettingsStore;
+        _appSettings = appSettings;
 
         _statusItem = new ToolStripMenuItem("Статус: подключение") { Enabled = false };
         _toggleMonitoringItem = new ToolStripMenuItem("Остановить мониторинг", null, OnToggleMonitoring);
@@ -32,6 +38,7 @@ public sealed class TrayApplicationContext : ApplicationContext
         menu.Items.Add(_toggleMonitoringItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(new ToolStripMenuItem("Настройки подключения", null, OnOpenSettings));
+        menu.Items.Add(new ToolStripMenuItem("Автоответы в чатах", null, OnOpenAutoReplySettings));
         menu.Items.Add(new ToolStripMenuItem("Открыть папку логов", null, OnOpenLogs));
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(new ToolStripMenuItem("Выход", null, OnExit));
@@ -122,6 +129,18 @@ public sealed class TrayApplicationContext : ApplicationContext
             WorkerSetupConstants.ProductName,
             MessageBoxButtons.OK,
             MessageBoxIcon.Information);
+    }
+
+    private void OnOpenAutoReplySettings(object? sender, EventArgs e)
+    {
+        if (AutoReplySettingsForm.TryConfigure(_appSettingsStore, _appSettings))
+        {
+            _trayIcon.ShowBalloonTip(
+                3000,
+                "Орбита · воркер",
+                "Настройки автоответов сохранены.",
+                ToolTipIcon.Info);
+        }
     }
 
     private static void OnOpenLogs(object? sender, EventArgs e)

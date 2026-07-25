@@ -32,7 +32,8 @@ public sealed class WorkerMonitoringService(
     IAdsPowerAvitoAutomationService adsPowerAvitoAutomationService,
     IWorkerActivityReporter activityReporter,
     IWorkerPendingUpdateCoordinator pendingUpdateCoordinator,
-    IBrowserMonitorSource browserMonitorSource) : IWorkerMonitoringService
+    IBrowserMonitorSource browserMonitorSource,
+    AppSettings workerAppSettings) : IWorkerMonitoringService
 {
     private const int LoopRecoveryPauseMinutes = 12;
     private const int MaxLoopRecoveryFailuresBeforeStop = 10;
@@ -597,6 +598,7 @@ public sealed class WorkerMonitoringService(
             var skippedPersonDuplicates = 0;
             var filteredAge = 0;
             var filteredGender = 0;
+            var filteredResponseAge = 0;
             var filterSamples = new List<string>(5);
             for (var i = 0; i < readyCandidates.Count; i++)
             {
@@ -647,6 +649,27 @@ public sealed class WorkerMonitoringService(
                     continue;
                 }
 
+                // Проверка давности отклика (пропускать старше N дней).
+                var responseCreatedAt = candidate.CreatedAt == default
+                    ? (candidate.CollectedAt == default ? DateTime.UtcNow : candidate.CollectedAt)
+                    : candidate.CreatedAt;
+                var ageFilterResult = ResponseCollectionFilter.EvaluateResponseAge(responseCreatedAt, settings.ResponseFilters);
+                if (!ageFilterResult.Pass)
+                {
+                    filteredResponseAge++;
+                    if (filterSamples.Count < 5)
+                    {
+                        filterSamples.Add(
+                            $"{candidate.FullName}|created={responseCreatedAt:yyyy-MM-dd}|{ageFilterResult.RejectReason}");
+                    }
+
+                    _ = GlobalLogger.Instance.LogAsync(
+                        $"Response collection filter skipped «{candidate.FullName}»: {ageFilterResult.RejectReason} (created={responseCreatedAt:yyyy-MM-dd}).",
+                        DeskLinkAuditLogLevel.Info,
+                        memberName: nameof(StreamProcessAccountResponsesAsync));
+                    continue;
+                }
+
                 await PublishCandidateAsync(candidate, cancellationToken).ConfigureAwait(false);
                 publishedCount++;
                 publishedTotal++;
@@ -657,10 +680,10 @@ public sealed class WorkerMonitoringService(
                 }
             }
 
-            if (filteredAge > 0 || filteredGender > 0)
+            if (filteredAge > 0 || filteredGender > 0 || filteredResponseAge > 0)
             {
                 _ = GlobalLogger.Instance.LogAsync(
-                    $"Response filters for {account.DisplayName}: filtered_age={filteredAge}, filtered_gender={filteredGender}. Samples: {string.Join("; ", filterSamples)}",
+                    $"Response filters for {account.DisplayName}: filtered_age={filteredAge}, filtered_gender={filteredGender}, filtered_response_age={filteredResponseAge}. Samples: {string.Join("; ", filterSamples)}",
                     DeskLinkAuditLogLevel.Info,
                     memberName: nameof(StreamProcessAccountResponsesAsync));
             }
@@ -786,7 +809,8 @@ public sealed class WorkerMonitoringService(
                 var singleProfileHints = new CandidatesMessengerEnrichmentHints(
                     account.Id,
                     settings.DuplicateScope,
-                    ResponseFilters: settings.ResponseFilters);
+                    ResponseFilters: settings.ResponseFilters,
+                    MessengerAutoReply: settings.Avito.MessengerAutoReply);
                 var rawJson = await session
                     .ExtractCandidatesJsonAsync(singleProfileHints, cancellationToken)
                     .ConfigureAwait(false);
@@ -911,7 +935,8 @@ public sealed class WorkerMonitoringService(
                         account.Id,
                         settings.DuplicateScope,
                         sub.Id,
-                        settings.ResponseFilters);
+                        settings.ResponseFilters,
+                        settings.Avito.MessengerAutoReply);
                     var rawJson = await session
                         .ExtractCandidatesJsonAsync(messengerHints, cancellationToken)
                         .ConfigureAwait(false);
@@ -1180,12 +1205,17 @@ public sealed class WorkerMonitoringService(
         return DateTime.UtcNow - last.Value >= TimeSpan.FromMinutes(MonitoringTiming.ActiveAdsRefreshIntervalMinutes);
     }
 
-    private static AppSettings ToAppSettings(WorkerMonitoringConfig config) => new()
+    private AppSettings ToAppSettings(WorkerMonitoringConfig config) => new()
     {
         DemoModeEnabled = config.DemoModeEnabled,
         DuplicateScope = config.DuplicateScope,
         MonitoringSafety = new MonitoringSafetyOptions { MaxConcurrentAccounts = config.MaxConcurrentAccounts },
-        ResponseFilters = config.ResponseFilters ?? ResponseCollectionFilters.Disabled
+        ResponseFilters = config.ResponseFilters ?? ResponseCollectionFilters.Disabled,
+        Avito = new AvitoSettings
+        {
+            MessengerAutoReply = config.MessengerAutoReply?.Clone()
+                ?? workerAppSettings.Avito.MessengerAutoReply.Clone()
+        }
     };
 
     private async Task ApplyStatsSnapshotAsync(

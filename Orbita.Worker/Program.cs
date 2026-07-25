@@ -95,7 +95,8 @@ internal static class Program
             return;
         }
 
-        var appSettings = new WorkerAppSettingsStore().LoadOrCreate();
+        var appSettingsStore = new WorkerAppSettingsStore();
+        var appSettings = appSettingsStore.LoadOrCreate();
         var host = Host.CreateApplicationBuilder();
         host.Services.AddSingleton(credentials);
         host.Services.AddSingleton(store);
@@ -179,7 +180,13 @@ internal static class Program
             nameof(RunTrayApplication))
             .GetAwaiter().GetResult();
 
-        Application.Run(new TrayApplicationContext(orchestrator, runtimeState, store, credentials));
+        Application.Run(new TrayApplicationContext(
+            orchestrator,
+            runtimeState,
+            store,
+            credentials,
+            appSettingsStore,
+            appSettings));
 
         WorkerLifecycleLog.InfoAsync(
             "Worker lifecycle: трей закрыт, остановка хоста",

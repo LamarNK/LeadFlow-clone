@@ -81,6 +81,18 @@ public sealed class AvitoChatAutoReplyEvaluatorTests
         Assert.False(AvitoChatAutoReplyEvaluator.NeedsAutoReply(messages));
     }
 
+    [Fact]
+    public void NeedsAutoReply_ConfiguredAutoReplyAlreadySent_ReturnsFalse()
+    {
+        const string configuredMessage = "Спасибо, мы вам перезвоним.";
+        var messages = new[]
+        {
+            Candidate("Здравствуйте"),
+            Employer(configuredMessage)
+        };
+
+        Assert.False(AvitoChatAutoReplyEvaluator.NeedsAutoReply(messages, configuredMessage));
+    }
     private static AvitoChatMessage Platform(string text) => new()
     {
         Text = text,

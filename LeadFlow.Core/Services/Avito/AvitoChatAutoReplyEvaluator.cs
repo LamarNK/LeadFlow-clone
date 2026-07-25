@@ -7,9 +7,14 @@ namespace LeadFlow.Core.Services.Avito;
 /// </summary>
 public static class AvitoChatAutoReplyEvaluator
 {
-    public static bool NeedsAutoReply(IReadOnlyList<AvitoChatMessage> messages)
+    public static bool NeedsAutoReply(IReadOnlyList<AvitoChatMessage> messages) =>
+        NeedsAutoReply(messages, AvitoMessengerAutoReply.DefaultMessage);
+
+    public static bool NeedsAutoReply(
+        IReadOnlyList<AvitoChatMessage> messages,
+        string autoReplyMessage)
     {
-        if (messages.Count == 0)
+        if (messages.Count == 0 || string.IsNullOrWhiteSpace(autoReplyMessage))
         {
             return false;
         }
@@ -37,15 +42,20 @@ public static class AvitoChatAutoReplyEvaluator
             }
         }
 
-        return !AlreadySentDefaultAutoReply(messages);
+        return !AlreadySentAutoReply(messages, autoReplyMessage);
     }
 
     public static bool AlreadySentDefaultAutoReply(IReadOnlyList<AvitoChatMessage> messages) =>
+        AlreadySentAutoReply(messages, AvitoMessengerAutoReply.DefaultMessage);
+
+    public static bool AlreadySentAutoReply(
+        IReadOnlyList<AvitoChatMessage> messages,
+        string autoReplyMessage) =>
         messages.Any(m =>
             IsEmployerMessage(m)
             && string.Equals(
                 m.Text.Trim(),
-                AvitoMessengerAutoReply.DefaultMessage.Trim(),
+                autoReplyMessage.Trim(),
                 StringComparison.Ordinal));
 
     internal static bool IsCandidateMessage(AvitoChatMessage message) =>

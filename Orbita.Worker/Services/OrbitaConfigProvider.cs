@@ -1,3 +1,4 @@
+using LeadFlow.Core.Models;
 using LeadFlow.Core.Services.Worker;
 using Orbita.Contracts;
 
@@ -42,7 +43,14 @@ public sealed class OrbitaConfigProvider(
         {
             MaxConcurrentAccounts = _cached.MaxConcurrentAccounts,
             Accounts = accounts,
-            ResponseFilters = _cached.ResponseFilters
+            ResponseFilters = _cached.ResponseFilters,
+            MessengerAutoReply = _cached.MessengerAutoReplyEnabled
+                ? new AvitoMessengerAutoReplySettings
+                {
+                    Enabled = true,
+                    Message = _cached.MessengerAutoReplyMessage ?? AvitoMessengerAutoReplySettings.DefaultMessage
+                }
+                : null
         };
     }
 
