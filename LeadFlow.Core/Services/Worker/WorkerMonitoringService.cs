@@ -33,8 +33,12 @@ public sealed class WorkerMonitoringService(
     IWorkerActivityReporter activityReporter,
     IWorkerPendingUpdateCoordinator pendingUpdateCoordinator,
     IBrowserMonitorSource browserMonitorSource,
-    AppSettings workerAppSettings) : IWorkerMonitoringService
+    AppSettings workerAppSettings,
+    IResponsePhoneObservationStore? phoneObservationStore = null) : IWorkerMonitoringService
 {
+    private readonly IResponsePhoneObservationStore _phoneObservationStore =
+        phoneObservationStore ?? new NullResponsePhoneObservationStore();
+
     private const int LoopRecoveryPauseMinutes = 12;
     private const int MaxLoopRecoveryFailuresBeforeStop = 10;
 
@@ -546,6 +550,17 @@ public sealed class WorkerMonitoringService(
         var publishedTotal = 0;
         var subProfilesProcessed = 0;
         var seenKeys = new HashSet<string>(StringComparer.Ordinal);
+        // Порог часов «номер не менялся» — из конфига воркера (Orbita), default 24.
+        var phoneUnchangedHours = ResponsePhoneWatchRules.DefaultUnchangedHours;
+        try
+        {
+            var liveConfig = await configProvider.GetConfigAsync(cancellationToken).ConfigureAwait(false);
+            phoneUnchangedHours = liveConfig.PhoneUnchangedHours;
+        }
+        catch
+        {
+            // оставляем default
+        }
 
         async Task<CandidateBatchPublishResult> ProcessBatchInlineAsync(IReadOnlyList<CandidateResponse> batch)
         {
@@ -562,9 +577,11 @@ public sealed class WorkerMonitoringService(
                     break;
                 }
 
-                var normalizedForKey = phoneNormalizer.Normalize(response.PhoneRaw);
-                var key = !string.IsNullOrWhiteSpace(normalizedForKey)
-                    ? $"phone:{normalizedForKey}"
+                // Дедуп внутри батча: по субпрофилю+ФИО (не SourceResponseId — он динамический).
+                var nameKey = ResponsePhoneWatchEvaluator.BuildFullNameKey(response.FullName);
+                var subKey = (response.AvitoSubProfileId ?? string.Empty).Trim();
+                var key = !string.IsNullOrWhiteSpace(nameKey)
+                    ? $"fio:{subKey}|{nameKey}"
                     : (string.IsNullOrWhiteSpace(response.SourceResponseId)
                         ? $"{response.PhoneRaw}|{response.FullName}|{response.Vacancy}"
                         : response.SourceResponseId);
@@ -582,35 +599,21 @@ public sealed class WorkerMonitoringService(
                 return CandidateBatchPublishResult.Empty;
             }
 
-            var profiles = readyCandidates
-                .Select(response => new CandidateLookupProfileDto(
-                    response.FullName,
-                    response.Age,
-                    response.City ?? string.Empty,
-                    phoneNormalizer.Normalize(response.PhoneRaw) ?? string.Empty,
-                    response.CreatedAt == default ? null : response.CreatedAt))
-                .ToList();
-            var matchedProfiles = await duplicateRepository
-                .GetMatchedProfileIndicesAsync(profiles, account.Id, cancellationToken)
-                .ConfigureAwait(false);
-
+            // В Орбиту шлём ТОЛЬКО метрики номера (смена / не менялся N ч).
+            // Первый проход — только локальный phone-watch (субпрофиль+ФИО), без отправки.
+            // FIO person-match lookup не нужен: «New» при первом появлении больше не публикуем.
             var publishedCount = 0;
             var skippedPersonDuplicates = 0;
             var filteredAge = 0;
             var filteredGender = 0;
             var filteredResponseAge = 0;
             var filterSamples = new List<string>(5);
+            var utcNow = DateTime.UtcNow;
             for (var i = 0; i < readyCandidates.Count; i++)
             {
                 if (cancellationToken.IsCancellationRequested)
                 {
                     break;
-                }
-
-                if (matchedProfiles.Contains(i))
-                {
-                    skippedPersonDuplicates++;
-                    continue;
                 }
 
                 var candidate = readyCandidates[i];
@@ -670,6 +673,45 @@ public sealed class WorkerMonitoringService(
                     continue;
                 }
 
+                var phoneNormalized = phoneNormalizer.Normalize(candidate.PhoneRaw) ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(phoneNormalized))
+                {
+                    skippedPersonDuplicates++;
+                    continue;
+                }
+
+                var fullNameKey = ResponsePhoneWatchEvaluator.BuildFullNameKey(candidate.FullName);
+                if (string.IsNullOrWhiteSpace(fullNameKey))
+                {
+                    skippedPersonDuplicates++;
+                    continue;
+                }
+
+                // Идентичность только субпрофиль + ФИО (AccountId/SourceResponseId динамические — не используем).
+                var existingObs = await _phoneObservationStore
+                    .GetAsync(candidate.AvitoSubProfileId, fullNameKey, cancellationToken)
+                    .ConfigureAwait(false);
+                var decision = ResponsePhoneWatchEvaluator.Evaluate(
+                    existingObs,
+                    candidate.AvitoSubProfileId,
+                    fullNameKey,
+                    candidate.PhoneRaw,
+                    phoneNormalized,
+                    phoneUnchangedHours,
+                    utcNow);
+
+                await _phoneObservationStore
+                    .UpsertAsync(decision.NextObservation, cancellationToken)
+                    .ConfigureAwait(false);
+
+                // Skip: первый проход (запомнили) / ждём N ч / уже закрыт после «не менялся».
+                if (decision.Action == ResponsePhoneWatchAction.Skip)
+                {
+                    skippedPersonDuplicates++;
+                    continue;
+                }
+
+                ApplyPhoneWatchDecision(candidate, decision, phoneNormalized);
                 await PublishCandidateAsync(candidate, cancellationToken).ConfigureAwait(false);
                 publishedCount++;
                 publishedTotal++;
@@ -1086,6 +1128,79 @@ public sealed class WorkerMonitoringService(
         response.CreatedAt = response.CreatedAt == default ? response.CollectedAt : response.CreatedAt;
 
         await candidateSink.PublishAsync(response, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Проставляет метрики номера и синтетический SourceResponseId для событий смены/стабильности
+    /// (Avito ID динамический — не используем его как ключ идентичности).
+    /// </summary>
+    private static void ApplyPhoneWatchDecision(
+        CandidateResponse candidate,
+        ResponsePhoneWatchDecision decision,
+        string phoneNormalized)
+    {
+        candidate.PhoneNormalized = phoneNormalized;
+        switch (decision.Action)
+        {
+            case ResponsePhoneWatchAction.PublishPhoneChanged:
+                candidate.PhoneMetricKind = ResponsePhoneMetricKinds.PhoneChanged;
+                candidate.PreviousPhoneRaw = decision.PreviousPhoneRaw;
+                candidate.PreviousPhoneNormalized = decision.PreviousPhoneNormalized;
+                candidate.PhoneChangedAtUtc = decision.PhoneChangedAtUtc ?? DateTime.UtcNow;
+                candidate.PhoneUnchangedHours = null;
+                candidate.SourceResponseId = BuildPhoneMetricSourceId(
+                    "phone-chg",
+                    candidate.AvitoSubProfileId,
+                    candidate.FullName,
+                    decision.PreviousPhoneNormalized,
+                    phoneNormalized);
+                break;
+
+            case ResponsePhoneWatchAction.PublishPhoneUnchanged:
+                candidate.PhoneMetricKind = ResponsePhoneMetricKinds.PhoneUnchanged;
+                candidate.PreviousPhoneRaw = null;
+                candidate.PreviousPhoneNormalized = null;
+                candidate.PhoneChangedAtUtc = null;
+                candidate.PhoneUnchangedHours = decision.UnchangedHours;
+                candidate.SourceResponseId = BuildPhoneMetricSourceId(
+                    "phone-stable",
+                    candidate.AvitoSubProfileId,
+                    candidate.FullName,
+                    phoneNormalized,
+                    null);
+                break;
+
+            default:
+                candidate.PhoneMetricKind = ResponsePhoneMetricKinds.None;
+                candidate.PreviousPhoneRaw = null;
+                candidate.PreviousPhoneNormalized = null;
+                candidate.PhoneUnchangedHours = null;
+                candidate.PhoneChangedAtUtc = null;
+                break;
+        }
+    }
+
+    private static string BuildPhoneMetricSourceId(
+        string prefix,
+        string? subProfileId,
+        string fullName,
+        string? phoneA,
+        string? phoneB)
+    {
+        var nameKey = ResponsePhoneWatchEvaluator.BuildFullNameKey(fullName);
+        var sub = (subProfileId ?? string.Empty).Trim();
+        var a = (phoneA ?? string.Empty).Trim();
+        var b = (phoneB ?? string.Empty).Trim();
+        var payload = string.Join('\u001f', sub, nameKey, a, b);
+        // Короткий стабильный id без SourceResponseId Avito.
+        uint hash = 2166136261;
+        foreach (var ch in payload)
+        {
+            hash ^= ch;
+            hash *= 16777619;
+        }
+
+        return $"{prefix}:{hash:x8}";
     }
 
     private static bool IsAdsPowerAccount(AvitoAccount account) =>

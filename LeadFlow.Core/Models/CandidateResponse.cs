@@ -51,4 +51,11 @@ public sealed class CandidateResponse
     /// <summary>Момент сбора отклика воркером.</summary>
     public DateTime CollectedAt { get; set; } = DateTime.UtcNow;
     public DateTime? ProcessedAt { get; set; }
+
+    /// <summary>Метрика номера: <see cref="Orbita.Contracts.ResponsePhoneMetricKinds"/>.</summary>
+    public string PhoneMetricKind { get; set; } = string.Empty;
+    public string? PreviousPhoneRaw { get; set; }
+    public string? PreviousPhoneNormalized { get; set; }
+    public int? PhoneUnchangedHours { get; set; }
+    public DateTime? PhoneChangedAtUtc { get; set; }
 }

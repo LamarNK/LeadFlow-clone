@@ -93,6 +93,12 @@ public sealed class WorkerEntity
     /// <summary>Текст автоответа в чатах Avito.</summary>
     public string? MessengerAutoReplyMessage { get; set; }
 
+    /// <summary>
+    /// Через сколько часов без смены номера слать метрику «не менялся».
+    /// null — default 24; 0 — не слать стабильность (смену номера всё равно трекаем).
+    /// </summary>
+    public int? PhoneUnchangedHours { get; set; }
+
     public double? LastCpuPercent { get; set; }
     public double? LastRamPercent { get; set; }
     public long? LastRamUsedMb { get; set; }
@@ -303,6 +309,13 @@ public sealed class CandidateResponseEntity
     /// <summary>Момент сбора отклика воркером / записи в Орбиту.</summary>
     public DateTime CollectedAt { get; set; }
     public DateTime? ProcessedAt { get; set; }
+
+    /// <summary>Метрика номера: <see cref="ResponsePhoneMetricKinds"/>.</summary>
+    public string PhoneMetricKind { get; set; } = string.Empty;
+    public string PreviousPhoneRaw { get; set; } = string.Empty;
+    public string PreviousPhoneNormalized { get; set; } = string.Empty;
+    public int? PhoneUnchangedHours { get; set; }
+    public DateTime? PhoneChangedAtUtc { get; set; }
 
     public CandidatePersonEntity Person { get; set; } = null!;
     public OfficeEntity Office { get; set; } = null!;

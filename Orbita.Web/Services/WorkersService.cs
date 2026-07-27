@@ -224,6 +224,7 @@ public sealed class WorkersService(
         string? autoScheduleToLocalTime = null,
         bool messengerAutoReplyEnabled = false,
         string? messengerAutoReplyMessage = null,
+        int? phoneUnchangedHours = null,
         CancellationToken ct = default) =>
         api.UpdateWorkerSettingsAsync(
             workerId,
@@ -244,6 +245,7 @@ public sealed class WorkersService(
             autoScheduleToLocalTime,
             messengerAutoReplyEnabled,
             messengerAutoReplyMessage,
+            phoneUnchangedHours,
             ct);
 
     public Task<(bool Success, string? Error)> UpdateWorkerAccountAsync(

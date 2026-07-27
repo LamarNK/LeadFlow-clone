@@ -324,6 +324,14 @@ namespace Orbita.Api.Data.Migrations
                     b.Property<Guid>("PersonId")
                         .HasColumnType("uuid");
 
+                    b.Property<DateTime?>("PhoneChangedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("PhoneMetricKind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
                     b.Property<string>("PhoneNormalized")
                         .IsRequired()
                         .HasColumnType("text");
@@ -331,6 +339,19 @@ namespace Orbita.Api.Data.Migrations
                     b.Property<string>("PhoneRaw")
                         .IsRequired()
                         .HasColumnType("text");
+
+                    b.Property<int?>("PhoneUnchangedHours")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("PreviousPhoneNormalized")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("PreviousPhoneRaw")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
 
                     b.Property<DateTime?>("ProcessedAt")
                         .HasColumnType("timestamp with time zone");
@@ -1142,6 +1163,9 @@ namespace Orbita.Api.Data.Migrations
                     b.Property<string>("MessengerAutoReplyMessage")
                         .HasMaxLength(2000)
                         .HasColumnType("character varying(2000)");
+
+                    b.Property<int?>("PhoneUnchangedHours")
+                        .HasColumnType("integer");
 
                     b.Property<string>("ResponseHighlightAgeBuckets")
                         .HasMaxLength(256)

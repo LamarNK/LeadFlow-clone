@@ -181,6 +181,13 @@
                             {
                                 <span>@phoneDisplay</span>
                             }
+                            @if (!string.IsNullOrWhiteSpace(row.PhoneMetricLabel))
+                            {
+                                var phoneMetricTone = row.PhoneMetricKind == ResponsePhoneMetricKinds.PhoneChanged
+                                    ? "responses-phone-metric--changed"
+                                    : "responses-phone-metric--unchanged";
+                                <span class="responses-phone-metric @phoneMetricTone" title="@row.PhoneMetricLabel">@row.PhoneMetricLabel</span>
+                            }
                         </td>
                         <td class="responses-city" data-label="Город">@ResponseDisplay.FormatCity(row.City)</td>
                         <td class="responses-age" data-label="Возраст">

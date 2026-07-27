@@ -614,6 +614,7 @@ public sealed class OrbitaApiClient(
         string? autoScheduleToLocalTime = null,
         bool messengerAutoReplyEnabled = false,
         string? messengerAutoReplyMessage = null,
+        int? phoneUnchangedHours = null,
         CancellationToken ct = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Patch, $"api/v1/workers/{workerId}/settings");
@@ -635,7 +636,8 @@ public sealed class OrbitaApiClient(
             autoScheduleFromLocalTime,
             autoScheduleToLocalTime,
             messengerAutoReplyEnabled,
-            messengerAutoReplyMessage));
+            messengerAutoReplyMessage,
+            phoneUnchangedHours));
         using var response = await SendAuthenticatedAsync(request, ct);
         if (response is null)
         {

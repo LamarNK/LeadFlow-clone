@@ -75,7 +75,12 @@ public sealed record WorkerConfigDto(
     string? AutoScheduleFromLocalTime = null,
     string? AutoScheduleToLocalTime = null,
     bool MessengerAutoReplyEnabled = false,
-    string? MessengerAutoReplyMessage = null)
+    string? MessengerAutoReplyMessage = null,
+    /// <summary>
+    /// Через сколько часов без смены номера отправлять метрику «не менялся».
+    /// null — default 24; 0 — не отправлять метрику стабильности (смену номера всё равно трекаем).
+    /// </summary>
+    int? PhoneUnchangedHours = null)
 {
     public ResponseCollectionFilters ResponseFilters =>
         ResponseCollectionFilters.NormalizeLegacy(
@@ -86,6 +91,9 @@ public sealed record WorkerConfigDto(
             ResponseFilterMaxAgeMale,
             ResponseFilterMaxAgeFemale,
             ResponseFilterMaxResponseAgeDays);
+
+    public int EffectivePhoneUnchangedHours =>
+        ResponsePhoneWatchRules.ResolveUnchangedHours(PhoneUnchangedHours);
 }
 
 public sealed record WorkerAccountSyncItemDto(
@@ -114,7 +122,13 @@ public sealed record WorkerCandidateDto(
     string ChatMessagesJson,
     DateTime CreatedAt,
     string AvitoSubProfileName = "",
-    DateTime CollectedAt = default);
+    DateTime CollectedAt = default,
+    /// <summary>Метрика номера: <see cref="ResponsePhoneMetricKinds"/>.</summary>
+    string PhoneMetricKind = "",
+    string? PreviousPhoneRaw = null,
+    string? PreviousPhoneNormalized = null,
+    int? PhoneUnchangedHours = null,
+    DateTime? PhoneChangedAtUtc = null);
 
 public sealed record WorkerCandidateBatchRequest(
     IReadOnlyList<WorkerCandidateDto> Candidates);
@@ -179,7 +193,9 @@ public sealed record UpdateWorkerSettingsRequest(
     string? AutoScheduleFromLocalTime = null,
     string? AutoScheduleToLocalTime = null,
     bool MessengerAutoReplyEnabled = false,
-    string? MessengerAutoReplyMessage = null);
+    string? MessengerAutoReplyMessage = null,
+    /// <summary>Часов без смены номера до метрики «не менялся». null=24, 0=выкл стабильность.</summary>
+    int? PhoneUnchangedHours = null);
 
 public sealed record UpdateWorkerAccountRequest(bool IsEnabledInPanel);
 

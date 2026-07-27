@@ -366,10 +366,7 @@ FodyWeavers.xsd
 dist/
 .publish/
 
-# Локальные артефакты IDE/агента
-agent-tools/
-mcps/
-terminals/
+# Локальные вспомогательные файлы
 tmp-cookies.txt
 tmp-login.html
 .verify-build/

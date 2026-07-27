@@ -46,6 +46,7 @@ public interface IWorkersService
         string? autoScheduleToLocalTime = null,
         bool messengerAutoReplyEnabled = false,
         string? messengerAutoReplyMessage = null,
+        int? phoneUnchangedHours = null,
         CancellationToken ct = default);
     Task<(bool Success, string? Error)> UpdateWorkerAccountAsync(Guid workerId, Guid accountId, bool isEnabled, CancellationToken ct = default);
     Task<(bool Success, string? Error)> UpdateWorkerAccountCredentialsAsync(

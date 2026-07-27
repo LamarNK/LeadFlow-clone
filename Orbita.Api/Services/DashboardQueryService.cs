@@ -341,7 +341,8 @@ public sealed class DashboardQueryService(
             worker.AutoScheduleFromLocalTime,
             worker.AutoScheduleToLocalTime,
             worker.MessengerAutoReplyEnabled,
-            worker.MessengerAutoReplyMessage);
+            worker.MessengerAutoReplyMessage,
+            worker.PhoneUnchangedHours);
     }
 
     public async Task<IReadOnlyList<WorkerAccountDto>> GetWorkerAccountsAsync(

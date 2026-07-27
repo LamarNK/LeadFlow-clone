@@ -50,7 +50,8 @@ public sealed class OrbitaConfigProvider(
                     Enabled = true,
                     Message = _cached.MessengerAutoReplyMessage ?? AvitoMessengerAutoReplySettings.DefaultMessage
                 }
-                : null
+                : null,
+            PhoneUnchangedHours = _cached.EffectivePhoneUnchangedHours
         };
     }
 

@@ -169,6 +169,8 @@ public sealed class WorkerDetailsViewModel
     public IReadOnlyList<string> AutoScheduleDayOptions { get; init; } = [];
     public bool MessengerAutoReplyEnabled { get; init; }
     public string? MessengerAutoReplyMessage { get; init; }
+    /// <summary>Часов без смены номера до метрики «не менялся». null — default 24; 0 — выкл.</summary>
+    public int? PhoneUnchangedHours { get; init; }
     public string EffectiveAdsPowerApiBaseUrl =>
         string.IsNullOrWhiteSpace(AdsPowerApiBaseUrl) ? DefaultAdsPowerApiBaseUrl : AdsPowerApiBaseUrl;
     public WorkerSystemPanelViewModel System { get; init; } = new();

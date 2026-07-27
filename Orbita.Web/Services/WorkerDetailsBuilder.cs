@@ -88,6 +88,8 @@ internal static class WorkerDetailsBuilder
             AutoScheduleDayOptions = WorkerScheduleRules.AllowedDays,
             MessengerAutoReplyEnabled = worker.MessengerAutoReplyEnabled,
             MessengerAutoReplyMessage = worker.MessengerAutoReplyMessage,
+            PhoneUnchangedHours = worker.PhoneUnchangedHours
+                ?? ResponsePhoneWatchRules.DefaultUnchangedHours,
             System = BuildSystemPanel(worker, extra),
             Logs = logs,
             CurrentActivity = WorkerActivityPresenter.Present(

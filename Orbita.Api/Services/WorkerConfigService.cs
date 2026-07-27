@@ -107,7 +107,8 @@ public sealed class WorkerConfigService(
             worker.AutoScheduleFromLocalTime,
             worker.AutoScheduleToLocalTime,
             worker.MessengerAutoReplyEnabled,
-            worker.MessengerAutoReplyMessage);
+            worker.MessengerAutoReplyMessage,
+            worker.PhoneUnchangedHours);
     }
 
     public async Task<bool> SyncAccountsAsync(
@@ -241,6 +242,7 @@ public sealed class WorkerConfigService(
         var autoReplyMessage = NormalizeAutoReplyMessage(request.MessengerAutoReplyMessage);
         worker.MessengerAutoReplyEnabled = request.MessengerAutoReplyEnabled && !string.IsNullOrWhiteSpace(autoReplyMessage);
         worker.MessengerAutoReplyMessage = autoReplyMessage;
+        worker.PhoneUnchangedHours = ResponsePhoneWatchRules.ClampUnchangedHours(request.PhoneUnchangedHours);
 
         // Legacy field: keep only when both genders share the same limit (old workers / DTO).
         worker.ResponseFilterMaxAge =

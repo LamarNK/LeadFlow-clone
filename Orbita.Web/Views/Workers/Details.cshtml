@@ -103,13 +103,7 @@
                     <i class="fa-solid fa-rotate-right" aria-hidden="true"></i>
                     <span>Перезапустить</span>
                 </button>
-                <a class="worker-refresh-btn worker-browsers-btn"
-                   href="@Url.Action("Browsers", "Workers", new { id = Model.WorkerId })"
-                   target="_blank"
-                   rel="noopener noreferrer">
-                    <i class="fa-solid fa-table-cells-large" aria-hidden="true"></i>
-                    <span>Активные браузеры</span>
-                </a>
+                @* Временно скрыто: маршрут и страница просмотра браузеров сохранены для последующего включения. *@
             }
             <div class="worker-actions-menu" data-row-menu>
                 <button type="button" class="worker-actions-trigger row-menu-btn" aria-label="Действия с воркером" aria-expanded="false" aria-haspopup="true">
@@ -313,6 +307,26 @@
                                    inputmode="numeric" />
                             <span class="worker-settings-hint">
                                 Отклики, созданные на Avito раньше этого срока, не собираются. По дате отклика из чата. Пусто — без ограничения.
+                            </span>
+                        </label>
+
+                        <span class="worker-settings-subsection-title">Временные номера Avito</span>
+                        <label class="worker-settings-field" for="phoneUnchangedHours">
+                            <span class="worker-settings-label">Часов без смены номера</span>
+                            <input type="number"
+                                   id="phoneUnchangedHours"
+                                   name="phoneUnchangedHours"
+                                   class="worker-settings-input"
+                                   min="0"
+                                   max="720"
+                                   step="1"
+                                   value="@(Model.PhoneUnchangedHours?.ToString() ?? "24")"
+                                   placeholder="24"
+                                   inputmode="numeric" />
+                            <span class="worker-settings-hint">
+                                Первый проход только запоминает номер (в Орбиту не шлём). В отклики попадает только если номер сменился
+                                или не менялся дольше этого срока («номер не менялся N ч» — дальше игнор).
+                                Ключ: субпрофиль + ФИО (не ID отклика/аккаунта). 0 — не слать метку стабильности (смену всё равно трекаем). По умолчанию 24.
                             </span>
                         </label>
                     </div>

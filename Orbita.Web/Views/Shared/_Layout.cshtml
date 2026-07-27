@@ -42,11 +42,12 @@ else
     </script>
     <link rel="stylesheet" href="~/lib/fontawesome/css/all.min.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/orbita.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/orbita-mobile.css" asp-append-version="true" />
     @await RenderSectionAsync("Styles", required: false)
 </head>
 <body data-orbita-selected-office="@(OfficeContext.EffectiveOfficeId?.ToString("D") ?? "")">
 <div class="orbita-app">
-    <aside class="orbita-sidebar">
+    <aside class="orbita-sidebar" id="orbitaPrimaryNavigation">
         <div class="orbita-sidebar-header">
             <div class="orbita-sidebar-brand">
                 <img src="~/images/logo.png" alt="" asp-append-version="true" />
@@ -60,7 +61,7 @@ else
                 <i class="fa-solid fa-bars" aria-hidden="true"></i>
             </button>
         </div>
-        <nav class="orbita-nav">
+        <nav class="orbita-nav" aria-label="Основная навигация">
             @{
                 var ctrl = ViewContext.RouteData.Values["controller"]?.ToString();
             }

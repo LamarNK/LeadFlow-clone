@@ -15,6 +15,131 @@ public sealed class CandidateIngestionServiceTests
     private static readonly Guid WorkerId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
 
     [Fact]
+    public async Task IngestBatchAsync_PhoneChangedMetric_DoesNotMarkAsDuplicate()
+    {
+        await using var db = CreateDb();
+        SeedWorker(db, autoDistributionEnabled: false);
+
+        var person = TestCandidatePersonFactory.CreatePerson(
+            OfficeId,
+            fullName: "Гор Олег Александрович",
+            firstName: "Олег",
+            lastName: "Гор",
+            middleName: "Александрович",
+            age: 66,
+            city: "рабочий поселок Чик",
+            phoneRaw: "+79930099416",
+            phoneNormalized: "79930099416");
+        db.CandidatePersons.Add(person);
+        db.CandidateResponses.Add(TestCandidatePersonFactory.CreateResponse(
+            OfficeId,
+            person.Id,
+            WorkerId,
+            phone: "79930099416",
+            sourceResponseId: "existing-source",
+            fullName: "Гор Олег Александрович",
+            age: 66,
+            city: "рабочий поселок Чик"));
+        await db.SaveChangesAsync();
+
+        var sut = CreateService(db);
+        var request = new WorkerCandidateBatchRequest([
+            new WorkerCandidateDto(
+                Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc"),
+                "acc",
+                "Avito",
+                "phone-chg:abc",
+                "",
+                "Гор Олег Александрович",
+                66,
+                null,
+                "+79910001122",
+                "рабочий поселок Чик",
+                "Курьер",
+                "",
+                "",
+                "",
+                "",
+                "",
+                DateTime.UtcNow,
+                AvitoSubProfileName: "",
+                CollectedAt: default,
+                PhoneMetricKind: ResponsePhoneMetricKinds.PhoneChanged,
+                PreviousPhoneRaw: "+79930099416",
+                PreviousPhoneNormalized: "79930099416",
+                PhoneChangedAtUtc: DateTime.UtcNow)
+        ]);
+
+        var result = await sut.IngestBatchAsync(WorkerId, request);
+
+        Assert.Equal(0, result.SkippedDuplicates);
+        Assert.Equal(ResponseStatuses.ActionRequired, result.Items[0].Status);
+
+        var stored = await db.CandidateResponses.SingleAsync(x => x.SourceResponseId == "phone-chg:abc");
+        Assert.Equal(ResponsePhoneMetricKinds.PhoneChanged, stored.PhoneMetricKind);
+        Assert.Equal("79930099416", stored.PreviousPhoneNormalized);
+        Assert.False(stored.IsLocalDuplicate);
+        Assert.Equal(person.Id, stored.PersonId);
+    }
+
+    [Fact]
+    public async Task IngestBatchAsync_PhoneUnchangedMetric_StoresInformationalDuplicate()
+    {
+        await using var db = CreateDb();
+        SeedWorker(db, autoDistributionEnabled: false);
+
+        var person = TestCandidatePersonFactory.CreatePerson(
+            OfficeId,
+            fullName: "Гор Олег Александрович",
+            firstName: "Олег",
+            lastName: "Гор",
+            middleName: "Александрович",
+            age: 66,
+            city: "рабочий поселок Чик",
+            phoneRaw: "+79930099416",
+            phoneNormalized: "79930099416");
+        db.CandidatePersons.Add(person);
+        await db.SaveChangesAsync();
+
+        var sut = CreateService(db);
+        var request = new WorkerCandidateBatchRequest([
+            new WorkerCandidateDto(
+                Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc"),
+                "acc",
+                "Avito",
+                "phone-stable:abc",
+                "",
+                "Гор Олег Александрович",
+                66,
+                null,
+                "+79930099416",
+                "рабочий поселок Чик",
+                "Курьер",
+                "",
+                "",
+                "",
+                "",
+                "",
+                DateTime.UtcNow,
+                AvitoSubProfileName: "",
+                CollectedAt: default,
+                PhoneMetricKind: ResponsePhoneMetricKinds.PhoneUnchanged,
+                PhoneUnchangedHours: 48)
+        ]);
+
+        var result = await sut.IngestBatchAsync(WorkerId, request);
+
+        Assert.Equal(1, result.SkippedDuplicates);
+        Assert.Equal(ResponseStatuses.Duplicate, result.Items[0].Status);
+
+        var stored = await db.CandidateResponses.SingleAsync(x => x.SourceResponseId == "phone-stable:abc");
+        Assert.Equal(ResponsePhoneMetricKinds.PhoneUnchanged, stored.PhoneMetricKind);
+        Assert.Equal(48, stored.PhoneUnchangedHours);
+        Assert.True(stored.IsLocalDuplicate);
+        Assert.Contains("не менялся", stored.DuplicateSummary, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task IngestBatchAsync_SamePersonDifferentPhone_StoresDuplicateStatus()
     {
         await using var db = CreateDb();

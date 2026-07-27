@@ -95,7 +95,8 @@ public sealed record WorkerDetail(
     string? AutoScheduleFromLocalTime = null,
     string? AutoScheduleToLocalTime = null,
     bool MessengerAutoReplyEnabled = false,
-    string? MessengerAutoReplyMessage = null);
+    string? MessengerAutoReplyMessage = null,
+    int? PhoneUnchangedHours = null);
 
 public sealed record WorkerEventListItem(
     Guid Id,

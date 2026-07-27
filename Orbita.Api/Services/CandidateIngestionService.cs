@@ -149,7 +149,15 @@ public sealed class CandidateIngestionService(
             responseAt);
 
         var matchedPerson = await personMatch.FindMatchingPersonAsync(worker.OfficeId, profile, ct);
-        var isLocalDuplicate = matchedPerson is not null;
+        var phoneMetricKind = ResponsePhoneMetricKinds.Normalize(candidate.PhoneMetricKind);
+        // PhoneChanged — новый пункт с новым номером (не считаем FIO-дублем).
+        // PhoneUnchanged — информационная метка, без повторной отправки в Bitrix.
+        var isLocalDuplicate = matchedPerson is not null
+            && phoneMetricKind != ResponsePhoneMetricKinds.PhoneChanged;
+        if (phoneMetricKind == ResponsePhoneMetricKinds.PhoneUnchanged)
+        {
+            isLocalDuplicate = true;
+        }
 
         CandidatePersonEntity person;
         if (matchedPerson is not null)
@@ -204,7 +212,12 @@ public sealed class CandidateIngestionService(
             CreatedAt = responseAt,
             CollectedAt = collectedAt,
             Status = ResponseStatuses.InProgress,
-            BitrixEntityType = bitrixOptions.Value.EntityType
+            BitrixEntityType = bitrixOptions.Value.EntityType,
+            PhoneMetricKind = phoneMetricKind,
+            PreviousPhoneRaw = candidate.PreviousPhoneRaw?.Trim() ?? string.Empty,
+            PreviousPhoneNormalized = candidate.PreviousPhoneNormalized?.Trim() ?? string.Empty,
+            PhoneUnchangedHours = candidate.PhoneUnchangedHours,
+            PhoneChangedAtUtc = candidate.PhoneChangedAtUtc
         };
 
         db.CandidateResponses.Add(entity);
@@ -218,7 +231,18 @@ public sealed class CandidateIngestionService(
         if (isLocalDuplicate)
         {
             entity.Status = ResponseStatuses.Duplicate;
-            entity.DuplicateSummary = "Локальный дубль: найден существующий кандидат по ФИО.";
+            entity.DuplicateSummary = phoneMetricKind switch
+            {
+                ResponsePhoneMetricKinds.PhoneUnchanged =>
+                    ResponsePhoneMetricKinds.FormatLabel(
+                        phoneMetricKind,
+                        candidate.PhoneUnchangedHours),
+                ResponsePhoneMetricKinds.PhoneChanged =>
+                    ResponsePhoneMetricKinds.FormatLabel(
+                        phoneMetricKind,
+                        previousPhone: candidate.PreviousPhoneRaw ?? candidate.PreviousPhoneNormalized),
+                _ => "Локальный дубль: найден существующий кандидат по ФИО."
+            };
             await db.SaveChangesAsync(ct);
             return new WorkerCandidateIngestionItemResultDto(
                 entity.Id,

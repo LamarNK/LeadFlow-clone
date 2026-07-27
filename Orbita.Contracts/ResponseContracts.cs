@@ -48,7 +48,13 @@ public sealed record ResponseListItemDto(
     DateTime CreatedAt,
     DateTime CollectedAt,
     DateTime? ProcessedAt,
-    IReadOnlyList<ResponseBitrixDeliveryDto> BitrixDeliveries);
+    IReadOnlyList<ResponseBitrixDeliveryDto> BitrixDeliveries,
+    string PhoneMetricKind = "",
+    string? PreviousPhoneRaw = null,
+    string? PreviousPhoneNormalized = null,
+    int? PhoneUnchangedHours = null,
+    DateTime? PhoneChangedAtUtc = null,
+    string? PhoneMetricLabel = null);
 
 public sealed record ResponseDetailDto(
     Guid Id,
@@ -93,7 +99,13 @@ public sealed record ResponseDetailDto(
     DateTime CreatedAt,
     DateTime CollectedAt,
     DateTime? ProcessedAt,
-    IReadOnlyList<ResponseBitrixDeliveryDto> BitrixDeliveries);
+    IReadOnlyList<ResponseBitrixDeliveryDto> BitrixDeliveries,
+    string PhoneMetricKind = "",
+    string? PreviousPhoneRaw = null,
+    string? PreviousPhoneNormalized = null,
+    int? PhoneUnchangedHours = null,
+    DateTime? PhoneChangedAtUtc = null,
+    string? PhoneMetricLabel = null);
 
 public sealed record ResponsesPageDto(
     IReadOnlyList<ResponseListItemDto> Items,

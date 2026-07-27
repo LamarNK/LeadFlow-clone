@@ -271,7 +271,12 @@ public sealed class ResponsesQueryService(
                 ResponseHighlightAgeBuckets = x.Worker != null ? x.Worker.ResponseHighlightAgeBuckets : null,
                 x.CreatedAt,
                 x.CollectedAt,
-                x.ProcessedAt
+                x.ProcessedAt,
+                x.PhoneMetricKind,
+                x.PreviousPhoneRaw,
+                x.PreviousPhoneNormalized,
+                x.PhoneUnchangedHours,
+                x.PhoneChangedAtUtc
             })
             .ToListAsync(ct);
 
@@ -305,6 +310,10 @@ public sealed class ResponsesQueryService(
                 var bitrixDeliveries = deliveryLookup.TryGetValue(x.Id, out var loaded)
                     ? loaded
                     : [];
+                var phoneMetricLabel = ResponsePhoneMetricKinds.FormatLabel(
+                    x.PhoneMetricKind,
+                    x.PhoneUnchangedHours,
+                    string.IsNullOrWhiteSpace(x.PreviousPhoneRaw) ? x.PreviousPhoneNormalized : x.PreviousPhoneRaw);
                 return new ResponseListItemDto(
                     x.Id,
                     x.OfficeId,
@@ -345,7 +354,13 @@ public sealed class ResponsesQueryService(
                     x.CreatedAt,
                     x.CollectedAt,
                     x.ProcessedAt,
-                    bitrixDeliveries);
+                    bitrixDeliveries,
+                    x.PhoneMetricKind ?? string.Empty,
+                    string.IsNullOrWhiteSpace(x.PreviousPhoneRaw) ? null : x.PreviousPhoneRaw,
+                    string.IsNullOrWhiteSpace(x.PreviousPhoneNormalized) ? null : x.PreviousPhoneNormalized,
+                    x.PhoneUnchangedHours,
+                    x.PhoneChangedAtUtc,
+                    string.IsNullOrWhiteSpace(phoneMetricLabel) ? null : phoneMetricLabel);
             })
             .ToList();
 
@@ -666,6 +681,12 @@ public sealed class ResponsesQueryService(
             portalHost,
             entity.BitrixEntityType,
             entity.BitrixEntityId);
+        var phoneMetricLabel = ResponsePhoneMetricKinds.FormatLabel(
+            entity.PhoneMetricKind,
+            entity.PhoneUnchangedHours,
+            string.IsNullOrWhiteSpace(entity.PreviousPhoneRaw)
+                ? entity.PreviousPhoneNormalized
+                : entity.PreviousPhoneRaw);
         return new(
             entity.Id,
             entity.OfficeId,
@@ -715,6 +736,12 @@ public sealed class ResponsesQueryService(
             entity.CreatedAt,
             entity.CollectedAt,
             entity.ProcessedAt,
-            bitrixDeliveries ?? []);
+            bitrixDeliveries ?? [],
+            entity.PhoneMetricKind ?? string.Empty,
+            string.IsNullOrWhiteSpace(entity.PreviousPhoneRaw) ? null : entity.PreviousPhoneRaw,
+            string.IsNullOrWhiteSpace(entity.PreviousPhoneNormalized) ? null : entity.PreviousPhoneNormalized,
+            entity.PhoneUnchangedHours,
+            entity.PhoneChangedAtUtc,
+            string.IsNullOrWhiteSpace(phoneMetricLabel) ? null : phoneMetricLabel);
     }
 }

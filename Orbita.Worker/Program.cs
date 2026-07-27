@@ -151,6 +151,8 @@ internal static class Program
         host.Services.AddSingleton<IAvitoResponseSource, AvitoResponseSource>();
         host.Services.AddSingleton<WorkerAccountRuntimeStore>();
         host.Services.AddSingleton<EphemeralDedupCache>();
+        host.Services.AddSingleton<ResponsePhoneObservationStore>();
+        host.Services.AddSingleton<IResponsePhoneObservationStore>(sp => sp.GetRequiredService<ResponsePhoneObservationStore>());
         host.Services.AddSingleton<WorkerCandidateOutbox>();
         host.Services.AddSingleton<OrbitaMonitoringRepository>();
         host.Services.AddSingleton<OrbitaCandidateDuplicateRepository>();

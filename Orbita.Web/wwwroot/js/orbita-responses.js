@@ -824,6 +824,15 @@
             var phoneCell = phoneHidden
                 ? '<span class="responses-phone-hidden">Скрыт</span>'
                 : '<span>' + shared.escapeHtml(phoneDisplay) + '</span>';
+            var phoneMetricLabel = readRowValue(row, 'phoneMetricLabel') || '';
+            var phoneMetricKind = readRowValue(row, 'phoneMetricKind') || '';
+            if (phoneMetricLabel) {
+                var phoneMetricTone = phoneMetricKind === 'PhoneChanged'
+                    ? 'responses-phone-metric--changed'
+                    : 'responses-phone-metric--unchanged';
+                phoneCell += '<span class="responses-phone-metric ' + phoneMetricTone + '" title="' +
+                    shared.escapeAttr(phoneMetricLabel) + '">' + shared.escapeHtml(phoneMetricLabel) + '</span>';
+            }
             var city = readRowValue(row, 'city');
             var cityDisplay = city && String(city).trim() ? shared.escapeHtml(city) : '—';
             var age = readRowValue(row, 'age');

@@ -170,6 +170,7 @@ public sealed class WorkersController(IWorkersService workers) : Controller
         string? autoScheduleToLocalTime = null,
         bool messengerAutoReplyEnabled = false,
         string? messengerAutoReplyMessage = null,
+        int? phoneUnchangedHours = null,
         CancellationToken ct = default)
     {
         var responseHighlightAgeBucketsCsv = responseHighlightAgeBuckets is { Length: > 0 }
@@ -198,6 +199,7 @@ public sealed class WorkersController(IWorkersService workers) : Controller
             autoScheduleToLocalTime,
             messengerAutoReplyEnabled,
             messengerAutoReplyMessage,
+            phoneUnchangedHours,
             ct);
         if (!success)
         {

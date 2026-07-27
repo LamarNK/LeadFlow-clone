@@ -159,6 +159,8 @@ internal static class ResponsesIndexBuilder
                 item.BitrixEntityId),
             IsHighlighted = item.IsHighlighted,
             HighlightLabel = item.HighlightLabel,
+            PhoneMetricKind = string.IsNullOrWhiteSpace(item.PhoneMetricKind) ? null : item.PhoneMetricKind,
+            PhoneMetricLabel = item.PhoneMetricLabel,
             CanSend = canSend,
             CanResend = canSend
         };
@@ -202,7 +204,13 @@ internal static class ResponsesIndexBuilder
             detail.CreatedAt,
             detail.CollectedAt,
             detail.ProcessedAt,
-            detail.BitrixDeliveries);
+            detail.BitrixDeliveries,
+            detail.PhoneMetricKind,
+            detail.PreviousPhoneRaw,
+            detail.PreviousPhoneNormalized,
+            detail.PhoneUnchangedHours,
+            detail.PhoneChangedAtUtc,
+            detail.PhoneMetricLabel);
         var canSend = CanSendToBitrix(detail.Status);
         var statusLabel = MapStatusLabel(listItem);
         return new ResponseDetailViewModel
@@ -231,6 +239,8 @@ internal static class ResponsesIndexBuilder
             Status = detail.Status,
             StatusLabel = statusLabel,
             StatusTone = MapStatusTone(detail.Status),
+            PhoneMetricKind = string.IsNullOrWhiteSpace(detail.PhoneMetricKind) ? null : detail.PhoneMetricKind,
+            PhoneMetricLabel = detail.PhoneMetricLabel,
             DuplicateSummary = detail.DuplicateSummary,
             BitrixEntityId = detail.BitrixEntityId,
             BitrixEntityUrl = detail.BitrixEntityUrl,

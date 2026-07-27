@@ -79,6 +79,8 @@ public sealed class ResponseRowViewModel
     public string CardCopy { get; init; } = string.Empty;
     public bool IsHighlighted { get; init; }
     public string? HighlightLabel { get; init; }
+    public string? PhoneMetricKind { get; init; }
+    public string? PhoneMetricLabel { get; init; }
     public bool CanSend { get; init; }
     public bool CanResend { get; init; }
 }
@@ -128,6 +130,8 @@ public sealed class ResponseDetailViewModel
     public string Status { get; init; } = string.Empty;
     public string StatusLabel { get; init; } = string.Empty;
     public string StatusTone { get; init; } = "unique";
+    public string? PhoneMetricKind { get; init; }
+    public string? PhoneMetricLabel { get; init; }
     public string? DuplicateSummary { get; init; }
     public string? BitrixEntityId { get; init; }
     public string? BitrixEntityUrl { get; init; }
