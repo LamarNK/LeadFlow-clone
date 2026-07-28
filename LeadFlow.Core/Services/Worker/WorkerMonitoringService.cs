@@ -598,9 +598,18 @@ public sealed class WorkerMonitoringService(
                 return CandidateBatchPublishResult.Empty;
             }
 
-            // В Орбиту шлём ТОЛЬКО метрики номера (смена / не менялся N ч).
-            // Первый проход — только локальный phone-watch (субпрофиль+ФИО), без отправки.
-            // FIO person-match lookup не нужен: «New» при первом появлении больше не публикуем.
+            var profiles = readyCandidates
+                .Select(response => new CandidateLookupProfileDto(
+                    response.FullName,
+                    response.Age,
+                    response.City ?? string.Empty,
+                    phoneNormalizer.Normalize(response.PhoneRaw) ?? string.Empty,
+                    response.CreatedAt == default ? null : response.CreatedAt))
+                .ToList();
+            var matchedProfiles = await duplicateRepository
+                .GetMatchedProfileIndicesAsync(profiles, account.Id, cancellationToken)
+                .ConfigureAwait(false);
+
             var publishedCount = 0;
             var skippedPersonDuplicates = 0;
             var filteredAge = 0;
@@ -613,6 +622,12 @@ public sealed class WorkerMonitoringService(
                 if (cancellationToken.IsCancellationRequested)
                 {
                     break;
+                }
+
+                if (matchedProfiles.Contains(i))
+                {
+                    skippedPersonDuplicates++;
+                    continue;
                 }
 
                 var candidate = readyCandidates[i];

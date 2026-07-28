@@ -90,23 +90,10 @@ public sealed class CandidateIngestionServiceTests
     }
 
     [Fact]
-    public async Task IngestBatchAsync_PhoneUnchangedMetric_StoresInformationalDuplicate()
+    public async Task IngestBatchAsync_PhoneUnchangedMetric_WithoutPersonMatch_DoesNotMarkAsDuplicate()
     {
         await using var db = CreateDb();
         SeedWorker(db, autoDistributionEnabled: false);
-
-        var person = TestCandidatePersonFactory.CreatePerson(
-            OfficeId,
-            fullName: "Гор Олег Александрович",
-            firstName: "Олег",
-            lastName: "Гор",
-            middleName: "Александрович",
-            age: 66,
-            city: "рабочий поселок Чик",
-            phoneRaw: "+79930099416",
-            phoneNormalized: "79930099416");
-        db.CandidatePersons.Add(person);
-        await db.SaveChangesAsync();
 
         var sut = CreateService(db);
         var request = new WorkerCandidateBatchRequest([
@@ -136,14 +123,14 @@ public sealed class CandidateIngestionServiceTests
 
         var result = await sut.IngestBatchAsync(WorkerId, request);
 
-        Assert.Equal(1, result.SkippedDuplicates);
-        Assert.Equal(ResponseStatuses.Duplicate, result.Items[0].Status);
+        Assert.Equal(0, result.SkippedDuplicates);
+        Assert.Equal(ResponseStatuses.ActionRequired, result.Items[0].Status);
 
         var stored = await db.CandidateResponses.SingleAsync(x => x.SourceResponseId == "phone-stable:abc");
         Assert.Equal(ResponsePhoneMetricKinds.PhoneUnchanged, stored.PhoneMetricKind);
         Assert.Equal(48, stored.PhoneUnchangedHours);
-        Assert.True(stored.IsLocalDuplicate);
-        Assert.Contains("не менялся", stored.DuplicateSummary, StringComparison.OrdinalIgnoreCase);
+        Assert.False(stored.IsLocalDuplicate);
+        Assert.Equal(ResponseStatuses.ActionRequired, stored.Status);
     }
 
     [Fact]

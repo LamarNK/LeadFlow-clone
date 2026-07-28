@@ -152,13 +152,9 @@ public sealed class CandidateIngestionService(
         var matchedPerson = await personMatch.FindMatchingPersonAsync(worker.OfficeId, profile, ct);
         var phoneMetricKind = ResponsePhoneMetricKinds.Normalize(candidate.PhoneMetricKind);
         // PhoneChanged — новый пункт с новым номером (не считаем FIO-дублем).
-        // PhoneUnchanged — информационная метка, без повторной отправки в Bitrix.
+        // PhoneUnchanged — метка стабильного номера; дублем её делает только совпадение кандидата.
         var isLocalDuplicate = matchedPerson is not null
             && phoneMetricKind != ResponsePhoneMetricKinds.PhoneChanged;
-        if (phoneMetricKind == ResponsePhoneMetricKinds.PhoneUnchanged)
-        {
-            isLocalDuplicate = true;
-        }
 
         CandidatePersonEntity person;
         if (matchedPerson is not null)
