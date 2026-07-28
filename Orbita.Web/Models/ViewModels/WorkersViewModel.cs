@@ -150,6 +150,7 @@ public sealed class WorkerDetailsViewModel
     public PageHeaderViewModel Header { get; init; } = new();
     public Guid WorkerId { get; init; }
     public int MaxConcurrentAccounts { get; init; } = 1;
+    public int MaxConcurrentAccountsLimit { get; init; } = 1;
     public string? AdsPowerApiBaseUrl { get; init; }
     public string? AdsPowerApiKey { get; init; }
     public bool ResponseFilterEnabled { get; init; }

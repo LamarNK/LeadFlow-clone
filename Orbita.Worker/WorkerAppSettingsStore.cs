@@ -140,7 +140,7 @@ public sealed class WorkerAppSettingsStore
         settings.DemoModeEnabled = false;
         settings.MonitoringSafety ??= new MonitoringSafetyOptions();
         settings.MonitoringSafety.MaxConcurrentAccounts =
-            Math.Clamp(settings.MonitoringSafety.MaxConcurrentAccounts, 1, 10);
+            Math.Max(settings.MonitoringSafety.MaxConcurrentAccounts, 1);
         settings.MonitoringSafety.CheckIntervalSeconds =
             Math.Clamp(settings.MonitoringSafety.CheckIntervalSeconds, 30, 3600);
         settings.Avito ??= new AvitoSettings();

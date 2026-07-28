@@ -226,6 +226,41 @@ public sealed class WorkerConfigServiceTests
     }
 
     [Fact]
+    public async Task UpdateSettingsAsync_RejectsParallelismThatExceedsWorkerRamCapacity()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+        var worker = await db.Workers.SingleAsync();
+        worker.LastRamTotalMb = WorkerParallelismRules.RamMbPerBrowser * 3;
+        await db.SaveChangesAsync();
+
+        var sut = CreateService(db);
+        var (config, error) = await sut.UpdateSettingsAsync(
+            WorkerId,
+            new UpdateWorkerSettingsRequest(MaxConcurrentAccounts: 4),
+            OfficeScope.ForOffice(OfficeId));
+
+        Assert.Null(config);
+        Assert.Contains("не более 3", error);
+    }
+
+    [Fact]
+    public async Task GetConfigForWorkerAsync_CapsParallelismToWorkerRamCapacity()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+        var worker = await db.Workers.SingleAsync();
+        worker.MaxConcurrentAccounts = 8;
+        worker.LastRamTotalMb = WorkerParallelismRules.RamMbPerBrowser * 3;
+        await db.SaveChangesAsync();
+
+        var config = await CreateService(db).GetConfigForWorkerAsync(WorkerId, OfficeScope.ForOffice(OfficeId));
+
+        Assert.NotNull(config);
+        Assert.Equal(3, config!.MaxConcurrentAccounts);
+    }
+
+    [Fact]
     public async Task UpdateSettingsAsync_AutoEnablesFiltersAndPersistsHighlightSettings()
     {
         await using var db = CreateDb();

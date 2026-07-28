@@ -83,9 +83,15 @@ public sealed class WorkerConfigService(
             .GetPendingForWorkerAsync(worker.Id, ct)
             .ConfigureAwait(false);
 
+        var configuredParallelism = worker.MaxConcurrentAccounts;
+        var ramBasedParallelism = WorkerParallelismRules.GetMaximumConcurrentAccounts(worker.LastRamTotalMb);
+        var effectiveParallelism = ramBasedParallelism is null
+            ? configuredParallelism
+            : Math.Min(configuredParallelism, ramBasedParallelism.Value);
+
         return new WorkerConfigDto(
             worker.Id,
-            worker.MaxConcurrentAccounts,
+            effectiveParallelism,
             worker.AdsPowerApiBaseUrl,
             worker.AdsPowerApiKey,
             accounts,
@@ -191,6 +197,14 @@ public sealed class WorkerConfigService(
         if (worker is null)
         {
             return (null, "Воркер не найден.");
+        }
+
+        var maximumConcurrentAccounts = WorkerParallelismRules.GetMaximumConcurrentAccounts(worker.LastRamTotalMb);
+        if (maximumConcurrentAccounts is not null && request.MaxConcurrentAccounts > maximumConcurrentAccounts)
+        {
+            return (null,
+                $"Для этого воркера доступно не более {maximumConcurrentAccounts} параллельных браузеров " +
+                $"({WorkerParallelismRules.RamMbPerBrowser} МБ ОЗУ на браузер).");
         }
 
         if (!TryNormalizeAdsPowerApiBaseUrl(request.AdsPowerApiBaseUrl, out var normalizedBaseUrl, out var baseUrlError))

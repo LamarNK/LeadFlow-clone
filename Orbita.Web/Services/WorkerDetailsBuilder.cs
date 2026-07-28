@@ -42,6 +42,9 @@ internal static class WorkerDetailsBuilder
         var activePct = totalAccounts == 0
             ? 0
             : activeAccounts * 100 / totalAccounts;
+        var ramBasedParallelism = WorkerParallelismRules.GetMaximumConcurrentAccounts(worker.LastRamTotalMb);
+        var maxConcurrentAccountsLimit = ramBasedParallelism ?? Math.Max(worker.MaxConcurrentAccounts, 1);
+        var effectiveParallelism = Math.Min(worker.MaxConcurrentAccounts, maxConcurrentAccountsLimit);
 
         var activityChart = stats?.HourlyActivity.Count > 0
             ? DashboardChartsBuilder.FromHourlyActivity(stats.HourlyActivity)
@@ -69,7 +72,8 @@ internal static class WorkerDetailsBuilder
             PeriodStats = BuildPeriodStats(stats, responses, duplicates, errors),
             Accounts = accounts,
             Sort = sort ?? TableSortState.Create("account", descending: false),
-            MaxConcurrentAccounts = worker.MaxConcurrentAccounts,
+            MaxConcurrentAccounts = effectiveParallelism,
+            MaxConcurrentAccountsLimit = maxConcurrentAccountsLimit,
             AdsPowerApiBaseUrl = worker.AdsPowerApiBaseUrl,
             AdsPowerApiKey = worker.AdsPowerApiKey,
             ResponseFilterEnabled = worker.ResponseFilterEnabled,

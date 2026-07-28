@@ -9,6 +9,6 @@ public sealed class MonitoringSafetyOptions
     public bool StopOnAuthRequired { get; set; } = true;
     public bool AutoStartMonitoring { get; set; }
 
-    /// <summary>Сколько аккаунтов Авито обрабатывать параллельно в одном цикле мониторинга (1…10).</summary>
+    /// <summary>Сколько аккаунтов Авито обрабатывать параллельно в одном цикле мониторинга (не меньше 1).</summary>
     public int MaxConcurrentAccounts { get; set; } = 1;
 }

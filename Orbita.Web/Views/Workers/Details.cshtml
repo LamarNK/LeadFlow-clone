@@ -213,10 +213,11 @@
                         <label class="worker-settings-field" for="maxConcurrentAccounts">
                             <span class="worker-settings-label">Аккаунтов одновременно</span>
                             <div class="worker-parallel-controls">
-                                <input type="range" id="maxConcurrentAccounts" name="maxConcurrentAccounts" min="1" max="10" value="@Model.MaxConcurrentAccounts" />
+                                <input type="range" id="maxConcurrentAccounts" name="maxConcurrentAccounts" min="1" max="@Model.MaxConcurrentAccountsLimit" value="@Model.MaxConcurrentAccounts" />
                                 <output id="maxConcurrentAccountsOut">@Model.MaxConcurrentAccounts</output>
                             </div>
                             <span class="worker-settings-hint">
+                                Лимит рассчитывается автоматически по ОЗУ воркера.
                                 Применяется в текущем цикле перед стартом следующего аккаунта. Уже открытые браузеры не закрываются при уменьшении лимита.
                             </span>
                         </label>

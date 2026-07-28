@@ -95,12 +95,9 @@ internal static class Program
             return;
         }
 
-        var appSettingsStore = new WorkerAppSettingsStore();
-        var appSettings = appSettingsStore.LoadOrCreate();
         var host = Host.CreateApplicationBuilder();
         host.Services.AddSingleton(credentials);
         host.Services.AddSingleton(store);
-        host.Services.AddSingleton(appSettings);
         host.Services.AddSingleton<WorkerRuntimeState>();
         host.Services.AddHttpClient(nameof(OrbitaApiClient));
         host.Services.AddSingleton<OrbitaApiClient>(sp =>
@@ -186,9 +183,7 @@ internal static class Program
             orchestrator,
             runtimeState,
             store,
-            credentials,
-            appSettingsStore,
-            appSettings));
+            credentials));
 
         WorkerLifecycleLog.InfoAsync(
             "Worker lifecycle: трей закрыт, остановка хоста",

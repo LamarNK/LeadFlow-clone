@@ -33,7 +33,6 @@ public sealed class WorkerMonitoringService(
     IWorkerActivityReporter activityReporter,
     IWorkerPendingUpdateCoordinator pendingUpdateCoordinator,
     IBrowserMonitorSource browserMonitorSource,
-    AppSettings workerAppSettings,
     IResponsePhoneObservationStore? phoneObservationStore = null) : IWorkerMonitoringService
 {
     private readonly IResponsePhoneObservationStore _phoneObservationStore =
@@ -313,7 +312,7 @@ public sealed class WorkerMonitoringService(
                 configProvider.InvalidateConfigCache();
                 var config = await configProvider.GetConfigAsync(cancellationToken).ConfigureAwait(false);
                 var settings = ToAppSettings(config);
-                parallelism = Math.Clamp(config.MaxConcurrentAccounts, 1, 10);
+                parallelism = Math.Max(config.MaxConcurrentAccounts, 1);
 
                 if (parallelism != lastLoggedParallelism)
                 {
@@ -1320,7 +1319,7 @@ public sealed class WorkerMonitoringService(
         return DateTime.UtcNow - last.Value >= TimeSpan.FromMinutes(MonitoringTiming.ActiveAdsRefreshIntervalMinutes);
     }
 
-    private AppSettings ToAppSettings(WorkerMonitoringConfig config) => new()
+    private static AppSettings ToAppSettings(WorkerMonitoringConfig config) => new()
     {
         DemoModeEnabled = config.DemoModeEnabled,
         DuplicateScope = config.DuplicateScope,
@@ -1329,7 +1328,7 @@ public sealed class WorkerMonitoringService(
         Avito = new AvitoSettings
         {
             MessengerAutoReply = config.MessengerAutoReply?.Clone()
-                ?? workerAppSettings.Avito.MessengerAutoReply.Clone()
+                ?? new AvitoMessengerAutoReplySettings { Enabled = false }
         }
     };
 
