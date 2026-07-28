@@ -10,6 +10,11 @@ public sealed class OfficeEntity
     public DateTime CreatedAtUtc { get; set; }
     public bool IsEnabled { get; set; } = true;
     public bool BitrixTransmissionEnabled { get; set; } = true;
+    /// <summary>Включает параллельный CRM-пилот для новых откликов офиса.</summary>
+    public bool CrmEnabled { get; set; }
+
+    /// <summary>Требовать комментарий при смене этапа CRM.</summary>
+    public bool CrmRequireStageComment { get; set; }
     public string? BitrixWebhookUrlProtected { get; set; }
     public string? BitrixPortalHost { get; set; }
     public string BitrixValidationStatus { get; set; } = BitrixValidationStatuses.NotConfigured;
@@ -26,6 +31,9 @@ public sealed class PanelUserProfileEntity
 {
     public string UserId { get; set; } = string.Empty;
     public Guid? OfficeId { get; set; }
+    public int CrmCapacity { get; set; } = 10;
+    public bool CrmShiftActive { get; set; }
+    public DateTime? CrmLastAutoAssignmentAtUtc { get; set; }
 
     public OfficeEntity? Office { get; set; }
 }
@@ -437,4 +445,60 @@ public sealed class PanelAuditLogEntity
     public string? TargetId { get; set; }
     public string? Details { get; set; }
     public string? IpAddress { get; set; }
+}
+
+public sealed class CrmCandidateCardEntity
+{
+    public Guid Id { get; set; }
+    public Guid ResponseId { get; set; }
+    public Guid OfficeId { get; set; }
+    public string Stage { get; set; } = CrmStages.Lead;
+    public string? ManagerUserId { get; set; }
+    public bool IsInActiveLoad { get; set; } = true;
+    public DateTime CreatedAtUtc { get; set; }
+    public DateTime UpdatedAtUtc { get; set; }
+    public DateTime StageChangedAtUtc { get; set; }
+    public DateTime? LastContactAtUtc { get; set; }
+    public DateTime? NextActionAtUtc { get; set; }
+    public bool IsClosed { get; set; }
+    public string? CloseReason { get; set; }
+    public DateTime? ClosedAtUtc { get; set; }
+    public CandidateResponseEntity Response { get; set; } = null!;
+}
+
+public sealed class CrmCandidateNoteEntity
+{
+    public Guid Id { get; set; }
+    public Guid CardId { get; set; }
+    public string AuthorUserId { get; set; } = string.Empty;
+    public string AuthorName { get; set; } = string.Empty;
+    public string Text { get; set; } = string.Empty;
+    public DateTime CreatedAtUtc { get; set; }
+}
+
+public sealed class CrmTaskEntity
+{
+    public Guid Id { get; set; }
+    public Guid OfficeId { get; set; }
+    public Guid? CardId { get; set; }
+    public string Title { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    public string AssigneeUserId { get; set; } = string.Empty;
+    public string CreatorUserId { get; set; } = string.Empty;
+    public string CreatorName { get; set; } = string.Empty;
+    public DateTime? DueAtUtc { get; set; }
+    public string Status { get; set; } = CrmTaskStatuses.Open;
+    public DateTime CreatedAtUtc { get; set; }
+    public DateTime? CompletedAtUtc { get; set; }
+}
+
+public sealed class CrmCandidateHistoryEntity
+{
+    public Guid Id { get; set; }
+    public Guid CardId { get; set; }
+    public string Action { get; set; } = string.Empty;
+    public string? Details { get; set; }
+    public string ActorUserId { get; set; } = string.Empty;
+    public string ActorName { get; set; } = string.Empty;
+    public DateTime CreatedAtUtc { get; set; }
 }

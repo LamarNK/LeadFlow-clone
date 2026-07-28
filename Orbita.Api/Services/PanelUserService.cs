@@ -275,14 +275,14 @@ public sealed class PanelUserService(
 
         var normalizedRole = PanelRoles.Normalize(role);
         if (await IsAdminAsync(user)
-            && normalizedRole == PanelRoles.Operator
+            && normalizedRole != PanelRoles.Admin
             && string.Equals(user.Id, currentUserId, StringComparison.Ordinal))
         {
             return (null, "Нельзя снять роль администратора у текущего пользователя.");
         }
 
         if (await IsAdminAsync(user)
-            && normalizedRole == PanelRoles.Operator
+            && normalizedRole != PanelRoles.Admin
             && await CountAdminsAsync(ct) <= 1)
         {
             return (null, "Нельзя снять роль у последнего администратора.");
@@ -527,7 +527,7 @@ public sealed class PanelUserService(
 
         if (officeId is not Guid resolvedOfficeId)
         {
-            return "Для оператора нужно выбрать офис.";
+            return "Для менеджера или оператора нужно выбрать офис.";
         }
 
         if (!await db.Offices.AnyAsync(x => x.Id == resolvedOfficeId && x.IsEnabled, ct))

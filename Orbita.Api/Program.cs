@@ -213,6 +213,8 @@ builder.Services.Configure<FormOptions>(options =>
     options.MultipartHeadersLengthLimit = int.MaxValue;
 });
 builder.Services.AddScoped<CandidateIngestionService>();
+builder.Services.AddScoped<CrmLeadDistributionService>();
+builder.Services.AddScoped<CrmWorkspaceService>();
 builder.Services.AddScoped<BitrixInstanceService>();
 builder.Services.AddScoped<DistributionRouteService>();
 builder.Services.AddScoped<LeadExportQuotaService>();
@@ -2009,6 +2011,191 @@ panel.MapPut("/office/bitrix-settings", async (
     return error is not null
         ? Results.BadRequest(new { error })
         : Results.Ok(settings);
+});
+
+var crm = app.MapGroup("/api/v1/crm").RequireAuthorization("Panel");
+crm.MapGet("/board", async (
+    Guid? officeId,
+    string? search,
+    string? scopeFilter,
+    string? city,
+    string? vacancy,
+    bool overdueOnly,
+    bool activeLoadOnly,
+    bool includeClosed,
+    CrmWorkspaceService workspace,
+    OfficeScopeService officeScope,
+    ClaimsPrincipal principal,
+    CancellationToken ct) =>
+{
+    var scope = await officeScope.ResolveAsync(principal, ct);
+    var effectiveOfficeId = scope.ResolveFilter(officeId);
+    var isAdmin = principal.IsInRole(PanelRoles.Admin);
+    var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+    if (effectiveOfficeId is not Guid resolvedOfficeId || string.IsNullOrWhiteSpace(userId)
+        || (!isAdmin && !principal.IsInRole(PanelRoles.Manager)))
+    {
+        return Results.Forbid();
+    }
+
+    var board = await workspace.GetBoardAsync(
+        resolvedOfficeId,
+        userId,
+        isAdmin,
+        new CrmBoardQuery(search, scopeFilter, city, vacancy, overdueOnly, activeLoadOnly, includeClosed),
+        ct);
+    return board is null ? Results.NotFound() : Results.Ok(board);
+});
+
+crm.MapGet("/tasks", async (
+    Guid? officeId,
+    CrmWorkspaceService workspace,
+    OfficeScopeService officeScope,
+    ClaimsPrincipal principal,
+    CancellationToken ct) =>
+{
+    var scope = await officeScope.ResolveAsync(principal, ct);
+    var effectiveOfficeId = scope.ResolveFilter(officeId);
+    var isAdmin = principal.IsInRole(PanelRoles.Admin);
+    var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+    if (effectiveOfficeId is not Guid resolvedOfficeId || string.IsNullOrWhiteSpace(userId)
+        || (!isAdmin && !principal.IsInRole(PanelRoles.Manager)))
+    {
+        return Results.Forbid();
+    }
+
+    return Results.Ok(await workspace.GetTasksAsync(resolvedOfficeId, userId, isAdmin, ct));
+});
+
+crm.MapPost("/shift/start", async (
+    CrmWorkspaceService workspace,
+    OfficeScopeService officeScope,
+    ClaimsPrincipal principal,
+    CancellationToken ct) =>
+{
+    var scope = await officeScope.ResolveAsync(principal, ct);
+    var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+    if (scope.OfficeId is not Guid officeId || string.IsNullOrWhiteSpace(userId)
+        || (!principal.IsInRole(PanelRoles.Manager) && !principal.IsInRole(PanelRoles.Admin)))
+    {
+        return Results.Forbid();
+    }
+
+    return await workspace.StartShiftAsync(officeId, userId, ct) ? Results.NoContent() : Results.NotFound();
+});
+
+crm.MapPost("/shift/stop", async (
+    CrmWorkspaceService workspace,
+    OfficeScopeService officeScope,
+    ClaimsPrincipal principal,
+    CancellationToken ct) =>
+{
+    var scope = await officeScope.ResolveAsync(principal, ct);
+    var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+    if (scope.OfficeId is not Guid officeId || string.IsNullOrWhiteSpace(userId)
+        || (!principal.IsInRole(PanelRoles.Manager) && !principal.IsInRole(PanelRoles.Admin)))
+    {
+        return Results.Forbid();
+    }
+
+    return await workspace.StopShiftAsync(officeId, userId, ct) ? Results.NoContent() : Results.NotFound();
+});
+
+crm.MapGet("/cards/{cardId:guid}", async (Guid cardId, CrmWorkspaceService workspace, ClaimsPrincipal principal, CancellationToken ct) =>
+{
+    var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+    if (string.IsNullOrWhiteSpace(userId)) return Results.Forbid();
+    var card = await workspace.GetCardAsync(cardId, userId, principal.IsInRole(PanelRoles.Admin), ct);
+    return card is null ? Results.NotFound() : Results.Ok(card);
+});
+
+crm.MapPost("/cards/{cardId:guid}/move", async (Guid cardId, CrmMoveRequest request, CrmWorkspaceService workspace, ClaimsPrincipal principal, CancellationToken ct) =>
+{
+    var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+    if (string.IsNullOrWhiteSpace(userId)) return Results.Forbid();
+    var (ok, error) = await workspace.MoveAsync(cardId, request.Stage, request.Comment, userId, principal.IsInRole(PanelRoles.Admin), ct);
+    return ok ? Results.NoContent() : Results.BadRequest(new { error = error ?? "Не удалось сменить этап." });
+});
+
+crm.MapPost("/cards/{cardId:guid}/assign", async (Guid cardId, CrmAssignRequest request, CrmWorkspaceService workspace, ClaimsPrincipal principal, CancellationToken ct) =>
+{
+    var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+    if (string.IsNullOrWhiteSpace(userId)) return Results.Forbid();
+    return await workspace.AssignAsync(cardId, request.ManagerUserId, userId, principal.IsInRole(PanelRoles.Admin), ct) ? Results.NoContent() : Results.NotFound();
+});
+
+crm.MapPost("/cards/{cardId:guid}/active-load/{isInActiveLoad:bool}", async (Guid cardId, bool isInActiveLoad, CrmWorkspaceService workspace, ClaimsPrincipal principal, CancellationToken ct) =>
+{
+    var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+    if (string.IsNullOrWhiteSpace(userId)) return Results.Forbid();
+    return await workspace.SetActiveLoadAsync(cardId, isInActiveLoad, userId, principal.IsInRole(PanelRoles.Admin), ct) ? Results.NoContent() : Results.NotFound();
+});
+
+crm.MapPost("/cards/{cardId:guid}/close", async (Guid cardId, CrmCloseRequest request, CrmWorkspaceService workspace, ClaimsPrincipal principal, CancellationToken ct) =>
+{
+    var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+    if (string.IsNullOrWhiteSpace(userId)) return Results.Forbid();
+    var (ok, error) = await workspace.CloseAsync(cardId, request.Reason, request.Comment, userId, principal.IsInRole(PanelRoles.Admin), ct);
+    return ok ? Results.NoContent() : Results.BadRequest(new { error = error ?? "Не удалось закрыть карточку." });
+});
+
+crm.MapPost("/cards/{cardId:guid}/reopen", async (Guid cardId, CrmWorkspaceService workspace, ClaimsPrincipal principal, CancellationToken ct) =>
+{
+    var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+    if (string.IsNullOrWhiteSpace(userId)) return Results.Forbid();
+    return await workspace.ReopenAsync(cardId, userId, principal.IsInRole(PanelRoles.Admin), ct) ? Results.NoContent() : Results.NotFound();
+});
+
+crm.MapPost("/cards/{cardId:guid}/notes", async (Guid cardId, CrmNoteCreateRequest request, CrmWorkspaceService workspace, ClaimsPrincipal principal, CancellationToken ct) =>
+{
+    var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+    if (string.IsNullOrWhiteSpace(userId)) return Results.Forbid();
+    return await workspace.AddNoteAsync(cardId, request.Text, userId, principal.IsInRole(PanelRoles.Admin), ct) ? Results.NoContent() : Results.BadRequest();
+});
+
+crm.MapPost("/cards/{cardId:guid}/follow-up", async (Guid cardId, CrmFollowUpRequest request, CrmWorkspaceService workspace, ClaimsPrincipal principal, CancellationToken ct) =>
+{
+    var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+    if (string.IsNullOrWhiteSpace(userId)) return Results.Forbid();
+    var task = await workspace.CreateFollowUpAsync(cardId, request.Minutes, request.Title, userId, principal.IsInRole(PanelRoles.Admin), ct);
+    return task is null ? Results.BadRequest() : Results.Created($"/api/v1/crm/tasks/{task.Id}", task);
+});
+
+crm.MapPost("/tasks", async (Guid? officeId, CrmTaskCreateRequest request, CrmWorkspaceService workspace, OfficeScopeService officeScope, ClaimsPrincipal principal, CancellationToken ct) =>
+{
+    var scope = await officeScope.ResolveAsync(principal, ct);
+    var effectiveOfficeId = scope.ResolveFilter(officeId);
+    var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+    var isAdmin = principal.IsInRole(PanelRoles.Admin);
+    if (effectiveOfficeId is not Guid resolvedOfficeId || string.IsNullOrWhiteSpace(userId) || (!isAdmin && !principal.IsInRole(PanelRoles.Manager))) return Results.Forbid();
+    var task = await workspace.CreateTaskAsync(resolvedOfficeId, request, userId, isAdmin, ct);
+    return task is null ? Results.BadRequest() : Results.Created($"/api/v1/crm/tasks/{task.Id}", task);
+});
+
+crm.MapPost("/tasks/{taskId:guid}/complete", async (Guid taskId, CrmWorkspaceService workspace, ClaimsPrincipal principal, CancellationToken ct) =>
+{
+    var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+    if (string.IsNullOrWhiteSpace(userId)) return Results.Forbid();
+    return await workspace.CompleteTaskAsync(taskId, userId, principal.IsInRole(PanelRoles.Admin), ct) ? Results.NoContent() : Results.NotFound();
+});
+
+crm.MapGet("/offices/{officeId:guid}/settings", async (Guid officeId, CrmWorkspaceService workspace, ClaimsPrincipal principal, CancellationToken ct) =>
+    principal.IsInRole(PanelRoles.Admin)
+        ? Results.Ok(await workspace.GetOfficeSettingsAsync(officeId, ct))
+        : Results.Forbid());
+
+crm.MapPut("/offices/{officeId:guid}/settings", async (Guid officeId, CrmOfficeSettingsRequest request, CrmWorkspaceService workspace, ClaimsPrincipal principal, CancellationToken ct) =>
+    principal.IsInRole(PanelRoles.Admin)
+        ? (await workspace.SetOfficeSettingsAsync(officeId, request.IsEnabled, request.RequireStageComment, ct) ? Results.NoContent() : Results.NotFound())
+        : Results.Forbid());
+
+crm.MapPut("/managers/{managerUserId}/capacity", async (string managerUserId, Guid? officeId, CrmCapacityRequest request, CrmWorkspaceService workspace, OfficeScopeService officeScope, ClaimsPrincipal principal, CancellationToken ct) =>
+{
+    if (!principal.IsInRole(PanelRoles.Admin)) return Results.Forbid();
+    var scope = await officeScope.ResolveAsync(principal, ct);
+    var effectiveOfficeId = scope.ResolveFilter(officeId);
+    if (effectiveOfficeId is not Guid resolvedOfficeId) return Results.BadRequest();
+    return await workspace.SetCapacityAsync(resolvedOfficeId, managerUserId, request.Capacity, ct) ? Results.NoContent() : Results.BadRequest();
 });
 
 panel.MapGet("/responses", async (

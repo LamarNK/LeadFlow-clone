@@ -20,6 +20,10 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
     public DbSet<CandidatePersonEntity> CandidatePersons => Set<CandidatePersonEntity>();
     public DbSet<CandidatePhoneHistoryEntity> CandidatePhoneHistory => Set<CandidatePhoneHistoryEntity>();
     public DbSet<CandidateResponseEntity> CandidateResponses => Set<CandidateResponseEntity>();
+    public DbSet<CrmCandidateCardEntity> CrmCandidateCards => Set<CrmCandidateCardEntity>();
+    public DbSet<CrmCandidateNoteEntity> CrmCandidateNotes => Set<CrmCandidateNoteEntity>();
+    public DbSet<CrmTaskEntity> CrmTasks => Set<CrmTaskEntity>();
+    public DbSet<CrmCandidateHistoryEntity> CrmCandidateHistory => Set<CrmCandidateHistoryEntity>();
     public DbSet<ResponseBitrixDeliveryEntity> ResponseBitrixDeliveries => Set<ResponseBitrixDeliveryEntity>();
     public DbSet<BitrixInstanceEntity> BitrixInstances => Set<BitrixInstanceEntity>();
     public DbSet<DistributionRouteEntity> DistributionRoutes => Set<DistributionRouteEntity>();
@@ -154,6 +158,50 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.HasOne(x => x.DuplicateBitrixInstance).WithMany().HasForeignKey(x => x.DuplicateBitrixInstanceId).OnDelete(DeleteBehavior.SetNull);
         });
 
+        modelBuilder.Entity<CrmCandidateCardEntity>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => x.ResponseId).IsUnique();
+            entity.HasIndex(x => new { x.OfficeId, x.ManagerUserId, x.IsInActiveLoad });
+            entity.HasIndex(x => new { x.OfficeId, x.Stage });
+            entity.HasIndex(x => new { x.OfficeId, x.IsClosed, x.NextActionAtUtc });
+            entity.Property(x => x.Stage).HasMaxLength(64);
+            entity.Property(x => x.ManagerUserId).HasMaxLength(128);
+            entity.Property(x => x.CloseReason).HasMaxLength(64);
+            entity.HasOne(x => x.Response).WithMany().HasForeignKey(x => x.ResponseId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<CrmCandidateNoteEntity>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.CardId, x.CreatedAtUtc });
+            entity.Property(x => x.AuthorUserId).HasMaxLength(128);
+            entity.Property(x => x.AuthorName).HasMaxLength(256);
+            entity.Property(x => x.Text).HasMaxLength(4000);
+        });
+
+        modelBuilder.Entity<CrmTaskEntity>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.OfficeId, x.AssigneeUserId, x.Status });
+            entity.HasIndex(x => x.CardId);
+            entity.Property(x => x.Title).HasMaxLength(500);
+            entity.Property(x => x.Description).HasMaxLength(4000);
+            entity.Property(x => x.AssigneeUserId).HasMaxLength(128);
+            entity.Property(x => x.CreatorUserId).HasMaxLength(128);
+            entity.Property(x => x.CreatorName).HasMaxLength(256);
+            entity.Property(x => x.Status).HasMaxLength(16);
+        });
+
+        modelBuilder.Entity<CrmCandidateHistoryEntity>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.CardId, x.CreatedAtUtc });
+            entity.Property(x => x.Action).HasMaxLength(64);
+            entity.Property(x => x.Details).HasMaxLength(2000);
+            entity.Property(x => x.ActorUserId).HasMaxLength(128);
+            entity.Property(x => x.ActorName).HasMaxLength(256);
+        });
         modelBuilder.Entity<ResponseBitrixDeliveryEntity>(entity =>
         {
             entity.HasKey(x => x.Id);

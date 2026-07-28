@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Orbita.Api.Data;
@@ -11,9 +12,11 @@ using Orbita.Api.Data;
 namespace Orbita.Api.Data.Migrations
 {
     [DbContext(typeof(OrbitaDbContext))]
-    partial class OrbitaDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260728081438_AddManagerCrm")]
+    partial class AddManagerCrm
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -683,31 +686,15 @@ namespace Orbita.Api.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<string>("CloseReason")
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
-
-                    b.Property<DateTime?>("ClosedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("IsClosed")
-                        .HasColumnType("boolean");
 
                     b.Property<bool>("IsInActiveLoad")
                         .HasColumnType("boolean");
 
-                    b.Property<DateTime?>("LastContactAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
                     b.Property<string>("ManagerUserId")
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)");
-
-                    b.Property<DateTime?>("NextActionAtUtc")
-                        .HasColumnType("timestamp with time zone");
 
                     b.Property<Guid>("OfficeId")
                         .HasColumnType("uuid");
@@ -720,9 +707,6 @@ namespace Orbita.Api.Data.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
 
-                    b.Property<DateTime>("StageChangedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
                     b.Property<DateTime>("UpdatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
@@ -732,8 +716,6 @@ namespace Orbita.Api.Data.Migrations
                         .IsUnique();
 
                     b.HasIndex("OfficeId", "Stage");
-
-                    b.HasIndex("OfficeId", "IsClosed", "NextActionAtUtc");
 
                     b.HasIndex("OfficeId", "ManagerUserId", "IsInActiveLoad");
 
@@ -1000,9 +982,6 @@ namespace Orbita.Api.Data.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<bool>("CrmEnabled")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("CrmRequireStageComment")
                         .HasColumnType("boolean");
 
                     b.Property<bool>("IsEnabled")

@@ -18,7 +18,8 @@ public sealed class CandidateIngestionService(
     CandidateAutoDistributionService autoDistribution,
     ManualBitrixSendService manualBitrixSend,
     IOptions<OrbitaBitrixSettings> bitrixOptions,
-    IPanelRealtimeNotifier panelRealtime)
+    IPanelRealtimeNotifier panelRealtime,
+    CrmWorkspaceService? crm = null)
 {
     public async Task<WorkerCandidateIngestionResultDto> IngestBatchAsync(
         Guid workerId,
@@ -249,6 +250,12 @@ public sealed class CandidateIngestionService(
                 candidate.SourceResponseId,
                 entity.Status,
                 entity.DuplicateSummary);
+        }
+
+        // CRM is a parallel projection: it must not affect Bitrix delivery or its result.
+        if (crm is not null)
+        {
+            await crm.CreateCardForResponseAsync(entity, ct);
         }
 
         if (!autoEnabled)
