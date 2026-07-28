@@ -1,0 +1,128 @@
+@model Orbita.Contracts.CrmBoardDto
+@using Orbita.Contracts
+@using Orbita.Web.Models.ViewModels
+@{
+    ViewData["Title"] = "CRM — Воронка";
+    var header = new PageHeaderViewModel
+    {
+        Title = "Воронка кандидатов",
+        Subtitle = Model.IsEnabled ? "Рабочее место менеджера" : "CRM выключена для офиса",
+        ShowRefresh = true,
+        UpdatedAtUtc = DateTime.UtcNow
+    };
+    string ScopeUrl(string scope) => Url.Action("Index", new
+    {
+        scope,
+        search = Model.Search,
+        city = Model.City,
+        vacancy = Model.Vacancy,
+        overdueOnly = Model.OverdueOnly,
+        activeLoadOnly = Model.ActiveLoadOnly,
+        includeClosed = Model.IncludeClosed
+    })!;
+}
+<partial name="_PageHeader" model="header" />
+
+<div class="orbita-main crm-shell">
+    @if (TempData["CrmError"] is string error)
+    {
+        <div class="crm-notice crm-notice--error"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i>@error</div>
+    }
+    @if (!Model.IsEnabled)
+    {
+        <div class="crm-notice"><i class="fa-solid fa-flask" aria-hidden="true"></i>CRM-пилот выключен для этого офиса. Новые отклики не попадают в воронку (Bitrix работает как раньше).@if (Model.IsAdmin) { <text> Включите в </text><a asp-action="Team">Команда CRM</a><text>.</text> }</div>
+    }
+
+    <section class="crm-toolbar card">
+        <div class="crm-toolbar__shift">
+            <div>
+                <span class="crm-pill @(Model.IsShiftActive ? "is-on" : "")">@(Model.IsShiftActive ? "На смене" : "Не на смене")</span>
+                <strong class="crm-toolbar__load">@Model.ActiveLoad <span>/ @Model.Capacity</span></strong>
+                <p>Нагрузка · открытых задач @Model.OpenTaskCount@if (Model.OverdueTaskCount > 0) { <text> · </text><em class="crm-overdue">просрочено @Model.OverdueTaskCount</em> }</p>
+            </div>
+            @if (Model.IsShiftActive)
+            {
+                <form asp-action="StopShift" method="post"><button class="settings-secondary-btn" type="submit">Стоп смены</button></form>
+            }
+            else
+            {
+                <form asp-action="StartShift" method="post"><button class="settings-primary-btn" type="submit">Старт смены</button></form>
+            }
+        </div>
+        <div class="crm-toolbar__stats">
+            <div><small>В работе</small><strong>@Model.TeamStats.TotalActiveCards</strong></div>
+            <div><small>Очередь</small><strong>@Model.UnassignedCount</strong></div>
+            <div><small>На смене</small><strong>@Model.TeamStats.OnShiftManagers / @Model.TeamStats.TotalManagers</strong></div>
+            <div><small>Закрыто сегодня</small><strong>@Model.TeamStats.ClosedToday</strong></div>
+        </div>
+    </section>
+
+    <section class="crm-filters card">
+        <form method="get" class="crm-filters__form" asp-action="Index">
+            <div class="crm-scope-tabs" role="tablist">
+                <a class="@(Model.Scope == CrmBoardScopes.Mine ? "is-active" : "")" href="@ScopeUrl(CrmBoardScopes.Mine)">Мои</a>
+                @if (Model.IsAdmin)
+                {
+                    <a class="@(Model.Scope == CrmBoardScopes.Team ? "is-active" : "")" href="@ScopeUrl(CrmBoardScopes.Team)">Команда</a>
+                    <a class="@(Model.Scope == CrmBoardScopes.Unassigned ? "is-active" : "")" href="@ScopeUrl(CrmBoardScopes.Unassigned)">Очередь <span>@Model.UnassignedCount</span></a>
+                }
+                <a class="@(Model.Scope == CrmBoardScopes.Closed ? "is-active" : "")" href="@ScopeUrl(CrmBoardScopes.Closed)">Закрытые</a>
+            </div>
+            <input type="hidden" name="scope" value="@Model.Scope" />
+            <input type="search" name="search" value="@Model.Search" placeholder="ФИО, телефон, город…" />
+            <input type="text" name="city" value="@Model.City" placeholder="Город" />
+            <input type="text" name="vacancy" value="@Model.Vacancy" placeholder="Вакансия" />
+            <label class="crm-check"><input type="checkbox" name="overdueOnly" value="true" @(Model.OverdueOnly ? "checked" : null) /> Просрочка</label>
+            <label class="crm-check"><input type="checkbox" name="activeLoadOnly" value="true" @(Model.ActiveLoadOnly ? "checked" : null) /> В нагрузке</label>
+            <label class="crm-check"><input type="checkbox" name="includeClosed" value="true" @(Model.IncludeClosed ? "checked" : null) /> + закрытые</label>
+            <div class="crm-filter-actions">
+                <button class="settings-primary-btn" type="submit">Найти</button>
+                <a class="settings-secondary-btn" asp-action="Index">Сброс</a>
+            </div>
+        </form>
+    </section>
+
+    <section class="crm-board-card card" aria-label="Воронка кандидатов">
+        <p id="crm-board-scroll-hint" class="crm-board-scroll-hint"><i class="fa-solid fa-arrows-left-right" aria-hidden="true"></i>Прокрутите воронку горизонтально, чтобы увидеть все этапы.</p>
+        <div class="crm-board-wrap">
+            <div class="crm-board" data-crm-board>
+            @foreach (var stage in Model.Stages)
+            {
+                <section class="crm-stage" data-stage="@stage.Name">
+                    <header class="crm-stage__head">
+                        <h3>@stage.Name</h3>
+                        <span>@stage.TotalCount</span>
+                    </header>
+                    <div class="crm-stage__cards">
+                    @foreach (var card in stage.Cards)
+                    {
+                        <a asp-action="Card" asp-route-id="@card.Id" class="crm-tile @(card.IsClosed ? "is-closed" : "") @(card.HasOverdueTask ? "is-overdue" : "")">
+                            <div class="crm-tile__top">
+                                <strong>@card.FullName</strong>
+                                @if (!card.IsInActiveLoad && !card.IsClosed) { <span class="crm-tag">Вне нагрузки</span> }
+                                @if (card.IsClosed) { <span class="crm-tag crm-tag--muted">@card.CloseReason</span> }
+                            </div>
+                            <div class="crm-tile__meta">@(card.Age?.ToString() ?? "—") · @card.City</div>
+                            <div class="crm-tile__vacancy">@card.Vacancy</div>
+                            <div class="crm-tile__phone">@card.PhoneRaw</div>
+                            <footer class="crm-tile__foot">
+                                <span><i class="fa-regular fa-user" aria-hidden="true"></i>@(card.ManagerName ?? "—")</span>
+                                <span class="@(card.HoursInStage >= 24 ? "crm-hot" : "")" title="В этапе">@card.HoursInStage.ToString("0.#")ч</span>
+                                @if (card.OpenTaskCount > 0)
+                                {
+                                    <span class="@(card.HasOverdueTask ? "crm-overdue" : "")"><i class="fa-solid fa-list-check" aria-hidden="true"></i>@card.OpenTaskCount</span>
+                                }
+                            </footer>
+                        </a>
+                    }
+                    @if (stage.Cards.Count == 0)
+                    {
+                        <div class="crm-stage__empty">Пусто</div>
+                    }
+                    </div>
+                </section>
+            }
+            </div>
+        </div>
+    </section>
+</div>

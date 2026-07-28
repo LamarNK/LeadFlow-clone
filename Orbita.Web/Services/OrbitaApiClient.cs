@@ -1700,6 +1700,213 @@ public sealed class OrbitaApiClient(
         return await GetAsync<BrowserMonitorSessionDto>($"api/v1/panel/browser-monitor-sessions/{sessionId:D}", ct);
     }
 
+    public Task<CrmBoardDto?> GetCrmBoardAsync(
+        Guid? officeId = null,
+        CrmBoardQuery? query = null,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return Task.FromResult<CrmBoardDto?>(DesignPreviewData.GetCrmBoard(query));
+        }
+
+        query ??= new CrmBoardQuery();
+        var url = WithOfficeQuery("api/v1/crm/board", officeId);
+        url = AppendQuery(url, "search", query.Search);
+        url = AppendQuery(url, "scopeFilter", query.Scope);
+        url = AppendQuery(url, "city", query.City);
+        url = AppendQuery(url, "vacancy", query.Vacancy);
+        if (query.OverdueOnly) url = AppendQuery(url, "overdueOnly", "true");
+        if (query.ActiveLoadOnly) url = AppendQuery(url, "activeLoadOnly", "true");
+        if (query.IncludeClosed) url = AppendQuery(url, "includeClosed", "true");
+        return GetAsync<CrmBoardDto>(url, ct);
+    }
+
+    public Task<CrmCandidateDetailDto?> GetCrmCardAsync(Guid cardId, CancellationToken ct = default) =>
+        _preview.Enabled
+            ? Task.FromResult(DesignPreviewData.GetCrmCard(cardId))
+            : GetAsync<CrmCandidateDetailDto>($"api/v1/crm/cards/{cardId:D}", ct);
+
+    public Task<IReadOnlyList<CrmTaskDto>?> GetCrmTasksAsync(Guid? officeId = null, CancellationToken ct = default) =>
+        _preview.Enabled
+            ? Task.FromResult<IReadOnlyList<CrmTaskDto>?>(DesignPreviewData.GetCrmTasks())
+            : GetAsync<IReadOnlyList<CrmTaskDto>>(WithOfficeQuery("api/v1/crm/tasks", officeId), ct);
+
+    public Task<(bool Success, string? Error)> StartCrmShiftAsync(CancellationToken ct = default) =>
+        _preview.Enabled
+            ? Task.FromResult(DesignPreviewData.StartCrmShift())
+            : PostPanelActionAsync("api/v1/crm/shift/start", ct);
+
+    public Task<(bool Success, string? Error)> StopCrmShiftAsync(CancellationToken ct = default) =>
+        _preview.Enabled
+            ? Task.FromResult(DesignPreviewData.StopCrmShift())
+            : PostPanelActionAsync("api/v1/crm/shift/stop", ct);
+
+    public async Task<(bool Success, string? Error)> MoveCrmCardAsync(Guid cardId, string stage, string? comment = null, CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return DesignPreviewData.MoveCrmCard(cardId, stage, comment);
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"api/v1/crm/cards/{cardId:D}/move")
+        {
+            Content = JsonContent.Create(new CrmMoveRequest(stage, comment))
+        };
+        using var response = await SendAuthenticatedAsync(request, ct);
+        return response is null ? (false, InvalidApiSessionError) : response.IsSuccessStatusCode ? (true, null) : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(bool Success, string? Error)> SetCrmCardActiveLoadAsync(Guid cardId, bool active, CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return DesignPreviewData.SetCrmCardActiveLoad(cardId, active);
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"api/v1/crm/cards/{cardId:D}/active-load/{active.ToString().ToLowerInvariant()}");
+        using var response = await SendAuthenticatedAsync(request, ct);
+        return response is null ? (false, InvalidApiSessionError) : response.IsSuccessStatusCode ? (true, null) : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(bool Success, string? Error)> AssignCrmCardAsync(Guid cardId, string managerUserId, CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return DesignPreviewData.AssignCrmCard(cardId, managerUserId);
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"api/v1/crm/cards/{cardId:D}/assign")
+        {
+            Content = JsonContent.Create(new CrmAssignRequest(managerUserId))
+        };
+        using var response = await SendAuthenticatedAsync(request, ct);
+        return response is null ? (false, InvalidApiSessionError) : response.IsSuccessStatusCode ? (true, null) : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(bool Success, string? Error)> CloseCrmCardAsync(Guid cardId, string reason, string? comment = null, CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return DesignPreviewData.CloseCrmCard(cardId, reason, comment);
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"api/v1/crm/cards/{cardId:D}/close")
+        {
+            Content = JsonContent.Create(new CrmCloseRequest(reason, comment))
+        };
+        using var response = await SendAuthenticatedAsync(request, ct);
+        return response is null ? (false, InvalidApiSessionError) : response.IsSuccessStatusCode ? (true, null) : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(bool Success, string? Error)> ReopenCrmCardAsync(Guid cardId, CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return DesignPreviewData.ReopenCrmCard(cardId);
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"api/v1/crm/cards/{cardId:D}/reopen");
+        using var response = await SendAuthenticatedAsync(request, ct);
+        return response is null ? (false, InvalidApiSessionError) : response.IsSuccessStatusCode ? (true, null) : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(bool Success, string? Error)> AddCrmNoteAsync(Guid cardId, string text, CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return DesignPreviewData.AddCrmNote(cardId, text);
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"api/v1/crm/cards/{cardId:D}/notes") { Content = JsonContent.Create(new CrmNoteCreateRequest(text)) };
+        using var response = await SendAuthenticatedAsync(request, ct);
+        return response is null ? (false, InvalidApiSessionError) : response.IsSuccessStatusCode ? (true, null) : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(CrmTaskDto? Task, string? Error)> CreateCrmTaskAsync(CrmTaskCreateRequest task, CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return DesignPreviewData.CreateCrmTask(task);
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, WithOfficeQuery("api/v1/crm/tasks")) { Content = JsonContent.Create(task) };
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null) return (null, InvalidApiSessionError);
+        if (!response.IsSuccessStatusCode) return (null, await ReadApiErrorAsync(response, ct));
+        return (await response.Content.ReadFromJsonAsync<CrmTaskDto>(ApiJsonOptions, ct), null);
+    }
+
+    public async Task<(CrmTaskDto? Task, string? Error)> CreateCrmFollowUpAsync(Guid cardId, int minutes, string? title = null, CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return DesignPreviewData.CreateCrmFollowUp(cardId, minutes, title);
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"api/v1/crm/cards/{cardId:D}/follow-up")
+        {
+            Content = JsonContent.Create(new CrmFollowUpRequest(minutes, title))
+        };
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null) return (null, InvalidApiSessionError);
+        if (!response.IsSuccessStatusCode) return (null, await ReadApiErrorAsync(response, ct));
+        return (await response.Content.ReadFromJsonAsync<CrmTaskDto>(ApiJsonOptions, ct), null);
+    }
+
+    public async Task<(bool Success, string? Error)> CompleteCrmTaskAsync(Guid taskId, CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return DesignPreviewData.CompleteCrmTask(taskId);
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"api/v1/crm/tasks/{taskId:D}/complete");
+        using var response = await SendAuthenticatedAsync(request, ct);
+        return response is null ? (false, InvalidApiSessionError) : response.IsSuccessStatusCode ? (true, null) : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(bool Success, string? Error)> SetCrmOfficeSettingsAsync(Guid officeId, bool enabled, bool requireStageComment, CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return DesignPreviewData.SetCrmOfficeSettings(enabled, requireStageComment);
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Put, $"api/v1/crm/offices/{officeId:D}/settings")
+        {
+            Content = JsonContent.Create(new CrmOfficeSettingsRequest(enabled, requireStageComment))
+        };
+        using var response = await SendAuthenticatedAsync(request, ct);
+        return response is null ? (false, InvalidApiSessionError) : response.IsSuccessStatusCode ? (true, null) : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(bool Success, string? Error)> SetCrmManagerCapacityAsync(string managerUserId, int capacity, Guid? officeId = null, CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return DesignPreviewData.SetCrmManagerCapacity(managerUserId, capacity);
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Put, WithOfficeQuery($"api/v1/crm/managers/{Uri.EscapeDataString(managerUserId)}/capacity", officeId))
+        {
+            Content = JsonContent.Create(new CrmCapacityRequest(capacity))
+        };
+        using var response = await SendAuthenticatedAsync(request, ct);
+        return response is null ? (false, InvalidApiSessionError) : response.IsSuccessStatusCode ? (true, null) : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    private static string AppendQuery(string url, string key, string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return url;
+        }
+
+        var sep = url.Contains('?', StringComparison.Ordinal) ? "&" : "?";
+        return $"{url}{sep}{Uri.EscapeDataString(key)}={Uri.EscapeDataString(value)}";
+    }
+
     private sealed record ApiErrorResponse(string? Error);
 }
 

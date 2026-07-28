@@ -1,0 +1,99 @@
+@model Orbita.Contracts.CrmBoardDto
+@using Orbita.Web.Models.ViewModels
+@inject Orbita.Web.Services.IOfficeContext OfficeContext
+@{
+    ViewData["Title"] = "CRM — Команда";
+    var header = new PageHeaderViewModel
+    {
+        Title = "Команда CRM",
+        Subtitle = "Нагрузка, очередь и настройки офиса",
+        ShowRefresh = true,
+        UpdatedAtUtc = DateTime.UtcNow
+    };
+    var officeId = OfficeContext.EffectiveOfficeId;
+}
+<partial name="_PageHeader" model="header" />
+
+<div class="orbita-main crm-shell">
+    @if (TempData["CrmError"] is string error)
+    {
+        <div class="crm-notice crm-notice--error"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i>@error</div>
+    }
+    @if (TempData["CrmOk"] is string ok)
+    {
+        <div class="crm-notice crm-notice--ok"><i class="fa-solid fa-circle-check" aria-hidden="true"></i>@ok</div>
+    }
+
+    <section class="crm-toolbar card">
+        <div class="crm-toolbar__stats crm-toolbar__stats--team">
+            <div><small>Активные карточки</small><strong>@Model.TeamStats.TotalActiveCards</strong></div>
+            <div><small>Очередь</small><strong>@Model.UnassignedCount</strong></div>
+            <div><small>На смене</small><strong>@Model.TeamStats.OnShiftManagers</strong></div>
+            <div><small>Выдано сегодня</small><strong>@Model.TeamStats.AssignedToday</strong></div>
+            <div><small>Закрыто сегодня</small><strong>@Model.TeamStats.ClosedToday</strong></div>
+        </div>
+    </section>
+
+    <div class="crm-team-grid">
+        <section class="card crm-team-panel">
+            <div class="card-header"><div><h2>Менеджеры</h2><p>Ёмкость и текущая нагрузка (активные карточки в нагрузке).</p></div></div>
+            <div class="crm-manager-table">
+                @foreach (var m in Model.Managers)
+                {
+                    var pct = m.Capacity <= 0 ? 0 : Math.Min(100, (int)Math.Round(100.0 * m.ActiveLoad / m.Capacity));
+                    <article class="crm-manager-row">
+                        <div class="crm-manager-row__name">
+                            <span class="crm-manager-row__identity"><i class="fa-solid fa-circle @(m.IsShiftActive ? "is-online" : "")" aria-hidden="true"></i><strong>@m.DisplayName</strong></span>
+                            <span>@(m.IsShiftActive ? "на смене" : "не на смене")</span>
+                        </div>
+                        <div class="crm-manager-row__load">
+                            <strong>@m.ActiveLoad / @m.Capacity</strong>
+                            <span class="crm-progress"><i style="width:@pct%"></i></span>
+                        </div>
+                        <form asp-action="SaveCapacity" method="post" class="crm-capacity-form">
+                            <input type="hidden" name="managerUserId" value="@m.UserId" />
+                            <label>Лимит нагрузки<input type="number" name="capacity" min="1" max="100" value="@m.Capacity" aria-label="Лимит нагрузки для @m.DisplayName" /></label>
+                            <button class="settings-secondary-btn" type="submit">Сохранить</button>
+                        </form>
+                    </article>
+                }
+                @if (Model.Managers.Count == 0)
+                {
+                    <p class="crm-empty">В офисе нет менеджеров с ролью Manager.</p>
+                }
+            </div>
+        </section>
+
+        <section class="card crm-team-panel">
+            <div class="card-header"><div><h2>По этапам</h2><p>Активные карточки офиса.</p></div></div>
+            <div class="crm-stage-counts">
+                @foreach (var stage in Model.TeamStats.StageCounts.OrderByDescending(x => x.Count))
+                {
+                    <div><span>@stage.Stage</span><strong>@stage.Count</strong></div>
+                }
+                @if (Model.TeamStats.StageCounts.Count == 0)
+                {
+                    <p class="crm-empty">Нет данных</p>
+                }
+            </div>
+        </section>
+
+        <section class="card crm-team-panel">
+            <div class="card-header"><div><h2>Настройки офиса</h2><p>CRM параллельна Bitrix: выключение CRM не останавливает отправку в Битрикс.</p></div></div>
+            @if (officeId is Guid oid)
+            {
+                <form asp-action="SaveOfficeSettings" method="post" class="crm-standard-form">
+                    <input type="hidden" name="officeId" value="@oid" />
+                    <label class="crm-check"><input type="checkbox" name="isEnabled" value="true" @(Model.IsEnabled ? "checked" : null) /> CRM включена (новые отклики → карточки)</label>
+                    <label class="crm-check"><input type="checkbox" name="requireStageComment" value="true" @(Model.RequireStageComment ? "checked" : null) /> Требовать комментарий при смене этапа</label>
+                    <p class="crm-hint">CRM не меняет отправку в Bitrix. Пока пилот — оба контура работают параллельно.</p>
+                    <button class="settings-primary-btn" type="submit">Сохранить</button>
+                </form>
+            }
+            else
+            {
+                <p class="crm-empty">Выберите офис в шапке.</p>
+            }
+        </section>
+    </div>
+</div>

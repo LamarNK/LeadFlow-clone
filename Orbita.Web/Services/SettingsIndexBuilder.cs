@@ -24,6 +24,7 @@ internal static class SettingsIndexBuilder
     public static readonly IReadOnlyList<EventFilterOptionViewModel> ProfileOptions =
     [
         new() { Value = PanelRoles.Operator, Label = "Оператор" },
+        new() { Value = PanelRoles.Manager, Label = "Менеджер" },
         new() { Value = PanelRoles.Admin, Label = "Администратор" }
     ];
 
@@ -674,6 +675,10 @@ internal static class SettingsIndexBuilder
             _ => ("Не настроено", "neutral")
         };
 
-    private static string RoleLabel(string role) =>
-        role == PanelRoles.Admin ? "Администратор" : "Оператор";
+    private static string RoleLabel(string role) => role switch
+    {
+        PanelRoles.Admin => "Администратор",
+        PanelRoles.Manager => "Менеджер",
+        _ => "Оператор"
+    };
 }

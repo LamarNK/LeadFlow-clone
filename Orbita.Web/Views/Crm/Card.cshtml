@@ -1,0 +1,272 @@
+@model Orbita.Contracts.CrmCandidateDetailDto
+@using Orbita.Contracts
+@using Orbita.Web.Models.ViewModels
+@{
+    ViewData["Title"] = Model.Card.FullName;
+    var header = new PageHeaderViewModel { Title = Model.Card.FullName, Subtitle = "Карточка кандидата", ShowRefresh = true, UpdatedAtUtc = DateTime.UtcNow };
+    var activeTab = ViewData["CrmTab"] as string ?? "activity";
+    var card = Model.Card;
+    string DisplayCrmAction(string action) => action switch
+    {
+        "Created" => "Карточка создана",
+        "Assigned" => "Назначен ответственный",
+        "StageChanged" => "Смена этапа",
+        "ReturnedToLoad" => "Вернули в нагрузку",
+        "RemovedFromLoad" => "Сняли с нагрузки",
+        "Closed" => "Карточка закрыта",
+        "Reopened" => "Карточка открыта снова",
+        "Note" => "Комментарий",
+        "TaskCreated" => "Задача создана",
+        "TaskCompleted" => "Задача выполнена",
+        _ => action
+    };
+}
+<partial name="_PageHeader" model="header" />
+
+<div class="orbita-main crm-shell crm-card-page">
+    <a asp-action="Index" class="crm-back"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i>К воронке</a>
+    @if (TempData["CrmError"] is string error)
+    {
+        <div class="crm-notice crm-notice--error"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i>@error</div>
+    }
+
+    <section class="crm-card-hero card">
+        <div class="crm-card-hero__main">
+            <div class="crm-avatar">@(string.IsNullOrEmpty(card.FullName) ? "?" : card.FullName.Trim()[0])</div>
+            <div>
+                <h1>@card.FullName</h1>
+                <p>
+                    @(card.Age?.ToString() ?? "—") лет · @card.City · @card.Vacancy
+                    @if (card.IsClosed) { <span class="crm-tag crm-tag--muted">Закрыто: @card.CloseReason</span> }
+                    else if (!card.IsInActiveLoad) { <span class="crm-tag">Вне нагрузки</span> }
+                </p>
+                <div class="crm-card-hero__contacts">
+                    <a href="tel:@card.PhoneRaw" class="settings-secondary-btn"><i class="fa-solid fa-phone" aria-hidden="true"></i>@card.PhoneRaw</a>
+                    @if (!string.IsNullOrWhiteSpace(card.MessengerUrl))
+                    {
+                        <a href="@card.MessengerUrl" target="_blank" rel="noopener" class="settings-secondary-btn"><i class="fa-regular fa-message" aria-hidden="true"></i>Чат</a>
+                    }
+                    <button type="button" class="settings-secondary-btn" data-copy="@card.PhoneRaw"><i class="fa-regular fa-copy" aria-hidden="true"></i>Копировать</button>
+                </div>
+            </div>
+        </div>
+        <div class="crm-card-hero__side">
+            <div><small>Ответственный</small><strong>@(card.ManagerName ?? "Не назначен")</strong></div>
+            <div><small>В этапе</small><strong class="@(card.HoursInStage >= 24 ? "crm-hot" : "")">@card.HoursInStage.ToString("0.#") ч</strong></div>
+            <div><small>Задачи</small><strong class="@(card.HasOverdueTask ? "crm-overdue" : "")">@card.OpenTaskCount</strong></div>
+        </div>
+    </section>
+
+    <section class="crm-stage-rail card">
+        <div class="crm-stage-rail__comment">
+            <label for="stageComment">Комментарий к смене этапа (если требуется в офисе)</label>
+            <input id="stageComment" type="text" form="crm-stage-forms" name="comment" placeholder="Необязательно, если офис не требует" />
+        </div>
+        <div class="crm-stage-rail__stages">
+        @foreach (var stage in CrmStages.All)
+        {
+            <form asp-action="Move" method="post" class="@(stage == card.Stage ? "is-current" : "") @(card.IsClosed ? "is-disabled" : "")">
+                <input type="hidden" name="id" value="@card.Id" />
+                <input type="hidden" name="stage" value="@stage" />
+                <input type="hidden" name="comment" value="" data-stage-comment />
+                <button type="submit" @(card.IsClosed ? "disabled" : null)>@stage</button>
+            </form>
+        }
+        </div>
+    </section>
+
+    <div class="crm-card-layout">
+        <aside class="crm-card-side">
+            <section class="card crm-side-panel">
+                <header>Контакты и поля</header>
+                <dl>
+                    <div><dt>Телефон</dt><dd>@card.PhoneRaw</dd></div>
+                    <div><dt>Город</dt><dd>@card.City</dd></div>
+                    <div><dt>Вакансия</dt><dd>@card.Vacancy</dd></div>
+                    <div><dt>Этап</dt><dd>@card.Stage</dd></div>
+                    <div><dt>Нагрузка</dt><dd>@(card.IsInActiveLoad ? "В активной работе" : "Вне нагрузки")</dd></div>
+                    <div><dt>Создана</dt><dd>@card.CreatedAtUtc.ToLocalTime().ToString("dd.MM.yyyy HH:mm")</dd></div>
+                    @if (card.LastContactAtUtc is DateTime last)
+                    {
+                        <div><dt>Контакт</dt><dd>@last.ToLocalTime().ToString("dd.MM.yyyy HH:mm")</dd></div>
+                    }
+                    @if (card.NextActionAtUtc is DateTime next)
+                    {
+                        <div><dt>След. действие</dt><dd class="@(next < DateTime.UtcNow ? "crm-overdue" : "")">@next.ToLocalTime().ToString("dd.MM.yyyy HH:mm")</dd></div>
+                    }
+                </dl>
+            </section>
+
+            <section class="card crm-side-panel">
+                <header>Быстрые действия</header>
+                <div class="crm-quick-actions">
+                    <form asp-action="FollowUp" method="post"><input type="hidden" name="id" value="@card.Id" /><input type="hidden" name="minutes" value="60" /><button type="submit">+1 ч</button></form>
+                    <form asp-action="FollowUp" method="post"><input type="hidden" name="id" value="@card.Id" /><input type="hidden" name="minutes" value="180" /><button type="submit">+3 ч</button></form>
+                    <form asp-action="FollowUp" method="post"><input type="hidden" name="id" value="@card.Id" /><input type="hidden" name="minutes" value="1440" /><button type="submit">Завтра</button></form>
+                    <form asp-action="FollowUp" method="post"><input type="hidden" name="id" value="@card.Id" /><input type="hidden" name="minutes" value="4320" /><button type="submit">+3 дн</button></form>
+                </div>
+                <form asp-action="SetLoad" method="post" class="crm-side-form">
+                    <input type="hidden" name="id" value="@card.Id" />
+                    <input type="hidden" name="active" value="@(!card.IsInActiveLoad)" />
+                    <button class="settings-secondary-btn" type="submit">@(card.IsInActiveLoad ? "Снять с нагрузки" : "Вернуть в нагрузку")</button>
+                </form>
+                @if (ViewData["IsCrmAdmin"] as bool? == true && Model.Managers.Count > 0)
+                {
+                    <form asp-action="Assign" method="post" class="crm-side-form">
+                        <input type="hidden" name="id" value="@card.Id" />
+                        <label>Переназначить
+                            <select name="managerUserId">
+                                @foreach (var m in Model.Managers)
+                                {
+                                    if (m.UserId == card.ManagerUserId)
+                                    {
+                                        <option value="@m.UserId" selected>@m.DisplayName (@m.ActiveLoad/@m.Capacity)</option>
+                                    }
+                                    else
+                                    {
+                                        <option value="@m.UserId">@m.DisplayName (@m.ActiveLoad/@m.Capacity)</option>
+                                    }
+                                }
+                            </select>
+                        </label>
+                        <button class="settings-secondary-btn" type="submit">Назначить</button>
+                    </form>
+                }
+                @if (!card.IsClosed)
+                {
+                    <form asp-action="Close" method="post" class="crm-side-form">
+                        <input type="hidden" name="id" value="@card.Id" />
+                        <label>Закрыть
+                            <select name="reason" required>
+                                @foreach (var reason in CrmCloseReasons.All)
+                                {
+                                    <option value="@reason">@reason</option>
+                                }
+                            </select>
+                        </label>
+                        <textarea name="comment" placeholder="Комментарий (необяз.)"></textarea>
+                        <button class="settings-secondary-btn crm-btn-danger" type="submit">Закрыть карточку</button>
+                    </form>
+                }
+                else
+                {
+                    <form asp-action="Reopen" method="post" class="crm-side-form">
+                        <input type="hidden" name="id" value="@card.Id" />
+                        <button class="settings-primary-btn" type="submit">Вернуть в работу</button>
+                    </form>
+                }
+            </section>
+        </aside>
+
+        <section class="crm-card-main card">
+            <nav class="crm-tabs">
+                <a class="@(activeTab == "activity" ? "is-active" : "")" asp-action="Card" asp-route-id="@card.Id">Лента</a>
+                <a class="@(activeTab == "tasks" ? "is-active" : "")" asp-action="Card" asp-route-id="@card.Id" asp-route-tab="tasks">Задачи <span>@Model.Tasks.Count(t => t.Status == CrmTaskStatuses.Open)</span></a>
+                <a class="@(activeTab == "history" ? "is-active" : "")" asp-action="Card" asp-route-id="@card.Id" asp-route-tab="history">История</a>
+            </nav>
+
+            @if (activeTab == "activity")
+            {
+                <form asp-action="AddNote" method="post" class="crm-composer">
+                    <input type="hidden" name="id" value="@card.Id" />
+                    <textarea name="text" required placeholder="Комментарий по кандидату…"></textarea>
+                    <button class="settings-primary-btn" type="submit">Добавить</button>
+                </form>
+                <div class="crm-feed">
+                    @foreach (var item in Model.Activity)
+                    {
+                        <article class="crm-feed-item crm-feed-item--@item.Kind">
+                            <div class="crm-feed-item__icon"><i class="fa-solid @(item.Kind switch { "note" => "fa-comment", "task" => "fa-list-check", "task-done" => "fa-check", _ => "fa-clock" })" aria-hidden="true"></i></div>
+                            <div>
+                                <header><strong>@DisplayCrmAction(item.Title)</strong><span>@item.ActorName · @item.AtUtc.ToLocalTime().ToString("dd MMM, HH:mm")</span></header>
+                                @if (!string.IsNullOrWhiteSpace(item.Body)) { <p>@item.Body</p> }
+                            </div>
+                        </article>
+                    }
+                    @if (Model.Activity.Count == 0) { <p class="crm-empty">Пока нет активности — оставьте первый комментарий.</p> }
+                </div>
+            }
+            else if (activeTab == "tasks")
+            {
+                <form asp-action="CreateTask" method="post" class="crm-task-create">
+                    <input type="hidden" name="cardId" value="@card.Id" />
+                    <input name="title" required placeholder="Что сделать" />
+                    <select name="assigneeUserId" required>
+                        @foreach (var m in Model.Managers)
+                        {
+                            <option value="@m.UserId">@m.DisplayName</option>
+                        }
+                    </select>
+                    <input type="datetime-local" name="dueAtUtc" />
+                    <textarea name="description" placeholder="Комментарий"></textarea>
+                    <button class="settings-primary-btn" type="submit">Поставить задачу</button>
+                </form>
+                <div class="crm-task-list">
+                    @foreach (var task in Model.Tasks)
+                    {
+                        <article class="crm-task-row @(task.Status == CrmTaskStatuses.Completed ? "is-complete" : "") @(task.IsOverdue ? "is-overdue" : "")">
+                            <div>
+                                <strong>@task.Title</strong>
+                                <span>@task.AssigneeName @if (task.DueAtUtc is DateTime due) { <text>· до @due.ToLocalTime().ToString("dd MMM, HH:mm")</text> } @if (task.IsOverdue) { <em class="crm-overdue">просрочено</em> }</span>
+                                @if (!string.IsNullOrWhiteSpace(task.Description)) { <p>@task.Description</p> }
+                            </div>
+                            @if (task.Status == CrmTaskStatuses.Open)
+                            {
+                                <form asp-action="CompleteTask" method="post">
+                                    <input type="hidden" name="taskId" value="@task.Id" />
+                                    <input type="hidden" name="cardId" value="@card.Id" />
+                                    <button class="settings-secondary-btn" type="submit">Выполнить</button>
+                                </form>
+                            }
+                        </article>
+                    }
+                    @if (Model.Tasks.Count == 0) { <p class="crm-empty">Задач пока нет.</p> }
+                </div>
+            }
+            else
+            {
+                <div class="crm-history-list">
+                    @foreach (var item in Model.History)
+                    {
+                        <article>
+                            <time>@item.CreatedAtUtc.ToLocalTime().ToString("dd MMM, HH:mm")</time>
+                            <div>
+                                <strong>@DisplayCrmAction(item.Action)</strong>
+                                @if (!string.IsNullOrWhiteSpace(item.Details)) { <span>@item.Details</span> }
+                                <em>@item.ActorName</em>
+                            </div>
+                        </article>
+                    }
+                </div>
+            }
+        </section>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+document.querySelectorAll('[data-copy]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+        var text = btn.getAttribute('data-copy') || '';
+        if (navigator.clipboard && text) {
+            navigator.clipboard.writeText(text).then(function () {
+                btn.classList.add('is-copied');
+                setTimeout(function () { btn.classList.remove('is-copied'); }, 1200);
+            });
+        }
+    });
+});
+(function () {
+    var input = document.getElementById('stageComment');
+    if (!input) return;
+    document.querySelectorAll('form[action*="Move"], form .crm-stage-rail form').forEach(function () {});
+    document.querySelectorAll('[data-stage-comment]').forEach(function (hidden) {
+        var form = hidden.closest('form');
+        if (!form) return;
+        form.addEventListener('submit', function () {
+            hidden.value = input.value || '';
+        });
+    });
+})();
+</script>
+}

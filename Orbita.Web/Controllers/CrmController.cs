@@ -1,0 +1,184 @@
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Orbita.Contracts;
+using Orbita.Web.Authorization;
+using Orbita.Web.Models.ViewModels;
+using Orbita.Web.Services;
+
+namespace Orbita.Web.Controllers;
+
+[Authorize(Roles = $"{OrbitaRoles.Admin},{OrbitaRoles.Manager}")]
+public sealed class CrmController(OrbitaApiClient api) : Controller
+{
+    [HttpGet]
+    public async Task<IActionResult> Index(
+        Guid? officeId,
+        string? search,
+        string? scope,
+        string? city,
+        string? vacancy,
+        bool overdueOnly = false,
+        bool activeLoadOnly = false,
+        bool includeClosed = false,
+        CancellationToken ct = default)
+    {
+        var board = await api.GetCrmBoardAsync(
+            officeId,
+            new CrmBoardQuery(search, scope, city, vacancy, overdueOnly, activeLoadOnly, includeClosed),
+            ct);
+        return board is null ? View("Unavailable") : View(board);
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> StartShift(CancellationToken ct = default)
+    {
+        var (_, error) = await api.StartCrmShiftAsync(ct);
+        if (error is not null) TempData["CrmError"] = error;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> StopShift(CancellationToken ct = default)
+    {
+        var (_, error) = await api.StopCrmShiftAsync(ct);
+        if (error is not null) TempData["CrmError"] = error;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> Card(Guid id, string? tab, CancellationToken ct = default)
+    {
+        var card = await api.GetCrmCardAsync(id, ct);
+        if (card is null) return NotFound();
+        ViewData["CrmTab"] = tab is "tasks" or "history" ? tab : "activity";
+        ViewData["IsCrmAdmin"] = User.IsInRole(OrbitaRoles.Admin);
+        return View(card);
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> Tasks(CancellationToken ct = default)
+    {
+        var tasksRequest = api.GetCrmTasksAsync(ct: ct);
+        var boardRequest = api.GetCrmBoardAsync(ct: ct);
+        await Task.WhenAll(tasksRequest, boardRequest);
+        var tasks = await tasksRequest;
+        var board = await boardRequest;
+        return tasks is null || board is null
+            ? View("Unavailable")
+            : View(new CrmTasksViewModel(tasks, board.Managers, board.OpenTaskCount, board.OverdueTaskCount));
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> Team(CancellationToken ct = default)
+    {
+        var board = await api.GetCrmBoardAsync(query: new CrmBoardQuery(Scope: CrmBoardScopes.Team), ct: ct);
+        if (board is null) return View("Unavailable");
+        if (!board.IsAdmin) return Forbid();
+        return View(board);
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Move(Guid id, string stage, string? comment, CancellationToken ct = default)
+    {
+        var (_, error) = await api.MoveCrmCardAsync(id, stage, comment, ct);
+        if (error is not null) TempData["CrmError"] = error;
+        return RedirectToAction(nameof(Card), new { id });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SetLoad(Guid id, bool active, CancellationToken ct = default)
+    {
+        var (_, error) = await api.SetCrmCardActiveLoadAsync(id, active, ct);
+        if (error is not null) TempData["CrmError"] = error;
+        return RedirectToAction(nameof(Card), new { id });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Assign(Guid id, string managerUserId, CancellationToken ct = default)
+    {
+        var (_, error) = await api.AssignCrmCardAsync(id, managerUserId, ct);
+        if (error is not null) TempData["CrmError"] = error;
+        return RedirectToAction(nameof(Card), new { id });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Close(Guid id, string reason, string? comment, CancellationToken ct = default)
+    {
+        var (_, error) = await api.CloseCrmCardAsync(id, reason, comment, ct);
+        if (error is not null) TempData["CrmError"] = error;
+        return RedirectToAction(nameof(Card), new { id });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Reopen(Guid id, CancellationToken ct = default)
+    {
+        var (_, error) = await api.ReopenCrmCardAsync(id, ct);
+        if (error is not null) TempData["CrmError"] = error;
+        return RedirectToAction(nameof(Card), new { id });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> AddNote(Guid id, string text, CancellationToken ct = default)
+    {
+        var (_, error) = await api.AddCrmNoteAsync(id, text, ct);
+        if (error is not null) TempData["CrmError"] = error;
+        return RedirectToAction(nameof(Card), new { id });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> FollowUp(Guid id, int minutes, string? title, CancellationToken ct = default)
+    {
+        var (_, error) = await api.CreateCrmFollowUpAsync(id, minutes, title, ct);
+        if (error is not null) TempData["CrmError"] = error;
+        return RedirectToAction(nameof(Card), new { id, tab = "tasks" });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> CreateTask(Guid? cardId, string title, string? description, string assigneeUserId, DateTime? dueAtUtc, CancellationToken ct = default)
+    {
+        var (_, error) = await api.CreateCrmTaskAsync(new CrmTaskCreateRequest(cardId, title, description, assigneeUserId, dueAtUtc), ct);
+        if (error is not null) TempData["CrmError"] = error;
+        return cardId is Guid id ? RedirectToAction(nameof(Card), new { id, tab = "tasks" }) : RedirectToAction(nameof(Tasks));
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> CompleteTask(Guid taskId, Guid? cardId, CancellationToken ct = default)
+    {
+        var (_, error) = await api.CompleteCrmTaskAsync(taskId, ct);
+        if (error is not null) TempData["CrmError"] = error;
+        return cardId is Guid id ? RedirectToAction(nameof(Card), new { id, tab = "tasks" }) : RedirectToAction(nameof(Tasks));
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    [Authorize(Roles = OrbitaRoles.Admin)]
+    public async Task<IActionResult> SaveOfficeSettings(Guid officeId, bool isEnabled, bool requireStageComment, CancellationToken ct = default)
+    {
+        var (_, error) = await api.SetCrmOfficeSettingsAsync(officeId, isEnabled, requireStageComment, ct);
+        if (error is not null) TempData["CrmError"] = error;
+        else TempData["CrmOk"] = "Настройки CRM сохранены.";
+        return RedirectToAction(nameof(Team));
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    [Authorize(Roles = OrbitaRoles.Admin)]
+    public async Task<IActionResult> SaveCapacity(string managerUserId, int capacity, CancellationToken ct = default)
+    {
+        var (_, error) = await api.SetCrmManagerCapacityAsync(managerUserId, capacity, ct: ct);
+        if (error is not null) TempData["CrmError"] = error;
+        else TempData["CrmOk"] = "Ёмкость обновлена.";
+        return RedirectToAction(nameof(Team));
+    }
+}

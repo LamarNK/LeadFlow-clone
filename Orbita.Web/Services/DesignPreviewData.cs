@@ -35,6 +35,401 @@ internal static class DesignPreviewData
 
     private static readonly DateTime Now = DateTime.UtcNow;
 
+    // CRM preview intentionally lives only in memory. It lets designers click through the
+    // manager workflow without starting the API or PostgreSQL.
+    private static readonly object CrmSync = new();
+    private const string PreviewManagerElena = "preview-manager-elena";
+    private const string PreviewManagerIgor = "preview-manager-igor";
+    private static bool _previewCrmShiftActive = true;
+    private static bool _previewCrmEnabled = true;
+    private static bool _previewCrmRequireComment;
+    private static readonly List<PreviewCrmCandidate> PreviewCrmCandidates =
+    [
+        new(Guid.Parse("90000000-0000-0000-0000-000000000001"), "Селезнёв Артур Алексеевич", 55, "+7 912 445-18-07", "Тында", "Разнорабочий на вахту", CrmStages.Lead, PreviewManagerElena, true, 35),
+        new(Guid.Parse("90000000-0000-0000-0000-000000000002"), "Ахмадалиев Сабиржон Садриддинович", 62, "+7 900 201-74-65", "Бородино", "Сварщик на вахту с проживанием", CrmStages.Lead, PreviewManagerIgor, true, 70),
+        new(Guid.Parse("90000000-0000-0000-0000-000000000003"), "Турунцев Сергей Леонидович", 42, "+7 982 133-05-91", "Киров", "Электрик вахта с питанием", CrmStages.Ndz73, PreviewManagerElena, true, 105),
+        new(Guid.Parse("90000000-0000-0000-0000-000000000004"), "Цветков Сергей Андреевич", 30, "+7 950 784-12-20", "Сыктывкар", "Слесарь на вахту", CrmStages.Ndz26, PreviewManagerIgor, true, 150),
+        new(Guid.Parse("90000000-0000-0000-0000-000000000005"), "Василий Демичев", 41, "+7 917 332-48-09", "Тихвин", "Охранник вахта с питанием", CrmStages.Substitution, PreviewManagerElena, true, 190),
+        new(Guid.Parse("90000000-0000-0000-0000-000000000006"), "Магомедов Либир Алигадыджиевич", 61, "+7 964 285-61-14", "Махачкала", "Сварщик", CrmStages.Negotiations, PreviewManagerIgor, true, 240),
+        new(Guid.Parse("90000000-0000-0000-0000-000000000007"), "Махмутов Марат Магсумович", 49, "+7 908 447-93-52", "Анастасово", "Охранник вахта", CrmStages.Questionnaire, PreviewManagerElena, true, 285),
+        new(Guid.Parse("90000000-0000-0000-0000-000000000008"), "Гаджиев Руслан Сулейманович", 35, "+7 995 623-40-15", "Хасавюрт", "Слесарь на вахту", CrmStages.Ticket, PreviewManagerIgor, false, 340),
+        new(Guid.Parse("90000000-0000-0000-0000-000000000009"), "Алексей Корнев", 28, "+7 927 104-70-32", "Самара", "Комплектовщик на склад", CrmStages.Lead, null, false, 12)
+    ];
+    private static readonly Dictionary<Guid, List<CrmNoteDto>> PreviewCrmNotes = new()
+    {
+        [Guid.Parse("90000000-0000-0000-0000-000000000001")] =
+        [
+            new(Guid.Parse("91000000-0000-0000-0000-000000000001"), PreviewManagerElena, "Елена Воронцова", "Созвониться после 18:00, кандидат сейчас на работе.", Now.AddMinutes(-28))
+        ]
+    };
+    private static readonly List<CrmTaskDto> PreviewCrmTasks =
+    [
+        new(Guid.Parse("92000000-0000-0000-0000-000000000001"), Guid.Parse("90000000-0000-0000-0000-000000000001"), "Селезнёв Артур Алексеевич", "Уточнить дату выезда", "Попросить прислать фото паспорта в мессенджер.", PreviewManagerElena, "Елена Воронцова", "preview-admin", "Администратор", Now.AddHours(3), CrmTaskStatuses.Open, Now.AddHours(-1), null, false),
+        new(Guid.Parse("92000000-0000-0000-0000-000000000002"), Guid.Parse("90000000-0000-0000-0000-000000000003"), "Турунцев Сергей Леонидович", "Перезвонить", null, PreviewManagerElena, "Елена Воронцова", PreviewManagerElena, "Елена Воронцова", Now.AddHours(-2), CrmTaskStatuses.Open, Now.AddHours(-5), null, true),
+        new(Guid.Parse("92000000-0000-0000-0000-000000000003"), null, null, "Проверить вакансии на неделю", null, PreviewManagerElena, "Елена Воронцова", PreviewManagerElena, "Елена Воронцова", Now.AddDays(1), CrmTaskStatuses.Open, Now.AddHours(-8), null, false)
+    ];
+    private static readonly List<CrmHistoryDto> PreviewCrmHistory =
+    [
+        new(Guid.Parse("93000000-0000-0000-0000-000000000001"), "Created", "Отклик из Avito", "system", "Система", Now.AddMinutes(-35)),
+        new(Guid.Parse("93000000-0000-0000-0000-000000000002"), "Assigned", "Елена Воронцова", "preview-admin", "Администратор", Now.AddMinutes(-34))
+    ];
+
+    public static CrmBoardDto GetCrmBoard(CrmBoardQuery? query = null)
+    {
+        lock (CrmSync)
+        {
+            query ??= new CrmBoardQuery();
+            var managers = BuildPreviewCrmManagers();
+            var cards = PreviewCrmCandidates.AsEnumerable();
+            if (!string.IsNullOrWhiteSpace(query.Search))
+            {
+                var term = query.Search.Trim();
+                cards = cards.Where(c =>
+                    c.FullName.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                    c.PhoneRaw.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                    c.City.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                    c.Vacancy.Contains(term, StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (!string.IsNullOrWhiteSpace(query.City))
+            {
+                cards = cards.Where(c => c.City.Contains(query.City, StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (!string.IsNullOrWhiteSpace(query.Vacancy))
+            {
+                cards = cards.Where(c => c.Vacancy.Contains(query.Vacancy, StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (query.ActiveLoadOnly)
+            {
+                cards = cards.Where(c => c.IsInActiveLoad);
+            }
+
+            if (query.Scope == CrmBoardScopes.Unassigned)
+            {
+                cards = cards.Where(c => c.ManagerUserId is null && !c.IsClosed);
+            }
+            else if (query.Scope == CrmBoardScopes.Closed)
+            {
+                cards = cards.Where(c => c.IsClosed);
+            }
+            else if (!query.IncludeClosed)
+            {
+                cards = cards.Where(c => !c.IsClosed);
+            }
+
+            var list = cards.ToList();
+            var stages = CrmStages.All
+                .Select(stage =>
+                {
+                    var stageCards = list.Where(c => c.Stage == stage && !c.IsClosed)
+                        .OrderByDescending(c => c.CreatedAtUtc)
+                        .Select(ToPreviewCrmCard)
+                        .ToList();
+                    return new CrmStageDto(stage, stageCards, stageCards.Count);
+                })
+                .ToList();
+            var activeLoad = PreviewCrmCandidates.Count(c => c.ManagerUserId == PreviewManagerElena && c.IsInActiveLoad && !c.IsClosed);
+            var openTasks = PreviewCrmTasks.Count(t => t.Status == CrmTaskStatuses.Open);
+            var overdue = PreviewCrmTasks.Count(t => t.IsOverdue && t.Status == CrmTaskStatuses.Open);
+            var team = new CrmTeamStatsDto(
+                PreviewCrmCandidates.Count(c => !c.IsClosed),
+                PreviewCrmCandidates.Count(c => c.ManagerUserId is null && !c.IsClosed),
+                managers.Count(m => m.IsShiftActive),
+                managers.Count,
+                PreviewCrmCandidates.Count(c => c.IsClosed),
+                4,
+                CrmStages.All.Select(s => new CrmStageCountDto(s, PreviewCrmCandidates.Count(c => c.Stage == s && !c.IsClosed))).ToList());
+            return new CrmBoardDto(
+                _previewCrmEnabled,
+                _previewCrmRequireComment,
+                _previewCrmShiftActive,
+                10,
+                activeLoad,
+                stages,
+                managers,
+                team.UnassignedCount,
+                openTasks,
+                overdue,
+                true,
+                team,
+                query.Scope ?? CrmBoardScopes.Team,
+                query.Search,
+                query.City,
+                query.Vacancy,
+                query.OverdueOnly,
+                query.ActiveLoadOnly,
+                query.IncludeClosed);
+        }
+    }
+
+    public static CrmCandidateDetailDto? GetCrmCard(Guid cardId)
+    {
+        lock (CrmSync)
+        {
+            var candidate = PreviewCrmCandidates.FirstOrDefault(item => item.Id == cardId);
+            if (candidate is null) return null;
+            var notes = PreviewCrmNotes.TryGetValue(cardId, out var n)
+                ? n.OrderByDescending(note => note.CreatedAtUtc).ToList()
+                : [];
+            var tasks = PreviewCrmTasks.Where(task => task.CardId == cardId).OrderBy(task => task.Status).ThenBy(task => task.DueAtUtc).ToList();
+            var history = PreviewCrmHistory.OrderByDescending(item => item.CreatedAtUtc).ToList();
+            var activity = notes.Select(x => new CrmActivityItemDto("note", "Комментарий", x.Text, x.AuthorName, x.CreatedAtUtc))
+                .Concat(tasks.Select(t => new CrmActivityItemDto(t.Status == CrmTaskStatuses.Completed ? "task-done" : "task", t.Title, t.Description, t.CreatorName, t.CompletedAtUtc ?? t.CreatedAtUtc, t.Id)))
+                .Concat(history.Select(h => new CrmActivityItemDto("history", h.Action, h.Details, h.ActorName, h.CreatedAtUtc)))
+                .OrderByDescending(x => x.AtUtc)
+                .ToList();
+            return new CrmCandidateDetailDto(
+                ToPreviewCrmCard(candidate),
+                notes,
+                tasks,
+                history,
+                activity,
+                BuildPreviewCrmManagers());
+        }
+    }
+
+    public static IReadOnlyList<CrmTaskDto> GetCrmTasks()
+    {
+        lock (CrmSync)
+        {
+            return PreviewCrmTasks
+                .OrderBy(task => task.Status)
+                .ThenBy(task => task.DueAtUtc)
+                .ThenByDescending(task => task.CreatedAtUtc)
+                .ToList();
+        }
+    }
+
+    public static (bool Success, string? Error) StartCrmShift()
+    {
+        lock (CrmSync)
+        {
+            _previewCrmShiftActive = true;
+            return (true, null);
+        }
+    }
+
+    public static (bool Success, string? Error) StopCrmShift()
+    {
+        lock (CrmSync)
+        {
+            _previewCrmShiftActive = false;
+            return (true, null);
+        }
+    }
+
+    public static (bool Success, string? Error) MoveCrmCard(Guid cardId, string stage, string? comment = null)
+    {
+        lock (CrmSync)
+        {
+            var candidate = PreviewCrmCandidates.FirstOrDefault(item => item.Id == cardId);
+            if (candidate is null || !CrmStages.IsValid(stage)) return (false, "Карточка или этап не найдены.");
+            if (_previewCrmRequireComment && string.IsNullOrWhiteSpace(comment)) return (false, "Нужен комментарий при смене этапа.");
+            candidate.Stage = stage;
+            candidate.StageChangedAtUtc = DateTime.UtcNow;
+            AddPreviewCrmHistory("StageChanged", stage);
+            if (!string.IsNullOrWhiteSpace(comment))
+            {
+                AddCrmNote(cardId, comment);
+            }
+
+            return (true, null);
+        }
+    }
+
+    public static (bool Success, string? Error) SetCrmCardActiveLoad(Guid cardId, bool active)
+    {
+        lock (CrmSync)
+        {
+            var candidate = PreviewCrmCandidates.FirstOrDefault(item => item.Id == cardId);
+            if (candidate is null) return (false, "Карточка не найдена.");
+            candidate.IsInActiveLoad = active;
+            AddPreviewCrmHistory(active ? "ReturnedToLoad" : "RemovedFromLoad", candidate.FullName);
+            return (true, null);
+        }
+    }
+
+    public static (bool Success, string? Error) AssignCrmCard(Guid cardId, string managerUserId)
+    {
+        lock (CrmSync)
+        {
+            var candidate = PreviewCrmCandidates.FirstOrDefault(item => item.Id == cardId);
+            var manager = BuildPreviewCrmManagers().FirstOrDefault(m => m.UserId == managerUserId);
+            if (candidate is null || manager is null) return (false, "Карточка или менеджер не найдены.");
+            candidate.ManagerUserId = managerUserId;
+            candidate.IsClosed = false;
+            candidate.CloseReason = null;
+            AddPreviewCrmHistory("Assigned", manager.DisplayName);
+            return (true, null);
+        }
+    }
+
+    public static (bool Success, string? Error) CloseCrmCard(Guid cardId, string reason, string? comment)
+    {
+        lock (CrmSync)
+        {
+            var candidate = PreviewCrmCandidates.FirstOrDefault(item => item.Id == cardId);
+            if (candidate is null || !CrmCloseReasons.IsValid(reason)) return (false, "Не удалось закрыть карточку.");
+            candidate.IsClosed = true;
+            candidate.CloseReason = reason;
+            candidate.IsInActiveLoad = false;
+            AddPreviewCrmHistory("Closed", reason);
+            if (!string.IsNullOrWhiteSpace(comment)) AddCrmNote(cardId, comment);
+            return (true, null);
+        }
+    }
+
+    public static (bool Success, string? Error) ReopenCrmCard(Guid cardId)
+    {
+        lock (CrmSync)
+        {
+            var candidate = PreviewCrmCandidates.FirstOrDefault(item => item.Id == cardId);
+            if (candidate is null) return (false, "Карточка не найдена.");
+            candidate.IsClosed = false;
+            candidate.CloseReason = null;
+            candidate.IsInActiveLoad = true;
+            AddPreviewCrmHistory("Reopened", candidate.FullName);
+            return (true, null);
+        }
+    }
+
+    public static (bool Success, string? Error) AddCrmNote(Guid cardId, string text)
+    {
+        lock (CrmSync)
+        {
+            if (PreviewCrmCandidates.All(item => item.Id != cardId) || string.IsNullOrWhiteSpace(text)) return (false, "Введите текст заметки.");
+            if (!PreviewCrmNotes.TryGetValue(cardId, out var notes))
+            {
+                notes = [];
+                PreviewCrmNotes[cardId] = notes;
+            }
+            notes.Add(new CrmNoteDto(Guid.NewGuid(), "preview-admin", "Администратор", text.Trim(), DateTime.UtcNow));
+            AddPreviewCrmHistory("Note", text.Trim());
+            return (true, null);
+        }
+    }
+
+    public static (CrmTaskDto? Task, string? Error) CreateCrmTask(CrmTaskCreateRequest request)
+    {
+        lock (CrmSync)
+        {
+            if (string.IsNullOrWhiteSpace(request.Title)) return (null, "Введите название задачи.");
+            var assignee = BuildPreviewCrmManagers().FirstOrDefault(manager => manager.UserId == request.AssigneeUserId);
+            if (assignee is null) return (null, "Исполнитель не найден.");
+            var candidateName = request.CardId is Guid id
+                ? PreviewCrmCandidates.FirstOrDefault(c => c.Id == id)?.FullName
+                : null;
+            var due = request.DueAtUtc;
+            var task = new CrmTaskDto(Guid.NewGuid(), request.CardId, candidateName, request.Title.Trim(), request.Description?.Trim(), assignee.UserId, assignee.DisplayName, "preview-admin", "Администратор", due, CrmTaskStatuses.Open, DateTime.UtcNow, null, due is DateTime d && d < DateTime.UtcNow);
+            PreviewCrmTasks.Add(task);
+            AddPreviewCrmHistory("TaskCreated", task.Title);
+            return (task, null);
+        }
+    }
+
+    public static (CrmTaskDto? Task, string? Error) CreateCrmFollowUp(Guid cardId, int minutes, string? title)
+    {
+        lock (CrmSync)
+        {
+            var label = string.IsNullOrWhiteSpace(title)
+                ? minutes <= 60 ? "Перезвонить через час" : $"Перезвонить через {minutes / 60} ч"
+                : title.Trim();
+            return CreateCrmTask(new CrmTaskCreateRequest(cardId, label, null, PreviewManagerElena, DateTime.UtcNow.AddMinutes(minutes)));
+        }
+    }
+
+    public static (bool Success, string? Error) CompleteCrmTask(Guid taskId)
+    {
+        lock (CrmSync)
+        {
+            var index = PreviewCrmTasks.FindIndex(task => task.Id == taskId);
+            if (index < 0) return (false, "Задача не найдена.");
+            var task = PreviewCrmTasks[index];
+            PreviewCrmTasks[index] = task with { Status = CrmTaskStatuses.Completed, CompletedAtUtc = DateTime.UtcNow, IsOverdue = false };
+            AddPreviewCrmHistory("TaskCompleted", task.Title);
+            return (true, null);
+        }
+    }
+
+    public static (bool Success, string? Error) SetCrmOfficeSettings(bool enabled, bool requireStageComment)
+    {
+        lock (CrmSync)
+        {
+            _previewCrmEnabled = enabled;
+            _previewCrmRequireComment = requireStageComment;
+            return (true, null);
+        }
+    }
+
+    public static (bool Success, string? Error) SetCrmManagerCapacity(string managerUserId, int capacity)
+    {
+        lock (CrmSync)
+        {
+            if (capacity is < 1 or > 100) return (false, "Ёмкость 1–100.");
+            if (managerUserId is not (PreviewManagerElena or PreviewManagerIgor)) return (false, "Менеджер не найден.");
+            return (true, null);
+        }
+    }
+
+    private static IReadOnlyList<CrmManagerDto> BuildPreviewCrmManagers() =>
+    [
+        new(PreviewManagerElena, "Елена Воронцова", _previewCrmShiftActive, 10, PreviewCrmCandidates.Count(candidate => candidate.ManagerUserId == PreviewManagerElena && candidate.IsInActiveLoad && !candidate.IsClosed)),
+        new(PreviewManagerIgor, "Игорь Белов", true, 10, PreviewCrmCandidates.Count(candidate => candidate.ManagerUserId == PreviewManagerIgor && candidate.IsInActiveLoad && !candidate.IsClosed))
+    ];
+
+    private static CrmCandidateCardDto ToPreviewCrmCard(PreviewCrmCandidate candidate)
+    {
+        var openTasks = PreviewCrmTasks.Count(t => t.CardId == candidate.Id && t.Status == CrmTaskStatuses.Open);
+        var overdue = PreviewCrmTasks.Any(t => t.CardId == candidate.Id && t.IsOverdue && t.Status == CrmTaskStatuses.Open);
+        var hours = Math.Round(Math.Max(0, (DateTime.UtcNow - candidate.StageChangedAtUtc).TotalHours), 1);
+        return new(
+            candidate.Id,
+            Guid.Parse($"94000000-0000-0000-0000-{candidate.Id.ToString("N")[^12..]}"),
+            candidate.FullName,
+            candidate.Age,
+            candidate.PhoneRaw,
+            candidate.City,
+            candidate.Vacancy,
+            $"https://www.avito.ru/profile/messenger/{candidate.Id:N}",
+            candidate.Stage,
+            candidate.ManagerUserId,
+            candidate.ManagerUserId == PreviewManagerElena ? "Елена Воронцова" : candidate.ManagerUserId == PreviewManagerIgor ? "Игорь Белов" : null,
+            candidate.IsInActiveLoad,
+            candidate.CreatedAtUtc,
+            candidate.StageChangedAtUtc,
+            candidate.LastContactAtUtc,
+            candidate.NextActionAtUtc,
+            candidate.IsClosed,
+            candidate.CloseReason,
+            openTasks,
+            overdue,
+            hours);
+    }
+
+    private static void AddPreviewCrmHistory(string action, string details) =>
+        PreviewCrmHistory.Add(new CrmHistoryDto(Guid.NewGuid(), action, details, "preview-admin", "Администратор", DateTime.UtcNow));
+
+    private sealed class PreviewCrmCandidate(Guid id, string fullName, int? age, string phoneRaw, string city, string vacancy, string stage, string? managerUserId, bool isInActiveLoad, int minutesAgo)
+    {
+        public Guid Id { get; } = id;
+        public string FullName { get; } = fullName;
+        public int? Age { get; } = age;
+        public string PhoneRaw { get; } = phoneRaw;
+        public string City { get; } = city;
+        public string Vacancy { get; } = vacancy;
+        public string Stage { get; set; } = stage;
+        public string? ManagerUserId { get; set; } = managerUserId;
+        public bool IsInActiveLoad { get; set; } = isInActiveLoad;
+        public DateTime CreatedAtUtc { get; } = Now.AddMinutes(-minutesAgo);
+        public DateTime StageChangedAtUtc { get; set; } = Now.AddMinutes(-minutesAgo);
+        public DateTime? LastContactAtUtc { get; set; } = Now.AddMinutes(-minutesAgo / 2);
+        public DateTime? NextActionAtUtc { get; set; } = Now.AddHours(2);
+        public bool IsClosed { get; set; }
+        public string? CloseReason { get; set; }
+    }
+
     public static GlobalDashboardSummary Summary => new(
         TotalWorkers: 3,
         OnlineWorkers: 3,
@@ -1436,6 +1831,7 @@ internal static class DesignPreviewData
     public static IReadOnlyList<PanelUserDto> PanelUsers =>
     [
         new("preview-admin", "admin@orbita.local", true, PanelRoles.Admin, false),
+        new(PreviewManagerElena, "elena@orbita.local", true, PanelRoles.Manager, false, PreviewOfficeId, "Основной"),
         new("preview-operator", "operator@orbita.local", true, PanelRoles.Operator, true, PreviewOfficeId, "Основной")
     ];
 
@@ -1585,6 +1981,7 @@ internal static class DesignPreviewData
     public static IReadOnlyList<BitrixIntegrationListItemDto> BitrixIntegrations =>
     [
         new("preview-admin", "admin@orbita.local", PanelRoles.Admin, null, BitrixValidationStatuses.NotConfigured, null, null),
+        new(PreviewManagerElena, "elena@orbita.local", PanelRoles.Manager, "demo.bitrix24.ru", BitrixValidationStatuses.Ok, "Вебхук настроен корректно.", Now.AddHours(-1)),
         new("preview-operator", "operator@orbita.local", PanelRoles.Operator, "demo.bitrix24.ru", BitrixValidationStatuses.Ok, "Вебхук настроен корректно.", Now.AddHours(-2))
     ];
 

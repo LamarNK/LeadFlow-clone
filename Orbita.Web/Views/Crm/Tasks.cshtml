@@ -1,0 +1,57 @@
+@model Orbita.Web.Models.ViewModels.CrmTasksViewModel
+@using Orbita.Contracts
+@using Orbita.Web.Models.ViewModels
+@{
+    ViewData["Title"] = "CRM — Задачи";
+    var now = DateTime.UtcNow;
+    var open = Model.Tasks.Where(x => x.Status == CrmTaskStatuses.Open).ToList();
+    var overdue = open.Where(x => x.IsOverdue || (x.DueAtUtc is DateTime d && d < now)).ToList();
+    var overdueIds = overdue.Select(x => x.Id).ToHashSet();
+    var todayEnd = now.Date.AddDays(1);
+    var today = open.Where(x => !overdueIds.Contains(x.Id) && x.DueAtUtc is DateTime d && d < todayEnd).ToList();
+    var todayIds = today.Select(x => x.Id).ToHashSet();
+    var later = open.Where(x => !overdueIds.Contains(x.Id) && !todayIds.Contains(x.Id)).ToList();
+    var completed = Model.Tasks.Where(x => x.Status == CrmTaskStatuses.Completed).Take(30).ToList();
+    var header = new PageHeaderViewModel { Title = "Задачи", Subtitle = "Inbox менеджера", ShowRefresh = true, UpdatedAtUtc = DateTime.UtcNow };
+}
+<partial name="_PageHeader" model="header" />
+
+<div class="orbita-main crm-shell">
+    @if (TempData["CrmError"] is string error)
+    {
+        <div class="crm-notice crm-notice--error"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i>@error</div>
+    }
+
+    <section class="crm-toolbar card">
+        <div class="crm-toolbar__stats crm-toolbar__stats--tasks">
+            <div><small>Открыто</small><strong>@open.Count</strong></div>
+            <div><small>Просрочено</small><strong class="crm-overdue">@overdue.Count</strong></div>
+            <div><small>На сегодня</small><strong>@today.Count</strong></div>
+        </div>
+    </section>
+
+    <partial name="_TaskGroup" model="@("Просрочено", (IReadOnlyList<CrmTaskDto>)overdue, true)" />
+    <partial name="_TaskGroup" model="@("Сегодня", (IReadOnlyList<CrmTaskDto>)today, true)" />
+    <partial name="_TaskGroup" model="@("Позже", (IReadOnlyList<CrmTaskDto>)later, true)" />
+
+    <details class="card crm-new-task">
+        <summary>Поставить задачу</summary>
+        <form asp-action="CreateTask" method="post" class="crm-standard-form">
+            <input name="title" required placeholder="Что сделать" />
+            <select name="assigneeUserId" required>
+                @foreach (var manager in Model.Managers)
+                {
+                    <option value="@manager.UserId">@manager.DisplayName</option>
+                }
+            </select>
+            <input type="datetime-local" name="dueAtUtc" aria-label="Срок" />
+            <textarea name="description" placeholder="Комментарий (необязательно)"></textarea>
+            <button class="settings-primary-btn" type="submit">Создать</button>
+        </form>
+    </details>
+
+    @if (completed.Count > 0)
+    {
+        <partial name="_TaskGroup" model="@("Недавно выполненные", (IReadOnlyList<CrmTaskDto>)completed, false)" />
+    }
+</div>
