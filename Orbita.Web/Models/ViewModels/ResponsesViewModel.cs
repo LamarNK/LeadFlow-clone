@@ -1,3 +1,5 @@
+using Orbita.Contracts;
+
 namespace Orbita.Web.Models.ViewModels;
 
 public sealed class ResponsesIndexViewModel
@@ -132,6 +134,8 @@ public sealed class ResponseDetailViewModel
     public string StatusTone { get; init; } = "unique";
     public string? PhoneMetricKind { get; init; }
     public string? PhoneMetricLabel { get; init; }
+    public string? PreviousPhoneRaw { get; init; }
+    public string? PreviousPhoneNormalized { get; init; }
     public string? DuplicateSummary { get; init; }
     public string? BitrixEntityId { get; init; }
     public string? BitrixEntityUrl { get; init; }
@@ -145,6 +149,7 @@ public sealed class ResponseDetailViewModel
     public DateTime CreatedAtUtc { get; init; }
     public DateTime? ProcessedAtUtc { get; init; }
     public IReadOnlyList<ResponseBitrixDeliveryViewModel> BitrixDeliveries { get; init; } = [];
+    public IReadOnlyList<CandidatePhoneHistoryDto> PhoneHistory { get; init; } = [];
     public string CardCopy { get; init; } = string.Empty;
     public bool CanSend { get; init; }
     public bool CanResend { get; init; }

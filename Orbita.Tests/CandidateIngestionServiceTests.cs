@@ -80,6 +80,13 @@ public sealed class CandidateIngestionServiceTests
         Assert.Equal("79930099416", stored.PreviousPhoneNormalized);
         Assert.False(stored.IsLocalDuplicate);
         Assert.Equal(person.Id, stored.PersonId);
+
+        var phoneHistory = await db.CandidatePhoneHistory
+            .Where(x => x.PersonId == person.Id)
+            .OrderBy(x => x.RecordedAtUtc)
+            .Select(x => x.PhoneNormalized)
+            .ToListAsync();
+        Assert.Equal(["79930099416", "79910001122"], phoneHistory);
     }
 
     [Fact]

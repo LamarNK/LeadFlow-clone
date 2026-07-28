@@ -241,6 +241,8 @@ internal static class ResponsesIndexBuilder
             StatusTone = MapStatusTone(detail.Status),
             PhoneMetricKind = string.IsNullOrWhiteSpace(detail.PhoneMetricKind) ? null : detail.PhoneMetricKind,
             PhoneMetricLabel = detail.PhoneMetricLabel,
+            PreviousPhoneRaw = detail.PreviousPhoneRaw,
+            PreviousPhoneNormalized = detail.PreviousPhoneNormalized,
             DuplicateSummary = detail.DuplicateSummary,
             BitrixEntityId = detail.BitrixEntityId,
             BitrixEntityUrl = detail.BitrixEntityUrl,
@@ -254,6 +256,7 @@ internal static class ResponsesIndexBuilder
             CreatedAtUtc = detail.CreatedAt,
             ProcessedAtUtc = detail.ProcessedAt,
             BitrixDeliveries = MapDeliveries(detail.BitrixDeliveries),
+            PhoneHistory = detail.PhoneHistory ?? [],
             CardCopy = BuildCardCopy(
                 detail.FullName,
                 detail.PhoneRaw,
@@ -528,6 +531,33 @@ internal static class ResponsesIndexBuilder
     public static ResponseDetailJsonViewModel MapDetailJson(ResponseDetailViewModel detail)
     {
         var phone = ResponseDisplay.FormatPhone(detail.PhoneRaw, detail.PhoneNormalized);
+        var phoneHistory = detail.PhoneHistory
+            .Where(x => !string.IsNullOrWhiteSpace(x.PhoneNormalized))
+            .GroupBy(x => x.PhoneNormalized)
+            .Select(x => x.OrderByDescending(item => item.RecordedAtUtc).First())
+            .ToList();
+        if (!string.IsNullOrWhiteSpace(detail.PreviousPhoneNormalized) &&
+            phoneHistory.All(x => !string.Equals(x.PhoneNormalized, detail.PreviousPhoneNormalized, StringComparison.Ordinal)))
+        {
+            phoneHistory.Add(new CandidatePhoneHistoryDto(
+                detail.PreviousPhoneRaw ?? detail.PreviousPhoneNormalized,
+                detail.PreviousPhoneNormalized,
+                detail.CreatedAtUtc));
+        }
+
+        if (!string.IsNullOrWhiteSpace(detail.PhoneNormalized) &&
+            phoneHistory.All(x => !string.Equals(x.PhoneNormalized, detail.PhoneNormalized, StringComparison.Ordinal)))
+        {
+            phoneHistory.Add(new CandidatePhoneHistoryDto(
+                detail.PhoneRaw,
+                detail.PhoneNormalized,
+                detail.CollectedAtUtc));
+        }
+
+        var phoneHistoryValues = phoneHistory
+            .OrderBy(x => x.RecordedAtUtc)
+            .Select(x => $"{ResponseDisplay.FormatPhone(x.PhoneRaw, x.PhoneNormalized)} · {ResponseDisplay.FormatCreatedAtLocal(x.RecordedAtUtc)}")
+            .ToList();
         var sections = new List<DetailSectionItemViewModel>
         {
             new() { Label = "Телефон", Value = phone.Length > 0 ? phone : "Скрыт" },
@@ -542,6 +572,15 @@ internal static class ResponsesIndexBuilder
             new() { Label = "Сбор", Value = ResponseDisplay.FormatCreatedAtLocal(detail.CollectedAtUtc) },
             new() { Label = "Отклик", Value = ResponseDisplay.FormatCreatedAtLocal(detail.CreatedAtUtc) }
         };
+
+        if (phoneHistoryValues.Count > 1)
+        {
+            sections.Insert(1, new DetailSectionItemViewModel
+            {
+                Label = "История номеров",
+                Values = phoneHistoryValues
+            });
+        }
 
         if (detail.BitrixDeliveries.Count > 0)
         {

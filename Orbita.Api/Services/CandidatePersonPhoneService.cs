@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using Orbita.Api.Data;
 
 namespace Orbita.Api.Services;
@@ -16,32 +17,47 @@ public sealed class CandidatePersonPhoneService(OrbitaDbContext db)
             return;
         }
 
+        var hasHistory = await db.CandidatePhoneHistory
+            .AnyAsync(x => x.PersonId == person.Id, ct);
+
         if (string.IsNullOrWhiteSpace(person.PhoneNormalized))
         {
             person.PhoneRaw = phoneRaw;
             person.PhoneNormalized = phoneNormalized;
             person.UpdatedAtUtc = DateTime.UtcNow;
-            await AppendHistoryAsync(person.Id, phoneRaw, phoneNormalized, responseId, ct);
+            AppendHistory(person.Id, phoneRaw, phoneNormalized, responseId);
+            await db.SaveChangesAsync(ct);
             return;
         }
 
         if (string.Equals(person.PhoneNormalized, phoneNormalized, StringComparison.Ordinal))
         {
+            if (!hasHistory)
+            {
+                AppendHistory(person.Id, phoneRaw, phoneNormalized, responseId);
+                await db.SaveChangesAsync(ct);
+            }
+
             return;
+        }
+
+        if (!hasHistory)
+        {
+            AppendHistory(person.Id, person.PhoneRaw, person.PhoneNormalized, responseId: null);
         }
 
         person.PhoneRaw = phoneRaw;
         person.PhoneNormalized = phoneNormalized;
         person.UpdatedAtUtc = DateTime.UtcNow;
-        await AppendHistoryAsync(person.Id, phoneRaw, phoneNormalized, responseId, ct);
+        AppendHistory(person.Id, phoneRaw, phoneNormalized, responseId);
+        await db.SaveChangesAsync(ct);
     }
 
-    private async Task AppendHistoryAsync(
+    private void AppendHistory(
         Guid personId,
         string phoneRaw,
         string phoneNormalized,
-        Guid? responseId,
-        CancellationToken ct)
+        Guid? responseId)
     {
         db.CandidatePhoneHistory.Add(new CandidatePhoneHistoryEntity
         {
@@ -52,6 +68,5 @@ public sealed class CandidatePersonPhoneService(OrbitaDbContext db)
             PhoneNormalized = phoneNormalized,
             RecordedAtUtc = DateTime.UtcNow
         });
-        await db.SaveChangesAsync(ct);
     }
 }

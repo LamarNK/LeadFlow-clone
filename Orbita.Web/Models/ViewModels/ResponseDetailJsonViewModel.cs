@@ -16,6 +16,7 @@ public sealed class DetailSectionItemViewModel
 {
     public string Label { get; init; } = string.Empty;
     public string Value { get; init; } = string.Empty;
+    public IReadOnlyList<string> Values { get; init; } = [];
     public string? Href { get; init; }
 }
 

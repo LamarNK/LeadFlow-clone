@@ -9051,6 +9051,15 @@ body.orbita-search-open {
     font-size: 14px;
 }
 
+.orbita-detail-value-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
 .orbita-detail-chat {
     margin-top: 20px;
 }

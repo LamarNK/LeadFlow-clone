@@ -12,6 +12,11 @@ public sealed record ResponseBitrixDeliveryDto(
     string Source,
     DateTime CreatedAtUtc);
 
+public sealed record CandidatePhoneHistoryDto(
+    string PhoneRaw,
+    string PhoneNormalized,
+    DateTime RecordedAtUtc);
+
 public sealed record ResponseListItemDto(
     Guid Id,
     Guid OfficeId,
@@ -105,7 +110,8 @@ public sealed record ResponseDetailDto(
     string? PreviousPhoneNormalized = null,
     int? PhoneUnchangedHours = null,
     DateTime? PhoneChangedAtUtc = null,
-    string? PhoneMetricLabel = null);
+    string? PhoneMetricLabel = null,
+    IReadOnlyList<CandidatePhoneHistoryDto>? PhoneHistory = null);
 
 public sealed record ResponsesPageDto(
     IReadOnlyList<ResponseListItemDto> Items,

@@ -1698,7 +1698,16 @@
                 var dt = document.createElement('dt');
                 dt.textContent = section.label || '';
                 var dd = document.createElement('dd');
-                if (section.href) {
+                if (section.values && section.values.length) {
+                    var list = document.createElement('ul');
+                    list.className = 'orbita-detail-value-list';
+                    section.values.forEach(function (value) {
+                        var item = document.createElement('li');
+                        item.textContent = value || '';
+                        list.appendChild(item);
+                    });
+                    dd.appendChild(list);
+                } else if (section.href) {
                     var link = document.createElement('a');
                     link.href = section.href;
                     link.textContent = section.value || '';

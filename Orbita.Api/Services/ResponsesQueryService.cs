@@ -185,7 +185,16 @@ public sealed class ResponsesQueryService(
         var bitrixDeliveries = deliveryLookup.TryGetValue(entity.Id, out var loaded)
             ? loaded
             : [];
-        return MapDetail(entity, portalHost, subProfileName, bitrixDeliveries);
+        var phoneHistory = await db.CandidatePhoneHistory
+            .AsNoTracking()
+            .Where(x => x.PersonId == entity.PersonId)
+            .OrderBy(x => x.RecordedAtUtc)
+            .Select(x => new CandidatePhoneHistoryDto(
+                x.PhoneRaw,
+                x.PhoneNormalized,
+                x.RecordedAtUtc))
+            .ToListAsync(ct);
+        return MapDetail(entity, portalHost, subProfileName, bitrixDeliveries, phoneHistory);
     }
 
     private async Task<ResponsesPageDto> GetPageInternalAsync(
@@ -675,7 +684,8 @@ public sealed class ResponsesQueryService(
         CandidateResponseEntity entity,
         string? portalHost,
         string? subProfileName = null,
-        IReadOnlyList<ResponseBitrixDeliveryDto>? bitrixDeliveries = null)
+        IReadOnlyList<ResponseBitrixDeliveryDto>? bitrixDeliveries = null,
+        IReadOnlyList<CandidatePhoneHistoryDto>? phoneHistory = null)
     {
         var bitrixEntityUrl = BitrixPortalLinks.TryBuildEntityDetailsUrl(
             portalHost,
@@ -742,6 +752,7 @@ public sealed class ResponsesQueryService(
             string.IsNullOrWhiteSpace(entity.PreviousPhoneNormalized) ? null : entity.PreviousPhoneNormalized,
             entity.PhoneUnchangedHours,
             entity.PhoneChangedAtUtc,
-            string.IsNullOrWhiteSpace(phoneMetricLabel) ? null : phoneMetricLabel);
+            string.IsNullOrWhiteSpace(phoneMetricLabel) ? null : phoneMetricLabel,
+            phoneHistory ?? []);
     }
 }
