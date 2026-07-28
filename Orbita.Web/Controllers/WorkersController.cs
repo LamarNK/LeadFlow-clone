@@ -171,6 +171,7 @@ public sealed class WorkersController(IWorkersService workers) : Controller
         bool messengerAutoReplyEnabled = false,
         string? messengerAutoReplyMessage = null,
         int? phoneUnchangedHours = null,
+        string? settingsTab = null,
         CancellationToken ct = default)
     {
         var responseHighlightAgeBucketsCsv = responseHighlightAgeBuckets is { Length: > 0 }
@@ -210,7 +211,7 @@ public sealed class WorkersController(IWorkersService workers) : Controller
             TempData["WorkersSuccess"] = "Настройки воркера сохранены.";
         }
 
-        return RedirectToAction(nameof(Details), new { id = workerId });
+        return RedirectToAction(nameof(Details), new { id = workerId, settingsTab });
     }
 
     [HttpPost]

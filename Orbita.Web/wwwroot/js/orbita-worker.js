@@ -222,6 +222,89 @@
         });
     }
 
+    function initWorkerSettings() {
+        var form = document.querySelector('.worker-settings-form');
+        if (!form || form.hasAttribute('data-worker-settings-bound')) return;
+        form.setAttribute('data-worker-settings-bound', '1');
+
+        var dirty = form.querySelector('[data-worker-settings-dirty]');
+        var saveButton = form.querySelector('[data-worker-settings-save]');
+        var activeTabInput = document.getElementById('workerSettingsActiveTab');
+        var tabButtons = Array.from(form.querySelectorAll('[data-worker-settings-tab]'));
+        var tabPanels = Array.from(form.querySelectorAll('[data-worker-settings-panel]'));
+
+        function activateSettingsTab(tabName, updateLocation) {
+            var selectedPanel = form.querySelector('[data-worker-settings-panel="' + tabName + '"]');
+            if (!selectedPanel) return;
+
+            tabButtons.forEach(function (button) {
+                var isActive = button.getAttribute('data-worker-settings-tab') === tabName;
+                button.classList.toggle('is-active', isActive);
+                button.setAttribute('aria-selected', isActive ? 'true' : 'false');
+            });
+            tabPanels.forEach(function (panel) {
+                panel.hidden = panel !== selectedPanel;
+            });
+            if (activeTabInput) activeTabInput.value = tabName;
+
+            if (updateLocation && window.history && window.history.replaceState) {
+                window.history.replaceState(null, '', '#worker-settings-' + tabName);
+            }
+        }
+
+        tabButtons.forEach(function (button, index) {
+            button.addEventListener('click', function () {
+                activateSettingsTab(button.getAttribute('data-worker-settings-tab'), true);
+            });
+            button.addEventListener('keydown', function (event) {
+                var nextIndex = null;
+                if (event.key === 'ArrowRight') nextIndex = (index + 1) % tabButtons.length;
+                if (event.key === 'ArrowLeft') nextIndex = (index - 1 + tabButtons.length) % tabButtons.length;
+                if (event.key === 'Home') nextIndex = 0;
+                if (event.key === 'End') nextIndex = tabButtons.length - 1;
+                if (nextIndex === null) return;
+
+                event.preventDefault();
+                var nextButton = tabButtons[nextIndex];
+                nextButton.focus();
+                activateSettingsTab(nextButton.getAttribute('data-worker-settings-tab'), true);
+            });
+        });
+
+        var queryTab = new URLSearchParams(window.location.search).get('settingsTab');
+        var hashTab = window.location.hash.replace('#worker-settings-', '');
+        activateSettingsTab(queryTab || hashTab || 'performance', false);
+
+        function syncDependentFields(controlId) {
+            var control = document.getElementById(controlId);
+            if (!control) return;
+
+            form.querySelectorAll('[data-worker-settings-depends-on="' + controlId + '"]').forEach(function (section) {
+                section.hidden = !control.checked;
+                section.setAttribute('aria-hidden', control.checked ? 'false' : 'true');
+            });
+        }
+
+        form.querySelectorAll('[data-worker-settings-depends-on]').forEach(function (section) {
+            var controlId = section.getAttribute('data-worker-settings-depends-on');
+            var control = controlId ? document.getElementById(controlId) : null;
+            if (!control) return;
+
+            syncDependentFields(controlId);
+            control.addEventListener('change', function () {
+                syncDependentFields(controlId);
+            });
+        });
+
+        function markDirty() {
+            if (dirty) dirty.hidden = false;
+            if (saveButton) saveButton.textContent = 'Сохранить изменения';
+        }
+
+        form.addEventListener('input', markDirty);
+        form.addEventListener('change', markDirty);
+    }
+
     function initCopyButtons() {
         document.querySelectorAll('[data-worker-copy]').forEach(function (button) {
             button.addEventListener('click', async function () {
@@ -677,6 +760,7 @@
         initAccountRowNavigation();
         initActivityChart();
         initParallelismSlider();
+        initWorkerSettings();
         initCopyButtons();
         if (window.OrbitaLive && shared && shared.getLiveRoot()) {
             window.OrbitaLive.register('worker', { fetchSnapshot: fetchSnapshot });

@@ -207,7 +207,34 @@
                 <form asp-action="UpdateSettings" method="post" class="worker-settings-form">
                     @Html.AntiForgeryToken()
                     <input type="hidden" name="workerId" value="@Model.WorkerId" />
+                    <input type="hidden" name="settingsTab" id="workerSettingsActiveTab" value="performance" />
 
+                    <div class="worker-settings-layout">
+                        <nav class="worker-settings-nav" role="tablist" aria-label="Разделы настроек воркера">
+                            <button type="button" class="worker-settings-nav-link" id="worker-settings-tab-performance" role="tab" aria-selected="true" aria-controls="worker-settings-performance" data-worker-settings-tab="performance">
+                                <i class="fa-solid fa-gauge-high" aria-hidden="true"></i>
+                                Режим работы
+                            </button>
+                            <button type="button" class="worker-settings-nav-link" id="worker-settings-tab-schedule" role="tab" aria-selected="false" aria-controls="worker-settings-schedule" data-worker-settings-tab="schedule">
+                                <i class="fa-regular fa-calendar" aria-hidden="true"></i>
+                                Расписание
+                            </button>
+                            <button type="button" class="worker-settings-nav-link" id="worker-settings-tab-collection" role="tab" aria-selected="false" aria-controls="worker-settings-collection" data-worker-settings-tab="collection">
+                                <i class="fa-solid fa-filter" aria-hidden="true"></i>
+                                Сбор откликов
+                            </button>
+                            <button type="button" class="worker-settings-nav-link" id="worker-settings-tab-processing" role="tab" aria-selected="false" aria-controls="worker-settings-processing" data-worker-settings-tab="processing">
+                                <i class="fa-solid fa-comments" aria-hidden="true"></i>
+                                Обработка откликов
+                            </button>
+                            <button type="button" class="worker-settings-nav-link" id="worker-settings-tab-connection" role="tab" aria-selected="false" aria-controls="worker-settings-connection" data-worker-settings-tab="connection">
+                                <i class="fa-solid fa-plug" aria-hidden="true"></i>
+                                Подключение
+                            </button>
+                        </nav>
+
+                        <div class="worker-settings-groups">
+                    <div class="worker-settings-group" id="worker-settings-performance" role="tabpanel" aria-labelledby="worker-settings-tab-performance" data-worker-settings-panel="performance">
                     <div class="worker-settings-section">
                         <span class="worker-settings-section-title">Параллелизм</span>
                         <label class="worker-settings-field" for="maxConcurrentAccounts">
@@ -222,7 +249,9 @@
                             </span>
                         </label>
                     </div>
+                    </div>
 
+                    <div class="worker-settings-group" id="worker-settings-collection" role="tabpanel" aria-labelledby="worker-settings-tab-collection" data-worker-settings-panel="collection">
                     <div class="worker-settings-section">
                         <span class="worker-settings-section-title">Фильтры сбора откликов</span>
                         <p class="worker-settings-hint worker-settings-section-hint">
@@ -331,7 +360,9 @@
                             </span>
                         </label>
                     </div>
+                    </div>
 
+                    <div class="worker-settings-group" id="worker-settings-processing" role="tabpanel" aria-labelledby="worker-settings-tab-processing" data-worker-settings-panel="processing">
                     <div class="worker-settings-section">
                         <span class="worker-settings-section-title">Пометка откликов</span>
                         <p class="worker-settings-hint worker-settings-section-hint">
@@ -354,23 +385,25 @@
                             </div>
                         </div>
 
-                        <span class="worker-settings-subsection-title">Какие отклики подсвечивать</span>
-                        @{
-                            var selectedHighlightBuckets = (Model.ResponseHighlightAgeBuckets ?? string.Empty)
-                                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-                        }
-                        <div class="worker-settings-chip-grid">
-                            @foreach (var bucket in Model.ResponseHighlightBucketOptions)
-                            {
-                                var isChecked = selectedHighlightBuckets.Contains(bucket);
-                                <label class="worker-settings-chip-option">
-                                    <input type="checkbox"
-                                           name="responseHighlightAgeBuckets"
-                                           value="@bucket"
-                                           @(isChecked ? "checked" : null) />
-                                    <span>@bucket</span>
-                                </label>
+                        <div class="worker-settings-dependent" data-worker-settings-depends-on="responseHighlightEnabled">
+                            <span class="worker-settings-subsection-title">Какие отклики подсвечивать</span>
+                            @{
+                                var selectedHighlightBuckets = (Model.ResponseHighlightAgeBuckets ?? string.Empty)
+                                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
                             }
+                            <div class="worker-settings-chip-grid">
+                                @foreach (var bucket in Model.ResponseHighlightBucketOptions)
+                                {
+                                    var isChecked = selectedHighlightBuckets.Contains(bucket);
+                                    <label class="worker-settings-chip-option">
+                                        <input type="checkbox"
+                                               name="responseHighlightAgeBuckets"
+                                               value="@bucket"
+                                               @(isChecked ? "checked" : null) />
+                                        <span>@bucket</span>
+                                    </label>
+                                }
+                            </div>
                         </div>
                     </div>
 
@@ -395,20 +428,24 @@
                                 </label>
                             </div>
                         </div>
-                        <label class="worker-settings-field" for="messengerAutoReplyMessage">
-                            <span class="worker-settings-label">Текст автоответа</span>
-                            <textarea id="messengerAutoReplyMessage"
-                                      name="messengerAutoReplyMessage"
-                                      class="worker-settings-textarea"
-                                      maxlength="2000"
-                                      rows="3"
-                                      placeholder="Доброго времени суток, наши коллеги с вами свяжутся и поподробнее расскажут о вакансии.">@Model.MessengerAutoReplyMessage</textarea>
-                            <span class="worker-settings-hint">
-                                Максимум 2000 символов. Если поле пустое, автоответ не отправляется даже при включённой опции.
-                            </span>
-                        </label>
+                        <div class="worker-settings-dependent" data-worker-settings-depends-on="messengerAutoReplyEnabled">
+                            <label class="worker-settings-field" for="messengerAutoReplyMessage">
+                                <span class="worker-settings-label">Текст автоответа</span>
+                                <textarea id="messengerAutoReplyMessage"
+                                          name="messengerAutoReplyMessage"
+                                          class="worker-settings-textarea"
+                                          maxlength="2000"
+                                          rows="3"
+                                          placeholder="Доброго времени суток, наши коллеги с вами свяжутся и поподробнее расскажут о вакансии.">@Model.MessengerAutoReplyMessage</textarea>
+                                <span class="worker-settings-hint">
+                                    Максимум 2000 символов. Если поле пустое, автоответ не отправляется даже при включённой опции.
+                                </span>
+                            </label>
+                        </div>
+                    </div>
                     </div>
 
+                    <div class="worker-settings-group" id="worker-settings-schedule" role="tabpanel" aria-labelledby="worker-settings-tab-schedule" data-worker-settings-panel="schedule">
                     <div class="worker-settings-section">
                         <span class="worker-settings-section-title">Автовключение по расписанию</span>
                         <p class="worker-settings-hint worker-settings-section-hint">
@@ -431,51 +468,55 @@
                             </div>
                         </div>
 
-                        @{
-                            var selectedScheduleDays = (Model.AutoScheduleDays ?? string.Empty)
-                                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-                        }
-                        <span class="worker-settings-subsection-title" id="schedule-days-title">Дни работы</span>
-                        <div class="worker-schedule-days" role="group" aria-labelledby="schedule-days-title">
-                            @foreach (var day in Model.AutoScheduleDayOptions)
-                            {
-                                var isChecked = selectedScheduleDays.Contains(day);
-                                var dayLabel = scheduleDayLabels.TryGetValue(day, out var label) ? label : day;
-                                <label class="worker-schedule-day" title="@dayLabel">
-                                    <input type="checkbox"
-                                           name="autoScheduleDays"
-                                           value="@day"
-                                           aria-label="@dayLabel"
-                                           @(isChecked ? "checked" : null) />
-                                    <span aria-hidden="true">@dayLabel</span>
-                                </label>
+                        <div class="worker-settings-dependent" data-worker-settings-depends-on="autoScheduleEnabled">
+                            @{
+                                var selectedScheduleDays = (Model.AutoScheduleDays ?? string.Empty)
+                                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
                             }
-                        </div>
+                            <span class="worker-settings-subsection-title" id="schedule-days-title">Дни работы</span>
+                            <div class="worker-schedule-days" role="group" aria-labelledby="schedule-days-title">
+                                @foreach (var day in Model.AutoScheduleDayOptions)
+                                {
+                                    var isChecked = selectedScheduleDays.Contains(day);
+                                    var dayLabel = scheduleDayLabels.TryGetValue(day, out var label) ? label : day;
+                                    <label class="worker-schedule-day" title="@dayLabel">
+                                        <input type="checkbox"
+                                               name="autoScheduleDays"
+                                               value="@day"
+                                               aria-label="@dayLabel"
+                                               @(isChecked ? "checked" : null) />
+                                        <span aria-hidden="true">@dayLabel</span>
+                                    </label>
+                                }
+                            </div>
 
-                        <span class="worker-settings-subsection-title">Рабочее время</span>
-                        <div class="worker-settings-age-grid worker-schedule-time-grid">
-                            <label class="worker-settings-field" for="autoScheduleFromLocalTime">
-                                <span class="worker-settings-label">С</span>
-                                <input type="time"
-                                       id="autoScheduleFromLocalTime"
-                                       name="autoScheduleFromLocalTime"
-                                       class="worker-settings-input"
-                                       value="@Model.AutoScheduleFromLocalTime" />
-                            </label>
-                            <label class="worker-settings-field" for="autoScheduleToLocalTime">
-                                <span class="worker-settings-label">До</span>
-                                <input type="time"
-                                       id="autoScheduleToLocalTime"
-                                       name="autoScheduleToLocalTime"
-                                       class="worker-settings-input"
-                                       value="@Model.AutoScheduleToLocalTime" />
-                            </label>
+                            <span class="worker-settings-subsection-title">Рабочее время</span>
+                            <div class="worker-settings-age-grid worker-schedule-time-grid">
+                                <label class="worker-settings-field" for="autoScheduleFromLocalTime">
+                                    <span class="worker-settings-label">С</span>
+                                    <input type="time"
+                                           id="autoScheduleFromLocalTime"
+                                           name="autoScheduleFromLocalTime"
+                                           class="worker-settings-input"
+                                           value="@Model.AutoScheduleFromLocalTime" />
+                                </label>
+                                <label class="worker-settings-field" for="autoScheduleToLocalTime">
+                                    <span class="worker-settings-label">До</span>
+                                    <input type="time"
+                                           id="autoScheduleToLocalTime"
+                                           name="autoScheduleToLocalTime"
+                                           class="worker-settings-input"
+                                           value="@Model.AutoScheduleToLocalTime" />
+                                </label>
+                            </div>
+                            <span class="worker-settings-hint">
+                                Время московское. Если окно пересекает полночь, например 19:00-07:00, оно тоже поддерживается.
+                            </span>
                         </div>
-                        <span class="worker-settings-hint">
-                            Время московское. Если окно пересекает полночь, например 19:00-07:00, оно тоже поддерживается.
-                        </span>
+                    </div>
                     </div>
 
+                    <div class="worker-settings-group worker-settings-group--advanced" id="worker-settings-connection" role="tabpanel" aria-labelledby="worker-settings-tab-connection" data-worker-settings-panel="connection">
                     <div class="worker-settings-section">
                         <span class="worker-settings-section-title">AdsPower Local API</span>
                         <label class="worker-settings-field" for="adsPowerApiBaseUrl">
@@ -511,9 +552,13 @@
                             <code class="worker-settings-effective-value">@Model.EffectiveAdsPowerApiBaseUrl</code>
                         </div>
                     </div>
+                    </div>
+                        </div>
+                    </div>
 
-                    <div class="worker-settings-actions">
-                        <button type="submit" class="worker-refresh-btn">Сохранить настройки</button>
+                    <div class="worker-settings-actions" data-worker-settings-actions>
+                        <span class="worker-settings-dirty" data-worker-settings-dirty hidden>Есть несохранённые изменения</span>
+                        <button type="submit" class="worker-refresh-btn" data-worker-settings-save>Сохранить настройки</button>
                     </div>
                 </form>
             </div>
