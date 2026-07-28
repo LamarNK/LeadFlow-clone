@@ -51,16 +51,36 @@ public sealed class WorkerMonitoringService(
     private int _completedCyclesSinceBrowserHousekeeping;
     private DateOnly? _lastBrowserHousekeepingLocalDate;
     private volatile bool _captchaHold;
+    private readonly SemaphoreSlim _monitorScreencastGate = new(1, 1);
+    private readonly Dictionary<Guid, BrowserMonitorScreencastCapture> _monitorScreencasts = [];
 
     public bool IsActive { get; private set; }
     public bool IsCaptchaHold => _captchaHold;
 
-    public void EnterCaptchaHold()
+    public async Task EnterCaptchaHoldAsync()
     {
-        _captchaHold = true;
-        _ = GlobalLogger.Instance.LogAsync(
-            "Мониторинг приостановлен для сессии капчи (текущие браузеры не закрываются).",
-            DeskLinkAuditLogLevel.Info);
+        BrowserMonitorScreencastCapture[] captures;
+        await _monitorScreencastGate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            _captchaHold = true;
+            captures = [.. _monitorScreencasts.Values];
+            _monitorScreencasts.Clear();
+        }
+        finally
+        {
+            _monitorScreencastGate.Release();
+        }
+
+        foreach (var capture in captures)
+        {
+            await capture.DisposeAsync().ConfigureAwait(false);
+        }
+
+        await GlobalLogger.Instance.LogAsync(
+                "Мониторинг приостановлен для сессии капчи; monitor screencast остановлены (текущие браузеры не закрываются).",
+                DeskLinkAuditLogLevel.Info)
+            .ConfigureAwait(false);
     }
 
     public void ExitCaptchaHold()
@@ -798,17 +818,40 @@ public sealed class WorkerMonitoringService(
                 {
                     try
                     {
-                        if (monitorScreencast is null)
+                        BrowserMonitorScreencastCapture? activeMonitorScreencast;
+                        await _monitorScreencastGate.WaitAsync(ct).ConfigureAwait(false);
+                        try
                         {
-                            monitorScreencast = await session
-                                .CreateMonitorScreencastCaptureAsync(ct)
-                                .ConfigureAwait(false);
-                            await monitorScreencast
-                                .WaitForFirstFrameAsync(TimeSpan.FromSeconds(4), ct)
-                                .ConfigureAwait(false);
+                            if (_captchaHold)
+                            {
+                                return null;
+                            }
+
+                            if (!_monitorScreencasts.TryGetValue(account.Id, out activeMonitorScreencast)
+                                || !ReferenceEquals(activeMonitorScreencast, monitorScreencast))
+                            {
+                                monitorScreencast = await session
+                                    .CreateMonitorScreencastCaptureAsync(ct)
+                                    .ConfigureAwait(false);
+                                _monitorScreencasts[account.Id] = monitorScreencast;
+                                activeMonitorScreencast = monitorScreencast;
+                            }
+                        }
+                        finally
+                        {
+                            _monitorScreencastGate.Release();
                         }
 
-                        var bytes = monitorScreencast.TryGetLatestJpeg();
+                        await activeMonitorScreencast
+                            .WaitForFirstFrameAsync(TimeSpan.FromSeconds(4), ct)
+                            .ConfigureAwait(false);
+
+                        if (_captchaHold)
+                        {
+                            return null;
+                        }
+
+                        var bytes = activeMonitorScreencast.TryGetLatestJpeg();
                         if (bytes is null || bytes.Length == 0)
                         {
                             bytes = await session.CapturePageJpegScreenshotAsync(ct).ConfigureAwait(false);
@@ -1112,6 +1155,20 @@ public sealed class WorkerMonitoringService(
                 browserMonitorSource.Unregister(account.Id);
                 if (monitorScreencast is not null)
                 {
+                    await _monitorScreencastGate.WaitAsync().ConfigureAwait(false);
+                    try
+                    {
+                        if (_monitorScreencasts.TryGetValue(account.Id, out var active)
+                            && ReferenceEquals(active, monitorScreencast))
+                        {
+                            _monitorScreencasts.Remove(account.Id);
+                        }
+                    }
+                    finally
+                    {
+                        _monitorScreencastGate.Release();
+                    }
+
                     await monitorScreencast.DisposeAsync().ConfigureAwait(false);
                 }
 

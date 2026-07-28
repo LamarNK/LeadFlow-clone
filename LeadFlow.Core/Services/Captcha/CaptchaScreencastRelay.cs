@@ -169,6 +169,10 @@ internal sealed class CaptchaScreencastRelay : IAsyncDisposable
                 return;
             }
 
+            // A frame is available as soon as CDP delivers it. Do not make screencast startup depend on
+            // SignalR delivery, which can be cancelled while the operator is completing the captcha.
+            _firstFrameReceived.TrySetResult(true);
+
             await _frameLock.WaitAsync(_cancellationToken).ConfigureAwait(false);
             try
             {
@@ -186,8 +190,6 @@ internal sealed class CaptchaScreencastRelay : IAsyncDisposable
             {
                 _frameLock.Release();
             }
-
-            _firstFrameReceived.TrySetResult(true);
         }
         catch (OperationCanceledException) when (_cancellationToken.IsCancellationRequested)
         {

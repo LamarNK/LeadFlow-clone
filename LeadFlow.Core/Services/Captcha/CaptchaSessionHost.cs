@@ -16,6 +16,7 @@ public sealed class CaptchaSessionHost(IAdsPowerApiClient adsPowerApiClient)
     private const int CaptchaClearChecksRequired = 2;
     private const int CaptchaMissingChecksRequired = 4;
     private const int CaptchaProbeIntervalMs = 1_200;
+    private const int LiveFrameRestartDelayMs = 300;
 
     public async Task<CaptchaSessionHostResult> RunAsync(
         CaptchaSessionHostRequest request,
@@ -180,29 +181,42 @@ public sealed class CaptchaSessionHost(IAdsPowerApiClient adsPowerApiClient)
         Func<CaptchaFramePayload, CancellationToken, Task> onFrame,
         CancellationToken cancellationToken)
     {
-        for (var attempt = 1; attempt <= LiveFrameStartAttempts; attempt++)
+        var attemptsWithoutFrame = 0;
+        while (!cancellationToken.IsCancellationRequested)
         {
-            var liveFramesCompleted = await TryPumpLiveFramesAsync(page, request, onFrame, cancellationToken)
+            var liveStream = await TryPumpLiveFramesAsync(page, request, onFrame, cancellationToken)
                 .ConfigureAwait(false);
-            if (liveFramesCompleted || cancellationToken.IsCancellationRequested)
+            if (cancellationToken.IsCancellationRequested || liveStream.CompletedNormally)
             {
                 return;
             }
 
-            if (attempt < LiveFrameStartAttempts)
+            if (!liveStream.ReceivedFrame)
             {
+                attemptsWithoutFrame++;
+                if (attemptsWithoutFrame >= LiveFrameStartAttempts)
+                {
+                    throw new InvalidOperationException(
+                        "Не удалось получить live-кадр из браузера. Сессия остановлена, чтобы не оставлять оператора в ожидании.");
+                }
+
                 await LogAsync(
-                        $"Captcha: live screencast не дал кадр, повторный запуск ({attempt + 1}/{LiveFrameStartAttempts}).",
+                        $"Captcha: live screencast не дал кадр, повторный запуск ({attemptsWithoutFrame + 1}/{LiveFrameStartAttempts}).",
                         DeskLinkAuditLogLevel.Warning)
                     .ConfigureAwait(false);
+                continue;
             }
-        }
 
-        throw new InvalidOperationException(
-            "Не удалось получить live-кадр из браузера. Сессия остановлена, чтобы не оставлять оператора в ожидании.");
+            attemptsWithoutFrame = 0;
+            await LogAsync(
+                    "Captcha: live screencast остановился после кадра, перезапускаем поток.",
+                    DeskLinkAuditLogLevel.Warning)
+                .ConfigureAwait(false);
+            await Task.Delay(LiveFrameRestartDelayMs, cancellationToken).ConfigureAwait(false);
+        }
     }
 
-    private static async Task<bool> TryPumpLiveFramesAsync(
+    private static async Task<LiveFramePumpResult> TryPumpLiveFramesAsync(
         IPage page,
         CaptchaSessionHostRequest request,
         Func<CaptchaFramePayload, CancellationToken, Task> onFrame,
@@ -223,23 +237,27 @@ public sealed class CaptchaSessionHost(IAdsPowerApiClient adsPowerApiClient)
                     TimeSpan.FromMilliseconds(LiveFrameFirstFrameTimeoutMs),
                     cancellationToken).ConfigureAwait(false))
             {
-                return false;
+                return new LiveFramePumpResult(false, false);
             }
 
-            return await relay.WaitForCompletionAsync(cancellationToken).ConfigureAwait(false);
+            return new LiveFramePumpResult(
+                true,
+                await relay.WaitForCompletionAsync(cancellationToken).ConfigureAwait(false));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            return true;
+            return new LiveFramePumpResult(false, true);
         }
         catch (Exception ex)
         {
             await LogAsync(
                 $"Captcha: live screencast не стартовал — {ex.Message}",
                 DeskLinkAuditLogLevel.Warning).ConfigureAwait(false);
-            return false;
+            return new LiveFramePumpResult(false, false);
         }
     }
+
+    private readonly record struct LiveFramePumpResult(bool ReceivedFrame, bool CompletedNormally);
 
     private static async Task PumpInputsAsync(
         IPage page,

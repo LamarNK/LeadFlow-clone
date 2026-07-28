@@ -6,6 +6,6 @@ public interface IWorkerMonitoringService
     bool IsCaptchaHold { get; }
     Task StartAsync(CancellationToken cancellationToken);
     Task StopAsync();
-    void EnterCaptchaHold();
+    Task EnterCaptchaHoldAsync();
     void ExitCaptchaHold();
 }

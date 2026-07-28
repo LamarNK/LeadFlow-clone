@@ -41,7 +41,7 @@ public sealed class CaptchaSessionCoordinator(
             return false;
         }
 
-        monitoringService.EnterCaptchaHold();
+        await monitoringService.EnterCaptchaHoldAsync().ConfigureAwait(false);
         CancellationTokenSource? activeSessionCts = null;
         try
         {
@@ -230,6 +230,12 @@ public sealed class CaptchaSessionCoordinator(
                                 new Dictionary<string, object?> { ["captcha.sessionId"] = pending.SessionId })
                                 .ConfigureAwait(false);
                         }
+                    }
+                    catch (OperationCanceledException) when (ct.IsCancellationRequested
+                        || hubConnection.State != HubConnectionState.Connected)
+                    {
+                        // The session is ending or SignalR is reconnecting. The live stream will resume
+                        // on the next frame instead of turning a solved captcha into a failed session.
                     }
                     catch (Exception ex)
                     {
