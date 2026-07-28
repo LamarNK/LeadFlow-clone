@@ -374,12 +374,31 @@
             menuButton.setAttribute('aria-label', isOpen ? 'Закрыть меню' : 'Открыть меню');
         }
 
+        function syncSidebarToggle(isOpen) {
+            var sidebarToggle = document.querySelector('[data-orbita-sidebar-toggle]');
+            var icon = sidebarToggle && sidebarToggle.querySelector('i');
+            if (!sidebarToggle || !icon) return;
+
+            if (isOpen && mobileQuery.matches) {
+                sidebarToggle.setAttribute('aria-expanded', 'true');
+                sidebarToggle.setAttribute('aria-label', 'Закрыть меню');
+                icon.className = 'fa-solid fa-xmark';
+                return;
+            }
+
+            var isCollapsed = document.documentElement.classList.contains('sidebar-collapsed');
+            sidebarToggle.setAttribute('aria-expanded', isCollapsed ? 'false' : 'true');
+            sidebarToggle.setAttribute('aria-label', isCollapsed ? 'Развернуть меню' : 'Свернуть меню');
+            icon.className = isCollapsed ? 'fa-solid fa-angles-right' : 'fa-solid fa-bars';
+        }
+
         function closeMobileSidebar(restoreFocus) {
             document.documentElement.classList.remove('sidebar-mobile-open');
             document.body.classList.remove('sidebar-mobile-open');
             var backdrop = document.querySelector('[data-orbita-sidebar-backdrop]');
             if (backdrop) backdrop.setAttribute('hidden', '');
             syncMenuButton(false);
+            syncSidebarToggle(false);
 
             if (restoreFocus && previousFocus && typeof previousFocus.focus === 'function') {
                 previousFocus.focus();
@@ -397,6 +416,7 @@
             var backdrop = document.querySelector('[data-orbita-sidebar-backdrop]');
             if (backdrop) backdrop.removeAttribute('hidden');
             syncMenuButton(true);
+            syncSidebarToggle(true);
 
             var firstNavigationItem = document.querySelector('.orbita-nav .nav-item');
             if (firstNavigationItem) firstNavigationItem.focus();
@@ -472,6 +492,15 @@
 
         document.addEventListener('click', function (e) {
             if (!e.target.closest('[data-orbita-sidebar-toggle]')) return;
+
+            if (window.matchMedia('(max-width: 768px)').matches) {
+                if (document.documentElement.classList.contains('sidebar-mobile-open') &&
+                    window.Orbita && typeof window.Orbita.closeMobileSidebar === 'function') {
+                    window.Orbita.closeMobileSidebar();
+                }
+                return;
+            }
+
             setCollapsed(!document.documentElement.classList.contains('sidebar-collapsed'));
         });
     }
