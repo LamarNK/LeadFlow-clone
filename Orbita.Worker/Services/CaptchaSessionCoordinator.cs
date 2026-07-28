@@ -199,49 +199,9 @@ public sealed class CaptchaSessionCoordinator(
                 pending.ViewportWidth,
                 pending.ViewportHeight);
 
-            var snapshotCount = 0;
             var frameCount = 0;
             var result = await captchaHost.RunAsync(
                 request,
-                async (snapshot, ct) =>
-                {
-                    if (hubConnection.State != HubConnectionState.Connected)
-                    {
-                        return;
-                    }
-
-                    try
-                    {
-                        await hubConnection.InvokeAsync(
-                            "SendSnapshot",
-                            new CaptchaSnapshotMessage(
-                                snapshot.SessionId,
-                                snapshot.MhtmlGzipBase64,
-                                snapshot.ViewportWidth,
-                                snapshot.ViewportHeight,
-                                snapshot.TimestampMs,
-                                "image/jpeg"),
-                            ct).ConfigureAwait(false);
-                        snapshotCount++;
-                        if (snapshotCount == 1 || snapshotCount % 10 == 0)
-                        {
-                            await CaptchaWorkerLog.InfoAsync(
-                                $"Captcha: отправлен снимок #{snapshotCount} ({snapshot.MhtmlGzipBase64.Length} b64 chars).",
-                                nameof(TryRunPendingSessionAsync),
-                                new Dictionary<string, object?> { ["captcha.sessionId"] = pending.SessionId })
-                                .ConfigureAwait(false);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        await CaptchaWorkerLog.ErrorAsync(
-                            $"Captcha: ошибка SendSnapshot — {ex.Message}",
-                            nameof(TryRunPendingSessionAsync),
-                            new Dictionary<string, object?> { ["captcha.sessionId"] = pending.SessionId })
-                            .ConfigureAwait(false);
-                        throw;
-                    }
-                },
                 async (frame, ct) =>
                 {
                     if (hubConnection.State != HubConnectionState.Connected)
@@ -361,7 +321,7 @@ public sealed class CaptchaSessionCoordinator(
             }
 
             await CaptchaWorkerLog.InfoAsync(
-                $"Captcha: сессия завершена — {finalStatus}, live frames: {frameCount}, снимков: {snapshotCount}, сообщение: {result.Message ?? "—"}",
+                $"Captcha: сессия завершена — {finalStatus}, live frames: {frameCount}, сообщение: {result.Message ?? "—"}",
                 nameof(TryRunPendingSessionAsync),
                 new Dictionary<string, object?> { ["captcha.sessionId"] = pending.SessionId })
                 .ConfigureAwait(false);

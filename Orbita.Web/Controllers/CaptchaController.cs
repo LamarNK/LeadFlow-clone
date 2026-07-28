@@ -31,7 +31,7 @@ public sealed class CaptchaController(OrbitaApiClient api) : Controller
         return Ok(session);
     }
 
-    [HttpPost("Cancel/{id:guid}")]
+    [HttpPost("/Captcha/Cancel/{id:guid}")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Cancel(Guid id, CancellationToken ct)
     {

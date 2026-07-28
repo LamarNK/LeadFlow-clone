@@ -40,6 +40,11 @@ internal sealed class CaptchaScreencastRelay : IAsyncDisposable
         Func<CaptchaFramePayload, CancellationToken, Task> onFrame,
         CancellationToken cancellationToken)
     {
+        await page.BringToFrontAsync().ConfigureAwait(false);
+        await page.EvaluateFunctionAsync(
+                "() => { window.focus(); document.body?.focus?.(); }")
+            .ConfigureAwait(false);
+
         var client = await page.CreateCDPSessionAsync().ConfigureAwait(false);
         var relay = new CaptchaScreencastRelay(
             client,
@@ -52,6 +57,7 @@ internal sealed class CaptchaScreencastRelay : IAsyncDisposable
         relay.Attach();
         try
         {
+            await client.SendAsync("Page.enable").ConfigureAwait(false);
             await client.SendAsync("Page.startScreencast", new
             {
                 format = "jpeg",

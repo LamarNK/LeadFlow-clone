@@ -9,18 +9,17 @@ namespace LeadFlow.Core.Services.Captcha;
 
 public sealed class CaptchaSessionHost(IAdsPowerApiClient adsPowerApiClient)
 {
-    private const int SnapshotIntervalMs = 400;
     private const int LiveFrameFirstFrameTimeoutMs = 5_000;
+    private const int LiveFrameStartAttempts = 2;
     private const string DefaultAdsPowerApiBaseUrl = "http://local.adspower.net:50325";
-    private const int CaptchaDetectTimeoutSeconds = 45;
+    private const int CaptchaDetectTimeoutSeconds = 300;
     private const int CaptchaClearChecksRequired = 2;
     private const int CaptchaMissingChecksRequired = 4;
     private const int CaptchaProbeIntervalMs = 1_200;
 
     public async Task<CaptchaSessionHostResult> RunAsync(
         CaptchaSessionHostRequest request,
-        Func<CaptchaSnapshotPayload, CancellationToken, Task> onSnapshot,
-        Func<CaptchaFramePayload, CancellationToken, Task>? onFrame,
+        Func<CaptchaFramePayload, CancellationToken, Task> onFrame,
         ChannelReader<CaptchaInputPayload> inputs,
         Func<CaptchaSessionProgress, CancellationToken, Task> onProgress,
         CancellationToken cancellationToken = default)
@@ -67,7 +66,7 @@ public sealed class CaptchaSessionHost(IAdsPowerApiClient adsPowerApiClient)
 
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             var inputTask = PumpInputsAsync(page, request, inputs, linkedCts.Token);
-            var visualTask = PumpVisualsAsync(page, request, onSnapshot, onFrame, linkedCts.Token);
+            var visualTask = PumpLiveFramesAsync(page, request, onFrame, linkedCts.Token);
             var probeTask = ProbeCompletionAsync(page, request, onProgress, linkedCts);
 
             await Task.WhenAny(probeTask, inputTask, visualTask).ConfigureAwait(false);
@@ -175,14 +174,13 @@ public sealed class CaptchaSessionHost(IAdsPowerApiClient adsPowerApiClient)
         return page;
     }
 
-    private static async Task PumpVisualsAsync(
+    private static async Task PumpLiveFramesAsync(
         IPage page,
         CaptchaSessionHostRequest request,
-        Func<CaptchaSnapshotPayload, CancellationToken, Task> onSnapshot,
-        Func<CaptchaFramePayload, CancellationToken, Task>? onFrame,
+        Func<CaptchaFramePayload, CancellationToken, Task> onFrame,
         CancellationToken cancellationToken)
     {
-        if (onFrame is not null)
+        for (var attempt = 1; attempt <= LiveFrameStartAttempts; attempt++)
         {
             var liveFramesCompleted = await TryPumpLiveFramesAsync(page, request, onFrame, cancellationToken)
                 .ConfigureAwait(false);
@@ -191,12 +189,17 @@ public sealed class CaptchaSessionHost(IAdsPowerApiClient adsPowerApiClient)
                 return;
             }
 
-            await LogAsync(
-                "Captcha: live screencast недоступен, переключаемся на JPEG snapshots.",
-                DeskLinkAuditLogLevel.Warning).ConfigureAwait(false);
+            if (attempt < LiveFrameStartAttempts)
+            {
+                await LogAsync(
+                        $"Captcha: live screencast не дал кадр, повторный запуск ({attempt + 1}/{LiveFrameStartAttempts}).",
+                        DeskLinkAuditLogLevel.Warning)
+                    .ConfigureAwait(false);
+            }
         }
 
-        await PumpSnapshotsAsync(page, request, onSnapshot, cancellationToken).ConfigureAwait(false);
+        throw new InvalidOperationException(
+            "Не удалось получить live-кадр из браузера. Сессия остановлена, чтобы не оставлять оператора в ожидании.");
     }
 
     private static async Task<bool> TryPumpLiveFramesAsync(
@@ -235,32 +238,6 @@ public sealed class CaptchaSessionHost(IAdsPowerApiClient adsPowerApiClient)
                 $"Captcha: live screencast не стартовал — {ex.Message}",
                 DeskLinkAuditLogLevel.Warning).ConfigureAwait(false);
             return false;
-        }
-    }
-
-    private static async Task PumpSnapshotsAsync(
-        IPage page,
-        CaptchaSessionHostRequest request,
-        Func<CaptchaSnapshotPayload, CancellationToken, Task> onSnapshot,
-        CancellationToken cancellationToken)
-    {
-        while (!cancellationToken.IsCancellationRequested)
-        {
-            var gzip = await CaptchaScreenshotCapture.CaptureJpegGzipBase64Async(page, cancellationToken: cancellationToken)
-                .ConfigureAwait(false);
-            if (!string.IsNullOrWhiteSpace(gzip))
-            {
-                await onSnapshot(
-                    new CaptchaSnapshotPayload(
-                        request.SessionId,
-                        gzip,
-                        request.ViewportWidth,
-                        request.ViewportHeight,
-                        DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()),
-                    cancellationToken).ConfigureAwait(false);
-            }
-
-            await Task.Delay(SnapshotIntervalMs, cancellationToken).ConfigureAwait(false);
         }
     }
 
