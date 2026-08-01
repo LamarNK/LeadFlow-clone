@@ -15,23 +15,50 @@ public sealed class CrmWorkspaceService(
     UserManager<IdentityUser> users,
     CrmLeadDistributionService leadDistribution)
 {
-    public async Task CreateCardForResponseAsync(CandidateResponseEntity response, CancellationToken ct = default)
+    /// <summary>
+    /// Create CRM card for a response in the target office (delivery path only).
+    /// Does not call SaveChanges — caller owns the unit of work unless <paramref name="save"/> is true.
+    /// </summary>
+    public async Task<(Guid? CardId, string? Error)> TryCreateCardForDeliveryAsync(
+        CandidateResponseEntity response,
+        Guid officeId,
+        bool save = true,
+        CancellationToken ct = default)
     {
-        var enabled = await db.Offices.AsNoTracking()
-            .Where(x => x.Id == response.OfficeId)
-            .Select(x => x.CrmEnabled)
-            .FirstOrDefaultAsync(ct);
-        if (!enabled || response.IsLocalDuplicate || await db.CrmCandidateCards.AnyAsync(x => x.ResponseId == response.Id, ct))
+        if (response.IsLocalDuplicate)
         {
-            return;
+            return (null, "Локальный дубль — карточка CRM не создаётся.");
         }
 
+        var office = await db.Offices.AsNoTracking()
+            .Where(x => x.Id == officeId)
+            .Select(x => new { x.CrmEnabled, x.IsEnabled, x.CrmStagesJson })
+            .FirstOrDefaultAsync(ct);
+        if (office is null || !office.IsEnabled)
+        {
+            return (null, "Офис не найден или отключён.");
+        }
+
+        if (!office.CrmEnabled)
+        {
+            return (null, "Офис не принимает отклики в CRM.");
+        }
+
+        var existing = await db.CrmCandidateCards
+            .FirstOrDefaultAsync(x => x.ResponseId == response.Id, ct);
+        if (existing is not null)
+        {
+            return (existing.Id, null);
+        }
+
+        var initialStage = CrmStages.Resolve(office.CrmStagesJson)[0];
         var now = DateTime.UtcNow;
         var card = new CrmCandidateCardEntity
         {
             Id = Guid.NewGuid(),
             ResponseId = response.Id,
-            OfficeId = response.OfficeId,
+            OfficeId = officeId,
+            Stage = initialStage,
             CreatedAtUtc = now,
             UpdatedAtUtc = now,
             StageChangedAtUtc = now,
@@ -40,7 +67,23 @@ public sealed class CrmWorkspaceService(
         db.CrmCandidateCards.Add(card);
         AddHistory(card.Id, "Created", "Карточка создана из отклика", "system", "Система", now);
         await leadDistribution.TryAutoAssignNewCardAsync(card, ct: ct);
-        await db.SaveChangesAsync(ct);
+        if (save)
+        {
+            await db.SaveChangesAsync(ct);
+        }
+
+        return (card.Id, null);
+    }
+
+    [Obsolete("Use TryCreateCardForDeliveryAsync — CRM cards are created only on delivery.")]
+    public async Task CreateCardForResponseAsync(CandidateResponseEntity response, CancellationToken ct = default)
+    {
+        if (response.OfficeId is not Guid officeId)
+        {
+            return;
+        }
+
+        await TryCreateCardForDeliveryAsync(response, officeId, save: true, ct);
     }
 
     public async Task<CrmBoardDto?> GetBoardAsync(
@@ -125,7 +168,8 @@ public sealed class CrmWorkspaceService(
                 || (x.NextActionAtUtc is DateTime next && next < now)).ToList();
         }
 
-        var stageDtos = CrmStages.All.Select(stage =>
+        var officeStages = CrmStages.Resolve(office.CrmStagesJson);
+        var stageDtos = officeStages.Select(stage =>
         {
             var stageCards = cards.Where(x => x.Stage == stage && !x.IsClosed).Select(x =>
             {
@@ -134,6 +178,24 @@ public sealed class CrmWorkspaceService(
             }).ToList();
             return new CrmStageDto(stage, stageCards, stageCards.Count);
         }).ToList();
+
+        // Cards left on stages removed from the funnel stay visible until remapped.
+        var knownStages = new HashSet<string>(officeStages, StringComparer.Ordinal);
+        var orphanStages = cards
+            .Where(x => !x.IsClosed && !knownStages.Contains(x.Stage))
+            .Select(x => x.Stage)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(x => x, StringComparer.Ordinal)
+            .ToList();
+        foreach (var orphan in orphanStages)
+        {
+            var stageCards = cards.Where(x => x.Stage == orphan && !x.IsClosed).Select(x =>
+            {
+                var stats = taskStats.GetValueOrDefault(x.Id);
+                return ToCardDto(x, names, stats.Count, stats.Overdue, now);
+            }).ToList();
+            stageDtos.Add(new CrmStageDto(orphan, stageCards, stageCards.Count));
+        }
 
         if (scope == CrmBoardScopes.Closed || query.IncludeClosed)
         {
@@ -211,7 +273,8 @@ public sealed class CrmWorkspaceService(
             query.Vacancy,
             query.OverdueOnly,
             query.ActiveLoadOnly,
-            query.IncludeClosed);
+            query.IncludeClosed,
+            officeStages);
     }
 
     public async Task<bool> StartShiftAsync(Guid officeId, string userId, CancellationToken ct = default)
@@ -282,10 +345,60 @@ public sealed class CrmWorkspaceService(
         return true;
     }
 
+    public async Task<(bool Ok, string? Error)> SetOfficeFunnelAsync(
+        Guid officeId,
+        IReadOnlyList<string> stages,
+        string actorUserId,
+        CancellationToken ct = default)
+    {
+        var normalized = CrmStages.Normalize(stages);
+        if (normalized is null)
+        {
+            return (false, $"Укажите от {CrmStages.MinCount} до {CrmStages.MaxCount} уникальных этапов (до {CrmStages.MaxNameLength} символов).");
+        }
+
+        var office = await db.Offices.FirstOrDefaultAsync(x => x.Id == officeId, ct);
+        if (office is null)
+        {
+            return (false, "Офис не найден.");
+        }
+
+        var nextStages = normalized.ToList();
+        var nextSet = new HashSet<string>(nextStages, StringComparer.Ordinal);
+        var fallback = nextStages[0];
+        var now = DateTime.UtcNow;
+        var actorName = await ResolveDisplayNameAsync(actorUserId, ct);
+
+        // Cards on removed stages move to the first stage of the new funnel.
+        var openCards = await db.CrmCandidateCards
+            .Where(x => x.OfficeId == officeId && !x.IsClosed)
+            .ToListAsync(ct);
+        foreach (var card in openCards.Where(x => !nextSet.Contains(x.Stage)))
+        {
+            var previousStage = card.Stage;
+            card.Stage = fallback;
+            card.StageChangedAtUtc = now;
+            card.UpdatedAtUtc = now;
+            AddHistory(
+                card.Id,
+                "StageChanged",
+                $"{previousStage} → {fallback} (воронка обновлена)",
+                actorUserId,
+                actorName,
+                now);
+        }
+
+        office.CrmStagesJson = CrmStages.Serialize(nextStages);
+        await db.SaveChangesAsync(ct);
+        return (true, null);
+    }
+
     public async Task<CrmOfficeSettingsDto?> GetOfficeSettingsAsync(Guid officeId, CancellationToken ct = default)
     {
         var office = await db.Offices.AsNoTracking().FirstOrDefaultAsync(x => x.Id == officeId, ct);
-        return office is null ? null : new CrmOfficeSettingsDto(office.CrmEnabled, office.CrmRequireStageComment);
+        return office is null
+            ? null
+            : new CrmOfficeSettingsDto(office.CrmEnabled, office.CrmRequireStageComment, CrmStages.Resolve(office.CrmStagesJson));
     }
 
     public async Task<CrmCandidateDetailDto?> GetCardAsync(Guid cardId, string userId, bool isAdmin, CancellationToken ct = default)
@@ -298,6 +411,11 @@ public sealed class CrmWorkspaceService(
             return null;
         }
 
+        var officeStagesJson = await db.Offices.AsNoTracking()
+            .Where(x => x.Id == card.OfficeId)
+            .Select(x => x.CrmStagesJson)
+            .FirstOrDefaultAsync(ct);
+        var officeStages = CrmStages.Resolve(officeStagesJson);
         var managers = await GetManagersAsync(card.OfficeId, ct);
         var names = managers.ToDictionary(x => x.Profile.UserId, x => x.Name, StringComparer.Ordinal);
         var loads = await leadDistribution.GetActiveLoadsAsync(card.OfficeId, ct);
@@ -330,7 +448,8 @@ public sealed class CrmWorkspaceService(
                 x.Name,
                 x.Profile.CrmShiftActive,
                 x.Profile.CrmCapacity,
-                loads.GetValueOrDefault(x.Profile.UserId))).ToList());
+                loads.GetValueOrDefault(x.Profile.UserId))).ToList(),
+            officeStages);
     }
 
     public async Task<IReadOnlyList<CrmTaskDto>> GetTasksAsync(Guid officeId, string userId, bool isAdmin, CancellationToken ct = default)
@@ -367,11 +486,6 @@ public sealed class CrmWorkspaceService(
         bool isAdmin,
         CancellationToken ct = default)
     {
-        if (!CrmStages.IsValid(stage))
-        {
-            return (false, "Неизвестный этап.");
-        }
-
         var card = await FindAccessibleCardAsync(cardId, actorUserId, isAdmin, ct);
         if (card is null)
         {
@@ -383,11 +497,17 @@ public sealed class CrmWorkspaceService(
             return (false, "Карточка закрыта. Сначала верните её в работу.");
         }
 
-        var requireComment = await db.Offices.AsNoTracking()
+        var officeMeta = await db.Offices.AsNoTracking()
             .Where(x => x.Id == card.OfficeId)
-            .Select(x => x.CrmRequireStageComment)
+            .Select(x => new { x.CrmRequireStageComment, x.CrmStagesJson })
             .FirstOrDefaultAsync(ct);
-        if (requireComment && string.IsNullOrWhiteSpace(comment))
+        var officeStages = CrmStages.Resolve(officeMeta?.CrmStagesJson);
+        if (!CrmStages.Contains(officeStages, stage))
+        {
+            return (false, "Неизвестный этап.");
+        }
+
+        if (officeMeta?.CrmRequireStageComment == true && string.IsNullOrWhiteSpace(comment))
         {
             return (false, "Нужен комментарий при смене этапа.");
         }

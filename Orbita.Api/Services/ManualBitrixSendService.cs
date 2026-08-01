@@ -26,16 +26,29 @@ public sealed class ManualBitrixSendService(
             return new SendBitrixResultDto(false, ResponseStatuses.Error, null, null, null, "Отклик не найден.");
         }
 
-        if (!scope.CanAccessOffice(entity.OfficeId))
+        if (!scope.CanAccessResponse(entity.OfficeId, entity.Worker?.OfficeId))
         {
             return new SendBitrixResultDto(false, ResponseStatuses.Error, null, null, null, "Нет доступа к отклику.");
         }
 
         var instance = await db.BitrixInstances
-            .FirstOrDefaultAsync(x => x.Id == bitrixInstanceId && x.OfficeId == entity.OfficeId, ct);
-        if (instance is null || !instance.IsEnabled)
+            .FirstOrDefaultAsync(x => x.Id == bitrixInstanceId && x.IsEnabled, ct);
+        if (instance is null)
         {
             return new SendBitrixResultDto(false, ResponseStatuses.Error, null, null, null, "Битрикс не найден или отключён.");
+        }
+
+        // Bind collection-pool response to the Bitrix instance office.
+        entity.OfficeId ??= instance.OfficeId;
+        if (entity.OfficeId != instance.OfficeId)
+        {
+            return new SendBitrixResultDto(
+                false,
+                ResponseStatuses.Error,
+                null,
+                instance.Id,
+                instance.Name,
+                "Битрикс принадлежит другому офису.");
         }
 
         var localDuplicate = await duplicateService.FindLocalDuplicateAsync(

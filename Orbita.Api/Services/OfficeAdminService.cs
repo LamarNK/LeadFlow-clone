@@ -35,6 +35,14 @@ public sealed class OfficeAdminService(OrbitaDbContext db)
             .ToList();
     }
 
+    /// <summary>Enabled offices for pickers (workers, CRM delivery targets).</summary>
+    public async Task<IReadOnlyList<OfficeOptionDto>> ListOptionsAsync(CancellationToken ct = default) =>
+        await db.Offices.AsNoTracking()
+            .Where(x => x.IsEnabled)
+            .OrderBy(x => x.Name)
+            .Select(x => new OfficeOptionDto(x.Id, x.Name, x.IsEnabled, x.CrmEnabled))
+            .ToListAsync(ct);
+
     public async Task<OfficeDetailDto?> GetAsync(Guid id, CancellationToken ct = default)
     {
         var office = await db.Offices.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
@@ -74,6 +82,7 @@ public sealed class OfficeAdminService(OrbitaDbContext db)
         string name,
         bool isEnabled,
         bool bitrixTransmissionEnabled,
+        bool crmEnabled,
         CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(name))
@@ -96,6 +105,7 @@ public sealed class OfficeAdminService(OrbitaDbContext db)
         office.Name = trimmedName;
         office.IsEnabled = isEnabled;
         office.BitrixTransmissionEnabled = bitrixTransmissionEnabled;
+        office.CrmEnabled = crmEnabled;
 
         var route = await db.DistributionRoutes.FirstOrDefaultAsync(x => x.OfficeId == office.Id, ct);
         var now = DateTime.UtcNow;
@@ -210,7 +220,8 @@ public sealed class OfficeAdminService(OrbitaDbContext db)
             bitrix.ValidationMessage,
             bitrix.MaskedWebhookUrl,
             bitrix.PortalHost,
-            bitrix.LastValidatedAtUtc);
+            bitrix.LastValidatedAtUtc,
+            office.CrmEnabled);
     }
 
     private static string MaskSecret(string hashOrSecret)

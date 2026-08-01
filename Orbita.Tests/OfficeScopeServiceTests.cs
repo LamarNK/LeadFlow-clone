@@ -1,18 +1,20 @@
 using Microsoft.EntityFrameworkCore;
 using Orbita.Api.Data;
 using Orbita.Api.Services;
+using Orbita.Contracts;
+using System.Security.Claims;
 
 namespace Orbita.Tests;
 
 public sealed class OfficeScopeServiceTests
 {
     [Fact]
-    public void GlobalAdmin_CanAccessAnyOffice()
+    public void GlobalAdmin_HasAccessToAnyOfficeFilter()
     {
         var scope = OfficeScope.GlobalAdmin;
-        Assert.True(scope.CanAccessOffice(Guid.NewGuid()));
+        Assert.True(scope.HasAccess);
         Assert.Null(scope.ResolveFilter(null));
-        Assert.Equal(Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"), scope.ResolveFilter(Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")));
+        Assert.True(scope.CanAccessOffice(Guid.NewGuid()));
     }
 
     [Fact]
@@ -21,10 +23,14 @@ public sealed class OfficeScopeServiceTests
         var officeId = Guid.Parse("22222222-2222-2222-2222-222222222222");
         var scope = OfficeScope.ForOffice(officeId);
 
-        Assert.Equal(officeId, scope.ResolveFilter(null));
+        Assert.True(scope.HasAccess);
         Assert.Equal(officeId, scope.ResolveFilter(Guid.NewGuid()));
         Assert.True(scope.CanAccessOffice(officeId));
         Assert.False(scope.CanAccessOffice(Guid.NewGuid()));
+        Assert.True(scope.CanAccessWorker(officeId));
+        Assert.True(scope.CanAccessResponse(officeId));
+        Assert.True(scope.CanAccessResponse(null, officeId));
+        Assert.False(scope.CanAccessResponse(null, Guid.NewGuid()));
     }
 
     [Fact]
@@ -75,6 +81,23 @@ public sealed class OfficeScopeServiceTests
         var service = new OfficeScopeService(db);
         var canAccess = await service.CanAccessWorkerAsync(OfficeScope.ForOffice(officeA), workerBId);
         Assert.False(canAccess);
+    }
+
+    [Fact]
+    public void Resolve_OperatorRole_UsesOfficeClaim()
+    {
+        var officeId = Guid.Parse("22222222-2222-2222-2222-222222222222");
+        var claims = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim(ClaimTypes.NameIdentifier, "op-user"),
+            new Claim(ClaimTypes.Role, PanelRoles.Operator),
+            new Claim(OfficeClaims.OfficeId, officeId.ToString("D"))
+        ], "test"));
+
+        var service = new OfficeScopeService(CreateDb());
+        var scope = service.Resolve(claims);
+        Assert.Equal(officeId, scope.OfficeId);
+        Assert.False(scope.IsGlobalAdmin);
     }
 
     private static OrbitaDbContext CreateDb()

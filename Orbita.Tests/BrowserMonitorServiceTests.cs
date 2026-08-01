@@ -43,7 +43,8 @@ public sealed class BrowserMonitorServiceTests
             [
                 new WorkerActiveAccountDto(firstAccountId, "Account 1", WorkerActivityPhases.Account, "Открыт браузер"),
                 new WorkerActiveAccountDto(secondAccountId, "Account 2", WorkerActivityPhases.SubProfile, "Открыт субпрофиль", "sub-1", "Sub 1")
-            ]);
+            ],
+            ownerUserId: "op1");
 
         var pushNotifier = new CapturingWorkerPushNotifier();
         var service = CreateService(db, pushNotifier);
@@ -100,7 +101,8 @@ public sealed class BrowserMonitorServiceTests
             ],
             [
                 new WorkerActiveAccountDto(accountId, "Account 1", WorkerActivityPhases.Account, "Открыт браузер")
-            ]);
+            ],
+            ownerUserId: "op1");
 
         var service = CreateService(db);
         var (session, error) = await service.StartAsync(
@@ -143,7 +145,8 @@ public sealed class BrowserMonitorServiceTests
         Guid officeId,
         Guid workerId,
         IReadOnlyList<WorkerAccountEntity> accounts,
-        IReadOnlyList<WorkerActiveAccountDto> activeAccounts)
+        IReadOnlyList<WorkerActiveAccountDto> activeAccounts,
+        string? ownerUserId = null)
     {
         db.Offices.Add(new OfficeEntity
         {
@@ -156,6 +159,7 @@ public sealed class BrowserMonitorServiceTests
         {
             Id = workerId,
             OfficeId = officeId,
+            OwnerUserId = ownerUserId,
             DisplayName = "Worker 1",
             MachineName = "PC-1",
             ApiKeyHash = "hash",

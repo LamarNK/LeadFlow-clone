@@ -164,7 +164,8 @@ public sealed class ResponsesQueryService(
             .Include(x => x.BitrixInstance)
             .Include(x => x.DuplicateBitrixInstance)
             .FirstOrDefaultAsync(x => x.Id == id, ct);
-        if (entity is null || !scope.CanAccessOffice(entity.OfficeId))
+        if (entity is null
+            || !scope.CanAccessResponse(entity.OfficeId, entity.Worker?.OfficeId))
         {
             return null;
         }
@@ -643,13 +644,24 @@ public sealed class ResponsesQueryService(
         OfficeScope scope,
         Guid? officeFilter)
     {
-        var effectiveOfficeId = scope.ResolveFilter(officeFilter);
-        if (effectiveOfficeId is Guid officeId)
+        if (scope.IsGlobalAdmin)
         {
-            return query.Where(x => x.OfficeId == officeId);
+            return officeFilter is Guid officeId
+                ? query.Where(x =>
+                    x.OfficeId == officeId
+                    || (x.OfficeId == null && x.Worker != null && x.Worker.OfficeId == officeId))
+                : query;
         }
 
-        return scope.IsGlobalAdmin ? query : query.Where(_ => false);
+        if (scope.OfficeId is Guid scopedOfficeId)
+        {
+            // Office users: bound CRM office + collection-pool rows from their workers.
+            return query.Where(x =>
+                x.OfficeId == scopedOfficeId
+                || (x.OfficeId == null && x.Worker != null && x.Worker.OfficeId == scopedOfficeId));
+        }
+
+        return query.Where(_ => false);
     }
 
     private static string? CoalesceSubProfileName(

@@ -325,6 +325,7 @@ public sealed class PanelUserService(
         }
 
         await db.SaveChangesAsync(ct);
+        await users.UpdateSecurityStampAsync(user);
 
         await audit.LogAsync(
             actor.UserId,

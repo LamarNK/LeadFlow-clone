@@ -22,7 +22,8 @@ public sealed record OfficeDetailDto(
     string? BitrixValidationMessage = null,
     string? MaskedBitrixWebhookUrl = null,
     string? BitrixPortalHost = null,
-    DateTime? BitrixLastValidatedAtUtc = null);
+    DateTime? BitrixLastValidatedAtUtc = null,
+    bool CrmEnabled = false);
 
 public sealed record OfficeBitrixIntegrationDto(
     Guid OfficeId,
@@ -35,9 +36,23 @@ public sealed record OfficeBitrixIntegrationDto(
     DateTime? UpdatedAtUtc,
     bool TransmissionEnabled);
 
+/// <summary>
+/// Lightweight office pick-list (panel users who create workers / send leads).
+/// <see cref="CrmEnabled"/> — офис принимает отклики в CRM (операторы любого офиса могут отправлять туда).
+/// </summary>
+public sealed record OfficeOptionDto(Guid Id, string Name, bool IsEnabled, bool CrmEnabled = false);
+
 public sealed record CreateOfficeRequest(string Name);
 
-public sealed record UpdateOfficeRequest(string Name, bool IsEnabled, bool BitrixTransmissionEnabled = true);
+/// <summary>
+/// Office core settings. Bitrix auto-transmission is managed on the Bitrix tab
+/// (<see cref="UpdateOfficeBitrixSettingsRequest"/>); keep <see cref="BitrixTransmissionEnabled"/> only for backward-compatible clients.
+/// </summary>
+public sealed record UpdateOfficeRequest(
+    string Name,
+    bool IsEnabled,
+    bool BitrixTransmissionEnabled = true,
+    bool CrmEnabled = false);
 
 public sealed record OfficeBitrixSettingsDto(
     Guid OfficeId,

@@ -195,7 +195,11 @@ public sealed record UpdateWorkerSettingsRequest(
     bool MessengerAutoReplyEnabled = false,
     string? MessengerAutoReplyMessage = null,
     /// <summary>Часов без смены номера до метрики «не менялся». null=24, 0=выкл стабильность.</summary>
-    int? PhoneUnchangedHours = null);
+    int? PhoneUnchangedHours = null,
+    /// <summary>Авто-отправка новых откликов в CRM офиса назначения воркера.</summary>
+    bool? AutoDeliverToCrm = null,
+    /// <summary>Авто-отправка новых откликов в Bitrix (схема офиса). Legacy-канал.</summary>
+    bool? AutoDeliverToBitrix = null);
 
 public sealed record UpdateWorkerAccountRequest(bool IsEnabledInPanel);
 

@@ -252,6 +252,15 @@ public sealed class WorkerConfigService(
         worker.AutoScheduleDays = string.IsNullOrWhiteSpace(normalizedScheduleDays) ? null : normalizedScheduleDays;
         worker.AutoScheduleFromLocalTime = normalizedScheduleFrom;
         worker.AutoScheduleToLocalTime = normalizedScheduleTo;
+        if (request.AutoDeliverToCrm is bool autoCrm)
+        {
+            worker.AutoDeliverToCrm = autoCrm;
+        }
+
+        if (request.AutoDeliverToBitrix is bool autoBitrix)
+        {
+            worker.AutoDeliverToBitrix = autoBitrix;
+        }
 
         var autoReplyMessage = NormalizeAutoReplyMessage(request.MessengerAutoReplyMessage);
         worker.MessengerAutoReplyEnabled = request.MessengerAutoReplyEnabled && !string.IsNullOrWhiteSpace(autoReplyMessage);

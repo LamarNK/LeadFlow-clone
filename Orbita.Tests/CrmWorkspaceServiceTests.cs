@@ -99,6 +99,84 @@ public sealed class CrmWorkspaceServiceTests
         Assert.Equal(CrmCloseReasons.Refused, card.CloseReason);
     }
 
+    [Fact]
+    public async Task SetOfficeFunnel_SavesCustomStagesAndMovesOrphans()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var manager = await harness.CreateManagerAsync("funnel@test.local", capacity: 5, onShift: true);
+        var response = await SeedResponseAsync(harness.Db);
+        var card = NewCard(response.Id, manager.Id);
+        card.Stage = CrmStages.Ticket;
+        harness.Db.CrmCandidateCards.Add(card);
+        await harness.Db.SaveChangesAsync();
+
+        var (ok, error) = await harness.Sut.SetOfficeFunnelAsync(
+            OfficeId,
+            ["Новый", "В работе", "Готово"],
+            manager.Id);
+        Assert.True(ok, error);
+
+        var office = await harness.Db.Offices.SingleAsync(x => x.Id == OfficeId);
+        Assert.Equal(["Новый", "В работе", "Готово"], CrmStages.Resolve(office.CrmStagesJson));
+        Assert.Equal("Новый", card.Stage);
+
+        var board = await harness.Sut.GetBoardAsync(OfficeId, manager.Id, isAdmin: true);
+        Assert.NotNull(board);
+        Assert.Equal(["Новый", "В работе", "Готово"], board.FunnelStages);
+        Assert.Equal(["Новый", "В работе", "Готово"], board.Stages.Select(s => s.Name).ToList());
+    }
+
+    [Fact]
+    public async Task CreateCard_UsesFirstOfficeStage()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var office = await harness.Db.Offices.SingleAsync(x => x.Id == OfficeId);
+        office.CrmStagesJson = CrmStages.Serialize(["Старт", "Финиш"]);
+        await harness.Db.SaveChangesAsync();
+        var response = await SeedResponseAsync(harness.Db);
+
+        await harness.Sut.CreateCardForResponseAsync(response);
+
+        var card = Assert.Single(harness.Db.CrmCandidateCards);
+        Assert.Equal("Старт", card.Stage);
+    }
+
+    [Fact]
+    public async Task Move_RejectsStageOutsideOfficeFunnel()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var manager = await harness.CreateManagerAsync("move@test.local", capacity: 5, onShift: true);
+        var office = await harness.Db.Offices.SingleAsync(x => x.Id == OfficeId);
+        office.CrmStagesJson = CrmStages.Serialize(["А", "Б"]);
+        var response = await SeedResponseAsync(harness.Db);
+        var card = NewCard(response.Id, manager.Id);
+        card.Stage = "А";
+        harness.Db.CrmCandidateCards.Add(card);
+        await harness.Db.SaveChangesAsync();
+
+        var (ok, error) = await harness.Sut.MoveAsync(card.Id, CrmStages.Ticket, null, manager.Id, isAdmin: false);
+        Assert.False(ok);
+        Assert.Equal("Неизвестный этап.", error);
+
+        (ok, error) = await harness.Sut.MoveAsync(card.Id, "Б", null, manager.Id, isAdmin: false);
+        Assert.True(ok, error);
+        Assert.Equal("Б", card.Stage);
+    }
+
+    [Fact]
+    public async Task SetOfficeFunnel_RejectsEmptyOrInvalid()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+
+        var (ok, error) = await harness.Sut.SetOfficeFunnelAsync(OfficeId, [], "admin");
+        Assert.False(ok);
+        Assert.Contains("этап", error, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static CrmCandidateCardEntity NewCard(Guid responseId, string? managerId = null) => new()
     {
         Id = Guid.NewGuid(),

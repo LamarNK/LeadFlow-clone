@@ -21,6 +21,7 @@ public sealed class CaptchaSessionServiceTests
         {
             Id = workerId,
             OfficeId = officeId,
+            OwnerUserId = "op1",
             DisplayName = "W1",
             MachineName = "M1",
             ApiKeyHash = "hash",
@@ -44,8 +45,9 @@ public sealed class CaptchaSessionServiceTests
         Assert.Null(firstConflict);
         Assert.NotNull(first);
 
-        var principal2 = TestPrincipalFactory.Operator("op2", "Operator 2", officeId);
-        var (_, secondConflict) = await service.CreateAsync(request, principal2);
+        // Admin can access any worker; second session on same worker must conflict.
+        var admin = TestPrincipalFactory.Admin("admin1", "Admin");
+        var (_, secondConflict) = await service.CreateAsync(request, admin);
         Assert.NotNull(secondConflict);
         Assert.Contains("занят", secondConflict.Message, StringComparison.OrdinalIgnoreCase);
     }
@@ -57,7 +59,7 @@ public sealed class CaptchaSessionServiceTests
         var officeId = Guid.NewGuid();
         var workerId = Guid.NewGuid();
         var accountId = Guid.NewGuid();
-        SeedWorker(db, officeId, workerId, accountId);
+        SeedWorker(db, officeId, workerId, accountId, ownerUserId: "op1");
 
         var relay = new CapturingCaptchaSessionRelayNotifier();
         var service = CreateService(db, relay);
@@ -100,13 +102,19 @@ public sealed class CaptchaSessionServiceTests
             relayNotifier ?? new NoopCaptchaSessionRelayNotifier());
     }
 
-    private static void SeedWorker(OrbitaDbContext db, Guid officeId, Guid workerId, Guid accountId)
+    private static void SeedWorker(
+        OrbitaDbContext db,
+        Guid officeId,
+        Guid workerId,
+        Guid accountId,
+        string? ownerUserId = null)
     {
         db.Offices.Add(new OfficeEntity { Id = officeId, Name = "Office", RegistrationSecretHash = "x", CreatedAtUtc = DateTime.UtcNow });
         db.Workers.Add(new WorkerEntity
         {
             Id = workerId,
             OfficeId = officeId,
+            OwnerUserId = ownerUserId,
             DisplayName = "W1",
             MachineName = "M1",
             ApiKeyHash = "hash",

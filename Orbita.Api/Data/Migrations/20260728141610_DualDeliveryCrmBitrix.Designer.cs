@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Orbita.Api.Data;
@@ -11,9 +12,11 @@ using Orbita.Api.Data;
 namespace Orbita.Api.Data.Migrations
 {
     [DbContext(typeof(OrbitaDbContext))]
-    partial class OrbitaDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260728141610_DualDeliveryCrmBitrix")]
+    partial class DualDeliveryCrmBitrix
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1004,10 +1007,6 @@ namespace Orbita.Api.Data.Migrations
 
                     b.Property<bool>("CrmRequireStageComment")
                         .HasColumnType("boolean");
-
-                    b.Property<string>("CrmStagesJson")
-                        .HasMaxLength(4000)
-                        .HasColumnType("character varying(4000)");
 
                     b.Property<bool>("IsEnabled")
                         .HasColumnType("boolean");

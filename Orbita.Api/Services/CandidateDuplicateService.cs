@@ -12,7 +12,7 @@ public sealed class CandidateDuplicateService(
     BitrixClient bitrixClient)
 {
     public async Task<CandidateResponseEntity?> FindLocalDuplicateAsync(
-        Guid officeId,
+        Guid? officeId,
         Guid personId,
         Guid excludeId,
         CancellationToken ct = default)
@@ -23,19 +23,23 @@ public sealed class CandidateDuplicateService(
         }
 
         var duplicateCutoffUtc = CandidateDuplicateLookback.GetCutoffUtc(DateTime.UtcNow);
-
-        return await db.CandidateResponses
+        var query = db.CandidateResponses
             .AsNoTracking()
-            .Where(x => x.OfficeId == officeId
-                        && x.PersonId == personId
+            .Where(x => x.PersonId == personId
                         && x.Id != excludeId
-                        && x.CreatedAt >= duplicateCutoffUtc)
+                        && x.CreatedAt >= duplicateCutoffUtc);
+        if (officeId is Guid oid)
+        {
+            query = query.Where(x => x.OfficeId == null || x.OfficeId == oid);
+        }
+
+        return await query
             .OrderBy(x => x.CreatedAt)
             .FirstOrDefaultAsync(ct);
     }
 
     public async Task<CandidatePersonEntity?> FindMatchingPersonAsync(
-        Guid officeId,
+        Guid? officeId,
         CandidateMatchProfile profile,
         CancellationToken ct = default) =>
         await personMatch.FindMatchingPersonAsync(officeId, profile, ct);

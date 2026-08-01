@@ -107,7 +107,7 @@ public sealed class WorkerAdminService(
         }
 
         var worker = await db.Workers.Include(x => x.Office).FirstOrDefaultAsync(x => x.Id == id, ct);
-        if (worker is null || !scope.CanAccessOffice(worker.OfficeId))
+        if (worker is null || !scope.CanAccessWorker(worker.OfficeId))
         {
             return (null, "Воркер не найден.");
         }
@@ -124,7 +124,7 @@ public sealed class WorkerAdminService(
         CancellationToken ct = default)
     {
         var worker = await db.Workers.Include(x => x.Office).FirstOrDefaultAsync(x => x.Id == id, ct);
-        if (worker is null || !scope.CanAccessOffice(worker.OfficeId))
+        if (worker is null || !scope.CanAccessWorker(worker.OfficeId))
         {
             return (null, "Воркер не найден.");
         }
@@ -178,7 +178,7 @@ public sealed class WorkerAdminService(
         var officesToReset = new HashSet<Guid>();
         foreach (var worker in workers)
         {
-            if (!scope.CanAccessOffice(worker.OfficeId) || worker.IsEnabled == enabled)
+            if (!scope.CanAccessWorker(worker.OfficeId) || worker.IsEnabled == enabled)
             {
                 continue;
             }
@@ -233,7 +233,7 @@ public sealed class WorkerAdminService(
         CancellationToken ct = default)
     {
         var worker = await db.Workers.FirstOrDefaultAsync(x => x.Id == id, ct);
-        if (worker is null || !scope.CanAccessOffice(worker.OfficeId))
+        if (worker is null || !scope.CanAccessWorker(worker.OfficeId))
         {
             return (null, "Воркер не найден.");
         }
@@ -272,7 +272,7 @@ public sealed class WorkerAdminService(
         CancellationToken ct = default)
     {
         var worker = await db.Workers.FindAsync([id], ct);
-        if (worker is null || !scope.CanAccessOffice(worker.OfficeId))
+        if (worker is null || !scope.CanAccessWorker(worker.OfficeId))
         {
             return (null, "Воркер не найден.");
         }

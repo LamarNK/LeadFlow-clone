@@ -19,7 +19,7 @@ public sealed record CandidatePhoneHistoryDto(
 
 public sealed record ResponseListItemDto(
     Guid Id,
-    Guid OfficeId,
+    Guid? OfficeId,
     Guid WorkerId,
     string WorkerName,
     Guid AccountId,
@@ -63,7 +63,7 @@ public sealed record ResponseListItemDto(
 
 public sealed record ResponseDetailDto(
     Guid Id,
-    Guid OfficeId,
+    Guid? OfficeId,
     Guid WorkerId,
     string WorkerName,
     Guid AccountId,

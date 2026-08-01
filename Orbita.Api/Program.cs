@@ -63,7 +63,9 @@ builder.Services.AddAuthentication(options =>
             ValidateIssuerSigningKey = true,
             ValidIssuer = builder.Configuration["Jwt:Issuer"] ?? "Orbita",
             ValidAudience = builder.Configuration["Jwt:Audience"] ?? "Orbita.Web",
-            IssuerSigningKey = new SymmetricSecurityKey(System.Text.Encoding.UTF8.GetBytes(jwtKey))
+            IssuerSigningKey = new SymmetricSecurityKey(System.Text.Encoding.UTF8.GetBytes(jwtKey)),
+            RoleClaimType = ClaimTypes.Role,
+            NameClaimType = ClaimTypes.NameIdentifier
         };
         options.Events = new JwtBearerEvents
         {
@@ -212,7 +214,6 @@ builder.Services.Configure<FormOptions>(options =>
     options.ValueLengthLimit = int.MaxValue;
     options.MultipartHeadersLengthLimit = int.MaxValue;
 });
-builder.Services.AddScoped<CandidateIngestionService>();
 builder.Services.AddScoped<CrmLeadDistributionService>();
 builder.Services.AddScoped<CrmWorkspaceService>();
 builder.Services.AddScoped<BitrixInstanceService>();
@@ -225,6 +226,8 @@ builder.Services.AddScoped<CandidateBitrixSendService>();
 builder.Services.AddScoped<ResponseBitrixDeliveryService>();
 builder.Services.AddScoped<ManualBitrixSendService>();
 builder.Services.AddScoped<BulkResponsesBitrixSendService>();
+builder.Services.AddScoped<ResponseDeliveryService>();
+builder.Services.AddScoped<CandidateIngestionService>();
 builder.Services.AddScoped<BitrixLegacyMigrationService>();
 builder.Services.AddScoped<CandidateLookupService>();
 builder.Services.AddScoped<WorkerMonitoringStatsService>();
@@ -1046,6 +1049,7 @@ admin.MapPut("/offices/{id:guid}", async (
         request.Name,
         request.IsEnabled,
         request.BitrixTransmissionEnabled,
+        request.CrmEnabled,
         ct);
     if (error is not null)
     {
@@ -1556,6 +1560,22 @@ workers.MapGet("/browser-monitor-sessions/{id:guid}/alive", (
     return Results.Ok();
 });
 
+// Office pick-list for any panel user (operators create workers for a delivery office).
+panel.MapGet("/offices/options", async (
+    OfficeAdminService offices,
+    OfficeScopeService officeScope,
+    ClaimsPrincipal principal,
+    CancellationToken ct) =>
+{
+    var scope = await officeScope.ResolveAsync(principal, ct);
+    if (!scope.HasAccess)
+    {
+        return Results.Forbid();
+    }
+
+    return Results.Ok(await offices.ListOptionsAsync(ct));
+});
+
 panel.MapPost("/workers/create", async (
     CreateWorkerRequest request,
     WorkerAdminService workers,
@@ -2015,27 +2035,39 @@ panel.MapPut("/office/bitrix-settings", async (
 
 var crm = app.MapGroup("/api/v1/crm").RequireAuthorization("Panel");
 crm.MapGet("/board", async (
-    Guid? officeId,
-    string? search,
-    string? scopeFilter,
-    string? city,
-    string? vacancy,
-    bool overdueOnly,
-    bool activeLoadOnly,
-    bool includeClosed,
     CrmWorkspaceService workspace,
     OfficeScopeService officeScope,
     ClaimsPrincipal principal,
-    CancellationToken ct) =>
+    CancellationToken ct,
+    Guid? officeId = null,
+    string? search = null,
+    string? scopeFilter = null,
+    string? city = null,
+    string? vacancy = null,
+    // Defaults: missing non-nullable bool query params otherwise → HTTP 400.
+    bool overdueOnly = false,
+    bool activeLoadOnly = false,
+    bool includeClosed = false) =>
 {
     var scope = await officeScope.ResolveAsync(principal, ct);
     var effectiveOfficeId = scope.ResolveFilter(officeId);
     var isAdmin = principal.IsInRole(PanelRoles.Admin);
-    var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
-    if (effectiveOfficeId is not Guid resolvedOfficeId || string.IsNullOrWhiteSpace(userId)
-        || (!isAdmin && !principal.IsInRole(PanelRoles.Manager)))
+    var isManager = principal.IsInRole(PanelRoles.Manager);
+    var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier)
+                 ?? principal.FindFirstValue("sub");
+    if (string.IsNullOrWhiteSpace(userId) || (!isAdmin && !isManager))
     {
         return Results.Forbid();
+    }
+
+    if (effectiveOfficeId is not Guid resolvedOfficeId)
+    {
+        return Results.BadRequest(new
+        {
+            error = isAdmin
+                ? "Выберите офис в переключателе, чтобы открыть CRM."
+                : "Менеджеру не назначен офис. Обратитесь к администратору."
+        });
     }
 
     var board = await workspace.GetBoardAsync(
@@ -2044,7 +2076,9 @@ crm.MapGet("/board", async (
         isAdmin,
         new CrmBoardQuery(search, scopeFilter, city, vacancy, overdueOnly, activeLoadOnly, includeClosed),
         ct);
-    return board is null ? Results.NotFound() : Results.Ok(board);
+    return board is null
+        ? Results.NotFound(new { error = "Офис не найден." })
+        : Results.Ok(board);
 });
 
 crm.MapGet("/tasks", async (
@@ -2057,11 +2091,22 @@ crm.MapGet("/tasks", async (
     var scope = await officeScope.ResolveAsync(principal, ct);
     var effectiveOfficeId = scope.ResolveFilter(officeId);
     var isAdmin = principal.IsInRole(PanelRoles.Admin);
-    var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
-    if (effectiveOfficeId is not Guid resolvedOfficeId || string.IsNullOrWhiteSpace(userId)
-        || (!isAdmin && !principal.IsInRole(PanelRoles.Manager)))
+    var isManager = principal.IsInRole(PanelRoles.Manager);
+    var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier)
+                 ?? principal.FindFirstValue("sub");
+    if (string.IsNullOrWhiteSpace(userId) || (!isAdmin && !isManager))
     {
         return Results.Forbid();
+    }
+
+    if (effectiveOfficeId is not Guid resolvedOfficeId)
+    {
+        return Results.BadRequest(new
+        {
+            error = isAdmin
+                ? "Выберите офис в переключателе, чтобы открыть CRM."
+                : "Менеджеру не назначен офис. Обратитесь к администратору."
+        });
     }
 
     return Results.Ok(await workspace.GetTasksAsync(resolvedOfficeId, userId, isAdmin, ct));
@@ -2188,6 +2233,28 @@ crm.MapPut("/offices/{officeId:guid}/settings", async (Guid officeId, CrmOfficeS
     principal.IsInRole(PanelRoles.Admin)
         ? (await workspace.SetOfficeSettingsAsync(officeId, request.IsEnabled, request.RequireStageComment, ct) ? Results.NoContent() : Results.NotFound())
         : Results.Forbid());
+
+crm.MapPut("/offices/{officeId:guid}/funnel", async (
+    Guid officeId,
+    CrmOfficeFunnelRequest request,
+    CrmWorkspaceService workspace,
+    ClaimsPrincipal principal,
+    CancellationToken ct) =>
+{
+    if (!principal.IsInRole(PanelRoles.Admin))
+    {
+        return Results.Forbid();
+    }
+
+    var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+    if (string.IsNullOrWhiteSpace(userId))
+    {
+        return Results.Forbid();
+    }
+
+    var (ok, error) = await workspace.SetOfficeFunnelAsync(officeId, request.Stages, userId, ct);
+    return ok ? Results.NoContent() : Results.BadRequest(new { error });
+});
 
 crm.MapPut("/managers/{managerUserId}/capacity", async (string managerUserId, Guid? officeId, CrmCapacityRequest request, CrmWorkspaceService workspace, OfficeScopeService officeScope, ClaimsPrincipal principal, CancellationToken ct) =>
 {
@@ -2572,6 +2639,43 @@ panel.MapPost("/responses/{id:guid}/send-bitrix", async (
     return Results.Ok(await manualSend.SendAsync(id, request.BitrixInstanceId, scope, ct));
 });
 
+// Multi-channel delivery: CRM and/or Bitrix (Bitrix is temporary/legacy).
+panel.MapPost("/responses/{id:guid}/deliver", async (
+    Guid id,
+    DeliverResponseRequest request,
+    ResponseDeliveryService delivery,
+    OfficeScopeService officeScope,
+    ClaimsPrincipal principal,
+    CancellationToken ct) =>
+{
+    var scope = await officeScope.ResolveAsync(principal, ct);
+    if (!scope.HasAccess)
+    {
+        return Results.Forbid();
+    }
+
+    return Results.Ok(await delivery.DeliverAsync(id, request, scope, DistributionModes.Manual, ct));
+});
+
+panel.MapPost("/responses/deliver-bulk", async (
+    BulkDeliverResponsesRequest request,
+    ResponseDeliveryService delivery,
+    OfficeScopeService officeScope,
+    ClaimsPrincipal principal,
+    CancellationToken ct) =>
+{
+    var scope = await officeScope.ResolveAsync(principal, ct);
+    if (!scope.HasAccess)
+    {
+        return Results.Forbid();
+    }
+
+    var (result, error) = await delivery.DeliverBulkAsync(request, scope, ct);
+    return error is not null
+        ? Results.BadRequest(new { error })
+        : Results.Ok(result);
+});
+
 panel.MapPost("/responses/send-bitrix-bulk", async (
     BulkSendResponsesToBitrixRequest request,
     BulkResponsesBitrixSendService bulkSend,
@@ -2877,7 +2981,9 @@ app.MapPost("/api/v1/auth/login", async (
         if (officeId is null)
         {
             await audit.LogAsync(user.Id, user.Email, PanelAuditActions.LoginFailed, "user", user.Id, "office_not_assigned", ip, ct);
-            return Results.Json(new { error = "Оператору не назначен офис. Обратитесь к администратору." }, statusCode: StatusCodes.Status403Forbidden);
+            return Results.Json(
+                new { error = "Оператору не назначен офис. Обратитесь к администратору." },
+                statusCode: StatusCodes.Status403Forbidden);
         }
     }
 
@@ -2994,6 +3100,35 @@ static async Task SeedAsync(WebApplication app)
     }
 
     await db.SaveChangesAsync();
+
+    // Operators must be office-bound: rebind any left without an office.
+    var operatorUserIds = new HashSet<string>(StringComparer.Ordinal);
+    foreach (var user in await users.Users.ToListAsync())
+    {
+        if (await users.IsInRoleAsync(user, PanelRoles.Operator))
+        {
+            operatorUserIds.Add(user.Id);
+        }
+    }
+
+    if (operatorUserIds.Count > 0)
+    {
+        var unboundOperators = await db.PanelUserProfiles
+            .Where(x => x.OfficeId == null && operatorUserIds.Contains(x.UserId))
+            .ToListAsync();
+        foreach (var profile in unboundOperators)
+        {
+            profile.OfficeId = defaultOffice.Id;
+        }
+
+        if (unboundOperators.Count > 0)
+        {
+            await db.SaveChangesAsync();
+            await GlobalLogger.Instance.LogAsync(
+                $"Rebound {unboundOperators.Count} operator(s) without office to default office.",
+                DeskLinkAuditLogLevel.Info);
+        }
+    }
 }
 
 public sealed record LoginRequest(string Email, string Password);

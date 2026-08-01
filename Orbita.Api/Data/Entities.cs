@@ -10,11 +10,16 @@ public sealed class OfficeEntity
     public DateTime CreatedAtUtc { get; set; }
     public bool IsEnabled { get; set; } = true;
     public bool BitrixTransmissionEnabled { get; set; } = true;
-    /// <summary>Включает параллельный CRM-пилот для новых откликов офиса.</summary>
+    /// <summary>
+    /// Офис принимает отклики в CRM: операторы любого офиса могут отправлять сюда карточки.
+    /// </summary>
     public bool CrmEnabled { get; set; }
 
     /// <summary>Требовать комментарий при смене этапа CRM.</summary>
     public bool CrmRequireStageComment { get; set; }
+
+    /// <summary>JSON-массив имён этапов воронки офиса. Null/пусто = <see cref="CrmStages.Default"/>.</summary>
+    public string? CrmStagesJson { get; set; }
     public string? BitrixWebhookUrlProtected { get; set; }
     public string? BitrixPortalHost { get; set; }
     public string BitrixValidationStatus { get; set; } = BitrixValidationStatuses.NotConfigured;
@@ -42,6 +47,18 @@ public sealed class WorkerEntity
 {
     public Guid Id { get; set; }
     public Guid OfficeId { get; set; }
+
+    /// <summary>
+    /// Optional marker (legacy). Access control is office-based for operators/managers.
+    /// </summary>
+    public string? OwnerUserId { get; set; }
+
+    /// <summary>Auto-deliver new unique responses into office CRM (cards + manager assign).</summary>
+    public bool AutoDeliverToCrm { get; set; }
+
+    /// <summary>Auto-deliver new unique responses into Bitrix via office distribution route.</summary>
+    public bool AutoDeliverToBitrix { get; set; } = true;
+
     public string DisplayName { get; set; } = string.Empty;
     public string MachineName { get; set; } = string.Empty;
     public string ApiKeyHash { get; set; } = string.Empty;
@@ -242,7 +259,10 @@ public sealed class PanelUserBitrixSettingsEntity
 public sealed class CandidatePersonEntity
 {
     public Guid Id { get; set; }
-    public Guid OfficeId { get; set; }
+
+    /// <summary>Optional CRM office; null = collection pool (global person match).</summary>
+    public Guid? OfficeId { get; set; }
+
     public string FullName { get; set; } = string.Empty;
     public string FirstName { get; set; } = string.Empty;
     public string LastName { get; set; } = string.Empty;
@@ -254,7 +274,7 @@ public sealed class CandidatePersonEntity
     public DateTime CreatedAtUtc { get; set; }
     public DateTime UpdatedAtUtc { get; set; }
 
-    public OfficeEntity Office { get; set; } = null!;
+    public OfficeEntity? Office { get; set; }
     public ICollection<CandidateResponseEntity> Responses { get; set; } = [];
     public ICollection<CandidatePhoneHistoryEntity> PhoneHistory { get; set; } = [];
 }
@@ -276,7 +296,13 @@ public sealed class CandidateResponseEntity
 {
     public Guid Id { get; set; }
     public Guid PersonId { get; set; }
-    public Guid OfficeId { get; set; }
+
+    /// <summary>
+    /// CRM / delivery office. Null while response stays in the collection pool
+    /// (before successful send to CRM or Bitrix office).
+    /// </summary>
+    public Guid? OfficeId { get; set; }
+
     public Guid? WorkerId { get; set; }
     public string WorkerName { get; set; } = string.Empty;
     public Guid AccountId { get; set; }
@@ -326,11 +352,29 @@ public sealed class CandidateResponseEntity
     public DateTime? PhoneChangedAtUtc { get; set; }
 
     public CandidatePersonEntity Person { get; set; } = null!;
-    public OfficeEntity Office { get; set; } = null!;
+    public OfficeEntity? Office { get; set; }
     public WorkerEntity? Worker { get; set; }
     public BitrixInstanceEntity? BitrixInstance { get; set; }
     public BitrixInstanceEntity? DuplicateBitrixInstance { get; set; }
     public ICollection<ResponseBitrixDeliveryEntity> BitrixDeliveries { get; set; } = [];
+    public ICollection<ResponseCrmDeliveryEntity> CrmDeliveries { get; set; } = [];
+}
+
+/// <summary>CRM channel delivery attempt for a collected response.</summary>
+public sealed class ResponseCrmDeliveryEntity
+{
+    public Guid Id { get; set; }
+    public Guid ResponseId { get; set; }
+    public Guid OfficeId { get; set; }
+    public Guid? CardId { get; set; }
+    public string Outcome { get; set; } = string.Empty;
+    public string ErrorMessage { get; set; } = string.Empty;
+    public string Source { get; set; } = string.Empty;
+    public DateTime CreatedAtUtc { get; set; }
+
+    public CandidateResponseEntity Response { get; set; } = null!;
+    public OfficeEntity Office { get; set; } = null!;
+    public CrmCandidateCardEntity? Card { get; set; }
 }
 
 public sealed class ResponseBitrixDeliveryEntity

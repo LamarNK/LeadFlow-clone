@@ -14,7 +14,7 @@ public sealed class OfficeScopeService(OrbitaDbContext db)
             return OfficeScope.GlobalAdmin;
         }
 
-        if (Guid.TryParse(principal.FindFirstValue(OfficeClaims.OfficeId), out var officeId))
+        if (TryGetOfficeClaim(principal, out var officeId))
         {
             return OfficeScope.ForOffice(officeId);
         }
@@ -29,12 +29,13 @@ public sealed class OfficeScopeService(OrbitaDbContext db)
             return OfficeScope.GlobalAdmin;
         }
 
-        if (Guid.TryParse(principal.FindFirstValue(OfficeClaims.OfficeId), out var officeId))
+        if (TryGetOfficeClaim(principal, out var officeId))
         {
             return OfficeScope.ForOffice(officeId);
         }
 
-        var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+        var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier)
+                     ?? principal.FindFirstValue("sub");
         if (string.IsNullOrWhiteSpace(userId))
         {
             return OfficeScope.NoAccess;
@@ -51,7 +52,16 @@ public sealed class OfficeScopeService(OrbitaDbContext db)
             : OfficeScope.NoAccess;
     }
 
-    public IQueryable<WorkerEntity> ApplyWorkerFilter(IQueryable<WorkerEntity> query, OfficeScope scope, Guid? officeFilter = null)
+    private static bool TryGetOfficeClaim(ClaimsPrincipal principal, out Guid officeId)
+    {
+        var raw = principal.FindFirstValue(OfficeClaims.OfficeId);
+        return Guid.TryParse(raw, out officeId);
+    }
+
+    public IQueryable<WorkerEntity> ApplyWorkerFilter(
+        IQueryable<WorkerEntity> query,
+        OfficeScope scope,
+        Guid? officeFilter = null)
     {
         var effectiveOfficeId = scope.ResolveFilter(officeFilter);
         if (effectiveOfficeId is Guid officeId)

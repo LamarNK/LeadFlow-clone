@@ -258,7 +258,9 @@ public sealed class DashboardQueryService(
         }
 
         var nowUtc = DateTime.UtcNow;
-        var worker = await db.Workers.AsNoTracking().FirstOrDefaultAsync(x => x.Id == workerId, ct);
+        var worker = await db.Workers.AsNoTracking()
+            .Include(x => x.Office)
+            .FirstOrDefaultAsync(x => x.Id == workerId, ct);
         if (worker is null)
         {
             return null;
@@ -342,7 +344,11 @@ public sealed class DashboardQueryService(
             worker.AutoScheduleToLocalTime,
             worker.MessengerAutoReplyEnabled,
             worker.MessengerAutoReplyMessage,
-            worker.PhoneUnchangedHours);
+            worker.PhoneUnchangedHours,
+            worker.AutoDeliverToCrm,
+            worker.AutoDeliverToBitrix,
+            worker.OfficeId,
+            worker.Office?.Name ?? string.Empty);
     }
 
     public async Task<IReadOnlyList<WorkerAccountDto>> GetWorkerAccountsAsync(

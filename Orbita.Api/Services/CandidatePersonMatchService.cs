@@ -6,29 +6,32 @@ namespace Orbita.Api.Services;
 
 public sealed class CandidatePersonMatchService(OrbitaDbContext db)
 {
+    /// <summary>
+    /// Global person match for collection pool (no office filter).
+    /// Optional <paramref name="officeId"/> narrows match to that office when set.
+    /// </summary>
     public async Task<CandidatePersonEntity?> FindMatchingPersonAsync(
-        Guid officeId,
+        Guid? officeId,
         CandidateMatchProfile incoming,
         CancellationToken ct = default)
     {
         var incomingName = CandidateNameNormalizer.Normalize(incoming.FullName);
-        // Хотя бы один токен (в т.ч. «только Иван»). Полное ФИО матчится по имени;
-        // неполное — только если scorer наберёт порог за счёт age/city (или phone)
-        // и есть отклик в узком временном окне (~неделя).
         if (!CandidateNameNormalizer.HasAnyNamePart(incomingName))
         {
             return null;
         }
 
         var isCompleteFio = CandidateNameNormalizer.IsCompleteFio(incomingName);
-        var nameMatches = await db.CandidatePersons
-            .AsNoTracking()
-            .Where(x => x.OfficeId == officeId
-                        && x.LastName.ToLower() == incomingName.LastName
+        var personsQuery = db.CandidatePersons.AsNoTracking()
+            .Where(x => x.LastName.ToLower() == incomingName.LastName
                         && x.FirstName.ToLower() == incomingName.FirstName
-                        && x.MiddleName.ToLower() == incomingName.MiddleName)
-            .ToListAsync(ct);
+                        && x.MiddleName.ToLower() == incomingName.MiddleName);
+        if (officeId is Guid oid)
+        {
+            personsQuery = personsQuery.Where(x => x.OfficeId == null || x.OfficeId == oid);
+        }
 
+        var nameMatches = await personsQuery.ToListAsync(ct);
         if (nameMatches.Count == 0)
         {
             return null;
@@ -39,26 +42,32 @@ public sealed class CandidatePersonMatchService(OrbitaDbContext db)
         if (isCompleteFio)
         {
             var duplicateCutoffUtc = CandidateDuplicateLookback.GetCutoffUtc(DateTime.UtcNow);
-            activePersonIds = await db.CandidateResponses
-                .AsNoTracking()
-                .Where(x => x.OfficeId == officeId
-                            && x.CreatedAt >= duplicateCutoffUtc
-                            && candidatePersonIds.Contains(x.PersonId))
+            var responsesQuery = db.CandidateResponses.AsNoTracking()
+                .Where(x => x.CreatedAt >= duplicateCutoffUtc && candidatePersonIds.Contains(x.PersonId));
+            if (officeId is Guid responseOfficeId)
+            {
+                responsesQuery = responsesQuery.Where(x => x.OfficeId == null || x.OfficeId == responseOfficeId);
+            }
+
+            activePersonIds = await responsesQuery
                 .Select(x => x.PersonId)
                 .Distinct()
                 .ToListAsync(ct);
         }
         else
         {
-            // Неполное имя: только отклики около даты этого отклика (±7 дней).
             var (windowStart, windowEnd) = CandidateDuplicateLookback.GetIncompleteNameWindow(
                 incoming.ResponseAtUtc);
-            activePersonIds = await db.CandidateResponses
-                .AsNoTracking()
-                .Where(x => x.OfficeId == officeId
-                            && x.CreatedAt >= windowStart
+            var responsesQuery = db.CandidateResponses.AsNoTracking()
+                .Where(x => x.CreatedAt >= windowStart
                             && x.CreatedAt <= windowEnd
-                            && candidatePersonIds.Contains(x.PersonId))
+                            && candidatePersonIds.Contains(x.PersonId));
+            if (officeId is Guid responseOfficeId)
+            {
+                responsesQuery = responsesQuery.Where(x => x.OfficeId == null || x.OfficeId == responseOfficeId);
+            }
+
+            activePersonIds = await responsesQuery
                 .Select(x => x.PersonId)
                 .Distinct()
                 .ToListAsync(ct);
@@ -81,7 +90,7 @@ public sealed class CandidatePersonMatchService(OrbitaDbContext db)
     }
 
     public CandidatePersonEntity CreatePerson(
-        Guid officeId,
+        Guid? officeId,
         string fullName,
         string firstName,
         string lastName,

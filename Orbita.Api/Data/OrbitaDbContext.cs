@@ -25,6 +25,7 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
     public DbSet<CrmTaskEntity> CrmTasks => Set<CrmTaskEntity>();
     public DbSet<CrmCandidateHistoryEntity> CrmCandidateHistory => Set<CrmCandidateHistoryEntity>();
     public DbSet<ResponseBitrixDeliveryEntity> ResponseBitrixDeliveries => Set<ResponseBitrixDeliveryEntity>();
+    public DbSet<ResponseCrmDeliveryEntity> ResponseCrmDeliveries => Set<ResponseCrmDeliveryEntity>();
     public DbSet<BitrixInstanceEntity> BitrixInstances => Set<BitrixInstanceEntity>();
     public DbSet<DistributionRouteEntity> DistributionRoutes => Set<DistributionRouteEntity>();
     public DbSet<DistributionNodeEntity> DistributionNodes => Set<DistributionNodeEntity>();
@@ -45,6 +46,7 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.Property(x => x.BitrixValidationStatus).HasMaxLength(32);
             entity.Property(x => x.BitrixValidationMessage).HasMaxLength(2000);
             entity.Property(x => x.BitrixUpdatedByUserId).HasMaxLength(128);
+            entity.Property(x => x.CrmStagesJson).HasMaxLength(4000);
             entity.HasIndex(x => x.Name).IsUnique();
         });
 
@@ -65,6 +67,8 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
                 .HasForeignKey(x => x.OfficeId)
                 .OnDelete(DeleteBehavior.Restrict);
             entity.HasIndex(x => x.OfficeId);
+            entity.HasIndex(x => x.OwnerUserId);
+            entity.Property(x => x.OwnerUserId).HasMaxLength(128);
             entity.Property(x => x.DisplayName).HasMaxLength(200);
             entity.Property(x => x.MachineName).HasMaxLength(200);
             entity.Property(x => x.ApiKeyHash).HasMaxLength(512);
@@ -106,7 +110,7 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
         modelBuilder.Entity<CandidatePersonEntity>(entity =>
         {
             entity.HasKey(x => x.Id);
-            entity.HasIndex(x => new { x.OfficeId, x.LastName, x.FirstName, x.MiddleName });
+            entity.HasIndex(x => new { x.LastName, x.FirstName, x.MiddleName });
             entity.HasIndex(x => x.OfficeId);
             entity.Property(x => x.FullName).HasMaxLength(500);
             entity.Property(x => x.FirstName).HasMaxLength(200);
@@ -115,7 +119,7 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.Property(x => x.City).HasMaxLength(500);
             entity.Property(x => x.PhoneRaw).HasMaxLength(64);
             entity.Property(x => x.PhoneNormalized).HasMaxLength(32);
-            entity.HasOne(x => x.Office).WithMany().HasForeignKey(x => x.OfficeId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.Office).WithMany().HasForeignKey(x => x.OfficeId).OnDelete(DeleteBehavior.SetNull);
         });
 
         modelBuilder.Entity<CandidatePhoneHistoryEntity>(entity =>
@@ -152,10 +156,23 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.Property(x => x.PreviousPhoneRaw).HasMaxLength(64);
             entity.Property(x => x.PreviousPhoneNormalized).HasMaxLength(32);
             entity.HasOne(x => x.Person).WithMany(x => x.Responses).HasForeignKey(x => x.PersonId).OnDelete(DeleteBehavior.Restrict);
-            entity.HasOne(x => x.Office).WithMany().HasForeignKey(x => x.OfficeId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.Office).WithMany().HasForeignKey(x => x.OfficeId).OnDelete(DeleteBehavior.SetNull);
             entity.HasOne(x => x.Worker).WithMany().HasForeignKey(x => x.WorkerId).OnDelete(DeleteBehavior.SetNull);
             entity.HasOne(x => x.BitrixInstance).WithMany().HasForeignKey(x => x.BitrixInstanceId).OnDelete(DeleteBehavior.SetNull);
             entity.HasOne(x => x.DuplicateBitrixInstance).WithMany().HasForeignKey(x => x.DuplicateBitrixInstanceId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<ResponseCrmDeliveryEntity>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => x.ResponseId);
+            entity.HasIndex(x => new { x.ResponseId, x.CreatedAtUtc });
+            entity.Property(x => x.Outcome).HasMaxLength(16);
+            entity.Property(x => x.Source).HasMaxLength(16);
+            entity.Property(x => x.ErrorMessage).HasMaxLength(2000);
+            entity.HasOne(x => x.Response).WithMany(x => x.CrmDeliveries).HasForeignKey(x => x.ResponseId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.Office).WithMany().HasForeignKey(x => x.OfficeId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.Card).WithMany().HasForeignKey(x => x.CardId).OnDelete(DeleteBehavior.SetNull);
         });
 
         modelBuilder.Entity<CrmCandidateCardEntity>(entity =>

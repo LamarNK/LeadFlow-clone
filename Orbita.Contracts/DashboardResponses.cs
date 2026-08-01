@@ -96,7 +96,11 @@ public sealed record WorkerDetail(
     string? AutoScheduleToLocalTime = null,
     bool MessengerAutoReplyEnabled = false,
     string? MessengerAutoReplyMessage = null,
-    int? PhoneUnchangedHours = null);
+    int? PhoneUnchangedHours = null,
+    bool AutoDeliverToCrm = false,
+    bool AutoDeliverToBitrix = true,
+    Guid OfficeId = default,
+    string OfficeName = "");
 
 public sealed record WorkerEventListItem(
     Guid Id,

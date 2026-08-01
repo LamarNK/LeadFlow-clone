@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace Orbita.Contracts;
 
 public static class CrmStages
@@ -10,13 +12,84 @@ public static class CrmStages
     public const string Questionnaire = "Анкета";
     public const string Ticket = "Билет";
 
+    public const int MinCount = 1;
+    public const int MaxCount = 20;
+    public const int MaxNameLength = 64;
+
     public static readonly IReadOnlyList<string> All =
     [
         Lead, Ndz73, Ndz26, Substitution, Negotiations, Questionnaire, Ticket
     ];
 
+    /// <summary>Default funnel used when an office has no custom stages.</summary>
+    public static IReadOnlyList<string> Default => All;
+
     public static bool IsValid(string? stage) =>
         All.Contains(stage ?? string.Empty, StringComparer.Ordinal);
+
+    public static bool IsValidName(string? stage) =>
+        !string.IsNullOrWhiteSpace(stage) && stage.Trim().Length <= MaxNameLength;
+
+    /// <summary>
+    /// Normalize a free-form stage list: trim, drop empties, de-dupe (ordinal), enforce limits.
+    /// Returns null when the list is empty or exceeds <see cref="MaxCount"/>.
+    /// </summary>
+    public static IReadOnlyList<string>? Normalize(IEnumerable<string?>? stages)
+    {
+        if (stages is null)
+        {
+            return null;
+        }
+
+        var result = new List<string>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var raw in stages)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                continue;
+            }
+
+            var name = raw.Trim();
+            if (name.Length > MaxNameLength || !seen.Add(name))
+            {
+                continue;
+            }
+
+            result.Add(name);
+            if (result.Count > MaxCount)
+            {
+                return null;
+            }
+        }
+
+        return result.Count < MinCount ? null : result;
+    }
+
+    public static IReadOnlyList<string> Resolve(string? stagesJson)
+    {
+        if (string.IsNullOrWhiteSpace(stagesJson))
+        {
+            return Default;
+        }
+
+        try
+        {
+            var parsed = JsonSerializer.Deserialize<List<string>>(stagesJson);
+            var normalized = Normalize(parsed);
+            return normalized ?? Default;
+        }
+        catch (JsonException)
+        {
+            return Default;
+        }
+    }
+
+    public static string Serialize(IReadOnlyList<string> stages) =>
+        JsonSerializer.Serialize(stages);
+
+    public static bool Contains(IReadOnlyList<string> stages, string? stage) =>
+        stages.Contains(stage ?? string.Empty, StringComparer.Ordinal);
 }
 
 public static class CrmTaskStatuses
@@ -81,7 +154,8 @@ public sealed record CrmBoardDto(
     string? Vacancy,
     bool OverdueOnly,
     bool ActiveLoadOnly,
-    bool IncludeClosed);
+    bool IncludeClosed,
+    IReadOnlyList<string> FunnelStages);
 
 public sealed record CrmStageDto(string Name, IReadOnlyList<CrmCandidateCardDto> Cards, int TotalCount);
 
@@ -132,7 +206,8 @@ public sealed record CrmCandidateDetailDto(
     IReadOnlyList<CrmTaskDto> Tasks,
     IReadOnlyList<CrmHistoryDto> History,
     IReadOnlyList<CrmActivityItemDto> Activity,
-    IReadOnlyList<CrmManagerDto> Managers);
+    IReadOnlyList<CrmManagerDto> Managers,
+    IReadOnlyList<string> Stages);
 
 public sealed record CrmNoteDto(
     Guid Id,
@@ -186,4 +261,5 @@ public sealed record CrmFollowUpRequest(int Minutes, string? Title = null);
 public sealed record CrmCloseRequest(string Reason, string? Comment = null);
 public sealed record CrmCapacityRequest(int Capacity);
 public sealed record CrmOfficeSettingsRequest(bool IsEnabled, bool RequireStageComment = false);
-public sealed record CrmOfficeSettingsDto(bool IsEnabled, bool RequireStageComment);
+public sealed record CrmOfficeSettingsDto(bool IsEnabled, bool RequireStageComment, IReadOnlyList<string> Stages);
+public sealed record CrmOfficeFunnelRequest(IReadOnlyList<string> Stages);

@@ -13,13 +13,12 @@ public sealed class CandidateIngestionService(
     CandidateParser candidateParser,
     CandidatePersonMatchService personMatch,
     CandidatePersonPhoneService personPhone,
-    DistributionRouteService distributionRoute,
     DistributionEngine distributionEngine,
     CandidateAutoDistributionService autoDistribution,
     ManualBitrixSendService manualBitrixSend,
+    ResponseDeliveryService responseDelivery,
     IOptions<OrbitaBitrixSettings> bitrixOptions,
-    IPanelRealtimeNotifier panelRealtime,
-    CrmWorkspaceService? crm = null)
+    IPanelRealtimeNotifier panelRealtime)
 {
     public async Task<WorkerCandidateIngestionResultDto> IngestBatchAsync(
         Guid workerId,
@@ -33,7 +32,6 @@ public sealed class CandidateIngestionService(
             return EmptyResult(request.Candidates.Count);
         }
 
-        var autoEnabled = await distributionRoute.IsAutoDistributionEnabledAsync(worker.OfficeId, ct);
         var received = request.Candidates.Count;
         var ingested = 0;
         var skippedDuplicates = 0;
@@ -42,7 +40,7 @@ public sealed class CandidateIngestionService(
 
         foreach (var candidate in request.Candidates)
         {
-            var item = await IngestOneAsync(worker, candidate, autoEnabled, ct);
+            var item = await IngestOneAsync(worker, candidate, ct);
             items.Add(item);
 
             switch (item.Status)
@@ -78,7 +76,6 @@ public sealed class CandidateIngestionService(
     private async Task<WorkerCandidateIngestionItemResultDto> IngestOneAsync(
         WorkerEntity worker,
         WorkerCandidateDto candidate,
-        bool autoEnabled,
         CancellationToken ct)
     {
         var phoneNormalized = phoneNormalizer.Normalize(candidate.PhoneRaw);
@@ -149,7 +146,8 @@ public sealed class CandidateIngestionService(
             phoneNormalized,
             responseAt);
 
-        var matchedPerson = await personMatch.FindMatchingPersonAsync(worker.OfficeId, profile, ct);
+        // Collection pool: global person match (no office filter).
+        var matchedPerson = await personMatch.FindMatchingPersonAsync(officeId: null, profile, ct);
         var phoneMetricKind = ResponsePhoneMetricKinds.Normalize(candidate.PhoneMetricKind);
         // PhoneChanged — новый пункт с новым номером (не считаем FIO-дублем).
         // PhoneUnchanged — метка стабильного номера; дублем её делает только совпадение кандидата.
@@ -164,7 +162,7 @@ public sealed class CandidateIngestionService(
         else
         {
             person = personMatch.CreatePerson(
-                worker.OfficeId,
+                officeId: null,
                 candidate.FullName,
                 firstName,
                 lastName,
@@ -182,7 +180,8 @@ public sealed class CandidateIngestionService(
         {
             Id = Guid.NewGuid(),
             PersonId = person.Id,
-            OfficeId = worker.OfficeId,
+            // Stay in collection pool until delivery assigns a CRM/Bitrix office.
+            OfficeId = null,
             WorkerId = worker.Id,
             WorkerName = worker.DisplayName,
             AccountId = candidate.AccountId,
@@ -248,28 +247,11 @@ public sealed class CandidateIngestionService(
                 entity.DuplicateSummary);
         }
 
-        // CRM is a parallel projection: it must not affect Bitrix delivery or its result.
-        if (crm is not null)
-        {
-            await crm.CreateCardForResponseAsync(entity, ct);
-        }
+        // Delivery (CRM and/or Bitrix) is driven by worker auto flags — not office route alone.
+        await responseDelivery.ApplyAutoDeliveryAsync(entity, worker, ct);
+        await db.Entry(entity).ReloadAsync(ct);
 
-        if (!autoEnabled)
-        {
-            entity.Status = ResponseStatuses.ActionRequired;
-            entity.ErrorMessage = "Ожидает действия оператора.";
-            await db.SaveChangesAsync(ct);
-            return new WorkerCandidateIngestionItemResultDto(
-                entity.Id,
-                candidate.SourceResponseId,
-                entity.Status,
-                entity.ErrorMessage);
-        }
-
-        var plan = await distributionEngine.GetPlanAsync(worker.OfficeId, ct);
-        var distributionResult = await autoDistribution.DistributeAsync(entity, plan, ct);
-        ApplyDistributionResult(entity, distributionResult);
-        if (distributionResult.Status == ResponseStatuses.Error)
+        if (entity.Status == ResponseStatuses.Error)
         {
             panelRealtime.Notify(
                 [PanelChangeKind.Responses, PanelChangeKind.NavBadges],
@@ -278,7 +260,6 @@ public sealed class CandidateIngestionService(
                 entity.ErrorMessage);
         }
 
-        await db.SaveChangesAsync(ct);
         return new WorkerCandidateIngestionItemResultDto(
             entity.Id,
             candidate.SourceResponseId,
@@ -366,7 +347,13 @@ public sealed class CandidateIngestionService(
             return new ResendBitrixResultDto(false, ResponseStatuses.Error, null, "Отклик не найден.");
         }
 
-        if (!scope.CanAccessOffice(entity.OfficeId))
+        var workerOfficeId = entity.WorkerId is Guid wid
+            ? await db.Workers.AsNoTracking()
+                .Where(x => x.Id == wid)
+                .Select(x => (Guid?)x.OfficeId)
+                .FirstOrDefaultAsync(ct)
+            : null;
+        if (!scope.CanAccessResponse(entity.OfficeId, workerOfficeId))
         {
             return new ResendBitrixResultDto(false, ResponseStatuses.Error, null, "Нет доступа к отклику.");
         }
@@ -381,17 +368,27 @@ public sealed class CandidateIngestionService(
                 result.ErrorMessage);
         }
 
-        var plan = await distributionEngine.GetPlanAsync(entity.OfficeId, ct);
-        var distributionResult = await autoDistribution.DistributeAsync(entity, plan, ct);
-        ApplyDistributionResult(entity, distributionResult);
-        entity.ProcessedAt = DateTime.UtcNow;
-        await db.SaveChangesAsync(ct);
+        var officeId = entity.OfficeId
+            ?? await db.Workers.AsNoTracking()
+                .Where(x => x.Id == entity.WorkerId)
+                .Select(x => (Guid?)x.OfficeId)
+                .FirstOrDefaultAsync(ct);
+        if (officeId is null)
+        {
+            return new ResendBitrixResultDto(false, ResponseStatuses.ActionRequired, null, "Укажите офис для отправки.");
+        }
 
+        var deliver = await responseDelivery.DeliverAsync(
+            entity.Id,
+            new DeliverResponseRequest(officeId, ToCrm: false, ToBitrix: true, UseBitrixRoute: true),
+            scope,
+            DistributionModes.Auto,
+            ct);
         return new ResendBitrixResultDto(
-            distributionResult.Status == ResponseStatuses.Sent,
-            distributionResult.Status,
-            distributionResult.BitrixEntityId,
-            distributionResult.ErrorMessage);
+            deliver.Success,
+            deliver.Status,
+            deliver.Channels.FirstOrDefault(x => x.Channel == "Bitrix")?.BitrixEntityId,
+            deliver.ErrorMessage);
     }
 
     private static void ApplyDistributionResult(CandidateResponseEntity entity, AutoDistributionResult result)

@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Orbita.Api.Data;
@@ -11,9 +12,11 @@ using Orbita.Api.Data;
 namespace Orbita.Api.Data.Migrations
 {
     [DbContext(typeof(OrbitaDbContext))]
-    partial class OrbitaDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260728140615_OperatorOwnerWorkers")]
+    partial class OperatorOwnerWorkers
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -329,7 +332,7 @@ namespace Orbita.Api.Data.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
-                    b.Property<Guid?>("OfficeId")
+                    b.Property<Guid>("OfficeId")
                         .HasColumnType("uuid");
 
                     b.Property<string>("PhoneNormalized")
@@ -349,7 +352,7 @@ namespace Orbita.Api.Data.Migrations
 
                     b.HasIndex("OfficeId");
 
-                    b.HasIndex("LastName", "FirstName", "MiddleName");
+                    b.HasIndex("OfficeId", "LastName", "FirstName", "MiddleName");
 
                     b.ToTable("CandidatePersons");
                 });
@@ -495,7 +498,7 @@ namespace Orbita.Api.Data.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<Guid?>("OfficeId")
+                    b.Property<Guid>("OfficeId")
                         .HasColumnType("uuid");
 
                     b.Property<Guid>("PersonId")
@@ -1005,10 +1008,6 @@ namespace Orbita.Api.Data.Migrations
                     b.Property<bool>("CrmRequireStageComment")
                         .HasColumnType("boolean");
 
-                    b.Property<string>("CrmStagesJson")
-                        .HasMaxLength(4000)
-                        .HasColumnType("character varying(4000)");
-
                     b.Property<bool>("IsEnabled")
                         .HasColumnType("boolean");
 
@@ -1191,52 +1190,6 @@ namespace Orbita.Api.Data.Migrations
                     b.HasIndex("ResponseId", "CreatedAtUtc");
 
                     b.ToTable("ResponseBitrixDeliveries");
-                });
-
-            modelBuilder.Entity("Orbita.Api.Data.ResponseCrmDeliveryEntity", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("CardId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("ErrorMessage")
-                        .IsRequired()
-                        .HasMaxLength(2000)
-                        .HasColumnType("character varying(2000)");
-
-                    b.Property<Guid>("OfficeId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Outcome")
-                        .IsRequired()
-                        .HasMaxLength(16)
-                        .HasColumnType("character varying(16)");
-
-                    b.Property<Guid>("ResponseId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Source")
-                        .IsRequired()
-                        .HasMaxLength(16)
-                        .HasColumnType("character varying(16)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CardId");
-
-                    b.HasIndex("OfficeId");
-
-                    b.HasIndex("ResponseId");
-
-                    b.HasIndex("ResponseId", "CreatedAtUtc");
-
-                    b.ToTable("ResponseCrmDeliveries");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.WorkerAccountEntity", b =>
@@ -1424,12 +1377,6 @@ namespace Orbita.Api.Data.Migrations
                         .IsRequired()
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
-
-                    b.Property<bool>("AutoDeliverToBitrix")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("AutoDeliverToCrm")
-                        .HasColumnType("boolean");
 
                     b.Property<string>("AutoScheduleDays")
                         .HasMaxLength(64)
@@ -1769,7 +1716,8 @@ namespace Orbita.Api.Data.Migrations
                     b.HasOne("Orbita.Api.Data.OfficeEntity", "Office")
                         .WithMany()
                         .HasForeignKey("OfficeId")
-                        .OnDelete(DeleteBehavior.SetNull);
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
 
                     b.Navigation("Office");
                 });
@@ -1807,7 +1755,8 @@ namespace Orbita.Api.Data.Migrations
                     b.HasOne("Orbita.Api.Data.OfficeEntity", "Office")
                         .WithMany()
                         .HasForeignKey("OfficeId")
-                        .OnDelete(DeleteBehavior.SetNull);
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
 
                     b.HasOne("Orbita.Api.Data.CandidatePersonEntity", "Person")
                         .WithMany("Responses")
@@ -1930,32 +1879,6 @@ namespace Orbita.Api.Data.Migrations
                     b.Navigation("Response");
                 });
 
-            modelBuilder.Entity("Orbita.Api.Data.ResponseCrmDeliveryEntity", b =>
-                {
-                    b.HasOne("Orbita.Api.Data.CrmCandidateCardEntity", "Card")
-                        .WithMany()
-                        .HasForeignKey("CardId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("Orbita.Api.Data.OfficeEntity", "Office")
-                        .WithMany()
-                        .HasForeignKey("OfficeId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("Orbita.Api.Data.CandidateResponseEntity", "Response")
-                        .WithMany("CrmDeliveries")
-                        .HasForeignKey("ResponseId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Card");
-
-                    b.Navigation("Office");
-
-                    b.Navigation("Response");
-                });
-
             modelBuilder.Entity("Orbita.Api.Data.WorkerAccountEntity", b =>
                 {
                     b.HasOne("Orbita.Api.Data.WorkerEntity", "Worker")
@@ -2032,8 +1955,6 @@ namespace Orbita.Api.Data.Migrations
             modelBuilder.Entity("Orbita.Api.Data.CandidateResponseEntity", b =>
                 {
                     b.Navigation("BitrixDeliveries");
-
-                    b.Navigation("CrmDeliveries");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.DistributionNodeEntity", b =>

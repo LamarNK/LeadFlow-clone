@@ -313,6 +313,20 @@ public sealed class CandidateIngestionServiceTests
         var leadExportQuota = new LeadExportQuotaService(db);
         var autoDistribution = new CandidateAutoDistributionService(bitrixDuplicateCheck, bitrixSend, deliveries, leadExportQuota);
         var manualSend = new ManualBitrixSendService(db, duplicateService, bitrixDuplicateCheck, bitrixSend, deliveries, new NoopPanelRealtimeNotifier());
+        var crmWorkspace = new CrmWorkspaceService(
+            db,
+            /* users */ null!,
+            new CrmLeadDistributionService(db, null!));
+        // CrmWorkspaceService needs UserManager only for board ops; delivery path uses TryCreateCard + LeadDistribution.
+        // For ingestion tests CRM auto is off by default — ResponseDeliveryService still constructed.
+        var delivery = new ResponseDeliveryService(
+            db,
+            crmWorkspace,
+            distributionEngine,
+            autoDistribution,
+            manualSend,
+            duplicateService,
+            new NoopPanelRealtimeNotifier());
 
         return new CandidateIngestionService(
             db,
@@ -320,10 +334,10 @@ public sealed class CandidateIngestionServiceTests
             new CandidateParser(),
             personMatch,
             personPhone,
-            distributionRoute,
             distributionEngine,
             autoDistribution,
             manualSend,
+            delivery,
             bitrixOptions,
             new NoopPanelRealtimeNotifier());
     }
@@ -356,7 +370,9 @@ public sealed class CandidateIngestionServiceTests
             ApiKeyHash = "hash",
             AppVersion = "1.0",
             MonitoringStatus = "Stopped",
-            CreatedAtUtc = DateTime.UtcNow
+            CreatedAtUtc = DateTime.UtcNow,
+            AutoDeliverToCrm = false,
+            AutoDeliverToBitrix = autoDistributionEnabled
         });
         db.DistributionRoutes.Add(new DistributionRouteEntity
         {
