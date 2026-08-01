@@ -23,6 +23,9 @@ public sealed class ResponsesIndexViewModel
     public IReadOnlyList<EventFilterOptionViewModel> Vacancies { get; init; } = [];
     public IReadOnlyList<ResponseRowViewModel> Responses { get; init; } = [];
     public IReadOnlyList<SendBitrixInstanceOptionViewModel> SendBitrixInstances { get; init; } = [];
+    public IReadOnlyList<EventFilterOptionViewModel> OfficeOptions { get; init; } = [];
+    /// <summary>Offices for the deliver modal (includes CRM acceptance flag).</summary>
+    public IReadOnlyList<DeliveryOfficeOptionViewModel> DeliveryOffices { get; init; } = [];
     public PaginationViewModel Pagination { get; init; } = new();
     public ResponseDetailViewModel? Selected { get; init; }
     public bool HasActiveFilters { get; init; }
@@ -106,6 +109,19 @@ public sealed class SendBitrixInstanceOptionViewModel
     public string? PortalHost { get; init; }
 }
 
+public sealed class DeliveryOfficeOptionViewModel
+{
+    public required Guid Id { get; init; }
+    public required string Name { get; init; }
+    public bool CrmEnabled { get; init; }
+}
+
+public sealed class ResponsesDeliverOptionsViewModel
+{
+    public IReadOnlyList<DeliveryOfficeOptionViewModel> DeliveryOffices { get; init; } = [];
+    public IReadOnlyList<SendBitrixInstanceOptionViewModel> SendBitrixInstances { get; init; } = [];
+}
+
 public sealed class ResponseDetailViewModel
 {
     public Guid Id { get; init; }
@@ -179,4 +195,40 @@ public sealed class SendResponseToBitrixFormModel
     public int Page { get; set; } = 1;
     public string? Sort { get; set; }
     public string? Dir { get; set; }
+}
+
+public sealed class DeliverResponseFormModel
+{
+    public Guid Id { get; set; }
+    public Guid? OfficeId { get; set; }
+    public List<Guid> OfficeIds { get; set; } = [];
+    public bool ToCrm { get; set; } = true;
+    public bool ToBitrix { get; set; }
+    public Guid? BitrixInstanceId { get; set; }
+    public List<Guid> BitrixInstanceIds { get; set; } = [];
+    public string? From { get; set; }
+    public string? To { get; set; }
+    public string? Status { get; set; }
+    public Guid? WorkerId { get; set; }
+    public Guid? AccountId { get; set; }
+    public string? BitrixDestination { get; set; }
+    public string? Gender { get; set; }
+    public int? AgeFrom { get; set; }
+    public int? AgeTo { get; set; }
+    public string? Vacancy { get; set; }
+    public string? Search { get; set; }
+    public int Page { get; set; } = 1;
+    public string? Sort { get; set; }
+    public string? Dir { get; set; }
+}
+
+public sealed class BulkDeliverResponsesFormModel
+{
+    public List<Guid> ResponseIds { get; set; } = [];
+    public Guid? OfficeId { get; set; }
+    public List<Guid> OfficeIds { get; set; } = [];
+    public bool ToCrm { get; set; } = true;
+    public bool ToBitrix { get; set; }
+    public Guid? BitrixInstanceId { get; set; }
+    public List<Guid> BitrixInstanceIds { get; set; } = [];
 }

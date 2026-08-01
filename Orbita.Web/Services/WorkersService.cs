@@ -225,6 +225,8 @@ public sealed class WorkersService(
         bool messengerAutoReplyEnabled = false,
         string? messengerAutoReplyMessage = null,
         int? phoneUnchangedHours = null,
+        bool? autoDeliverToCrm = null,
+        bool? autoDeliverToBitrix = null,
         CancellationToken ct = default) =>
         api.UpdateWorkerSettingsAsync(
             workerId,
@@ -246,6 +248,8 @@ public sealed class WorkersService(
             messengerAutoReplyEnabled,
             messengerAutoReplyMessage,
             phoneUnchangedHours,
+            autoDeliverToCrm,
+            autoDeliverToBitrix,
             ct);
 
     public Task<(bool Success, string? Error)> UpdateWorkerAccountAsync(

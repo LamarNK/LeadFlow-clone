@@ -7,15 +7,15 @@
 <div class="card card--settings-distribution">
     <div class="card-header settings-card-header">
         <div>
-            <h2 class="settings-card-title">Схема связей</h2>
+            <h2 class="settings-card-title">Схема Bitrix24 (legacy)</h2>
             <p class="settings-card-subtitle">
                 @if (!string.IsNullOrWhiteSpace(editor.OfficeName))
                 {
-                    <text>Схема офиса «@editor.OfficeName»: отдельные узлы — во все Битриксы, цепочка B1→B2 — по очереди с пропуском дублей</text>
+                    <text>Временно: схема офиса «@editor.OfficeName» для Bitrix. Основной канал — CRM. Отдельные узлы — во все Битриксы, цепочка B1→B2 — по очереди.</text>
                 }
                 else
                 {
-                    <text>Отдельные узлы — рассылка во все Битриксы. Цепочка B1→B2→B3 — попытка по порядку, дубль пропускается</text>
+                    <text>Временно: Bitrix-канал. Отдельные узлы — рассылка во все. Цепочка B1→B2→B3 — по порядку. Основной канал — CRM офиса.</text>
                 }
             </p>
         </div>

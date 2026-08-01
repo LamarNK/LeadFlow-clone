@@ -6,6 +6,8 @@ public sealed class ResponsesLiveSnapshotViewModel
     public IReadOnlyList<DashboardKpiCardViewModel> KpiCards { get; init; } = [];
     public IReadOnlyList<ResponseRowViewModel> Responses { get; init; } = [];
     public PaginationViewModel Pagination { get; init; } = new();
+    public IReadOnlyList<DeliveryOfficeOptionViewModel> DeliveryOffices { get; init; } = [];
+    public IReadOnlyList<SendBitrixInstanceOptionViewModel> SendBitrixInstances { get; init; } = [];
 }
 
 public sealed class WorkersLiveSnapshotViewModel

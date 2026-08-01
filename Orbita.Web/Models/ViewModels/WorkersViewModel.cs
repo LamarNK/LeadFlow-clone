@@ -172,6 +172,10 @@ public sealed class WorkerDetailsViewModel
     public string? MessengerAutoReplyMessage { get; init; }
     /// <summary>Часов без смены номера до метрики «не менялся». null — default 24; 0 — выкл.</summary>
     public int? PhoneUnchangedHours { get; init; }
+    public bool AutoDeliverToCrm { get; init; }
+    public bool AutoDeliverToBitrix { get; init; } = true;
+    public Guid OfficeId { get; init; }
+    public string OfficeName { get; init; } = string.Empty;
     public string EffectiveAdsPowerApiBaseUrl =>
         string.IsNullOrWhiteSpace(AdsPowerApiBaseUrl) ? DefaultAdsPowerApiBaseUrl : AdsPowerApiBaseUrl;
     public WorkerSystemPanelViewModel System { get; init; } = new();

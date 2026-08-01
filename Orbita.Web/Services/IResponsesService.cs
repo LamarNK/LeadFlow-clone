@@ -36,5 +36,24 @@ public interface IResponsesService
         Guid bitrixInstanceId,
         CancellationToken ct = default);
 
+    Task<(bool Success, string? Error)> DeliverAsync(
+        Guid id,
+        IReadOnlyList<Guid> officeIds,
+        bool toCrm,
+        bool toBitrix,
+        IReadOnlyList<Guid> bitrixInstanceIds,
+        CancellationToken ct = default);
+
+    Task<(BulkDeliverResponsesResultDto? Result, string? Error)> DeliverBulkAsync(
+        IReadOnlyList<Guid> responseIds,
+        IReadOnlyList<Guid> officeIds,
+        bool toCrm,
+        bool toBitrix,
+        IReadOnlyList<Guid> bitrixInstanceIds,
+        CancellationToken ct = default);
+
     Task<ResponseDetailJsonViewModel?> GetDetailJsonAsync(Guid id, CancellationToken ct = default);
+
+    /// <summary>Fresh office/Bitrix options for the deliver modal (not cached on the page).</summary>
+    Task<ResponsesDeliverOptionsViewModel> GetDeliverOptionsAsync(CancellationToken ct = default);
 }

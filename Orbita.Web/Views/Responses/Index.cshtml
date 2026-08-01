@@ -53,7 +53,11 @@
      data-responses-filter-url="@Url.Action("Index", "Responses", new { accountId = "__id__" })"
      data-send-bitrix-url="@Url.Action("Send", "Responses")"
      data-bulk-send-bitrix-url="@Url.Action("BulkSend", "Responses")"
-     data-bitrix-instances-json="@JsonSerializer.Serialize(Model.SendBitrixInstances)">
+     data-deliver-url="@Url.Action("Deliver", "Responses")"
+     data-bulk-deliver-url="@Url.Action("BulkDeliver", "Responses")"
+     data-deliver-options-url="@Url.Action("DeliverOptions", "Responses")"
+     data-bitrix-instances-json="@JsonSerializer.Serialize(Model.SendBitrixInstances)"
+     data-office-options-json="@JsonSerializer.Serialize(Model.DeliveryOffices)">
     @if (TempData["ResponsesError"] is string errorMessage)
     {
         <div class="orbita-preview-banner" role="alert">@errorMessage</div>
@@ -98,7 +102,7 @@
             <div class="responses-bulk-bar-actions">
                 <button type="button" class="settings-secondary-btn" data-responses-bulk-send>
                     <i class="fa-solid fa-paper-plane" aria-hidden="true"></i>
-                    <span>Отправить в Bitrix24</span>
+                    <span>Отправить</span>
                 </button>
                 <button type="button" class="settings-secondary-btn" data-responses-bulk-copy-cards>
                     <i class="fa-regular fa-copy" aria-hidden="true"></i>
@@ -266,7 +270,7 @@
                                     {
                                         <button type="button" class="row-menu-item" data-send-bitrix data-response-id="@row.Id">
                                             <i class="fa-solid fa-paper-plane" aria-hidden="true"></i>
-                                            Отправить в Bitrix24
+                                            Отправить
                                         </button>
                                     }
                                     @if (!string.IsNullOrWhiteSpace(row.BitrixEntityUrl))

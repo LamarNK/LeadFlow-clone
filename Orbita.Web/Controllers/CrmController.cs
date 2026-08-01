@@ -8,7 +8,10 @@ using Orbita.Web.Services;
 namespace Orbita.Web.Controllers;
 
 [Authorize(Roles = $"{OrbitaRoles.Admin},{OrbitaRoles.Manager}")]
-public sealed class CrmController(OrbitaApiClient api) : Controller
+public sealed class CrmController(
+    OrbitaApiClient api,
+    IOfficeContext officeContext,
+    OrbitaAuthService auth) : Controller
 {
     [HttpGet]
     public async Task<IActionResult> Index(
@@ -22,11 +25,41 @@ public sealed class CrmController(OrbitaApiClient api) : Controller
         bool includeClosed = false,
         CancellationToken ct = default)
     {
-        var board = await api.GetCrmBoardAsync(
+        officeId ??= officeContext.EffectiveOfficeId;
+        if (User.IsInRole(OrbitaRoles.Admin) && officeId is null)
+        {
+            ViewData["CrmUnavailableMessage"] =
+                "Выберите офис в переключателе в шапке, чтобы открыть CRM.";
+            return View("Unavailable");
+        }
+
+        var (board, errorCode) = await api.GetCrmBoardResultAsync(
             officeId,
             new CrmBoardQuery(search, scope, city, vacancy, overdueOnly, activeLoadOnly, includeClosed),
             ct);
-        return board is null ? View("Unavailable") : View(board);
+        if (board is null)
+        {
+            if (errorCode is "unauthorized" or "no_session")
+            {
+                await auth.SignOutAsync(ct);
+                return RedirectToAction("Login", "Account");
+            }
+
+            ViewData["CrmUnavailableMessage"] = errorCode switch
+            {
+                "forbidden" => "Нет доступа к CRM. Нужна роль менеджера или администратора.",
+                "bad_request" when officeId is null =>
+                    "Менеджеру не назначен офис. Обратитесь к администратору или войдите снова.",
+                "bad_request" => "Выберите офис в переключателе в шапке, чтобы открыть CRM.",
+                "not_found" => "Офис не найден.",
+                _ when officeId is null =>
+                    "Менеджеру не назначен офис. Обратитесь к администратору или войдите снова.",
+                _ => "Не удалось загрузить CRM для выбранного офиса. Выйдите и войдите снова."
+            };
+            return View("Unavailable");
+        }
+
+        return View(board);
     }
 
     [HttpPost]
@@ -60,50 +93,90 @@ public sealed class CrmController(OrbitaApiClient api) : Controller
     [HttpGet]
     public async Task<IActionResult> Tasks(CancellationToken ct = default)
     {
-        var tasksRequest = api.GetCrmTasksAsync(ct: ct);
-        var boardRequest = api.GetCrmBoardAsync(ct: ct);
+        var officeId = officeContext.EffectiveOfficeId;
+        if (User.IsInRole(OrbitaRoles.Admin) && officeId is null)
+        {
+            ViewData["CrmUnavailableMessage"] =
+                "Выберите офис в переключателе в шапке, чтобы открыть CRM.";
+            return View("Unavailable");
+        }
+
+        var tasksRequest = api.GetCrmTasksAsync(officeId, ct);
+        var boardRequest = api.GetCrmBoardResultAsync(officeId, ct: ct);
         await Task.WhenAll(tasksRequest, boardRequest);
         var tasks = await tasksRequest;
-        var board = await boardRequest;
-        return tasks is null || board is null
-            ? View("Unavailable")
-            : View(new CrmTasksViewModel(tasks, board.Managers, board.OpenTaskCount, board.OverdueTaskCount));
+        var (board, boardError) = await boardRequest;
+        if (boardError is "unauthorized" or "no_session")
+        {
+            await auth.SignOutAsync(ct);
+            return RedirectToAction("Login", "Account");
+        }
+
+        if (tasks is null || board is null)
+        {
+            ViewData["CrmUnavailableMessage"] = "Не удалось загрузить задачи CRM. Выйдите и войдите снова.";
+            return View("Unavailable");
+        }
+
+        return View(new CrmTasksViewModel(tasks, board.Managers, board.OpenTaskCount, board.OverdueTaskCount));
     }
 
     [HttpGet]
     public async Task<IActionResult> Team(CancellationToken ct = default)
     {
-        var board = await api.GetCrmBoardAsync(query: new CrmBoardQuery(Scope: CrmBoardScopes.Team), ct: ct);
-        if (board is null) return View("Unavailable");
+        var officeId = officeContext.EffectiveOfficeId;
+        if (officeId is null)
+        {
+            ViewData["CrmUnavailableMessage"] =
+                "Выберите офис в переключателе в шапке, чтобы открыть команду CRM.";
+            return View("Unavailable");
+        }
+
+        var (board, errorCode) = await api.GetCrmBoardResultAsync(
+            officeId,
+            query: new CrmBoardQuery(Scope: CrmBoardScopes.Team),
+            ct: ct);
+        if (errorCode is "unauthorized" or "no_session")
+        {
+            await auth.SignOutAsync(ct);
+            return RedirectToAction("Login", "Account");
+        }
+
+        if (board is null)
+        {
+            ViewData["CrmUnavailableMessage"] = "Не удалось загрузить CRM для выбранного офиса. Выйдите и войдите снова.";
+            return View("Unavailable");
+        }
+
         if (!board.IsAdmin) return Forbid();
         return View(board);
     }
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Move(Guid id, string stage, string? comment, CancellationToken ct = default)
+    public async Task<IActionResult> Move(Guid id, string stage, string? comment, string? returnUrl, CancellationToken ct = default)
     {
         var (_, error) = await api.MoveCrmCardAsync(id, stage, comment, ct);
         if (error is not null) TempData["CrmError"] = error;
-        return RedirectToAction(nameof(Card), new { id });
+        return RedirectAfterCardMutation(returnUrl, nameof(Card), new { id });
     }
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> SetLoad(Guid id, bool active, CancellationToken ct = default)
+    public async Task<IActionResult> SetLoad(Guid id, bool active, string? returnUrl, CancellationToken ct = default)
     {
         var (_, error) = await api.SetCrmCardActiveLoadAsync(id, active, ct);
         if (error is not null) TempData["CrmError"] = error;
-        return RedirectToAction(nameof(Card), new { id });
+        return RedirectAfterCardMutation(returnUrl, nameof(Card), new { id });
     }
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Assign(Guid id, string managerUserId, CancellationToken ct = default)
+    public async Task<IActionResult> Assign(Guid id, string managerUserId, string? returnUrl, CancellationToken ct = default)
     {
         var (_, error) = await api.AssignCrmCardAsync(id, managerUserId, ct);
         if (error is not null) TempData["CrmError"] = error;
-        return RedirectToAction(nameof(Card), new { id });
+        return RedirectAfterCardMutation(returnUrl, nameof(Card), new { id });
     }
 
     [HttpPost]
@@ -144,11 +217,13 @@ public sealed class CrmController(OrbitaApiClient api) : Controller
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> CreateTask(Guid? cardId, string title, string? description, string assigneeUserId, DateTime? dueAtUtc, CancellationToken ct = default)
+    public async Task<IActionResult> CreateTask(Guid? cardId, string title, string? description, string assigneeUserId, DateTime? dueAtUtc, string? returnUrl, CancellationToken ct = default)
     {
         var (_, error) = await api.CreateCrmTaskAsync(new CrmTaskCreateRequest(cardId, title, description, assigneeUserId, dueAtUtc), ct);
         if (error is not null) TempData["CrmError"] = error;
-        return cardId is Guid id ? RedirectToAction(nameof(Card), new { id, tab = "tasks" }) : RedirectToAction(nameof(Tasks));
+        return cardId is Guid id
+            ? RedirectAfterCardMutation(returnUrl, nameof(Card), new { id, tab = "tasks" })
+            : RedirectToAction(nameof(Tasks));
     }
 
     [HttpPost]
@@ -160,6 +235,16 @@ public sealed class CrmController(OrbitaApiClient api) : Controller
         return cardId is Guid id ? RedirectToAction(nameof(Card), new { id, tab = "tasks" }) : RedirectToAction(nameof(Tasks));
     }
 
+    private IActionResult RedirectAfterCardMutation(string? returnUrl, string fallbackAction, object fallbackRouteValues)
+    {
+        if (!string.IsNullOrWhiteSpace(returnUrl) && Url.IsLocalUrl(returnUrl))
+        {
+            return LocalRedirect(returnUrl);
+        }
+
+        return RedirectToAction(fallbackAction, fallbackRouteValues)!;
+    }
+
     [HttpPost]
     [ValidateAntiForgeryToken]
     [Authorize(Roles = OrbitaRoles.Admin)]
@@ -168,6 +253,22 @@ public sealed class CrmController(OrbitaApiClient api) : Controller
         var (_, error) = await api.SetCrmOfficeSettingsAsync(officeId, isEnabled, requireStageComment, ct);
         if (error is not null) TempData["CrmError"] = error;
         else TempData["CrmOk"] = "Настройки CRM сохранены.";
+        return RedirectToAction(nameof(Team));
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    [Authorize(Roles = OrbitaRoles.Admin)]
+    public async Task<IActionResult> SaveOfficeFunnel(Guid officeId, string? stagesText, bool resetDefault = false, CancellationToken ct = default)
+    {
+        IReadOnlyList<string> stages = resetDefault
+            ? CrmStages.Default
+            : (stagesText ?? string.Empty)
+                .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        var (_, error) = await api.SetCrmOfficeFunnelAsync(officeId, stages, ct);
+        if (error is not null) TempData["CrmError"] = error;
+        else TempData["CrmOk"] = resetDefault ? "Воронка сброшена к значениям по умолчанию." : "Воронка офиса сохранена.";
         return RedirectToAction(nameof(Team));
     }
 

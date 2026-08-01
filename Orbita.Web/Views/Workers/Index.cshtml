@@ -250,12 +250,12 @@
             </header>
             <form asp-action="Create" method="post" class="workers-modal-body">
                 @Html.AntiForgeryToken()
-                <p class="workers-modal-hint">Укажите имя VDS. API-ключ и команду установки будут показаны один раз после создания.</p>
+                <p class="workers-modal-hint">Укажите имя VDS и офис назначения (CRM / Bitrix). API-ключ будет показан один раз после создания.</p>
                 <label class="workers-modal-label" for="workerDisplayName">Имя воркера</label>
                 <input type="text" id="workerDisplayName" name="displayName" class="workers-modal-input" placeholder="VDS #1" required maxlength="200" />
                 @if (Model.CanSelectOffice && Model.OfficeOptions.Count > 0)
                 {
-                    <label class="workers-modal-label" for="workerOfficeId">Офис</label>
+                    <label class="workers-modal-label" for="workerOfficeId">Офис назначения</label>
                     <select id="workerOfficeId" name="officeId" class="workers-modal-input" required>
                         @foreach (var opt in Model.OfficeOptions)
                         {

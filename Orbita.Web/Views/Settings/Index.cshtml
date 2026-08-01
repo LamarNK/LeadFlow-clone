@@ -139,11 +139,11 @@
                                     </div>
                                     <div class="settings-option">
                                         <div class="settings-option-text">
-                                            <span class="settings-option-label">Передача в Bitrix24</span>
-                                            <span class="settings-option-desc">Новые отклики офиса отправляются в CRM после проверки дублей</span>
+                                            <span class="settings-option-label">Офис принимает отклики</span>
+                                            <span class="settings-option-desc">Операторы всех офисов могут отправлять отклики в CRM этого офиса</span>
                                         </div>
-                                        <label class="worker-toggle" title="Передача в Bitrix24">
-                                            <input type="checkbox" name="BitrixTransmissionEnabled" value="true" @(selected.BitrixTransmissionEnabled ? "checked" : null) />
+                                        <label class="worker-toggle" title="Офис принимает отклики">
+                                            <input type="checkbox" name="CrmEnabled" value="true" @(selected.CrmEnabled ? "checked" : null) />
                                             <span class="worker-toggle-slider"></span>
                                         </label>
                                     </div>

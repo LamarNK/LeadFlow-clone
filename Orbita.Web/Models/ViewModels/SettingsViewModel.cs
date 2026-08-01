@@ -69,6 +69,8 @@ public sealed class OfficeDetailViewModel
     public required string Name { get; init; }
     public bool IsEnabled { get; init; }
     public bool BitrixTransmissionEnabled { get; init; } = true;
+    /// <summary>Офис принимает отклики в CRM от операторов любого офиса.</summary>
+    public bool CrmEnabled { get; init; }
     public bool RegistrationConfigured { get; init; }
     public required string MaskedRegistrationSecret { get; init; }
     public string BitrixValidationStatus { get; init; } = BitrixValidationStatuses.NotConfigured;
@@ -90,7 +92,7 @@ public sealed class UpdateOfficeFormModel
     public Guid OfficeId { get; set; }
     public string Name { get; set; } = string.Empty;
     public bool IsEnabled { get; set; } = true;
-    public bool BitrixTransmissionEnabled { get; set; } = true;
+    public bool CrmEnabled { get; set; }
 }
 
 public sealed class UpdatePanelUserOfficeFormModel
@@ -186,6 +188,8 @@ public sealed class PanelAuditRowViewModel
 public sealed class ProfileSettingsViewModel
 {
     public required string Email { get; init; }
+    /// <summary>Raw role id (<see cref="PanelRoles"/>).</summary>
+    public string Role { get; init; } = PanelRoles.Operator;
     public required string RoleLabel { get; init; }
     public PasswordPolicyViewModel? PasswordPolicy { get; init; }
 }

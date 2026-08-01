@@ -26,11 +26,11 @@
 
     <section class="crm-toolbar card">
         <div class="crm-toolbar__stats crm-toolbar__stats--team">
-            <div><small>Активные карточки</small><strong>@Model.TeamStats.TotalActiveCards</strong></div>
-            <div><small>Очередь</small><strong>@Model.UnassignedCount</strong></div>
-            <div><small>На смене</small><strong>@Model.TeamStats.OnShiftManagers</strong></div>
-            <div><small>Выдано сегодня</small><strong>@Model.TeamStats.AssignedToday</strong></div>
-            <div><small>Закрыто сегодня</small><strong>@Model.TeamStats.ClosedToday</strong></div>
+            <div class="crm-team-stat"><i class="fa-regular fa-folder-open" aria-hidden="true"></i><small>Активные карточки</small><strong>@Model.TeamStats.TotalActiveCards</strong></div>
+            <div class="crm-team-stat"><i class="fa-solid fa-inbox" aria-hidden="true"></i><small>Очередь</small><strong>@Model.UnassignedCount</strong></div>
+            <div class="crm-team-stat"><i class="fa-solid fa-user-check" aria-hidden="true"></i><small>На смене</small><strong>@Model.TeamStats.OnShiftManagers</strong></div>
+            <div class="crm-team-stat"><i class="fa-solid fa-arrow-right-arrow-left" aria-hidden="true"></i><small>Выдано сегодня</small><strong>@Model.TeamStats.AssignedToday</strong></div>
+            <div class="crm-team-stat"><i class="fa-solid fa-circle-check" aria-hidden="true"></i><small>Закрыто сегодня</small><strong>@Model.TeamStats.ClosedToday</strong></div>
         </div>
     </section>
 
@@ -38,6 +38,7 @@
         <section class="card crm-team-panel">
             <div class="card-header"><div><h2>Менеджеры</h2><p>Ёмкость и текущая нагрузка (активные карточки в нагрузке).</p></div></div>
             <div class="crm-manager-table">
+                <div class="crm-manager-table__head" aria-hidden="true"><span>Менеджер</span><span>Нагрузка</span><span>Лимит</span></div>
                 @foreach (var m in Model.Managers)
                 {
                     var pct = m.Capacity <= 0 ? 0 : Math.Min(100, (int)Math.Round(100.0 * m.ActiveLoad / m.Capacity));
@@ -52,7 +53,7 @@
                         </div>
                         <form asp-action="SaveCapacity" method="post" class="crm-capacity-form">
                             <input type="hidden" name="managerUserId" value="@m.UserId" />
-                            <label>Лимит нагрузки<input type="number" name="capacity" min="1" max="100" value="@m.Capacity" aria-label="Лимит нагрузки для @m.DisplayName" /></label>
+                            <label><span>Лимит</span><input type="number" name="capacity" min="1" max="100" value="@m.Capacity" aria-label="Лимит нагрузки для @m.DisplayName" /></label>
                             <button class="settings-secondary-btn" type="submit">Сохранить</button>
                         </form>
                     </article>
@@ -78,16 +79,47 @@
             </div>
         </section>
 
-        <section class="card crm-team-panel">
-            <div class="card-header"><div><h2>Настройки офиса</h2><p>CRM параллельна Bitrix: выключение CRM не останавливает отправку в Битрикс.</p></div></div>
+        <section class="card crm-team-panel crm-team-panel--settings">
+            <div class="card-header"><div><h2>Настройки офиса</h2><p>Офис принимает отклики в CRM — операторы любого офиса могут отправлять сюда карточки. Bitrix настраивается отдельно.</p></div></div>
             @if (officeId is Guid oid)
             {
-                <form asp-action="SaveOfficeSettings" method="post" class="crm-standard-form">
+                <form asp-action="SaveOfficeSettings" method="post" class="crm-standard-form crm-office-settings-form">
                     <input type="hidden" name="officeId" value="@oid" />
-                    <label class="crm-check"><input type="checkbox" name="isEnabled" value="true" @(Model.IsEnabled ? "checked" : null) /> CRM включена (новые отклики → карточки)</label>
-                    <label class="crm-check"><input type="checkbox" name="requireStageComment" value="true" @(Model.RequireStageComment ? "checked" : null) /> Требовать комментарий при смене этапа</label>
-                    <p class="crm-hint">CRM не меняет отправку в Bitrix. Пока пилот — оба контура работают параллельно.</p>
-                    <button class="settings-primary-btn" type="submit">Сохранить</button>
+                    <div class="crm-office-settings-form__options">
+                        <label class="crm-setting-toggle">
+                            <input type="checkbox" name="isEnabled" value="true" @(Model.IsEnabled ? "checked" : null) />
+                            <span><strong>Принимать отклики в CRM</strong><small>Создавать карточки из откликов операторов.</small></span>
+                        </label>
+                        <label class="crm-setting-toggle">
+                            <input type="checkbox" name="requireStageComment" value="true" @(Model.RequireStageComment ? "checked" : null) />
+                            <span><strong>Комментарий при смене этапа</strong><small>Просить менеджера пояснить изменение статуса.</small></span>
+                        </label>
+                    </div>
+                    <div class="crm-form-footer">
+                        <p class="crm-hint">Та же настройка, что в «Администрирование → Офисы». Выключение не останавливает Bitrix.</p>
+                        <button class="settings-primary-btn" type="submit">Сохранить настройки</button>
+                    </div>
+                </form>
+            }
+            else
+            {
+                <p class="crm-empty">Выберите офис в шапке.</p>
+            }
+        </section>
+
+        <section class="card crm-team-panel crm-team-panel--funnel">
+            <div class="card-header"><div><h2>Воронка офиса</h2><p>Этапы CRM для текущего офиса. Только администратор. Первый этап — стартовый для новых карточек.</p></div></div>
+            @if (officeId is Guid funnelOfficeId)
+            {
+                <form asp-action="SaveOfficeFunnel" method="post" class="crm-standard-form crm-funnel-form">
+                    <input type="hidden" name="officeId" value="@funnelOfficeId" />
+                    <label for="stagesText">Этапы (один на строку, сверху вниз)</label>
+                    <textarea id="stagesText" name="stagesText" rows="@(Math.Max(6, Model.FunnelStages.Count + 2))" spellcheck="false">@string.Join(Environment.NewLine, Model.FunnelStages)</textarea>
+                    <p class="crm-hint">От @CrmStages.MinCount до @CrmStages.MaxCount уникальных этапов, до @CrmStages.MaxNameLength символов. Карточки с удалённых этапов переносятся на первый этап.</p>
+                    <div class="crm-funnel-form__actions">
+                        <button class="settings-primary-btn" type="submit">Сохранить воронку</button>
+                        <button class="settings-secondary-btn" type="submit" name="resetDefault" value="true">Сбросить по умолчанию</button>
+                    </div>
                 </form>
             }
             else

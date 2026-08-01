@@ -54,6 +54,10 @@
             <div><small>Ответственный</small><strong>@(card.ManagerName ?? "Не назначен")</strong></div>
             <div><small>В этапе</small><strong class="@(card.HoursInStage >= 24 ? "crm-hot" : "")">@card.HoursInStage.ToString("0.#") ч</strong></div>
             <div><small>Задачи</small><strong class="@(card.HasOverdueTask ? "crm-overdue" : "")">@card.OpenTaskCount</strong></div>
+            @if (card.NextActionAtUtc is DateTime nextAction)
+            {
+                <div><small>Следующее действие</small><strong class="@(nextAction < DateTime.UtcNow ? "crm-overdue" : "")">@nextAction.ToLocalTime().ToString("dd.MM, HH:mm")</strong></div>
+            }
         </div>
     </section>
 
@@ -62,8 +66,8 @@
             <label for="stageComment">Комментарий к смене этапа (если требуется в офисе)</label>
             <input id="stageComment" type="text" form="crm-stage-forms" name="comment" placeholder="Необязательно, если офис не требует" />
         </div>
-        <div class="crm-stage-rail__stages">
-        @foreach (var stage in CrmStages.All)
+        <div class="crm-stage-rail__stages" style="--crm-stage-count: @Model.Stages.Count">
+        @foreach (var stage in Model.Stages)
         {
             <form asp-action="Move" method="post" class="@(stage == card.Stage ? "is-current" : "") @(card.IsClosed ? "is-disabled" : "")">
                 <input type="hidden" name="id" value="@card.Id" />

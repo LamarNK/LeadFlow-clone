@@ -10,11 +10,16 @@ public sealed class MySettingsService(OrbitaApiClient api, IOptions<DesignPrevie
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
-    private static readonly IReadOnlyList<SettingsTabViewModel> Tabs =
+    private static readonly IReadOnlyList<SettingsTabViewModel> OperatorTabs =
     [
         new() { Id = "profile", Label = "Мой профиль" },
         new() { Id = "bitrix", Label = "Битриксы" },
         new() { Id = "distribution", Label = "Связи" }
+    ];
+
+    private static readonly IReadOnlyList<SettingsTabViewModel> ManagerOnlyTabs =
+    [
+        new() { Id = "profile", Label = "Мой профиль" }
     ];
 
     public async Task<MySettingsIndexViewModel> GetIndexAsync(
@@ -22,14 +27,17 @@ public sealed class MySettingsService(OrbitaApiClient api, IOptions<DesignPrevie
         Guid? instanceId = null,
         CancellationToken ct = default)
     {
-        var activeTab = NormalizeTab(tab);
         var profile = await BuildProfileAsync(ct);
+        var isManagerOnly = profile?.Role is PanelRoles.Manager;
+        var tabs = isManagerOnly ? ManagerOnlyTabs : OperatorTabs;
+        // Bitrix/distribution are operator office tools — managers only edit their profile.
+        var activeTab = isManagerOnly ? "profile" : NormalizeTab(tab);
 
         return new MySettingsIndexViewModel
         {
             Header = PageHeaderBuilder.MySettings(),
             ActiveTab = activeTab,
-            Tabs = Tabs,
+            Tabs = tabs,
             Profile = profile,
             BitrixInstances = activeTab == "bitrix" ? await BuildBitrixInstancesAsync(instanceId, ct) : null,
             Distribution = activeTab == "distribution" ? await BuildDistributionAsync(ct) : null
@@ -129,6 +137,7 @@ public sealed class MySettingsService(OrbitaApiClient api, IOptions<DesignPrevie
         return new ProfileSettingsViewModel
         {
             Email = profile.Email,
+            Role = profile.Role,
             RoleLabel = profile.Role switch
             {
                 PanelRoles.Admin => "Администратор",

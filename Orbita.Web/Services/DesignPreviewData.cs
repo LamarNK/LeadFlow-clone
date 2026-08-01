@@ -43,6 +43,7 @@ internal static class DesignPreviewData
     private static bool _previewCrmShiftActive = true;
     private static bool _previewCrmEnabled = true;
     private static bool _previewCrmRequireComment;
+    private static List<string> _previewCrmStages = CrmStages.Default.ToList();
     private static readonly List<PreviewCrmCandidate> PreviewCrmCandidates =
     [
         new(Guid.Parse("90000000-0000-0000-0000-000000000001"), "Селезнёв Артур Алексеевич", 55, "+7 912 445-18-07", "Тында", "Разнорабочий на вахту", CrmStages.Lead, PreviewManagerElena, true, 35),
@@ -120,7 +121,7 @@ internal static class DesignPreviewData
             }
 
             var list = cards.ToList();
-            var stages = CrmStages.All
+            var stages = _previewCrmStages
                 .Select(stage =>
                 {
                     var stageCards = list.Where(c => c.Stage == stage && !c.IsClosed)
@@ -140,7 +141,7 @@ internal static class DesignPreviewData
                 managers.Count,
                 PreviewCrmCandidates.Count(c => c.IsClosed),
                 4,
-                CrmStages.All.Select(s => new CrmStageCountDto(s, PreviewCrmCandidates.Count(c => c.Stage == s && !c.IsClosed))).ToList());
+                _previewCrmStages.Select(s => new CrmStageCountDto(s, PreviewCrmCandidates.Count(c => c.Stage == s && !c.IsClosed))).ToList());
             return new CrmBoardDto(
                 _previewCrmEnabled,
                 _previewCrmRequireComment,
@@ -160,7 +161,8 @@ internal static class DesignPreviewData
                 query.Vacancy,
                 query.OverdueOnly,
                 query.ActiveLoadOnly,
-                query.IncludeClosed);
+                query.IncludeClosed,
+                _previewCrmStages.ToList());
         }
     }
 
@@ -186,7 +188,8 @@ internal static class DesignPreviewData
                 tasks,
                 history,
                 activity,
-                BuildPreviewCrmManagers());
+                BuildPreviewCrmManagers(),
+                _previewCrmStages.ToList());
         }
     }
 
@@ -225,7 +228,7 @@ internal static class DesignPreviewData
         lock (CrmSync)
         {
             var candidate = PreviewCrmCandidates.FirstOrDefault(item => item.Id == cardId);
-            if (candidate is null || !CrmStages.IsValid(stage)) return (false, "Карточка или этап не найдены.");
+            if (candidate is null || !CrmStages.Contains(_previewCrmStages, stage)) return (false, "Карточка или этап не найдены.");
             if (_previewCrmRequireComment && string.IsNullOrWhiteSpace(comment)) return (false, "Нужен комментарий при смене этапа.");
             candidate.Stage = stage;
             candidate.StageChangedAtUtc = DateTime.UtcNow;
@@ -359,6 +362,29 @@ internal static class DesignPreviewData
         {
             _previewCrmEnabled = enabled;
             _previewCrmRequireComment = requireStageComment;
+            return (true, null);
+        }
+    }
+
+    public static (bool Success, string? Error) SetCrmOfficeFunnel(IReadOnlyList<string> stages)
+    {
+        lock (CrmSync)
+        {
+            var normalized = CrmStages.Normalize(stages);
+            if (normalized is null)
+            {
+                return (false, $"Укажите от {CrmStages.MinCount} до {CrmStages.MaxCount} уникальных этапов.");
+            }
+
+            var nextSet = new HashSet<string>(normalized, StringComparer.Ordinal);
+            var fallback = normalized[0];
+            foreach (var card in PreviewCrmCandidates.Where(c => !c.IsClosed && !nextSet.Contains(c.Stage)))
+            {
+                card.Stage = fallback;
+                card.StageChangedAtUtc = DateTime.UtcNow;
+            }
+
+            _previewCrmStages = normalized.ToList();
             return (true, null);
         }
     }
@@ -1878,7 +1904,8 @@ internal static class DesignPreviewData
                 office.Id == PreviewOfficeId ? "Вебхук настроен корректно." : null,
                 office.Id == PreviewOfficeId ? "https://demo.bitrix24.ru/rest/1/***/" : null,
                 office.BitrixPortalHost,
-                office.Id == PreviewOfficeId ? Now.AddHours(-2) : null);
+                office.Id == PreviewOfficeId ? Now.AddHours(-2) : null,
+                CrmEnabled: true);
     }
 
     public static PasswordPolicyDto PasswordPolicy =>
@@ -2112,6 +2139,21 @@ internal static class DesignPreviewData
         return new WorkerLogsPageDto(items, list.Count, page, pageSize);
     }
 
+    public static ResponsesDeliverOptionsViewModel BuildResponsesDeliverOptions() =>
+        new()
+        {
+            DeliveryOffices = Offices
+                .Where(o => o.IsEnabled)
+                .Select(o => new DeliveryOfficeOptionViewModel
+                {
+                    Id = o.Id,
+                    Name = o.Name,
+                    CrmEnabled = true
+                })
+                .ToList(),
+            SendBitrixInstances = ResponsesIndexBuilder.MapSendBitrixInstances(PreviewBitrixInstances)
+        };
+
     public static ResponsesIndexViewModel BuildResponsesIndexViewModel(
         ResponsesFilterViewModel filters,
         Guid? selectedId = null,
@@ -2170,7 +2212,13 @@ internal static class DesignPreviewData
                     .Take(20)
                     .ToList()),
             Responses = paged,
-            SendBitrixInstances = ResponsesIndexBuilder.MapSendBitrixInstances(PreviewBitrixInstances),
+            SendBitrixInstances = BuildResponsesDeliverOptions().SendBitrixInstances,
+            OfficeOptions = Offices.Select(o => new EventFilterOptionViewModel
+            {
+                Value = o.Id.ToString(),
+                Label = o.Name
+            }).ToList(),
+            DeliveryOffices = BuildResponsesDeliverOptions().DeliveryOffices,
             Pagination = new PaginationViewModel
             {
                 Page = page,

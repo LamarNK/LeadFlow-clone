@@ -295,6 +295,9 @@ public sealed class OrbitaApiClient(
     public Task<IReadOnlyList<OfficeDto>?> GetOfficesAsync(CancellationToken ct = default) =>
         GetAsync<IReadOnlyList<OfficeDto>>("api/v1/admin/offices", ct);
 
+    public Task<IReadOnlyList<OfficeOptionDto>?> GetOfficeOptionsAsync(CancellationToken ct = default) =>
+        GetAsync<IReadOnlyList<OfficeOptionDto>>("api/v1/panel/offices/options", ct);
+
     public Task<OfficeDetailDto?> GetOfficeAsync(Guid id, CancellationToken ct = default) =>
         GetAsync<OfficeDetailDto>($"api/v1/admin/offices/{id}", ct);
 
@@ -322,10 +325,11 @@ public sealed class OrbitaApiClient(
         string name,
         bool isEnabled,
         bool bitrixTransmissionEnabled,
+        bool crmEnabled,
         CancellationToken ct = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Put, $"api/v1/admin/offices/{id}");
-        request.Content = JsonContent.Create(new UpdateOfficeRequest(name, isEnabled, bitrixTransmissionEnabled));
+        request.Content = JsonContent.Create(new UpdateOfficeRequest(name, isEnabled, bitrixTransmissionEnabled, crmEnabled));
         using var response = await SendAuthenticatedAsync(request, ct);
         if (response is null)
         {
@@ -615,6 +619,8 @@ public sealed class OrbitaApiClient(
         bool messengerAutoReplyEnabled = false,
         string? messengerAutoReplyMessage = null,
         int? phoneUnchangedHours = null,
+        bool? autoDeliverToCrm = null,
+        bool? autoDeliverToBitrix = null,
         CancellationToken ct = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Patch, $"api/v1/workers/{workerId}/settings");
@@ -637,7 +643,9 @@ public sealed class OrbitaApiClient(
             autoScheduleToLocalTime,
             messengerAutoReplyEnabled,
             messengerAutoReplyMessage,
-            phoneUnchangedHours));
+            phoneUnchangedHours,
+            autoDeliverToCrm,
+            autoDeliverToBitrix));
         using var response = await SendAuthenticatedAsync(request, ct);
         if (response is null)
         {
@@ -1193,6 +1201,61 @@ public sealed class OrbitaApiClient(
         return await response.Content.ReadFromJsonAsync<SendBitrixResultDto>(ApiJsonOptions, ct);
     }
 
+    public async Task<DeliverResponseResultDto?> DeliverResponseAsync(
+        Guid id,
+        DeliverResponseRequest body,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return new DeliverResponseResultDto(
+                true,
+                ResponseStatuses.Sent,
+                null,
+                body.OfficeId,
+                [new DeliverResponseChannelResultDto("CRM", true, "Sent", null)]);
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"api/v1/panel/responses/{id:D}/deliver");
+        request.Content = JsonContent.Create(body);
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null || !response.IsSuccessStatusCode)
+        {
+            return null;
+        }
+
+        return await response.Content.ReadFromJsonAsync<DeliverResponseResultDto>(ApiJsonOptions, ct);
+    }
+
+    public async Task<(BulkDeliverResponsesResultDto? Result, string? Error)> DeliverResponsesBulkAsync(
+        BulkDeliverResponsesRequest body,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            var items = body.ResponseIds
+                .Select(id => new BulkDeliverItemResultDto(id, true, ResponseStatuses.Sent, null))
+                .ToList();
+            return (new BulkDeliverResponsesResultDto(body.ResponseIds.Count, body.ResponseIds.Count, 0, items), null);
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/panel/responses/deliver-bulk");
+        request.Content = JsonContent.Create(body);
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (null, InvalidApiSessionError);
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            return (null, await ReadApiErrorAsync(response, ct));
+        }
+
+        var result = await response.Content.ReadFromJsonAsync<BulkDeliverResponsesResultDto>(ApiJsonOptions, ct);
+        return result is null ? (null, "Не удалось прочитать ответ API.") : (result, null);
+    }
+
     public async Task<(BulkSendBitrixResultDto? Result, string? Error)> BulkSendResponsesToBitrixAsync(
         IReadOnlyList<Guid> responseIds,
         Guid bitrixInstanceId,
@@ -1700,14 +1763,26 @@ public sealed class OrbitaApiClient(
         return await GetAsync<BrowserMonitorSessionDto>($"api/v1/panel/browser-monitor-sessions/{sessionId:D}", ct);
     }
 
-    public Task<CrmBoardDto?> GetCrmBoardAsync(
+    public async Task<CrmBoardDto?> GetCrmBoardAsync(
+        Guid? officeId = null,
+        CrmBoardQuery? query = null,
+        CancellationToken ct = default)
+    {
+        var (board, _) = await GetCrmBoardResultAsync(officeId, query, ct);
+        return board;
+    }
+
+    /// <summary>
+    /// Loads CRM board. ErrorCode: unauthorized | forbidden | bad_request | not_found | error | null on success.
+    /// </summary>
+    public async Task<(CrmBoardDto? Board, string? ErrorCode)> GetCrmBoardResultAsync(
         Guid? officeId = null,
         CrmBoardQuery? query = null,
         CancellationToken ct = default)
     {
         if (_preview.Enabled)
         {
-            return Task.FromResult<CrmBoardDto?>(DesignPreviewData.GetCrmBoard(query));
+            return (DesignPreviewData.GetCrmBoard(query), null);
         }
 
         query ??= new CrmBoardQuery();
@@ -1716,10 +1791,52 @@ public sealed class OrbitaApiClient(
         url = AppendQuery(url, "scopeFilter", query.Scope);
         url = AppendQuery(url, "city", query.City);
         url = AppendQuery(url, "vacancy", query.Vacancy);
-        if (query.OverdueOnly) url = AppendQuery(url, "overdueOnly", "true");
-        if (query.ActiveLoadOnly) url = AppendQuery(url, "activeLoadOnly", "true");
-        if (query.IncludeClosed) url = AppendQuery(url, "includeClosed", "true");
-        return GetAsync<CrmBoardDto>(url, ct);
+        // Always send bools — older API builds rejected missing non-nullable query bools with 400.
+        url = AppendQuery(url, "overdueOnly", query.OverdueOnly ? "true" : "false");
+        url = AppendQuery(url, "activeLoadOnly", query.ActiveLoadOnly ? "true" : "false");
+        url = AppendQuery(url, "includeClosed", query.IncludeClosed ? "true" : "false");
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (null, "no_session");
+        }
+
+        if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        {
+            return (null, "unauthorized");
+        }
+
+        if (response.StatusCode == System.Net.HttpStatusCode.Forbidden)
+        {
+            return (null, "forbidden");
+        }
+
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            return (null, "not_found");
+        }
+
+        if (response.StatusCode == System.Net.HttpStatusCode.BadRequest)
+        {
+            return (null, "bad_request");
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            return (null, "error");
+        }
+
+        try
+        {
+            var board = await response.Content.ReadFromJsonAsync<CrmBoardDto>(ApiJsonOptions, ct);
+            return board is null ? (null, "error") : (board, null);
+        }
+        catch (JsonException)
+        {
+            return (null, "error");
+        }
     }
 
     public Task<CrmCandidateDetailDto?> GetCrmCardAsync(Guid cardId, CancellationToken ct = default) =>
@@ -1876,6 +1993,21 @@ public sealed class OrbitaApiClient(
         using var request = new HttpRequestMessage(HttpMethod.Put, $"api/v1/crm/offices/{officeId:D}/settings")
         {
             Content = JsonContent.Create(new CrmOfficeSettingsRequest(enabled, requireStageComment))
+        };
+        using var response = await SendAuthenticatedAsync(request, ct);
+        return response is null ? (false, InvalidApiSessionError) : response.IsSuccessStatusCode ? (true, null) : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(bool Success, string? Error)> SetCrmOfficeFunnelAsync(Guid officeId, IReadOnlyList<string> stages, CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return DesignPreviewData.SetCrmOfficeFunnel(stages);
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Put, $"api/v1/crm/offices/{officeId:D}/funnel")
+        {
+            Content = JsonContent.Create(new CrmOfficeFunnelRequest(stages))
         };
         using var response = await SendAuthenticatedAsync(request, ct);
         return response is null ? (false, InvalidApiSessionError) : response.IsSuccessStatusCode ? (true, null) : (false, await ReadApiErrorAsync(response, ct));

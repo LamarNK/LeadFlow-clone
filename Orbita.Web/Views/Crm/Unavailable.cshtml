@@ -1,2 +1,11 @@
-@{ ViewData["Title"] = "CRM недоступна"; }
-<section class="page-header"><div><h1>CRM недоступна</h1><p>Не удалось загрузить CRM для выбранного офиса.</p></div></section>
+@{
+    ViewData["Title"] = "CRM недоступна";
+    var message = ViewData["CrmUnavailableMessage"] as string
+        ?? "Не удалось загрузить CRM для выбранного офиса.";
+}
+<section class="page-header">
+    <div>
+        <h1>CRM недоступна</h1>
+        <p>@message</p>
+    </div>
+</section>

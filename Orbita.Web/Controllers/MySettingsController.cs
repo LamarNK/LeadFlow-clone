@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Orbita.Contracts;
+using Orbita.Web.Authorization;
 using Orbita.Web.Helpers;
 using Orbita.Web.Models.ViewModels;
 using Orbita.Web.Services;
@@ -13,6 +14,8 @@ public sealed class MySettingsController(
     IMySettingsService settings,
     BitrixValidationResultCache bitrixValidationCache) : Controller
 {
+    private bool IsManagerOnly =>
+        User.IsInRole(OrbitaRoles.Manager) && !User.IsInRole(OrbitaRoles.Admin);
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     [HttpGet]
@@ -60,12 +63,26 @@ public sealed class MySettingsController(
     }
 
     [HttpGet]
-    public IActionResult CreateBitrixInstance(string? tab = "bitrix") =>
-        RedirectToAction(nameof(Index), new { tab, instanceId = Guid.Empty });
+    public IActionResult CreateBitrixInstance(string? tab = "bitrix")
+    {
+        if (IsManagerOnly)
+        {
+            return RedirectToAction(nameof(Index), new { tab = "profile" });
+        }
+
+        return RedirectToAction(nameof(Index), new { tab, instanceId = Guid.Empty });
+    }
 
     [HttpGet]
-    public IActionResult EditBitrixInstance(Guid id, string? tab = "bitrix") =>
-        RedirectToAction(nameof(Index), new { tab, instanceId = id });
+    public IActionResult EditBitrixInstance(Guid id, string? tab = "bitrix")
+    {
+        if (IsManagerOnly)
+        {
+            return RedirectToAction(nameof(Index), new { tab = "profile" });
+        }
+
+        return RedirectToAction(nameof(Index), new { tab, instanceId = id });
+    }
 
     [HttpPost]
     [ValidateAntiForgeryToken]
@@ -88,6 +105,11 @@ public sealed class MySettingsController(
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> SaveBitrixTransmission(SaveBitrixTransmissionFormModel model, CancellationToken ct = default)
     {
+        if (IsManagerOnly)
+        {
+            return Forbid();
+        }
+
         var transmissionEnabled = FormBindingHelper.ReadCheckbox(Request.Form, "TransmissionEnabled");
         var (success, error) = await settings.SaveBitrixTransmissionAsync(transmissionEnabled, ct);
         TempData[success ? "MySettingsStatus" : "MySettingsError"] = success
@@ -102,6 +124,11 @@ public sealed class MySettingsController(
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> SaveBitrixInstance(SaveBitrixInstanceFormModel model, CancellationToken ct = default)
     {
+        if (IsManagerOnly)
+        {
+            return Forbid();
+        }
+
         var (success, error, instanceId) = await settings.SaveBitrixInstanceAsync(model, ct);
         TempData[success ? "MySettingsStatus" : "MySettingsError"] = success
             ? model.Id is Guid existingId && existingId != Guid.Empty
@@ -119,6 +146,11 @@ public sealed class MySettingsController(
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> DeleteBitrixInstance(Guid id, CancellationToken ct = default)
     {
+        if (IsManagerOnly)
+        {
+            return Forbid();
+        }
+
         var (success, error) = await settings.DeleteBitrixInstanceAsync(id, ct);
         TempData[success ? "MySettingsStatus" : "MySettingsError"] = success
             ? "Битрикс удалён."
@@ -133,6 +165,11 @@ public sealed class MySettingsController(
         [FromServices] OrbitaApiClient api,
         CancellationToken ct = default)
     {
+        if (IsManagerOnly)
+        {
+            return Forbid();
+        }
+
         var webhookUrl = string.IsNullOrWhiteSpace(model.WebhookUrl) ? null : model.WebhookUrl.Trim();
         var (validation, error) = model.Id != Guid.Empty
             ? await api.ValidateBitrixInstanceAsync(model.Id, webhookUrl, ct: ct)
@@ -151,6 +188,11 @@ public sealed class MySettingsController(
         SaveDistributionRouteFormModel model,
         CancellationToken ct = default)
     {
+        if (IsManagerOnly)
+        {
+            return Forbid();
+        }
+
         IReadOnlyList<SaveDistributionNodeRequest> nodes;
         try
         {
@@ -183,6 +225,11 @@ public sealed class MySettingsController(
         [FromServices] OrbitaApiClient api,
         CancellationToken ct = default)
     {
+        if (IsManagerOnly)
+        {
+            return Forbid();
+        }
+
         var (route, error) = await api.SaveDistributionRouteAsync(request, ct: ct);
         if (route is null)
         {

@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Orbita.Contracts;
+using Orbita.Web.Helpers;
 using Orbita.Web.Models.ViewModels;
 using Orbita.Web.Services;
 using System.Linq;
@@ -171,6 +172,8 @@ public sealed class WorkersController(IWorkersService workers) : Controller
         bool messengerAutoReplyEnabled = false,
         string? messengerAutoReplyMessage = null,
         int? phoneUnchangedHours = null,
+        bool autoDeliverToCrm = false,
+        bool autoDeliverToBitrix = false,
         string? settingsTab = null,
         CancellationToken ct = default)
     {
@@ -180,6 +183,10 @@ public sealed class WorkersController(IWorkersService workers) : Controller
         var autoScheduleDaysCsv = autoScheduleDays is { Length: > 0 }
             ? string.Join(',', autoScheduleDays.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim()))
             : null;
+
+        // Unchecked checkboxes are omitted from form posts.
+        autoDeliverToCrm = FormBindingHelper.ReadCheckbox(Request.Form, "autoDeliverToCrm");
+        autoDeliverToBitrix = FormBindingHelper.ReadCheckbox(Request.Form, "autoDeliverToBitrix");
 
         var (success, error) = await workers.UpdateWorkerSettingsAsync(
             workerId,
@@ -201,6 +208,8 @@ public sealed class WorkersController(IWorkersService workers) : Controller
             messengerAutoReplyEnabled,
             messengerAutoReplyMessage,
             phoneUnchangedHours,
+            autoDeliverToCrm,
+            autoDeliverToBitrix,
             ct);
         if (!success)
         {

@@ -385,6 +385,7 @@ internal static class SettingsIndexBuilder
             Name = office.Name,
             IsEnabled = office.IsEnabled,
             BitrixTransmissionEnabled = office.BitrixTransmissionEnabled,
+            CrmEnabled = office.CrmEnabled,
             RegistrationConfigured = office.RegistrationConfigured,
             MaskedRegistrationSecret = office.MaskedRegistrationSecret,
             BitrixValidationStatus = office.BitrixValidationStatus,

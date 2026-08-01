@@ -1505,7 +1505,7 @@
                 var sendBtn = document.createElement('button');
                 sendBtn.type = 'button';
                 sendBtn.className = 'orbita-detail-modal__action orbita-detail-modal__action--primary';
-                sendBtn.textContent = action.label || 'Отправить в Bitrix';
+                sendBtn.textContent = action.label || 'Отправить…';
                 sendBtn.addEventListener('click', function () {
                     closeDetailModal();
                     if (window.OrbitaResponses && typeof window.OrbitaResponses.openSendBitrixModal === 'function') {
@@ -2008,6 +2008,8 @@
             scripts = ['/js/orbita-journal.js'];
         } else if (key === 'responses') {
             scripts = ['/js/orbita-responses.js'];
+        } else if (key === 'crm' || p.startsWith('/crm')) {
+            scripts = ['/js/orbita-crm-board.js'];
         } else if (key === 'mysettings') {
             scripts = [
                 '/js/orbita-bitrix-instances.js',
@@ -2160,6 +2162,11 @@
                 && window.OrbitaStatistics
                 && typeof window.OrbitaStatistics.reinit === 'function') {
                 window.OrbitaStatistics.reinit();
+            }
+            if (pageKey && pageKey.toLowerCase() === 'crm'
+                && window.OrbitaCrmBoard
+                && typeof window.OrbitaCrmBoard.init === 'function') {
+                window.OrbitaCrmBoard.init();
             }
         } catch (err) {
             console.warn('Orbita fast nav failed, falling back', err);

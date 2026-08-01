@@ -660,7 +660,7 @@ internal static class ResponsesIndexBuilder
         {
             primaryActions.Add(new DetailActionLinkViewModel
             {
-                Label = "Отправить в Bitrix",
+                Label = "Отправить…",
                 Tone = "primary",
                 Action = "send-bitrix",
                 ResponseId = detail.Id

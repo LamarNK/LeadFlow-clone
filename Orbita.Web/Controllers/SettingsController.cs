@@ -103,7 +103,7 @@ public sealed class SettingsController(
             model.OfficeId,
             model.Name,
             model.IsEnabled,
-            model.BitrixTransmissionEnabled,
+            model.CrmEnabled,
             ct);
         TempData[success ? "SettingsStatus" : "SettingsError"] = success
             ? "Офис обновлён."

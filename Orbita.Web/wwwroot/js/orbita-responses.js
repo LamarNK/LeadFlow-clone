@@ -68,9 +68,13 @@
         return shared.urlFromTemplate(shared.getLiveAttr('data-response-detail-json-url'), '__id__', id);
     }
 
-    function getBitrixInstances() {
+    function getLiveRoot() {
         var shared = getShared();
-        var root = shared && shared.getLiveRoot();
+        return shared ? shared.getLiveRoot() : null;
+    }
+
+    function getBitrixInstances() {
+        var root = getLiveRoot();
         if (!root) return [];
         try {
             return JSON.parse(root.getAttribute('data-bitrix-instances-json') || '[]');
@@ -79,16 +83,91 @@
         }
     }
 
+    function getOfficeOptions() {
+        var root = getLiveRoot();
+        if (!root) return [];
+        try {
+            return JSON.parse(root.getAttribute('data-office-options-json') || '[]');
+        } catch (e) {
+            return [];
+        }
+    }
+
+    function getDeliverOptionsUrl() {
+        var root = getLiveRoot();
+        return root ? root.getAttribute('data-deliver-options-url') : null;
+    }
+
+    function writeDeliverOptionsToDom(offices, instances) {
+        var root = getLiveRoot();
+        if (!root) return;
+        if (Array.isArray(offices)) {
+            root.setAttribute('data-office-options-json', JSON.stringify(offices));
+        }
+        if (Array.isArray(instances)) {
+            root.setAttribute('data-bitrix-instances-json', JSON.stringify(instances));
+        }
+    }
+
+    function normalizeDeliverOptionsPayload(payload) {
+        if (!payload) return { offices: [], instances: [] };
+        var offices = payload.deliveryOffices || payload.DeliveryOffices || [];
+        var instances = payload.sendBitrixInstances || payload.SendBitrixInstances || [];
+        return { offices: offices, instances: instances };
+    }
+
+    /** Always load fresh office/Bitrix settings when opening the modal. */
+    function fetchDeliverOptions() {
+        var url = getDeliverOptionsUrl();
+        if (!url) {
+            return Promise.resolve({
+                offices: getOfficeOptions(),
+                instances: getBitrixInstances()
+            });
+        }
+
+        return fetch(url, {
+            method: 'GET',
+            credentials: 'same-origin',
+            headers: { Accept: 'application/json' },
+            cache: 'no-store'
+        }).then(function (res) {
+            if (!res.ok) throw new Error('Deliver options failed: ' + res.status);
+            return res.json();
+        }).then(function (payload) {
+            var normalized = normalizeDeliverOptionsPayload(payload);
+            writeDeliverOptionsToDom(normalized.offices, normalized.instances);
+            return normalized;
+        }).catch(function () {
+            return {
+                offices: getOfficeOptions(),
+                instances: getBitrixInstances()
+            };
+        });
+    }
+
     function getSendBitrixUrl() {
         var shared = getShared();
         var root = shared && shared.getLiveRoot();
         return root ? root.getAttribute('data-send-bitrix-url') : null;
     }
 
+    function getDeliverUrl() {
+        var shared = getShared();
+        var root = shared && shared.getLiveRoot();
+        return root ? (root.getAttribute('data-deliver-url') || root.getAttribute('data-send-bitrix-url')) : null;
+    }
+
     function getBulkSendUrl() {
         var shared = getShared();
         var root = shared && shared.getLiveRoot();
         return root ? root.getAttribute('data-bulk-send-bitrix-url') : null;
+    }
+
+    function getBulkDeliverUrl() {
+        var shared = getShared();
+        var root = shared && shared.getLiveRoot();
+        return root ? (root.getAttribute('data-bulk-deliver-url') || root.getAttribute('data-bulk-send-bitrix-url')) : null;
     }
 
     function closeRowMenus() {
@@ -110,7 +189,72 @@
     }
 
     var SELECTION_STORAGE_KEY = 'orbita-responses-selected';
+    var DELIVER_PREFS_KEY = 'orbita-responses-deliver-prefs';
     var BULK_SEND_MAX = 200;
+
+    function loadDeliverPrefs() {
+        try {
+            var parsed = JSON.parse(localStorage.getItem(DELIVER_PREFS_KEY) || '{}');
+            return parsed && typeof parsed === 'object' ? parsed : {};
+        } catch (e) {
+            return {};
+        }
+    }
+
+    function saveDeliverPrefs(prefs) {
+        try {
+            localStorage.setItem(DELIVER_PREFS_KEY, JSON.stringify(prefs || {}));
+        } catch (e) { /* ignore quota / private mode */ }
+    }
+
+    function readDeliverPrefsFromForm(form) {
+        if (!form) return {};
+        var crm = form.querySelector('[data-deliver-to-crm]');
+        var bitrix = form.querySelector('[data-deliver-to-bitrix]');
+        return {
+            toCrm: !!(crm && crm.checked),
+            toBitrix: !!(bitrix && bitrix.checked),
+            officeIds: getCheckedValues(form, '[data-deliver-office-option]'),
+            bitrixInstanceIds: getCheckedValues(form, '[data-deliver-bitrix-option]')
+        };
+    }
+
+    function getCheckedValues(root, selector) {
+        return Array.prototype.slice.call(root.querySelectorAll(selector + ':checked'))
+            .map(function (el) { return String(el.value || ''); })
+            .filter(Boolean);
+    }
+
+    function applyDeliverPrefsToForm(form, prefs) {
+        prefs = prefs || {};
+        var crm = form.querySelector('[data-deliver-to-crm]');
+        var bitrix = form.querySelector('[data-deliver-to-bitrix]');
+        // Default: CRM on if nothing stored yet.
+        var toCrm = prefs.toCrm !== undefined ? !!prefs.toCrm : true;
+        var toBitrix = prefs.toBitrix !== undefined ? !!prefs.toBitrix : false;
+        // At least one channel — prefer stored, else CRM.
+        if (!toCrm && !toBitrix) toCrm = true;
+        if (crm) crm.checked = toCrm;
+        if (bitrix) bitrix.checked = toBitrix;
+    }
+
+    function normalizePrefIdList(prefs) {
+        prefs = prefs || {};
+        var officeIds = Array.isArray(prefs.officeIds) ? prefs.officeIds.map(String) : [];
+        var bitrixIds = Array.isArray(prefs.bitrixInstanceIds) ? prefs.bitrixInstanceIds.map(String) : [];
+        // Migrate legacy single-id prefs.
+        if (!officeIds.length && prefs.officeId) officeIds = [String(prefs.officeId)];
+        if (!bitrixIds.length && prefs.bitrixInstanceId) bitrixIds = [String(prefs.bitrixInstanceId)];
+        return { officeIds: officeIds, bitrixInstanceIds: bitrixIds };
+    }
+
+    function setCheckedByValues(root, selector, values) {
+        var set = {};
+        (values || []).forEach(function (v) { set[String(v)] = true; });
+        root.querySelectorAll(selector).forEach(function (el) {
+            el.checked = !!set[String(el.value || '')];
+        });
+    }
 
     function loadSelectionState() {
         try {
@@ -361,12 +505,15 @@
 
     function ensureSendModal() {
         var modal = document.getElementById('responsesSendBitrixDialog');
-        if (modal) return modal;
+        if (modal && modal.dataset.uiVersion === '5') return modal;
+        if (modal) modal.remove();
+
         modal = document.createElement('dialog');
         modal.id = 'responsesSendBitrixDialog';
-        modal.className = 'settings-dialog responses-send-bitrix-dialog';
+        modal.className = 'settings-dialog responses-send-dialog';
+        modal.dataset.uiVersion = '5';
         modal.innerHTML =
-            '<form method="post" class="settings-dialog-form" data-send-bitrix-form>' +
+            '<form method="post" class="settings-dialog-form responses-send-form" data-send-bitrix-form>' +
             '<input type="hidden" name="__RequestVerificationToken" />' +
             '<input type="hidden" name="Id" data-send-bitrix-response-id />' +
             '<input type="hidden" name="From" data-send-bitrix-from />' +
@@ -380,18 +527,108 @@
             '<input type="hidden" name="Page" data-send-bitrix-page />' +
             '<input type="hidden" name="Sort" data-send-bitrix-sort />' +
             '<input type="hidden" name="Dir" data-send-bitrix-dir />' +
-            '<h2 class="settings-dialog-title">Отправить в Bitrix24</h2>' +
-            '<p class="settings-dialog-subtitle">Выберите Битрикс для ручной отправки отклика</p>' +
-            '<label class="settings-field">' +
-            '<span class="settings-field-label">Битрикс</span>' +
-            '<select name="BitrixInstanceId" class="settings-select" required data-send-bitrix-select></select>' +
+            '<h2 class="settings-dialog-title">Отправить отклик</h2>' +
+            '<p class="settings-dialog-subtitle">Можно выбрать CRM и Bitrix24 вместе. Запоминаем последний выбор.</p>' +
+            '<div class="responses-send-channels" role="group" aria-label="Каналы">' +
+            '<label class="responses-send-check">' +
+            '<input type="checkbox" name="ToCrm" value="true" checked data-deliver-to-crm />' +
+            '<span>CRM офиса</span>' +
             '</label>' +
+            '<label class="responses-send-check">' +
+            '<input type="checkbox" name="ToBitrix" value="true" data-deliver-to-bitrix />' +
+            '<span>Bitrix24</span>' +
+            '</label>' +
+            '</div>' +
+            '<div class="responses-send-fields">' +
+            '<div class="responses-send-multiselect" data-deliver-office-field hidden>' +
+            '<span class="settings-field-label">Офисы CRM <em>(можно несколько)</em></span>' +
+            '<div class="responses-send-check-list" data-deliver-office-list></div>' +
+            '<span class="responses-send-hint" data-deliver-office-hint></span>' +
+            '</div>' +
+            '<div class="responses-send-multiselect" data-deliver-bitrix-field hidden>' +
+            '<span class="settings-field-label">Порталы Bitrix24 <em>(можно несколько; пусто = схема офиса)</em></span>' +
+            '<div class="responses-send-check-list" data-deliver-bitrix-list></div>' +
+            '</div>' +
+            '</div>' +
+            '<p class="responses-send-error" data-deliver-error hidden role="alert"></p>' +
             '<div class="settings-dialog-actions">' +
             '<button type="button" class="settings-secondary-btn" data-send-bitrix-cancel>Отмена</button>' +
-            '<button type="submit" class="settings-primary-btn">Отправить</button>' +
+            '<button type="submit" class="settings-primary-btn" data-deliver-submit>Отправить</button>' +
             '</div></form>';
         document.body.appendChild(modal);
+
+        bindSendModalInteractions(modal);
         return modal;
+    }
+
+    function bindSendModalInteractions(modal) {
+        var form = modal.querySelector('[data-send-bitrix-form]');
+        if (!form || form.dataset.bound === '1') return;
+        form.dataset.bound = '1';
+
+        var crmToggle = form.querySelector('[data-deliver-to-crm]');
+        var bitrixToggle = form.querySelector('[data-deliver-to-bitrix]');
+        var officeField = form.querySelector('[data-deliver-office-field]');
+        var bitrixField = form.querySelector('[data-deliver-bitrix-field]');
+        var errorEl = form.querySelector('[data-deliver-error]');
+
+        function syncChannelUi() {
+            var toCrm = !!(crmToggle && crmToggle.checked);
+            var toBitrix = !!(bitrixToggle && bitrixToggle.checked);
+
+            if (officeField) officeField.hidden = !toCrm;
+            if (bitrixField) bitrixField.hidden = !toBitrix;
+
+            if (errorEl) {
+                errorEl.hidden = true;
+                errorEl.textContent = '';
+            }
+
+            // Disable options of hidden channels so they are not posted.
+            form.querySelectorAll('[data-deliver-office-option]').forEach(function (el) {
+                el.disabled = !toCrm;
+            });
+            form.querySelectorAll('[data-deliver-bitrix-option]').forEach(function (el) {
+                el.disabled = !toBitrix;
+            });
+
+            var submitBtn = form.querySelector('[data-deliver-submit]');
+            if (submitBtn) submitBtn.disabled = !toCrm && !toBitrix;
+        }
+
+        if (crmToggle) crmToggle.addEventListener('change', syncChannelUi);
+        if (bitrixToggle) bitrixToggle.addEventListener('change', syncChannelUi);
+
+        form.addEventListener('submit', function (e) {
+            var toCrm = !!(crmToggle && crmToggle.checked);
+            var toBitrix = !!(bitrixToggle && bitrixToggle.checked);
+            if (!toCrm && !toBitrix) {
+                e.preventDefault();
+                if (errorEl) {
+                    errorEl.hidden = false;
+                    errorEl.textContent = 'Выберите хотя бы один канал.';
+                }
+                return;
+            }
+            if (toCrm && getCheckedValues(form, '[data-deliver-office-option]').length === 0) {
+                e.preventDefault();
+                if (errorEl) {
+                    errorEl.hidden = false;
+                    errorEl.textContent = 'Выберите хотя бы один офис для CRM.';
+                }
+                return;
+            }
+
+            saveDeliverPrefs(readDeliverPrefsFromForm(form));
+
+            var submitBtn = form.querySelector('[data-deliver-submit]');
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.classList.add('is-loading');
+            }
+        });
+
+        modal._orbitaSyncChannels = syncChannelUi;
     }
 
     function fillFilterFields(form) {
@@ -415,6 +652,84 @@
         });
     }
 
+    function officeAcceptsCrm(item) {
+        // Explicit false only — missing flag treated as off (safer for CRM picker).
+        return item.crmEnabled === true || item.CrmEnabled === true;
+    }
+
+    function populateSendModalOptions(form, shared, allOffices, instances) {
+        var officeList = form.querySelector('[data-deliver-office-list]');
+        var bitrixList = form.querySelector('[data-deliver-bitrix-list]');
+        var hint = form.querySelector('[data-deliver-office-hint]');
+
+        function fillOffices(preferredIds) {
+            if (!officeList) return;
+            var list = allOffices.filter(officeAcceptsCrm);
+            preferredIds = preferredIds || getCheckedValues(form, '[data-deliver-office-option]');
+
+            if (!list.length) {
+                officeList.innerHTML = '<p class="responses-send-empty">Нет офисов с включённой CRM</p>';
+            } else {
+                officeList.innerHTML = list.map(function (item) {
+                    var label = item.name || item.Name || item.label || item.Label || 'Офис';
+                    var id = item.id || item.Id || item.value || item.Value;
+                    return '<label class="responses-send-check">' +
+                        '<input type="checkbox" name="OfficeIds" value="' + shared.escapeHtml(id) +
+                        '" data-deliver-office-option />' +
+                        '<span>' + shared.escapeHtml(label) + '</span></label>';
+                }).join('');
+
+                if (preferredIds.length) {
+                    setCheckedByValues(form, '[data-deliver-office-option]', preferredIds);
+                } else if (list.length === 1) {
+                    // Single office — auto-check for convenience.
+                    var only = officeList.querySelector('[data-deliver-office-option]');
+                    if (only) only.checked = true;
+                }
+            }
+
+            if (hint) {
+                if (!list.length) {
+                    hint.textContent = 'Нет офисов с включённой CRM.';
+                    hint.classList.add('is-warning');
+                } else {
+                    hint.textContent = '';
+                    hint.classList.remove('is-warning');
+                }
+            }
+        }
+
+        function fillBitrix(preferredIds) {
+            if (!bitrixList) return;
+            preferredIds = preferredIds || getCheckedValues(form, '[data-deliver-bitrix-option]');
+
+            if (!instances.length) {
+                bitrixList.innerHTML = '<p class="responses-send-empty">Нет подключённых порталов — сработает схема офиса</p>';
+            } else {
+                bitrixList.innerHTML = instances.map(function (item) {
+                    var label = item.label || item.Label || 'Битрикс';
+                    var id = item.id || item.Id;
+                    var host = item.portalHost || item.PortalHost;
+                    var text = label + (host ? ' · ' + host : '');
+                    return '<label class="responses-send-check">' +
+                        '<input type="checkbox" name="BitrixInstanceIds" value="' + shared.escapeHtml(id) +
+                        '" data-deliver-bitrix-option />' +
+                        '<span>' + shared.escapeHtml(text) + '</span></label>';
+                }).join('');
+                setCheckedByValues(form, '[data-deliver-bitrix-option]', preferredIds);
+            }
+        }
+
+        fillOffices();
+        fillBitrix();
+
+        return {
+            fillOffices: fillOffices,
+            fillBitrix: fillBitrix,
+            crmOfficeCount: allOffices.filter(officeAcceptsCrm).length
+        };
+    }
+
     function openSendBitrixModal(responseId) {
         if (!responseId) return;
         var shared = getShared();
@@ -423,14 +738,9 @@
             return;
         }
 
-        var instances = getBitrixInstances();
-        var sendUrl = getSendBitrixUrl();
+        var sendUrl = getDeliverUrl() || getSendBitrixUrl();
         if (!sendUrl) {
             toast('Отправка недоступна. Обновите страницу.', 'error');
-            return;
-        }
-        if (!instances.length) {
-            toast('Нет доступных Битриксов. Настройте их в разделе «Битриксы».', 'error');
             return;
         }
 
@@ -447,19 +757,52 @@
         form.querySelector('[data-send-bitrix-response-id]').value = responseId;
         fillFilterFields(form);
 
-        var select = form.querySelector('[data-send-bitrix-select]');
-        select.innerHTML = instances.map(function (item) {
-            var label = item.label || item.Label || 'Битрикс';
-            var id = item.id || item.Id;
-            var host = item.portalHost || item.PortalHost;
-            return '<option value="' + shared.escapeHtml(id) + '">' +
-                shared.escapeHtml(label) + (host ? ' · ' + shared.escapeHtml(host) : '') +
-                '</option>';
-        }).join('');
+        // Restore last used channels / multi office / multi bitrix.
+        var prefs = loadDeliverPrefs();
+        var prefIds = normalizePrefIdList(prefs);
+        applyDeliverPrefsToForm(form, prefs);
 
+        var errorEl = form.querySelector('[data-deliver-error]');
+        if (errorEl) {
+            errorEl.hidden = true;
+            errorEl.textContent = '';
+        }
+        var submitBtn = form.querySelector('[data-deliver-submit]');
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.classList.remove('is-loading');
+            submitBtn.textContent = 'Отправить';
+        }
+
+        // Show dialog immediately, then fill with fresh options.
         if (!showDialog(modal)) {
             toast('Не удалось открыть окно отправки. Обновите страницу.', 'error');
+            return;
         }
+
+        if (typeof modal._orbitaSyncChannels === 'function') {
+            modal._orbitaSyncChannels();
+        }
+
+        form.classList.add('is-loading-options');
+        fetchDeliverOptions().then(function (opts) {
+            form.classList.remove('is-loading-options');
+            var allOffices = opts.offices || [];
+            var instances = opts.instances || [];
+
+            var populated = populateSendModalOptions(form, shared, allOffices, instances);
+            populated.fillOffices(prefIds.officeIds);
+            populated.fillBitrix(prefIds.bitrixInstanceIds);
+
+            var toCrm = form.querySelector('[data-deliver-to-crm]');
+            if (toCrm && toCrm.checked && populated.crmOfficeCount === 0) {
+                toast('Нет офисов с CRM. Включите CRM в настройках офиса или снимите канал CRM.', 'error');
+            }
+
+            if (typeof modal._orbitaSyncChannels === 'function') {
+                modal._orbitaSyncChannels();
+            }
+        });
     }
 
     function initSendBitrixUi() {
@@ -486,23 +829,74 @@
 
     function ensureBulkSendModal() {
         var modal = document.getElementById('responsesBulkSendBitrixDialog');
-        if (modal) return modal;
+        if (modal && modal.dataset.uiVersion === '3') return modal;
+        if (modal) modal.remove();
+
         modal = document.createElement('dialog');
         modal.id = 'responsesBulkSendBitrixDialog';
-        modal.className = 'settings-dialog responses-send-bitrix-dialog';
+        modal.className = 'settings-dialog responses-send-dialog';
+        modal.dataset.uiVersion = '3';
         modal.innerHTML =
-            '<form class="settings-dialog-form" data-bulk-send-bitrix-form>' +
-            '<h2 class="settings-dialog-title">Массовая отправка в Bitrix24</h2>' +
-            '<p class="settings-dialog-subtitle" data-bulk-send-bitrix-subtitle>Выберите Битрикс для отправки выбранных откликов</p>' +
-            '<label class="settings-field">' +
-            '<span class="settings-field-label">Битрикс</span>' +
-            '<select name="BitrixInstanceId" class="settings-select" required data-bulk-send-bitrix-select></select>' +
+            '<form class="settings-dialog-form responses-send-form" data-bulk-deliver-form>' +
+            '<h2 class="settings-dialog-title">Массовая отправка</h2>' +
+            '<p class="settings-dialog-subtitle" data-bulk-deliver-subtitle>Выберите каналы для выбранных откликов</p>' +
+            '<div class="responses-send-channels" role="group" aria-label="Каналы">' +
+            '<label class="responses-send-check">' +
+            '<input type="checkbox" name="ToCrm" value="true" checked data-deliver-to-crm />' +
+            '<span>CRM офиса</span>' +
             '</label>' +
+            '<label class="responses-send-check">' +
+            '<input type="checkbox" name="ToBitrix" value="true" data-deliver-to-bitrix />' +
+            '<span>Bitrix24</span>' +
+            '</label>' +
+            '</div>' +
+            '<div class="responses-send-fields">' +
+            '<div class="responses-send-multiselect" data-deliver-office-field hidden>' +
+            '<span class="settings-field-label">Офисы CRM <em>(можно несколько)</em></span>' +
+            '<div class="responses-send-check-list" data-deliver-office-list></div>' +
+            '<span class="responses-send-hint" data-deliver-office-hint></span>' +
+            '</div>' +
+            '<div class="responses-send-multiselect" data-deliver-bitrix-field hidden>' +
+            '<span class="settings-field-label">Порталы Bitrix24 <em>(можно несколько; пусто = схема офиса)</em></span>' +
+            '<div class="responses-send-check-list" data-deliver-bitrix-list></div>' +
+            '</div>' +
+            '</div>' +
+            '<p class="responses-send-error" data-deliver-error hidden role="alert"></p>' +
             '<div class="settings-dialog-actions">' +
             '<button type="button" class="settings-secondary-btn" data-bulk-send-bitrix-cancel>Отмена</button>' +
-            '<button type="submit" class="settings-primary-btn" data-bulk-send-bitrix-submit>Отправить</button>' +
+            '<button type="submit" class="settings-primary-btn" data-bulk-deliver-submit>Отправить</button>' +
             '</div></form>';
         document.body.appendChild(modal);
+
+        var form = modal.querySelector('[data-bulk-deliver-form]');
+        var crmToggle = form.querySelector('[data-deliver-to-crm]');
+        var bitrixToggle = form.querySelector('[data-deliver-to-bitrix]');
+        var officeField = form.querySelector('[data-deliver-office-field]');
+        var bitrixField = form.querySelector('[data-deliver-bitrix-field]');
+        var errorEl = form.querySelector('[data-deliver-error]');
+
+        function syncBulkChannels() {
+            var toCrm = !!(crmToggle && crmToggle.checked);
+            var toBitrix = !!(bitrixToggle && bitrixToggle.checked);
+            if (officeField) officeField.hidden = !toCrm;
+            if (bitrixField) bitrixField.hidden = !toBitrix;
+            form.querySelectorAll('[data-deliver-office-option]').forEach(function (el) {
+                el.disabled = !toCrm;
+            });
+            form.querySelectorAll('[data-deliver-bitrix-option]').forEach(function (el) {
+                el.disabled = !toBitrix;
+            });
+            if (errorEl) {
+                errorEl.hidden = true;
+                errorEl.textContent = '';
+            }
+            var submitBtn = form.querySelector('[data-bulk-deliver-submit]');
+            if (submitBtn) submitBtn.disabled = !toCrm && !toBitrix;
+        }
+
+        if (crmToggle) crmToggle.addEventListener('change', syncBulkChannels);
+        if (bitrixToggle) bitrixToggle.addEventListener('change', syncBulkChannels);
+        modal._orbitaSyncChannels = syncBulkChannels;
         return modal;
     }
 
@@ -520,36 +914,56 @@
             return;
         }
 
-        var instances = getBitrixInstances();
-        var sendUrl = getBulkSendUrl();
+        var sendUrl = getBulkDeliverUrl() || getBulkSendUrl();
         if (!sendUrl) {
             toast('Отправка недоступна. Обновите страницу.', 'error');
             return;
         }
-        if (!instances.length) {
-            toast('Нет доступных Битриксов. Настройте их в разделе «Битриксы».', 'error');
-            return;
-        }
 
         var modal = ensureBulkSendModal();
-        var subtitle = modal.querySelector('[data-bulk-send-bitrix-subtitle]');
+        var form = modal.querySelector('[data-bulk-deliver-form]');
+        if (!form) return;
+
+        var subtitle = modal.querySelector('[data-bulk-deliver-subtitle]');
         if (subtitle) {
-            subtitle.textContent = 'Отправить ' + count + ' ' + pluralizeResponses(count) + ' в выбранный Битрикс';
+            subtitle.textContent = 'Отправить ' + count + ' ' + pluralizeResponses(count) +
+                '. CRM / Bitrix / несколько офисов и порталов.';
         }
 
-        var select = modal.querySelector('[data-bulk-send-bitrix-select]');
-        select.innerHTML = instances.map(function (item) {
-            var label = item.label || item.Label || 'Битрикс';
-            var id = item.id || item.Id;
-            var host = item.portalHost || item.PortalHost;
-            return '<option value="' + shared.escapeHtml(id) + '">' +
-                shared.escapeHtml(label) + (host ? ' · ' + shared.escapeHtml(host) : '') +
-                '</option>';
-        }).join('');
+        var prefs = loadDeliverPrefs();
+        var prefIds = normalizePrefIdList(prefs);
+        applyDeliverPrefsToForm(form, prefs);
+
+        var errorEl = form.querySelector('[data-deliver-error]');
+        if (errorEl) {
+            errorEl.hidden = true;
+            errorEl.textContent = '';
+        }
+        var submitBtn = form.querySelector('[data-bulk-deliver-submit]');
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.classList.remove('is-loading');
+        }
 
         if (!showDialog(modal)) {
             toast('Не удалось открыть окно отправки. Обновите страницу.', 'error');
+            return;
         }
+
+        if (typeof modal._orbitaSyncChannels === 'function') {
+            modal._orbitaSyncChannels();
+        }
+
+        form.classList.add('is-loading-options');
+        fetchDeliverOptions().then(function (opts) {
+            form.classList.remove('is-loading-options');
+            var populated = populateSendModalOptions(form, shared, opts.offices || [], opts.instances || []);
+            populated.fillOffices(prefIds.officeIds);
+            populated.fillBitrix(prefIds.bitrixInstanceIds);
+            if (typeof modal._orbitaSyncChannels === 'function') {
+                modal._orbitaSyncChannels();
+            }
+        });
     }
 
     function pluralizeResponses(count) {
@@ -560,17 +974,30 @@
         return 'откликов';
     }
 
-    function submitBulkSend(bitrixInstanceId) {
-        var url = getBulkSendUrl();
+    function submitBulkDeliver(form) {
+        var url = getBulkDeliverUrl();
         var ids = getSelectedIds();
-        if (!url || !ids.length || !bitrixInstanceId) return Promise.resolve();
+        if (!url || !ids.length) {
+            return Promise.resolve({ ok: false, payload: { error: 'Отправка недоступна.' } });
+        }
+
+        var crm = form.querySelector('[data-deliver-to-crm]');
+        var bitrix = form.querySelector('[data-deliver-to-bitrix]');
+        var toCrm = !!(crm && crm.checked);
+        var toBitrix = !!(bitrix && bitrix.checked);
+        var officeIds = toCrm ? getCheckedValues(form, '[data-deliver-office-option]') : [];
+        var bitrixIds = toBitrix ? getCheckedValues(form, '[data-deliver-bitrix-option]') : [];
 
         var shared = getShared();
         var formData = new FormData();
         var token = shared ? shared.getRequestVerificationToken() : '';
         if (token) formData.append('__RequestVerificationToken', token);
-        formData.append('BitrixInstanceId', bitrixInstanceId);
         ids.forEach(function (id) { formData.append('ResponseIds', id); });
+        // Always send both flags — property defaults on the model are not reliable for unchecked boxes.
+        formData.append('ToCrm', toCrm ? 'true' : 'false');
+        formData.append('ToBitrix', toBitrix ? 'true' : 'false');
+        officeIds.forEach(function (id) { formData.append('OfficeIds', id); });
+        bitrixIds.forEach(function (id) { formData.append('BitrixInstanceIds', id); });
 
         return fetch(url, {
             method: 'POST',
@@ -649,19 +1076,45 @@
         });
 
         document.addEventListener('submit', function (e) {
-            var form = e.target.closest('[data-bulk-send-bitrix-form]');
+            var form = e.target.closest('[data-bulk-deliver-form]');
             if (!form) return;
             e.preventDefault();
 
-            var select = form.querySelector('[data-bulk-send-bitrix-select]');
-            var bitrixId = select ? select.value : '';
-            if (!bitrixId) return;
+            var crm = form.querySelector('[data-deliver-to-crm]');
+            var bitrix = form.querySelector('[data-deliver-to-bitrix]');
+            var errorEl = form.querySelector('[data-deliver-error]');
+            var toCrm = !!(crm && crm.checked);
+            var toBitrix = !!(bitrix && bitrix.checked);
 
-            var submitBtn = form.querySelector('[data-bulk-send-bitrix-submit]');
-            if (submitBtn) submitBtn.disabled = true;
+            if (!toCrm && !toBitrix) {
+                if (errorEl) {
+                    errorEl.hidden = false;
+                    errorEl.textContent = 'Выберите хотя бы один канал.';
+                }
+                return;
+            }
+            if (toCrm && getCheckedValues(form, '[data-deliver-office-option]').length === 0) {
+                if (errorEl) {
+                    errorEl.hidden = false;
+                    errorEl.textContent = 'Выберите хотя бы один офис для CRM.';
+                }
+                return;
+            }
 
-            submitBulkSend(bitrixId).then(function (result) {
-                if (submitBtn) submitBtn.disabled = false;
+            saveDeliverPrefs(readDeliverPrefsFromForm(form));
+
+            var submitBtn = form.querySelector('[data-bulk-deliver-submit]');
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.classList.add('is-loading');
+            }
+
+            var selectedCount = selectedIds.size;
+            submitBulkDeliver(form).then(function (result) {
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.classList.remove('is-loading');
+                }
                 var modal = document.getElementById('responsesBulkSendBitrixDialog');
                 if (modal) modal.close();
 
@@ -676,12 +1129,18 @@
                 var succeeded = data.succeeded != null ? data.succeeded : data.Succeeded;
                 var failed = data.failed != null ? data.failed : data.Failed;
                 var total = data.total != null ? data.total : data.Total;
-                var msg = 'Отправлено: ' + (succeeded || 0) + ' из ' + (total || selectedIds.size);
+                var msg = 'Отправлено: ' + (succeeded || 0) + ' из ' + (total || selectedCount);
                 if (failed > 0) msg += ', ошибок: ' + failed;
                 toast(msg, failed > 0 ? 'info' : 'success');
+
+                // Always clear multi-select after a bulk send attempt that the server accepted.
+                clearSelection();
                 fetchSnapshot();
             }).catch(function () {
-                if (submitBtn) submitBtn.disabled = false;
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.classList.remove('is-loading');
+                }
                 toast('Не удалось выполнить массовую отправку.', 'error');
             });
         });
@@ -723,7 +1182,7 @@
             '<a class="row-menu-item" href="' + shared.escapeHtml(workerUrl) + '"><i class="fa-solid fa-server" aria-hidden="true"></i>Перейти к воркеру</a>';
         items += '<button type="button" class="row-menu-item" data-copy-response-card><i class="fa-regular fa-copy" aria-hidden="true"></i>Копировать карточку</button>';
         if (readRowBool(row, 'canSend')) {
-            items += '<button type="button" class="row-menu-item" data-send-bitrix data-response-id="' + shared.escapeHtml(rowId) + '"><i class="fa-solid fa-paper-plane" aria-hidden="true"></i>Отправить в Bitrix24</button>';
+            items += '<button type="button" class="row-menu-item" data-send-bitrix data-response-id="' + shared.escapeHtml(rowId) + '"><i class="fa-solid fa-paper-plane" aria-hidden="true"></i>Отправить…</button>';
         }
         var deliveries = readDeliveries(row);
         deliveries.forEach(function (delivery) {
@@ -893,6 +1352,12 @@
         if (prev !== next) {
             renderResponses(snapshot.responses || []);
             if (highlightChanged) shared.highlightCard(document.querySelector('.card--responses-table'));
+        }
+        var liveOpts = normalizeDeliverOptionsPayload(snapshot);
+        if (liveOpts.offices.length || liveOpts.instances.length) {
+            writeDeliverOptionsToDom(
+                liveOpts.offices.length ? liveOpts.offices : null,
+                liveOpts.instances.length ? liveOpts.instances : null);
         }
         liveState = snapshot;
         shared.updateUpdatedClock(snapshot.updatedAtUtc);

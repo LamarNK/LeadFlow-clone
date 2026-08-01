@@ -79,6 +79,19 @@ public sealed class ResponsesService(
         var workers = await api.GetWorkersAsync(ct) ?? [];
         var accounts = await api.GetResponseFilterAccountsAsync(ct) ?? [];
         var bitrixInstances = await api.GetBitrixInstancesAsync(ct: ct) ?? [];
+        var officeOptionsDto = await api.GetOfficeOptionsAsync(ct) ?? [];
+        var officeOptions = officeOptionsDto
+            .Select(o => new EventFilterOptionViewModel { Value = o.Id.ToString(), Label = o.Name })
+            .ToList();
+        var deliveryOffices = officeOptionsDto
+            .Where(o => o.IsEnabled && o.CrmEnabled)
+            .Select(o => new DeliveryOfficeOptionViewModel
+            {
+                Id = o.Id,
+                Name = o.Name,
+                CrmEnabled = true
+            })
+            .ToList();
         var vacancyOptions = await api.GetResponseFilterVacanciesAsync(fromUtc, toUtc, ct) ?? [];
 
         ResponseDetailViewModel? selected = null;
@@ -121,6 +134,8 @@ public sealed class ResponsesService(
             Vacancies = vacancyFilterOptions,
             Responses = pageDto.Items.Select(ResponsesIndexBuilder.MapRow).ToList(),
             SendBitrixInstances = ResponsesIndexBuilder.MapSendBitrixInstances(bitrixInstances),
+            OfficeOptions = officeOptions,
+            DeliveryOffices = deliveryOffices,
             Pagination = new PaginationViewModel
             {
                 Page = pageDto.Page,
@@ -201,6 +216,107 @@ public sealed class ResponsesService(
         }
 
         return await api.BulkSendResponsesToBitrixAsync(responseIds, bitrixInstanceId, ct);
+    }
+
+    public async Task<(bool Success, string? Error)> DeliverAsync(
+        Guid id,
+        IReadOnlyList<Guid> officeIds,
+        bool toCrm,
+        bool toBitrix,
+        IReadOnlyList<Guid> bitrixInstanceIds,
+        CancellationToken ct = default)
+    {
+        if (previewOptions.Value.Enabled)
+        {
+            return (true, null);
+        }
+
+        officeIds = NormalizeIds(officeIds);
+        bitrixInstanceIds = NormalizeIds(bitrixInstanceIds);
+        var useRoute = bitrixInstanceIds.Count == 0;
+        var result = await api.DeliverResponseAsync(
+            id,
+            new DeliverResponseRequest(
+                OfficeId: officeIds.Count == 1 ? officeIds[0] : null,
+                ToCrm: toCrm,
+                ToBitrix: toBitrix,
+                BitrixInstanceId: bitrixInstanceIds.Count == 1 ? bitrixInstanceIds[0] : null,
+                UseBitrixRoute: useRoute,
+                OfficeIds: officeIds,
+                BitrixInstanceIds: bitrixInstanceIds),
+            ct);
+        if (result is null)
+        {
+            return (false, "Не удалось выполнить запрос.");
+        }
+
+        return result.Success
+            ? (true, result.ErrorMessage)
+            : (false, result.ErrorMessage ?? "Отправка не удалась.");
+    }
+
+    public async Task<(BulkDeliverResponsesResultDto? Result, string? Error)> DeliverBulkAsync(
+        IReadOnlyList<Guid> responseIds,
+        IReadOnlyList<Guid> officeIds,
+        bool toCrm,
+        bool toBitrix,
+        IReadOnlyList<Guid> bitrixInstanceIds,
+        CancellationToken ct = default)
+    {
+        if (previewOptions.Value.Enabled)
+        {
+            var items = responseIds
+                .Select(id => new BulkDeliverItemResultDto(id, true, ResponseStatuses.Sent, null))
+                .ToList();
+            return (new BulkDeliverResponsesResultDto(responseIds.Count, responseIds.Count, 0, items), null);
+        }
+
+        officeIds = NormalizeIds(officeIds);
+        bitrixInstanceIds = NormalizeIds(bitrixInstanceIds);
+        var useRoute = bitrixInstanceIds.Count == 0;
+        return await api.DeliverResponsesBulkAsync(
+            new BulkDeliverResponsesRequest(
+                responseIds,
+                OfficeId: officeIds.Count == 1 ? officeIds[0] : null,
+                ToCrm: toCrm,
+                ToBitrix: toBitrix,
+                BitrixInstanceId: bitrixInstanceIds.Count == 1 ? bitrixInstanceIds[0] : null,
+                UseBitrixRoute: useRoute,
+                OfficeIds: officeIds,
+                BitrixInstanceIds: bitrixInstanceIds),
+            ct);
+    }
+
+    private static IReadOnlyList<Guid> NormalizeIds(IReadOnlyList<Guid>? ids) =>
+        (ids ?? [])
+            .Where(id => id != Guid.Empty)
+            .Distinct()
+            .ToList();
+
+    public async Task<ResponsesDeliverOptionsViewModel> GetDeliverOptionsAsync(CancellationToken ct = default)
+    {
+        if (previewOptions.Value.Enabled)
+        {
+            return DesignPreviewData.BuildResponsesDeliverOptions();
+        }
+
+        var officeOptionsDto = await api.GetOfficeOptionsAsync(ct) ?? [];
+        var bitrixInstances = await api.GetBitrixInstancesAsync(ct: ct) ?? [];
+
+        return new ResponsesDeliverOptionsViewModel
+        {
+            // Only offices that can actually receive CRM cards (enabled + CRM on).
+            DeliveryOffices = officeOptionsDto
+                .Where(o => o.IsEnabled && o.CrmEnabled)
+                .Select(o => new DeliveryOfficeOptionViewModel
+                {
+                    Id = o.Id,
+                    Name = o.Name,
+                    CrmEnabled = true
+                })
+                .ToList(),
+            SendBitrixInstances = ResponsesIndexBuilder.MapSendBitrixInstances(bitrixInstances)
+        };
     }
 
     internal static string BuildQueryParams(

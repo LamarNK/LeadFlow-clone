@@ -198,7 +198,15 @@ public sealed class SettingsService(
             return (false, "Офис не найден.");
         }
 
-        return await UpdateOfficeAsync(officeId, office.Name, office.IsEnabled, transmissionEnabled, ct);
+        // Preserve CRM acceptance flag when toggling Bitrix transmission.
+        var (updated, error) = await api.UpdateOfficeAsync(
+            officeId,
+            office.Name,
+            office.IsEnabled,
+            transmissionEnabled,
+            office.CrmEnabled,
+            ct);
+        return updated is not null ? (true, null) : (false, error);
     }
 
     public Task<(bool Success, string? Error)> CreateUserAsync(
@@ -236,7 +244,7 @@ public sealed class SettingsService(
         Guid officeId,
         string name,
         bool isEnabled,
-        bool bitrixTransmissionEnabled,
+        bool crmEnabled,
         CancellationToken ct = default)
     {
         if (previewOptions.Value.Enabled)
@@ -244,7 +252,16 @@ public sealed class SettingsService(
             return (true, null);
         }
 
-        var (office, error) = await api.UpdateOfficeAsync(officeId, name, isEnabled, bitrixTransmissionEnabled, ct);
+        // Preserve Bitrix transmission flag when editing core office settings.
+        var current = await api.GetOfficeAsync(officeId, ct);
+        var bitrixTransmission = current?.BitrixTransmissionEnabled ?? true;
+        var (office, error) = await api.UpdateOfficeAsync(
+            officeId,
+            name,
+            isEnabled,
+            bitrixTransmission,
+            crmEnabled,
+            ct);
         return office is not null ? (true, null) : (false, error);
     }
 

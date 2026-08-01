@@ -66,7 +66,12 @@ public sealed class OrbitaAuthService(IHttpContextAccessor httpContextAccessor, 
 
         var handler = new JwtSecurityTokenHandler();
         var jwt = handler.ReadJwtToken(token);
-        var identity = new ClaimsIdentity(jwt.Claims, CookieAuthenticationDefaults.AuthenticationScheme);
+        // Explicit name/role claim types so IsInRole works with JWT ClaimTypes.Role URIs.
+        var identity = new ClaimsIdentity(
+            jwt.Claims,
+            CookieAuthenticationDefaults.AuthenticationScheme,
+            ClaimTypes.Name,
+            ClaimTypes.Role);
         var principal = new ClaimsPrincipal(identity);
 
         await context.SignInAsync(

@@ -94,6 +94,10 @@ internal static class WorkerDetailsBuilder
             MessengerAutoReplyMessage = worker.MessengerAutoReplyMessage,
             PhoneUnchangedHours = worker.PhoneUnchangedHours
                 ?? ResponsePhoneWatchRules.DefaultUnchangedHours,
+            AutoDeliverToCrm = worker.AutoDeliverToCrm,
+            AutoDeliverToBitrix = worker.AutoDeliverToBitrix,
+            OfficeId = worker.OfficeId,
+            OfficeName = worker.OfficeName,
             System = BuildSystemPanel(worker, extra),
             Logs = logs,
             CurrentActivity = WorkerActivityPresenter.Present(
