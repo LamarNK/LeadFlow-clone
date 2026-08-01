@@ -18,7 +18,17 @@ internal static class AvitoLoginDetectionScripts
 
             const titleSuggestsLogin = /^вход$/i.test(title);
 
+            // Экран сохранённых профилей (users-list → клик → пароль) — отдельный UI без login-form.
+            const hasSavedUsersList = !!(
+                document.querySelector("[data-marker='users-list']") ||
+                document.querySelector("[data-marker^='users-list(']") ||
+                document.querySelector("[data-marker='user/link']") ||
+                document.querySelector("[data-marker='users-list/button']") ||
+                document.querySelector("[data-marker='login-form-with-avatar']")
+            );
+
             const hasLoginDom = !!(
+                hasSavedUsersList ||
                 document.querySelector("[data-marker='auth-app-root']") ||
                 document.querySelector("form[data-marker='login-form']") ||
                 document.querySelector("[data-marker='login-form/login']") ||
@@ -32,11 +42,11 @@ internal static class AvitoLoginDetectionScripts
                 document.querySelector("[class*='AuthorizationMainScreen']")
             );
 
-            const hasLoginHtml = /data-marker=['"]auth-app-root|data-marker=['"]login-form|AuthorizationMainScreen-module|login-form\/login|login-form\/password/i.test(htmlSnippet);
+            const hasLoginHtml = /data-marker=['"]auth-app-root|data-marker=['"]login-form|data-marker=['"]users-list|data-marker=['"]user\/link|AuthorizationMainScreen-module|login-form\/login|login-form\/password/i.test(htmlSnippet);
 
             // Тексты именно формы входа (не промо-кнопки баннеров в Pro-кабинете).
             const containsAuthText = (value) =>
-                /телефон или почта|забыли пароль|запомнить пароль|продолжить через|нет аккаунта на|войти в авито/i.test(value ?? "");
+                /телефон или почта|забыли пароль|запомнить пароль|продолжить через|нет аккаунта на|войти в авито|войти в другой профиль|введите пароль от/i.test(value ?? "");
 
             const hasLoginText = containsAuthText(probeText);
 

@@ -44,7 +44,16 @@ public static class AvitoPageStateScripts
             const urlSuggestsLogin =
                 /\/profile\/login|\/profile\/auth|avito\.ru\/login|#login\b|\/auth\b/i.test(url);
             const titleSuggestsLogin = /^вход$/i.test(title);
+            // Экран сохранённых профилей (users-list → клик по карточке → пароль).
+            const hasSavedUsersList = !!(
+                document.querySelector("[data-marker='users-list']") ||
+                document.querySelector("[data-marker^='users-list(']") ||
+                document.querySelector("[data-marker='user/link']") ||
+                document.querySelector("[data-marker='users-list/button']") ||
+                document.querySelector("[data-marker='login-form-with-avatar']")
+            );
             const hasLoginDom = !!(
+                hasSavedUsersList ||
                 document.querySelector("[data-marker='auth-app-root']") ||
                 document.querySelector("form[data-marker='login-form']") ||
                 document.querySelector("[data-marker='login-form/login']") ||
@@ -57,10 +66,10 @@ public static class AvitoPageStateScripts
                 document.querySelector("input[name='password'][autocomplete='current-password']") ||
                 document.querySelector("[class*='AuthorizationMainScreen']")
             );
-            const hasLoginHtml = /data-marker=['"]auth-app-root|data-marker=['"]login-form|AuthorizationMainScreen-module|login-form\/login|login-form\/password/i.test(htmlSnippet);
+            const hasLoginHtml = /data-marker=['"]auth-app-root|data-marker=['"]login-form|data-marker=['"]users-list|data-marker=['"]user\/link|AuthorizationMainScreen-module|login-form\/login|login-form\/password/i.test(htmlSnippet);
             // Тексты именно формы входа (не промо-кнопки баннеров в Pro-кабинете).
             const containsAuthText = (value) =>
-                /телефон или почта|забыли пароль|запомнить пароль|продолжить через|нет аккаунта на|войти в авито/i.test(value ?? "");
+                /телефон или почта|забыли пароль|запомнить пароль|продолжить через|нет аккаунта на|войти в авито|войти в другой профиль|введите пароль от/i.test(value ?? "");
             const hasLoginText = containsAuthText(probeText);
             const hasGuestLoginButton = !!document.querySelector("[data-marker='header/login-button']");
             // Pro: osp-sidebar/* — основной маркер кабинета; header/profile-name — обычный профиль.

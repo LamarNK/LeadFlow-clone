@@ -190,6 +190,7 @@ public sealed class AvitoAutoLoginRecoveryTests
 
         Assert.Contains("user/link", script);
         Assert.Contains("login-form-with-avatar", script);
+        Assert.Contains("users-list", script);
         Assert.Contains("войти\\s+в\\s+другой\\s+профиль", script);
         Assert.Contains("phone_card", script);
     }
@@ -201,5 +202,17 @@ public sealed class AvitoAutoLoginRecoveryTests
 
         Assert.Contains("войти\\s+в\\s+другой\\s+профиль", script);
         Assert.Contains("login-form/other", script);
+        Assert.Contains("users-list/button", script);
+    }
+
+    [Fact]
+    public void BuildProbeScript_DetectsUsersListAsNeedsLogin()
+    {
+        var script = AvitoAutoLoginScripts.BuildProbeScript();
+
+        Assert.Contains("hasUsersList", script);
+        Assert.Contains("users-list", script);
+        Assert.Contains("user/link", script);
+        Assert.Contains("hasProfileChooser", script);
     }
 }

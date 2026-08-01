@@ -33,11 +33,15 @@ public static class AvitoAutoLoginScripts
                 document.querySelector("[data-marker='login-form/login']") ||
                 document.querySelector("[data-marker='login-form/password']") ||
                 document.querySelector("[data-marker='login-form/submit']") ||
+                document.querySelector("[data-marker='users-list']") ||
+                document.querySelector("[data-marker^='users-list(']") ||
+                document.querySelector("[data-marker='user/link']") ||
                 document.querySelector("input[name='password'][autocomplete='current-password']")
             );
             const hasUsersList = !!(
                 document.querySelector("[data-marker='users-list']") ||
-                document.querySelector("[data-marker^='users-list(']")
+                document.querySelector("[data-marker^='users-list(']") ||
+                document.querySelector("[data-marker='users-list/button']")
             );
             const hasSavedUserCard = !!(
                 document.querySelector("[data-marker='user/link']") ||
@@ -60,6 +64,8 @@ public static class AvitoAutoLoginScripts
                 document.querySelector("[data-marker='login-form/other']") ||
                 document.querySelector("[data-marker='login-form/other-profile']") ||
                 document.querySelector("[data-marker*='other-profile']") ||
+                document.querySelector("[data-marker='users-list/button']") ||
+                document.querySelector("[data-marker='another-profile-link'] a") ||
                 Array.from(document.querySelectorAll("a, button, span, div[role='button']"))
                     .find((el) => /войти\s+в\s+другой\s+профиль/i.test((el.textContent || "").trim()));
 
@@ -165,9 +171,12 @@ public static class AvitoAutoLoginScripts
                 document.querySelector("[data-marker='users-list'] [data-marker='user/link']"),
                 document.querySelector("[data-marker^='users-list('] [data-marker='user/link']"),
                 document.querySelector("[data-marker='users-list'] button[data-marker='user/link']"),
+                document.querySelector("[data-marker='user'] [data-marker='user/link']"),
+                document.querySelector("button[data-marker='user/link']"),
                 document.querySelector("[data-marker='login-form-with-avatar'] [data-marker='user/link']"),
                 document.querySelector("[data-marker='auth-app-root'] [data-marker='user/link']"),
                 document.querySelector("[data-marker='user/link']"),
+                document.querySelector("[data-marker^='users-list(']"),
                 document.querySelector("[data-marker='login-form-with-avatar'] button:not([type='submit'])"),
                 document.querySelector("[data-marker='login-form-with-avatar'] [role='button']"),
                 document.querySelector("[data-marker='login-form-with-avatar'] a"),
@@ -181,6 +190,7 @@ public static class AvitoAutoLoginScripts
 
             // Fallback: кликабельная карточка с телефоном (+7 …) внутри модалки входа.
             const roots = [
+                document.querySelector("[data-marker='users-list']"),
                 document.querySelector("[data-marker='login-form-with-avatar']"),
                 document.querySelector("[data-marker='auth-app-root']"),
                 document.querySelector("[data-marker='login-form']"),
@@ -221,11 +231,13 @@ public static class AvitoAutoLoginScripts
             const byMarker =
                 document.querySelector("[data-marker='login-form/other']") ||
                 document.querySelector("[data-marker='login-form/other-profile']") ||
-                document.querySelector("[data-marker*='other-profile']");
+                document.querySelector("[data-marker*='other-profile']") ||
+                document.querySelector("[data-marker='users-list/button']") ||
+                document.querySelector("[data-marker='another-profile-link'] a");
             if (tryClick(byMarker)) return { clicked: true, step: "marker" };
 
             const byText = Array.from(document.querySelectorAll("a, button, span, div[role='button']"))
-                .find((el) => /войти\s+в\s+другой\s+профиль/i.test((el.textContent || "").trim()));
+                .find((el) => /войти\s+в\s+другой\s+профиль|вернуться\s+к\s+списку/i.test((el.textContent || "").trim()));
             if (tryClick(byText)) return { clicked: true, step: "text" };
 
             return { clicked: false, step: "none" };
@@ -319,19 +331,37 @@ public static class AvitoAutoLoginScripts
             let filledLogin = false;
             let filledPassword = false;
 
-            if (loginInput && login) {
+            // После выбора сохранённого профиля login уже привязан (часто readonly/hidden) —
+            // не затираем его; на этом экране нужен только пароль из Орбиты.
+            const loginLocked = !!(
+                loginInput &&
+                (loginInput.readOnly ||
+                 loginInput.disabled ||
+                 loginInput.type === "hidden" ||
+                 (loginInput.style && loginInput.style.display === "none") ||
+                 getComputedStyle(loginInput).display === "none")
+            );
+            const passwordOnlyForm = !!(passwordInput && (!loginInput || loginLocked));
+
+            if (loginInput && login && !passwordOnlyForm) {
                 filledLogin = setNativeValue(loginInput, login);
                 try { loginInput.focus(); } catch { /* best effort */ }
             }
 
             if (passwordInput && password) {
                 filledPassword = setNativeValue(passwordInput, password);
-                try { passwordInput.focus(); } catch { /* best effort */ }
+                try {
+                    passwordInput.focus();
+                    passwordInput.dispatchEvent(new Event("focus", { bubbles: true }));
+                    passwordInput.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "a" }));
+                    passwordInput.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true, key: "a" }));
+                } catch { /* best effort */ }
             }
 
             const hasPassword = !!(passwordInput && String(passwordInput.value || "").trim().length > 0);
             const hasLogin = !!(loginInput && String(loginInput.value || "").trim().length > 0);
             // Login-only step (phone first): submit without password field / value.
+            // Password-only (saved profile): достаточно заполненного пароля.
             const canSubmit = hasPassword || (hasLogin && !passwordInput);
 
             if (!canSubmit) {

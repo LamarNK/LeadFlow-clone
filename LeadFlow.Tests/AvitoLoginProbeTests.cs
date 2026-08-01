@@ -97,4 +97,37 @@ public sealed class AvitoLoginProbeTests
         Assert.Contains("softLoginSignals", script, StringComparison.Ordinal);
         Assert.Contains("!hasLoggedInProfile", script, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void DetectionScripts_RecognizeSavedUsersListScreen()
+    {
+        var pageState = AvitoPageStateScripts.BuildProbeScript();
+        var autoLoginProbe = AvitoAutoLoginScripts.BuildProbeScript();
+        var selectUser = AvitoAutoLoginScripts.BuildSelectSavedUserScript();
+        var switchOther = AvitoAutoLoginScripts.BuildSwitchToOtherProfileScript();
+
+        // Экран «Вход» со списком профилей (users-list / user/link) должен детектиться как login.
+        Assert.Contains("hasSavedUsersList", pageState, StringComparison.Ordinal);
+        Assert.Contains("users-list", pageState, StringComparison.Ordinal);
+        Assert.Contains("user/link", pageState, StringComparison.Ordinal);
+        Assert.Contains("login-form-with-avatar", pageState, StringComparison.Ordinal);
+
+        Assert.Contains("users-list", autoLoginProbe, StringComparison.Ordinal);
+        Assert.Contains("user/link", autoLoginProbe, StringComparison.Ordinal);
+        Assert.Contains("login-form-with-avatar", autoLoginProbe, StringComparison.Ordinal);
+
+        Assert.Contains("user/link", selectUser, StringComparison.Ordinal);
+        Assert.Contains("users-list/button", switchOther, StringComparison.Ordinal);
+        Assert.Contains("войти\\s+в\\s+другой\\s+профиль", selectUser, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void FillCredentialsScript_DoesNotOverwriteLockedLoginOnPasswordOnlyForm()
+    {
+        var script = AvitoAutoLoginScripts.BuildFillCredentialsAndSubmitScript("+79001234567", "secret");
+
+        Assert.Contains("passwordOnlyForm", script, StringComparison.Ordinal);
+        Assert.Contains("loginLocked", script, StringComparison.Ordinal);
+        Assert.Contains("!passwordOnlyForm", script, StringComparison.Ordinal);
+    }
 }
