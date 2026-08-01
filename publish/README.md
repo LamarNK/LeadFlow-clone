@@ -56,7 +56,7 @@ publish\publish.bat notifybot
 publish\publish.bat all
 ```
 
-**Docker на ПК не нужен.** Образы собираются на сервере через SSH (`tar` + `deploy-remote-build.sh`).
+**Docker на ПК не нужен.** Образы собираются на сервере через SSH (`tar` + `deploy-remote-build.sh`). При сборке `orbita-web` клиентские файлы `Orbita.Web/wwwroot/js` автоматически обфусцируются; исходные файлы в репозитории не изменяются.
 
 Как в DeskLink: вся логика деплоя в `publish.bat`, PowerShell только для меню (`publish-menu.ps1`). Отдельного `publish.ps1` нет — антивирус на него не ругается.
 
@@ -67,6 +67,9 @@ publish\publish.bat all
 | `LEADFLOW_SERVER` | `root@163.5.153.207` |
 | `LEADFLOW_SSH_PORT` | `22` |
 | `LEADFLOW_SSH_KEY` | не задан — `Z:\servers\.ssh\home`, иначе стандартный SSH (`~/.ssh/config`, ssh-agent) |
+| `LEADFLOW_SSH_CONNECT_TIMEOUT` | `15` секунд на установку соединения |
+| `LEADFLOW_SSH_ALIVE_INTERVAL` | `15` секунд между keepalive-проверками |
+| `LEADFLOW_SSH_ALIVE_COUNT_MAX` | `4` — оборвать неотвечающее соединение примерно через минуту |
 | `LEADFLOW_SECRET_FILE` | `publish\secrets\orbita.env` |
 | `LEADFLOW_SKIP_SECRETS_SYNC` | `0` — поставьте `1`, чтобы не копировать `.env` |
 | `LEADFLOW_FORCE_PUBLISH` | `0` — поставьте `1`, чтобы принудительно залить всё, даже если файлы не менялись |

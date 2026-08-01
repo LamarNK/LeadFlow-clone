@@ -20,6 +20,9 @@ set "STATE_ROOT=%ROOT%state"
 if not defined LEADFLOW_SERVER if defined ORBITA_SERVER set "LEADFLOW_SERVER=%ORBITA_SERVER%"
 if not defined LEADFLOW_SERVER set "LEADFLOW_SERVER=root@163.5.153.207"
 if not defined LEADFLOW_SSH_PORT set "LEADFLOW_SSH_PORT=22"
+if not defined LEADFLOW_SSH_CONNECT_TIMEOUT set "LEADFLOW_SSH_CONNECT_TIMEOUT=15"
+if not defined LEADFLOW_SSH_ALIVE_INTERVAL set "LEADFLOW_SSH_ALIVE_INTERVAL=15"
+if not defined LEADFLOW_SSH_ALIVE_COUNT_MAX set "LEADFLOW_SSH_ALIVE_COUNT_MAX=4"
 if not defined LEADFLOW_REMOTE_DIR set "LEADFLOW_REMOTE_DIR=/opt/orbita"
 if not defined LEADFLOW_SKIP_SECRETS_SYNC set "LEADFLOW_SKIP_SECRETS_SYNC=0"
 if not defined LEADFLOW_SKIP_DOCKER_PRUNE set "LEADFLOW_SKIP_DOCKER_PRUNE=0"
@@ -468,8 +471,8 @@ if not defined SSH_KEY if exist "Z:\servers\.ssh\home" set "SSH_KEY=Z:\servers\.
 exit /b 0
 
 :build_transport_args
-set "SSH_ARGS=-p !LEADFLOW_SSH_PORT! -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 -o ServerAliveCountMax=120"
-set "SCP_ARGS=-P !LEADFLOW_SSH_PORT! -o BatchMode=yes -o StrictHostKeyChecking=accept-new"
+set "SSH_ARGS=-p !LEADFLOW_SSH_PORT! -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectionAttempts=1 -o ConnectTimeout=!LEADFLOW_SSH_CONNECT_TIMEOUT! -o ServerAliveInterval=!LEADFLOW_SSH_ALIVE_INTERVAL! -o ServerAliveCountMax=!LEADFLOW_SSH_ALIVE_COUNT_MAX!"
+set "SCP_ARGS=-P !LEADFLOW_SSH_PORT! -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectionAttempts=1 -o ConnectTimeout=!LEADFLOW_SSH_CONNECT_TIMEOUT! -o ServerAliveInterval=!LEADFLOW_SSH_ALIVE_INTERVAL! -o ServerAliveCountMax=!LEADFLOW_SSH_ALIVE_COUNT_MAX!"
 if defined SSH_KEY (
     set "SSH_ARGS=-i !SSH_KEY! !SSH_ARGS!"
     set "SCP_ARGS=-i !SSH_KEY! !SCP_ARGS!"
