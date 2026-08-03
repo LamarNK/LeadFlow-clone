@@ -199,7 +199,11 @@ public sealed record CrmCandidateCardDto(
     string? CloseReason,
     int OpenTaskCount,
     bool HasOverdueTask,
-    double HoursInStage);
+    double HoursInStage,
+    string? SourceUrl,
+    string? VacancyUrl,
+    string? AccountName,
+    string? SourceResponseId);
 
 public sealed record CrmCandidateDetailDto(
     CrmCandidateCardDto Card,
@@ -209,7 +213,19 @@ public sealed record CrmCandidateDetailDto(
     IReadOnlyList<CrmActivityItemDto> Activity,
     IReadOnlyList<CrmManagerDto> Managers,
     IReadOnlyList<string> Stages,
-    bool CanEdit);
+    bool CanEdit,
+    IReadOnlyList<CrmChatMessageDto> Chat,
+    IReadOnlyList<CrmPhoneHistoryDto> PhoneHistory);
+
+public sealed record CrmChatMessageDto(
+    string Text,
+    string TimeLabel,
+    string Tone);
+
+public sealed record CrmPhoneHistoryDto(
+    string PhoneRaw,
+    string PhoneNormalized,
+    DateTime RecordedAtUtc);
 
 public sealed record CrmNoteDto(
     Guid Id,

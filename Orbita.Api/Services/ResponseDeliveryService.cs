@@ -153,6 +153,16 @@ public sealed class ResponseDeliveryService(
             primaryOfficeId,
             entity.WorkerId);
 
+        // The response can be delivered to several CRM offices. Each board needs its own scoped event.
+        var crmResults = channels.Where(x => x.Channel == "CRM").ToList();
+        foreach (var (officeId, result) in officeIds.Zip(crmResults))
+        {
+            if (result.Success)
+            {
+                panelRealtime.Notify([PanelChangeKind.Crm], officeId, entity.WorkerId);
+            }
+        }
+
         return new DeliverResponseResultDto(
             anySuccess,
             entity.Status,

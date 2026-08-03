@@ -15,6 +15,56 @@ public sealed class CandidateIngestionServiceTests
     private static readonly Guid WorkerId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
 
     [Fact]
+    public async Task IngestBatchAsync_ExistingResponse_BackfillsVacancyUrl()
+    {
+        await using var db = CreateDb();
+        SeedWorker(db, autoDistributionEnabled: false);
+
+        var accountId = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc");
+        var person = TestCandidatePersonFactory.CreatePerson(OfficeId, fullName: "Иванов Иван", firstName: "Иван", lastName: "Иванов");
+        var response = TestCandidatePersonFactory.CreateResponse(
+            OfficeId,
+            person.Id,
+            WorkerId,
+            sourceResponseId: "existing-response",
+            fullName: "Иванов Иван");
+        response.AccountId = accountId;
+        response.VacancyUrl = string.Empty;
+        response.SourceUrl = string.Empty;
+        db.CandidatePersons.Add(person);
+        db.CandidateResponses.Add(response);
+        await db.SaveChangesAsync();
+
+        var sut = CreateService(db);
+        var request = new WorkerCandidateBatchRequest([
+            new WorkerCandidateDto(
+                accountId,
+                "acc",
+                "Avito",
+                "existing-response",
+                "",
+                "Иванов Иван",
+                25,
+                null,
+                "+7 (900) 111-11-11",
+                "Москва",
+                "Охранник",
+                "https://www.avito.ru/example/vacancy",
+                "",
+                "",
+                "",
+                "",
+                DateTime.UtcNow)
+        ]);
+
+        await sut.IngestBatchAsync(WorkerId, request);
+
+        var stored = await db.CandidateResponses.SingleAsync(x => x.Id == response.Id);
+        Assert.Equal("https://www.avito.ru/example/vacancy", stored.VacancyUrl);
+        Assert.Equal("https://www.avito.ru/example/vacancy", stored.SourceUrl);
+    }
+
+    [Fact]
     public async Task IngestBatchAsync_PhoneChangedMetric_DoesNotMarkAsDuplicate()
     {
         await using var db = CreateDb();

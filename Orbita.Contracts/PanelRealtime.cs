@@ -9,7 +9,8 @@ public enum PanelChangeKind
     Errors,
     Accounts,
     Statistics,
-    NavBadges
+    NavBadges,
+    Crm
 }
 
 public sealed record PanelChangeNotification(

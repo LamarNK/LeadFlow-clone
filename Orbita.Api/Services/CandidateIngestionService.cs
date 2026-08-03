@@ -199,6 +199,7 @@ public sealed class CandidateIngestionService(
             PhoneNormalized = phoneNormalized,
             City = candidate.City,
             Vacancy = candidate.Vacancy,
+            SourceUrl = candidate.VacancyUrl,
             VacancyUrl = candidate.VacancyUrl,
             MessengerUrl = candidate.MessengerUrl,
             AvitoSubProfileId = candidate.AvitoSubProfileId,
@@ -290,6 +291,21 @@ public sealed class CandidateIngestionService(
             && !string.IsNullOrWhiteSpace(candidate.MessengerUrl))
         {
             tracked.MessengerUrl = candidate.MessengerUrl;
+            changed = true;
+        }
+
+        var vacancyUrl = candidate.VacancyUrl?.Trim();
+        if (!string.IsNullOrWhiteSpace(vacancyUrl)
+            && !string.Equals(tracked.VacancyUrl, vacancyUrl, StringComparison.Ordinal))
+        {
+            tracked.VacancyUrl = vacancyUrl;
+            changed = true;
+        }
+
+        if (string.IsNullOrWhiteSpace(tracked.SourceUrl)
+            && !string.IsNullOrWhiteSpace(vacancyUrl))
+        {
+            tracked.SourceUrl = vacancyUrl;
             changed = true;
         }
 

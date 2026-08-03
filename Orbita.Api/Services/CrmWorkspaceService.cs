@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text.Json;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Orbita.Api.Data;
@@ -13,7 +15,8 @@ namespace Orbita.Api.Services;
 public sealed class CrmWorkspaceService(
     OrbitaDbContext db,
     UserManager<IdentityUser> users,
-    CrmLeadDistributionService leadDistribution)
+    CrmLeadDistributionService leadDistribution,
+    IPanelRealtimeNotifier? panelRealtime = null)
 {
     /// <summary>
     /// Create CRM card for a response in the target office (delivery path only).
@@ -298,6 +301,7 @@ public sealed class CrmWorkspaceService(
             ct);
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
+        NotifyBoardChanged(officeId);
         return true;
     }
 
@@ -311,6 +315,7 @@ public sealed class CrmWorkspaceService(
 
         profile.CrmShiftActive = false;
         await db.SaveChangesAsync(ct);
+        NotifyBoardChanged(officeId);
         return true;
     }
 
@@ -329,6 +334,7 @@ public sealed class CrmWorkspaceService(
 
         profile.CrmCapacity = capacity;
         await db.SaveChangesAsync(ct);
+        NotifyBoardChanged(officeId);
         return true;
     }
 
@@ -343,6 +349,7 @@ public sealed class CrmWorkspaceService(
         office.CrmEnabled = enabled;
         office.CrmRequireStageComment = requireStageComment;
         await db.SaveChangesAsync(ct);
+        NotifyBoardChanged(officeId);
         return true;
     }
 
@@ -391,6 +398,7 @@ public sealed class CrmWorkspaceService(
 
         office.CrmStagesJson = CrmStages.Serialize(nextStages);
         await db.SaveChangesAsync(ct);
+        NotifyBoardChanged(officeId);
         return (true, null);
     }
 
@@ -406,6 +414,8 @@ public sealed class CrmWorkspaceService(
     {
         var card = await db.CrmCandidateCards.AsNoTracking()
             .Include(x => x.Response)
+                .ThenInclude(x => x.Person)
+                    .ThenInclude(x => x.PhoneHistory)
             .FirstOrDefaultAsync(x => x.Id == cardId, ct);
         if (card is null)
         {
@@ -452,6 +462,8 @@ public sealed class CrmWorkspaceService(
         var hasOverdue = tasks.Any(x => x.Status == CrmTaskStatuses.Open && x.DueAtUtc is DateTime due && due < now);
 
         var activity = BuildActivity(notes, tasks, history, names);
+        var chat = ParseChatMessages(card.Response.ChatMessagesJson);
+        var phoneHistory = BuildPhoneHistory(card.Response);
         return new CrmCandidateDetailDto(
             ToCardDto(card, names, openCount, hasOverdue, now),
             notes.Select(x => new CrmNoteDto(x.Id, x.AuthorUserId, x.AuthorName, x.Text, x.CreatedAtUtc)).ToList(),
@@ -465,7 +477,9 @@ public sealed class CrmWorkspaceService(
                 x.Profile.CrmCapacity,
                 loads.GetValueOrDefault(x.Profile.UserId))).ToList(),
             officeStages,
-            canEdit);
+            canEdit,
+            chat,
+            phoneHistory);
     }
 
     public async Task<IReadOnlyList<CrmTaskDto>> GetTasksAsync(Guid officeId, string userId, bool isAdmin, CancellationToken ct = default)
@@ -551,6 +565,7 @@ public sealed class CrmWorkspaceService(
         }
 
         await db.SaveChangesAsync(ct);
+        NotifyBoardChanged(card.OfficeId);
         return (true, null);
     }
 
@@ -573,6 +588,7 @@ public sealed class CrmWorkspaceService(
         leadDistribution.AssignManually(card, managerUserId, managerName, actorUserId, actorName);
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
+        NotifyBoardChanged(card.OfficeId);
         return true;
     }
 
@@ -590,6 +606,7 @@ public sealed class CrmWorkspaceService(
         card.UpdatedAtUtc = now;
         AddHistory(card.Id, isInActiveLoad ? "ReturnedToLoad" : "RemovedFromLoad", null, actorUserId, actorName, now);
         await db.SaveChangesAsync(ct);
+        NotifyBoardChanged(card.OfficeId);
         return true;
     }
 
@@ -635,6 +652,7 @@ public sealed class CrmWorkspaceService(
         }
 
         await db.SaveChangesAsync(ct);
+        NotifyBoardChanged(card.OfficeId);
         return (true, null);
     }
 
@@ -655,6 +673,7 @@ public sealed class CrmWorkspaceService(
         card.UpdatedAtUtc = now;
         AddHistory(card.Id, "Reopened", null, actorUserId, actorName, now);
         await db.SaveChangesAsync(ct);
+        NotifyBoardChanged(card.OfficeId);
         return true;
     }
 
@@ -681,6 +700,7 @@ public sealed class CrmWorkspaceService(
         card.UpdatedAtUtc = now;
         AddHistory(card.Id, "Note", null, actorUserId, actorName, now);
         await db.SaveChangesAsync(ct);
+        NotifyBoardChanged(card.OfficeId);
         return true;
     }
 
@@ -740,21 +760,28 @@ public sealed class CrmWorkspaceService(
         }
 
         await db.SaveChangesAsync(ct);
-        return new CrmTaskDto(
-            task.Id,
-            task.CardId,
-            candidateName,
-            task.Title,
-            task.Description,
-            task.AssigneeUserId,
-            assigneeName,
-            task.CreatorUserId,
-            actorName,
-            task.DueAtUtc,
-            task.Status,
-            task.CreatedAtUtc,
-            null,
-            task.DueAtUtc is DateTime d && d < now);
+        if (request.CardId is Guid)
+        {
+            NotifyBoardChanged(officeId);
+        }
+
+        return task is null
+            ? null
+            : new CrmTaskDto(
+                task.Id,
+                task.CardId,
+                candidateName,
+                task.Title,
+                task.Description,
+                task.AssigneeUserId,
+                assigneeName,
+                task.CreatorUserId,
+                actorName,
+                task.DueAtUtc,
+                task.Status,
+                task.CreatedAtUtc,
+                null,
+                task.DueAtUtc is DateTime d && d < now);
     }
 
     public async Task<CrmTaskDto?> CreateFollowUpAsync(
@@ -826,6 +853,18 @@ public sealed class CrmWorkspaceService(
         }
 
         await db.SaveChangesAsync(ct);
+        if (task.CardId is Guid completedCardId && completedCardId != Guid.Empty)
+        {
+            var completedCardOffice = await db.CrmCandidateCards.AsNoTracking()
+                .Where(x => x.Id == completedCardId)
+                .Select(x => x.OfficeId)
+                .FirstOrDefaultAsync(ct);
+            if (completedCardOffice != Guid.Empty)
+            {
+                NotifyBoardChanged(completedCardOffice);
+            }
+        }
+
         return true;
     }
 
@@ -928,7 +967,11 @@ public sealed class CrmWorkspaceService(
             card.CloseReason,
             openTaskCount,
             hasOverdue,
-            Math.Round(hours, 1));
+            Math.Round(hours, 1),
+            string.IsNullOrWhiteSpace(card.Response.SourceUrl) ? null : card.Response.SourceUrl,
+            string.IsNullOrWhiteSpace(card.Response.VacancyUrl) ? null : card.Response.VacancyUrl,
+            string.IsNullOrWhiteSpace(card.Response.AccountName) ? null : card.Response.AccountName,
+            string.IsNullOrWhiteSpace(card.Response.SourceResponseId) ? null : card.Response.SourceResponseId);
     }
 
     private static CrmTaskDto ToTaskDto(
@@ -990,4 +1033,95 @@ public sealed class CrmWorkspaceService(
         "Reopened" => "Карточка открыта снова",
         _ => action
     };
+
+    private void NotifyBoardChanged(Guid officeId) =>
+        panelRealtime?.Notify([PanelChangeKind.Crm], officeId);
+
+    private static IReadOnlyList<CrmPhoneHistoryDto> BuildPhoneHistory(CandidateResponseEntity response)
+    {
+        var history = response.Person?.PhoneHistory
+            ?.Select(x => new CrmPhoneHistoryDto(x.PhoneRaw, x.PhoneNormalized, x.RecordedAtUtc))
+            .ToList() ?? [];
+
+        if (!string.IsNullOrWhiteSpace(response.PreviousPhoneNormalized) &&
+            !history.Any(x => string.Equals(x.PhoneNormalized, response.PreviousPhoneNormalized, StringComparison.Ordinal)))
+        {
+            history.Add(new CrmPhoneHistoryDto(
+                string.IsNullOrWhiteSpace(response.PreviousPhoneRaw)
+                    ? response.PreviousPhoneNormalized
+                    : response.PreviousPhoneRaw,
+                response.PreviousPhoneNormalized,
+                response.PhoneChangedAtUtc ?? response.CreatedAt));
+        }
+
+        if (!string.IsNullOrWhiteSpace(response.PhoneNormalized) &&
+            !history.Any(x => string.Equals(x.PhoneNormalized, response.PhoneNormalized, StringComparison.Ordinal)))
+        {
+            history.Add(new CrmPhoneHistoryDto(response.PhoneRaw, response.PhoneNormalized, response.CollectedAt));
+        }
+
+        return history.OrderBy(x => x.RecordedAtUtc).ToList();
+    }
+
+    private static IReadOnlyList<CrmChatMessageDto> ParseChatMessages(string? chatMessagesJson)
+    {
+        if (string.IsNullOrWhiteSpace(chatMessagesJson))
+        {
+            return [];
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(chatMessagesJson);
+            if (doc.RootElement.ValueKind != JsonValueKind.Array)
+            {
+                return [];
+            }
+
+            var results = new List<CrmChatMessageDto>();
+            foreach (var message in doc.RootElement.EnumerateArray())
+            {
+                var text = message.TryGetProperty("text", out var textProp) ? textProp.GetString() : null;
+                if (string.IsNullOrWhiteSpace(text))
+                {
+                    continue;
+                }
+
+                var side = message.TryGetProperty("side", out var sideProp) ? sideProp.GetString() : null;
+                var isPlatform = message.TryGetProperty("isPlatform", out var platformProp)
+                    && platformProp.ValueKind == JsonValueKind.True;
+                var at = message.TryGetProperty("at", out var atProp) ? atProp.GetString() : null;
+
+                var tone = string.Equals(side, "right", StringComparison.OrdinalIgnoreCase)
+                    ? "outgoing"
+                    : isPlatform
+                        ? "system"
+                        : "incoming";
+
+                results.Add(new CrmChatMessageDto(text.Trim(), FormatMessageTime(at), tone));
+            }
+
+            return results;
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
+
+    private static string FormatMessageTime(string? at)
+    {
+        if (string.IsNullOrWhiteSpace(at))
+        {
+            return string.Empty;
+        }
+
+        if (DateTime.TryParse(at, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var parsed))
+        {
+            var local = parsed.Kind == DateTimeKind.Utc ? parsed.ToLocalTime() : parsed;
+            return local.ToString("dd MMM HH:mm", CultureInfo.GetCultureInfo("ru-RU"));
+        }
+
+        return at;
+    }
 }
