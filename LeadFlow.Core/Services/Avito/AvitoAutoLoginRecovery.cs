@@ -2,12 +2,13 @@ using System.Text.Json;
 using LeadFlow.Core.Logging.Audit;
 using LeadFlow.Core.Services;
 using PuppeteerSharp;
+using PuppeteerSharp.Input;
 
 namespace LeadFlow.Core.Services.Avito;
 
 /// <summary>
-/// Пытается восстановить сессию Avito через UI входа:
-/// сохранённый профиль → пароль (Орбита/браузер); если профиля нет — полный логин/пароль.
+/// Пытается восстановить сессию Avito через UI входа.
+/// Единственный источник логина и пароля — Орбита.
 /// </summary>
 public static class AvitoAutoLoginRecovery
 {
@@ -84,8 +85,22 @@ public static class AvitoAutoLoginRecovery
         var steps = new List<string>();
         const int maxIterations = 10;
 
+        if (credentials is not { IsUsable: true })
+        {
+            steps.Add("credentials Орбиты: нет — автовход невозможен");
+            await LogAsync(
+                    DeskLinkAuditLogLevel.Warning,
+                    "Avito auto-login aborted: no Orbit credentials.",
+                    steps,
+                    page.Url)
+                .ConfigureAwait(false);
+            return new RecoveryResult(false, true, false, "no_orbit_credentials", steps);
+        }
+
+        steps.Add("credentials Орбиты: есть");
+
         var initialState = await ProbeAsync(page, cancellationToken).ConfigureAwait(false);
-        if (initialState is { NeedsLogin: true })
+        if (initialState is { NeedsLogin: true } && !HasVisibleLoginUi(initialState))
         {
             if (await TryRefreshSessionAsync(page, steps, cancellationToken).ConfigureAwait(false))
             {
@@ -120,8 +135,6 @@ public static class AvitoAutoLoginRecovery
             }
 
             var progressed = false;
-            var hasOrbitCredentials = credentials is { IsUsable: true };
-
             // 1) Есть сохранённый профиль («База») — кликаем его, затем вводим пароль.
             // «Войти в другой профиль» на этом экране не трогаем, пока есть карточка.
             if (!state.HasCredentialInputs &&
@@ -153,11 +166,11 @@ public static class AvitoAutoLoginRecovery
             }
 
             // 2) Поле пароля (после выбора профиля) или полная форма — credentials из Орбиты.
-            if (state.HasCredentialInputs && hasOrbitCredentials)
+            if (state.HasCredentialInputs)
             {
                 var submitted = await TryFillCredentialsAndSubmitAsync(
                         page,
-                        credentials!,
+                        credentials,
                         cancellationToken)
                     .ConfigureAwait(false);
                 steps.Add(submitted
@@ -171,20 +184,7 @@ public static class AvitoAutoLoginRecovery
                 }
             }
 
-            // 3) Пароль уже в браузере — просто submit.
-            if (state.HasLoginForm && state.HasPasswordValue && state.HasSubmitButton)
-            {
-                var submitted = await TrySubmitPasswordFormAsync(page, cancellationToken).ConfigureAwait(false);
-                steps.Add(submitted ? "отправлена форма с сохранённым паролем" : "пароль не заполнен");
-                if (submitted)
-                {
-                    progressed = true;
-                    await WaitForAuthSettleAsync(page, cancellationToken).ConfigureAwait(false);
-                    continue;
-                }
-            }
-
-            // 4) Нет сохранённого профиля, только ссылка на полный вход.
+            // 3) Нет сохранённого профиля, только ссылка на полный вход.
             if (!state.HasCredentialInputs &&
                 state.HasOtherProfileLink &&
                 !state.HasUsersList &&
@@ -199,28 +199,6 @@ public static class AvitoAutoLoginRecovery
                     progressed = true;
                     await Task.Delay(MonitoringTiming.AutoLoginAfterUserSelectMs, cancellationToken).ConfigureAwait(false);
                     continue;
-                }
-            }
-
-            // 5) Autofill пароля в браузере (без credentials Орбиты).
-            if (state.HasLoginForm && !state.HasPasswordValue && state.HasCredentialInputs)
-            {
-                await TryTriggerPasswordAutofillAsync(page, cancellationToken).ConfigureAwait(false);
-                var afterAutofill = await ProbeAsync(page, cancellationToken).ConfigureAwait(false);
-                if (afterAutofill is { HasPasswordValue: true, HasSubmitButton: true })
-                {
-                    var submitted = await TrySubmitPasswordFormAsync(page, cancellationToken).ConfigureAwait(false);
-                    steps.Add(submitted ? "автозаполнение пароля и вход" : "автозаполнение не сработало");
-                    if (submitted)
-                    {
-                        progressed = true;
-                        await WaitForAuthSettleAsync(page, cancellationToken).ConfigureAwait(false);
-                        continue;
-                    }
-                }
-                else if (!hasOrbitCredentials)
-                {
-                    steps.Add("пароль не сохранён в браузере и нет credentials в Орбите");
                 }
             }
 
@@ -255,9 +233,7 @@ public static class AvitoAutoLoginRecovery
         var reason = finalState switch
         {
             { HasCaptcha: true } => "captcha",
-            { HasLoginForm: true, HasPasswordValue: false } when credentials is not { IsUsable: true }
-                => "no_saved_password",
-            { HasLoginForm: true } when credentials is { IsUsable: true }
+            { HasLoginForm: true }
                 => "credentials_login_failed",
             _ => "login_ui_stuck"
         };
@@ -364,28 +340,89 @@ public static class AvitoAutoLoginRecovery
         return TryReadBoolProperty(raw, "clicked");
     }
 
+    private static readonly string[] SavedUserClickSelectors =
+    [
+        "[data-marker='users-list'] button[data-marker='user/link']",
+        "[data-marker='users-list'] [data-marker='user/link']",
+        "[data-marker='user'] button[data-marker='user/link']",
+        "button[data-marker='user/link']",
+        "[data-marker='user/link']"
+    ];
+
+    private static readonly string[] OtherProfileClickSelectors =
+    [
+        "[data-marker='users-list/button']",
+        "[data-marker='login-form/other']",
+        "[data-marker='login-form/other-profile']",
+        "[data-marker='another-profile-link'] a"
+    ];
+
+    private static readonly string[] PasswordInputSelectors =
+    [
+        "[data-marker='login-form/password/input']",
+        "form[data-marker='login-form'] input[name='password']",
+        "input[name='password'][autocomplete='current-password']",
+        "input[type='password']"
+    ];
+
+    private static readonly string[] LoginInputSelectors =
+    [
+        "[data-marker='login-form/login/input']",
+        "[data-marker='login-form/login'] input",
+        "input[name='login'][autocomplete='username']",
+        "input[name='login']",
+        "input[autocomplete='username']"
+    ];
+
     private static async Task<bool> TrySelectSavedUserAsync(IPage page, CancellationToken cancellationToken)
     {
+        if (await TryClickAndWaitForCredentialsAsync(
+                page,
+                () => TryMouseClickFirstAsync(page, SavedUserClickSelectors, cancellationToken),
+                cancellationToken).ConfigureAwait(false))
+        {
+            return true;
+        }
+
+        if (await TryClickAndWaitForCredentialsAsync(
+                page,
+                () => TryClickFirstAsync(page, SavedUserClickSelectors, cancellationToken),
+                cancellationToken).ConfigureAwait(false))
+        {
+            return true;
+        }
+
         var raw = await EvaluateJsonStringAsync(page, AvitoAutoLoginScripts.BuildSelectSavedUserScript(), cancellationToken)
             .ConfigureAwait(false);
-        return TryReadBoolProperty(raw, "clicked");
+        return TryReadBoolProperty(raw, "clicked")
+               && await WaitForCredentialInputsAsync(page, cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task<bool> TrySwitchToOtherProfileAsync(IPage page, CancellationToken cancellationToken)
     {
+        if (await TryClickAndWaitForCredentialsAsync(
+                page,
+                () => TryMouseClickFirstAsync(page, OtherProfileClickSelectors, cancellationToken),
+                cancellationToken).ConfigureAwait(false))
+        {
+            return true;
+        }
+
+        if (await TryClickAndWaitForCredentialsAsync(
+                page,
+                () => TryClickFirstAsync(page, OtherProfileClickSelectors, cancellationToken),
+                cancellationToken).ConfigureAwait(false))
+        {
+            return true;
+        }
+
         var raw = await EvaluateJsonStringAsync(
                 page,
                 AvitoAutoLoginScripts.BuildSwitchToOtherProfileScript(),
                 cancellationToken)
             .ConfigureAwait(false);
-        return TryReadBoolProperty(raw, "clicked");
-    }
-
-    private static async Task<bool> TrySubmitPasswordFormAsync(IPage page, CancellationToken cancellationToken)
-    {
-        var raw = await EvaluateJsonStringAsync(page, AvitoAutoLoginScripts.BuildSubmitPasswordFormScript(), cancellationToken)
-            .ConfigureAwait(false);
-        return TryReadBoolProperty(raw, "submitted");
+        return TryReadBoolProperty(raw, "clicked")
+               && await WaitForCredentialInputsAsync(page, cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task<bool> TryFillCredentialsAndSubmitAsync(
@@ -393,6 +430,14 @@ public static class AvitoAutoLoginRecovery
         AvitoLoginCredentials credentials,
         CancellationToken cancellationToken)
     {
+        if (!await WaitForCredentialInputsAsync(page, cancellationToken).ConfigureAwait(false))
+        {
+            return false;
+        }
+
+        // CDP-ввод очищает сохранённый браузером пароль, затем JS дублирует
+        // значение через React value tracker и отправляет именно форму Avito.
+        _ = await TryTypeOrbitCredentialsAsync(page, credentials, cancellationToken).ConfigureAwait(false);
         var raw = await EvaluateJsonStringAsync(
                 page,
                 AvitoAutoLoginScripts.BuildFillCredentialsAndSubmitScript(credentials.Login, credentials.Password),
@@ -401,22 +446,185 @@ public static class AvitoAutoLoginRecovery
         return TryReadBoolProperty(raw, "submitted");
     }
 
-    private static async Task TryTriggerPasswordAutofillAsync(IPage page, CancellationToken cancellationToken)
+    private static async Task<bool> TryClickAndWaitForCredentialsAsync(
+        IPage page,
+        Func<Task<bool>> click,
+        CancellationToken cancellationToken)
     {
-        for (var i = 0; i < MonitoringTiming.AutoLoginPasswordAutofillPolls; i++)
+        if (!await click().ConfigureAwait(false))
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            _ = await EvaluateJsonStringAsync(page, AvitoAutoLoginScripts.BuildSubmitPasswordFormScript(), cancellationToken)
-                .ConfigureAwait(false);
-            var state = await ProbeAsync(page, cancellationToken).ConfigureAwait(false);
-            if (state is { HasPasswordValue: true })
-            {
-                return;
-            }
+            return false;
+        }
 
-            await Task.Delay(MonitoringTiming.AutoLoginPasswordAutofillPollMs, cancellationToken).ConfigureAwait(false);
+        return await WaitForCredentialInputsAsync(page, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<bool> WaitForCredentialInputsAsync(IPage page, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        try
+        {
+            await page.WaitForSelectorAsync(
+                    "[data-marker='login-form/password/input'], form[data-marker='login-form'] input[name='password'], input[type='password']",
+                    new WaitForSelectorOptions { Timeout = 6_000, Visible = true })
+                .ConfigureAwait(false);
+            return true;
+        }
+        catch
+        {
+            return false;
         }
     }
+
+    private static async Task<bool> TryTypeOrbitCredentialsAsync(
+        IPage page,
+        AvitoLoginCredentials credentials,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var password = await QueryFirstAsync(page, PasswordInputSelectors).ConfigureAwait(false);
+            if (password is null)
+            {
+                return false;
+            }
+
+            var login = await QueryFirstAsync(page, LoginInputSelectors).ConfigureAwait(false);
+            if (login is not null)
+            {
+                var locked = await login.EvaluateFunctionAsync<bool>(
+                        "el => !!(el.readOnly || el.disabled || el.type === 'hidden' || getComputedStyle(el).display === 'none')")
+                    .ConfigureAwait(false);
+                if (!locked)
+                {
+                    await ClearAndTypeAsync(page, login, credentials.Login, cancellationToken).ConfigureAwait(false);
+                }
+            }
+
+            await ClearAndTypeAsync(page, password, credentials.Password, cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static async Task ClearAndTypeAsync(
+        IPage page,
+        IElementHandle input,
+        string value,
+        CancellationToken cancellationToken)
+    {
+        await input.ClickAsync(new ClickOptions { Delay = 20 }).ConfigureAwait(false);
+        await Task.Delay(40, cancellationToken).ConfigureAwait(false);
+        await page.Keyboard.DownAsync("Control").ConfigureAwait(false);
+        await page.Keyboard.PressAsync("KeyA").ConfigureAwait(false);
+        await page.Keyboard.UpAsync("Control").ConfigureAwait(false);
+        await page.Keyboard.PressAsync("Backspace").ConfigureAwait(false);
+        await input.TypeAsync(value, new TypeOptions { Delay = 15 }).ConfigureAwait(false);
+    }
+
+    private static async Task<bool> TryMouseClickFirstAsync(
+        IPage page,
+        IReadOnlyList<string> selectors,
+        CancellationToken cancellationToken)
+    {
+        foreach (var selector in selectors)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                var handle = await page.QuerySelectorAsync(selector).ConfigureAwait(false);
+                if (handle is null)
+                {
+                    continue;
+                }
+
+                await handle.EvaluateFunctionAsync("el => el.scrollIntoView({ block: 'center', inline: 'center' })")
+                    .ConfigureAwait(false);
+                await Task.Delay(80, cancellationToken).ConfigureAwait(false);
+                var box = await handle.BoundingBoxAsync().ConfigureAwait(false);
+                if (box is null || box.Width < 1 || box.Height < 1)
+                {
+                    continue;
+                }
+
+                await page.Mouse.MoveAsync(box.X + box.Width / 2, box.Y + box.Height / 2).ConfigureAwait(false);
+                await Task.Delay(30, cancellationToken).ConfigureAwait(false);
+                await page.Mouse.ClickAsync(
+                        box.X + box.Width / 2,
+                        box.Y + box.Height / 2,
+                        new ClickOptions { Delay = 40 })
+                    .ConfigureAwait(false);
+                return true;
+            }
+            catch
+            {
+                // Try the next selector.
+            }
+        }
+
+        return false;
+    }
+
+    private static async Task<bool> TryClickFirstAsync(
+        IPage page,
+        IReadOnlyList<string> selectors,
+        CancellationToken cancellationToken)
+    {
+        foreach (var selector in selectors)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                var handle = await page.QuerySelectorAsync(selector).ConfigureAwait(false);
+                if (handle is null)
+                {
+                    continue;
+                }
+
+                await handle.EvaluateFunctionAsync("el => el.scrollIntoView({ block: 'center', inline: 'center' })")
+                    .ConfigureAwait(false);
+                await handle.ClickAsync(new ClickOptions { Delay = 35 }).ConfigureAwait(false);
+                return true;
+            }
+            catch
+            {
+                // Try the next selector.
+            }
+        }
+
+        return false;
+    }
+
+    private static async Task<IElementHandle?> QueryFirstAsync(IPage page, IReadOnlyList<string> selectors)
+    {
+        foreach (var selector in selectors)
+        {
+            try
+            {
+                var handle = await page.QuerySelectorAsync(selector).ConfigureAwait(false);
+                if (handle is not null)
+                {
+                    return handle;
+                }
+            }
+            catch
+            {
+                // Try the next selector.
+            }
+        }
+
+        return null;
+    }
+
+    private static bool HasVisibleLoginUi(ProbeState state) =>
+        state.HasLoginForm ||
+        state.HasUsersList ||
+        state.HasSavedUserCard ||
+        state.HasOtherProfileLink ||
+        state.HasCredentialInputs;
 
     private static async Task WaitForAuthSettleAsync(IPage page, CancellationToken cancellationToken)
     {

@@ -196,6 +196,27 @@ public sealed class AvitoAutoLoginRecoveryTests
     }
 
     [Fact]
+    public void BuildSelectSavedUserScript_DispatchesCompleteMouseGesture()
+    {
+        var script = AvitoAutoLoginScripts.BuildSelectSavedUserScript();
+
+        Assert.Contains("pointerdown", script);
+        Assert.Contains("mousedown", script);
+        Assert.Contains("mouseup", script);
+    }
+
+    [Fact]
+    public void BuildFillCredentialsAndSubmitScript_RequiresOrbitValuesBeforeSubmit()
+    {
+        var script = AvitoAutoLoginScripts.BuildFillCredentialsAndSubmitScript("+79001234567", "test-password");
+
+        Assert.Contains("orbit_password_not_applied", script);
+        Assert.Contains("orbit_login_not_applied", script);
+        Assert.Contains("requestSubmit", script);
+        Assert.Contains("input[name='login'][autocomplete='username']", script);
+    }
+
+    [Fact]
     public void BuildSwitchToOtherProfileScript_ContainsOtherProfileText()
     {
         var script = AvitoAutoLoginScripts.BuildSwitchToOtherProfileScript();

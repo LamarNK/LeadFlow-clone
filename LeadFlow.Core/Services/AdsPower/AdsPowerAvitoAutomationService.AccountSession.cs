@@ -110,6 +110,25 @@ public sealed partial class AdsPowerAvitoAutomationService
             }
         }
 
+        // Вход должен происходить прямо после старта AdsPower. Раньше recovery
+        // вызывался только позже, при переключении субпрофиля: браузер уже
+        // показывал users-list/login-form, но до этого шага поток не доходил.
+        var warmupState = await ProbePageStateAsync(page, cancellationToken).ConfigureAwait(false);
+        if (warmupState?.HasLoginForm == true
+            || warmupState?.PageKind == AvitoPageKind.Login
+            || AvitoAutomationFailureFormatter.SuggestsLogin(warmupState))
+        {
+            var recovered = await TryRecoverAvitoLoginAsync(page, cancellationToken).ConfigureAwait(false);
+            if (recovered && !IsOnActiveProfileItemsPage(page.Url))
+            {
+                await page.GoToAsync(ProfileItemsPageUrl, new NavigationOptions
+                {
+                    Timeout = 90_000,
+                    WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
+                }).ConfigureAwait(false);
+            }
+        }
+
         if (IsOnActiveProfileItemsPage(page.Url))
         {
             await WaitForProfileItemsShellAsync(page, nameof(WarmUpSessionPageAsync), cancellationToken)

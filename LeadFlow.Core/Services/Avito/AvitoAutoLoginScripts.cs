@@ -130,6 +130,22 @@ public static class AvitoAutoLoginScripts
             const tryClick = (el) => {
                 if (!el) return false;
                 try {
+                    if (typeof PointerEvent === "function") {
+                        el.dispatchEvent(new PointerEvent("pointerdown", {
+                            bubbles: true, cancelable: true, button: 0, pointerType: "mouse", isPrimary: true
+                        }));
+                    }
+                    el.dispatchEvent(new MouseEvent("mousedown", {
+                        bubbles: true, cancelable: true, button: 0, view: window
+                    }));
+                    if (typeof PointerEvent === "function") {
+                        el.dispatchEvent(new PointerEvent("pointerup", {
+                            bubbles: true, cancelable: true, button: 0, pointerType: "mouse", isPrimary: true
+                        }));
+                    }
+                    el.dispatchEvent(new MouseEvent("mouseup", {
+                        bubbles: true, cancelable: true, button: 0, view: window
+                    }));
                     el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
                     if (typeof el.click === "function") el.click();
                     return true;
@@ -156,6 +172,22 @@ public static class AvitoAutoLoginScripts
             const tryClick = (el) => {
                 if (!el) return false;
                 try {
+                    if (typeof PointerEvent === "function") {
+                        el.dispatchEvent(new PointerEvent("pointerdown", {
+                            bubbles: true, cancelable: true, button: 0, pointerType: "mouse", isPrimary: true
+                        }));
+                    }
+                    el.dispatchEvent(new MouseEvent("mousedown", {
+                        bubbles: true, cancelable: true, button: 0, view: window
+                    }));
+                    if (typeof PointerEvent === "function") {
+                        el.dispatchEvent(new PointerEvent("pointerup", {
+                            bubbles: true, cancelable: true, button: 0, pointerType: "mouse", isPrimary: true
+                        }));
+                    }
+                    el.dispatchEvent(new MouseEvent("mouseup", {
+                        bubbles: true, cancelable: true, button: 0, view: window
+                    }));
                     el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
                     if (typeof el.click === "function") el.click();
                     return true;
@@ -220,6 +252,22 @@ public static class AvitoAutoLoginScripts
             const tryClick = (el) => {
                 if (!el) return false;
                 try {
+                    if (typeof PointerEvent === "function") {
+                        el.dispatchEvent(new PointerEvent("pointerdown", {
+                            bubbles: true, cancelable: true, button: 0, pointerType: "mouse", isPrimary: true
+                        }));
+                    }
+                    el.dispatchEvent(new MouseEvent("mousedown", {
+                        bubbles: true, cancelable: true, button: 0, view: window
+                    }));
+                    if (typeof PointerEvent === "function") {
+                        el.dispatchEvent(new PointerEvent("pointerup", {
+                            bubbles: true, cancelable: true, button: 0, pointerType: "mouse", isPrimary: true
+                        }));
+                    }
+                    el.dispatchEvent(new MouseEvent("mouseup", {
+                        bubbles: true, cancelable: true, button: 0, view: window
+                    }));
                     el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
                     if (typeof el.click === "function") el.click();
                     return true;
@@ -244,40 +292,6 @@ public static class AvitoAutoLoginScripts
         })();
         """;
 
-    /// <summary>Фокус на поле пароля (для автозаполнения) и отправка формы, если пароль уже в браузере.</summary>
-    public static string BuildSubmitPasswordFormScript() =>
-        """
-        (() => {
-            const pwd =
-                document.querySelector("[data-marker='login-form/password/input']") ||
-                document.querySelector("input[name='password'][autocomplete='current-password']") ||
-                document.querySelector("form[data-marker='login-form'] input[name='password']");
-            if (pwd) {
-                try {
-                    pwd.focus();
-                    pwd.dispatchEvent(new Event("focus", { bubbles: true }));
-                    pwd.dispatchEvent(new Event("input", { bubbles: true }));
-                } catch { /* best effort */ }
-            }
-
-            const hasPassword = !!(pwd && String(pwd.value || "").trim().length > 0);
-            if (!hasPassword) return { submitted: false, reason: "no_password" };
-
-            const submit =
-                document.querySelector("[data-marker='login-form/submit']") ||
-                document.querySelector("form[data-marker='login-form'] button[type='submit']");
-            if (!submit) return { submitted: false, reason: "no_submit" };
-
-            try {
-                submit.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
-                if (typeof submit.click === "function") submit.click();
-                return { submitted: true };
-            } catch {
-                return { submitted: false, reason: "click_failed" };
-            }
-        })();
-        """;
-
     /// <summary>Заполняет login/password из credentials Орбиты и отправляет форму.</summary>
     public static string BuildFillCredentialsAndSubmitScript(string login, string password)
     {
@@ -291,16 +305,24 @@ public static class AvitoAutoLoginScripts
             const setNativeValue = (el, value) => {
                 if (!el) return false;
                 try {
+                    el.focus();
                     const proto = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value");
                     if (proto && typeof proto.set === "function") {
                         proto.set.call(el, value);
                     } else {
                         el.value = value;
                     }
+                    try {
+                        const tracker = el._valueTracker;
+                        if (tracker && typeof tracker.setValue === "function") tracker.setValue("");
+                    } catch { /* React tracker is optional */ }
+                    el.dispatchEvent(new InputEvent("input", {
+                        bubbles: true, data: value, inputType: "insertText"
+                    }));
                     el.dispatchEvent(new Event("input", { bubbles: true }));
                     el.dispatchEvent(new Event("change", { bubbles: true }));
                     el.dispatchEvent(new Event("blur", { bubbles: true }));
-                    return true;
+                    return String(el.value || "") === String(value);
                 } catch {
                     try { el.value = value; return true; } catch { return false; }
                 }
@@ -309,6 +331,7 @@ public static class AvitoAutoLoginScripts
             const findLogin = () =>
                 document.querySelector("[data-marker='login-form/login/input']") ||
                 document.querySelector("[data-marker='login-form/login'] input") ||
+                document.querySelector("input[name='login'][autocomplete='username']") ||
                 document.querySelector("input[name='login']") ||
                 document.querySelector("input[autocomplete='username']") ||
                 document.querySelector("input[type='tel']") ||
@@ -324,7 +347,13 @@ public static class AvitoAutoLoginScripts
             const findSubmit = () =>
                 document.querySelector("[data-marker='login-form/submit']") ||
                 document.querySelector("form[data-marker='login-form'] button[type='submit']") ||
+                document.querySelector("button[name='submit'][type='submit']") ||
                 document.querySelector("button[type='submit']");
+
+            const findForm = () =>
+                document.querySelector("form[data-marker='login-form']") ||
+                (findPassword() && findPassword().closest("form")) ||
+                null;
 
             const loginInput = findLogin();
             const passwordInput = findPassword();
@@ -358,38 +387,63 @@ public static class AvitoAutoLoginScripts
                 } catch { /* best effort */ }
             }
 
-            const hasPassword = !!(passwordInput && String(passwordInput.value || "").trim().length > 0);
-            const hasLogin = !!(loginInput && String(loginInput.value || "").trim().length > 0);
+            const loginValue = loginInput ? String(loginInput.value || "").trim() : "";
+            const passwordValue = passwordInput ? String(passwordInput.value || "").trim() : "";
+            const hasPassword = passwordValue.length > 0;
+            const hasLogin = loginValue.length > 0;
+            const digits = (value) => String(value || "").replace(/\D/g, "");
+            const loginMatches =
+                passwordOnlyForm ||
+                (digits(loginValue).length >= 10 && digits(loginValue) === digits(login));
+            const passwordMatches = passwordValue === String(password);
             // Login-only step (phone first): submit without password field / value.
             // Password-only (saved profile): достаточно заполненного пароля.
             const canSubmit = hasPassword || (hasLogin && !passwordInput);
 
-            if (!canSubmit) {
+            if (!canSubmit || !passwordMatches || !loginMatches) {
                 return {
                     submitted: false,
-                    reason: passwordInput ? "no_password" : "no_fields",
+                    reason: !passwordMatches ? "orbit_password_not_applied" :
+                        (!loginMatches ? "orbit_login_not_applied" :
+                            (passwordInput ? "no_password" : "no_fields")),
                     filledLogin,
                     filledPassword,
                     hasLogin,
-                    hasPassword
+                    hasPassword,
+                    loginMatches,
+                    passwordMatches
                 };
             }
 
             const submit = findSubmit();
-            if (!submit) {
+            const form = findForm();
+            if (!submit && !form) {
                 return { submitted: false, reason: "no_submit", filledLogin, filledPassword, hasLogin, hasPassword };
             }
 
             try {
-                submit.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
-                if (typeof submit.click === "function") submit.click();
+                let method = "click";
+                if (form && typeof form.requestSubmit === "function") {
+                    if (submit) form.requestSubmit(submit);
+                    else form.requestSubmit();
+                    method = "requestSubmit";
+                } else if (submit) {
+                    submit.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+                    if (typeof submit.click === "function") submit.click();
+                } else {
+                    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+                    method = "submit_event";
+                }
                 return {
                     submitted: true,
-                    reason: hasPassword ? "login_password" : "login_only",
+                    reason: hasPassword ? "orbit_login_password" : "orbit_login_only",
+                    method,
                     filledLogin,
                     filledPassword,
                     hasLogin,
-                    hasPassword
+                    hasPassword,
+                    loginMatches,
+                    passwordMatches
                 };
             } catch {
                 return { submitted: false, reason: "click_failed", filledLogin, filledPassword, hasLogin, hasPassword };
