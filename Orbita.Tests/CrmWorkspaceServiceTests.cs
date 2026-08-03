@@ -177,6 +177,59 @@ public sealed class CrmWorkspaceServiceTests
         Assert.Contains("этап", error, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task GetBoard_ManagerSeesTeamReadOnlyAndOwnMineEditable()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var manager = await harness.CreateManagerAsync("view@test.local", capacity: 5, onShift: true);
+        var response = await SeedResponseAsync(harness.Db);
+        var card = NewCard(response.Id, manager.Id);
+        card.Stage = CrmStages.Lead;
+        harness.Db.CrmCandidateCards.Add(card);
+        await harness.Db.SaveChangesAsync();
+
+        var team = await harness.Sut.GetBoardAsync(
+            OfficeId,
+            manager.Id,
+            isAdmin: false,
+            new CrmBoardQuery(Scope: CrmBoardScopes.Team));
+        Assert.NotNull(team);
+        Assert.Equal(CrmBoardScopes.Team, team.Scope);
+        Assert.False(team.CanEdit);
+        Assert.Contains(team.Stages.SelectMany(s => s.Cards), c => c.Id == card.Id);
+
+        var mine = await harness.Sut.GetBoardAsync(
+            OfficeId,
+            manager.Id,
+            isAdmin: false,
+            new CrmBoardQuery(Scope: CrmBoardScopes.Mine));
+        Assert.NotNull(mine);
+        Assert.Equal(CrmBoardScopes.Mine, mine.Scope);
+        Assert.True(mine.CanEdit);
+    }
+
+    [Fact]
+    public async Task GetCard_ManagerViewsOwnOfficeCardReadOnly()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var owner = await harness.CreateManagerAsync("owner@test.local", capacity: 5, onShift: true);
+        var viewer = await harness.CreateManagerAsync("viewer@test.local", capacity: 5, onShift: true);
+        var response = await SeedResponseAsync(harness.Db);
+        var card = NewCard(response.Id, owner.Id);
+        harness.Db.CrmCandidateCards.Add(card);
+        await harness.Db.SaveChangesAsync();
+
+        var detail = await harness.Sut.GetCardAsync(card.Id, viewer.Id, isAdmin: false);
+        Assert.NotNull(detail);
+        Assert.False(detail.CanEdit);
+
+        var own = await harness.Sut.GetCardAsync(card.Id, owner.Id, isAdmin: false);
+        Assert.NotNull(own);
+        Assert.True(own.CanEdit);
+    }
+
     private static CrmCandidateCardEntity NewCard(Guid responseId, string? managerId = null) => new()
     {
         Id = Guid.NewGuid(),

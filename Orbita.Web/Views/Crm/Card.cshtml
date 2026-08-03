@@ -6,6 +6,7 @@
     var header = new PageHeaderViewModel { Title = Model.Card.FullName, Subtitle = "Карточка кандидата", ShowRefresh = true, UpdatedAtUtc = DateTime.UtcNow };
     var activeTab = ViewData["CrmTab"] as string ?? "activity";
     var card = Model.Card;
+    var canEdit = Model.CanEdit;
     string DisplayCrmAction(string action) => action switch
     {
         "Created" => "Карточка создана",
@@ -61,23 +62,26 @@
         </div>
     </section>
 
-    <section class="crm-stage-rail card">
-        <div class="crm-stage-rail__comment">
-            <label for="stageComment">Комментарий к смене этапа (если требуется в офисе)</label>
-            <input id="stageComment" type="text" form="crm-stage-forms" name="comment" placeholder="Необязательно, если офис не требует" />
-        </div>
-        <div class="crm-stage-rail__stages" style="--crm-stage-count: @Model.Stages.Count">
-        @foreach (var stage in Model.Stages)
-        {
-            <form asp-action="Move" method="post" class="@(stage == card.Stage ? "is-current" : "") @(card.IsClosed ? "is-disabled" : "")">
-                <input type="hidden" name="id" value="@card.Id" />
-                <input type="hidden" name="stage" value="@stage" />
-                <input type="hidden" name="comment" value="" data-stage-comment />
-                <button type="submit" @(card.IsClosed ? "disabled" : null)>@stage</button>
-            </form>
-        }
-        </div>
-    </section>
+    @if (canEdit)
+    {
+        <section class="crm-stage-rail card">
+            <div class="crm-stage-rail__comment">
+                <label for="stageComment">Комментарий к смене этапа (если требуется в офисе)</label>
+                <input id="stageComment" type="text" form="crm-stage-forms" name="comment" placeholder="Необязательно, если офис не требует" />
+            </div>
+            <div class="crm-stage-rail__stages" style="--crm-stage-count: @Model.Stages.Count">
+            @foreach (var stage in Model.Stages)
+            {
+                <form asp-action="Move" method="post" class="@(stage == card.Stage ? "is-current" : "") @(card.IsClosed ? "is-disabled" : "")">
+                    <input type="hidden" name="id" value="@card.Id" />
+                    <input type="hidden" name="stage" value="@stage" />
+                    <input type="hidden" name="comment" value="" data-stage-comment />
+                    <button type="submit" @(card.IsClosed ? "disabled" : null)>@stage</button>
+                </form>
+            }
+            </div>
+        </section>
+    }
 
     <div class="crm-card-layout">
         <aside class="crm-card-side">
@@ -101,65 +105,68 @@
                 </dl>
             </section>
 
-            <section class="card crm-side-panel">
-                <header>Быстрые действия</header>
-                <div class="crm-quick-actions">
-                    <form asp-action="FollowUp" method="post"><input type="hidden" name="id" value="@card.Id" /><input type="hidden" name="minutes" value="60" /><button type="submit">+1 ч</button></form>
-                    <form asp-action="FollowUp" method="post"><input type="hidden" name="id" value="@card.Id" /><input type="hidden" name="minutes" value="180" /><button type="submit">+3 ч</button></form>
-                    <form asp-action="FollowUp" method="post"><input type="hidden" name="id" value="@card.Id" /><input type="hidden" name="minutes" value="1440" /><button type="submit">Завтра</button></form>
-                    <form asp-action="FollowUp" method="post"><input type="hidden" name="id" value="@card.Id" /><input type="hidden" name="minutes" value="4320" /><button type="submit">+3 дн</button></form>
-                </div>
-                <form asp-action="SetLoad" method="post" class="crm-side-form">
-                    <input type="hidden" name="id" value="@card.Id" />
-                    <input type="hidden" name="active" value="@(!card.IsInActiveLoad)" />
-                    <button class="settings-secondary-btn" type="submit">@(card.IsInActiveLoad ? "Снять с нагрузки" : "Вернуть в нагрузку")</button>
-                </form>
-                @if (ViewData["IsCrmAdmin"] as bool? == true && Model.Managers.Count > 0)
-                {
-                    <form asp-action="Assign" method="post" class="crm-side-form">
+            @if (canEdit)
+            {
+                <section class="card crm-side-panel">
+                    <header>Быстрые действия</header>
+                    <div class="crm-quick-actions">
+                        <form asp-action="FollowUp" method="post"><input type="hidden" name="id" value="@card.Id" /><input type="hidden" name="minutes" value="60" /><button type="submit">+1 ч</button></form>
+                        <form asp-action="FollowUp" method="post"><input type="hidden" name="id" value="@card.Id" /><input type="hidden" name="minutes" value="180" /><button type="submit">+3 ч</button></form>
+                        <form asp-action="FollowUp" method="post"><input type="hidden" name="id" value="@card.Id" /><input type="hidden" name="minutes" value="1440" /><button type="submit">Завтра</button></form>
+                        <form asp-action="FollowUp" method="post"><input type="hidden" name="id" value="@card.Id" /><input type="hidden" name="minutes" value="4320" /><button type="submit">+3 дн</button></form>
+                    </div>
+                    <form asp-action="SetLoad" method="post" class="crm-side-form">
                         <input type="hidden" name="id" value="@card.Id" />
-                        <label>Переназначить
-                            <select name="managerUserId">
-                                @foreach (var m in Model.Managers)
-                                {
-                                    if (m.UserId == card.ManagerUserId)
+                        <input type="hidden" name="active" value="@(!card.IsInActiveLoad)" />
+                        <button class="settings-secondary-btn" type="submit">@(card.IsInActiveLoad ? "Снять с нагрузки" : "Вернуть в нагрузку")</button>
+                    </form>
+                    @if (ViewData["IsCrmAdmin"] as bool? == true && Model.Managers.Count > 0)
+                    {
+                        <form asp-action="Assign" method="post" class="crm-side-form">
+                            <input type="hidden" name="id" value="@card.Id" />
+                            <label>Переназначить
+                                <select name="managerUserId">
+                                    @foreach (var m in Model.Managers)
                                     {
-                                        <option value="@m.UserId" selected>@m.DisplayName (@m.ActiveLoad/@m.Capacity)</option>
+                                        if (m.UserId == card.ManagerUserId)
+                                        {
+                                            <option value="@m.UserId" selected>@m.DisplayName (@m.ActiveLoad/@m.Capacity)</option>
+                                        }
+                                        else
+                                        {
+                                            <option value="@m.UserId">@m.DisplayName (@m.ActiveLoad/@m.Capacity)</option>
+                                        }
                                     }
-                                    else
+                                </select>
+                            </label>
+                            <button class="settings-secondary-btn" type="submit">Назначить</button>
+                        </form>
+                    }
+                    @if (!card.IsClosed)
+                    {
+                        <form asp-action="Close" method="post" class="crm-side-form">
+                            <input type="hidden" name="id" value="@card.Id" />
+                            <label>Закрыть
+                                <select name="reason" required>
+                                    @foreach (var reason in CrmCloseReasons.All)
                                     {
-                                        <option value="@m.UserId">@m.DisplayName (@m.ActiveLoad/@m.Capacity)</option>
+                                        <option value="@reason">@reason</option>
                                     }
-                                }
-                            </select>
-                        </label>
-                        <button class="settings-secondary-btn" type="submit">Назначить</button>
-                    </form>
-                }
-                @if (!card.IsClosed)
-                {
-                    <form asp-action="Close" method="post" class="crm-side-form">
-                        <input type="hidden" name="id" value="@card.Id" />
-                        <label>Закрыть
-                            <select name="reason" required>
-                                @foreach (var reason in CrmCloseReasons.All)
-                                {
-                                    <option value="@reason">@reason</option>
-                                }
-                            </select>
-                        </label>
-                        <textarea name="comment" placeholder="Комментарий (необяз.)"></textarea>
-                        <button class="settings-secondary-btn crm-btn-danger" type="submit">Закрыть карточку</button>
-                    </form>
-                }
-                else
-                {
-                    <form asp-action="Reopen" method="post" class="crm-side-form">
-                        <input type="hidden" name="id" value="@card.Id" />
-                        <button class="settings-primary-btn" type="submit">Вернуть в работу</button>
-                    </form>
-                }
-            </section>
+                                </select>
+                            </label>
+                            <textarea name="comment" placeholder="Комментарий (необяз.)"></textarea>
+                            <button class="settings-secondary-btn crm-btn-danger" type="submit">Закрыть карточку</button>
+                        </form>
+                    }
+                    else
+                    {
+                        <form asp-action="Reopen" method="post" class="crm-side-form">
+                            <input type="hidden" name="id" value="@card.Id" />
+                            <button class="settings-primary-btn" type="submit">Вернуть в работу</button>
+                        </form>
+                    }
+                </section>
+            }
         </aside>
 
         <section class="crm-card-main card">
@@ -171,11 +178,14 @@
 
             @if (activeTab == "activity")
             {
-                <form asp-action="AddNote" method="post" class="crm-composer">
-                    <input type="hidden" name="id" value="@card.Id" />
-                    <textarea name="text" required placeholder="Комментарий по кандидату…"></textarea>
-                    <button class="settings-primary-btn" type="submit">Добавить</button>
-                </form>
+                @if (canEdit)
+                {
+                    <form asp-action="AddNote" method="post" class="crm-composer">
+                        <input type="hidden" name="id" value="@card.Id" />
+                        <textarea name="text" required placeholder="Комментарий по кандидату…"></textarea>
+                        <button class="settings-primary-btn" type="submit">Добавить</button>
+                    </form>
+                }
                 <div class="crm-feed">
                     @foreach (var item in Model.Activity)
                     {
@@ -192,19 +202,22 @@
             }
             else if (activeTab == "tasks")
             {
-                <form asp-action="CreateTask" method="post" class="crm-task-create">
-                    <input type="hidden" name="cardId" value="@card.Id" />
-                    <input name="title" required placeholder="Что сделать" />
-                    <select name="assigneeUserId" required>
-                        @foreach (var m in Model.Managers)
-                        {
-                            <option value="@m.UserId">@m.DisplayName</option>
-                        }
-                    </select>
-                    <input type="datetime-local" name="dueAtUtc" />
-                    <textarea name="description" placeholder="Комментарий"></textarea>
-                    <button class="settings-primary-btn" type="submit">Поставить задачу</button>
-                </form>
+                @if (canEdit)
+                {
+                    <form asp-action="CreateTask" method="post" class="crm-task-create">
+                        <input type="hidden" name="cardId" value="@card.Id" />
+                        <input name="title" required placeholder="Что сделать" />
+                        <select name="assigneeUserId" required>
+                            @foreach (var m in Model.Managers)
+                            {
+                                <option value="@m.UserId">@m.DisplayName</option>
+                            }
+                        </select>
+                        <input type="datetime-local" name="dueAtUtc" />
+                        <textarea name="description" placeholder="Комментарий"></textarea>
+                        <button class="settings-primary-btn" type="submit">Поставить задачу</button>
+                    </form>
+                }
                 <div class="crm-task-list">
                     @foreach (var task in Model.Tasks)
                     {
@@ -214,7 +227,7 @@
                                 <span>@task.AssigneeName @if (task.DueAtUtc is DateTime due) { <text>· до @due.ToLocalTime().ToString("dd MMM, HH:mm")</text> } @if (task.IsOverdue) { <em class="crm-overdue">просрочено</em> }</span>
                                 @if (!string.IsNullOrWhiteSpace(task.Description)) { <p>@task.Description</p> }
                             </div>
-                            @if (task.Status == CrmTaskStatuses.Open)
+                            @if (task.Status == CrmTaskStatuses.Open && canEdit)
                             {
                                 <form asp-action="CompleteTask" method="post">
                                     <input type="hidden" name="taskId" value="@task.Id" />

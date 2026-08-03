@@ -76,11 +76,8 @@
             <div class="crm-filters__primary">
                 <div class="crm-scope-tabs" role="tablist">
                     <a class="@(Model.Scope == CrmBoardScopes.Mine ? "is-active" : "")" href="@ScopeUrl(CrmBoardScopes.Mine)">Мои</a>
-                    @if (Model.IsAdmin)
-                    {
-                        <a class="@(Model.Scope == CrmBoardScopes.Team ? "is-active" : "")" href="@ScopeUrl(CrmBoardScopes.Team)">Команда</a>
-                        <a class="@(Model.Scope == CrmBoardScopes.Unassigned ? "is-active" : "")" href="@ScopeUrl(CrmBoardScopes.Unassigned)">Очередь <span>@Model.UnassignedCount</span></a>
-                    }
+                    <a class="@(Model.Scope == CrmBoardScopes.Team ? "is-active" : "")" href="@ScopeUrl(CrmBoardScopes.Team)">Команда</a>
+                    <a class="@(Model.Scope == CrmBoardScopes.Unassigned ? "is-active" : "")" href="@ScopeUrl(CrmBoardScopes.Unassigned)">Очередь <span>@Model.UnassignedCount</span></a>
                     <a class="@(Model.Scope == CrmBoardScopes.Closed ? "is-active" : "")" href="@ScopeUrl(CrmBoardScopes.Closed)">Закрытые</a>
                 </div>
                 <input type="hidden" name="scope" value="@Model.Scope" />
@@ -99,10 +96,26 @@
                 </div>
             </details>
             <p class="crm-scope-description">
-                @if (Model.Scope == CrmBoardScopes.Team) { <text><i class="fa-solid fa-users" aria-hidden="true"></i>Режим команды: видно распределение кандидатов и риски по этапам.</text> }
-                else if (Model.Scope == CrmBoardScopes.Unassigned) { <text><i class="fa-solid fa-inbox" aria-hidden="true"></i>Очередь: назначьте ответственного или верните кандидата в активную нагрузку.</text> }
-                else if (Model.Scope == CrmBoardScopes.Closed) { <text><i class="fa-solid fa-box-archive" aria-hidden="true"></i>Архив закрытых карточек.</text> }
-                else { <text><i class="fa-solid fa-user-check" aria-hidden="true"></i>Ваша рабочая воронка и приоритетные действия на сегодня.</text> }
+                @if (Model.Scope == CrmBoardScopes.Team)
+                {
+                    <text><i class="fa-solid fa-users" aria-hidden="true"></i>Режим команды: видно распределение кандидатов и риски по этапам.</text>
+                }
+                else if (Model.Scope == CrmBoardScopes.Unassigned)
+                {
+                    <text><i class="fa-solid fa-inbox" aria-hidden="true"></i>Очередь: кандидаты без ответственного.</text>
+                }
+                else if (Model.Scope == CrmBoardScopes.Closed)
+                {
+                    <text><i class="fa-solid fa-box-archive" aria-hidden="true"></i>Архив закрытых карточек.</text>
+                }
+                else
+                {
+                    <text><i class="fa-solid fa-user-check" aria-hidden="true"></i>Ваша рабочая воронка и приоритетные действия на сегодня.</text>
+                }
+                @if (!Model.CanEdit)
+                {
+                    <text><em class="crm-readonly-hint">Просмотр — изменения недоступны.</em></text>
+                }
             </p>
         </form>
     </section>
@@ -188,52 +201,55 @@
                                         {
                                             <a href="@card.MessengerUrl" target="_blank" rel="noopener" title="Открыть чат"><i class="fa-regular fa-message" aria-hidden="true"></i><span>Чат</span></a>
                                         }
-                                        @if (!card.IsInActiveLoad)
+                                        @if (Model.CanEdit)
                                         {
-                                            <form asp-action="SetLoad" method="post"><input type="hidden" name="id" value="@card.Id" /><input type="hidden" name="active" value="true" /><input type="hidden" name="returnUrl" value="@boardReturnUrl" /><button type="submit" title="Вернуть в активную нагрузку"><i class="fa-solid fa-bolt" aria-hidden="true"></i><span>В нагрузку</span></button></form>
-                                        }
-                                        @if (nextStage is not null && !Model.RequireStageComment)
-                                        {
-                                            <form asp-action="Move" method="post"><input type="hidden" name="id" value="@card.Id" /><input type="hidden" name="stage" value="@nextStage" /><input type="hidden" name="returnUrl" value="@boardReturnUrl" /><button type="submit" title="Перевести на этап «@nextStage»"><i class="fa-solid fa-arrow-right" aria-hidden="true"></i><span>Дальше</span></button></form>
-                                        }
-                                        @if (Model.IsAdmin || defaultAssigneeUserId is not null)
-                                        {
-                                            <details class="crm-tile__quick-menu">
-                                                <summary title="Ещё действия"><i class="fa-solid fa-ellipsis" aria-hidden="true"></i><span>Ещё действия</span></summary>
-                                                <div>
-                                                    @if (Model.IsAdmin && Model.Managers.Count > 0)
-                                                    {
-                                                        <form asp-action="Assign" method="post">
-                                                            <input type="hidden" name="id" value="@card.Id" />
-                                                            <input type="hidden" name="returnUrl" value="@boardReturnUrl" />
-                                                            <select name="managerUserId" aria-label="Назначить менеджера для @card.FullName">
-                                                                @foreach (var manager in Model.Managers)
-                                                                {
-                                                                    if (manager.UserId == card.ManagerUserId)
+                                            @if (!card.IsInActiveLoad)
+                                            {
+                                                <form asp-action="SetLoad" method="post"><input type="hidden" name="id" value="@card.Id" /><input type="hidden" name="active" value="true" /><input type="hidden" name="returnUrl" value="@boardReturnUrl" /><button type="submit" title="Вернуть в активную нагрузку"><i class="fa-solid fa-bolt" aria-hidden="true"></i><span>В нагрузку</span></button></form>
+                                            }
+                                            @if (nextStage is not null && !Model.RequireStageComment)
+                                            {
+                                                <form asp-action="Move" method="post"><input type="hidden" name="id" value="@card.Id" /><input type="hidden" name="stage" value="@nextStage" /><input type="hidden" name="returnUrl" value="@boardReturnUrl" /><button type="submit" title="Перевести на этап «@nextStage»"><i class="fa-solid fa-arrow-right" aria-hidden="true"></i><span>Дальше</span></button></form>
+                                            }
+                                            @if (Model.IsAdmin || defaultAssigneeUserId is not null)
+                                            {
+                                                <details class="crm-tile__quick-menu">
+                                                    <summary title="Ещё действия"><i class="fa-solid fa-ellipsis" aria-hidden="true"></i><span>Ещё действия</span></summary>
+                                                    <div>
+                                                        @if (Model.IsAdmin && Model.Managers.Count > 0)
+                                                        {
+                                                            <form asp-action="Assign" method="post">
+                                                                <input type="hidden" name="id" value="@card.Id" />
+                                                                <input type="hidden" name="returnUrl" value="@boardReturnUrl" />
+                                                                <select name="managerUserId" aria-label="Назначить менеджера для @card.FullName">
+                                                                    @foreach (var manager in Model.Managers)
                                                                     {
-                                                                        <option value="@manager.UserId" selected>@manager.DisplayName</option>
+                                                                        if (manager.UserId == card.ManagerUserId)
+                                                                        {
+                                                                            <option value="@manager.UserId" selected>@manager.DisplayName</option>
+                                                                        }
+                                                                        else
+                                                                        {
+                                                                            <option value="@manager.UserId">@manager.DisplayName</option>
+                                                                        }
                                                                     }
-                                                                    else
-                                                                    {
-                                                                        <option value="@manager.UserId">@manager.DisplayName</option>
-                                                                    }
-                                                                }
-                                                            </select>
-                                                            <button type="submit"><i class="fa-regular fa-user" aria-hidden="true"></i>Назначить</button>
-                                                        </form>
-                                                    }
-                                                    @if (defaultAssigneeUserId is not null)
-                                                    {
-                                                        <form asp-action="CreateTask" method="post">
-                                                            <input type="hidden" name="cardId" value="@card.Id" />
-                                                            <input type="hidden" name="assigneeUserId" value="@defaultAssigneeUserId" />
-                                                            <input type="hidden" name="returnUrl" value="@boardReturnUrl" />
-                                                            <input type="text" name="title" required placeholder="Новая задача" aria-label="Новая задача для @card.FullName" />
-                                                            <button type="submit"><i class="fa-solid fa-list-check" aria-hidden="true"></i>Поставить</button>
-                                                        </form>
-                                                    }
-                                                </div>
-                                            </details>
+                                                                </select>
+                                                                <button type="submit"><i class="fa-regular fa-user" aria-hidden="true"></i>Назначить</button>
+                                                            </form>
+                                                        }
+                                                        @if (defaultAssigneeUserId is not null)
+                                                        {
+                                                            <form asp-action="CreateTask" method="post">
+                                                                <input type="hidden" name="cardId" value="@card.Id" />
+                                                                <input type="hidden" name="assigneeUserId" value="@defaultAssigneeUserId" />
+                                                                <input type="hidden" name="returnUrl" value="@boardReturnUrl" />
+                                                                <input type="text" name="title" required placeholder="Новая задача" aria-label="Новая задача для @card.FullName" />
+                                                                <button type="submit"><i class="fa-solid fa-list-check" aria-hidden="true"></i>Поставить</button>
+                                                            </form>
+                                                        }
+                                                    </div>
+                                                </details>
+                                            }
                                         }
                                     </div>
                                 }

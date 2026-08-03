@@ -147,6 +147,7 @@ public sealed record CrmBoardDto(
     int OpenTaskCount,
     int OverdueTaskCount,
     bool IsAdmin,
+    bool CanEdit,
     CrmTeamStatsDto TeamStats,
     string Scope,
     string? Search,
@@ -207,7 +208,8 @@ public sealed record CrmCandidateDetailDto(
     IReadOnlyList<CrmHistoryDto> History,
     IReadOnlyList<CrmActivityItemDto> Activity,
     IReadOnlyList<CrmManagerDto> Managers,
-    IReadOnlyList<string> Stages);
+    IReadOnlyList<string> Stages,
+    bool CanEdit);
 
 public sealed record CrmNoteDto(
     Guid Id,

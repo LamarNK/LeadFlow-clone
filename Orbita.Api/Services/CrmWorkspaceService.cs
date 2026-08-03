@@ -100,7 +100,7 @@ public sealed class CrmWorkspaceService(
         }
 
         query ??= new CrmBoardQuery();
-        var scope = NormalizeScope(query.Scope, isAdmin);
+        var scope = NormalizeScope(query.Scope);
         var profile = await db.PanelUserProfiles.AsNoTracking().FirstOrDefaultAsync(x => x.UserId == userId, ct);
         var managers = await GetManagersAsync(officeId, ct);
         var names = managers.ToDictionary(x => x.Profile.UserId, x => x.Name, StringComparer.Ordinal);
@@ -114,8 +114,8 @@ public sealed class CrmWorkspaceService(
         cardsQuery = scope switch
         {
             CrmBoardScopes.Unassigned => cardsQuery.Where(x => x.ManagerUserId == null && !x.IsClosed),
-            CrmBoardScopes.Closed => cardsQuery.Where(x => x.IsClosed && (isAdmin || x.ManagerUserId == userId)),
-            CrmBoardScopes.Team when isAdmin => cardsQuery.Where(x => !x.IsClosed || query.IncludeClosed),
+            CrmBoardScopes.Closed => cardsQuery.Where(x => x.IsClosed),
+            CrmBoardScopes.Team => cardsQuery.Where(x => !x.IsClosed || query.IncludeClosed),
             _ => cardsQuery.Where(x => x.ManagerUserId == userId && (!x.IsClosed || query.IncludeClosed))
         };
 
@@ -266,6 +266,7 @@ public sealed class CrmWorkspaceService(
             openTaskCount,
             overdueTaskCount,
             isAdmin,
+            isAdmin || scope == CrmBoardScopes.Mine,
             teamStats,
             scope,
             query.Search,
@@ -406,9 +407,23 @@ public sealed class CrmWorkspaceService(
         var card = await db.CrmCandidateCards.AsNoTracking()
             .Include(x => x.Response)
             .FirstOrDefaultAsync(x => x.Id == cardId, ct);
-        if (card is null || (!isAdmin && card.ManagerUserId != userId))
+        if (card is null)
         {
             return null;
+        }
+
+        var canEdit = isAdmin || card.ManagerUserId == userId;
+        if (!canEdit)
+        {
+            // Managers may open cards of their own office (team / queue) in read-only mode.
+            var ownOfficeId = await db.PanelUserProfiles.AsNoTracking()
+                .Where(x => x.UserId == userId)
+                .Select(x => x.OfficeId)
+                .FirstOrDefaultAsync(ct);
+            if (ownOfficeId != card.OfficeId)
+            {
+                return null;
+            }
         }
 
         var officeStagesJson = await db.Offices.AsNoTracking()
@@ -449,7 +464,8 @@ public sealed class CrmWorkspaceService(
                 x.Profile.CrmShiftActive,
                 x.Profile.CrmCapacity,
                 loads.GetValueOrDefault(x.Profile.UserId))).ToList(),
-            officeStages);
+            officeStages,
+            canEdit);
     }
 
     public async Task<IReadOnlyList<CrmTaskDto>> GetTasksAsync(Guid officeId, string userId, bool isAdmin, CancellationToken ct = default)
@@ -873,14 +889,12 @@ public sealed class CrmWorkspaceService(
     private static string DisplayName(IdentityUser user) =>
         user.Email ?? user.UserName ?? user.Id;
 
-    private static string NormalizeScope(string? scope, bool isAdmin) =>
+    private static string NormalizeScope(string? scope) =>
         scope switch
         {
-            CrmBoardScopes.Team when isAdmin => CrmBoardScopes.Team,
-            CrmBoardScopes.Unassigned when isAdmin => CrmBoardScopes.Unassigned,
+            CrmBoardScopes.Team => CrmBoardScopes.Team,
+            CrmBoardScopes.Unassigned => CrmBoardScopes.Unassigned,
             CrmBoardScopes.Closed => CrmBoardScopes.Closed,
-            CrmBoardScopes.Team when !isAdmin => CrmBoardScopes.Mine,
-            CrmBoardScopes.Unassigned when !isAdmin => CrmBoardScopes.Mine,
             _ => CrmBoardScopes.Mine
         };
 

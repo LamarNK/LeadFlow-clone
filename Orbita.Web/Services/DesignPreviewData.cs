@@ -154,6 +154,7 @@ internal static class DesignPreviewData
                 openTasks,
                 overdue,
                 true,
+                true,
                 team,
                 query.Scope ?? CrmBoardScopes.Team,
                 query.Search,
@@ -189,7 +190,8 @@ internal static class DesignPreviewData
                 history,
                 activity,
                 BuildPreviewCrmManagers(),
-                _previewCrmStages.ToList());
+                _previewCrmStages.ToList(),
+                true);
         }
     }
 

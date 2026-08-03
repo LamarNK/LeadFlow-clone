@@ -219,6 +219,20 @@
 
         viewport.addEventListener('scroll', () => window.requestAnimationFrame(updateControls), { passive: true });
 
+        // Keep hovered tiles fully visible so their quick actions are never clipped.
+        root.addEventListener('mouseover', (event) => {
+            const tile = event.target.closest('.crm-tile');
+            if (!tile) return;
+            const cards = tile.closest('.crm-stage__cards');
+            if (!cards) return;
+            const tileRect = tile.getBoundingClientRect();
+            const cardsRect = cards.getBoundingClientRect();
+            const overshoot = tileRect.bottom - (cardsRect.bottom - 8);
+            if (overshoot > 4 && cards.scrollHeight > cards.clientHeight) {
+                cards.scrollTop += overshoot;
+            }
+        }, true);
+
         const jumpsStrip = root.querySelector('[data-crm-board-jumps]');
         if (jumpsStrip) {
             const syncJumpScroll = () => {
