@@ -32,11 +32,19 @@ public sealed record OfficeScope(Guid? OfficeId, bool IsGlobalAdmin)
         CanAccessOffice(workerOfficeId);
 
     /// <summary>
-    /// Response access: admin, bound CRM office, or worker's office
-    /// (collection-pool responses may have null OfficeId until delivery).
+    /// Response access: admin, bound ownership office, worker's office
+    /// (collection-pool may have null OfficeId), or shared via CRM delivery to this scope office.
     /// </summary>
-    public bool CanAccessResponse(Guid? responseOfficeId, Guid? workerOfficeId = null) =>
+    /// <param name="sharedWithScopeOffice">
+    /// True when the response has a successful CRM delivery / card for <see cref="OfficeId"/>
+    /// (same response, no clone/transfer).
+    /// </param>
+    public bool CanAccessResponse(
+        Guid? responseOfficeId,
+        Guid? workerOfficeId = null,
+        bool sharedWithScopeOffice = false) =>
         IsGlobalAdmin
+        || sharedWithScopeOffice
         || (OfficeId.HasValue && responseOfficeId.HasValue && OfficeId == responseOfficeId)
         || (OfficeId.HasValue && workerOfficeId.HasValue && OfficeId == workerOfficeId);
 }

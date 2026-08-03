@@ -184,6 +184,95 @@ public sealed class CandidateIngestionServiceTests
     }
 
     [Fact]
+    public async Task IngestBatchAsync_PhoneChangedOnSentResponse_UpdatesSameResponseAndAppendsHistory()
+    {
+        await using var db = CreateDb();
+        SeedWorker(db, autoDistributionEnabled: false);
+
+        var accountId = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc");
+        var person = TestCandidatePersonFactory.CreatePerson(
+            OfficeId,
+            fullName: "Гор Олег Александрович",
+            firstName: "Олег",
+            lastName: "Гор",
+            middleName: "Александрович",
+            age: 66,
+            city: "рабочий поселок Чик",
+            phoneRaw: "+79930099416",
+            phoneNormalized: "79930099416");
+        var response = TestCandidatePersonFactory.CreateResponse(
+            OfficeId,
+            person.Id,
+            WorkerId,
+            phone: "79930099416",
+            sourceResponseId: "phone-watch:deadbeef",
+            fullName: "Гор Олег Александрович",
+            age: 66,
+            city: "рабочий поселок Чик");
+        response.AccountId = accountId;
+        response.Status = ResponseStatuses.Sent;
+        response.PhoneRaw = "+79930099416";
+        db.CandidatePersons.Add(person);
+        db.CandidateResponses.Add(response);
+        db.CandidatePhoneHistory.Add(new CandidatePhoneHistoryEntity
+        {
+            Id = Guid.NewGuid(),
+            PersonId = person.Id,
+            ResponseId = response.Id,
+            PhoneRaw = "+79930099416",
+            PhoneNormalized = "79930099416",
+            RecordedAtUtc = DateTime.UtcNow.AddHours(-1)
+        });
+        await db.SaveChangesAsync();
+
+        var sut = CreateService(db);
+        var request = new WorkerCandidateBatchRequest([
+            new WorkerCandidateDto(
+                accountId,
+                "acc",
+                "Avito",
+                "phone-watch:deadbeef",
+                "",
+                "Гор Олег Александрович",
+                66,
+                null,
+                "+79910001122",
+                "рабочий поселок Чик",
+                "Курьер",
+                "",
+                "",
+                "",
+                "",
+                "",
+                DateTime.UtcNow,
+                AvitoSubProfileName: "",
+                CollectedAt: default,
+                PhoneMetricKind: ResponsePhoneMetricKinds.PhoneChanged,
+                PreviousPhoneRaw: "+79930099416",
+                PreviousPhoneNormalized: "79930099416",
+                PhoneChangedAtUtc: DateTime.UtcNow)
+        ]);
+
+        var result = await sut.IngestBatchAsync(WorkerId, request);
+
+        Assert.Equal(1, await db.CandidateResponses.CountAsync());
+        var stored = await db.CandidateResponses.SingleAsync(x => x.Id == response.Id);
+        Assert.Equal("79910001122", stored.PhoneNormalized);
+        Assert.Equal(ResponsePhoneMetricKinds.PhoneChanged, stored.PhoneMetricKind);
+        Assert.Equal("79930099416", stored.PreviousPhoneNormalized);
+        Assert.Equal(ResponseStatuses.Sent, stored.Status);
+
+        var history = await db.CandidatePhoneHistory
+            .Where(x => x.PersonId == person.Id)
+            .OrderBy(x => x.RecordedAtUtc)
+            .ToListAsync();
+        Assert.Equal(2, history.Count);
+        Assert.All(history, h => Assert.Equal(response.Id, h.ResponseId));
+        Assert.Equal(["79930099416", "79910001122"], history.Select(h => h.PhoneNormalized).ToList());
+        Assert.Equal(response.Id, result.Items[0].Id);
+    }
+
+    [Fact]
     public async Task IngestBatchAsync_SamePersonDifferentPhone_StoresDuplicateStatus()
     {
         await using var db = CreateDb();

@@ -37,7 +37,23 @@ public sealed class ResponseDeliveryService(
             return Fail(ResponseStatuses.Error, "Отклик не найден.");
         }
 
-        if (!scope.CanAccessResponse(entity.OfficeId, entity.Worker?.OfficeId))
+        var sharedWithScope = false;
+        if (!scope.IsGlobalAdmin && scope.OfficeId is Guid scopeOffice)
+        {
+            sharedWithScope = await db.ResponseCrmDeliveries.AsNoTracking()
+                .AnyAsync(
+                    d => d.ResponseId == entity.Id
+                         && d.OfficeId == scopeOffice
+                         && d.Outcome == ResponseCrmDeliveryOutcomes.Sent,
+                    ct);
+            if (!sharedWithScope)
+            {
+                sharedWithScope = await db.CrmCandidateCards.AsNoTracking()
+                    .AnyAsync(c => c.ResponseId == entity.Id && c.OfficeId == scopeOffice, ct);
+            }
+        }
+
+        if (!scope.CanAccessResponse(entity.OfficeId, entity.Worker?.OfficeId, sharedWithScope))
         {
             return Fail(ResponseStatuses.Error, "Нет доступа к отклику.");
         }
@@ -128,17 +144,21 @@ public sealed class ResponseDeliveryService(
             }
         }
 
-        // Bind response to primary office after any successful channel.
+        // Ownership: bind once to worker home office — never transfer to selected CRM targets.
         var anySuccess = channels.Any(x => x.Success);
-        if (anySuccess && primaryOfficeId is Guid bindOffice)
+        if (anySuccess && entity.OfficeId is null)
         {
-            entity.OfficeId = bindOffice;
-            if (entity.PersonId != Guid.Empty)
+            var homeOfficeId = entity.Worker?.OfficeId ?? primaryOfficeId;
+            if (homeOfficeId is Guid bindOffice)
             {
-                var person = await db.CandidatePersons.FirstOrDefaultAsync(x => x.Id == entity.PersonId, ct);
-                if (person is not null && person.OfficeId is null)
+                entity.OfficeId = bindOffice;
+                if (entity.PersonId != Guid.Empty)
                 {
-                    person.OfficeId = bindOffice;
+                    var person = await db.CandidatePersons.FirstOrDefaultAsync(x => x.Id == entity.PersonId, ct);
+                    if (person is not null && person.OfficeId is null)
+                    {
+                        person.OfficeId = bindOffice;
+                    }
                 }
             }
         }

@@ -91,6 +91,169 @@ public sealed class ResponseDeliveryServiceTests
     }
 
     [Fact]
+    public async Task Deliver_CrmOnly_DoesNotTransferResponseAlreadyBoundToOffice()
+    {
+        await using var provider = await CreateProviderAsync();
+        var db = provider.GetRequiredService<OrbitaDbContext>();
+        var officeA = Guid.NewGuid();
+        var officeB = Guid.NewGuid();
+        var workerId = Guid.NewGuid();
+        var responseId = Guid.NewGuid();
+        var personId = Guid.NewGuid();
+
+        foreach (var (id, name) in new[] { (officeA, "Office A"), (officeB, "Office B") })
+        {
+            db.Offices.Add(new OfficeEntity
+            {
+                Id = id,
+                Name = name,
+                RegistrationSecretHash = "h",
+                CreatedAtUtc = DateTime.UtcNow,
+                IsEnabled = true,
+                CrmEnabled = true
+            });
+        }
+
+        db.Workers.Add(new WorkerEntity
+        {
+            Id = workerId,
+            OfficeId = officeA,
+            DisplayName = "W",
+            ApiKeyHash = "h",
+            CreatedAtUtc = DateTime.UtcNow,
+            AutoDeliverToCrm = false,
+            AutoDeliverToBitrix = false
+        });
+        db.CandidatePersons.Add(new CandidatePersonEntity
+        {
+            Id = personId,
+            OfficeId = officeA,
+            FullName = "Иван Иванов",
+            FirstName = "Иван",
+            LastName = "Иванов",
+            MiddleName = "",
+            PhoneNormalized = "79001112233",
+            CreatedAtUtc = DateTime.UtcNow,
+            UpdatedAtUtc = DateTime.UtcNow
+        });
+        db.CandidateResponses.Add(new CandidateResponseEntity
+        {
+            Id = responseId,
+            PersonId = personId,
+            OfficeId = officeA,
+            WorkerId = workerId,
+            AccountId = Guid.NewGuid(),
+            AccountName = "acc",
+            Source = "Avito",
+            SourceResponseId = "src-no-transfer",
+            FullName = "Иван Иванов",
+            PhoneRaw = "+7 900 111-22-33",
+            PhoneNormalized = "79001112233",
+            Status = ResponseStatuses.ActionRequired,
+            CreatedAt = DateTime.UtcNow,
+            CollectedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var delivery = provider.GetRequiredService<ResponseDeliveryService>();
+        // Operator selects office B; ownership must stay on A (no transfer, no clone).
+        var result = await delivery.DeliverAsync(
+            responseId,
+            new DeliverResponseRequest(officeB, ToCrm: true, ToBitrix: false),
+            OfficeScope.GlobalAdmin);
+
+        Assert.True(result.Success, result.ErrorMessage);
+        Assert.Equal(1, await db.CandidateResponses.CountAsync());
+        Assert.Equal(officeA, (await db.CandidateResponses.SingleAsync(x => x.Id == responseId)).OfficeId);
+        Assert.Equal(officeA, (await db.CandidatePersons.SingleAsync(x => x.Id == personId)).OfficeId);
+        Assert.True(await db.ResponseCrmDeliveries.AnyAsync(x =>
+            x.ResponseId == responseId
+            && x.OfficeId == officeB
+            && x.Outcome == ResponseCrmDeliveryOutcomes.Sent));
+    }
+
+    [Fact]
+    public async Task Deliver_CrmOnly_BindsWorkerHomeOffice_NotSelectedCrmOffice()
+    {
+        await using var provider = await CreateProviderAsync();
+        var db = provider.GetRequiredService<OrbitaDbContext>();
+        var workerOffice = Guid.NewGuid();
+        var selectedCrmOffice = Guid.NewGuid();
+        var workerId = Guid.NewGuid();
+        var responseId = Guid.NewGuid();
+        var personId = Guid.NewGuid();
+
+        foreach (var (id, name) in new[] { (workerOffice, "Worker home"), (selectedCrmOffice, "CRM target") })
+        {
+            db.Offices.Add(new OfficeEntity
+            {
+                Id = id,
+                Name = name,
+                RegistrationSecretHash = "h",
+                CreatedAtUtc = DateTime.UtcNow,
+                IsEnabled = true,
+                CrmEnabled = true
+            });
+        }
+
+        db.Workers.Add(new WorkerEntity
+        {
+            Id = workerId,
+            OfficeId = workerOffice,
+            DisplayName = "W",
+            ApiKeyHash = "h",
+            CreatedAtUtc = DateTime.UtcNow,
+            AutoDeliverToCrm = false,
+            AutoDeliverToBitrix = false
+        });
+        db.CandidatePersons.Add(new CandidatePersonEntity
+        {
+            Id = personId,
+            OfficeId = null,
+            FullName = "Пётр Петров",
+            FirstName = "Пётр",
+            LastName = "Петров",
+            MiddleName = "",
+            PhoneNormalized = "79002223344",
+            CreatedAtUtc = DateTime.UtcNow,
+            UpdatedAtUtc = DateTime.UtcNow
+        });
+        db.CandidateResponses.Add(new CandidateResponseEntity
+        {
+            Id = responseId,
+            PersonId = personId,
+            OfficeId = null,
+            WorkerId = workerId,
+            AccountId = Guid.NewGuid(),
+            AccountName = "acc",
+            Source = "Avito",
+            SourceResponseId = "src-home-bind",
+            FullName = "Пётр Петров",
+            PhoneRaw = "+7 900 222-33-44",
+            PhoneNormalized = "79002223344",
+            Status = ResponseStatuses.ActionRequired,
+            CreatedAt = DateTime.UtcNow,
+            CollectedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var delivery = provider.GetRequiredService<ResponseDeliveryService>();
+        var result = await delivery.DeliverAsync(
+            responseId,
+            new DeliverResponseRequest(selectedCrmOffice, ToCrm: true, ToBitrix: false),
+            OfficeScope.GlobalAdmin);
+
+        Assert.True(result.Success, result.ErrorMessage);
+        var stored = await db.CandidateResponses
+            .Include(x => x.Worker)
+            .SingleAsync(x => x.Id == responseId);
+        Assert.Equal(workerOffice, stored.OfficeId);
+        Assert.Equal(workerOffice, (await db.CandidatePersons.SingleAsync(x => x.Id == personId)).OfficeId);
+        Assert.True(await db.ResponseCrmDeliveries.AnyAsync(x =>
+            x.ResponseId == responseId && x.OfficeId == selectedCrmOffice));
+    }
+
+    [Fact]
     public async Task ApplyAutoDelivery_NoFlags_ActionRequired()
     {
         await using var provider = await CreateProviderAsync();

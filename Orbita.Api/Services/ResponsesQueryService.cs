@@ -164,8 +164,28 @@ public sealed class ResponsesQueryService(
             .Include(x => x.BitrixInstance)
             .Include(x => x.DuplicateBitrixInstance)
             .FirstOrDefaultAsync(x => x.Id == id, ct);
-        if (entity is null
-            || !scope.CanAccessResponse(entity.OfficeId, entity.Worker?.OfficeId))
+        if (entity is null)
+        {
+            return null;
+        }
+
+        var sharedWithScope = false;
+        if (!scope.IsGlobalAdmin && scope.OfficeId is Guid scopeOfficeId)
+        {
+            sharedWithScope = await db.ResponseCrmDeliveries.AsNoTracking()
+                .AnyAsync(
+                    d => d.ResponseId == entity.Id
+                         && d.OfficeId == scopeOfficeId
+                         && d.Outcome == ResponseCrmDeliveryOutcomes.Sent,
+                    ct);
+            if (!sharedWithScope)
+            {
+                sharedWithScope = await db.CrmCandidateCards.AsNoTracking()
+                    .AnyAsync(c => c.ResponseId == entity.Id && c.OfficeId == scopeOfficeId, ct);
+            }
+        }
+
+        if (!scope.CanAccessResponse(entity.OfficeId, entity.Worker?.OfficeId, sharedWithScope))
         {
             return null;
         }
@@ -649,16 +669,21 @@ public sealed class ResponsesQueryService(
             return officeFilter is Guid officeId
                 ? query.Where(x =>
                     x.OfficeId == officeId
-                    || (x.OfficeId == null && x.Worker != null && x.Worker.OfficeId == officeId))
+                    || (x.OfficeId == null && x.Worker != null && x.Worker.OfficeId == officeId)
+                    || x.CrmDeliveries.Any(d =>
+                        d.OfficeId == officeId && d.Outcome == ResponseCrmDeliveryOutcomes.Sent))
                 : query;
         }
 
         if (scope.OfficeId is Guid scopedOfficeId)
         {
-            // Office users: bound CRM office + collection-pool rows from their workers.
+            // Ownership office, collection-pool from home workers, or shared via CRM delivery
+            // (same response — no clone/transfer when another office is selected for CRM).
             return query.Where(x =>
                 x.OfficeId == scopedOfficeId
-                || (x.OfficeId == null && x.Worker != null && x.Worker.OfficeId == scopedOfficeId));
+                || (x.OfficeId == null && x.Worker != null && x.Worker.OfficeId == scopedOfficeId)
+                || x.CrmDeliveries.Any(d =>
+                    d.OfficeId == scopedOfficeId && d.Outcome == ResponseCrmDeliveryOutcomes.Sent));
         }
 
         return query.Where(_ => false);

@@ -276,7 +276,6 @@ public sealed class CandidateIngestionService(
         CancellationToken ct)
     {
         var tracked = await db.CandidateResponses
-            .Include(x => x.BitrixDeliveries)
             .FirstAsync(x => x.Id == existing.Id, ct);
 
         var changed = false;
@@ -310,10 +309,35 @@ public sealed class CandidateIngestionService(
         }
 
         var phoneChanged = !string.Equals(tracked.PhoneNormalized, phoneNormalized, StringComparison.Ordinal);
-        if (phoneChanged && CanUpdateResponsePhone(tracked))
+        if (phoneChanged)
         {
+            // Temporary Avito numbers can change after CRM/Bitrix send — keep the same response
+            // and append person/response phone history (do not re-run auto delivery).
+            var previousRaw = tracked.PhoneRaw;
+            var previousNormalized = tracked.PhoneNormalized;
             tracked.PhoneRaw = candidate.PhoneRaw;
             tracked.PhoneNormalized = phoneNormalized;
+
+            var metricKind = ResponsePhoneMetricKinds.Normalize(candidate.PhoneMetricKind);
+            if (metricKind == ResponsePhoneMetricKinds.PhoneChanged
+                || !string.IsNullOrWhiteSpace(candidate.PreviousPhoneNormalized)
+                || !string.IsNullOrWhiteSpace(candidate.PreviousPhoneRaw))
+            {
+                tracked.PhoneMetricKind = ResponsePhoneMetricKinds.PhoneChanged;
+                tracked.PreviousPhoneRaw = candidate.PreviousPhoneRaw?.Trim()
+                    ?? previousRaw;
+                tracked.PreviousPhoneNormalized = candidate.PreviousPhoneNormalized?.Trim()
+                    ?? previousNormalized;
+                tracked.PhoneChangedAtUtc = candidate.PhoneChangedAtUtc ?? DateTime.UtcNow;
+            }
+            else
+            {
+                tracked.PhoneMetricKind = ResponsePhoneMetricKinds.PhoneChanged;
+                tracked.PreviousPhoneRaw = previousRaw;
+                tracked.PreviousPhoneNormalized = previousNormalized;
+                tracked.PhoneChangedAtUtc = DateTime.UtcNow;
+            }
+
             changed = true;
 
             var person = await db.CandidatePersons.FirstAsync(x => x.Id == tracked.PersonId, ct);
@@ -339,17 +363,6 @@ public sealed class CandidateIngestionService(
             candidate.SourceResponseId,
             tracked.Status,
             tracked.ErrorMessage);
-    }
-
-    private static bool CanUpdateResponsePhone(CandidateResponseEntity response)
-    {
-        if (string.Equals(response.Status, ResponseStatuses.Sent, StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        return !response.BitrixDeliveries.Any(x =>
-            string.Equals(x.Outcome, ResponseBitrixDeliveryOutcomes.Sent, StringComparison.Ordinal));
     }
 
     public async Task<ResendBitrixResultDto> ResendToBitrixAsync(
