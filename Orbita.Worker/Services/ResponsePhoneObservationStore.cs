@@ -6,7 +6,7 @@ namespace Orbita.Worker.Services;
 
 /// <summary>
 /// SQLite-хранилище наблюдений номера по (subprofile, FIO).
-/// AccountId и SourceResponseId намеренно не используются — динамические.
+/// AccountId и SourceResponseId Avito намеренно не используются — динамические.
 /// </summary>
 public sealed class ResponsePhoneObservationStore : IResponsePhoneObservationStore, IDisposable
 {
@@ -39,7 +39,6 @@ public sealed class ResponsePhoneObservationStore : IResponsePhoneObservationSto
 
     private static async Task EnsureSchemaAsync(SqliteConnection connection, CancellationToken cancellationToken)
     {
-        // Новая схема: PK (AvitoSubProfileId, FullNameKey) — без AccountId.
         await using (var create = connection.CreateCommand())
         {
             create.CommandText =
@@ -54,6 +53,8 @@ public sealed class ResponsePhoneObservationStore : IResponsePhoneObservationSto
                     ClosedAfterStableSend INTEGER NOT NULL DEFAULT 0,
                     LastPublishedPhoneNormalized TEXT NOT NULL DEFAULT '',
                     LastPublishedMetricKind TEXT NOT NULL DEFAULT '',
+                    PublishedSourceResponseId TEXT NOT NULL DEFAULT '',
+                    WatchStartedUtc TEXT NULL,
                     PRIMARY KEY (AvitoSubProfileId, FullNameKey)
                 );
                 CREATE INDEX IF NOT EXISTS IX_PhoneObservations_LastSeenUtc ON PhoneObservations (LastSeenUtc);
@@ -62,55 +63,70 @@ public sealed class ResponsePhoneObservationStore : IResponsePhoneObservationSto
         }
 
         // Миграция со старой схемы, где был AccountId в PK.
-        var hasAccountIdColumn = false;
+        var columns = new HashSet<string>(StringComparer.Ordinal);
         await using (var pragma = connection.CreateCommand())
         {
             pragma.CommandText = "PRAGMA table_info(PhoneObservations)";
             await using var reader = await pragma.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
-                if (string.Equals(reader.GetString(1), "AccountId", StringComparison.Ordinal))
-                {
-                    hasAccountIdColumn = true;
-                    break;
-                }
+                columns.Add(reader.GetString(1));
             }
         }
 
-        if (!hasAccountIdColumn)
+        if (columns.Contains("AccountId"))
         {
+            await using var migrate = connection.CreateCommand();
+            migrate.CommandText =
+                """
+                CREATE TABLE IF NOT EXISTS PhoneObservations_v2 (
+                    AvitoSubProfileId TEXT NOT NULL DEFAULT '',
+                    FullNameKey TEXT NOT NULL,
+                    PhoneRaw TEXT NOT NULL DEFAULT '',
+                    PhoneNormalized TEXT NOT NULL DEFAULT '',
+                    PhoneFirstSeenUtc TEXT NOT NULL,
+                    LastSeenUtc TEXT NOT NULL,
+                    ClosedAfterStableSend INTEGER NOT NULL DEFAULT 0,
+                    LastPublishedPhoneNormalized TEXT NOT NULL DEFAULT '',
+                    LastPublishedMetricKind TEXT NOT NULL DEFAULT '',
+                    PublishedSourceResponseId TEXT NOT NULL DEFAULT '',
+                    WatchStartedUtc TEXT NULL,
+                    PRIMARY KEY (AvitoSubProfileId, FullNameKey)
+                );
+                INSERT OR IGNORE INTO PhoneObservations_v2 (
+                    AvitoSubProfileId, FullNameKey, PhoneRaw, PhoneNormalized,
+                    PhoneFirstSeenUtc, LastSeenUtc, ClosedAfterStableSend,
+                    LastPublishedPhoneNormalized, LastPublishedMetricKind,
+                    PublishedSourceResponseId, WatchStartedUtc)
+                SELECT
+                    AvitoSubProfileId, FullNameKey, PhoneRaw, PhoneNormalized,
+                    PhoneFirstSeenUtc, LastSeenUtc, ClosedAfterStableSend,
+                    LastPublishedPhoneNormalized, LastPublishedMetricKind,
+                    '', NULL
+                FROM PhoneObservations;
+                DROP TABLE PhoneObservations;
+                ALTER TABLE PhoneObservations_v2 RENAME TO PhoneObservations;
+                CREATE INDEX IF NOT EXISTS IX_PhoneObservations_LastSeenUtc ON PhoneObservations (LastSeenUtc);
+                """;
+            await migrate.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             return;
         }
 
-        await using var migrate = connection.CreateCommand();
-        migrate.CommandText =
-            """
-            CREATE TABLE IF NOT EXISTS PhoneObservations_v2 (
-                AvitoSubProfileId TEXT NOT NULL DEFAULT '',
-                FullNameKey TEXT NOT NULL,
-                PhoneRaw TEXT NOT NULL DEFAULT '',
-                PhoneNormalized TEXT NOT NULL DEFAULT '',
-                PhoneFirstSeenUtc TEXT NOT NULL,
-                LastSeenUtc TEXT NOT NULL,
-                ClosedAfterStableSend INTEGER NOT NULL DEFAULT 0,
-                LastPublishedPhoneNormalized TEXT NOT NULL DEFAULT '',
-                LastPublishedMetricKind TEXT NOT NULL DEFAULT '',
-                PRIMARY KEY (AvitoSubProfileId, FullNameKey)
-            );
-            INSERT OR IGNORE INTO PhoneObservations_v2 (
-                AvitoSubProfileId, FullNameKey, PhoneRaw, PhoneNormalized,
-                PhoneFirstSeenUtc, LastSeenUtc, ClosedAfterStableSend,
-                LastPublishedPhoneNormalized, LastPublishedMetricKind)
-            SELECT
-                AvitoSubProfileId, FullNameKey, PhoneRaw, PhoneNormalized,
-                PhoneFirstSeenUtc, LastSeenUtc, ClosedAfterStableSend,
-                LastPublishedPhoneNormalized, LastPublishedMetricKind
-            FROM PhoneObservations;
-            DROP TABLE PhoneObservations;
-            ALTER TABLE PhoneObservations_v2 RENAME TO PhoneObservations;
-            CREATE INDEX IF NOT EXISTS IX_PhoneObservations_LastSeenUtc ON PhoneObservations (LastSeenUtc);
-            """;
-        await migrate.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        if (!columns.Contains("PublishedSourceResponseId"))
+        {
+            await using var addPub = connection.CreateCommand();
+            addPub.CommandText =
+                "ALTER TABLE PhoneObservations ADD COLUMN PublishedSourceResponseId TEXT NOT NULL DEFAULT '';";
+            await addPub.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        if (!columns.Contains("WatchStartedUtc"))
+        {
+            await using var addWatch = connection.CreateCommand();
+            addWatch.CommandText =
+                "ALTER TABLE PhoneObservations ADD COLUMN WatchStartedUtc TEXT NULL;";
+            await addWatch.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
     }
 
     public async Task<ResponsePhoneObservation?> GetAsync(
@@ -131,7 +147,8 @@ public sealed class ResponsePhoneObservationStore : IResponsePhoneObservationSto
             """
             SELECT AvitoSubProfileId, FullNameKey, PhoneRaw, PhoneNormalized,
                    PhoneFirstSeenUtc, LastSeenUtc, ClosedAfterStableSend,
-                   LastPublishedPhoneNormalized, LastPublishedMetricKind
+                   LastPublishedPhoneNormalized, LastPublishedMetricKind,
+                   PublishedSourceResponseId, WatchStartedUtc
             FROM PhoneObservations
             WHERE AvitoSubProfileId = $sub
               AND FullNameKey = $name
@@ -144,6 +161,19 @@ public sealed class ResponsePhoneObservationStore : IResponsePhoneObservationSto
         if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             return null;
+        }
+
+        DateTime? watchStarted = null;
+        if (!reader.IsDBNull(10))
+        {
+            var rawWatch = reader.GetString(10);
+            if (!string.IsNullOrWhiteSpace(rawWatch))
+            {
+                watchStarted = DateTime.Parse(
+                    rawWatch,
+                    null,
+                    System.Globalization.DateTimeStyles.RoundtripKind).ToUniversalTime();
+            }
         }
 
         return new ResponsePhoneObservation
@@ -162,7 +192,9 @@ public sealed class ResponsePhoneObservationStore : IResponsePhoneObservationSto
                 System.Globalization.DateTimeStyles.RoundtripKind).ToUniversalTime(),
             ClosedAfterStableSend = reader.GetInt64(6) != 0,
             LastPublishedPhoneNormalized = reader.GetString(7),
-            LastPublishedMetricKind = reader.GetString(8)
+            LastPublishedMetricKind = reader.GetString(8),
+            PublishedSourceResponseId = reader.IsDBNull(9) ? string.Empty : reader.GetString(9),
+            WatchStartedUtc = watchStarted
         };
     }
 
@@ -184,11 +216,13 @@ public sealed class ResponsePhoneObservationStore : IResponsePhoneObservationSto
             INSERT INTO PhoneObservations (
                 AvitoSubProfileId, FullNameKey, PhoneRaw, PhoneNormalized,
                 PhoneFirstSeenUtc, LastSeenUtc, ClosedAfterStableSend,
-                LastPublishedPhoneNormalized, LastPublishedMetricKind)
+                LastPublishedPhoneNormalized, LastPublishedMetricKind,
+                PublishedSourceResponseId, WatchStartedUtc)
             VALUES (
                 $sub, $name, $phoneRaw, $phoneNorm,
                 $firstSeen, $lastSeen, $closed,
-                $lastPubPhone, $lastPubKind)
+                $lastPubPhone, $lastPubKind,
+                $pubSourceId, $watchStarted)
             ON CONFLICT(AvitoSubProfileId, FullNameKey)
             DO UPDATE SET
                 PhoneRaw = excluded.PhoneRaw,
@@ -197,7 +231,9 @@ public sealed class ResponsePhoneObservationStore : IResponsePhoneObservationSto
                 LastSeenUtc = excluded.LastSeenUtc,
                 ClosedAfterStableSend = excluded.ClosedAfterStableSend,
                 LastPublishedPhoneNormalized = excluded.LastPublishedPhoneNormalized,
-                LastPublishedMetricKind = excluded.LastPublishedMetricKind;
+                LastPublishedMetricKind = excluded.LastPublishedMetricKind,
+                PublishedSourceResponseId = excluded.PublishedSourceResponseId,
+                WatchStartedUtc = excluded.WatchStartedUtc;
             """;
         command.Parameters.AddWithValue("$sub", observation.AvitoSubProfileId?.Trim() ?? string.Empty);
         command.Parameters.AddWithValue("$name", observation.FullNameKey.Trim());
@@ -216,6 +252,14 @@ public sealed class ResponsePhoneObservationStore : IResponsePhoneObservationSto
         command.Parameters.AddWithValue(
             "$lastPubKind",
             observation.LastPublishedMetricKind ?? string.Empty);
+        command.Parameters.AddWithValue(
+            "$pubSourceId",
+            observation.PublishedSourceResponseId ?? string.Empty);
+        command.Parameters.AddWithValue(
+            "$watchStarted",
+            observation.WatchStartedUtc is DateTime ws
+                ? ws.ToUniversalTime().ToString("O")
+                : (object)DBNull.Value);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 

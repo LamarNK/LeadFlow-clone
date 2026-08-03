@@ -57,16 +57,20 @@ public static class ResponsePhoneMetricKinds
     }
 }
 
-/// <summary>Правила порога «номер не менялся N часов» в настройках воркера.</summary>
+/// <summary>
+/// Правила окна наблюдения за номером после первой отправки в Орбиту (настройка воркера).
+/// Поле Worker.PhoneUnchangedHours хранит часы окна (историческое имя колонки).
+/// </summary>
 public static class ResponsePhoneWatchRules
 {
-    public const int DefaultUnchangedHours = 24;
+    /// <summary>Default: 5 суток наблюдения после первой отправки.</summary>
+    public const int DefaultUnchangedHours = 120;
     public const int MinUnchangedHours = 1;
     public const int MaxUnchangedHours = 720;
 
     /// <summary>
     /// null — настройка не задана (берём default при применении).
-    /// 0 — отключить отправку метрики «не менялся» (смену номера всё равно отслеживаем).
+    /// 0 — не наблюдать после первой отправки (сразу закрыть окно).
     /// </summary>
     public static int? ClampUnchangedHours(int? hours)
     {

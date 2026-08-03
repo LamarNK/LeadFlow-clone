@@ -342,7 +342,7 @@
 
                         <span class="worker-settings-subsection-title">Временные номера Avito</span>
                         <label class="worker-settings-field" for="phoneUnchangedHours">
-                            <span class="worker-settings-label">Часов без смены номера</span>
+                            <span class="worker-settings-label">Окно наблюдения (часов) после первой отправки</span>
                             <input type="number"
                                    id="phoneUnchangedHours"
                                    name="phoneUnchangedHours"
@@ -350,13 +350,13 @@
                                    min="0"
                                    max="720"
                                    step="1"
-                                   value="@(Model.PhoneUnchangedHours?.ToString() ?? "24")"
-                                   placeholder="24"
+                                   value="@(Model.PhoneUnchangedHours?.ToString() ?? "120")"
+                                   placeholder="120"
                                    inputmode="numeric" />
                             <span class="worker-settings-hint">
-                                Первый проход только запоминает номер (в Орбиту не шлём). В отклики попадает только если номер сменился
-                                или не менялся дольше этого срока («номер не менялся N ч» — дальше игнор).
-                                Ключ: субпрофиль + ФИО (не ID отклика/аккаунта). 0 — не слать метку стабильности (смену всё равно трекаем). По умолчанию 24.
+                                При первом появлении номера отклик сразу уходит в Орбиту. Дальше N часов следим за сменой номера
+                                и дописываем историю в тот же отклик; после окна наблюдение закрывается.
+                                Ключ: субпрофиль + ФИО (не ID отклика/аккаунта). 0 — не наблюдать после первой отправки. По умолчанию 120 (5 суток).
                             </span>
                         </label>
                     </div>

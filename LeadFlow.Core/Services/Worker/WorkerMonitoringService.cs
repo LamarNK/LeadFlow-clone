@@ -728,12 +728,12 @@ public sealed class WorkerMonitoringService(
         var publishedTotal = 0;
         var subProfilesProcessed = 0;
         var seenKeys = new HashSet<string>(StringComparer.Ordinal);
-        // Порог часов «номер не менялся» — из конфига воркера (Orbita), default 24.
-        var phoneUnchangedHours = ResponsePhoneWatchRules.DefaultUnchangedHours;
+        // Окно наблюдения (часов) после первой отправки — из конфига воркера, default 120 (5 суток).
+        var phoneWatchHours = ResponsePhoneWatchRules.DefaultUnchangedHours;
         try
         {
             var liveConfig = await configProvider.GetConfigAsync(cancellationToken).ConfigureAwait(false);
-            phoneUnchangedHours = liveConfig.PhoneUnchangedHours;
+            phoneWatchHours = liveConfig.PhoneUnchangedHours;
         }
         catch
         {
@@ -777,6 +777,8 @@ public sealed class WorkerMonitoringService(
                 return CandidateBatchPublishResult.Empty;
             }
 
+            // Уже известные в Орбите кандидаты (FIO/телефон) — не слать повторно как новый отклик.
+            // Смену номера по phone-watch пропускаем отдельно (см. ниже).
             var profiles = readyCandidates
                 .Select(response => new CandidateLookupProfileDto(
                     response.FullName,
@@ -801,12 +803,6 @@ public sealed class WorkerMonitoringService(
                 if (cancellationToken.IsCancellationRequested)
                 {
                     break;
-                }
-
-                if (matchedProfiles.Contains(i))
-                {
-                    skippedPersonDuplicates++;
-                    continue;
                 }
 
                 var candidate = readyCandidates[i];
@@ -880,29 +876,52 @@ public sealed class WorkerMonitoringService(
                     continue;
                 }
 
-                // Идентичность только субпрофиль + ФИО (AccountId/SourceResponseId динамические — не используем).
                 var existingObs = await _phoneObservationStore
                     .GetAsync(candidate.AvitoSubProfileId, fullNameKey, cancellationToken)
                     .ConfigureAwait(false);
+                var alreadyInOrbit = matchedProfiles.Contains(i);
+                var watchingOpen = existingObs is not null
+                    && !existingObs.ClosedAfterStableSend
+                    && !string.IsNullOrWhiteSpace(existingObs.PublishedSourceResponseId);
+
+                // Уже в Орбите и мы сами его не ведём в phone-watch — тихо игнор (без дублей в ленте).
+                if (alreadyInOrbit && !watchingOpen)
+                {
+                    skippedPersonDuplicates++;
+                    continue;
+                }
+
                 var decision = ResponsePhoneWatchEvaluator.Evaluate(
                     existingObs,
                     candidate.AvitoSubProfileId,
                     fullNameKey,
                     candidate.PhoneRaw,
                     phoneNormalized,
-                    phoneUnchangedHours,
+                    phoneWatchHours,
                     utcNow);
 
-                await _phoneObservationStore
-                    .UpsertAsync(decision.NextObservation, cancellationToken)
-                    .ConfigureAwait(false);
-
-                // Skip: первый проход (запомнили) / ждём N ч / уже закрыт после «не менялся».
+                // Skip: тот же номер в окне / окно закрыто / нет данных.
                 if (decision.Action == ResponsePhoneWatchAction.Skip)
+                {
+                    await _phoneObservationStore
+                        .UpsertAsync(decision.NextObservation, cancellationToken)
+                        .ConfigureAwait(false);
+                    skippedPersonDuplicates++;
+                    continue;
+                }
+
+                // Первая отправка: если кандидат уже в Орбите — не плодим duplicate-строки.
+                // Не пишем observation как published (иначе «фантомная» публикация).
+                if (decision.Action == ResponsePhoneWatchAction.PublishInitial && alreadyInOrbit)
                 {
                     skippedPersonDuplicates++;
                     continue;
                 }
+
+                // PublishInitial (новый) или PublishPhoneChanged (тот же phone-watch id) — в Орбиту.
+                await _phoneObservationStore
+                    .UpsertAsync(decision.NextObservation, cancellationToken)
+                    .ConfigureAwait(false);
 
                 ApplyPhoneWatchDecision(candidate, decision, phoneNormalized);
                 await PublishCandidateAsync(candidate, cancellationToken).ConfigureAwait(false);
@@ -1361,8 +1380,8 @@ public sealed class WorkerMonitoringService(
     }
 
     /// <summary>
-    /// Проставляет метрики номера и синтетический SourceResponseId для событий смены/стабильности
-    /// (Avito ID динамический — не используем его как ключ идентичности).
+    /// Проставляет метрики номера и стабильный SourceResponseId (один отклик на sub+FIO).
+    /// Avito ID динамический — не используем его как ключ идентичности.
     /// </summary>
     private static void ApplyPhoneWatchDecision(
         CandidateResponse candidate,
@@ -1370,6 +1389,16 @@ public sealed class WorkerMonitoringService(
         string phoneNormalized)
     {
         candidate.PhoneNormalized = phoneNormalized;
+        var sourceId = decision.NextObservation.PublishedSourceResponseId;
+        if (string.IsNullOrWhiteSpace(sourceId))
+        {
+            sourceId = ResponsePhoneWatchEvaluator.BuildPublishedSourceResponseId(
+                candidate.AvitoSubProfileId,
+                ResponsePhoneWatchEvaluator.BuildFullNameKey(candidate.FullName));
+        }
+
+        candidate.SourceResponseId = sourceId;
+
         switch (decision.Action)
         {
             case ResponsePhoneWatchAction.PublishPhoneChanged:
@@ -1378,26 +1407,14 @@ public sealed class WorkerMonitoringService(
                 candidate.PreviousPhoneNormalized = decision.PreviousPhoneNormalized;
                 candidate.PhoneChangedAtUtc = decision.PhoneChangedAtUtc ?? DateTime.UtcNow;
                 candidate.PhoneUnchangedHours = null;
-                candidate.SourceResponseId = BuildPhoneMetricSourceId(
-                    "phone-chg",
-                    candidate.AvitoSubProfileId,
-                    candidate.FullName,
-                    decision.PreviousPhoneNormalized,
-                    phoneNormalized);
                 break;
 
-            case ResponsePhoneWatchAction.PublishPhoneUnchanged:
-                candidate.PhoneMetricKind = ResponsePhoneMetricKinds.PhoneUnchanged;
+            case ResponsePhoneWatchAction.PublishInitial:
+                candidate.PhoneMetricKind = ResponsePhoneMetricKinds.None;
                 candidate.PreviousPhoneRaw = null;
                 candidate.PreviousPhoneNormalized = null;
+                candidate.PhoneUnchangedHours = null;
                 candidate.PhoneChangedAtUtc = null;
-                candidate.PhoneUnchangedHours = decision.UnchangedHours;
-                candidate.SourceResponseId = BuildPhoneMetricSourceId(
-                    "phone-stable",
-                    candidate.AvitoSubProfileId,
-                    candidate.FullName,
-                    phoneNormalized,
-                    null);
                 break;
 
             default:
@@ -1408,29 +1425,6 @@ public sealed class WorkerMonitoringService(
                 candidate.PhoneChangedAtUtc = null;
                 break;
         }
-    }
-
-    private static string BuildPhoneMetricSourceId(
-        string prefix,
-        string? subProfileId,
-        string fullName,
-        string? phoneA,
-        string? phoneB)
-    {
-        var nameKey = ResponsePhoneWatchEvaluator.BuildFullNameKey(fullName);
-        var sub = (subProfileId ?? string.Empty).Trim();
-        var a = (phoneA ?? string.Empty).Trim();
-        var b = (phoneB ?? string.Empty).Trim();
-        var payload = string.Join('\u001f', sub, nameKey, a, b);
-        // Короткий стабильный id без SourceResponseId Avito.
-        uint hash = 2166136261;
-        foreach (var ch in payload)
-        {
-            hash ^= ch;
-            hash *= 16777619;
-        }
-
-        return $"{prefix}:{hash:x8}";
     }
 
     private static bool IsAdsPowerAccount(AvitoAccount account) =>

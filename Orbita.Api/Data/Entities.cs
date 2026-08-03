@@ -119,8 +119,8 @@ public sealed class WorkerEntity
     public string? MessengerAutoReplyMessage { get; set; }
 
     /// <summary>
-    /// Через сколько часов без смены номера слать метрику «не менялся».
-    /// null — default 24; 0 — не слать стабильность (смену номера всё равно трекаем).
+    /// Окно наблюдения (часов) после первой отправки номера в Орбиту.
+    /// null — default 120 (5 суток); 0 — не наблюдать после первой отправки.
     /// </summary>
     public int? PhoneUnchangedHours { get; set; }
 

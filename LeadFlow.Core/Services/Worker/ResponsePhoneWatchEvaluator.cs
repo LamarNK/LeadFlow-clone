@@ -4,13 +4,13 @@ namespace LeadFlow.Core.Services.Worker;
 
 public enum ResponsePhoneWatchAction
 {
-    /// <summary>Номер сменился — отправить с метрикой PhoneChanged.</summary>
+    /// <summary>Первое появление номера — сразу отправить в Орбиту и открыть окно наблюдения.</summary>
+    PublishInitial,
+
+    /// <summary>Номер сменился в окне наблюдения — обновить тот же отклик (метрика PhoneChanged).</summary>
     PublishPhoneChanged,
 
-    /// <summary>Номер стабилен ≥ порога — отправить с метрикой PhoneUnchanged и закрыть.</summary>
-    PublishPhoneUnchanged,
-
-    /// <summary>Пропуск: первый проход (только запомнить) / ждём N ч / уже закрыт.</summary>
+    /// <summary>Пропуск: тот же номер / ждём / окно закрыто / нет данных.</summary>
     Skip
 }
 
@@ -23,15 +23,31 @@ public readonly record struct ResponsePhoneWatchDecision(
     ResponsePhoneObservation NextObservation);
 
 /// <summary>
-/// Решение по отправке отклика на основе сравнения номера между проходами.
-/// Идентичность: только субпрофиль + ФИО (AccountId / SourceResponseId — динамические, не используем).
-/// В Орбиту уходит ТОЛЬКО при смене номера или когда номер не менялся ≥ N часов.
-/// Первый проход — только запомнить, без отправки.
+/// Решение по отправке/обновлению отклика на основе номера между проходами.
+/// Идентичность: субпрофиль + ФИО.
+/// При первом появлении номера — сразу в Орбиту; N часов (default 5 суток) следим за сменой
+/// и дописываем историю в тот же отклик; затем наблюдение закрывается.
 /// </summary>
 public static class ResponsePhoneWatchEvaluator
 {
     public static string BuildFullNameKey(string? fullName) =>
         CandidateNameNormalizer.Normalize(fullName).FullName;
+
+    /// <summary>Стабильный SourceResponseId без номера: один отклик на ключ наблюдения.</summary>
+    public static string BuildPublishedSourceResponseId(string? avitoSubProfileId, string? fullNameKey)
+    {
+        var sub = (avitoSubProfileId ?? string.Empty).Trim();
+        var nameKey = (fullNameKey ?? string.Empty).Trim();
+        var payload = string.Join('\u001f', sub, nameKey);
+        uint hash = 2166136261;
+        foreach (var ch in payload)
+        {
+            hash ^= ch;
+            hash *= 16777619;
+        }
+
+        return $"phone-watch:{hash:x8}";
+    }
 
     public static ResponsePhoneWatchDecision Evaluate(
         ResponsePhoneObservation? existing,
@@ -39,7 +55,7 @@ public static class ResponsePhoneWatchEvaluator
         string fullNameKey,
         string phoneRaw,
         string phoneNormalized,
-        int phoneUnchangedHours,
+        int phoneWatchHours,
         DateTime utcNow)
     {
         var sub = (avitoSubProfileId ?? string.Empty).Trim();
@@ -55,19 +71,48 @@ public static class ResponsePhoneWatchEvaluator
                 null,
                 null,
                 null,
-                BuildFresh(sub, nameKey, raw, phone, utcNow));
+                BuildFresh(sub, nameKey, raw, phone, utcNow, published: false));
         }
 
-        // Первый проход: только запомнить номер и отклик, в Орбиту НЕ шлём.
+        // Первый проход: сразу в Орбиту, открываем окно наблюдения.
         if (existing is null)
         {
+            var fresh = BuildFresh(sub, nameKey, raw, phone, utcNow, published: true);
+            if (phoneWatchHours <= 0)
+            {
+                fresh.ClosedAfterStableSend = true;
+            }
+
             return new ResponsePhoneWatchDecision(
-                ResponsePhoneWatchAction.Skip,
+                ResponsePhoneWatchAction.PublishInitial,
                 null,
                 null,
                 null,
                 null,
-                BuildFresh(sub, nameKey, raw, phone, utcNow));
+                fresh);
+        }
+
+        // Старые наблюдения без PublishedSourceResponseId — один раз «допубликуем» как initial.
+        if (string.IsNullOrWhiteSpace(existing.PublishedSourceResponseId)
+            && !existing.ClosedAfterStableSend)
+        {
+            var migrate = Clone(existing);
+            migrate.PhoneRaw = string.IsNullOrWhiteSpace(raw) ? migrate.PhoneRaw : raw;
+            migrate.PhoneNormalized = phone;
+            migrate.LastSeenUtc = utcNow;
+            migrate.PhoneFirstSeenUtc = utcNow;
+            migrate.WatchStartedUtc = utcNow;
+            migrate.PublishedSourceResponseId = BuildPublishedSourceResponseId(sub, nameKey);
+            migrate.LastPublishedPhoneNormalized = phone;
+            migrate.LastPublishedMetricKind = ResponsePhoneMetricKinds.None;
+            migrate.ClosedAfterStableSend = phoneWatchHours <= 0;
+            return new ResponsePhoneWatchDecision(
+                ResponsePhoneWatchAction.PublishInitial,
+                null,
+                null,
+                null,
+                null,
+                migrate);
         }
 
         if (existing.ClosedAfterStableSend)
@@ -83,29 +128,6 @@ public static class ResponsePhoneWatchEvaluator
                 closed);
         }
 
-        var samePhone = string.Equals(existing.PhoneNormalized, phone, StringComparison.Ordinal);
-        if (!samePhone)
-        {
-            var prevRaw = existing.PhoneRaw;
-            var prevNorm = existing.PhoneNormalized;
-            var changed = Clone(existing);
-            changed.PhoneRaw = raw;
-            changed.PhoneNormalized = phone;
-            changed.PhoneFirstSeenUtc = utcNow;
-            changed.LastSeenUtc = utcNow;
-            changed.LastPublishedPhoneNormalized = phone;
-            changed.LastPublishedMetricKind = ResponsePhoneMetricKinds.PhoneChanged;
-            changed.ClosedAfterStableSend = false;
-            return new ResponsePhoneWatchDecision(
-                ResponsePhoneWatchAction.PublishPhoneChanged,
-                prevRaw,
-                prevNorm,
-                null,
-                utcNow,
-                changed);
-        }
-
-        // Тот же номер — ждём порог N часов, потом одна отправка «не менялся».
         var watching = Clone(existing);
         watching.LastSeenUtc = utcNow;
         if (string.IsNullOrWhiteSpace(watching.PhoneRaw) && !string.IsNullOrWhiteSpace(raw))
@@ -113,24 +135,8 @@ public static class ResponsePhoneWatchEvaluator
             watching.PhoneRaw = raw;
         }
 
-        var thresholdHours = phoneUnchangedHours;
-        if (thresholdHours <= 0)
-        {
-            // Стабильность выключена — только смена номера.
-            return new ResponsePhoneWatchDecision(
-                ResponsePhoneWatchAction.Skip,
-                null,
-                null,
-                null,
-                null,
-                watching);
-        }
-
-        if (string.Equals(
-                existing.LastPublishedMetricKind,
-                ResponsePhoneMetricKinds.PhoneUnchanged,
-                StringComparison.Ordinal)
-            && string.Equals(existing.LastPublishedPhoneNormalized, phone, StringComparison.Ordinal))
+        var watchStarted = existing.WatchStartedUtc ?? existing.PhoneFirstSeenUtc;
+        if (phoneWatchHours > 0 && utcNow - watchStarted >= TimeSpan.FromHours(phoneWatchHours))
         {
             watching.ClosedAfterStableSend = true;
             return new ResponsePhoneWatchDecision(
@@ -142,9 +148,16 @@ public static class ResponsePhoneWatchEvaluator
                 watching);
         }
 
-        var held = utcNow - existing.PhoneFirstSeenUtc;
-        if (held < TimeSpan.FromHours(thresholdHours))
+        var samePhone = string.Equals(existing.PhoneNormalized, phone, StringComparison.Ordinal)
+            || string.Equals(existing.LastPublishedPhoneNormalized, phone, StringComparison.Ordinal);
+        if (samePhone)
         {
+            watching.PhoneNormalized = phone;
+            if (!string.IsNullOrWhiteSpace(raw))
+            {
+                watching.PhoneRaw = raw;
+            }
+
             return new ResponsePhoneWatchDecision(
                 ResponsePhoneWatchAction.Skip,
                 null,
@@ -154,21 +167,32 @@ public static class ResponsePhoneWatchEvaluator
                 watching);
         }
 
-        var unchangedHours = (int)Math.Floor(held.TotalHours);
-        if (unchangedHours < thresholdHours)
+        // Номер сменился в окне — публикуем обновление того же отклика.
+        var prevRaw = existing.PhoneRaw;
+        var prevNorm = string.IsNullOrWhiteSpace(existing.LastPublishedPhoneNormalized)
+            ? existing.PhoneNormalized
+            : existing.LastPublishedPhoneNormalized;
+        watching.PhoneRaw = raw;
+        watching.PhoneNormalized = phone;
+        watching.PhoneFirstSeenUtc = utcNow;
+        watching.LastPublishedPhoneNormalized = phone;
+        watching.LastPublishedMetricKind = ResponsePhoneMetricKinds.PhoneChanged;
+        if (string.IsNullOrWhiteSpace(watching.PublishedSourceResponseId))
         {
-            unchangedHours = thresholdHours;
+            watching.PublishedSourceResponseId = BuildPublishedSourceResponseId(sub, nameKey);
         }
 
-        watching.LastPublishedPhoneNormalized = phone;
-        watching.LastPublishedMetricKind = ResponsePhoneMetricKinds.PhoneUnchanged;
-        watching.ClosedAfterStableSend = true;
+        if (watching.WatchStartedUtc is null)
+        {
+            watching.WatchStartedUtc = watchStarted;
+        }
+
         return new ResponsePhoneWatchDecision(
-            ResponsePhoneWatchAction.PublishPhoneUnchanged,
+            ResponsePhoneWatchAction.PublishPhoneChanged,
+            prevRaw,
+            prevNorm,
             null,
-            null,
-            unchangedHours,
-            null,
+            utcNow,
             watching);
     }
 
@@ -177,7 +201,8 @@ public static class ResponsePhoneWatchEvaluator
         string nameKey,
         string raw,
         string phone,
-        DateTime utcNow) =>
+        DateTime utcNow,
+        bool published) =>
         new()
         {
             AvitoSubProfileId = sub,
@@ -186,9 +211,12 @@ public static class ResponsePhoneWatchEvaluator
             PhoneNormalized = phone,
             PhoneFirstSeenUtc = utcNow,
             LastSeenUtc = utcNow,
+            WatchStartedUtc = published ? utcNow : null,
+            PublishedSourceResponseId = published
+                ? BuildPublishedSourceResponseId(sub, nameKey)
+                : string.Empty,
             ClosedAfterStableSend = false,
-            // Ещё ничего не публиковали — только наблюдение.
-            LastPublishedPhoneNormalized = string.Empty,
+            LastPublishedPhoneNormalized = published ? phone : string.Empty,
             LastPublishedMetricKind = ResponsePhoneMetricKinds.None
         };
 
@@ -201,6 +229,8 @@ public static class ResponsePhoneWatchEvaluator
             PhoneNormalized = source.PhoneNormalized,
             PhoneFirstSeenUtc = source.PhoneFirstSeenUtc,
             LastSeenUtc = source.LastSeenUtc,
+            WatchStartedUtc = source.WatchStartedUtc,
+            PublishedSourceResponseId = source.PublishedSourceResponseId,
             ClosedAfterStableSend = source.ClosedAfterStableSend,
             LastPublishedPhoneNormalized = source.LastPublishedPhoneNormalized,
             LastPublishedMetricKind = source.LastPublishedMetricKind
