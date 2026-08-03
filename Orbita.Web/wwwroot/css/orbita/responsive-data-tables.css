@@ -1,0 +1,1518 @@
+/* Unified list filters bar (events, errors, responses) */
+.orbita-filters-bar {
+    margin-bottom: 20px;
+    padding: 14px 16px;
+    background: #ffffff;
+    border: 1px solid #eef2f7;
+    border-radius: 14px;
+    box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+}
+
+.orbita-filters-form {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.orbita-filters-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.orbita-filters-search {
+    position: relative;
+    display: flex;
+    align-items: center;
+    flex: 1 1 280px;
+    min-width: 0;
+    height: 40px;
+}
+
+.orbita-filters-search input {
+    width: 100%;
+    height: 40px;
+    padding: 0 14px 0 40px;
+    border: 1px solid #e4e7ec;
+    border-radius: 10px;
+    background: #ffffff;
+    color: #101828;
+    font-size: 14px;
+    font-family: inherit;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.orbita-filters-search input::placeholder {
+    color: #98a2b3;
+}
+
+.orbita-filters-search input:focus {
+    outline: none;
+    border-color: #2563eb;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.orbita-filters-search .orbita-filters-search-icon,
+.orbita-filters-search .events-search-icon,
+.orbita-filters-search .errors-search-icon,
+.orbita-filters-search .responses-search-icon {
+    position: absolute;
+    left: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 15px;
+    color: #98a2b3;
+    pointer-events: none;
+}
+
+.orbita-filters-toolbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.orbita-filters-toggle,
+.orbita-filters-apply,
+.orbita-filters-reset {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    height: 40px;
+    margin: 0;
+    padding: 0 14px;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 500;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.orbita-filters-toggle {
+    width: 40px;
+    padding: 0;
+    border: 1px solid #e4e7ec;
+    background: #ffffff;
+    color: #667085;
+}
+
+.orbita-filters-bar .workers-filter-btn,
+.orbita-filters-bar .accounts-filter-btn {
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border: 1px solid #e4e7ec;
+    background: #ffffff;
+    color: #667085;
+}
+
+.orbita-filters-toggle:hover {
+    background: #f9fafb;
+    border-color: #d0d5dd;
+}
+
+.orbita-filters-apply {
+    border: 0;
+    background: #2563eb;
+    color: #ffffff;
+    font-weight: 600;
+}
+
+.orbita-filters-apply:hover {
+    background: #1d4ed8;
+}
+
+.orbita-filters-reset {
+    border: 0;
+    background: transparent;
+    color: #667085;
+    font-size: 13px;
+}
+
+.orbita-filters-reset:hover {
+    background: #f2f4f7;
+    color: #344054;
+}
+
+.orbita-filters-fields {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+    gap: 12px 16px;
+    padding: 14px 16px;
+    background: #f8fafc;
+    border: 1px solid #eef2f7;
+    border-radius: 12px;
+}
+
+.orbita-filters-fields .orbita-filters-field,
+.orbita-filters-fields .events-filter-field,
+.orbita-filters-fields .errors-filter-field,
+.orbita-filters-fields .responses-filter-field,
+.orbita-filters-fields .workers-filter-field,
+.orbita-filters-fields .accounts-filter-field,
+.orbita-filters-fields .statistics-filter-field,
+.orbita-filters-fields .orbita-page-size-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+    flex: unset;
+}
+
+.orbita-filters-fields .responses-filter-field--grow {
+    grid-column: span 2;
+}
+
+.orbita-filters-fields .responses-filter-field--period {
+    min-width: 0;
+}
+
+.orbita-filters-fields .orbita-filters-label,
+.orbita-filters-fields .events-filter-label,
+.orbita-filters-fields .errors-filter-label,
+.orbita-filters-fields .responses-filter-label,
+.orbita-filters-fields .workers-filter-label,
+.orbita-filters-fields .accounts-filter-label,
+.orbita-filters-fields .statistics-filter-label,
+.orbita-filters-fields .orbita-page-size-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: #98a2b3;
+}
+
+.orbita-filters-fields .orbita-filters-select,
+.orbita-filters-fields .events-select,
+.orbita-filters-fields .errors-select,
+.orbita-filters-fields .responses-select,
+.orbita-filters-fields .workers-select,
+.orbita-filters-fields .accounts-select,
+.orbita-filters-fields .statistics-select,
+.orbita-filters-fields .orbita-page-size-select,
+.orbita-filters-fields .responses-input,
+.orbita-filters-fields .orbita-period-picker--inline {
+    width: 100%;
+    min-width: 0;
+    height: 40px;
+    padding: 0 12px;
+    border: 1px solid #e4e7ec;
+    border-radius: 10px;
+    background: #ffffff;
+    color: #344054;
+    font-size: 14px;
+    font-family: inherit;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.orbita-filters-fields .orbita-filters-select,
+.orbita-filters-fields .events-select,
+.orbita-filters-fields .errors-select,
+.orbita-filters-fields .responses-select,
+.orbita-filters-fields .workers-select,
+.orbita-filters-fields .accounts-select,
+.orbita-filters-fields .statistics-select,
+.orbita-filters-fields .orbita-page-size-select {
+    cursor: pointer;
+}
+
+.orbita-filters-fields .orbita-filters-select:focus,
+.orbita-filters-fields .events-select:focus,
+.orbita-filters-fields .errors-select:focus,
+.orbita-filters-fields .responses-select:focus,
+.orbita-filters-fields .workers-select:focus,
+.orbita-filters-fields .accounts-select:focus,
+.orbita-filters-fields .orbita-page-size-select:focus,
+.orbita-filters-fields .responses-input:focus {
+    outline: none;
+    border-color: #2563eb;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.orbita-filters-toggle.is-active,
+.responses-filter-btn.is-active,
+.events-filter-btn.is-active,
+.errors-filter-btn.is-active,
+.workers-filter-btn.is-active,
+.accounts-filter-btn.is-active,
+.statistics-filter-btn.is-active {
+    border-color: #2563eb;
+    color: #2563eb;
+    background: #eff6ff;
+}
+
+[data-theme="dark"] .orbita-filters-bar {
+    background: var(--bg-card);
+    border-color: var(--border);
+}
+
+[data-theme="dark"] .orbita-filters-fields {
+    background: rgba(15, 23, 42, 0.35);
+    border-color: var(--border);
+}
+
+[data-theme="dark"] .orbita-filters-search input,
+[data-theme="dark"] .orbita-filters-toggle {
+    background: var(--bg-card);
+    border-color: var(--border);
+    color: var(--text-primary);
+}
+
+[data-theme="dark"] .orbita-filters-reset {
+    color: var(--text-secondary);
+}
+
+[data-theme="dark"] .orbita-filters-reset:hover {
+    background: #334155;
+    color: var(--text-primary);
+}
+
+[data-theme="dark"] .orbita-filters-fields .orbita-filters-label,
+[data-theme="dark"] .orbita-filters-fields .events-filter-label,
+[data-theme="dark"] .orbita-filters-fields .errors-filter-label,
+[data-theme="dark"] .orbita-filters-fields .responses-filter-label,
+[data-theme="dark"] .orbita-filters-fields .workers-filter-label,
+[data-theme="dark"] .orbita-filters-fields .accounts-filter-label,
+[data-theme="dark"] .orbita-filters-fields .statistics-filter-label,
+[data-theme="dark"] .orbita-filters-fields .orbita-page-size-label {
+    color: var(--text-secondary);
+}
+
+[data-theme="dark"] .orbita-filters-fields .orbita-filters-select,
+[data-theme="dark"] .orbita-filters-fields .events-select,
+[data-theme="dark"] .orbita-filters-fields .errors-select,
+[data-theme="dark"] .orbita-filters-fields .responses-select,
+[data-theme="dark"] .orbita-filters-fields .workers-select,
+[data-theme="dark"] .orbita-filters-fields .accounts-select,
+[data-theme="dark"] .orbita-filters-fields .statistics-select,
+[data-theme="dark"] .orbita-filters-fields .orbita-page-size-select,
+[data-theme="dark"] .orbita-filters-fields .responses-input,
+[data-theme="dark"] .statistics-filter-field--account .orbita-account-combobox__input {
+    background: var(--bg-card);
+    border-color: var(--border);
+    color: var(--text-primary);
+}
+
+/* Collapsible list filters: desktop always visible, mobile behind filter button */
+@media (min-width: 1101px) {
+    [data-orbita-collapsible-filters][hidden] {
+        display: grid !important;
+    }
+
+    .orbita-filters-toggle,
+    .responses-filter-btn,
+    .events-filter-btn,
+    .errors-filter-btn,
+    .workers-filter-btn,
+    .accounts-filter-btn,
+    .orbita-filters-apply,
+    .responses-apply-btn,
+    .events-apply-btn,
+    .errors-apply-btn {
+        display: none !important;
+    }
+
+    .orbita-filters-toolbar {
+        flex-wrap: nowrap;
+    }
+
+    .orbita-filters-toolbar-actions {
+        margin-left: auto;
+    }
+}
+
+/* ── Mobile adaptation (≤1100px) ── */
+
+@media (max-width: 1100px) {
+    .settings-tabs {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        padding-bottom: 4px;
+    }
+
+    .settings-tabs::-webkit-scrollbar { display: none; }
+
+    .settings-tab { flex-shrink: 0; }
+
+    .orbita-filters-fields,
+    .responses-filters-row,
+    .events-filters-row,
+    .errors-filters-row,
+    .accounts-filters-row {
+        grid-template-columns: 1fr;
+    }
+
+    .orbita-filters-fields .responses-filter-field--grow {
+        grid-column: span 1;
+    }
+
+    .orbita-filters-toolbar {
+        width: 100%;
+    }
+
+    .orbita-filters-search {
+        flex: 1 1 100%;
+        width: 100%;
+    }
+
+    .orbita-filters-toolbar-actions {
+        flex: 1 1 100%;
+        justify-content: stretch;
+    }
+
+    .orbita-filters-toolbar-actions .orbita-filters-toggle,
+    .orbita-filters-toolbar-actions .orbita-filters-apply,
+    .orbita-filters-toolbar-actions .orbita-filters-reset,
+    .responses-filters-actions .responses-apply-btn,
+    .responses-filters-actions .responses-reset-btn,
+    .events-filters-actions button,
+    .errors-filters-actions button {
+        flex: 1;
+    }
+
+    .orbita-breadcrumbs {
+        overflow-x: auto;
+        white-space: nowrap;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        padding-bottom: 4px;
+    }
+
+    .orbita-breadcrumbs::-webkit-scrollbar { display: none; }
+
+    .chart-canvas-wrap {
+        min-height: 200px;
+    }
+}
+
+/* Card layout for data tables */
+@media (max-width: 1100px) {
+    .workers-table-wrap,
+    .accounts-table-wrap,
+    .events-table-wrap,
+    .errors-table-wrap,
+    .responses-table-wrap,
+    .settings-table-wrap,
+    .dashboard-workers-table-wrap,
+    .worker-accounts-wrap,
+    .statistics-workers-table-wrap {
+        overflow-x: visible;
+    }
+
+    /* Table-only cards: drop outer shell so rows are not nested inside another card */
+    .card--accounts-table,
+    .card--workers-table,
+    .card--responses-table,
+    .card--events-table,
+    .card--errors-table {
+        padding: 0;
+        border: none;
+        box-shadow: none;
+        background: transparent;
+        border-radius: 0;
+    }
+
+    .card--accounts-table .card-body-table,
+    .card--workers-table .card-body-table,
+    .card--responses-table .card-body-table,
+    .card--events-table .card-body-table,
+    .card--errors-table .card-body-table {
+        padding: 0;
+    }
+
+    .card-body-table:has(.data-table--cards) > .orbita-pagination {
+        padding-top: 16px;
+    }
+
+    .data-table--cards {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+    }
+
+    .data-table--cards thead {
+        display: none;
+    }
+
+    .data-table--cards tbody tr {
+        display: block;
+        position: relative;
+        margin-bottom: 0;
+        padding: 10px 0;
+        border: none;
+        border-bottom: 1px solid #eef2f7;
+        border-radius: 0;
+        background: transparent;
+        box-shadow: none;
+    }
+
+    .data-table--cards tbody tr:hover {
+        background: transparent;
+    }
+
+    .data-table--cards tbody tr:last-child {
+        border-bottom: none;
+    }
+
+    .data-table--cards tbody td {
+        display: grid;
+        grid-template-columns: minmax(72px, 34%) minmax(0, 1fr);
+        align-items: baseline;
+        gap: 2px 10px;
+        height: auto;
+        min-height: 0;
+        padding: 2px 0;
+        border: none;
+        text-align: left;
+        font-size: 14px;
+    }
+
+    .data-table--cards tbody td::before {
+        content: attr(data-label);
+        font-weight: 600;
+        font-size: 12px;
+        color: #667085;
+        text-align: left;
+    }
+
+    .data-table--cards tbody td[data-label=""]::before,
+    .data-table--cards tbody td:not([data-label])::before {
+        display: none;
+    }
+
+    .data-table--cards tbody td.cell-name,
+    .data-table--cards tbody td.cell-account,
+    .data-table--cards tbody td.responses-ad,
+    .data-table--cards tbody td.errors-message,
+    .data-table--cards tbody td.events-desc {
+        display: block;
+        padding-top: 0;
+        padding-bottom: 10px;
+        margin-bottom: 4px;
+        border-bottom: 1px solid #eef2f7;
+        text-align: left;
+        font-size: 16px;
+        font-weight: 600;
+    }
+
+    .data-table--cards tbody td.cell-name::before,
+    .data-table--cards tbody td.cell-account::before,
+    .data-table--cards tbody td.responses-ad::before,
+    .data-table--cards tbody td.errors-message::before,
+    .data-table--cards tbody td.events-desc::before {
+        display: none;
+    }
+
+    .data-table--cards tbody td.data-table-menu,
+    .data-table--cards tbody td.data-table-actions-col {
+        display: flex;
+        justify-content: flex-end;
+        grid-template-columns: 1fr;
+        padding-top: 4px;
+        margin-top: 2px;
+        border-top: none;
+    }
+
+    .data-table--cards tbody td.data-table-check-col {
+        justify-content: flex-start;
+    }
+
+    .data-table--cards tbody td.data-table-check-col::before {
+        max-width: none;
+    }
+
+    .data-table--cards tbody td[colspan] {
+        display: block;
+        text-align: center;
+    }
+
+    .data-table--cards tbody td[colspan]::before {
+        display: none;
+    }
+
+    .data-table--cards tbody td.settings-log-message {
+        display: block;
+        text-align: left;
+        font-weight: 600;
+        font-size: 15px;
+        border-bottom: 1px solid #eef2f7;
+        padding-bottom: 10px;
+        margin-bottom: 4px;
+    }
+
+    .data-table--cards tbody td.settings-log-message::before {
+        display: none;
+    }
+
+    [data-theme="dark"] .data-table--cards tbody tr {
+        background: transparent;
+        border-bottom-color: var(--border);
+    }
+
+    [data-theme="dark"] .data-table--cards tbody tr:hover {
+        background: transparent;
+    }
+
+    [data-theme="dark"] .data-table--cards tbody td.cell-name,
+    [data-theme="dark"] .data-table--cards tbody td.cell-account,
+    [data-theme="dark"] .data-table--cards tbody td.responses-ad,
+    [data-theme="dark"] .data-table--cards tbody td.errors-message,
+    [data-theme="dark"] .data-table--cards tbody td.events-desc,
+    [data-theme="dark"] .data-table--cards tbody td.data-table-menu,
+    [data-theme="dark"] .data-table--cards tbody td.data-table-actions-col {
+        border-color: var(--border);
+    }
+
+    [data-theme="dark"] .data-table--cards tbody td::before {
+        color: var(--text-secondary);
+    }
+}
+
+@media (max-width: 768px) {
+    .orbita-main {
+        padding: 0 16px 20px;
+    }
+
+    .card {
+        padding: 16px;
+    }
+
+    .card--accounts-table,
+    .card--workers-table,
+    .card--responses-table,
+    .card--events-table,
+    .card--errors-table {
+        padding: 0;
+    }
+
+    .card:has(.data-table--cards) .card-header {
+        margin-bottom: 12px;
+    }
+
+    .card:has(.data-table--cards) .card-body-table {
+        padding-top: 0;
+    }
+
+    .orbita-topbar h1 {
+        font-size: 20px;
+    }
+
+    .orbita-period-dropdown {
+        position: fixed;
+        top: auto;
+        left: 50%;
+        right: auto;
+        bottom: 24px;
+        transform: translateX(-50%);
+        width: min(280px, calc(100vw - 32px));
+        z-index: 60;
+    }
+
+    .orbita-search,
+    .orbita-detail-modal,
+    .orbita-confirm {
+        align-items: flex-end;
+        padding: 0;
+    }
+
+    .orbita-search__dialog,
+    .orbita-detail-modal__dialog,
+    .orbita-confirm__dialog {
+        width: 100%;
+        max-width: 100%;
+        border-radius: 16px 16px 0 0;
+        border-bottom: none;
+    }
+
+    .orbita-detail-modal__foot {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .orbita-detail-modal__foot-actions {
+        width: 100%;
+        margin-left: 0;
+    }
+
+    .orbita-detail-modal__action,
+    .orbita-detail-modal__dismiss {
+        flex: 1;
+        justify-content: center;
+    }
+}
+
+@media (max-width: 600px) {
+    .kpi-card {
+        padding: 16px;
+        min-height: 140px;
+    }
+
+    .orbita-pagination {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 12px;
+    }
+
+    .orbita-pagination__info {
+        text-align: center;
+    }
+
+    .orbita-pagination__controls {
+        justify-content: center;
+    }
+
+    .orbita-pagination__controls .orbita-pagination__btn--page,
+    .orbita-pagination__ellipsis {
+        display: none;
+    }
+
+    .orbita-filter-chips {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scroll-snap-type: x proximity;
+        padding-bottom: 6px;
+        scrollbar-width: none;
+    }
+
+    .orbita-filter-chips::-webkit-scrollbar {
+        display: none;
+    }
+
+    .orbita-filter-chips > * {
+        scroll-snap-align: start;
+        flex-shrink: 0;
+    }
+
+    .worker-info-row,
+    .worker-stats-row {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 4px;
+    }
+
+    .worker-info-value,
+    .worker-stats-value {
+        text-align: left;
+    }
+
+    .account-error-hint {
+        max-width: none;
+        white-space: normal;
+        overflow: visible;
+        text-overflow: unset;
+    }
+
+    .worker-logs-header {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .card-footer-btn--inline {
+        white-space: normal;
+        text-align: center;
+    }
+
+    .card--dashboard-workers .worker-activity-pill-text,
+    .data-table--cards .worker-activity-pill-text {
+        max-width: 100%;
+    }
+
+    .settings-worker-rename-form {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 8px;
+    }
+
+    .settings-worker-name-input {
+        min-width: 0;
+        width: 100%;
+    }
+
+    .account-stats-donut {
+        width: min(180px, 70vw);
+        height: min(180px, 70vw);
+    }
+
+    .subprofiles-item {
+        grid-template-columns: auto 1fr;
+        grid-template-areas:
+            "toggle main"
+            "toggle meta";
+    }
+
+    .subprofiles-toggle-sm {
+        grid-area: toggle;
+    }
+
+    .subprofiles-item-main {
+        grid-area: main;
+    }
+
+    .subprofiles-meta {
+        grid-area: meta;
+        flex-direction: row;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 8px;
+        flex-shrink: 1;
+    }
+
+    .subprofiles-rating {
+        white-space: normal;
+        text-align: left;
+    }
+
+    .subprofiles-panel {
+        padding-left: 0;
+        border-left: 0;
+        border-top: 1px solid #eaecf0;
+        margin-top: 8px;
+        padding-top: 8px;
+    }
+
+    .subprofiles-item-alert {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 6px;
+    }
+
+    .subprofiles-summary {
+        white-space: normal;
+        overflow: visible;
+        text-overflow: unset;
+    }
+}
+
+@media (max-width: 1100px) {
+    .dashboard-workers-table-scroll {
+        overflow-x: visible;
+    }
+
+    .card--dashboard-workers .data-table--dashboard-workers {
+        min-width: 0;
+    }
+
+    .data-table--cards tbody tr {
+        position: relative;
+    }
+
+    .data-table--cards tbody td.cell-toggle {
+        position: absolute;
+        top: 14px;
+        right: 14px;
+        display: block;
+        width: auto;
+        padding: 0;
+        border: none;
+        justify-content: flex-end;
+    }
+
+    .data-table--cards tbody td.cell-toggle::before {
+        display: none;
+    }
+
+    .data-table--cards tbody td.cell-account,
+    .data-table--cards tbody td.cell-name {
+        padding-right: 52px;
+    }
+
+    .data-table--cards tbody td.responses-phone,
+    .data-table--cards tbody td.errors-message,
+    .data-table--cards tbody td.events-desc {
+        word-break: break-word;
+        white-space: normal;
+        text-align: left;
+    }
+
+    .data-table--cards tbody td.responses-phone > *,
+    .data-table--cards tbody td.errors-message > *,
+    .data-table--cards tbody td.events-desc > * {
+        text-align: left;
+        max-width: 100%;
+    }
+
+    /* Accounts: compact list rows instead of tall label/value stacks */
+    .data-table--accounts-list.data-table--cards tbody tr,
+    .data-table--accounts.data-table--cards tbody tr {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-start;
+        gap: 4px 8px;
+        padding: 10px 0;
+    }
+
+    .data-table--accounts-list.data-table--cards tbody tr::before,
+    .data-table--accounts.data-table--cards tbody tr::before,
+    .data-table--accounts-list.data-table--cards tbody tr::after,
+    .data-table--accounts.data-table--cards tbody tr::after {
+        content: "";
+        flex-basis: 100%;
+        width: 0;
+        height: 0;
+    }
+
+    .data-table--accounts-list.data-table--cards tbody tr::before,
+    .data-table--accounts.data-table--cards tbody tr::before {
+        order: 3;
+    }
+
+    .data-table--accounts-list.data-table--cards tbody tr::after,
+    .data-table--accounts.data-table--cards tbody tr::after {
+        order: 5;
+    }
+
+    .data-table--accounts-list.data-table--cards tbody td,
+    .data-table--accounts.data-table--cards tbody td {
+        display: block;
+        padding: 0;
+        text-align: left;
+        border: none;
+    }
+
+    .data-table--accounts-list.data-table--cards tbody td::before,
+    .data-table--accounts.data-table--cards tbody td::before {
+        display: none;
+    }
+
+    .data-table--accounts-list.data-table--cards tbody td.cell-account,
+    .data-table--accounts.data-table--cards tbody td.cell-name {
+        order: 1;
+        flex: 1 1 calc(100% - 52px);
+        min-width: 0;
+        padding: 0 8px 0 0;
+        margin: 0;
+        border-bottom: none;
+        font-size: 15px;
+        font-weight: 600;
+    }
+
+    .data-table--accounts-list.data-table--cards tbody td.cell-toggle,
+    .data-table--accounts.data-table--cards tbody td.cell-toggle,
+    .data-table--accounts.data-table--cards tbody td[data-label="Вкл"] {
+        order: 2;
+        position: static;
+        top: auto;
+        right: auto;
+        flex: 0 0 auto;
+        width: auto;
+        padding: 0;
+        align-self: center;
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .data-table--accounts-list.data-table--cards .subprofiles-data-row:not(.subprofiles-data-row--collapsed),
+    .data-table--accounts.data-table--cards .subprofiles-data-row:not(.subprofiles-data-row--collapsed) {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-start;
+    }
+
+    .data-table--accounts-list.data-table--cards .subprofiles-data-row .subprofiles-data-name,
+    .data-table--accounts.data-table--cards .subprofiles-data-row .subprofiles-data-name {
+        order: 1;
+        flex: 1 1 calc(100% - 52px);
+    }
+
+    .data-table--accounts-list.data-table--cards .subprofiles-data-row .cell-toggle,
+    .data-table--accounts.data-table--cards .subprofiles-data-row .cell-toggle {
+        order: 2;
+    }
+
+    .data-table--accounts-list td[data-label="Статус"],
+    .data-table--accounts td[data-label="Статус"],
+    .data-table--accounts-list td[data-label="Сейчас"] {
+        order: 4;
+        display: inline-flex;
+        align-items: center;
+        width: auto;
+        margin-bottom: 2px;
+    }
+
+    .data-table--accounts-list td[data-label="Статус"] {
+        margin-right: 8px;
+    }
+
+    .data-table--accounts-list td.cell-num,
+    .data-table--accounts td.cell-num,
+    .data-table--accounts-list td[data-label="Баланс"],
+    .data-table--accounts-list td[data-label="Откликов"],
+    .data-table--accounts-list td[data-label="Уникальных"],
+    .data-table--accounts-list td[data-label="Ошибок"],
+    .data-table--accounts td[data-label="Баланс"],
+    .data-table--accounts td[data-label="Откликов"],
+    .data-table--accounts td[data-label="Ошибок"] {
+        order: 6;
+        flex: 1 1 calc(25% - 6px);
+        min-width: 68px;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 2px;
+        padding: 5px 6px;
+        margin: 0 2px 4px 0;
+        background: #f8fafc;
+        border-radius: 8px;
+        font-size: 13px;
+        font-weight: 600;
+        line-height: 1.2;
+    }
+
+    .data-table--accounts-list td.cell-num::before,
+    .data-table--accounts td.cell-num::before,
+    .data-table--accounts-list td[data-label="Баланс"]::before,
+    .data-table--accounts-list td[data-label="Откликов"]::before,
+    .data-table--accounts-list td[data-label="Уникальных"]::before,
+    .data-table--accounts-list td[data-label="Ошибок"]::before,
+    .data-table--accounts td[data-label="Баланс"]::before,
+    .data-table--accounts td[data-label="Откликов"]::before,
+    .data-table--accounts td[data-label="Ошибок"]::before {
+        display: block;
+        content: attr(data-label);
+        font-size: 9px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: #98a2b3;
+    }
+
+    .data-table--accounts-list .cell-worker,
+    .data-table--accounts-list td[data-label="Офис"] {
+        order: 7;
+        width: 100%;
+        font-size: 12px;
+        color: #667085;
+        margin-top: 2px;
+    }
+
+    .data-table--accounts-list td[data-label="Последняя активность"],
+    .data-table--accounts td[data-label="Последняя активность"] {
+        order: 8;
+        flex: 1 1 auto;
+        font-size: 12px;
+        color: #667085;
+        margin-top: 2px;
+    }
+
+    .data-table--accounts-list td.data-table-menu,
+    .data-table--accounts td.data-table-menu {
+        order: 9;
+        position: absolute;
+        top: 8px;
+        right: 0;
+        flex: 0 0 auto;
+        width: auto;
+        margin: 0;
+        padding: 0;
+        border: none;
+    }
+
+    .data-table--accounts-list.data-table--cards tbody td.cell-account,
+    .data-table--accounts.data-table--cards tbody td.cell-name {
+        padding-right: 36px;
+    }
+
+    .data-table--accounts-list .account-error-hint,
+    .data-table--accounts .account-error-hint {
+        display: block;
+        font-size: 11px;
+        margin-top: 4px;
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    [data-theme="dark"] .data-table--accounts-list td.cell-num,
+    [data-theme="dark"] .data-table--accounts td.cell-num,
+    [data-theme="dark"] .data-table--accounts-list td[data-label="Баланс"],
+    [data-theme="dark"] .data-table--accounts-list td[data-label="Откликов"],
+    [data-theme="dark"] .data-table--accounts-list td[data-label="Уникальных"],
+    [data-theme="dark"] .data-table--accounts-list td[data-label="Ошибок"],
+    [data-theme="dark"] .data-table--accounts td[data-label="Баланс"],
+    [data-theme="dark"] .data-table--accounts td[data-label="Откликов"],
+    [data-theme="dark"] .data-table--accounts td[data-label="Ошибок"] {
+        background: rgba(255, 255, 255, 0.04);
+    }
+
+    /* Workers: compact list rows */
+    .data-table--workers.data-table--cards tbody tr,
+    .data-table--dashboard-workers.data-table--cards tbody tr,
+    .data-table--statistics-workers.data-table--cards tbody tr {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-start;
+        gap: 4px 8px;
+        padding: 10px 0;
+    }
+
+    .data-table--workers.data-table--cards tbody tr::before,
+    .data-table--dashboard-workers.data-table--cards tbody tr::before,
+    .data-table--statistics-workers.data-table--cards tbody tr::before,
+    .data-table--workers.data-table--cards tbody tr::after,
+    .data-table--dashboard-workers.data-table--cards tbody tr::after,
+    .data-table--statistics-workers.data-table--cards tbody tr::after {
+        content: "";
+        flex-basis: 100%;
+        width: 0;
+        height: 0;
+    }
+
+    .data-table--workers.data-table--cards tbody tr::before,
+    .data-table--dashboard-workers.data-table--cards tbody tr::before,
+    .data-table--statistics-workers.data-table--cards tbody tr::before {
+        order: 3;
+    }
+
+    .data-table--workers.data-table--cards tbody tr::after,
+    .data-table--dashboard-workers.data-table--cards tbody tr::after,
+    .data-table--statistics-workers.data-table--cards tbody tr::after {
+        order: 5;
+    }
+
+    .data-table--workers.data-table--cards tbody td,
+    .data-table--dashboard-workers.data-table--cards tbody td,
+    .data-table--statistics-workers.data-table--cards tbody td {
+        display: block;
+        padding: 0;
+        text-align: left;
+        border: none;
+    }
+
+    .data-table--workers.data-table--cards tbody td::before,
+    .data-table--dashboard-workers.data-table--cards tbody td::before,
+    .data-table--statistics-workers.data-table--cards tbody td::before {
+        display: none;
+    }
+
+    .data-table--workers.data-table--cards tbody td.cell-name,
+    .data-table--dashboard-workers.data-table--cards tbody td.cell-name,
+    .data-table--statistics-workers.data-table--cards tbody td[data-label="Воркер"] {
+        order: 1;
+        flex: 1 1 calc(100% - 40px);
+        min-width: 0;
+        padding: 0 36px 0 0;
+        margin: 0;
+        border-bottom: none;
+        font-size: 15px;
+        font-weight: 600;
+    }
+
+    .data-table--workers td[data-label="Статус"],
+    .data-table--dashboard-workers td[data-label="Статус"],
+    .data-table--statistics-workers td[data-label="Статус"] {
+        order: 4;
+        display: inline-flex;
+        align-items: center;
+        width: auto;
+        margin-bottom: 2px;
+        margin-right: 8px;
+    }
+
+    .data-table--workers td[data-label="Сейчас"],
+    .data-table--dashboard-workers td[data-label="Сейчас"] {
+        order: 4;
+        display: inline-flex;
+        align-items: center;
+        width: auto;
+        margin-bottom: 2px;
+    }
+
+    .data-table--workers td.cell-num,
+    .data-table--workers td[data-label="Аккаунтов"],
+    .data-table--workers td[data-label="Откликов"],
+    .data-table--workers td[data-label="Дублей"],
+    .data-table--workers td[data-label="Ошибок"],
+    .data-table--dashboard-workers td.cell-num,
+    .data-table--dashboard-workers td[data-label="Аккаунтов"],
+    .data-table--dashboard-workers td[data-label="Откликов"],
+    .data-table--dashboard-workers td[data-label="Дублей"],
+    .data-table--dashboard-workers td[data-label="Ошибок"],
+    .data-table--statistics-workers td.cell-num,
+    .data-table--statistics-workers td[data-label="Отклики"],
+    .data-table--statistics-workers td[data-label="Битрикс24"],
+    .data-table--statistics-workers td[data-label="Дубли"],
+    .data-table--statistics-workers td[data-label="Ошибки"],
+    .data-table--statistics-workers td[data-label="Аккаунты"] {
+        order: 6;
+        flex: 1 1 calc(25% - 6px);
+        min-width: 64px;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 2px;
+        padding: 5px 6px;
+        margin: 0 2px 4px 0;
+        background: #f8fafc;
+        border-radius: 8px;
+        font-size: 13px;
+        font-weight: 600;
+        line-height: 1.2;
+    }
+
+    .data-table--workers td.cell-num::before,
+    .data-table--workers td[data-label="Аккаунтов"]::before,
+    .data-table--workers td[data-label="Откликов"]::before,
+    .data-table--workers td[data-label="Дублей"]::before,
+    .data-table--workers td[data-label="Ошибок"]::before,
+    .data-table--dashboard-workers td.cell-num::before,
+    .data-table--dashboard-workers td[data-label="Аккаунтов"]::before,
+    .data-table--dashboard-workers td[data-label="Откликов"]::before,
+    .data-table--dashboard-workers td[data-label="Дублей"]::before,
+    .data-table--dashboard-workers td[data-label="Ошибок"]::before,
+    .data-table--statistics-workers td.cell-num::before,
+    .data-table--statistics-workers td[data-label="Отклики"]::before,
+    .data-table--statistics-workers td[data-label="Битрикс24"]::before,
+    .data-table--statistics-workers td[data-label="Дубли"]::before,
+    .data-table--statistics-workers td[data-label="Ошибки"]::before,
+    .data-table--statistics-workers td[data-label="Аккаунты"]::before {
+        display: block;
+        content: attr(data-label);
+        font-size: 9px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: #98a2b3;
+    }
+
+    .data-table--workers td[data-label="Офис"],
+    .data-table--dashboard-workers td[data-label="Офис"],
+    .data-table--statistics-workers td[data-label="Офис"] {
+        order: 7;
+        width: 100%;
+        font-size: 12px;
+        color: #667085;
+        margin-top: 2px;
+    }
+
+    .data-table--workers td[data-label="Последняя активность"],
+    .data-table--dashboard-workers td[data-label="Последняя активность"] {
+        order: 8;
+        flex: 1 1 auto;
+        font-size: 12px;
+        color: #667085;
+        margin-top: 2px;
+    }
+
+    .data-table--workers td.data-table-menu,
+    .data-table--dashboard-workers td.data-table-menu {
+        order: 9;
+        position: absolute;
+        top: 8px;
+        right: 0;
+        flex: 0 0 auto;
+        width: auto;
+        padding: 0;
+        border: none;
+        margin: 0;
+    }
+
+    [data-theme="dark"] .data-table--workers td.cell-num,
+    [data-theme="dark"] .data-table--workers td[data-label="Аккаунтов"],
+    [data-theme="dark"] .data-table--workers td[data-label="Откликов"],
+    [data-theme="dark"] .data-table--workers td[data-label="Дублей"],
+    [data-theme="dark"] .data-table--workers td[data-label="Ошибок"],
+    [data-theme="dark"] .data-table--dashboard-workers td.cell-num,
+    [data-theme="dark"] .data-table--dashboard-workers td[data-label="Аккаунтов"],
+    [data-theme="dark"] .data-table--dashboard-workers td[data-label="Откликов"],
+    [data-theme="dark"] .data-table--dashboard-workers td[data-label="Дублей"],
+    [data-theme="dark"] .data-table--dashboard-workers td[data-label="Ошибок"],
+    [data-theme="dark"] .data-table--statistics-workers td.cell-num,
+    [data-theme="dark"] .data-table--statistics-workers td[data-label="Отклики"],
+    [data-theme="dark"] .data-table--statistics-workers td[data-label="Битрикс24"],
+    [data-theme="dark"] .data-table--statistics-workers td[data-label="Дубли"],
+    [data-theme="dark"] .data-table--statistics-workers td[data-label="Ошибки"],
+    [data-theme="dark"] .data-table--statistics-workers td[data-label="Аккаунты"] {
+        background: rgba(255, 255, 255, 0.04);
+    }
+
+    /* Events & errors: compact list rows */
+    .data-table--events.data-table--cards tbody tr,
+    .data-table--errors.data-table--cards tbody tr {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-start;
+        gap: 4px 6px;
+        padding: 10px 0;
+    }
+
+    .data-table--events.data-table--cards tbody td,
+    .data-table--errors.data-table--cards tbody td {
+        display: block;
+        padding: 0;
+        text-align: left;
+        border: none;
+    }
+
+    .data-table--events.data-table--cards tbody td::before,
+    .data-table--errors.data-table--cards tbody td::before {
+        display: none;
+    }
+
+    .data-table--events .events-desc,
+    .data-table--errors .errors-message {
+        order: 1;
+        width: 100%;
+        padding: 0 36px 6px 0;
+        margin: 0 0 4px;
+        border-bottom: 1px solid #eef2f7;
+        font-size: 14px;
+        font-weight: 600;
+        line-height: 1.35;
+        word-break: break-word;
+    }
+
+    .data-table--events .events-time,
+    .data-table--events td[data-label="Тип события"],
+    .data-table--events td[data-label="Уровень"],
+    .data-table--errors .errors-time,
+    .data-table--errors td[data-label="Уровень"],
+    .data-table--errors .errors-type {
+        order: 2;
+        display: inline-flex;
+        align-items: center;
+        width: auto;
+        padding: 2px 8px;
+        background: #f1f5f9;
+        border-radius: 999px;
+        font-size: 12px;
+        color: #475467;
+    }
+
+    .data-table--events .cell-link,
+    .data-table--events td[data-label="Аккаунт"],
+    .data-table--events td[data-label="Воркер"],
+    .data-table--errors .cell-link,
+    .data-table--errors td[data-label="Аккаунт"],
+    .data-table--errors td[data-label="Воркер"] {
+        order: 4;
+        width: auto;
+        font-size: 12px;
+        color: #667085;
+    }
+
+    .data-table--errors td[data-label="Повторений"],
+    .data-table--errors td[data-label="Последнее появление"] {
+        order: 5;
+        display: inline-flex;
+        align-items: center;
+        width: auto;
+        padding: 2px 8px;
+        background: #f8fafc;
+        border-radius: 999px;
+        font-size: 12px;
+        color: #667085;
+    }
+
+    .data-table--events td.data-table-menu,
+    .data-table--errors td.data-table-menu {
+        order: 6;
+        position: absolute;
+        top: 8px;
+        right: 0;
+        width: auto;
+        display: flex;
+        justify-content: flex-end;
+        padding: 0;
+        margin: 0;
+        border: none;
+    }
+
+    [data-theme="dark"] .data-table--events .events-desc,
+    [data-theme="dark"] .data-table--errors .errors-message {
+        border-bottom-color: var(--border);
+    }
+
+    [data-theme="dark"] .data-table--events .events-time,
+    [data-theme="dark"] .data-table--events td[data-label="Тип события"],
+    [data-theme="dark"] .data-table--events td[data-label="Уровень"],
+    [data-theme="dark"] .data-table--errors .errors-time,
+    [data-theme="dark"] .data-table--errors td[data-label="Уровень"],
+    [data-theme="dark"] .data-table--errors .errors-type,
+    [data-theme="dark"] .data-table--errors td[data-label="Повторений"],
+    [data-theme="dark"] .data-table--errors td[data-label="Последнее появление"] {
+        background: rgba(255, 255, 255, 0.06);
+        color: var(--text-secondary);
+    }
+
+    /* Responses: compact list rows */
+    .data-table--responses.data-table--cards tbody tr {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-start;
+        gap: 6px 8px;
+        padding: 10px 0;
+    }
+
+    .data-table--responses.data-table--cards tbody tr::before {
+        content: "";
+        flex-basis: 100%;
+        width: 0;
+        height: 0;
+        order: 3;
+    }
+
+    .data-table--responses.data-table--cards tbody td {
+        display: block;
+        padding: 0;
+        text-align: left;
+        border: none;
+    }
+
+    .data-table--responses.data-table--cards tbody td::before {
+        display: none;
+    }
+
+    .data-table--responses.data-table--cards tbody td.responses-ad {
+        order: 1;
+        width: 100%;
+        padding: 0 0 6px;
+        margin: 0 0 2px;
+        border-bottom: 1px solid #eef2f7;
+        font-size: 14px;
+        font-weight: 600;
+    }
+
+    .data-table--responses .responses-author,
+    .data-table--responses .responses-phone {
+        order: 2;
+        width: auto;
+        font-weight: 600;
+        font-size: 14px;
+    }
+
+    .data-table--responses .responses-phone {
+        margin-left: auto;
+        text-align: right;
+    }
+
+    .data-table--responses .responses-time,
+    .data-table--responses .responses-city,
+    .data-table--responses .responses-age,
+    .data-table--responses .responses-gender,
+    .data-table--responses td[data-label="Аккаунт"],
+    .data-table--responses td[data-label="Статус"] {
+        order: 4;
+        display: inline-flex;
+        align-items: center;
+        width: auto;
+        flex: 0 1 auto;
+        padding: 3px 8px;
+        background: #f1f5f9;
+        border-radius: 999px;
+        font-size: 12px;
+        color: #475467;
+    }
+
+    .data-table--responses td.data-table-menu {
+        order: 5;
+        position: absolute;
+        top: 8px;
+        right: 0;
+        width: auto;
+        display: flex;
+        justify-content: flex-end;
+        padding: 0;
+        margin: 0;
+        border: none;
+    }
+
+    .data-table--responses.data-table--cards tbody td.responses-ad {
+        padding-right: 36px;
+    }
+
+    [data-theme="dark"] .data-table--responses .responses-ad,
+    [data-theme="dark"] .data-table--responses td.data-table-menu {
+        border-color: var(--border);
+    }
+
+    [data-theme="dark"] .data-table--responses .responses-time,
+    [data-theme="dark"] .data-table--responses .responses-city,
+    [data-theme="dark"] .data-table--responses .responses-age,
+    [data-theme="dark"] .data-table--responses .responses-gender,
+    [data-theme="dark"] .data-table--responses td[data-label="Аккаунт"],
+    [data-theme="dark"] .data-table--responses td[data-label="Статус"] {
+        background: rgba(255, 255, 255, 0.06);
+        color: var(--text-secondary);
+    }
+
+    [data-theme="dark"] .data-table--responses tbody tr.responses-row--highlighted {
+        background: linear-gradient(90deg, rgba(245, 158, 11, 0.2), rgba(245, 158, 11, 0.08));
+    }
+
+    [data-theme="dark"] .responses-age-highlight-badge {
+        background: rgba(245, 158, 11, 0.22);
+        color: #fcd34d;
+    }
+}
+
+@media (max-width: 480px) {
+    .orbita-main {
+        padding: 0 12px 16px;
+    }
+
+    .card {
+        padding: 14px;
+    }
+
+    .card--accounts-table,
+    .card--workers-table,
+    .card--responses-table,
+    .card--events-table,
+    .card--errors-table {
+        padding: 0;
+    }
+
+    .data-table--cards tbody tr {
+        padding: 8px 0;
+    }
+
+    .data-table--workers td.cell-num,
+    .data-table--workers td[data-label="Аккаунтов"],
+    .data-table--workers td[data-label="Откликов"],
+    .data-table--workers td[data-label="Дублей"],
+    .data-table--workers td[data-label="Ошибок"],
+    .data-table--statistics-workers td.cell-num,
+    .data-table--accounts-list td.cell-num,
+    .data-table--accounts td.cell-num,
+    .data-table--accounts-list td[data-label="Баланс"],
+    .data-table--accounts-list td[data-label="Откликов"],
+    .data-table--accounts-list td[data-label="Уникальных"],
+    .data-table--accounts-list td[data-label="Ошибок"],
+    .data-table--accounts td[data-label="Баланс"],
+    .data-table--accounts td[data-label="Откликов"],
+    .data-table--accounts td[data-label="Ошибок"] {
+        flex: 1 1 calc(50% - 4px);
+        min-width: 0;
+    }
+
+    .orbita-topbar-actions {
+        gap: 8px;
+    }
+
+    .orbita-search__dialog,
+    .orbita-detail-modal__dialog,
+    .orbita-confirm__dialog {
+        padding-bottom: env(safe-area-inset-bottom, 0);
+    }
+
+    .orbita-period-dropdown {
+        bottom: calc(24px + env(safe-area-inset-bottom, 0));
+    }
+}
+
+[data-theme="dark"] .subprofiles-panel {
+    border-top-color: var(--border);
+}
+

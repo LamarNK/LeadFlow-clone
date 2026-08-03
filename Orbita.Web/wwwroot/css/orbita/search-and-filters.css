@@ -1,0 +1,1040 @@
+/* Nav badges */
+.nav-item {
+    position: relative;
+}
+
+.nav-badge {
+    position: absolute;
+    top: 8px;
+    right: 10px;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: #ef4444;
+    color: #ffffff;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 18px;
+    text-align: center;
+}
+
+html.sidebar-collapsed .nav-badge {
+    top: 4px;
+    right: 6px;
+}
+
+/* Global search trigger + palette */
+.orbita-search-trigger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-width: 220px;
+    height: 36px;
+    padding: 0 10px 0 12px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg-card);
+    color: var(--text-secondary);
+    font-size: 13px;
+    cursor: pointer;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.orbita-search-trigger:hover,
+.orbita-search-trigger:focus-visible {
+    border-color: #93c5fd;
+    background: #f8fafc;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+    outline: none;
+}
+
+.orbita-search-trigger-leading {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.orbita-search-trigger-label {
+    color: #98a2b3;
+    white-space: nowrap;
+}
+
+.orbita-search-kbd {
+    flex-shrink: 0;
+    padding: 2px 6px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: #f8fafc;
+    font-size: 11px;
+    font-family: inherit;
+    color: #94a3b8;
+    line-height: 1.2;
+}
+
+body.orbita-search-open {
+    overflow: hidden;
+}
+
+.orbita-search {
+    position: fixed;
+    inset: 0;
+    z-index: 80;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 10vh 16px 16px;
+}
+
+.orbita-search[hidden] { display: none !important; }
+
+.orbita-search__backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.45);
+    backdrop-filter: blur(4px);
+    opacity: 0;
+    transition: opacity 0.16s ease;
+}
+
+.orbita-search.is-open .orbita-search__backdrop {
+    opacity: 1;
+}
+
+.orbita-search__dialog {
+    position: relative;
+    width: min(680px, 100%);
+    border-radius: 18px;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    box-shadow: 0 24px 64px rgba(15, 23, 42, 0.22);
+    overflow: hidden;
+    opacity: 0;
+    transform: translateY(-10px) scale(0.98);
+    transition: opacity 0.16s ease, transform 0.16s ease;
+}
+
+.orbita-search.is-open .orbita-search__dialog {
+    opacity: 1;
+    transform: none;
+}
+
+.orbita-search__head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 14px 14px 16px;
+    border-bottom: 1px solid var(--border);
+}
+
+.orbita-search__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+    background: #eff6ff;
+    color: #2563eb;
+    flex-shrink: 0;
+}
+
+.orbita-search__input {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    outline: none;
+    font-size: 16px;
+    color: var(--text-primary);
+    background: transparent;
+}
+
+.orbita-search__input::placeholder {
+    color: #94a3b8;
+}
+
+.orbita-search__spinner {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    color: #2563eb;
+    flex-shrink: 0;
+}
+
+.orbita-search__spinner[hidden] { display: none !important; }
+
+.orbita-search__close {
+    width: 32px;
+    height: 32px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.orbita-search__close:hover {
+    background: #f1f5f9;
+    color: var(--text-primary);
+}
+
+.orbita-search__results {
+    max-height: min(420px, 52vh);
+    overflow: auto;
+    padding: 8px;
+}
+
+.orbita-search__section + .orbita-search__section {
+    margin-top: 4px;
+}
+
+.orbita-search__section-title {
+    padding: 8px 12px 4px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #94a3b8;
+}
+
+.orbita-search__hit {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 10px 12px;
+    border: 0;
+    border-radius: 12px;
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.12s ease, box-shadow 0.12s ease;
+}
+
+.orbita-search__hit:hover,
+.orbita-search__hit.is-active {
+    background: #f8fafc;
+    box-shadow: inset 0 0 0 1px #e2e8f0;
+}
+
+.orbita-search__hit.is-active {
+    background: #eff6ff;
+    box-shadow: inset 0 0 0 1px #bfdbfe;
+}
+
+.orbita-search__hit-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    flex-shrink: 0;
+    font-size: 14px;
+}
+
+.orbita-search__hit-icon--workers { background: #eff6ff; color: #2563eb; }
+.orbita-search__hit-icon--accounts { background: #f5f3ff; color: #7c3aed; }
+.orbita-search__hit-icon--responses { background: #ecfdf5; color: #059669; }
+.orbita-search__hit-icon--events { background: #fff7ed; color: #ea580c; }
+
+.orbita-search__hit-text {
+    flex: 1;
+    min-width: 0;
+}
+
+.orbita-search__hit-title {
+    display: block;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.orbita-search__hit-sub {
+    display: block;
+    margin-top: 2px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.orbita-search__hit-enter {
+    flex-shrink: 0;
+    opacity: 0;
+    transition: opacity 0.12s ease;
+    color: #94a3b8;
+}
+
+.orbita-search__hit-enter kbd {
+    padding: 2px 6px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    font-size: 11px;
+    font-family: inherit;
+}
+
+.orbita-search__hit.is-active .orbita-search__hit-enter,
+.orbita-search__hit:hover .orbita-search__hit-enter {
+    opacity: 1;
+}
+
+.orbita-search__mark {
+    padding: 0 1px;
+    border-radius: 3px;
+    background: #fef08a;
+    color: inherit;
+}
+
+.orbita-search__idle,
+.orbita-search__empty {
+    padding: 28px 24px 32px;
+    text-align: center;
+}
+
+.orbita-search__idle-icon,
+.orbita-search__empty-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 52px;
+    height: 52px;
+    margin-bottom: 12px;
+    border-radius: 16px;
+    background: #f1f5f9;
+    color: #64748b;
+    font-size: 20px;
+}
+
+.orbita-search__idle-title,
+.orbita-search__empty-title {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.orbita-search__idle-sub,
+.orbita-search__empty-sub {
+    margin: 6px 0 0;
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.45;
+}
+
+.orbita-search__tips {
+    list-style: none;
+    margin: 18px 0 0;
+    padding: 0;
+    display: grid;
+    gap: 8px;
+    text-align: left;
+}
+
+.orbita-search__tips li {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: #f8fafc;
+    border: 1px solid #eef2f7;
+    font-size: 13px;
+    color: #475569;
+}
+
+.orbita-search__tips li i {
+    width: 16px;
+    color: #64748b;
+    text-align: center;
+}
+
+.orbita-search__footer {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 16px;
+    padding: 10px 16px;
+    border-top: 1px solid var(--border);
+    background: #f8fafc;
+    font-size: 12px;
+    color: #94a3b8;
+}
+
+.orbita-search__shortcut {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.orbita-search__shortcut kbd,
+.orbita-search__idle kbd {
+    padding: 2px 6px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    font-size: 11px;
+    font-family: inherit;
+    color: #64748b;
+}
+
+/* Filter panels */
+.workers-filter-btn.is-active,
+.accounts-filter-btn.is-active,
+.orbita-filters-toggle.is-active,
+.events-filter-btn.is-active,
+.errors-filter-btn.is-active,
+.responses-filter-btn.is-active {
+    border-color: #2563eb;
+    color: #2563eb;
+    background: #eff6ff;
+}
+
+.orbita-filter-panel {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    z-index: 20;
+    min-width: 260px;
+    padding: 14px;
+    border-radius: 12px;
+    border: 1px solid #e4e7ec;
+    background: #ffffff;
+    box-shadow: 0 12px 24px rgba(16, 24, 40, 0.12);
+}
+
+.orbita-filter-panel[hidden] { display: none !important; }
+
+.workers-toolbar,
+.accounts-toolbar,
+.orbita-filters-toolbar-actions,
+.events-filters-actions,
+.errors-filters-actions,
+.responses-filters-actions {
+    position: relative;
+}
+
+.orbita-filter-panel__label {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #667085;
+}
+
+.orbita-filter-panel__select {
+    width: 100%;
+    height: 36px;
+    padding: 0 10px;
+    border-radius: 8px;
+    border: 1px solid #e4e7ec;
+    background: #ffffff;
+    font-size: 14px;
+}
+
+.orbita-filter-panel__actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.orbita-filter-panel__reset {
+    font-size: 13px;
+    color: #667085;
+    text-decoration: none;
+}
+
+.orbita-filter-panel__apply {
+    height: 32px;
+    padding: 0 12px;
+    border: 0;
+    border-radius: 8px;
+    background: #2563eb;
+    color: #ffffff;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+/* Detail modal */
+.orbita-detail-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 75;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px 16px;
+    overflow-y: auto;
+}
+
+.orbita-detail-modal--media {
+    align-items: flex-start;
+}
+
+.orbita-detail-modal[hidden] { display: none !important; }
+
+.orbita-detail-modal__backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.45);
+}
+
+.orbita-detail-modal__dialog {
+    position: relative;
+    width: min(520px, 100%);
+    max-height: calc(100vh - 48px);
+    display: flex;
+    flex-direction: column;
+    border-radius: 16px;
+    border: 1px solid #e4e7ec;
+    background: #ffffff;
+    box-shadow: 0 20px 40px rgba(16, 24, 40, 0.16);
+    overflow: hidden;
+}
+
+.orbita-detail-modal--media .orbita-detail-modal__dialog {
+    width: min(960px, calc(100vw - 32px));
+}
+
+.orbita-detail-modal__head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 18px 20px 0;
+    flex-shrink: 0;
+}
+
+.orbita-detail-modal__title {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 700;
+    color: #101828;
+}
+
+.orbita-detail-modal__subtitle {
+    margin: 4px 0 0;
+    font-size: 13px;
+    color: #667085;
+}
+
+.orbita-detail-modal__body {
+    padding: 14px 20px 20px;
+    font-size: 14px;
+    line-height: 1.55;
+    color: #344054;
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-y: auto;
+    flex: 1;
+    min-height: 0;
+}
+
+.orbita-detail-modal__foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 0 20px 18px;
+    flex-shrink: 0;
+}
+
+.orbita-detail-modal__foot[hidden] {
+    display: none !important;
+}
+
+.orbita-detail-modal__nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    min-width: 0;
+}
+
+.orbita-detail-modal__nav[hidden] {
+    display: none !important;
+}
+
+.orbita-detail-modal__nav-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 36px;
+    padding: 0 12px;
+    border: 1px solid #e4e7ec;
+    border-radius: 10px;
+    background: #ffffff;
+    color: #344054;
+    font-size: 13px;
+    font-weight: 500;
+    text-decoration: none;
+    transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.orbita-detail-modal__nav-link:hover {
+    background: #f9fafb;
+    border-color: #d0d5dd;
+    color: #101828;
+}
+
+.orbita-detail-modal__foot-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+}
+
+.orbita-detail-modal__action {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: 40px;
+    padding: 0 16px;
+    border: 0;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.orbita-detail-modal__action--ghost {
+    border: 1px solid #e4e7ec;
+    background: #ffffff;
+    color: #344054;
+}
+
+.orbita-detail-modal__action--ghost:hover {
+    background: #f9fafb;
+    border-color: #d0d5dd;
+}
+
+.orbita-detail-modal__action[hidden] {
+    display: none !important;
+}
+
+.orbita-detail-modal__dismiss {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: 40px;
+    padding: 0 16px;
+    border: 0;
+    border-radius: 10px;
+    background: #2563eb;
+    color: #ffffff;
+    font-size: 14px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background 0.2s ease;
+}
+
+.orbita-detail-modal__dismiss:hover {
+    background: #1d4ed8;
+}
+
+.orbita-detail-modal__dismiss[hidden] {
+    display: none !important;
+}
+
+.orbita-detail-modal__close {
+    width: 32px;
+    height: 32px;
+    border: 0;
+    border-radius: 8px;
+    background: #f9fafb;
+    color: #667085;
+    cursor: pointer;
+}
+
+.chart-period-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: #667085;
+}
+
+@media (max-width: 768px) {
+    .orbita-search-trigger {
+        min-width: 0;
+        padding: 0 10px;
+    }
+
+    .orbita-search-trigger-label,
+    .orbita-search-kbd { display: none; }
+
+    .orbita-search__footer {
+        gap: 8px;
+    }
+
+    .orbita-search__shortcut:nth-child(1) {
+        display: none;
+    }
+}
+
+[data-theme="dark"] .orbita-search-trigger,
+[data-theme="dark"] .orbita-filter-panel,
+[data-theme="dark"] .orbita-search__dialog,
+[data-theme="dark"] .orbita-detail-modal__dialog {
+    background: var(--bg-card);
+    border-color: var(--border);
+    color: var(--text-primary);
+}
+
+[data-theme="dark"] .orbita-search-trigger:hover,
+[data-theme="dark"] .orbita-search-trigger:focus-visible {
+    background: #1e293b;
+    border-color: #475569;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+}
+
+[data-theme="dark"] .orbita-search-kbd {
+    background: #0f172a;
+    border-color: var(--border);
+    color: #94a3b8;
+}
+
+[data-theme="dark"] .orbita-search__input,
+[data-theme="dark"] .orbita-detail-modal__title {
+    color: var(--text-primary);
+}
+
+[data-theme="dark"] .orbita-search__icon {
+    background: rgba(37, 99, 235, 0.15);
+    color: #60a5fa;
+}
+
+[data-theme="dark"] .orbita-search__close:hover {
+    background: #334155;
+}
+
+[data-theme="dark"] .orbita-search__hit:hover,
+[data-theme="dark"] .orbita-search__hit.is-active {
+    background: #334155;
+    box-shadow: inset 0 0 0 1px #475569;
+}
+
+[data-theme="dark"] .orbita-search__hit.is-active {
+    background: rgba(37, 99, 235, 0.18);
+    box-shadow: inset 0 0 0 1px rgba(96, 165, 250, 0.45);
+}
+
+[data-theme="dark"] .orbita-search__hit-icon--workers { background: rgba(37, 99, 235, 0.18); color: #60a5fa; }
+[data-theme="dark"] .orbita-search__hit-icon--accounts { background: rgba(124, 58, 237, 0.18); color: #a78bfa; }
+[data-theme="dark"] .orbita-search__hit-icon--responses { background: rgba(5, 150, 105, 0.18); color: #34d399; }
+[data-theme="dark"] .orbita-search__hit-icon--events { background: rgba(234, 88, 12, 0.18); color: #fb923c; }
+
+[data-theme="dark"] .orbita-search__mark {
+    background: rgba(250, 204, 21, 0.28);
+    color: inherit;
+}
+
+[data-theme="dark"] .orbita-search__idle-icon,
+[data-theme="dark"] .orbita-search__empty-icon {
+    background: #334155;
+    color: #94a3b8;
+}
+
+[data-theme="dark"] .orbita-search__tips li {
+    background: #0f172a;
+    border-color: var(--border);
+    color: #cbd5e1;
+}
+
+[data-theme="dark"] .orbita-search__footer {
+    background: #0f172a;
+    border-color: var(--border);
+}
+
+[data-theme="dark"] .orbita-detail-modal__nav-link,
+[data-theme="dark"] .orbita-detail-modal__action--ghost {
+    background: var(--bg-card);
+    border-color: var(--border);
+    color: var(--text-primary);
+}
+
+[data-theme="dark"] .orbita-detail-modal__nav-link:hover,
+[data-theme="dark"] .orbita-detail-modal__action--ghost:hover {
+    background: var(--bg-hover);
+    border-color: var(--border-strong);
+    color: var(--text-primary);
+}
+
+[data-theme="dark"] .orbita-detail-modal__dismiss {
+    background: #3b82f6;
+}
+
+[data-theme="dark"] .orbita-detail-modal__dismiss:hover {
+    background: #2563eb;
+}
+
+/* Active filter chips */
+.orbita-filter-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding-top: 4px;
+}
+
+
+
+.workers-filter-btn {
+    position: relative;
+}
+
+.journal-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 20px;
+}
+
+.journal-tab {
+    display: inline-flex;
+    align-items: center;
+    height: 36px;
+    padding: 0 14px;
+    border: 1px solid #e4e7ec;
+    border-radius: 999px;
+    background: #ffffff;
+    color: #667085;
+    font-size: 14px;
+    font-weight: 500;
+    text-decoration: none;
+    transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.journal-tab:hover {
+    background: #f9fafb;
+    color: #344054;
+}
+
+.journal-tab--active {
+    border-color: #2563eb;
+    background: #eff6ff;
+    color: #1d4ed8;
+}
+
+.orbita-account-combobox {
+    position: relative;
+    width: 100%;
+}
+
+.orbita-account-combobox__control {
+    position: relative;
+}
+
+.orbita-account-combobox__input {
+    width: 100%;
+    height: 40px;
+    padding: 0 36px 0 12px;
+    border: 1px solid #e4e7ec;
+    border-radius: 10px;
+    font-size: 14px;
+    font-family: inherit;
+}
+
+.orbita-account-combobox__clear {
+    position: absolute;
+    top: 50%;
+    right: 8px;
+    transform: translateY(-50%);
+    width: 24px;
+    height: 24px;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: #98a2b3;
+    cursor: pointer;
+}
+
+.orbita-account-combobox__list {
+    position: absolute;
+    z-index: 30;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    max-height: 220px;
+    margin: 0;
+    padding: 6px;
+    list-style: none;
+    overflow: auto;
+    border: 1px solid #e4e7ec;
+    border-radius: 10px;
+    background: #ffffff;
+    box-shadow: 0 8px 24px rgba(16, 24, 40, 0.12);
+}
+
+.orbita-account-combobox__option {
+    padding: 8px 10px;
+    border-radius: 8px;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+.orbita-account-combobox__option:hover,
+.orbita-account-combobox__option.is-selected {
+    background: #f2f4f7;
+}
+
+.orbita-detail-sections {
+    display: grid;
+    grid-template-columns: minmax(120px, 34%) 1fr;
+    gap: 10px 16px;
+    margin: 0;
+}
+
+.orbita-detail-sections dt {
+    margin: 0;
+    color: #667085;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.orbita-detail-sections dd {
+    margin: 0;
+    color: #101828;
+    font-size: 14px;
+}
+
+.orbita-detail-value-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.orbita-detail-chat {
+    margin-top: 20px;
+}
+
+.orbita-detail-chat__title {
+    margin: 0 0 12px;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.orbita-detail-chat__thread {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 280px;
+    overflow: auto;
+}
+
+.orbita-detail-chat__bubble {
+    max-width: 85%;
+    padding: 10px 12px;
+    border-radius: 12px;
+    font-size: 14px;
+}
+
+.orbita-detail-chat__bubble--incoming {
+    align-self: flex-start;
+    background: #f2f4f7;
+}
+
+.orbita-detail-chat__bubble--outgoing {
+    align-self: flex-end;
+    background: #dbeafe;
+}
+
+.orbita-detail-chat__time {
+    display: block;
+    margin-top: 4px;
+    color: #98a2b3;
+    font-size: 11px;
+}
+
+.orbita-detail-modal__primary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-right: auto;
+}
+
+.orbita-detail-modal__action--primary {
+    border: 0;
+    background: #2563eb;
+    color: #ffffff;
+}
+
+.workers-filter-btn .orbita-filters-toggle-count {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    font-size: 10px;
+    border: 2px solid #ffffff;
+}
+
+.orbita-filter-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 28px;
+    padding: 0 10px;
+    border: 1px solid #d0d5dd;
+    border-radius: 999px;
+    background: #f9fafb;
+    color: #344054;
+    font-size: 12px;
+    font-weight: 500;
+    text-decoration: none;
+    transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.orbita-filter-chip:hover {
+    background: #f3f4f6;
+    border-color: #98a2b3;
+    color: #101828;
+}
+
+.orbita-filter-chip__remove {
+    font-size: 10px;
+    color: #98a2b3;
+}
+
+.orbita-filters-toggle-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: #2563eb;
+    color: #ffffff;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+}
+
+[data-theme="dark"] .orbita-filter-chip {
+    background: rgba(15, 23, 42, 0.5);
+    border-color: var(--border);
+    color: var(--text-primary);
+}
+
+[data-theme="dark"] .orbita-filter-chip:hover {
+    background: var(--bg-hover);
+    border-color: var(--border-strong);
+}
+

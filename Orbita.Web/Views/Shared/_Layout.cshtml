@@ -43,7 +43,21 @@ else
         } catch (e) { }
     </script>
     <link rel="stylesheet" href="~/lib/fontawesome/css/all.min.css" asp-append-version="true" />
-    <link rel="stylesheet" href="~/css/orbita.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/orbita/base.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/orbita/dashboard.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/orbita/workers.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/orbita/worker-detail.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/orbita/accounts.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/orbita/events.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/orbita/errors.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/orbita/settings.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/orbita/navigation.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/orbita/responses.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/orbita/feedback.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/orbita/search-and-filters.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/orbita/responsive-data-tables.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/orbita/statistics.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/orbita/crm.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/orbita-mobile.css" asp-append-version="true" />
     @await RenderSectionAsync("Styles", required: false)
 </head>
@@ -190,7 +204,14 @@ else
 </div>
 <script src="~/js/orbita-time.js" asp-append-version="true"></script>
 <script src="~/js/orbita-live-shared.js" asp-append-version="true"></script>
-<script src="~/js/orbita.js" asp-append-version="true"></script>
+<script src="~/js/orbita/layout.js" asp-append-version="true"></script>
+<script src="~/js/orbita/sidebar.js" asp-append-version="true"></script>
+<script src="~/js/orbita/feedback.js" asp-append-version="true"></script>
+<script src="~/js/orbita/workers.js" asp-append-version="true"></script>
+<script src="~/js/orbita/filters.js" asp-append-version="true"></script>
+<script src="~/js/orbita/detail-modal.js" asp-append-version="true"></script>
+<script src="~/js/orbita/navigation.js" asp-append-version="true"></script>
+<script src="~/js/orbita/entry.js" asp-append-version="true"></script>
 @if (!PreviewOptions.Value.Enabled)
 {
 <script src="~/lib/signalr/dist/browser/signalr.min.js" asp-append-version="true"></script>

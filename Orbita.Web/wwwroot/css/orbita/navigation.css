@@ -1,0 +1,282 @@
+/* Client-side fast page navigation loading overlay + spinner */
+.orbita-content {
+    position: relative;
+}
+
+.orbita-nav-loading {
+    position: absolute;
+    left: var(--orbita-sidebar-width);
+    top: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(248, 250, 252, 0.85);
+    backdrop-filter: blur(3px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 300;
+    pointer-events: all;
+}
+
+[data-theme="dark"] .orbita-nav-loading {
+    background: rgba(15, 23, 42, 0.85);
+}
+
+.orbita-spinner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    color: #334155;
+    font-size: 14px;
+    font-weight: 600;
+    background: white;
+    padding: 16px 28px;
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(15, 23, 42, 0.15), 0 2px 8px rgba(0,0,0,0.08);
+}
+
+[data-theme="dark"] .orbita-spinner {
+    background: #1e293b;
+    color: #e2e8f0;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+}
+
+.orbita-spinner i {
+    font-size: 36px;
+    color: #2563eb;
+}
+
+/* .orbita-nav-loading is now managed outside .orbita-content */
+
+.settings-registration-secret,
+.settings-registration-source {
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.settings-worker-rename-form {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.settings-worker-name-input {
+    height: 36px;
+    min-width: 160px;
+    padding: 0 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-card);
+    color: var(--text-primary);
+    font-size: 14px;
+    font-family: inherit;
+}
+
+.settings-status-pill {
+    display: inline-flex;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.settings-status-pill--online {
+    background: rgba(22, 163, 74, 0.12);
+    color: #15803d;
+}
+
+.settings-status-pill--offline {
+    background: rgba(148, 163, 184, 0.16);
+    color: #475569;
+}
+
+.settings-status-pill--disabled {
+    background: rgba(239, 68, 68, 0.12);
+    color: #b91c1c;
+}
+
+.settings-worker-row--disabled {
+    opacity: 0.72;
+}
+
+.settings-audit-action {
+    display: block;
+    font-weight: 600;
+    font-size: 13px;
+}
+
+[data-theme="dark"] .settings-tab { color: #94a3b8; }
+[data-theme="dark"] .settings-tab:hover { color: #e2e8f0; }
+[data-theme="dark"] .settings-alert--success { color: #4ade80; }
+[data-theme="dark"] .settings-alert--error { color: #fca5a5; }
+[data-theme="dark"] .settings-alert--api-key { color: #93c5fd; }
+
+.settings-grid--bitrix,
+.settings-grid--integrations {
+    display: grid;
+    gap: 20px;
+}
+
+.settings-grid--integrations {
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+}
+
+.settings-bitrix-status {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.settings-bitrix-status--success { background: #ecfdf3; color: #027a48; }
+.settings-bitrix-status--warning { background: #fffaeb; color: #b54708; }
+.settings-bitrix-status--error { background: #fef3f2; color: #b42318; }
+.settings-bitrix-status--neutral { background: #f2f4f7; color: #475467; }
+
+.settings-bitrix-current,
+.settings-bitrix-message,
+.settings-bitrix-checked,
+.settings-bitrix-hint {
+    margin: 0 0 12px;
+    font-size: 13px;
+    color: #667085;
+}
+
+.settings-bitrix-transmission-form {
+    margin-bottom: 1.25rem;
+    padding-bottom: 1.25rem;
+    border-bottom: 1px solid var(--orbita-border, #eaecf0);
+}
+
+.settings-bitrix-transmission-toggle {
+    font-weight: 600;
+}
+
+.settings-bitrix-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.settings-bitrix-instructions {
+    margin-top: 16px;
+    font-size: 13px;
+    color: #475467;
+}
+
+.settings-bitrix-instructions summary {
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.settings-bitrix-instructions ol {
+    margin: 10px 0 0;
+    padding-left: 20px;
+}
+
+.settings-bitrix-validation {
+    margin-top: 14px;
+}
+
+.settings-bitrix-validation-summary {
+    padding: 10px 12px;
+    border-radius: 8px;
+    font-size: 13px;
+    margin-bottom: 10px;
+}
+
+.settings-bitrix-validation-summary--success { background: #ecfdf3; color: #027a48; }
+.settings-bitrix-validation-summary--warning { background: #fffaeb; color: #b54708; }
+.settings-bitrix-validation-summary--error { background: #fef3f2; color: #b42318; }
+
+.settings-bitrix-step-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 8px;
+}
+
+.settings-bitrix-validation-caption {
+    margin: 12px 0 8px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #475467;
+}
+
+.settings-bitrix-validation-loading {
+    margin: 0;
+    font-size: 13px;
+    color: #667085;
+}
+
+.settings-bitrix-step {
+    display: block;
+    font-size: 13px;
+    padding: 10px 12px;
+    border: 1px solid #eaecf0;
+    border-radius: 8px;
+}
+
+.settings-bitrix-step-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 6px;
+}
+
+.settings-bitrix-step-name {
+    font-weight: 600;
+    color: #344054;
+}
+
+.settings-bitrix-step-message {
+    margin: 0;
+    color: #475467;
+    line-height: 1.45;
+}
+
+.settings-bitrix-step-hint {
+    margin: 8px 0 0;
+    padding: 8px 10px;
+    border-radius: 6px;
+    background: #f9fafb;
+    color: #344054;
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.settings-bitrix-step--success { border-color: #abefc6; }
+.settings-bitrix-step--warning { border-color: #fedf89; }
+.settings-bitrix-step--error { border-color: #fecdca; }
+
+[data-theme="dark"] .settings-bitrix-status--success { background: #052e1c; color: #6ee7a8; }
+[data-theme="dark"] .settings-bitrix-status--warning { background: #3b2f13; color: #fcd34d; }
+[data-theme="dark"] .settings-bitrix-status--error { background: #3f1d1d; color: #fca5a5; }
+[data-theme="dark"] .settings-bitrix-status--neutral { background: #1f2937; color: #cbd5e1; }
+
+@media (max-width: 1100px) {
+    .settings-grid--users,
+    .settings-grid--offices,
+    .settings-grid--profile,
+    .settings-grid--integrations { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 700px) {
+    .settings-page-title { font-size: 32px; }
+    .settings-logs-filters-row { flex-direction: column; align-items: stretch; }
+    .settings-filter-field,
+    .settings-filter-field--grow { min-width: 0; width: 100%; }
+    .service-log-entry { padding: 12px 16px; }
+    .service-log-entry__trace {
+        margin-left: 0;
+        max-width: 100%;
+    }
+}
+
