@@ -65,6 +65,15 @@ internal static class WorkerMonitoringLogger
     public static void AccountFailed(AvitoAccount account, string step, string detail) =>
         LogError($"{FormatAccount(account)} — сбой на шаге «{step}»: {detail}");
 
+    public static void AccountPersonalDelay(
+        AvitoAccount account,
+        double delayMinutes,
+        int newResponses,
+        bool polled) =>
+        LogInfo(
+            $"{FormatAccount(account)} — пауза ~{delayMinutes:F0} мин " +
+            $"(проход {(polled ? "ok" : "skip")}, новых {newResponses}); браузер закрыт.");
+
     public static void BrowserOpened(AvitoAccount account) =>
         LogInfo($"{FormatAccount(account)} — браузер AdsPower открыт.");
 

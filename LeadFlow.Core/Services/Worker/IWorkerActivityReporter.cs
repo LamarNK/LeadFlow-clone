@@ -4,6 +4,8 @@ public interface IWorkerActivityReporter
 {
     void ReportCycle(int accountCount);
 
+    void ReportCycleProgress(string message);
+
     void ReportWaiting(DateTime nextCycleAtUtc, string message);
 
     void ReportAccount(Guid accountId, string accountName, string message);

@@ -6,6 +6,8 @@ public sealed class NullWorkerActivityReporter : IWorkerActivityReporter
 
     public void ReportCycle(int accountCount) { }
 
+    public void ReportCycleProgress(string message) { }
+
     public void ReportWaiting(DateTime nextCycleAtUtc, string message) { }
 
     public void ReportAccount(Guid accountId, string accountName, string message) { }

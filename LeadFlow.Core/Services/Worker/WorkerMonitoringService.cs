@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text.Json;
 using LeadFlow.Core.Data;
@@ -46,13 +47,16 @@ public sealed class WorkerMonitoringService(
     private CancellationTokenSource? _cts;
     private Task? _loopTask;
     private int _consecutiveMonitoringLoopFailures;
-    private int _consecutiveQuietMonitoringCycles;
-    /// <summary>Полные циклы (browser/start…stop) с последней принудительной уборки браузеров.</summary>
-    private int _completedCyclesSinceBrowserHousekeeping;
+    /// <summary>Сколько account-проходов с последней orphan-уборки (вместо «полного цикла»).</summary>
+    private int _completedPassesSinceBrowserHousekeeping;
     private DateOnly? _lastBrowserHousekeepingLocalDate;
     private volatile bool _captchaHold;
     private readonly SemaphoreSlim _monitorScreencastGate = new(1, 1);
     private readonly Dictionary<Guid, BrowserMonitorScreencastCapture> _monitorScreencasts = [];
+    /// <summary>Когда аккаунт снова можно брать (своя пауза после прохода + close).</summary>
+    private readonly ConcurrentDictionary<Guid, DateTime> _accountNextEligibleUtc = new();
+    /// <summary>Сколько подряд «тихих» проходов у аккаунта (для quiet backoff delay).</summary>
+    private readonly ConcurrentDictionary<Guid, int> _accountQuietStreak = new();
 
     public bool IsActive { get; private set; }
     public bool IsCaptchaHold => _captchaHold;
@@ -100,9 +104,10 @@ public sealed class WorkerMonitoringService(
 
         _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         IsActive = true;
-        _consecutiveQuietMonitoringCycles = 0;
-        // После stop/start счётчик циклов обнуляется; календарный день учитывается отдельно.
-        _completedCyclesSinceBrowserHousekeeping = 0;
+        _accountNextEligibleUtc.Clear();
+        _accountQuietStreak.Clear();
+        // После stop/start счётчик проходов обнуляется; календарный день учитывается отдельно.
+        _completedPassesSinceBrowserHousekeeping = 0;
         _ = GlobalLogger.Instance.LogAsync("Мониторинг воркера запущен.", DeskLinkAuditLogLevel.Info);
         _loopTask = RunAsync(_cts.Token);
         return Task.CompletedTask;
@@ -152,6 +157,14 @@ public sealed class WorkerMonitoringService(
     {
         try
         {
+            // Независимые аккаунты: start → work → browser/stop → своя пауза → снова.
+            // Не ждём «хвост» списка: слот сразу уходит следующему due.
+            var running = new List<AccountCycleJob>();
+            var lastLoggedParallelism = -1;
+            var launchSlot = 0;
+            WorkerMonitoringLogger.CycleStarted(0);
+            activityReporter.ReportCycle(0);
+
             while (!cancellationToken.IsCancellationRequested)
             {
                 if (_captchaHold)
@@ -162,6 +175,7 @@ public sealed class WorkerMonitoringService(
 
                 try
                 {
+                    configProvider.InvalidateConfigCache();
                     var config = await configProvider.GetConfigAsync(cancellationToken).ConfigureAwait(false);
                     var settings = ToAppSettings(config);
                     var accounts = config.Accounts
@@ -171,9 +185,26 @@ public sealed class WorkerMonitoringService(
 
                     if (accounts.Count == 0)
                     {
+                        if (running.Count > 0)
+                        {
+                            var doneEmpty = await Task.WhenAny(running.Select(static j => j.Task))
+                                .ConfigureAwait(false);
+                            var finishedEmpty = running.First(j => j.Task == doneEmpty);
+                            running.Remove(finishedEmpty);
+                            try
+                            {
+                                await finishedEmpty.Task.ConfigureAwait(false);
+                            }
+                            catch (OperationCanceledException)
+                            {
+                                // ignore
+                            }
+
+                            continue;
+                        }
+
                         WorkerMonitoringLogger.CycleSkippedNoAccounts();
                         activityReporter.ReportNoEnabledAccounts();
-                        configProvider.InvalidateConfigCache();
                         await Task.Delay(
                                 TimeSpan.FromSeconds(MonitoringTiming.NoAccountsConfigPollSeconds),
                                 cancellationToken)
@@ -181,73 +212,198 @@ public sealed class WorkerMonitoringService(
                         continue;
                     }
 
-                    WorkerMonitoringLogger.CycleStarted(accounts.Count);
-                    activityReporter.ReportCycle(accounts.Count);
-
-                    var cycleSw = Stopwatch.StartNew();
-                    var (newResponsesThisCycle, accountsPolled, hadUndischargedBacklog, notPolled) =
-                        await ProcessAccountsInCycleAsync(accounts, cancellationToken).ConfigureAwait(false);
-
-                    cycleSw.Stop();
-                    _consecutiveMonitoringLoopFailures = 0;
-
-                    if (newResponsesThisCycle > 0 || hadUndischargedBacklog)
+                    // MSI: нет «общей паузы цикла» — вместо неё drain:
+                    // не стартуем новые, ждём пока доработают текущие, фаза Waiting → install.
+                    var updatePending = pendingUpdateCoordinator.HasPendingInstall;
+                    if (updatePending)
                     {
-                        _consecutiveQuietMonitoringCycles = 0;
-                    }
-                    else
-                    {
-                        _consecutiveQuietMonitoringCycles++;
-                    }
-
-                    var historicalHeat = await repository
-                        .GetHistoricalResponseIngestHeatScoreAsync(DateTime.UtcNow, cancellationToken)
-                        .ConfigureAwait(false);
-                    var delay = MonitoringCycleDelay.GetDelayAfterCycle(
-                        newResponsesThisCycle,
-                        accountsPolled,
-                        _consecutiveQuietMonitoringCycles,
-                        hadUndischargedBacklog,
-                        historicalHeat);
-
-                    WorkerMonitoringLogger.CycleFinished(
-                        cycleSw.Elapsed.TotalSeconds,
-                        newResponsesThisCycle,
-                        accountsPolled,
-                        accounts.Count,
-                        delay.TotalMinutes);
-                    WorkerMonitoringLogger.CycleNotPolledSummary(accounts.Count, notPolled);
-
-                    // Полный цикл: аккаунты прошли browser/start…browser/stop (или были пропущены).
-                    // Раз в N циклов или при смене календарного дня — закрыть осиротевшие окна.
-                    await MaybeHousekeepBrowsersAfterCycleAsync(config, cancellationToken)
-                        .ConfigureAwait(false);
-
-                    if (pendingUpdateCoordinator.HasPendingInstall)
-                    {
-                        var pendingMessage = pendingUpdateCoordinator.BuildWaitingMessage(delay)
-                            ?? "Пауза · установка обновления";
-                        activityReporter.ReportWaiting(DateTime.UtcNow, pendingMessage);
-
-                        if (pendingUpdateCoordinator.TryApplyPendingInstallAtPause())
+                        if (running.Count == 0)
                         {
-                            break;
+                            activityReporter.ReportWaiting(
+                                DateTime.UtcNow,
+                                pendingUpdateCoordinator.BuildWaitingMessage(TimeSpan.Zero)
+                                ?? "Пауза · установка обновления");
+                            if (pendingUpdateCoordinator.TryApplyPendingInstallAtPause())
+                            {
+                                break;
+                            }
+
+                            await Task.Delay(
+                                    TimeSpan.FromSeconds(MonitoringTiming.PendingUpdateRetrySeconds),
+                                    cancellationToken)
+                                .ConfigureAwait(false);
+                            continue;
                         }
 
-                        configProvider.InvalidateConfigCache();
-                        await Task.Delay(
-                                TimeSpan.FromSeconds(MonitoringTiming.PendingUpdateRetrySeconds),
-                                cancellationToken)
+                        activityReporter.ReportWaiting(
+                            DateTime.UtcNow,
+                            $"Обновление: жду завершения {running.Count} аккаунт(ов)");
+                        var drainDone = await Task.WhenAny(running.Select(static j => j.Task))
                             .ConfigureAwait(false);
+                        var drained = running.First(j => j.Task == drainDone);
+                        running.Remove(drained);
+                        try
+                        {
+                            await drained.Task.ConfigureAwait(false);
+                        }
+                        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                        {
+                            throw;
+                        }
+                        catch
+                        {
+                            // ignore pass errors during drain for update
+                        }
+
+                        // Не планируем nextEligible — после install процесс перезапустится.
                         continue;
                     }
 
-                    var nextCycleAt = DateTime.UtcNow.Add(delay);
-                    activityReporter.ReportWaiting(
-                        nextCycleAt,
-                        $"Пауза до следующего цикла (~{Math.Max(1, (int)Math.Round(delay.TotalMinutes))} мин)");
+                    var parallelism = Math.Max(config.MaxConcurrentAccounts, 1);
+                    if (parallelism != lastLoggedParallelism)
+                    {
+                        lastLoggedParallelism = parallelism;
+                        WorkerMonitoringLogger.CycleParallelism(parallelism);
+                    }
 
-                    await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+                    var now = DateTime.UtcNow;
+                    var runningIds = running.Select(static j => j.Account.Id).ToHashSet();
+                    var due = accounts
+                        .Where(a => !runningIds.Contains(a.Id))
+                        .Where(a => GetNextEligibleUtc(a.Id) <= now)
+                        .OrderBy(a => GetNextEligibleUtc(a.Id))
+                        .ThenBy(a => a.DisplayName, StringComparer.OrdinalIgnoreCase)
+                        .ToList();
+
+                    while (running.Count < parallelism && due.Count > 0)
+                    {
+                        var account = due[0];
+                        due.RemoveAt(0);
+                        var slot = launchSlot++;
+                        running.Add(new AccountCycleJob(
+                            account,
+                            RunAccountInCycleSlotAsync(account, settings, slot, cancellationToken)));
+                    }
+
+                    activityReporter.ReportCycleProgress(
+                        $"Активно {running.Count}/{parallelism} · аккаунтов {accounts.Count}");
+
+                    if (running.Count == 0)
+                    {
+                        var nextDue = accounts
+                            .Select(a => GetNextEligibleUtc(a.Id))
+                            .DefaultIfEmpty(now.AddSeconds(30))
+                            .Min();
+                        var wait = nextDue - DateTime.UtcNow;
+                        if (wait < TimeSpan.FromSeconds(2))
+                        {
+                            wait = TimeSpan.FromSeconds(2);
+                        }
+
+                        if (wait > TimeSpan.FromSeconds(30))
+                        {
+                            wait = TimeSpan.FromSeconds(30);
+                        }
+
+                        activityReporter.ReportWaiting(
+                            DateTime.UtcNow.Add(wait),
+                            $"Жду due-аккаунты (~{Math.Max(1, (int)Math.Ceiling(wait.TotalSeconds))} с)");
+                        await Task.Delay(wait, cancellationToken).ConfigureAwait(false);
+                        continue;
+                    }
+
+                    var completedTask = await Task.WhenAny(running.Select(static j => j.Task))
+                        .ConfigureAwait(false);
+                    var job = running.First(j => j.Task == completedTask);
+                    running.Remove(job);
+
+                    var newResponses = 0;
+                    var polled = false;
+                    var backlog = false;
+                    try
+                    {
+                        var outcome = await job.Task.ConfigureAwait(false);
+                        if (outcome.PolledSource)
+                        {
+                            polled = true;
+                            newResponses = outcome.NewResponses;
+                            backlog = outcome.HasUndischargedBacklog;
+                        }
+                        else if (!string.IsNullOrWhiteSpace(outcome.NotPolledReason))
+                        {
+                            WorkerMonitoringLogger.AccountSkipped(job.Account, outcome.NotPolledReason);
+                        }
+                    }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                    {
+                        throw;
+                    }
+                    catch (Exception ex)
+                    {
+                        WorkerMonitoringLogger.AccountFailed(job.Account, "проход", ex.Message);
+                    }
+
+                    _consecutiveMonitoringLoopFailures = 0;
+
+                    var quietStreak = _accountQuietStreak.GetValueOrDefault(job.Account.Id);
+                    if (polled && (newResponses > 0 || backlog))
+                    {
+                        quietStreak = 0;
+                    }
+                    else if (polled)
+                    {
+                        quietStreak++;
+                    }
+
+                    _accountQuietStreak[job.Account.Id] = quietStreak;
+
+                    // Своя пауза только этому аккаунту (браузер уже закрыт в finally прохода).
+                    var historicalHeat = await repository
+                        .GetHistoricalResponseIngestHeatScoreAsync(DateTime.UtcNow, cancellationToken)
+                        .ConfigureAwait(false);
+                    TimeSpan personalDelay;
+                    if (polled)
+                    {
+                        personalDelay = MonitoringCycleDelay.GetDelayAfterCycle(
+                            newResponses,
+                            accountsPolled: 1,
+                            quietStreak,
+                            backlog,
+                            historicalHeat);
+                    }
+                    else
+                    {
+                        // Skip: короткая пауза, не блокируем на max quiet.
+                        personalDelay = TimeSpan.FromMinutes(MonitoringTiming.CycleDelayMinMinutes);
+                    }
+
+                    _accountNextEligibleUtc[job.Account.Id] = DateTime.UtcNow.Add(personalDelay);
+
+                    WorkerMonitoringLogger.AccountPersonalDelay(
+                        job.Account,
+                        personalDelay.TotalMinutes,
+                        newResponses,
+                        polled);
+
+                    _completedPassesSinceBrowserHousekeeping++;
+                    if (_completedPassesSinceBrowserHousekeeping
+                        >= Math.Max(1, MonitoringTiming.BrowserHousekeepingEveryNCycles)
+                           * Math.Max(1, accounts.Count))
+                    {
+                        await MaybeHousekeepBrowsersAfterPassesAsync(config, cancellationToken)
+                            .ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        // Смена календарного дня — тоже уборка.
+                        var todayLocal = DateOnly.FromDateTime(DateTime.Now);
+                        if (_lastBrowserHousekeepingLocalDate is not null
+                            && todayLocal != _lastBrowserHousekeepingLocalDate.Value)
+                        {
+                            await MaybeHousekeepBrowsersAfterPassesAsync(config, cancellationToken)
+                                .ConfigureAwait(false);
+                        }
+                    }
                 }
                 catch (OperationCanceledException)
                 {
@@ -274,6 +430,9 @@ public sealed class WorkerMonitoringService(
             }
         }
     }
+
+    private DateTime GetNextEligibleUtc(Guid accountId) =>
+        _accountNextEligibleUtc.TryGetValue(accountId, out var at) ? at : DateTime.MinValue;
 
     private async Task<bool> TryRecoverLoopAsync(Exception ex, CancellationToken cancellationToken)
     {
@@ -1539,10 +1698,10 @@ public sealed class WorkerMonitoringService(
     }
 
     /// <summary>
-    /// После полного цикла: каждые N проходов или при смене локального дня закрыть все известные браузеры.
-    /// Не трогаем во время hold капчи (браузер нужен оператору).
+    /// Orphan-уборка: вызывается после порога account-проходов или смены дня.
+    /// Не трогаем hold капчи.
     /// </summary>
-    private async Task MaybeHousekeepBrowsersAfterCycleAsync(
+    private async Task MaybeHousekeepBrowsersAfterPassesAsync(
         WorkerMonitoringConfig config,
         CancellationToken cancellationToken)
     {
@@ -1552,23 +1711,15 @@ public sealed class WorkerMonitoringService(
             return;
         }
 
-        _completedCyclesSinceBrowserHousekeeping++;
         var todayLocal = DateOnly.FromDateTime(DateTime.Now);
-        if (!AdsPowerBrowserHousekeeping.ShouldSweep(
-                _completedCyclesSinceBrowserHousekeeping,
-                _lastBrowserHousekeepingLocalDate,
-                todayLocal))
-        {
-            return;
-        }
-
         var reason = _lastBrowserHousekeepingLocalDate is not null
                      && todayLocal != _lastBrowserHousekeepingLocalDate.Value
             ? "конец/смена дня"
-            : $"каждые {MonitoringTiming.BrowserHousekeepingEveryNCycles} цикла";
+            : $"каждые ~{MonitoringTiming.BrowserHousekeepingEveryNCycles}×N проходов";
 
         await CloseAllKnownAdsPowerBrowsersAsync(config.Accounts, reason, cancellationToken)
             .ConfigureAwait(false);
+        _completedPassesSinceBrowserHousekeeping = 0;
     }
 
     private async Task CloseAllKnownAdsPowerBrowsersAsync(
@@ -1586,7 +1737,7 @@ public sealed class WorkerMonitoringService(
 
         if (targets.Count == 0)
         {
-            _completedCyclesSinceBrowserHousekeeping = 0;
+            _completedPassesSinceBrowserHousekeeping = 0;
             _lastBrowserHousekeepingLocalDate = DateOnly.FromDateTime(DateTime.Now);
             return;
         }
@@ -1610,7 +1761,7 @@ public sealed class WorkerMonitoringService(
         }
 
         WorkerMonitoringLogger.BrowserHousekeepingFinished(closedOk, targets.Count);
-        _completedCyclesSinceBrowserHousekeeping = 0;
+        _completedPassesSinceBrowserHousekeeping = 0;
         _lastBrowserHousekeepingLocalDate = DateOnly.FromDateTime(DateTime.Now);
     }
 

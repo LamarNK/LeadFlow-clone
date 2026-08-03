@@ -26,6 +26,9 @@ public sealed class WorkerActivityReporter(
     public void ReportCycle(int accountCount) =>
         SetGlobal(WorkerActivityPhases.Cycle, $"Цикл: {accountCount} аккаунт(ов)");
 
+    public void ReportCycleProgress(string message) =>
+        SetGlobal(WorkerActivityPhases.Cycle, message);
+
     public void ReportWaiting(DateTime nextCycleAtUtc, string message) =>
         SetGlobal(WorkerActivityPhases.Waiting, message, nextCycleAtUtc);
 
