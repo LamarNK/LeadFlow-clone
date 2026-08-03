@@ -163,6 +163,84 @@ public sealed class SettingsService(
         return success ? (true, null) : (false, error);
     }
 
+    public async Task<(bool Success, string? Error)> SaveBitrixWorkforceAsync(
+        SaveBitrixWorkforceFormModel model,
+        CancellationToken ct = default)
+    {
+        if (model.OfficeId == Guid.Empty || model.BitrixInstanceId == Guid.Empty)
+        {
+            return (false, "Выберите офис и Битрикс.");
+        }
+
+        var (managerIds, managerError) = ParseManagerUserIds(model.ManagerUserIdsText);
+        if (managerError is not null)
+        {
+            return (false, managerError);
+        }
+
+        var stageRules = (model.StageRules ?? [])
+            .OrderBy(x => x.SortOrder)
+            .Select(x => new BitrixWorkforceStageRuleDto(
+                x.Id,
+                x.Scenario?.Trim() ?? string.Empty,
+                x.SourceStageId?.Trim() ?? string.Empty,
+                x.TargetStageId?.Trim() ?? string.Empty,
+                x.UsesMorningWindow,
+                x.SortOrder,
+                x.IsEnabled))
+            .ToList();
+
+        var request = new UpdateBitrixWorkforceSettingsRequest(
+            model.OperationMode?.Trim() ?? BitrixWorkforceDistribution.DisabledMode,
+            model.DealCategoryId,
+            model.TimeZoneId?.Trim() ?? "Europe/Moscow",
+            managerIds,
+            stageRules,
+            model.MorningWindowStartMinutes,
+            model.MorningWindowEndMinutes,
+            model.LateJoinReserveMinutes,
+            model.SingleManagerInitialReleasePercent,
+            model.RetryDelaySeconds,
+            model.MaxAttempts,
+            model.PreserveManualNewOwner,
+            model.SyncContactOwner,
+            model.FillOnlyEmptyAvitoFields,
+            model.WriterRulesConfirmed);
+
+        var (saved, error) = await api.UpdateBitrixWorkforceSettingsAsync(
+            model.BitrixInstanceId,
+            request,
+            model.OfficeId,
+            ct);
+        return saved is null ? (false, error) : (true, null);
+    }
+
+    public async Task<(bool Success, string? Error)> ConfigureBitrixWorkforceReceiverAsync(
+        ConfigureBitrixWorkforceReceiverFormModel model,
+        CancellationToken ct = default)
+    {
+        if (model.OfficeId == Guid.Empty || model.BitrixInstanceId == Guid.Empty)
+        {
+            return (false, "Выберите офис и Битрикс.");
+        }
+
+        if (string.IsNullOrWhiteSpace(model.ApplicationToken))
+        {
+            return (false, "Укажите application_token исходящего вебхука Bitrix24.");
+        }
+
+        var (receiver, error) = await api.ConfigureBitrixWorkforceReceiverAsync(
+            model.BitrixInstanceId,
+            new ConfigureBitrixWorkforceReceiverRequest(
+                model.ApplicationToken.Trim(),
+                string.IsNullOrWhiteSpace(model.ExpectedMemberId)
+                    ? null
+                    : model.ExpectedMemberId.Trim()),
+            model.OfficeId,
+            ct);
+        return receiver is null ? (false, error) : (true, null);
+    }
+
     public async Task<(bool Success, string? Error)> SaveDistributionRouteAsync(
         bool isAutoDistributionEnabled,
         IReadOnlyList<SaveDistributionNodeRequest> nodes,
@@ -505,15 +583,25 @@ public sealed class SettingsService(
         var selectedOfficeId = officeId ?? offices.FirstOrDefault()?.Id;
         var selectedOffice = offices.FirstOrDefault(x => x.Id == selectedOfficeId);
         BitrixInstanceEditorViewModel? editor = null;
+        BitrixWorkforceEditorViewModel? workforce = null;
         if (instanceId == Guid.Empty)
         {
             editor = MySettingsService.CreateNewEditor();
         }
         else if (instanceId is Guid selectedInstanceId)
         {
-            editor = DesignPreviewData.GetPreviewBitrixInstance(selectedInstanceId) is { } detail
-                ? MySettingsService.MapEditor(detail)
-                : null;
+            if (DesignPreviewData.GetPreviewBitrixInstance(selectedInstanceId) is { } detail)
+            {
+                editor = MySettingsService.MapEditor(detail);
+                if (selectedOfficeId is Guid previewOfficeId)
+                {
+                    workforce = CreateWorkforceEditor(
+                        previewOfficeId,
+                        MySettingsService.FormatBitrixLabel(detail.Name, detail.Signature),
+                        DesignPreviewData.PreviewBitrixWorkforceSettings,
+                        DesignPreviewData.PreviewBitrixWorkforceAssignments);
+                }
+            }
         }
 
         return new BitrixDistributionSettingsViewModel
@@ -536,6 +624,7 @@ public sealed class SettingsService(
                     .ToList(),
                 Editor = editor
             },
+            Workforce = workforce,
             Distribution = new DistributionEditorViewModel
             {
                 OfficeId = selectedOfficeId,
@@ -580,6 +669,7 @@ public sealed class SettingsService(
             ?? new DistributionRouteDto(Guid.Empty, selectedOfficeId, false, [], null);
 
         BitrixInstanceEditorViewModel? editor = null;
+        BitrixWorkforceEditorViewModel? workforce = null;
         if (instanceId == Guid.Empty)
         {
             editor = MySettingsService.CreateNewEditor();
@@ -590,6 +680,22 @@ public sealed class SettingsService(
             if (detail is not null)
             {
                 editor = MySettingsService.MapEditor(detail);
+                var workforceSettings = await api.GetBitrixWorkforceSettingsAsync(
+                    selectedInstanceId,
+                    selectedOfficeId,
+                    ct);
+                if (workforceSettings is not null)
+                {
+                    var recentAssignments = await api.GetBitrixWorkforceAssignmentsAsync(
+                        selectedInstanceId,
+                        selectedOfficeId,
+                        ct: ct) ?? [];
+                    workforce = CreateWorkforceEditor(
+                        selectedOfficeId,
+                        MySettingsService.FormatBitrixLabel(detail.Name, detail.Signature),
+                        workforceSettings,
+                        recentAssignments);
+                }
             }
         }
 
@@ -621,6 +727,7 @@ public sealed class SettingsService(
                 Instances = instances.Select(MySettingsService.MapListItem).ToList(),
                 Editor = editor
             },
+            Workforce = workforce,
             Distribution = new DistributionEditorViewModel
             {
                 OfficeId = selectedOfficeId,
@@ -631,6 +738,116 @@ public sealed class SettingsService(
                 InstancesJson = System.Text.Json.JsonSerializer.Serialize(instancePayload)
             }
         };
+    }
+
+    private static BitrixWorkforceEditorViewModel CreateWorkforceEditor(
+        Guid officeId,
+        string bitrixInstanceLabel,
+        BitrixWorkforceSettingsDto settings,
+        IReadOnlyList<BitrixWorkforceAssignmentDto> recentAssignments)
+    {
+        var stageRules = settings.StageRules
+            .OrderBy(x => x.SortOrder)
+            .Select(x => new BitrixWorkforceStageRuleFormModel
+            {
+                Id = x.Id,
+                Scenario = x.Scenario,
+                SourceStageId = x.SourceStageId,
+                TargetStageId = x.TargetStageId,
+                UsesMorningWindow = x.UsesMorningWindow,
+                SortOrder = x.SortOrder,
+                IsEnabled = x.IsEnabled
+            })
+            .ToList();
+
+        EnsureStageRuleSlots(
+            stageRules,
+            BitrixWorkforceDistribution.NewScenario,
+            usesMorningWindow: false,
+            desiredCount: 1);
+        EnsureStageRuleSlots(
+            stageRules,
+            BitrixWorkforceDistribution.MissedCallScenario,
+            usesMorningWindow: true,
+            desiredCount: 2);
+        EnsureStageRuleSlots(
+            stageRules,
+            BitrixWorkforceDistribution.SubstituteMissedCallScenario,
+            usesMorningWindow: true,
+            desiredCount: 2);
+        stageRules = stageRules.OrderBy(x => x.SortOrder).ToList();
+
+        return new BitrixWorkforceEditorViewModel
+        {
+            OfficeId = officeId,
+            BitrixInstanceId = settings.BitrixInstanceId,
+            BitrixInstanceLabel = bitrixInstanceLabel,
+            Settings = settings,
+            ManagerUserIdsText = string.Join(Environment.NewLine, settings.ManagerUserIds),
+            StageRules = stageRules,
+            RecentAssignments = recentAssignments
+        };
+    }
+
+    private static BitrixWorkforceStageRuleFormModel CreateEmptyStageRule(
+        string scenario,
+        bool usesMorningWindow,
+        int sortOrder) =>
+        new()
+        {
+            Scenario = scenario,
+            UsesMorningWindow = usesMorningWindow,
+            SortOrder = sortOrder,
+            IsEnabled = false
+        };
+
+    private static void EnsureStageRuleSlots(
+        List<BitrixWorkforceStageRuleFormModel> rules,
+        string scenario,
+        bool usesMorningWindow,
+        int desiredCount)
+    {
+        var missing = desiredCount - rules.Count(x =>
+            string.Equals(x.Scenario, scenario, StringComparison.Ordinal));
+        while (missing > 0)
+        {
+            var nextSortOrder = rules.Count == 0
+                ? 0
+                : rules.Max(x => x.SortOrder) + 1;
+            rules.Add(CreateEmptyStageRule(
+                scenario,
+                usesMorningWindow,
+                nextSortOrder));
+            missing--;
+        }
+    }
+
+    private static (IReadOnlyList<long> ManagerIds, string? Error) ParseManagerUserIds(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return ([], null);
+        }
+
+        var tokens = value.Split(
+            [',', ';', ' ', '\t', '\r', '\n'],
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var result = new List<long>(tokens.Length);
+        var seen = new HashSet<long>();
+        foreach (var token in tokens)
+        {
+            if (!long.TryParse(token, out var id) || id <= 0)
+            {
+                return ([], $"Некорректный Bitrix ID менеджера: «{token}».");
+            }
+
+            if (seen.Add(id))
+            {
+                result.Add(id);
+            }
+        }
+
+        return (result, null);
     }
 
     private static string NormalizeTab(string? tab) =>

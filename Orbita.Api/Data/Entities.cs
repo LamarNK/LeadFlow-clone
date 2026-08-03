@@ -417,6 +417,148 @@ public sealed class BitrixInstanceEntity
     public OfficeEntity Office { get; set; } = null!;
 }
 
+public sealed class BitrixWorkforceConfigurationEntity
+{
+    public Guid BitrixInstanceId { get; set; }
+    public string OperationMode { get; set; } = BitrixWorkforceDistribution.DisabledMode;
+    public int DealCategoryId { get; set; }
+    public string TimeZoneId { get; set; } = "Europe/Moscow";
+    public int MorningWindowStartMinutes { get; set; } = 480;
+    public int MorningWindowEndMinutes { get; set; } = 660;
+    public int LateJoinReserveMinutes { get; set; } = 120;
+    public decimal SingleManagerInitialReleasePercent { get; set; } = 50m;
+    public int RetryDelaySeconds { get; set; } = 60;
+    public int MaxAttempts { get; set; } = 20;
+    public bool PreserveManualNewOwner { get; set; } = true;
+    public bool SyncContactOwner { get; set; } = true;
+    public bool FillOnlyEmptyAvitoFields { get; set; } = true;
+    public bool WriterRulesConfirmed { get; set; }
+    public DateTime UpdatedAtUtc { get; set; }
+    public string? UpdatedByUserId { get; set; }
+
+    public BitrixInstanceEntity BitrixInstance { get; set; } = null!;
+}
+
+public sealed class BitrixWorkforceStageRuleEntity
+{
+    public Guid Id { get; set; }
+    public Guid BitrixInstanceId { get; set; }
+    public string Scenario { get; set; } = string.Empty;
+    public string SourceStageId { get; set; } = string.Empty;
+    public string TargetStageId { get; set; } = string.Empty;
+    public bool UsesMorningWindow { get; set; }
+    public int SortOrder { get; set; }
+    public bool IsEnabled { get; set; } = true;
+
+    public BitrixInstanceEntity BitrixInstance { get; set; } = null!;
+}
+
+public sealed class BitrixWorkforceManagerEntity
+{
+    public Guid Id { get; set; }
+    public Guid BitrixInstanceId { get; set; }
+    public long BitrixUserId { get; set; }
+    public bool IsEnabled { get; set; } = true;
+    public int SortOrder { get; set; }
+
+    public BitrixInstanceEntity BitrixInstance { get; set; } = null!;
+}
+
+public sealed class BitrixWorkforceEventCredentialEntity
+{
+    public Guid BitrixInstanceId { get; set; }
+    public Guid PublicId { get; set; }
+    public string ApplicationTokenHash { get; set; } = string.Empty;
+    public string? ExpectedMemberId { get; set; }
+    public DateTime ConfiguredAtUtc { get; set; }
+    public DateTime? LastAcceptedAtUtc { get; set; }
+
+    public BitrixInstanceEntity BitrixInstance { get; set; } = null!;
+}
+
+public sealed class BitrixDealEventInboxEntity
+{
+    public long Id { get; set; }
+    public Guid BitrixInstanceId { get; set; }
+    public string EventName { get; set; } = string.Empty;
+    public long DealId { get; set; }
+    public string EventKey { get; set; } = string.Empty;
+    public DateTime ReceivedAtUtc { get; set; }
+    public string State { get; set; } = BitrixWorkforceInboxStates.Pending;
+    public int AttemptCount { get; set; }
+    public int FailureCount { get; set; }
+    public DateTime NextAttemptAtUtc { get; set; }
+    public DateTime? LockedUntilUtc { get; set; }
+    public string? LockOwner { get; set; }
+    public string? LastError { get; set; }
+    public DateTime? CompletedAtUtc { get; set; }
+
+    public BitrixInstanceEntity BitrixInstance { get; set; } = null!;
+}
+
+public sealed class BitrixWorkforceCursorEntity
+{
+    public Guid BitrixInstanceId { get; set; }
+    public string Scenario { get; set; } = string.Empty;
+    public long? LastAssignedBitrixUserId { get; set; }
+    public DateTime? LastAssignedAtUtc { get; set; }
+
+    public BitrixInstanceEntity BitrixInstance { get; set; } = null!;
+}
+
+public sealed class BitrixWorkforceDealStateEntity
+{
+    public Guid BitrixInstanceId { get; set; }
+    public long DealId { get; set; }
+    public string? LastObservedStageId { get; set; }
+    public string? LastAppliedStageId { get; set; }
+    public long? LastAppliedResponsibleId { get; set; }
+    public Guid? LastAssignmentId { get; set; }
+    public DateTime UpdatedAtUtc { get; set; }
+
+    public BitrixInstanceEntity BitrixInstance { get; set; } = null!;
+}
+
+public sealed class BitrixWorkforceMorningStateEntity
+{
+    public Guid BitrixInstanceId { get; set; }
+    public DateOnly LocalDate { get; set; }
+    public string Scenario { get; set; } = string.Empty;
+    public long? FirstManagerId { get; set; }
+    public DateTime? FirstManagerSeenAtUtc { get; set; }
+    public DateTime? ReserveUntilUtc { get; set; }
+    public int InitialReleaseLimit { get; set; }
+    public int InitialReleasedCount { get; set; }
+
+    public BitrixInstanceEntity BitrixInstance { get; set; } = null!;
+}
+
+public sealed class BitrixWorkforceAssignmentEntity
+{
+    public Guid Id { get; set; }
+    public long InboxId { get; set; }
+    public Guid BitrixInstanceId { get; set; }
+    public long DealId { get; set; }
+    public long? ContactId { get; set; }
+    public string Scenario { get; set; } = string.Empty;
+    public string OperationMode { get; set; } = string.Empty;
+    public string? FromStageId { get; set; }
+    public string? ToStageId { get; set; }
+    public long? PreviousResponsibleId { get; set; }
+    public long? SelectedResponsibleId { get; set; }
+    public string Decision { get; set; } = string.Empty;
+    public string Reason { get; set; } = string.Empty;
+    public DateTime CreatedAtUtc { get; set; }
+    public DateTime? ConfigurationRevisionAtUtc { get; set; }
+    public DateTime? DealAppliedAtUtc { get; set; }
+    public DateTime? ContactsAppliedAtUtc { get; set; }
+    public DateTime? AppliedAtUtc { get; set; }
+    public string? Error { get; set; }
+
+    public BitrixInstanceEntity BitrixInstance { get; set; } = null!;
+    public BitrixDealEventInboxEntity Inbox { get; set; } = null!;
+}
+
 public sealed class DistributionRouteEntity
 {
     public Guid Id { get; set; }

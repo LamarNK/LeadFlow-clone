@@ -82,7 +82,9 @@ public sealed class BitrixInstanceService(
         }
 
         var validation = await validator.ValidateAsync(normalized, ct);
-        var integration = ResolveIntegrationSettings();
+        var integration = BitrixInstanceIntegrationSettings.FromDto(
+            request.IntegrationSettings,
+            defaultBitrixOptions.Value);
         var now = DateTime.UtcNow;
         var entity = new BitrixInstanceEntity
         {
@@ -140,7 +142,12 @@ public sealed class BitrixInstanceService(
         entity.Name = request.Name.Trim();
         entity.Signature = request.Signature?.Trim() ?? string.Empty;
         entity.IsEnabled = request.IsEnabled;
-        entity.IntegrationSettingsJson = ResolveIntegrationSettings().Serialize();
+        if (request.IntegrationSettings is not null)
+        {
+            entity.IntegrationSettingsJson = BitrixInstanceIntegrationSettings
+                .FromDto(request.IntegrationSettings, defaultBitrixOptions.Value)
+                .Serialize();
+        }
 
         if (!string.IsNullOrWhiteSpace(request.WebhookUrl))
         {
@@ -151,11 +158,20 @@ public sealed class BitrixInstanceService(
             }
 
             var validation = await validator.ValidateAsync(normalized, ct);
+            var currentWebhookUrl = TryUnprotectWebhook(entity.WebhookUrlProtected);
+            var webhookChanged = !string.Equals(
+                currentWebhookUrl,
+                normalized,
+                StringComparison.Ordinal);
             entity.WebhookUrlProtected = protector.Protect(normalized);
             entity.PortalHost = BitrixWebhookValidator.TryGetPortalHost(normalized);
             entity.ValidationStatus = validation.Status;
             entity.ValidationMessage = validation.Message;
             entity.LastValidatedAtUtc = DateTime.UtcNow;
+            if (webhookChanged)
+            {
+                await ResetWorkforceForWebhookChangeAsync(entity.Id, actorUserId, ct);
+            }
         }
 
         entity.UpdatedAtUtc = DateTime.UtcNow;
@@ -173,6 +189,74 @@ public sealed class BitrixInstanceService(
             ct);
 
         return (MapDto(entity), null);
+    }
+
+    private async Task ResetWorkforceForWebhookChangeAsync(
+        Guid bitrixInstanceId,
+        string actorUserId,
+        CancellationToken ct)
+    {
+        var now = DateTime.UtcNow;
+        var configuration = await db.BitrixWorkforceConfigurations
+            .FirstOrDefaultAsync(x => x.BitrixInstanceId == bitrixInstanceId, ct);
+        if (configuration is not null)
+        {
+            configuration.OperationMode = BitrixWorkforceDistribution.DisabledMode;
+            configuration.WriterRulesConfirmed = false;
+            configuration.UpdatedAtUtc = now;
+            configuration.UpdatedByUserId = actorUserId;
+        }
+
+        var activeJobs = await db.BitrixDealEventInbox
+            .Where(x => x.BitrixInstanceId == bitrixInstanceId
+                        && (x.State == BitrixWorkforceInboxStates.Pending
+                            || x.State == BitrixWorkforceInboxStates.Processing))
+            .ToListAsync(ct);
+        foreach (var job in activeJobs)
+        {
+            job.State = BitrixWorkforceInboxStates.Completed;
+            job.CompletedAtUtc = now;
+            job.LockOwner = null;
+            job.LockedUntilUtc = null;
+            job.LastError = "Cancelled because the Bitrix24 webhook changed.";
+        }
+
+        var inFlightAssignments = await db.BitrixWorkforceAssignments
+            .Where(x => x.BitrixInstanceId == bitrixInstanceId
+                        && x.Decision == BitrixWorkforceDecisions.Assigned
+                        && x.AppliedAtUtc == null)
+            .ToListAsync(ct);
+        foreach (var assignment in inFlightAssignments)
+        {
+            assignment.Decision = BitrixWorkforceDecisions.Ignored;
+            assignment.Reason =
+                "Assignment was cancelled because the Bitrix24 webhook changed.";
+            assignment.Error = null;
+        }
+
+        db.BitrixWorkforceCursors.RemoveRange(
+            db.BitrixWorkforceCursors.Where(x => x.BitrixInstanceId == bitrixInstanceId));
+        db.BitrixWorkforceDealStates.RemoveRange(
+            db.BitrixWorkforceDealStates.Where(x => x.BitrixInstanceId == bitrixInstanceId));
+        db.BitrixWorkforceMorningStates.RemoveRange(
+            db.BitrixWorkforceMorningStates.Where(x => x.BitrixInstanceId == bitrixInstanceId));
+    }
+
+    private string? TryUnprotectWebhook(string protectedWebhookUrl)
+    {
+        if (string.IsNullOrWhiteSpace(protectedWebhookUrl))
+        {
+            return null;
+        }
+
+        try
+        {
+            return protector.Unprotect(protectedWebhookUrl);
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     public async Task<(bool Success, string? Error)> DeleteAsync(
@@ -283,7 +367,8 @@ public sealed class BitrixInstanceService(
 
         try
         {
-            return protector.Unprotect(instance.WebhookUrlProtected);
+            return BitrixWebhookValidator.NormalizeWebhookUrl(
+                protector.Unprotect(instance.WebhookUrlProtected));
         }
         catch
         {
@@ -317,9 +402,6 @@ public sealed class BitrixInstanceService(
 
     private static string? MaskWebhook(string? portalHost) =>
         portalHost is null ? null : $"https://{portalHost}/rest/***/";
-
-    private BitrixInstanceIntegrationSettings ResolveIntegrationSettings() =>
-        BitrixInstanceIntegrationSettings.FromDefaults(defaultBitrixOptions.Value);
 
     private static bool CanAccessOffice(OfficeScope scope, Guid? requestedOfficeId, Guid entityOfficeId)
     {

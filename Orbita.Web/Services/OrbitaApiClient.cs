@@ -1014,6 +1014,95 @@ public sealed class OrbitaApiClient(
             ? Task.FromResult(DesignPreviewData.GetPreviewBitrixInstance(id))
             : GetAsync<BitrixInstanceDto>(WithOfficeQuery($"api/v1/panel/bitrix-instances/{id:D}", officeId), ct);
 
+    public Task<BitrixWorkforceSettingsDto?> GetBitrixWorkforceSettingsAsync(
+        Guid id,
+        Guid? officeId = null,
+        CancellationToken ct = default) =>
+        _preview.Enabled
+            ? Task.FromResult<BitrixWorkforceSettingsDto?>(DesignPreviewData.PreviewBitrixWorkforceSettings)
+            : GetAsync<BitrixWorkforceSettingsDto>(
+                WithOfficeQuery($"api/v1/panel/bitrix-instances/{id:D}/workforce", officeId),
+                ct);
+
+    public Task<IReadOnlyList<BitrixWorkforceAssignmentDto>?> GetBitrixWorkforceAssignmentsAsync(
+        Guid id,
+        Guid? officeId = null,
+        int take = 50,
+        CancellationToken ct = default) =>
+        _preview.Enabled
+            ? Task.FromResult<IReadOnlyList<BitrixWorkforceAssignmentDto>?>(DesignPreviewData.PreviewBitrixWorkforceAssignments)
+            : GetAsync<IReadOnlyList<BitrixWorkforceAssignmentDto>>(
+                WithOfficeQuery(
+                    $"api/v1/panel/bitrix-instances/{id:D}/workforce/assignments?take={Math.Clamp(take, 1, 200)}",
+                    officeId),
+                ct);
+
+    public async Task<(BitrixWorkforceSettingsDto? Settings, string? Error)> UpdateBitrixWorkforceSettingsAsync(
+        Guid id,
+        UpdateBitrixWorkforceSettingsRequest settings,
+        Guid? officeId = null,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return (DesignPreviewData.PreviewBitrixWorkforceSettings, null);
+        }
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Put,
+            WithOfficeQuery($"api/v1/panel/bitrix-instances/{id:D}/workforce", officeId));
+        request.Content = JsonContent.Create(settings);
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (null, InvalidApiSessionError);
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            return (null, await ReadApiErrorAsync(response, ct));
+        }
+
+        var saved = await response.Content.ReadFromJsonAsync<BitrixWorkforceSettingsDto>(ApiJsonOptions, ct);
+        return saved is null ? (null, "Не удалось прочитать ответ API.") : (saved, null);
+    }
+
+    public async Task<(BitrixWorkforceReceiverDto? Receiver, string? Error)> ConfigureBitrixWorkforceReceiverAsync(
+        Guid id,
+        ConfigureBitrixWorkforceReceiverRequest receiver,
+        Guid? officeId = null,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return (
+                new BitrixWorkforceReceiverDto(
+                    true,
+                    DesignPreviewData.PreviewBitrixWorkforceSettings.EventEndpointUrl,
+                    receiver.ExpectedMemberId,
+                    DateTime.UtcNow),
+                null);
+        }
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Put,
+            WithOfficeQuery($"api/v1/panel/bitrix-instances/{id:D}/workforce/receiver", officeId));
+        request.Content = JsonContent.Create(receiver);
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (null, InvalidApiSessionError);
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            return (null, await ReadApiErrorAsync(response, ct));
+        }
+
+        var saved = await response.Content.ReadFromJsonAsync<BitrixWorkforceReceiverDto>(ApiJsonOptions, ct);
+        return saved is null ? (null, "Не удалось прочитать ответ API.") : (saved, null);
+    }
+
     public async Task<(BitrixInstanceDto? Instance, string? Error)> CreateBitrixInstanceAsync(
         CreateBitrixInstanceRequest request,
         Guid? officeId = null,

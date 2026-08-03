@@ -397,6 +397,46 @@ public sealed class SettingsController(
 
     [HttpPost]
     [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SaveBitrixWorkforce(
+        SaveBitrixWorkforceFormModel model,
+        CancellationToken ct = default)
+    {
+        var (success, error) = await settings.SaveBitrixWorkforceAsync(model, ct);
+        TempData[success ? "SettingsStatus" : "SettingsError"] = success
+            ? model.OperationMode == BitrixWorkforceDistribution.WriterMode
+                ? "Распределение сохранено в режиме writer."
+                : model.OperationMode == BitrixWorkforceDistribution.ShadowMode
+                    ? "Распределение сохранено в безопасном shadow-режиме."
+                    : "Распределение отключено."
+            : error;
+        return RedirectToAction(nameof(Index), new
+        {
+            tab = "integrations",
+            officeId = model.OfficeId,
+            instanceId = model.BitrixInstanceId
+        });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ConfigureBitrixWorkforceReceiver(
+        ConfigureBitrixWorkforceReceiverFormModel model,
+        CancellationToken ct = default)
+    {
+        var (success, error) = await settings.ConfigureBitrixWorkforceReceiverAsync(model, ct);
+        TempData[success ? "SettingsStatus" : "SettingsError"] = success
+            ? "Приём событий Bitrix24 настроен. Добавьте показанный endpoint в исходящий вебхук."
+            : error;
+        return RedirectToAction(nameof(Index), new
+        {
+            tab = "integrations",
+            officeId = model.OfficeId,
+            instanceId = model.BitrixInstanceId
+        });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> ValidateAdminBitrixInstance(
         ValidateBitrixInstanceFormModel model,
         Guid officeId,

@@ -20,6 +20,15 @@ public sealed class BitrixWebhookValidatorTests
         Assert.Contains(result.Steps, x => x.Id == "format" && x.Hint is not null);
     }
 
+    [Theory]
+    [InlineData("https://localhost/rest/1/secret")]
+    [InlineData("https://127.0.0.1/rest/1/secret")]
+    [InlineData("https://internal.example/rest/1/secret")]
+    public void NormalizeWebhookUrl_RejectsNonBitrixHost(string input)
+    {
+        Assert.Null(BitrixWebhookValidator.NormalizeWebhookUrl(input));
+    }
+
     [Fact]
     public async Task ValidateAsync_CrmOnlyScope_ReturnsOk()
     {

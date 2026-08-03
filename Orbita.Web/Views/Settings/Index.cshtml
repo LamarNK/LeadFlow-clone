@@ -1109,6 +1109,10 @@
                 ViewData["BitrixController"] = "Settings";
                 <partial name="_BitrixInstancesRegistry" model="bitrixDistribution.BitrixInstances" />
             }
+            @if (bitrixDistribution.Workforce is not null)
+            {
+                <partial name="_BitrixWorkforceSettings" model="bitrixDistribution.Workforce" />
+            }
             @if (bitrixDistribution.Distribution is not null)
             {
                 ViewData["DistributionController"] = "Settings";

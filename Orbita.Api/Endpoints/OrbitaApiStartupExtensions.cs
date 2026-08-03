@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.RateLimiting;
 using Orbita.Api.Auth;
 using Orbita.Api.Data;
 using Orbita.Api.Hubs;
@@ -16,6 +17,7 @@ using Orbita.Api.Services;
 using Orbita.Api.Services.Bitrix;
 using Orbita.Contracts;
 using Orbita.Logging.Audit;
+using System.Threading.RateLimiting;
 
 namespace Orbita.Api.Endpoints;
 
@@ -191,6 +193,26 @@ public static class OrbitaApiStartupExtensions
                     .AllowAnyMethod()
                     .AllowCredentials());
         });
+        builder.Services.AddRateLimiter(options =>
+        {
+            options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+            options.AddPolicy(
+                BitrixWorkforceEndpoints.RateLimitPolicyName,
+                context =>
+                {
+                    var receiver = context.Request.RouteValues["publicId"]?.ToString() ?? "unknown";
+                    var remoteIp = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+                    return RateLimitPartition.GetFixedWindowLimiter(
+                        $"{receiver}:{remoteIp}",
+                        _ => new FixedWindowRateLimiterOptions
+                        {
+                            PermitLimit = 300,
+                            Window = TimeSpan.FromMinutes(1),
+                            QueueLimit = 0,
+                            AutoReplenishment = true
+                        });
+                });
+        });
 
         builder.Services.AddScoped<TelemetryService>();
         builder.Services.AddScoped<DashboardQueryService>();
@@ -222,6 +244,9 @@ public static class OrbitaApiStartupExtensions
         builder.Services.AddScoped<CrmLeadDistributionService>();
         builder.Services.AddScoped<CrmWorkspaceService>();
         builder.Services.AddScoped<BitrixInstanceService>();
+        builder.Services.AddScoped<BitrixWorkforceSettingsService>();
+        builder.Services.AddScoped<BitrixWorkforceEventReceiver>();
+        builder.Services.AddScoped<BitrixWorkforceProcessor>();
         builder.Services.AddScoped<DistributionRouteService>();
         builder.Services.AddScoped<LeadExportQuotaService>();
         builder.Services.AddScoped<DistributionEngine>();
@@ -246,11 +271,16 @@ public static class OrbitaApiStartupExtensions
         builder.Services.AddSingleton<PhoneNormalizer>();
         builder.Services.AddSingleton<CandidateParser>();
         builder.Services.AddSingleton<BitrixClient>();
+        builder.Services.AddSingleton<IBitrixWorkforceClient, BitrixWorkforceClient>();
+        builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.Configure<OrbitaBitrixSettings>(builder.Configuration.GetSection("Bitrix"));
+        builder.Services.Configure<BitrixWorkforceOptions>(
+            builder.Configuration.GetSection(BitrixWorkforceOptions.SectionName));
         builder.Services.AddScoped<PasswordPolicyService>();
         builder.Services.AddScoped<ServiceLogsQueryService>();
         builder.Services.AddHostedService<ServiceLogsCleanupService>();
         builder.Services.AddHostedService<WorkerScheduleHostedService>();
+        builder.Services.AddHostedService<BitrixWorkforceHostedService>();
         builder.Services.AddScoped<WebhookSecretProtector>();
         builder.Services.AddScoped<AvitoAccountSecretProtector>();
         builder.Services.AddScoped<BitrixWebhookValidator>();
@@ -272,13 +302,24 @@ public static class OrbitaApiStartupExtensions
                 .SetApplicationName("Orbita.Api");
         }
         builder.Services.AddHttpClient(nameof(BitrixWebhookValidator), client =>
-        {
-            client.Timeout = TimeSpan.FromSeconds(10);
-        });
+            {
+                client.Timeout = TimeSpan.FromSeconds(10);
+            })
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+            {
+                AllowAutoRedirect = false
+            })
+            .RemoveAllLoggers();
         builder.Services.AddHttpClient(nameof(BitrixClient), client =>
-        {
-            client.Timeout = TimeSpan.FromSeconds(30);
-        });
+            {
+                client.Timeout = TimeSpan.FromSeconds(30);
+            })
+            .RemoveAllLoggers();
+        builder.Services.AddHttpClient(nameof(BitrixWorkforceClient), client =>
+            {
+                client.Timeout = TimeSpan.FromSeconds(30);
+            })
+            .RemoveAllLoggers();
 
         builder.Services.Configure<ForwardedHeadersOptions>(options =>
         {

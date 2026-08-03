@@ -26,6 +26,7 @@ services:
       LOG_SERVICE_NAME: Orbita.Api
       Logs__SharedRoot: /app/Data/logs
       DataProtection__KeysPath: /app/Data/dataprotection-api
+      BitrixWorkforce__PublicBaseUrl: http://localhost:8080
     depends_on:
       - postgres
     ports:

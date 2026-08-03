@@ -27,6 +27,15 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
     public DbSet<ResponseBitrixDeliveryEntity> ResponseBitrixDeliveries => Set<ResponseBitrixDeliveryEntity>();
     public DbSet<ResponseCrmDeliveryEntity> ResponseCrmDeliveries => Set<ResponseCrmDeliveryEntity>();
     public DbSet<BitrixInstanceEntity> BitrixInstances => Set<BitrixInstanceEntity>();
+    public DbSet<BitrixWorkforceConfigurationEntity> BitrixWorkforceConfigurations => Set<BitrixWorkforceConfigurationEntity>();
+    public DbSet<BitrixWorkforceStageRuleEntity> BitrixWorkforceStageRules => Set<BitrixWorkforceStageRuleEntity>();
+    public DbSet<BitrixWorkforceManagerEntity> BitrixWorkforceManagers => Set<BitrixWorkforceManagerEntity>();
+    public DbSet<BitrixWorkforceEventCredentialEntity> BitrixWorkforceEventCredentials => Set<BitrixWorkforceEventCredentialEntity>();
+    public DbSet<BitrixDealEventInboxEntity> BitrixDealEventInbox => Set<BitrixDealEventInboxEntity>();
+    public DbSet<BitrixWorkforceCursorEntity> BitrixWorkforceCursors => Set<BitrixWorkforceCursorEntity>();
+    public DbSet<BitrixWorkforceDealStateEntity> BitrixWorkforceDealStates => Set<BitrixWorkforceDealStateEntity>();
+    public DbSet<BitrixWorkforceMorningStateEntity> BitrixWorkforceMorningStates => Set<BitrixWorkforceMorningStateEntity>();
+    public DbSet<BitrixWorkforceAssignmentEntity> BitrixWorkforceAssignments => Set<BitrixWorkforceAssignmentEntity>();
     public DbSet<DistributionRouteEntity> DistributionRoutes => Set<DistributionRouteEntity>();
     public DbSet<DistributionNodeEntity> DistributionNodes => Set<DistributionNodeEntity>();
     public DbSet<DistributionRoundRobinStateEntity> DistributionRoundRobinStates => Set<DistributionRoundRobinStateEntity>();
@@ -244,6 +253,127 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.Property(x => x.IntegrationSettingsJson).HasMaxLength(4000);
             entity.Property(x => x.UpdatedByUserId).HasMaxLength(128);
             entity.HasOne(x => x.Office).WithMany().HasForeignKey(x => x.OfficeId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<BitrixWorkforceConfigurationEntity>(entity =>
+        {
+            entity.HasKey(x => x.BitrixInstanceId);
+            entity.Property(x => x.OperationMode).HasMaxLength(16);
+            entity.Property(x => x.TimeZoneId).HasMaxLength(128);
+            entity.Property(x => x.SingleManagerInitialReleasePercent).HasPrecision(5, 2);
+            entity.Property(x => x.UpdatedByUserId).HasMaxLength(128);
+            entity.HasOne(x => x.BitrixInstance)
+                .WithOne()
+                .HasForeignKey<BitrixWorkforceConfigurationEntity>(x => x.BitrixInstanceId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<BitrixWorkforceStageRuleEntity>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.BitrixInstanceId, x.SourceStageId }).IsUnique();
+            entity.Property(x => x.Scenario).HasMaxLength(64);
+            entity.Property(x => x.SourceStageId).HasMaxLength(128);
+            entity.Property(x => x.TargetStageId).HasMaxLength(128);
+            entity.HasOne(x => x.BitrixInstance)
+                .WithMany()
+                .HasForeignKey(x => x.BitrixInstanceId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<BitrixWorkforceManagerEntity>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.BitrixInstanceId, x.BitrixUserId }).IsUnique();
+            entity.HasIndex(x => new { x.BitrixInstanceId, x.SortOrder });
+            entity.HasOne(x => x.BitrixInstance)
+                .WithMany()
+                .HasForeignKey(x => x.BitrixInstanceId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<BitrixWorkforceEventCredentialEntity>(entity =>
+        {
+            entity.HasKey(x => x.BitrixInstanceId);
+            entity.HasIndex(x => x.PublicId).IsUnique();
+            entity.Property(x => x.ApplicationTokenHash).HasMaxLength(128);
+            entity.Property(x => x.ExpectedMemberId).HasMaxLength(128);
+            entity.HasOne(x => x.BitrixInstance)
+                .WithOne()
+                .HasForeignKey<BitrixWorkforceEventCredentialEntity>(x => x.BitrixInstanceId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<BitrixDealEventInboxEntity>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.BitrixInstanceId, x.EventKey }).IsUnique();
+            entity.HasIndex(x => new { x.State, x.NextAttemptAtUtc });
+            entity.Property(x => x.EventName).HasMaxLength(64);
+            entity.Property(x => x.EventKey).HasMaxLength(128);
+            entity.Property(x => x.State).HasMaxLength(32);
+            entity.Property(x => x.LockOwner).HasMaxLength(128);
+            entity.Property(x => x.LastError).HasMaxLength(2000);
+            entity.HasOne(x => x.BitrixInstance)
+                .WithMany()
+                .HasForeignKey(x => x.BitrixInstanceId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<BitrixWorkforceCursorEntity>(entity =>
+        {
+            entity.HasKey(x => new { x.BitrixInstanceId, x.Scenario });
+            entity.Property(x => x.Scenario).HasMaxLength(64);
+            entity.HasOne(x => x.BitrixInstance)
+                .WithMany()
+                .HasForeignKey(x => x.BitrixInstanceId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<BitrixWorkforceDealStateEntity>(entity =>
+        {
+            entity.HasKey(x => new { x.BitrixInstanceId, x.DealId });
+            entity.Property(x => x.LastObservedStageId).HasMaxLength(128);
+            entity.Property(x => x.LastAppliedStageId).HasMaxLength(128);
+            entity.HasOne(x => x.BitrixInstance)
+                .WithMany()
+                .HasForeignKey(x => x.BitrixInstanceId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<BitrixWorkforceMorningStateEntity>(entity =>
+        {
+            entity.HasKey(x => new { x.BitrixInstanceId, x.LocalDate, x.Scenario });
+            entity.Property(x => x.Scenario).HasMaxLength(64);
+            entity.HasOne(x => x.BitrixInstance)
+                .WithMany()
+                .HasForeignKey(x => x.BitrixInstanceId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<BitrixWorkforceAssignmentEntity>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => x.InboxId).IsUnique();
+            entity.HasIndex(x => new { x.BitrixInstanceId, x.DealId, x.CreatedAtUtc });
+            entity.HasIndex(x => new { x.BitrixInstanceId, x.DealId })
+                .IsUnique()
+                .HasFilter("\"AppliedAtUtc\" IS NULL AND \"Decision\" = 'assigned'");
+            entity.Property(x => x.Scenario).HasMaxLength(64);
+            entity.Property(x => x.OperationMode).HasMaxLength(16);
+            entity.Property(x => x.FromStageId).HasMaxLength(128);
+            entity.Property(x => x.ToStageId).HasMaxLength(128);
+            entity.Property(x => x.Decision).HasMaxLength(32);
+            entity.Property(x => x.Reason).HasMaxLength(1000);
+            entity.Property(x => x.Error).HasMaxLength(2000);
+            entity.HasOne(x => x.BitrixInstance)
+                .WithMany()
+                .HasForeignKey(x => x.BitrixInstanceId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.Inbox)
+                .WithOne()
+                .HasForeignKey<BitrixWorkforceAssignmentEntity>(x => x.InboxId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<DistributionRouteEntity>(entity =>

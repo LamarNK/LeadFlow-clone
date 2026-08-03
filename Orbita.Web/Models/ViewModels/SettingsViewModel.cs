@@ -278,7 +278,59 @@ public sealed class BitrixDistributionSettingsViewModel
     public string? SelectedOfficeName { get; init; }
     public IReadOnlyList<EventFilterOptionViewModel> OfficeOptions { get; init; } = [];
     public BitrixInstancesRegistryViewModel? BitrixInstances { get; init; }
+    public BitrixWorkforceEditorViewModel? Workforce { get; init; }
     public DistributionEditorViewModel? Distribution { get; init; }
+}
+
+public sealed class BitrixWorkforceEditorViewModel
+{
+    public required Guid OfficeId { get; init; }
+    public required Guid BitrixInstanceId { get; init; }
+    public string BitrixInstanceLabel { get; init; } = string.Empty;
+    public required BitrixWorkforceSettingsDto Settings { get; init; }
+    public string ManagerUserIdsText { get; init; } = string.Empty;
+    public IReadOnlyList<BitrixWorkforceStageRuleFormModel> StageRules { get; init; } = [];
+    public IReadOnlyList<BitrixWorkforceAssignmentDto> RecentAssignments { get; init; } = [];
+}
+
+public sealed class SaveBitrixWorkforceFormModel
+{
+    public Guid OfficeId { get; set; }
+    public Guid BitrixInstanceId { get; set; }
+    public string OperationMode { get; set; } = BitrixWorkforceDistribution.DisabledMode;
+    public int DealCategoryId { get; set; }
+    public string TimeZoneId { get; set; } = "Europe/Moscow";
+    public string ManagerUserIdsText { get; set; } = string.Empty;
+    public List<BitrixWorkforceStageRuleFormModel> StageRules { get; set; } = [];
+    public int MorningWindowStartMinutes { get; set; } = 480;
+    public int MorningWindowEndMinutes { get; set; } = 660;
+    public int LateJoinReserveMinutes { get; set; } = 120;
+    public decimal SingleManagerInitialReleasePercent { get; set; } = 50m;
+    public int RetryDelaySeconds { get; set; } = 60;
+    public int MaxAttempts { get; set; } = 20;
+    public bool PreserveManualNewOwner { get; set; } = true;
+    public bool SyncContactOwner { get; set; } = true;
+    public bool FillOnlyEmptyAvitoFields { get; set; } = true;
+    public bool WriterRulesConfirmed { get; set; }
+}
+
+public sealed class BitrixWorkforceStageRuleFormModel
+{
+    public Guid? Id { get; set; }
+    public string Scenario { get; set; } = string.Empty;
+    public string SourceStageId { get; set; } = string.Empty;
+    public string TargetStageId { get; set; } = string.Empty;
+    public bool UsesMorningWindow { get; set; }
+    public int SortOrder { get; set; }
+    public bool IsEnabled { get; set; }
+}
+
+public sealed class ConfigureBitrixWorkforceReceiverFormModel
+{
+    public Guid OfficeId { get; set; }
+    public Guid BitrixInstanceId { get; set; }
+    public string ApplicationToken { get; set; } = string.Empty;
+    public string? ExpectedMemberId { get; set; }
 }
 
 public sealed class BitrixIntegrationRowViewModel

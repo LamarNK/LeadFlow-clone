@@ -70,6 +70,7 @@ publish\build.bat -Target orbita-worker
 
 - [User guide](docs/USER_GUIDE_RU.md)
 - [Orbita architecture and local setup](docs/ORBITA.md)
+- [Bitrix24 workforce distribution](docs/BITRIX_WORKFORCE_DISTRIBUTION_RU.md)
 - [Build and deployment scripts](publish/README.md)
 
 ## Configuration and security

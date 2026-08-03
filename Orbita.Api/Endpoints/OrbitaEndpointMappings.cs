@@ -28,6 +28,7 @@ public static class OrbitaEndpointMappings
         AdminEndpoints.Map(app);
         PanelEndpoints.Map(app);
         PanelResponseEndpoints.Map(app);
+        BitrixWorkforceEndpoints.Map(app);
         CrmEndpoints.Map(app);
         WorkerPanelEndpoints.Map(app);
         AuthenticationEndpoints.Map(app);

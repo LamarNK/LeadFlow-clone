@@ -193,6 +193,13 @@ public sealed class BitrixWebhookValidator(IHttpClientFactory httpClientFactory)
                 HintCreateWebhook);
         }
 
+        if (!IsAllowedPortalHost(uri.Host))
+        {
+            return (
+                "Разрешены только облачные порталы Bitrix24 в домене *.bitrix24.ru.",
+                "Скопируйте URL входящего вебхука непосредственно из нужного портала Bitrix24.");
+        }
+
         if (!uri.AbsolutePath.Contains("/rest/", StringComparison.OrdinalIgnoreCase))
         {
             return (
@@ -212,6 +219,11 @@ public sealed class BitrixWebhookValidator(IHttpClientFactory httpClientFactory)
 
         return null;
     }
+
+    private static bool IsAllowedPortalHost(string host) =>
+        !string.IsNullOrWhiteSpace(host)
+        && host.EndsWith(".bitrix24.ru", StringComparison.OrdinalIgnoreCase)
+        && Uri.CheckHostName(host) == UriHostNameType.Dns;
 
     public static string? TryGetPortalHost(string? webhookUrl)
     {

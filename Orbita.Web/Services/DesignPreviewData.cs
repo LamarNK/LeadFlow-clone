@@ -1961,6 +1961,94 @@ internal static class DesignPreviewData
 
     public static readonly Guid PreviewBitrixInstanceId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
 
+    public static BitrixWorkforceSettingsDto PreviewBitrixWorkforceSettings =>
+        new(
+            PreviewBitrixInstanceId,
+            BitrixWorkforceDistribution.ShadowMode,
+            0,
+            "Europe/Moscow",
+            [101, 102, 103],
+            [
+                new(null, BitrixWorkforceDistribution.NewScenario, "NEW", "NEW", false, 0, true),
+                new(null, BitrixWorkforceDistribution.MissedCallScenario, "UC_FU2T4L", "UC_FU2T4L", true, 1, true),
+                new(null, BitrixWorkforceDistribution.MissedCallScenario, "UC_ENSD7E", "UC_FU2T4L", true, 2, true),
+                new(null, BitrixWorkforceDistribution.SubstituteMissedCallScenario, "UC_6OQRTF", "UC_6OQRTF", true, 3, true),
+                new(null, BitrixWorkforceDistribution.SubstituteMissedCallScenario, "UC_WT8KQY", "UC_6OQRTF", true, 4, true)
+            ],
+            480,
+            660,
+            120,
+            50m,
+            60,
+            20,
+            true,
+            true,
+            true,
+            false,
+            true,
+            "https://api.orbitsu.ru/api/v1/integrations/bitrix/events/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            "preview-member-id",
+            Now.AddMinutes(-12),
+            Now.AddHours(-1));
+
+    public static IReadOnlyList<BitrixWorkforceAssignmentDto> PreviewBitrixWorkforceAssignments =>
+    [
+        new(
+            Guid.Parse("ad000000-0000-0000-0000-000000000001"),
+            PreviewBitrixInstanceId,
+            20980,
+            31001,
+            BitrixWorkforceDistribution.NewScenario,
+            BitrixWorkforceDistribution.ShadowMode,
+            "NEW",
+            "NEW",
+            101,
+            102,
+            BitrixWorkforceDecisions.Assigned,
+            "Shadow: следующим по round-robin выбран менеджер 102.",
+            Now.AddMinutes(-12),
+            null,
+            null,
+            null,
+            null),
+        new(
+            Guid.Parse("ad000000-0000-0000-0000-000000000002"),
+            PreviewBitrixInstanceId,
+            20976,
+            null,
+            BitrixWorkforceDistribution.MissedCallScenario,
+            BitrixWorkforceDistribution.ShadowMode,
+            "UC_ENSD7E",
+            "UC_FU2T4L",
+            103,
+            null,
+            BitrixWorkforceDecisions.Reserved,
+            "Часть утренней очереди зарезервирована для второго менеджера.",
+            Now.AddMinutes(-18),
+            null,
+            null,
+            null,
+            null),
+        new(
+            Guid.Parse("ad000000-0000-0000-0000-000000000003"),
+            PreviewBitrixInstanceId,
+            20972,
+            null,
+            BitrixWorkforceDistribution.SubstituteMissedCallScenario,
+            BitrixWorkforceDistribution.ShadowMode,
+            "UC_WT8KQY",
+            "UC_6OQRTF",
+            101,
+            null,
+            BitrixWorkforceDecisions.Deferred,
+            "Нет менеджеров с рабочим днём OPENED или PAUSED.",
+            Now.AddMinutes(-24),
+            null,
+            null,
+            null,
+            null)
+    ];
+
     private static readonly BitrixInstanceIntegrationSettingsDto PreviewIntegrationSettings = new(
         "Deal",
         1,

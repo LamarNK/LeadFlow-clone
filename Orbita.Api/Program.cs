@@ -20,6 +20,7 @@ app.UseCors("Web");
 app.UseWebSockets();
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
 app.MapHub<PanelHub>("/hubs/panel");
 app.MapHub<CaptchaRelayHub>("/hubs/captcha");
 app.MapHub<BrowserMonitorHub>("/hubs/browser-monitor");

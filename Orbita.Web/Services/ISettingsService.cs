@@ -31,6 +31,14 @@ public interface ISettingsService
 
     Task<(bool Success, string? Error)> DeleteBitrixInstanceAsync(Guid id, Guid officeId, CancellationToken ct = default);
 
+    Task<(bool Success, string? Error)> SaveBitrixWorkforceAsync(
+        SaveBitrixWorkforceFormModel model,
+        CancellationToken ct = default);
+
+    Task<(bool Success, string? Error)> ConfigureBitrixWorkforceReceiverAsync(
+        ConfigureBitrixWorkforceReceiverFormModel model,
+        CancellationToken ct = default);
+
     Task<(bool Success, string? Error)> SaveDistributionRouteAsync(
         bool isAutoDistributionEnabled,
         IReadOnlyList<SaveDistributionNodeRequest> nodes,

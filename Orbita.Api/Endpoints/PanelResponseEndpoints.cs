@@ -235,6 +235,11 @@ public static class PanelResponseEndpoints
             Guid? officeId,
             CancellationToken ct) =>
         {
+            if (!principal.IsInRole(PanelRoles.Admin))
+            {
+                return Results.Forbid();
+            }
+
             var scope = await officeScope.ResolveAsync(principal, ct);
             if (!scope.HasAccess)
             {
@@ -273,6 +278,11 @@ public static class PanelResponseEndpoints
             Guid? officeId,
             CancellationToken ct) =>
         {
+            if (!principal.IsInRole(PanelRoles.Admin))
+            {
+                return Results.Forbid();
+            }
+
             var scope = await officeScope.ResolveAsync(principal, ct);
             if (!scope.HasAccess)
             {
@@ -292,6 +302,11 @@ public static class PanelResponseEndpoints
             Guid? officeId,
             CancellationToken ct) =>
         {
+            if (!principal.IsInRole(PanelRoles.Admin))
+            {
+                return Results.Forbid();
+            }
+
             var scope = await officeScope.ResolveAsync(principal, ct);
             if (!scope.HasAccess)
             {
@@ -328,6 +343,11 @@ public static class PanelResponseEndpoints
             Guid? officeId,
             CancellationToken ct) =>
         {
+            if (!principal.IsInRole(PanelRoles.Admin))
+            {
+                return Results.Forbid();
+            }
+
             var scope = await officeScope.ResolveAsync(principal, ct);
             if (!scope.HasAccess)
             {

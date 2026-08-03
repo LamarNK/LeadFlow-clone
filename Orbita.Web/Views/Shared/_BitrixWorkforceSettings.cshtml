@@ -1,0 +1,376 @@
+@model BitrixWorkforceEditorViewModel
+@using Orbita.Contracts
+@{
+    var settings = Model.Settings;
+    var endpointElementId = $"bitrixWorkforceEndpoint-{Model.BitrixInstanceId:N}";
+}
+
+<div class="card card--settings-bitrix-editor">
+    <div class="card-header settings-card-header">
+        <div>
+            <h2 class="settings-card-title">Распределение по рабочей смене</h2>
+            <p class="settings-card-subtitle">
+                @Model.BitrixInstanceLabel · менеджеры с рабочим днём OPENED или PAUSED
+            </p>
+        </div>
+        <span class="settings-bitrix-status settings-bitrix-status--@(settings.OperationMode == BitrixWorkforceDistribution.WriterMode ? "warning" : settings.OperationMode == BitrixWorkforceDistribution.ShadowMode ? "success" : "neutral")">
+            @settings.OperationMode
+        </span>
+    </div>
+    <div class="card-body">
+        <form asp-controller="Settings"
+              asp-action="SaveBitrixWorkforce"
+              method="post"
+              class="settings-create-form settings-bitrix-form">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="OfficeId" value="@Model.OfficeId" />
+            <input type="hidden" name="BitrixInstanceId" value="@Model.BitrixInstanceId" />
+
+            <div class="settings-release-upload-grid">
+                <label class="settings-field">
+                    <span class="settings-field-label">Режим</span>
+                    <select name="OperationMode" class="settings-select">
+                        @if (settings.OperationMode == BitrixWorkforceDistribution.DisabledMode)
+                        {
+                            <option value="@BitrixWorkforceDistribution.DisabledMode" selected>disabled — не обрабатывать</option>
+                        }
+                        else
+                        {
+                            <option value="@BitrixWorkforceDistribution.DisabledMode">disabled — не обрабатывать</option>
+                        }
+                        @if (settings.OperationMode == BitrixWorkforceDistribution.ShadowMode)
+                        {
+                            <option value="@BitrixWorkforceDistribution.ShadowMode" selected>shadow — считать без записи</option>
+                        }
+                        else
+                        {
+                            <option value="@BitrixWorkforceDistribution.ShadowMode">shadow — считать без записи</option>
+                        }
+                        @if (settings.OperationMode == BitrixWorkforceDistribution.WriterMode)
+                        {
+                            <option value="@BitrixWorkforceDistribution.WriterMode" selected>writer — изменять Bitrix24</option>
+                        }
+                        else
+                        {
+                            <option value="@BitrixWorkforceDistribution.WriterMode">writer — изменять Bitrix24</option>
+                        }
+                    </select>
+                </label>
+                <label class="settings-field">
+                    <span class="settings-field-label">ID воронки сделок</span>
+                    <input type="number" name="DealCategoryId" value="@settings.DealCategoryId" min="0" required />
+                </label>
+                <label class="settings-field">
+                    <span class="settings-field-label">Часовой пояс</span>
+                    <input type="text" name="TimeZoneId" value="@settings.TimeZoneId" required maxlength="100" />
+                </label>
+            </div>
+
+            <label class="settings-field">
+                <span class="settings-field-label">Bitrix ID менеджеров</span>
+                <textarea name="ManagerUserIdsText"
+                          class="settings-select"
+                          rows="4"
+                          spellcheck="false"
+                          placeholder="101, 102, 103">@Model.ManagerUserIdsText</textarea>
+                <span class="settings-field-hint">Можно разделять ID запятыми, пробелами, точками с запятой или переносами строк.</span>
+            </label>
+
+            <section class="settings-office-section">
+                <div class="settings-office-section-head">
+                    <div>
+                        <h3 class="settings-office-section-title">Стадии и сценарии</h3>
+                        <p class="settings-office-section-hint">
+                            Для основной стадии Source и Target совпадают. Для «НДЗ 2» Target указывает основную стадию.
+                        </p>
+                    </div>
+                </div>
+
+                @for (var index = 0; index < Model.StageRules.Count; index++)
+                {
+                    var rule = Model.StageRules[index];
+                    var scenarioLabel = rule.Scenario switch
+                    {
+                        BitrixWorkforceDistribution.NewScenario => "Новая сделка",
+                        BitrixWorkforceDistribution.MissedCallScenario => "НДЗ",
+                        BitrixWorkforceDistribution.SubstituteMissedCallScenario => "НДЗ с подменным",
+                        _ => rule.Scenario
+                    };
+                    <div class="settings-office-section">
+                        @if (rule.Id is Guid ruleId)
+                        {
+                            <input type="hidden" name="StageRules[@index].Id" value="@ruleId" />
+                        }
+                        <input type="hidden" name="StageRules[@index].Scenario" value="@rule.Scenario" />
+                        <input type="hidden" name="StageRules[@index].UsesMorningWindow" value="@rule.UsesMorningWindow.ToString().ToLowerInvariant()" />
+                        <input type="hidden" name="StageRules[@index].SortOrder" value="@rule.SortOrder" />
+
+                        <div class="settings-office-section-head">
+                            <div>
+                                <h4 class="settings-office-section-title">@scenarioLabel</h4>
+                                <p class="settings-office-section-hint">
+                                    @(rule.UsesMorningWindow ? "Работает в утреннем окне." : "Распределяется сразу.")
+                                </p>
+                            </div>
+                            <label class="worker-toggle" title="Правило активно">
+                                <input type="checkbox"
+                                       name="StageRules[@index].IsEnabled"
+                                       value="true"
+                                       @(rule.IsEnabled ? "checked" : null) />
+                                <span class="worker-toggle-slider"></span>
+                            </label>
+                            <input type="hidden" name="StageRules[@index].IsEnabled" value="false" />
+                        </div>
+                        <div class="settings-release-upload-grid">
+                            <label class="settings-field">
+                                <span class="settings-field-label">Source stage ID</span>
+                                <input type="text"
+                                       name="StageRules[@index].SourceStageId"
+                                       value="@rule.SourceStageId"
+                                       maxlength="100"
+                                       spellcheck="false"
+                                       placeholder="UC_..." />
+                            </label>
+                            <label class="settings-field">
+                                <span class="settings-field-label">Target stage ID</span>
+                                <input type="text"
+                                       name="StageRules[@index].TargetStageId"
+                                       value="@rule.TargetStageId"
+                                       maxlength="100"
+                                       spellcheck="false"
+                                       placeholder="UC_..." />
+                            </label>
+                        </div>
+                    </div>
+                }
+            </section>
+
+            <details class="settings-bitrix-instructions">
+                <summary>Дополнительные параметры распределения</summary>
+                <div class="settings-release-upload-grid">
+                    <label class="settings-field">
+                        <span class="settings-field-label">Начало утреннего окна, минут от 00:00</span>
+                        <input type="number" name="MorningWindowStartMinutes" value="@settings.MorningWindowStartMinutes" min="0" max="1439" required />
+                    </label>
+                    <label class="settings-field">
+                        <span class="settings-field-label">Конец утреннего окна, минут от 00:00</span>
+                        <input type="number" name="MorningWindowEndMinutes" value="@settings.MorningWindowEndMinutes" min="1" max="1440" required />
+                    </label>
+                    <label class="settings-field">
+                        <span class="settings-field-label">Резерв для позднего выхода, минут</span>
+                        <input type="number" name="LateJoinReserveMinutes" value="@settings.LateJoinReserveMinutes" min="0" max="1440" required />
+                    </label>
+                    <label class="settings-field">
+                        <span class="settings-field-label">Первая выдача одному менеджеру, %</span>
+                        <input type="number"
+                               name="SingleManagerInitialReleasePercent"
+                               value="@settings.SingleManagerInitialReleasePercent.ToString(System.Globalization.CultureInfo.InvariantCulture)"
+                               min="0"
+                               max="100"
+                               step="0.01"
+                               required />
+                    </label>
+                    <label class="settings-field">
+                        <span class="settings-field-label">Повторная попытка, секунд</span>
+                        <input type="number" name="RetryDelaySeconds" value="@settings.RetryDelaySeconds" min="10" max="3600" required />
+                    </label>
+                    <label class="settings-field">
+                        <span class="settings-field-label">Максимум попыток</span>
+                        <input type="number" name="MaxAttempts" value="@settings.MaxAttempts" min="1" max="1000" required />
+                    </label>
+                </div>
+                <div class="settings-options">
+                    <div class="settings-option">
+                        <div class="settings-option-text">
+                            <span class="settings-option-label">Сохранять ответственного для ручной NEW</span>
+                        </div>
+                        <label class="worker-toggle">
+                            <input type="checkbox" name="PreserveManualNewOwner" value="true" @(settings.PreserveManualNewOwner ? "checked" : null) />
+                            <span class="worker-toggle-slider"></span>
+                        </label>
+                        <input type="hidden" name="PreserveManualNewOwner" value="false" />
+                    </div>
+                    <div class="settings-option">
+                        <div class="settings-option-text">
+                            <span class="settings-option-label">Синхронизировать ответственного контакта</span>
+                        </div>
+                        <label class="worker-toggle">
+                            <input type="checkbox" name="SyncContactOwner" value="true" @(settings.SyncContactOwner ? "checked" : null) />
+                            <span class="worker-toggle-slider"></span>
+                        </label>
+                        <input type="hidden" name="SyncContactOwner" value="false" />
+                    </div>
+                    <div class="settings-option">
+                        <div class="settings-option-text">
+                            <span class="settings-option-label">Заполнять поля Авито только если они пустые</span>
+                        </div>
+                        <label class="worker-toggle">
+                            <input type="checkbox" name="FillOnlyEmptyAvitoFields" value="true" @(settings.FillOnlyEmptyAvitoFields ? "checked" : null) />
+                            <span class="worker-toggle-slider"></span>
+                        </label>
+                        <input type="hidden" name="FillOnlyEmptyAvitoFields" value="false" />
+                    </div>
+                </div>
+            </details>
+
+            <div class="settings-options">
+                <div class="settings-option">
+                    <div class="settings-option-text">
+                        <span class="settings-option-label">Правила проверены в shadow-режиме</span>
+                        <span class="settings-option-desc">
+                            Обязательное подтверждение для writer. Writer меняет стадии и ответственных в Bitrix24.
+                        </span>
+                    </div>
+                    <label class="worker-toggle" title="Правила проверены">
+                        <input type="checkbox"
+                               name="WriterRulesConfirmed"
+                               value="true"
+                               @(settings.WriterRulesConfirmed ? "checked" : null) />
+                        <span class="worker-toggle-slider"></span>
+                    </label>
+                    <input type="hidden" name="WriterRulesConfirmed" value="false" />
+                </div>
+            </div>
+
+            <button type="submit" class="settings-primary-btn">Сохранить распределение</button>
+        </form>
+    </div>
+</div>
+
+<div class="card card--settings-bitrix-list">
+    <div class="card-header settings-card-header">
+        <div>
+            <h2 class="settings-card-title">Последние решения распределения</h2>
+            <p class="settings-card-subtitle">
+                Проверяйте выбранных менеджеров и причины в shadow-режиме до включения writer.
+            </p>
+        </div>
+        <span class="settings-office-count">@Model.RecentAssignments.Count</span>
+    </div>
+    <div class="card-body card-body-table settings-table-wrap">
+        <table class="data-table data-table--cards">
+            <thead>
+            <tr>
+                <th>Сделка</th>
+                <th>Сценарий</th>
+                <th>Менеджер</th>
+                <th>Решение</th>
+                <th>Причина</th>
+                <th>Время</th>
+            </tr>
+            </thead>
+            <tbody>
+            @if (Model.RecentAssignments.Count == 0)
+            {
+                <tr>
+                    <td colspan="6" class="settings-empty-cell">
+                        Решений пока нет. Включите shadow и дождитесь событий или очередной сверки.
+                    </td>
+                </tr>
+            }
+            else
+            {
+                @foreach (var assignment in Model.RecentAssignments)
+                {
+                    var decisionTone = assignment.Decision switch
+                    {
+                        BitrixWorkforceDecisions.Assigned => "success",
+                        BitrixWorkforceDecisions.Failed => "error",
+                        BitrixWorkforceDecisions.Reserved => "warning",
+                        BitrixWorkforceDecisions.Deferred => "warning",
+                        _ => "neutral"
+                    };
+                    <tr>
+                        <td data-label="Сделка"><strong>@assignment.DealId</strong></td>
+                        <td data-label="Сценарий">@assignment.Scenario</td>
+                        <td data-label="Менеджер">@(assignment.SelectedResponsibleId?.ToString() ?? "—")</td>
+                        <td data-label="Решение">
+                            <span class="settings-bitrix-status settings-bitrix-status--@decisionTone">@assignment.Decision</span>
+                        </td>
+                        <td data-label="Причина">
+                            @if (!string.IsNullOrWhiteSpace(assignment.Error))
+                            {
+                                <span class="settings-bitrix-message">@assignment.Error</span>
+                            }
+                            else
+                            {
+                                <span>@assignment.Reason</span>
+                            }
+                        </td>
+                        <td data-label="Время">
+                            <span data-orbita-utc="@assignment.CreatedAtUtc.ToString("O")"></span>
+                        </td>
+                    </tr>
+                }
+            }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="card card--settings-bitrix-editor">
+    <div class="card-header settings-card-header">
+        <div>
+            <h2 class="settings-card-title">Исходящий вебхук Bitrix24</h2>
+            <p class="settings-card-subtitle">Приём ONCRMDEALADD и ONCRMDEALUPDATE</p>
+        </div>
+        <span class="settings-bitrix-status settings-bitrix-status--@(settings.EventReceiverConfigured ? "success" : "neutral")">
+            @(settings.EventReceiverConfigured ? "Настроен" : "Не настроен")
+        </span>
+    </div>
+    <div class="card-body">
+        @if (!string.IsNullOrWhiteSpace(settings.EventEndpointUrl))
+        {
+            <p class="settings-bitrix-hint">Endpoint для обработчика исходящего вебхука:</p>
+            <div class="settings-alert settings-alert--api-key" role="status">
+                <code class="settings-api-key-value settings-api-key-value--text" id="@endpointElementId">@settings.EventEndpointUrl</code>
+                <button type="button"
+                        class="settings-link-btn"
+                        data-settings-copy-api-key
+                        data-copy-target="@endpointElementId">
+                    <span>Копировать</span>
+                </button>
+            </div>
+        }
+        @if (settings.LastEventAtUtc is DateTime lastEventAtUtc)
+        {
+            <p class="settings-bitrix-checked">
+                Последнее принятое событие: <span data-orbita-utc="@lastEventAtUtc.ToString("O")"></span>
+            </p>
+        }
+
+        <form asp-controller="Settings"
+              asp-action="ConfigureBitrixWorkforceReceiver"
+              method="post"
+              class="settings-create-form settings-bitrix-form">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="OfficeId" value="@Model.OfficeId" />
+            <input type="hidden" name="BitrixInstanceId" value="@Model.BitrixInstanceId" />
+            <label class="settings-field">
+                <span class="settings-field-label">application_token</span>
+                <input type="password"
+                       name="ApplicationToken"
+                       required
+                       minlength="16"
+                       autocomplete="new-password"
+                       spellcheck="false"
+                       placeholder="Токен исходящего вебхука" />
+                <span class="settings-field-hint">
+                    Токен сохраняется только в виде SHA-256 хеша и после сохранения больше не показывается.
+                </span>
+            </label>
+            <label class="settings-field">
+                <span class="settings-field-label">Ожидаемый member_id (необязательно)</span>
+                <input type="text"
+                       name="ExpectedMemberId"
+                       value="@settings.EventExpectedMemberId"
+                       maxlength="100"
+                       autocomplete="off"
+                       spellcheck="false" />
+            </label>
+            <button type="submit" class="settings-secondary-btn">
+                @(settings.EventReceiverConfigured ? "Заменить токен receiver" : "Настроить receiver")
+            </button>
+        </form>
+    </div>
+</div>
