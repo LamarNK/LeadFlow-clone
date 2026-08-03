@@ -11,7 +11,8 @@
         errors: ['Errors', 'NavBadges'],
         journal: ['Events', 'Errors', 'NavBadges'],
         accounts: ['Accounts', 'NavBadges', 'Dashboard'],
-        statistics: ['Statistics', 'Dashboard', 'Accounts', 'NavBadges']
+        statistics: ['Statistics', 'Dashboard', 'Accounts', 'NavBadges'],
+        crm: ['Crm']
     };
 
     var POLL_INTERVAL_MS = 60000;
@@ -27,7 +28,7 @@
 
     function normalizeKind(kind) {
         if (typeof kind === 'number') {
-            var names = ['Dashboard', 'Responses', 'Workers', 'Events', 'Errors', 'Accounts', 'Statistics', 'NavBadges'];
+            var names = ['Dashboard', 'Responses', 'Workers', 'Events', 'Errors', 'Accounts', 'Statistics', 'NavBadges', 'Crm'];
             return names[kind] || null;
         }
         return kind;

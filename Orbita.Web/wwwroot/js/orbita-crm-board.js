@@ -13,6 +13,105 @@
         });
     }
 
+    const initBoardDragAndDrop = (root) => {
+        const board = root.querySelector('[data-crm-board]');
+        if (!board) return;
+
+        const requiresStageComment = root.dataset.crmRequireStageComment === 'true';
+
+        board.addEventListener('dragstart', (event) => {
+            const tile = event.target.closest('.crm-tile[draggable="true"]');
+            if (!tile || !event.dataTransfer) return;
+            event.dataTransfer.effectAllowed = 'move';
+            event.dataTransfer.setData('text/plain', tile.dataset.cardId || '');
+            root.classList.add('is-dragging');
+        });
+
+        board.addEventListener('dragover', (event) => {
+            if (!root.classList.contains('is-dragging')) return;
+            const stage = event.target.closest('.crm-stage');
+            if (!stage) return;
+            const stageName = stage.getAttribute('data-stage');
+            if (!stageName || !event.dataTransfer) return;
+            event.preventDefault();
+            event.dataTransfer.dropEffect = 'move';
+            stage.classList.add('is-drop-target');
+        });
+
+        board.addEventListener('dragleave', (event) => {
+            const stage = event.target.closest('.crm-stage');
+            if (stage) stage.classList.remove('is-drop-target');
+        });
+
+        board.addEventListener('drop', (event) => {
+            const stage = event.target.closest('.crm-stage');
+            const stageName = stage ? stage.getAttribute('data-stage') : null;
+            if (!stage || !stageName || !event.dataTransfer) return;
+            event.preventDefault();
+            const cardId = event.dataTransfer.getData('text/plain');
+            const sourceTile = board.querySelector(`.crm-tile[data-card-id="${CSS.escape(cardId)}"]`);
+            if (!cardId || !sourceTile) return;
+            const sourceStage = sourceTile.dataset.cardStage;
+            if (sourceStage === stageName) return;
+
+            let comment = '';
+            if (requiresStageComment) {
+                comment = window.prompt('Добавьте комментарий к смене этапа:') || '';
+                if (!comment.trim()) {
+                    if (window.Orbita && typeof window.Orbita.toast === 'function') {
+                        window.Orbita.toast('Для смены этапа нужен комментарий.', { variant: 'error' });
+                    }
+                    return;
+                }
+            }
+
+            if (window.Orbita && typeof window.Orbita.postForm === 'function') {
+                window.Orbita.postForm('/Crm/MoveAjax', { id: cardId, stage: stageName, comment: comment })
+                    .then(function (result) {
+                        if (!result.ok || !result.payload || result.payload.ok !== true) {
+                            var message = (result.payload && result.payload.error) || 'Не удалось сменить этап.';
+                            if (window.Orbita && typeof window.Orbita.toast === 'function') {
+                                window.Orbita.toast(message, { variant: 'error' });
+                            }
+                            return;
+                        }
+                        if (window.OrbitaLive && typeof window.OrbitaLive.scheduleRefresh === 'function') {
+                            window.OrbitaLive.scheduleRefresh({ kinds: ['Crm'] });
+                        } else {
+                            refreshBoard();
+                        }
+                    })
+                    .catch(function () { });
+            }
+        });
+
+        const endDrag = () => {
+            root.classList.remove('is-dragging');
+            root.querySelectorAll('.crm-stage.is-drop-target').forEach((stage) => stage.classList.remove('is-drop-target'));
+        };
+        board.addEventListener('dragend', endDrag);
+        board.addEventListener('dragcancel', endDrag);
+    };
+
+    const refreshBoard = () => {
+        var root = document.querySelector('[data-orbita-live]');
+        var liveWorkspace = document.querySelector('[data-crm-live-workspace]');
+        if (!root || !liveWorkspace) return Promise.resolve();
+        var url = root.getAttribute('data-orbita-snapshot');
+        if (!url) return Promise.resolve();
+        return fetch(url, { credentials: 'same-origin', headers: { 'X-Orbita-Content-Only': '1' } })
+            .then(function (res) {
+                if (res.status === 204) return null;
+                if (!res.ok) throw new Error('Crm board snapshot failed: ' + res.status);
+                return res.text();
+            })
+            .then(function (html) {
+                if (!html || !html.trim()) return;
+                liveWorkspace.innerHTML = html;
+                initCrmBoardPage();
+            });
+    };
+
     const initBoardNavigation = (root) => {
         if (root.dataset.navigationReady === 'true') return;
 
@@ -255,6 +354,8 @@
             updateControls();
             window.requestAnimationFrame(updateControls);
         });
+
+        initBoardDragAndDrop(root);
     };
 
     const initCrmBoardPage = () => {
@@ -264,6 +365,11 @@
         });
 
         document.querySelectorAll('[data-crm-board-carousel]').forEach(initBoardNavigation);
+
+        if (window.OrbitaLive && typeof window.OrbitaLive.register === 'function'
+            && document.querySelector('[data-orbita-live][data-orbita-live-page="crm"]')) {
+            window.OrbitaLive.register('crm', { fetchSnapshot: refreshBoard });
+        }
     };
 
     window.OrbitaCrmBoard = window.OrbitaCrmBoard || {};

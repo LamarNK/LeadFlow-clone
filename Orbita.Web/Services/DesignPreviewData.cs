@@ -191,9 +191,29 @@ internal static class DesignPreviewData
                 activity,
                 BuildPreviewCrmManagers(),
                 _previewCrmStages.ToList(),
-                true);
+                true,
+                BuildPreviewChat(candidate.Id),
+                BuildPreviewPhoneHistory(candidate));
         }
     }
+
+    private static IReadOnlyList<CrmChatMessageDto> BuildPreviewChat(Guid cardId)
+    {
+        var count = (int)(cardId.GetHashCode() & 0x3);
+        var messages = new List<CrmChatMessageDto>();
+        for (var i = 0; i < count; i++)
+        {
+            messages.Add(new CrmChatMessageDto(
+                $"Пример сообщения из переписки кандидата #{i + 1}. Заполняется из отклика.",
+                DateTime.UtcNow.AddMinutes(-10 * (i + 1)).ToString("dd MMM HH:mm"),
+                i % 2 == 0 ? "incoming" : "outgoing"));
+        }
+
+        return messages;
+    }
+
+    private static IReadOnlyList<CrmPhoneHistoryDto> BuildPreviewPhoneHistory(PreviewCrmCandidate candidate) =>
+        [new CrmPhoneHistoryDto(candidate.PhoneRaw, candidate.PhoneRaw, DateTime.UtcNow.AddDays(-3))];
 
     public static IReadOnlyList<CrmTaskDto> GetCrmTasks()
     {
@@ -433,7 +453,11 @@ internal static class DesignPreviewData
             candidate.CloseReason,
             openTasks,
             overdue,
-            hours);
+            hours,
+            $"https://www.avito.ru/item/{candidate.Id:N}",
+            $"https://www.avito.ru/item/{candidate.Id:N}",
+            "Avito · Северный парк",
+            candidate.Id.ToString("N")[..8]);
     }
 
     private static void AddPreviewCrmHistory(string action, string details) =>

@@ -7,6 +7,7 @@
     var activeTab = ViewData["CrmTab"] as string ?? "activity";
     var card = Model.Card;
     var canEdit = Model.CanEdit;
+    var vacancyUrl = !string.IsNullOrWhiteSpace(card.VacancyUrl) ? card.VacancyUrl : card.SourceUrl;
     string DisplayCrmAction(string action) => action switch
     {
         "Created" => "Карточка создана",
@@ -37,7 +38,15 @@
             <div>
                 <h1>@card.FullName</h1>
                 <p>
-                    @(card.Age?.ToString() ?? "—") лет · @card.City · @card.Vacancy
+                    @(card.Age?.ToString() ?? "—") лет · @card.City ·
+                    @if (!string.IsNullOrWhiteSpace(vacancyUrl))
+                    {
+                        <a class="crm-vacancy-link" href="@vacancyUrl" target="_blank" rel="noopener" title="Открыть объявление">@card.Vacancy <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a>
+                    }
+                    else
+                    {
+                        @card.Vacancy
+                    }
                     @if (card.IsClosed) { <span class="crm-tag crm-tag--muted">Закрыто: @card.CloseReason</span> }
                     else if (!card.IsInActiveLoad) { <span class="crm-tag">Вне нагрузки</span> }
                 </p>
@@ -47,7 +56,11 @@
                     {
                         <a href="@card.MessengerUrl" target="_blank" rel="noopener" class="settings-secondary-btn"><i class="fa-regular fa-message" aria-hidden="true"></i>Чат</a>
                     }
-                    <button type="button" class="settings-secondary-btn" data-copy="@card.PhoneRaw"><i class="fa-regular fa-copy" aria-hidden="true"></i>Копировать</button>
+                    @if (!string.IsNullOrWhiteSpace(vacancyUrl))
+                    {
+                        <a href="@vacancyUrl" target="_blank" rel="noopener" class="settings-secondary-btn"><i class="fa-solid fa-tag" aria-hidden="true"></i>Объявление</a>
+                    }
+                    <button type="button" class="settings-secondary-btn" data-copy="@card.PhoneRaw" onclick="window.Orbita.copyText(this.dataset.copy, 'Телефон скопирован.');"><i class="fa-regular fa-copy" aria-hidden="true"></i>Копировать</button>
                 </div>
             </div>
         </div>
@@ -89,8 +102,44 @@
                 <header>Контакты и поля</header>
                 <dl>
                     <div><dt>Телефон</dt><dd>@card.PhoneRaw</dd></div>
+                    @if (Model.PhoneHistory.Count > 1)
+                    {
+                        <div>
+                            <dt>История номеров</dt>
+                            <dd class="crm-phone-history">
+                                @foreach (var ph in Model.PhoneHistory)
+                                {
+                                    <span><i class="fa-solid fa-phone" aria-hidden="true"></i>@ph.PhoneRaw<em>@ph.RecordedAtUtc.ToLocalTime().ToString("dd.MM.yyyy HH:mm")</em></span>
+                                }
+                            </dd>
+                        </div>
+                    }
                     <div><dt>Город</dt><dd>@card.City</dd></div>
-                    <div><dt>Вакансия</dt><dd>@card.Vacancy</dd></div>
+                    <div>
+                        <dt>Вакансия</dt>
+                        <dd>
+                            @if (!string.IsNullOrWhiteSpace(vacancyUrl))
+                            {
+                                <a class="crm-field-link" href="@vacancyUrl" target="_blank" rel="noopener" title="Открыть объявление">@card.Vacancy <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a>
+                            }
+                            else
+                            {
+                                @card.Vacancy
+                            }
+                        </dd>
+                    </div>
+                    @if (!string.IsNullOrWhiteSpace(vacancyUrl))
+                    {
+                        <div><dt>Объявление</dt><dd><a class="crm-field-link" href="@vacancyUrl" target="_blank" rel="noopener">Открыть объявление <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a></dd></div>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(card.AccountName))
+                    {
+                        <div><dt>Источник</dt><dd>@card.AccountName</dd></div>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(card.SourceResponseId))
+                    {
+                        <div><dt>ID отклика</dt><dd>@card.SourceResponseId</dd></div>
+                    }
                     <div><dt>Этап</dt><dd>@card.Stage</dd></div>
                     <div><dt>Нагрузка</dt><dd>@(card.IsInActiveLoad ? "В активной работе" : "Вне нагрузки")</dd></div>
                     <div><dt>Создана</dt><dd>@card.CreatedAtUtc.ToLocalTime().ToString("dd.MM.yyyy HH:mm")</dd></div>
@@ -172,6 +221,7 @@
         <section class="crm-card-main card">
             <nav class="crm-tabs">
                 <a class="@(activeTab == "activity" ? "is-active" : "")" asp-action="Card" asp-route-id="@card.Id">Лента</a>
+                <a class="@(activeTab == "chat" ? "is-active" : "")" asp-action="Card" asp-route-id="@card.Id" asp-route-tab="chat">Чат @if (Model.Chat.Count > 0) { <span>@Model.Chat.Count</span> }</a>
                 <a class="@(activeTab == "tasks" ? "is-active" : "")" asp-action="Card" asp-route-id="@card.Id" asp-route-tab="tasks">Задачи <span>@Model.Tasks.Count(t => t.Status == CrmTaskStatuses.Open)</span></a>
                 <a class="@(activeTab == "history" ? "is-active" : "")" asp-action="Card" asp-route-id="@card.Id" asp-route-tab="history">История</a>
             </nav>
@@ -199,6 +249,30 @@
                     }
                     @if (Model.Activity.Count == 0) { <p class="crm-empty">Пока нет активности — оставьте первый комментарий.</p> }
                 </div>
+            }
+            else if (activeTab == "chat")
+            {
+                @if (Model.Chat.Count > 0)
+                {
+                    <div class="crm-chat">
+                        @foreach (var msg in Model.Chat)
+                        {
+                            var sender = msg.Tone == "outgoing" ? "Вы" : msg.Tone == "system" ? "Avito" : "Кандидат";
+                            var avatar = msg.Tone == "outgoing" ? "В" : msg.Tone == "system" ? "A" : (string.IsNullOrWhiteSpace(card.FullName) ? "К" : card.FullName.Trim()[0].ToString());
+                            <article class="crm-chat__msg crm-chat__msg--@msg.Tone">
+                                <span class="crm-chat__avatar" aria-hidden="true">@avatar</span>
+                                <div class="crm-chat__bubble">
+                                    <header><strong>@sender</strong><time>@msg.TimeLabel</time></header>
+                                    <p>@msg.Text</p>
+                                </div>
+                            </article>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <p class="crm-empty">Переписка не сохранена для этого отклика.</p>
+                }
             }
             else if (activeTab == "tasks")
             {
@@ -262,17 +336,6 @@
 
 @section Scripts {
 <script>
-document.querySelectorAll('[data-copy]').forEach(function (btn) {
-    btn.addEventListener('click', function () {
-        var text = btn.getAttribute('data-copy') || '';
-        if (navigator.clipboard && text) {
-            navigator.clipboard.writeText(text).then(function () {
-                btn.classList.add('is-copied');
-                setTimeout(function () { btn.classList.remove('is-copied'); }, 1200);
-            });
-        }
-    });
-});
 (function () {
     var input = document.getElementById('stageComment');
     if (!input) return;

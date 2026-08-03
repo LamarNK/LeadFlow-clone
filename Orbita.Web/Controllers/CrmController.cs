@@ -62,6 +62,39 @@ public sealed class CrmController(
         return View(board);
     }
 
+    [HttpGet]
+    public async Task<IActionResult> Snapshot(
+        Guid? officeId,
+        string? search,
+        string? scope,
+        string? city,
+        string? vacancy,
+        bool overdueOnly = false,
+        bool activeLoadOnly = false,
+        bool includeClosed = false,
+        CancellationToken ct = default)
+    {
+        officeId ??= officeContext.EffectiveOfficeId;
+        if (officeId is null)
+        {
+            return NoContent();
+        }
+
+        var (board, errorCode) = await api.GetCrmBoardResultAsync(
+            officeId,
+            new CrmBoardQuery(search, scope, city, vacancy, overdueOnly, activeLoadOnly, includeClosed),
+            ct);
+        return board is null ? NoContent() : PartialView("_CrmWorkspace", board);
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> MoveAjax(Guid id, string stage, string? comment, CancellationToken ct = default)
+    {
+        var (ok, error) = await api.MoveCrmCardAsync(id, stage, comment, ct);
+        return Json(new { ok, error });
+    }
+
     [HttpPost]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> StartShift(CancellationToken ct = default)
@@ -85,7 +118,7 @@ public sealed class CrmController(
     {
         var card = await api.GetCrmCardAsync(id, ct);
         if (card is null) return NotFound();
-        ViewData["CrmTab"] = tab is "tasks" or "history" ? tab : "activity";
+        ViewData["CrmTab"] = tab is "tasks" or "history" or "chat" ? tab : "activity";
         ViewData["IsCrmAdmin"] = User.IsInRole(OrbitaRoles.Admin);
         return View(card);
     }

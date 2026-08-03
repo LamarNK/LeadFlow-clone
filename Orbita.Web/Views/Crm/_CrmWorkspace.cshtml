@@ -1,0 +1,110 @@
+@model Orbita.Contracts.CrmBoardDto
+@using Orbita.Contracts
+@{
+    var activeAdvancedFilters = new[]
+    {
+        !string.IsNullOrWhiteSpace(Model.City),
+        !string.IsNullOrWhiteSpace(Model.Vacancy),
+        Model.OverdueOnly,
+        Model.ActiveLoadOnly,
+        Model.IncludeClosed
+    }.Count(x => x);
+    var advancedFilterBadge = activeAdvancedFilters > 0 ? activeAdvancedFilters.ToString() : string.Empty;
+    string ScopeUrl(string scope) => Url.Action("Index", new
+    {
+        scope,
+        search = Model.Search,
+        city = Model.City,
+        vacancy = Model.Vacancy,
+        overdueOnly = Model.OverdueOnly,
+        activeLoadOnly = Model.ActiveLoadOnly,
+        includeClosed = Model.IncludeClosed
+    })!;
+}
+@if (TempData["CrmError"] is string error)
+{
+    <div class="crm-notice crm-notice--error"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i>@error</div>
+}
+@if (!Model.IsEnabled)
+{
+    <div class="crm-notice"><i class="fa-solid fa-flask" aria-hidden="true"></i>Офис не принимает отклики в CRM — операторы не могут отправлять сюда карточки.@if (Model.IsAdmin) { <text> Включите в </text><a asp-action="Team">Команда CRM</a><text> или в настройках офиса.</text> }</div>
+}
+
+<section class="crm-toolbar card">
+    <div class="crm-toolbar__shift">
+        <div>
+            <span class="crm-pill @(Model.IsShiftActive ? "is-on" : "")">@(Model.IsShiftActive ? "На смене" : "Не на смене")</span>
+            <strong class="crm-toolbar__load">@Model.ActiveLoad <span>/ @Model.Capacity</span></strong>
+            <p>Нагрузка · открытых задач @Model.OpenTaskCount@if (Model.OverdueTaskCount > 0) { <text> · </text><em class="crm-overdue">просрочено @Model.OverdueTaskCount</em> }</p>
+            @if (Model.OverdueTaskCount > 0)
+            {
+                <a class="crm-toolbar__urgent" asp-action="Tasks"><i class="fa-solid fa-clock" aria-hidden="true"></i>Открыть просроченные задачи</a>
+            }
+        </div>
+        @if (Model.IsShiftActive)
+        {
+            <form asp-action="StopShift" method="post"><button class="settings-secondary-btn" type="submit">Стоп смены</button></form>
+        }
+        else
+        {
+            <form asp-action="StartShift" method="post"><button class="settings-primary-btn" type="submit">Старт смены</button></form>
+        }
+    </div>
+    <div class="crm-toolbar__stats">
+        <div><small>В работе</small><strong>@Model.TeamStats.TotalActiveCards</strong></div>
+        <div><small>Очередь</small><strong>@Model.UnassignedCount</strong></div>
+        <div><small>На смене</small><strong>@Model.TeamStats.OnShiftManagers / @Model.TeamStats.TotalManagers</strong></div>
+        <div><small>Закрыто сегодня</small><strong>@Model.TeamStats.ClosedToday</strong></div>
+    </div>
+</section>
+
+<section class="crm-filters card">
+    <form method="get" class="crm-filters__form" asp-action="Index">
+        <div class="crm-filters__primary">
+            <div class="crm-scope-tabs" role="tablist">
+                <a class="@(Model.Scope == CrmBoardScopes.Mine ? "is-active" : "")" href="@ScopeUrl(CrmBoardScopes.Mine)">Мои</a>
+                <a class="@(Model.Scope == CrmBoardScopes.Team ? "is-active" : "")" href="@ScopeUrl(CrmBoardScopes.Team)">Команда</a>
+                <a class="@(Model.Scope == CrmBoardScopes.Unassigned ? "is-active" : "")" href="@ScopeUrl(CrmBoardScopes.Unassigned)">Очередь <span>@Model.UnassignedCount</span></a>
+                <a class="@(Model.Scope == CrmBoardScopes.Closed ? "is-active" : "")" href="@ScopeUrl(CrmBoardScopes.Closed)">Закрытые</a>
+            </div>
+            <input type="hidden" name="scope" value="@Model.Scope" />
+            <input type="search" name="search" value="@Model.Search" placeholder="ФИО, телефон, город…" aria-label="Поиск кандидата" />
+            <button class="settings-primary-btn" type="submit">Найти</button>
+            <a class="settings-secondary-btn" asp-action="Index">Сброс</a>
+        </div>
+        <details class="crm-filter-details" @(activeAdvancedFilters > 0 ? "open" : null)>
+            <summary><i class="fa-solid fa-sliders" aria-hidden="true"></i>Дополнительные фильтры<span class="crm-filter-details__count @(activeAdvancedFilters == 0 ? "is-empty" : "")">@advancedFilterBadge</span></summary>
+            <div class="crm-filter-details__body">
+                <input type="text" name="city" value="@Model.City" placeholder="Город" />
+                <input type="text" name="vacancy" value="@Model.Vacancy" placeholder="Вакансия" />
+                <label class="crm-check"><input type="checkbox" name="overdueOnly" value="true" @(Model.OverdueOnly ? "checked" : null) /> Просрочка</label>
+                <label class="crm-check"><input type="checkbox" name="activeLoadOnly" value="true" @(Model.ActiveLoadOnly ? "checked" : null) /> В нагрузке</label>
+                <label class="crm-check"><input type="checkbox" name="includeClosed" value="true" @(Model.IncludeClosed ? "checked" : null) /> + закрытые</label>
+            </div>
+        </details>
+        <p class="crm-scope-description">
+            @if (Model.Scope == CrmBoardScopes.Team)
+            {
+                <text><i class="fa-solid fa-users" aria-hidden="true"></i>Режим команды: видно распределение кандидатов и риски по этапам.</text>
+            }
+            else if (Model.Scope == CrmBoardScopes.Unassigned)
+            {
+                <text><i class="fa-solid fa-inbox" aria-hidden="true"></i>Очередь: кандидаты без ответственного.</text>
+            }
+            else if (Model.Scope == CrmBoardScopes.Closed)
+            {
+                <text><i class="fa-solid fa-box-archive" aria-hidden="true"></i>Архив закрытых карточек.</text>
+            }
+            else
+            {
+                <text><i class="fa-solid fa-user-check" aria-hidden="true"></i>Ваша рабочая воронка и приоритетные действия на сегодня.</text>
+            }
+            @if (!Model.CanEdit)
+            {
+                <text><em class="crm-readonly-hint">Просмотр — изменения недоступны.</em></text>
+            }
+        </p>
+    </form>
+</section>
+
+<partial name="_CrmBoard" model="Model" />
