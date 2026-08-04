@@ -1,0 +1,93 @@
+@model Orbita.Contracts.CrmBoardDto
+@{
+    var cards = Model.Stages
+        .SelectMany(stage => stage.Cards)
+        .Where(card => !card.IsClosed && string.IsNullOrWhiteSpace(card.ManagerUserId))
+        .OrderByDescending(card => card.HasOverdueTask)
+        .ThenByDescending(card => card.HoursInStage)
+        .ToList();
+}
+<section class="crm-closed crm-queue-list card" aria-label="Очередь кандидатов">
+    <header class="crm-closed__header">
+        <div>
+            <h2>Очередь кандидатов</h2>
+            <p>Карточки без назначенного ответственного.</p>
+        </div>
+        <span class="crm-closed__count">@cards.Count</span>
+    </header>
+
+    @if (cards.Count == 0)
+    {
+        <div class="crm-closed__empty">
+            <i class="fa-solid fa-inbox" aria-hidden="true"></i>
+            <strong>Очередь пуста</strong>
+            <span>Новые кандидаты без ответственного появятся здесь.</span>
+        </div>
+    }
+    else
+    {
+        <div class="crm-closed__table-wrap">
+            <table class="data-table data-table--cards crm-closed__table">
+                <thead>
+                    <tr>
+                        <th>Кандидат</th>
+                        <th>Вакансия</th>
+                        <th>Этап</th>
+                        <th>Статус</th>
+                        @if (Model.IsAdmin && Model.CanEdit && Model.Managers.Count > 0)
+                        {
+                            <th>Ответственный</th>
+                        }
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var card in cards)
+                    {
+                        <tr>
+                            <td class="cell-name" data-label="Кандидат">
+                                <a asp-action="Card" asp-route-id="@card.Id">@card.FullName</a>
+                                <small>@(card.Age?.ToString() ?? "—") лет · @card.City</small>
+                            </td>
+                            <td data-label="Вакансия">@card.Vacancy</td>
+                            <td data-label="Этап"><span class="crm-queue-list__stage">@card.Stage</span></td>
+                            <td data-label="Статус">
+                                @if (card.HasOverdueTask)
+                                {
+                                    <span class="crm-overdue"><i class="fa-solid fa-clock" aria-hidden="true"></i> Просрочена</span>
+                                }
+                                else if (card.OpenTaskCount > 0)
+                                {
+                                    <span><i class="fa-solid fa-list-check" aria-hidden="true"></i> @card.OpenTaskCount задач</span>
+                                }
+                                else if (card.HoursInStage >= 24)
+                                {
+                                    <span class="crm-hot">В очереди @card.HoursInStage.ToString("0.#")ч</span>
+                                }
+                            else
+                            {
+                                <span>Новая карточка</span>
+                            }
+                            </td>
+                            @if (Model.IsAdmin && Model.CanEdit && Model.Managers.Count > 0)
+                            {
+                                <td data-label="Ответственный">
+                                    <form asp-action="Assign" method="post" class="crm-queue-list__assign">
+                                        <input type="hidden" name="id" value="@card.Id" />
+                                        <input type="hidden" name="returnUrl" value="@(Context.Request.Path + Context.Request.QueryString)" />
+                                        <select name="managerUserId" aria-label="Назначить менеджера для @card.FullName">
+                                            @foreach (var manager in Model.Managers)
+                                            {
+                                                <option value="@manager.UserId">@manager.DisplayName</option>
+                                            }
+                                        </select>
+                                        <button type="submit" aria-label="Назначить менеджера">Назначить</button>
+                                    </form>
+                                </td>
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>

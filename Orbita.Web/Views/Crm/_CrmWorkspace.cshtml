@@ -111,6 +111,10 @@
 {
     <partial name="_CrmClosedTable" model="Model" />
 }
+else if (Model.Scope == CrmBoardScopes.Unassigned)
+{
+    <partial name="_CrmQueueTable" model="Model" />
+}
 else
 {
     <partial name="_CrmBoard" model="Model" />

@@ -11,10 +11,11 @@
         UpdatedAtUtc = DateTime.UtcNow
     };
     var officeId = OfficeContext.EffectiveOfficeId;
+    var stageTotal = Math.Max(1, Model.TeamStats.TotalActiveCards);
 }
 <partial name="_PageHeader" model="header" />
 
-<div class="orbita-main crm-shell">
+<main class="orbita-main crm-shell crm-team-dashboard">
     @if (TempData["CrmError"] is string error)
     {
         <div class="crm-notice crm-notice--error"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i>@error</div>
@@ -24,25 +25,45 @@
         <div class="crm-notice crm-notice--ok"><i class="fa-solid fa-circle-check" aria-hidden="true"></i>@ok</div>
     }
 
-    <section class="crm-toolbar card">
-        <div class="crm-toolbar__stats crm-toolbar__stats--team">
-            <div class="crm-team-stat"><i class="fa-regular fa-folder-open" aria-hidden="true"></i><small>Активные карточки</small><strong>@Model.TeamStats.TotalActiveCards</strong></div>
-            <div class="crm-team-stat"><i class="fa-solid fa-inbox" aria-hidden="true"></i><small>Очередь</small><strong>@Model.UnassignedCount</strong></div>
-            <div class="crm-team-stat"><i class="fa-solid fa-user-check" aria-hidden="true"></i><small>На смене</small><strong>@Model.TeamStats.OnShiftManagers</strong></div>
-            <div class="crm-team-stat"><i class="fa-solid fa-arrow-right-arrow-left" aria-hidden="true"></i><small>Выдано сегодня</small><strong>@Model.TeamStats.AssignedToday</strong></div>
-            <div class="crm-team-stat"><i class="fa-solid fa-circle-check" aria-hidden="true"></i><small>Закрыто сегодня</small><strong>@Model.TeamStats.ClosedToday</strong></div>
+    <section class="crm-team-overview" aria-label="Сводка по команде">
+        <div class="crm-team-metrics">
+            <article class="kpi-card crm-team-metric crm-team-metric--cards" style="--kpi-index: 0;">
+                <header class="kpi-card-head"><span class="kpi-icon-box kpi-icon-box--blue"><i class="fa-regular fa-folder-open" aria-hidden="true"></i></span><span class="kpi-card-label">Активные карточки</span></header>
+                <div class="kpi-card-metric crm-team-metric__metric"><b class="kpi-value">@Model.TeamStats.TotalActiveCards</b></div>
+                <p class="crm-team-metric__caption">В работе у команды</p>
+            </article>
+            <article class="kpi-card crm-team-metric crm-team-metric--queue" style="--kpi-index: 1;">
+                <header class="kpi-card-head"><span class="kpi-icon-box kpi-icon-box--orange"><i class="fa-solid fa-inbox" aria-hidden="true"></i></span><span class="kpi-card-label">Очередь</span></header>
+                <div class="kpi-card-metric crm-team-metric__metric"><b class="kpi-value">@Model.UnassignedCount</b></div>
+                <p class="crm-team-metric__caption">Ждут распределения</p>
+            </article>
+            <article class="kpi-card crm-team-metric crm-team-metric--shift" style="--kpi-index: 2;">
+                <header class="kpi-card-head"><span class="kpi-icon-box kpi-icon-box--green"><i class="fa-solid fa-user-check" aria-hidden="true"></i></span><span class="kpi-card-label">На смене</span></header>
+                <div class="kpi-card-metric crm-team-metric__metric"><b class="kpi-value">@Model.TeamStats.OnShiftManagers</b></div>
+                <p class="crm-team-metric__caption">Менеджеров доступны</p>
+            </article>
+            <article class="kpi-card crm-team-metric crm-team-metric--assigned" style="--kpi-index: 3;">
+                <header class="kpi-card-head"><span class="kpi-icon-box kpi-icon-box--purple"><i class="fa-solid fa-arrow-right-arrow-left" aria-hidden="true"></i></span><span class="kpi-card-label">Выдано сегодня</span></header>
+                <div class="kpi-card-metric crm-team-metric__metric"><b class="kpi-value">@Model.TeamStats.AssignedToday</b></div>
+                <p class="crm-team-metric__caption">Карточек назначено</p>
+            </article>
+            <article class="kpi-card crm-team-metric crm-team-metric--closed" style="--kpi-index: 4;">
+                <header class="kpi-card-head"><span class="kpi-icon-box kpi-icon-box--green"><i class="fa-solid fa-circle-check" aria-hidden="true"></i></span><span class="kpi-card-label">Закрыто сегодня</span></header>
+                <div class="kpi-card-metric crm-team-metric__metric"><b class="kpi-value">@Model.TeamStats.ClosedToday</b></div>
+                <p class="crm-team-metric__caption">Завершено за смену</p>
+            </article>
         </div>
     </section>
 
     <div class="crm-team-grid">
-        <section class="card crm-team-panel">
-            <div class="card-header"><div><h2>Менеджеры</h2><p>Ёмкость и текущая нагрузка (активные карточки в нагрузке).</p></div></div>
+        <section class="card crm-team-panel crm-team-panel--managers">
+            <header class="crm-team-panel__header"><div><h2>Менеджеры</h2><p>Ёмкость и текущая нагрузка по активным карточкам.</p></div><b>@Model.Managers.Count</b></header>
             <div class="crm-manager-table">
                 <div class="crm-manager-table__head" aria-hidden="true"><span>Менеджер</span><span>Нагрузка</span><span>Лимит</span></div>
                 @foreach (var m in Model.Managers)
                 {
                     var pct = m.Capacity <= 0 ? 0 : Math.Min(100, (int)Math.Round(100.0 * m.ActiveLoad / m.Capacity));
-                    <article class="crm-manager-row">
+                    <article class="crm-manager-row @(pct >= 100 ? "is-at-limit" : null)">
                         <div class="crm-manager-row__name">
                             <span class="crm-manager-row__identity"><i class="fa-solid fa-circle @(m.IsShiftActive ? "is-online" : "")" aria-hidden="true"></i><strong>@m.DisplayName</strong></span>
                             <span>@(m.IsShiftActive ? "на смене" : "не на смене")</span>
@@ -65,12 +86,13 @@
             </div>
         </section>
 
-        <section class="card crm-team-panel">
-            <div class="card-header"><div><h2>По этапам</h2><p>Активные карточки офиса.</p></div></div>
+        <section class="card crm-team-panel crm-team-panel--stages">
+            <header class="crm-team-panel__header"><div><h2>По этапам</h2><p>Активные карточки текущего офиса.</p></div></header>
             <div class="crm-stage-counts">
                 @foreach (var stage in Model.TeamStats.StageCounts.OrderByDescending(x => x.Count))
                 {
-                    <div><span>@stage.Stage</span><strong>@stage.Count</strong></div>
+                    var pct = Math.Min(100, (int)Math.Round(100.0 * stage.Count / stageTotal));
+                    <div class="crm-stage-count"><div><span>@stage.Stage</span><strong>@stage.Count</strong></div><i><b style="width:@pct%"></b></i></div>
                 }
                 @if (Model.TeamStats.StageCounts.Count == 0)
                 {
@@ -80,7 +102,7 @@
         </section>
 
         <section class="card crm-team-panel crm-team-panel--settings">
-            <div class="card-header"><div><h2>Настройки офиса</h2><p>Офис принимает отклики в CRM — операторы любого офиса могут отправлять сюда карточки. Bitrix настраивается отдельно.</p></div></div>
+            <header class="crm-team-panel__header"><div><h2>Настройки офиса</h2><p>Приём откликов и правила работы менеджеров.</p></div></header>
             @if (officeId is Guid oid)
             {
                 <form asp-action="SaveOfficeSettings" method="post" class="crm-standard-form crm-office-settings-form">
@@ -108,7 +130,7 @@
         </section>
 
         <section class="card crm-team-panel crm-team-panel--funnel">
-            <div class="card-header"><div><h2>Воронка офиса</h2><p>Этапы CRM для текущего офиса. Только администратор. Первый этап — стартовый для новых карточек.</p></div></div>
+            <header class="crm-team-panel__header"><div><h2>Воронка офиса</h2><p>Этапы CRM для текущего офиса.</p></div></header>
             @if (officeId is Guid funnelOfficeId)
             {
                 <form asp-action="SaveOfficeFunnel" method="post" class="crm-standard-form crm-funnel-form">
@@ -128,4 +150,4 @@
             }
         </section>
     </div>
-</div>
+</main>

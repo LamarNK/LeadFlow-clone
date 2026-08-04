@@ -2,11 +2,10 @@
     ViewData["Title"] = "CRM недоступна";
     var message = ViewData["CrmUnavailableMessage"] as string
         ?? "Не удалось загрузить CRM для выбранного офиса.";
+    var header = new PageHeaderViewModel
+    {
+        Title = "CRM недоступна",
+        Subtitle = message
+    };
 }
-<section class="page-header crm-unavailable-header">
-    <div>
-        <h1>CRM недоступна</h1>
-        <p>@message</p>
-    </div>
-    <vc:office-switcher />
-</section>
+<partial name="_PageHeader" model="header" />
