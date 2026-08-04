@@ -194,6 +194,76 @@
                                 <li>Скопируйте всю ссылку целиком — от <code>https://</code> до секретного кода в конце — и вставьте в поле выше.</li>
                             </ol>
                         </details>
+                        @if (controller == "Settings")
+                        {
+                            <input type="hidden" name="EntityType" value="@editor.IntegrationSettings.EntityType" />
+                            <input type="hidden" name="ResponsibleId" value="@editor.IntegrationSettings.ResponsibleId" />
+                            <details class="settings-bitrix-instructions" open>
+                                <summary>Поля интеграции CRM</summary>
+                                <p class="settings-bitrix-hint">
+                                    Коды пользовательских полей задаются отдельно для этого портала Bitrix24.
+                                    Оставьте код пустым, если соответствующее поле заполнять не нужно.
+                                </p>
+                                <div class="settings-release-upload-grid">
+                                    <label class="settings-field">
+                                        <span class="settings-field-label">Источник лида</span>
+                                        <input type="text"
+                                               name="LeadSource"
+                                               value="@editor.IntegrationSettings.LeadSource"
+                                               maxlength="200"
+                                               placeholder="Авито" />
+                                    </label>
+                                    <label class="settings-field">
+                                        <span class="settings-field-label">UF-код идемпотентности</span>
+                                        <input type="text"
+                                               name="DealIdempotencyUfCode"
+                                               value="@editor.IntegrationSettings.DealIdempotencyUfCode"
+                                               maxlength="128"
+                                               placeholder="UF_CRM_..." />
+                                    </label>
+                                    <label class="settings-field">
+                                        <span class="settings-field-label">UF-код возраста</span>
+                                        <input type="text"
+                                               name="DealAgeUfCode"
+                                               value="@editor.IntegrationSettings.DealAgeUfCode"
+                                               maxlength="128"
+                                               placeholder="UF_CRM_..." />
+                                    </label>
+                                    <label class="settings-field">
+                                        <span class="settings-field-label">UF-код профессии</span>
+                                        <input type="text"
+                                               name="DealProfessionUfCode"
+                                               value="@editor.IntegrationSettings.DealProfessionUfCode"
+                                               maxlength="128"
+                                               placeholder="UF_CRM_..." />
+                                    </label>
+                                    <label class="settings-field">
+                                        <span class="settings-field-label">UF-код города</span>
+                                        <input type="text"
+                                               name="DealCityUfCode"
+                                               value="@editor.IntegrationSettings.DealCityUfCode"
+                                               maxlength="128"
+                                               placeholder="UF_CRM_..." />
+                                    </label>
+                                </div>
+                                <div class="settings-options">
+                                    <div class="settings-option">
+                                        <div class="settings-option-text">
+                                            <span class="settings-option-label">Проверять дубли в Bitrix24</span>
+                                            <span class="settings-option-desc">Перед созданием сделки искать совпадения в этом портале</span>
+                                        </div>
+                                        <label class="worker-toggle" title="Проверять дубли в Bitrix24">
+                                            <input type="checkbox"
+                                                   name="CheckDuplicatesInBitrix"
+                                                   value="true"
+                                                   @(editor.IntegrationSettings.CheckDuplicatesInBitrix ? "checked" : null) />
+                                            <span class="worker-toggle-slider"></span>
+                                        </label>
+                                        <input type="hidden" name="CheckDuplicatesInBitrix" value="false" />
+                                    </div>
+                                </div>
+                            </details>
+                        }
                         <div class="settings-options">
                             <div class="settings-option">
                                 <div class="settings-option-text">

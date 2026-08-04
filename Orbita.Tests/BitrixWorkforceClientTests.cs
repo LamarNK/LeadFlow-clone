@@ -99,6 +99,149 @@ public sealed class BitrixWorkforceClientTests
         Assert.Equal("A", deals.Single(x => x.DealId == 3).StageId);
     }
 
+    [Fact]
+    public async Task ValidateDealFieldsAsync_AcceptsAllConfiguredFieldsCaseInsensitively()
+    {
+        var sut = CreateClient(
+            """
+            {
+              "result": {
+                "ID": { "type": "integer" },
+                "UF_AGE": { "type": "integer" },
+                "UF_CITY": { "type": "string" }
+              }
+            }
+            """);
+
+        await sut.ValidateDealFieldsAsync(
+            "https://example.bitrix24.ru/rest/1/secret",
+            ["uf_age", "UF_CITY", "UF_AGE", " "],
+            CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task ValidateDealFieldsAsync_RejectsUnknownConfiguredField()
+    {
+        var sut = CreateClient(
+            """{"result":{"ID":{"type":"integer"},"UF_AGE":{"type":"integer"}}}""");
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            sut.ValidateDealFieldsAsync(
+                "https://example.bitrix24.ru/rest/1/secret",
+                ["UF_AGE", "UF_MISSING"],
+                CancellationToken.None));
+
+        Assert.Contains("UF_MISSING", error.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(0, "DEAL_STAGE", "NEW", "IN_PROCESS")]
+    [InlineData(7, "DEAL_STAGE_7", "C7:NEW", "C7:IN_PROCESS")]
+    public async Task ValidateDealPipelineAsync_ValidatesCategoryAndConfiguredStages(
+        int categoryId,
+        string expectedStageEntityId,
+        string sourceStageId,
+        string targetStageId)
+    {
+        var methods = new List<string>();
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            using var body = JsonDocument.Parse(
+                request.Content!.ReadAsStringAsync().GetAwaiter().GetResult());
+            var path = request.RequestUri!.AbsolutePath;
+            if (path.EndsWith("/crm.category.list.json", StringComparison.Ordinal))
+            {
+                methods.Add("crm.category.list");
+                Assert.Equal(2, body.RootElement.GetProperty("entityTypeId").GetInt32());
+                Assert.Equal(0, body.RootElement.GetProperty("start").GetInt32());
+                return JsonResponse(JsonSerializer.Serialize(new
+                {
+                    result = new
+                    {
+                        categories = new[] { new { id = categoryId, name = "Candidates" } }
+                    }
+                }));
+            }
+
+            Assert.EndsWith("/crm.status.list.json", path, StringComparison.Ordinal);
+            methods.Add("crm.status.list");
+            Assert.Equal(
+                expectedStageEntityId,
+                body.RootElement
+                    .GetProperty("filter")
+                    .GetProperty("ENTITY_ID")
+                    .GetString());
+            return JsonResponse(JsonSerializer.Serialize(new
+            {
+                result = new[]
+                {
+                    new { STATUS_ID = sourceStageId },
+                    new { STATUS_ID = targetStageId }
+                }
+            }));
+        });
+        var sut = new BitrixWorkforceClient(new StubHttpClientFactory(handler));
+
+        await sut.ValidateDealPipelineAsync(
+            "https://example.bitrix24.ru/rest/1/secret",
+            categoryId,
+            [sourceStageId, targetStageId, sourceStageId.ToLowerInvariant()],
+            CancellationToken.None);
+
+        Assert.Equal(["crm.category.list", "crm.status.list"], methods);
+    }
+
+    [Fact]
+    public async Task ValidateDealPipelineAsync_RejectsUnknownConfiguredStage()
+    {
+        var call = 0;
+        var handler = new StubHttpMessageHandler(_ =>
+        {
+            call++;
+            return call switch
+            {
+                1 => JsonResponse(
+                    """{"result":{"categories":[{"id":0,"name":"Main"}]}}"""),
+                2 => JsonResponse(
+                    """{"result":[{"STATUS_ID":"NEW"}]}"""),
+                _ => throw new InvalidOperationException("Unexpected Bitrix24 request.")
+            };
+        });
+        var sut = new BitrixWorkforceClient(new StubHttpClientFactory(handler));
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            sut.ValidateDealPipelineAsync(
+                "https://example.bitrix24.ru/rest/1/secret",
+                0,
+                ["NEW", "MISSING"],
+                CancellationToken.None));
+
+        Assert.Contains("MISSING", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ValidateDealPipelineAsync_RejectsUnknownOrInaccessibleCategory()
+    {
+        var calls = 0;
+        var handler = new StubHttpMessageHandler(_ =>
+        {
+            calls++;
+            return JsonResponse(
+                """{"result":{"categories":[{"id":0,"name":"Main"}]}}""");
+        });
+        var sut = new BitrixWorkforceClient(new StubHttpClientFactory(handler));
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            sut.ValidateDealPipelineAsync(
+                "https://example.bitrix24.ru/rest/1/secret",
+                7,
+                ["C7:NEW"],
+                CancellationToken.None));
+
+        Assert.Contains("category 7", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(1, calls);
+    }
+
     private static BitrixWorkforceClient CreateClient(string responseBody)
     {
         var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
@@ -107,6 +250,12 @@ public sealed class BitrixWorkforceClientTests
         });
         return new BitrixWorkforceClient(new StubHttpClientFactory(handler));
     }
+
+    private static HttpResponseMessage JsonResponse(string responseBody) =>
+        new(HttpStatusCode.OK)
+        {
+            Content = new StringContent(responseBody, Encoding.UTF8, "application/json")
+        };
 
     private sealed class StubHttpClientFactory(HttpMessageHandler handler) : IHttpClientFactory
     {

@@ -92,4 +92,15 @@ publish\publish.bat all
 copy publish\secrets\orbita.env.example publish\secrets\orbita.env
 ```
 
+Для приёмника событий и фоновой обработки `BitrixWorkforce` в `orbita.env` должны быть заданы:
+
+| Переменная | Рекомендуемое production-значение |
+|------------|-----------------------------------|
+| `BITRIX_WORKFORCE_PUBLIC_BASE_URL` | публичный HTTPS URL API без завершающего `/`, например `https://api.orbitsu.ru` |
+| `BITRIX_WORKFORCE_WORKER_INTERVAL_SECONDS` | `5` |
+| `BITRIX_WORKFORCE_BATCH_SIZE` | `50` |
+| `BITRIX_WORKFORCE_LEASE_SECONDS` | `300` |
+
+`BITRIX_WORKFORCE_PUBLIC_BASE_URL` нужен для формирования абсолютного URL исходящего webhook Bitrix24. После изменения `orbita.env` опубликуйте как минимум цели `config` и `orbita-api`.
+
 Файл `orbita.env` не коммитится (только `orbita.env.example`).

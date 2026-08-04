@@ -1,4 +1,6 @@
+using Microsoft.Extensions.Options;
 using Orbita.Api.Data;
+using Orbita.Api.Models;
 using Orbita.Api.Services.Bitrix;
 using Orbita.Contracts;
 
@@ -6,7 +8,8 @@ namespace Orbita.Api.Services;
 
 public sealed class BitrixDuplicateCheckAllService(
     BitrixInstanceService bitrixInstances,
-    BitrixClient bitrixClient)
+    BitrixClient bitrixClient,
+    IOptions<OrbitaBitrixSettings> defaultBitrixOptions)
 {
     public async Task<(bool IsDuplicate, BitrixInstanceEntity? DuplicateIn, string? UnavailableReason)> CheckAllEnabledAsync(
         Guid officeId,
@@ -20,7 +23,9 @@ public sealed class BitrixDuplicateCheckAllService(
         }
 
         var unavailableReasons = new List<string>();
-        var checks = instances.Select(async instance =>
+        var checks = instances
+            .Where(ShouldCheckDuplicates)
+            .Select(async instance =>
         {
             if (!BitrixValidationStatuses.AllowsWebhookUsage(instance.ValidationStatus))
             {
@@ -69,6 +74,11 @@ public sealed class BitrixDuplicateCheckAllService(
         CandidateMatchProfile profile,
         CancellationToken ct = default)
     {
+        if (!ShouldCheckDuplicates(instance))
+        {
+            return (false, null);
+        }
+
         if (!BitrixValidationStatuses.AllowsWebhookUsage(instance.ValidationStatus))
         {
             return (false, "Вебхук Битрикса не прошёл валидацию.");
@@ -88,4 +98,9 @@ public sealed class BitrixDuplicateCheckAllService(
 
         return (lookup.IsDuplicate, null);
     }
+
+    private bool ShouldCheckDuplicates(BitrixInstanceEntity instance) =>
+        BitrixInstanceIntegrationSettings
+            .Parse(instance.IntegrationSettingsJson, defaultBitrixOptions.Value)
+            .CheckDuplicatesInBitrix;
 }

@@ -6,8 +6,6 @@ namespace Orbita.Api.Models;
 
 public sealed class BitrixInstanceIntegrationSettings
 {
-    public const bool DuplicateCheckEnabled = true;
-
     public string EntityType { get; set; } = "Deal";
     public int ResponsibleId { get; set; }
     public string LeadSource { get; set; } = "Авито";
@@ -31,7 +29,7 @@ public sealed class BitrixInstanceIntegrationSettings
         DealAgeUfCode = defaults.DealAgeUfCode,
         DealProfessionUfCode = defaults.DealProfessionUfCode,
         DealCityUfCode = defaults.DealCityUfCode,
-        CheckDuplicatesInBitrix = DuplicateCheckEnabled
+        CheckDuplicatesInBitrix = defaults.CheckDuplicatesInBitrix
     };
 
     public static BitrixInstanceIntegrationSettings Parse(string? json, OrbitaBitrixSettings defaults)
@@ -43,10 +41,8 @@ public sealed class BitrixInstanceIntegrationSettings
 
         try
         {
-            var parsed = JsonSerializer.Deserialize<BitrixInstanceIntegrationSettings>(json, JsonOptions)
-                           ?? FromDefaults(defaults);
-            parsed.CheckDuplicatesInBitrix = DuplicateCheckEnabled;
-            return parsed;
+            return JsonSerializer.Deserialize<BitrixInstanceIntegrationSettings>(json, JsonOptions)
+                   ?? FromDefaults(defaults);
         }
         catch
         {
@@ -65,7 +61,7 @@ public sealed class BitrixInstanceIntegrationSettings
         DealAgeUfCode = DealAgeUfCode,
         DealProfessionUfCode = DealProfessionUfCode,
         DealCityUfCode = DealCityUfCode,
-        CheckDuplicatesInBitrix = DuplicateCheckEnabled
+        CheckDuplicatesInBitrix = this.CheckDuplicatesInBitrix
     };
 
     public BitrixInstanceIntegrationSettingsDto ToDto() => new(
@@ -91,10 +87,10 @@ public sealed class BitrixInstanceIntegrationSettings
             ResponsibleId = dto.ResponsibleId,
             LeadSource = string.IsNullOrWhiteSpace(dto.LeadSource) ? defaults.LeadSource : dto.LeadSource,
             DealIdempotencyUfCode = dto.DealIdempotencyUfCode ?? string.Empty,
-            DealAgeUfCode = string.IsNullOrWhiteSpace(dto.DealAgeUfCode) ? defaults.DealAgeUfCode : dto.DealAgeUfCode,
-            DealProfessionUfCode = string.IsNullOrWhiteSpace(dto.DealProfessionUfCode) ? defaults.DealProfessionUfCode : dto.DealProfessionUfCode,
-            DealCityUfCode = string.IsNullOrWhiteSpace(dto.DealCityUfCode) ? defaults.DealCityUfCode : dto.DealCityUfCode,
-            CheckDuplicatesInBitrix = DuplicateCheckEnabled
+            DealAgeUfCode = dto.DealAgeUfCode?.Trim() ?? string.Empty,
+            DealProfessionUfCode = dto.DealProfessionUfCode?.Trim() ?? string.Empty,
+            DealCityUfCode = dto.DealCityUfCode?.Trim() ?? string.Empty,
+            CheckDuplicatesInBitrix = dto.CheckDuplicatesInBitrix
         };
     }
 }

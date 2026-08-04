@@ -117,6 +117,7 @@ public sealed class SettingsService(
             return (true, null, model.Id ?? DesignPreviewData.PreviewBitrixInstanceId);
         }
 
+        var integrationSettings = MapIntegrationSettings(model);
         if (model.Id is Guid existingId && existingId != Guid.Empty)
         {
             var (instance, error) = await api.UpdateBitrixInstanceAsync(
@@ -125,7 +126,7 @@ public sealed class SettingsService(
                     model.Name,
                     model.Signature,
                     string.IsNullOrWhiteSpace(model.WebhookUrl) ? null : model.WebhookUrl.Trim(),
-                    null,
+                    integrationSettings,
                     model.IsEnabled),
                 officeId,
                 ct);
@@ -142,12 +143,24 @@ public sealed class SettingsService(
                 model.Name,
                 model.Signature,
                 model.WebhookUrl.Trim(),
-                null,
+                integrationSettings,
                 model.IsEnabled),
             officeId,
             ct);
         return created is null ? (false, createError, null) : (true, null, created.Id);
     }
+
+    internal static BitrixInstanceIntegrationSettingsDto MapIntegrationSettings(
+        SaveBitrixInstanceFormModel model) =>
+        new(
+            string.IsNullOrWhiteSpace(model.EntityType) ? "Deal" : model.EntityType.Trim(),
+            model.ResponsibleId,
+            model.LeadSource?.Trim() ?? string.Empty,
+            model.DealIdempotencyUfCode?.Trim() ?? string.Empty,
+            model.DealAgeUfCode?.Trim() ?? string.Empty,
+            model.DealProfessionUfCode?.Trim() ?? string.Empty,
+            model.DealCityUfCode?.Trim() ?? string.Empty,
+            model.CheckDuplicatesInBitrix);
 
     public async Task<(bool Success, string? Error)> DeleteBitrixInstanceAsync(
         Guid id,

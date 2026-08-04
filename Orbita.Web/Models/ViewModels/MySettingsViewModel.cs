@@ -57,6 +57,15 @@ public sealed class BitrixInstanceEditorViewModel
     public bool IsEnabled { get; init; } = true;
     public string? DraftWebhookUrl { get; init; }
     public BitrixWebhookValidationDto? LiveValidation { get; init; }
+    public BitrixInstanceIntegrationSettingsDto IntegrationSettings { get; init; } = new(
+        "Deal",
+        0,
+        "Авито",
+        string.Empty,
+        string.Empty,
+        string.Empty,
+        string.Empty,
+        true);
 
     public BitrixInstanceEditorViewModel WithLiveValidation(
         string? draftWebhookUrl,
@@ -77,7 +86,8 @@ public sealed class BitrixInstanceEditorViewModel
             ValidationStatusTone = ValidationStatusTone,
             IsEnabled = IsEnabled,
             DraftWebhookUrl = draftWebhookUrl,
-            LiveValidation = liveValidation
+            LiveValidation = liveValidation,
+            IntegrationSettings = IntegrationSettings
         };
 }
 
@@ -103,6 +113,14 @@ public sealed class SaveBitrixInstanceFormModel
     public string Signature { get; set; } = string.Empty;
     public string? WebhookUrl { get; set; }
     public bool IsEnabled { get; set; } = true;
+    public string EntityType { get; set; } = "Deal";
+    public int ResponsibleId { get; set; }
+    public string LeadSource { get; set; } = "Авито";
+    public string DealIdempotencyUfCode { get; set; } = string.Empty;
+    public string DealAgeUfCode { get; set; } = string.Empty;
+    public string DealProfessionUfCode { get; set; } = string.Empty;
+    public string DealCityUfCode { get; set; } = string.Empty;
+    public bool CheckDuplicatesInBitrix { get; set; } = true;
 }
 
 public sealed class ValidateBitrixInstanceFormModel

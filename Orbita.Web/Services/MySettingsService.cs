@@ -249,7 +249,8 @@ public sealed class MySettingsService(OrbitaApiClient api, IOptions<DesignPrevie
             LastValidatedAtUtc = detail.LastValidatedAtUtc,
             ValidationStatusLabel = label,
             ValidationStatusTone = tone,
-            IsEnabled = detail.IsEnabled
+            IsEnabled = detail.IsEnabled,
+            IntegrationSettings = detail.IntegrationSettings
         };
     }
 

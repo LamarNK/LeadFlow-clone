@@ -63,6 +63,17 @@ public interface IBitrixWorkforceClient
     Task ValidateCrmAccessAsync(
         string webhookUrl,
         CancellationToken ct);
+
+    Task ValidateDealFieldsAsync(
+        string webhookUrl,
+        IReadOnlyCollection<string> requiredFieldCodes,
+        CancellationToken ct);
+
+    Task ValidateDealPipelineAsync(
+        string webhookUrl,
+        int categoryId,
+        IReadOnlyCollection<string> stageIds,
+        CancellationToken ct);
 }
 
 public sealed class BitrixWorkforceClient(IHttpClientFactory httpClientFactory) : IBitrixWorkforceClient
@@ -267,8 +278,14 @@ public sealed class BitrixWorkforceClient(IHttpClientFactory httpClientFactory) 
             .ToList();
     }
 
-    public async Task ValidateCrmAccessAsync(
+    public Task ValidateCrmAccessAsync(
         string webhookUrl,
+        CancellationToken ct) =>
+        ValidateDealFieldsAsync(webhookUrl, [], ct);
+
+    public async Task ValidateDealFieldsAsync(
+        string webhookUrl,
+        IReadOnlyCollection<string> requiredFieldCodes,
         CancellationToken ct)
     {
         using var json = await CallAsync(
@@ -276,7 +293,103 @@ public sealed class BitrixWorkforceClient(IHttpClientFactory httpClientFactory) 
             "crm.deal.fields",
             new { },
             ct);
-        _ = RequireObjectResult(json.RootElement, "crm.deal.fields");
+        var fields = RequireObjectResult(json.RootElement, "crm.deal.fields");
+        var availableFieldCodes = fields
+            .EnumerateObject()
+            .Select(x => x.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var missingFieldCodes = requiredFieldCodes
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Where(x => !availableFieldCodes.Contains(x))
+            .ToList();
+        if (missingFieldCodes.Count > 0)
+        {
+            throw new InvalidOperationException(
+                "Bitrix24 deal fields were not found or are not accessible: "
+                + string.Join(", ", missingFieldCodes));
+        }
+    }
+
+    public async Task ValidateDealPipelineAsync(
+        string webhookUrl,
+        int categoryId,
+        IReadOnlyCollection<string> stageIds,
+        CancellationToken ct)
+    {
+        var categoryFound = false;
+        var start = 0;
+        do
+        {
+            using var categoryJson = await CallAsync(
+                webhookUrl,
+                "crm.category.list",
+                new { entityTypeId = 2, start },
+                ct);
+            var categoryResult = RequireObjectResult(
+                categoryJson.RootElement,
+                "crm.category.list");
+            if (!categoryResult.TryGetProperty("categories", out var categories)
+                || categories.ValueKind != JsonValueKind.Array)
+            {
+                throw new InvalidOperationException(
+                    "Bitrix24 crm.category.list returned an unexpected response.");
+            }
+
+            categoryFound = categories
+                .EnumerateArray()
+                .Any(x => TryGetInt(x, "id", out var id) && id == categoryId);
+            start = categoryFound
+                ? -1
+                : categoryJson.RootElement.TryGetProperty("next", out var next)
+                    ? ParseInt(next)
+                    : -1;
+        }
+        while (start >= 0);
+
+        if (!categoryFound)
+        {
+            throw new InvalidOperationException(
+                $"Bitrix24 deal category {categoryId} was not found or is not accessible.");
+        }
+
+        var entityId = categoryId == 0
+            ? "DEAL_STAGE"
+            : $"DEAL_STAGE_{categoryId}";
+        using var stagesJson = await CallAsync(
+            webhookUrl,
+            "crm.status.list",
+            new
+            {
+                order = new { SORT = "ASC" },
+                filter = new { ENTITY_ID = entityId }
+            },
+            ct);
+        if (!stagesJson.RootElement.TryGetProperty("result", out var stages)
+            || stages.ValueKind != JsonValueKind.Array)
+        {
+            throw new InvalidOperationException(
+                "Bitrix24 crm.status.list returned an unexpected response.");
+        }
+
+        var availableStageIds = stages
+            .EnumerateArray()
+            .Select(x => GetString(x, "STATUS_ID"))
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var missingStageIds = stageIds
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Where(x => !availableStageIds.Contains(x))
+            .ToList();
+        if (missingStageIds.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"Bitrix24 deal stages were not found in category {categoryId}: "
+                + string.Join(", ", missingStageIds));
+        }
     }
 
     private async Task<bool> IsUserActiveAsync(
@@ -436,6 +549,16 @@ public sealed class BitrixWorkforceClient(IHttpClientFactory httpClientFactory) 
 
     private static int GetInt(JsonElement element, string propertyName) =>
         element.TryGetProperty(propertyName, out var value) ? ParseInt(value) : 0;
+
+    private static bool TryGetInt(
+        JsonElement element,
+        string propertyName,
+        out int value)
+    {
+        value = -1;
+        return element.TryGetProperty(propertyName, out var property)
+               && (value = ParseInt(property)) >= 0;
+    }
 
     private static int ParseInt(JsonElement value)
     {

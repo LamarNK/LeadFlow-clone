@@ -1071,5 +1071,18 @@ public sealed class BitrixWorkforceProcessorTests
             string webhookUrl,
             CancellationToken ct) =>
             Task.CompletedTask;
+
+        public Task ValidateDealFieldsAsync(
+            string webhookUrl,
+            IReadOnlyCollection<string> requiredFieldCodes,
+            CancellationToken ct) =>
+            Task.CompletedTask;
+
+        public Task ValidateDealPipelineAsync(
+            string webhookUrl,
+            int categoryId,
+            IReadOnlyCollection<string> stageIds,
+            CancellationToken ct) =>
+            Task.CompletedTask;
     }
 }

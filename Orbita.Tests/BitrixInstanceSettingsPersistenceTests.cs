@@ -13,6 +13,32 @@ namespace Orbita.Tests;
 public sealed class BitrixInstanceSettingsPersistenceTests
 {
     [Fact]
+    public void FromDto_EmptyOptionalFieldCodesDisablePerInstanceWrites()
+    {
+        var defaults = new OrbitaBitrixSettings
+        {
+            DealAgeUfCode = "UF_GLOBAL_AGE",
+            DealProfessionUfCode = "UF_GLOBAL_PROFESSION",
+            DealCityUfCode = "UF_GLOBAL_CITY"
+        };
+        var dto = new BitrixInstanceIntegrationSettingsDto(
+            "Deal",
+            0,
+            "Авито",
+            string.Empty,
+            string.Empty,
+            string.Empty,
+            string.Empty,
+            true);
+
+        var settings = BitrixInstanceIntegrationSettings.FromDto(dto, defaults);
+
+        Assert.Empty(settings.DealAgeUfCode);
+        Assert.Empty(settings.DealProfessionUfCode);
+        Assert.Empty(settings.DealCityUfCode);
+    }
+
+    [Fact]
     public async Task ResolveWebhookUrlAsync_RejectsUntrustedLegacyHost()
     {
         var options = new DbContextOptionsBuilder<OrbitaDbContext>()
@@ -86,7 +112,7 @@ public sealed class BitrixInstanceSettingsPersistenceTests
             "UF_AGE",
             "UF_PROFESSION",
             "UF_CITY",
-            true);
+            false);
 
         var (updated, firstError) = await sut.UpdateAsync(
             instanceId,
@@ -96,6 +122,7 @@ public sealed class BitrixInstanceSettingsPersistenceTests
             "admin");
         Assert.Null(firstError);
         Assert.Equal(77, updated!.IntegrationSettings.ResponsibleId);
+        Assert.False(updated.IntegrationSettings.CheckDuplicatesInBitrix);
 
         var (renamed, secondError) = await sut.UpdateAsync(
             instanceId,
@@ -108,6 +135,40 @@ public sealed class BitrixInstanceSettingsPersistenceTests
         Assert.Equal("Renamed", renamed!.Name);
         Assert.Equal(77, renamed.IntegrationSettings.ResponsibleId);
         Assert.Equal("UF_PROFESSION", renamed.IntegrationSettings.DealProfessionUfCode);
+        Assert.False(renamed.IntegrationSettings.CheckDuplicatesInBitrix);
+
+        var persisted = BitrixInstanceIntegrationSettings.Parse(
+            db.BitrixInstances.Single(x => x.Id == instanceId).IntegrationSettingsJson,
+            defaults);
+        Assert.False(persisted.CheckDuplicatesInBitrix);
+        Assert.False(persisted.ToOrbitaBitrixSettings().CheckDuplicatesInBitrix);
+    }
+
+    [Fact]
+    public async Task DuplicateCheckDisabled_SkipsBitrixLookupForInstance()
+    {
+        var instance = new BitrixInstanceEntity
+        {
+            IntegrationSettingsJson = new BitrixInstanceIntegrationSettings
+            {
+                CheckDuplicatesInBitrix = false
+            }.Serialize(),
+            ValidationStatus = BitrixValidationStatuses.NotConfigured
+        };
+        var sut = new BitrixDuplicateCheckAllService(
+            null!,
+            null!,
+            Options.Create(new OrbitaBitrixSettings
+            {
+                CheckDuplicatesInBitrix = true
+            }));
+
+        var (isDuplicate, unavailableReason) = await sut.CheckInInstanceAsync(
+            instance,
+            new CandidateMatchProfile("Иван Иванов", 30, "Москва", "79990000000"));
+
+        Assert.False(isDuplicate);
+        Assert.Null(unavailableReason);
     }
 
     [Fact]

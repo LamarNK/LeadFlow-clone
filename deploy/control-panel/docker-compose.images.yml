@@ -38,6 +38,10 @@ services:
       Kestrel__Limits__MinRequestBodyDataRate__GracePeriod: "00:10:00"
       WorkerReleases__MaxUploadBytes: "536870912"
       DataProtection__KeysPath: /app/Data/dataprotection-api
+      BitrixWorkforce__PublicBaseUrl: ${BITRIX_WORKFORCE_PUBLIC_BASE_URL:-https://api.orbitsu.ru}
+      BitrixWorkforce__WorkerIntervalSeconds: ${BITRIX_WORKFORCE_WORKER_INTERVAL_SECONDS:-5}
+      BitrixWorkforce__BatchSize: ${BITRIX_WORKFORCE_BATCH_SIZE:-50}
+      BitrixWorkforce__LeaseSeconds: ${BITRIX_WORKFORCE_LEASE_SECONDS:-300}
     depends_on:
       postgres:
         condition: service_healthy

@@ -12,6 +12,7 @@ namespace Orbita.Api.Services;
 public sealed class BitrixWorkforceSettingsService(
     OrbitaDbContext db,
     IOptions<BitrixWorkforceOptions> options,
+    IOptions<OrbitaBitrixSettings> defaultBitrixOptions,
     BitrixInstanceService bitrixInstances,
     IBitrixWorkforceClient bitrixClient)
 {
@@ -86,17 +87,65 @@ public sealed class BitrixWorkforceSettingsService(
 
             try
             {
-                await bitrixClient.ValidateCrmAccessAsync(webhookUrl, ct);
-                _ = await bitrixClient.GetManagerStatusesAsync(
+                var integrationSettings = BitrixInstanceIntegrationSettings.Parse(
+                    instance.IntegrationSettingsJson,
+                    defaultBitrixOptions.Value);
+                var requiredDealFieldCodes = new[]
+                    {
+                        integrationSettings.DealIdempotencyUfCode,
+                        integrationSettings.DealAgeUfCode,
+                        integrationSettings.DealProfessionUfCode,
+                        integrationSettings.DealCityUfCode
+                    }
+                    .Where(x => !string.IsNullOrWhiteSpace(x))
+                    .Select(x => x.Trim())
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+                await bitrixClient.ValidateDealFieldsAsync(
                     webhookUrl,
-                    request.ManagerUserIds.Where(x => x > 0).Distinct().Take(1).ToList(),
+                    requiredDealFieldCodes,
                     ct);
+                var enabledStageIds = EffectiveRules(request.StageRules)
+                    .Where(x => x.IsEnabled)
+                    .SelectMany(x => new[] { x.SourceStageId, x.TargetStageId })
+                    .Where(x => !string.IsNullOrWhiteSpace(x))
+                    .Select(x => x.Trim())
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+                await bitrixClient.ValidateDealPipelineAsync(
+                    webhookUrl,
+                    request.DealCategoryId,
+                    enabledStageIds,
+                    ct);
+
+                var preflightManagerIds = request.ManagerUserIds
+                    .Where(x => x > 0)
+                    .Distinct()
+                    .ToList();
+                var managerStatuses = await bitrixClient.GetManagerStatusesAsync(
+                    webhookUrl,
+                    preflightManagerIds,
+                    ct);
+                var activeManagerIds = managerStatuses
+                    .Where(x => x.IsActive)
+                    .Select(x => x.BitrixUserId)
+                    .ToHashSet();
+                var missingOrInactiveManagerIds = preflightManagerIds
+                    .Where(x => !activeManagerIds.Contains(x))
+                    .ToList();
+                if (missingOrInactiveManagerIds.Count > 0)
+                {
+                    return (
+                        null,
+                        "Невозможно включить writer: менеджеры Bitrix24 отсутствуют или неактивны: "
+                        + string.Join(", ", missingOrInactiveManagerIds));
+                }
             }
             catch (Exception ex)
             {
                 return (
                     null,
-                    $"Невозможно включить writer: проверьте права CRM, user и timeman входящего вебхука. {ex.Message}");
+                    $"Невозможно включить writer: проверьте доступ к CRM, воронке, стадиям, user и timeman входящего вебхука. {ex.Message}");
             }
         }
 
