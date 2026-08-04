@@ -6,4 +6,5 @@ public sealed record CrmTasksViewModel(
     IReadOnlyList<CrmTaskDto> Tasks,
     IReadOnlyList<CrmManagerDto> Managers,
     int OpenTaskCount,
-    int OverdueTaskCount);
+    int OverdueTaskCount,
+    string SelectedScope);

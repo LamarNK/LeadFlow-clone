@@ -5,53 +5,116 @@
     ViewData["Title"] = "CRM — Задачи";
     var now = DateTime.UtcNow;
     var open = Model.Tasks.Where(x => x.Status == CrmTaskStatuses.Open).ToList();
-    var overdue = open.Where(x => x.IsOverdue || (x.DueAtUtc is DateTime d && d < now)).ToList();
+    var overdue = open.Where(x => x.IsOverdue || (x.DueAtUtc is DateTime due && due < now)).OrderBy(x => x.DueAtUtc).ToList();
     var overdueIds = overdue.Select(x => x.Id).ToHashSet();
     var todayEnd = now.Date.AddDays(1);
-    var today = open.Where(x => !overdueIds.Contains(x.Id) && x.DueAtUtc is DateTime d && d < todayEnd).ToList();
+    var today = open.Where(x => !overdueIds.Contains(x.Id) && x.DueAtUtc is DateTime due && due < todayEnd).OrderBy(x => x.DueAtUtc).ToList();
     var todayIds = today.Select(x => x.Id).ToHashSet();
-    var later = open.Where(x => !overdueIds.Contains(x.Id) && !todayIds.Contains(x.Id)).ToList();
-    var completed = Model.Tasks.Where(x => x.Status == CrmTaskStatuses.Completed).Take(30).ToList();
-    var header = new PageHeaderViewModel { Title = "Задачи", Subtitle = "Inbox менеджера", ShowRefresh = true, UpdatedAtUtc = DateTime.UtcNow };
+    var later = open.Where(x => !overdueIds.Contains(x.Id) && !todayIds.Contains(x.Id)).OrderBy(x => x.DueAtUtc ?? DateTime.MaxValue).ToList();
+    var completed = Model.Tasks.Where(x => x.Status == CrmTaskStatuses.Completed).OrderByDescending(x => x.CompletedAtUtc).Take(30).ToList();
+    var selectedScope = Model.SelectedScope;
+    var shownCount = selectedScope switch
+    {
+        "overdue" => overdue.Count,
+        "today" => today.Count,
+        "later" => later.Count,
+        "completed" => completed.Count,
+        _ => open.Count
+    };
+    var header = new PageHeaderViewModel { Title = "Задачи", Subtitle = "Планируйте, отслеживайте и выполняйте задачи", ShowRefresh = true, UpdatedAtUtc = DateTime.UtcNow };
 }
 <partial name="_PageHeader" model="header" />
 
-<div class="orbita-main crm-shell">
+<main class="orbita-main crm-shell crm-task-dashboard">
     @if (TempData["CrmError"] is string error)
     {
         <div class="crm-notice crm-notice--error"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i>@error</div>
     }
 
-    <section class="crm-toolbar card">
-        <div class="crm-toolbar__stats crm-toolbar__stats--tasks">
-            <div><small>Открыто</small><strong>@open.Count</strong></div>
-            <div><small>Просрочено</small><strong class="crm-overdue">@overdue.Count</strong></div>
-            <div><small>На сегодня</small><strong>@today.Count</strong></div>
+    <section class="crm-task-overview" aria-label="Сводка по задачам">
+        <div class="crm-task-metrics">
+            <article class="kpi-card crm-task-metric crm-task-metric--queue" style="--kpi-index: 0;">
+                <header class="kpi-card-head">
+                    <span class="kpi-icon-box kpi-icon-box--blue"><i class="fa-solid fa-list-check" aria-hidden="true"></i></span>
+                    <span class="kpi-card-label">Моя очередь</span>
+                </header>
+                <div class="kpi-card-metric crm-task-metric__metric"><b class="kpi-value">@open.Count</b></div>
+                <p class="crm-task-metric__caption">Открытые задачи по срокам</p>
+            </article>
+            <article class="kpi-card crm-task-metric crm-task-metric--overdue" style="--kpi-index: 1;">
+                <header class="kpi-card-head">
+                    <span class="kpi-icon-box kpi-icon-box--orange"><i class="fa-solid fa-calendar-xmark" aria-hidden="true"></i></span>
+                    <span class="kpi-card-label">Просрочено</span>
+                </header>
+                <div class="kpi-card-metric crm-task-metric__metric"><b class="kpi-value">@overdue.Count</b></div>
+                <p class="crm-task-metric__caption">Требуют внимания сейчас</p>
+            </article>
+            <article class="kpi-card crm-task-metric crm-task-metric--today" style="--kpi-index: 2;">
+                <header class="kpi-card-head">
+                    <span class="kpi-icon-box kpi-icon-box--green"><i class="fa-solid fa-calendar-day" aria-hidden="true"></i></span>
+                    <span class="kpi-card-label">На сегодня</span>
+                </header>
+                <div class="kpi-card-metric crm-task-metric__metric"><b class="kpi-value">@today.Count</b></div>
+                <p class="crm-task-metric__caption">Запланировано до конца дня</p>
+            </article>
+            <article class="kpi-card crm-task-metric crm-task-metric--later" style="--kpi-index: 3;">
+                <header class="kpi-card-head">
+                    <span class="kpi-icon-box kpi-icon-box--purple"><i class="fa-solid fa-clock" aria-hidden="true"></i></span>
+                    <span class="kpi-card-label">Позже</span>
+                </header>
+                <div class="kpi-card-metric crm-task-metric__metric"><b class="kpi-value">@later.Count</b></div>
+                <p class="crm-task-metric__caption">Срок ещё впереди</p>
+            </article>
         </div>
+
+        <button type="button" class="crm-task-create-trigger" data-crm-task-create-open aria-label="Новая задача" title="Новая задача"><i class="fa-solid fa-plus" aria-hidden="true"></i></button>
     </section>
 
-    <partial name="_TaskGroup" model="@("Просрочено", (IReadOnlyList<CrmTaskDto>)overdue, true)" />
-    <partial name="_TaskGroup" model="@("Сегодня", (IReadOnlyList<CrmTaskDto>)today, true)" />
-    <partial name="_TaskGroup" model="@("Позже", (IReadOnlyList<CrmTaskDto>)later, true)" />
+    <section class="card crm-task-workspace" aria-label="Список задач">
+        <header class="crm-task-workspace__toolbar">
+            <nav class="crm-task-tabs" aria-label="Отбор задач">
+                <a class="@(selectedScope == "all" ? "is-active" : "")" asp-action="Tasks">Все задачи</a>
+                <a class="@(selectedScope == "overdue" ? "is-active" : "")" asp-action="Tasks" asp-route-scope="overdue">Просроченные @if (overdue.Count > 0) { <span>@overdue.Count</span> }</a>
+                <a class="@(selectedScope == "today" ? "is-active" : "")" asp-action="Tasks" asp-route-scope="today">Сегодня @if (today.Count > 0) { <span>@today.Count</span> }</a>
+                <a class="@(selectedScope == "later" ? "is-active" : "")" asp-action="Tasks" asp-route-scope="later">Позже @if (later.Count > 0) { <span>@later.Count</span> }</a>
+                <a class="@(selectedScope == "completed" ? "is-active" : "")" asp-action="Tasks" asp-route-scope="completed">Завершённые</a>
+            </nav>
+            <div class="crm-task-workspace__tools">
+                <button type="button" class="crm-task-tool"><span>Сортировка: Срок (по возрастанию)</span><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></button>
+                <button type="button" class="crm-task-tool crm-task-tool--filter"><i class="fa-solid fa-filter" aria-hidden="true"></i> Фильтры</button>
+            </div>
+        </header>
 
-    <details class="card crm-new-task">
-        <summary>Поставить задачу</summary>
-        <form asp-action="CreateTask" method="post" class="crm-standard-form">
-            <input name="title" required placeholder="Что сделать" />
-            <select name="assigneeUserId" required>
-                @foreach (var manager in Model.Managers)
-                {
-                    <option value="@manager.UserId">@manager.DisplayName</option>
-                }
-            </select>
-            <input type="datetime-local" name="dueAtUtc" aria-label="Срок" />
-            <textarea name="description" placeholder="Комментарий (необязательно)"></textarea>
-            <button class="settings-primary-btn" type="submit">Создать</button>
-        </form>
-    </details>
+        <div id="crm-task-all" class="crm-task-groups">
+            @if (selectedScope is "all" or "overdue") { <partial name="_TaskGroup" model="@("Просрочено", (IReadOnlyList<CrmTaskDto>)overdue, true)" /> }
+            @if (selectedScope is "all" or "today") { <partial name="_TaskGroup" model="@("Сегодня", (IReadOnlyList<CrmTaskDto>)today, true)" /> }
+            @if (selectedScope is "all" or "later") { <partial name="_TaskGroup" model="@("Позже", (IReadOnlyList<CrmTaskDto>)later, true)" /> }
+            @if (selectedScope is "all" or "completed") { <partial name="_TaskGroup" model="@("Завершённые", (IReadOnlyList<CrmTaskDto>)completed, false)" /> }
+        </div>
 
-    @if (completed.Count > 0)
-    {
-        <partial name="_TaskGroup" model="@("Недавно выполненные", (IReadOnlyList<CrmTaskDto>)completed, false)" />
-    }
-</div>
+        <footer class="crm-task-workspace__footer">Показано @shownCount задач</footer>
+    </section>
+
+    <div class="crm-task-modal" data-crm-task-create-modal hidden>
+        <div class="crm-task-modal__backdrop" data-crm-task-create-close></div>
+        <section class="crm-task-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="crm-task-create-title" tabindex="-1">
+            <header class="crm-task-modal__header">
+                <div>
+                    <h2 id="crm-task-create-title">Новая задача</h2>
+                    <p>Добавьте действие и срок, чтобы не потерять договорённость.</p>
+                </div>
+                <button type="button" class="crm-task-modal__close" data-crm-task-create-close aria-label="Закрыть"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+            </header>
+            <form asp-action="CreateTask" method="post" class="crm-standard-form crm-task-create-form crm-task-create-form--modal">
+                <label><span>Что нужно сделать</span><input name="title" required placeholder="Например, позвонить кандидату" /></label>
+                <label><span>Ответственный</span><select name="assigneeUserId" required>@foreach (var manager in Model.Managers) { <option value="@manager.UserId">@manager.DisplayName</option> }</select></label>
+                <label><span>Срок</span><input type="datetime-local" name="dueAtUtc" /></label>
+                <label class="crm-task-create-form__description"><span>Комментарий <small>необязательно</small></span><textarea name="description" placeholder="Контекст или следующий шаг"></textarea></label>
+                <footer class="crm-task-create-form__actions">
+                    <button class="settings-secondary-btn" type="button" data-crm-task-create-close>Отмена</button>
+                    <button class="settings-primary-btn" type="submit"><i class="fa-solid fa-plus" aria-hidden="true"></i> Создать задачу</button>
+                </footer>
+            </form>
+        </section>
+    </div>
+</main>

@@ -94,7 +94,7 @@
     runtime.initDebouncedSearch = function initDebouncedSearch() {
         var DEBOUNCE_MS = 750;
         document.querySelectorAll(
-            '.orbita-filters-form input[type="search"], .workers-search input[type="search"], .accounts-search input[type="search"]'
+            '.orbita-filters-form input[type="search"], .workers-search input[type="search"], .accounts-search input[type="search"], [data-orbita-live-search]'
         ).forEach(function (input) {
             if (input.hasAttribute('data-orbita-debounce-bound')) return;
             input.setAttribute('data-orbita-debounce-bound', '1');
@@ -175,6 +175,43 @@
                 runtime.closeAllFilterPanels();
             });
             window.__orbitaFilterPanelDocListeners = true;
+        }
+    }
+
+    runtime.initCrmTaskCreateModal = function initCrmTaskCreateModal() {
+        document.querySelectorAll('[data-crm-task-create-modal]').forEach(function (modal) {
+            if (modal.hasAttribute('data-orbita-task-modal-bound')) return;
+            modal.setAttribute('data-orbita-task-modal-bound', '1');
+
+            var openModal = function () {
+                modal.hidden = false;
+                document.body.classList.add('orbita-modal-open');
+                window.setTimeout(function () {
+                    modal.querySelector('input[name="title"]')?.focus();
+                }, 0);
+            };
+            var closeModal = function () {
+                modal.hidden = true;
+                document.body.classList.remove('orbita-modal-open');
+            };
+
+            document.querySelectorAll('[data-crm-task-create-open]').forEach(function (trigger) {
+                trigger.addEventListener('click', openModal);
+            });
+            modal.querySelectorAll('[data-crm-task-create-close]').forEach(function (trigger) {
+                trigger.addEventListener('click', closeModal);
+            });
+        });
+
+        if (!window.__orbitaCrmTaskModalEscapeBound) {
+            document.addEventListener('keydown', function (e) {
+                if (e.key !== 'Escape') return;
+                var modal = document.querySelector('[data-crm-task-create-modal]:not([hidden])');
+                if (!modal) return;
+                modal.hidden = true;
+                document.body.classList.remove('orbita-modal-open');
+            });
+            window.__orbitaCrmTaskModalEscapeBound = true;
         }
     }
 

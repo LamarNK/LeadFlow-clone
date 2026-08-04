@@ -127,7 +127,7 @@ public sealed class CrmController(
     }
 
     [HttpGet]
-    public async Task<IActionResult> Tasks(CancellationToken ct = default)
+    public async Task<IActionResult> Tasks(string? scope, CancellationToken ct = default)
     {
         var officeId = ResolveOfficeId(null);
         if (User.IsInRole(OrbitaRoles.Admin) && officeId is null)
@@ -154,7 +154,13 @@ public sealed class CrmController(
             return View("Unavailable");
         }
 
-        return View(new CrmTasksViewModel(tasks, board.Managers, board.OpenTaskCount, board.OverdueTaskCount));
+        var selectedScope = scope?.ToLowerInvariant() switch
+        {
+            "overdue" or "today" or "later" or "completed" => scope.ToLowerInvariant(),
+            _ => "all"
+        };
+
+        return View(new CrmTasksViewModel(tasks, board.Managers, board.OpenTaskCount, board.OverdueTaskCount, selectedScope));
     }
 
     [HttpGet]

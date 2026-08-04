@@ -100,6 +100,7 @@
     runtime.initAccountCombobox();
     runtime.initDetailModal();
     runtime.initDetailOpenButtons();
+    runtime.initCrmTaskCreateModal();
     runtime.initLiveRowActions();
 
     // --- Fast page switching (client-side, no full reload) + loading spinner ---
@@ -177,6 +178,7 @@
         runtime.initAccountCombobox();
         runtime.initDetailModal();
         runtime.initDetailOpenButtons();
+        runtime.initCrmTaskCreateModal();
 
         // Re-localize any new time elements
         if (window.OrbitaTime && window.OrbitaTime.localizeAll) {
