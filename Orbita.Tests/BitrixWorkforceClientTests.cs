@@ -39,7 +39,7 @@ public sealed class BitrixWorkforceClientTests
     }
 
     [Fact]
-    public async Task ListDealsAsync_FollowsPaginationAndDeduplicatesDealsAcrossStages()
+    public async Task ListDealsAsync_RejectsDealThatMovesAcrossStagesDuringSnapshot()
     {
         var starts = new List<int>();
         var call = 0;
@@ -88,15 +88,15 @@ public sealed class BitrixWorkforceClientTests
         });
         var sut = new BitrixWorkforceClient(new StubHttpClientFactory(handler));
 
-        var deals = await sut.ListDealsAsync(
-            "https://example.bitrix24.ru/rest/1/secret",
-            0,
-            ["A", "B"],
-            CancellationToken.None);
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            sut.ListDealsAsync(
+                "https://example.bitrix24.ru/rest/1/secret",
+                0,
+                ["A", "B"],
+                CancellationToken.None));
 
         Assert.Equal([0, 50, 0], starts);
-        Assert.Equal([1L, 2L, 3L, 4L], deals.Select(x => x.DealId));
-        Assert.Equal("A", deals.Single(x => x.DealId == 3).StageId);
+        Assert.Contains("3", error.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -117,6 +117,19 @@ public sealed class BitrixWorkforceClientTests
             "https://example.bitrix24.ru/rest/1/secret",
             ["uf_age", "UF_CITY", "UF_AGE", " "],
             CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task GetContactOwnerIdAsync_ReturnsCurrentResponsible()
+    {
+        var sut = CreateClient("""{"result":{"ID":"456","ASSIGNED_BY_ID":"27"}}""");
+
+        var ownerId = await sut.GetContactOwnerIdAsync(
+            "https://example.bitrix24.ru/rest/1/secret",
+            456,
+            CancellationToken.None);
+
+        Assert.Equal(27L, ownerId);
     }
 
     [Fact]

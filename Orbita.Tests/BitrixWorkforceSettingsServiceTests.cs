@@ -73,6 +73,392 @@ public sealed class BitrixWorkforceSettingsServiceTests
     }
 
     [Fact]
+    public async Task WriterGate_RejectsSecondEnabledWriterForSamePortalAndCategory()
+    {
+        var client = new SettingsBitrixClientStub();
+        var context = await CreateContextAsync(client);
+        await using var db = context.Db;
+
+        var (_, shadowError) = await context.Sut.SaveAsync(
+            context.InstanceId,
+            context.Scope,
+            officeId: null,
+            CreateRequest(BitrixWorkforceDistribution.ShadowMode),
+            "admin");
+        Assert.Null(shadowError);
+        await AddOtherWriterAsync(
+            db,
+            context.InstanceId,
+            dealCategoryId: 0,
+            instanceIsEnabled: true);
+
+        var (writer, writerError) = await context.Sut.SaveAsync(
+            context.InstanceId,
+            context.Scope,
+            officeId: null,
+            CreateRequest(
+                BitrixWorkforceDistribution.WriterMode,
+                writerRulesConfirmed: true),
+            "admin");
+
+        Assert.Null(writer);
+        Assert.Contains("второй writer", writerError, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(0, client.ValidateDealFieldsCalls);
+        Assert.Equal(
+            BitrixWorkforceDistribution.ShadowMode,
+            (await db.BitrixWorkforceConfigurations
+                .SingleAsync(x => x.BitrixInstanceId == context.InstanceId))
+            .OperationMode);
+    }
+
+    [Theory]
+    [InlineData(1, true)]
+    [InlineData(0, false)]
+    public async Task WriterGate_AllowsWriterWhenOtherPortalBindingDoesNotConflict(
+        int otherDealCategoryId,
+        bool otherInstanceIsEnabled)
+    {
+        var client = new SettingsBitrixClientStub();
+        var context = await CreateContextAsync(client);
+        await using var db = context.Db;
+
+        var (_, shadowError) = await context.Sut.SaveAsync(
+            context.InstanceId,
+            context.Scope,
+            officeId: null,
+            CreateRequest(BitrixWorkforceDistribution.ShadowMode),
+            "admin");
+        Assert.Null(shadowError);
+        await AddOtherWriterAsync(
+            db,
+            context.InstanceId,
+            otherDealCategoryId,
+            otherInstanceIsEnabled);
+
+        var (writer, writerError) = await context.Sut.SaveAsync(
+            context.InstanceId,
+            context.Scope,
+            officeId: null,
+            CreateRequest(
+                BitrixWorkforceDistribution.WriterMode,
+                writerRulesConfirmed: true),
+            "admin");
+
+        Assert.Null(writerError);
+        Assert.NotNull(writer);
+        Assert.Equal(BitrixWorkforceDistribution.WriterMode, writer.OperationMode);
+        Assert.Equal(1, client.ValidateDealFieldsCalls);
+    }
+
+    [Fact]
+    public async Task WriterGate_RejectsWriterWhenBitrixInstanceIsDisabled()
+    {
+        var client = new SettingsBitrixClientStub();
+        var context = await CreateContextAsync(client);
+        await using var db = context.Db;
+        await SaveShadowAndGetRevisionAsync(context);
+        var instance = await db.BitrixInstances.SingleAsync(x => x.Id == context.InstanceId);
+        instance.IsEnabled = false;
+        await db.SaveChangesAsync();
+
+        var (writer, writerError) = await context.Sut.SaveAsync(
+            context.InstanceId,
+            context.Scope,
+            officeId: null,
+            CreateRequest(
+                BitrixWorkforceDistribution.WriterMode,
+                writerRulesConfirmed: true),
+            "admin");
+
+        Assert.Null(writer);
+        Assert.Contains("отключено", writerError, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(0, client.ValidateDealFieldsCalls);
+        Assert.Equal(0, client.ListDealsCalls);
+        Assert.Equal(
+            BitrixWorkforceDistribution.ShadowMode,
+            (await db.BitrixWorkforceConfigurations.SingleAsync()).OperationMode);
+    }
+
+    [Fact]
+    public async Task ShadowCoverageGate_RejectsCurrentDealWithoutState()
+    {
+        var client = new SettingsBitrixClientStub
+        {
+            CurrentDeals = [new BitrixWorkforceDealRevision(501, "NEW", "revision-501")]
+        };
+        var context = await CreateContextAsync(client);
+        await using var db = context.Db;
+        await SaveShadowAndGetRevisionAsync(context);
+
+        var (writer, writerError) = await context.Sut.SaveAsync(
+            context.InstanceId,
+            context.Scope,
+            officeId: null,
+            CreateRequest(
+                BitrixWorkforceDistribution.WriterMode,
+                writerRulesConfirmed: true),
+            "admin");
+
+        Assert.Null(writer);
+        Assert.Contains("501", writerError, StringComparison.Ordinal);
+        Assert.Equal(1, client.ListDealsCalls);
+        Assert.Equal(0, client.LastListDealsCategoryId);
+        Assert.Equal(["NEW"], client.LastListDealsStageIds);
+        Assert.Equal(
+            BitrixWorkforceDistribution.ShadowMode,
+            (await db.BitrixWorkforceConfigurations.SingleAsync()).OperationMode);
+    }
+
+    [Theory]
+    [InlineData("other_instance")]
+    [InlineData("stage_mismatch")]
+    [InlineData("scenario_case_mismatch")]
+    [InlineData("null_markers")]
+    [InlineData("stale_marker")]
+    public async Task ShadowCoverageGate_RejectsMismatchedOrUnobservedState(string stateKind)
+    {
+        const long dealId = 502;
+        var client = new SettingsBitrixClientStub
+        {
+            CurrentDeals = [new BitrixWorkforceDealRevision(dealId, "NEW", "revision-502")]
+        };
+        var context = await CreateContextAsync(client);
+        await using var db = context.Db;
+        var shadowRevision = await SaveShadowAndGetRevisionAsync(context);
+        db.BitrixWorkforceDealStates.Add(new BitrixWorkforceDealStateEntity
+        {
+            BitrixInstanceId = stateKind == "other_instance"
+                ? Guid.NewGuid()
+                : context.InstanceId,
+            DealId = dealId,
+            LastObservedStageId = stateKind == "stage_mismatch" ? "OTHER" : "NEW",
+            ActiveScenario = stateKind == "scenario_case_mismatch"
+                ? BitrixWorkforceDistribution.NewScenario.ToUpperInvariant()
+                : BitrixWorkforceDistribution.NewScenario,
+            ActiveScenarioShadowHandledAtUtc = stateKind switch
+            {
+                "null_markers" => null,
+                "stale_marker" => shadowRevision.AddSeconds(-1),
+                _ => shadowRevision
+            },
+            ActiveScenarioWriterHandledAtUtc = null,
+            UpdatedAtUtc = shadowRevision
+        });
+        await db.SaveChangesAsync();
+
+        var (writer, writerError) = await context.Sut.SaveAsync(
+            context.InstanceId,
+            context.Scope,
+            officeId: null,
+            CreateRequest(
+                BitrixWorkforceDistribution.WriterMode,
+                writerRulesConfirmed: true),
+            "admin");
+
+        Assert.Null(writer);
+        Assert.Contains(dealId.ToString(), writerError, StringComparison.Ordinal);
+        Assert.Equal(
+            BitrixWorkforceDistribution.ShadowMode,
+            (await db.BitrixWorkforceConfigurations.SingleAsync()).OperationMode);
+    }
+
+    [Fact]
+    public async Task ShadowCoverageGate_RejectsMixedCoveredAndUncoveredDeals()
+    {
+        var client = new SettingsBitrixClientStub
+        {
+            CurrentDeals =
+            [
+                new BitrixWorkforceDealRevision(503, "NEW", "revision-503"),
+                new BitrixWorkforceDealRevision(504, "NEW", "revision-504")
+            ]
+        };
+        var context = await CreateContextAsync(client);
+        await using var db = context.Db;
+        var shadowRevision = await SaveShadowAndGetRevisionAsync(context);
+        await AddCoverageStateAsync(
+            db,
+            context.InstanceId,
+            dealId: 503,
+            lastObservedStageId: "NEW",
+            activeScenario: BitrixWorkforceDistribution.NewScenario,
+            shadowHandledAtUtc: shadowRevision,
+            writerHandledAtUtc: null);
+
+        var (writer, writerError) = await context.Sut.SaveAsync(
+            context.InstanceId,
+            context.Scope,
+            officeId: null,
+            CreateRequest(
+                BitrixWorkforceDistribution.WriterMode,
+                writerRulesConfirmed: true),
+            "admin");
+
+        Assert.Null(writer);
+        Assert.Contains("504", writerError, StringComparison.Ordinal);
+        Assert.DoesNotContain("503", writerError, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ShadowCoverageGate_AllowsEmptyCurrentDealSet()
+    {
+        var client = new SettingsBitrixClientStub { CurrentDeals = [] };
+        var context = await CreateContextAsync(client);
+        await using var db = context.Db;
+        await SaveShadowAndGetRevisionAsync(context);
+
+        var (writer, writerError) = await context.Sut.SaveAsync(
+            context.InstanceId,
+            context.Scope,
+            officeId: null,
+            CreateRequest(
+                BitrixWorkforceDistribution.WriterMode,
+                writerRulesConfirmed: true),
+            "admin");
+
+        Assert.Null(writerError);
+        Assert.Equal(BitrixWorkforceDistribution.WriterMode, writer!.OperationMode);
+        Assert.Equal(2, client.ListDealsCalls);
+    }
+
+    [Fact]
+    public async Task ShadowCoverageGate_AllowsMatchingShadowMarkerAndComparesStageIgnoringCase()
+    {
+        const long dealId = 505;
+        var client = new SettingsBitrixClientStub
+        {
+            CurrentDeals = [new BitrixWorkforceDealRevision(dealId, "new", "revision-505")]
+        };
+        var context = await CreateContextAsync(client);
+        await using var db = context.Db;
+        var shadowRevision = await SaveShadowAndGetRevisionAsync(context);
+        await AddCoverageStateAsync(
+            db,
+            context.InstanceId,
+            dealId,
+            lastObservedStageId: "NeW",
+            activeScenario: BitrixWorkforceDistribution.NewScenario,
+            shadowHandledAtUtc: shadowRevision,
+            writerHandledAtUtc: null);
+
+        var (writer, writerError) = await context.Sut.SaveAsync(
+            context.InstanceId,
+            context.Scope,
+            officeId: null,
+            CreateRequest(
+                BitrixWorkforceDistribution.WriterMode,
+                writerRulesConfirmed: true),
+            "admin");
+
+        Assert.Null(writerError);
+        Assert.Equal(BitrixWorkforceDistribution.WriterMode, writer!.OperationMode);
+        Assert.Equal(2, client.ListDealsCalls);
+    }
+
+    [Fact]
+    public async Task ShadowCoverageGate_AllowsMatchingWriterMarker()
+    {
+        const long dealId = 506;
+        var client = new SettingsBitrixClientStub
+        {
+            CurrentDeals = [new BitrixWorkforceDealRevision(dealId, "NEW", "revision-506")]
+        };
+        var context = await CreateContextAsync(client);
+        await using var db = context.Db;
+        var shadowRevision = await SaveShadowAndGetRevisionAsync(context);
+        await AddCoverageStateAsync(
+            db,
+            context.InstanceId,
+            dealId,
+            lastObservedStageId: "NEW",
+            activeScenario: BitrixWorkforceDistribution.NewScenario,
+            shadowHandledAtUtc: null,
+            writerHandledAtUtc: shadowRevision);
+
+        var (writer, writerError) = await context.Sut.SaveAsync(
+            context.InstanceId,
+            context.Scope,
+            officeId: null,
+            CreateRequest(
+                BitrixWorkforceDistribution.WriterMode,
+                writerRulesConfirmed: true),
+            "admin");
+
+        Assert.Null(writerError);
+        Assert.Equal(BitrixWorkforceDistribution.WriterMode, writer!.OperationMode);
+        Assert.Equal(2, client.ListDealsCalls);
+    }
+
+    [Fact]
+    public async Task ShadowCoverageGate_RejectsDealChangedBetweenVerificationScans()
+    {
+        const long dealId = 507;
+        var client = new SettingsBitrixClientStub
+        {
+            ListDealsFactory = call =>
+            [
+                new BitrixWorkforceDealRevision(
+                    dealId,
+                    "NEW",
+                    call == 1 ? "revision-before" : "revision-after")
+            ]
+        };
+        var context = await CreateContextAsync(client);
+        await using var db = context.Db;
+        var shadowRevision = await SaveShadowAndGetRevisionAsync(context);
+        await AddCoverageStateAsync(
+            db,
+            context.InstanceId,
+            dealId,
+            lastObservedStageId: "NEW",
+            activeScenario: BitrixWorkforceDistribution.NewScenario,
+            shadowHandledAtUtc: shadowRevision,
+            writerHandledAtUtc: null);
+
+        var (writer, writerError) = await context.Sut.SaveAsync(
+            context.InstanceId,
+            context.Scope,
+            officeId: null,
+            CreateRequest(
+                BitrixWorkforceDistribution.WriterMode,
+                writerRulesConfirmed: true),
+            "admin");
+
+        Assert.Null(writer);
+        Assert.Contains("измен", writerError, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(2, client.ListDealsCalls);
+        Assert.Equal(
+            BitrixWorkforceDistribution.ShadowMode,
+            (await db.BitrixWorkforceConfigurations.SingleAsync()).OperationMode);
+    }
+
+    [Fact]
+    public async Task ShadowCoverageGate_ReportsListDealsFailureAndKeepsShadow()
+    {
+        var client = new SettingsBitrixClientStub();
+        var context = await CreateContextAsync(client);
+        await using var db = context.Db;
+        await SaveShadowAndGetRevisionAsync(context);
+        client.ListDealsError = new InvalidOperationException("coverage list failed");
+
+        var (writer, writerError) = await context.Sut.SaveAsync(
+            context.InstanceId,
+            context.Scope,
+            officeId: null,
+            CreateRequest(
+                BitrixWorkforceDistribution.WriterMode,
+                writerRulesConfirmed: true),
+            "admin");
+
+        Assert.Null(writer);
+        Assert.Contains("coverage list failed", writerError, StringComparison.Ordinal);
+        Assert.Equal(1, client.ListDealsCalls);
+        Assert.Equal(
+            BitrixWorkforceDistribution.ShadowMode,
+            (await db.BitrixWorkforceConfigurations.SingleAsync()).OperationMode);
+    }
+
+    [Fact]
     public async Task WriterGate_AllowsClosedManagerButRejectsMissingOrInactiveManager()
     {
         var client = new SettingsBitrixClientStub
@@ -186,6 +572,131 @@ public sealed class BitrixWorkforceSettingsServiceTests
         Assert.Equal(0, client.GetManagerStatusesCalls);
     }
 
+    [Fact]
+    public async Task Save_RejectsEnabledTargetThatIsSourceOfAnotherScenario()
+    {
+        var client = new SettingsBitrixClientStub();
+        var context = await CreateContextAsync(client);
+        await using var db = context.Db;
+        var request = CreateRequest(BitrixWorkforceDistribution.ShadowMode) with
+        {
+            StageRules =
+            [
+                new BitrixWorkforceStageRuleDto(
+                    Id: null,
+                    Scenario: BitrixWorkforceDistribution.MissedCallScenario,
+                    SourceStageId: "UC_FIRST",
+                    TargetStageId: "UC_HANDOFF",
+                    UsesMorningWindow: false,
+                    SortOrder: 0,
+                    IsEnabled: true),
+                new BitrixWorkforceStageRuleDto(
+                    Id: null,
+                    Scenario: BitrixWorkforceDistribution.SubstituteMissedCallScenario,
+                    SourceStageId: "uc_handoff",
+                    TargetStageId: "UC_SECOND",
+                    UsesMorningWindow: false,
+                    SortOrder: 1,
+                    IsEnabled: true)
+            ]
+        };
+
+        var (settings, error) = await context.Sut.SaveAsync(
+            context.InstanceId,
+            context.Scope,
+            officeId: null,
+            request,
+            "admin");
+
+        Assert.Null(settings);
+        Assert.Contains("Target", error, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Source", error, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(await db.BitrixWorkforceConfigurations.ToListAsync());
+        Assert.Empty(await db.BitrixWorkforceStageRules.ToListAsync());
+    }
+
+    [Fact]
+    public async Task Save_AllowsTargetToSourceHandoffInsideSameScenario()
+    {
+        var client = new SettingsBitrixClientStub();
+        var context = await CreateContextAsync(client);
+        await using var db = context.Db;
+        var request = CreateRequest(BitrixWorkforceDistribution.ShadowMode) with
+        {
+            StageRules =
+            [
+                new BitrixWorkforceStageRuleDto(
+                    Id: null,
+                    Scenario: BitrixWorkforceDistribution.MissedCallScenario,
+                    SourceStageId: "UC_FIRST",
+                    TargetStageId: "UC_HANDOFF",
+                    UsesMorningWindow: false,
+                    SortOrder: 0,
+                    IsEnabled: true),
+                new BitrixWorkforceStageRuleDto(
+                    Id: null,
+                    Scenario: BitrixWorkforceDistribution.MissedCallScenario,
+                    SourceStageId: "UC_HANDOFF",
+                    TargetStageId: "UC_HANDOFF",
+                    UsesMorningWindow: false,
+                    SortOrder: 1,
+                    IsEnabled: true)
+            ]
+        };
+
+        var (settings, error) = await context.Sut.SaveAsync(
+            context.InstanceId,
+            context.Scope,
+            officeId: null,
+            request,
+            "admin");
+
+        Assert.Null(error);
+        Assert.NotNull(settings);
+        Assert.Equal(2, await db.BitrixWorkforceStageRules.CountAsync());
+    }
+
+    [Fact]
+    public async Task Save_IgnoresCrossScenarioCollisionWhenSourceRuleIsDisabled()
+    {
+        var client = new SettingsBitrixClientStub();
+        var context = await CreateContextAsync(client);
+        await using var db = context.Db;
+        var request = CreateRequest(BitrixWorkforceDistribution.ShadowMode) with
+        {
+            StageRules =
+            [
+                new BitrixWorkforceStageRuleDto(
+                    Id: null,
+                    Scenario: BitrixWorkforceDistribution.MissedCallScenario,
+                    SourceStageId: "UC_FIRST",
+                    TargetStageId: "UC_HANDOFF",
+                    UsesMorningWindow: false,
+                    SortOrder: 0,
+                    IsEnabled: true),
+                new BitrixWorkforceStageRuleDto(
+                    Id: null,
+                    Scenario: BitrixWorkforceDistribution.SubstituteMissedCallScenario,
+                    SourceStageId: "UC_HANDOFF",
+                    TargetStageId: "UC_SECOND",
+                    UsesMorningWindow: false,
+                    SortOrder: 1,
+                    IsEnabled: false)
+            ]
+        };
+
+        var (settings, error) = await context.Sut.SaveAsync(
+            context.InstanceId,
+            context.Scope,
+            officeId: null,
+            request,
+            "admin");
+
+        Assert.Null(error);
+        Assert.NotNull(settings);
+        Assert.Equal(2, await db.BitrixWorkforceStageRules.CountAsync());
+    }
+
     private static UpdateBitrixWorkforceSettingsRequest CreateRequest(
         string mode,
         bool writerRulesConfirmed = false) =>
@@ -215,6 +726,81 @@ public sealed class BitrixWorkforceSettingsServiceTests
             ],
             WriterRulesConfirmed: writerRulesConfirmed);
 
+    private static async Task<DateTime> SaveShadowAndGetRevisionAsync(
+        SettingsTestContext context)
+    {
+        var (_, shadowError) = await context.Sut.SaveAsync(
+            context.InstanceId,
+            context.Scope,
+            officeId: null,
+            CreateRequest(BitrixWorkforceDistribution.ShadowMode),
+            "admin");
+        Assert.Null(shadowError);
+        return await context.Db.BitrixWorkforceConfigurations
+            .AsNoTracking()
+            .Where(x => x.BitrixInstanceId == context.InstanceId)
+            .Select(x => x.UpdatedAtUtc)
+            .SingleAsync();
+    }
+
+    private static async Task AddCoverageStateAsync(
+        OrbitaDbContext db,
+        Guid bitrixInstanceId,
+        long dealId,
+        string? lastObservedStageId,
+        string? activeScenario,
+        DateTime? shadowHandledAtUtc,
+        DateTime? writerHandledAtUtc)
+    {
+        db.BitrixWorkforceDealStates.Add(new BitrixWorkforceDealStateEntity
+        {
+            BitrixInstanceId = bitrixInstanceId,
+            DealId = dealId,
+            LastObservedStageId = lastObservedStageId,
+            ActiveScenario = activeScenario,
+            ActiveScenarioShadowHandledAtUtc = shadowHandledAtUtc,
+            ActiveScenarioWriterHandledAtUtc = writerHandledAtUtc,
+            UpdatedAtUtc = shadowHandledAtUtc ?? writerHandledAtUtc ?? DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+    }
+
+    private static async Task AddOtherWriterAsync(
+        OrbitaDbContext db,
+        Guid currentInstanceId,
+        int dealCategoryId,
+        bool instanceIsEnabled)
+    {
+        var currentInstance = await db.BitrixInstances
+            .AsNoTracking()
+            .SingleAsync(x => x.Id == currentInstanceId);
+        var otherInstanceId = Guid.NewGuid();
+        var now = DateTime.UtcNow;
+        db.BitrixInstances.Add(new BitrixInstanceEntity
+        {
+            Id = otherInstanceId,
+            OfficeId = currentInstance.OfficeId,
+            Name = "Other Bitrix",
+            PortalHost = currentInstance.PortalHost,
+            // Exercise the stored PortalHost fallback used for legacy instances
+            // whose encrypted webhook is absent.
+            WebhookUrlProtected = string.Empty,
+            IntegrationSettingsJson = "{}",
+            IsEnabled = instanceIsEnabled,
+            CreatedAtUtc = now,
+            UpdatedAtUtc = now
+        });
+        db.BitrixWorkforceConfigurations.Add(new BitrixWorkforceConfigurationEntity
+        {
+            BitrixInstanceId = otherInstanceId,
+            OperationMode = BitrixWorkforceDistribution.WriterMode,
+            DealCategoryId = dealCategoryId,
+            WriterRulesConfirmed = true,
+            UpdatedAtUtc = now
+        });
+        await db.SaveChangesAsync();
+    }
+
     private static async Task<SettingsTestContext> CreateContextAsync(
         SettingsBitrixClientStub client)
     {
@@ -243,6 +829,7 @@ public sealed class BitrixWorkforceSettingsServiceTests
                 "https://example.bitrix24.ru/rest/1/secret"),
             IntegrationSettingsJson = new BitrixInstanceIntegrationSettings
             {
+                ResponsibleId = 999,
                 DealIdempotencyUfCode = "UF_IDEMPOTENCY",
                 DealAgeUfCode = "UF_AGE",
                 DealProfessionUfCode = "UF_PROFESSION",
@@ -285,12 +872,22 @@ public sealed class BitrixWorkforceSettingsServiceTests
         public int ValidateDealFieldsCalls { get; private set; }
         public int ValidateDealPipelineCalls { get; private set; }
         public int GetManagerStatusesCalls { get; private set; }
+        public int ListDealsCalls { get; private set; }
         public IReadOnlyList<long> LastManagerIds { get; private set; } = [];
         public int? LastCategoryId { get; private set; }
         public IReadOnlyList<string> LastStageIds { get; private set; } = [];
         public IReadOnlyList<string> LastRequiredFieldCodes { get; private set; } = [];
+        public int? LastListDealsCategoryId { get; private set; }
+        public IReadOnlyList<string> LastListDealsStageIds { get; private set; } = [];
         public Exception? DealFieldValidationError { get; init; }
         public Exception? PipelineValidationError { get; init; }
+        public Exception? ListDealsError { get; set; }
+        public IReadOnlyList<BitrixWorkforceDealRevision> CurrentDeals { get; set; } = [];
+        public Func<int, IReadOnlyList<BitrixWorkforceDealRevision>>? ListDealsFactory
+        {
+            get;
+            set;
+        }
         public Func<IReadOnlyList<long>, IReadOnlyList<BitrixWorkforceManagerStatus>>?
             ManagerStatusesFactory { get; init; }
 
@@ -361,6 +958,12 @@ public sealed class BitrixWorkforceSettingsServiceTests
             CancellationToken ct) =>
             throw new NotSupportedException();
 
+        public Task<long?> GetContactOwnerIdAsync(
+            string webhookUrl,
+            long contactId,
+            CancellationToken ct) =>
+            throw new NotSupportedException();
+
         public Task UpdateDealAsync(
             string webhookUrl,
             long dealId,
@@ -379,7 +982,15 @@ public sealed class BitrixWorkforceSettingsServiceTests
             string webhookUrl,
             int categoryId,
             IReadOnlyCollection<string> stageIds,
-            CancellationToken ct) =>
-            throw new NotSupportedException();
+            CancellationToken ct)
+        {
+            ListDealsCalls++;
+            LastListDealsCategoryId = categoryId;
+            LastListDealsStageIds = stageIds.ToList();
+            return ListDealsError is null
+                ? Task.FromResult(ListDealsFactory?.Invoke(ListDealsCalls) ?? CurrentDeals)
+                : Task.FromException<IReadOnlyList<BitrixWorkforceDealRevision>>(
+                    ListDealsError);
+        }
     }
 }

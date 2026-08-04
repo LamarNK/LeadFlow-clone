@@ -1,4 +1,7 @@
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Options;
 using Orbita.Api.Data;
 using Orbita.Api.Models;
@@ -139,6 +142,23 @@ public sealed class BitrixInstanceService(
             return (null, "Укажите название Битрикса.");
         }
 
+        await using var settingsGateTransaction = await BeginSettingsGateTransactionAsync(id, ct);
+        if (settingsGateTransaction is not null)
+        {
+            await db.BitrixInstances
+                .FromSqlInterpolated(
+                    $"SELECT * FROM \"BitrixInstances\" WHERE \"Id\" = {id} FOR UPDATE")
+                .ToListAsync(ct);
+            await db.Entry(entity).ReloadAsync(ct);
+            if (db.Entry(entity).State == EntityState.Detached
+                || !CanAccessOffice(scope, officeId, entity.OfficeId))
+            {
+                return (null, "Битрикс не найден.");
+            }
+        }
+
+        var wasEnabled = entity.IsEnabled;
+        var previousIntegrationSettingsJson = entity.IntegrationSettingsJson;
         entity.Name = request.Name.Trim();
         entity.Signature = request.Signature?.Trim() ?? string.Empty;
         entity.IsEnabled = request.IsEnabled;
@@ -148,6 +168,15 @@ public sealed class BitrixInstanceService(
                 .FromDto(request.IntegrationSettings, defaultBitrixOptions.Value)
                 .Serialize();
         }
+
+        var integrationSettingsChanged = !string.Equals(
+            previousIntegrationSettingsJson,
+            entity.IntegrationSettingsJson,
+            StringComparison.Ordinal);
+        var webhookChanged = false;
+        var portalChanged = false;
+        var webhookValidationAllowsUsage = BitrixValidationStatuses.AllowsWebhookUsage(
+            entity.ValidationStatus);
 
         if (!string.IsNullOrWhiteSpace(request.WebhookUrl))
         {
@@ -159,24 +188,52 @@ public sealed class BitrixInstanceService(
 
             var validation = await validator.ValidateAsync(normalized, ct);
             var currentWebhookUrl = TryUnprotectWebhook(entity.WebhookUrlProtected);
-            var webhookChanged = !string.Equals(
+            var currentPortalHost = !string.IsNullOrWhiteSpace(entity.PortalHost)
+                ? entity.PortalHost
+                : BitrixWebhookValidator.TryGetPortalHost(currentWebhookUrl);
+            var newPortalHost = BitrixWebhookValidator.TryGetPortalHost(normalized);
+            webhookChanged = !string.Equals(
                 currentWebhookUrl,
                 normalized,
                 StringComparison.Ordinal);
+            portalChanged = !string.Equals(
+                currentPortalHost,
+                newPortalHost,
+                StringComparison.OrdinalIgnoreCase);
             entity.WebhookUrlProtected = protector.Protect(normalized);
-            entity.PortalHost = BitrixWebhookValidator.TryGetPortalHost(normalized);
+            entity.PortalHost = newPortalHost;
             entity.ValidationStatus = validation.Status;
             entity.ValidationMessage = validation.Message;
             entity.LastValidatedAtUtc = DateTime.UtcNow;
-            if (webhookChanged)
+            webhookValidationAllowsUsage = BitrixValidationStatuses.AllowsWebhookUsage(
+                validation.Status);
+            if (webhookChanged && portalChanged)
             {
                 await ResetWorkforceForWebhookChangeAsync(entity.Id, actorUserId, ct);
             }
         }
 
+        if (!portalChanged
+            && (webhookChanged
+                || integrationSettingsChanged
+                || wasEnabled != request.IsEnabled
+                || !request.IsEnabled
+                || !webhookValidationAllowsUsage))
+        {
+            await SuspendWorkforceAsync(
+                entity.Id,
+                actorUserId,
+                "Cancelled because the Bitrix24 connection settings changed.",
+                ct);
+        }
+
         entity.UpdatedAtUtc = DateTime.UtcNow;
         entity.UpdatedByUserId = actorUserId;
         await db.SaveChangesAsync(ct);
+        if (settingsGateTransaction is not null)
+        {
+            await settingsGateTransaction.CommitAsync(ct);
+        }
 
         await audit.LogAsync(
             actorUserId,
@@ -242,6 +299,83 @@ public sealed class BitrixInstanceService(
             db.BitrixWorkforceMorningStates.Where(x => x.BitrixInstanceId == bitrixInstanceId));
     }
 
+    private async Task SuspendWorkforceAsync(
+        Guid bitrixInstanceId,
+        string actorUserId,
+        string reason,
+        CancellationToken ct)
+    {
+        var now = DateTime.UtcNow;
+        var configuration = await db.BitrixWorkforceConfigurations
+            .FirstOrDefaultAsync(x => x.BitrixInstanceId == bitrixInstanceId, ct);
+        if (configuration is not null)
+        {
+            configuration.OperationMode = BitrixWorkforceDistribution.DisabledMode;
+            configuration.WriterRulesConfirmed = false;
+            configuration.UpdatedAtUtc = now <= configuration.UpdatedAtUtc
+                ? configuration.UpdatedAtUtc.AddMilliseconds(1)
+                : now;
+            configuration.UpdatedByUserId = actorUserId;
+        }
+
+        var activeJobs = await db.BitrixDealEventInbox
+            .Where(x => x.BitrixInstanceId == bitrixInstanceId
+                        && (x.State == BitrixWorkforceInboxStates.Pending
+                            || x.State == BitrixWorkforceInboxStates.Processing))
+            .ToListAsync(ct);
+        foreach (var job in activeJobs)
+        {
+            job.State = BitrixWorkforceInboxStates.Completed;
+            job.CompletedAtUtc = now;
+            job.LockOwner = null;
+            job.LockedUntilUtc = null;
+            job.LastError = reason;
+        }
+
+        var inFlightAssignments = await db.BitrixWorkforceAssignments
+            .Where(x => x.BitrixInstanceId == bitrixInstanceId
+                        && x.Decision == BitrixWorkforceDecisions.Assigned
+                        && x.AppliedAtUtc == null)
+            .ToListAsync(ct);
+        foreach (var assignment in inFlightAssignments)
+        {
+            assignment.Decision = BitrixWorkforceDecisions.Ignored;
+            assignment.Reason = reason;
+            assignment.Error = null;
+        }
+    }
+
+    private async Task<IDbContextTransaction?> BeginSettingsGateTransactionAsync(
+        Guid bitrixInstanceId,
+        CancellationToken ct)
+    {
+        if (!string.Equals(
+                db.Database.ProviderName,
+                "Npgsql.EntityFrameworkCore.PostgreSQL",
+                StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var transaction = await db.Database.BeginTransactionAsync(ct);
+        try
+        {
+            var canonical = $"settings|{bitrixInstanceId:D}";
+            var lockKey = BitConverter.ToInt64(
+                SHA256.HashData(Encoding.UTF8.GetBytes(canonical)),
+                0);
+            await db.Database.ExecuteSqlInterpolatedAsync(
+                $"SELECT pg_advisory_xact_lock({lockKey})",
+                ct);
+            return transaction;
+        }
+        catch
+        {
+            await transaction.DisposeAsync();
+            throw;
+        }
+    }
+
     private string? TryUnprotectWebhook(string protectedWebhookUrl)
     {
         if (string.IsNullOrWhiteSpace(protectedWebhookUrl))
@@ -271,6 +405,21 @@ public sealed class BitrixInstanceService(
             return (false, "Битрикс не найден.");
         }
 
+        await using var settingsGateTransaction = await BeginSettingsGateTransactionAsync(id, ct);
+        if (settingsGateTransaction is not null)
+        {
+            await db.BitrixInstances
+                .FromSqlInterpolated(
+                    $"SELECT * FROM \"BitrixInstances\" WHERE \"Id\" = {id} FOR UPDATE")
+                .ToListAsync(ct);
+            await db.Entry(entity).ReloadAsync(ct);
+            if (db.Entry(entity).State == EntityState.Detached
+                || !CanAccessOffice(scope, officeId, entity.OfficeId))
+            {
+                return (false, "Битрикс не найден.");
+            }
+        }
+
         var usedInRoute = await db.DistributionNodes.AnyAsync(x => x.BitrixInstanceId == id, ct);
         if (usedInRoute)
         {
@@ -278,8 +427,17 @@ public sealed class BitrixInstanceService(
         }
 
         var name = entity.Name;
+        await SuspendWorkforceAsync(
+            id,
+            "system",
+            "Cancelled because the Bitrix24 connection was deleted.",
+            ct);
         db.BitrixInstances.Remove(entity);
         await db.SaveChangesAsync(ct);
+        if (settingsGateTransaction is not null)
+        {
+            await settingsGateTransaction.CommitAsync(ct);
+        }
 
         await audit.LogAsync(
             null,

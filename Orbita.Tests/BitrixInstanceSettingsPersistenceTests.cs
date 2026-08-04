@@ -307,6 +307,330 @@ public sealed class BitrixInstanceSettingsPersistenceTests
         Assert.Empty(db.BitrixWorkforceMorningStates);
     }
 
+    [Fact]
+    public async Task UpdateAsync_WhenWebhookSecretChangesOnSamePortal_SuspendsWorkforceAndPreservesGuards()
+    {
+        var options = new DbContextOptionsBuilder<OrbitaDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
+            .Options;
+        await using var db = new OrbitaDbContext(options);
+        var now = DateTime.UtcNow;
+        var officeId = Guid.NewGuid();
+        var instanceId = Guid.NewGuid();
+        var assignmentId = Guid.NewGuid();
+        const long dealId = 456;
+        const string oldWebhook =
+            "https://same-portal.bitrix24.ru/rest/1/old-secret";
+        const string newWebhook =
+            "https://same-portal.bitrix24.ru/rest/99/new-secret";
+        var protector = new WebhookSecretProtector(
+            new EphemeralDataProtectionProvider());
+
+        db.Offices.Add(new OfficeEntity
+        {
+            Id = officeId,
+            Name = "Office",
+            RegistrationSecretHash = "hash",
+            CreatedAtUtc = now
+        });
+        db.BitrixInstances.Add(new BitrixInstanceEntity
+        {
+            Id = instanceId,
+            OfficeId = officeId,
+            Name = "Portal",
+            PortalHost = "same-portal.bitrix24.ru",
+            WebhookUrlProtected = protector.Protect(oldWebhook),
+            ValidationStatus = BitrixValidationStatuses.Ok,
+            IntegrationSettingsJson = string.Empty,
+            IsEnabled = true,
+            CreatedAtUtc = now,
+            UpdatedAtUtc = now
+        });
+        db.BitrixWorkforceConfigurations.Add(new BitrixWorkforceConfigurationEntity
+        {
+            BitrixInstanceId = instanceId,
+            OperationMode = BitrixWorkforceDistribution.WriterMode,
+            WriterRulesConfirmed = true,
+            TimeZoneId = "Europe/Moscow",
+            UpdatedAtUtc = now
+        });
+        var inbox = new BitrixDealEventInboxEntity
+        {
+            BitrixInstanceId = instanceId,
+            EventName = "ONCRMDEALUPDATE",
+            DealId = dealId,
+            EventKey = "same-portal-pending-event",
+            ReceivedAtUtc = now,
+            State = BitrixWorkforceInboxStates.Pending,
+            NextAttemptAtUtc = now
+        };
+        db.BitrixDealEventInbox.Add(inbox);
+        db.BitrixWorkforceCursors.Add(new BitrixWorkforceCursorEntity
+        {
+            BitrixInstanceId = instanceId,
+            Scenario = BitrixWorkforceDistribution.NewScenario,
+            LastAssignedBitrixUserId = 10,
+            LastAssignedAtUtc = now
+        });
+        db.BitrixWorkforceDealStates.Add(new BitrixWorkforceDealStateEntity
+        {
+            BitrixInstanceId = instanceId,
+            DealId = dealId,
+            ActiveScenario = BitrixWorkforceDistribution.NewScenario,
+            ActiveScenarioWriterHandledAtUtc = now,
+            LastObservedStageId = "NEW",
+            LastAppliedStageId = "NEW",
+            LastAppliedResponsibleId = 10,
+            LastAssignmentId = assignmentId,
+            UpdatedAtUtc = now
+        });
+        db.BitrixWorkforceMorningStates.Add(new BitrixWorkforceMorningStateEntity
+        {
+            BitrixInstanceId = instanceId,
+            LocalDate = DateOnly.FromDateTime(now),
+            Scenario = BitrixWorkforceDistribution.MissedCallScenario,
+            FirstManagerId = 10,
+            InitialReleaseLimit = 2,
+            InitialReleasedCount = 1
+        });
+        await db.SaveChangesAsync();
+
+        db.BitrixWorkforceAssignments.Add(new BitrixWorkforceAssignmentEntity
+        {
+            Id = assignmentId,
+            InboxId = inbox.Id,
+            BitrixInstanceId = instanceId,
+            DealId = dealId,
+            Scenario = BitrixWorkforceDistribution.NewScenario,
+            OperationMode = BitrixWorkforceDistribution.WriterMode,
+            FromStageId = "NEW",
+            ToStageId = "NEW",
+            PreviousResponsibleId = 999,
+            SelectedResponsibleId = 10,
+            Decision = BitrixWorkforceDecisions.Assigned,
+            Reason = "Selected",
+            CreatedAtUtc = now,
+            ConfigurationRevisionAtUtc = now
+        });
+        await db.SaveChangesAsync();
+
+        var validator = new BitrixWebhookValidator(
+            new StubHttpClientFactory(new StubHttpMessageHandler(request =>
+            {
+                var body = request.RequestUri?.AbsolutePath.EndsWith(
+                    "/scope.json",
+                    StringComparison.OrdinalIgnoreCase) == true
+                    ? """{"result":["crm"]}"""
+                    : """{"result":[]}""";
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(body, Encoding.UTF8, "application/json")
+                };
+            })));
+        var sut = new BitrixInstanceService(
+            db,
+            protector,
+            validator,
+            Options.Create(new OrbitaBitrixSettings()),
+            new PanelAuditService(db));
+
+        var (updated, error) = await sut.UpdateAsync(
+            instanceId,
+            OfficeScope.ForOffice(officeId),
+            officeId: null,
+            new UpdateBitrixInstanceRequest(
+                "Portal",
+                "",
+                newWebhook,
+                null,
+                true),
+            "admin");
+
+        Assert.Null(error);
+        Assert.Equal("same-portal.bitrix24.ru", updated!.PortalHost);
+        Assert.Equal(
+            newWebhook,
+            await sut.ResolveWebhookUrlAsync(
+                await db.BitrixInstances.SingleAsync(x => x.Id == instanceId)));
+
+        var configuration = await db.BitrixWorkforceConfigurations.SingleAsync();
+        Assert.Equal(BitrixWorkforceDistribution.DisabledMode, configuration.OperationMode);
+        Assert.False(configuration.WriterRulesConfirmed);
+
+        var cancelledJob = await db.BitrixDealEventInbox.SingleAsync();
+        Assert.Equal(BitrixWorkforceInboxStates.Completed, cancelledJob.State);
+        Assert.NotNull(cancelledJob.CompletedAtUtc);
+        Assert.Contains("connection settings changed", cancelledJob.LastError);
+
+        var cancelledAssignment = await db.BitrixWorkforceAssignments.SingleAsync();
+        Assert.Equal(BitrixWorkforceDecisions.Ignored, cancelledAssignment.Decision);
+        Assert.Null(cancelledAssignment.AppliedAtUtc);
+        Assert.Equal(10, cancelledAssignment.SelectedResponsibleId);
+
+        var cursor = await db.BitrixWorkforceCursors.SingleAsync();
+        Assert.Equal(10, cursor.LastAssignedBitrixUserId);
+        var dealState = await db.BitrixWorkforceDealStates.SingleAsync();
+        Assert.Equal(assignmentId, dealState.LastAssignmentId);
+        Assert.Equal(BitrixWorkforceDistribution.NewScenario, dealState.ActiveScenario);
+        Assert.Equal(now, dealState.ActiveScenarioWriterHandledAtUtc);
+        var morningState = await db.BitrixWorkforceMorningStates.SingleAsync();
+        Assert.Equal(1, morningState.InitialReleasedCount);
+    }
+
+    [Theory]
+    [InlineData("enabled_toggle")]
+    [InlineData("integration_settings")]
+    public async Task UpdateAsync_WhenConnectionSafetySettingChanges_SuspendsWorkforceAndPreservesGuards(
+        string changeKind)
+    {
+        var options = new DbContextOptionsBuilder<OrbitaDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
+            .Options;
+        await using var db = new OrbitaDbContext(options);
+        var now = DateTime.UtcNow;
+        var officeId = Guid.NewGuid();
+        var instanceId = Guid.NewGuid();
+        var assignmentId = Guid.NewGuid();
+        const long dealId = 789;
+        const string webhook = "https://settings-safe.bitrix24.ru/rest/1/secret";
+        var protector = new WebhookSecretProtector(
+            new EphemeralDataProtectionProvider());
+        var originalIntegration = new BitrixInstanceIntegrationSettings
+        {
+            EntityType = "Deal",
+            ResponsibleId = 1,
+            LeadSource = "Avito",
+            DealIdempotencyUfCode = "UF_OLD_IDEMPOTENCY",
+            DealAgeUfCode = "UF_OLD_AGE",
+            DealProfessionUfCode = "UF_OLD_PROFESSION",
+            DealCityUfCode = "UF_OLD_CITY",
+            CheckDuplicatesInBitrix = true
+        };
+
+        db.Offices.Add(new OfficeEntity
+        {
+            Id = officeId,
+            Name = "Office",
+            RegistrationSecretHash = "hash",
+            CreatedAtUtc = now
+        });
+        db.BitrixInstances.Add(new BitrixInstanceEntity
+        {
+            Id = instanceId,
+            OfficeId = officeId,
+            Name = "Portal",
+            PortalHost = "settings-safe.bitrix24.ru",
+            WebhookUrlProtected = protector.Protect(webhook),
+            ValidationStatus = BitrixValidationStatuses.Ok,
+            IntegrationSettingsJson = originalIntegration.Serialize(),
+            IsEnabled = true,
+            CreatedAtUtc = now,
+            UpdatedAtUtc = now
+        });
+        db.BitrixWorkforceConfigurations.Add(new BitrixWorkforceConfigurationEntity
+        {
+            BitrixInstanceId = instanceId,
+            OperationMode = BitrixWorkforceDistribution.WriterMode,
+            WriterRulesConfirmed = true,
+            TimeZoneId = "Europe/Moscow",
+            UpdatedAtUtc = now
+        });
+        var inbox = new BitrixDealEventInboxEntity
+        {
+            BitrixInstanceId = instanceId,
+            EventName = "ONCRMDEALUPDATE",
+            DealId = dealId,
+            EventKey = $"connection-change-{changeKind}",
+            ReceivedAtUtc = now,
+            State = BitrixWorkforceInboxStates.Processing,
+            NextAttemptAtUtc = now,
+            LockOwner = "old-worker",
+            LockedUntilUtc = now.AddMinutes(5)
+        };
+        db.BitrixDealEventInbox.Add(inbox);
+        db.BitrixWorkforceDealStates.Add(new BitrixWorkforceDealStateEntity
+        {
+            BitrixInstanceId = instanceId,
+            DealId = dealId,
+            ActiveScenario = BitrixWorkforceDistribution.NewScenario,
+            ActiveScenarioWriterHandledAtUtc = now,
+            LastObservedStageId = "NEW",
+            LastAssignmentId = assignmentId,
+            UpdatedAtUtc = now
+        });
+        await db.SaveChangesAsync();
+        db.BitrixWorkforceAssignments.Add(new BitrixWorkforceAssignmentEntity
+        {
+            Id = assignmentId,
+            InboxId = inbox.Id,
+            BitrixInstanceId = instanceId,
+            DealId = dealId,
+            Scenario = BitrixWorkforceDistribution.NewScenario,
+            OperationMode = BitrixWorkforceDistribution.WriterMode,
+            FromStageId = "NEW",
+            ToStageId = "IN_PROCESS",
+            SelectedResponsibleId = 10,
+            Decision = BitrixWorkforceDecisions.Assigned,
+            Reason = "Selected",
+            CreatedAtUtc = now,
+            ConfigurationRevisionAtUtc = now
+        });
+        await db.SaveChangesAsync();
+
+        var changedIntegration = changeKind == "integration_settings"
+            ? new BitrixInstanceIntegrationSettingsDto(
+                "Deal",
+                77,
+                "Avito",
+                "UF_NEW_IDEMPOTENCY",
+                "UF_NEW_AGE",
+                "UF_NEW_PROFESSION",
+                "UF_NEW_CITY",
+                false)
+            : null;
+        var sut = new BitrixInstanceService(
+            db,
+            protector,
+            null!,
+            Options.Create(new OrbitaBitrixSettings()),
+            new PanelAuditService(db));
+
+        var (updated, error) = await sut.UpdateAsync(
+            instanceId,
+            OfficeScope.ForOffice(officeId),
+            officeId: null,
+            new UpdateBitrixInstanceRequest(
+                "Portal",
+                "",
+                null,
+                changedIntegration,
+                IsEnabled: changeKind != "enabled_toggle"),
+            "admin");
+
+        Assert.Null(error);
+        Assert.NotNull(updated);
+        Assert.Equal(changeKind != "enabled_toggle", updated.IsEnabled);
+        var configuration = await db.BitrixWorkforceConfigurations.SingleAsync();
+        Assert.Equal(BitrixWorkforceDistribution.DisabledMode, configuration.OperationMode);
+        Assert.False(configuration.WriterRulesConfirmed);
+        Assert.True(configuration.UpdatedAtUtc > now);
+
+        var cancelledJob = await db.BitrixDealEventInbox.SingleAsync();
+        Assert.Equal(BitrixWorkforceInboxStates.Completed, cancelledJob.State);
+        Assert.NotNull(cancelledJob.CompletedAtUtc);
+        Assert.Null(cancelledJob.LockOwner);
+        Assert.Null(cancelledJob.LockedUntilUtc);
+        Assert.Contains("connection settings changed", cancelledJob.LastError);
+        Assert.Equal(
+            BitrixWorkforceDecisions.Ignored,
+            (await db.BitrixWorkforceAssignments.SingleAsync()).Decision);
+
+        var preservedGuard = await db.BitrixWorkforceDealStates.SingleAsync();
+        Assert.Equal(BitrixWorkforceDistribution.NewScenario, preservedGuard.ActiveScenario);
+        Assert.Equal(now, preservedGuard.ActiveScenarioWriterHandledAtUtc);
+        Assert.Equal(assignmentId, preservedGuard.LastAssignmentId);
+    }
+
     private sealed class StubHttpClientFactory(HttpMessageHandler handler) : IHttpClientFactory
     {
         public HttpClient CreateClient(string name) => new(handler, disposeHandler: false);

@@ -500,6 +500,7 @@ public sealed class BitrixWorkforceCursorEntity
 {
     public Guid BitrixInstanceId { get; set; }
     public string Scenario { get; set; } = string.Empty;
+    public string OperationMode { get; set; } = BitrixWorkforceDistribution.WriterMode;
     public long? LastAssignedBitrixUserId { get; set; }
     public DateTime? LastAssignedAtUtc { get; set; }
 
@@ -510,6 +511,9 @@ public sealed class BitrixWorkforceDealStateEntity
 {
     public Guid BitrixInstanceId { get; set; }
     public long DealId { get; set; }
+    public string? ActiveScenario { get; set; }
+    public DateTime? ActiveScenarioShadowHandledAtUtc { get; set; }
+    public DateTime? ActiveScenarioWriterHandledAtUtc { get; set; }
     public string? LastObservedStageId { get; set; }
     public string? LastAppliedStageId { get; set; }
     public long? LastAppliedResponsibleId { get; set; }
@@ -524,6 +528,7 @@ public sealed class BitrixWorkforceMorningStateEntity
     public Guid BitrixInstanceId { get; set; }
     public DateOnly LocalDate { get; set; }
     public string Scenario { get; set; } = string.Empty;
+    public string OperationMode { get; set; } = BitrixWorkforceDistribution.WriterMode;
     public long? FirstManagerId { get; set; }
     public DateTime? FirstManagerSeenAtUtc { get; set; }
     public DateTime? ReserveUntilUtc { get; set; }

@@ -42,6 +42,11 @@ public interface IBitrixWorkforceClient
         long dealId,
         CancellationToken ct);
 
+    Task<long?> GetContactOwnerIdAsync(
+        string webhookUrl,
+        long contactId,
+        CancellationToken ct);
+
     Task UpdateDealAsync(
         string webhookUrl,
         long dealId,
@@ -170,6 +175,20 @@ public sealed class BitrixWorkforceClient(IHttpClientFactory httpClientFactory) 
         return contactIds.Distinct().ToList();
     }
 
+    public async Task<long?> GetContactOwnerIdAsync(
+        string webhookUrl,
+        long contactId,
+        CancellationToken ct)
+    {
+        using var json = await CallAsync(
+            webhookUrl,
+            "crm.contact.get",
+            new { id = contactId },
+            ct);
+        var result = RequireObjectResult(json.RootElement, "crm.contact.get");
+        return GetNullableLong(result, "ASSIGNED_BY_ID");
+    }
+
     public async Task UpdateDealAsync(
         string webhookUrl,
         long dealId,
@@ -272,10 +291,29 @@ public sealed class BitrixWorkforceClient(IHttpClientFactory httpClientFactory) 
             while (start >= 0);
         }
 
-        return deals
-            .GroupBy(x => x.DealId)
-            .Select(x => x.First())
+        var grouped = deals.GroupBy(x => x.DealId).ToList();
+        var unstableDealIds = grouped
+            .Where(group => group
+                    .Select(x => x.StageId.Trim())
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Skip(1)
+                    .Any()
+                || group
+                    .Select(x => x.Revision.Trim())
+                    .Distinct(StringComparer.Ordinal)
+                    .Skip(1)
+                    .Any())
+            .Select(x => x.Key)
+            .Take(20)
             .ToList();
+        if (unstableDealIds.Count > 0)
+        {
+            throw new InvalidOperationException(
+                "Bitrix24 deals changed while the source-stage snapshot was being read: "
+                + string.Join(", ", unstableDealIds));
+        }
+
+        return grouped.Select(x => x.First()).ToList();
     }
 
     public Task ValidateCrmAccessAsync(

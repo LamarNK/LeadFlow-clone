@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Options;
 using Orbita.Api.Data;
 using Orbita.Api.Models;
@@ -52,6 +53,20 @@ public sealed class BitrixWorkforceSettingsService(
         }
 
         var mode = NormalizeMode(request.OperationMode);
+        await using var settingsGateTransaction = await BeginSettingsGateTransactionAsync(
+            bitrixInstanceId,
+            ct);
+        if (!await LockAndReloadInstanceAsync(instance, ct))
+        {
+            return (null, "Битрикс не найден.");
+        }
+
+        var (resolvedOfficeId, _) = OfficeIdResolver.Resolve(scope, officeId);
+        if (resolvedOfficeId != instance.OfficeId)
+        {
+            return (null, "Битрикс не найден.");
+        }
+
         var configuration = await db.BitrixWorkforceConfigurations
             .FirstOrDefaultAsync(x => x.BitrixInstanceId == bitrixInstanceId, ct);
         var existingManagers = await db.BitrixWorkforceManagers
@@ -64,6 +79,11 @@ public sealed class BitrixWorkforceSettingsService(
             .ToListAsync(ct);
         if (mode == BitrixWorkforceDistribution.WriterMode)
         {
+            if (!instance.IsEnabled)
+            {
+                return (null, "Невозможно включить writer: подключение Bitrix24 отключено.");
+            }
+
             if (configuration is null
                 || configuration.OperationMode is not (
                     BitrixWorkforceDistribution.ShadowMode
@@ -85,11 +105,58 @@ public sealed class BitrixWorkforceSettingsService(
                 return (null, "Невозможно включить writer: входящий REST-вебхук Bitrix24 не настроен.");
             }
 
+            var canonicalPortalHost = BitrixWebhookValidator.TryGetPortalHost(webhookUrl);
+            if (string.IsNullOrWhiteSpace(canonicalPortalHost))
+            {
+                return (
+                    null,
+                    "Невозможно включить writer: не удалось определить портал Bitrix24 из входящего REST-вебхука.");
+            }
+
+            if (settingsGateTransaction is not null)
+            {
+                await AcquireAdvisoryLockAsync(
+                    $"writer|{canonicalPortalHost.ToLowerInvariant()}|{request.DealCategoryId}",
+                    ct);
+            }
+
+            if (await HasCompetingWriterAsync(
+                    bitrixInstanceId,
+                    canonicalPortalHost,
+                    request.DealCategoryId,
+                    ct))
+            {
+                return (
+                    null,
+                    "Нельзя включить второй writer для того же портала и воронки: сначала отключите текущий writer.");
+            }
+
+            if (!string.Equals(
+                    instance.PortalHost,
+                    canonicalPortalHost,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                instance.PortalHost = canonicalPortalHost;
+            }
+
             try
             {
                 var integrationSettings = BitrixInstanceIntegrationSettings.Parse(
                     instance.IntegrationSettingsJson,
                     defaultBitrixOptions.Value);
+                if (EffectiveRules(request.StageRules).Any(x =>
+                        x.IsEnabled
+                        && string.Equals(
+                            x.Scenario,
+                            BitrixWorkforceDistribution.NewScenario,
+                            StringComparison.Ordinal))
+                    && integrationSettings.ResponsibleId <= 0)
+                {
+                    return (
+                        null,
+                        "Невозможно включить writer: укажите ответственного по умолчанию в настройках интеграции Bitrix24. Только этот пользователь считается безопасным исходным владельцем новой сделки.");
+                }
+
                 var requiredDealFieldCodes = new[]
                     {
                         integrationSettings.DealIdempotencyUfCode,
@@ -140,6 +207,20 @@ public sealed class BitrixWorkforceSettingsService(
                         "Невозможно включить writer: менеджеры Bitrix24 отсутствуют или неактивны: "
                         + string.Join(", ", missingOrInactiveManagerIds));
                 }
+
+                if (configuration.OperationMode == BitrixWorkforceDistribution.ShadowMode)
+                {
+                    var coverageError = await ValidateShadowCoverageAsync(
+                        instance.Id,
+                        webhookUrl,
+                        configuration,
+                        existingRules,
+                        ct);
+                    if (coverageError is not null)
+                    {
+                        return (null, coverageError);
+                    }
+                }
             }
             catch (Exception ex)
             {
@@ -150,6 +231,13 @@ public sealed class BitrixWorkforceSettingsService(
         }
 
         var now = DateTime.UtcNow;
+        if (configuration is not null && now <= configuration.UpdatedAtUtc)
+        {
+            // UpdatedAtUtc is also the configuration revision used by in-flight
+            // decisions and shadow coverage. Keep it strictly monotonic even when
+            // two saves land within the database timestamp precision.
+            now = configuration.UpdatedAtUtc.AddMilliseconds(1);
+        }
         if (configuration is null)
         {
             configuration = new BitrixWorkforceConfigurationEntity
@@ -213,6 +301,11 @@ public sealed class BitrixWorkforceSettingsService(
         }
 
         await db.SaveChangesAsync(ct);
+        if (settingsGateTransaction is not null)
+        {
+            await settingsGateTransaction.CommitAsync(ct);
+        }
+
         return (await BuildDtoAsync(bitrixInstanceId, ct), null);
     }
 
@@ -292,6 +385,194 @@ public sealed class BitrixWorkforceSettingsService(
                 x.AppliedAtUtc,
                 x.Error))
             .ToListAsync(ct);
+    }
+
+    private async Task<string?> ValidateShadowCoverageAsync(
+        Guid bitrixInstanceId,
+        string webhookUrl,
+        BitrixWorkforceConfigurationEntity configuration,
+        IReadOnlyList<BitrixWorkforceStageRuleEntity> rules,
+        CancellationToken ct)
+    {
+        var enabledRules = rules
+            .Where(x => x.IsEnabled)
+            .ToList();
+        var sourceStageIds = enabledRules
+            .Select(x => x.SourceStageId)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var currentDeals = (await bitrixClient.ListDealsAsync(
+                webhookUrl,
+                configuration.DealCategoryId,
+                sourceStageIds,
+                ct))
+            .GroupBy(x => x.DealId)
+            .Select(x => x.Last())
+            .ToList();
+        var statesByDealId = new Dictionary<long, BitrixWorkforceDealStateEntity>();
+        foreach (var dealIds in currentDeals.Select(x => x.DealId).Distinct().Chunk(500))
+        {
+            var states = await db.BitrixWorkforceDealStates
+                .AsNoTracking()
+                .Where(x => x.BitrixInstanceId == bitrixInstanceId
+                            && dealIds.Contains(x.DealId))
+                .ToListAsync(ct);
+            foreach (var state in states)
+            {
+                statesByDealId[state.DealId] = state;
+            }
+        }
+
+        var uncoveredDealIds = new List<long>();
+        foreach (var deal in currentDeals)
+        {
+            var rule = enabledRules.SingleOrDefault(x => string.Equals(
+                x.SourceStageId,
+                deal.StageId,
+                StringComparison.OrdinalIgnoreCase));
+            statesByDealId.TryGetValue(deal.DealId, out var state);
+            var handledAt = state?.ActiveScenarioShadowHandledAtUtc;
+            if (state?.ActiveScenarioWriterHandledAtUtc is DateTime writerHandledAt
+                && (handledAt is null || writerHandledAt > handledAt))
+            {
+                handledAt = writerHandledAt;
+            }
+
+            var covered = rule is not null
+                          && state is not null
+                          && string.Equals(
+                              state.LastObservedStageId,
+                              deal.StageId,
+                              StringComparison.OrdinalIgnoreCase)
+                          && string.Equals(
+                              state.ActiveScenario,
+                              rule.Scenario,
+                              StringComparison.Ordinal)
+                          && handledAt is DateTime observedAt
+                          && observedAt >= configuration.UpdatedAtUtc;
+            if (!covered)
+            {
+                uncoveredDealIds.Add(deal.DealId);
+            }
+        }
+
+        if (uncoveredDealIds.Count > 0)
+        {
+            const int sampleSize = 20;
+            var sample = string.Join(", ", uncoveredDealIds.Take(sampleSize));
+            var suffix = uncoveredDealIds.Count > sampleSize ? ", …" : string.Empty;
+            return $"Нельзя включить writer: shadow ещё не обработал {uncoveredDealIds.Count} текущих сделок на исходных стадиях (ID: {sample}{suffix}). Дождитесь завершения shadow-reconcile и повторите проверку.";
+        }
+
+        var verificationDeals = (await bitrixClient.ListDealsAsync(
+                webhookUrl,
+                configuration.DealCategoryId,
+                sourceStageIds,
+                ct))
+            .GroupBy(x => x.DealId)
+            .Select(x => x.Last())
+            .ToList();
+        var firstSnapshot = currentDeals.ToDictionary(
+            x => x.DealId,
+            x => (Stage: x.StageId.Trim().ToUpperInvariant(), Revision: x.Revision.Trim()));
+        var secondSnapshot = verificationDeals.ToDictionary(
+            x => x.DealId,
+            x => (Stage: x.StageId.Trim().ToUpperInvariant(), Revision: x.Revision.Trim()));
+        if (firstSnapshot.Count != secondSnapshot.Count
+            || firstSnapshot.Any(x => !secondSnapshot.TryGetValue(x.Key, out var revision)
+                                      || revision != x.Value))
+        {
+            return "Нельзя включить writer: сделки изменились во время shadow-проверки. Дождитесь стабильного reconcile и повторите попытку.";
+        }
+
+        return null;
+    }
+
+    private async Task<bool> HasCompetingWriterAsync(
+        Guid bitrixInstanceId,
+        string portalHost,
+        int dealCategoryId,
+        CancellationToken ct)
+    {
+        var candidates = await db.BitrixWorkforceConfigurations
+            .AsNoTracking()
+            .Join(
+                db.BitrixInstances.AsNoTracking(),
+                workforce => workforce.BitrixInstanceId,
+                portal => portal.Id,
+                (workforce, portal) => new { Workforce = workforce, Portal = portal })
+            .Where(x => x.Portal.Id != bitrixInstanceId
+                        && x.Portal.IsEnabled
+                        && x.Workforce.OperationMode == BitrixWorkforceDistribution.WriterMode
+                        && x.Workforce.DealCategoryId == dealCategoryId)
+            .Select(x => x.Portal)
+            .ToListAsync(ct);
+        foreach (var candidate in candidates)
+        {
+            var candidateWebhookUrl = await bitrixInstances.ResolveWebhookUrlAsync(candidate, ct);
+            var candidateHost = BitrixWebhookValidator.TryGetPortalHost(candidateWebhookUrl)
+                                ?? candidate.PortalHost?.Trim();
+            if (string.Equals(candidateHost, portalHost, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private async Task<IDbContextTransaction?> BeginSettingsGateTransactionAsync(
+        Guid bitrixInstanceId,
+        CancellationToken ct)
+    {
+        if (!string.Equals(
+                db.Database.ProviderName,
+                "Npgsql.EntityFrameworkCore.PostgreSQL",
+                StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var transaction = await db.Database.BeginTransactionAsync(ct);
+        try
+        {
+            await AcquireAdvisoryLockAsync($"settings|{bitrixInstanceId:D}", ct);
+            return transaction;
+        }
+        catch
+        {
+            await transaction.DisposeAsync();
+            throw;
+        }
+    }
+
+    private async Task<bool> LockAndReloadInstanceAsync(
+        BitrixInstanceEntity instance,
+        CancellationToken ct)
+    {
+        if (string.Equals(
+                db.Database.ProviderName,
+                "Npgsql.EntityFrameworkCore.PostgreSQL",
+                StringComparison.Ordinal))
+        {
+            await db.BitrixInstances
+                .FromSqlInterpolated(
+                    $"SELECT * FROM \"BitrixInstances\" WHERE \"Id\" = {instance.Id} FOR UPDATE")
+                .ToListAsync(ct);
+        }
+
+        await db.Entry(instance).ReloadAsync(ct);
+        return db.Entry(instance).State != EntityState.Detached;
+    }
+
+    private Task<int> AcquireAdvisoryLockAsync(string canonical, CancellationToken ct)
+    {
+        var lockKey = BitConverter.ToInt64(
+            SHA256.HashData(Encoding.UTF8.GetBytes(canonical)),
+            0);
+        return db.Database.ExecuteSqlInterpolatedAsync(
+            $"SELECT pg_advisory_xact_lock({lockKey})",
+            ct);
     }
 
     internal static string HashToken(string token) =>
@@ -411,6 +692,21 @@ public sealed class BitrixWorkforceSettingsService(
             .Any(x => x.Count() > 1))
         {
             return "Одна стадия не может участвовать в нескольких правилах.";
+        }
+
+        var crossScenarioTargetCollision = enabledRules.Any(targetRule =>
+            enabledRules.Any(sourceRule =>
+                !string.Equals(
+                    targetRule.Scenario.Trim(),
+                    sourceRule.Scenario.Trim(),
+                    StringComparison.Ordinal)
+                && string.Equals(
+                    targetRule.TargetStageId.Trim(),
+                    sourceRule.SourceStageId.Trim(),
+                    StringComparison.OrdinalIgnoreCase)));
+        if (crossScenarioTargetCollision)
+        {
+            return "Target-стадия одного сценария не может быть Source-стадией другого сценария: это вызовет каскадное повторное распределение.";
         }
 
         if (mode == BitrixWorkforceDistribution.WriterMode)

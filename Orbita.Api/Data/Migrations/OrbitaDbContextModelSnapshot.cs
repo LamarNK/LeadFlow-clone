@@ -518,13 +518,28 @@ namespace Orbita.Api.Data.Migrations
                     b.Property<long?>("LastAssignedBitrixUserId")
                         .HasColumnType("bigint");
 
-                    b.HasKey("BitrixInstanceId", "Scenario");
+                    b.Property<string>("OperationMode")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.HasKey("BitrixInstanceId", "Scenario", "OperationMode");
 
                     b.ToTable("BitrixWorkforceCursors");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.BitrixWorkforceDealStateEntity", b =>
                 {
+                    b.Property<string>("ActiveScenario")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTime?>("ActiveScenarioShadowHandledAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("ActiveScenarioWriterHandledAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<Guid>("BitrixInstanceId")
                         .HasColumnType("uuid");
 
@@ -636,10 +651,15 @@ namespace Orbita.Api.Data.Migrations
                     b.Property<int>("InitialReleasedCount")
                         .HasColumnType("integer");
 
+                    b.Property<string>("OperationMode")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
                     b.Property<DateTime?>("ReserveUntilUtc")
                         .HasColumnType("timestamp with time zone");
 
-                    b.HasKey("BitrixInstanceId", "LocalDate", "Scenario");
+                    b.HasKey("BitrixInstanceId", "LocalDate", "Scenario", "OperationMode");
 
                     b.ToTable("BitrixWorkforceMorningStates");
                 });

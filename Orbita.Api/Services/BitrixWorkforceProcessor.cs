@@ -154,7 +154,8 @@ public sealed class BitrixWorkforceProcessor(
                         dealId,
                         deal.StageId,
                         deal.Revision,
-                        localDate);
+                        localDate,
+                        configuration.UpdatedAtUtc);
                     if (await db.BitrixDealEventInbox.AnyAsync(
                             x => x.BitrixInstanceId == instance.Id && x.EventKey == eventKey,
                             ct))
@@ -218,11 +219,33 @@ public sealed class BitrixWorkforceProcessor(
             || !instance.IsEnabled
             || configuration.OperationMode == BitrixWorkforceDistribution.DisabledMode)
         {
+            await PreserveExistingAssignmentGuardAsync(job, ct);
             await CompleteAsync(job, "disabled", "Workforce distribution is disabled.", ct);
             return;
         }
 
         var webhookUrl = await bitrixInstances.ResolveWebhookUrlAsync(instance, ct);
+        var canonicalPortalHost = BitrixWebhookValidator.TryGetPortalHost(webhookUrl);
+        if (configuration.OperationMode == BitrixWorkforceDistribution.WriterMode
+            && (string.IsNullOrWhiteSpace(canonicalPortalHost)
+                || await HasCompetingWriterAsync(
+                    instance,
+                    configuration,
+                    canonicalPortalHost,
+                    ct)))
+        {
+            await PreserveExistingAssignmentGuardAsync(job, ct);
+            configuration.OperationMode = BitrixWorkforceDistribution.DisabledMode;
+            configuration.WriterRulesConfirmed = false;
+            configuration.UpdatedAtUtc = UtcNow();
+            await CompleteAsync(
+                job,
+                "duplicate_writer_configuration",
+                "Writer was disabled because its Bitrix24 connection is unsafe or another enabled Orbita writer targets the same portal and funnel.",
+                ct);
+            return;
+        }
+
         if (string.IsNullOrWhiteSpace(webhookUrl))
         {
             throw new InvalidOperationException("Bitrix24 webhook URL cannot be decrypted.");
@@ -246,6 +269,42 @@ public sealed class BitrixWorkforceProcessor(
         dealState.LastObservedStageId = deal.StageId;
         dealState.UpdatedAtUtc = UtcNow();
 
+        var sourceRule = deal.CategoryId == configuration.DealCategoryId
+            ? rules.FirstOrDefault(x =>
+                string.Equals(x.SourceStageId, deal.StageId, StringComparison.OrdinalIgnoreCase))
+            : null;
+        var observedScenario = ResolveObservedScenario(
+            deal,
+            configuration,
+            sourceRule,
+            rules,
+            dealState,
+            previouslyObservedStageId);
+        ObserveScenario(dealState, observedScenario);
+        var rule = sourceRule is not null
+                   && string.Equals(
+                       sourceRule.Scenario,
+                       observedScenario,
+                       StringComparison.Ordinal)
+            ? sourceRule
+            : null;
+        var sourceScenarioWasRemapped = sourceRule is not null
+                                        && rule is null
+                                        && !string.IsNullOrWhiteSpace(dealState.ActiveScenario)
+                                        && !rules.Any(x =>
+                                            string.Equals(
+                                                x.Scenario,
+                                                dealState.ActiveScenario,
+                                                StringComparison.Ordinal)
+                                            && (string.Equals(
+                                                    x.SourceStageId,
+                                                    deal.StageId,
+                                                    StringComparison.OrdinalIgnoreCase)
+                                                || string.Equals(
+                                                    x.TargetStageId,
+                                                    deal.StageId,
+                                                    StringComparison.OrdinalIgnoreCase)));
+
         if (deal.CategoryId != configuration.DealCategoryId)
         {
             await CompleteAsync(job, "category_mismatch", "Deal belongs to another funnel.", ct);
@@ -254,19 +313,47 @@ public sealed class BitrixWorkforceProcessor(
 
         var assignment = await db.BitrixWorkforceAssignments
             .FirstOrDefaultAsync(x => x.InboxId == job.Id, ct);
+
         if (assignment?.Decision == BitrixWorkforceDecisions.Assigned
             && assignment.SelectedResponsibleId is > 0)
         {
-            if (configuration.UpdatedAtUtc != assignment.ConfigurationRevisionAtUtc)
+            if (EnsureAssignmentScenarioHandled(
+                    dealState,
+                    assignment,
+                    deal,
+                    configuration,
+                    UtcNow()))
             {
-                await CompleteAsync(
-                    job,
-                    "configuration_changed",
-                    "Distribution settings changed after this assignment was selected.",
-                    ct);
-                return;
+                await db.SaveChangesAsync(ct);
+            }
+        }
+
+        if (assignment is not null
+            && configuration.UpdatedAtUtc != assignment.ConfigurationRevisionAtUtc)
+        {
+            if (string.Equals(
+                    dealState.ActiveScenario,
+                    assignment.Scenario,
+                    StringComparison.Ordinal))
+            {
+                MarkScenarioHandled(
+                    dealState,
+                    assignment.Scenario,
+                    assignment.OperationMode,
+                    UtcNow());
             }
 
+            await CompleteAsync(
+                job,
+                "configuration_changed",
+                "Distribution settings changed after this decision was created.",
+                ct);
+            return;
+        }
+
+        if (assignment?.Decision == BitrixWorkforceDecisions.Assigned
+            && assignment.SelectedResponsibleId is > 0)
+        {
             var remoteMatchesAppliedAssignment =
                 string.Equals(
                     deal.StageId,
@@ -288,59 +375,88 @@ public sealed class BitrixWorkforceProcessor(
                     deal,
                     dealState,
                     integrationSettings,
+                    instance,
                     configuration,
                     webhookUrl,
                     ct);
                 return;
             }
 
-            if (assignment.DealAppliedAtUtc is not null)
-            {
-                await CompleteAsync(
-                    job,
-                    "stale_partial_assignment",
-                    "Deal or responsible changed after the deal step; contact synchronization was cancelled.",
-                    ct);
-                return;
-            }
-
-            assignment.Decision = BitrixWorkforceDecisions.Ignored;
-            assignment.Reason =
-                "A previously selected assignment became stale because the deal stage changed.";
-            assignment.SelectedResponsibleId = null;
-            assignment.Error = null;
+            await CompleteAsync(
+                job,
+                assignment.DealAppliedAtUtc is not null
+                    ? "stale_partial_assignment"
+                    : "stale_selected_assignment",
+                assignment.DealAppliedAtUtc is not null
+                    ? "Deal or responsible changed after the deal step; contact synchronization was cancelled."
+                    : "Deal or responsible changed after a manager was selected; the current state is preserved.",
+                ct);
+            return;
         }
 
-        var rule = rules.FirstOrDefault(x =>
-            string.Equals(x.SourceStageId, deal.StageId, StringComparison.OrdinalIgnoreCase));
+        if (sourceScenarioWasRemapped)
+        {
+            var handledAt = UtcNow() < configuration.UpdatedAtUtc
+                ? configuration.UpdatedAtUtc
+                : UtcNow();
+            MarkScenarioHandled(
+                dealState,
+                sourceRule!.Scenario,
+                configuration.OperationMode,
+                handledAt);
+            await CompleteWithDecisionAsync(
+                job,
+                assignment,
+                sourceRule,
+                deal,
+                configuration,
+                BitrixWorkforceDecisions.Ignored,
+                "The source stage was remapped to another scenario; the current responsible is preserved.",
+                selectedManagerId: null,
+                ct);
+            return;
+        }
+
         if (rule is null)
         {
             await CompleteAsync(job, "stage_not_configured", "Deal stage is not configured.", ct);
             return;
         }
 
-        if ((assignment is null
-             || assignment.Decision != BitrixWorkforceDecisions.Assigned)
-            && dealState.LastAssignmentId is not null
-            && string.Equals(
-                dealState.LastAppliedStageId,
-                deal.StageId,
-                StringComparison.OrdinalIgnoreCase)
-            && (configuration.OperationMode == BitrixWorkforceDistribution.ShadowMode
-                ? string.Equals(
-                    previouslyObservedStageId,
-                    deal.StageId,
-                    StringComparison.OrdinalIgnoreCase)
-                : dealState.LastAppliedResponsibleId == deal.AssignedById))
+        var unprotectedPriorFailures = assignment is null
+            ? await db.BitrixDealEventInbox
+                .Where(prior => prior.BitrixInstanceId == job.BitrixInstanceId
+                                && prior.DealId == job.DealId
+                                && prior.Id != job.Id
+                                && prior.FailureCount > 0
+                                && !db.BitrixWorkforceAssignments.Any(
+                                    decision => decision.InboxId == prior.Id))
+                .ToListAsync(ct)
+            : [];
+        if (assignment is null
+            && (job.FailureCount > 0 || unprotectedPriorFailures.Count > 0))
         {
-            await CompleteAsync(job, "self_update", "State already matches the last applied decision.", ct);
-            return;
-        }
+            foreach (var priorFailure in unprotectedPriorFailures)
+            {
+                UpsertAssignment(
+                    priorFailure,
+                    null,
+                    rule,
+                    deal,
+                    configuration,
+                    BitrixWorkforceDecisions.Ignored,
+                    "Failure tombstone: the original owner was not captured.",
+                    selectedManagerId: null);
+            }
 
-        if (rule.Scenario == BitrixWorkforceDistribution.NewScenario
-            && configuration.PreserveManualNewOwner
-            && IsManagerCreatedDeal(deal, managerIds, integrationSettings.DealIdempotencyUfCode))
-        {
+            var handledAt = UtcNow() < configuration.UpdatedAtUtc
+                ? configuration.UpdatedAtUtc
+                : UtcNow();
+            MarkScenarioHandled(
+                dealState,
+                rule.Scenario,
+                configuration.OperationMode,
+                handledAt);
             await CompleteWithDecisionAsync(
                 job,
                 assignment,
@@ -348,7 +464,151 @@ public sealed class BitrixWorkforceProcessor(
                 deal,
                 configuration,
                 BitrixWorkforceDecisions.Ignored,
-                "NEW was created manually by a configured manager.",
+                "A previous attempt failed before the original owner could be recorded; the current owner is preserved.",
+                selectedManagerId: null,
+                ct);
+            return;
+        }
+
+        var scenarioHandledAt = GetScenarioHandledAt(dealState, configuration.OperationMode);
+        if (scenarioHandledAt is not null
+            && string.Equals(
+                dealState.ActiveScenario,
+                rule.Scenario,
+                StringComparison.Ordinal))
+        {
+            // Refresh the coverage marker under the currently saved configuration.
+            // This lets a shadow reconcile prove that an already protected deal was
+            // observed after the latest settings change without making a CRM write.
+            if (configuration.OperationMode == BitrixWorkforceDistribution.ShadowMode)
+            {
+                var handledAt = UtcNow() < configuration.UpdatedAtUtc
+                    ? configuration.UpdatedAtUtc
+                    : UtcNow();
+                MarkScenarioHandled(
+                    dealState,
+                    rule.Scenario,
+                    configuration.OperationMode,
+                    handledAt);
+            }
+            var stateMatchesLastDecision = string.Equals(
+                                               dealState.LastAppliedStageId,
+                                               deal.StageId,
+                                               StringComparison.OrdinalIgnoreCase)
+                                           && (configuration.OperationMode
+                                               == BitrixWorkforceDistribution.ShadowMode
+                                               ? string.Equals(
+                                                   previouslyObservedStageId,
+                                                   deal.StageId,
+                                                   StringComparison.OrdinalIgnoreCase)
+                                               : dealState.LastAppliedResponsibleId
+                                                 == deal.AssignedById);
+            await CompleteAsync(
+                job,
+                stateMatchesLastDecision ? "self_update" : "scenario_already_handled",
+                stateMatchesLastDecision
+                    ? "State already matches the last applied decision."
+                    : "This scenario entry was already handled; the current responsible is preserved.",
+                ct);
+            return;
+        }
+
+        if (assignment is null)
+        {
+            var priorActiveAssignment = await db.BitrixWorkforceAssignments
+                .Join(
+                    db.BitrixDealEventInbox,
+                    prior => prior.InboxId,
+                    inbox => inbox.Id,
+                    (prior, inbox) => new { Assignment = prior, Inbox = inbox })
+                .Where(x => x.Assignment.BitrixInstanceId == instance.Id
+                            && x.Assignment.DealId == deal.Id
+                            && x.Assignment.Scenario == rule.Scenario
+                            && x.Inbox.Id != job.Id
+                            && (x.Inbox.State == BitrixWorkforceInboxStates.Pending
+                                || x.Inbox.State == BitrixWorkforceInboxStates.Processing)
+                            && (x.Assignment.Decision == BitrixWorkforceDecisions.Deferred
+                                || x.Assignment.Decision == BitrixWorkforceDecisions.Reserved
+                                || x.Assignment.Decision == BitrixWorkforceDecisions.Assigned))
+                .OrderBy(x => x.Assignment.CreatedAtUtc)
+                .Select(x => x.Assignment)
+                .FirstOrDefaultAsync(ct);
+            if (priorActiveAssignment is not null)
+            {
+                if (priorActiveAssignment.PreviousResponsibleId != deal.AssignedById)
+                {
+                    MarkScenarioHandled(
+                        dealState,
+                        rule.Scenario,
+                        priorActiveAssignment.OperationMode,
+                        UtcNow());
+                    dealState.LastAssignmentId = priorActiveAssignment.Id;
+                }
+
+                await CompleteAsync(
+                    job,
+                    "another_event_active",
+                    "Another event already owns this scenario entry; its original-owner baseline is preserved.",
+                    ct);
+                return;
+            }
+        }
+
+        if (assignment is not null
+            && (assignment.Decision is BitrixWorkforceDecisions.Deferred
+                or BitrixWorkforceDecisions.Reserved))
+        {
+            if (!string.Equals(
+                    assignment.Scenario,
+                    rule.Scenario,
+                    StringComparison.Ordinal))
+            {
+                await CompleteAsync(
+                    job,
+                    "stale_deferred_assignment",
+                    "The deal entered another scenario while this decision was waiting.",
+                    ct);
+                return;
+            }
+
+            if (assignment.PreviousResponsibleId != deal.AssignedById)
+            {
+                MarkScenarioHandled(
+                    dealState,
+                    rule.Scenario,
+                    assignment.OperationMode,
+                    UtcNow());
+                await CompleteAsync(
+                    job,
+                    "responsible_changed_while_waiting",
+                    "The responsible changed while distribution was waiting; the current responsible is preserved.",
+                    ct);
+                return;
+            }
+        }
+
+        if (rule.Scenario == BitrixWorkforceDistribution.NewScenario
+            && configuration.PreserveManualNewOwner
+            && previouslyObservedStageId is null
+            && ShouldPreserveExistingNewOwner(
+                deal,
+                managerIds,
+                integrationSettings.ResponsibleId,
+                integrationSettings.DealIdempotencyUfCode))
+        {
+            MarkScenarioHandled(
+                dealState,
+                rule.Scenario,
+                configuration.OperationMode,
+                UtcNow());
+            await CompleteWithDecisionAsync(
+                job,
+                assignment,
+                rule,
+                deal,
+                configuration,
+                BitrixWorkforceDecisions.Ignored,
+                "NEW already has a non-default or manually selected responsible; the current owner is preserved.",
                 selectedManagerId: null,
                 ct);
             return;
@@ -389,6 +649,22 @@ public sealed class BitrixWorkforceProcessor(
             return;
         }
 
+        if (assignment is null)
+        {
+            assignment = UpsertAssignment(
+                job,
+                assignment,
+                rule,
+                deal,
+                configuration,
+                BitrixWorkforceDecisions.Deferred,
+                "Distribution evaluation started.",
+                selectedManagerId: null);
+            // Persist the original owner before any external manager-status request.
+            // A retry can then detect and preserve a manual owner change.
+            await db.SaveChangesAsync(ct);
+        }
+
         var statuses = await GetManagerStatusesAsync(
             instance.Id,
             webhookUrl,
@@ -419,6 +695,39 @@ public sealed class BitrixWorkforceProcessor(
             ct);
         try
         {
+            var lockedConfiguration = await LockConfigurationForSelectionAsync(
+                instance.Id,
+                ct);
+            var configurationStillMatchesDecision = lockedConfiguration is not null
+                                                    && lockedConfiguration.UpdatedAtUtc
+                                                    == assignment.ConfigurationRevisionAtUtc
+                                                    && string.Equals(
+                                                        lockedConfiguration.OperationMode,
+                                                        assignment.OperationMode,
+                                                        StringComparison.Ordinal)
+                                                    && (lockedConfiguration.OperationMode
+                                                        != BitrixWorkforceDistribution.WriterMode
+                                                        || lockedConfiguration.WriterRulesConfirmed);
+            if (!configurationStillMatchesDecision)
+            {
+                MarkScenarioHandled(
+                    dealState,
+                    rule.Scenario,
+                    assignment.OperationMode,
+                    UtcNow());
+                await CompleteAsync(
+                    job,
+                    "configuration_changed_before_selection",
+                    "Distribution settings changed while manager availability was being evaluated.",
+                    ct);
+                if (scenarioTransaction is not null)
+                {
+                    await scenarioTransaction.CommitAsync(ct);
+                }
+
+                return;
+            }
+
             var anotherAssignmentInFlight = await db.BitrixWorkforceAssignments
                 .AsNoTracking()
                 .AnyAsync(
@@ -488,14 +797,17 @@ public sealed class BitrixWorkforceProcessor(
 
             var cursor = await db.BitrixWorkforceCursors
                 .FirstOrDefaultAsync(
-                    x => x.BitrixInstanceId == instance.Id && x.Scenario == rule.Scenario,
+                    x => x.BitrixInstanceId == instance.Id
+                         && x.Scenario == rule.Scenario
+                         && x.OperationMode == configuration.OperationMode,
                     ct);
             if (cursor is null)
             {
                 cursor = new BitrixWorkforceCursorEntity
                 {
                     BitrixInstanceId = instance.Id,
-                    Scenario = rule.Scenario
+                    Scenario = rule.Scenario,
+                    OperationMode = configuration.OperationMode
                 };
                 db.BitrixWorkforceCursors.Add(cursor);
             }
@@ -531,8 +843,15 @@ public sealed class BitrixWorkforceProcessor(
                 BitrixWorkforceDecisions.Assigned,
                 "Round-robin among managers with an OPENED or PAUSED workday.",
                 selected);
+            var selectedAt = UtcNow();
             cursor.LastAssignedBitrixUserId = selected;
-            cursor.LastAssignedAtUtc = UtcNow();
+            cursor.LastAssignedAtUtc = selectedAt;
+            MarkScenarioHandled(
+                dealState,
+                rule.Scenario,
+                configuration.OperationMode,
+                selectedAt);
+            dealState.LastAssignmentId = assignment.Id;
             if (morningState is not null
                 && eligible.Count == 1
                 && eligible[0] == morningState.FirstManagerId
@@ -562,6 +881,7 @@ public sealed class BitrixWorkforceProcessor(
             deal,
             dealState,
             integrationSettings,
+            instance,
             configuration,
             webhookUrl,
             ct);
@@ -573,20 +893,35 @@ public sealed class BitrixWorkforceProcessor(
         BitrixWorkforceDeal deal,
         BitrixWorkforceDealStateEntity dealState,
         BitrixInstanceIntegrationSettings integrationSettings,
+        BitrixInstanceEntity instance,
         BitrixWorkforceConfigurationEntity configuration,
         string webhookUrl,
         CancellationToken ct)
     {
         var selected = assignment.SelectedResponsibleId
                        ?? throw new InvalidOperationException("Assignment has no selected manager.");
+        await using var settingsWriteTransaction = await BeginSettingsWriteTransactionAsync(
+            instance.Id,
+            ct);
         await db.Entry(configuration).ReloadAsync(ct);
-        if (configuration.UpdatedAtUtc != assignment.ConfigurationRevisionAtUtc)
+        await db.Entry(instance).ReloadAsync(ct);
+        var instanceRevisionAtUtc = instance.UpdatedAtUtc;
+
+        async Task CompleteAndCommitAsync(string reasonCode, string reason)
         {
-            await CompleteAsync(
-                job,
+            await CompleteAsync(job, reasonCode, reason, ct);
+            if (settingsWriteTransaction is not null)
+            {
+                await settingsWriteTransaction.CommitAsync(ct);
+            }
+        }
+
+        if (!instance.IsEnabled
+            || configuration.UpdatedAtUtc != assignment.ConfigurationRevisionAtUtc)
+        {
+            await CompleteAndCommitAsync(
                 "configuration_changed",
-                "Distribution settings changed after this assignment was selected.",
-                ct);
+                "The Bitrix24 connection or distribution settings changed after this assignment was selected.");
             return;
         }
 
@@ -597,36 +932,44 @@ public sealed class BitrixWorkforceProcessor(
             assignment.ContactsAppliedAtUtc = shadowAppliedAt;
             assignment.AppliedAtUtc = shadowAppliedAt;
             assignment.Error = null;
+            MarkScenarioHandled(
+                dealState,
+                assignment.Scenario,
+                BitrixWorkforceDistribution.ShadowMode,
+                shadowAppliedAt);
             dealState.LastAppliedStageId = assignment.ToStageId;
             dealState.LastAppliedResponsibleId = selected;
             dealState.LastAssignmentId = assignment.Id;
             dealState.UpdatedAtUtc = shadowAppliedAt;
             await CompleteJobAsync(job, ct);
+            if (settingsWriteTransaction is not null)
+            {
+                await settingsWriteTransaction.CommitAsync(ct);
+            }
             return;
         }
 
         if (configuration.OperationMode != BitrixWorkforceDistribution.WriterMode
             || !configuration.WriterRulesConfirmed)
         {
-            await CompleteAsync(
-                job,
+            await CompleteAndCommitAsync(
                 "writer_disabled_or_changed",
-                "Writer was disabled or its settings changed before the Bitrix24 write.",
-                ct);
+                "Writer was disabled or its settings changed before the Bitrix24 write.");
             return;
         }
 
         deal = await bitrixClient.GetDealAsync(webhookUrl, deal.Id, ct);
         await db.Entry(configuration).ReloadAsync(ct);
-        if (configuration.UpdatedAtUtc != assignment.ConfigurationRevisionAtUtc
+        await db.Entry(instance).ReloadAsync(ct);
+        if (!instance.IsEnabled
+            || instance.UpdatedAtUtc != instanceRevisionAtUtc
+            || configuration.UpdatedAtUtc != assignment.ConfigurationRevisionAtUtc
             || configuration.OperationMode != BitrixWorkforceDistribution.WriterMode
             || !configuration.WriterRulesConfirmed)
         {
-            await CompleteAsync(
-                job,
+            await CompleteAndCommitAsync(
                 "writer_disabled_or_changed_during_deal_refresh",
-                "Writer was disabled or its settings changed while refreshing the deal.",
-                ct);
+                "Writer was disabled or its settings changed while refreshing the deal.");
             return;
         }
 
@@ -646,11 +989,9 @@ public sealed class BitrixWorkforceProcessor(
                 ? !remoteMatchesOriginalDecision && !remoteMatchesAppliedAssignment
                 : !remoteMatchesAppliedAssignment)
         {
-            await CompleteAsync(
-                job,
+            await CompleteAndCommitAsync(
                 "stale_before_write",
-                "Deal stage, funnel or responsible changed before the Bitrix24 write.",
-                ct);
+                "Deal stage, funnel or responsible changed before the Bitrix24 write.");
             return;
         }
 
@@ -674,8 +1015,18 @@ public sealed class BitrixWorkforceProcessor(
                 await bitrixClient.UpdateDealAsync(webhookUrl, deal.Id, fields, ct);
             }
 
-            assignment.DealAppliedAtUtc = UtcNow();
+            var dealAppliedAt = UtcNow();
+            assignment.DealAppliedAtUtc = dealAppliedAt;
             assignment.Error = null;
+            MarkScenarioHandled(
+                dealState,
+                assignment.Scenario,
+                BitrixWorkforceDistribution.WriterMode,
+                dealAppliedAt);
+            dealState.LastAppliedStageId = assignment.ToStageId;
+            dealState.LastAppliedResponsibleId = selected;
+            dealState.LastAssignmentId = assignment.Id;
+            dealState.UpdatedAtUtc = dealAppliedAt;
             await db.SaveChangesAsync(ct);
         }
 
@@ -683,16 +1034,17 @@ public sealed class BitrixWorkforceProcessor(
         if (assignment.ContactsAppliedAtUtc is null)
         {
             await db.Entry(configuration).ReloadAsync(ct);
-            if (configuration.UpdatedAtUtc != assignment.ConfigurationRevisionAtUtc
+            await db.Entry(instance).ReloadAsync(ct);
+            if (!instance.IsEnabled
+                || instance.UpdatedAtUtc != instanceRevisionAtUtc
+                || configuration.UpdatedAtUtc != assignment.ConfigurationRevisionAtUtc
                 || configuration.OperationMode
                 != BitrixWorkforceDistribution.WriterMode
                 || !configuration.WriterRulesConfirmed)
             {
-                await CompleteAsync(
-                    job,
+                await CompleteAndCommitAsync(
                     "writer_disabled_or_changed_before_contact_sync",
-                    "Writer was disabled or its settings changed before contact synchronization.",
-                    ct);
+                    "Writer was disabled or its settings changed before contact synchronization.");
                 return;
             }
 
@@ -708,17 +1060,35 @@ public sealed class BitrixWorkforceProcessor(
                         assignment,
                         selected))
                 {
-                    await CompleteAsync(
-                        job,
+                    await CompleteAndCommitAsync(
                         "stale_before_contact_sync",
-                        "Deal changed after its update; contact synchronization was cancelled.",
-                        ct);
+                        "Deal changed after its update; contact synchronization was cancelled.");
                     return;
                 }
 
                 contactIds = await bitrixClient.GetDealContactIdsAsync(webhookUrl, deal.Id, ct);
                 foreach (var contactId in contactIds)
                 {
+                    var currentContactOwner = await bitrixClient.GetContactOwnerIdAsync(
+                        webhookUrl,
+                        contactId,
+                        ct);
+                    if (currentContactOwner == selected)
+                    {
+                        continue;
+                    }
+
+                    if (currentContactOwner != assignment.PreviousResponsibleId)
+                    {
+                        logger.LogInformation(
+                            "Bitrix contact {ContactId} owner {OwnerId} was preserved while assigning deal {DealId}; expected baseline owner {BaselineOwnerId}.",
+                            contactId,
+                            currentContactOwner,
+                            deal.Id,
+                            assignment.PreviousResponsibleId);
+                        continue;
+                    }
+
                     await bitrixClient.UpdateContactOwnerAsync(
                         webhookUrl,
                         contactId,
@@ -736,11 +1106,255 @@ public sealed class BitrixWorkforceProcessor(
 
         assignment.AppliedAtUtc = UtcNow();
         assignment.Error = null;
-        dealState.LastAppliedStageId = assignment.ToStageId;
-        dealState.LastAppliedResponsibleId = selected;
-        dealState.LastAssignmentId = assignment.Id;
         dealState.UpdatedAtUtc = UtcNow();
         await CompleteJobAsync(job, ct);
+        if (settingsWriteTransaction is not null)
+        {
+            await settingsWriteTransaction.CommitAsync(ct);
+        }
+    }
+
+    private static string? ResolveObservedScenario(
+        BitrixWorkforceDeal deal,
+        BitrixWorkforceConfigurationEntity configuration,
+        BitrixWorkforceStageRuleEntity? sourceRule,
+        IReadOnlyCollection<BitrixWorkforceStageRuleEntity> rules,
+        BitrixWorkforceDealStateEntity dealState,
+        string? previouslyObservedStageId)
+    {
+        if (deal.CategoryId != configuration.DealCategoryId)
+        {
+            return null;
+        }
+
+        var activeScenario = dealState.ActiveScenario;
+        if (!string.IsNullOrWhiteSpace(activeScenario)
+            && string.Equals(
+                previouslyObservedStageId,
+                deal.StageId,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            // A settings edit must not look like the deal left and re-entered a scenario.
+            // If Bitrix still reports the exact same stage, retain the existing entry guard.
+            return activeScenario;
+        }
+
+        if (!string.IsNullOrWhiteSpace(activeScenario)
+            && rules.Any(x =>
+                string.Equals(x.Scenario, activeScenario, StringComparison.Ordinal)
+                && (string.Equals(
+                        x.SourceStageId,
+                        deal.StageId,
+                        StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(
+                        x.TargetStageId,
+                        deal.StageId,
+                        StringComparison.OrdinalIgnoreCase))))
+        {
+            return activeScenario;
+        }
+
+        return sourceRule?.Scenario;
+    }
+
+    private void ObserveScenario(
+        BitrixWorkforceDealStateEntity dealState,
+        string? observedScenario)
+    {
+        var normalized = string.IsNullOrWhiteSpace(observedScenario)
+            ? null
+            : observedScenario.Trim();
+        if (string.Equals(dealState.ActiveScenario, normalized, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        dealState.ActiveScenario = normalized;
+        dealState.ActiveScenarioShadowHandledAtUtc = null;
+        dealState.ActiveScenarioWriterHandledAtUtc = null;
+        dealState.UpdatedAtUtc = UtcNow();
+    }
+
+    private static DateTime? GetScenarioHandledAt(
+        BitrixWorkforceDealStateEntity dealState,
+        string operationMode) =>
+        operationMode switch
+        {
+            BitrixWorkforceDistribution.ShadowMode =>
+                dealState.ActiveScenarioShadowHandledAtUtc
+                ?? dealState.ActiveScenarioWriterHandledAtUtc,
+            BitrixWorkforceDistribution.WriterMode =>
+                dealState.ActiveScenarioWriterHandledAtUtc
+                ?? dealState.ActiveScenarioShadowHandledAtUtc,
+            _ => null
+        };
+
+    private void MarkScenarioHandled(
+        BitrixWorkforceDealStateEntity dealState,
+        string scenario,
+        string operationMode,
+        DateTime handledAtUtc)
+    {
+        if (!string.Equals(dealState.ActiveScenario, scenario, StringComparison.Ordinal))
+        {
+            dealState.ActiveScenario = scenario;
+            dealState.ActiveScenarioShadowHandledAtUtc = null;
+            dealState.ActiveScenarioWriterHandledAtUtc = null;
+        }
+
+        if (operationMode == BitrixWorkforceDistribution.ShadowMode)
+        {
+            if (dealState.ActiveScenarioShadowHandledAtUtc is not DateTime shadowHandledAt
+                || shadowHandledAt < handledAtUtc)
+            {
+                dealState.ActiveScenarioShadowHandledAtUtc = handledAtUtc;
+            }
+        }
+        else if (operationMode == BitrixWorkforceDistribution.WriterMode)
+        {
+            if (dealState.ActiveScenarioWriterHandledAtUtc is not DateTime writerHandledAt
+                || writerHandledAt < handledAtUtc)
+            {
+                dealState.ActiveScenarioWriterHandledAtUtc = handledAtUtc;
+            }
+        }
+
+        if (dealState.UpdatedAtUtc < handledAtUtc)
+        {
+            dealState.UpdatedAtUtc = handledAtUtc;
+        }
+    }
+
+    private bool EnsureAssignmentScenarioHandled(
+        BitrixWorkforceDealStateEntity dealState,
+        BitrixWorkforceAssignmentEntity assignment,
+        BitrixWorkforceDeal deal,
+        BitrixWorkforceConfigurationEntity configuration,
+        DateTime handledAtUtc)
+    {
+        var belongsToCurrentScenario = string.Equals(
+                                           dealState.ActiveScenario,
+                                           assignment.Scenario,
+                                           StringComparison.Ordinal)
+                                       || (string.IsNullOrWhiteSpace(dealState.ActiveScenario)
+                                           && deal.CategoryId == configuration.DealCategoryId
+                                           && (string.Equals(
+                                                   deal.StageId,
+                                                   assignment.FromStageId,
+                                                   StringComparison.OrdinalIgnoreCase)
+                                               || string.Equals(
+                                                   deal.StageId,
+                                                   assignment.ToStageId,
+                                                   StringComparison.OrdinalIgnoreCase)));
+        if (!belongsToCurrentScenario)
+        {
+            return false;
+        }
+
+        var previousScenario = dealState.ActiveScenario;
+        var previousShadowHandledAt = dealState.ActiveScenarioShadowHandledAtUtc;
+        var previousWriterHandledAt = dealState.ActiveScenarioWriterHandledAtUtc;
+        var previousLastAssignmentId = dealState.LastAssignmentId;
+        var previousLastAppliedStageId = dealState.LastAppliedStageId;
+        var previousLastAppliedResponsibleId = dealState.LastAppliedResponsibleId;
+
+        MarkScenarioHandled(
+            dealState,
+            assignment.Scenario,
+            assignment.OperationMode,
+            assignment.DealAppliedAtUtc
+            ?? assignment.AppliedAtUtc
+            ?? (assignment.CreatedAtUtc == default
+                ? handledAtUtc
+                : assignment.CreatedAtUtc));
+        dealState.LastAssignmentId = assignment.Id;
+        if (assignment.DealAppliedAtUtc is not null
+            || (assignment.OperationMode == BitrixWorkforceDistribution.ShadowMode
+                && assignment.AppliedAtUtc is not null))
+        {
+            dealState.LastAppliedStageId = assignment.ToStageId;
+            dealState.LastAppliedResponsibleId = assignment.SelectedResponsibleId;
+        }
+
+        return !string.Equals(previousScenario, dealState.ActiveScenario, StringComparison.Ordinal)
+               || previousShadowHandledAt != dealState.ActiveScenarioShadowHandledAtUtc
+               || previousWriterHandledAt != dealState.ActiveScenarioWriterHandledAtUtc
+               || previousLastAssignmentId != dealState.LastAssignmentId
+               || !string.Equals(
+                   previousLastAppliedStageId,
+                   dealState.LastAppliedStageId,
+                   StringComparison.OrdinalIgnoreCase)
+               || previousLastAppliedResponsibleId != dealState.LastAppliedResponsibleId;
+    }
+
+    private async Task PreserveExistingAssignmentGuardAsync(
+        BitrixDealEventInboxEntity job,
+        CancellationToken ct)
+    {
+        var assignment = await db.BitrixWorkforceAssignments
+            .FirstOrDefaultAsync(x => x.InboxId == job.Id, ct);
+        if (assignment is null
+            || string.IsNullOrWhiteSpace(assignment.Scenario)
+            || assignment.OperationMode is not (
+                BitrixWorkforceDistribution.ShadowMode
+                or BitrixWorkforceDistribution.WriterMode))
+        {
+            return;
+        }
+
+        var dealState = await db.BitrixWorkforceDealStates
+            .FirstOrDefaultAsync(
+                x => x.BitrixInstanceId == assignment.BitrixInstanceId
+                     && x.DealId == assignment.DealId,
+                ct);
+        if (dealState is null
+            || !string.Equals(
+                dealState.ActiveScenario,
+                assignment.Scenario,
+                StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        MarkScenarioHandled(
+            dealState,
+            assignment.Scenario,
+            assignment.OperationMode,
+            UtcNow());
+        dealState.LastAssignmentId = assignment.Id;
+    }
+
+    private async Task<bool> HasCompetingWriterAsync(
+        BitrixInstanceEntity instance,
+        BitrixWorkforceConfigurationEntity configuration,
+        string portalHost,
+        CancellationToken ct)
+    {
+        var candidates = await db.BitrixWorkforceConfigurations
+            .AsNoTracking()
+            .Join(
+                db.BitrixInstances.AsNoTracking(),
+                workforce => workforce.BitrixInstanceId,
+                portal => portal.Id,
+                (workforce, portal) => new { Workforce = workforce, Portal = portal })
+            .Where(x => x.Portal.Id != instance.Id
+                        && x.Portal.IsEnabled
+                        && x.Workforce.OperationMode == BitrixWorkforceDistribution.WriterMode
+                        && x.Workforce.DealCategoryId == configuration.DealCategoryId)
+            .Select(x => x.Portal)
+            .ToListAsync(ct);
+        foreach (var candidate in candidates)
+        {
+            var candidateWebhookUrl = await bitrixInstances.ResolveWebhookUrlAsync(candidate, ct);
+            var candidateHost = BitrixWebhookValidator.TryGetPortalHost(candidateWebhookUrl)
+                                ?? candidate.PortalHost?.Trim();
+            if (string.Equals(candidateHost, portalHost, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static bool RemoteMatchesAppliedAssignment(
@@ -771,7 +1385,8 @@ public sealed class BitrixWorkforceProcessor(
             .FirstOrDefaultAsync(
                 x => x.BitrixInstanceId == instance.Id
                      && x.LocalDate == localDate
-                     && x.Scenario == rule.Scenario,
+                     && x.Scenario == rule.Scenario
+                     && x.OperationMode == configuration.OperationMode,
                 ct);
         if (state is not null)
         {
@@ -804,6 +1419,7 @@ public sealed class BitrixWorkforceProcessor(
             BitrixInstanceId = instance.Id,
             LocalDate = localDate,
             Scenario = rule.Scenario,
+            OperationMode = configuration.OperationMode,
             FirstManagerId = eligible[0],
             FirstManagerSeenAtUtc = UtcNow(),
             ReserveUntilUtc = reserveUntil,
@@ -902,6 +1518,8 @@ public sealed class BitrixWorkforceProcessor(
         string reason,
         long? selectedManagerId)
     {
+        var isNewAssignment = assignment is null;
+        var wasAssigned = assignment?.Decision == BitrixWorkforceDecisions.Assigned;
         if (assignment is null)
         {
             assignment = new BitrixWorkforceAssignmentEntity
@@ -913,19 +1531,23 @@ public sealed class BitrixWorkforceProcessor(
                 CreatedAtUtc = UtcNow()
             };
             db.BitrixWorkforceAssignments.Add(assignment);
+            assignment.PreviousResponsibleId = deal.AssignedById;
         }
 
         if (decision == BitrixWorkforceDecisions.Assigned
-            && assignment.Decision != BitrixWorkforceDecisions.Assigned)
+            && !wasAssigned)
         {
             assignment.CreatedAtUtc = UtcNow();
         }
 
         assignment.Scenario = rule.Scenario;
         assignment.OperationMode = configuration.OperationMode;
-        assignment.FromStageId = deal.StageId;
-        assignment.ToStageId = rule.TargetStageId;
-        assignment.PreviousResponsibleId = deal.AssignedById;
+        if (isNewAssignment || !wasAssigned)
+        {
+            assignment.FromStageId = deal.StageId;
+            assignment.ToStageId = rule.TargetStageId;
+        }
+
         assignment.SelectedResponsibleId = selectedManagerId;
         assignment.Decision = decision;
         assignment.Reason = reason;
@@ -1008,6 +1630,27 @@ public sealed class BitrixWorkforceProcessor(
             if (assignment is not null)
             {
                 assignment.Decision = BitrixWorkforceDecisions.Failed;
+                var dealState = await db.BitrixWorkforceDealStates
+                    .FirstOrDefaultAsync(
+                        x => x.BitrixInstanceId == assignment.BitrixInstanceId
+                             && x.DealId == assignment.DealId,
+                        ct);
+                if (dealState is not null
+                    && string.Equals(
+                        dealState.ActiveScenario,
+                        assignment.Scenario,
+                        StringComparison.Ordinal)
+                    && assignment.OperationMode is (
+                        BitrixWorkforceDistribution.ShadowMode
+                        or BitrixWorkforceDistribution.WriterMode))
+                {
+                    MarkScenarioHandled(
+                        dealState,
+                        assignment.Scenario,
+                        assignment.OperationMode,
+                        UtcNow());
+                    dealState.LastAssignmentId = assignment.Id;
+                }
             }
         }
         else
@@ -1070,20 +1713,31 @@ public sealed class BitrixWorkforceProcessor(
         fields[code] = value.Trim();
     }
 
-    private static bool IsManagerCreatedDeal(
+    private static bool ShouldPreserveExistingNewOwner(
         BitrixWorkforceDeal deal,
         IReadOnlyCollection<long> managerIds,
+        long replaceableResponsibleId,
         string idempotencyFieldCode)
     {
-        if (deal.CreatedById is not long creatorId || !managerIds.Contains(creatorId))
+        if (deal.AssignedById is long currentOwnerId
+            && currentOwnerId > 0
+            && (replaceableResponsibleId <= 0
+                || currentOwnerId != replaceableResponsibleId))
+        {
+            return true;
+        }
+
+        var code = idempotencyFieldCode?.Trim() ?? string.Empty;
+        var hasLeadFlowMarker = code.Length > 0
+                                && deal.Fields.TryGetValue(code, out var marker)
+                                && !string.IsNullOrWhiteSpace(marker);
+        if (hasLeadFlowMarker)
         {
             return false;
         }
 
-        var code = idempotencyFieldCode?.Trim() ?? string.Empty;
-        return code.Length == 0
-               || !deal.Fields.TryGetValue(code, out var marker)
-               || string.IsNullOrWhiteSpace(marker);
+        return deal.CreatedById is long creatorId && managerIds.Contains(creatorId)
+               || deal.ModifiedById is long modifierId && managerIds.Contains(modifierId);
     }
 
     private static string BuildReconciliationEventKey(
@@ -1091,7 +1745,8 @@ public sealed class BitrixWorkforceProcessor(
         long dealId,
         string stageId,
         string revision,
-        DateOnly localDate)
+        DateOnly localDate,
+        DateTime configurationRevisionAtUtc)
     {
         var canonical = string.Join(
             '|',
@@ -1099,6 +1754,7 @@ public sealed class BitrixWorkforceProcessor(
             instanceId.ToString("N"),
             dealId.ToString(CultureInfo.InvariantCulture),
             stageId.Trim().ToUpperInvariant(),
+            configurationRevisionAtUtc.Ticks.ToString(CultureInfo.InvariantCulture),
             string.IsNullOrWhiteSpace(revision)
                 ? localDate.ToString("yyyyMMdd", CultureInfo.InvariantCulture)
                 : revision.Trim());
@@ -1303,6 +1959,55 @@ public sealed class BitrixWorkforceProcessor(
             await transaction.DisposeAsync();
             throw;
         }
+    }
+
+    private async Task<IDbContextTransaction?> BeginSettingsWriteTransactionAsync(
+        Guid bitrixInstanceId,
+        CancellationToken ct)
+    {
+        if (!UsesPostgres())
+        {
+            return null;
+        }
+
+        var transaction = await db.Database.BeginTransactionAsync(ct);
+        try
+        {
+            var lockKey = BuildAdvisoryLockKey($"settings|{bitrixInstanceId:D}");
+            await db.Database.ExecuteSqlInterpolatedAsync(
+                $"SELECT pg_advisory_xact_lock({lockKey})",
+                ct);
+            return transaction;
+        }
+        catch
+        {
+            await transaction.DisposeAsync();
+            throw;
+        }
+    }
+
+    private async Task<BitrixWorkforceConfigurationEntity?> LockConfigurationForSelectionAsync(
+        Guid bitrixInstanceId,
+        CancellationToken ct)
+    {
+        if (!UsesPostgres())
+        {
+            return await db.BitrixWorkforceConfigurations
+                .AsNoTracking()
+                .FirstOrDefaultAsync(x => x.BitrixInstanceId == bitrixInstanceId, ct);
+        }
+
+        var rows = await db.BitrixWorkforceConfigurations
+            .FromSqlInterpolated(
+                $"""
+                 SELECT *
+                 FROM "BitrixWorkforceConfigurations"
+                 WHERE "BitrixInstanceId" = {bitrixInstanceId}
+                 FOR UPDATE
+                 """)
+            .AsNoTracking()
+            .ToListAsync(ct);
+        return rows.SingleOrDefault();
     }
 
     private bool UsesPostgres() =>

@@ -322,8 +322,9 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
 
         modelBuilder.Entity<BitrixWorkforceCursorEntity>(entity =>
         {
-            entity.HasKey(x => new { x.BitrixInstanceId, x.Scenario });
+            entity.HasKey(x => new { x.BitrixInstanceId, x.Scenario, x.OperationMode });
             entity.Property(x => x.Scenario).HasMaxLength(64);
+            entity.Property(x => x.OperationMode).HasMaxLength(16);
             entity.HasOne(x => x.BitrixInstance)
                 .WithMany()
                 .HasForeignKey(x => x.BitrixInstanceId)
@@ -333,6 +334,7 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
         modelBuilder.Entity<BitrixWorkforceDealStateEntity>(entity =>
         {
             entity.HasKey(x => new { x.BitrixInstanceId, x.DealId });
+            entity.Property(x => x.ActiveScenario).HasMaxLength(64);
             entity.Property(x => x.LastObservedStageId).HasMaxLength(128);
             entity.Property(x => x.LastAppliedStageId).HasMaxLength(128);
             entity.HasOne(x => x.BitrixInstance)
@@ -343,8 +345,15 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
 
         modelBuilder.Entity<BitrixWorkforceMorningStateEntity>(entity =>
         {
-            entity.HasKey(x => new { x.BitrixInstanceId, x.LocalDate, x.Scenario });
+            entity.HasKey(x => new
+            {
+                x.BitrixInstanceId,
+                x.LocalDate,
+                x.Scenario,
+                x.OperationMode
+            });
             entity.Property(x => x.Scenario).HasMaxLength(64);
+            entity.Property(x => x.OperationMode).HasMaxLength(16);
             entity.HasOne(x => x.BitrixInstance)
                 .WithMany()
                 .HasForeignKey(x => x.BitrixInstanceId)

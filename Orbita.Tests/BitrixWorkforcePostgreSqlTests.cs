@@ -1,6 +1,8 @@
 using System.Collections.Concurrent;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Orbita.Api.Data;
@@ -15,6 +17,296 @@ public sealed class BitrixWorkforcePostgreSqlTests
 {
     private const string ConnectionStringVariable =
         "ORBITA_TEST_POSTGRES_CONNECTION_STRING";
+    private const string PreviousWorkforceMigration =
+        "20260803231231_AddBitrixWorkforceDistribution";
+    private const string ScenarioGuardMigration =
+        "20260804120000_AddWorkforceScenarioEntryGuard";
+
+    [PostgreSqlFact]
+    public async Task ScenarioGuardMigration_BackfillsLegacyProtectedWorkforceStates()
+    {
+        var baseConnectionString = Environment.GetEnvironmentVariable(
+            ConnectionStringVariable)!;
+        var schema = $"workforce_migration_{Guid.NewGuid():N}";
+        var schemaConnectionString =
+            $"{baseConnectionString.Trim().TrimEnd(';')};Search Path={schema}";
+        var bootstrapOptions = new DbContextOptionsBuilder<OrbitaDbContext>()
+            .UseNpgsql(baseConnectionString)
+            .Options;
+
+        await using (var bootstrap = new OrbitaDbContext(bootstrapOptions))
+        {
+            await bootstrap.Database.ExecuteSqlRawAsync(
+                $"CREATE SCHEMA \"{schema}\"");
+        }
+
+        try
+        {
+            var options = new DbContextOptionsBuilder<OrbitaDbContext>()
+                .UseNpgsql(schemaConnectionString)
+                .Options;
+            await using (var migrationDb = new OrbitaDbContext(options))
+            {
+                await migrationDb.GetService<IMigrator>()
+                    .MigrateAsync(PreviousWorkforceMigration);
+            }
+
+            var now = new DateTime(2026, 8, 4, 6, 0, 0, DateTimeKind.Utc);
+            var officeId = Guid.NewGuid();
+            var instanceId = Guid.NewGuid();
+            var relevantAssignmentId = Guid.NewGuid();
+            var ignoredAssignmentId = Guid.NewGuid();
+            var repeatedDeferredAssignmentId = Guid.NewGuid();
+
+            await using (var seed = new OrbitaDbContext(options))
+            {
+                seed.Offices.Add(new OfficeEntity
+                {
+                    Id = officeId,
+                    Name = "Workforce migration test",
+                    RegistrationSecretHash = "hash",
+                    CreatedAtUtc = now
+                });
+                seed.BitrixInstances.Add(new BitrixInstanceEntity
+                {
+                    Id = instanceId,
+                    OfficeId = officeId,
+                    Name = "Legacy Bitrix",
+                    PortalHost = "legacy.bitrix24.ru",
+                    WebhookUrlProtected = "protected",
+                    IntegrationSettingsJson = "{}",
+                    IsEnabled = true,
+                    CreatedAtUtc = now,
+                    UpdatedAtUtc = now
+                });
+                seed.BitrixWorkforceStageRules.AddRange(
+                    new BitrixWorkforceStageRuleEntity
+                    {
+                        Id = Guid.NewGuid(),
+                        BitrixInstanceId = instanceId,
+                        Scenario = BitrixWorkforceDistribution.MissedCallScenario,
+                        SourceStageId = "A_SOURCE",
+                        TargetStageId = "A_TARGET",
+                        UsesMorningWindow = false,
+                        SortOrder = 0,
+                        IsEnabled = true
+                    },
+                    new BitrixWorkforceStageRuleEntity
+                    {
+                        Id = Guid.NewGuid(),
+                        BitrixInstanceId = instanceId,
+                        Scenario = BitrixWorkforceDistribution.SubstituteMissedCallScenario,
+                        SourceStageId = "B_SOURCE",
+                        TargetStageId = "B_TARGET",
+                        UsesMorningWindow = false,
+                        SortOrder = 1,
+                        IsEnabled = true
+                    },
+                    new BitrixWorkforceStageRuleEntity
+                    {
+                        Id = Guid.NewGuid(),
+                        BitrixInstanceId = instanceId,
+                        Scenario = BitrixWorkforceDistribution.MissedCallScenario,
+                        SourceStageId = "A_THIRD",
+                        TargetStageId = "A_THIRD_TARGET",
+                        UsesMorningWindow = false,
+                        SortOrder = 2,
+                        IsEnabled = true
+                    });
+                var relevantInbox = NewEvent(instanceId, 8101, "legacy-relevant", now);
+                var newerIrrelevantInbox = NewEvent(instanceId, 8101, "legacy-irrelevant", now);
+                var ignoredInbox = NewEvent(instanceId, 8102, "legacy-ignored", now);
+                var repeatedDeferredInbox = NewEvent(
+                    instanceId,
+                    8103,
+                    "legacy-repeated-deferred",
+                    now);
+                repeatedDeferredInbox.AttemptCount = 2;
+                var failedBeforeDecisionInbox = NewEvent(
+                    instanceId,
+                    8104,
+                    "legacy-failed-before-decision",
+                    now);
+                failedBeforeDecisionInbox.AttemptCount = 1;
+                failedBeforeDecisionInbox.FailureCount = 1;
+                seed.BitrixDealEventInbox.AddRange(
+                    relevantInbox,
+                    newerIrrelevantInbox,
+                    ignoredInbox,
+                    repeatedDeferredInbox,
+                    failedBeforeDecisionInbox);
+                await seed.SaveChangesAsync();
+
+                seed.BitrixWorkforceAssignments.AddRange(
+                    new BitrixWorkforceAssignmentEntity
+                    {
+                        Id = relevantAssignmentId,
+                        InboxId = relevantInbox.Id,
+                        BitrixInstanceId = instanceId,
+                        DealId = 8101,
+                        Scenario = BitrixWorkforceDistribution.MissedCallScenario,
+                        OperationMode = BitrixWorkforceDistribution.WriterMode,
+                        FromStageId = "A_SOURCE",
+                        ToStageId = "A_TARGET",
+                        PreviousResponsibleId = 999,
+                        SelectedResponsibleId = 10,
+                        Decision = BitrixWorkforceDecisions.Assigned,
+                        Reason = "Legacy partial writer saga",
+                        CreatedAtUtc = now.AddMinutes(-5),
+                        DealAppliedAtUtc = now.AddMinutes(-4)
+                    },
+                    new BitrixWorkforceAssignmentEntity
+                    {
+                        Id = Guid.NewGuid(),
+                        InboxId = newerIrrelevantInbox.Id,
+                        BitrixInstanceId = instanceId,
+                        DealId = 8101,
+                        Scenario = BitrixWorkforceDistribution.SubstituteMissedCallScenario,
+                        OperationMode = BitrixWorkforceDistribution.WriterMode,
+                        FromStageId = "B_SOURCE",
+                        ToStageId = "B_TARGET",
+                        PreviousResponsibleId = 10,
+                        SelectedResponsibleId = 20,
+                        Decision = BitrixWorkforceDecisions.Assigned,
+                        Reason = "Newer assignment from another scenario",
+                        CreatedAtUtc = now.AddMinutes(-1)
+                    },
+                    new BitrixWorkforceAssignmentEntity
+                    {
+                        Id = ignoredAssignmentId,
+                        InboxId = ignoredInbox.Id,
+                        BitrixInstanceId = instanceId,
+                        DealId = 8102,
+                        Scenario = BitrixWorkforceDistribution.MissedCallScenario,
+                        OperationMode = BitrixWorkforceDistribution.WriterMode,
+                        FromStageId = "A_SOURCE",
+                        ToStageId = "A_TARGET",
+                        PreviousResponsibleId = 999,
+                        SelectedResponsibleId = 30,
+                        Decision = BitrixWorkforceDecisions.Ignored,
+                        Reason = "Legacy selected assignment cancelled before write",
+                        CreatedAtUtc = now.AddMinutes(-3)
+                    },
+                    new BitrixWorkforceAssignmentEntity
+                    {
+                        Id = repeatedDeferredAssignmentId,
+                        InboxId = repeatedDeferredInbox.Id,
+                        BitrixInstanceId = instanceId,
+                        DealId = 8103,
+                        Scenario = BitrixWorkforceDistribution.MissedCallScenario,
+                        OperationMode = BitrixWorkforceDistribution.WriterMode,
+                        FromStageId = "A_SOURCE",
+                        ToStageId = "A_TARGET",
+                        PreviousResponsibleId = 36,
+                        SelectedResponsibleId = null,
+                        Decision = BitrixWorkforceDecisions.Deferred,
+                        Reason = "Legacy deferred assignment retried more than once",
+                        CreatedAtUtc = now.AddMinutes(-2)
+                    });
+                await seed.SaveChangesAsync();
+
+                await seed.Database.ExecuteSqlInterpolatedAsync(
+                    $"""
+                     INSERT INTO "BitrixWorkforceDealStates" (
+                         "BitrixInstanceId",
+                         "DealId",
+                         "LastObservedStageId",
+                         "LastAppliedStageId",
+                         "LastAppliedResponsibleId",
+                         "LastAssignmentId",
+                         "UpdatedAtUtc")
+                     VALUES
+                     (
+                         {instanceId},
+                         {8101L},
+                         {"A_TARGET"},
+                         NULL,
+                         NULL,
+                         NULL,
+                         {now.AddMinutes(-10)}),
+                     (
+                         {instanceId},
+                         {8102L},
+                         {"A_THIRD"},
+                         NULL,
+                         NULL,
+                         NULL,
+                         {now.AddMinutes(-10)}),
+                     (
+                         {instanceId},
+                         {8103L},
+                         {"A_TARGET"},
+                         NULL,
+                         NULL,
+                         NULL,
+                         {now.AddMinutes(-10)}),
+                     (
+                         {instanceId},
+                         {8104L},
+                         {"A_TARGET"},
+                         NULL,
+                         NULL,
+                         NULL,
+                         {now.AddMinutes(-10)})
+                     """);
+            }
+
+            await using (var migrationDb = new OrbitaDbContext(options))
+            {
+                await migrationDb.GetService<IMigrator>()
+                    .MigrateAsync(ScenarioGuardMigration);
+            }
+
+            await using var verify = new OrbitaDbContext(options);
+            var state = await verify.BitrixWorkforceDealStates
+                .AsNoTracking()
+                .SingleAsync(x => x.BitrixInstanceId == instanceId && x.DealId == 8101);
+            Assert.Equal(BitrixWorkforceDistribution.MissedCallScenario, state.ActiveScenario);
+            Assert.Equal(now.AddMinutes(-4), state.ActiveScenarioWriterHandledAtUtc);
+            Assert.Null(state.ActiveScenarioShadowHandledAtUtc);
+            Assert.Equal("A_TARGET", state.LastAppliedStageId);
+            Assert.Equal(10, state.LastAppliedResponsibleId);
+            Assert.Equal(relevantAssignmentId, state.LastAssignmentId);
+
+            var ignoredState = await verify.BitrixWorkforceDealStates
+                .AsNoTracking()
+                .SingleAsync(x => x.BitrixInstanceId == instanceId && x.DealId == 8102);
+            Assert.Equal(
+                BitrixWorkforceDistribution.MissedCallScenario,
+                ignoredState.ActiveScenario);
+            Assert.Equal(now.AddMinutes(-3), ignoredState.ActiveScenarioWriterHandledAtUtc);
+            Assert.Null(ignoredState.LastAppliedStageId);
+            Assert.Null(ignoredState.LastAppliedResponsibleId);
+            Assert.Equal(ignoredAssignmentId, ignoredState.LastAssignmentId);
+
+            var deferredState = await verify.BitrixWorkforceDealStates
+                .AsNoTracking()
+                .SingleAsync(x => x.BitrixInstanceId == instanceId && x.DealId == 8103);
+            Assert.Equal(
+                BitrixWorkforceDistribution.MissedCallScenario,
+                deferredState.ActiveScenario);
+            Assert.Equal(now.AddMinutes(-2), deferredState.ActiveScenarioWriterHandledAtUtc);
+            Assert.Null(deferredState.LastAppliedStageId);
+            Assert.Null(deferredState.LastAppliedResponsibleId);
+            Assert.Equal(repeatedDeferredAssignmentId, deferredState.LastAssignmentId);
+
+            var preDecisionFailureState = await verify.BitrixWorkforceDealStates
+                .AsNoTracking()
+                .SingleAsync(x => x.BitrixInstanceId == instanceId && x.DealId == 8104);
+            Assert.Equal(
+                BitrixWorkforceDistribution.MissedCallScenario,
+                preDecisionFailureState.ActiveScenario);
+            Assert.Equal(now, preDecisionFailureState.ActiveScenarioShadowHandledAtUtc);
+            Assert.Equal(now, preDecisionFailureState.ActiveScenarioWriterHandledAtUtc);
+            Assert.Null(preDecisionFailureState.LastAssignmentId);
+        }
+        finally
+        {
+            await using var cleanup = new OrbitaDbContext(bootstrapOptions);
+            await cleanup.Database.ExecuteSqlRawAsync(
+                $"DROP SCHEMA IF EXISTS \"{schema}\" CASCADE");
+        }
+    }
 
     [PostgreSqlFact]
     public async Task ConcurrentDuplicateEvents_ApplyOneAssignmentAndAdvanceCursorOnce()
@@ -283,6 +575,12 @@ public sealed class BitrixWorkforcePostgreSqlTests
             long requestedDealId,
             CancellationToken ct) =>
             Task.FromResult<IReadOnlyList<long>>([]);
+
+        public Task<long?> GetContactOwnerIdAsync(
+            string webhookUrl,
+            long contactId,
+            CancellationToken ct) =>
+            Task.FromResult<long?>(null);
 
         public Task UpdateDealAsync(
             string webhookUrl,
