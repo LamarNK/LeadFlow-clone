@@ -70,7 +70,11 @@
                             <div class="crm-tile__meta">@(card.Age?.ToString() ?? "—") лет · @card.City</div>
                             <div class="crm-tile__vacancy">@card.Vacancy</div>
                             <footer class="crm-tile__foot">
-                                <span><i class="fa-regular fa-user" aria-hidden="true"></i>@(card.ManagerName ?? "—")</span>
+                                <span class="crm-tile__assignee">
+                                    <i class="fa-regular fa-user" aria-hidden="true"></i>
+                                    <small>Ответственный</small>
+                                    <strong>@(card.ManagerName ?? "Не назначен")</strong>
+                                </span>
                                 <span class="@(card.HoursInStage >= 24 ? "crm-hot" : "")" title="В этапе">@card.HoursInStage.ToString("0.#")ч</span>
                                 @if (card.OpenTaskCount > 0)
                                 {

@@ -133,6 +133,7 @@
                         <div><dt>ID отклика</dt><dd>@card.SourceResponseId</dd></div>
                     }
                     <div><dt>Этап</dt><dd>@card.Stage</dd></div>
+                    <div><dt>Ответственный</dt><dd>@(card.ManagerName ?? "Не назначен")</dd></div>
                     <div><dt>Нагрузка</dt><dd>@(card.IsInActiveLoad ? "В активной работе" : "Вне нагрузки")</dd></div>
                     <div><dt>Создана</dt><dd>@card.CreatedAtUtc.ToLocalTime().ToString("dd.MM.yyyy HH:mm")</dd></div>
                     @if (card.LastContactAtUtc is DateTime last)

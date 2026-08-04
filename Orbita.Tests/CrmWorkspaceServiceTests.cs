@@ -197,7 +197,9 @@ public sealed class CrmWorkspaceServiceTests
         Assert.NotNull(team);
         Assert.Equal(CrmBoardScopes.Team, team.Scope);
         Assert.False(team.CanEdit);
-        Assert.Contains(team.Stages.SelectMany(s => s.Cards), c => c.Id == card.Id);
+        var teamCard = Assert.Single(team.Stages.SelectMany(s => s.Cards), c => c.Id == card.Id);
+        Assert.Equal(manager.Id, teamCard.ManagerUserId);
+        Assert.Equal("view@test.local", teamCard.ManagerName);
 
         var mine = await harness.Sut.GetBoardAsync(
             OfficeId,
@@ -224,6 +226,8 @@ public sealed class CrmWorkspaceServiceTests
         var detail = await harness.Sut.GetCardAsync(card.Id, viewer.Id, isAdmin: false);
         Assert.NotNull(detail);
         Assert.False(detail.CanEdit);
+        Assert.Equal(owner.Id, detail.Card.ManagerUserId);
+        Assert.Equal("owner@test.local", detail.Card.ManagerName);
 
         var own = await harness.Sut.GetCardAsync(card.Id, owner.Id, isAdmin: false);
         Assert.NotNull(own);
