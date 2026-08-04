@@ -103,6 +103,7 @@ builder.Services.AddReverseProxy()
             }
         ]);
 
+// Build the web app only after all services and middleware dependencies are configured.
 var app = builder.Build();
 app.UseOrbitaLogging();
 

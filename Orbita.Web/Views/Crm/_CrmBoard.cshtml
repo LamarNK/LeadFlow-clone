@@ -82,10 +82,6 @@
                             {
                                 <div class="crm-tile__actions" aria-label="Быстрые действия для @card.FullName">
                                     <a href="tel:@card.PhoneRaw" title="Позвонить"><i class="fa-solid fa-phone" aria-hidden="true"></i><span>Позвонить</span></a>
-                                    @if (!string.IsNullOrWhiteSpace(card.MessengerUrl))
-                                    {
-                                        <a href="@card.MessengerUrl" target="_blank" rel="noopener" title="Открыть чат"><i class="fa-regular fa-message" aria-hidden="true"></i><span>Чат</span></a>
-                                    }
                                     @if (!string.IsNullOrWhiteSpace(adUrl))
                                     {
                                         <a href="@adUrl" target="_blank" rel="noopener" title="Открыть объявление"><i class="fa-solid fa-tag" aria-hidden="true"></i><span>Объявление</span></a>

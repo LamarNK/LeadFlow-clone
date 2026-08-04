@@ -305,7 +305,7 @@
 .crm-vacancy-link:hover, .crm-field-link:hover { color: var(--accent); border-bottom-color: currentColor; }
 .crm-vacancy-link i, .crm-field-link i { margin-left: 4px; font-size: .72em; }
 .crm-field-link { color: var(--accent); font-weight: 600; }
-.crm-chat { display: grid; gap: 14px; max-width: 980px; margin: 4px auto; padding: 20px; border: 1px solid color-mix(in srgb, var(--border) 80%, transparent); border-radius: 16px; background: linear-gradient(145deg, color-mix(in srgb, var(--bg-card) 94%, #eef4ff), var(--bg-card)); box-shadow: inset 0 1px rgba(255,255,255,.55); }
+.crm-chat { display: grid; gap: 14px; width: 100%; max-width: none; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
 .crm-chat__msg { display: flex; align-items: flex-end; gap: 8px; max-width: 82%; color: var(--text-primary); }
 .crm-chat__avatar { display: inline-grid; flex: 0 0 30px; width: 30px; height: 30px; place-items: center; border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--border)); border-radius: 50%; background: color-mix(in srgb, var(--accent) 11%, var(--bg-card)); color: var(--accent); font-size: 11px; font-weight: 800; box-shadow: 0 2px 5px rgba(16,24,40,.08); }
 .crm-chat__bubble { min-width: 0; padding: 10px 13px 11px; border: 1px solid color-mix(in srgb, var(--border) 82%, transparent); border-radius: 4px 15px 15px; background: var(--bg-card); box-shadow: 0 2px 8px rgba(16,24,40,.045); }
@@ -342,7 +342,7 @@
 .crm-card-hero__side { display: grid; gap: 10px; min-width: 160px; }
 .crm-card-hero__side small { display: block; color: #98a2b3; font-size: 11px; }
 .crm-card-hero__side strong { color: #101828; font-size: 14px; }
-.crm-stage-rail { display: grid; grid-template-columns: minmax(230px, 320px) minmax(0, 1fr); gap: 10px; margin-bottom: 14px; padding: 10px; }
+.crm-stage-rail { display: grid; grid-template-columns: minmax(230px, 320px) minmax(0, 1fr); align-items: end; gap: 10px; margin-bottom: 14px; padding: 10px; }
 .crm-stage-rail form button { width: 100%; min-height: 34px; border: 0; border-radius: 8px; background: #e4e7ec; color: #475467; font: inherit; font-size: 11px; font-weight: 700; cursor: pointer; }
 .crm-stage-rail form.is-current button { background: #3538cd; color: #fff; box-shadow: 0 0 0 2px rgba(53,56,205,.18); }
 .crm-stage-rail form.is-disabled button { opacity: .5; cursor: not-allowed; }

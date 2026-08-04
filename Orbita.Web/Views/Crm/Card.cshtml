@@ -52,10 +52,6 @@
                 </p>
                 <div class="crm-card-hero__contacts">
                     <a href="tel:@card.PhoneRaw" class="settings-secondary-btn"><i class="fa-solid fa-phone" aria-hidden="true"></i>@card.PhoneRaw</a>
-                    @if (!string.IsNullOrWhiteSpace(card.MessengerUrl))
-                    {
-                        <a href="@card.MessengerUrl" target="_blank" rel="noopener" class="settings-secondary-btn"><i class="fa-regular fa-message" aria-hidden="true"></i>Чат</a>
-                    }
                     @if (!string.IsNullOrWhiteSpace(vacancyUrl))
                     {
                         <a href="@vacancyUrl" target="_blank" rel="noopener" class="settings-secondary-btn"><i class="fa-solid fa-tag" aria-hidden="true"></i>Объявление</a>
@@ -128,10 +124,6 @@
                             }
                         </dd>
                     </div>
-                    @if (!string.IsNullOrWhiteSpace(vacancyUrl))
-                    {
-                        <div><dt>Объявление</dt><dd><a class="crm-field-link" href="@vacancyUrl" target="_blank" rel="noopener">Открыть объявление <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a></dd></div>
-                    }
                     @if (!string.IsNullOrWhiteSpace(card.AccountName))
                     {
                         <div><dt>Источник</dt><dd>@card.AccountName</dd></div>
