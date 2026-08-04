@@ -1,8 +1,10 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 using Orbita.Contracts;
 using Orbita.Web.Authorization;
 using Orbita.Web.Models.ViewModels;
+using Orbita.Web.Options;
 using Orbita.Web.Services;
 
 namespace Orbita.Web.Controllers;
@@ -11,7 +13,8 @@ namespace Orbita.Web.Controllers;
 public sealed class CrmController(
     OrbitaApiClient api,
     IOfficeContext officeContext,
-    OrbitaAuthService auth) : Controller
+    OrbitaAuthService auth,
+    IOptions<DesignPreviewOptions> previewOptions) : Controller
 {
     [HttpGet]
     public async Task<IActionResult> Index(
@@ -25,7 +28,7 @@ public sealed class CrmController(
         bool includeClosed = false,
         CancellationToken ct = default)
     {
-        officeId ??= officeContext.EffectiveOfficeId;
+        officeId = ResolveOfficeId(officeId);
         if (User.IsInRole(OrbitaRoles.Admin) && officeId is null)
         {
             ViewData["CrmUnavailableMessage"] =
@@ -74,7 +77,7 @@ public sealed class CrmController(
         bool includeClosed = false,
         CancellationToken ct = default)
     {
-        officeId ??= officeContext.EffectiveOfficeId;
+        officeId = ResolveOfficeId(officeId);
         if (officeId is null)
         {
             return NoContent();
@@ -126,7 +129,7 @@ public sealed class CrmController(
     [HttpGet]
     public async Task<IActionResult> Tasks(CancellationToken ct = default)
     {
-        var officeId = officeContext.EffectiveOfficeId;
+        var officeId = ResolveOfficeId(null);
         if (User.IsInRole(OrbitaRoles.Admin) && officeId is null)
         {
             ViewData["CrmUnavailableMessage"] =
@@ -157,7 +160,7 @@ public sealed class CrmController(
     [HttpGet]
     public async Task<IActionResult> Team(CancellationToken ct = default)
     {
-        var officeId = officeContext.EffectiveOfficeId;
+        var officeId = ResolveOfficeId(null);
         if (officeId is null)
         {
             ViewData["CrmUnavailableMessage"] =
@@ -267,6 +270,11 @@ public sealed class CrmController(
         if (error is not null) TempData["CrmError"] = error;
         return cardId is Guid id ? RedirectToAction(nameof(Card), new { id, tab = "tasks" }) : RedirectToAction(nameof(Tasks));
     }
+
+    private Guid? ResolveOfficeId(Guid? officeId) =>
+        officeId
+        ?? officeContext.EffectiveOfficeId
+        ?? (previewOptions.Value.Enabled ? DesignPreviewData.PreviewOfficeId : null);
 
     private IActionResult RedirectAfterCardMutation(string? returnUrl, string fallbackAction, object fallbackRouteValues)
     {

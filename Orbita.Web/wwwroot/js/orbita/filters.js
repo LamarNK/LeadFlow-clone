@@ -72,7 +72,7 @@
         pendingSearchFocus = null;
 
         var inputs = document.querySelectorAll(
-            '.orbita-filters-form input[type="search"], .workers-search input[type="search"], .accounts-search input[type="search"]'
+            '.orbita-filters-form input[type="search"], .workers-search input[type="search"], .accounts-search input[type="search"], [data-orbita-live-search]'
         );
         var input = null;
         inputs.forEach(function (candidate) {
@@ -102,6 +102,7 @@
             var timer = null;
             var form = input.closest('form');
             if (!form) return;
+            var debounceMs = Number(input.dataset.orbitaDebounceMs) || DEBOUNCE_MS;
 
             input.addEventListener('input', function () {
                 if (timer) window.clearTimeout(timer);
@@ -110,7 +111,7 @@
                     if (!runtime.shouldSubmitSearch(input)) return;
                     runtime.rememberSearchFocus(input);
                     runtime.submitFilterForm(form);
-                }, DEBOUNCE_MS);
+                }, debounceMs);
             });
 
             input.addEventListener('keydown', function (e) {

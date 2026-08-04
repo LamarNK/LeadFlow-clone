@@ -43,11 +43,11 @@
         </div>
         @if (Model.IsShiftActive)
         {
-            <form asp-action="StopShift" method="post"><button class="settings-secondary-btn" type="submit">Стоп смены</button></form>
+            <form asp-action="StopShift" method="post"><button class="crm-shift-action crm-shift-action--stop" type="submit"><i class="fa-solid fa-stop" aria-hidden="true"></i>Стоп смены</button></form>
         }
         else
         {
-            <form asp-action="StartShift" method="post"><button class="settings-primary-btn" type="submit">Старт смены</button></form>
+            <form asp-action="StartShift" method="post"><button class="crm-shift-action crm-shift-action--start" type="submit"><i class="fa-solid fa-play" aria-hidden="true"></i>Старт смены</button></form>
         }
     </div>
     <div class="crm-toolbar__stats">
@@ -68,7 +68,7 @@
                 <a class="@(Model.Scope == CrmBoardScopes.Closed ? "is-active" : "")" href="@ScopeUrl(CrmBoardScopes.Closed)">Закрытые</a>
             </div>
             <input type="hidden" name="scope" value="@Model.Scope" />
-            <input type="search" name="search" value="@Model.Search" placeholder="ФИО, телефон, город…" aria-label="Поиск кандидата" />
+            <input type="search" name="search" value="@Model.Search" placeholder="ФИО, телефон, город…" aria-label="Поиск кандидата" data-orbita-live-search data-orbita-debounce-ms="350" />
             <button class="settings-primary-btn" type="submit">Найти</button>
             <a class="settings-secondary-btn" asp-action="Index">Сброс</a>
         </div>
@@ -107,4 +107,11 @@
     </form>
 </section>
 
-<partial name="_CrmBoard" model="Model" />
+@if (Model.Scope == CrmBoardScopes.Closed)
+{
+    <partial name="_CrmClosedTable" model="Model" />
+}
+else
+{
+    <partial name="_CrmBoard" model="Model" />
+}

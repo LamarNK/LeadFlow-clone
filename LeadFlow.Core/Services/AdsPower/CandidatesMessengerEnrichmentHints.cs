@@ -9,4 +9,8 @@ public sealed record CandidatesMessengerEnrichmentHints(
     DuplicateScope DuplicateScope,
     string? AvitoSubProfileId = null,
     ResponseCollectionFilters? ResponseFilters = null,
-    AvitoMessengerAutoReplySettings? MessengerAutoReply = null);
+    AvitoMessengerAutoReplySettings? MessengerAutoReply = null,
+    /// <summary>
+    /// true = открытое phone-watch наблюдение (sub+FIO) — нельзя скипать phone-reveal.
+    /// </summary>
+    Func<string, CancellationToken, Task<bool>>? IsOpenPhoneWatchAsync = null);

@@ -35,12 +35,6 @@
         </div>
     </div>
     <div class="crm-board-viewport" data-crm-board-viewport>
-        <button type="button" class="crm-board-edge crm-board-edge--prev" data-crm-board-prev aria-label="Предыдущий этап" hidden>
-            <i class="fa-solid fa-chevron-left" aria-hidden="true"></i>
-        </button>
-        <button type="button" class="crm-board-edge crm-board-edge--next" data-crm-board-next aria-label="Следующий этап" hidden>
-            <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
-        </button>
         <div class="crm-board-wrap" data-crm-board-scroll tabindex="0" aria-label="Горизонтальная прокрутка воронки. Колёсико с Shift или перетаскивание мышью. Карточку можно перетащить на другой этап.">
             <div class="crm-board" data-crm-board style="--crm-stage-count: @Model.Stages.Count">
             @for (var stageIndex = 0; stageIndex < Model.Stages.Count; stageIndex++)

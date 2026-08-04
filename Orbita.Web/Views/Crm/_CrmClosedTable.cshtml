@@ -1,0 +1,57 @@
+@model Orbita.Contracts.CrmBoardDto
+@{
+    var cards = Model.Stages
+        .SelectMany(stage => stage.Cards)
+        .Where(card => card.IsClosed)
+        .OrderByDescending(card => card.StageChangedAtUtc)
+        .ToList();
+}
+<section class="crm-closed card" aria-label="Закрытые кандидаты">
+    <header class="crm-closed__header">
+        <div>
+            <h2>Закрытые кандидаты</h2>
+            <p>Архив завершённых карточек.</p>
+        </div>
+        <span class="crm-closed__count">@cards.Count</span>
+    </header>
+
+    @if (cards.Count == 0)
+    {
+        <div class="crm-closed__empty">
+            <i class="fa-solid fa-box-archive" aria-hidden="true"></i>
+            <strong>Закрытых карточек нет</strong>
+            <span>Завершённые кандидаты появятся здесь.</span>
+        </div>
+    }
+    else
+    {
+        <div class="crm-closed__table-wrap">
+            <table class="data-table data-table--cards crm-closed__table">
+                <thead>
+                    <tr>
+                        <th>Кандидат</th>
+                        <th>Вакансия</th>
+                        <th>Ответственный</th>
+                        <th>Причина</th>
+                        <th>Последнее изменение</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var card in cards)
+                    {
+                        <tr>
+                            <td class="cell-name" data-label="Кандидат">
+                                <a asp-action="Card" asp-route-id="@card.Id">@card.FullName</a>
+                                <small>@(card.Age?.ToString() ?? "—") лет · @card.City</small>
+                            </td>
+                            <td data-label="Вакансия">@card.Vacancy</td>
+                            <td data-label="Ответственный">@(card.ManagerName ?? "Не назначен")</td>
+                            <td data-label="Причина"><span class="crm-closed__reason">@(card.CloseReason ?? "Не указана")</span></td>
+                            <td data-label="Последнее изменение"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(card.StageChangedAtUtc, "datetime"))" /></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>

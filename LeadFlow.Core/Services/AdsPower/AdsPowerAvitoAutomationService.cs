@@ -93,7 +93,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 BuildResolveExistingCardFingerprintsCallback(messengerEnrichmentHints),
                 BuildResolveExistingPhonesCallback(messengerEnrichmentHints),
                 BuildResolveExistingMatchedProfileIndicesCallback(messengerEnrichmentHints),
-                messengerEnrichmentHints?.ResponseFilters).ConfigureAwait(false);
+                messengerEnrichmentHints?.ResponseFilters,
+                messengerEnrichmentHints?.IsOpenPhoneWatchAsync).ConfigureAwait(false);
 
             var raw = await EvaluateWithRetryAsync<string>(page, ExtractionScript, cancellationToken).ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(raw))

@@ -3,9 +3,10 @@
     var message = ViewData["CrmUnavailableMessage"] as string
         ?? "Не удалось загрузить CRM для выбранного офиса.";
 }
-<section class="page-header">
+<section class="page-header crm-unavailable-header">
     <div>
         <h1>CRM недоступна</h1>
         <p>@message</p>
     </div>
+    <vc:office-switcher />
 </section>

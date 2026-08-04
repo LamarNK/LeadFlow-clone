@@ -37,6 +37,19 @@ public static class AvitoCandidatesPageScripts
             return normalizePhoneText(store[String(index)] ?? store[index] ?? "");
         };
 
+        const clearCachedPhone = (index) => {
+            const store = window.__leadflowRevealedPhones;
+            if (!store || typeof store !== "object") {
+                return;
+            }
+
+            try {
+                delete store[String(index)];
+                delete store[index];
+            } catch {
+            }
+        };
+
         const readInlinePhone = (item) => {
             const phoneEl = item.querySelector("[data-marker='job-application/phone']");
             if (!phoneEl) {
@@ -46,13 +59,21 @@ public static class AvitoCandidatesPageScripts
             return normalizePhoneText(phoneEl.textContent ?? "");
         };
 
+        const isMaskedPhoneText = (raw) => /\*/.test(normalizePhoneText(raw));
+
         const readItemPhone = (item, index) => {
+            // Маска в DOM — старый кэш невалиден (временный номер Avito мог смениться).
+            const inline = readInlinePhone(item);
+            if (isMaskedPhoneText(inline)) {
+                clearCachedPhone(index);
+                return "";
+            }
+
             const cached = getCachedPhone(index);
             if (isRevealedPhoneText(cached)) {
                 return cached;
             }
 
-            const inline = readInlinePhone(item);
             if (isRevealedPhoneText(inline)) {
                 return inline;
             }
@@ -60,6 +81,11 @@ public static class AvitoCandidatesPageScripts
             const callBtn = item.querySelector("[data-marker='job-application/call-button']");
             if (callBtn) {
                 const callText = normalizePhoneText(callBtn.textContent ?? "");
+                if (isMaskedPhoneText(callText)) {
+                    clearCachedPhone(index);
+                    return "";
+                }
+
                 if (isRevealedPhoneText(callText)) {
                     return callText;
                 }
@@ -77,8 +103,26 @@ public static class AvitoCandidatesPageScripts
             return !!(skips[String(index)] || skips[index]);
         };
 
-        const needsPhoneReveal = (item, index) =>
-            !shouldSkipPhoneReveal(index) && !isRevealedPhoneText(readItemPhone(item, index));
+        // Skip «уже известен» не действует, если номер под маской — иначе phone-watch не увидит смену.
+        const needsPhoneReveal = (item, index) => {
+            const inline = readInlinePhone(item);
+            if (isMaskedPhoneText(inline)) {
+                clearCachedPhone(index);
+                return true;
+            }
+
+            const callBtn = item.querySelector("[data-marker='job-application/call-button']");
+            if (callBtn && isMaskedPhoneText(callBtn.textContent ?? "")) {
+                clearCachedPhone(index);
+                return true;
+            }
+
+            if (shouldSkipPhoneReveal(index)) {
+                return false;
+            }
+
+            return !isRevealedPhoneText(readItemPhone(item, index));
+        };
 
         const readContactsPopupPhone = () => {
             const popup = document.querySelector("[data-marker='job-application/response/contacts-popup/popup']");
@@ -1384,10 +1428,6 @@ public static class AvitoCandidatesPageScripts
             let clicked = 0;
             for (let index = 0; index < items.length; index++) {
                 const item = items[index];
-                if (shouldSkipPhoneReveal(index)) {
-                    continue;
-                }
-
                 const btn = item.querySelector("[data-marker='job-application/phone']");
                 if (!btn || btn.closest?.("[data-marker^='download-report-button']")) {
                     continue;
@@ -1398,7 +1438,9 @@ public static class AvitoCandidatesPageScripts
                     continue;
                 }
 
+                // Под маской всегда кликаем — даже если карточка «известна» (phone-watch / смена номера).
                 masked++;
+                clearCachedPhone(index);
                 try {
                     btn.scrollIntoView({ block: "center", inline: "nearest" });
                 } catch {

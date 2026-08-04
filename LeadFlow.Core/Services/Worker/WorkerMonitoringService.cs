@@ -1087,7 +1087,11 @@ public sealed class WorkerMonitoringService(
                     account.Id,
                     settings.DuplicateScope,
                     ResponseFilters: settings.ResponseFilters,
-                    MessengerAutoReply: settings.Avito.MessengerAutoReply);
+                    MessengerAutoReply: settings.Avito.MessengerAutoReply,
+                    IsOpenPhoneWatchAsync: (fullName, ct) => IsOpenPhoneWatchForHintsAsync(
+                        avitoSubProfileId: null,
+                        fullName,
+                        ct));
                 var rawJson = await session
                     .ExtractCandidatesJsonAsync(singleProfileHints, cancellationToken)
                     .ConfigureAwait(false);
@@ -1213,7 +1217,11 @@ public sealed class WorkerMonitoringService(
                         settings.DuplicateScope,
                         sub.Id,
                         settings.ResponseFilters,
-                        settings.Avito.MessengerAutoReply);
+                        settings.Avito.MessengerAutoReply,
+                        IsOpenPhoneWatchAsync: (fullName, ct) => IsOpenPhoneWatchForHintsAsync(
+                            sub.Id,
+                            fullName,
+                            ct));
                     var rawJson = await session
                         .ExtractCandidatesJsonAsync(messengerHints, cancellationToken)
                         .ConfigureAwait(false);
@@ -1377,6 +1385,23 @@ public sealed class WorkerMonitoringService(
         response.CreatedAt = response.CreatedAt == default ? response.CollectedAt : response.CreatedAt;
 
         await candidateSink.PublishAsync(response, cancellationToken).ConfigureAwait(false);
+    }
+
+    private Task<bool> IsOpenPhoneWatchForHintsAsync(
+        string? avitoSubProfileId,
+        string fullName,
+        CancellationToken cancellationToken)
+    {
+        var nameKey = ResponsePhoneWatchEvaluator.BuildFullNameKey(fullName);
+        if (string.IsNullOrWhiteSpace(nameKey))
+        {
+            return Task.FromResult(false);
+        }
+
+        return _phoneObservationStore.IsOpenWatchAsync(
+            avitoSubProfileId ?? string.Empty,
+            nameKey,
+            cancellationToken);
     }
 
     /// <summary>

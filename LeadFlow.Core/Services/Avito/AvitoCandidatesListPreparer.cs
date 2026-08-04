@@ -28,7 +28,8 @@ public static class AvitoCandidatesListPreparer
         Func<IReadOnlyCollection<string>, CancellationToken, Task<IReadOnlySet<string>>>? resolveExistingCardFingerprintsAsync = null,
         Func<IReadOnlyCollection<string>, CancellationToken, Task<IReadOnlySet<string>>>? resolveExistingPhonesAsync = null,
         Func<IReadOnlyList<CandidateLookupProfileDto>, CancellationToken, Task<IReadOnlySet<int>>>? resolveExistingMatchedProfileIndicesAsync = null,
-        ResponseCollectionFilters? responseCollectionFilters = null)
+        ResponseCollectionFilters? responseCollectionFilters = null,
+        Func<string, CancellationToken, Task<bool>>? isOpenPhoneWatchAsync = null)
     {
         await AvitoFirewallProbe.ThrowIfBlockedAsync(executeScript, fetchHtmlSnapshot, pageUrl, cancellationToken)
             .ConfigureAwait(false);
@@ -76,19 +77,28 @@ public static class AvitoCandidatesListPreparer
         var phoneRevealLimit = domItems == 0 ? MaxPhoneRevealRoundsWhenNoItems : MaxPhoneRevealRounds;
         var phoneRevealRounds = 0;
         var phoneClicksTotal = 0;
+        var openWatchProtected = await ResolveOpenPhoneWatchProtectedIndicesAsync(
+                executeScript,
+                isOpenPhoneWatchAsync,
+                cancellationToken)
+            .ConfigureAwait(false);
+
         var cardFingerprintSkipCount = await TryApplyKnownCardFingerprintSkipsAsync(
                 executeScript,
                 resolveExistingCardFingerprintsAsync,
+                openWatchProtected,
                 cancellationToken)
             .ConfigureAwait(false);
         var phoneSkipCount = await TryApplyKnownPhoneSkipsAsync(
                 executeScript,
                 resolveExistingPhonesAsync,
+                openWatchProtected,
                 cancellationToken)
             .ConfigureAwait(false);
         var profileSkipCount = await TryApplyKnownProfileSkipsAsync(
                 executeScript,
                 resolveExistingMatchedProfileIndicesAsync,
+                openWatchProtected,
                 cancellationToken)
             .ConfigureAwait(false);
         var collectionFilterSkipCount = await TryApplyResponseCollectionFilterSkipsAsync(
@@ -654,9 +664,59 @@ public static class AvitoCandidatesListPreparer
         }
     }
 
+    /// <summary>
+    /// Индексы карточек с открытым phone-watch — phone-reveal для них нельзя скипать.
+    /// </summary>
+    private static async Task<HashSet<int>> ResolveOpenPhoneWatchProtectedIndicesAsync(
+        Func<string, CancellationToken, Task<string>> executeScript,
+        Func<string, CancellationToken, Task<bool>>? isOpenPhoneWatchAsync,
+        CancellationToken cancellationToken)
+    {
+        if (isOpenPhoneWatchAsync is null)
+        {
+            return [];
+        }
+
+        var listItems = await TryParseListItemProfilesAsync(executeScript, cancellationToken).ConfigureAwait(false);
+        if (listItems.Count == 0)
+        {
+            return [];
+        }
+
+        var protectedIndices = new HashSet<int>();
+        foreach (var item in listItems)
+        {
+            if (string.IsNullOrWhiteSpace(item.FullName))
+            {
+                continue;
+            }
+
+            try
+            {
+                if (await isOpenPhoneWatchAsync(item.FullName, cancellationToken).ConfigureAwait(false))
+                {
+                    protectedIndices.Add(item.Index);
+                }
+            }
+            catch
+            {
+                // best-effort: ошибка store не должна валить сбор
+            }
+        }
+
+        return protectedIndices;
+    }
+
+    private static bool HasFullyRevealedPhoneDigits(string? phoneDigits)
+    {
+        var digits = NormalizePhoneDigits(phoneDigits);
+        return digits.Length >= 10;
+    }
+
     private static async Task<int> TryApplyKnownCardFingerprintSkipsAsync(
         Func<string, CancellationToken, Task<string>> executeScript,
         Func<IReadOnlyCollection<string>, CancellationToken, Task<IReadOnlySet<string>>>? resolveExistingCardFingerprintsAsync,
+        IReadOnlySet<int> openWatchProtected,
         CancellationToken cancellationToken)
     {
         if (resolveExistingCardFingerprintsAsync is null)
@@ -680,8 +740,15 @@ public static class AvitoCandidatesListPreparer
             return 0;
         }
 
+        // Phone digits per index — не скипать, пока номер не раскрыт (маска / phone-watch).
+        var phonesByIndex = await TryParseListItemSkipKeysAsync(executeScript, cancellationToken).ConfigureAwait(false);
+
         var skipIndices = fingerprintsByIndex
             .Where(kv => existing.Contains(kv.Value))
+            .Where(kv => !openWatchProtected.Contains(kv.Key))
+            .Where(kv =>
+                phonesByIndex.TryGetValue(kv.Key, out var keys)
+                && HasFullyRevealedPhoneDigits(keys.PhoneDigits))
             .Select(kv => kv.Key)
             .ToArray();
         if (skipIndices.Length == 0)
@@ -699,6 +766,7 @@ public static class AvitoCandidatesListPreparer
     private static async Task<int> TryApplyKnownPhoneSkipsAsync(
         Func<string, CancellationToken, Task<string>> executeScript,
         Func<IReadOnlyCollection<string>, CancellationToken, Task<IReadOnlySet<string>>>? resolveExistingPhonesAsync,
+        IReadOnlySet<int> openWatchProtected,
         CancellationToken cancellationToken)
     {
         if (resolveExistingPhonesAsync is null)
@@ -728,8 +796,10 @@ public static class AvitoCandidatesListPreparer
             return 0;
         }
 
+        // Известный старый номер + open watch — всё равно раскрываем (номер мог смениться под маской).
         var skipIndices = phonesByIndex
-            .Where(kv => !string.IsNullOrWhiteSpace(kv.Value.PhoneDigits)
+            .Where(kv => !openWatchProtected.Contains(kv.Key))
+            .Where(kv => HasFullyRevealedPhoneDigits(kv.Value.PhoneDigits)
                          && existing.Contains(kv.Value.PhoneDigits))
             .Select(static kv => kv.Key)
             .ToArray();
@@ -748,6 +818,7 @@ public static class AvitoCandidatesListPreparer
     private static async Task<int> TryApplyKnownProfileSkipsAsync(
         Func<string, CancellationToken, Task<string>> executeScript,
         Func<IReadOnlyList<CandidateLookupProfileDto>, CancellationToken, Task<IReadOnlySet<int>>>? resolveExistingMatchedProfileIndicesAsync,
+        IReadOnlySet<int> openWatchProtected,
         CancellationToken cancellationToken)
     {
         if (resolveExistingMatchedProfileIndicesAsync is null)
@@ -775,9 +846,13 @@ public static class AvitoCandidatesListPreparer
             return 0;
         }
 
+        // Уже в Орбите, но open phone-watch или номер не раскрыт — reveal обязателен.
         var skipIndices = matched
             .Where(i => i >= 0 && i < listItems.Count)
-            .Select(i => listItems[i].Index)
+            .Select(i => listItems[i])
+            .Where(item => !openWatchProtected.Contains(item.Index))
+            .Where(item => HasFullyRevealedPhoneDigits(item.PhoneDigits))
+            .Select(item => item.Index)
             .ToArray();
         if (skipIndices.Length == 0)
         {

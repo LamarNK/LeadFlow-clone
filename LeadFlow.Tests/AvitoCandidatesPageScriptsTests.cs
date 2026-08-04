@@ -57,12 +57,27 @@ public sealed class AvitoCandidatesPageScriptsTests
     }
 
     [Fact]
-    public void BuildRevealMaskedPhonesStepScript_RespectsSkipList()
+    public void BuildRevealMaskedPhonesStepScript_ClicksMaskedEvenIfKnown()
     {
         var script = AvitoCandidatesPageScripts.BuildRevealMaskedPhonesStepScript();
 
-        Assert.Contains("shouldSkipPhoneReveal", script, StringComparison.Ordinal);
-        Assert.Contains("__leadflowSkipPhoneReveal", script, StringComparison.Ordinal);
+        // Под маской всегда кликаем (phone-watch / смена временного номера).
+        Assert.Contains("clearCachedPhone", script, StringComparison.Ordinal);
+        Assert.Contains("/\\*/.test(raw)", script, StringComparison.Ordinal);
+        // Цикл кликов не гейтится shouldSkip — только наличие «*» в тексте кнопки.
+        Assert.Contains("masked++", script, StringComparison.Ordinal);
+        Assert.Contains("target.click()", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ContactsPhoneHelpers_MaskedInvalidatesCacheAndNeedsReveal()
+    {
+        // Helpers вшиты в probe/extraction scripts.
+        var script = AvitoCandidatesPageScripts.BuildPhonesReadyProbeScript();
+
+        Assert.Contains("isMaskedPhoneText", script, StringComparison.Ordinal);
+        Assert.Contains("clearCachedPhone", script, StringComparison.Ordinal);
+        Assert.Contains("needsPhoneReveal", script, StringComparison.Ordinal);
     }
 
     [Fact]

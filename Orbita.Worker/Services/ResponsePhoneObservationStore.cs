@@ -198,6 +198,15 @@ public sealed class ResponsePhoneObservationStore : IResponsePhoneObservationSto
         };
     }
 
+    public async Task<bool> IsOpenWatchAsync(
+        string avitoSubProfileId,
+        string fullNameKey,
+        CancellationToken cancellationToken = default)
+    {
+        var obs = await GetAsync(avitoSubProfileId, fullNameKey, cancellationToken).ConfigureAwait(false);
+        return ResponsePhoneObservationWatch.IsOpen(obs);
+    }
+
     public async Task UpsertAsync(
         ResponsePhoneObservation observation,
         CancellationToken cancellationToken = default)

@@ -131,6 +131,18 @@ internal static class DesignPreviewData
                     return new CrmStageDto(stage, stageCards, stageCards.Count);
                 })
                 .ToList();
+            if (query.Scope == CrmBoardScopes.Closed || query.IncludeClosed)
+            {
+                var closedCards = list
+                    .Where(c => c.IsClosed)
+                    .OrderByDescending(c => c.StageChangedAtUtc)
+                    .Select(ToPreviewCrmCard)
+                    .ToList();
+                if (closedCards.Count > 0)
+                {
+                    stages.Add(new CrmStageDto("Закрыто", closedCards, closedCards.Count));
+                }
+            }
             var activeLoad = PreviewCrmCandidates.Count(c => c.ManagerUserId == PreviewManagerElena && c.IsInActiveLoad && !c.IsClosed);
             var openTasks = PreviewCrmTasks.Count(t => t.Status == CrmTaskStatuses.Open);
             var overdue = PreviewCrmTasks.Count(t => t.IsOverdue && t.Status == CrmTaskStatuses.Open);
