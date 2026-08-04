@@ -78,7 +78,7 @@ public sealed class CandidateParserTests
         Assert.Contains("Источник: Авито", preview.Comments);
         Assert.Contains("Ссылка на вакансию: https://www.avito.ru/item/1", preview.Comments);
         Assert.Contains("ID отклика (источник): avito-123", preview.Comments);
-        Assert.Contains("Ссылка на мессенджер: https://www.avito.ru/msg/1", preview.Comments);
+        Assert.DoesNotContain("Ссылка на мессенджер", preview.Comments, StringComparison.Ordinal);
         Assert.Contains("Текст отклика (фрагмент): Привет", preview.Comments);
         Assert.Contains("Аккаунт Авито: TestAcc", preview.Comments);
         Assert.Contains("Дата отклика:", preview.Comments);

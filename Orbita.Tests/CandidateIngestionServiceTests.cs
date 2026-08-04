@@ -448,7 +448,11 @@ public sealed class CandidateIngestionServiceTests
             bitrixInstanceService,
             new BitrixClient(new HttpClientFactoryStub(), new CandidateParser()),
             bitrixOptions);
-        var bitrixSend = new CandidateBitrixSendService(bitrixInstanceService, new BitrixClient(new HttpClientFactoryStub(), new CandidateParser()), bitrixOptions);
+        var bitrixSend = new CandidateBitrixSendService(
+            db,
+            bitrixInstanceService,
+            new BitrixClient(new HttpClientFactoryStub(), new CandidateParser()),
+            bitrixOptions);
         var deliveries = new ResponseBitrixDeliveryService(db);
         var leadExportQuota = new LeadExportQuotaService(db);
         var autoDistribution = new CandidateAutoDistributionService(bitrixDuplicateCheck, bitrixSend, deliveries, leadExportQuota);

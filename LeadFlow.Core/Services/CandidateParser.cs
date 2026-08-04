@@ -45,7 +45,6 @@ public sealed class CandidateParser : ICandidateParser
                 $"Источник: Авито{Environment.NewLine}" +
                 $"ID отклика (источник): {response.SourceResponseId}{Environment.NewLine}" +
                 $"Ссылка на вакансию: {response.VacancyUrl}{Environment.NewLine}" +
-                $"Ссылка на мессенджер: {response.MessengerUrl}{Environment.NewLine}" +
                 $"Аккаунт Авито: {response.AccountName}{Environment.NewLine}" +
                 $"Дата отклика: {response.CreatedAt.ToLocalTimeFromStoredUtc():dd.MM.yyyy HH:mm}" +
                 (string.IsNullOrEmpty(rawSnippet)

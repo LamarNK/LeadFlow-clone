@@ -21,4 +21,12 @@ public sealed class CandidateLead
     public string AvitoSubProfileId { get; set; } = string.Empty;
     public string RawText { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    /// <summary>История номеров (хронологически) для COMMENTS в Bitrix.</summary>
+    public IReadOnlyList<CandidateLeadPhoneHistoryItem> PhoneHistory { get; set; } = [];
 }
+
+public sealed record CandidateLeadPhoneHistoryItem(
+    string PhoneRaw,
+    string PhoneNormalized,
+    DateTime RecordedAtUtc);
