@@ -683,6 +683,16 @@ public sealed class CrmTaskEntity
     public DateTime? CompletedAtUtc { get; set; }
 }
 
+public sealed class CrmTaskCommentEntity
+{
+    public Guid Id { get; set; }
+    public Guid TaskId { get; set; }
+    public string AuthorUserId { get; set; } = string.Empty;
+    public string AuthorName { get; set; } = string.Empty;
+    public string Text { get; set; } = string.Empty;
+    public DateTime CreatedAtUtc { get; set; }
+}
+
 public sealed class CrmCandidateHistoryEntity
 {
     public Guid Id { get; set; }

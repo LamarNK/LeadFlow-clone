@@ -7,6 +7,8 @@
     var activeTab = ViewData["CrmTab"] as string ?? "activity";
     var card = Model.Card;
     var canEdit = Model.CanEdit;
+    var currentUserId = ViewData["CurrentCrmUserId"] as string;
+    var isCrmAdmin = ViewData["IsCrmAdmin"] as bool? == true;
     var vacancyUrl = !string.IsNullOrWhiteSpace(card.VacancyUrl) ? card.VacancyUrl : card.SourceUrl;
     string DisplayCrmAction(string action) => action switch
     {
@@ -294,7 +296,7 @@
                                 <span>@task.AssigneeName @if (task.DueAtUtc is DateTime due) { <text>· до @due.ToLocalTime().ToString("dd MMM, HH:mm")</text> } @if (task.IsOverdue) { <em class="crm-overdue">просрочено</em> }</span>
                                 @if (!string.IsNullOrWhiteSpace(task.Description)) { <p>@task.Description</p> }
                             </div>
-                            @if (task.Status == CrmTaskStatuses.Open && canEdit)
+                            @if (task.Status == CrmTaskStatuses.Open && (isCrmAdmin || task.AssigneeUserId == currentUserId))
                             {
                                 <form asp-action="CompleteTask" method="post">
                                     <input type="hidden" name="taskId" value="@task.Id" />

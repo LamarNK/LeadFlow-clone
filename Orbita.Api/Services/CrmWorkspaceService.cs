@@ -488,7 +488,7 @@ public sealed class CrmWorkspaceService(
         var names = managers.ToDictionary(x => x.Profile.UserId, x => x.Name, StringComparer.Ordinal);
         var now = DateTime.UtcNow;
         var tasks = await db.CrmTasks.AsNoTracking()
-            .Where(x => x.OfficeId == officeId && (isAdmin || x.AssigneeUserId == userId))
+            .Where(x => x.OfficeId == officeId && (isAdmin || x.AssigneeUserId == userId || x.CreatorUserId == userId))
             .OrderBy(x => x.Status)
             .ThenBy(x => x.DueAtUtc)
             .ThenByDescending(x => x.CreatedAtUtc)
@@ -711,7 +711,8 @@ public sealed class CrmWorkspaceService(
         bool isAdmin,
         CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(request.Title) || await GetManagerProfileAsync(officeId, request.AssigneeUserId, ct) is null)
+        if (string.IsNullOrWhiteSpace(request.Title)
+            || await GetManagerProfileAsync(officeId, request.AssigneeUserId, ct, allowAdmin: false) is null)
         {
             return null;
         }
@@ -868,6 +869,84 @@ public sealed class CrmWorkspaceService(
         return true;
     }
 
+    public async Task<CrmTaskDetailDto?> GetTaskAsync(
+        Guid taskId,
+        string userId,
+        bool isAdmin,
+        CancellationToken ct = default)
+    {
+        var task = await db.CrmTasks.AsNoTracking().FirstOrDefaultAsync(x => x.Id == taskId, ct);
+        if (task is null || !CanAccessTask(task, userId, isAdmin))
+        {
+            return null;
+        }
+
+        var managers = await GetManagersAsync(task.OfficeId, ct);
+        var names = managers.ToDictionary(x => x.Profile.UserId, x => x.Name, StringComparer.Ordinal);
+        var candidateName = task.CardId is Guid cardId
+            ? await db.CrmCandidateCards.AsNoTracking()
+                .Where(x => x.Id == cardId)
+                .Select(x => x.Response.FullName)
+                .FirstOrDefaultAsync(ct)
+            : null;
+        var comments = await db.CrmTaskComments.AsNoTracking()
+            .Where(x => x.TaskId == taskId)
+            .OrderBy(x => x.CreatedAtUtc)
+            .Select(x => new CrmTaskCommentDto(
+                x.Id,
+                x.TaskId,
+                x.AuthorUserId,
+                x.AuthorName,
+                x.Text,
+                x.CreatedAtUtc))
+            .ToListAsync(ct);
+        var now = DateTime.UtcNow;
+        return new CrmTaskDetailDto(
+            ToTaskDto(task, names, candidateName, now),
+            comments,
+            isAdmin || task.AssigneeUserId == userId);
+    }
+
+    public async Task<CrmTaskCommentDto?> AddTaskCommentAsync(
+        Guid taskId,
+        string text,
+        string userId,
+        bool isAdmin,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return null;
+        }
+
+        var task = await db.CrmTasks.FirstOrDefaultAsync(x => x.Id == taskId, ct);
+        if (task is null || !CanAccessTask(task, userId, isAdmin))
+        {
+            return null;
+        }
+
+        var now = DateTime.UtcNow;
+        var comment = new CrmTaskCommentEntity
+        {
+            Id = Guid.NewGuid(),
+            TaskId = taskId,
+            AuthorUserId = userId,
+            AuthorName = await ResolveDisplayNameAsync(userId, ct),
+            Text = text.Trim(),
+            CreatedAtUtc = now
+        };
+        db.CrmTaskComments.Add(comment);
+        await db.SaveChangesAsync(ct);
+
+        return new CrmTaskCommentDto(
+            comment.Id,
+            comment.TaskId,
+            comment.AuthorUserId,
+            comment.AuthorName,
+            comment.Text,
+            comment.CreatedAtUtc);
+    }
+
     public async Task<int> CountOpenTasksAsync(Guid officeId, string userId, bool isAdmin, CancellationToken ct = default) =>
         await db.CrmTasks.CountAsync(
             x => x.OfficeId == officeId
@@ -890,13 +969,17 @@ public sealed class CrmWorkspaceService(
     private async Task<CrmCandidateCardEntity?> FindAccessibleCardAsync(Guid cardId, string userId, bool isAdmin, CancellationToken ct) =>
         await db.CrmCandidateCards.FirstOrDefaultAsync(x => x.Id == cardId && (isAdmin || x.ManagerUserId == userId), ct);
 
-    private async Task<PanelUserProfileEntity?> GetManagerProfileAsync(Guid officeId, string userId, CancellationToken ct)
+    private async Task<PanelUserProfileEntity?> GetManagerProfileAsync(
+        Guid officeId,
+        string userId,
+        CancellationToken ct,
+        bool allowAdmin = true)
     {
         var user = await users.FindByIdAsync(userId);
         if (user is null || !await users.IsInRoleAsync(user, PanelRoles.Manager))
         {
             // Admin may set capacity / assign without manager role on some setups — still require profile.
-            if (user is null || !await users.IsInRoleAsync(user, PanelRoles.Admin))
+            if (!allowAdmin || user is null || !await users.IsInRoleAsync(user, PanelRoles.Admin))
             {
                 return null;
             }
@@ -904,6 +987,9 @@ public sealed class CrmWorkspaceService(
 
         return await db.PanelUserProfiles.FirstOrDefaultAsync(x => x.OfficeId == officeId && x.UserId == userId, ct);
     }
+
+    private static bool CanAccessTask(CrmTaskEntity task, string userId, bool isAdmin) =>
+        isAdmin || task.AssigneeUserId == userId || task.CreatorUserId == userId;
 
     private async Task<List<(PanelUserProfileEntity Profile, string Name)>> GetManagersAsync(Guid officeId, CancellationToken ct)
     {

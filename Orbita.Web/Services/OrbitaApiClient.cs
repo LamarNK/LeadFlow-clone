@@ -1938,6 +1938,11 @@ public sealed class OrbitaApiClient(
             ? Task.FromResult<IReadOnlyList<CrmTaskDto>?>(DesignPreviewData.GetCrmTasks())
             : GetAsync<IReadOnlyList<CrmTaskDto>>(WithOfficeQuery("api/v1/crm/tasks", officeId), ct);
 
+    public Task<CrmTaskDetailDto?> GetCrmTaskAsync(Guid taskId, CancellationToken ct = default) =>
+        _preview.Enabled
+            ? Task.FromResult(DesignPreviewData.GetCrmTask(taskId))
+            : GetAsync<CrmTaskDetailDto>($"api/v1/crm/tasks/{taskId:D}", ct);
+
     public Task<(bool Success, string? Error)> StartCrmShiftAsync(CancellationToken ct = default) =>
         _preview.Enabled
             ? Task.FromResult(DesignPreviewData.StartCrmShift())
@@ -2068,6 +2073,21 @@ public sealed class OrbitaApiClient(
         }
 
         using var request = new HttpRequestMessage(HttpMethod.Post, $"api/v1/crm/tasks/{taskId:D}/complete");
+        using var response = await SendAuthenticatedAsync(request, ct);
+        return response is null ? (false, InvalidApiSessionError) : response.IsSuccessStatusCode ? (true, null) : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(bool Success, string? Error)> AddCrmTaskCommentAsync(Guid taskId, string text, CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return DesignPreviewData.AddCrmTaskComment(taskId, text);
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"api/v1/crm/tasks/{taskId:D}/comments")
+        {
+            Content = JsonContent.Create(new CrmTaskCommentCreateRequest(text))
+        };
         using var response = await SendAuthenticatedAsync(request, ct);
         return response is null ? (false, InvalidApiSessionError) : response.IsSuccessStatusCode ? (true, null) : (false, await ReadApiErrorAsync(response, ct));
     }

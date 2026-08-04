@@ -7,4 +7,6 @@ public sealed record CrmTasksViewModel(
     IReadOnlyList<CrmManagerDto> Managers,
     int OpenTaskCount,
     int OverdueTaskCount,
-    string SelectedScope);
+    string SelectedScope,
+    string CurrentUserId,
+    bool IsAdmin);

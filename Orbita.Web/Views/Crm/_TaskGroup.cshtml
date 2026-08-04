@@ -1,6 +1,8 @@
 @model (string Title, IReadOnlyList<Orbita.Contracts.CrmTaskDto> Items, bool ShowComplete)
 @using Orbita.Contracts
 @{
+    var currentUserId = ViewData["CurrentCrmUserId"] as string;
+    var isAdmin = ViewData["IsCrmAdmin"] as bool? == true;
     var groupClass = Model.Title switch
     {
         "Просрочено" => "crm-task-group--overdue",
@@ -38,21 +40,23 @@
             @foreach (var task in Model.Items)
             {
                 var isOverdue = task.Status == CrmTaskStatuses.Open && (task.IsOverdue || (task.DueAtUtc is DateTime dueAt && dueAt < DateTime.UtcNow));
+                var canComplete = isAdmin || task.AssigneeUserId == currentUserId;
                 <article class="crm-task-row @(isOverdue ? "is-overdue" : "") @(task.Status == CrmTaskStatuses.Completed ? "is-complete" : "")">
-                    <div class="crm-task-row__main">
+                    <a class="crm-task-row__main" asp-action="TaskDetails" asp-route-id="@task.Id">
                         <strong>@task.Title</strong>
                         @if (!string.IsNullOrWhiteSpace(task.Description)) { <p>@task.Description</p> }
                         <div class="crm-task-row__people">
-                            <span><small>Кандидат</small>@if (task.CardId is Guid cardId) { <a asp-action="Card" asp-route-id="@cardId" asp-route-tab="tasks">@(task.CandidateName ?? "Карточка")</a> } else { <em>Личная задача</em> }</span>
+                            <span><small>Кандидат</small>@if (task.CardId is Guid) { <span>@(task.CandidateName ?? "Карточка")</span> } else { <em>Личная задача</em> }</span>
                             <span><small>Ответственный</small><b>@task.AssigneeName</b></span>
+                            <span><small>Автор</small><b>@task.CreatorName</b></span>
                         </div>
-                    </div>
+                    </a>
                     <div class="crm-task-row__due @(isOverdue ? "is-overdue" : "")">
                         <small>Срок</small>
                         @if (task.DueAtUtc is DateTime due) { <span><i class="fa-regular fa-calendar" aria-hidden="true"></i> до @due.ToLocalTime().ToString("dd MMM, HH:mm")</span> } else { <span class="is-empty">Не задан</span> }
                         @if (isOverdue) { <em>Просрочено</em> }
                     </div>
-                    @if (Model.ShowComplete && task.Status == CrmTaskStatuses.Open)
+                    @if (Model.ShowComplete && task.Status == CrmTaskStatuses.Open && canComplete)
                     {
                         <form asp-action="CompleteTask" method="post"><input type="hidden" name="taskId" value="@task.Id" /><button class="crm-task-row__complete" type="submit"><i class="fa-solid fa-check" aria-hidden="true"></i> Выполнить</button></form>
                     }

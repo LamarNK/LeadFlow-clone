@@ -23,6 +23,7 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
     public DbSet<CrmCandidateCardEntity> CrmCandidateCards => Set<CrmCandidateCardEntity>();
     public DbSet<CrmCandidateNoteEntity> CrmCandidateNotes => Set<CrmCandidateNoteEntity>();
     public DbSet<CrmTaskEntity> CrmTasks => Set<CrmTaskEntity>();
+    public DbSet<CrmTaskCommentEntity> CrmTaskComments => Set<CrmTaskCommentEntity>();
     public DbSet<CrmCandidateHistoryEntity> CrmCandidateHistory => Set<CrmCandidateHistoryEntity>();
     public DbSet<ResponseBitrixDeliveryEntity> ResponseBitrixDeliveries => Set<ResponseBitrixDeliveryEntity>();
     public DbSet<ResponseCrmDeliveryEntity> ResponseCrmDeliveries => Set<ResponseCrmDeliveryEntity>();
@@ -217,6 +218,19 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.Property(x => x.CreatorUserId).HasMaxLength(128);
             entity.Property(x => x.CreatorName).HasMaxLength(256);
             entity.Property(x => x.Status).HasMaxLength(16);
+        });
+
+        modelBuilder.Entity<CrmTaskCommentEntity>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.TaskId, x.CreatedAtUtc });
+            entity.Property(x => x.AuthorUserId).HasMaxLength(128);
+            entity.Property(x => x.AuthorName).HasMaxLength(256);
+            entity.Property(x => x.Text).HasMaxLength(4000);
+            entity.HasOne<CrmTaskEntity>()
+                .WithMany()
+                .HasForeignKey(x => x.TaskId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<CrmCandidateHistoryEntity>(entity =>

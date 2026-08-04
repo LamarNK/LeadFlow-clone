@@ -215,6 +215,24 @@ public static class CrmEndpoints
             return await workspace.CompleteTaskAsync(taskId, userId, principal.IsInRole(PanelRoles.Admin), ct) ? Results.NoContent() : Results.NotFound();
         });
 
+        crm.MapGet("/tasks/{taskId:guid}", async (Guid taskId, CrmWorkspaceService workspace, ClaimsPrincipal principal, CancellationToken ct) =>
+        {
+            var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrWhiteSpace(userId)) return Results.Forbid();
+            var task = await workspace.GetTaskAsync(taskId, userId, principal.IsInRole(PanelRoles.Admin), ct);
+            return task is null ? Results.NotFound() : Results.Ok(task);
+        });
+
+        crm.MapPost("/tasks/{taskId:guid}/comments", async (Guid taskId, CrmTaskCommentCreateRequest request, CrmWorkspaceService workspace, ClaimsPrincipal principal, CancellationToken ct) =>
+        {
+            var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrWhiteSpace(userId)) return Results.Forbid();
+            var comment = await workspace.AddTaskCommentAsync(taskId, request.Text, userId, principal.IsInRole(PanelRoles.Admin), ct);
+            return comment is null
+                ? Results.BadRequest()
+                : Results.Created($"/api/v1/crm/tasks/{taskId:D}#comment-{comment.Id:D}", comment);
+        });
+
         crm.MapGet("/offices/{officeId:guid}/settings", async (Guid officeId, CrmWorkspaceService workspace, ClaimsPrincipal principal, CancellationToken ct) =>
             principal.IsInRole(PanelRoles.Admin)
                 ? Results.Ok(await workspace.GetOfficeSettingsAsync(officeId, ct))

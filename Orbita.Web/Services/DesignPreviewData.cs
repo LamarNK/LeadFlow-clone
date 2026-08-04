@@ -69,6 +69,13 @@ internal static class DesignPreviewData
         new(Guid.Parse("92000000-0000-0000-0000-000000000002"), Guid.Parse("90000000-0000-0000-0000-000000000003"), "Турунцев Сергей Леонидович", "Перезвонить", null, PreviewManagerElena, "Елена Воронцова", PreviewManagerElena, "Елена Воронцова", Now.AddHours(-2), CrmTaskStatuses.Open, Now.AddHours(-5), null, true),
         new(Guid.Parse("92000000-0000-0000-0000-000000000003"), null, null, "Проверить вакансии на неделю", null, PreviewManagerElena, "Елена Воронцова", PreviewManagerElena, "Елена Воронцова", Now.AddDays(1), CrmTaskStatuses.Open, Now.AddHours(-8), null, false)
     ];
+    private static readonly Dictionary<Guid, List<CrmTaskCommentDto>> PreviewCrmTaskComments = new()
+    {
+        [Guid.Parse("92000000-0000-0000-0000-000000000001")] =
+        [
+            new(Guid.Parse("92500000-0000-0000-0000-000000000001"), Guid.Parse("92000000-0000-0000-0000-000000000001"), PreviewManagerElena, "Елена Воронцова", "Кандидат обещал прислать документы после смены.", Now.AddMinutes(-35))
+        ]
+    };
     private static readonly List<CrmHistoryDto> PreviewCrmHistory =
     [
         new(Guid.Parse("93000000-0000-0000-0000-000000000001"), "Created", "Отклик из Avito", "system", "Система", Now.AddMinutes(-35)),
@@ -239,6 +246,19 @@ internal static class DesignPreviewData
         }
     }
 
+    public static CrmTaskDetailDto? GetCrmTask(Guid taskId)
+    {
+        lock (CrmSync)
+        {
+            var task = PreviewCrmTasks.FirstOrDefault(x => x.Id == taskId);
+            if (task is null) return null;
+            var comments = PreviewCrmTaskComments.TryGetValue(taskId, out var items)
+                ? items.OrderBy(x => x.CreatedAtUtc).ToList()
+                : [];
+            return new CrmTaskDetailDto(task, comments, task.Status == CrmTaskStatuses.Open);
+        }
+    }
+
     public static (bool Success, string? Error) StartCrmShift()
     {
         lock (CrmSync)
@@ -386,6 +406,32 @@ internal static class DesignPreviewData
             var task = PreviewCrmTasks[index];
             PreviewCrmTasks[index] = task with { Status = CrmTaskStatuses.Completed, CompletedAtUtc = DateTime.UtcNow, IsOverdue = false };
             AddPreviewCrmHistory("TaskCompleted", task.Title);
+            return (true, null);
+        }
+    }
+
+    public static (bool Success, string? Error) AddCrmTaskComment(Guid taskId, string text)
+    {
+        lock (CrmSync)
+        {
+            if (PreviewCrmTasks.All(task => task.Id != taskId) || string.IsNullOrWhiteSpace(text))
+            {
+                return (false, "Введите текст комментария.");
+            }
+
+            if (!PreviewCrmTaskComments.TryGetValue(taskId, out var comments))
+            {
+                comments = [];
+                PreviewCrmTaskComments[taskId] = comments;
+            }
+
+            comments.Add(new CrmTaskCommentDto(
+                Guid.NewGuid(),
+                taskId,
+                "preview-admin",
+                "Администратор",
+                text.Trim(),
+                DateTime.UtcNow));
             return (true, null);
         }
     }

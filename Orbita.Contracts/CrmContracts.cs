@@ -250,6 +250,19 @@ public sealed record CrmTaskDto(
     DateTime? CompletedAtUtc,
     bool IsOverdue);
 
+public sealed record CrmTaskCommentDto(
+    Guid Id,
+    Guid TaskId,
+    string AuthorUserId,
+    string AuthorName,
+    string Text,
+    DateTime CreatedAtUtc);
+
+public sealed record CrmTaskDetailDto(
+    CrmTaskDto Task,
+    IReadOnlyList<CrmTaskCommentDto> Comments,
+    bool CanComplete);
+
 public sealed record CrmHistoryDto(
     Guid Id,
     string Action,
@@ -275,6 +288,7 @@ public sealed record CrmTaskCreateRequest(
     string? Description,
     string AssigneeUserId,
     DateTime? DueAtUtc);
+public sealed record CrmTaskCommentCreateRequest(string Text);
 public sealed record CrmFollowUpRequest(int Minutes, string? Title = null);
 public sealed record CrmCloseRequest(string Reason, string? Comment = null);
 public sealed record CrmCapacityRequest(int Capacity);

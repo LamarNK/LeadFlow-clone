@@ -13,6 +13,8 @@
     var later = open.Where(x => !overdueIds.Contains(x.Id) && !todayIds.Contains(x.Id)).OrderBy(x => x.DueAtUtc ?? DateTime.MaxValue).ToList();
     var completed = Model.Tasks.Where(x => x.Status == CrmTaskStatuses.Completed).OrderByDescending(x => x.CompletedAtUtc).Take(30).ToList();
     var selectedScope = Model.SelectedScope;
+    ViewData["CurrentCrmUserId"] = Model.CurrentUserId;
+    ViewData["IsCrmAdmin"] = Model.IsAdmin;
     var shownCount = selectedScope switch
     {
         "overdue" => overdue.Count,

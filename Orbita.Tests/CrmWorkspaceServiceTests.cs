@@ -234,6 +234,79 @@ public sealed class CrmWorkspaceServiceTests
         Assert.True(own.CanEdit);
     }
 
+    [Fact]
+    public async Task Tasks_AreVisibleToCreatorAndAssigneeOnly_AndCommentsKeepAuthor()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var creator = await harness.CreateManagerAsync("creator@test.local", capacity: 5, onShift: true);
+        var assignee = await harness.CreateManagerAsync("assignee@test.local", capacity: 5, onShift: true);
+        var outsider = await harness.CreateManagerAsync("outsider@test.local", capacity: 5, onShift: true);
+
+        var task = await harness.Sut.CreateTaskAsync(
+            OfficeId,
+            new CrmTaskCreateRequest(null, "Позвонить кандидату", "Уточнить время", assignee.Id, DateTime.UtcNow.AddHours(1)),
+            creator.Id,
+            isAdmin: false);
+
+        Assert.NotNull(task);
+        Assert.Contains((await harness.Sut.GetTasksAsync(OfficeId, creator.Id, isAdmin: false)).Select(x => x.Id), id => id == task.Id);
+        Assert.Contains((await harness.Sut.GetTasksAsync(OfficeId, assignee.Id, isAdmin: false)).Select(x => x.Id), id => id == task.Id);
+        Assert.DoesNotContain((await harness.Sut.GetTasksAsync(OfficeId, outsider.Id, isAdmin: false)).Select(x => x.Id), id => id == task.Id);
+        Assert.Contains((await harness.Sut.GetTasksAsync(OfficeId, "admin", isAdmin: true)).Select(x => x.Id), id => id == task.Id);
+
+        var comment = await harness.Sut.AddTaskCommentAsync(task.Id, "Созвон согласован", creator.Id, isAdmin: false);
+        Assert.NotNull(comment);
+        Assert.Equal(creator.Id, comment.AuthorUserId);
+
+        var detail = await harness.Sut.GetTaskAsync(task.Id, assignee.Id, isAdmin: false);
+        Assert.NotNull(detail);
+        Assert.True(detail.CanComplete);
+        Assert.Single(detail.Comments);
+        Assert.Equal("Созвон согласован", detail.Comments[0].Text);
+
+        var adminDetail = await harness.Sut.GetTaskAsync(task.Id, "admin", isAdmin: true);
+        Assert.NotNull(adminDetail);
+        Assert.True(adminDetail.CanComplete);
+
+        Assert.Null(await harness.Sut.GetTaskAsync(task.Id, outsider.Id, isAdmin: false));
+        Assert.Null(await harness.Sut.AddTaskCommentAsync(task.Id, "Нет доступа", outsider.Id, isAdmin: false));
+        Assert.False(await harness.Sut.CompleteTaskAsync(task.Id, creator.Id, isAdmin: false));
+        Assert.True(await harness.Sut.CompleteTaskAsync(task.Id, assignee.Id, isAdmin: false));
+    }
+
+    [Fact]
+    public async Task CreateTask_RejectsManagerFromAnotherOffice_AndForeignCard()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var creator = await harness.CreateManagerAsync("creator@test.local", capacity: 5, onShift: true);
+        var assignee = await harness.CreateManagerAsync("assignee@test.local", capacity: 5, onShift: true);
+        var foreignManager = await harness.CreateManagerAsync("foreign@test.local", capacity: 5, onShift: true);
+        var foreignProfile = await harness.Db.PanelUserProfiles.SingleAsync(x => x.UserId == foreignManager.Id);
+        foreignProfile.OfficeId = Guid.NewGuid();
+        await harness.Db.SaveChangesAsync();
+
+        var foreignAssigneeTask = await harness.Sut.CreateTaskAsync(
+            OfficeId,
+            new CrmTaskCreateRequest(null, "Не создать", null, foreignManager.Id, null),
+            creator.Id,
+            isAdmin: false);
+        Assert.Null(foreignAssigneeTask);
+
+        var response = await SeedResponseAsync(harness.Db);
+        var card = NewCard(response.Id, creator.Id);
+        harness.Db.CrmCandidateCards.Add(card);
+        await harness.Db.SaveChangesAsync();
+
+        var linkedTask = await harness.Sut.CreateTaskAsync(
+            OfficeId,
+            new CrmTaskCreateRequest(card.Id, "Проверить анкету", null, assignee.Id, null),
+            assignee.Id,
+            isAdmin: false);
+        Assert.Null(linkedTask);
+    }
+
     private static CrmCandidateCardEntity NewCard(Guid responseId, string? managerId = null) => new()
     {
         Id = Guid.NewGuid(),

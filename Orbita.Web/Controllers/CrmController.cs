@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
+using System.Security.Claims;
 using Orbita.Contracts;
 using Orbita.Web.Authorization;
 using Orbita.Web.Models.ViewModels;
@@ -123,6 +124,7 @@ public sealed class CrmController(
         if (card is null) return NotFound();
         ViewData["CrmTab"] = tab is "tasks" or "history" or "chat" ? tab : "activity";
         ViewData["IsCrmAdmin"] = User.IsInRole(OrbitaRoles.Admin);
+        ViewData["CurrentCrmUserId"] = User.FindFirstValue(ClaimTypes.NameIdentifier);
         return View(card);
     }
 
@@ -160,7 +162,21 @@ public sealed class CrmController(
             _ => "all"
         };
 
-        return View(new CrmTasksViewModel(tasks, board.Managers, board.OpenTaskCount, board.OverdueTaskCount, selectedScope));
+        return View(new CrmTasksViewModel(
+            tasks,
+            board.Managers,
+            board.OpenTaskCount,
+            board.OverdueTaskCount,
+            selectedScope,
+            User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty,
+            User.IsInRole(OrbitaRoles.Admin)));
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> TaskDetails(Guid id, CancellationToken ct = default)
+    {
+        var task = await api.GetCrmTaskAsync(id, ct);
+        return task is null ? NotFound() : View(task);
     }
 
     [HttpGet]
@@ -274,7 +290,18 @@ public sealed class CrmController(
     {
         var (_, error) = await api.CompleteCrmTaskAsync(taskId, ct);
         if (error is not null) TempData["CrmError"] = error;
-        return cardId is Guid id ? RedirectToAction(nameof(Card), new { id, tab = "tasks" }) : RedirectToAction(nameof(Tasks));
+        return cardId is Guid id
+            ? RedirectToAction(nameof(Card), new { id, tab = "tasks" })
+            : RedirectToAction(nameof(TaskDetails), new { id = taskId });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> AddTaskComment(Guid taskId, string text, CancellationToken ct = default)
+    {
+        var (_, error) = await api.AddCrmTaskCommentAsync(taskId, text, ct);
+        if (error is not null) TempData["CrmError"] = error;
+        return RedirectToAction(nameof(TaskDetails), new { id = taskId });
     }
 
     private Guid? ResolveOfficeId(Guid? officeId) =>
