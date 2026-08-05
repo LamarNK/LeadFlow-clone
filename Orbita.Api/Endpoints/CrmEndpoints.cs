@@ -215,6 +215,40 @@ public static class CrmEndpoints
             return await workspace.CompleteTaskAsync(taskId, userId, principal.IsInRole(PanelRoles.Admin), ct) ? Results.NoContent() : Results.NotFound();
         });
 
+        crm.MapPut("/tasks/{taskId:guid}", async (
+            Guid taskId,
+            CrmTaskUpdateRequest request,
+            CrmWorkspaceService workspace,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrWhiteSpace(userId)) return Results.Forbid();
+            var (ok, error) = await workspace.UpdateTaskAsync(
+                taskId,
+                request,
+                userId,
+                principal.IsInRole(PanelRoles.Admin),
+                ct);
+            return ok ? Results.NoContent() : Results.BadRequest(new { error = error ?? "Не удалось обновить задачу." });
+        });
+
+        crm.MapPost("/tasks/{taskId:guid}/cancel", async (Guid taskId, CrmWorkspaceService workspace, ClaimsPrincipal principal, CancellationToken ct) =>
+        {
+            var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrWhiteSpace(userId)) return Results.Forbid();
+            var (ok, error) = await workspace.CancelTaskAsync(taskId, userId, principal.IsInRole(PanelRoles.Admin), ct);
+            return ok ? Results.NoContent() : Results.BadRequest(new { error = error ?? "Не удалось отменить задачу." });
+        });
+
+        crm.MapPost("/tasks/{taskId:guid}/reopen", async (Guid taskId, CrmWorkspaceService workspace, ClaimsPrincipal principal, CancellationToken ct) =>
+        {
+            var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrWhiteSpace(userId)) return Results.Forbid();
+            var (ok, error) = await workspace.ReopenTaskAsync(taskId, userId, principal.IsInRole(PanelRoles.Admin), ct);
+            return ok ? Results.NoContent() : Results.BadRequest(new { error = error ?? "Не удалось вернуть задачу в работу." });
+        });
+
         crm.MapGet("/tasks/{taskId:guid}", async (Guid taskId, CrmWorkspaceService workspace, ClaimsPrincipal principal, CancellationToken ct) =>
         {
             var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
@@ -231,6 +265,66 @@ public static class CrmEndpoints
             return comment is null
                 ? Results.BadRequest()
                 : Results.Created($"/api/v1/crm/tasks/{taskId:D}#comment-{comment.Id:D}", comment);
+        });
+
+        crm.MapPost("/tasks/{taskId:guid}/attachments", async (
+            Guid taskId,
+            HttpRequest request,
+            CrmWorkspaceService workspace,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrWhiteSpace(userId)) return Results.Forbid();
+            if (!request.HasFormContentType)
+            {
+                return Results.BadRequest(new { error = "Ожидается multipart/form-data." });
+            }
+
+            var form = await request.ReadFormAsync(ct);
+            var file = form.Files.GetFile("file");
+            if (file is null || file.Length == 0)
+            {
+                return Results.BadRequest(new { error = "Файл не передан." });
+            }
+
+            await using var content = file.OpenReadStream();
+            var (attachment, error) = await workspace.AddTaskAttachmentAsync(
+                taskId,
+                content,
+                file.Length,
+                file.FileName,
+                file.ContentType,
+                userId,
+                principal.IsInRole(PanelRoles.Admin),
+                ct);
+            return attachment is null
+                ? Results.BadRequest(new { error = error ?? "Не удалось сохранить вложение." })
+                : Results.Created($"/api/v1/crm/tasks/{taskId:D}/attachments/{attachment.Id:D}", attachment);
+        }).DisableAntiforgery();
+
+        crm.MapGet("/tasks/{taskId:guid}/attachments/{attachmentId:guid}", async (
+            Guid taskId,
+            Guid attachmentId,
+            CrmWorkspaceService workspace,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrWhiteSpace(userId)) return Results.Forbid();
+            var attachment = await workspace.OpenTaskAttachmentAsync(
+                taskId,
+                attachmentId,
+                userId,
+                principal.IsInRole(PanelRoles.Admin),
+                ct);
+            return attachment.Stream is null
+                ? Results.NotFound()
+                : Results.File(
+                    attachment.Stream,
+                    attachment.ContentType ?? "application/octet-stream",
+                    attachment.FileName ?? "Вложение",
+                    enableRangeProcessing: true);
         });
 
         crm.MapGet("/offices/{officeId:guid}/settings", async (Guid officeId, CrmWorkspaceService workspace, ClaimsPrincipal principal, CancellationToken ct) =>

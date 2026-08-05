@@ -276,13 +276,18 @@
                     <form asp-action="CreateTask" method="post" class="crm-task-create">
                         <input type="hidden" name="cardId" value="@card.Id" />
                         <input name="title" required placeholder="Что сделать" />
-                        <select name="assigneeUserId" required>
-                            @foreach (var m in Model.Managers)
-                            {
-                                <option value="@m.UserId">@m.DisplayName</option>
-                            }
-                        </select>
-                        <input type="datetime-local" name="dueAtUtc" />
+                          <select name="assigneeUserId" required>
+                              @foreach (var m in Model.Managers)
+                              {
+                                  <option value="@m.UserId">@m.DisplayName</option>
+                              }
+                          </select>
+                          <select name="importance" required aria-label="Важность задачи">
+                              <option value="@CrmTaskImportances.Low">Низкая</option>
+                              <option value="@CrmTaskImportances.Medium" selected>Средняя</option>
+                              <option value="@CrmTaskImportances.High">Высокая</option>
+                          </select>
+                          <input type="datetime-local" name="dueAtUtc" />
                         <textarea name="description" placeholder="Комментарий"></textarea>
                         <button class="settings-primary-btn" type="submit">Поставить задачу</button>
                     </form>

@@ -35,6 +35,7 @@ public sealed class OfficeEntity
 public sealed class PanelUserProfileEntity
 {
     public string UserId { get; set; } = string.Empty;
+    public string? FullName { get; set; }
     public Guid? OfficeId { get; set; }
     public int CrmCapacity { get; set; } = 10;
     public bool CrmShiftActive { get; set; }
@@ -678,6 +679,7 @@ public sealed class CrmTaskEntity
     public string CreatorUserId { get; set; } = string.Empty;
     public string CreatorName { get; set; } = string.Empty;
     public DateTime? DueAtUtc { get; set; }
+    public string Importance { get; set; } = CrmTaskImportances.Medium;
     public string Status { get; set; } = CrmTaskStatuses.Open;
     public DateTime CreatedAtUtc { get; set; }
     public DateTime? CompletedAtUtc { get; set; }
@@ -690,6 +692,19 @@ public sealed class CrmTaskCommentEntity
     public string AuthorUserId { get; set; } = string.Empty;
     public string AuthorName { get; set; } = string.Empty;
     public string Text { get; set; } = string.Empty;
+    public DateTime CreatedAtUtc { get; set; }
+}
+
+public sealed class CrmTaskAttachmentEntity
+{
+    public Guid Id { get; set; }
+    public Guid TaskId { get; set; }
+    public string FileName { get; set; } = string.Empty;
+    public string ContentType { get; set; } = "application/octet-stream";
+    public long SizeBytes { get; set; }
+    public string UploadedByUserId { get; set; } = string.Empty;
+    public string UploadedByName { get; set; } = string.Empty;
+    public string RelativePath { get; set; } = string.Empty;
     public DateTime CreatedAtUtc { get; set; }
 }
 

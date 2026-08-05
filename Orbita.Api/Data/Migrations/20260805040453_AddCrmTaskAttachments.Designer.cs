@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Orbita.Api.Data;
@@ -11,9 +12,11 @@ using Orbita.Api.Data;
 namespace Orbita.Api.Data.Migrations
 {
     [DbContext(typeof(OrbitaDbContext))]
-    partial class OrbitaDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260805040453_AddCrmTaskAttachments")]
+    partial class AddCrmTaskAttachments
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -512,16 +515,15 @@ namespace Orbita.Api.Data.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
 
+                    b.Property<string>("OperationMode")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
                     b.Property<DateTime?>("LastAssignedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<long?>("LastAssignedBitrixUserId")
                         .HasColumnType("bigint");
-
-                    b.Property<string>("OperationMode")
-                        .IsRequired()
-                        .HasMaxLength(16)
-                        .HasColumnType("character varying(16)");
 
                     b.HasKey("BitrixInstanceId", "Scenario", "OperationMode");
 
@@ -530,6 +532,12 @@ namespace Orbita.Api.Data.Migrations
 
             modelBuilder.Entity("Orbita.Api.Data.BitrixWorkforceDealStateEntity", b =>
                 {
+                    b.Property<Guid>("BitrixInstanceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<long>("DealId")
+                        .HasColumnType("bigint");
+
                     b.Property<string>("ActiveScenario")
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
@@ -539,12 +547,6 @@ namespace Orbita.Api.Data.Migrations
 
                     b.Property<DateTime?>("ActiveScenarioWriterHandledAtUtc")
                         .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("BitrixInstanceId")
-                        .HasColumnType("uuid");
-
-                    b.Property<long>("DealId")
-                        .HasColumnType("bigint");
 
                     b.Property<long?>("LastAppliedResponsibleId")
                         .HasColumnType("bigint");
@@ -639,6 +641,10 @@ namespace Orbita.Api.Data.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
 
+                    b.Property<string>("OperationMode")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
                     b.Property<long?>("FirstManagerId")
                         .HasColumnType("bigint");
 
@@ -650,11 +656,6 @@ namespace Orbita.Api.Data.Migrations
 
                     b.Property<int>("InitialReleasedCount")
                         .HasColumnType("integer");
-
-                    b.Property<string>("OperationMode")
-                        .IsRequired()
-                        .HasMaxLength(16)
-                        .HasColumnType("character varying(16)");
 
                     b.Property<DateTime?>("ReserveUntilUtc")
                         .HasColumnType("timestamp with time zone");
@@ -1630,10 +1631,6 @@ namespace Orbita.Api.Data.Migrations
 
                     b.Property<bool>("CrmShiftActive")
                         .HasColumnType("boolean");
-
-                    b.Property<string>("FullName")
-                        .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
 
                     b.Property<Guid?>("OfficeId")
                         .HasColumnType("uuid");

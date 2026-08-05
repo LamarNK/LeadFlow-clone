@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using Orbita.Contracts;
 
 namespace Orbita.Api.Data;
 
@@ -24,6 +25,7 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
     public DbSet<CrmCandidateNoteEntity> CrmCandidateNotes => Set<CrmCandidateNoteEntity>();
     public DbSet<CrmTaskEntity> CrmTasks => Set<CrmTaskEntity>();
     public DbSet<CrmTaskCommentEntity> CrmTaskComments => Set<CrmTaskCommentEntity>();
+    public DbSet<CrmTaskAttachmentEntity> CrmTaskAttachments => Set<CrmTaskAttachmentEntity>();
     public DbSet<CrmCandidateHistoryEntity> CrmCandidateHistory => Set<CrmCandidateHistoryEntity>();
     public DbSet<ResponseBitrixDeliveryEntity> ResponseBitrixDeliveries => Set<ResponseBitrixDeliveryEntity>();
     public DbSet<ResponseCrmDeliveryEntity> ResponseCrmDeliveries => Set<ResponseCrmDeliveryEntity>();
@@ -63,6 +65,7 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
         modelBuilder.Entity<PanelUserProfileEntity>(entity =>
         {
             entity.HasKey(x => x.UserId);
+            entity.Property(x => x.FullName).HasMaxLength(256);
             entity.HasOne(x => x.Office)
                 .WithMany(x => x.UserProfiles)
                 .HasForeignKey(x => x.OfficeId)
@@ -217,6 +220,7 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.Property(x => x.AssigneeUserId).HasMaxLength(128);
             entity.Property(x => x.CreatorUserId).HasMaxLength(128);
             entity.Property(x => x.CreatorName).HasMaxLength(256);
+            entity.Property(x => x.Importance).HasMaxLength(16).HasDefaultValue(CrmTaskImportances.Medium);
             entity.Property(x => x.Status).HasMaxLength(16);
         });
 
@@ -227,6 +231,21 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.Property(x => x.AuthorUserId).HasMaxLength(128);
             entity.Property(x => x.AuthorName).HasMaxLength(256);
             entity.Property(x => x.Text).HasMaxLength(4000);
+            entity.HasOne<CrmTaskEntity>()
+                .WithMany()
+                .HasForeignKey(x => x.TaskId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<CrmTaskAttachmentEntity>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.TaskId, x.CreatedAtUtc });
+            entity.Property(x => x.FileName).HasMaxLength(255);
+            entity.Property(x => x.ContentType).HasMaxLength(128);
+            entity.Property(x => x.UploadedByUserId).HasMaxLength(128);
+            entity.Property(x => x.UploadedByName).HasMaxLength(256);
+            entity.Property(x => x.RelativePath).HasMaxLength(512);
             entity.HasOne<CrmTaskEntity>()
                 .WithMany()
                 .HasForeignKey(x => x.TaskId)

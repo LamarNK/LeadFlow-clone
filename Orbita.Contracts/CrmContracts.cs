@@ -96,6 +96,31 @@ public static class CrmTaskStatuses
 {
     public const string Open = "Open";
     public const string Completed = "Completed";
+    public const string Cancelled = "Cancelled";
+}
+
+public static class CrmTaskImportances
+{
+    public const string Low = "Low";
+    public const string Medium = "Medium";
+    public const string High = "High";
+
+    public static readonly IReadOnlyList<string> All = [Low, Medium, High];
+
+    public static bool IsValid(string? importance) =>
+        All.Contains(importance ?? string.Empty, StringComparer.Ordinal);
+
+    public static string GetLabel(string? importance) => importance switch
+    {
+        Low => "Низкая",
+        High => "Высокая",
+        _ => "Средняя"
+    };
+}
+
+public static class CrmTaskAttachmentLimits
+{
+    public const long MaxFileSizeBytes = 20 * 1024 * 1024;
 }
 
 public static class CrmCloseReasons
@@ -248,7 +273,8 @@ public sealed record CrmTaskDto(
     string Status,
     DateTime CreatedAtUtc,
     DateTime? CompletedAtUtc,
-    bool IsOverdue);
+    bool IsOverdue,
+    string Importance = CrmTaskImportances.Medium);
 
 public sealed record CrmTaskCommentDto(
     Guid Id,
@@ -258,10 +284,21 @@ public sealed record CrmTaskCommentDto(
     string Text,
     DateTime CreatedAtUtc);
 
+public sealed record CrmTaskAttachmentDto(
+    Guid Id,
+    string FileName,
+    string ContentType,
+    long SizeBytes,
+    string UploadedByName,
+    DateTime CreatedAtUtc);
+
 public sealed record CrmTaskDetailDto(
     CrmTaskDto Task,
     IReadOnlyList<CrmTaskCommentDto> Comments,
-    bool CanComplete);
+    bool CanComplete,
+    IReadOnlyList<CrmTaskAttachmentDto> Attachments,
+    bool CanManage,
+    IReadOnlyList<CrmManagerDto> Managers);
 
 public sealed record CrmHistoryDto(
     Guid Id,
@@ -287,7 +324,16 @@ public sealed record CrmTaskCreateRequest(
     string Title,
     string? Description,
     string AssigneeUserId,
-    DateTime? DueAtUtc);
+    DateTime? DueAtUtc,
+    string Importance = CrmTaskImportances.Medium);
+
+public sealed record CrmTaskUpdateRequest(
+    string Title,
+    string? Description,
+    string AssigneeUserId,
+    DateTime? DueAtUtc,
+    string Importance = CrmTaskImportances.Medium);
+
 public sealed record CrmTaskCommentCreateRequest(string Text);
 public sealed record CrmFollowUpRequest(int Minutes, string? Title = null);
 public sealed record CrmCloseRequest(string Reason, string? Comment = null);

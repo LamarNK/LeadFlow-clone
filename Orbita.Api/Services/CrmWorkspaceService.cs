@@ -16,7 +16,8 @@ public sealed class CrmWorkspaceService(
     OrbitaDbContext db,
     UserManager<IdentityUser> users,
     CrmLeadDistributionService leadDistribution,
-    IPanelRealtimeNotifier? panelRealtime = null)
+    IPanelRealtimeNotifier? panelRealtime = null,
+    CrmTaskAttachmentStorageService? taskAttachments = null)
 {
     /// <summary>
     /// Create CRM card for a response in the target office (delivery path only).
@@ -712,6 +713,7 @@ public sealed class CrmWorkspaceService(
         CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(request.Title)
+            || !CrmTaskImportances.IsValid(request.Importance)
             || await GetManagerProfileAsync(officeId, request.AssigneeUserId, ct, allowAdmin: false) is null)
         {
             return null;
@@ -752,6 +754,7 @@ public sealed class CrmWorkspaceService(
             CreatorUserId = actorUserId,
             CreatorName = actorName,
             DueAtUtc = request.DueAtUtc,
+            Importance = request.Importance,
             CreatedAtUtc = now
         };
         db.CrmTasks.Add(task);
@@ -782,7 +785,8 @@ public sealed class CrmWorkspaceService(
                 task.Status,
                 task.CreatedAtUtc,
                 null,
-                task.DueAtUtc is DateTime d && d < now);
+                task.DueAtUtc is DateTime d && d < now,
+                task.Importance);
     }
 
     public async Task<CrmTaskDto?> CreateFollowUpAsync(
@@ -827,7 +831,9 @@ public sealed class CrmWorkspaceService(
     public async Task<bool> CompleteTaskAsync(Guid taskId, string userId, bool isAdmin, CancellationToken ct = default)
     {
         var task = await db.CrmTasks.FirstOrDefaultAsync(x => x.Id == taskId, ct);
-        if (task is null || (!isAdmin && task.AssigneeUserId != userId))
+        if (task is null
+            || task.Status != CrmTaskStatuses.Open
+            || (!isAdmin && task.AssigneeUserId != userId))
         {
             return false;
         }
@@ -839,34 +845,147 @@ public sealed class CrmWorkspaceService(
         {
             var actorName = await ResolveDisplayNameAsync(userId, ct);
             AddHistory(cardId, "TaskCompleted", task.Title, userId, actorName, now);
-            var card = await db.CrmCandidateCards.FirstOrDefaultAsync(x => x.Id == cardId, ct);
-            if (card is not null)
-            {
-                card.LastContactAtUtc = now;
-                card.UpdatedAtUtc = now;
-                var next = await db.CrmTasks.AsNoTracking()
-                    .Where(x => x.CardId == cardId && x.Status == CrmTaskStatuses.Open && x.Id != taskId && x.DueAtUtc != null)
-                    .OrderBy(x => x.DueAtUtc)
-                    .Select(x => x.DueAtUtc)
-                    .FirstOrDefaultAsync(ct);
-                card.NextActionAtUtc = next;
-            }
+            await RefreshTaskCardNextActionAsync(task, now, markContact: true, ct);
         }
 
         await db.SaveChangesAsync(ct);
-        if (task.CardId is Guid completedCardId && completedCardId != Guid.Empty)
-        {
-            var completedCardOffice = await db.CrmCandidateCards.AsNoTracking()
-                .Where(x => x.Id == completedCardId)
-                .Select(x => x.OfficeId)
-                .FirstOrDefaultAsync(ct);
-            if (completedCardOffice != Guid.Empty)
-            {
-                NotifyBoardChanged(completedCardOffice);
-            }
-        }
+        NotifyBoardChanged(task.OfficeId);
 
         return true;
+    }
+
+    public async Task<(bool Ok, string? Error)> UpdateTaskAsync(
+        Guid taskId,
+        CrmTaskUpdateRequest request,
+        string userId,
+        bool isAdmin,
+        CancellationToken ct = default)
+    {
+        var task = await db.CrmTasks.FirstOrDefaultAsync(x => x.Id == taskId, ct);
+        if (task is null)
+        {
+            return (false, "Задача не найдена.");
+        }
+
+        if (!CanManageTask(task, userId, isAdmin))
+        {
+            return (false, "Изменять задачу может её автор или администратор.");
+        }
+
+        if (task.Status != CrmTaskStatuses.Open)
+        {
+            return (false, "Можно изменить только задачу в работе.");
+        }
+
+        var title = request.Title?.Trim();
+        var description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim();
+        if (string.IsNullOrWhiteSpace(title) || title.Length > 500)
+        {
+            return (false, "Название задачи обязательно и не должно превышать 500 символов.");
+        }
+
+        if (description?.Length > 4000)
+        {
+            return (false, "Описание задачи не должно превышать 4000 символов.");
+        }
+
+        if (!CrmTaskImportances.IsValid(request.Importance))
+        {
+            return (false, "Укажите корректную важность задачи.");
+        }
+
+        if (await GetManagerProfileAsync(task.OfficeId, request.AssigneeUserId, ct, allowAdmin: false) is null)
+        {
+            return (false, "Ответственный должен быть менеджером этого офиса.");
+        }
+
+        var now = DateTime.UtcNow;
+        task.Title = title;
+        task.Description = description;
+        task.AssigneeUserId = request.AssigneeUserId;
+        task.DueAtUtc = request.DueAtUtc;
+        task.Importance = request.Importance;
+        if (task.CardId is Guid cardId)
+        {
+            AddHistory(cardId, "TaskUpdated", task.Title, userId, await ResolveDisplayNameAsync(userId, ct), now);
+            await RefreshTaskCardNextActionAsync(task, now, markContact: false, ct);
+        }
+
+        await db.SaveChangesAsync(ct);
+        NotifyBoardChanged(task.OfficeId);
+        return (true, null);
+    }
+
+    public async Task<(bool Ok, string? Error)> CancelTaskAsync(
+        Guid taskId,
+        string userId,
+        bool isAdmin,
+        CancellationToken ct = default)
+    {
+        var task = await db.CrmTasks.FirstOrDefaultAsync(x => x.Id == taskId, ct);
+        if (task is null)
+        {
+            return (false, "Задача не найдена.");
+        }
+
+        if (!CanManageTask(task, userId, isAdmin))
+        {
+            return (false, "Отменять задачу может её автор или администратор.");
+        }
+
+        if (task.Status != CrmTaskStatuses.Open)
+        {
+            return (false, "Отменить можно только задачу в работе.");
+        }
+
+        var now = DateTime.UtcNow;
+        task.Status = CrmTaskStatuses.Cancelled;
+        task.CompletedAtUtc = now;
+        if (task.CardId is Guid cardId)
+        {
+            AddHistory(cardId, "TaskCancelled", task.Title, userId, await ResolveDisplayNameAsync(userId, ct), now);
+            await RefreshTaskCardNextActionAsync(task, now, markContact: false, ct);
+        }
+
+        await db.SaveChangesAsync(ct);
+        NotifyBoardChanged(task.OfficeId);
+        return (true, null);
+    }
+
+    public async Task<(bool Ok, string? Error)> ReopenTaskAsync(
+        Guid taskId,
+        string userId,
+        bool isAdmin,
+        CancellationToken ct = default)
+    {
+        var task = await db.CrmTasks.FirstOrDefaultAsync(x => x.Id == taskId, ct);
+        if (task is null)
+        {
+            return (false, "Задача не найдена.");
+        }
+
+        if (!CanManageTask(task, userId, isAdmin))
+        {
+            return (false, "Возвращать задачу в работу может её автор или администратор.");
+        }
+
+        if (task.Status == CrmTaskStatuses.Open)
+        {
+            return (true, null);
+        }
+
+        var now = DateTime.UtcNow;
+        task.Status = CrmTaskStatuses.Open;
+        task.CompletedAtUtc = null;
+        if (task.CardId is Guid cardId)
+        {
+            AddHistory(cardId, "TaskReopened", task.Title, userId, await ResolveDisplayNameAsync(userId, ct), now);
+            await RefreshTaskCardNextActionAsync(task, now, markContact: false, ct);
+        }
+
+        await db.SaveChangesAsync(ct);
+        NotifyBoardChanged(task.OfficeId);
+        return (true, null);
     }
 
     public async Task<CrmTaskDetailDto?> GetTaskAsync(
@@ -881,6 +1000,7 @@ public sealed class CrmWorkspaceService(
             return null;
         }
 
+        var canManage = CanManageTask(task, userId, isAdmin);
         var managers = await GetManagersAsync(task.OfficeId, ct);
         var names = managers.ToDictionary(x => x.Profile.UserId, x => x.Name, StringComparer.Ordinal);
         var candidateName = task.CardId is Guid cardId
@@ -900,11 +1020,137 @@ public sealed class CrmWorkspaceService(
                 x.Text,
                 x.CreatedAtUtc))
             .ToListAsync(ct);
+        var attachments = await db.CrmTaskAttachments.AsNoTracking()
+            .Where(x => x.TaskId == taskId)
+            .OrderByDescending(x => x.CreatedAtUtc)
+            .Select(x => new CrmTaskAttachmentDto(
+                x.Id,
+                x.FileName,
+                x.ContentType,
+                x.SizeBytes,
+                x.UploadedByName,
+                x.CreatedAtUtc))
+            .ToListAsync(ct);
         var now = DateTime.UtcNow;
         return new CrmTaskDetailDto(
             ToTaskDto(task, names, candidateName, now),
             comments,
-            isAdmin || task.AssigneeUserId == userId);
+            isAdmin || task.AssigneeUserId == userId,
+            attachments,
+            canManage,
+            canManage
+                ? managers.Select(x => new CrmManagerDto(
+                    x.Profile.UserId,
+                    x.Name,
+                    x.Profile.CrmShiftActive,
+                    x.Profile.CrmCapacity,
+                    0)).ToList()
+                : []);
+    }
+
+    public async Task<(CrmTaskAttachmentDto? Attachment, string? Error)> AddTaskAttachmentAsync(
+        Guid taskId,
+        Stream content,
+        long contentLength,
+        string fileName,
+        string? contentType,
+        string userId,
+        bool isAdmin,
+        CancellationToken ct = default)
+    {
+        if (taskAttachments is null)
+        {
+            return (null, "Хранилище вложений недоступно.");
+        }
+
+        if (contentLength <= 0 || contentLength > taskAttachments.MaxUploadBytes)
+        {
+            return (null, "Размер файла вне допустимого диапазона.");
+        }
+
+        var task = await db.CrmTasks.AsNoTracking().FirstOrDefaultAsync(x => x.Id == taskId, ct);
+        if (task is null || !CanAccessTask(task, userId, isAdmin))
+        {
+            return (null, "Задача не найдена.");
+        }
+
+        var safeFileName = Path.GetFileName(fileName?.Trim() ?? string.Empty);
+        if (string.IsNullOrWhiteSpace(safeFileName))
+        {
+            safeFileName = "Вложение";
+        }
+        else if (safeFileName.Length > 255)
+        {
+            return (null, "Название файла слишком длинное.");
+        }
+
+        var safeContentType = string.IsNullOrWhiteSpace(contentType) || contentType.Length > 128
+            ? "application/octet-stream"
+            : contentType.Trim();
+        var now = DateTime.UtcNow;
+        var attachment = new CrmTaskAttachmentEntity
+        {
+            Id = Guid.NewGuid(),
+            TaskId = taskId,
+            FileName = safeFileName,
+            ContentType = safeContentType,
+            SizeBytes = contentLength,
+            UploadedByUserId = userId,
+            UploadedByName = await ResolveDisplayNameAsync(userId, ct),
+            CreatedAtUtc = now
+        };
+
+        try
+        {
+            attachment.RelativePath = await taskAttachments.SaveAsync(taskId, attachment.Id, content, ct);
+            db.CrmTaskAttachments.Add(attachment);
+            await db.SaveChangesAsync(ct);
+        }
+        catch
+        {
+            if (!string.IsNullOrWhiteSpace(attachment.RelativePath))
+            {
+                taskAttachments.TryDelete(attachment.RelativePath);
+            }
+
+            return (null, "Не удалось сохранить вложение.");
+        }
+
+        return (new CrmTaskAttachmentDto(
+            attachment.Id,
+            attachment.FileName,
+            attachment.ContentType,
+            attachment.SizeBytes,
+            attachment.UploadedByName,
+            attachment.CreatedAtUtc), null);
+    }
+
+    public async Task<(Stream? Stream, string? FileName, string? ContentType)> OpenTaskAttachmentAsync(
+        Guid taskId,
+        Guid attachmentId,
+        string userId,
+        bool isAdmin,
+        CancellationToken ct = default)
+    {
+        if (taskAttachments is null)
+        {
+            return (null, null, null);
+        }
+
+        var task = await db.CrmTasks.AsNoTracking().FirstOrDefaultAsync(x => x.Id == taskId, ct);
+        if (task is null || !CanAccessTask(task, userId, isAdmin))
+        {
+            return (null, null, null);
+        }
+
+        var attachment = await db.CrmTaskAttachments.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == attachmentId && x.TaskId == taskId, ct);
+        if (attachment is null)
+        {
+            return (null, null, null);
+        }
+
+        return (taskAttachments.OpenRead(attachment.RelativePath), attachment.FileName, attachment.ContentType);
     }
 
     public async Task<CrmTaskCommentDto?> AddTaskCommentAsync(
@@ -991,13 +1237,56 @@ public sealed class CrmWorkspaceService(
     private static bool CanAccessTask(CrmTaskEntity task, string userId, bool isAdmin) =>
         isAdmin || task.AssigneeUserId == userId || task.CreatorUserId == userId;
 
+    private static bool CanManageTask(CrmTaskEntity task, string userId, bool isAdmin) =>
+        isAdmin || task.CreatorUserId == userId;
+
+    private async Task RefreshTaskCardNextActionAsync(
+        CrmTaskEntity task,
+        DateTime now,
+        bool markContact,
+        CancellationToken ct)
+    {
+        if (task.CardId is not Guid cardId)
+        {
+            return;
+        }
+
+        var card = await db.CrmCandidateCards.FirstOrDefaultAsync(x => x.Id == cardId, ct);
+        if (card is null)
+        {
+            return;
+        }
+
+        var nextOther = await db.CrmTasks.AsNoTracking()
+            .Where(x => x.CardId == cardId
+                        && x.Id != task.Id
+                        && x.Status == CrmTaskStatuses.Open
+                        && x.DueAtUtc != null)
+            .OrderBy(x => x.DueAtUtc)
+            .Select(x => x.DueAtUtc)
+            .FirstOrDefaultAsync(ct);
+        var ownNext = task.Status == CrmTaskStatuses.Open ? task.DueAtUtc : null;
+        card.NextActionAtUtc = ownNext is null
+            ? nextOther
+            : nextOther is null ? ownNext : ownNext < nextOther ? ownNext : nextOther;
+        card.UpdatedAtUtc = now;
+        if (markContact)
+        {
+            card.LastContactAtUtc = now;
+        }
+    }
+
     private async Task<List<(PanelUserProfileEntity Profile, string Name)>> GetManagersAsync(Guid officeId, CancellationToken ct)
     {
         var managerUsers = await users.GetUsersInRoleAsync(PanelRoles.Manager);
         var ids = managerUsers.Select(x => x.Id).ToHashSet(StringComparer.Ordinal);
         var profiles = await db.PanelUserProfiles.Where(x => x.OfficeId == officeId && ids.Contains(x.UserId)).ToListAsync(ct);
         var names = managerUsers.ToDictionary(x => x.Id, x => DisplayName(x), StringComparer.Ordinal);
-        return profiles.Select(x => (x, names.GetValueOrDefault(x.UserId, x.UserId))).ToList();
+        return profiles.Select(x => (
+            x,
+            string.IsNullOrWhiteSpace(x.FullName)
+                ? names.GetValueOrDefault(x.UserId, x.UserId)
+                : x.FullName)).ToList();
     }
 
     private async Task<string> ResolveDisplayNameAsync(string userId, CancellationToken ct)
@@ -1005,6 +1294,16 @@ public sealed class CrmWorkspaceService(
         if (userId is "system")
         {
             return "Система";
+        }
+
+        var fullName = await db.PanelUserProfiles
+            .AsNoTracking()
+            .Where(x => x.UserId == userId)
+            .Select(x => x.FullName)
+            .FirstOrDefaultAsync(ct);
+        if (!string.IsNullOrWhiteSpace(fullName))
+        {
+            return fullName;
         }
 
         var user = await users.FindByIdAsync(userId);
@@ -1074,12 +1373,15 @@ public sealed class CrmWorkspaceService(
             task.AssigneeUserId,
             names.GetValueOrDefault(task.AssigneeUserId, task.AssigneeUserId),
             task.CreatorUserId,
-            string.IsNullOrWhiteSpace(task.CreatorName) ? names.GetValueOrDefault(task.CreatorUserId, task.CreatorUserId) : task.CreatorName,
+            names.GetValueOrDefault(
+                task.CreatorUserId,
+                string.IsNullOrWhiteSpace(task.CreatorName) ? task.CreatorUserId : task.CreatorName),
             task.DueAtUtc,
             task.Status,
             task.CreatedAtUtc,
             task.CompletedAtUtc,
-            task.Status == CrmTaskStatuses.Open && task.DueAtUtc is DateTime due && due < now);
+            task.Status == CrmTaskStatuses.Open && task.DueAtUtc is DateTime due && due < now,
+            task.Importance);
 
     private static IReadOnlyList<CrmActivityItemDto> BuildActivity(
         IReadOnlyList<CrmCandidateNoteEntity> notes,
@@ -1117,6 +1419,9 @@ public sealed class CrmWorkspaceService(
         "RemovedFromLoad" => "Сняли с нагрузки",
         "Closed" => "Карточка закрыта",
         "Reopened" => "Карточка открыта снова",
+        "TaskUpdated" => "Задача изменена",
+        "TaskCancelled" => "Задача отменена",
+        "TaskReopened" => "Задача возвращена в работу",
         _ => action
     };
 

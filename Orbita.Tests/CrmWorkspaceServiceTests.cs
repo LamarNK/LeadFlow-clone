@@ -3,7 +3,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Orbita.Api.Data;
+using Orbita.Api.Options;
 using Orbita.Api.Services;
 using Orbita.Contracts;
 
@@ -242,14 +244,20 @@ public sealed class CrmWorkspaceServiceTests
         var creator = await harness.CreateManagerAsync("creator@test.local", capacity: 5, onShift: true);
         var assignee = await harness.CreateManagerAsync("assignee@test.local", capacity: 5, onShift: true);
         var outsider = await harness.CreateManagerAsync("outsider@test.local", capacity: 5, onShift: true);
+        (await harness.Db.PanelUserProfiles.SingleAsync(x => x.UserId == creator.Id)).FullName = "Иван Петров";
+        (await harness.Db.PanelUserProfiles.SingleAsync(x => x.UserId == assignee.Id)).FullName = "Мария Сидорова";
+        await harness.Db.SaveChangesAsync();
 
         var task = await harness.Sut.CreateTaskAsync(
             OfficeId,
-            new CrmTaskCreateRequest(null, "Позвонить кандидату", "Уточнить время", assignee.Id, DateTime.UtcNow.AddHours(1)),
+            new CrmTaskCreateRequest(null, "Позвонить кандидату", "Уточнить время", assignee.Id, DateTime.UtcNow.AddHours(1), CrmTaskImportances.High),
             creator.Id,
             isAdmin: false);
 
         Assert.NotNull(task);
+        Assert.Equal(CrmTaskImportances.High, task.Importance);
+        Assert.Equal("Иван Петров", task.CreatorName);
+        Assert.Equal("Мария Сидорова", task.AssigneeName);
         Assert.Contains((await harness.Sut.GetTasksAsync(OfficeId, creator.Id, isAdmin: false)).Select(x => x.Id), id => id == task.Id);
         Assert.Contains((await harness.Sut.GetTasksAsync(OfficeId, assignee.Id, isAdmin: false)).Select(x => x.Id), id => id == task.Id);
         Assert.DoesNotContain((await harness.Sut.GetTasksAsync(OfficeId, outsider.Id, isAdmin: false)).Select(x => x.Id), id => id == task.Id);
@@ -258,10 +266,12 @@ public sealed class CrmWorkspaceServiceTests
         var comment = await harness.Sut.AddTaskCommentAsync(task.Id, "Созвон согласован", creator.Id, isAdmin: false);
         Assert.NotNull(comment);
         Assert.Equal(creator.Id, comment.AuthorUserId);
+        Assert.Equal("Иван Петров", comment.AuthorName);
 
         var detail = await harness.Sut.GetTaskAsync(task.Id, assignee.Id, isAdmin: false);
         Assert.NotNull(detail);
         Assert.True(detail.CanComplete);
+        Assert.Equal(CrmTaskImportances.High, detail.Task.Importance);
         Assert.Single(detail.Comments);
         Assert.Equal("Созвон согласован", detail.Comments[0].Text);
 
@@ -305,6 +315,100 @@ public sealed class CrmWorkspaceServiceTests
             assignee.Id,
             isAdmin: false);
         Assert.Null(linkedTask);
+    }
+
+    [Fact]
+    public async Task TaskAuthorOrAdmin_CanEditCancelAndReopenTask()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var creator = await harness.CreateManagerAsync("creator@test.local", capacity: 5, onShift: true);
+        var assignee = await harness.CreateManagerAsync("assignee@test.local", capacity: 5, onShift: true);
+        var replacement = await harness.CreateManagerAsync("replacement@test.local", capacity: 5, onShift: true);
+        var task = await harness.Sut.CreateTaskAsync(
+            OfficeId,
+            new CrmTaskCreateRequest(null, "Первичный звонок", null, assignee.Id, DateTime.UtcNow.AddHours(1)),
+            creator.Id,
+            isAdmin: false);
+        Assert.NotNull(task);
+
+        var denied = await harness.Sut.UpdateTaskAsync(
+            task.Id,
+            new CrmTaskUpdateRequest("Изменённая задача", "Описание", replacement.Id, DateTime.UtcNow.AddDays(1), CrmTaskImportances.High),
+            assignee.Id,
+            isAdmin: false);
+        Assert.False(denied.Ok);
+
+        var updated = await harness.Sut.UpdateTaskAsync(
+            task.Id,
+            new CrmTaskUpdateRequest("Изменённая задача", "Описание", replacement.Id, DateTime.UtcNow.AddDays(1), CrmTaskImportances.High),
+            creator.Id,
+            isAdmin: false);
+        Assert.True(updated.Ok);
+        var afterUpdate = await harness.Sut.GetTaskAsync(task.Id, creator.Id, isAdmin: false);
+        Assert.NotNull(afterUpdate);
+        Assert.True(afterUpdate.CanManage);
+        Assert.Equal("Изменённая задача", afterUpdate.Task.Title);
+        Assert.Equal(replacement.Id, afterUpdate.Task.AssigneeUserId);
+        Assert.Equal(CrmTaskImportances.High, afterUpdate.Task.Importance);
+
+        var cancelDenied = await harness.Sut.CancelTaskAsync(task.Id, replacement.Id, isAdmin: false);
+        Assert.False(cancelDenied.Ok);
+        Assert.True((await harness.Sut.CancelTaskAsync(task.Id, creator.Id, isAdmin: false)).Ok);
+        var cancelled = await harness.Sut.GetTaskAsync(task.Id, creator.Id, isAdmin: false);
+        Assert.NotNull(cancelled);
+        Assert.Equal(CrmTaskStatuses.Cancelled, cancelled.Task.Status);
+        Assert.False(await harness.Sut.CompleteTaskAsync(task.Id, replacement.Id, isAdmin: false));
+
+        Assert.True((await harness.Sut.ReopenTaskAsync(task.Id, creator.Id, isAdmin: false)).Ok);
+        Assert.True(await harness.Sut.CompleteTaskAsync(task.Id, replacement.Id, isAdmin: false));
+        Assert.True((await harness.Sut.ReopenTaskAsync(task.Id, "admin", isAdmin: true)).Ok);
+        var reopened = await harness.Sut.GetTaskAsync(task.Id, creator.Id, isAdmin: false);
+        Assert.NotNull(reopened);
+        Assert.Equal(CrmTaskStatuses.Open, reopened.Task.Status);
+    }
+
+    [Fact]
+    public async Task TaskAttachment_IsAvailableToParticipantsOnly()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var creator = await harness.CreateManagerAsync("creator@test.local", capacity: 5, onShift: true);
+        var assignee = await harness.CreateManagerAsync("assignee@test.local", capacity: 5, onShift: true);
+        var outsider = await harness.CreateManagerAsync("outsider@test.local", capacity: 5, onShift: true);
+        var task = await harness.Sut.CreateTaskAsync(
+            OfficeId,
+            new CrmTaskCreateRequest(null, "Получить документы", null, assignee.Id, null),
+            creator.Id,
+            isAdmin: false);
+        Assert.NotNull(task);
+
+        await using var uploadContent = new MemoryStream([1, 2, 3, 4]);
+        var (attachment, error) = await harness.Sut.AddTaskAttachmentAsync(
+            task.Id,
+            uploadContent,
+            uploadContent.Length,
+            "..\\документы.pdf",
+            "application/pdf",
+            creator.Id,
+            isAdmin: false);
+
+        Assert.Null(error);
+        Assert.NotNull(attachment);
+        Assert.Equal("документы.pdf", attachment.FileName);
+        var detail = await harness.Sut.GetTaskAsync(task.Id, assignee.Id, isAdmin: false);
+        Assert.NotNull(detail);
+        Assert.Single(detail.Attachments);
+        Assert.Equal(attachment.Id, detail.Attachments[0].Id);
+
+        var outsiderDownload = await harness.Sut.OpenTaskAttachmentAsync(task.Id, attachment.Id, outsider.Id, isAdmin: false);
+        Assert.Null(outsiderDownload.Stream);
+        var assigneeDownload = await harness.Sut.OpenTaskAttachmentAsync(task.Id, attachment.Id, assignee.Id, isAdmin: false);
+        Assert.NotNull(assigneeDownload.Stream);
+        await using var downloadStream = assigneeDownload.Stream!;
+        using var downloaded = new MemoryStream();
+        await downloadStream.CopyToAsync(downloaded);
+        Assert.Equal([1, 2, 3, 4], downloaded.ToArray());
     }
 
     private static CrmCandidateCardEntity NewCard(Guid responseId, string? managerId = null) => new()
@@ -368,13 +472,15 @@ public sealed class CrmWorkspaceServiceTests
         public OrbitaDbContext Db { get; }
         public UserManager<IdentityUser> Users { get; }
         public CrmWorkspaceService Sut { get; }
+        private string AttachmentRoot { get; }
 
-        private Harness(ServiceProvider services, OrbitaDbContext db, UserManager<IdentityUser> users, CrmWorkspaceService sut)
+        private Harness(ServiceProvider services, OrbitaDbContext db, UserManager<IdentityUser> users, CrmWorkspaceService sut, string attachmentRoot)
         {
             _services = services;
             Db = db;
             Users = users;
             Sut = sut;
+            AttachmentRoot = attachmentRoot;
         }
 
         public static async Task<Harness> CreateAsync()
@@ -408,8 +514,13 @@ public sealed class CrmWorkspaceServiceTests
 
             var users = sp.GetRequiredService<UserManager<IdentityUser>>();
             var distribution = new CrmLeadDistributionService(db, users);
-            var sut = new CrmWorkspaceService(db, users, distribution);
-            return new Harness(sp, db, users, sut);
+            var attachmentRoot = Path.Combine(Path.GetTempPath(), "orbita-crm-task-tests", Guid.NewGuid().ToString("N"));
+            var attachments = new CrmTaskAttachmentStorageService(Options.Create(new CrmTaskAttachmentOptions
+            {
+                DataPath = attachmentRoot
+            }));
+            var sut = new CrmWorkspaceService(db, users, distribution, taskAttachments: attachments);
+            return new Harness(sp, db, users, sut, attachmentRoot);
         }
 
         public async Task<IdentityUser> CreateManagerAsync(string email, int capacity, bool onShift)
@@ -433,6 +544,10 @@ public sealed class CrmWorkspaceServiceTests
         {
             await Db.DisposeAsync();
             await _services.DisposeAsync();
+            if (Directory.Exists(AttachmentRoot))
+            {
+                Directory.Delete(AttachmentRoot, recursive: true);
+            }
         }
     }
 }

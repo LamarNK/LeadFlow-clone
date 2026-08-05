@@ -125,6 +125,7 @@
                                                         <form asp-action="CreateTask" method="post">
                                                             <input type="hidden" name="cardId" value="@card.Id" />
                                                             <input type="hidden" name="assigneeUserId" value="@defaultAssigneeUserId" />
+                                                            <input type="hidden" name="importance" value="@CrmTaskImportances.Medium" />
                                                             <input type="hidden" name="returnUrl" value="@boardReturnUrl" />
                                                             <input type="text" name="title" required placeholder="Новая задача" aria-label="Новая задача для @card.FullName" />
                                                             <button type="submit"><i class="fa-solid fa-list-check" aria-hidden="true"></i>Поставить</button>

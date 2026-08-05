@@ -12,6 +12,7 @@
     var todayIds = today.Select(x => x.Id).ToHashSet();
     var later = open.Where(x => !overdueIds.Contains(x.Id) && !todayIds.Contains(x.Id)).OrderBy(x => x.DueAtUtc ?? DateTime.MaxValue).ToList();
     var completed = Model.Tasks.Where(x => x.Status == CrmTaskStatuses.Completed).OrderByDescending(x => x.CompletedAtUtc).Take(30).ToList();
+    var cancelled = Model.Tasks.Where(x => x.Status == CrmTaskStatuses.Cancelled).OrderByDescending(x => x.CompletedAtUtc).Take(30).ToList();
     var selectedScope = Model.SelectedScope;
     ViewData["CurrentCrmUserId"] = Model.CurrentUserId;
     ViewData["IsCrmAdmin"] = Model.IsAdmin;
@@ -21,6 +22,7 @@
         "today" => today.Count,
         "later" => later.Count,
         "completed" => completed.Count,
+        "cancelled" => cancelled.Count,
         _ => open.Count
     };
     var header = new PageHeaderViewModel { Title = "Задачи", Subtitle = "Планируйте, отслеживайте и выполняйте задачи", ShowRefresh = true, UpdatedAtUtc = DateTime.UtcNow };
@@ -80,6 +82,7 @@
                 <a class="@(selectedScope == "today" ? "is-active" : "")" asp-action="Tasks" asp-route-scope="today">Сегодня @if (today.Count > 0) { <span>@today.Count</span> }</a>
                 <a class="@(selectedScope == "later" ? "is-active" : "")" asp-action="Tasks" asp-route-scope="later">Позже @if (later.Count > 0) { <span>@later.Count</span> }</a>
                 <a class="@(selectedScope == "completed" ? "is-active" : "")" asp-action="Tasks" asp-route-scope="completed">Завершённые</a>
+                <a class="@(selectedScope == "cancelled" ? "is-active" : "")" asp-action="Tasks" asp-route-scope="cancelled">Отменённые</a>
             </nav>
             <div class="crm-task-workspace__tools">
                 <button type="button" class="crm-task-tool"><span>Сортировка: Срок (по возрастанию)</span><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></button>
@@ -88,10 +91,15 @@
         </header>
 
         <div id="crm-task-all" class="crm-task-groups">
-            @if (selectedScope is "all" or "overdue") { <partial name="_TaskGroup" model="@("Просрочено", (IReadOnlyList<CrmTaskDto>)overdue, true)" /> }
-            @if (selectedScope is "all" or "today") { <partial name="_TaskGroup" model="@("Сегодня", (IReadOnlyList<CrmTaskDto>)today, true)" /> }
-            @if (selectedScope is "all" or "later") { <partial name="_TaskGroup" model="@("Позже", (IReadOnlyList<CrmTaskDto>)later, true)" /> }
-            @if (selectedScope is "all" or "completed") { <partial name="_TaskGroup" model="@("Завершённые", (IReadOnlyList<CrmTaskDto>)completed, false)" /> }
+            @if (selectedScope == "overdue" || (selectedScope == "all" && overdue.Count > 0)) { <partial name="_TaskGroup" model="@("Просрочено", (IReadOnlyList<CrmTaskDto>)overdue, true)" /> }
+            @if (selectedScope == "today" || (selectedScope == "all" && today.Count > 0)) { <partial name="_TaskGroup" model="@("Сегодня", (IReadOnlyList<CrmTaskDto>)today, true)" /> }
+            @if (selectedScope == "later" || (selectedScope == "all" && later.Count > 0)) { <partial name="_TaskGroup" model="@("Позже", (IReadOnlyList<CrmTaskDto>)later, true)" /> }
+            @if (selectedScope == "completed" || (selectedScope == "all" && completed.Count > 0)) { <partial name="_TaskGroup" model="@("Завершённые", (IReadOnlyList<CrmTaskDto>)completed, false)" /> }
+            @if (selectedScope == "cancelled" || (selectedScope == "all" && cancelled.Count > 0)) { <partial name="_TaskGroup" model="@("Отменённые", (IReadOnlyList<CrmTaskDto>)cancelled, false)" /> }
+            @if (selectedScope == "all" && Model.Tasks.Count == 0)
+            {
+                <p class="crm-task-groups__empty">Открытых и завершённых задач пока нет.</p>
+            }
         </div>
 
         <footer class="crm-task-workspace__footer">Показано @shownCount задач</footer>
@@ -110,6 +118,7 @@
             <form asp-action="CreateTask" method="post" class="crm-standard-form crm-task-create-form crm-task-create-form--modal">
                 <label><span>Что нужно сделать</span><input name="title" required placeholder="Например, позвонить кандидату" /></label>
                 <label><span>Ответственный</span><select name="assigneeUserId" required>@foreach (var manager in Model.Managers) { <option value="@manager.UserId">@manager.DisplayName</option> }</select></label>
+                <label><span>Важность</span><select name="importance" required><option value="@CrmTaskImportances.Low">Низкая</option><option value="@CrmTaskImportances.Medium" selected>Средняя</option><option value="@CrmTaskImportances.High">Высокая</option></select></label>
                 <label><span>Срок</span><input type="datetime-local" name="dueAtUtc" /></label>
                 <label class="crm-task-create-form__description"><span>Комментарий <small>необязательно</small></span><textarea name="description" placeholder="Контекст или следующий шаг"></textarea></label>
                 <footer class="crm-task-create-form__actions">

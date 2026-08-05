@@ -8,6 +8,7 @@
         "Просрочено" => "crm-task-group--overdue",
         "Сегодня" => "crm-task-group--today",
         "Позже" => "crm-task-group--later",
+        "Отменённые" => "crm-task-group--cancelled",
         _ => "crm-task-group--completed"
     };
     var groupIcon = Model.Title switch
@@ -15,6 +16,7 @@
         "Просрочено" => "fa-triangle-exclamation",
         "Сегодня" => "fa-sun",
         "Позже" => "fa-clock",
+        "Отменённые" => "fa-ban",
         _ => "fa-check"
     };
     var emptyText = Model.Title switch
@@ -22,6 +24,7 @@
         "Просрочено" => "Просроченных задач нет.",
         "Сегодня" => "На сегодня задач нет.",
         "Позже" => "Запланированных задач пока нет.",
+        "Отменённые" => "Отменённых задач пока нет.",
         _ => "Завершённых задач пока нет."
     };
 }
@@ -41,9 +44,9 @@
             {
                 var isOverdue = task.Status == CrmTaskStatuses.Open && (task.IsOverdue || (task.DueAtUtc is DateTime dueAt && dueAt < DateTime.UtcNow));
                 var canComplete = isAdmin || task.AssigneeUserId == currentUserId;
-                <article class="crm-task-row @(isOverdue ? "is-overdue" : "") @(task.Status == CrmTaskStatuses.Completed ? "is-complete" : "")">
+                <article class="crm-task-row @(isOverdue ? "is-overdue" : "") @(task.Status == CrmTaskStatuses.Completed ? "is-complete" : "") @(task.Status == CrmTaskStatuses.Cancelled ? "is-cancelled" : "")">
                     <a class="crm-task-row__main" asp-action="TaskDetails" asp-route-id="@task.Id">
-                        <strong>@task.Title</strong>
+                        <div class="crm-task-row__title"><strong>@task.Title</strong><span class="crm-task-importance crm-task-importance--@task.Importance.ToLowerInvariant()">@CrmTaskImportances.GetLabel(task.Importance)</span></div>
                         @if (!string.IsNullOrWhiteSpace(task.Description)) { <p>@task.Description</p> }
                         <div class="crm-task-row__people">
                             <span><small>Кандидат</small>@if (task.CardId is Guid) { <span>@(task.CandidateName ?? "Карточка")</span> } else { <em>Личная задача</em> }</span>
@@ -55,6 +58,7 @@
                         <small>Срок</small>
                         @if (task.DueAtUtc is DateTime due) { <span><i class="fa-regular fa-calendar" aria-hidden="true"></i> до @due.ToLocalTime().ToString("dd MMM, HH:mm")</span> } else { <span class="is-empty">Не задан</span> }
                         @if (isOverdue) { <em>Просрочено</em> }
+                        @if (task.Status == CrmTaskStatuses.Cancelled) { <em>Отменена</em> }
                     </div>
                     @if (Model.ShowComplete && task.Status == CrmTaskStatuses.Open && canComplete)
                     {
