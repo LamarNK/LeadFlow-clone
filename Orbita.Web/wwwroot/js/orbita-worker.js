@@ -296,6 +296,42 @@
             });
         });
 
+        form.querySelectorAll('[data-worker-highlight-profile]').forEach(function (profile) {
+            var toggle = profile.querySelector('[data-worker-highlight-profile-toggle]');
+            var panel = profile.querySelector('[data-worker-highlight-profile-panel]');
+            var selected = profile.querySelector('[data-worker-highlight-profile-selected]');
+
+            function updateSelectionState() {
+                var selectedCount = profile.querySelectorAll('input[name="responseHighlightTargets"]:checked').length;
+                if (!selected) return;
+
+                selected.hidden = selectedCount === 0;
+                selected.textContent = 'Выбрано: ' + selectedCount;
+            }
+
+            function setExpanded(expanded) {
+                if (!panel || !toggle) return;
+
+                profile.classList.toggle('is-expanded', expanded);
+                panel.hidden = !expanded;
+                panel.setAttribute('aria-hidden', expanded ? 'false' : 'true');
+                toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+                toggle.title = expanded ? 'Скрыть субпрофили' : 'Показать субпрофили';
+            }
+
+            if (toggle && panel) {
+                toggle.addEventListener('click', function () {
+                    setExpanded(!profile.classList.contains('is-expanded'));
+                });
+            }
+
+            profile.querySelectorAll('input[name="responseHighlightTargets"]').forEach(function (checkbox) {
+                checkbox.addEventListener('change', updateSelectionState);
+            });
+
+            updateSelectionState();
+        });
+
         function markDirty() {
             if (dirty) dirty.hidden = false;
             if (saveButton) saveButton.textContent = 'Сохранить изменения';
