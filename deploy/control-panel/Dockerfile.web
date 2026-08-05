@@ -3,6 +3,7 @@ WORKDIR /src
 
 COPY Orbita.Web/wwwroot/js/ /src/js/
 RUN npm install --global javascript-obfuscator@4.1.1 \
+    && npm install --prefix /vendor chart.js@4.4.1 @microsoft/signalr@8.0.7 drawflow@0.0.60 \
     && javascript-obfuscator /src/js \
         --output /obfuscated-js \
         --compact true \
@@ -25,6 +26,10 @@ COPY Orbita.Contracts/ Orbita.Contracts/
 COPY Orbita.Logging/ Orbita.Logging/
 COPY Orbita.Web/ Orbita.Web/
 COPY --from=js-obfuscator /obfuscated-js/ Orbita.Web/wwwroot/js/
+COPY --from=js-obfuscator /vendor/node_modules/chart.js/dist/chart.umd.js Orbita.Web/wwwroot/lib/chart.js/dist/chart.umd.js
+COPY --from=js-obfuscator /vendor/node_modules/@microsoft/signalr/dist/browser/signalr.min.js Orbita.Web/wwwroot/lib/signalr/dist/browser/signalr.min.js
+COPY --from=js-obfuscator /vendor/node_modules/drawflow/dist/drawflow.min.css Orbita.Web/wwwroot/lib/drawflow/dist/drawflow.min.css
+COPY --from=js-obfuscator /vendor/node_modules/drawflow/dist/drawflow.min.js Orbita.Web/wwwroot/lib/drawflow/dist/drawflow.min.js
 RUN --mount=type=cache,target=/root/.nuget/packages \
     dotnet publish Orbita.Web/Orbita.Web.csproj -c Release -o /app/publish /p:UseAppHost=false
 

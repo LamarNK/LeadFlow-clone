@@ -914,20 +914,22 @@
     }
 
     function initStatisticsAll() {
-        if (typeof Chart === 'undefined') return;
         if (!getLiveRoot()) return;
+
+        initKpiCounters();
+        initRowNavigation();
+        initMonitoringAccountRows();
+        initMonitoringSearch();
+        initLiveRefresh();
+
+        if (typeof Chart === 'undefined') return;
 
         ensureChartRegistry();
 
         var payload = readChartsPayload();
         if (!payload) return;
 
-        initKpiCounters();
-        initRowNavigation();
-        initMonitoringAccountRows();
-        initMonitoringSearch();
         applyCharts(payload);
-        initLiveRefresh();
     }
 
     var statisticsInitPending = false;
