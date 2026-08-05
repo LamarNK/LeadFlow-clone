@@ -178,7 +178,7 @@ public class Logger
     private readonly string logDirectory;
     private readonly string? aggregateReadRoot;
     private const int MaxFileSizeInBytes = 5 * 1024 * 1024; // 5 MB
-    private const int MaxDuplicateErrors = 3; // Жёсткий лимит на дубликаты
+    private const int MaxDuplicateLogEntries = 3; // Жёсткий лимит на дубликаты
     private const int DuplicateWindowSeconds = 60; // Временное окно для дубликатов
     private const int MaxTraceIdBytes = 1024;
 
@@ -193,7 +193,7 @@ public class Logger
     private const uint IndexFormatMagic = 0x4C494458; // "LIDX"
     private const byte IndexFormatVersion = 1;
 
-    private readonly Dictionary<string, ErrorCacheEntry> errorCache = new();
+    private readonly Dictionary<string, DeduplicationCacheEntry> deduplicationCache = new();
     private readonly ConcurrentDictionary<string, List<string>> fileCache = new();
     private readonly SemaphoreSlim writeSemaphore = new(1, 1);
 
@@ -233,10 +233,10 @@ public class Logger
     // Минимальная наблюдаемость внутренних ошибок логгера (с троттлингом)
     private DateTime lastInternalErrorReportedUtc = DateTime.MinValue;
 
-    // Ограничение роста errorCache
-    private DateTime lastErrorCacheCleanupUtc = DateTime.MinValue;
-    private const int ErrorCacheTtlSeconds = DuplicateWindowSeconds * 5;
-    private const int ErrorCacheCleanupMinIntervalSeconds = 60;
+    // Ограничение роста кеша дедупликации
+    private DateTime lastDeduplicationCacheCleanupUtc = DateTime.MinValue;
+    private const int DeduplicationCacheTtlSeconds = DuplicateWindowSeconds * 5;
+    private const int DeduplicationCacheCleanupMinIntervalSeconds = 60;
 
     // Убираем I/O из hot-path: запись идёт в фоновом воркере
     private const int WriteChannelCapacity = 2048;
@@ -254,7 +254,7 @@ public class Logger
         string? PropertiesJson
     );
 
-    private readonly record struct ErrorCacheEntry(
+    private readonly record struct DeduplicationCacheEntry(
         int Count,
         DateTime LastSeen,
         int SuppressedSinceSummary,
@@ -562,38 +562,37 @@ public class Logger
             // В бинарном формате не нужно экранировать переносы строк
             // message остается как есть
 
-            // Периодическая уборка errorCache
-            CleanupErrorCacheIfNeeded(req.Timestamp);
+            // Периодическая уборка кеша дедупликации
+            CleanupDeduplicationCacheIfNeeded(req.Timestamp);
 
-            if (req.Level == DeskLinkAuditLogLevel.Error)
+            // Для всех уровней предпочтителен стабильный errorKey.
+            // Без него используем нормализованный текст; о пропущенном ключе сообщаем только для Error.
+            string dedupeKeyCore;
+            if (!string.IsNullOrWhiteSpace(req.ErrorKey))
             {
-                // Для Error желательно всегда передавать стабильный errorKey.
-                // Если его нет — используем нормализованный message, чтобы дедуп работал лучше на динамических значениях (id/числа/Guid/IP).
-                string dedupeKeyCore;
-                if (!string.IsNullOrWhiteSpace(req.ErrorKey))
-                {
-                    dedupeKeyCore = req.ErrorKey!;
-                }
-                else
-                {
-                    dedupeKeyCore = NormalizeForDedupe(req.Message);
+                dedupeKeyCore = req.ErrorKey!;
+            }
+            else
+            {
+                dedupeKeyCore = NormalizeForDedupe(req.Message);
+                if (req.Level == DeskLinkAuditLogLevel.Error)
                     ReportMissingErrorKeyIfNeeded(req.Prefix, req.Message);
-                }
+            }
 
-                string dedupeKey = $"{req.Prefix}|{dedupeKeyCore}";
-                var (isDuplicate, shouldLogSummary, suppressedForSummary) = TrackDuplicate(dedupeKey, req.Timestamp);
-                if (isDuplicate && !shouldLogSummary)
-                {
-                    return; // подавляем
-                }
+            string dedupeKey = $"{req.Prefix}|{dedupeKeyCore}";
+            var (isDuplicate, shouldLogSummary, suppressedForSummary) = TrackDuplicate(dedupeKey, req.Timestamp);
+            if (isDuplicate && !shouldLogSummary)
+            {
+                return; // подавляем
+            }
 
-                if (isDuplicate && shouldLogSummary)
-                {
-                    await WriteOneEntryAsync(req.Timestamp, req.Level, req.Prefix, req.Message, req.TraceId, req.PropertiesJson,
-                        suffix: $" (suppressed {suppressedForSummary} duplicates)");
+            if (isDuplicate && shouldLogSummary)
+            {
+                await WriteOneEntryAsync(req.Timestamp, req.Level, req.Prefix, req.Message, req.TraceId, req.PropertiesJson,
+                    suffix: $" (suppressed {suppressedForSummary} duplicates)");
+                if (req.Level == DeskLinkAuditLogLevel.Error)
                     errorEventMessage = $"{req.Message} (suppressed {suppressedForSummary} duplicates)";
-                    return;
-                }
+                return;
             }
 
             await WriteOneEntryAsync(req.Timestamp, req.Level, req.Prefix, req.Message, req.TraceId, req.PropertiesJson);
@@ -1493,22 +1492,22 @@ public class Logger
     /// </summary>
     /// <param name="message">Сообщение ошибки.</param>
     /// <returns>Кортеж: (является ли дубликатом, текущий счётчик, счётчик подавленных).</returns>
-    private void CleanupErrorCacheIfNeeded(DateTime now)
+    private void CleanupDeduplicationCacheIfNeeded(DateTime now)
     {
         var nowUtc = now.ToUniversalTime();
-        if ((nowUtc - lastErrorCacheCleanupUtc).TotalSeconds < ErrorCacheCleanupMinIntervalSeconds)
+        if ((nowUtc - lastDeduplicationCacheCleanupUtc).TotalSeconds < DeduplicationCacheCleanupMinIntervalSeconds)
         {
             return;
         }
 
-        lastErrorCacheCleanupUtc = nowUtc;
+        lastDeduplicationCacheCleanupUtc = nowUtc;
 
         try
         {
             var keysToRemove = new List<string>();
-            foreach (var kvp in errorCache)
+            foreach (var kvp in deduplicationCache)
             {
-                if ((nowUtc - kvp.Value.LastSeen.ToUniversalTime()).TotalSeconds > ErrorCacheTtlSeconds)
+                if ((nowUtc - kvp.Value.LastSeen.ToUniversalTime()).TotalSeconds > DeduplicationCacheTtlSeconds)
                 {
                     keysToRemove.Add(kvp.Key);
                 }
@@ -1516,7 +1515,7 @@ public class Logger
 
             foreach (var key in keysToRemove)
             {
-                errorCache.Remove(key);
+                deduplicationCache.Remove(key);
             }
         }
         catch
@@ -1526,23 +1525,23 @@ public class Logger
     }
 
     /// <summary>
-    /// Дедупликация ошибок: подавляем повторяющиеся ошибки и периодически пишем summary.
+    /// Дедупликация записей: подавляем повторы и периодически пишем summary.
     /// </summary>
     private (bool IsDuplicate, bool ShouldLogSummary, int SuppressedForSummary) TrackDuplicate(string key, DateTime now)
     {
         // В одном writer-потоке можно работать без сложной атомарности.
-        if (!errorCache.TryGetValue(key, out var entry) || (now - entry.LastSeen).TotalSeconds > DuplicateWindowSeconds)
+        if (!deduplicationCache.TryGetValue(key, out var entry) || (now - entry.LastSeen).TotalSeconds > DuplicateWindowSeconds)
         {
-            errorCache[key] = new ErrorCacheEntry(1, now, 0, DateTime.MinValue);
+            deduplicationCache[key] = new DeduplicationCacheEntry(1, now, 0, DateTime.MinValue);
             return (false, false, 0);
         }
 
         int newCount = entry.Count + 1;
 
         // До лимита — не duplicate
-        if (newCount <= MaxDuplicateErrors)
+        if (newCount <= MaxDuplicateLogEntries)
         {
-            errorCache[key] = entry with { Count = newCount, LastSeen = now };
+            deduplicationCache[key] = entry with { Count = newCount, LastSeen = now };
             return (false, false, 0);
         }
 
@@ -1550,9 +1549,9 @@ public class Logger
         int suppressedSince = entry.SuppressedSinceSummary + 1;
 
         // Первое подавление — сразу логируем summary (как маркер, что началось подавление)
-        if (newCount == MaxDuplicateErrors + 1)
+        if (newCount == MaxDuplicateLogEntries + 1)
         {
-            errorCache[key] = new ErrorCacheEntry(newCount, now, 0, now);
+            deduplicationCache[key] = new DeduplicationCacheEntry(newCount, now, 0, now);
             return (true, true, 1);
         }
 
@@ -1560,12 +1559,12 @@ public class Logger
         if (entry.LastSummaryLogged != DateTime.MinValue &&
             (now - entry.LastSummaryLogged).TotalSeconds >= DuplicateWindowSeconds)
         {
-            errorCache[key] = new ErrorCacheEntry(newCount, now, 0, now);
+            deduplicationCache[key] = new DeduplicationCacheEntry(newCount, now, 0, now);
             return (true, true, suppressedSince);
         }
 
         // Просто подавляем
-        errorCache[key] = entry with { Count = newCount, LastSeen = now, SuppressedSinceSummary = suppressedSince };
+        deduplicationCache[key] = entry with { Count = newCount, LastSeen = now, SuppressedSinceSummary = suppressedSince };
         return (true, false, 0);
     }
 
