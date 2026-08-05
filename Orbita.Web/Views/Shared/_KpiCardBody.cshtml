@@ -2,7 +2,7 @@
 @using System.Globalization
 @{
     var card = Model.Card;
-    var isAvgCard = card.Label == "Среднее время отклика" || card.PreferTextValue;
+    var isAvgCard = card.Label == "Среднее время сбора откликов" || card.PreferTextValue;
     var useCaption = Model.Layout == KpiCardLayout.StatStacked && (isAvgCard || card.Delta == "За выбранный период");
     var hasSegments = card.Segments.Count > 0;
     var segmentTotal = hasSegments ? card.Segments.Sum(s => s.Value) : 0;

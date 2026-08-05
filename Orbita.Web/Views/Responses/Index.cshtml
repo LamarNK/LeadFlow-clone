@@ -126,6 +126,21 @@
             else
             {
             <table class="data-table data-table--responses data-table--cards">
+                <colgroup>
+                    <col class="responses-col--select" />
+                    <col class="responses-col--collected" />
+                    <col class="responses-col--responded" />
+                    <col class="responses-col--author" />
+                    <col class="responses-col--phone" />
+                    <col class="responses-col--city" />
+                    <col class="responses-col--age" />
+                    <col class="responses-col--gender" />
+                    <col class="responses-col--vacancy" />
+                    <col class="responses-col--account" />
+                    <col class="responses-col--status" />
+                    <col class="responses-col--bitrix" />
+                    <col class="responses-col--actions" />
+                </colgroup>
                 <thead>
                     <tr>
                         <th class="responses-select-col" scope="col">
@@ -157,6 +172,7 @@
                     var phoneDisplay = ResponseDisplay.FormatPhone(row.PhoneRaw, row.PhoneNormalized);
                     var adId = ResponseDisplay.DisplayAdId(row.SourceResponseId, row.VacancyUrl);
                     var author = ResponseDisplay.DisplayAuthor(row.FullName);
+                    var city = ResponseDisplay.FormatCity(row.City);
                     <tr class="responses-row @(row.IsHighlighted ? "responses-row--highlighted" : null)"
                         data-response-id="@row.Id"
                         data-phone="@phoneDisplay"
@@ -175,7 +191,7 @@
                         </td>
                         <td class="responses-time" data-label="Сбор"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(row.CollectedAtUtc, "datetime"))" /></td>
                         <td class="responses-time responses-time--responded" data-label="Отклик"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(row.CreatedAtUtc, "datetime"))" /></td>
-                        <td class="responses-author" data-label="Автор">@author</td>
+                        <td class="responses-author" data-label="Автор"><span class="responses-cell-clamp" title="@author">@author</span></td>
                         <td class="responses-phone" data-label="Телефон">
                             @if (row.IsPhoneHidden)
                             {
@@ -193,7 +209,7 @@
                                 <span class="responses-phone-metric @phoneMetricTone" title="@row.PhoneMetricLabel">@row.PhoneMetricLabel</span>
                             }
                         </td>
-                        <td class="responses-city" data-label="Город">@ResponseDisplay.FormatCity(row.City)</td>
+                        <td class="responses-city" data-label="Город"><span class="responses-cell-clamp" title="@city">@city</span></td>
                         <td class="responses-age" data-label="Возраст">
                             @ResponseDisplay.FormatAge(row.Age)
                             @if (row.IsHighlighted && !string.IsNullOrWhiteSpace(row.HighlightLabel))
@@ -205,16 +221,16 @@
                         <td class="responses-ad" data-label="Объявление">
                             @if (!string.IsNullOrWhiteSpace(row.VacancyUrl))
                             {
-                                <a class="responses-ad-link" href="@row.VacancyUrl" target="_blank" rel="noopener">@row.Vacancy</a>
+                                <a class="responses-ad-link" href="@row.VacancyUrl" target="_blank" rel="noopener" title="@row.Vacancy">@row.Vacancy</a>
                             }
                             else
                             {
-                                <span class="responses-ad-link">@row.Vacancy</span>
+                                <span class="responses-ad-link" title="@row.Vacancy">@row.Vacancy</span>
                             }
                             <span class="responses-ad-id">ID: @adId</span>
                         </td>
                         <td class="cell-link responses-account" data-label="Аккаунт">
-                            <a href="@accountUrl">@row.AccountName</a>
+                            <a href="@accountUrl" title="@row.AccountName">@row.AccountName</a>
                             @if (!string.IsNullOrWhiteSpace(row.AvitoSubProfileName))
                             {
                                 <span class="responses-account-sub" title="Субпрофиль Avito">@row.AvitoSubProfileName</span>

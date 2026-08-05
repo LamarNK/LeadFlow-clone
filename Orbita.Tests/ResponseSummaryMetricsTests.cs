@@ -95,6 +95,37 @@ public sealed class ResponseSummaryMetricsTests
         Assert.Equal(1, summary.UniqueAuthors);
     }
 
+    [Fact]
+    public async Task GetSummaryAsync_CalculatesAverageCollectionTimeFromResponseTime()
+    {
+        await using var db = CreateDb();
+        SeedOffice(db);
+        var now = DateTime.UtcNow;
+        db.CandidateResponses.AddRange(
+            CreateResponse("r1", PersonOne, "79930099416", now.AddMinutes(-20), now),
+            CreateResponse("r2", PersonTwo, "79910001122", now.AddMinutes(-70), now),
+            CreateResponse("r3", Guid.NewGuid(), "79910002233", now, now));
+        await db.SaveChangesAsync();
+
+        var sut = new ResponsesQueryService(db, new ResponseBitrixDeliveryService(db));
+        var summary = await sut.GetSummaryAsync(
+            OfficeScope.ForOffice(OfficeId),
+            OfficeId,
+            status: null,
+            search: null,
+            vacancy: null,
+            workerId: null,
+            accountId: null,
+            bitrixDestination: null,
+            gender: null,
+            ageFrom: null,
+            ageTo: null,
+            fromUtc: now.AddDays(-1),
+            toUtc: now.AddDays(1));
+
+        Assert.Equal(45d, summary.AvgResponseMinutes!.Value);
+    }
+
     private static OrbitaDbContext CreateDb()
     {
         var options = new DbContextOptionsBuilder<OrbitaDbContext>()
@@ -131,7 +162,8 @@ public sealed class ResponseSummaryMetricsTests
         string sourceResponseId,
         Guid personId,
         string phone,
-        DateTime? createdAt = null) => new()
+        DateTime? createdAt = null,
+        DateTime? collectedAt = null) => new()
     {
         Id = Guid.NewGuid(),
         PersonId = personId,
@@ -146,6 +178,6 @@ public sealed class ResponseSummaryMetricsTests
         PhoneNormalized = phone,
         Status = ResponseStatuses.Sent,
         CreatedAt = createdAt ?? DateTime.UtcNow,
-        CollectedAt = createdAt ?? DateTime.UtcNow
+        CollectedAt = collectedAt ?? createdAt ?? DateTime.UtcNow
     };
 }

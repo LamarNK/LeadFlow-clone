@@ -92,11 +92,11 @@ internal static class ResponsesIndexBuilder
             },
             new()
             {
-                Label = "Среднее время отклика",
+                Label = "Среднее время сбора откликов",
                 Value = ResponseDisplay.FormatAverageResponseMinutes(summary.AvgResponseMinutes),
                 CountValue = summary.AvgResponseMinutes ?? 0,
                 ValueSuffix = summary.AvgResponseMinutes is > 0 ? null : "",
-                Delta = "Среднее время между публикацией объявления и откликом",
+                Delta = "Среднее время между откликом кандидата и его сбором",
                 DeltaTone = "neutral",
                 IconClass = "fa-regular fa-clock",
                 IconTone = "blue"

@@ -271,6 +271,35 @@
     overflow-x: auto;
 }
 
+.data-table--responses {
+    width: 100%;
+    min-width: 1520px;
+    table-layout: fixed;
+}
+
+.responses-col--select { width: 48px; }
+.responses-col--collected, .responses-col--responded { width: 116px; }
+.responses-col--author { width: 150px; }
+.responses-col--phone { width: 148px; }
+.responses-col--city { width: 142px; }
+.responses-col--age { width: 92px; }
+.responses-col--gender { width: 82px; }
+.responses-col--vacancy { width: 196px; }
+.responses-col--account { width: 156px; }
+.responses-col--status { width: 126px; }
+.responses-col--bitrix { width: 164px; }
+.responses-col--actions { width: 52px; }
+
+.responses-cell-clamp,
+.responses-ad-link,
+.responses-account > a {
+    overflow: hidden;
+    overflow-wrap: anywhere;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+}
+
 .data-table--responses thead th {
     font-size: 12px;
     font-weight: 500;
@@ -347,8 +376,10 @@
 .responses-gender {
     font-size: 14px;
     color: #344054;
-    white-space: nowrap;
 }
+
+.responses-age,
+.responses-gender { white-space: nowrap; }
 
 .responses-age {
     font-variant-numeric: tabular-nums;
@@ -373,12 +404,10 @@
 }
 
 .responses-account > a {
-    display: block;
     font-size: 14px;
     font-weight: 600;
     color: #2563eb;
     text-decoration: none;
-    white-space: nowrap;
 }
 
 .responses-account > a:hover {
