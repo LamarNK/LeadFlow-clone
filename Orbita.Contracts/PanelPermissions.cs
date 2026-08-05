@@ -13,9 +13,16 @@ public static class PanelPermissions
     public const string Responses = "responses";
     public const string Events = "events";
     public const string Settings = "settings";
+    /// <summary>
+    /// Legacy CRM permission. Existing role claims are expanded to the granular
+    /// CRM permissions during normalization.
+    /// </summary>
     public const string Crm = "crm";
+    public const string CrmBoard = "crm-board";
+    public const string CrmTasks = "crm-tasks";
     public const string Administration = "administration";
     public const string ConfigurationClaimType = "orbita.permission-configured";
+    public const string UserPermissionOverrideClaimType = "orbita.user-permission-override";
 
     public static readonly IReadOnlyList<PanelPermissionDefinition> All =
     [
@@ -26,7 +33,8 @@ public static class PanelPermissions
         new(Responses, "Отклики", "Работа с откликами и их доставкой."),
         new(Events, "События", "Просмотр и обработка событий."),
         new(Settings, "Личные настройки", "Профиль, пароль и личные интеграции."),
-        new(Crm, "CRM", "Воронка и задачи CRM своего офиса."),
+        new(CrmBoard, "CRM: Воронка", "Рабочее место менеджера и карточки кандидатов."),
+        new(CrmTasks, "CRM: Задачи", "Список, выполнение и планирование задач CRM."),
         new(Administration, "Администрирование", "Пользователи, офисы, системные настройки и профили доступа.")
     ];
 
@@ -41,16 +49,37 @@ public static class PanelPermissions
         PanelRoles.Normalize(role) switch
         {
             PanelRoles.Admin => All.Select(x => x.Id).ToArray(),
-            PanelRoles.Manager => [Crm, Settings],
+            PanelRoles.Manager => [CrmBoard, CrmTasks, Settings],
             _ => [Dashboard, Workers, Accounts, Statistics, Responses, Events, Settings]
         };
 
     public static IReadOnlyList<string> Normalize(IEnumerable<string>? permissions)
     {
         var allowed = All.Select(x => x.Id).ToHashSet(StringComparer.Ordinal);
-        return (permissions ?? [])
-            .Where(allowed.Contains)
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
+        var normalized = new HashSet<string>(StringComparer.Ordinal);
+        var result = new List<string>();
+
+        void Add(string permission)
+        {
+            if (normalized.Add(permission))
+            {
+                result.Add(permission);
+            }
+        }
+
+        foreach (var permission in permissions ?? [])
+        {
+            if (permission == Crm)
+            {
+                Add(CrmBoard);
+                Add(CrmTasks);
+            }
+            else if (allowed.Contains(permission))
+            {
+                Add(permission);
+            }
+        }
+
+        return result;
     }
 }

@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using Orbita.Contracts;
 using Orbita.Web.Controllers;
+using Orbita.Web.Models.ViewModels;
 using Orbita.Web.Options;
 using Orbita.Web.Services;
 
@@ -41,6 +42,20 @@ public sealed class CrmControllerPreviewTests
 
         var view = Assert.IsType<ViewResult>(result);
         Assert.Equal("Unavailable", view.ViewName);
+    }
+
+    [Fact]
+    public async Task Team_InDesignPreview_ReturnsTeamTasksForSelectedOffice()
+    {
+        var (controller, _) = CreateController(previewEnabled: true);
+
+        var result = await controller.Team(taskScope: "overdue");
+
+        var view = Assert.IsType<ViewResult>(result);
+        var model = Assert.IsType<CrmTeamViewModel>(view.Model);
+        Assert.True(model.Board.IsAdmin);
+        Assert.NotEmpty(model.Tasks);
+        Assert.Equal("overdue", model.SelectedTaskScope);
     }
 
     private static (CrmController Controller, HttpClient Http) CreateController(bool previewEnabled)

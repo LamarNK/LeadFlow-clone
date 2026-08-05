@@ -37,6 +37,8 @@ public sealed class PanelUserRowViewModel
     public required string ProfileId { get; init; }
     public bool IsCurrentUser { get; init; }
     public bool IsLocked { get; init; }
+    public bool HasPermissionOverride { get; init; }
+    public IReadOnlyList<string> EffectivePermissions { get; init; } = [];
     public string BitrixStatus { get; init; } = BitrixValidationStatuses.NotConfigured;
     public string BitrixStatusLabel { get; init; } = "Не настроено";
     public string BitrixStatusTone { get; init; } = "neutral";
@@ -241,6 +243,10 @@ public sealed class UpdatePanelUserFormModel
     public Guid? OfficeId { get; set; }
     public Guid? OriginalOfficeId { get; set; }
     public string? Password { get; set; }
+    public bool UseProfilePermissions { get; set; }
+    public bool OriginalUseProfilePermissions { get; set; }
+    public string? OriginalPermissionKeys { get; set; }
+    public List<string> Permissions { get; set; } = [];
 }
 
 public sealed class UpdateAccessProfileFormModel

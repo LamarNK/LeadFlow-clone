@@ -101,6 +101,8 @@ public sealed class AccountController(
                 .ToHashSet(StringComparer.Ordinal);
 
             if (permissions.Contains(PanelPermissions.Dashboard)) return ("Index", "Dashboard");
+            if (permissions.Contains(PanelPermissions.CrmBoard)) return ("Index", "Crm");
+            if (permissions.Contains(PanelPermissions.CrmTasks)) return ("Tasks", "Crm");
             if (permissions.Contains(PanelPermissions.Crm)) return ("Index", "Crm");
             if (permissions.Contains(PanelPermissions.Workers)) return ("Index", "Workers");
             if (permissions.Contains(PanelPermissions.Accounts)) return ("Index", "Accounts");

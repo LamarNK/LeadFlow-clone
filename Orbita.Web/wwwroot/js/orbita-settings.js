@@ -59,10 +59,14 @@
             const originalRoleInput = document.getElementById('editUserOriginalRole');
             const officeInput = document.getElementById('editUserOffice');
             const originalOfficeInput = document.getElementById('editUserOriginalOfficeId');
+            const originalUseProfilePermissionsInput = document.getElementById('editUserOriginalUseProfilePermissions');
+            const originalPermissionKeysInput = document.getElementById('editUserOriginalPermissionKeys');
             const passwordInput = document.getElementById('editUserPassword');
             const accessFields = document.getElementById('editUserAccessFields');
             const officeField = document.getElementById('editUserOfficeField');
             const passwordField = document.getElementById('editUserPasswordField');
+            const useProfilePermissionsInput = document.getElementById('editUserUseProfilePermissions');
+            const permissionInputs = document.querySelectorAll('[data-user-permission-checkbox]');
 
             const updateOfficeState = () => {
                 if (!form || !roleInput || !officeInput || !officeField) return;
@@ -70,6 +74,13 @@
                 const isAdmin = roleInput.value === 'Admin';
                 officeField.hidden = isCurrentUser || isAdmin;
                 officeInput.disabled = isCurrentUser || isAdmin;
+
+                if (useProfilePermissionsInput) {
+                    useProfilePermissionsInput.disabled = isCurrentUser;
+                    permissionInputs.forEach((input) => {
+                        input.disabled = isCurrentUser || useProfilePermissionsInput.checked;
+                    });
+                }
 
                 if (!isCurrentUser && !isAdmin && !officeInput.value && officeInput.options.length > 0) {
                     officeInput.selectedIndex = 0;
@@ -83,12 +94,16 @@
                 button.addEventListener('click', () => {
                     if (!form || !userIdInput || !userEmailLabel || !fullNameInput || !originalFullNameInput
                         || !roleInput || !originalRoleInput || !officeInput || !originalOfficeInput
-                        || !passwordInput || !accessFields || !passwordField) return;
+                        || !passwordInput || !accessFields || !passwordField || !useProfilePermissionsInput) return;
 
                     const isCurrentUser = button.getAttribute('data-user-is-current') === 'true';
                     const fullName = button.getAttribute('data-user-full-name') || '';
                     const role = button.getAttribute('data-user-role') || '';
                     const officeId = button.getAttribute('data-user-office-id') || '';
+                    const permissions = new Set((button.getAttribute('data-user-permissions') || '')
+                        .split(',')
+                        .filter(Boolean));
+                    const hasPermissionOverride = button.getAttribute('data-user-has-permission-override') === 'true';
 
                     form.dataset.currentUser = String(isCurrentUser);
                     userIdInput.value = button.getAttribute('data-user-id') || '';
@@ -99,7 +114,13 @@
                     originalRoleInput.value = role;
                     officeInput.value = officeId;
                     originalOfficeInput.value = officeId;
+                    originalUseProfilePermissionsInput.value = String(!hasPermissionOverride);
+                    originalPermissionKeysInput.value = Array.from(permissions).join(',');
                     passwordInput.value = '';
+                    useProfilePermissionsInput.checked = !hasPermissionOverride;
+                    permissionInputs.forEach((input) => {
+                        input.checked = permissions.has(input.value);
+                    });
                     accessFields.hidden = isCurrentUser;
                     passwordField.hidden = isCurrentUser;
                     updateOfficeState();
@@ -113,6 +134,7 @@
             if (!editUserDialog.__orbitaDialogBound) {
                 editUserDialog.__orbitaDialogBound = true;
                 roleInput?.addEventListener('change', updateOfficeState);
+                useProfilePermissionsInput?.addEventListener('change', updateOfficeState);
 
                 document.querySelectorAll('[data-settings-dialog-close]').forEach((button) => {
                     button.addEventListener('click', () => button.closest('dialog')?.close());

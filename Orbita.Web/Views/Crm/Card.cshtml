@@ -7,6 +7,7 @@
     var activeTab = ViewData["CrmTab"] as string ?? "activity";
     var card = Model.Card;
     var canEdit = Model.CanEdit;
+    var canAccessCrmTasks = ViewData["CanAccessCrmTasks"] as bool? == true;
     var currentUserId = ViewData["CurrentCrmUserId"] as string;
     var isCrmAdmin = ViewData["IsCrmAdmin"] as bool? == true;
     var vacancyUrl = !string.IsNullOrWhiteSpace(card.VacancyUrl) ? card.VacancyUrl : card.SourceUrl;
@@ -154,10 +155,13 @@
                 <section class="card crm-side-panel">
                     <header>Быстрые действия</header>
                     <div class="crm-quick-actions">
-                        <form asp-action="FollowUp" method="post"><input type="hidden" name="id" value="@card.Id" /><input type="hidden" name="minutes" value="60" /><button type="submit">+1 ч</button></form>
-                        <form asp-action="FollowUp" method="post"><input type="hidden" name="id" value="@card.Id" /><input type="hidden" name="minutes" value="180" /><button type="submit">+3 ч</button></form>
-                        <form asp-action="FollowUp" method="post"><input type="hidden" name="id" value="@card.Id" /><input type="hidden" name="minutes" value="1440" /><button type="submit">Завтра</button></form>
-                        <form asp-action="FollowUp" method="post"><input type="hidden" name="id" value="@card.Id" /><input type="hidden" name="minutes" value="4320" /><button type="submit">+3 дн</button></form>
+                        @if (canAccessCrmTasks)
+                        {
+                            <form asp-action="FollowUp" method="post"><input type="hidden" name="id" value="@card.Id" /><input type="hidden" name="minutes" value="60" /><button type="submit">+1 ч</button></form>
+                            <form asp-action="FollowUp" method="post"><input type="hidden" name="id" value="@card.Id" /><input type="hidden" name="minutes" value="180" /><button type="submit">+3 ч</button></form>
+                            <form asp-action="FollowUp" method="post"><input type="hidden" name="id" value="@card.Id" /><input type="hidden" name="minutes" value="1440" /><button type="submit">Завтра</button></form>
+                            <form asp-action="FollowUp" method="post"><input type="hidden" name="id" value="@card.Id" /><input type="hidden" name="minutes" value="4320" /><button type="submit">+3 дн</button></form>
+                        }
                     </div>
                     <form asp-action="SetLoad" method="post" class="crm-side-form">
                         <input type="hidden" name="id" value="@card.Id" />
@@ -217,7 +221,10 @@
             <nav class="crm-tabs">
                 <a class="@(activeTab == "activity" ? "is-active" : "")" asp-action="Card" asp-route-id="@card.Id">Лента</a>
                 <a class="@(activeTab == "chat" ? "is-active" : "")" asp-action="Card" asp-route-id="@card.Id" asp-route-tab="chat">Чат @if (Model.Chat.Count > 0) { <span>@Model.Chat.Count</span> }</a>
-                <a class="@(activeTab == "tasks" ? "is-active" : "")" asp-action="Card" asp-route-id="@card.Id" asp-route-tab="tasks">Задачи <span>@Model.Tasks.Count(t => t.Status == CrmTaskStatuses.Open)</span></a>
+                @if (canAccessCrmTasks)
+                {
+                    <a class="@(activeTab == "tasks" ? "is-active" : "")" asp-action="Card" asp-route-id="@card.Id" asp-route-tab="tasks">Задачи <span>@Model.Tasks.Count(t => t.Status == CrmTaskStatuses.Open)</span></a>
+                }
                 <a class="@(activeTab == "history" ? "is-active" : "")" asp-action="Card" asp-route-id="@card.Id" asp-route-tab="history">История</a>
             </nav>
 

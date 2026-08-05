@@ -73,6 +73,22 @@ public sealed class SettingsController(
 
         var currentUserId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
         var canEditAccess = !string.Equals(model.UserId, currentUserId, StringComparison.Ordinal);
+        var targetRole = PanelRoles.Normalize(canEditAccess ? model.Role : model.OriginalRole);
+        var permissions = PanelPermissions.Normalize(model.Permissions);
+        var originalPermissions = PanelPermissions.Normalize(
+            (model.OriginalPermissionKeys ?? string.Empty)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        var permissionsChanged = model.UseProfilePermissions != model.OriginalUseProfilePermissions
+                                 || (!model.UseProfilePermissions && !permissions.SequenceEqual(originalPermissions));
+        if (canEditAccess
+            && !model.UseProfilePermissions
+            && targetRole == PanelRoles.Admin
+            && !permissions.Contains(PanelPermissions.Administration, StringComparer.Ordinal))
+        {
+            TempData["SettingsError"] = "У администратора должно остаться право «Администрирование».";
+            return RedirectToAction(nameof(Index), new { tab = "users" });
+        }
+
         var changes = new List<Func<Task<(bool Success, string? Error)>>>();
 
         if (canEditAccess && !string.Equals(model.Role, model.OriginalRole, StringComparison.Ordinal))
@@ -85,6 +101,15 @@ public sealed class SettingsController(
             && model.OfficeId != model.OriginalOfficeId)
         {
             changes.Add(() => settings.UpdateUserOfficeAsync(model.UserId, model.OfficeId, ct));
+        }
+
+        if (canEditAccess && permissionsChanged)
+        {
+            changes.Add(() => settings.UpdateUserPermissionsAsync(
+                model.UserId,
+                model.UseProfilePermissions,
+                permissions,
+                ct));
         }
 
         if (!string.Equals(model.FullName.Trim(), model.OriginalFullName.Trim(), StringComparison.Ordinal))

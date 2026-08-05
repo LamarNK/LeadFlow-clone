@@ -10,7 +10,7 @@ using Orbita.Web.Services;
 
 namespace Orbita.Web.Controllers;
 
-[Authorize(Policy = PanelPermissions.Crm)]
+[Authorize]
 public sealed class CrmController(
     OrbitaApiClient api,
     IOfficeContext officeContext,
@@ -18,6 +18,7 @@ public sealed class CrmController(
     IOptions<DesignPreviewOptions> previewOptions) : Controller
 {
     [HttpGet]
+    [Authorize(Policy = PanelPermissions.CrmBoard)]
     public async Task<IActionResult> Index(
         Guid? officeId,
         string? search,
@@ -67,6 +68,7 @@ public sealed class CrmController(
     }
 
     [HttpGet]
+    [Authorize(Policy = PanelPermissions.CrmBoard)]
     public async Task<IActionResult> Snapshot(
         Guid? officeId,
         string? search,
@@ -92,6 +94,7 @@ public sealed class CrmController(
     }
 
     [HttpPost]
+    [Authorize(Policy = PanelPermissions.CrmBoard)]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> MoveAjax(Guid id, string stage, string? comment, CancellationToken ct = default)
     {
@@ -100,6 +103,7 @@ public sealed class CrmController(
     }
 
     [HttpPost]
+    [Authorize(Policy = PanelPermissions.CrmBoard)]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> StartShift(CancellationToken ct = default)
     {
@@ -109,6 +113,7 @@ public sealed class CrmController(
     }
 
     [HttpPost]
+    [Authorize(Policy = PanelPermissions.CrmBoard)]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> StopShift(CancellationToken ct = default)
     {
@@ -118,17 +123,27 @@ public sealed class CrmController(
     }
 
     [HttpGet]
+    [Authorize(Policy = PanelPermissions.CrmBoard)]
     public async Task<IActionResult> Card(Guid id, string? tab, CancellationToken ct = default)
     {
+        var canAccessTasks = User.HasClaim(PanelPermissions.ClaimType, PanelPermissions.CrmTasks)
+            || User.HasClaim(PanelPermissions.ClaimType, PanelPermissions.Crm);
+        if (tab == "tasks" && !canAccessTasks)
+        {
+            return Forbid();
+        }
+
         var card = await api.GetCrmCardAsync(id, ct);
         if (card is null) return NotFound();
         ViewData["CrmTab"] = tab is "tasks" or "history" or "chat" ? tab : "activity";
+        ViewData["CanAccessCrmTasks"] = canAccessTasks;
         ViewData["IsCrmAdmin"] = User.IsInRole(OrbitaRoles.Admin);
         ViewData["CurrentCrmUserId"] = User.FindFirstValue(ClaimTypes.NameIdentifier);
         return View(card);
     }
 
     [HttpGet]
+    [Authorize(Policy = PanelPermissions.CrmTasks)]
     public async Task<IActionResult> Tasks(string? scope, CancellationToken ct = default)
     {
         var officeId = ResolveOfficeId(null);
@@ -140,17 +155,11 @@ public sealed class CrmController(
         }
 
         var tasksRequest = api.GetCrmTasksAsync(officeId, ct);
-        var boardRequest = api.GetCrmBoardResultAsync(officeId, ct: ct);
-        await Task.WhenAll(tasksRequest, boardRequest);
+        var managersRequest = api.GetCrmTaskManagersAsync(officeId, ct);
+        await Task.WhenAll(tasksRequest, managersRequest);
         var tasks = await tasksRequest;
-        var (board, boardError) = await boardRequest;
-        if (boardError is "unauthorized" or "no_session")
-        {
-            await auth.SignOutAsync(ct);
-            return RedirectToAction("Login", "Account");
-        }
-
-        if (tasks is null || board is null)
+        var managers = await managersRequest;
+        if (tasks is null || managers is null)
         {
             ViewData["CrmUnavailableMessage"] = "Не удалось загрузить задачи CRM. Выйдите и войдите снова.";
             return View("Unavailable");
@@ -164,23 +173,35 @@ public sealed class CrmController(
 
         return View(new CrmTasksViewModel(
             tasks,
-            board.Managers,
-            board.OpenTaskCount,
-            board.OverdueTaskCount,
+            managers,
             selectedScope,
             User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty,
             User.IsInRole(OrbitaRoles.Admin)));
     }
 
     [HttpGet]
-    public async Task<IActionResult> TaskDetails(Guid id, CancellationToken ct = default)
+    [Authorize(Policy = PanelPermissions.CrmTasks)]
+    public async Task<IActionResult> TaskDetails(
+        Guid id,
+        bool fromTeam = false,
+        string? teamTaskScope = null,
+        CancellationToken ct = default)
     {
         var task = await api.GetCrmTaskAsync(id, ct);
-        return task is null ? NotFound() : View(task);
+        if (task is null) return NotFound();
+
+        ViewData["TaskListUrl"] = fromTeam
+            ? Url.Action(nameof(Team), new { taskScope = teamTaskScope })
+            : Url.Action(nameof(Tasks));
+        ViewData["TaskListTitle"] = fromTeam ? "Команда CRM" : "Задачи";
+        return View(task);
     }
 
     [HttpGet]
-    public async Task<IActionResult> Team(CancellationToken ct = default)
+    [Authorize(Policy = PanelPermissions.CrmBoard)]
+    [Authorize(Policy = PanelPermissions.CrmTasks)]
+    [Authorize(Policy = PanelPermissions.Administration)]
+    public async Task<IActionResult> Team(string? taskScope, CancellationToken ct = default)
     {
         var officeId = ResolveOfficeId(null);
         if (officeId is null)
@@ -190,27 +211,38 @@ public sealed class CrmController(
             return View("Unavailable");
         }
 
-        var (board, errorCode) = await api.GetCrmBoardResultAsync(
+        var boardRequest = api.GetCrmBoardResultAsync(
             officeId,
             query: new CrmBoardQuery(Scope: CrmBoardScopes.Team),
             ct: ct);
+        var tasksRequest = api.GetCrmTasksAsync(officeId, ct);
+        await Task.WhenAll(boardRequest, tasksRequest);
+        var (board, errorCode) = await boardRequest;
+        var tasks = await tasksRequest;
         if (errorCode is "unauthorized" or "no_session")
         {
             await auth.SignOutAsync(ct);
             return RedirectToAction("Login", "Account");
         }
 
-        if (board is null)
+        if (board is null || tasks is null)
         {
             ViewData["CrmUnavailableMessage"] = "Не удалось загрузить CRM для выбранного офиса. Выйдите и войдите снова.";
             return View("Unavailable");
         }
 
         if (!board.IsAdmin) return Forbid();
-        return View(board);
+        var selectedTaskScope = taskScope?.ToLowerInvariant() switch
+        {
+            "overdue" or "today" or "later" or "completed" or "cancelled" => taskScope.ToLowerInvariant(),
+            _ => "all"
+        };
+
+        return View(new CrmTeamViewModel(board, tasks, selectedTaskScope));
     }
 
     [HttpPost]
+    [Authorize(Policy = PanelPermissions.CrmBoard)]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Move(Guid id, string stage, string? comment, string? returnUrl, CancellationToken ct = default)
     {
@@ -220,6 +252,7 @@ public sealed class CrmController(
     }
 
     [HttpPost]
+    [Authorize(Policy = PanelPermissions.CrmBoard)]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> SetLoad(Guid id, bool active, string? returnUrl, CancellationToken ct = default)
     {
@@ -229,6 +262,7 @@ public sealed class CrmController(
     }
 
     [HttpPost]
+    [Authorize(Policy = PanelPermissions.CrmBoard)]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Assign(Guid id, string managerUserId, string? returnUrl, CancellationToken ct = default)
     {
@@ -238,6 +272,7 @@ public sealed class CrmController(
     }
 
     [HttpPost]
+    [Authorize(Policy = PanelPermissions.CrmBoard)]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Close(Guid id, string reason, string? comment, CancellationToken ct = default)
     {
@@ -247,6 +282,7 @@ public sealed class CrmController(
     }
 
     [HttpPost]
+    [Authorize(Policy = PanelPermissions.CrmBoard)]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Reopen(Guid id, CancellationToken ct = default)
     {
@@ -256,6 +292,7 @@ public sealed class CrmController(
     }
 
     [HttpPost]
+    [Authorize(Policy = PanelPermissions.CrmBoard)]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> AddNote(Guid id, string text, CancellationToken ct = default)
     {
@@ -265,6 +302,8 @@ public sealed class CrmController(
     }
 
     [HttpPost]
+    [Authorize(Policy = PanelPermissions.CrmBoard)]
+    [Authorize(Policy = PanelPermissions.CrmTasks)]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> FollowUp(Guid id, int minutes, string? title, CancellationToken ct = default)
     {
@@ -274,6 +313,7 @@ public sealed class CrmController(
     }
 
     [HttpPost]
+    [Authorize(Policy = PanelPermissions.CrmTasks)]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> CreateTask(Guid? cardId, string title, string? description, string assigneeUserId, DateTime? dueAtUtc, string? importance, string? returnUrl, CancellationToken ct = default)
     {
@@ -285,6 +325,7 @@ public sealed class CrmController(
     }
 
     [HttpPost]
+    [Authorize(Policy = PanelPermissions.CrmTasks)]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> CompleteTask(Guid taskId, Guid? cardId, CancellationToken ct = default)
     {
@@ -296,6 +337,7 @@ public sealed class CrmController(
     }
 
     [HttpPost]
+    [Authorize(Policy = PanelPermissions.CrmTasks)]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> UpdateTask(
         Guid taskId,
@@ -315,6 +357,7 @@ public sealed class CrmController(
     }
 
     [HttpPost]
+    [Authorize(Policy = PanelPermissions.CrmTasks)]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> CancelTask(Guid taskId, CancellationToken ct = default)
     {
@@ -324,6 +367,7 @@ public sealed class CrmController(
     }
 
     [HttpPost]
+    [Authorize(Policy = PanelPermissions.CrmTasks)]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> ReopenTask(Guid taskId, CancellationToken ct = default)
     {
@@ -333,6 +377,7 @@ public sealed class CrmController(
     }
 
     [HttpPost]
+    [Authorize(Policy = PanelPermissions.CrmTasks)]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> AddTaskComment(Guid taskId, string text, CancellationToken ct = default)
     {
@@ -342,6 +387,7 @@ public sealed class CrmController(
     }
 
     [HttpPost]
+    [Authorize(Policy = PanelPermissions.CrmTasks)]
     [ValidateAntiForgeryToken]
     [RequestSizeLimit(CrmTaskAttachmentLimits.MaxFileSizeBytes)]
     [RequestFormLimits(MultipartBodyLengthLimit = CrmTaskAttachmentLimits.MaxFileSizeBytes)]
@@ -372,6 +418,7 @@ public sealed class CrmController(
     }
 
     [HttpGet]
+    [Authorize(Policy = PanelPermissions.CrmTasks)]
     public async Task<IActionResult> DownloadTaskAttachment(Guid taskId, Guid attachmentId, CancellationToken ct = default)
     {
         var result = await api.OpenCrmTaskAttachmentAsync(taskId, attachmentId, ct);
@@ -399,6 +446,7 @@ public sealed class CrmController(
     }
 
     [HttpPost]
+    [Authorize(Policy = PanelPermissions.CrmBoard)]
     [ValidateAntiForgeryToken]
     [Authorize(Policy = PanelPermissions.Administration)]
     public async Task<IActionResult> SaveOfficeSettings(Guid officeId, bool isEnabled, bool requireStageComment, CancellationToken ct = default)
@@ -410,6 +458,7 @@ public sealed class CrmController(
     }
 
     [HttpPost]
+    [Authorize(Policy = PanelPermissions.CrmBoard)]
     [ValidateAntiForgeryToken]
     [Authorize(Policy = PanelPermissions.Administration)]
     public async Task<IActionResult> SaveOfficeFunnel(Guid officeId, string? stagesText, bool resetDefault = false, CancellationToken ct = default)
@@ -426,6 +475,7 @@ public sealed class CrmController(
     }
 
     [HttpPost]
+    [Authorize(Policy = PanelPermissions.CrmBoard)]
     [ValidateAntiForgeryToken]
     [Authorize(Policy = PanelPermissions.Administration)]
     public async Task<IActionResult> SaveCapacity(string managerUserId, int capacity, CancellationToken ct = default)

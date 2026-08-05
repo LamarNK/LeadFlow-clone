@@ -77,7 +77,18 @@ builder.Services.AddAuthorization(options =>
     foreach (var permission in PanelPermissions.All)
     {
         options.AddPolicy(permission.Id, policy =>
-            policy.RequireClaim(PanelPermissions.ClaimType, permission.Id));
+        {
+            if (permission.Id is PanelPermissions.CrmBoard or PanelPermissions.CrmTasks)
+            {
+                policy.RequireAssertion(context =>
+                    context.User.HasClaim(PanelPermissions.ClaimType, permission.Id)
+                    || context.User.HasClaim(PanelPermissions.ClaimType, PanelPermissions.Crm));
+            }
+            else
+            {
+                policy.RequireClaim(PanelPermissions.ClaimType, permission.Id);
+            }
+        });
     }
 });
 

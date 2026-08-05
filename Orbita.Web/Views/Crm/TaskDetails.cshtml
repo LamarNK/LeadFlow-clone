@@ -10,6 +10,8 @@
     var isOpen = task.Status == CrmTaskStatuses.Open;
     var progress = isCompleted ? 100 : isCancelled ? 0 : 50;
     var statusName = isCompleted ? "Выполнена" : isCancelled ? "Отменена" : "В работе";
+    var taskListUrl = ViewData["TaskListUrl"] as string ?? Url.Action("Tasks");
+    var taskListTitle = ViewData["TaskListTitle"] as string ?? "Задачи";
     var dueLabel = task.DueAtUtc is DateTime due ? due.ToLocalTime().ToString("dd MMMM yyyy, HH:mm", russianCulture) : "Не задан";
     var dueInputValue = task.DueAtUtc?.ToLocalTime().ToString("yyyy-MM-ddTHH:mm");
     var createdLabel = task.CreatedAtUtc.ToLocalTime().ToString("dd MMMM yyyy, HH:mm", russianCulture);
@@ -41,11 +43,11 @@
 
 <main class="orbita-main crm-shell crm-task-detail-page">
     <header class="crm-task-detail-header">
-        <a asp-action="Tasks" class="crm-task-detail-back" aria-label="Вернуться к задачам" title="К задачам">
+        <a href="@taskListUrl" class="crm-task-detail-back" aria-label="Вернуться к списку задач" title="К списку задач">
             <i class="fa-solid fa-arrow-left" aria-hidden="true"></i>
         </a>
         <div class="crm-task-detail-title">
-            <div class="crm-task-detail-title__eyebrow"><a asp-action="Tasks">Задачи</a><span>/</span> Детали задачи</div>
+            <div class="crm-task-detail-title__eyebrow"><a href="@taskListUrl">@taskListTitle</a><span>/</span> Детали задачи</div>
             <div class="crm-task-detail-title__line">
                 <h1>@task.Title</h1>
                 @if (task.DueAtUtc is DateTime dueAt)

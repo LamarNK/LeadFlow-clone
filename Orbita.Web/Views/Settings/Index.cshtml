@@ -250,6 +250,10 @@
                                 </td>
                                 <td data-label="Профиль">
                                     <span class="settings-role-pill">@user.RoleLabel</span>
+                                    @if (user.HasPermissionOverride)
+                                    {
+                                        <span class="settings-user-badge">Индивидуальные права</span>
+                                    }
                                 </td>
                                 <td data-label="Офис">
                                     @if (user.Role == PanelRoles.Admin)
@@ -288,6 +292,8 @@
                                                     data-user-full-name="@user.FullName"
                                                     data-user-role="@user.Role"
                                                     data-user-office-id="@(user.OfficeId?.ToString() ?? string.Empty)"
+                                                    data-user-permissions="@string.Join(',', user.EffectivePermissions)"
+                                                    data-user-has-permission-override="@user.HasPermissionOverride.ToString().ToLowerInvariant()"
                                                     data-user-is-current="@user.IsCurrentUser.ToString().ToLowerInvariant()">
                                                 Редактировать
                                             </button>
@@ -835,6 +841,8 @@
             <input type="hidden" name="OriginalFullName" id="editUserOriginalFullName" />
             <input type="hidden" name="OriginalRole" id="editUserOriginalRole" />
             <input type="hidden" name="OriginalOfficeId" id="editUserOriginalOfficeId" />
+            <input type="hidden" name="OriginalUseProfilePermissions" id="editUserOriginalUseProfilePermissions" />
+            <input type="hidden" name="OriginalPermissionKeys" id="editUserOriginalPermissionKeys" />
             <h2 class="settings-dialog-title">Редактировать пользователя</h2>
             <p class="settings-dialog-subtitle" id="editUserEmail"></p>
             <label class="settings-field">
@@ -860,6 +868,30 @@
                         }
                     </select>
                 </label>
+                <div class="settings-field" id="editUserPermissionsField">
+                    <span class="settings-field-label">Права доступа</span>
+                    <label class="settings-profile-permission">
+                        <input type="checkbox"
+                               name="UseProfilePermissions"
+                               value="true"
+                               id="editUserUseProfilePermissions"
+                               checked />
+                        <span>Как у профиля</span>
+                    </label>
+                    <div class="settings-profile-permission-list" id="editUserPermissionsList">
+                        @foreach (var permission in PanelPermissions.All)
+                        {
+                            <label class="settings-profile-permission" title="@permission.Description">
+                                <input type="checkbox"
+                                       name="Permissions"
+                                       value="@permission.Id"
+                                       data-user-permission-checkbox />
+                                <span>@permission.Label</span>
+                            </label>
+                        }
+                    </div>
+                    <span class="settings-field-label">Снимите «Как у профиля», чтобы назначить персональные права.</span>
+                </div>
             </div>
             <label class="settings-field" id="editUserPasswordField">
                 <span class="settings-field-label">Новый пароль</span>

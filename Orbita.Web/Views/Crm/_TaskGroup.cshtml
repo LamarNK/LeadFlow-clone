@@ -3,6 +3,8 @@
 @{
     var currentUserId = ViewData["CurrentCrmUserId"] as string;
     var isAdmin = ViewData["IsCrmAdmin"] as bool? == true;
+    var fromTeam = ViewData["TaskDetailsFromTeam"] as bool? == true;
+    var teamTaskScope = ViewData["TeamTaskScope"] as string;
     var groupClass = Model.Title switch
     {
         "Просрочено" => "crm-task-group--overdue",
@@ -45,7 +47,7 @@
                 var isOverdue = task.Status == CrmTaskStatuses.Open && (task.IsOverdue || (task.DueAtUtc is DateTime dueAt && dueAt < DateTime.UtcNow));
                 var canComplete = isAdmin || task.AssigneeUserId == currentUserId;
                 <article class="crm-task-row @(isOverdue ? "is-overdue" : "") @(task.Status == CrmTaskStatuses.Completed ? "is-complete" : "") @(task.Status == CrmTaskStatuses.Cancelled ? "is-cancelled" : "")">
-                    <a class="crm-task-row__main" asp-action="TaskDetails" asp-route-id="@task.Id">
+                    <a class="crm-task-row__main" asp-action="TaskDetails" asp-route-id="@task.Id" asp-route-fromTeam="@fromTeam" asp-route-teamTaskScope="@teamTaskScope">
                         <div class="crm-task-row__title"><strong>@task.Title</strong><span class="crm-task-importance crm-task-importance--@task.Importance.ToLowerInvariant()">@CrmTaskImportances.GetLabel(task.Importance)</span></div>
                         @if (!string.IsNullOrWhiteSpace(task.Description)) { <p>@task.Description</p> }
                         <div class="crm-task-row__people">

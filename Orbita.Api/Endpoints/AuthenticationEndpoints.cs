@@ -82,7 +82,8 @@ public static class AuthenticationEndpoints
                 }
             }
 
-            var permissions = await accessProfiles.GetPermissionsForRolesAsync(roles, ct);
+            var permissions = await panelUsers.GetPermissionOverrideAsync(user)
+                ?? await accessProfiles.GetPermissionsForRolesAsync(roles, ct);
             var token = JwtTokenFactory.CreateToken(user, roles, permissions, config, officeId);
             await audit.LogAsync(user.Id, user.Email, PanelAuditActions.LoginSucceeded, "user", user.Id, null, ip, ct);
             await GlobalLogger.Instance.LogAsync(

@@ -487,6 +487,25 @@ public sealed class OrbitaApiClient(
         return (false, await ReadApiErrorAsync(response, ct));
     }
 
+    public async Task<(bool Success, string? Error)> UpdatePanelUserPermissionsAsync(
+        string userId,
+        bool useProfilePermissions,
+        IReadOnlyList<string> permissions,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Put, $"api/v1/admin/users/{userId}/permissions");
+        request.Content = JsonContent.Create(new UpdatePanelUserPermissionsRequest(useProfilePermissions, permissions));
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (false, InvalidApiSessionError);
+        }
+
+        return response.IsSuccessStatusCode
+            ? (true, null)
+            : (false, await ReadApiErrorAsync(response, ct));
+    }
+
     public async Task<(bool Success, string? Error)> LockPanelUserAsync(string userId, CancellationToken ct = default) =>
         await PostAdminActionAsync($"api/v1/admin/users/{userId}/lock", ct);
 
@@ -1889,6 +1908,11 @@ public sealed class OrbitaApiClient(
         _preview.Enabled
             ? Task.FromResult<IReadOnlyList<CrmTaskDto>?>(DesignPreviewData.GetCrmTasks())
             : GetAsync<IReadOnlyList<CrmTaskDto>>(WithOfficeQuery("api/v1/crm/tasks", officeId), ct);
+
+    public Task<IReadOnlyList<CrmManagerDto>?> GetCrmTaskManagersAsync(Guid? officeId = null, CancellationToken ct = default) =>
+        _preview.Enabled
+            ? Task.FromResult<IReadOnlyList<CrmManagerDto>?>(DesignPreviewData.GetCrmBoard().Managers)
+            : GetAsync<IReadOnlyList<CrmManagerDto>>(WithOfficeQuery("api/v1/crm/tasks/managers", officeId), ct);
 
     public Task<CrmTaskDetailDto?> GetCrmTaskAsync(Guid taskId, CancellationToken ct = default) =>
         _preview.Enabled
