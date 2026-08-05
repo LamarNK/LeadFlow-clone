@@ -43,7 +43,11 @@ public sealed class SettingsService(
                 "offices" => SettingsIndexBuilder.BuildOfficesTab(
                     previewOffices,
                     DesignPreviewData.GetOfficeDetail(officeId)),
-                "profiles" => SettingsIndexBuilder.BuildProfilesTab(previewUsers, previewOffices, currentUserId),
+                "profiles" => SettingsIndexBuilder.BuildProfilesTab(
+                    previewUsers,
+                    previewOffices,
+                    SettingsIndexBuilder.DefaultAccessProfiles,
+                    currentUserId),
                 "workers" => SettingsIndexBuilder.BuildWorkersTab(
                     DesignPreviewData.AdminWorkers,
                     previewOffices,
@@ -65,6 +69,7 @@ public sealed class SettingsService(
             "profiles" => SettingsIndexBuilder.BuildProfilesTab(
                 await api.GetPanelUsersAsync(ct) ?? [],
                 offices,
+                await api.GetAccessProfilesAsync(ct) ?? SettingsIndexBuilder.DefaultAccessProfiles,
                 currentUserId),
             "workers" => SettingsIndexBuilder.BuildWorkersTab(
                 await api.GetAdminWorkersAsync(ct) ?? [],
@@ -304,6 +309,14 @@ public sealed class SettingsService(
         previewOptions.Value.Enabled
             ? Task.FromResult<(bool, string?)>((true, null))
             : api.UpdatePanelUserFullNameAsync(userId, fullName, ct);
+
+    public Task<(bool Success, string? Error)> UpdateAccessProfileAsync(
+        string profileId,
+        IReadOnlyList<string> permissions,
+        CancellationToken ct = default) =>
+        previewOptions.Value.Enabled
+            ? Task.FromResult<(bool, string?)>((true, null))
+            : api.UpdateAccessProfileAsync(profileId, permissions, ct);
 
     public Task<(bool Success, string? Error)> UpdateUserOfficeAsync(
         string userId,

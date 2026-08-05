@@ -24,8 +24,11 @@ public static class PanelResponseEndpoints
 {
     public static void Map(WebApplication app)
     {
-        var panel = app.MapGroup("/api/v1/panel").RequireAuthorization("Panel");
-        panel.MapGet("/responses", async (
+        var responses = app.MapGroup("/api/v1/panel").RequireAuthorization(PanelPermissions.Responses);
+        var statistics = app.MapGroup("/api/v1/panel").RequireAuthorization(PanelPermissions.Statistics);
+        var settings = app.MapGroup("/api/v1/panel").RequireAuthorization(PanelPermissions.Settings);
+
+        responses.MapGet("/responses", async (
             ResponsesQueryService responses,
             OfficeScopeService officeScope,
             ClaimsPrincipal principal,
@@ -74,7 +77,7 @@ public static class PanelResponseEndpoints
                 ct));
         });
 
-        panel.MapGet("/responses/summary", async (
+        responses.MapGet("/responses/summary", async (
             ResponsesQueryService responses,
             OfficeScopeService officeScope,
             ClaimsPrincipal principal,
@@ -115,7 +118,7 @@ public static class PanelResponseEndpoints
                 ct));
         });
 
-        panel.MapGet("/statistics", async (
+        statistics.MapGet("/statistics", async (
             OfficeStatisticsQueryService statistics,
             OfficeScopeService officeScope,
             ClaimsPrincipal principal,
@@ -144,7 +147,7 @@ public static class PanelResponseEndpoints
                 ct));
         });
 
-        panel.MapGet("/responses/filters/accounts", async (
+        responses.MapGet("/responses/filters/accounts", async (
             ResponsesQueryService responses,
             OfficeScopeService officeScope,
             ClaimsPrincipal principal,
@@ -160,7 +163,7 @@ public static class PanelResponseEndpoints
             return Results.Ok(await responses.GetFilterAccountsAsync(scope, officeId, ct));
         });
 
-        panel.MapGet("/responses/filters/vacancies", async (
+        responses.MapGet("/responses/filters/vacancies", async (
             ResponsesQueryService responses,
             OfficeScopeService officeScope,
             ClaimsPrincipal principal,
@@ -178,7 +181,7 @@ public static class PanelResponseEndpoints
             return Results.Ok(await responses.GetFilterVacanciesAsync(scope, officeId, from, to, ct));
         });
 
-        panel.MapGet("/responses/{id:guid}", async (
+        responses.MapGet("/responses/{id:guid}", async (
             Guid id,
             ResponsesQueryService responses,
             OfficeScopeService officeScope,
@@ -195,7 +198,7 @@ public static class PanelResponseEndpoints
             return detail is null ? Results.NotFound() : Results.Ok(detail);
         });
 
-        panel.MapPost("/responses/{id:guid}/resend-bitrix", async (
+        responses.MapPost("/responses/{id:guid}/resend-bitrix", async (
             Guid id,
             CandidateIngestionService ingestion,
             OfficeScopeService officeScope,
@@ -211,7 +214,7 @@ public static class PanelResponseEndpoints
             return Results.Ok(await ingestion.ResendToBitrixAsync(id, scope, ct));
         });
 
-        panel.MapGet("/bitrix-instances", async (
+        settings.MapGet("/bitrix-instances", async (
             BitrixInstanceService bitrixInstances,
             OfficeScopeService officeScope,
             ClaimsPrincipal principal,
@@ -227,7 +230,7 @@ public static class PanelResponseEndpoints
             return Results.Ok(await bitrixInstances.ListAsync(scope, officeId, ct));
         });
 
-        panel.MapPost("/bitrix-instances", async (
+        settings.MapPost("/bitrix-instances", async (
             CreateBitrixInstanceRequest request,
             BitrixInstanceService bitrixInstances,
             OfficeScopeService officeScope,
@@ -251,7 +254,7 @@ public static class PanelResponseEndpoints
             return error is not null ? Results.BadRequest(new { error }) : Results.Ok(instance);
         });
 
-        panel.MapGet("/bitrix-instances/{id:guid}", async (
+        settings.MapGet("/bitrix-instances/{id:guid}", async (
             Guid id,
             BitrixInstanceService bitrixInstances,
             OfficeScopeService officeScope,
@@ -269,7 +272,7 @@ public static class PanelResponseEndpoints
             return instance is null ? Results.NotFound() : Results.Ok(instance);
         });
 
-        panel.MapPut("/bitrix-instances/{id:guid}", async (
+        settings.MapPut("/bitrix-instances/{id:guid}", async (
             Guid id,
             UpdateBitrixInstanceRequest request,
             BitrixInstanceService bitrixInstances,
@@ -294,7 +297,7 @@ public static class PanelResponseEndpoints
             return error is not null ? Results.BadRequest(new { error }) : Results.Ok(instance);
         });
 
-        panel.MapDelete("/bitrix-instances/{id:guid}", async (
+        settings.MapDelete("/bitrix-instances/{id:guid}", async (
             Guid id,
             BitrixInstanceService bitrixInstances,
             OfficeScopeService officeScope,
@@ -317,7 +320,7 @@ public static class PanelResponseEndpoints
             return error is not null ? Results.BadRequest(new { error }) : Results.NoContent();
         });
 
-        panel.MapPost("/bitrix-instances/validate-webhook", async (
+        settings.MapPost("/bitrix-instances/validate-webhook", async (
             ValidateBitrixInstanceRequest request,
             BitrixWebhookValidator validator,
             OfficeScopeService officeScope,
@@ -334,7 +337,7 @@ public static class PanelResponseEndpoints
             return Results.Ok(validation);
         });
 
-        panel.MapPost("/bitrix-instances/{id:guid}/validate", async (
+        settings.MapPost("/bitrix-instances/{id:guid}/validate", async (
             Guid id,
             ValidateBitrixInstanceRequest request,
             BitrixInstanceService bitrixInstances,
@@ -366,7 +369,7 @@ public static class PanelResponseEndpoints
             return error is not null ? Results.BadRequest(new { error }) : Results.Ok(validation);
         });
 
-        panel.MapGet("/distribution-route", async (
+        settings.MapGet("/distribution-route", async (
             DistributionRouteService distributionRoute,
             OfficeScopeService officeScope,
             ClaimsPrincipal principal,
@@ -383,7 +386,7 @@ public static class PanelResponseEndpoints
             return route is null ? Results.BadRequest(new { error = "Офис не назначен." }) : Results.Ok(route);
         });
 
-        panel.MapPut("/distribution-route", async (
+        settings.MapPut("/distribution-route", async (
             SaveDistributionRouteRequest request,
             DistributionRouteService distributionRoute,
             OfficeScopeService officeScope,
@@ -402,7 +405,7 @@ public static class PanelResponseEndpoints
             return error is not null ? Results.BadRequest(new { error }) : Results.Ok(route);
         });
 
-        panel.MapPost("/responses/{id:guid}/send-bitrix", async (
+        responses.MapPost("/responses/{id:guid}/send-bitrix", async (
             Guid id,
             SendResponseToBitrixRequest request,
             ManualBitrixSendService manualSend,
@@ -420,7 +423,7 @@ public static class PanelResponseEndpoints
         });
 
         // Multi-channel delivery: CRM and/or Bitrix (Bitrix is temporary/legacy).
-        panel.MapPost("/responses/{id:guid}/deliver", async (
+        responses.MapPost("/responses/{id:guid}/deliver", async (
             Guid id,
             DeliverResponseRequest request,
             ResponseDeliveryService delivery,
@@ -437,7 +440,7 @@ public static class PanelResponseEndpoints
             return Results.Ok(await delivery.DeliverAsync(id, request, scope, DistributionModes.Manual, ct));
         });
 
-        panel.MapPost("/responses/deliver-bulk", async (
+        responses.MapPost("/responses/deliver-bulk", async (
             BulkDeliverResponsesRequest request,
             ResponseDeliveryService delivery,
             OfficeScopeService officeScope,
@@ -456,7 +459,7 @@ public static class PanelResponseEndpoints
                 : Results.Ok(result);
         });
 
-        panel.MapPost("/responses/send-bitrix-bulk", async (
+        responses.MapPost("/responses/send-bitrix-bulk", async (
             BulkSendResponsesToBitrixRequest request,
             BulkResponsesBitrixSendService bulkSend,
             OfficeScopeService officeScope,
@@ -475,7 +478,7 @@ public static class PanelResponseEndpoints
                 : Results.Ok(result);
         });
 
-        panel.MapPut("/me/integrations/bitrix", async (
+        settings.MapPut("/me/integrations/bitrix", async (
             SaveBitrixIntegrationRequest request,
             OfficeBitrixIntegrationService officeBitrix,
             OfficeScopeService officeScope,
@@ -504,7 +507,7 @@ public static class PanelResponseEndpoints
         });
 
 
-        panel.MapPost("/me/integrations/bitrix/validate", async (
+        settings.MapPost("/me/integrations/bitrix/validate", async (
             ValidateBitrixIntegrationRequest request,
             OfficeBitrixIntegrationService officeBitrix,
             OfficeScopeService officeScope,

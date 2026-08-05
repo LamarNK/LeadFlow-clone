@@ -1,12 +1,13 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Orbita.Contracts;
 using Orbita.Web.Helpers;
 using Orbita.Web.Models.ViewModels;
 using Orbita.Web.Services;
 
 namespace Orbita.Web.Controllers;
 
-[Authorize]
+[Authorize(Policy = PanelPermissions.Responses)]
 public sealed class ResponsesController(IResponsesService responses) : Controller
 {
     [HttpGet]

@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.HttpOverrides;
+using Orbita.Contracts;
 using Orbita.Logging.Audit;
 using Orbita.Web.Authorization;
 using Orbita.Web.Middleware;
@@ -71,7 +72,13 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
     });
 builder.Services.AddAuthorization(options =>
 {
-    options.AddPolicy(OrbitaRoles.Admin, policy => policy.RequireRole(OrbitaRoles.Admin));
+    options.AddPolicy(OrbitaRoles.Admin, policy =>
+        policy.RequireClaim(PanelPermissions.ClaimType, PanelPermissions.Administration));
+    foreach (var permission in PanelPermissions.All)
+    {
+        options.AddPolicy(permission.Id, policy =>
+            policy.RequireClaim(PanelPermissions.ClaimType, permission.Id));
+    }
 });
 
 builder.Services.AddHttpClient<OrbitaApiClient>(client =>

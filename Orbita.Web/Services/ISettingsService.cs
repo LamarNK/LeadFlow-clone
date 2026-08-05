@@ -63,6 +63,11 @@ public interface ISettingsService
         string fullName,
         CancellationToken ct = default);
 
+    Task<(bool Success, string? Error)> UpdateAccessProfileAsync(
+        string profileId,
+        IReadOnlyList<string> permissions,
+        CancellationToken ct = default);
+
     Task<(bool Success, string? Error)> UpdateUserOfficeAsync(
         string userId,
         Guid? officeId,

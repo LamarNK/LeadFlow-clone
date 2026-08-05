@@ -33,6 +33,8 @@ public sealed record AccessProfileDto(
     string Description,
     IReadOnlyList<string> Permissions);
 
+public sealed record UpdateAccessProfileRequest(IReadOnlyList<string> Permissions);
+
 public sealed record ServiceLogEntryDto(
     DateTime TimestampUtc,
     string Level,
@@ -111,6 +113,7 @@ public static class PanelAuditActions
     public const string UserFullNameUpdated = "user.full_name_updated";
     public const string UserPasswordReset = "user.password_reset";
     public const string UserPasswordChanged = "user.password_changed";
+    public const string AccessProfileUpdated = "access_profile.updated";
     public const string UserLocked = "user.locked";
     public const string UserUnlocked = "user.unlocked";
     public const string UserSessionsRevoked = "user.sessions_revoked";

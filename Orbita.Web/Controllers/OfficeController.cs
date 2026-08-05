@@ -11,7 +11,7 @@ public sealed class OfficeController(OrbitaApiClient api) : Controller
 {
     [HttpPost]
     [ValidateAntiForgeryToken]
-    [Authorize(Roles = OrbitaRoles.Admin)]
+    [Authorize(Policy = PanelPermissions.Administration)]
     public async Task<IActionResult> Select(Guid? officeId, string? returnUrl, CancellationToken ct)
     {
         var target = NormalizeReturnUrl(returnUrl);

@@ -24,7 +24,7 @@ public static class DashboardEndpoints
 {
     public static void Map(WebApplication app)
     {
-        var dashboard = app.MapGroup("/api/v1/dashboard").RequireAuthorization("Panel");
+        var dashboard = app.MapGroup("/api/v1/dashboard").RequireAuthorization(PanelPermissions.Dashboard);
         dashboard.MapGet("/diagnostics/{id:guid}/image", async (
             Guid id,
             WorkerDiagnosticsService diagnostics,
@@ -60,7 +60,7 @@ public static class DashboardEndpoints
             return Results.Ok(await query.GetGlobalSummaryAsync(scope, officeId, ct));
         });
 
-        var workerRead = app.MapGroup("/api/v1").RequireAuthorization("Panel");
+        var workerRead = app.MapGroup("/api/v1").RequireAuthorization(PanelPermissions.Workers);
         workerRead.MapGet("/workers", async (
             Guid? officeId,
             DashboardQueryService query,
@@ -92,7 +92,8 @@ public static class DashboardEndpoints
             var detail = await query.GetWorkerDetailAsync(id, scope, ct);
             return detail is null ? Results.NotFound() : Results.Ok(detail);
         });
-        workerRead.MapGet("/workers/{id:guid}/accounts", async (
+        var accountRead = app.MapGroup("/api/v1").RequireAuthorization(PanelPermissions.Accounts);
+        accountRead.MapGet("/workers/{id:guid}/accounts", async (
             Guid id,
             DashboardQueryService query,
             OfficeScopeService officeScope,
@@ -107,7 +108,8 @@ public static class DashboardEndpoints
 
             return Results.Ok(await query.GetWorkerAccountsAsync(id, scope, ct));
         });
-        workerRead.MapGet("/events", async (
+        var eventsRead = app.MapGroup("/api/v1").RequireAuthorization(PanelPermissions.Events);
+        eventsRead.MapGet("/events", async (
             Guid? workerId,
             Guid? officeId,
             int? limit,

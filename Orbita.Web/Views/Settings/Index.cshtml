@@ -235,19 +235,7 @@
                         {
                             <tr>
                                 <td data-label="ФИО">
-                                    <form asp-action="UpdateUserFullName" method="post" class="settings-role-form">
-                                        @Html.AntiForgeryToken()
-                                        <input type="hidden" name="UserId" value="@user.Id" />
-                                        <input type="text"
-                                               name="FullName"
-                                               value="@user.FullName"
-                                               class="settings-select settings-select--inline"
-                                               maxlength="256"
-                                               required
-                                               autocomplete="name"
-                                               aria-label="ФИО @user.Email" />
-                                        <button type="submit" class="settings-link-btn">Сохранить</button>
-                                    </form>
+                                    @(string.IsNullOrWhiteSpace(user.FullName) ? "—" : user.FullName)
                                 </td>
                                 <td class="cell-name" data-label="Email">
                                     <span class="settings-user-email">@user.Email</span>
@@ -261,61 +249,16 @@
                                     }
                                 </td>
                                 <td data-label="Профиль">
-                                    @if (user.IsCurrentUser)
-                                    {
-                                        <span class="settings-role-pill">@user.RoleLabel</span>
-                                    }
-                                    else
-                                    {
-                                        <form asp-action="UpdateUserRole" method="post" class="settings-role-form">
-                                            @Html.AntiForgeryToken()
-                                            <input type="hidden" name="UserId" value="@user.Id" />
-                                            <select name="Role" class="settings-select settings-select--inline" aria-label="Профиль @user.Email">
-                                                @foreach (var opt in Model.ProfileOptions)
-                                                {
-                                                    if (opt.Value == user.Role)
-                                                    {
-                                                        <option value="@opt.Value" selected>@opt.Label</option>
-                                                    }
-                                                    else
-                                                    {
-                                                        <option value="@opt.Value">@opt.Label</option>
-                                                    }
-                                                }
-                                            </select>
-                                            <button type="submit" class="settings-link-btn">Сохранить</button>
-                                        </form>
-                                    }
+                                    <span class="settings-role-pill">@user.RoleLabel</span>
                                 </td>
                                 <td data-label="Офис">
                                     @if (user.Role == PanelRoles.Admin)
                                     {
                                         <span class="settings-role-pill">Все офисы</span>
                                     }
-                                    else if (user.IsCurrentUser)
-                                    {
-                                        <span>@(user.OfficeName ?? "—")</span>
-                                    }
                                     else
                                     {
-                                        <form asp-action="UpdateUserOffice" method="post" class="settings-role-form">
-                                            @Html.AntiForgeryToken()
-                                            <input type="hidden" name="UserId" value="@user.Id" />
-                                            <select name="OfficeId" class="settings-select settings-select--inline" aria-label="Офис @user.Email">
-                                                @foreach (var opt in Model.OfficeOptions)
-                                                {
-                                                    if (Guid.TryParse(opt.Value, out var officeGuid) && officeGuid == user.OfficeId)
-                                                    {
-                                                        <option value="@opt.Value" selected>@opt.Label</option>
-                                                    }
-                                                    else
-                                                    {
-                                                        <option value="@opt.Value">@opt.Label</option>
-                                                    }
-                                                }
-                                            </select>
-                                            <button type="submit" class="settings-link-btn">Сохранить</button>
-                                        </form>
+                                        <span>@(user.OfficeName ?? "—")</span>
                                     }
                                 </td>
                                 <td data-label="Bitrix24">
@@ -332,20 +275,24 @@
                                     }
                                 </td>
                                 <td class="data-table-menu" data-label="">
-                                    @if (!user.IsCurrentUser)
-                                    {
-                                        <div class="row-menu" data-row-menu>
-                                            <button type="button" class="row-menu-btn" aria-label="Действия" aria-expanded="false" aria-haspopup="true">
-                                                <i class="fa-solid fa-ellipsis-vertical" aria-hidden="true"></i>
+                                    <div class="row-menu" data-row-menu>
+                                        <button type="button" class="row-menu-btn" aria-label="Действия" aria-expanded="false" aria-haspopup="true">
+                                            <i class="fa-solid fa-ellipsis-vertical" aria-hidden="true"></i>
+                                        </button>
+                                        <div class="row-menu-dropdown" hidden>
+                                            <button type="button"
+                                                    class="row-menu-item"
+                                                    data-settings-edit-user
+                                                    data-user-id="@user.Id"
+                                                    data-user-email="@user.Email"
+                                                    data-user-full-name="@user.FullName"
+                                                    data-user-role="@user.Role"
+                                                    data-user-office-id="@(user.OfficeId?.ToString() ?? string.Empty)"
+                                                    data-user-is-current="@user.IsCurrentUser.ToString().ToLowerInvariant()">
+                                                Редактировать
                                             </button>
-                                            <div class="row-menu-dropdown" hidden>
-                                                <button type="button"
-                                                        class="row-menu-item"
-                                                        data-settings-reset-password
-                                                        data-user-id="@user.Id"
-                                                        data-user-email="@user.Email">
-                                                    Сменить пароль
-                                                </button>
+                                            @if (!user.IsCurrentUser)
+                                            {
                                                 @if (user.IsLocked)
                                                 {
                                                     <form asp-action="UnlockUser" method="post" class="settings-inline-form">
@@ -374,9 +321,9 @@
                                                         Удалить
                                                     </button>
                                                 </form>
-                                            </div>
+                                            }
                                         </div>
-                                    }
+                                    </div>
                                 </td>
                             </tr>
                         }
@@ -704,10 +651,33 @@
                         <div class="settings-profile-meta">
                             <span class="settings-profile-count">@accessProfile.UsersCount пользователей</span>
                         </div>
-                        <div class="settings-profile-permissions">
-                            <span class="settings-profile-permissions-label">Доступ</span>
-                            <p>@accessProfile.PermissionsLabel</p>
-                        </div>
+                        <form asp-action="UpdateAccessProfile" method="post" class="settings-profile-permissions">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="ProfileId" value="@accessProfile.Id" />
+                            <span class="settings-profile-permissions-label">Права доступа</span>
+                            <div class="settings-profile-permission-list">
+                                @foreach (var permission in PanelPermissions.All)
+                                {
+                                    var isGranted = accessProfile.Permissions.Contains(permission.Id, StringComparer.Ordinal);
+                                    var isRequiredForAdmin = accessProfile.Id == "admin"
+                                        && permission.Id == PanelPermissions.Administration;
+                                    if (isRequiredForAdmin)
+                                    {
+                                        <input type="hidden" name="Permissions" value="@permission.Id" />
+                                    }
+                                    <label class="settings-profile-permission" title="@permission.Description">
+                                        <input type="checkbox"
+                                               name="Permissions"
+                                               value="@permission.Id"
+                                               checked="@(isGranted ? "checked" : null)"
+                                               disabled="@(isRequiredForAdmin ? "disabled" : null)" />
+                                        <span>@permission.Label</span>
+                                    </label>
+                                }
+                            </div>
+                            <p class="settings-profile-permissions-hint">Изменение завершит активные сессии пользователей профиля.</p>
+                            <button type="submit" class="settings-secondary-btn">Сохранить права</button>
+                        </form>
                         <div class="settings-profile-members">
                             <span class="settings-profile-permissions-label">Пользователи</span>
                             @if (accessProfile.Members.Count == 0)
@@ -858,15 +828,43 @@
             }
         </div>
     }
-    <dialog class="settings-dialog" id="resetPasswordDialog">
-        <form asp-action="ResetPassword" method="post" class="settings-dialog-form">
+    <dialog class="settings-dialog" id="editUserDialog">
+        <form asp-action="UpdateUser" method="post" class="settings-dialog-form" id="editUserForm">
             @Html.AntiForgeryToken()
-            <input type="hidden" name="UserId" id="resetPasswordUserId" />
-            <h2 class="settings-dialog-title">Сменить пароль</h2>
-            <p class="settings-dialog-subtitle" id="resetPasswordUserEmail"></p>
+            <input type="hidden" name="UserId" id="editUserId" />
+            <input type="hidden" name="OriginalFullName" id="editUserOriginalFullName" />
+            <input type="hidden" name="OriginalRole" id="editUserOriginalRole" />
+            <input type="hidden" name="OriginalOfficeId" id="editUserOriginalOfficeId" />
+            <h2 class="settings-dialog-title">Редактировать пользователя</h2>
+            <p class="settings-dialog-subtitle" id="editUserEmail"></p>
             <label class="settings-field">
+                <span class="settings-field-label">ФИО</span>
+                <input type="text" name="FullName" id="editUserFullName" required maxlength="256" autocomplete="name" />
+            </label>
+            <div class="settings-dialog-fields" id="editUserAccessFields">
+                <label class="settings-field">
+                    <span class="settings-field-label">Профиль</span>
+                    <select name="Role" class="settings-select" id="editUserRole">
+                        @foreach (var opt in Model.ProfileOptions)
+                        {
+                            <option value="@opt.Value">@opt.Label</option>
+                        }
+                    </select>
+                </label>
+                <label class="settings-field" id="editUserOfficeField">
+                    <span class="settings-field-label">Офис</span>
+                    <select name="OfficeId" class="settings-select" id="editUserOffice">
+                        @foreach (var opt in Model.OfficeOptions)
+                        {
+                            <option value="@opt.Value">@opt.Label</option>
+                        }
+                    </select>
+                </label>
+            </div>
+            <label class="settings-field" id="editUserPasswordField">
                 <span class="settings-field-label">Новый пароль</span>
-                <input type="password" name="Password" required minlength="8" autocomplete="new-password" />
+                <input type="password" name="Password" id="editUserPassword" minlength="8" autocomplete="new-password" />
+                <span class="settings-field-label">Оставьте пустым, чтобы не менять пароль.</span>
             </label>
             <div class="settings-dialog-actions">
                 <button type="button" class="settings-secondary-btn" data-settings-dialog-close>Отмена</button>

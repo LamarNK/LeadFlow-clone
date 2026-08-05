@@ -8,7 +8,7 @@ using System.Linq;
 
 namespace Orbita.Web.Controllers;
 
-[Authorize]
+[Authorize(Policy = PanelPermissions.Workers)]
 public sealed class WorkersController(IWorkersService workers) : Controller
 {
     [HttpGet]

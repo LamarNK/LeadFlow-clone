@@ -24,7 +24,7 @@ public static class CrmEndpoints
 {
     public static void Map(WebApplication app)
     {
-        var crm = app.MapGroup("/api/v1/crm").RequireAuthorization("Panel");
+        var crm = app.MapGroup("/api/v1/crm").RequireAuthorization(PanelPermissions.Crm);
         crm.MapGet("/board", async (
             CrmWorkspaceService workspace,
             OfficeScopeService officeScope,

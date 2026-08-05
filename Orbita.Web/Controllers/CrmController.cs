@@ -10,7 +10,7 @@ using Orbita.Web.Services;
 
 namespace Orbita.Web.Controllers;
 
-[Authorize(Roles = $"{OrbitaRoles.Admin},{OrbitaRoles.Manager}")]
+[Authorize(Policy = PanelPermissions.Crm)]
 public sealed class CrmController(
     OrbitaApiClient api,
     IOfficeContext officeContext,
@@ -400,7 +400,7 @@ public sealed class CrmController(
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    [Authorize(Roles = OrbitaRoles.Admin)]
+    [Authorize(Policy = PanelPermissions.Administration)]
     public async Task<IActionResult> SaveOfficeSettings(Guid officeId, bool isEnabled, bool requireStageComment, CancellationToken ct = default)
     {
         var (_, error) = await api.SetCrmOfficeSettingsAsync(officeId, isEnabled, requireStageComment, ct);
@@ -411,7 +411,7 @@ public sealed class CrmController(
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    [Authorize(Roles = OrbitaRoles.Admin)]
+    [Authorize(Policy = PanelPermissions.Administration)]
     public async Task<IActionResult> SaveOfficeFunnel(Guid officeId, string? stagesText, bool resetDefault = false, CancellationToken ct = default)
     {
         IReadOnlyList<string> stages = resetDefault
@@ -427,7 +427,7 @@ public sealed class CrmController(
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    [Authorize(Roles = OrbitaRoles.Admin)]
+    [Authorize(Policy = PanelPermissions.Administration)]
     public async Task<IActionResult> SaveCapacity(string managerUserId, int capacity, CancellationToken ct = default)
     {
         var (_, error) = await api.SetCrmManagerCapacityAsync(managerUserId, capacity, ct: ct);

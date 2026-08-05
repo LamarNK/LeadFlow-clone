@@ -24,7 +24,7 @@ public static class WorkerPanelEndpoints
 {
     public static void Map(WebApplication app)
     {
-        var workerPanel = app.MapGroup("/api/v1/workers").RequireAuthorization("Panel");
+        var workerPanel = app.MapGroup("/api/v1/workers").RequireAuthorization(PanelPermissions.Workers);
         workerPanel.MapGet("/{id:guid}/config", async (
             Guid id,
             WorkerConfigService configService,

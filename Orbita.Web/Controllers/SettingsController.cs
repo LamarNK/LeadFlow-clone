@@ -9,7 +9,7 @@ using Orbita.Web.Services;
 
 namespace Orbita.Web.Controllers;
 
-[Authorize(Roles = OrbitaRoles.Admin)]
+[Authorize(Policy = PanelPermissions.Administration)]
 public sealed class SettingsController(
     ISettingsService settings,
     ThemeService theme) : Controller
@@ -59,6 +59,69 @@ public sealed class SettingsController(
             ? "ФИО пользователя обновлено."
             : error;
         return RedirectToAction(nameof(Index), new { tab = "users" });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> UpdateUser(UpdatePanelUserFormModel model, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(model.FullName))
+        {
+            TempData["SettingsError"] = "Укажите ФИО пользователя.";
+            return RedirectToAction(nameof(Index), new { tab = "users" });
+        }
+
+        var currentUserId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        var canEditAccess = !string.Equals(model.UserId, currentUserId, StringComparison.Ordinal);
+        var changes = new List<Func<Task<(bool Success, string? Error)>>>();
+
+        if (canEditAccess && !string.Equals(model.Role, model.OriginalRole, StringComparison.Ordinal))
+        {
+            changes.Add(() => settings.UpdateUserRoleAsync(model.UserId, model.Role ?? string.Empty, ct));
+        }
+
+        if (canEditAccess
+            && !string.Equals(model.Role, PanelRoles.Admin, StringComparison.Ordinal)
+            && model.OfficeId != model.OriginalOfficeId)
+        {
+            changes.Add(() => settings.UpdateUserOfficeAsync(model.UserId, model.OfficeId, ct));
+        }
+
+        if (!string.Equals(model.FullName.Trim(), model.OriginalFullName.Trim(), StringComparison.Ordinal))
+        {
+            changes.Add(() => settings.UpdateUserFullNameAsync(model.UserId, model.FullName, ct));
+        }
+
+        if (canEditAccess && !string.IsNullOrWhiteSpace(model.Password))
+        {
+            changes.Add(() => settings.ResetUserPasswordAsync(model.UserId, model.Password, ct));
+        }
+
+        foreach (var change in changes)
+        {
+            var (success, error) = await change();
+            if (!success)
+            {
+                TempData["SettingsError"] = error;
+                return RedirectToAction(nameof(Index), new { tab = "users" });
+            }
+        }
+
+        TempData["SettingsStatus"] = changes.Count == 0
+            ? "Изменений нет."
+            : "Пользователь обновлён.";
+        return RedirectToAction(nameof(Index), new { tab = "users" });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> UpdateAccessProfile(UpdateAccessProfileFormModel model, CancellationToken ct = default)
+    {
+        var (success, error) = await settings.UpdateAccessProfileAsync(model.ProfileId, model.Permissions, ct);
+        TempData[success ? "SettingsStatus" : "SettingsError"] = success
+            ? "Права доступа обновлены. Пользователям этого профиля нужно войти заново."
+            : error;
+        return RedirectToAction(nameof(Index), new { tab = "profiles" });
     }
 
     [HttpPost]

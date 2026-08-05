@@ -24,19 +24,14 @@ internal static class SettingsIndexBuilder
         new() { Value = PanelRoles.Admin, Label = "Администратор" }
     ];
 
-    private static readonly IReadOnlyList<AccessProfileDto> AccessProfiles =
-    [
-        new(
-            "admin",
-            "Администратор",
-            "Полный доступ к панели, настройкам и управлению пользователями.",
-            ["Панель управления", "Воркеры", "Аккаунты", "События", "Ошибки", "Настройки", "Администрирование", "Интеграции Bitrix"]),
-        new(
-            "operator",
-            "Оператор",
-            "Просмотр мониторинга и личные настройки (профиль, Bitrix24).",
-            ["Панель управления", "Воркеры", "Аккаунты", "События", "Ошибки", "Настройки"])
-    ];
+    public static readonly IReadOnlyList<AccessProfileDto> DefaultAccessProfiles =
+        PanelPermissions.Profiles
+            .Select(profile => new AccessProfileDto(
+                profile.Id,
+                profile.Name,
+                profile.Description,
+                PanelPermissions.DefaultForRole(profile.Role)))
+            .ToArray();
 
     public static SettingsIndexViewModel BuildOfficesTab(
         IReadOnlyList<OfficeDto> offices,
@@ -73,8 +68,9 @@ internal static class SettingsIndexBuilder
     public static SettingsIndexViewModel BuildProfilesTab(
         IReadOnlyList<PanelUserDto> users,
         IReadOnlyList<OfficeDto> offices,
+        IReadOnlyList<AccessProfileDto> profiles,
         string? currentUserId = null) =>
-        Build(users, offices, "profiles", currentUserId);
+        Build(users, offices, "profiles", currentUserId, accessProfiles: profiles);
 
     public static SettingsIndexViewModel BuildWorkerReleasesTab(WorkerReleaseListResponse releases) =>
         new()
@@ -246,13 +242,14 @@ internal static class SettingsIndexBuilder
         string activeTab,
         string? currentUserId,
         string? statusMessage = null,
-        string? errorMessage = null) =>
+        string? errorMessage = null,
+        IReadOnlyList<AccessProfileDto>? accessProfiles = null) =>
         new()
         {
             ActiveTab = activeTab,
             Tabs = Tabs,
             Users = users.Select(u => MapUser(u, offices, currentUserId)).ToList(),
-            Profiles = BuildProfiles(users),
+            Profiles = BuildProfiles(users, accessProfiles ?? DefaultAccessProfiles),
             ProfileOptions = ProfileOptions,
             OfficeOptions = offices.Select(o => new EventFilterOptionViewModel
             {
@@ -424,13 +421,15 @@ internal static class SettingsIndexBuilder
         };
     }
 
-    private static IReadOnlyList<AccessProfileRowViewModel> BuildProfiles(IReadOnlyList<PanelUserDto> users)
+    private static IReadOnlyList<AccessProfileRowViewModel> BuildProfiles(
+        IReadOnlyList<PanelUserDto> users,
+        IReadOnlyList<AccessProfileDto> profiles)
     {
         var mappedUsers = users
             .Select(u => new { User = u, Role = PanelRoles.Normalize(u.Role) })
             .ToList();
 
-        return AccessProfiles
+        return profiles
             .Select(profile =>
             {
                 var role = PanelRoles.RoleForProfileId(profile.Id);
@@ -445,7 +444,7 @@ internal static class SettingsIndexBuilder
                     Id = profile.Id,
                     Name = profile.Name,
                     Description = profile.Description,
-                    PermissionsLabel = string.Join(" · ", profile.Permissions),
+                    Permissions = profile.Permissions,
                     UsersCount = members.Count,
                     Members = members
                 };

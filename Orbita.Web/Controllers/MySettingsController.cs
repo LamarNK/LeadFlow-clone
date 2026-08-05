@@ -9,7 +9,7 @@ using Orbita.Web.Services;
 
 namespace Orbita.Web.Controllers;
 
-[Authorize]
+[Authorize(Policy = PanelPermissions.Settings)]
 public sealed class MySettingsController(
     IMySettingsService settings,
     BitrixValidationResultCache bitrixValidationCache) : Controller

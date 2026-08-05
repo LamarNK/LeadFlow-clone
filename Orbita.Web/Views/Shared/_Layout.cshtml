@@ -1,4 +1,5 @@
 @using Microsoft.Extensions.Options
+@using Orbita.Contracts
 @using Orbita.Web.Authorization
 @using Orbita.Web.Options
 @inject Orbita.Web.Services.ThemeService Theme
@@ -81,36 +82,48 @@ else
             @{
                 var ctrl = ViewContext.RouteData.Values["controller"]?.ToString();
                 var act = ViewContext.RouteData.Values["action"]?.ToString();
-                var isManagerOnly = User.IsInRole(OrbitaRoles.Manager) && !User.IsInRole(OrbitaRoles.Admin);
+                var can = new Func<string, bool>(permission => User.HasClaim(PanelPermissions.ClaimType, permission));
             }
-            @if (isManagerOnly)
-            {
-                <a class="nav-item @(ctrl == "Crm" && act is "Index" or null ? "active" : "")" href="@Url.Action("Index", "Crm")" title="Воронка"><i class="fa-solid fa-columns" aria-hidden="true"></i><span class="nav-item-label">Воронка</span></a>
-                <a class="nav-item @(ctrl == "Crm" && act == "Tasks" ? "active" : "")" href="@Url.Action("Tasks", "Crm")" title="Мои задачи"><i class="fa-solid fa-list-check" aria-hidden="true"></i><span class="nav-item-label">Задачи</span><span class="nav-badge" data-nav-badge="crm-tasks" hidden></span></a>
-                <a class="nav-item @(ctrl == "MySettings" ? "active" : "")" href="@Url.Action("Index", "MySettings")" title="Настройки"><i class="fa-solid fa-gear" aria-hidden="true"></i><span class="nav-item-label">Настройки</span></a>
-            }
-            else
+            @if (can(PanelPermissions.Dashboard))
             {
                 <a class="nav-item @(ctrl == "Dashboard" ? "active" : "")" href="@Url.Action("Index", "Dashboard")" title="Панель управления"><i class="fa-solid fa-house" aria-hidden="true"></i><span class="nav-item-label">Панель управления</span></a>
+            }
+            @if (can(PanelPermissions.Workers))
+            {
                 <a class="nav-item @(ctrl == "Workers" ? "active" : "")" href="@Url.Action("Index", "Workers")" title="Воркеры"><i class="fa-solid fa-server" aria-hidden="true"></i><span class="nav-item-label">Воркеры</span></a>
+            }
+            @if (can(PanelPermissions.Accounts))
+            {
                 <a class="nav-item @(ctrl == "Accounts" ? "active" : "")" href="@Url.Action("Index", "Accounts")" title="Аккаунты"><i class="fa-solid fa-users" aria-hidden="true"></i><span class="nav-item-label">Аккаунты</span></a>
+            }
+            @if (can(PanelPermissions.Statistics))
+            {
                 <a class="nav-item @(ctrl == "Statistics" ? "active" : "")" href="@Url.Action("Index", "Statistics")" title="Статистика"><i class="fa-solid fa-chart-line" aria-hidden="true"></i><span class="nav-item-label">Статистика</span></a>
+            }
+            @if (can(PanelPermissions.Responses))
+            {
                 <a class="nav-item @(ctrl == "Responses" ? "active" : "")" href="@Url.Action("Index", "Responses")" title="Отклики"><i class="fa-solid fa-inbox" aria-hidden="true"></i><span class="nav-item-label">Отклики</span><span class="nav-badge" data-nav-badge="responses" hidden></span></a>
-                @if (User.IsInRole(OrbitaRoles.Manager) || User.IsInRole(OrbitaRoles.Admin))
+            }
+            @if (can(PanelPermissions.Crm))
+            {
+                <a class="nav-item @(ctrl == "Crm" && act is "Index" or "Card" or null ? "active" : "")" href="@Url.Action("Index", "Crm")" title="CRM менеджеров"><i class="fa-solid fa-columns" aria-hidden="true"></i><span class="nav-item-label">CRM</span></a>
+                <a class="nav-item @(ctrl == "Crm" && act == "Tasks" ? "active" : "")" href="@Url.Action("Tasks", "Crm")" title="Мои задачи"><i class="fa-solid fa-list-check" aria-hidden="true"></i><span class="nav-item-label">Задачи</span><span class="nav-badge" data-nav-badge="crm-tasks" hidden></span></a>
+                @if (can(PanelPermissions.Administration))
                 {
-                    <a class="nav-item @(ctrl == "Crm" && act is "Index" or "Card" or null ? "active" : "")" href="@Url.Action("Index", "Crm")" title="CRM менеджеров"><i class="fa-solid fa-columns" aria-hidden="true"></i><span class="nav-item-label">CRM</span></a>
-                    <a class="nav-item @(ctrl == "Crm" && act == "Tasks" ? "active" : "")" href="@Url.Action("Tasks", "Crm")" title="Мои задачи"><i class="fa-solid fa-list-check" aria-hidden="true"></i><span class="nav-item-label">Задачи</span><span class="nav-badge" data-nav-badge="crm-tasks" hidden></span></a>
-                    @if (User.IsInRole(OrbitaRoles.Admin))
-                    {
-                        <a class="nav-item @(ctrl == "Crm" && act == "Team" ? "active" : "")" href="@Url.Action("Team", "Crm")" title="Команда CRM"><i class="fa-solid fa-people-group" aria-hidden="true"></i><span class="nav-item-label">Команда CRM</span></a>
-                    }
+                    <a class="nav-item @(ctrl == "Crm" && act == "Team" ? "active" : "")" href="@Url.Action("Team", "Crm")" title="Команда CRM"><i class="fa-solid fa-people-group" aria-hidden="true"></i><span class="nav-item-label">Команда CRM</span></a>
                 }
+            }
+            @if (can(PanelPermissions.Events))
+            {
                 <a class="nav-item @(ctrl is "Events" or "Errors" ? "active" : "")" href="@Url.Action("Index", "Events")" title="События"><i class="fa-regular fa-clipboard" aria-hidden="true"></i><span class="nav-item-label">События</span><span class="nav-badge" data-nav-badge="errors" hidden></span></a>
+            }
+            @if (can(PanelPermissions.Settings))
+            {
                 <a class="nav-item @(ctrl == "MySettings" ? "active" : "")" href="@Url.Action("Index", "MySettings")" title="Настройки"><i class="fa-solid fa-gear" aria-hidden="true"></i><span class="nav-item-label">Настройки</span></a>
-                @if (User.IsInRole(OrbitaRoles.Admin))
-                {
-                    <a class="nav-item @(ctrl == "Settings" ? "active" : "")" href="@Url.Action("Index", "Settings")" title="Администрирование"><i class="fa-solid fa-user-shield" aria-hidden="true"></i><span class="nav-item-label">Администрирование</span></a>
-                }
+            }
+            @if (can(PanelPermissions.Administration))
+            {
+                <a class="nav-item @(ctrl == "Settings" ? "active" : "")" href="@Url.Action("Index", "Settings")" title="Администрирование"><i class="fa-solid fa-user-shield" aria-hidden="true"></i><span class="nav-item-label">Администрирование</span></a>
             }
         </nav>
         <div class="orbita-sidebar-footer">

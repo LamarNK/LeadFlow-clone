@@ -29,6 +29,7 @@ public static class AuthenticationEndpoints
             SignInManager<IdentityUser> signIn,
             PanelAuditService audit,
             PanelUserService panelUsers,
+            AccessProfileService accessProfiles,
             IConfiguration config,
             HttpContext http,
             CancellationToken ct) =>
@@ -81,7 +82,8 @@ public static class AuthenticationEndpoints
                 }
             }
 
-            var token = JwtTokenFactory.CreateToken(user, roles, config, officeId);
+            var permissions = await accessProfiles.GetPermissionsForRolesAsync(roles, ct);
+            var token = JwtTokenFactory.CreateToken(user, roles, permissions, config, officeId);
             await audit.LogAsync(user.Id, user.Email, PanelAuditActions.LoginSucceeded, "user", user.Id, null, ip, ct);
             await GlobalLogger.Instance.LogAsync(
                 $"Login succeeded ({request.Email}).",

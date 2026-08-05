@@ -1,11 +1,12 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Orbita.Contracts;
 using Orbita.Web.Models.ViewModels;
 using Orbita.Web.Services;
 
 namespace Orbita.Web.Controllers;
 
-[Authorize]
+[Authorize(Policy = PanelPermissions.Dashboard)]
 public sealed class DashboardController(
     IDashboardService dashboard,
     IWorkersService workers,

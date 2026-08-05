@@ -43,7 +43,7 @@ public static class BitrixWorkforceEndpoints
         .RequireRateLimiting(RateLimitPolicyName)
         .WithMetadata(new RequestSizeLimitAttribute(MaxWebhookBodyBytes));
 
-        var panel = app.MapGroup("/api/v1/panel").RequireAuthorization("Panel");
+        var panel = app.MapGroup("/api/v1/panel").RequireAuthorization(PanelPermissions.Settings);
 
         panel.MapGet("/bitrix-instances/{id:guid}/workforce", async (
             Guid id,

@@ -77,31 +77,38 @@ public sealed class AccountController(
 
         await auth.SignInAsync(result.Token, result.Email, ct);
 
-        // Managers land in CRM workspace; everyone else on the dashboard.
-        // User principal is not yet refreshed on this request — read roles from the JWT.
-        if (IsManagerOnlyToken(result.Token))
-        {
-            return RedirectToAction("Index", "Crm");
-        }
-
-        return RedirectToAction("Index", "Dashboard");
+        // The cookie principal is refreshed only on the next request, so choose the
+        // landing page from the permissions embedded in the just-issued JWT.
+        var (action, controller) = GetInitialDestination(result.Token);
+        return RedirectToAction(action, controller);
     }
 
-    private static bool IsManagerOnlyToken(string token)
+    private static (string Action, string Controller) GetInitialDestination(string token)
     {
         try
         {
             var jwt = new JwtSecurityTokenHandler().ReadJwtToken(token);
-            var roles = jwt.Claims
-                .Where(c => c.Type is ClaimTypes.Role or "role")
+            var permissions = jwt.Claims
+                .Where(c => c.Type == PanelPermissions.ClaimType)
                 .Select(c => c.Value)
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
-            return roles.Contains(PanelRoles.Manager) && !roles.Contains(PanelRoles.Admin);
+                .ToHashSet(StringComparer.Ordinal);
+
+            if (permissions.Contains(PanelPermissions.Dashboard)) return ("Index", "Dashboard");
+            if (permissions.Contains(PanelPermissions.Crm)) return ("Index", "Crm");
+            if (permissions.Contains(PanelPermissions.Workers)) return ("Index", "Workers");
+            if (permissions.Contains(PanelPermissions.Accounts)) return ("Index", "Accounts");
+            if (permissions.Contains(PanelPermissions.Statistics)) return ("Index", "Statistics");
+            if (permissions.Contains(PanelPermissions.Responses)) return ("Index", "Responses");
+            if (permissions.Contains(PanelPermissions.Events)) return ("Index", "Events");
+            if (permissions.Contains(PanelPermissions.Settings)) return ("Index", "MySettings");
+            if (permissions.Contains(PanelPermissions.Administration)) return ("Index", "Settings");
         }
         catch
         {
-            return false;
+            // Authentication already validated the token before reaching this point.
         }
+
+        return ("Login", "Account");
     }
 
     [Authorize]

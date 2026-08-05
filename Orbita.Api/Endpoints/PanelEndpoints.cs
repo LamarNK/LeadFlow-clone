@@ -24,8 +24,11 @@ public static class PanelEndpoints
 {
     public static void Map(WebApplication app)
     {
-        var panel = app.MapGroup("/api/v1/panel").RequireAuthorization("Panel");
-        panel.MapPost("/captcha-sessions", async (
+        var workers = app.MapGroup("/api/v1/panel").RequireAuthorization(PanelPermissions.Workers);
+        var events = app.MapGroup("/api/v1/panel").RequireAuthorization(PanelPermissions.Events);
+        var settings = app.MapGroup("/api/v1/panel").RequireAuthorization(PanelPermissions.Settings);
+
+        workers.MapPost("/captcha-sessions", async (
             CreateCaptchaSessionRequest request,
             CaptchaSessionService captchaSessions,
             ClaimsPrincipal principal,
@@ -48,7 +51,7 @@ public static class PanelEndpoints
                 : Results.Ok(session);
         });
 
-        panel.MapGet("/captcha-sessions/{id:guid}", async (
+        workers.MapGet("/captcha-sessions/{id:guid}", async (
             Guid id,
             CaptchaSessionService captchaSessions,
             ClaimsPrincipal principal,
@@ -58,7 +61,7 @@ public static class PanelEndpoints
             return session is null ? Results.NotFound() : Results.Ok(session);
         });
 
-        panel.MapPost("/captcha-sessions/{id:guid}/cancel", async (
+        workers.MapPost("/captcha-sessions/{id:guid}/cancel", async (
             Guid id,
             CaptchaSessionService captchaSessions,
             ClaimsPrincipal principal,
@@ -68,7 +71,7 @@ public static class PanelEndpoints
             return success ? Results.Ok() : Results.BadRequest(new { error });
         });
 
-        panel.MapGet("/workers/{id:guid}/captcha-lock", async (
+        workers.MapGet("/workers/{id:guid}/captcha-lock", async (
             Guid id,
             CaptchaSessionService captchaSessions,
             ClaimsPrincipal principal,
@@ -78,7 +81,7 @@ public static class PanelEndpoints
             return lockState is null ? Results.NotFound() : Results.Ok(lockState);
         });
 
-        panel.MapPost("/browser-monitor-sessions", async (
+        workers.MapPost("/browser-monitor-sessions", async (
             Guid workerId,
             BrowserMonitorService browserMonitorSessions,
             ClaimsPrincipal principal,
@@ -90,7 +93,7 @@ public static class PanelEndpoints
                 : Results.Ok(session);
         });
 
-        panel.MapGet("/browser-monitor-sessions/{id:guid}", async (
+        workers.MapGet("/browser-monitor-sessions/{id:guid}", async (
             Guid id,
             BrowserMonitorService browserMonitorSessions,
             ClaimsPrincipal principal,
@@ -100,7 +103,7 @@ public static class PanelEndpoints
             return session is null ? Results.NotFound() : Results.Ok(session);
         });
 
-        panel.MapPost("/browser-monitor-sessions/{id:guid}/stop", async (
+        workers.MapPost("/browser-monitor-sessions/{id:guid}/stop", async (
             Guid id,
             BrowserMonitorService browserMonitorSessions,
             ClaimsPrincipal principal,
@@ -125,7 +128,7 @@ public static class PanelEndpoints
         }).RequireAuthorization("Worker");
 
         // Office pick-list for any panel user (operators create workers for a delivery office).
-        panel.MapGet("/offices/options", async (
+        workers.MapGet("/offices/options", async (
             OfficeAdminService offices,
             OfficeScopeService officeScope,
             ClaimsPrincipal principal,
@@ -140,7 +143,7 @@ public static class PanelEndpoints
             return Results.Ok(await offices.ListOptionsAsync(ct));
         });
 
-        panel.MapPost("/workers/create", async (
+        workers.MapPost("/workers/create", async (
             CreateWorkerRequest request,
             WorkerAdminService workers,
             PanelAuditService audit,
@@ -178,7 +181,7 @@ public static class PanelEndpoints
             return Results.Ok(result);
         });
 
-        panel.MapPost("/workers/{id:guid}/enable", async (
+        workers.MapPost("/workers/{id:guid}/enable", async (
             Guid id,
             WorkerAdminService workers,
             PanelAuditService audit,
@@ -212,7 +215,7 @@ public static class PanelEndpoints
             return Results.Ok(worker);
         });
 
-        panel.MapPost("/workers/{id:guid}/disable", async (
+        workers.MapPost("/workers/{id:guid}/disable", async (
             Guid id,
             WorkerAdminService workers,
             PanelAuditService audit,
@@ -246,7 +249,7 @@ public static class PanelEndpoints
             return Results.Ok(worker);
         });
 
-        panel.MapPost("/workers/enable-all", async (
+        workers.MapPost("/workers/enable-all", async (
             WorkerAdminService workers,
             PanelAuditService audit,
             OfficeScopeService officeScope,
@@ -279,7 +282,7 @@ public static class PanelEndpoints
             return Results.Ok(result);
         });
 
-        panel.MapPost("/workers/disable-all", async (
+        workers.MapPost("/workers/disable-all", async (
             WorkerAdminService workers,
             PanelAuditService audit,
             OfficeScopeService officeScope,
@@ -312,7 +315,7 @@ public static class PanelEndpoints
             return Results.Ok(result);
         });
 
-        panel.MapPost("/workers/{id:guid}/rotate-key", async (
+        workers.MapPost("/workers/{id:guid}/rotate-key", async (
             Guid id,
             WorkerAdminService workers,
             PanelAuditService audit,
@@ -346,7 +349,7 @@ public static class PanelEndpoints
             return Results.Ok(result);
         });
 
-        panel.MapDelete("/workers/{id:guid}", async (
+        workers.MapDelete("/workers/{id:guid}", async (
             Guid id,
             WorkerAdminService workers,
             WorkerDiagnosticsService diagnostics,
@@ -387,7 +390,7 @@ public static class PanelEndpoints
             return Results.Ok(new { message = "Воркер удалён." });
         });
 
-        panel.MapPost("/events/{id:guid}/dismiss", async (
+        events.MapPost("/events/{id:guid}/dismiss", async (
             Guid id,
             WorkerEventService events,
             OfficeScopeService officeScope,
@@ -411,7 +414,7 @@ public static class PanelEndpoints
             return Results.Ok(new { message = "Событие отмечено как обработанное." });
         });
 
-        panel.MapGet("/me", async (
+        settings.MapGet("/me", async (
             PanelUserService panelUsers,
             ClaimsPrincipal principal,
             CancellationToken ct) =>
@@ -426,7 +429,7 @@ public static class PanelEndpoints
             return profile is null ? Results.NotFound() : Results.Ok(profile);
         });
 
-        panel.MapPost("/me/password", async (
+        settings.MapPost("/me/password", async (
             ChangeOwnPasswordRequest request,
             PanelUserService panelUsers,
             ClaimsPrincipal principal,
@@ -453,10 +456,10 @@ public static class PanelEndpoints
             return Results.BadRequest(new { error });
         });
 
-        panel.MapGet("/security/policy", (PasswordPolicyService policy) =>
+        settings.MapGet("/security/policy", (PasswordPolicyService policy) =>
             Results.Ok(policy.GetPolicy()));
 
-        panel.MapGet("/me/integrations/bitrix", async (
+        settings.MapGet("/me/integrations/bitrix", async (
             OfficeBitrixIntegrationService officeBitrix,
             OfficeScopeService officeScope,
             ClaimsPrincipal principal,
@@ -474,7 +477,7 @@ public static class PanelEndpoints
                 : Results.Ok(integration);
         });
 
-        panel.MapGet("/office/integrations/bitrix", async (
+        settings.MapGet("/office/integrations/bitrix", async (
             OfficeBitrixIntegrationService bitrix,
             OfficeScopeService officeScope,
             ClaimsPrincipal principal,
@@ -492,7 +495,7 @@ public static class PanelEndpoints
                 : Results.Ok(integration);
         });
 
-        panel.MapPut("/office/integrations/bitrix", async (
+        settings.MapPut("/office/integrations/bitrix", async (
             SaveBitrixIntegrationRequest request,
             OfficeBitrixIntegrationService bitrix,
             OfficeScopeService officeScope,
@@ -520,7 +523,7 @@ public static class PanelEndpoints
                 : Results.Ok(integration);
         });
 
-        panel.MapPost("/office/integrations/bitrix/validate", async (
+        settings.MapPost("/office/integrations/bitrix/validate", async (
             ValidateBitrixIntegrationRequest request,
             OfficeBitrixIntegrationService bitrix,
             OfficeScopeService officeScope,
@@ -549,7 +552,7 @@ public static class PanelEndpoints
                 : Results.Ok(validation);
         });
 
-        panel.MapGet("/office/bitrix-settings", async (
+        settings.MapGet("/office/bitrix-settings", async (
             OfficeBitrixSettingsService bitrixSettings,
             OfficeScopeService officeScope,
             ClaimsPrincipal principal,
@@ -568,7 +571,7 @@ public static class PanelEndpoints
                 : Results.Ok(settings);
         });
 
-        panel.MapPut("/office/bitrix-settings", async (
+        settings.MapPut("/office/bitrix-settings", async (
             UpdateOfficeBitrixSettingsRequest request,
             OfficeBitrixSettingsService bitrixSettings,
             OfficeScopeService officeScope,

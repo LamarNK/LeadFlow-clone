@@ -25,6 +25,25 @@ public static class AdminEndpoints
     public static void Map(WebApplication app)
     {
         var admin = app.MapGroup("/api/v1/admin").RequireAuthorization("Admin");
+        admin.MapGet("/access-profiles", async (AccessProfileService profiles, CancellationToken ct) =>
+            Results.Ok(await profiles.GetAllAsync(ct)));
+
+        admin.MapPut("/access-profiles/{profileId}", async (
+            string profileId,
+            UpdateAccessProfileRequest request,
+            AccessProfileService profiles,
+            ClaimsPrincipal principal,
+            HttpContext http,
+            CancellationToken ct) =>
+        {
+            var error = await profiles.UpdateAsync(
+                profileId,
+                request.Permissions,
+                GetActor(principal, http),
+                ct);
+            return error is null ? Results.NoContent() : Results.BadRequest(new { error });
+        });
+
         admin.MapGet("/users", async (PanelUserService panelUsers, CancellationToken ct) =>
             Results.Ok(await panelUsers.ListAsync(ct)));
 

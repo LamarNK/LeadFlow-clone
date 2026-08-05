@@ -103,7 +103,7 @@ public sealed class AccessProfileRowViewModel
     public required string Id { get; init; }
     public required string Name { get; init; }
     public required string Description { get; init; }
-    public required string PermissionsLabel { get; init; }
+    public IReadOnlyList<string> Permissions { get; init; } = [];
     public int UsersCount { get; init; }
     public IReadOnlyList<ProfileMemberViewModel> Members { get; init; } = [];
 }
@@ -229,6 +229,24 @@ public sealed class UpdatePanelUserFullNameFormModel
 {
     public string UserId { get; set; } = string.Empty;
     public string FullName { get; set; } = string.Empty;
+}
+
+public sealed class UpdatePanelUserFormModel
+{
+    public string UserId { get; set; } = string.Empty;
+    public string FullName { get; set; } = string.Empty;
+    public string OriginalFullName { get; set; } = string.Empty;
+    public string? Role { get; set; }
+    public string? OriginalRole { get; set; }
+    public Guid? OfficeId { get; set; }
+    public Guid? OriginalOfficeId { get; set; }
+    public string? Password { get; set; }
+}
+
+public sealed class UpdateAccessProfileFormModel
+{
+    public string ProfileId { get; set; } = string.Empty;
+    public List<string> Permissions { get; set; } = [];
 }
 
 public sealed class ResetPanelUserPasswordFormModel

@@ -149,12 +149,21 @@ public static class OrbitaApiStartupExtensions
             {
                 policy.AddAuthenticationSchemes(JwtBearerDefaults.AuthenticationScheme);
                 policy.RequireAuthenticatedUser();
+                policy.RequireClaim(PanelPermissions.ClaimType);
             });
             options.AddPolicy("Admin", policy =>
             {
                 policy.AddAuthenticationSchemes(JwtBearerDefaults.AuthenticationScheme);
-                policy.RequireRole(PanelRoles.Admin);
+                policy.RequireClaim(PanelPermissions.ClaimType, PanelPermissions.Administration);
             });
+            foreach (var permission in PanelPermissions.All)
+            {
+                options.AddPolicy(permission.Id, policy =>
+                {
+                    policy.AddAuthenticationSchemes(JwtBearerDefaults.AuthenticationScheme);
+                    policy.RequireClaim(PanelPermissions.ClaimType, permission.Id);
+                });
+            }
             options.AddPolicy("WorkerOrPanel", policy =>
             {
                 policy.AddAuthenticationSchemes(
@@ -218,6 +227,7 @@ public static class OrbitaApiStartupExtensions
         builder.Services.AddScoped<DashboardQueryService>();
         builder.Services.AddScoped<OfficeStatisticsQueryService>();
         builder.Services.AddScoped<PanelAuditService>();
+        builder.Services.AddScoped<AccessProfileService>();
         builder.Services.AddScoped<PanelUserService>();
         builder.Services.AddScoped<OfficeScopeService>();
         builder.Services.AddScoped<OfficeAdminService>();

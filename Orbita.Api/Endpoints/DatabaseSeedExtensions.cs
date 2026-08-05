@@ -46,6 +46,9 @@ public static class DatabaseSeedExtensions
             }
         }
 
+        var accessProfiles = scope.ServiceProvider.GetRequiredService<AccessProfileService>();
+        await accessProfiles.EnsureDefaultsAsync();
+
         var defaultOffice = await offices.EnsureDefaultOfficeAsync(registrationSecret);
 
         var workersWithoutOffice = await db.Workers.Where(x => x.OfficeId == Guid.Empty).ToListAsync();

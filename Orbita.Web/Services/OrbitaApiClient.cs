@@ -389,6 +389,27 @@ public sealed class OrbitaApiClient(
         return (false, await ReadApiErrorAsync(response, ct));
     }
 
+    public Task<IReadOnlyList<AccessProfileDto>?> GetAccessProfilesAsync(CancellationToken ct = default) =>
+        GetAsync<IReadOnlyList<AccessProfileDto>>("api/v1/admin/access-profiles", ct);
+
+    public async Task<(bool Success, string? Error)> UpdateAccessProfileAsync(
+        string profileId,
+        IReadOnlyList<string> permissions,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Put, $"api/v1/admin/access-profiles/{profileId}");
+        request.Content = JsonContent.Create(new UpdateAccessProfileRequest(permissions));
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (false, InvalidApiSessionError);
+        }
+
+        return response.IsSuccessStatusCode
+            ? (true, null)
+            : (false, await ReadApiErrorAsync(response, ct));
+    }
+
     public async Task<(bool Success, string? Error)> UpdatePanelUserFullNameAsync(
         string userId,
         string fullName,

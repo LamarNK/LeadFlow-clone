@@ -276,6 +276,12 @@
     gap: 16px;
 }
 
+.settings-dialog-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
 .settings-field {
     display: flex;
     flex-direction: column;
@@ -401,6 +407,38 @@
     margin: 6px 0 0;
     font-size: 14px;
     line-height: 1.5;
+}
+
+.settings-profile-permission-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 8px 12px;
+    margin-top: 10px;
+}
+
+.settings-profile-permission {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+.settings-profile-permission input { accent-color: #2563eb; }
+
+.settings-profile-permission input:disabled + span {
+    color: var(--text-secondary);
+    cursor: not-allowed;
+}
+
+.settings-profile-permissions-hint {
+    color: var(--text-secondary);
+    font-size: 13px !important;
+}
+
+.settings-profile-permissions .settings-secondary-btn {
+    align-self: flex-start;
+    margin-top: 14px;
 }
 
 .settings-profile-members {

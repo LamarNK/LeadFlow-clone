@@ -24,6 +24,7 @@ public static class JwtTokenFactory
     public static string CreateToken(
         IdentityUser user,
         IEnumerable<string> roles,
+        IEnumerable<string> permissions,
         IConfiguration config,
         Guid? officeId = null)
     {
@@ -45,6 +46,11 @@ public static class JwtTokenFactory
         foreach (var role in roles)
         {
             claims.Add(new Claim(ClaimTypes.Role, role));
+        }
+
+        foreach (var permission in PanelPermissions.Normalize(permissions))
+        {
+            claims.Add(new Claim(PanelPermissions.ClaimType, permission));
         }
 
         if (officeId is Guid resolvedOfficeId)

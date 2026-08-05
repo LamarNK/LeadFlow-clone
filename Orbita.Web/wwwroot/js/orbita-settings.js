@@ -48,35 +48,79 @@
             });
         });
 
-        const resetDialog = document.getElementById('resetPasswordDialog');
-        if (resetDialog) {
-            const userIdInput = document.getElementById('resetPasswordUserId');
-            const userEmailLabel = document.getElementById('resetPasswordUserEmail');
+        const editUserDialog = document.getElementById('editUserDialog');
+        if (editUserDialog) {
+            const form = document.getElementById('editUserForm');
+            const userIdInput = document.getElementById('editUserId');
+            const userEmailLabel = document.getElementById('editUserEmail');
+            const fullNameInput = document.getElementById('editUserFullName');
+            const originalFullNameInput = document.getElementById('editUserOriginalFullName');
+            const roleInput = document.getElementById('editUserRole');
+            const originalRoleInput = document.getElementById('editUserOriginalRole');
+            const officeInput = document.getElementById('editUserOffice');
+            const originalOfficeInput = document.getElementById('editUserOriginalOfficeId');
+            const passwordInput = document.getElementById('editUserPassword');
+            const accessFields = document.getElementById('editUserAccessFields');
+            const officeField = document.getElementById('editUserOfficeField');
+            const passwordField = document.getElementById('editUserPasswordField');
 
-            document.querySelectorAll('[data-settings-reset-password]').forEach((button) => {
-                if (button.__orbitaResetBound) return;
-                button.__orbitaResetBound = true;
+            const updateOfficeState = () => {
+                if (!form || !roleInput || !officeInput || !officeField) return;
+                const isCurrentUser = form.dataset.currentUser === 'true';
+                const isAdmin = roleInput.value === 'Admin';
+                officeField.hidden = isCurrentUser || isAdmin;
+                officeInput.disabled = isCurrentUser || isAdmin;
+
+                if (!isCurrentUser && !isAdmin && !officeInput.value && officeInput.options.length > 0) {
+                    officeInput.selectedIndex = 0;
+                }
+            };
+
+            document.querySelectorAll('[data-settings-edit-user]').forEach((button) => {
+                if (button.__orbitaEditUserBound) return;
+                button.__orbitaEditUserBound = true;
 
                 button.addEventListener('click', () => {
-                    if (!userIdInput || !userEmailLabel) return;
+                    if (!form || !userIdInput || !userEmailLabel || !fullNameInput || !originalFullNameInput
+                        || !roleInput || !originalRoleInput || !officeInput || !originalOfficeInput
+                        || !passwordInput || !accessFields || !passwordField) return;
+
+                    const isCurrentUser = button.getAttribute('data-user-is-current') === 'true';
+                    const fullName = button.getAttribute('data-user-full-name') || '';
+                    const role = button.getAttribute('data-user-role') || '';
+                    const officeId = button.getAttribute('data-user-office-id') || '';
+
+                    form.dataset.currentUser = String(isCurrentUser);
                     userIdInput.value = button.getAttribute('data-user-id') || '';
                     userEmailLabel.textContent = button.getAttribute('data-user-email') || '';
-                    if (typeof resetDialog.showModal === 'function') {
-                        resetDialog.showModal();
+                    fullNameInput.value = fullName;
+                    originalFullNameInput.value = fullName;
+                    roleInput.value = role;
+                    originalRoleInput.value = role;
+                    officeInput.value = officeId;
+                    originalOfficeInput.value = officeId;
+                    passwordInput.value = '';
+                    accessFields.hidden = isCurrentUser;
+                    passwordField.hidden = isCurrentUser;
+                    updateOfficeState();
+
+                    if (typeof editUserDialog.showModal === 'function') {
+                        editUserDialog.showModal();
                     }
                 });
             });
 
-            if (!resetDialog.__orbitaDialogBound) {
-                resetDialog.__orbitaDialogBound = true;
+            if (!editUserDialog.__orbitaDialogBound) {
+                editUserDialog.__orbitaDialogBound = true;
+                roleInput?.addEventListener('change', updateOfficeState);
 
                 document.querySelectorAll('[data-settings-dialog-close]').forEach((button) => {
-                    button.addEventListener('click', () => resetDialog.close());
+                    button.addEventListener('click', () => button.closest('dialog')?.close());
                 });
 
-                resetDialog.addEventListener('click', (event) => {
-                    if (event.target === resetDialog) {
-                        resetDialog.close();
+                editUserDialog.addEventListener('click', (event) => {
+                    if (event.target === editUserDialog) {
+                        editUserDialog.close();
                     }
                 });
             }

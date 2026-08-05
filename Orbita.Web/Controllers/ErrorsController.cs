@@ -1,10 +1,11 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Orbita.Contracts;
 using Orbita.Web.Services;
 
 namespace Orbita.Web.Controllers;
 
-[Authorize]
+[Authorize(Policy = PanelPermissions.Events)]
 public sealed class ErrorsController(IErrorsService errors) : Controller
 {
     [HttpGet]
