@@ -1,4 +1,254 @@
 (function (runtime) {
+    function responseInitials(name) {
+        return String(name || '').trim().split(/\s+/).filter(Boolean).slice(0, 2)
+            .map(function (part) { return part.charAt(0).toLocaleUpperCase(); }).join('') || '—';
+    }
+
+    function responseTone(tone) {
+        return ['unique', 'duplicate', 'sent', 'action_required', 'error'].indexOf(tone) >= 0
+            ? tone
+            : 'unique';
+    }
+
+    function responseIcon(className) {
+        var icon = document.createElement('i');
+        icon.className = className;
+        icon.setAttribute('aria-hidden', 'true');
+        return icon;
+    }
+
+    function appendResponseFact(list, section) {
+        var row = document.createElement('div');
+        row.className = 'orbita-response-detail__fact';
+
+        var label = document.createElement('dt');
+        label.textContent = section.label || '';
+        row.appendChild(label);
+
+        var value = document.createElement('dd');
+        if (section.values && section.values.length) {
+            var values = document.createElement('ul');
+            values.className = 'orbita-response-detail__fact-values';
+            section.values.forEach(function (item) {
+                var valueItem = document.createElement('li');
+                valueItem.textContent = item || '—';
+                values.appendChild(valueItem);
+            });
+            value.appendChild(values);
+        } else if (section.href) {
+            var link = document.createElement('a');
+            link.href = section.href;
+            link.target = '_blank';
+            link.rel = 'noopener';
+            link.textContent = section.value || 'Открыть';
+            value.appendChild(link);
+        } else {
+            value.textContent = section.value || '—';
+        }
+        row.appendChild(value);
+        list.appendChild(row);
+    }
+
+    function createResponseChatBubble(message) {
+        var tone = message.tone === 'outgoing' || message.tone === 'incoming'
+            ? message.tone
+            : 'system';
+        var bubble = document.createElement('article');
+        bubble.className = 'orbita-response-detail__chat-bubble orbita-response-detail__chat-bubble--' + tone;
+        var text = document.createElement('p');
+        text.textContent = message.text || '—';
+        bubble.appendChild(text);
+        if (message.timeLabel) {
+            var time = document.createElement('time');
+            time.textContent = message.timeLabel;
+            bubble.appendChild(time);
+        }
+        return bubble;
+    }
+
+    function createResponseDetail(options) {
+        var profile = options.responseProfile || {};
+        var sections = options.sections || [];
+        var messages = options.chatMessages || [];
+        var detail = document.createElement('div');
+        detail.className = 'orbita-response-detail';
+
+        var hero = document.createElement('header');
+        hero.className = 'orbita-response-detail__hero';
+        var identity = document.createElement('div');
+        identity.className = 'orbita-response-detail__identity';
+        var avatar = document.createElement('span');
+        avatar.className = 'orbita-response-detail__avatar';
+        avatar.textContent = responseInitials(profile.candidateName || options.title);
+        if (profile.avatarUrl) {
+            var avatarImage = document.createElement('img');
+            avatarImage.src = profile.avatarUrl;
+            avatarImage.alt = '';
+            avatarImage.addEventListener('error', function () { avatarImage.remove(); });
+            avatar.appendChild(avatarImage);
+        }
+        identity.appendChild(avatar);
+
+        var person = document.createElement('div');
+        var nameLine = document.createElement('div');
+        nameLine.className = 'orbita-response-detail__name-line';
+        var name = document.createElement('h2');
+        name.textContent = profile.candidateName || options.title || 'Кандидат';
+        nameLine.appendChild(name);
+        if (profile.statusLabel) {
+            var status = document.createElement('span');
+            status.className = 'orbita-response-detail__status orbita-response-detail__status--' + responseTone(profile.statusTone);
+            status.textContent = profile.statusLabel;
+            nameLine.appendChild(status);
+        }
+        person.appendChild(nameLine);
+        if (profile.candidateMeta) {
+            var meta = document.createElement('p');
+            meta.className = 'orbita-response-detail__meta';
+            meta.textContent = profile.candidateMeta;
+            person.appendChild(meta);
+        }
+        identity.appendChild(person);
+        hero.appendChild(identity);
+
+        var quickActions = document.createElement('div');
+        quickActions.className = 'orbita-response-detail__quick-actions';
+        if (profile.phoneHref) {
+            var phoneAction = document.createElement('a');
+            phoneAction.className = 'orbita-response-detail__quick-action';
+            phoneAction.href = 'tel:' + profile.phoneHref;
+            phoneAction.appendChild(responseIcon('fa-solid fa-phone'));
+            var phoneLabel = document.createElement('span');
+            phoneLabel.textContent = 'Позвонить';
+            phoneAction.appendChild(phoneLabel);
+            quickActions.appendChild(phoneAction);
+        }
+        if (profile.phone && profile.phone !== 'Скрыт') {
+            var copyPhone = document.createElement('button');
+            copyPhone.type = 'button';
+            copyPhone.className = 'orbita-response-detail__quick-action orbita-response-detail__quick-action--icon';
+            copyPhone.title = 'Скопировать телефон';
+            copyPhone.setAttribute('aria-label', 'Скопировать телефон');
+            copyPhone.appendChild(responseIcon('fa-regular fa-copy'));
+            copyPhone.addEventListener('click', function () { runtime.copyText(profile.phone); });
+            quickActions.appendChild(copyPhone);
+        }
+        if (profile.messengerUrl) {
+            var messenger = document.createElement('a');
+            messenger.className = 'orbita-response-detail__quick-action orbita-response-detail__quick-action--icon';
+            messenger.href = profile.messengerUrl;
+            messenger.target = '_blank';
+            messenger.rel = 'noopener';
+            messenger.title = 'Открыть чат';
+            messenger.setAttribute('aria-label', 'Открыть чат');
+            messenger.appendChild(responseIcon('fa-solid fa-paper-plane'));
+            quickActions.appendChild(messenger);
+        }
+        if (quickActions.childElementCount) {
+            hero.appendChild(quickActions);
+        }
+        detail.appendChild(hero);
+
+        var layout = document.createElement('div');
+        layout.className = 'orbita-response-detail__layout';
+        var summary = document.createElement('section');
+        summary.className = 'orbita-response-detail__summary';
+        var vacancyIcon = document.createElement('span');
+        vacancyIcon.className = 'orbita-response-detail__summary-icon';
+        vacancyIcon.appendChild(responseIcon('fa-solid fa-briefcase'));
+        summary.appendChild(vacancyIcon);
+        var vacancyCopy = document.createElement('div');
+        var vacancyLabel = document.createElement('span');
+        vacancyLabel.className = 'orbita-response-detail__eyebrow';
+        vacancyLabel.textContent = 'Отклик на вакансию';
+        vacancyCopy.appendChild(vacancyLabel);
+        if (profile.vacancyUrl) {
+            var vacancyLink = document.createElement('a');
+            vacancyLink.className = 'orbita-response-detail__vacancy';
+            vacancyLink.href = profile.vacancyUrl;
+            vacancyLink.target = '_blank';
+            vacancyLink.rel = 'noopener';
+            vacancyLink.textContent = profile.vacancy || 'Вакансия не указана';
+            vacancyCopy.appendChild(vacancyLink);
+        } else {
+            var vacancy = document.createElement('p');
+            vacancy.className = 'orbita-response-detail__vacancy';
+            vacancy.textContent = profile.vacancy || 'Вакансия не указана';
+            vacancyCopy.appendChild(vacancy);
+        }
+        if (profile.source) {
+            var source = document.createElement('span');
+            source.className = 'orbita-response-detail__source';
+            source.textContent = profile.source;
+            vacancyCopy.appendChild(source);
+        }
+        summary.appendChild(vacancyCopy);
+
+        var left = document.createElement('div');
+        left.className = 'orbita-response-detail__main';
+        left.appendChild(summary);
+        var info = document.createElement('section');
+        info.className = 'orbita-response-detail__panel';
+        var infoTitle = document.createElement('h3');
+        infoTitle.textContent = 'Данные кандидата';
+        info.appendChild(infoTitle);
+        var facts = document.createElement('dl');
+        facts.className = 'orbita-response-detail__facts';
+        var factLabels = ['Телефон', 'История номеров', 'Город', 'Аккаунт', 'Воркер', 'Источник', 'ID отклика', 'Сбор', 'Отклик'];
+        var routeSections = [];
+        sections.forEach(function (section) {
+            if (factLabels.indexOf(section.label) >= 0) {
+                appendResponseFact(facts, section);
+            } else if (['Возраст', 'Пол', 'Объявление'].indexOf(section.label) < 0) {
+                routeSections.push(section);
+            }
+        });
+        if (facts.childElementCount) {
+            info.appendChild(facts);
+        } else {
+            var noFacts = document.createElement('p');
+            noFacts.className = 'orbita-response-detail__empty';
+            noFacts.textContent = 'Дополнительных данных пока нет.';
+            info.appendChild(noFacts);
+        }
+        left.appendChild(info);
+
+        if (routeSections.length) {
+            var routing = document.createElement('section');
+            routing.className = 'orbita-response-detail__panel orbita-response-detail__panel--routing';
+            var routingTitle = document.createElement('h3');
+            routingTitle.textContent = 'Статус и отправка';
+            routing.appendChild(routingTitle);
+            var routeFacts = document.createElement('dl');
+            routeFacts.className = 'orbita-response-detail__facts';
+            routeSections.forEach(function (section) { appendResponseFact(routeFacts, section); });
+            routing.appendChild(routeFacts);
+            left.appendChild(routing);
+        }
+        layout.appendChild(left);
+
+        var chat = document.createElement('aside');
+        chat.className = 'orbita-response-detail__history';
+        var chatTitle = document.createElement('h3');
+        chatTitle.textContent = 'Чат';
+        chat.appendChild(chatTitle);
+        var thread = document.createElement('div');
+        thread.className = 'orbita-response-detail__chat-thread';
+        messages.forEach(function (message) {
+            thread.appendChild(createResponseChatBubble(message));
+        });
+        if (!thread.childElementCount) {
+            var emptyChat = document.createElement('p');
+            emptyChat.className = 'orbita-response-detail__empty';
+            emptyChat.textContent = 'Переписка с кандидатом пока не найдена.';
+            thread.appendChild(emptyChat);
+        }
+        chat.appendChild(thread);
+        layout.appendChild(chat);
+        detail.appendChild(layout);
+        return detail;
+    }
+
     runtime.getRowDetailLinks = function getRowDetailLinks(row) {
         var links = [];
         var logUrl = row.getAttribute('data-detail-log-url');
@@ -295,9 +545,10 @@
         runtime.initDetailModal();
         if (!detailModal || !detailTitle || !detailBody) return;
 
-        detailTitle.textContent = options.title || 'Детали';
+        var isResponseDetail = !!options.responseProfile;
+        detailTitle.textContent = isResponseDetail ? 'Детали отклика' : (options.title || 'Детали');
         if (detailSubtitle) {
-            if (options.subtitle) {
+            if (!isResponseDetail && options.subtitle) {
                 detailSubtitle.textContent = options.subtitle;
                 detailSubtitle.removeAttribute('hidden');
             } else {
@@ -308,8 +559,11 @@
         detailCloseHandler = options.onClose || null;
         detailBody.textContent = '';
         detailModal.classList.remove('orbita-detail-modal--chat');
+        detailModal.classList.toggle('orbita-detail-modal--response', isResponseDetail);
 
-        if (options.attachmentUrl) {
+        if (isResponseDetail) {
+            detailBody.appendChild(createResponseDetail(options));
+        } else if (options.attachmentUrl) {
             var img = document.createElement('img');
             img.className = 'orbita-detail-screenshot';
             img.alt = 'Скриншот страницы';
@@ -317,7 +571,7 @@
             detailBody.appendChild(img);
         }
 
-        if (options.sections && options.sections.length) {
+        if (!isResponseDetail && options.sections && options.sections.length) {
             var dl = document.createElement('dl');
             dl.className = 'orbita-detail-sections';
             options.sections.forEach(function (section) {
@@ -347,14 +601,14 @@
                 dl.appendChild(dd);
             });
             detailBody.appendChild(dl);
-        } else if (options.body) {
+        } else if (!isResponseDetail && options.body) {
             var text = document.createElement('p');
             text.className = 'orbita-detail-text';
             text.textContent = options.body;
             detailBody.appendChild(text);
         }
 
-        if (options.chatMessages && options.chatMessages.length) {
+        if (!isResponseDetail && options.chatMessages && options.chatMessages.length) {
             detailModal.classList.add('orbita-detail-modal--chat');
             var chat = document.createElement('section');
             chat.className = 'orbita-detail-chat';
@@ -404,7 +658,7 @@
             detailCloseHandler = null;
         }
         detailModal.setAttribute('hidden', '');
-        detailModal.classList.remove('orbita-detail-modal--media', 'orbita-detail-modal--chat');
+        detailModal.classList.remove('orbita-detail-modal--media', 'orbita-detail-modal--chat', 'orbita-detail-modal--response');
         runtime.setDetailFooter(null);
     }
 

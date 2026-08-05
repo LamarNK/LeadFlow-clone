@@ -50,6 +50,30 @@
         return '—';
     }
 
+    function candidateInitials(name) {
+        return String(name || '').trim().split(/\s+/).filter(Boolean).slice(0, 2)
+            .map(function (part) { return part.charAt(0).toLocaleUpperCase(); }).join('') || '—';
+    }
+
+    function formatRelativeResponseTime(value) {
+        var date = new Date(value);
+        var elapsed = Math.max(0, Date.now() - date.getTime());
+        if (!isFinite(elapsed)) return '—';
+        var minutes = Math.floor(elapsed / 60000);
+        if (minutes < 1) return 'только что';
+        if (minutes < 60) return minutes + ' мин назад';
+        var hours = Math.floor(minutes / 60);
+        if (hours < 24) return hours + ' ч назад';
+        var days = Math.floor(hours / 24);
+        return days + ' дн назад';
+    }
+
+    function localizeRelativeResponseTimes(root) {
+        (root || document).querySelectorAll('[data-response-relative-time]').forEach(function (element) {
+            element.textContent = formatRelativeResponseTime(element.getAttribute('data-orbita-utc'));
+        });
+    }
+
     function formatCollectionDuration(createdAtUtc, collectedAtUtc) {
         var createdAt = new Date(createdAtUtc);
         var collectedAt = new Date(collectedAtUtc);
@@ -62,14 +86,16 @@
         return minutes === 0 ? hours + ' ч' : hours + ' ч ' + minutes + ' мин';
     }
 
-    function renderCollectionDurationCell(createdAtUtc, collectedAtUtc, shared) {
+    function renderResponseTimingCell(createdAtUtc, collectedAtUtc, shared) {
         var duration = formatCollectionDuration(createdAtUtc, collectedAtUtc);
-        var title = duration === '—'
-            ? 'Время сбора неизвестно'
-            : 'Собран через ' + duration + ' после отклика';
-        return '<td class="responses-collection-duration" data-label="Время сбора"><div class="responses-collection-timeline" title="' +
-            shared.escapeAttr(title) + '"><span class="responses-collection-duration-label">' +
-            shared.escapeHtml(duration) + '</span><span class="responses-collection-duration-track" aria-hidden="true"><span class="responses-collection-duration-dot"></span><span class="responses-collection-duration-line"></span><span class="responses-collection-duration-dot"></span></span></div></td>';
+        var gapText = duration === '—' ? 'Разница: —' : 'Через ' + duration;
+        return '<td class="responses-last-response" data-label="Отклик и сбор"><div class="responses-last-response__timeline">' +
+            '<div class="responses-last-response__event responses-last-response__event--response"><span class="responses-last-response__dot"><i class="fa-solid fa-paper-plane" aria-hidden="true"></i></span><div><span>Отклик</span><time data-orbita-utc="' +
+            shared.escapeHtml(createdAtUtc) + '" data-orbita-format="activity"></time></div></div>' +
+            '<div class="responses-last-response__gap"><span aria-hidden="true"></span><strong>' + shared.escapeHtml(gapText) + '</strong></div>' +
+            '<div class="responses-last-response__event responses-last-response__event--collection"><span class="responses-last-response__dot"><i class="fa-solid fa-box-archive" aria-hidden="true"></i></span><div><span>Сбор</span><time data-orbita-utc="' +
+            shared.escapeHtml(collectedAtUtc) + '" data-orbita-format="activity"></time></div></div>' +
+            '</div></td>';
     }
 
     function workerDetailsUrl(id) {
@@ -512,6 +538,7 @@
                 window.Orbita.openDetailModal({
                     title: payload.title,
                     subtitle: payload.subtitle,
+                    responseProfile: payload.profile || null,
                     sections: payload.sections || [],
                     chatMessages: payload.chatMessages || [],
                     links: (payload.links || []).map(function (l) {
@@ -1298,13 +1325,13 @@
             var adHtml = vacancyUrl
                 ? '<a class="responses-ad-link" href="' + shared.escapeHtml(vacancyUrl) + '" target="_blank" rel="noopener">' + shared.escapeHtml(vacancy) + '</a>'
                 : '<span class="responses-ad-link">' + shared.escapeHtml(vacancy) + '</span>';
-            adHtml += '<span class="responses-ad-id">ID: ' + shared.escapeHtml(adId) + '</span>';
+            adHtml += '<span class="responses-ad-tags"><span>' + shared.escapeHtml(readRowValue(row, 'source') || 'Avito') +
+                '</span><span>ID: ' + shared.escapeHtml(adId) + '</span></span>';
 
             var phoneDisplay = shared.formatPhone(readRowValue(row, 'phoneRaw'), readRowValue(row, 'phoneNormalized'));
             var phoneHidden = readRowBool(row, 'isPhoneHidden');
-            var phoneCell = phoneHidden
-                ? '<span class="responses-phone-hidden">Скрыт</span>'
-                : '<span>' + shared.escapeHtml(phoneDisplay) + '</span>';
+            var phoneCell = '<div class="responses-phone__number"><i class="fa-solid fa-phone" aria-hidden="true"></i>' +
+                shared.escapeHtml(phoneHidden ? 'Скрыт' : phoneDisplay) + '</div>';
             var phoneMetricLabel = readRowValue(row, 'phoneMetricLabel') || '';
             var phoneMetricKind = readRowValue(row, 'phoneMetricKind') || '';
             if (phoneMetricLabel) {
@@ -1334,26 +1361,42 @@
             var respondedAtUtc = readRowValue(row, 'createdAtUtc');
             var statusTone = readRowValue(row, 'statusTone') || 'unique';
             var statusLabel = readRowValue(row, 'statusLabel') || '';
+            var statusShort = String(statusLabel).split('·')[0].trim();
+            var candidateMeta = [age > 0 ? String(age) : '', genderDisplay !== '—' ? genderDisplay : ''].filter(Boolean).join(' · ');
+            var avatarUrl = readRowValue(row, 'avatarUrl') || '';
+            var candidateHtml = '<div class="responses-candidate__identity"><span class="responses-candidate__avatar" aria-hidden="true">' +
+                shared.escapeHtml(candidateInitials(author)) +
+                (avatarUrl ? '<img src="' + shared.escapeAttr(avatarUrl) + '" alt="" loading="lazy">' : '') +
+                '</span><div class="responses-candidate__copy"><strong title="' +
+                shared.escapeAttr(author) + '">' + shared.escapeHtml(author) + '</strong>' +
+                (candidateMeta ? '<span>' + shared.escapeHtml(candidateMeta) + '</span>' : '') + ageBadge + '</div></div>';
+            var accountName = readRowValue(row, 'accountName') || '';
+            var accountSubProfile = readRowValue(row, 'avitoSubProfileName') || '';
+            var workerName = readRowValue(row, 'workerName') || '';
+            var accountHtml = '<a href="' + shared.escapeHtml(accountUrl) + '" title="' + shared.escapeAttr(accountName) + '">' +
+                shared.escapeHtml(accountName) + '</a>' +
+                (accountSubProfile ? '<span class="responses-account-sub" title="Субпрофиль Avito">' + shared.escapeHtml(accountSubProfile) + '</span>' : '') +
+                (workerName ? '<span class="responses-account-worker">' + shared.escapeHtml(workerName) + '</span>' : '');
+            var statusHtml = '<div class="responses-status__card"><span class="response-status-badge response-status-badge--' +
+                shared.escapeHtml(statusTone) + '" title="' + shared.escapeAttr(statusLabel) + '"><span class="response-status-badge__label">' +
+                shared.escapeHtml(statusShort) + '</span></span><div class="responses-status__destination">' + renderBitrixCell(row) + '</div></div>';
+            var lastResponseHtml = renderResponseTimingCell(respondedAtUtc, collectedAtUtc, shared);
 
             var cardCopy = readRowValue(row, 'cardCopy') || '';
             return '<tr class="responses-row' + (isHighlighted ? ' responses-row--highlighted' : '') + '" data-response-id="' + shared.escapeHtml(rowId) + '" data-phone="' + shared.escapeHtml(phoneDisplay) + '" data-can-send="' + (canSend ? 'true' : 'false') + '" data-phone-hidden="' + (phoneHidden ? 'true' : 'false') + '" data-highlighted="' + (isHighlighted ? 'true' : 'false') + '" data-highlight-label="' + shared.escapeAttr(highlightLabel) + '" data-response-card="' + shared.escapeAttr(cardCopy) + '" data-detail-json-url="' + shared.escapeHtml(detailJsonUrl(rowId)) + '">' +
                 renderSelectCell(row) +
-                '<td class="responses-time" data-label="Сбор"><time data-orbita-utc="' + shared.escapeHtml(collectedAtUtc) + '" data-orbita-format="datetime"></time></td>' +
-                renderCollectionDurationCell(respondedAtUtc, collectedAtUtc, shared) +
-                '<td class="responses-time responses-time--responded" data-label="Отклик"><time data-orbita-utc="' + shared.escapeHtml(respondedAtUtc) + '" data-orbita-format="datetime"></time></td>' +
-                '<td class="responses-author" data-label="Автор">' + shared.escapeHtml(author) + '</td>' +
+                '<td class="responses-candidate" data-label="Кандидат">' + candidateHtml + '</td>' +
                 '<td class="responses-phone" data-label="Телефон">' + phoneCell + '</td>' +
                 '<td class="responses-city" data-label="Город">' + cityDisplay + '</td>' +
-                '<td class="responses-age" data-label="Возраст">' + ageDisplay + ageBadge + '</td>' +
-                '<td class="responses-gender" data-label="Пол">' + shared.escapeHtml(genderDisplay) + '</td>' +
                 '<td class="responses-ad" data-label="Объявление">' + adHtml + '</td>' +
-                '<td class="cell-link responses-account" data-label="Аккаунт">' + shared.renderResponseAccountCell(readRowValue(row, 'accountName'), readRowValue(row, 'avitoSubProfileName'), accountUrl) + '</td>' +
-                '<td class="responses-status" data-label="Статус"><span class="response-status-badge response-status-badge--' + shared.escapeHtml(statusTone) + '" title="' + shared.escapeAttr(statusLabel) + '"><span class="response-status-badge__label">' + shared.escapeHtml(statusLabel) + '</span></span></td>' +
-                '<td class="responses-bitrix" data-label="Битрикс">' + renderBitrixCell(row) + '</td>' +
+                '<td class="cell-link responses-account" data-label="Аккаунт">' + accountHtml + '</td>' +
+                '<td class="responses-status" data-label="Статус (Битрикс)">' + statusHtml + '</td>' +
+                lastResponseHtml +
                 '<td class="data-table-menu" data-label="">' + renderResponseMenu(row, accountUrl, workerUrl) + '</td></tr>';
         }).join('');
 
         if (window.OrbitaTime) window.OrbitaTime.localizeAll(tbody);
+        localizeRelativeResponseTimes(tbody);
         closeRowMenus();
         shared.reinitLiveContent();
         initRowNavigation();
@@ -1410,6 +1453,7 @@
         initRowNavigation();
         initSendBitrixUi();
         initBulkSelection();
+        localizeRelativeResponseTimes();
         syncRowCheckboxes();
         updateBulkBar();
         var params = new URLSearchParams(window.location.search);
