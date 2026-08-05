@@ -53,6 +53,7 @@
             const form = document.getElementById('editUserForm');
             const userIdInput = document.getElementById('editUserId');
             const userEmailLabel = document.getElementById('editUserEmail');
+            const userInitials = document.getElementById('editUserInitials');
             const fullNameInput = document.getElementById('editUserFullName');
             const originalFullNameInput = document.getElementById('editUserOriginalFullName');
             const roleInput = document.getElementById('editUserRole');
@@ -98,6 +99,7 @@
 
                     const isCurrentUser = button.getAttribute('data-user-is-current') === 'true';
                     const fullName = button.getAttribute('data-user-full-name') || '';
+                    const email = button.getAttribute('data-user-email') || '';
                     const role = button.getAttribute('data-user-role') || '';
                     const officeId = button.getAttribute('data-user-office-id') || '';
                     const permissions = new Set((button.getAttribute('data-user-permissions') || '')
@@ -107,7 +109,12 @@
 
                     form.dataset.currentUser = String(isCurrentUser);
                     userIdInput.value = button.getAttribute('data-user-id') || '';
-                    userEmailLabel.textContent = button.getAttribute('data-user-email') || '';
+                    userEmailLabel.textContent = email;
+                    if (userInitials) {
+                        const initials = fullName.trim().split(/\s+/).filter(Boolean).slice(0, 2)
+                            .map((part) => part.charAt(0)).join('').toLocaleUpperCase();
+                        userInitials.textContent = initials || email.charAt(0).toLocaleUpperCase() || 'П';
+                    }
                     fullNameInput.value = fullName;
                     originalFullNameInput.value = fullName;
                     roleInput.value = role;
@@ -127,6 +134,7 @@
 
                     if (typeof editUserDialog.showModal === 'function') {
                         editUserDialog.showModal();
+                        window.requestAnimationFrame(() => fullNameInput.focus());
                     }
                 });
             });
