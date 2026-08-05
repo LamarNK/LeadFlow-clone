@@ -179,6 +179,7 @@
         runtime.initDetailModal();
         runtime.initDetailOpenButtons();
         runtime.initCrmTaskCreateModal();
+        runtime.initCrmTaskAttachments?.();
 
         // Re-localize any new time elements
         if (window.OrbitaTime && window.OrbitaTime.localizeAll) {
@@ -239,12 +240,8 @@
         } else if (key === 'settings') {
             scripts = [
                 '/js/orbita-settings.js',
-                '/js/orbita-bitrix-instances.js',
                 '/js/orbita-bitrix-settings.js',
-                '/lib/drawflow/dist/drawflow.min.js',
-                '/js/orbita-distribution-editor.js',
-                '/js/orbita-worker-releases.js',
-                '/js/orbita-leadflow-import.js'
+                '/js/orbita-worker-releases.js'
             ];
         }
         return scripts;

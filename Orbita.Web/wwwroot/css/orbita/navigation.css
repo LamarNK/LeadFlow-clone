@@ -101,12 +101,6 @@
     opacity: 0.72;
 }
 
-.settings-audit-action {
-    display: block;
-    font-weight: 600;
-    font-size: 13px;
-}
-
 [data-theme="dark"] .settings-tab { color: #94a3b8; }
 [data-theme="dark"] .settings-tab:hover { color: #e2e8f0; }
 [data-theme="dark"] .settings-alert--success { color: #4ade80; }

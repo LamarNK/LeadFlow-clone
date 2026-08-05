@@ -46,8 +46,90 @@
     window.Orbita.copyText = runtime.copyText;
     window.Orbita.confirm = runtime.showConfirm;
     window.Orbita.postForm = runtime.postForm;
+    runtime.initCrmTaskAttachments = function initCrmTaskAttachments() {
+        document.querySelectorAll('[data-crm-task-upload]').forEach(function (form) {
+            if (form.hasAttribute('data-crm-task-upload-bound')) return;
+            form.setAttribute('data-crm-task-upload-bound', '1');
+
+            var input = form.querySelector('[data-crm-task-file-input]');
+            var dropzone = form.querySelector('[data-crm-task-dropzone]');
+            var status = form.querySelector('[data-crm-task-file-status]');
+            var maxBytes = Number(form.dataset.maxBytes || 0);
+            if (!input || !dropzone) return;
+
+            function formatSize(bytes) {
+                if (bytes >= 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1).replace('.', ',') + ' МБ';
+                if (bytes >= 1024) return Math.round(bytes / 1024) + ' КБ';
+                return bytes + ' Б';
+            }
+
+            function selectFile(file) {
+                if (!file) return false;
+                if (maxBytes && file.size > maxBytes) {
+                    if (status) status.textContent = 'Файл больше 20 МБ';
+                    return false;
+                }
+
+                if (status) status.textContent = file.name + ' · ' + formatSize(file.size);
+                return true;
+            }
+
+            input.addEventListener('change', function () {
+                selectFile(input.files && input.files[0]);
+            });
+
+            ['dragenter', 'dragover'].forEach(function (eventName) {
+                dropzone.addEventListener(eventName, function (event) {
+                    event.preventDefault();
+                    dropzone.classList.add('is-dragging');
+                });
+            });
+            ['dragleave', 'drop'].forEach(function (eventName) {
+                dropzone.addEventListener(eventName, function (event) {
+                    event.preventDefault();
+                    dropzone.classList.remove('is-dragging');
+                });
+            });
+            dropzone.addEventListener('drop', function (event) {
+                var files = event.dataTransfer && event.dataTransfer.files;
+                var file = files && files[0];
+                if (!selectFile(file)) return;
+                input.files = files;
+                form.requestSubmit();
+            });
+            dropzone.addEventListener('keydown', function (event) {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    input.click();
+                }
+            });
+            form.addEventListener('submit', function (event) {
+                if (!selectFile(input.files && input.files[0])) {
+                    event.preventDefault();
+                }
+            });
+        });
+    };
+    runtime.initCrmTaskEditButtons = function initCrmTaskEditButtons() {
+        document.querySelectorAll('[data-crm-task-edit-open]').forEach(function (button) {
+            if (button.hasAttribute('data-crm-task-edit-bound')) return;
+            button.setAttribute('data-crm-task-edit-bound', '1');
+            button.addEventListener('click', function () {
+                var editor = document.getElementById(button.dataset.target || '');
+                if (!editor) return;
+                editor.open = true;
+                editor.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                window.setTimeout(function () {
+                    editor.querySelector('input[name="title"]')?.focus();
+                }, 250);
+            });
+        });
+    };
+    runtime.initCrmTaskAttachments();
+    runtime.initCrmTaskEditButtons();
     runtime.initBitrixValidateButtons();
     window.Orbita.initWorkerRestartButtons = runtime.initWorkerRestartButtons;
+    window.Orbita.initCrmTaskEditButtons = runtime.initCrmTaskEditButtons;
     window.Orbita.initWorkerAccountEnableToggles = runtime.initWorkerAccountEnableToggles;
     window.Orbita.initAvitoCredentialsButtons = runtime.initAvitoCredentialsButtons;
     window.Orbita.openDetailModal = runtime.openDetailModal;
