@@ -76,6 +76,17 @@ internal static class DesignPreviewData
             new(Guid.Parse("92500000-0000-0000-0000-000000000001"), Guid.Parse("92000000-0000-0000-0000-000000000001"), PreviewManagerElena, "Елена Воронцова", "Кандидат обещал прислать документы после смены.", Now.AddMinutes(-35))
         ]
     };
+    private static readonly Dictionary<Guid, List<CrmTaskAttachmentDto>> PreviewCrmTaskAttachments = new()
+    {
+        [Guid.Parse("92000000-0000-0000-0000-000000000001")] =
+        [
+            new(Guid.Parse("92600000-0000-0000-0000-000000000001"), "Документы кандидата.pdf", "application/pdf", 183_500, "Елена Воронцова", Now.AddMinutes(-31))
+        ]
+    };
+    private static readonly Dictionary<Guid, byte[]> PreviewCrmTaskAttachmentContent = new()
+    {
+        [Guid.Parse("92600000-0000-0000-0000-000000000001")] = "Предпросмотр вложения к задаче."u8.ToArray()
+    };
     private static readonly List<CrmHistoryDto> PreviewCrmHistory =
     [
         new(Guid.Parse("93000000-0000-0000-0000-000000000001"), "Created", "Отклик из Avito", "system", "Система", Now.AddMinutes(-35)),
@@ -255,7 +266,16 @@ internal static class DesignPreviewData
             var comments = PreviewCrmTaskComments.TryGetValue(taskId, out var items)
                 ? items.OrderBy(x => x.CreatedAtUtc).ToList()
                 : [];
-            return new CrmTaskDetailDto(task, comments, task.Status == CrmTaskStatuses.Open);
+            var attachments = PreviewCrmTaskAttachments.TryGetValue(taskId, out var attachmentItems)
+                ? attachmentItems.OrderByDescending(x => x.CreatedAtUtc).ToList()
+                : [];
+            return new CrmTaskDetailDto(
+                task,
+                comments,
+                task.Status == CrmTaskStatuses.Open,
+                attachments,
+                true,
+                BuildPreviewCrmManagers());
         }
     }
 
@@ -372,14 +392,14 @@ internal static class DesignPreviewData
     {
         lock (CrmSync)
         {
-            if (string.IsNullOrWhiteSpace(request.Title)) return (null, "Введите название задачи.");
+            if (string.IsNullOrWhiteSpace(request.Title) || !CrmTaskImportances.IsValid(request.Importance)) return (null, "Выберите важность задачи.");
             var assignee = BuildPreviewCrmManagers().FirstOrDefault(manager => manager.UserId == request.AssigneeUserId);
             if (assignee is null) return (null, "Исполнитель не найден.");
             var candidateName = request.CardId is Guid id
                 ? PreviewCrmCandidates.FirstOrDefault(c => c.Id == id)?.FullName
                 : null;
             var due = request.DueAtUtc;
-            var task = new CrmTaskDto(Guid.NewGuid(), request.CardId, candidateName, request.Title.Trim(), request.Description?.Trim(), assignee.UserId, assignee.DisplayName, "preview-admin", "Администратор", due, CrmTaskStatuses.Open, DateTime.UtcNow, null, due is DateTime d && d < DateTime.UtcNow);
+            var task = new CrmTaskDto(Guid.NewGuid(), request.CardId, candidateName, request.Title.Trim(), request.Description?.Trim(), assignee.UserId, assignee.DisplayName, "preview-admin", "Администратор", due, CrmTaskStatuses.Open, DateTime.UtcNow, null, due is DateTime d && d < DateTime.UtcNow, request.Importance);
             PreviewCrmTasks.Add(task);
             AddPreviewCrmHistory("TaskCreated", task.Title);
             return (task, null);
@@ -404,8 +424,76 @@ internal static class DesignPreviewData
             var index = PreviewCrmTasks.FindIndex(task => task.Id == taskId);
             if (index < 0) return (false, "Задача не найдена.");
             var task = PreviewCrmTasks[index];
+            if (task.Status != CrmTaskStatuses.Open) return (false, "Выполнить можно только задачу в работе.");
             PreviewCrmTasks[index] = task with { Status = CrmTaskStatuses.Completed, CompletedAtUtc = DateTime.UtcNow, IsOverdue = false };
             AddPreviewCrmHistory("TaskCompleted", task.Title);
+            return (true, null);
+        }
+    }
+
+    public static (bool Success, string? Error) UpdateCrmTask(Guid taskId, CrmTaskUpdateRequest update)
+    {
+        lock (CrmSync)
+        {
+            var index = PreviewCrmTasks.FindIndex(task => task.Id == taskId);
+            if (index < 0) return (false, "Задача не найдена.");
+            if (string.IsNullOrWhiteSpace(update.Title) || !CrmTaskImportances.IsValid(update.Importance))
+            {
+                return (false, "Проверьте название и важность задачи.");
+            }
+
+            var task = PreviewCrmTasks[index];
+            if (task.Status != CrmTaskStatuses.Open) return (false, "Можно изменить только задачу в работе.");
+            var assignee = BuildPreviewCrmManagers().FirstOrDefault(manager => manager.UserId == update.AssigneeUserId);
+            if (assignee is null) return (false, "Исполнитель не найден.");
+            PreviewCrmTasks[index] = task with
+            {
+                Title = update.Title.Trim(),
+                Description = string.IsNullOrWhiteSpace(update.Description) ? null : update.Description.Trim(),
+                AssigneeUserId = assignee.UserId,
+                AssigneeName = assignee.DisplayName,
+                DueAtUtc = update.DueAtUtc,
+                Importance = update.Importance,
+                IsOverdue = update.DueAtUtc is DateTime due && due < DateTime.UtcNow
+            };
+            AddPreviewCrmHistory("TaskUpdated", update.Title.Trim());
+            return (true, null);
+        }
+    }
+
+    public static (bool Success, string? Error) CancelCrmTask(Guid taskId)
+    {
+        lock (CrmSync)
+        {
+            var index = PreviewCrmTasks.FindIndex(task => task.Id == taskId);
+            if (index < 0) return (false, "Задача не найдена.");
+            var task = PreviewCrmTasks[index];
+            if (task.Status != CrmTaskStatuses.Open) return (false, "Отменить можно только задачу в работе.");
+            PreviewCrmTasks[index] = task with
+            {
+                Status = CrmTaskStatuses.Cancelled,
+                CompletedAtUtc = DateTime.UtcNow,
+                IsOverdue = false
+            };
+            AddPreviewCrmHistory("TaskCancelled", task.Title);
+            return (true, null);
+        }
+    }
+
+    public static (bool Success, string? Error) ReopenCrmTask(Guid taskId)
+    {
+        lock (CrmSync)
+        {
+            var index = PreviewCrmTasks.FindIndex(task => task.Id == taskId);
+            if (index < 0) return (false, "Задача не найдена.");
+            var task = PreviewCrmTasks[index];
+            PreviewCrmTasks[index] = task with
+            {
+                Status = CrmTaskStatuses.Open,
+                CompletedAtUtc = null,
+                IsOverdue = task.DueAtUtc is DateTime due && due < DateTime.UtcNow
+            };
+            AddPreviewCrmHistory("TaskReopened", task.Title);
             return (true, null);
         }
     }
@@ -433,6 +521,68 @@ internal static class DesignPreviewData
                 text.Trim(),
                 DateTime.UtcNow));
             return (true, null);
+        }
+    }
+
+    public static (CrmTaskAttachmentDto? Attachment, string? Error) AddCrmTaskAttachment(
+        Guid taskId,
+        Stream content,
+        long contentLength,
+        string fileName,
+        string? contentType)
+    {
+        lock (CrmSync)
+        {
+            if (PreviewCrmTasks.All(task => task.Id != taskId))
+            {
+                return (null, "Задача не найдена.");
+            }
+
+            if (contentLength <= 0 || contentLength > CrmTaskAttachmentLimits.MaxFileSizeBytes)
+            {
+                return (null, "Размер файла вне допустимого диапазона.");
+            }
+
+            var safeFileName = Path.GetFileName(fileName?.Trim() ?? string.Empty);
+            if (string.IsNullOrWhiteSpace(safeFileName))
+            {
+                return (null, "Выберите файл.");
+            }
+
+            using var copy = new MemoryStream();
+            content.CopyTo(copy);
+            var attachment = new CrmTaskAttachmentDto(
+                Guid.NewGuid(),
+                safeFileName,
+                string.IsNullOrWhiteSpace(contentType) ? "application/octet-stream" : contentType,
+                contentLength,
+                "Администратор",
+                DateTime.UtcNow);
+            if (!PreviewCrmTaskAttachments.TryGetValue(taskId, out var attachments))
+            {
+                attachments = [];
+                PreviewCrmTaskAttachments[taskId] = attachments;
+            }
+
+            attachments.Add(attachment);
+            PreviewCrmTaskAttachmentContent[attachment.Id] = copy.ToArray();
+            return (attachment, null);
+        }
+    }
+
+    public static (Stream? Stream, string? FileName, string? ContentType) OpenCrmTaskAttachment(Guid taskId, Guid attachmentId)
+    {
+        lock (CrmSync)
+        {
+            var attachment = PreviewCrmTaskAttachments.TryGetValue(taskId, out var attachments)
+                ? attachments.FirstOrDefault(item => item.Id == attachmentId)
+                : null;
+            if (attachment is null || !PreviewCrmTaskAttachmentContent.TryGetValue(attachmentId, out var content))
+            {
+                return (null, null, null);
+            }
+
+            return (new MemoryStream(content, writable: false), attachment.FileName, attachment.ContentType);
         }
     }
 
@@ -1940,9 +2090,9 @@ internal static class DesignPreviewData
 
     public static IReadOnlyList<PanelUserDto> PanelUsers =>
     [
-        new("preview-admin", "admin@orbita.local", true, PanelRoles.Admin, false),
-        new(PreviewManagerElena, "elena@orbita.local", true, PanelRoles.Manager, false, PreviewOfficeId, "Основной"),
-        new("preview-operator", "operator@orbita.local", true, PanelRoles.Operator, true, PreviewOfficeId, "Основной")
+        new("preview-admin", "admin@orbita.local", true, PanelRoles.Admin, false, FullName: "Администратор Орбита"),
+        new(PreviewManagerElena, "elena@orbita.local", true, PanelRoles.Manager, false, PreviewOfficeId, "Основной", "Елена Воронцова"),
+        new("preview-operator", "operator@orbita.local", true, PanelRoles.Operator, true, PreviewOfficeId, "Основной", "Алексей Селезнёв")
     ];
 
     public static PanelProfileDto PanelProfile =>
@@ -2201,41 +2351,6 @@ internal static class DesignPreviewData
         new(WorkerSpbId, "СПб-02", "WIN-SPB02", "1.0.0.2", true, false, Now.AddHours(-2), Now.AddDays(-10), null, false, "1.0.0.2", PreviewOfficeId, "Основной"),
         new(WorkerKazanId, "Казань-03", "WIN-KZN03", "0.9.5", false, false, Now.AddDays(-1), Now.AddDays(-30), Now.AddDays(-7), true, "1.0.0.2", PreviewOfficeId, "Основной")
     ];
-
-    public static PanelAuditPageDto BuildPanelAuditPage(
-        string? q,
-        string? action,
-        DateTime? date,
-        int page,
-        int pageSize = 50)
-    {
-        IEnumerable<PanelAuditEntryDto> rows =
-        [
-            new(1, Now.AddMinutes(-5), "admin@orbita.local", PanelAuditActions.LoginSucceeded, "user", "preview-admin", null, "127.0.0.1"),
-            new(2, Now.AddMinutes(-18), "admin@orbita.local", PanelAuditActions.WorkerKeyRotated, "worker", WorkerMoscowId.ToString(), null, "127.0.0.1"),
-            new(3, Now.AddHours(-1), "admin@orbita.local", PanelAuditActions.UserLocked, "user", "preview-operator", "operator@orbita.local", "127.0.0.1"),
-            new(4, Now.AddHours(-3), null, PanelAuditActions.LoginFailed, "user", null, "invalid_password", "10.0.0.5")
-        ];
-
-        if (!string.IsNullOrWhiteSpace(action))
-        {
-            rows = rows.Where(r => string.Equals(r.Action, action, StringComparison.OrdinalIgnoreCase));
-        }
-
-        if (!string.IsNullOrWhiteSpace(q))
-        {
-            var query = q.Trim();
-            rows = rows.Where(r =>
-                (r.ActorEmail?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false)
-                || (r.Details?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false)
-                || r.Action.Contains(query, StringComparison.OrdinalIgnoreCase));
-        }
-
-        var items = rows.ToList();
-        var total = items.Count;
-        var paged = items.Skip((page - 1) * pageSize).Take(pageSize).ToList();
-        return new PanelAuditPageDto(paged, total, page, pageSize);
-    }
 
     public static ServiceLogsPageDto BuildServiceLogsPage(
         string? q,

@@ -158,7 +158,7 @@ public sealed class CrmController(
 
         var selectedScope = scope?.ToLowerInvariant() switch
         {
-            "overdue" or "today" or "later" or "completed" => scope.ToLowerInvariant(),
+            "overdue" or "today" or "later" or "completed" or "cancelled" => scope.ToLowerInvariant(),
             _ => "all"
         };
 
@@ -275,9 +275,9 @@ public sealed class CrmController(
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> CreateTask(Guid? cardId, string title, string? description, string assigneeUserId, DateTime? dueAtUtc, string? returnUrl, CancellationToken ct = default)
+    public async Task<IActionResult> CreateTask(Guid? cardId, string title, string? description, string assigneeUserId, DateTime? dueAtUtc, string? importance, string? returnUrl, CancellationToken ct = default)
     {
-        var (_, error) = await api.CreateCrmTaskAsync(new CrmTaskCreateRequest(cardId, title, description, assigneeUserId, dueAtUtc), ct);
+        var (_, error) = await api.CreateCrmTaskAsync(new CrmTaskCreateRequest(cardId, title, description, assigneeUserId, dueAtUtc, importance ?? CrmTaskImportances.Medium), ct);
         if (error is not null) TempData["CrmError"] = error;
         return cardId is Guid id
             ? RedirectAfterCardMutation(returnUrl, nameof(Card), new { id, tab = "tasks" })
@@ -297,11 +297,90 @@ public sealed class CrmController(
 
     [HttpPost]
     [ValidateAntiForgeryToken]
+    public async Task<IActionResult> UpdateTask(
+        Guid taskId,
+        string title,
+        string? description,
+        string assigneeUserId,
+        DateTime? dueAtUtc,
+        string? importance,
+        CancellationToken ct = default)
+    {
+        var (_, error) = await api.UpdateCrmTaskAsync(
+            taskId,
+            new CrmTaskUpdateRequest(title, description, assigneeUserId, dueAtUtc, importance ?? CrmTaskImportances.Medium),
+            ct);
+        if (error is not null) TempData["CrmError"] = error;
+        return RedirectToAction(nameof(TaskDetails), new { id = taskId });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> CancelTask(Guid taskId, CancellationToken ct = default)
+    {
+        var (_, error) = await api.CancelCrmTaskAsync(taskId, ct);
+        if (error is not null) TempData["CrmError"] = error;
+        return RedirectToAction(nameof(TaskDetails), new { id = taskId });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ReopenTask(Guid taskId, CancellationToken ct = default)
+    {
+        var (_, error) = await api.ReopenCrmTaskAsync(taskId, ct);
+        if (error is not null) TempData["CrmError"] = error;
+        return RedirectToAction(nameof(TaskDetails), new { id = taskId });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> AddTaskComment(Guid taskId, string text, CancellationToken ct = default)
     {
         var (_, error) = await api.AddCrmTaskCommentAsync(taskId, text, ct);
         if (error is not null) TempData["CrmError"] = error;
         return RedirectToAction(nameof(TaskDetails), new { id = taskId });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    [RequestSizeLimit(CrmTaskAttachmentLimits.MaxFileSizeBytes)]
+    [RequestFormLimits(MultipartBodyLengthLimit = CrmTaskAttachmentLimits.MaxFileSizeBytes)]
+    public async Task<IActionResult> UploadTaskAttachment(Guid taskId, IFormFile? file, CancellationToken ct = default)
+    {
+        if (file is null || file.Length == 0)
+        {
+            TempData["CrmError"] = "Выберите файл для загрузки.";
+            return RedirectToAction(nameof(TaskDetails), new { id = taskId });
+        }
+
+        if (file.Length > CrmTaskAttachmentLimits.MaxFileSizeBytes)
+        {
+            TempData["CrmError"] = "Размер вложения не должен превышать 20 МБ.";
+            return RedirectToAction(nameof(TaskDetails), new { id = taskId });
+        }
+
+        await using var content = file.OpenReadStream();
+        var (_, error) = await api.UploadCrmTaskAttachmentAsync(
+            taskId,
+            content,
+            file.Length,
+            file.FileName,
+            file.ContentType,
+            ct);
+        if (error is not null) TempData["CrmError"] = error;
+        return RedirectToAction(nameof(TaskDetails), new { id = taskId });
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> DownloadTaskAttachment(Guid taskId, Guid attachmentId, CancellationToken ct = default)
+    {
+        var result = await api.OpenCrmTaskAttachmentAsync(taskId, attachmentId, ct);
+        return result.Stream is null
+            ? NotFound()
+            : File(
+                result.Stream,
+                result.ContentType ?? "application/octet-stream",
+                result.FileName ?? "Вложение");
     }
 
     private Guid? ResolveOfficeId(Guid? officeId) =>

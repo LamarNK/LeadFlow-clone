@@ -174,7 +174,7 @@ public sealed class BitrixInstanceAdminSettingsWebTests
         };
         var api = new OrbitaApiClient(http, session, officeContext, previewOptions);
         return (
-            new SettingsService(api, accessor, officeContext, previewOptions),
+            new SettingsService(api, accessor, previewOptions),
             http);
     }
 
