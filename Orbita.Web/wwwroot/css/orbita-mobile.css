@@ -478,6 +478,37 @@
         font-size: 11px;
     }
 
+    .data-table--responses.data-table--cards tbody td.responses-collection-duration {
+        order: 4;
+        display: inline-flex;
+        width: auto;
+        padding: 2px 8px;
+        background: #f1f5f9;
+        border-radius: 999px;
+    }
+
+    .data-table--responses.data-table--cards .responses-collection-timeline {
+        min-width: 0;
+    }
+
+    .data-table--responses.data-table--cards .responses-collection-duration-track {
+        display: none;
+    }
+
+    .data-table--responses.data-table--cards .responses-collection-duration-label {
+        padding: 0;
+        background: transparent;
+        color: #475467;
+    }
+
+    [data-theme="dark"] .data-table--responses.data-table--cards tbody td.responses-collection-duration {
+        background: rgba(255, 255, 255, 0.06);
+    }
+
+    [data-theme="dark"] .data-table--responses.data-table--cards .responses-collection-duration-label {
+        color: var(--text-secondary);
+    }
+
     .data-table--responses.data-table--cards tbody td.responses-bitrix {
         order: 5;
         display: inline-flex;

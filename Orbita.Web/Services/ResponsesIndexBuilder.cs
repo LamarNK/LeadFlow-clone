@@ -161,6 +161,8 @@ internal static class ResponsesIndexBuilder
             HighlightLabel = item.HighlightLabel,
             PhoneMetricKind = string.IsNullOrWhiteSpace(item.PhoneMetricKind) ? null : item.PhoneMetricKind,
             PhoneMetricLabel = item.PhoneMetricLabel,
+            PreviousPhoneRaw = item.PreviousPhoneRaw,
+            PreviousPhoneNormalized = item.PreviousPhoneNormalized,
             CanSend = canSend,
             CanResend = canSend
         };

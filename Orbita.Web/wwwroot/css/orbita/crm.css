@@ -244,15 +244,15 @@
 .crm-board-toolbar__meta { display: grid; gap: 2px; min-width: 108px; flex: 0 0 auto; }
 .crm-board-toolbar__meta strong { color: #101828; font-size: 13px; font-weight: 700; letter-spacing: -.01em; }
 .crm-board-toolbar__meta span { color: #98a2b3; font-size: 11px; white-space: nowrap; }
-.crm-board-jumps { display: flex; align-items: center; gap: 0; flex: 1 1 auto; min-width: 0; overflow-x: auto; padding: 3px; border-radius: 10px; background: #f2f4f7; scrollbar-width: thin; scrollbar-color: #d0d5dd transparent; }
+.crm-board-jumps { --crm-jumps-visible-start: 0px; --crm-jumps-visible-width: 0px; position: relative; display: flex; align-items: center; gap: 0; flex: 1 1 auto; min-width: 0; overflow-x: auto; padding: 3px; border-radius: 10px; background: #f2f4f7; scrollbar-width: thin; scrollbar-color: #d0d5dd transparent; }
+.crm-board-jumps::before { content: ""; position: absolute; z-index: 0; top: 3px; bottom: 3px; left: var(--crm-jumps-visible-start); width: var(--crm-jumps-visible-width); border-radius: 2px; background: #dfe7ff; pointer-events: none; }
+.crm-board-jumps:not(.has-visible-progress)::before { display: none; }
 .crm-board-jumps::-webkit-scrollbar { height: 4px; }
 .crm-board-jumps::-webkit-scrollbar-thumb { background: #d0d5dd; border-radius: 99px; }
 .crm-board-jump { position: relative; display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; max-width: 160px; min-height: 30px; padding: 0 10px; border: 0; border-radius: 7px; background: transparent; color: #475467; font: inherit; font-size: 11px; font-weight: 650; cursor: pointer; overflow: hidden; transition: background .16s ease, color .16s ease; }
 .crm-board-jump:hover { background: #eaecf0; color: #3538cd; }
 .crm-board-jump.is-active { border-radius: 0; background: transparent; color: #3538cd; }
-.crm-board-jump.is-active::before { content: ""; position: absolute; inset: 0; z-index: 0; background: #dfe7ff; transform-origin: left center; animation: crm-board-jump-fill .28s cubic-bezier(.2, .8, .2, 1) both; }
 .crm-board-jump > span { position: relative; z-index: 1; }
-@keyframes crm-board-jump-fill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 .crm-board-jump:first-child { border-radius: 7px 0 0 7px; }
 .crm-board-jump:last-child { border-radius: 0 7px 7px 0; }
 .crm-board-jump__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -488,9 +488,11 @@
 [data-theme="dark"] .crm-toolbar__stats > div, [data-theme="dark"] .crm-scope-tabs, [data-theme="dark"] .crm-stage, [data-theme="dark"] .crm-composer { background: color-mix(in srgb, var(--bg-card) 80%, #000); border-color: var(--border); }
 [data-theme="dark"] .crm-board-toolbar { border-color: var(--border); background: linear-gradient(180deg, color-mix(in srgb, var(--bg-card) 96%, #000), color-mix(in srgb, var(--bg-card) 88%, #000)); }
 [data-theme="dark"] .crm-board-toolbar__meta strong { color: var(--text-primary); }
-[data-theme="dark"] .crm-board-jump { border-color: var(--border); background: var(--bg-card); color: var(--text-secondary); }
+[data-theme="dark"] .crm-board-jumps { background: color-mix(in srgb, var(--bg-card) 82%, #000); }
+[data-theme="dark"] .crm-board-jumps::before { background: rgba(98,114,243,.28); }
+[data-theme="dark"] .crm-board-jump { border-color: var(--border); background: transparent; color: var(--text-secondary); }
 [data-theme="dark"] .crm-board-jump:hover { border-color: rgba(98,114,243,.45); background: rgba(98,114,243,.12); color: #a5b4fc; }
-[data-theme="dark"] .crm-board-jump.is-active { border-color: rgba(98,114,243,.55); background: rgba(98,114,243,.18); color: #c7d2fe; box-shadow: 0 0 0 2px rgba(98,114,243,.12); }
+[data-theme="dark"] .crm-board-jump.is-active { border-color: rgba(98,114,243,.55); background: transparent; color: #c7d2fe; box-shadow: 0 0 0 2px rgba(98,114,243,.12); }
 [data-theme="dark"] .crm-board-jump__count { background: color-mix(in srgb, var(--bg-card) 70%, #000); color: var(--text-secondary); }
 [data-theme="dark"] .crm-board-jump.is-active .crm-board-jump__count { background: rgba(98,114,243,.28); color: #c7d2fe; }
 [data-theme="dark"] .crm-board-nav { border-color: var(--border); background: color-mix(in srgb, var(--bg-card) 90%, #000); }

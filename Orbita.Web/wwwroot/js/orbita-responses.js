@@ -50,6 +50,28 @@
         return '—';
     }
 
+    function formatCollectionDuration(createdAtUtc, collectedAtUtc) {
+        var createdAt = new Date(createdAtUtc);
+        var collectedAt = new Date(collectedAtUtc);
+        var elapsedMinutes = Math.round((collectedAt.getTime() - createdAt.getTime()) / 60000);
+        if (!isFinite(elapsedMinutes) || elapsedMinutes <= 0) return '—';
+
+        var hours = Math.floor(elapsedMinutes / 60);
+        var minutes = elapsedMinutes % 60;
+        if (hours === 0) return elapsedMinutes + ' мин';
+        return minutes === 0 ? hours + ' ч' : hours + ' ч ' + minutes + ' мин';
+    }
+
+    function renderCollectionDurationCell(createdAtUtc, collectedAtUtc, shared) {
+        var duration = formatCollectionDuration(createdAtUtc, collectedAtUtc);
+        var title = duration === '—'
+            ? 'Время сбора неизвестно'
+            : 'Собран через ' + duration + ' после отклика';
+        return '<td class="responses-collection-duration" data-label="Время сбора"><div class="responses-collection-timeline" title="' +
+            shared.escapeAttr(title) + '"><span class="responses-collection-duration-label">' +
+            shared.escapeHtml(duration) + '</span><span class="responses-collection-duration-track" aria-hidden="true"><span class="responses-collection-duration-dot"></span><span class="responses-collection-duration-line"></span><span class="responses-collection-duration-dot"></span></span></div></td>';
+    }
+
     function workerDetailsUrl(id) {
         var shared = getShared();
         if (!shared) return '#';
@@ -1289,8 +1311,13 @@
                 var phoneMetricTone = phoneMetricKind === 'PhoneChanged'
                     ? 'responses-phone-metric--changed'
                     : 'responses-phone-metric--unchanged';
+                var previousPhoneRaw = readRowValue(row, 'previousPhoneRaw');
+                var previousPhoneNormalized = readRowValue(row, 'previousPhoneNormalized');
+                var phoneMetricText = phoneMetricKind === 'PhoneChanged' && previousPhoneNormalized
+                    ? 'Был: ' + shared.formatPhone(previousPhoneRaw, previousPhoneNormalized)
+                    : phoneMetricLabel;
                 phoneCell += '<span class="responses-phone-metric ' + phoneMetricTone + '" title="' +
-                    shared.escapeAttr(phoneMetricLabel) + '">' + shared.escapeHtml(phoneMetricLabel) + '</span>';
+                    shared.escapeAttr(phoneMetricLabel) + '">' + shared.escapeHtml(phoneMetricText) + '</span>';
             }
             var city = readRowValue(row, 'city');
             var cityDisplay = city && String(city).trim() ? shared.escapeHtml(city) : '—';
@@ -1312,6 +1339,7 @@
             return '<tr class="responses-row' + (isHighlighted ? ' responses-row--highlighted' : '') + '" data-response-id="' + shared.escapeHtml(rowId) + '" data-phone="' + shared.escapeHtml(phoneDisplay) + '" data-can-send="' + (canSend ? 'true' : 'false') + '" data-phone-hidden="' + (phoneHidden ? 'true' : 'false') + '" data-highlighted="' + (isHighlighted ? 'true' : 'false') + '" data-highlight-label="' + shared.escapeAttr(highlightLabel) + '" data-response-card="' + shared.escapeAttr(cardCopy) + '" data-detail-json-url="' + shared.escapeHtml(detailJsonUrl(rowId)) + '">' +
                 renderSelectCell(row) +
                 '<td class="responses-time" data-label="Сбор"><time data-orbita-utc="' + shared.escapeHtml(collectedAtUtc) + '" data-orbita-format="datetime"></time></td>' +
+                renderCollectionDurationCell(respondedAtUtc, collectedAtUtc, shared) +
                 '<td class="responses-time responses-time--responded" data-label="Отклик"><time data-orbita-utc="' + shared.escapeHtml(respondedAtUtc) + '" data-orbita-format="datetime"></time></td>' +
                 '<td class="responses-author" data-label="Автор">' + shared.escapeHtml(author) + '</td>' +
                 '<td class="responses-phone" data-label="Телефон">' + phoneCell + '</td>' +

@@ -129,6 +129,7 @@
                 <colgroup>
                     <col class="responses-col--select" />
                     <col class="responses-col--collected" />
+                    <col class="responses-col--collection-duration" />
                     <col class="responses-col--responded" />
                     <col class="responses-col--author" />
                     <col class="responses-col--phone" />
@@ -151,6 +152,7 @@
                                    title="Выбрать все на странице" />
                         </th>
                         <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Сбор", Column = "time", Sort = Model.Sort, Controller = "Responses", Action = "Index", RouteValues = responsesSortRoute })" />
+                        <th class="responses-collection-duration-heading" scope="col"><span class="sr-only">Время сбора</span></th>
                         <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Отклик", Column = "responded", Sort = Model.Sort, Controller = "Responses", Action = "Index", RouteValues = responsesSortRoute })" />
                         <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Автор", Column = "author", Sort = Model.Sort, Controller = "Responses", Action = "Index", RouteValues = responsesSortRoute })" />
                         <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Телефон", Column = "phone", Sort = Model.Sort, Controller = "Responses", Action = "Index", RouteValues = responsesSortRoute })" />
@@ -173,6 +175,10 @@
                     var adId = ResponseDisplay.DisplayAdId(row.SourceResponseId, row.VacancyUrl);
                     var author = ResponseDisplay.DisplayAuthor(row.FullName);
                     var city = ResponseDisplay.FormatCity(row.City);
+                    var collectionDuration = ResponseDisplay.FormatResponseCollectionDuration(row.CreatedAtUtc, row.CollectedAtUtc);
+                    var collectionDurationTitle = collectionDuration == "—"
+                        ? "Время сбора неизвестно"
+                        : $"Собран через {collectionDuration} после отклика";
                     <tr class="responses-row @(row.IsHighlighted ? "responses-row--highlighted" : null)"
                         data-response-id="@row.Id"
                         data-phone="@phoneDisplay"
@@ -190,6 +196,16 @@
                                    aria-label="Выбрать отклик" />
                         </td>
                         <td class="responses-time" data-label="Сбор"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(row.CollectedAtUtc, "datetime"))" /></td>
+                        <td class="responses-collection-duration" data-label="Время сбора">
+                            <div class="responses-collection-timeline" title="@collectionDurationTitle">
+                                <span class="responses-collection-duration-label">@collectionDuration</span>
+                                <span class="responses-collection-duration-track" aria-hidden="true">
+                                    <span class="responses-collection-duration-dot"></span>
+                                    <span class="responses-collection-duration-line"></span>
+                                    <span class="responses-collection-duration-dot"></span>
+                                </span>
+                            </div>
+                        </td>
                         <td class="responses-time responses-time--responded" data-label="Отклик"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(row.CreatedAtUtc, "datetime"))" /></td>
                         <td class="responses-author" data-label="Автор"><span class="responses-cell-clamp" title="@author">@author</span></td>
                         <td class="responses-phone" data-label="Телефон">
@@ -206,7 +222,11 @@
                                 var phoneMetricTone = row.PhoneMetricKind == ResponsePhoneMetricKinds.PhoneChanged
                                     ? "responses-phone-metric--changed"
                                     : "responses-phone-metric--unchanged";
-                                <span class="responses-phone-metric @phoneMetricTone" title="@row.PhoneMetricLabel">@row.PhoneMetricLabel</span>
+                                var phoneMetricText = row.PhoneMetricKind == ResponsePhoneMetricKinds.PhoneChanged &&
+                                    !string.IsNullOrWhiteSpace(row.PreviousPhoneNormalized)
+                                    ? $"Был: {ResponseDisplay.FormatPhone(row.PreviousPhoneRaw, row.PreviousPhoneNormalized)}"
+                                    : row.PhoneMetricLabel;
+                                <span class="responses-phone-metric @phoneMetricTone" title="@row.PhoneMetricLabel">@phoneMetricText</span>
                             }
                         </td>
                         <td class="responses-city" data-label="Город"><span class="responses-cell-clamp" title="@city">@city</span></td>

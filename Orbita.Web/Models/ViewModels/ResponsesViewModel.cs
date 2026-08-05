@@ -86,6 +86,8 @@ public sealed class ResponseRowViewModel
     public string? HighlightLabel { get; init; }
     public string? PhoneMetricKind { get; init; }
     public string? PhoneMetricLabel { get; init; }
+    public string? PreviousPhoneRaw { get; init; }
+    public string? PreviousPhoneNormalized { get; init; }
     public bool CanSend { get; init; }
     public bool CanResend { get; init; }
 }

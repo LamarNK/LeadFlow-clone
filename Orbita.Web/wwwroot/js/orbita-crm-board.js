@@ -120,6 +120,7 @@
         const prevButtons = [...root.querySelectorAll('[data-crm-board-prev]')];
         const nextButtons = [...root.querySelectorAll('[data-crm-board-next]')];
         const jumps = [...root.querySelectorAll('[data-crm-board-jump]')];
+        const jumpsStrip = root.querySelector('[data-crm-board-jumps]');
         const rangeLabel = root.querySelector('[data-crm-board-range]');
         if (!viewport || prevButtons.length === 0 || nextButtons.length === 0) return;
 
@@ -203,12 +204,22 @@
             let bestVisibility = -1;
             let activeIndex = 0;
             const visibleIndexes = [];
+            const visibleStages = [];
 
             list.forEach((stage, index) => {
                 const left = stage.offsetLeft;
                 const right = left + stage.offsetWidth;
-                const visible = Math.max(0, Math.min(right, viewRight) - Math.max(left, viewLeft));
+                const visibleLeft = Math.max(left, viewLeft);
+                const visibleRight = Math.min(right, viewRight);
+                const visible = Math.max(0, visibleRight - visibleLeft);
                 const ratio = visible / Math.max(1, stage.offsetWidth);
+                if (ratio > 0) {
+                    visibleStages.push({
+                        index,
+                        start: (visibleLeft - left) / Math.max(1, stage.offsetWidth),
+                        end: (visibleRight - left) / Math.max(1, stage.offsetWidth)
+                    });
+                }
                 if (ratio > 0.4) visibleIndexes.push(index);
                 if (ratio > bestVisibility) {
                     bestVisibility = ratio;
@@ -220,10 +231,26 @@
             const lastVisible = visibleIndexes.length > 0 ? visibleIndexes[visibleIndexes.length - 1] : activeIndex;
 
             jumps.forEach((jump, index) => {
-                const isActive = index >= firstVisible && index <= lastVisible;
+                const isActive = index === activeIndex;
                 jump.classList.toggle('is-active', isActive);
                 jump.setAttribute('aria-selected', isActive ? 'true' : 'false');
             });
+
+            if (jumpsStrip && visibleStages.length > 0) {
+                const first = visibleStages[0];
+                const last = visibleStages[visibleStages.length - 1];
+                const firstJump = jumps[first.index];
+                const lastJump = jumps[last.index];
+                if (firstJump && lastJump) {
+                    const start = firstJump.offsetLeft + firstJump.offsetWidth * first.start;
+                    const end = lastJump.offsetLeft + lastJump.offsetWidth * last.end;
+                    jumpsStrip.style.setProperty('--crm-jumps-visible-start', `${start}px`);
+                    jumpsStrip.style.setProperty('--crm-jumps-visible-width', `${Math.max(0, end - start)}px`);
+                    jumpsStrip.classList.add('has-visible-progress');
+                }
+            } else if (jumpsStrip) {
+                jumpsStrip.classList.remove('has-visible-progress');
+            }
 
             if (rangeLabel && list.length > 0) {
                 if (!canScroll) {
@@ -332,7 +359,6 @@
             }
         }, true);
 
-        const jumpsStrip = root.querySelector('[data-crm-board-jumps]');
         if (jumpsStrip) {
             const syncJumpScroll = () => {
                 const active = jumpsStrip.querySelector('.crm-board-jump.is-active');

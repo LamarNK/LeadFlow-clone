@@ -273,12 +273,24 @@
 
 .data-table--responses {
     width: 100%;
-    min-width: 1520px;
+    min-width: 1620px;
     table-layout: fixed;
 }
 
 .responses-col--select { width: 48px; }
 .responses-col--collected, .responses-col--responded { width: 116px; }
+.responses-col--collection-duration { width: 104px; }
+.responses-collection-duration-heading .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
 .responses-col--author { width: 150px; }
 .responses-col--phone { width: 148px; }
 .responses-col--city { width: 142px; }
@@ -340,6 +352,56 @@
 .responses-time--responded {
     font-weight: 400;
     color: #667085;
+}
+
+.data-table--responses tbody td.responses-collection-duration {
+    padding: 12px 6px;
+}
+
+.responses-collection-timeline {
+    display: flex;
+    min-width: 88px;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+.responses-collection-duration-label {
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: #f8fafc;
+    color: #667085;
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1.2;
+    white-space: nowrap;
+}
+
+.responses-collection-duration-track {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: 3px;
+}
+
+.responses-collection-duration-dot {
+    width: 4px;
+    height: 4px;
+    flex: 0 0 4px;
+    border-radius: 50%;
+    background: #cbd5e1;
+}
+
+.responses-collection-duration-line {
+    height: 1px;
+    flex: 1;
+    border-radius: 999px;
+    background: #e2e8f0;
+}
+
+[data-theme="dark"] .responses-collection-duration-label {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text-secondary);
 }
 
 .responses-ad {
@@ -437,9 +499,9 @@
 
 .responses-phone-metric {
     display: block;
-    margin-top: 2px;
-    font-size: 11px;
-    font-weight: 600;
+    margin-top: 3px;
+    font-size: 10px;
+    font-weight: 500;
     line-height: 1.2;
     white-space: normal;
     max-width: 12rem;
