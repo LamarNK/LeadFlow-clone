@@ -29,12 +29,19 @@
         "Отменённые" => "Отменённых задач пока нет.",
         _ => "Завершённых задач пока нет."
     };
+    var collapseCompletedByDefault = Model.Title == "Завершённые"
+        && ViewData["CollapseCompletedTasks"] as bool? == true
+        && teamTaskScope != "completed";
 }
-<section class="crm-task-group @groupClass">
-    <header class="crm-task-group__header">
+<details class="crm-task-group @groupClass @(collapseCompletedByDefault ? "crm-task-group--collapsible" : null)" open="@(!collapseCompletedByDefault)">
+    <summary class="crm-task-group__header">
         <span><i class="fa-solid @groupIcon" aria-hidden="true"></i> @Model.Title</span>
         <b>@Model.Items.Count</b>
-    </header>
+        @if (collapseCompletedByDefault)
+        {
+            <i class="fa-solid fa-chevron-down crm-task-group__chevron" aria-hidden="true"></i>
+        }
+    </summary>
     @if (Model.Items.Count == 0)
     {
         <p class="crm-task-group__empty">@emptyText</p>
@@ -70,4 +77,4 @@
             }
         </div>
     }
-</section>
+</details>

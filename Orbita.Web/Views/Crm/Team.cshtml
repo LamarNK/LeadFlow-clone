@@ -29,6 +29,7 @@
     ViewData["IsCrmAdmin"] = true;
     ViewData["TaskDetailsFromTeam"] = true;
     ViewData["TeamTaskScope"] = selectedTaskScope;
+    ViewData["CollapseCompletedTasks"] = true;
     var header = new PageHeaderViewModel
     {
         Title = "Команда CRM",
@@ -197,9 +198,31 @@
             {
                 <form asp-action="SaveOfficeFunnel" method="post" class="crm-standard-form crm-funnel-form">
                     <input type="hidden" name="officeId" value="@funnelOfficeId" />
-                    <label for="stagesText">Этапы (один на строку, сверху вниз)</label>
-                    <textarea id="stagesText" name="stagesText" rows="@(Math.Max(6, board.FunnelStages.Count + 2))" spellcheck="false">@string.Join(Environment.NewLine, board.FunnelStages)</textarea>
-                    <p class="crm-hint">От @CrmStages.MinCount до @CrmStages.MaxCount уникальных этапов, до @CrmStages.MaxNameLength символов. Карточки с удалённых этапов переносятся на первый этап.</p>
+                    <div class="crm-funnel-editor" data-crm-funnel-editor data-min-stages="@CrmStages.MinCount" data-max-stages="@CrmStages.MaxCount">
+                        <textarea id="stagesText" name="stagesText" data-crm-funnel-value hidden>@string.Join(Environment.NewLine, board.FunnelStages)</textarea>
+                        <div class="crm-funnel-editor__summary">
+                            <span><i class="fa-solid fa-arrow-right-long" aria-hidden="true"></i>Путь кандидата</span>
+                            <b data-crm-funnel-count>@board.FunnelStages.Count этапов</b>
+                        </div>
+                        <ol class="crm-funnel-editor__stages" data-crm-funnel-stages aria-label="Этапы воронки">
+                            @for (var stageIndex = 0; stageIndex < board.FunnelStages.Count; stageIndex++)
+                            {
+                                var stage = board.FunnelStages[stageIndex];
+                                <li class="crm-funnel-editor__stage" data-crm-funnel-stage>
+                                    <span class="crm-funnel-editor__number" data-crm-funnel-number>@(stageIndex + 1)</span>
+                                    <button class="crm-funnel-editor__drag" type="button" draggable="true" data-crm-funnel-drag aria-label="Перетащить этап @stage" title="Перетащить этап"><i class="fa-solid fa-grip-vertical" aria-hidden="true"></i></button>
+                                    <input class="crm-funnel-editor__input" type="text" value="@stage" maxlength="@CrmStages.MaxNameLength" data-crm-funnel-stage-input aria-label="Название этапа @(stageIndex + 1)" />
+                                    <div class="crm-funnel-editor__controls">
+                                        <button type="button" data-crm-funnel-action="move-up" aria-label="Поднять этап" title="Поднять этап" @(stageIndex == 0 ? "disabled" : null)><i class="fa-solid fa-arrow-up" aria-hidden="true"></i></button>
+                                        <button type="button" data-crm-funnel-action="move-down" aria-label="Опустить этап" title="Опустить этап" @(stageIndex == board.FunnelStages.Count - 1 ? "disabled" : null)><i class="fa-solid fa-arrow-down" aria-hidden="true"></i></button>
+                                        <button type="button" class="is-danger" data-crm-funnel-action="remove" aria-label="Удалить этап" title="Удалить этап"><i class="fa-solid fa-trash-can" aria-hidden="true"></i></button>
+                                    </div>
+                                </li>
+                            }
+                        </ol>
+                        <button class="crm-funnel-editor__add" type="button" data-crm-funnel-action="add"><i class="fa-solid fa-plus" aria-hidden="true"></i>Добавить этап</button>
+                    </div>
+                    <p class="crm-hint">Перетащите этап или используйте стрелки для смены порядка. От @CrmStages.MinCount до @CrmStages.MaxCount уникальных этапов, до @CrmStages.MaxNameLength символов. Карточки с удалённых этапов переносятся на первый этап.</p>
                     <div class="crm-funnel-form__actions">
                         <button class="settings-primary-btn" type="submit">Сохранить воронку</button>
                         <button class="settings-secondary-btn" type="submit" name="resetDefault" value="true">Сбросить по умолчанию</button>

@@ -384,6 +384,177 @@
         initBoardDragAndDrop(root);
     };
 
+    const initCrmFunnelEditor = (form) => {
+        if (form.dataset.crmFunnelReady === 'true') return;
+
+        const stages = form.querySelector('[data-crm-funnel-stages]');
+        const valueField = form.querySelector('[data-crm-funnel-value]');
+        const countField = form.querySelector('[data-crm-funnel-count]');
+        const addButton = form.querySelector('[data-crm-funnel-action="add"]');
+        if (!stages || !valueField || !addButton) return;
+
+        form.dataset.crmFunnelReady = 'true';
+        const minStages = Number.parseInt(form.dataset.minStages || '1', 10);
+        const maxStages = Number.parseInt(form.dataset.maxStages || '20', 10);
+        let draggedStage = null;
+
+        const getStages = () => Array.from(stages.querySelectorAll('[data-crm-funnel-stage]'));
+        const stageWord = (count) => {
+            const mod100 = count % 100;
+            const mod10 = count % 10;
+            if (mod100 >= 11 && mod100 <= 14) return 'этапов';
+            if (mod10 === 1) return 'этап';
+            if (mod10 >= 2 && mod10 <= 4) return 'этапа';
+            return 'этапов';
+        };
+        const makeControl = (action, label, icon, className) => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.dataset.crmFunnelAction = action;
+            button.setAttribute('aria-label', label);
+            button.title = label;
+            if (className) button.className = className;
+            button.innerHTML = '<i class="fa-solid ' + icon + '" aria-hidden="true"></i>';
+            return button;
+        };
+        const createStage = (name) => {
+            const stage = document.createElement('li');
+            stage.className = 'crm-funnel-editor__stage';
+            stage.dataset.crmFunnelStage = '';
+
+            const number = document.createElement('span');
+            number.className = 'crm-funnel-editor__number';
+            number.dataset.crmFunnelNumber = '';
+
+            const drag = document.createElement('button');
+            drag.type = 'button';
+            drag.className = 'crm-funnel-editor__drag';
+            drag.draggable = true;
+            drag.dataset.crmFunnelDrag = '';
+            drag.setAttribute('aria-label', 'Перетащить этап');
+            drag.title = 'Перетащить этап';
+            drag.innerHTML = '<i class="fa-solid fa-grip-vertical" aria-hidden="true"></i>';
+
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.className = 'crm-funnel-editor__input';
+            input.value = name;
+            input.maxLength = 64;
+            input.dataset.crmFunnelStageInput = '';
+
+            const controls = document.createElement('div');
+            controls.className = 'crm-funnel-editor__controls';
+            controls.append(
+                makeControl('move-up', 'Поднять этап', 'fa-arrow-up'),
+                makeControl('move-down', 'Опустить этап', 'fa-arrow-down'),
+                makeControl('remove', 'Удалить этап', 'fa-trash-can', 'is-danger')
+            );
+
+            stage.append(number, drag, input, controls);
+            return stage;
+        };
+        const suggestedStageName = () => {
+            const existing = new Set(getStages().map((stage) =>
+                (stage.querySelector('[data-crm-funnel-stage-input]')?.value || '').trim().toLocaleLowerCase()));
+            let suffix = 1;
+            let candidate = 'Новый этап';
+            while (existing.has(candidate.toLocaleLowerCase())) {
+                suffix += 1;
+                candidate = 'Новый этап ' + suffix;
+            }
+            return candidate;
+        };
+        const sync = () => {
+            const stageRows = getStages();
+            valueField.value = stageRows
+                .map((stage) => stage.querySelector('[data-crm-funnel-stage-input]')?.value.trim() || '')
+                .filter(Boolean)
+                .join('\n');
+
+            stageRows.forEach((stage, index) => {
+                const position = index + 1;
+                const input = stage.querySelector('[data-crm-funnel-stage-input]');
+                const number = stage.querySelector('[data-crm-funnel-number]');
+                const drag = stage.querySelector('[data-crm-funnel-drag]');
+                const up = stage.querySelector('[data-crm-funnel-action="move-up"]');
+                const down = stage.querySelector('[data-crm-funnel-action="move-down"]');
+                const remove = stage.querySelector('[data-crm-funnel-action="remove"]');
+                if (number) number.textContent = String(position).padStart(2, '0');
+                if (input) input.setAttribute('aria-label', 'Название этапа ' + position);
+                if (drag) {
+                    drag.setAttribute('aria-label', 'Перетащить этап ' + position);
+                    drag.title = 'Перетащить этап ' + position;
+                }
+                if (up) up.disabled = index === 0;
+                if (down) down.disabled = index === stageRows.length - 1;
+                if (remove) remove.disabled = stageRows.length <= minStages;
+            });
+
+            addButton.disabled = stageRows.length >= maxStages;
+            if (countField) countField.textContent = stageRows.length + ' ' + stageWord(stageRows.length);
+        };
+
+        form.addEventListener('input', (event) => {
+            if (event.target.matches('[data-crm-funnel-stage-input]')) sync();
+        });
+
+        form.addEventListener('click', (event) => {
+            const button = event.target.closest('[data-crm-funnel-action]');
+            if (!button) return;
+            const action = button.dataset.crmFunnelAction;
+            if (action === 'add') {
+                if (getStages().length >= maxStages) return;
+                const stage = createStage(suggestedStageName());
+                stages.append(stage);
+                sync();
+                stage.querySelector('[data-crm-funnel-stage-input]')?.focus();
+                return;
+            }
+
+            const stage = button.closest('[data-crm-funnel-stage]');
+            if (!stage) return;
+            if (action === 'remove' && getStages().length > minStages) {
+                stage.remove();
+            } else if (action === 'move-up' && stage.previousElementSibling) {
+                stage.previousElementSibling.before(stage);
+            } else if (action === 'move-down' && stage.nextElementSibling) {
+                stage.nextElementSibling.after(stage);
+            }
+            sync();
+        });
+
+        form.addEventListener('dragstart', (event) => {
+            const handle = event.target.closest('[data-crm-funnel-drag]');
+            if (!handle) return;
+            draggedStage = handle.closest('[data-crm-funnel-stage]');
+            if (!draggedStage) return;
+            draggedStage.classList.add('is-dragging');
+            event.dataTransfer?.setData('text/plain', 'crm-funnel-stage');
+            if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+        });
+        form.addEventListener('dragend', () => {
+            if (!draggedStage) return;
+            draggedStage.classList.remove('is-dragging');
+            draggedStage = null;
+            sync();
+        });
+        stages.addEventListener('dragover', (event) => {
+            if (!draggedStage) return;
+            const target = event.target.closest('[data-crm-funnel-stage]');
+            if (!target || target === draggedStage) return;
+            event.preventDefault();
+            const bounds = target.getBoundingClientRect();
+            target.insertAdjacentElement(event.clientX < bounds.left + bounds.width / 2 ? 'beforebegin' : 'afterend', draggedStage);
+        });
+        stages.addEventListener('drop', (event) => {
+            if (!draggedStage) return;
+            event.preventDefault();
+            sync();
+        });
+
+        sync();
+    };
+
     const initCrmBoardPage = () => {
         // Drop refreshers for boards removed by content swap
         refreshers.forEach((fn) => {
@@ -391,6 +562,7 @@
         });
 
         document.querySelectorAll('[data-crm-board-carousel]').forEach(initBoardNavigation);
+        document.querySelectorAll('[data-crm-funnel-editor]').forEach(initCrmFunnelEditor);
 
         if (window.OrbitaLive && typeof window.OrbitaLive.register === 'function'
             && document.querySelector('[data-orbita-live][data-orbita-live-page="crm"]')) {
