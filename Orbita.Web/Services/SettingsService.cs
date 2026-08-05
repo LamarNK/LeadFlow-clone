@@ -9,7 +9,6 @@ namespace Orbita.Web.Services;
 public sealed class SettingsService(
     OrbitaApiClient api,
     IHttpContextAccessor httpContextAccessor,
-    IOfficeContext officeContext,
     IOptions<DesignPreviewOptions> previewOptions) : ISettingsService
 {
     public async Task<SettingsIndexViewModel> GetIndexAsync(
@@ -18,7 +17,6 @@ public sealed class SettingsService(
         string? level,
         string? service,
         DateTime? date,
-        string? action,
         string? userId = null,
         Guid? officeId = null,
         Guid? instanceId = null,
@@ -50,15 +48,6 @@ public sealed class SettingsService(
                     DesignPreviewData.AdminWorkers,
                     previewOffices,
                     DesignPreviewData.WorkerRegistrationInfo),
-                "audit" => SettingsIndexBuilder.BuildAuditTab(
-                    q,
-                    action,
-                    date,
-                    DesignPreviewData.BuildPanelAuditPage(q, action, date, page)),
-                "integrations" => SettingsIndexBuilder.BuildIntegrationsTab(
-                    previewOffices,
-                    BuildPreviewBitrixDistribution(previewOffices, officeId, instanceId)),
-                "leadflow-import" => SettingsIndexBuilder.BuildLeadFlowImportTab(previewOffices),
                 "worker-releases" => SettingsIndexBuilder.BuildWorkerReleasesTab(DesignPreviewData.WorkerReleases),
                 _ => SettingsIndexBuilder.BuildUsersTab(
                     previewUsers,
@@ -81,9 +70,6 @@ public sealed class SettingsService(
                 await api.GetAdminWorkersAsync(ct) ?? [],
                 offices,
                 await api.GetWorkerRegistrationInfoAsync(ct)),
-            "audit" => await BuildAuditTabAsync(q, action, date, page, ct),
-            "integrations" => await BuildIntegrationsTabAsync(officeId, instanceId, offices, ct),
-            "leadflow-import" => SettingsIndexBuilder.BuildLeadFlowImportTab(offices),
             "worker-releases" => await BuildWorkerReleasesTabAsync(ct),
             _ => SettingsIndexBuilder.BuildUsersTab(
                 await api.GetPanelUsersAsync(ct) ?? [],
@@ -302,13 +288,22 @@ public sealed class SettingsService(
 
     public Task<(bool Success, string? Error)> CreateUserAsync(
         string email,
+        string fullName,
         string password,
         string role,
         Guid? officeId = null,
         CancellationToken ct = default) =>
         previewOptions.Value.Enabled
             ? Task.FromResult<(bool, string?)>((true, null))
-            : api.CreatePanelUserAsync(email, password, role, officeId, ct);
+            : api.CreatePanelUserAsync(email, fullName, password, role, officeId, ct);
+
+    public Task<(bool Success, string? Error)> UpdateUserFullNameAsync(
+        string userId,
+        string fullName,
+        CancellationToken ct = default) =>
+        previewOptions.Value.Enabled
+            ? Task.FromResult<(bool, string?)>((true, null))
+            : api.UpdatePanelUserFullNameAsync(userId, fullName, ct);
 
     public Task<(bool Success, string? Error)> UpdateUserOfficeAsync(
         string userId,
@@ -538,24 +533,6 @@ public sealed class SettingsService(
         return SettingsIndexBuilder.BuildLogsTab(q, level, service, date, pageDto, workerOptions: workerOptions);
     }
 
-    private async Task<SettingsIndexViewModel> BuildAuditTabAsync(
-        string? q,
-        string? action,
-        DateTime? date,
-        int page,
-        CancellationToken ct)
-    {
-        var pageDto = await api.GetPanelAuditAsync(
-            q,
-            action,
-            date ?? DateTime.UtcNow.Date,
-            page,
-            SettingsIndexBuilder.AuditPageSize,
-            ct) ?? new PanelAuditPageDto([], 0, page, SettingsIndexBuilder.AuditPageSize);
-
-        return SettingsIndexBuilder.BuildAuditTab(q, action, date, pageDto);
-    }
-
     private async Task<SettingsIndexViewModel> BuildWorkerReleasesTabAsync(CancellationToken ct)
     {
         var releases = await api.GetWorkerReleasesAsync(ct)
@@ -575,264 +552,6 @@ public sealed class SettingsService(
         }
 
         return SettingsIndexBuilder.BuildOfficesTab(offices, selected);
-    }
-
-    private async Task<SettingsIndexViewModel> BuildIntegrationsTabAsync(
-        Guid? officeId,
-        Guid? instanceId,
-        IReadOnlyList<OfficeDto> offices,
-        CancellationToken ct)
-    {
-        var selectedOfficeId = officeId ?? officeContext.EffectiveOfficeId ?? offices.FirstOrDefault()?.Id;
-        var bitrixDistribution = await BuildBitrixDistributionAsync(selectedOfficeId, offices, instanceId, ct);
-        return SettingsIndexBuilder.BuildIntegrationsTab(offices, bitrixDistribution);
-    }
-
-    private static BitrixDistributionSettingsViewModel BuildPreviewBitrixDistribution(
-        IReadOnlyList<OfficeDto> offices,
-        Guid? officeId,
-        Guid? instanceId)
-    {
-        var selectedOfficeId = officeId ?? offices.FirstOrDefault()?.Id;
-        var selectedOffice = offices.FirstOrDefault(x => x.Id == selectedOfficeId);
-        BitrixInstanceEditorViewModel? editor = null;
-        BitrixWorkforceEditorViewModel? workforce = null;
-        if (instanceId == Guid.Empty)
-        {
-            editor = MySettingsService.CreateNewEditor();
-        }
-        else if (instanceId is Guid selectedInstanceId)
-        {
-            if (DesignPreviewData.GetPreviewBitrixInstance(selectedInstanceId) is { } detail)
-            {
-                editor = MySettingsService.MapEditor(detail);
-                if (selectedOfficeId is Guid previewOfficeId)
-                {
-                    workforce = CreateWorkforceEditor(
-                        previewOfficeId,
-                        MySettingsService.FormatBitrixLabel(detail.Name, detail.Signature),
-                        DesignPreviewData.PreviewBitrixWorkforceSettings,
-                        DesignPreviewData.PreviewBitrixWorkforceAssignments);
-                }
-            }
-        }
-
-        return new BitrixDistributionSettingsViewModel
-        {
-            SelectedOfficeId = selectedOfficeId,
-            SelectedOfficeName = selectedOffice?.Name,
-            OfficeOptions = offices.Select(o => new EventFilterOptionViewModel
-            {
-                Value = o.Id.ToString(),
-                Label = o.Name
-            }).ToList(),
-            BitrixInstances = new BitrixInstancesRegistryViewModel
-            {
-                OfficeId = selectedOfficeId,
-                OfficeName = selectedOffice?.Name,
-                CanManage = selectedOfficeId.HasValue,
-                CanManageTransmission = false,
-                Instances = DesignPreviewData.PreviewBitrixInstances
-                    .Select(MySettingsService.MapListItem)
-                    .ToList(),
-                Editor = editor
-            },
-            Workforce = workforce,
-            Distribution = new DistributionEditorViewModel
-            {
-                OfficeId = selectedOfficeId,
-                OfficeName = selectedOffice?.Name,
-                CanManage = selectedOfficeId.HasValue,
-                IsAutoDistributionEnabled = DesignPreviewData.PreviewDistributionRoute.IsAutoDistributionEnabled,
-                RouteJson = System.Text.Json.JsonSerializer.Serialize(DesignPreviewData.PreviewDistributionRoute),
-                InstancesJson = System.Text.Json.JsonSerializer.Serialize(
-                    DesignPreviewData.PreviewBitrixInstances.Select(x => new
-                    {
-                        x.Id,
-                        x.Name,
-                        x.Signature,
-                        Label = MySettingsService.FormatBitrixLabel(x.Name, x.Signature),
-                        x.LeadExportLimit,
-                        x.LeadExportSessionCount
-                    }))
-            }
-        };
-    }
-
-    private async Task<BitrixDistributionSettingsViewModel> BuildBitrixDistributionAsync(
-        Guid? officeId,
-        IReadOnlyList<OfficeDto> offices,
-        Guid? instanceId,
-        CancellationToken ct)
-    {
-        var officeOptions = offices.Select(o => new EventFilterOptionViewModel
-        {
-            Value = o.Id.ToString(),
-            Label = o.Name
-        }).ToList();
-
-        if (officeId is not Guid selectedOfficeId)
-        {
-            return new BitrixDistributionSettingsViewModel { OfficeOptions = officeOptions };
-        }
-
-        var selectedOffice = offices.FirstOrDefault(x => x.Id == selectedOfficeId);
-        var instances = await api.GetBitrixInstancesAsync(selectedOfficeId, ct) ?? [];
-        var route = await api.GetDistributionRouteAsync(selectedOfficeId, ct)
-            ?? new DistributionRouteDto(Guid.Empty, selectedOfficeId, false, [], null);
-
-        BitrixInstanceEditorViewModel? editor = null;
-        BitrixWorkforceEditorViewModel? workforce = null;
-        if (instanceId == Guid.Empty)
-        {
-            editor = MySettingsService.CreateNewEditor();
-        }
-        else if (instanceId is Guid selectedInstanceId)
-        {
-            var detail = await api.GetBitrixInstanceAsync(selectedInstanceId, selectedOfficeId, ct);
-            if (detail is not null)
-            {
-                editor = MySettingsService.MapEditor(detail);
-                var workforceSettings = await api.GetBitrixWorkforceSettingsAsync(
-                    selectedInstanceId,
-                    selectedOfficeId,
-                    ct);
-                if (workforceSettings is not null)
-                {
-                    var recentAssignments = await api.GetBitrixWorkforceAssignmentsAsync(
-                        selectedInstanceId,
-                        selectedOfficeId,
-                        ct: ct) ?? [];
-                    workforce = CreateWorkforceEditor(
-                        selectedOfficeId,
-                        MySettingsService.FormatBitrixLabel(detail.Name, detail.Signature),
-                        workforceSettings,
-                        recentAssignments);
-                }
-            }
-        }
-
-        var instancePayload = instances
-            .Where(x => x.IsEnabled)
-            .Select(x => new
-            {
-                x.Id,
-                x.Name,
-                x.Signature,
-                Label = MySettingsService.FormatBitrixLabel(x.Name, x.Signature),
-                x.LeadExportLimit,
-                x.LeadExportSessionCount
-            })
-            .ToList();
-
-        return new BitrixDistributionSettingsViewModel
-        {
-            SelectedOfficeId = selectedOfficeId,
-            SelectedOfficeName = selectedOffice?.Name,
-            OfficeOptions = officeOptions,
-            BitrixInstances = new BitrixInstancesRegistryViewModel
-            {
-                OfficeId = selectedOfficeId,
-                OfficeName = selectedOffice?.Name,
-                CanManage = true,
-                CanManageTransmission = true,
-                TransmissionEnabled = route.IsAutoDistributionEnabled,
-                Instances = instances.Select(MySettingsService.MapListItem).ToList(),
-                Editor = editor
-            },
-            Workforce = workforce,
-            Distribution = new DistributionEditorViewModel
-            {
-                OfficeId = selectedOfficeId,
-                OfficeName = selectedOffice?.Name,
-                CanManage = true,
-                IsAutoDistributionEnabled = route.IsAutoDistributionEnabled,
-                RouteJson = System.Text.Json.JsonSerializer.Serialize(route),
-                InstancesJson = System.Text.Json.JsonSerializer.Serialize(instancePayload)
-            }
-        };
-    }
-
-    private static BitrixWorkforceEditorViewModel CreateWorkforceEditor(
-        Guid officeId,
-        string bitrixInstanceLabel,
-        BitrixWorkforceSettingsDto settings,
-        IReadOnlyList<BitrixWorkforceAssignmentDto> recentAssignments)
-    {
-        var stageRules = settings.StageRules
-            .OrderBy(x => x.SortOrder)
-            .Select(x => new BitrixWorkforceStageRuleFormModel
-            {
-                Id = x.Id,
-                Scenario = x.Scenario,
-                SourceStageId = x.SourceStageId,
-                TargetStageId = x.TargetStageId,
-                UsesMorningWindow = x.UsesMorningWindow,
-                SortOrder = x.SortOrder,
-                IsEnabled = x.IsEnabled
-            })
-            .ToList();
-
-        EnsureStageRuleSlots(
-            stageRules,
-            BitrixWorkforceDistribution.NewScenario,
-            usesMorningWindow: false,
-            desiredCount: 1);
-        EnsureStageRuleSlots(
-            stageRules,
-            BitrixWorkforceDistribution.MissedCallScenario,
-            usesMorningWindow: true,
-            desiredCount: 2);
-        EnsureStageRuleSlots(
-            stageRules,
-            BitrixWorkforceDistribution.SubstituteMissedCallScenario,
-            usesMorningWindow: true,
-            desiredCount: 2);
-        stageRules = stageRules.OrderBy(x => x.SortOrder).ToList();
-
-        return new BitrixWorkforceEditorViewModel
-        {
-            OfficeId = officeId,
-            BitrixInstanceId = settings.BitrixInstanceId,
-            BitrixInstanceLabel = bitrixInstanceLabel,
-            Settings = settings,
-            ManagerUserIdsText = string.Join(Environment.NewLine, settings.ManagerUserIds),
-            StageRules = stageRules,
-            RecentAssignments = recentAssignments
-        };
-    }
-
-    private static BitrixWorkforceStageRuleFormModel CreateEmptyStageRule(
-        string scenario,
-        bool usesMorningWindow,
-        int sortOrder) =>
-        new()
-        {
-            Scenario = scenario,
-            UsesMorningWindow = usesMorningWindow,
-            SortOrder = sortOrder,
-            IsEnabled = false
-        };
-
-    private static void EnsureStageRuleSlots(
-        List<BitrixWorkforceStageRuleFormModel> rules,
-        string scenario,
-        bool usesMorningWindow,
-        int desiredCount)
-    {
-        var missing = desiredCount - rules.Count(x =>
-            string.Equals(x.Scenario, scenario, StringComparison.Ordinal));
-        while (missing > 0)
-        {
-            var nextSortOrder = rules.Count == 0
-                ? 0
-                : rules.Max(x => x.SortOrder) + 1;
-            rules.Add(CreateEmptyStageRule(
-                scenario,
-                usesMorningWindow,
-                nextSortOrder));
-            missing--;
-        }
     }
 
     private static (IReadOnlyList<long> ManagerIds, string? Error) ParseManagerUserIds(string? value)
@@ -869,11 +588,8 @@ public sealed class SettingsService(
             "offices" => "offices",
             "profiles" => "profiles",
             "workers" => "workers",
-            "leadflow-import" => "leadflow-import",
             "worker-releases" => "worker-releases",
-            "audit" => "audit",
             "logs" => "logs",
-            "integrations" => "integrations",
             _ => "users"
         };
 }

@@ -20,7 +20,6 @@ public sealed class SettingsController(
         string? q,
         string? level,
         string? service,
-        string? action,
         string? userId,
         Guid? officeId,
         Guid? instanceId,
@@ -29,7 +28,7 @@ public sealed class SettingsController(
         int page = 1,
         CancellationToken ct = default)
     {
-        var model = await settings.GetIndexAsync(tab, q, level, service, date, action, userId, officeId, instanceId, workerId, page, ct);
+        var model = await settings.GetIndexAsync(tab, q, level, service, date, userId, officeId, instanceId, workerId, page, ct);
         model = model with
         {
             StatusMessage = TempData["SettingsStatus"] as string ?? model.StatusMessage,
@@ -44,9 +43,20 @@ public sealed class SettingsController(
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> CreateUser(CreatePanelUserFormModel model, CancellationToken ct = default)
     {
-        var (success, error) = await settings.CreateUserAsync(model.Email, model.Password, model.Role, model.OfficeId, ct);
+        var (success, error) = await settings.CreateUserAsync(model.Email, model.FullName, model.Password, model.Role, model.OfficeId, ct);
         TempData[success ? "SettingsStatus" : "SettingsError"] = success
             ? "Пользователь добавлен."
+            : error;
+        return RedirectToAction(nameof(Index), new { tab = "users" });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> UpdateUserFullName(UpdatePanelUserFullNameFormModel model, CancellationToken ct = default)
+    {
+        var (success, error) = await settings.UpdateUserFullNameAsync(model.UserId, model.FullName, ct);
+        TempData[success ? "SettingsStatus" : "SettingsError"] = success
+            ? "ФИО пользователя обновлено."
             : error;
         return RedirectToAction(nameof(Index), new { tab = "users" });
     }
@@ -283,76 +293,6 @@ public sealed class SettingsController(
     {
         TempData["SettingsError"] = "Настройка вебхука перенесена на вкладку «Битриксы и связи». Добавьте или обновите Битрикс в реестре интеграций.";
         return Task.FromResult<IActionResult>(RedirectToAction(nameof(Index), new { tab = "bitrix", officeId = model.OfficeId }));
-    }
-
-    [HttpPost]
-    [RequestSizeLimit(104_857_600)]
-    [RequestFormLimits(MultipartBodyLengthLimit = 104_857_600)]
-    [ValidateAntiForgeryToken]
-    public async Task<IActionResult> PreviewLeadFlowImport(
-        IFormFile? databaseFile,
-        Guid officeId,
-        string? encryptionKey,
-        [FromServices] OrbitaApiClient api,
-        CancellationToken ct = default)
-    {
-        if (databaseFile is null || databaseFile.Length == 0)
-        {
-            return BadRequest(new { error = "Выберите файл leadflow.db." });
-        }
-
-        await using var stream = databaseFile.OpenReadStream();
-        var (preview, error) = await api.PreviewLeadFlowImportAsync(
-            stream,
-            databaseFile.Length,
-            databaseFile.FileName,
-            officeId,
-            encryptionKey,
-            ct);
-        if (preview is null)
-        {
-            return BadRequest(new { error });
-        }
-
-        return Json(preview);
-    }
-
-    [HttpPost]
-    [ValidateAntiForgeryToken]
-    public async Task<IActionResult> ExecuteLeadFlowImport(
-        Guid sessionId,
-        string? selectedIdsJson,
-        [FromServices] OrbitaApiClient api,
-        CancellationToken ct = default)
-    {
-        if (sessionId == Guid.Empty)
-        {
-            return BadRequest(new { error = "Сессия импорта не указана." });
-        }
-
-        IReadOnlyList<Guid>? selectedIds = null;
-        if (!string.IsNullOrWhiteSpace(selectedIdsJson))
-        {
-            try
-            {
-                selectedIds = System.Text.Json.JsonSerializer.Deserialize<List<Guid>>(selectedIdsJson);
-            }
-            catch
-            {
-                return BadRequest(new { error = "Некорректный список выбранных откликов." });
-            }
-        }
-
-        var (result, error) = await api.ExecuteLeadFlowImportAsync(
-            sessionId,
-            selectedIds,
-            ct);
-        if (result is null)
-        {
-            return BadRequest(new { error });
-        }
-
-        return Json(result);
     }
 
     [HttpGet]

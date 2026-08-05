@@ -6,7 +6,6 @@ namespace Orbita.Web.Services;
 internal static class SettingsIndexBuilder
 {
     public const int LogsPageSize = 50;
-    public const int AuditPageSize = 50;
 
     public static readonly IReadOnlyList<SettingsTabViewModel> Tabs =
     [
@@ -14,11 +13,8 @@ internal static class SettingsIndexBuilder
         new() { Id = "users", Label = "Пользователи" },
         new() { Id = "profiles", Label = "Профили" },
         new() { Id = "workers", Label = "Воркеры" },
-        new() { Id = "leadflow-import", Label = "Импорт LeadFlow" },
         new() { Id = "worker-releases", Label = "Обновления воркера" },
-        new() { Id = "audit", Label = "Аудит" },
-        new() { Id = "logs", Label = "Логи сервиса" },
-        new() { Id = "integrations", Label = "Битриксы и связи" }
+        new() { Id = "logs", Label = "Логи сервиса" }
     ];
 
     public static readonly IReadOnlyList<EventFilterOptionViewModel> ProfileOptions =
@@ -80,51 +76,6 @@ internal static class SettingsIndexBuilder
         string? currentUserId = null) =>
         Build(users, offices, "profiles", currentUserId);
 
-    public static SettingsIndexViewModel BuildIntegrationsTab(
-        IReadOnlyList<OfficeDto> offices,
-        BitrixDistributionSettingsViewModel? bitrixDistribution = null) =>
-        new()
-        {
-            ActiveTab = "integrations",
-            Tabs = Tabs,
-            ProfileOptions = ProfileOptions,
-            OfficeOptions = offices.Select(o => new EventFilterOptionViewModel
-            {
-                Value = o.Id.ToString(),
-                Label = o.Name
-            }).ToList(),
-            BitrixDistribution = bitrixDistribution ?? new BitrixDistributionSettingsViewModel
-            {
-                OfficeOptions = offices.Select(o => new EventFilterOptionViewModel
-                {
-                    Value = o.Id.ToString(),
-                    Label = o.Name
-                }).ToList()
-            }
-        };
-
-    public static SettingsIndexViewModel BuildLeadFlowImportTab(
-        IReadOnlyList<OfficeDto> offices) =>
-        new()
-        {
-            ActiveTab = "leadflow-import",
-            Tabs = Tabs,
-            ProfileOptions = ProfileOptions,
-            OfficeOptions = offices.Select(o => new EventFilterOptionViewModel
-            {
-                Value = o.Id.ToString(),
-                Label = o.Name
-            }).ToList(),
-            LeadFlowImport = new LeadFlowImportSettingsViewModel
-            {
-                OfficeOptions = offices.Select(o => new EventFilterOptionViewModel
-                {
-                    Value = o.Id.ToString(),
-                    Label = o.Name
-                }).ToList()
-            }
-        };
-
     public static SettingsIndexViewModel BuildWorkerReleasesTab(WorkerReleaseListResponse releases) =>
         new()
         {
@@ -163,32 +114,6 @@ internal static class SettingsIndexBuilder
                         MaskedSecret = registration.MaskedSecret,
                         Source = registration.Source
                     }
-            }
-        };
-
-    public static SettingsIndexViewModel BuildAuditTab(
-        string? q,
-        string? action,
-        DateTime? date,
-        PanelAuditPageDto page) =>
-        new()
-        {
-            ActiveTab = "audit",
-            Tabs = Tabs,
-            ProfileOptions = ProfileOptions,
-            Audit = new PanelAuditViewModel
-            {
-                SearchQuery = q,
-                Action = action,
-                Date = date ?? DateTime.UtcNow.Date,
-                ActionOptions = BuildAuditActionOptions(),
-                Rows = page.Items.Select(MapAuditRow).ToList(),
-                Pagination = new PaginationViewModel
-                {
-                    Page = page.Page,
-                    PageSize = page.PageSize,
-                    TotalItems = page.Total
-                }
             }
         };
 
@@ -351,6 +276,7 @@ internal static class SettingsIndexBuilder
         return new PanelUserRowViewModel
         {
             Id = user.Id,
+            FullName = user.FullName,
             Email = user.Email,
             Role = role,
             RoleLabel = RoleLabel(role),
@@ -458,19 +384,6 @@ internal static class SettingsIndexBuilder
         return $"{mb:0.#} MB";
     }
 
-    private static PanelAuditRowViewModel MapAuditRow(PanelAuditEntryDto entry) =>
-        new()
-        {
-            TimestampUtc = entry.TimestampUtc,
-            ActorEmail = entry.ActorEmail,
-            Action = entry.Action,
-            ActionLabel = AuditActionLabel(entry.Action),
-            TargetType = entry.TargetType,
-            TargetId = entry.TargetId,
-            Details = entry.Details,
-            IpAddress = entry.IpAddress
-        };
-
     private static PasswordPolicyViewModel MapPasswordPolicy(PasswordPolicyDto policy)
     {
         var parts = new List<string> { $"минимум {policy.RequiredLength} символов" };
@@ -556,28 +469,6 @@ internal static class SettingsIndexBuilder
         new() { Value = "Orbita.Api", Label = "Orbita.Api" }
     ];
 
-    private static IReadOnlyList<EventFilterOptionViewModel> BuildAuditActionOptions() =>
-    [
-        new() { Value = "", Label = "Все действия" },
-        new() { Value = PanelAuditActions.UserCreated, Label = AuditActionLabel(PanelAuditActions.UserCreated) },
-        new() { Value = PanelAuditActions.UserDeleted, Label = AuditActionLabel(PanelAuditActions.UserDeleted) },
-        new() { Value = PanelAuditActions.UserRoleUpdated, Label = AuditActionLabel(PanelAuditActions.UserRoleUpdated) },
-        new() { Value = PanelAuditActions.UserPasswordReset, Label = AuditActionLabel(PanelAuditActions.UserPasswordReset) },
-        new() { Value = PanelAuditActions.UserPasswordChanged, Label = AuditActionLabel(PanelAuditActions.UserPasswordChanged) },
-        new() { Value = PanelAuditActions.UserLocked, Label = AuditActionLabel(PanelAuditActions.UserLocked) },
-        new() { Value = PanelAuditActions.UserUnlocked, Label = AuditActionLabel(PanelAuditActions.UserUnlocked) },
-        new() { Value = PanelAuditActions.UserSessionsRevoked, Label = AuditActionLabel(PanelAuditActions.UserSessionsRevoked) },
-        new() { Value = PanelAuditActions.LoginSucceeded, Label = AuditActionLabel(PanelAuditActions.LoginSucceeded) },
-        new() { Value = PanelAuditActions.LoginFailed, Label = AuditActionLabel(PanelAuditActions.LoginFailed) },
-        new() { Value = PanelAuditActions.WorkerRenamed, Label = AuditActionLabel(PanelAuditActions.WorkerRenamed) },
-        new() { Value = PanelAuditActions.WorkerDisabled, Label = AuditActionLabel(PanelAuditActions.WorkerDisabled) },
-        new() { Value = PanelAuditActions.WorkerEnabled, Label = AuditActionLabel(PanelAuditActions.WorkerEnabled) },
-        new() { Value = PanelAuditActions.WorkerKeyRotated, Label = AuditActionLabel(PanelAuditActions.WorkerKeyRotated) },
-        new() { Value = PanelAuditActions.BitrixWebhookUpdated, Label = AuditActionLabel(PanelAuditActions.BitrixWebhookUpdated) },
-        new() { Value = PanelAuditActions.BitrixWebhookValidated, Label = AuditActionLabel(PanelAuditActions.BitrixWebhookValidated) },
-        new() { Value = PanelAuditActions.LeadFlowImportExecuted, Label = AuditActionLabel(PanelAuditActions.LeadFlowImportExecuted) }
-    ];
-
     public static ServiceLogRowViewModel MapWorkerLogRow(WorkerLogEntryDto entry, string serviceLabel = "Orbita.Worker")
     {
         var tone = entry.Level switch
@@ -643,29 +534,6 @@ internal static class SettingsIndexBuilder
             IsTampered = entry.IsTampered
         };
     }
-
-    public static string AuditActionLabel(string action) =>
-        action switch
-        {
-            PanelAuditActions.UserCreated => "Пользователь создан",
-            PanelAuditActions.UserDeleted => "Пользователь удалён",
-            PanelAuditActions.UserRoleUpdated => "Роль изменена",
-            PanelAuditActions.UserPasswordReset => "Пароль сброшен",
-            PanelAuditActions.UserPasswordChanged => "Пароль изменён",
-            PanelAuditActions.UserLocked => "Пользователь заблокирован",
-            PanelAuditActions.UserUnlocked => "Пользователь разблокирован",
-            PanelAuditActions.UserSessionsRevoked => "Сессии завершены",
-            PanelAuditActions.LoginSucceeded => "Вход выполнен",
-            PanelAuditActions.LoginFailed => "Неудачный вход",
-            PanelAuditActions.WorkerRenamed => "Воркер переименован",
-            PanelAuditActions.WorkerDisabled => "Воркер отключён",
-            PanelAuditActions.WorkerEnabled => "Воркер включён",
-            PanelAuditActions.WorkerKeyRotated => "API-ключ перевыпущен",
-            PanelAuditActions.BitrixWebhookUpdated => "Вебхук Bitrix обновлён",
-            PanelAuditActions.BitrixWebhookValidated => "Вебхук Bitrix проверен",
-            PanelAuditActions.LeadFlowImportExecuted => "Импорт LeadFlow",
-            _ => action
-        };
 
     private static (string Label, string Tone) MapValidationStatus(string? status) =>
         status switch

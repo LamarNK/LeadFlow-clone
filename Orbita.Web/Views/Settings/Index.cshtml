@@ -3,11 +3,9 @@
 @{
     ViewData["Title"] = "Администрирование";
     var logs = Model.Logs;
-    var audit = Model.Audit;
     var workers = Model.Workers;
 
     var logsPagination = logs?.Pagination;
-    var auditPagination = audit?.Pagination;
     var rotatedApiKey = ViewBag.RotatedWorkerApiKey as string;
     var rotatedOfficeSecret = ViewBag.RotatedOfficeRegistrationSecret as string;
     var officesTab = Model.Offices;
@@ -224,6 +222,7 @@
                     <table class="data-table data-table--settings-users data-table--cards">
                         <thead>
                         <tr>
+                            <th>ФИО</th>
                             <th>Email</th>
                             <th>Профиль</th>
                             <th>Офис</th>
@@ -235,6 +234,21 @@
                         @foreach (var user in Model.Users)
                         {
                             <tr>
+                                <td data-label="ФИО">
+                                    <form asp-action="UpdateUserFullName" method="post" class="settings-role-form">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="UserId" value="@user.Id" />
+                                        <input type="text"
+                                               name="FullName"
+                                               value="@user.FullName"
+                                               class="settings-select settings-select--inline"
+                                               maxlength="256"
+                                               required
+                                               autocomplete="name"
+                                               aria-label="ФИО @user.Email" />
+                                        <button type="submit" class="settings-link-btn">Сохранить</button>
+                                    </form>
+                                </td>
                                 <td class="cell-name" data-label="Email">
                                     <span class="settings-user-email">@user.Email</span>
                                     @if (user.IsCurrentUser)
@@ -378,6 +392,10 @@
                 <div class="card-body">
                     <form asp-action="CreateUser" method="post" class="settings-create-form">
                         @Html.AntiForgeryToken()
+                        <label class="settings-field">
+                            <span class="settings-field-label">ФИО</span>
+                            <input type="text" name="FullName" required maxlength="256" placeholder="Иванов Иван Иванович" autocomplete="name" />
+                        </label>
                         <label class="settings-field">
                             <span class="settings-field-label">Email</span>
                             <input type="email" name="Email" required placeholder="user@example.com" autocomplete="username" />
@@ -554,105 +572,6 @@
             </div>
         </div>
     }
-    else if (Model.ActiveTab == "leadflow-import" && Model.LeadFlowImport is not null)
-    {
-        var leadFlowImport = Model.LeadFlowImport;
-        <div class="card card--settings-leadflow-import">
-            <div class="card-header settings-card-header">
-                <div>
-                    <h2 class="settings-card-title">Импорт базы LeadFlow</h2>
-                    <p class="settings-card-subtitle">Загрузите leadflow.db с офисного ПК, выберите офис и проверьте отклики перед синхронизацией. Ключ шифрования — только через утилиту ReadLeadFlowDatabaseKey на том же компьютере.</p>
-                </div>
-            </div>
-            <div class="card-body settings-leadflow-import-body">
-                <form class="settings-leadflow-import-form" data-leadflow-import-form>
-                    @Html.AntiForgeryToken()
-                    <div class="settings-release-upload-grid">
-                        <label class="settings-filter-field">
-                            <span class="settings-filter-label">Офис в Орбите</span>
-                            <select name="officeId" class="settings-select" data-leadflow-import-office required>
-                                <option value="">Выберите офис</option>
-                                @foreach (var opt in leadFlowImport.OfficeOptions)
-                                {
-                                    <option value="@opt.Value">@opt.Label</option>
-                                }
-                            </select>
-                        </label>
-                        <label class="settings-filter-field">
-                            <span class="settings-filter-label">Ключ шифрования</span>
-                            <input type="password"
-                                   name="encryptionKey"
-                                   class="settings-input"
-                                   data-leadflow-import-key
-                                   placeholder="ReadLeadFlowDatabaseKey.exe на офисном ПК"
-                                   autocomplete="off" />
-                        </label>
-                    </div>
-                    <input type="file" name="databaseFile" accept=".db" class="settings-release-file-input" data-leadflow-import-file required hidden />
-                    <div class="settings-release-dropzone" data-leadflow-import-dropzone tabindex="0" role="button" aria-label="Перетащите leadflow.db или выберите файл">
-                        <div class="settings-release-dropzone-icon" aria-hidden="true">
-                            <i class="fa-solid fa-database"></i>
-                        </div>
-                        <p class="settings-release-dropzone-title">Перетащите leadflow.db сюда</p>
-                        <p class="settings-release-dropzone-hint">или нажмите, чтобы выбрать файл</p>
-                        <p class="settings-release-dropzone-file" data-leadflow-import-file-name hidden></p>
-                        <p class="settings-release-dropzone-error" data-leadflow-import-file-error hidden></p>
-                    </div>
-                    <div class="settings-leadflow-import-actions">
-                        <button type="button" class="settings-primary-btn" data-leadflow-import-preview disabled>Предпросмотр</button>
-                    </div>
-                    <p class="settings-leadflow-import-status" data-leadflow-import-status hidden role="status"></p>
-                </form>
-            </div>
-        </div>
-
-        <div class="card card--settings-leadflow-preview" data-leadflow-import-preview-card hidden>
-            <div class="card-header settings-card-header">
-                <div>
-                    <h2 class="settings-card-title">Предпросмотр</h2>
-                    <p class="settings-card-subtitle" data-leadflow-import-summary></p>
-                </div>
-                <div class="settings-leadflow-preview-actions">
-                    <button type="button"
-                            class="settings-primary-btn"
-                            data-leadflow-import-execute-all
-                            hidden
-                            disabled>
-                        Импортировать все новые
-                    </button>
-                    <button type="button"
-                            class="settings-secondary-btn"
-                            data-leadflow-import-execute-sample
-                            hidden
-                            disabled>
-                        Импортировать выбранные в таблице
-                    </button>
-                </div>
-            </div>
-            <p class="settings-leadflow-preview-note" data-leadflow-import-preview-note hidden></p>
-            <label class="settings-leadflow-select-all" data-leadflow-import-select-all-wrap hidden>
-                <input type="checkbox" data-leadflow-import-select-all checked />
-                <span>Выбрать все строки в таблице</span>
-            </label>
-            <div class="card-body card-body-table settings-table-wrap">
-                <table class="data-table data-table--settings-leadflow-import data-table--cards">
-                    <thead>
-                    <tr>
-                        <th class="data-table-check-col"></th>
-                        <th>Дата</th>
-                        <th>Кандидат</th>
-                        <th>Телефон</th>
-                        <th>Аккаунт</th>
-                        <th>Вакансия</th>
-                        <th>Статус LeadFlow</th>
-                        <th>Импорт</th>
-                    </tr>
-                    </thead>
-                    <tbody data-leadflow-import-preview-body></tbody>
-                </table>
-            </div>
-        </div>
-    }
     else if (Model.ActiveTab == "worker-releases" && Model.WorkerReleases is not null)
     {
         var releases = Model.WorkerReleases;
@@ -763,140 +682,6 @@
                     }
                     </tbody>
                 </table>
-            </div>
-        </div>
-    }
-    else if (Model.ActiveTab == "audit" && audit is not null)
-    {
-        <div class="card card--settings-logs-filters">
-            <form class="settings-logs-filters" method="get" asp-action="Index">
-                <input type="hidden" name="tab" value="audit" />
-                <div class="settings-logs-filters-row">
-                    <label class="settings-filter-field">
-                        <span class="settings-filter-label">Действие</span>
-                        <select name="action" class="settings-select" aria-label="Действие">
-                            @foreach (var opt in audit.ActionOptions)
-                            {
-                                if (opt.Value == (audit.Action ?? ""))
-                                {
-                                    <option value="@opt.Value" selected>@opt.Label</option>
-                                }
-                                else
-                                {
-                                    <option value="@opt.Value">@opt.Label</option>
-                                }
-                            }
-                        </select>
-                    </label>
-                    <label class="settings-filter-field">
-                        <span class="settings-filter-label">Дата</span>
-                        <input type="date"
-                               name="date"
-                               class="settings-date-input"
-                               value="@audit.Date?.ToString("yyyy-MM-dd")"
-                               aria-label="Дата" />
-                    </label>
-                    <label class="settings-filter-field settings-filter-field--grow">
-                        <span class="settings-filter-label">Поиск</span>
-                        <input type="search"
-                               name="q"
-                               class="settings-search-input"
-                               value="@audit.SearchQuery"
-                               placeholder="Email, действие, объект..."
-                               aria-label="Поиск по аудиту" />
-                    </label>
-                    <button type="submit" class="settings-primary-btn settings-primary-btn--compact">
-                        <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
-                        <span>Найти</span>
-                    </button>
-                </div>
-            </form>
-        </div>
-
-        <div class="card card--settings-logs-table">
-            <div class="card-body card-body-table settings-table-wrap">
-                <table class="data-table data-table--settings-audit data-table--cards">
-                    <thead>
-                    <tr>
-                        <th>Время</th>
-                        <th>Актор</th>
-                        <th>Действие</th>
-                        <th>Объект</th>
-                        <th>Детали</th>
-                        <th>IP</th>
-                    </tr>
-                    </thead>
-                    <tbody>
-                    @if (audit.Rows.Count == 0)
-                    {
-                        <tr>
-                            <td colspan="6" class="settings-empty-cell">Записей аудита не найдено.</td>
-                        </tr>
-                    }
-                    else
-                    {
-                        @foreach (var row in audit.Rows)
-                        {
-                            <tr>
-                                <td class="settings-log-time" data-label="Время"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(row.TimestampUtc, "datetime-seconds"))" /></td>
-                                <td data-label="Актор">@(row.ActorEmail ?? "—")</td>
-                                <td data-label="Действие">
-                                    <span class="settings-audit-action">@row.ActionLabel</span>
-                                    <span class="settings-log-trace">@row.Action</span>
-                                </td>
-                                <td class="settings-log-source" data-label="Объект">
-                                    @if (!string.IsNullOrWhiteSpace(row.TargetType))
-                                    {
-                                        <span>@row.TargetType</span>
-                                    }
-                                    @if (!string.IsNullOrWhiteSpace(row.TargetId))
-                                    {
-                                        <span class="settings-log-trace">@row.TargetId</span>
-                                    }
-                                </td>
-                                <td class="settings-log-message" data-label="Детали">@(row.Details ?? "—")</td>
-                                <td class="settings-log-time" data-label="IP">@(row.IpAddress ?? "—")</td>
-                            </tr>
-                        }
-                    }
-                    </tbody>
-                </table>
-
-                @if (auditPagination is not null && auditPagination.TotalItems > 0)
-                {
-                    <div class="settings-pagination">
-                        <span class="settings-pagination-info">
-                            Показано @auditPagination.RangeStart–@auditPagination.RangeEnd из @auditPagination.TotalItems
-                        </span>
-                        <div class="settings-pagination-controls">
-                            @{
-                                var auditPrevPage = auditPagination.Page > 1 ? auditPagination.Page - 1 : (int?)null;
-                                var auditNextPage = auditPagination.Page < auditPagination.TotalPages ? auditPagination.Page + 1 : (int?)null;
-                            }
-                            @if (auditPrevPage is not null)
-                            {
-                                <a class="settings-page-btn"
-                                   href="@Url.Action("Index", new { tab = "audit", q = audit.SearchQuery, action = audit.Action, date = audit.Date?.ToString("yyyy-MM-dd"), page = auditPrevPage })"
-                                   aria-label="Предыдущая страница">&lt;</a>
-                            }
-                            else
-                            {
-                                <span class="settings-page-btn settings-page-btn--disabled" aria-hidden="true">&lt;</span>
-                            }
-                            <span class="settings-page-btn settings-page-btn--active" aria-current="page">@auditPagination.Page</span>
-                            @if (auditNextPage is not null)
-                            {
-                                <a class="settings-page-btn"
-                                   href="@Url.Action("Index", new { tab = "audit", q = audit.SearchQuery, action = audit.Action, date = audit.Date?.ToString("yyyy-MM-dd"), page = auditNextPage })"
-                                   aria-label="Следующая страница">&gt;</a>
-                            }
-                            else
-                            {
-                                <span class="settings-page-btn settings-page-btn--disabled" aria-hidden="true">&gt;</span>
-                            }
-                        </div>
-                    </div>
-                }
             </div>
         </div>
     }
@@ -1073,60 +858,6 @@
             }
         </div>
     }
-    else if (Model.ActiveTab == "integrations")
-    {
-        var bitrixDistribution = Model.BitrixDistribution;
-        <div class="card card--settings-integrations-office">
-            <div class="card-body settings-integrations-office-body">
-                <form method="get" asp-action="Index" class="settings-logs-filters">
-                    <input type="hidden" name="tab" value="integrations" />
-                    <label class="settings-filter-field">
-                        <span class="settings-filter-label">Офис</span>
-                        <select name="officeId" class="settings-select" aria-label="Офис" onchange="this.form.submit()">
-                            <option value="">Выберите офис</option>
-                            @foreach (var opt in Model.OfficeOptions)
-                            {
-                                var selected = bitrixDistribution?.SelectedOfficeId?.ToString() == opt.Value;
-                                if (selected)
-                                {
-                                    <option value="@opt.Value" selected>@opt.Label</option>
-                                }
-                                else
-                                {
-                                    <option value="@opt.Value">@opt.Label</option>
-                                }
-                            }
-                        </select>
-                    </label>
-                </form>
-            </div>
-        </div>
-
-        @if (bitrixDistribution?.SelectedOfficeId is Guid)
-        {
-            @if (bitrixDistribution.BitrixInstances is not null)
-            {
-                ViewData["BitrixController"] = "Settings";
-                <partial name="_BitrixInstancesRegistry" model="bitrixDistribution.BitrixInstances" />
-            }
-            @if (bitrixDistribution.Workforce is not null)
-            {
-                <partial name="_BitrixWorkforceSettings" model="bitrixDistribution.Workforce" />
-            }
-            @if (bitrixDistribution.Distribution is not null)
-            {
-                ViewData["DistributionController"] = "Settings";
-                <partial name="_DistributionEditor" model="bitrixDistribution.Distribution" />
-            }
-        }
-        else
-        {
-            <div class="card card--settings-integrations-empty">
-                <div class="card-body settings-empty-cell">Выберите офис, чтобы настроить Битриксы и схему связей.</div>
-            </div>
-        }
-    }
-
     <dialog class="settings-dialog" id="resetPasswordDialog">
         <form asp-action="ResetPassword" method="post" class="settings-dialog-form">
             @Html.AntiForgeryToken()
@@ -1145,30 +876,11 @@
     </dialog>
 </div>
 
-@section Styles {
-    @if (Model.ActiveTab == "integrations")
-    {
-        <link rel="stylesheet" href="~/lib/drawflow/dist/drawflow.min.css" asp-append-version="true" />
-        <link rel="stylesheet" href="~/css/orbita-distribution.css" asp-append-version="true" />
-    }
-}
-
 @section Scripts {
     <script src="~/js/orbita-settings.js" asp-append-version="true"></script>
     @if (Model.ActiveTab == "offices")
     {
         <script src="~/js/orbita-bitrix-settings.js" asp-append-version="true"></script>
-    }
-    @if (Model.ActiveTab == "integrations")
-    {
-        <script src="~/js/orbita-bitrix-instances.js" asp-append-version="true"></script>
-        <script src="~/js/orbita-bitrix-settings.js" asp-append-version="true"></script>
-        <script src="~/lib/drawflow/dist/drawflow.min.js" asp-append-version="true"></script>
-        <script src="~/js/orbita-distribution-editor.js" asp-append-version="true"></script>
-    }
-    @if (Model.ActiveTab == "leadflow-import")
-    {
-        <script src="~/js/orbita-leadflow-import.js" asp-append-version="true"></script>
     }
     @if (Model.ActiveTab == "worker-releases")
     {

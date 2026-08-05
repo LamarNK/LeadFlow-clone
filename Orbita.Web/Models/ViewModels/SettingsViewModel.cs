@@ -12,14 +12,10 @@ public sealed record SettingsIndexViewModel
     public IReadOnlyList<AccessProfileRowViewModel> Profiles { get; init; } = [];
     public IReadOnlyList<EventFilterOptionViewModel> ProfileOptions { get; init; } = [];
     public WorkersSettingsViewModel? Workers { get; init; }
-    public PanelAuditViewModel? Audit { get; init; }
     public ProfileSettingsViewModel? Profile { get; init; }
     public ServiceLogsViewModel? Logs { get; init; }
-    public BitrixIntegrationsSettingsViewModel? Integrations { get; init; }
-    public BitrixDistributionSettingsViewModel? BitrixDistribution { get; init; }
     public WorkerReleasesSettingsViewModel? WorkerReleases { get; init; }
     public OfficesSettingsViewModel? Offices { get; init; }
-    public LeadFlowImportSettingsViewModel? LeadFlowImport { get; init; }
     public IReadOnlyList<EventFilterOptionViewModel> OfficeOptions { get; init; } = [];
     public string? StatusMessage { get; init; }
     public string? ErrorMessage { get; init; }
@@ -34,6 +30,7 @@ public sealed class SettingsTabViewModel
 public sealed class PanelUserRowViewModel
 {
     public required string Id { get; init; }
+    public string? FullName { get; init; }
     public required string Email { get; init; }
     public required string Role { get; init; }
     public required string RoleLabel { get; init; }
@@ -163,28 +160,6 @@ public sealed class WorkerRegistrationViewModel
     public required string Source { get; init; }
 }
 
-public sealed class PanelAuditViewModel
-{
-    public string? SearchQuery { get; init; }
-    public string? Action { get; init; }
-    public DateTime? Date { get; init; }
-    public IReadOnlyList<EventFilterOptionViewModel> ActionOptions { get; init; } = [];
-    public IReadOnlyList<PanelAuditRowViewModel> Rows { get; init; } = [];
-    public PaginationViewModel Pagination { get; init; } = new();
-}
-
-public sealed class PanelAuditRowViewModel
-{
-    public required DateTime TimestampUtc { get; init; }
-    public string? ActorEmail { get; init; }
-    public required string Action { get; init; }
-    public required string ActionLabel { get; init; }
-    public string? TargetType { get; init; }
-    public string? TargetId { get; init; }
-    public string? Details { get; init; }
-    public string? IpAddress { get; init; }
-}
-
 public sealed class ProfileSettingsViewModel
 {
     public required string Email { get; init; }
@@ -243,10 +218,17 @@ public sealed class ServiceLogRowViewModel
 
 public sealed class CreatePanelUserFormModel
 {
+    public string FullName { get; set; } = string.Empty;
     public string Email { get; set; } = string.Empty;
     public string Password { get; set; } = string.Empty;
     public string Role { get; set; } = Orbita.Contracts.PanelRoles.Operator;
     public Guid? OfficeId { get; set; }
+}
+
+public sealed class UpdatePanelUserFullNameFormModel
+{
+    public string UserId { get; set; } = string.Empty;
+    public string FullName { get; set; } = string.Empty;
 }
 
 public sealed class ResetPanelUserPasswordFormModel
@@ -265,21 +247,6 @@ public sealed class RenameAdminWorkerFormModel
 {
     public Guid WorkerId { get; set; }
     public string DisplayName { get; set; } = string.Empty;
-}
-
-public sealed class BitrixIntegrationsSettingsViewModel
-{
-    public IReadOnlyList<BitrixIntegrationRowViewModel> Rows { get; init; } = [];
-}
-
-public sealed class BitrixDistributionSettingsViewModel
-{
-    public Guid? SelectedOfficeId { get; init; }
-    public string? SelectedOfficeName { get; init; }
-    public IReadOnlyList<EventFilterOptionViewModel> OfficeOptions { get; init; } = [];
-    public BitrixInstancesRegistryViewModel? BitrixInstances { get; init; }
-    public BitrixWorkforceEditorViewModel? Workforce { get; init; }
-    public DistributionEditorViewModel? Distribution { get; init; }
 }
 
 public sealed class BitrixWorkforceEditorViewModel
@@ -347,11 +314,6 @@ public sealed class SaveOfficeBitrixIntegrationFormModel
 {
     public Guid OfficeId { get; set; }
     public string WebhookUrl { get; set; } = string.Empty;
-}
-
-public sealed class LeadFlowImportSettingsViewModel
-{
-    public IReadOnlyList<EventFilterOptionViewModel> OfficeOptions { get; init; } = [];
 }
 
 public sealed class ChangeOwnPasswordFormModel

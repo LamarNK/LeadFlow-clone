@@ -367,13 +367,14 @@ public sealed class OrbitaApiClient(
 
     public async Task<(bool Success, string? Error)> CreatePanelUserAsync(
         string email,
+        string fullName,
         string password,
         string role,
         Guid? officeId = null,
         CancellationToken ct = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/admin/users");
-        request.Content = JsonContent.Create(new CreatePanelUserRequest(email, password, role, officeId));
+        request.Content = JsonContent.Create(new CreatePanelUserRequest(email, password, role, officeId, fullName));
         using var response = await SendAuthenticatedAsync(request, ct);
         if (response is null)
         {
@@ -386,6 +387,24 @@ public sealed class OrbitaApiClient(
         }
 
         return (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(bool Success, string? Error)> UpdatePanelUserFullNameAsync(
+        string userId,
+        string fullName,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Put, $"api/v1/admin/users/{userId}/full-name");
+        request.Content = JsonContent.Create(new UpdatePanelUserFullNameRequest(fullName));
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (false, InvalidApiSessionError);
+        }
+
+        return response.IsSuccessStatusCode
+            ? (true, null)
+            : (false, await ReadApiErrorAsync(response, ct));
     }
 
     public async Task<(bool Success, string? Error)> DeletePanelUserAsync(string userId, CancellationToken ct = default)
@@ -805,41 +824,6 @@ public sealed class OrbitaApiClient(
 
         var result = await response.Content.ReadFromJsonAsync<RotateWorkerApiKeyResponse>(ct);
         return result is null ? (null, "Не удалось прочитать ответ API.") : (result, null);
-    }
-
-    public Task<PanelAuditPageDto?> GetPanelAuditAsync(
-        string? q,
-        string? action,
-        DateTime? date,
-        int page,
-        int pageSize,
-        CancellationToken ct = default)
-    {
-        if (_preview.Enabled)
-        {
-            return Task.FromResult<PanelAuditPageDto?>(
-                DesignPreviewData.BuildPanelAuditPage(q, action, date, page, pageSize));
-        }
-
-        var query = new List<string>();
-        if (!string.IsNullOrWhiteSpace(q))
-        {
-            query.Add($"q={Uri.EscapeDataString(q)}");
-        }
-
-        if (!string.IsNullOrWhiteSpace(action))
-        {
-            query.Add($"action={Uri.EscapeDataString(action)}");
-        }
-
-        if (date.HasValue)
-        {
-            query.Add($"date={date.Value:yyyy-MM-dd}");
-        }
-
-        query.Add($"page={page}");
-        query.Add($"pageSize={pageSize}");
-        return GetAsync<PanelAuditPageDto>("api/v1/admin/audit?" + string.Join("&", query), ct);
     }
 
     public Task<PasswordPolicyDto?> GetPasswordPolicyAsync(CancellationToken ct = default) =>
@@ -1565,64 +1549,6 @@ public sealed class OrbitaApiClient(
             : (false, await ReadApiErrorAsync(response, ct));
     }
 
-    public async Task<(LeadFlowImportPreviewDto? Preview, string? Error)> PreviewLeadFlowImportAsync(
-        Stream databaseStream,
-        long fileLength,
-        string fileName,
-        Guid officeId,
-        string? encryptionKey,
-        CancellationToken ct = default)
-    {
-        using var content = new MultipartFormDataContent();
-        var fileContent = new StreamContent(databaseStream);
-        fileContent.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
-        fileContent.Headers.ContentLength = fileLength;
-        content.Add(fileContent, "databaseFile", fileName);
-        content.Add(new StringContent(officeId.ToString()), "officeId");
-        if (!string.IsNullOrWhiteSpace(encryptionKey))
-        {
-            content.Add(new StringContent(encryptionKey.Trim()), "encryptionKey");
-        }
-
-        using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/admin/leadflow-import/preview");
-        request.Content = content;
-        using var response = await SendAuthenticatedAsync(request, ct);
-        if (response is null)
-        {
-            return (null, InvalidApiSessionError);
-        }
-
-        if (!response.IsSuccessStatusCode)
-        {
-            return (null, await ReadApiErrorAsync(response, ct));
-        }
-
-        var preview = await response.Content.ReadFromJsonAsync<LeadFlowImportPreviewDto>(ct);
-        return preview is null ? (null, "Не удалось прочитать ответ API.") : (preview, null);
-    }
-
-    public async Task<(LeadFlowImportExecuteResultDto? Result, string? Error)> ExecuteLeadFlowImportAsync(
-        Guid sessionId,
-        IReadOnlyList<Guid>? selectedIds,
-        CancellationToken ct = default)
-    {
-        using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/admin/leadflow-import/execute");
-        request.Content = JsonContent.Create(new LeadFlowImportExecuteRequest(sessionId, selectedIds));
-        using var response = await SendAuthenticatedAsync(request, ct);
-        if (response is null)
-        {
-            return (null, InvalidApiSessionError);
-        }
-
-        if (!response.IsSuccessStatusCode)
-        {
-            return (null, await ReadApiErrorAsync(response, ct));
-        }
-
-        var result = await response.Content.ReadFromJsonAsync<LeadFlowImportExecuteResultDto>(ct);
-        return result is null ? (null, "Не удалось прочитать ответ API.") : (result, null);
-    }
-
     public async Task<(bool Success, string? Error)> DeleteWorkerReleaseAsync(
         string version,
         CancellationToken ct = default)
@@ -1679,7 +1605,12 @@ public sealed class OrbitaApiClient(
     {
         var fileName = response.Content.Headers.ContentDisposition?.FileName?.Trim('"')
             ?? defaultFileName;
-        var tempPath = Path.Combine(Path.GetTempPath(), $"orbita-worker-dl-{Guid.NewGuid():N}.msi");
+        var extension = Path.GetExtension(defaultFileName);
+        if (string.IsNullOrWhiteSpace(extension) || extension.Length > 16)
+        {
+            extension = ".download";
+        }
+        var tempPath = Path.Combine(Path.GetTempPath(), $"orbita-download-{Guid.NewGuid():N}{extension}");
 
         try
         {
@@ -1943,6 +1874,65 @@ public sealed class OrbitaApiClient(
             ? Task.FromResult(DesignPreviewData.GetCrmTask(taskId))
             : GetAsync<CrmTaskDetailDto>($"api/v1/crm/tasks/{taskId:D}", ct);
 
+    public async Task<(CrmTaskAttachmentDto? Attachment, string? Error)> UploadCrmTaskAttachmentAsync(
+        Guid taskId,
+        Stream content,
+        long contentLength,
+        string fileName,
+        string? contentType,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return DesignPreviewData.AddCrmTaskAttachment(taskId, content, contentLength, fileName, contentType);
+        }
+
+        using var form = new MultipartFormDataContent();
+        using var file = new StreamContent(content);
+        file.Headers.ContentType = MediaTypeHeaderValue.TryParse(contentType, out var mediaType)
+            ? mediaType
+            : new MediaTypeHeaderValue("application/octet-stream");
+        file.Headers.ContentLength = contentLength;
+        form.Add(file, "file", fileName);
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"api/v1/crm/tasks/{taskId:D}/attachments")
+        {
+            Content = form
+        };
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null) return (null, InvalidApiSessionError);
+        if (!response.IsSuccessStatusCode) return (null, await ReadApiErrorAsync(response, ct));
+        var attachment = await response.Content.ReadFromJsonAsync<CrmTaskAttachmentDto>(ApiJsonOptions, ct);
+        return attachment is null ? (null, "Не удалось прочитать ответ API.") : (attachment, null);
+    }
+
+    public async Task<(Stream? Stream, string? FileName, string? ContentType, string? Error)> OpenCrmTaskAttachmentAsync(
+        Guid taskId,
+        Guid attachmentId,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            var attachment = DesignPreviewData.OpenCrmTaskAttachment(taskId, attachmentId);
+            return (attachment.Stream, attachment.FileName, attachment.ContentType, attachment.Stream is null ? "Вложение не найдено." : null);
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"api/v1/crm/tasks/{taskId:D}/attachments/{attachmentId:D}");
+        using var response = await SendAuthenticatedAsync(request, ct, HttpCompletionOption.ResponseHeadersRead);
+        if (response is null)
+        {
+            return (null, null, null, InvalidApiSessionError);
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            return (null, null, null, await ReadApiErrorAsync(response, ct));
+        }
+
+        var contentType = response.Content.Headers.ContentType?.MediaType ?? "application/octet-stream";
+        var (stream, fileName, error) = await MaterializeDownloadResponseAsync(response, "Вложение", ct);
+        return (stream, fileName, contentType, error);
+    }
+
     public Task<(bool Success, string? Error)> StartCrmShiftAsync(CancellationToken ct = default) =>
         _preview.Enabled
             ? Task.FromResult(DesignPreviewData.StartCrmShift())
@@ -2073,6 +2063,48 @@ public sealed class OrbitaApiClient(
         }
 
         using var request = new HttpRequestMessage(HttpMethod.Post, $"api/v1/crm/tasks/{taskId:D}/complete");
+        using var response = await SendAuthenticatedAsync(request, ct);
+        return response is null ? (false, InvalidApiSessionError) : response.IsSuccessStatusCode ? (true, null) : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(bool Success, string? Error)> UpdateCrmTaskAsync(
+        Guid taskId,
+        CrmTaskUpdateRequest update,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return DesignPreviewData.UpdateCrmTask(taskId, update);
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Put, $"api/v1/crm/tasks/{taskId:D}")
+        {
+            Content = JsonContent.Create(update)
+        };
+        using var response = await SendAuthenticatedAsync(request, ct);
+        return response is null ? (false, InvalidApiSessionError) : response.IsSuccessStatusCode ? (true, null) : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(bool Success, string? Error)> CancelCrmTaskAsync(Guid taskId, CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return DesignPreviewData.CancelCrmTask(taskId);
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"api/v1/crm/tasks/{taskId:D}/cancel");
+        using var response = await SendAuthenticatedAsync(request, ct);
+        return response is null ? (false, InvalidApiSessionError) : response.IsSuccessStatusCode ? (true, null) : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(bool Success, string? Error)> ReopenCrmTaskAsync(Guid taskId, CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return DesignPreviewData.ReopenCrmTask(taskId);
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"api/v1/crm/tasks/{taskId:D}/reopen");
         using var response = await SendAuthenticatedAsync(request, ct);
         return response is null ? (false, InvalidApiSessionError) : response.IsSuccessStatusCode ? (true, null) : (false, await ReadApiErrorAsync(response, ct));
     }

@@ -11,7 +11,6 @@ public interface ISettingsService
         string? level,
         string? service,
         DateTime? date,
-        string? action,
         string? userId = null,
         Guid? officeId = null,
         Guid? instanceId = null,
@@ -53,9 +52,15 @@ public interface ISettingsService
 
     Task<(bool Success, string? Error)> CreateUserAsync(
         string email,
+        string fullName,
         string password,
         string role,
         Guid? officeId = null,
+        CancellationToken ct = default);
+
+    Task<(bool Success, string? Error)> UpdateUserFullNameAsync(
+        string userId,
+        string fullName,
         CancellationToken ct = default);
 
     Task<(bool Success, string? Error)> UpdateUserOfficeAsync(
