@@ -325,6 +325,11 @@
     vertical-align: middle;
 }
 
+.data-table--responses tbody td.responses-status,
+.data-table--responses tbody td.responses-bitrix {
+    overflow: hidden;
+}
+
 .data-table--responses tbody tr.responses-row {
     cursor: pointer;
     transition: background 0.2s ease;
@@ -533,13 +538,19 @@
 .response-status-badge {
     display: inline-flex;
     align-items: center;
-    height: 24px;
+    max-width: 100%;
+    min-width: 0;
+    min-height: 24px;
     padding: 4px 10px;
     border-radius: 999px;
     font-size: 12px;
     font-weight: 600;
-    line-height: 1;
-    white-space: nowrap;
+    line-height: 1.3;
+}
+
+.response-status-badge__label {
+    min-width: 0;
+    overflow-wrap: anywhere;
 }
 
 .response-status-badge--unique {
@@ -576,12 +587,13 @@
     display: flex;
     flex-wrap: wrap;
     gap: 4px;
-    max-width: 220px;
+    max-width: 100%;
 }
 
 .responses-bitrix-chip {
     display: inline-flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 4px;
     padding: 2px 6px;
     border-radius: 6px;
@@ -594,15 +606,12 @@
 
 .responses-bitrix-chip-label {
     font-weight: 600;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    max-width: 120px;
+    overflow-wrap: anywhere;
 }
 
 .responses-bitrix-chip-outcome {
     opacity: 0.85;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
 }
 
 .responses-bitrix-chip--sent {

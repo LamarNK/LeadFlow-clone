@@ -256,8 +256,10 @@
                                 <span class="responses-account-sub" title="Субпрофиль Avito">@row.AvitoSubProfileName</span>
                             }
                         </td>
-                        <td data-label="Статус">
-                            <span class="response-status-badge response-status-badge--@row.StatusTone">@row.StatusLabel</span>
+                        <td class="responses-status" data-label="Статус">
+                            <span class="response-status-badge response-status-badge--@row.StatusTone" title="@row.StatusLabel">
+                                <span class="response-status-badge__label">@row.StatusLabel</span>
+                            </span>
                         </td>
                         <td class="responses-bitrix" data-label="Битрикс">
                             @if (row.BitrixDeliveries.Count > 0)

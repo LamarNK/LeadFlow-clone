@@ -1348,7 +1348,7 @@
                 '<td class="responses-gender" data-label="Пол">' + shared.escapeHtml(genderDisplay) + '</td>' +
                 '<td class="responses-ad" data-label="Объявление">' + adHtml + '</td>' +
                 '<td class="cell-link responses-account" data-label="Аккаунт">' + shared.renderResponseAccountCell(readRowValue(row, 'accountName'), readRowValue(row, 'avitoSubProfileName'), accountUrl) + '</td>' +
-                '<td data-label="Статус"><span class="response-status-badge response-status-badge--' + shared.escapeHtml(statusTone) + '">' + shared.escapeHtml(statusLabel) + '</span></td>' +
+                '<td class="responses-status" data-label="Статус"><span class="response-status-badge response-status-badge--' + shared.escapeHtml(statusTone) + '" title="' + shared.escapeAttr(statusLabel) + '"><span class="response-status-badge__label">' + shared.escapeHtml(statusLabel) + '</span></span></td>' +
                 '<td class="responses-bitrix" data-label="Битрикс">' + renderBitrixCell(row) + '</td>' +
                 '<td class="data-table-menu" data-label="">' + renderResponseMenu(row, accountUrl, workerUrl) + '</td></tr>';
         }).join('');
