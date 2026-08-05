@@ -40,6 +40,7 @@ public static class AdminEndpoints
                 request.Password,
                 request.Role,
                 request.OfficeId,
+                request.FullName,
                 GetActor(principal, http),
                 ct);
             if (error is not null)
@@ -50,6 +51,22 @@ public static class AdminEndpoints
             }
 
             return Results.Ok(user);
+        });
+
+        admin.MapPut("/users/{id}/full-name", async (
+            string id,
+            UpdatePanelUserFullNameRequest request,
+            PanelUserService panelUsers,
+            ClaimsPrincipal principal,
+            HttpContext http,
+            CancellationToken ct) =>
+        {
+            var (user, error) = await panelUsers.SetFullNameAsync(
+                id,
+                request.FullName,
+                GetActor(principal, http),
+                ct);
+            return error is null ? Results.Ok(user) : Results.BadRequest(new { error });
         });
 
         admin.MapDelete("/users/{id}", async (

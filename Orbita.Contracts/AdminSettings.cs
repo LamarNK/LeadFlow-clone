@@ -7,11 +7,19 @@ public sealed record PanelUserDto(
     string Role,
     bool IsLocked,
     Guid? OfficeId = null,
-    string? OfficeName = null);
+    string? OfficeName = null,
+    string? FullName = null);
 
-public sealed record CreatePanelUserRequest(string Email, string Password, string Role, Guid? OfficeId = null);
+public sealed record CreatePanelUserRequest(
+    string Email,
+    string Password,
+    string Role,
+    Guid? OfficeId = null,
+    string? FullName = null);
 
 public sealed record UpdatePanelUserOfficeRequest(Guid? OfficeId);
+
+public sealed record UpdatePanelUserFullNameRequest(string FullName);
 
 public sealed record ResetPanelUserPasswordRequest(string Password);
 
@@ -92,13 +100,15 @@ public sealed record PanelProfileDto(
     string Email,
     string Role,
     Guid? OfficeId = null,
-    string? OfficeName = null);
+    string? OfficeName = null,
+    string? FullName = null);
 
 public static class PanelAuditActions
 {
     public const string UserCreated = "user.created";
     public const string UserDeleted = "user.deleted";
     public const string UserRoleUpdated = "user.role_updated";
+    public const string UserFullNameUpdated = "user.full_name_updated";
     public const string UserPasswordReset = "user.password_reset";
     public const string UserPasswordChanged = "user.password_changed";
     public const string UserLocked = "user.locked";

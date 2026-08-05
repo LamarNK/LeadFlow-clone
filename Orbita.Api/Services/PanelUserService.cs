@@ -33,8 +33,8 @@ public sealed class PanelUserService(
         var roles = await users.GetRolesAsync(user);
         var role = roles.FirstOrDefault(r => PanelRoles.All.Contains(r, StringComparer.OrdinalIgnoreCase))
                    ?? PanelRoles.Operator;
-        var (officeId, officeName) = await GetOfficeInfoAsync(userId, role, ct);
-        return new PanelProfileDto(user.Email ?? user.UserName ?? string.Empty, role, officeId, officeName);
+        var (officeId, officeName, fullName) = await GetProfileInfoAsync(userId, role, ct);
+        return new PanelProfileDto(user.Email ?? user.UserName ?? string.Empty, role, officeId, officeName, fullName);
     }
 
     public async Task<(PanelUserDto? User, string? Error)> CreateAsync(
@@ -42,12 +42,19 @@ public sealed class PanelUserService(
         string password,
         string? role,
         Guid? officeId,
+        string? fullName,
         AuditActor actor,
         CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(password))
         {
             return (null, "Email и пароль обязательны.");
+        }
+
+        var normalizedFullName = NormalizeFullName(fullName);
+        if (normalizedFullName is null)
+        {
+            return (null, "ФИО обязательно и не должно превышать 256 символов.");
         }
 
         var normalizedEmail = email.Trim();
@@ -86,6 +93,7 @@ public sealed class PanelUserService(
         db.PanelUserProfiles.Add(new PanelUserProfileEntity
         {
             UserId = user.Id,
+            FullName = normalizedFullName,
             OfficeId = normalizedRole == PanelRoles.Admin ? null : officeId
         });
         await db.SaveChangesAsync(ct);
@@ -96,13 +104,56 @@ public sealed class PanelUserService(
             PanelAuditActions.UserCreated,
             "user",
             user.Id,
-            $"role={normalizedRole};office={officeId}",
+            $"role={normalizedRole};office={officeId};fullName={normalizedFullName}",
             actor.IpAddress,
             ct);
 
         await GlobalLogger.Instance.LogAsync(
             $"Panel user created ({user.Email}, role={normalizedRole}).",
             DeskLinkAuditLogLevel.Info);
+
+        return (await MapAsync(user, ct), null);
+    }
+
+    public async Task<(PanelUserDto? User, string? Error)> SetFullNameAsync(
+        string id,
+        string? fullName,
+        AuditActor actor,
+        CancellationToken ct = default)
+    {
+        var normalizedFullName = NormalizeFullName(fullName);
+        if (normalizedFullName is null)
+        {
+            return (null, "ФИО обязательно и не должно превышать 256 символов.");
+        }
+
+        var user = await users.FindByIdAsync(id);
+        if (user is null)
+        {
+            return (null, "Пользователь не найден.");
+        }
+
+        var profile = await db.PanelUserProfiles.FirstOrDefaultAsync(x => x.UserId == id, ct);
+        if (profile is null)
+        {
+            profile = new PanelUserProfileEntity { UserId = id, FullName = normalizedFullName };
+            db.PanelUserProfiles.Add(profile);
+        }
+        else
+        {
+            profile.FullName = normalizedFullName;
+        }
+
+        await db.SaveChangesAsync(ct);
+        await audit.LogAsync(
+            actor.UserId,
+            actor.Email,
+            PanelAuditActions.UserFullNameUpdated,
+            "user",
+            id,
+            normalizedFullName,
+            actor.IpAddress,
+            ct);
 
         return (await MapAsync(user, ct), null);
     }
@@ -567,7 +618,7 @@ public sealed class PanelUserService(
         var roles = await users.GetRolesAsync(user);
         var role = roles.FirstOrDefault(r => PanelRoles.All.Contains(r, StringComparer.OrdinalIgnoreCase))
                    ?? PanelRoles.Operator;
-        var (officeId, officeName) = await GetOfficeInfoAsync(user.Id, role, ct);
+        var (officeId, officeName, fullName) = await GetProfileInfoAsync(user.Id, role, ct);
         return new PanelUserDto(
             user.Id,
             user.Email ?? user.UserName ?? string.Empty,
@@ -575,26 +626,32 @@ public sealed class PanelUserService(
             role,
             IsLocked(user),
             officeId,
-            officeName);
+            officeName,
+            fullName);
     }
 
-    private async Task<(Guid? OfficeId, string? OfficeName)> GetOfficeInfoAsync(
+    private async Task<(Guid? OfficeId, string? OfficeName, string? FullName)> GetProfileInfoAsync(
         string userId,
         string role,
         CancellationToken ct)
     {
-        if (role == PanelRoles.Admin)
-        {
-            return (null, null);
-        }
-
-        return await db.PanelUserProfiles
+        var profile = await db.PanelUserProfiles
             .AsNoTracking()
             .Where(x => x.UserId == userId)
-            .Select(x => new ValueTuple<Guid?, string?>(
+            .Select(x => new ValueTuple<Guid?, string?, string?>(
                 x.OfficeId,
-                x.Office != null ? x.Office.Name : null))
+                x.Office != null ? x.Office.Name : null,
+                x.FullName))
             .FirstOrDefaultAsync(ct);
+        return role == PanelRoles.Admin
+            ? (null, null, profile.Item3)
+            : profile;
+    }
+
+    private static string? NormalizeFullName(string? fullName)
+    {
+        var normalized = fullName?.Trim();
+        return string.IsNullOrWhiteSpace(normalized) || normalized.Length > 256 ? null : normalized;
     }
 
     private static bool IsLocked(IdentityUser user) =>
