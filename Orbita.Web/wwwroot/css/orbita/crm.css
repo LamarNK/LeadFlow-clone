@@ -247,9 +247,12 @@
 .crm-board-jumps { display: flex; align-items: center; gap: 0; flex: 1 1 auto; min-width: 0; overflow-x: auto; padding: 3px; border-radius: 10px; background: #f2f4f7; scrollbar-width: thin; scrollbar-color: #d0d5dd transparent; }
 .crm-board-jumps::-webkit-scrollbar { height: 4px; }
 .crm-board-jumps::-webkit-scrollbar-thumb { background: #d0d5dd; border-radius: 99px; }
-.crm-board-jump { display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; max-width: 160px; min-height: 30px; padding: 0 10px; border: 0; border-radius: 7px; background: transparent; color: #475467; font: inherit; font-size: 11px; font-weight: 650; cursor: pointer; transition: background .16s ease, color .16s ease; }
+.crm-board-jump { position: relative; display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; max-width: 160px; min-height: 30px; padding: 0 10px; border: 0; border-radius: 7px; background: transparent; color: #475467; font: inherit; font-size: 11px; font-weight: 650; cursor: pointer; overflow: hidden; transition: background .16s ease, color .16s ease; }
 .crm-board-jump:hover { background: #eaecf0; color: #3538cd; }
-.crm-board-jump.is-active { border-radius: 0; background: #dfe7ff; color: #3538cd; }
+.crm-board-jump.is-active { border-radius: 0; background: transparent; color: #3538cd; }
+.crm-board-jump.is-active::before { content: ""; position: absolute; inset: 0; z-index: 0; background: #dfe7ff; transform-origin: left center; animation: crm-board-jump-fill .28s cubic-bezier(.2, .8, .2, 1) both; }
+.crm-board-jump > span { position: relative; z-index: 1; }
+@keyframes crm-board-jump-fill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 .crm-board-jump:first-child { border-radius: 7px 0 0 7px; }
 .crm-board-jump:last-child { border-radius: 0 7px 7px 0; }
 .crm-board-jump__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
