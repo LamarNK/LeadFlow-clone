@@ -104,6 +104,17 @@ public sealed class CandidateIngestionService(
             candidate.Gender,
             candidate.RawText);
         var storedGender = CandidateGenderResolver.ToStoredGender(genderResolution);
+        byte[]? avatarImage = null;
+        string? avatarContentType = null;
+        if (CandidateResponseAvatar.TryDecode(
+                candidate.AvatarContentType,
+                candidate.AvatarImageBase64,
+                out var decodedAvatar,
+                out var detectedAvatarContentType))
+        {
+            avatarImage = decodedAvatar;
+            avatarContentType = detectedAvatarContentType;
+        }
 
         var workerFilters = ResponseCollectionFilters.NormalizeLegacy(
             worker.ResponseFilterEnabled,
@@ -202,6 +213,8 @@ public sealed class CandidateIngestionService(
             SourceUrl = candidate.VacancyUrl,
             VacancyUrl = candidate.VacancyUrl,
             MessengerUrl = candidate.MessengerUrl,
+            AvatarContentType = avatarContentType,
+            AvatarImage = avatarImage,
             AvitoSubProfileId = candidate.AvitoSubProfileId,
             AvitoSubProfileName = candidate.AvitoSubProfileName,
             RawText = candidate.RawText,
@@ -290,6 +303,18 @@ public sealed class CandidateIngestionService(
             && !string.IsNullOrWhiteSpace(candidate.MessengerUrl))
         {
             tracked.MessengerUrl = candidate.MessengerUrl;
+            changed = true;
+        }
+
+        if (tracked.AvatarImage is null
+            && CandidateResponseAvatar.TryDecode(
+                candidate.AvatarContentType,
+                candidate.AvatarImageBase64,
+                out var decodedAvatar,
+                out var detectedAvatarContentType))
+        {
+            tracked.AvatarImage = decodedAvatar;
+            tracked.AvatarContentType = detectedAvatarContentType;
             changed = true;
         }
 

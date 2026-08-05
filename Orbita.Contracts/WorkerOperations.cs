@@ -80,7 +80,9 @@ public sealed record WorkerConfigDto(
     /// Через сколько часов без смены номера отправлять метрику «не менялся».
     /// null — default 24; 0 — не отправлять метрику стабильности (смену номера всё равно трекаем).
     /// </summary>
-    int? PhoneUnchangedHours = null)
+    int? PhoneUnchangedHours = null,
+    /// <summary>JSON-набор профилей и субпрофилей, отклики из которых нужно подсвечивать.</summary>
+    string? ResponseHighlightTargetsJson = null)
 {
     public ResponseCollectionFilters ResponseFilters =>
         ResponseCollectionFilters.NormalizeLegacy(
@@ -128,7 +130,11 @@ public sealed record WorkerCandidateDto(
     string? PreviousPhoneRaw = null,
     string? PreviousPhoneNormalized = null,
     int? PhoneUnchangedHours = null,
-    DateTime? PhoneChangedAtUtc = null);
+    DateTime? PhoneChangedAtUtc = null,
+    /// <summary>Тип скачанного аватара кандидата. URL Avito по сети не передаётся.</summary>
+    string? AvatarContentType = null,
+    /// <summary>Скачанный аватар кандидата в Base64; ограничен <see cref="CandidateResponseAvatar.MaxImageBytes"/>.</summary>
+    string? AvatarImageBase64 = null);
 
 public sealed record WorkerCandidateBatchRequest(
     IReadOnlyList<WorkerCandidateDto> Candidates);
@@ -199,7 +205,9 @@ public sealed record UpdateWorkerSettingsRequest(
     /// <summary>Авто-отправка новых откликов в CRM офиса назначения воркера.</summary>
     bool? AutoDeliverToCrm = null,
     /// <summary>Авто-отправка новых откликов в Bitrix (схема офиса). Legacy-канал.</summary>
-    bool? AutoDeliverToBitrix = null);
+    bool? AutoDeliverToBitrix = null,
+    /// <summary>JSON-набор профилей и субпрофилей, отклики из которых нужно подсвечивать.</summary>
+    string? ResponseHighlightTargetsJson = null);
 
 public sealed record UpdateWorkerAccountRequest(bool IsEnabledInPanel);
 

@@ -64,6 +64,7 @@ public sealed class ResponseRowViewModel
     public string Vacancy { get; init; } = string.Empty;
     public string VacancyUrl { get; init; } = string.Empty;
     public string MessengerUrl { get; init; } = string.Empty;
+    public string? AvatarUrl { get; init; }
     public string SourceResponseId { get; init; } = string.Empty;
     public string City { get; init; } = string.Empty;
     public Guid AccountId { get; init; }
@@ -139,6 +140,7 @@ public sealed class ResponseDetailViewModel
     public string Vacancy { get; init; } = string.Empty;
     public string VacancyUrl { get; init; } = string.Empty;
     public string MessengerUrl { get; init; } = string.Empty;
+    public string? AvatarUrl { get; init; }
     public Guid AccountId { get; init; }
     public string AccountName { get; init; } = string.Empty;
     public string? AvitoSubProfileId { get; init; }

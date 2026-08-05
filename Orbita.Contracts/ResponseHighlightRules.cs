@@ -1,7 +1,26 @@
+using System.Text;
+using System.Text.Json;
+
 namespace Orbita.Contracts;
+
+public sealed record ResponseHighlightTarget(Guid AccountId, string? SubProfileId = null)
+{
+    public string ToFormValue()
+    {
+        if (string.IsNullOrWhiteSpace(SubProfileId))
+        {
+            return AccountId.ToString("N");
+        }
+
+        var encodedSubProfileId = Convert.ToBase64String(Encoding.UTF8.GetBytes(SubProfileId.Trim()));
+        return $"{AccountId:N}:{encodedSubProfileId}";
+    }
+}
 
 public static class ResponseHighlightRules
 {
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
     private static readonly string[] AllowedBuckets =
     [
         "18-24",
@@ -12,6 +31,51 @@ public static class ResponseHighlightRules
     ];
 
     public static IReadOnlyList<string> HighlightAgeBucketOptions => AllowedBuckets;
+
+    public static IReadOnlyList<ResponseHighlightTarget> ParseTargets(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return [];
+        }
+
+        try
+        {
+            return (JsonSerializer.Deserialize<List<ResponseHighlightTarget>>(json, JsonOptions) ?? [])
+                .Where(x => x.AccountId != Guid.Empty)
+                .Select(x => new ResponseHighlightTarget(
+                    x.AccountId,
+                    string.IsNullOrWhiteSpace(x.SubProfileId) ? null : x.SubProfileId.Trim()))
+                .Where(x => x.SubProfileId is null or { Length: <= 512 })
+                .Distinct()
+                .Take(200)
+                .ToList();
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
+
+    public static string? NormalizeTargetsJson(string? json) => SerializeTargets(ParseTargets(json));
+
+    public static string? NormalizeTargetsFormValues(IEnumerable<string>? values)
+    {
+        if (values is null)
+        {
+            return null;
+        }
+
+        var targets = values
+            .Select(TryParseFormValue)
+            .Where(x => x is not null)
+            .Select(x => x!)
+            .Distinct()
+            .Take(200)
+            .ToList();
+
+        return SerializeTargets(targets);
+    }
 
     public static string NormalizeBucketsCsv(string? csv)
     {
@@ -47,6 +111,82 @@ public static class ResponseHighlightRules
         }
 
         return false;
+    }
+
+    public static bool IsHighlighted(
+        int? age,
+        bool enabled,
+        string? ageBucketsCsv,
+        Guid accountId,
+        string? subProfileId,
+        string? targetsJson,
+        out string? label)
+    {
+        if (IsHighlighted(age, enabled, ageBucketsCsv, out label))
+        {
+            return true;
+        }
+
+        if (!enabled)
+        {
+            return false;
+        }
+
+        foreach (var target in ParseTargets(targetsJson))
+        {
+            if (target.AccountId != accountId)
+            {
+                continue;
+            }
+
+            if (target.SubProfileId is null)
+            {
+                label = "Профиль";
+                return true;
+            }
+
+            if (string.Equals(target.SubProfileId, subProfileId, StringComparison.Ordinal))
+            {
+                label = "Субпрофиль";
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static string? SerializeTargets(IReadOnlyList<ResponseHighlightTarget> targets) =>
+        targets.Count == 0 ? null : JsonSerializer.Serialize(targets, JsonOptions);
+
+    private static ResponseHighlightTarget? TryParseFormValue(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var parts = value.Split(':', 2, StringSplitOptions.TrimEntries);
+        if (!Guid.TryParseExact(parts[0], "N", out var accountId))
+        {
+            return null;
+        }
+
+        if (parts.Length == 1)
+        {
+            return new ResponseHighlightTarget(accountId);
+        }
+
+        try
+        {
+            var subProfileId = Encoding.UTF8.GetString(Convert.FromBase64String(parts[1]));
+            return string.IsNullOrWhiteSpace(subProfileId) || subProfileId.Length > 512
+                ? null
+                : new ResponseHighlightTarget(accountId, subProfileId.Trim());
+        }
+        catch (FormatException)
+        {
+            return null;
+        }
     }
 
     private static bool IsAllowedBucket(string bucket) => AllowedBuckets.Contains(bucket, StringComparer.Ordinal);

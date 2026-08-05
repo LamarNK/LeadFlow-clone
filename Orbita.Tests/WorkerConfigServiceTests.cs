@@ -266,6 +266,9 @@ public sealed class WorkerConfigServiceTests
         await using var db = CreateDb();
         SeedWorkerWithAccount(db);
 
+        var highlightTargets = ResponseHighlightRules.NormalizeTargetsFormValues(
+            [new ResponseHighlightTarget(AccountId, "sp-2").ToFormValue()]);
+
         var sut = CreateService(db);
         var (config, error) = await sut.UpdateSettingsAsync(
             WorkerId,
@@ -274,7 +277,8 @@ public sealed class WorkerConfigServiceTests
                 ResponseFilterEnabled: false,
                 ResponseFilterExcludeMale: true,
                 ResponseHighlightEnabled: true,
-                ResponseHighlightAgeBuckets: "63+,bad,45+"),
+                ResponseHighlightAgeBuckets: "63+,bad,45+",
+                ResponseHighlightTargetsJson: highlightTargets),
             OfficeScope.ForOffice(OfficeId));
 
         Assert.Null(error);
@@ -283,12 +287,37 @@ public sealed class WorkerConfigServiceTests
         Assert.True(config.ResponseFilterExcludeMale);
         Assert.True(config.ResponseHighlightEnabled);
         Assert.Equal("63+,45+", config.ResponseHighlightAgeBuckets);
+        Assert.Equal([new ResponseHighlightTarget(AccountId, "sp-2")], ResponseHighlightRules.ParseTargets(config.ResponseHighlightTargetsJson));
 
         var worker = await db.Workers.SingleAsync();
         Assert.True(worker.ResponseFilterEnabled);
         Assert.True(worker.ResponseFilterExcludeMale);
         Assert.True(worker.ResponseHighlightEnabled);
         Assert.Equal("63+,45+", worker.ResponseHighlightAgeBuckets);
+        Assert.Equal([new ResponseHighlightTarget(AccountId, "sp-2")], ResponseHighlightRules.ParseTargets(worker.ResponseHighlightTargetsJson));
+    }
+
+    [Fact]
+    public async Task UpdateSettingsAsync_EnablesHighlightForProfileTarget()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+
+        var highlightTargets = ResponseHighlightRules.NormalizeTargetsFormValues(
+            [new ResponseHighlightTarget(AccountId).ToFormValue()]);
+        var (config, error) = await CreateService(db).UpdateSettingsAsync(
+            WorkerId,
+            new UpdateWorkerSettingsRequest(
+                MaxConcurrentAccounts: 2,
+                ResponseHighlightEnabled: true,
+                ResponseHighlightTargetsJson: highlightTargets),
+            OfficeScope.ForOffice(OfficeId));
+
+        Assert.Null(error);
+        Assert.NotNull(config);
+        Assert.True(config!.ResponseHighlightEnabled);
+        Assert.Null(config.ResponseHighlightAgeBuckets);
+        Assert.Equal([new ResponseHighlightTarget(AccountId)], ResponseHighlightRules.ParseTargets(config.ResponseHighlightTargetsJson));
     }
 
     [Fact]

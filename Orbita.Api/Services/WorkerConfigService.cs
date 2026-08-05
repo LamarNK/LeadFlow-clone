@@ -114,7 +114,8 @@ public sealed class WorkerConfigService(
             worker.AutoScheduleToLocalTime,
             worker.MessengerAutoReplyEnabled,
             worker.MessengerAutoReplyMessage,
-            worker.PhoneUnchangedHours);
+            worker.PhoneUnchangedHours,
+            worker.ResponseHighlightTargetsJson);
     }
 
     public async Task<bool> SyncAccountsAsync(
@@ -227,7 +228,10 @@ public sealed class WorkerConfigService(
             request.ResponseFilterMaxAgeFemale,
             maxResponseAgeDays);
         var normalizedHighlightBuckets = ResponseHighlightRules.NormalizeBucketsCsv(request.ResponseHighlightAgeBuckets);
-        var highlightEnabled = request.ResponseHighlightEnabled && !string.IsNullOrWhiteSpace(normalizedHighlightBuckets);
+        var normalizedHighlightTargets = ResponseHighlightRules.NormalizeTargetsJson(request.ResponseHighlightTargetsJson);
+        var highlightEnabled = request.ResponseHighlightEnabled
+            && (!string.IsNullOrWhiteSpace(normalizedHighlightBuckets)
+                || !string.IsNullOrWhiteSpace(normalizedHighlightTargets));
         var normalizedScheduleDays = WorkerScheduleRules.NormalizeDaysCsv(request.AutoScheduleDays);
         var normalizedScheduleFrom = WorkerScheduleRules.NormalizeTime(request.AutoScheduleFromLocalTime);
         var normalizedScheduleTo = WorkerScheduleRules.NormalizeTime(request.AutoScheduleToLocalTime);
@@ -248,6 +252,7 @@ public sealed class WorkerConfigService(
         worker.ResponseFilterMaxAgeDays = filters.EffectiveMaxResponseAgeDays;
         worker.ResponseHighlightEnabled = highlightEnabled;
         worker.ResponseHighlightAgeBuckets = string.IsNullOrWhiteSpace(normalizedHighlightBuckets) ? null : normalizedHighlightBuckets;
+        worker.ResponseHighlightTargetsJson = normalizedHighlightTargets;
         worker.AutoScheduleEnabled = autoScheduleEnabled;
         worker.AutoScheduleDays = string.IsNullOrWhiteSpace(normalizedScheduleDays) ? null : normalizedScheduleDays;
         worker.AutoScheduleFromLocalTime = normalizedScheduleFrom;

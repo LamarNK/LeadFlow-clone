@@ -100,7 +100,8 @@ public sealed record WorkerDetail(
     bool AutoDeliverToCrm = false,
     bool AutoDeliverToBitrix = true,
     Guid OfficeId = default,
-    string OfficeName = "");
+    string OfficeName = "",
+    string? ResponseHighlightTargetsJson = null);
 
 public sealed record WorkerEventListItem(
     Guid Id,

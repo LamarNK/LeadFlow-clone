@@ -12,12 +12,15 @@ namespace Orbita.Worker.Services;
 public sealed class OrbitaCandidateSink(
     OrbitaApiClient apiClient,
     OrbitaCandidateDuplicateRepository dedupRepository,
-    WorkerCandidateOutbox outbox) : INewCandidateSink, IAsyncDisposable
+    WorkerCandidateOutbox outbox,
+    AvitoAvatarDownloader avatarDownloader) : INewCandidateSink, IAsyncDisposable
 {
     private const int MaxBatchSize = 5;
+    // Avatar payloads are binary Base64 in the worker-to-panel request; keep retry/outbox records bounded.
+    private const int MaxFlushBatchSize = 10;
     private static readonly TimeSpan FlushWindow = TimeSpan.FromMilliseconds(1500);
 
-    private readonly ConcurrentQueue<WorkerCandidateDto> _queue = new();
+    private readonly ConcurrentQueue<CandidateResponse> _queue = new();
     private readonly object _flushGate = new();
     private DateTime _lastFlushUtc = DateTime.MinValue;
     private volatile bool _disposed;
@@ -31,8 +34,7 @@ public sealed class OrbitaCandidateSink(
             return CandidatePublishResult.Pending();
         }
 
-        var dto = ToDto(candidate);
-        _queue.Enqueue(dto);
+        _queue.Enqueue(candidate);
 
         if (ShouldFlushNow())
         {
@@ -69,7 +71,7 @@ public sealed class OrbitaCandidateSink(
             return;
         }
 
-        List<WorkerCandidateDto> batchDtos;
+        List<CandidateResponse> candidates;
         lock (_flushGate)
         {
             if (_queue.IsEmpty)
@@ -77,20 +79,21 @@ public sealed class OrbitaCandidateSink(
                 return;
             }
 
-            batchDtos = new List<WorkerCandidateDto>();
-            while (_queue.TryDequeue(out var item) && batchDtos.Count < 100)
+            candidates = new List<CandidateResponse>();
+            while (_queue.TryDequeue(out var item) && candidates.Count < MaxFlushBatchSize)
             {
-                batchDtos.Add(item);
+                candidates.Add(item);
             }
 
             _lastFlushUtc = DateTime.UtcNow;
         }
 
-        if (batchDtos.Count == 0)
+        if (candidates.Count == 0)
         {
             return;
         }
 
+        var batchDtos = await Task.WhenAll(candidates.Select(candidate => ToDtoAsync(candidate, ct))).ConfigureAwait(false);
         var batch = new WorkerCandidateBatchRequest(batchDtos);
         var result = await apiClient.SubmitCandidatesAsync(batch, ct).ConfigureAwait(false);
         if (result is null)
@@ -116,8 +119,10 @@ public sealed class OrbitaCandidateSink(
         }
     }
 
-    private static WorkerCandidateDto ToDto(CandidateResponse candidate) =>
-        new(
+    private async Task<WorkerCandidateDto> ToDtoAsync(CandidateResponse candidate, CancellationToken ct)
+    {
+        var avatar = await avatarDownloader.DownloadAsync(candidate.AvatarUrl, ct).ConfigureAwait(false);
+        return new WorkerCandidateDto(
             candidate.AccountId,
             candidate.AccountName,
             candidate.Source,
@@ -141,7 +146,10 @@ public sealed class OrbitaCandidateSink(
             candidate.PreviousPhoneRaw,
             candidate.PreviousPhoneNormalized,
             candidate.PhoneUnchangedHours,
-            candidate.PhoneChangedAtUtc);
+            candidate.PhoneChangedAtUtc,
+            avatar?.ContentType,
+            avatar is null ? null : Convert.ToBase64String(avatar.Bytes));
+    }
 
     private static string? NormalizePhone(string phoneRaw) =>
         string.IsNullOrWhiteSpace(phoneRaw) ? null : phoneRaw.Trim();

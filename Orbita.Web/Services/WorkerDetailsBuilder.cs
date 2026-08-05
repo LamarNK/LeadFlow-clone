@@ -84,6 +84,7 @@ internal static class WorkerDetailsBuilder
             ResponseFilterMaxAgeDays = worker.ResponseFilterMaxResponseAgeDays,
             ResponseHighlightEnabled = worker.ResponseHighlightEnabled,
             ResponseHighlightAgeBuckets = ResponseHighlightRules.NormalizeBucketsCsv(worker.ResponseHighlightAgeBuckets),
+            ResponseHighlightTargetsJson = ResponseHighlightRules.NormalizeTargetsJson(worker.ResponseHighlightTargetsJson),
             ResponseHighlightBucketOptions = ResponseHighlightRules.HighlightAgeBucketOptions,
             AutoScheduleEnabled = worker.AutoScheduleEnabled,
             AutoScheduleDays = WorkerScheduleRules.NormalizeDaysCsv(worker.AutoScheduleDays),

@@ -680,6 +680,7 @@ public sealed class OrbitaApiClient(
         int? phoneUnchangedHours = null,
         bool? autoDeliverToCrm = null,
         bool? autoDeliverToBitrix = null,
+        string? responseHighlightTargetsJson = null,
         CancellationToken ct = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Patch, $"api/v1/workers/{workerId}/settings");
@@ -704,7 +705,8 @@ public sealed class OrbitaApiClient(
             messengerAutoReplyMessage,
             phoneUnchangedHours,
             autoDeliverToCrm,
-            autoDeliverToBitrix));
+            autoDeliverToBitrix,
+            responseHighlightTargetsJson));
         using var response = await SendAuthenticatedAsync(request, ct);
         if (response is null)
         {
@@ -1003,6 +1005,25 @@ public sealed class OrbitaApiClient(
         _preview.Enabled
             ? Task.FromResult<ResponseDetailDto?>(null)
             : GetAsync<ResponseDetailDto>($"api/v1/panel/responses/{id}", ct);
+
+    public async Task<(Stream? Stream, string? ContentType)> GetResponseAvatarAsync(Guid id, CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return (null, null);
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"api/v1/panel/responses/{id}/avatar");
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null || !response.IsSuccessStatusCode)
+        {
+            return (null, null);
+        }
+
+        var contentType = response.Content.Headers.ContentType?.MediaType;
+        var buffer = await response.Content.ReadAsByteArrayAsync(ct);
+        return buffer.Length == 0 ? (null, contentType) : (new MemoryStream(buffer), contentType);
+    }
 
     public async Task<ResendBitrixResultDto?> ResendResponseToBitrixAsync(Guid id, CancellationToken ct = default)
     {
@@ -1903,6 +1924,25 @@ public sealed class OrbitaApiClient(
         _preview.Enabled
             ? Task.FromResult(DesignPreviewData.GetCrmCard(cardId))
             : GetAsync<CrmCandidateDetailDto>($"api/v1/crm/cards/{cardId:D}", ct);
+
+    public async Task<(Stream? Stream, string? ContentType)> GetCrmCardAvatarAsync(Guid cardId, CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return (null, null);
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"api/v1/crm/cards/{cardId:D}/avatar");
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null || !response.IsSuccessStatusCode)
+        {
+            return (null, null);
+        }
+
+        var contentType = response.Content.Headers.ContentType?.MediaType;
+        var buffer = await response.Content.ReadAsByteArrayAsync(ct);
+        return buffer.Length == 0 ? (null, contentType) : (new MemoryStream(buffer), contentType);
+    }
 
     public Task<IReadOnlyList<CrmTaskDto>?> GetCrmTasksAsync(Guid? officeId = null, CancellationToken ct = default) =>
         _preview.Enabled

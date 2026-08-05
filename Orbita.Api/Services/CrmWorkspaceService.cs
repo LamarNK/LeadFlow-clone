@@ -424,17 +424,9 @@ public sealed class CrmWorkspaceService(
         }
 
         var canEdit = isAdmin || card.ManagerUserId == userId;
-        if (!canEdit)
+        if (!await CanAccessCardAsync(card.OfficeId, card.ManagerUserId, userId, isAdmin, ct))
         {
-            // Managers may open cards of their own office (team / queue) in read-only mode.
-            var ownOfficeId = await db.PanelUserProfiles.AsNoTracking()
-                .Where(x => x.UserId == userId)
-                .Select(x => x.OfficeId)
-                .FirstOrDefaultAsync(ct);
-            if (ownOfficeId != card.OfficeId)
-            {
-                return null;
-            }
+            return null;
         }
 
         var officeStagesJson = await db.Offices.AsNoTracking()
@@ -481,6 +473,38 @@ public sealed class CrmWorkspaceService(
             canEdit,
             chat,
             phoneHistory);
+    }
+
+    public async Task<ResponseAvatarFile?> GetCardAvatarAsync(
+        Guid cardId,
+        string userId,
+        bool isAdmin,
+        CancellationToken ct = default)
+    {
+        // Read the image only after access is confirmed and only for the requested card.
+        var card = await db.CrmCandidateCards.AsNoTracking()
+            .Where(x => x.Id == cardId)
+            .Select(x => new { x.OfficeId, x.ManagerUserId, x.ResponseId })
+            .FirstOrDefaultAsync(ct);
+        if (card is null
+            || !await CanAccessCardAsync(card.OfficeId, card.ManagerUserId, userId, isAdmin, ct))
+        {
+            return null;
+        }
+
+        var image = await db.CandidateResponses.AsNoTracking()
+            .Where(x => x.Id == card.ResponseId)
+            .Select(x => x.AvatarImage)
+            .FirstOrDefaultAsync(ct);
+        if (image is not { Length: > 0 })
+        {
+            return null;
+        }
+
+        var contentType = CandidateResponseAvatar.DetectContentType(image);
+        return string.IsNullOrEmpty(contentType)
+            ? null
+            : new ResponseAvatarFile(image, contentType);
     }
 
     public async Task<IReadOnlyList<CrmTaskDto>> GetTasksAsync(Guid officeId, string userId, bool isAdmin, CancellationToken ct = default)
@@ -1321,6 +1345,26 @@ public sealed class CrmWorkspaceService(
             CrmBoardScopes.Closed => CrmBoardScopes.Closed,
             _ => CrmBoardScopes.Mine
         };
+
+    private async Task<bool> CanAccessCardAsync(
+        Guid cardOfficeId,
+        string? managerUserId,
+        string userId,
+        bool isAdmin,
+        CancellationToken ct)
+    {
+        if (isAdmin || managerUserId == userId)
+        {
+            return true;
+        }
+
+        // Managers may open cards of their own office (team / queue) in read-only mode.
+        var ownOfficeId = await db.PanelUserProfiles.AsNoTracking()
+            .Where(x => x.UserId == userId)
+            .Select(x => x.OfficeId)
+            .FirstOrDefaultAsync(ct);
+        return ownOfficeId == cardOfficeId;
+    }
 
     private static CrmCandidateCardDto ToCardDto(
         CrmCandidateCardEntity card,

@@ -10,6 +10,15 @@ namespace Orbita.Web.Controllers;
 [Authorize(Policy = PanelPermissions.Responses)]
 public sealed class ResponsesController(IResponsesService responses) : Controller
 {
+    [HttpGet("/Responses/{id:guid}/Avatar")]
+    public async Task<IActionResult> Avatar(Guid id, CancellationToken ct = default)
+    {
+        var result = await responses.GetAvatarAsync(id, ct);
+        return result.Stream is null
+            ? NotFound()
+            : File(result.Stream, result.ContentType ?? "image/jpeg");
+    }
+
     [HttpGet]
     public async Task<IActionResult> Snapshot(
         string? from,

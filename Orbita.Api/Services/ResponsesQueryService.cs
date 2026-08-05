@@ -218,6 +218,54 @@ public sealed class ResponsesQueryService(
         return MapDetail(entity, portalHost, subProfileName, bitrixDeliveries, phoneHistory);
     }
 
+    public async Task<ResponseAvatarFile?> GetAvatarAsync(
+        Guid id,
+        OfficeScope scope,
+        CancellationToken ct = default)
+    {
+        var entity = await db.CandidateResponses
+            .AsNoTracking()
+            .Where(x => x.Id == id)
+            .Select(x => new
+            {
+                x.Id,
+                x.OfficeId,
+                WorkerOfficeId = x.Worker == null ? (Guid?)null : x.Worker.OfficeId,
+                x.AvatarImage
+            })
+            .FirstOrDefaultAsync(ct);
+        if (entity?.AvatarImage is not { Length: > 0 })
+        {
+            return null;
+        }
+
+        var sharedWithScope = false;
+        if (!scope.IsGlobalAdmin && scope.OfficeId is Guid scopeOfficeId)
+        {
+            sharedWithScope = await db.ResponseCrmDeliveries.AsNoTracking()
+                .AnyAsync(
+                    d => d.ResponseId == entity.Id
+                         && d.OfficeId == scopeOfficeId
+                         && d.Outcome == ResponseCrmDeliveryOutcomes.Sent,
+                    ct);
+            if (!sharedWithScope)
+            {
+                sharedWithScope = await db.CrmCandidateCards.AsNoTracking()
+                    .AnyAsync(c => c.ResponseId == entity.Id && c.OfficeId == scopeOfficeId, ct);
+            }
+        }
+
+        if (!scope.CanAccessResponse(entity.OfficeId, entity.WorkerOfficeId, sharedWithScope))
+        {
+            return null;
+        }
+
+        var contentType = CandidateResponseAvatar.DetectContentType(entity.AvatarImage);
+        return string.IsNullOrEmpty(contentType)
+            ? null
+            : new ResponseAvatarFile(entity.AvatarImage, contentType);
+    }
+
     private async Task<ResponsesPageDto> GetPageInternalAsync(
         OfficeScope scope,
         Guid? officeFilter,
@@ -281,6 +329,7 @@ public sealed class ResponsesQueryService(
                 x.Vacancy,
                 x.VacancyUrl,
                 x.MessengerUrl,
+                HasAvatar = x.AvatarImage != null,
                 x.City,
                 x.Status,
                 x.IsLocalDuplicate,
@@ -299,6 +348,7 @@ public sealed class ResponsesQueryService(
                 x.AvitoSubProfileName,
                 ResponseHighlightEnabled = x.Worker != null && x.Worker.ResponseHighlightEnabled,
                 ResponseHighlightAgeBuckets = x.Worker != null ? x.Worker.ResponseHighlightAgeBuckets : null,
+                ResponseHighlightTargetsJson = x.Worker != null ? x.Worker.ResponseHighlightTargetsJson : null,
                 x.CreatedAt,
                 x.CollectedAt,
                 x.ProcessedAt,
@@ -336,6 +386,9 @@ public sealed class ResponsesQueryService(
                     x.Age,
                     x.ResponseHighlightEnabled,
                     x.ResponseHighlightAgeBuckets,
+                    x.AccountId,
+                    x.AvitoSubProfileId,
+                    x.ResponseHighlightTargetsJson,
                     out var highlightLabel);
                 var bitrixDeliveries = deliveryLookup.TryGetValue(x.Id, out var loaded)
                     ? loaded
@@ -390,7 +443,8 @@ public sealed class ResponsesQueryService(
                     string.IsNullOrWhiteSpace(x.PreviousPhoneNormalized) ? null : x.PreviousPhoneNormalized,
                     x.PhoneUnchangedHours,
                     x.PhoneChangedAtUtc,
-                    string.IsNullOrWhiteSpace(phoneMetricLabel) ? null : phoneMetricLabel);
+                    string.IsNullOrWhiteSpace(phoneMetricLabel) ? null : phoneMetricLabel,
+                    x.HasAvatar);
             })
             .ToList();
 
@@ -790,6 +844,9 @@ public sealed class ResponsesQueryService(
             entity.PhoneUnchangedHours,
             entity.PhoneChangedAtUtc,
             string.IsNullOrWhiteSpace(phoneMetricLabel) ? null : phoneMetricLabel,
-            phoneHistory ?? []);
+            phoneHistory ?? [],
+            entity.AvatarImage is { Length: > 0 });
     }
 }
+
+public sealed record ResponseAvatarFile(byte[] Bytes, string ContentType);

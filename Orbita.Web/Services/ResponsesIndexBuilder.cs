@@ -122,6 +122,7 @@ internal static class ResponsesIndexBuilder
             Vacancy = item.Vacancy,
             VacancyUrl = item.VacancyUrl,
             MessengerUrl = item.MessengerUrl,
+            AvatarUrl = item.HasAvatar ? $"/Responses/{item.Id:D}/Avatar" : null,
             SourceResponseId = item.SourceResponseId,
             City = item.City,
             AccountId = item.AccountId,
@@ -212,7 +213,8 @@ internal static class ResponsesIndexBuilder
             detail.PreviousPhoneNormalized,
             detail.PhoneUnchangedHours,
             detail.PhoneChangedAtUtc,
-            detail.PhoneMetricLabel);
+            detail.PhoneMetricLabel,
+            detail.HasAvatar);
         var canSend = CanSendToBitrix(detail.Status);
         var statusLabel = MapStatusLabel(listItem);
         return new ResponseDetailViewModel
@@ -230,6 +232,7 @@ internal static class ResponsesIndexBuilder
             Vacancy = detail.Vacancy,
             VacancyUrl = detail.VacancyUrl,
             MessengerUrl = detail.MessengerUrl,
+            AvatarUrl = detail.HasAvatar ? $"/Responses/{detail.Id:D}/Avatar" : null,
             AccountId = detail.AccountId,
             AccountName = detail.AccountName,
             AvitoSubProfileId = string.IsNullOrWhiteSpace(detail.AvitoSubProfileId) ? null : detail.AvitoSubProfileId,
@@ -533,6 +536,21 @@ internal static class ResponsesIndexBuilder
     public static ResponseDetailJsonViewModel MapDetailJson(ResponseDetailViewModel detail)
     {
         var phone = ResponseDisplay.FormatPhone(detail.PhoneRaw, detail.PhoneNormalized);
+        var candidateMeta = new List<string>();
+        if (detail.Age is > 0)
+        {
+            candidateMeta.Add($"{detail.Age} лет");
+        }
+
+        var genderLabel = CandidateGenders.FormatLabel(detail.Gender);
+        if (!string.Equals(genderLabel, "—", StringComparison.Ordinal))
+        {
+            candidateMeta.Add(genderLabel);
+        }
+
+        var phoneHref = new string((detail.PhoneNormalized ?? detail.PhoneRaw)
+            .Where(char.IsDigit)
+            .ToArray());
         var phoneHistory = detail.PhoneHistory
             .Where(x => !string.IsNullOrWhiteSpace(x.PhoneNormalized))
             .GroupBy(x => x.PhoneNormalized)
@@ -673,6 +691,20 @@ internal static class ResponsesIndexBuilder
         {
             Title = ResponseDisplay.DisplayAuthor(detail.FullName),
             Subtitle = $"{detail.StatusLabel} · сбор {ResponseDisplay.FormatCreatedAtLocal(detail.CollectedAtUtc)} · отклик {ResponseDisplay.FormatCreatedAtLocal(detail.CreatedAtUtc)}",
+            Profile = new ResponseDetailProfileViewModel
+            {
+                CandidateName = ResponseDisplay.DisplayAuthor(detail.FullName),
+                CandidateMeta = string.Join(" · ", candidateMeta),
+                StatusLabel = detail.StatusLabel,
+                StatusTone = detail.StatusTone,
+                Phone = phone.Length > 0 ? phone : "Скрыт",
+                PhoneHref = phoneHref.Length > 0 ? phoneHref : null,
+                MessengerUrl = string.IsNullOrWhiteSpace(detail.MessengerUrl) ? null : detail.MessengerUrl,
+                AvatarUrl = detail.AvatarUrl,
+                Vacancy = string.IsNullOrWhiteSpace(detail.Vacancy) ? "Вакансия не указана" : detail.Vacancy,
+                VacancyUrl = string.IsNullOrWhiteSpace(detail.VacancyUrl) ? null : detail.VacancyUrl,
+                Source = detail.Source
+            },
             Sections = sections,
             ChatMessages = detail.ChatMessages
                 .Select(m => new DetailChatMessageViewModel

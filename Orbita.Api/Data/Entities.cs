@@ -101,6 +101,9 @@ public sealed class WorkerEntity
     /// <summary>CSV возрастных групп для подсветки на панели, например "45+,63+".</summary>
     public string? ResponseHighlightAgeBuckets { get; set; }
 
+    /// <summary>JSON-набор профилей и субпрофилей, отклики из которых нужно подсвечивать.</summary>
+    public string? ResponseHighlightTargetsJson { get; set; }
+
     /// <summary>Автоматически включать/выключать воркер по локальному расписанию сервера.</summary>
     public bool AutoScheduleEnabled { get; set; }
 
@@ -324,6 +327,8 @@ public sealed class CandidateResponseEntity
     public string SourceUrl { get; set; } = string.Empty;
     public string VacancyUrl { get; set; } = string.Empty;
     public string MessengerUrl { get; set; } = string.Empty;
+    public string? AvatarContentType { get; set; }
+    public byte[]? AvatarImage { get; set; }
     public string ChatMessagesJson { get; set; } = string.Empty;
     public string AvitoSubProfileId { get; set; } = string.Empty;
     public string AvitoSubProfileName { get; set; } = string.Empty;

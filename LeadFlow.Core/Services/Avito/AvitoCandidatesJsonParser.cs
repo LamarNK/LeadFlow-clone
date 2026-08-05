@@ -43,6 +43,7 @@ public static class AvitoCandidatesJsonParser
             }
 
             var messengerUrl = item.TryGetProperty("messengerUrl", out var messengerProp) ? messengerProp.GetString() ?? string.Empty : string.Empty;
+            var avatarUrl = item.TryGetProperty("avatarUrl", out var avatarProp) ? avatarProp.GetString() ?? string.Empty : string.Empty;
             var rawText = item.TryGetProperty("rawText", out var rawTextProp) ? rawTextProp.GetString() ?? string.Empty : string.Empty;
             var ageText = item.TryGetProperty("age", out var ageTextProp) ? ageTextProp.GetString() : null;
             var cardGender = ParseGender(item.TryGetProperty("gender", out var genderProp) ? genderProp.GetString() : null);
@@ -78,6 +79,7 @@ public static class AvitoCandidatesJsonParser
                 Gender = gender,
                 VacancyUrl = vacancyUrl,
                 MessengerUrl = messengerUrl,
+                AvatarUrl = avatarUrl,
                 ChatMessagesJson = chatMessagesJson,
                 RawText = rawText,
                 CreatedAt = createdAt,

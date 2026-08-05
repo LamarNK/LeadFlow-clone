@@ -348,7 +348,8 @@ public sealed class DashboardQueryService(
             worker.AutoDeliverToCrm,
             worker.AutoDeliverToBitrix,
             worker.OfficeId,
-            worker.Office?.Name ?? string.Empty);
+            worker.Office?.Name ?? string.Empty,
+            worker.ResponseHighlightTargetsJson);
     }
 
     public async Task<IReadOnlyList<WorkerAccountDto>> GetWorkerAccountsAsync(

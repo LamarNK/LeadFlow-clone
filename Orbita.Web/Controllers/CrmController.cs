@@ -142,6 +142,16 @@ public sealed class CrmController(
         return View(card);
     }
 
+    [HttpGet("/Crm/Cards/{id:guid}/Avatar")]
+    [Authorize(Policy = PanelPermissions.CrmBoard)]
+    public async Task<IActionResult> Avatar(Guid id, CancellationToken ct = default)
+    {
+        var result = await api.GetCrmCardAvatarAsync(id, ct);
+        return result.Stream is null
+            ? NotFound()
+            : File(result.Stream, result.ContentType ?? "image/jpeg");
+    }
+
     [HttpGet]
     [Authorize(Policy = PanelPermissions.CrmTasks)]
     public async Task<IActionResult> Tasks(string? scope, CancellationToken ct = default)

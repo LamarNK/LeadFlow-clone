@@ -199,6 +199,16 @@ public static class CrmEndpoints
             return card is null ? Results.NotFound() : Results.Ok(card);
         });
 
+        crmBoard.MapGet("/cards/{cardId:guid}/avatar", async (Guid cardId, CrmWorkspaceService workspace, ClaimsPrincipal principal, CancellationToken ct) =>
+        {
+            var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrWhiteSpace(userId)) return Results.Forbid();
+            var avatar = await workspace.GetCardAvatarAsync(cardId, userId, principal.IsInRole(PanelRoles.Admin), ct);
+            return avatar is null
+                ? Results.NotFound()
+                : Results.File(avatar.Bytes, avatar.ContentType);
+        });
+
         crmBoard.MapPost("/cards/{cardId:guid}/move", async (Guid cardId, CrmMoveRequest request, CrmWorkspaceService workspace, ClaimsPrincipal principal, CancellationToken ct) =>
         {
             var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);

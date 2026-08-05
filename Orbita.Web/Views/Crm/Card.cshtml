@@ -37,7 +37,10 @@
 
     <section class="crm-card-hero card">
         <div class="crm-card-hero__main">
-            <div class="crm-avatar">@(string.IsNullOrEmpty(card.FullName) ? "?" : card.FullName.Trim()[0])</div>
+            <div class="crm-avatar">
+                @(string.IsNullOrEmpty(card.FullName) ? "?" : card.FullName.Trim()[0])
+                <img src="@Url.Action("Avatar", "Crm", new { id = card.Id })" alt="" onerror="this.remove()" />
+            </div>
             <div>
                 <h1>@card.FullName</h1>
                 <p>

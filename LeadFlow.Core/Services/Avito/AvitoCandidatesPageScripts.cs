@@ -1926,6 +1926,53 @@ public static class AvitoCandidatesPageScripts
                 return extractAgeYearsFromText(rawText);
             };
 
+            // A real avatar is hosted at {shard}.img.avito.st/image/… .
+            // Deliberately reject Avito's generated /static/ims/ placeholders: the panel
+            // falls back to candidate initials when the person did not upload a photo.
+            const normalizeAvatarUrl = (value) => {
+                const normalized = normalizeUrl(value ?? "");
+                if (!normalized) {
+                    return "";
+                }
+
+                try {
+                    const parsed = new URL(normalized, window.location.href);
+                    const host = parsed.hostname.toLowerCase();
+                    return parsed.protocol === "https:"
+                        && (host === "img.avito.st" || host.endsWith(".img.avito.st"))
+                        && parsed.pathname.startsWith("/image/")
+                        ? parsed.href
+                        : "";
+                } catch (_) {
+                    return "";
+                }
+            };
+
+            const extractBackgroundImageUrl = (value) => {
+                const match = String(value ?? "").match(/url\(\s*['"]?(.+?)['"]?\s*\)/i);
+                return match ? normalizeAvatarUrl(match[1]) : "";
+            };
+
+            const resolveAvatarUrl = (root, fullName) => {
+                const images = Array.from(root.querySelectorAll("img[src]"));
+                const exactNameImage = images.find((image) =>
+                    (image.getAttribute("alt") ?? "").trim() === fullName);
+                const fromNamedImage = normalizeAvatarUrl(exactNameImage?.getAttribute("src"));
+                if (fromNamedImage) {
+                    return fromNamedImage;
+                }
+
+                // In another Avito card variant the photo is a div background, not img.
+                for (const element of root.querySelectorAll("[style*='background-image']")) {
+                    const fromBackground = extractBackgroundImageUrl(element.style?.backgroundImage ?? element.getAttribute("style"));
+                    if (fromBackground) {
+                        return fromBackground;
+                    }
+                }
+
+                return "";
+            };
+
             const listItems = Array.from(document.querySelectorAll("[data-marker='job-application/item']"));
             const candidates = roots.map((root) => {
                 const name = getNameNode(root)?.textContent?.trim() ?? "";
@@ -1967,6 +2014,7 @@ public static class AvitoCandidatesPageScripts
                     }
                 }
                 const messengerUrl = resolveMessengerUrl(root);
+                const avatarUrl = resolveAvatarUrl(root, name);
                 const sourceResponseId = buildSourceResponseId(name, phone, vacancy, city, vacancyUrl);
 
                 return {
@@ -1978,6 +2026,7 @@ public static class AvitoCandidatesPageScripts
                     city,
                     vacancyUrl,
                     messengerUrl,
+                    avatarUrl,
                     sourceResponseId,
                     domIndex: rootIndex,
                     rawText
