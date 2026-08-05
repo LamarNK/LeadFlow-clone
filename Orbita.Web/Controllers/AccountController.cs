@@ -29,6 +29,13 @@ public sealed class AccountController(
     }
 
     [AllowAnonymous]
+    [HttpGet]
+    public IActionResult AccessDenied()
+    {
+        return View(ErrorPageViewModel.ForStatusCode(StatusCodes.Status403Forbidden));
+    }
+
+    [AllowAnonymous]
     [HttpPost]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Login(LoginViewModel model, CancellationToken ct)

@@ -68,7 +68,7 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
     {
         options.LoginPath = "/Account/Login";
         options.LogoutPath = "/Account/Logout";
-        options.AccessDeniedPath = "/Dashboard";
+        options.AccessDeniedPath = "/Account/AccessDenied";
     });
 builder.Services.AddAuthorization(options =>
 {
@@ -116,16 +116,7 @@ app.UseOrbitaLogging();
 
 if (!app.Environment.IsDevelopment())
 {
-    app.UseExceptionHandler(new ExceptionHandlerOptions
-    {
-        AllowStatusCode404Response = true,
-        ExceptionHandler = async context =>
-        {
-            context.Response.StatusCode = StatusCodes.Status500InternalServerError;
-            context.Response.ContentType = "text/plain; charset=utf-8";
-            await context.Response.WriteAsync("Внутренняя ошибка сервера.");
-        }
-    });
+    app.UseExceptionHandler("/error/500");
     app.UseHsts();
 }
 
@@ -135,6 +126,10 @@ app.UseForwardedHeaders(new ForwardedHeadersOptions
 });
 
 app.UseHttpsRedirection();
+app.UseWhen(
+    context => HttpMethods.IsGet(context.Request.Method)
+        && context.Request.Headers.Accept.ToString().Contains("text/html", StringComparison.OrdinalIgnoreCase),
+    browser => browser.UseStatusCodePagesWithReExecute("/error/{0}"));
 app.UseStaticFiles();
 app.UseWebSockets();
 app.UseRouting();

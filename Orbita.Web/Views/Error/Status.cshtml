@@ -1,0 +1,99 @@
+@model ErrorPageViewModel
+@{
+    Layout = null;
+    ViewData["Title"] = $"Ошибка {Model.StatusCode}";
+}
+<!DOCTYPE html>
+<html lang="ru" class="orbita-error-html">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Орбита — @ViewData["Title"]</title>
+    <link rel="icon" type="image/png" sizes="48x48" href="~/images/favicon-48x48.png" asp-append-version="true" />
+    <link rel="icon" href="~/favicon.ico" asp-append-version="true" sizes="any" />
+    <link rel="stylesheet" href="~/lib/fontawesome/css/all.min.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/orbita-error.css" asp-append-version="true" />
+</head>
+<body class="orbita-error-body">
+<main class="orbita-error-page">
+    <div class="orbita-error-frame">
+        <div class="orbita-error-grid" aria-hidden="true"></div>
+        <div class="orbita-error-orbit-field" aria-hidden="true">
+            <span class="orbita-error-orbit orbita-error-orbit--one"></span>
+            <span class="orbita-error-orbit orbita-error-orbit--two"></span>
+            <span class="orbita-error-orbit orbita-error-orbit--three"></span>
+            <span class="orbita-error-orbit orbita-error-orbit--four"></span>
+            <span class="orbita-error-axis orbita-error-axis--horizontal"></span>
+            <span class="orbita-error-axis orbita-error-axis--vertical"></span>
+            <span class="orbita-error-flight-path"></span>
+            <span class="orbita-error-star orbita-error-star--one"></span>
+            <span class="orbita-error-star orbita-error-star--two"></span>
+            <span class="orbita-error-star orbita-error-star--three"></span>
+            <img class="orbita-error-logo" src="~/images/favicon-192x192.png" alt="" asp-append-version="true" />
+        </div>
+
+        <section class="orbita-error-copy" aria-labelledby="orbita-error-title">
+            <p class="orbita-error-signal"><span aria-hidden="true"></span>@Model.Signal</p>
+            <p class="orbita-error-code">@Model.StatusCode</p>
+            <h1 id="orbita-error-title">@Model.Title</h1>
+            <p class="orbita-error-description">@Model.Description</p>
+            <div class="orbita-error-actions">
+                @if (Model.IsAccessDenied)
+                {
+                    <button class="orbita-error-button orbita-error-button--primary" type="button" data-error-back>
+                        <i class="fa-solid fa-arrow-left" aria-hidden="true"></i>
+                        Вернуться назад
+                    </button>
+                }
+                else
+                {
+                    <a class="orbita-error-button orbita-error-button--primary" href="~/">
+                        <i class="fa-solid fa-arrow-left" aria-hidden="true"></i>
+                        Вернуться на главную
+                    </a>
+                }
+                <button class="orbita-error-button orbita-error-button--secondary" type="button" data-error-retry>
+                    <i class="fa-solid fa-rotate-right" aria-hidden="true"></i>
+                    Повторить запрос
+                </button>
+            </div>
+            @if (Model.IsAccessDenied)
+            {
+                <form asp-controller="Account" asp-action="Logout" method="post" class="orbita-error-logout">
+                    @Html.AntiForgeryToken()
+                    <button type="submit">Выйти из учётной записи</button>
+                </form>
+            }
+            <div class="orbita-error-hint">
+                <i class="fa-solid fa-headset" aria-hidden="true"></i>
+                <div>
+                    <h2>Нужна помощь?</h2>
+                    <p>@Model.SuggestedAction</p>
+                </div>
+            </div>
+        </section>
+
+        <dl class="orbita-error-telemetry" aria-label="Сведения об ошибке">
+            <div class="orbita-error-telemetry__item orbita-error-telemetry__item--code">
+                <dt>Код ошибки</dt>
+                <dd>@Model.StatusCode</dd>
+            </div>
+            <div class="orbita-error-telemetry__item orbita-error-telemetry__item--sector">
+                <dt>Сектор</dt>
+                <dd>@Model.Sector</dd>
+            </div>
+            <div class="orbita-error-telemetry__item orbita-error-telemetry__item--status">
+                <dt>Статус</dt>
+                <dd>@Model.Title</dd>
+            </div>
+            <div class="orbita-error-telemetry__item orbita-error-telemetry__item--time">
+                <dt>Время</dt>
+                <dd>@DateTimeOffset.Now.ToLocalTime().ToString("dd.MM.yyyy HH:mm:ss")</dd>
+            </div>
+        </dl>
+    </div>
+</main>
+<script src="~/js/orbita-error.js" asp-append-version="true"></script>
+</body>
+</html>
