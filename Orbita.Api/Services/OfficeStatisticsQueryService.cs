@@ -696,13 +696,38 @@ public sealed class OfficeStatisticsQueryService(
             return [];
         }
 
-        var rows = await deliveriesQuery
+        var deliveryRows = await deliveriesQuery
             .GroupBy(d => new { d.OfficeId, OfficeName = d.Office.Name })
             .Select(g => new { g.Key.OfficeId, g.Key.OfficeName, Count = g.Count() })
             .ToListAsync(ct);
 
-        return rows
-            .Select(x => new CrmDeliveryStatDto(x.OfficeId, x.OfficeName, x.Count))
+        // Delivery journal was added after CRM cards already existed. Count those cards by
+        // creation time only when no journal entry exists for the same response and office.
+        var legacyCardsQuery =
+            from card in db.CrmCandidateCards.AsNoTracking()
+            where card.CreatedAtUtc >= utcStart
+                  && card.CreatedAtUtc < utcEnd
+                  && !db.ResponseCrmDeliveries.Any(d =>
+                      d.ResponseId == card.ResponseId
+                      && d.OfficeId == card.OfficeId)
+            join response in scopedResponses on card.ResponseId equals response.Id
+            join office in db.Offices.AsNoTracking() on card.OfficeId equals office.Id
+            select new { card.OfficeId, OfficeName = office.Name };
+
+        if (effectiveOfficeId is Guid legacyOfficeId)
+        {
+            legacyCardsQuery = legacyCardsQuery.Where(card => card.OfficeId == legacyOfficeId);
+        }
+
+        var legacyRows = await legacyCardsQuery
+            .GroupBy(card => new { card.OfficeId, card.OfficeName })
+            .Select(g => new { g.Key.OfficeId, g.Key.OfficeName, Count = g.Count() })
+            .ToListAsync(ct);
+
+        return deliveryRows
+            .Concat(legacyRows)
+            .GroupBy(x => new { x.OfficeId, x.OfficeName })
+            .Select(g => new CrmDeliveryStatDto(g.Key.OfficeId, g.Key.OfficeName, g.Sum(x => x.Count)))
             .OrderByDescending(x => x.SentCount)
             .ThenBy(x => x.Label, StringComparer.OrdinalIgnoreCase)
             .ToList();

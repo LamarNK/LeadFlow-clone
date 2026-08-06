@@ -328,6 +328,53 @@ public sealed class OfficeStatisticsQueryServiceTests
     }
 
     [Fact]
+    public async Task GetStatisticsAsync_CrmCardFallback_UsesCardCreatedAtWhenDeliveryJournalIsMissing()
+    {
+        await using var db = CreateDb();
+        SeedOfficeData(db);
+        var now = DateTime.UtcNow;
+        var responseId = Guid.NewGuid();
+
+        db.CandidateResponses.Add(new CandidateResponseEntity
+        {
+            Id = responseId,
+            OfficeId = OfficeA,
+            WorkerId = WorkerA,
+            AccountId = AccountA,
+            AccountName = "Account A",
+            Source = "Avito",
+            SourceResponseId = "legacy-crm-card",
+            FullName = "CRM Lead",
+            PhoneRaw = "+79008888888",
+            PhoneNormalized = "79008888888",
+            Status = ResponseStatuses.Sent,
+            CreatedAt = now.AddDays(-30),
+            CollectedAt = now.AddDays(-30),
+            ProcessedAt = now.AddDays(-30)
+        });
+        db.CrmCandidateCards.Add(new CrmCandidateCardEntity
+        {
+            Id = Guid.NewGuid(),
+            ResponseId = responseId,
+            OfficeId = OfficeA,
+            Stage = "Лид",
+            CreatedAtUtc = now.AddHours(-3),
+            UpdatedAtUtc = now.AddHours(-3),
+            StageChangedAtUtc = now.AddHours(-3),
+            IsInActiveLoad = true
+        });
+        await db.SaveChangesAsync();
+
+        var result = await CreateService(db).GetStatisticsAsync(
+            OfficeScope.ForOffice(OfficeA),
+            OfficeA,
+            DateTime.Today.AddDays(-6),
+            DateTime.Today);
+
+        Assert.Contains(result.CrmDeliveries, d => d.OfficeId == OfficeA && d.SentCount >= 1);
+    }
+
+    [Fact]
     public void CandidateResponses_HasIndexForStatisticsWorkerAndPeriodFilter()
     {
         using var db = CreateDb();
