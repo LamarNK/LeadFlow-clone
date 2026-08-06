@@ -1,5 +1,8 @@
 @model ListFiltersBarViewModel
-<div class="orbita-filters-bar">
+@{
+    var barModifier = Model.FormClass?.Contains("statistics-filters") == true ? " orbita-filters-bar--statistics" : "";
+}
+<div class="orbita-filters-bar@barModifier">
     <form class="@Model.FormClass" method="get" action="@Model.FormAction">
         @if (!string.IsNullOrWhiteSpace(Model.ExtraFormContent))
         {

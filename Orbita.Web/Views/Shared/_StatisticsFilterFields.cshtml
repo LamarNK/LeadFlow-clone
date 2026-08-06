@@ -4,6 +4,10 @@
     var selectedAccountId = Model.Filters.AccountIds.FirstOrDefault();
 }
 <div class="orbita-filters-fields statistics-filters-row" id="statisticsFilterPanel" data-orbita-collapsible-filters hidden>
+    <div class="statistics-filters__context">
+        <span><i class="fa-solid fa-chart-simple" aria-hidden="true"></i>Срез отчёта</span>
+        <small>Уточните данные за период: @Model.Header.DateRangeLabel</small>
+    </div>
     <label class="orbita-filters-field statistics-filter-field">
         <span class="orbita-filters-label statistics-filter-label">Воркер</span>
         <select name="workerIds" class="orbita-filters-select statistics-select" aria-label="Воркер">

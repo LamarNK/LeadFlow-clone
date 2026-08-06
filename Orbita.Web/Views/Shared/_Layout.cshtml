@@ -86,7 +86,7 @@ else
                 var act = ViewContext.RouteData.Values["action"]?.ToString();
                 var can = new Func<string, bool>(permission =>
                     User.HasClaim(PanelPermissions.ClaimType, permission)
-                    || (permission is PanelPermissions.CrmBoard or PanelPermissions.CrmTasks
+                    || (permission is PanelPermissions.CrmBoard or PanelPermissions.CrmTasks or PanelPermissions.CrmAnalytics
                         && User.HasClaim(PanelPermissions.ClaimType, PanelPermissions.Crm)));
             }
             @if (can(PanelPermissions.Dashboard))
@@ -112,6 +112,9 @@ else
             @if (can(PanelPermissions.CrmBoard))
             {
                 <a class="nav-item @(ctrl == "Crm" && act is "Index" or "Card" or null ? "active" : "")" href="@Url.Action("Index", "Crm")" title="CRM менеджеров"><i class="fa-solid fa-columns" aria-hidden="true"></i><span class="nav-item-label">CRM</span></a>
+            }
+            @if (can(PanelPermissions.CrmAnalytics))
+            {
                 <a class="nav-item @(ctrl == "Crm" && act == "Analytics" ? "active" : "")" href="@Url.Action("Analytics", "Crm")" title="Аналитика CRM"><i class="fa-solid fa-chart-column" aria-hidden="true"></i><span class="nav-item-label">Аналитика CRM</span></a>
             }
             @if (can(PanelPermissions.CrmTasks))

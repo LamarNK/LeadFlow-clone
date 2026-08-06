@@ -105,24 +105,160 @@
     min-height: 0;
 }
 
-.statistics-filters-row {
-    grid-template-columns: repeat(2, minmax(200px, 1fr));
+.orbita-filters-bar--statistics {
+    margin-bottom: 0;
+    padding: 0;
+    overflow: visible;
+    border-color: #e1e8f1;
+    background: linear-gradient(135deg, #fbfdff 0%, #ffffff 62%);
+    box-shadow: 0 6px 20px rgba(16, 24, 40, 0.035);
 }
 
-.statistics-filter-field--account .orbita-account-combobox__control {
-    height: 40px;
+.statistics-filters {
+    gap: 0;
 }
 
-.statistics-filter-field--account .orbita-account-combobox__input {
-    height: 40px;
-    border: 1px solid #e4e7ec;
+.statistics-filters .orbita-filters-toolbar {
+    min-height: 62px;
+    padding: 11px 16px 10px;
+    border-bottom: 1px solid #edf1f5;
+}
+
+.statistics-filters .orbita-filters-toolbar::before {
+    content: "Фильтры статистики";
+    color: #34465f;
+    font-size: 13px;
+    font-weight: 750;
+    letter-spacing: -.01em;
+}
+
+.statistics-filters .orbita-filters-toolbar-actions {
+    gap: 7px;
+}
+
+.statistics-filters .orbita-filters-reset {
+    height: 34px;
+    padding: 0 10px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: #f4f7fb;
+    color: #627188;
+    font-size: 11px;
+    font-weight: 650;
+}
+
+.statistics-filters .orbita-filters-reset:hover {
+    border-color: #dce5f1;
+    background: #eef3fa;
+    color: #34465f;
+}
+
+.statistics-filters .orbita-filters-toggle,
+.statistics-filters .orbita-filters-apply {
+    height: 34px;
+    border-radius: 8px;
+    font-size: 12px;
+}
+
+.statistics-filters .orbita-filters-toggle {
+    width: 34px;
+}
+
+.statistics-filters .orbita-filters-fields {
+    grid-template-columns: minmax(180px, .85fr) minmax(220px, 1.1fr) minmax(250px, 1.25fr);
+    gap: 10px;
+    padding: 12px 16px 16px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+}
+
+.statistics-filters__context {
+    display: flex;
+    grid-column: 1 / -1;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 0 1px 1px;
+}
+
+.statistics-filters__context > span {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    color: #50627b;
+    font-size: 11px;
+    font-weight: 750;
+    letter-spacing: .02em;
+    text-transform: uppercase;
+}
+
+.statistics-filters__context i {
+    color: #5375bb;
+    font-size: 12px;
+}
+
+.statistics-filters__context small {
+    color: #8a98ab;
+    font-size: 11px;
+}
+
+.statistics-filters .statistics-filter-field {
+    gap: 6px;
+    padding: 10px 11px;
+    border: 1px solid #e6ecf4;
     border-radius: 10px;
-    font-size: 14px;
+    background: #f9fbfd;
+    transition: border-color .16s ease, background .16s ease, box-shadow .16s ease;
 }
 
-.statistics-filter-field--vacancy {
-    min-width: 220px;
-    flex: 2 1 240px;
+.statistics-filters .statistics-filter-field:focus-within {
+    border-color: #9eb8eb;
+    background: #fff;
+    box-shadow: 0 0 0 3px rgba(64, 113, 205, .09);
+}
+
+.statistics-filters .statistics-filter-label {
+    color: #75849a;
+    font-size: 10px;
+    font-weight: 750;
+    letter-spacing: .04em;
+}
+
+.statistics-filters .statistics-select,
+.statistics-filters .statistics-input,
+.statistics-filters .statistics-filter-field--account .orbita-account-combobox__input {
+    width: 100%;
+    height: 36px;
+    min-width: 0;
+    padding: 0 10px;
+    border: 1px solid #dfe6ef;
+    border-radius: 7px;
+    background: #fff;
+    color: #34465f;
+    font: inherit;
+    font-size: 12px;
+}
+
+.statistics-filters .statistics-input::placeholder {
+    color: #a0acbc;
+}
+
+.statistics-filters .statistics-select:focus,
+.statistics-filters .statistics-input:focus,
+.statistics-filters .statistics-filter-field--account .orbita-account-combobox__input:focus {
+    outline: none;
+    border-color: #7198e0;
+    box-shadow: 0 0 0 3px rgba(64, 113, 205, .1);
+}
+
+.statistics-filters .statistics-filter-field--account .orbita-account-combobox__control,
+.statistics-filters .statistics-filter-field--account .orbita-account-combobox__input {
+    height: 36px;
+}
+
+.statistics-filters .statistics-filter-field--account .orbita-account-combobox__input {
+    padding-right: 32px;
 }
 
 .orbita-filters-toolbar--no-search .orbita-filters-toolbar-actions {
@@ -194,6 +330,25 @@
     .statistics-filters-row {
         grid-template-columns: 1fr;
     }
+
+    .statistics-filters .orbita-filters-toolbar {
+        min-height: 0;
+        padding: 12px 14px;
+    }
+
+    .statistics-filters .orbita-filters-toolbar::before {
+        width: 100%;
+    }
+
+    .statistics-filters .orbita-filters-fields {
+        padding: 12px 14px 14px;
+    }
+
+    .statistics-filters__context {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 3px;
+    }
 }
 
 .statistics-stack > .card,
@@ -217,6 +372,42 @@
     font-weight: 400;
     text-align: right;
     max-width: 100%;
+}
+
+[data-theme="dark"] .orbita-filters-bar--statistics {
+    border-color: var(--border);
+    background: linear-gradient(135deg, color-mix(in srgb, var(--bg-card) 94%, #15233c), var(--bg-card));
+}
+
+[data-theme="dark"] .statistics-filters .orbita-filters-toolbar {
+    border-color: var(--border);
+}
+
+[data-theme="dark"] .statistics-filters .orbita-filters-toolbar::before,
+[data-theme="dark"] .statistics-filters__context > span {
+    color: var(--text-primary);
+}
+
+[data-theme="dark"] .statistics-filters__context small,
+[data-theme="dark"] .statistics-filters .statistics-filter-label {
+    color: var(--text-secondary);
+}
+
+[data-theme="dark"] .statistics-filters .statistics-filter-field {
+    border-color: var(--border);
+    background: rgba(15, 23, 42, .26);
+}
+
+[data-theme="dark"] .statistics-filters .statistics-filter-field:focus-within {
+    background: var(--bg-card);
+}
+
+[data-theme="dark"] .statistics-filters .statistics-select,
+[data-theme="dark"] .statistics-filters .statistics-input,
+[data-theme="dark"] .statistics-filters .statistics-filter-field--account .orbita-account-combobox__input {
+    border-color: var(--border);
+    background: var(--bg-card);
+    color: var(--text-primary);
 }
 
 .card-header-meta {
