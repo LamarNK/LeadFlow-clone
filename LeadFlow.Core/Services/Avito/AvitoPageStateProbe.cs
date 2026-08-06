@@ -1,4 +1,5 @@
 using System.Text.Json;
+using LeadFlow.Core.Services.AdsPower;
 
 namespace LeadFlow.Core.Services.Avito;
 
@@ -23,7 +24,7 @@ public static class AvitoPageStateProbe
 
         try
         {
-            var text = UnwrapJsonString(raw);
+            var text = PuppeteerJsonEvaluator.UnwrapJsonString(raw);
             using var doc = JsonDocument.Parse(text);
             var root = doc.RootElement;
 
@@ -58,21 +59,4 @@ public static class AvitoPageStateProbe
         _ => AvitoPageKind.Unknown
     };
 
-    private static string UnwrapJsonString(string raw)
-    {
-        var t = raw.Trim();
-        if (t.Length >= 2 && t.StartsWith('"') && t.EndsWith('"'))
-        {
-            try
-            {
-                return JsonSerializer.Deserialize<string>(t) ?? t;
-            }
-            catch
-            {
-                return t;
-            }
-        }
-
-        return t;
-    }
 }

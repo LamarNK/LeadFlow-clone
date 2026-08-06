@@ -92,7 +92,7 @@ public static class PuppeteerJsonEvaluator
         }
     }
 
-    private static string UnwrapJsonString(string raw)
+    internal static string UnwrapJsonString(string raw)
     {
         if (raw.Length >= 2 && raw.StartsWith('"') && raw.EndsWith('"'))
         {
@@ -109,7 +109,7 @@ public static class PuppeteerJsonEvaluator
         return raw;
     }
 
-    private static bool IsRecoverableNavigationError(Exception ex) =>
+    internal static bool IsRecoverableNavigationError(Exception ex) =>
         ex is PuppeteerException &&
         (ex.Message.Contains("Execution Context was destroyed", StringComparison.OrdinalIgnoreCase) ||
          ex.Message.Contains("Target closed", StringComparison.OrdinalIgnoreCase) ||

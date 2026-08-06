@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using LeadFlow.Core.Logging.Audit;
 using LeadFlow.Core.Services;
+using LeadFlow.Core.Services.AdsPower;
 using Orbita.Contracts;
 
 namespace LeadFlow.Core.Services.Avito;
@@ -233,7 +234,7 @@ public static class AvitoCandidatesListPreparer
 
         try
         {
-            using var doc = JsonDocument.Parse(UnwrapJsonString(raw));
+            using var doc = JsonDocument.Parse(PuppeteerJsonEvaluator.UnwrapJsonString(raw));
             var root = doc.RootElement;
             return new ScrollStepProbe(
                 root.TryGetProperty("itemCount", out var c) ? c.GetInt32() : 0,
@@ -259,7 +260,7 @@ public static class AvitoCandidatesListPreparer
 
         try
         {
-            using var doc = JsonDocument.Parse(UnwrapJsonString(raw));
+            using var doc = JsonDocument.Parse(PuppeteerJsonEvaluator.UnwrapJsonString(raw));
             var root = doc.RootElement;
             return new PhonesReadyProbe(
                 root.TryGetProperty("ready", out var r) && r.GetBoolean(),
@@ -425,7 +426,7 @@ public static class AvitoCandidatesListPreparer
 
         try
         {
-            using var doc = JsonDocument.Parse(UnwrapJsonString(raw));
+            using var doc = JsonDocument.Parse(PuppeteerJsonEvaluator.UnwrapJsonString(raw));
             if (doc.RootElement.ValueKind != JsonValueKind.Array)
             {
                 return [];
@@ -480,7 +481,7 @@ public static class AvitoCandidatesListPreparer
 
         try
         {
-            using var doc = JsonDocument.Parse(UnwrapJsonString(raw));
+            using var doc = JsonDocument.Parse(PuppeteerJsonEvaluator.UnwrapJsonString(raw));
             if (doc.RootElement.ValueKind != JsonValueKind.Array)
             {
                 return [];
@@ -605,7 +606,7 @@ public static class AvitoCandidatesListPreparer
 
         try
         {
-            using var doc = JsonDocument.Parse(UnwrapJsonString(raw));
+            using var doc = JsonDocument.Parse(PuppeteerJsonEvaluator.UnwrapJsonString(raw));
             ok = doc.RootElement.TryGetProperty("ok", out var okProp) && okProp.GetBoolean();
             return true;
         }
@@ -624,7 +625,7 @@ public static class AvitoCandidatesListPreparer
 
         try
         {
-            using var doc = JsonDocument.Parse(UnwrapJsonString(raw));
+            using var doc = JsonDocument.Parse(PuppeteerJsonEvaluator.UnwrapJsonString(raw));
             var root = doc.RootElement;
             var phoneDigits = root.TryGetProperty("phoneDigits", out var phoneProp)
                 ? phoneProp.GetString() ?? string.Empty
@@ -655,7 +656,7 @@ public static class AvitoCandidatesListPreparer
 
         try
         {
-            using var doc = JsonDocument.Parse(UnwrapJsonString(raw));
+            using var doc = JsonDocument.Parse(PuppeteerJsonEvaluator.UnwrapJsonString(raw));
             return doc.RootElement.TryGetProperty("isJobCrm", out var prop) && prop.GetBoolean();
         }
         catch
@@ -879,7 +880,7 @@ public static class AvitoCandidatesListPreparer
 
         try
         {
-            using var doc = JsonDocument.Parse(UnwrapJsonString(raw));
+            using var doc = JsonDocument.Parse(PuppeteerJsonEvaluator.UnwrapJsonString(raw));
             if (doc.RootElement.ValueKind != JsonValueKind.Array)
             {
                 return [];
@@ -925,7 +926,7 @@ public static class AvitoCandidatesListPreparer
 
         try
         {
-            using var doc = JsonDocument.Parse(UnwrapJsonString(raw));
+            using var doc = JsonDocument.Parse(PuppeteerJsonEvaluator.UnwrapJsonString(raw));
             var root = doc.RootElement;
             return new RevealPhonesStepProbe(
                 root.TryGetProperty("items", out var i) ? i.GetInt32() : 0,
@@ -953,7 +954,7 @@ public static class AvitoCandidatesListPreparer
 
         try
         {
-            using var doc = JsonDocument.Parse(UnwrapJsonString(raw));
+            using var doc = JsonDocument.Parse(PuppeteerJsonEvaluator.UnwrapJsonString(raw));
             var root = doc.RootElement;
             return new ContactsPopupRevealProbe(
                 root.TryGetProperty("items", out var i) ? i.GetInt32() : 0,
@@ -965,25 +966,6 @@ public static class AvitoCandidatesListPreparer
         {
             return null;
         }
-    }
-
-    /// <summary>WebView2 иногда возвращает JSON-строку в кавычках.</summary>
-    private static string UnwrapJsonString(string raw)
-    {
-        var t = raw.Trim();
-        if (t.Length >= 2 && t.StartsWith('"') && t.EndsWith('"'))
-        {
-            try
-            {
-                return JsonSerializer.Deserialize<string>(t) ?? t;
-            }
-            catch
-            {
-                return t;
-            }
-        }
-
-        return t;
     }
 
     private sealed record ScrollStepProbe(int ItemCount, bool Moved, bool AtEnd);

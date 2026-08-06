@@ -99,7 +99,7 @@ public sealed partial class AdsPowerAvitoAutomationService
                     WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
                 }).ConfigureAwait(false);
             }
-            catch (Exception ex) when (IsRecoverableNavigationError(ex))
+            catch (Exception ex) when (PuppeteerJsonEvaluator.IsRecoverableNavigationError(ex))
             {
                 await Task.Delay(2000, cancellationToken).ConfigureAwait(false);
                 await page.GoToAsync(ProfileItemsPageUrl, new NavigationOptions
@@ -494,7 +494,7 @@ public sealed partial class AdsPowerAvitoAutomationService
                     WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
                 }).ConfigureAwait(false);
             }
-            catch (Exception ex) when (IsRecoverableNavigationError(ex))
+            catch (Exception ex) when (PuppeteerJsonEvaluator.IsRecoverableNavigationError(ex))
             {
                 await Task.Delay(1400, cancellationToken).ConfigureAwait(false);
             }
@@ -565,7 +565,7 @@ public sealed partial class AdsPowerAvitoAutomationService
                     WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
                 }).ConfigureAwait(false);
             }
-            catch (Exception ex) when (IsRecoverableNavigationError(ex))
+            catch (Exception ex) when (PuppeteerJsonEvaluator.IsRecoverableNavigationError(ex))
             {
                 await Task.Delay(1400, cancellationToken).ConfigureAwait(false);
             }
@@ -607,7 +607,7 @@ public sealed partial class AdsPowerAvitoAutomationService
                     WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
                 }).ConfigureAwait(false);
             }
-            catch (Exception ex) when (IsRecoverableNavigationError(ex))
+            catch (Exception ex) when (PuppeteerJsonEvaluator.IsRecoverableNavigationError(ex))
             {
                 await Task.Delay(1400, cancellationToken).ConfigureAwait(false);
             }
