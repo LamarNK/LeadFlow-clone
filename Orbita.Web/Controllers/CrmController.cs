@@ -169,7 +169,8 @@ public sealed class CrmController(
             board.OverdueTaskCount,
             selectedScope,
             User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty,
-            User.IsInRole(OrbitaRoles.Admin)));
+            User.IsInRole(OrbitaRoles.Admin),
+            ResolveBrowserUtcOffsetMinutes()));
     }
 
     [HttpGet]
@@ -388,6 +389,15 @@ public sealed class CrmController(
         ?? officeContext.EffectiveOfficeId
         ?? (previewOptions.Value.Enabled ? DesignPreviewData.PreviewOfficeId : null);
 
+    private int ResolveBrowserUtcOffsetMinutes()
+    {
+        const string cookieName = "orbita_utc_offset_minutes";
+        return Request.Cookies.TryGetValue(cookieName, out var raw)
+               && int.TryParse(raw, out var offset)
+            ? Math.Clamp(offset, -14 * 60, 14 * 60)
+            : 0;
+    }
+
     private IActionResult RedirectAfterCardMutation(string? returnUrl, string fallbackAction, object fallbackRouteValues)
     {
         if (!string.IsNullOrWhiteSpace(returnUrl) && Url.IsLocalUrl(returnUrl))
@@ -401,9 +411,19 @@ public sealed class CrmController(
     [HttpPost]
     [ValidateAntiForgeryToken]
     [Authorize(Policy = PanelPermissions.Administration)]
-    public async Task<IActionResult> SaveOfficeSettings(Guid officeId, bool isEnabled, bool requireStageComment, CancellationToken ct = default)
+    public async Task<IActionResult> SaveOfficeSettings(
+        Guid officeId,
+        bool isEnabled,
+        bool requireStageComment,
+        bool deadlineNotificationsEnabled,
+        CancellationToken ct = default)
     {
-        var (_, error) = await api.SetCrmOfficeSettingsAsync(officeId, isEnabled, requireStageComment, ct);
+        var (_, error) = await api.SetCrmOfficeSettingsAsync(
+            officeId,
+            isEnabled,
+            requireStageComment,
+            deadlineNotificationsEnabled,
+            ct);
         if (error is not null) TempData["CrmError"] = error;
         else TempData["CrmOk"] = "Настройки CRM сохранены.";
         return RedirectToAction(nameof(Team));

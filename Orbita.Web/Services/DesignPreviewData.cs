@@ -43,6 +43,7 @@ internal static class DesignPreviewData
     private static bool _previewCrmShiftActive = true;
     private static bool _previewCrmEnabled = true;
     private static bool _previewCrmRequireComment;
+    private static bool _previewCrmDeadlineNotificationsEnabled = true;
     private static List<string> _previewCrmStages = CrmStages.Default.ToList();
     private static readonly List<PreviewCrmCandidate> PreviewCrmCandidates =
     [
@@ -87,6 +88,39 @@ internal static class DesignPreviewData
     {
         [Guid.Parse("92600000-0000-0000-0000-000000000001")] = "Предпросмотр вложения к задаче."u8.ToArray()
     };
+    private static readonly List<CrmTaskNotificationDto> PreviewCrmTaskNotifications =
+    [
+        new(
+            Guid.Parse("92700000-0000-0000-0000-000000000001"),
+            Guid.Parse("92000000-0000-0000-0000-000000000002"),
+            Guid.Parse("90000000-0000-0000-0000-000000000003"),
+            CrmTaskNotificationKinds.Overdue,
+            "Перезвонить кандидату",
+            "Срок задачи истёк. Свяжитесь с кандидатом и обновите результат.",
+            Now.AddHours(-2),
+            Now.AddMinutes(-8),
+            null),
+        new(
+            Guid.Parse("92700000-0000-0000-0000-000000000002"),
+            Guid.Parse("92000000-0000-0000-0000-000000000001"),
+            Guid.Parse("90000000-0000-0000-0000-000000000001"),
+            CrmTaskNotificationKinds.DueIn24Hours,
+            "Уточнить дату выезда",
+            "До срока задачи осталось меньше 24 часов.",
+            Now.AddHours(3),
+            Now.AddMinutes(-18),
+            null),
+        new(
+            Guid.Parse("92700000-0000-0000-0000-000000000003"),
+            Guid.Parse("92000000-0000-0000-0000-000000000003"),
+            null,
+            CrmTaskNotificationKinds.DueIn24Hours,
+            "Проверить вакансии на неделю",
+            "До срока задачи осталось 24 часа.",
+            Now.AddDays(1),
+            Now.AddHours(-1),
+            Now.AddMinutes(-30))
+    ];
     private static readonly List<CrmHistoryDto> PreviewCrmHistory =
     [
         new(Guid.Parse("93000000-0000-0000-0000-000000000001"), "Created", "Отклик из Avito", "system", "Система", Now.AddMinutes(-35)),
@@ -193,7 +227,8 @@ internal static class DesignPreviewData
                 query.OverdueOnly,
                 query.ActiveLoadOnly,
                 query.IncludeClosed,
-                _previewCrmStages.ToList());
+                _previewCrmStages.ToList(),
+                _previewCrmDeadlineNotificationsEnabled);
         }
     }
 
@@ -276,6 +311,75 @@ internal static class DesignPreviewData
                 attachments,
                 true,
                 BuildPreviewCrmManagers());
+        }
+    }
+
+    public static CrmTaskNotificationsDto GetCrmTaskNotifications(bool unreadOnly, int limit)
+    {
+        lock (CrmSync)
+        {
+            if (!_previewCrmDeadlineNotificationsEnabled)
+            {
+                return new CrmTaskNotificationsDto(0, [], false);
+            }
+
+            var unreadCount = PreviewCrmTaskNotifications.Count(item => item.ReadAtUtc is null);
+            var items = PreviewCrmTaskNotifications
+                .Where(item => !unreadOnly || item.ReadAtUtc is null)
+                .OrderByDescending(item => item.CreatedAtUtc)
+                .Take(Math.Clamp(limit, 1, 50))
+                .ToList();
+            return new CrmTaskNotificationsDto(unreadCount, items, true);
+        }
+    }
+
+    public static CrmTaskNotificationSummaryDto GetCrmTaskNotificationSummary()
+    {
+        lock (CrmSync)
+        {
+            return _previewCrmDeadlineNotificationsEnabled
+                ? new CrmTaskNotificationSummaryDto(
+                    PreviewCrmTaskNotifications.Count(item => item.ReadAtUtc is null),
+                    true)
+                : new CrmTaskNotificationSummaryDto(0, false);
+        }
+    }
+
+    public static (bool Success, string? Error) MarkCrmTaskNotificationRead(Guid notificationId)
+    {
+        lock (CrmSync)
+        {
+            var index = PreviewCrmTaskNotifications.FindIndex(item => item.Id == notificationId);
+            if (index < 0)
+            {
+                return (false, "Уведомление не найдено.");
+            }
+
+            var notification = PreviewCrmTaskNotifications[index];
+            if (notification.ReadAtUtc is null)
+            {
+                PreviewCrmTaskNotifications[index] = notification with { ReadAtUtc = DateTime.UtcNow };
+            }
+
+            return (true, null);
+        }
+    }
+
+    public static (bool Success, string? Error) MarkAllCrmTaskNotificationsRead()
+    {
+        lock (CrmSync)
+        {
+            var now = DateTime.UtcNow;
+            for (var index = 0; index < PreviewCrmTaskNotifications.Count; index++)
+            {
+                var notification = PreviewCrmTaskNotifications[index];
+                if (notification.ReadAtUtc is null)
+                {
+                    PreviewCrmTaskNotifications[index] = notification with { ReadAtUtc = now };
+                }
+            }
+
+            return (true, null);
         }
     }
 
@@ -586,12 +690,19 @@ internal static class DesignPreviewData
         }
     }
 
-    public static (bool Success, string? Error) SetCrmOfficeSettings(bool enabled, bool requireStageComment)
+    public static (bool Success, string? Error) SetCrmOfficeSettings(
+        bool enabled,
+        bool requireStageComment,
+        bool? deadlineNotificationsEnabled = null)
     {
         lock (CrmSync)
         {
             _previewCrmEnabled = enabled;
             _previewCrmRequireComment = requireStageComment;
+            if (deadlineNotificationsEnabled is bool notificationsEnabled)
+            {
+                _previewCrmDeadlineNotificationsEnabled = notificationsEnabled;
+            }
             return (true, null);
         }
     }

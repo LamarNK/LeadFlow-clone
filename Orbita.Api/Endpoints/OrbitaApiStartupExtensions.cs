@@ -239,6 +239,7 @@ public static class OrbitaApiStartupExtensions
         builder.Services.Configure<WorkerReleaseOptions>(builder.Configuration.GetSection(WorkerReleaseOptions.SectionName));
         builder.Services.Configure<WorkerDiagnosticsOptions>(builder.Configuration.GetSection(WorkerDiagnosticsOptions.SectionName));
         builder.Services.Configure<CrmTaskAttachmentOptions>(builder.Configuration.GetSection(CrmTaskAttachmentOptions.SectionName));
+        builder.Services.Configure<CrmDeadlineNotificationOptions>(builder.Configuration.GetSection(CrmDeadlineNotificationOptions.SectionName));
         builder.Services.Configure<WorkerLogsOptions>(builder.Configuration.GetSection(WorkerLogsOptions.SectionName));
         builder.Services.Configure<ServiceLogsOptions>(builder.Configuration.GetSection(ServiceLogsOptions.SectionName));
         builder.Services.AddSingleton<WorkerReleaseService>();
@@ -255,6 +256,8 @@ public static class OrbitaApiStartupExtensions
         });
         builder.Services.AddScoped<CrmLeadDistributionService>();
         builder.Services.AddScoped<CrmWorkspaceService>();
+        builder.Services.AddScoped<CrmDeadlineNotificationService>();
+        builder.Services.AddSingleton<ICrmNotificationRealtimeNotifier, CrmNotificationRealtimeNotifier>();
         builder.Services.AddScoped<BitrixInstanceService>();
         builder.Services.AddScoped<BitrixWorkforceSettingsService>();
         builder.Services.AddScoped<BitrixWorkforceEventReceiver>();
@@ -292,6 +295,7 @@ public static class OrbitaApiStartupExtensions
         builder.Services.AddScoped<ServiceLogsQueryService>();
         builder.Services.AddHostedService<ServiceLogsCleanupService>();
         builder.Services.AddHostedService<WorkerScheduleHostedService>();
+        builder.Services.AddHostedService<CrmDeadlineNotificationHostedService>();
         builder.Services.AddHostedService<BitrixWorkforceHostedService>();
         builder.Services.AddScoped<WebhookSecretProtector>();
         builder.Services.AddScoped<AvitoAccountSecretProtector>();

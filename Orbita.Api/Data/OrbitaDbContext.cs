@@ -24,6 +24,7 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
     public DbSet<CrmCandidateCardEntity> CrmCandidateCards => Set<CrmCandidateCardEntity>();
     public DbSet<CrmCandidateNoteEntity> CrmCandidateNotes => Set<CrmCandidateNoteEntity>();
     public DbSet<CrmTaskEntity> CrmTasks => Set<CrmTaskEntity>();
+    public DbSet<CrmTaskNotificationEntity> CrmTaskNotifications => Set<CrmTaskNotificationEntity>();
     public DbSet<CrmTaskCommentEntity> CrmTaskComments => Set<CrmTaskCommentEntity>();
     public DbSet<CrmTaskAttachmentEntity> CrmTaskAttachments => Set<CrmTaskAttachmentEntity>();
     public DbSet<CrmCandidateHistoryEntity> CrmCandidateHistory => Set<CrmCandidateHistoryEntity>();
@@ -214,6 +215,7 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
         {
             entity.HasKey(x => x.Id);
             entity.HasIndex(x => new { x.OfficeId, x.AssigneeUserId, x.Status });
+            entity.HasIndex(x => new { x.OfficeId, x.Status, x.DueAtUtc });
             entity.HasIndex(x => x.CardId);
             entity.Property(x => x.Title).HasMaxLength(500);
             entity.Property(x => x.Description).HasMaxLength(4000);
@@ -222,6 +224,23 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.Property(x => x.CreatorName).HasMaxLength(256);
             entity.Property(x => x.Importance).HasMaxLength(16).HasDefaultValue(CrmTaskImportances.Medium);
             entity.Property(x => x.Status).HasMaxLength(16);
+        });
+
+        modelBuilder.Entity<CrmTaskNotificationEntity>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.TaskId, x.ReminderVersion, x.Kind }).IsUnique();
+            entity.HasIndex(x => new { x.OfficeId, x.RecipientUserId, x.ReadAtUtc, x.CreatedAtUtc });
+            entity.Property(x => x.RecipientUserId).HasMaxLength(128);
+            entity.Property(x => x.Kind).HasMaxLength(16);
+            entity.HasOne<CrmTaskEntity>()
+                .WithMany()
+                .HasForeignKey(x => x.TaskId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<OfficeEntity>()
+                .WithMany()
+                .HasForeignKey(x => x.OfficeId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<CrmTaskCommentEntity>(entity =>

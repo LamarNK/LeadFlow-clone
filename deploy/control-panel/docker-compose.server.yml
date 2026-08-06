@@ -40,6 +40,7 @@ services:
       BitrixWorkforce__WorkerIntervalSeconds: ${BITRIX_WORKFORCE_WORKER_INTERVAL_SECONDS:-5}
       BitrixWorkforce__BatchSize: ${BITRIX_WORKFORCE_BATCH_SIZE:-50}
       BitrixWorkforce__LeaseSeconds: ${BITRIX_WORKFORCE_LEASE_SECONDS:-300}
+      CrmDeadlineNotifications__Enabled: ${CRM_DEADLINE_NOTIFICATIONS_ENABLED:-false}
     depends_on:
       postgres:
         condition: service_healthy

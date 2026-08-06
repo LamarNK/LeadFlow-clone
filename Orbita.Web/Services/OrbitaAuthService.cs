@@ -2,6 +2,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Orbita.Contracts;
 
 namespace Orbita.Web.Services;
 
@@ -26,12 +27,14 @@ public sealed class OrbitaAuthService(IHttpContextAccessor httpContextAccessor, 
             ?? throw new InvalidOperationException("HttpContext is not available.");
 
         var expires = DateTimeOffset.UtcNow.AddDays(7);
-        var claims = new[]
+        var claims = new List<Claim>
         {
             new Claim(ClaimTypes.Email, email),
             new Claim(ClaimTypes.Name, displayName),
-            new Claim(ClaimTypes.Role, "Admin")
+            new Claim(ClaimTypes.Role, PanelRoles.Admin)
         };
+        claims.AddRange(PanelPermissions.All.Select(permission =>
+            new Claim(PanelPermissions.ClaimType, permission.Id)));
         var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
         var principal = new ClaimsPrincipal(identity);
 

@@ -118,6 +118,16 @@ public static class CrmTaskImportances
     };
 }
 
+public static class CrmTaskNotificationKinds
+{
+    public const string DueIn24Hours = "due_24h";
+    public const string DueIn1Hour = "due_1h";
+    public const string Overdue = "overdue";
+
+    public static bool IsValid(string? kind) =>
+        kind is DueIn24Hours or DueIn1Hour or Overdue;
+}
+
 public static class CrmTaskAttachmentLimits
 {
     public const long MaxFileSizeBytes = 20 * 1024 * 1024;
@@ -181,7 +191,8 @@ public sealed record CrmBoardDto(
     bool OverdueOnly,
     bool ActiveLoadOnly,
     bool IncludeClosed,
-    IReadOnlyList<string> FunnelStages);
+    IReadOnlyList<string> FunnelStages,
+    bool DeadlineNotificationsEnabled = false);
 
 public sealed record CrmStageDto(string Name, IReadOnlyList<CrmCandidateCardDto> Cards, int TotalCount);
 
@@ -300,6 +311,26 @@ public sealed record CrmTaskDetailDto(
     bool CanManage,
     IReadOnlyList<CrmManagerDto> Managers);
 
+public sealed record CrmTaskNotificationDto(
+    Guid Id,
+    Guid TaskId,
+    Guid? CardId,
+    string Kind,
+    string TaskTitle,
+    string Message,
+    DateTime DueAtUtc,
+    DateTime CreatedAtUtc,
+    DateTime? ReadAtUtc);
+
+public sealed record CrmTaskNotificationsDto(
+    int UnreadCount,
+    IReadOnlyList<CrmTaskNotificationDto> Items,
+    bool Enabled = false);
+
+public sealed record CrmTaskNotificationSummaryDto(
+    int UnreadCount,
+    bool Enabled = false);
+
 public sealed record CrmHistoryDto(
     Guid Id,
     string Action,
@@ -338,6 +369,14 @@ public sealed record CrmTaskCommentCreateRequest(string Text);
 public sealed record CrmFollowUpRequest(int Minutes, string? Title = null);
 public sealed record CrmCloseRequest(string Reason, string? Comment = null);
 public sealed record CrmCapacityRequest(int Capacity);
-public sealed record CrmOfficeSettingsRequest(bool IsEnabled, bool RequireStageComment = false);
-public sealed record CrmOfficeSettingsDto(bool IsEnabled, bool RequireStageComment, IReadOnlyList<string> Stages);
+public sealed record CrmOfficeSettingsRequest(
+    bool IsEnabled,
+    bool RequireStageComment = false,
+    bool? DeadlineNotificationsEnabled = null);
+
+public sealed record CrmOfficeSettingsDto(
+    bool IsEnabled,
+    bool RequireStageComment,
+    IReadOnlyList<string> Stages,
+    bool DeadlineNotificationsEnabled = false);
 public sealed record CrmOfficeFunnelRequest(IReadOnlyList<string> Stages);

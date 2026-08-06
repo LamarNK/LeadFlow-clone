@@ -18,6 +18,15 @@ public sealed class OfficeEntity
     /// <summary>Требовать комментарий при смене этапа CRM.</summary>
     public bool CrmRequireStageComment { get; set; }
 
+    /// <summary>Включить персональные напоминания по срокам CRM-задач для этого офиса.</summary>
+    public bool CrmDeadlineNotificationsEnabled { get; set; }
+
+    /// <summary>
+    /// Момент последнего включения напоминаний. Задачи, не изменявшиеся после него,
+    /// не рассылаются автоматически, чтобы первый запуск не создал лавину старых уведомлений.
+    /// </summary>
+    public DateTime? CrmDeadlineNotificationsEnabledAtUtc { get; set; }
+
     /// <summary>JSON-массив имён этапов воронки офиса. Null/пусто = <see cref="CrmStages.Default"/>.</summary>
     public string? CrmStagesJson { get; set; }
     public string? BitrixWebhookUrlProtected { get; set; }
@@ -681,8 +690,24 @@ public sealed class CrmTaskEntity
     public DateTime? DueAtUtc { get; set; }
     public string Importance { get; set; } = CrmTaskImportances.Medium;
     public string Status { get; set; } = CrmTaskStatuses.Open;
+    public Guid ReminderVersion { get; set; } = Guid.NewGuid();
+    public DateTime ReminderVersionChangedAtUtc { get; set; }
     public DateTime CreatedAtUtc { get; set; }
     public DateTime? CompletedAtUtc { get; set; }
+}
+
+public sealed class CrmTaskNotificationEntity
+{
+    public Guid Id { get; set; }
+    public Guid OfficeId { get; set; }
+    public Guid TaskId { get; set; }
+    public Guid ReminderVersion { get; set; }
+    public string RecipientUserId { get; set; } = string.Empty;
+    public string Kind { get; set; } = string.Empty;
+    public DateTime DueAtUtc { get; set; }
+    public DateTime CreatedAtUtc { get; set; }
+    public DateTime? ReadAtUtc { get; set; }
+    public DateTime? DismissedAtUtc { get; set; }
 }
 
 public sealed class CrmTaskCommentEntity

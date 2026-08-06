@@ -257,6 +257,93 @@ public static class CrmEndpoints
             return task is null ? Results.NotFound() : Results.Ok(task);
         });
 
+        crm.MapGet("/notifications", async (
+            Guid? officeId,
+            bool? unreadOnly,
+            int? limit,
+            CrmDeadlineNotificationService notifications,
+            OfficeScopeService officeScope,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            var scope = await officeScope.ResolveAsync(principal, ct);
+            var effectiveOfficeId = scope.ResolveFilter(officeId);
+            var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier)
+                         ?? principal.FindFirstValue("sub");
+            if (effectiveOfficeId is not Guid resolvedOfficeId || string.IsNullOrWhiteSpace(userId))
+            {
+                return Results.BadRequest(new { error = "Выберите офис, чтобы открыть уведомления CRM." });
+            }
+
+            return Results.Ok(await notifications.GetAsync(
+                resolvedOfficeId,
+                userId,
+                unreadOnly == true,
+                limit ?? 20,
+                ct));
+        });
+
+        crm.MapGet("/notifications/summary", async (
+            Guid? officeId,
+            CrmDeadlineNotificationService notifications,
+            OfficeScopeService officeScope,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            var scope = await officeScope.ResolveAsync(principal, ct);
+            var effectiveOfficeId = scope.ResolveFilter(officeId);
+            var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier)
+                         ?? principal.FindFirstValue("sub");
+            if (effectiveOfficeId is not Guid resolvedOfficeId || string.IsNullOrWhiteSpace(userId))
+            {
+                return Results.BadRequest(new { error = "Выберите офис, чтобы открыть уведомления CRM." });
+            }
+
+            return Results.Ok(await notifications.GetSummaryAsync(resolvedOfficeId, userId, ct));
+        });
+
+        crm.MapPost("/notifications/{notificationId:guid}/read", async (
+            Guid notificationId,
+            Guid? officeId,
+            CrmDeadlineNotificationService notifications,
+            OfficeScopeService officeScope,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            var scope = await officeScope.ResolveAsync(principal, ct);
+            var effectiveOfficeId = scope.ResolveFilter(officeId);
+            var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier)
+                         ?? principal.FindFirstValue("sub");
+            if (effectiveOfficeId is not Guid resolvedOfficeId || string.IsNullOrWhiteSpace(userId))
+            {
+                return Results.BadRequest(new { error = "Выберите офис, чтобы открыть уведомления CRM." });
+            }
+
+            return await notifications.MarkReadAsync(resolvedOfficeId, userId, notificationId, ct)
+                ? Results.NoContent()
+                : Results.NotFound();
+        });
+
+        crm.MapPost("/notifications/read-all", async (
+            Guid? officeId,
+            CrmDeadlineNotificationService notifications,
+            OfficeScopeService officeScope,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            var scope = await officeScope.ResolveAsync(principal, ct);
+            var effectiveOfficeId = scope.ResolveFilter(officeId);
+            var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier)
+                         ?? principal.FindFirstValue("sub");
+            if (effectiveOfficeId is not Guid resolvedOfficeId || string.IsNullOrWhiteSpace(userId))
+            {
+                return Results.BadRequest(new { error = "Выберите офис, чтобы открыть уведомления CRM." });
+            }
+
+            var updated = await notifications.MarkAllReadAsync(resolvedOfficeId, userId, ct);
+            return Results.Ok(new { updated });
+        });
+
         crm.MapPost("/tasks/{taskId:guid}/comments", async (Guid taskId, CrmTaskCommentCreateRequest request, CrmWorkspaceService workspace, ClaimsPrincipal principal, CancellationToken ct) =>
         {
             var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
@@ -334,7 +421,12 @@ public static class CrmEndpoints
 
         crm.MapPut("/offices/{officeId:guid}/settings", async (Guid officeId, CrmOfficeSettingsRequest request, CrmWorkspaceService workspace, ClaimsPrincipal principal, CancellationToken ct) =>
             principal.IsInRole(PanelRoles.Admin)
-                ? (await workspace.SetOfficeSettingsAsync(officeId, request.IsEnabled, request.RequireStageComment, ct) ? Results.NoContent() : Results.NotFound())
+                ? (await workspace.SetOfficeSettingsAsync(
+                    officeId,
+                    request.IsEnabled,
+                    request.RequireStageComment,
+                    request.DeadlineNotificationsEnabled,
+                    ct) ? Results.NoContent() : Results.NotFound())
                 : Results.Forbid());
 
         crm.MapPut("/offices/{officeId:guid}/funnel", async (
