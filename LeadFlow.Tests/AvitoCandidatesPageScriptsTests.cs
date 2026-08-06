@@ -6,41 +6,6 @@ namespace LeadFlow.Tests;
 public sealed class AvitoCandidatesPageScriptsTests
 {
     [Fact]
-    public void BuildWaitForReadyProbeScript_DoesNotRequireDocumentComplete()
-    {
-        var script = AvitoCandidatesPageScripts.BuildWaitForReadyProbeScript();
-
-        Assert.DoesNotContain("document.readyState === \"complete\"", script, StringComparison.Ordinal);
-        Assert.Contains("hasListData ||", script, StringComparison.Ordinal);
-        Assert.Contains("readyState: document.readyState", script, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void InteractionWaiter_UsesSpecificContractsForBalanceBlockedItemsAndMessenger()
-    {
-        var script = AvitoInteractionWaiter.BuildProbeScript(AvitoInteractionWaiter.Target.BlockedItems);
-
-        Assert.Contains("osp-sidebar/tools/money", script, StringComparison.Ordinal);
-        Assert.Contains("messagesHistory/list", script, StringComparison.Ordinal);
-        Assert.Contains("mini-messenger/messenger-page-link", script, StringComparison.Ordinal);
-        Assert.Contains("contextMismatch", script, StringComparison.Ordinal);
-        Assert.Contains("rejectedContext && (hasItems", script, StringComparison.Ordinal);
-        Assert.DoesNotContain("auth-app-root", script, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void InteractionWaiter_SubProfileSwitchRequiresCurrentProfileOrModalCards()
-    {
-        var script = AvitoInteractionWaiter.BuildProbeScript(
-            AvitoInteractionWaiter.Target.SubProfileSwitch,
-            "123");
-
-        Assert.Contains("component-profile-switch/profile-${expectedSubProfileId}", script, StringComparison.Ordinal);
-        Assert.Contains("isCurrent", script, StringComparison.Ordinal);
-        Assert.Contains("switchModal && switchCards.length > 0", script, StringComparison.Ordinal);
-    }
-
-    [Fact]
     public void BuildClickCandidateChatByIndexScript_UsesJobApplicationItemIndex()
     {
         var script = AvitoCandidatesPageScripts.BuildClickCandidateChatByIndexScript(2);

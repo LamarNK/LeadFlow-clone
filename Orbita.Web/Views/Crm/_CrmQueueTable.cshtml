@@ -1,22 +1,45 @@
 @model Orbita.Contracts.CrmBoardDto
 @{
-    var cards = Model.Stages
+    var requestedSort = Context.Request.Query["sort"].ToString().Trim().ToLowerInvariant();
+    var requestedDir = Context.Request.Query["dir"].ToString();
+    var validSorts = new[] { "candidate", "phone", "vacancy", "stage", "priority", "created" };
+    var sortColumn = validSorts.Contains(requestedSort) ? requestedSort : "priority";
+    var sort = TableSortState.Create(sortColumn, string.Equals(requestedDir, "asc", StringComparison.OrdinalIgnoreCase) ? false : true);
+    var cardsQuery = Model.Stages
         .SelectMany(stage => stage.Cards)
-        .Where(card => !card.IsClosed && string.IsNullOrWhiteSpace(card.ManagerUserId))
-        .OrderByDescending(card => card.HasOverdueTask)
-        .ThenByDescending(card => card.HoursInStage)
-        .ToList();
+        .Where(card => !card.IsClosed && string.IsNullOrWhiteSpace(card.ManagerUserId));
+    var cards = sortColumn switch
+    {
+        "candidate" => sort.Descending ? cardsQuery.OrderByDescending(card => card.FullName) : cardsQuery.OrderBy(card => card.FullName),
+        "phone" => sort.Descending ? cardsQuery.OrderByDescending(card => card.PhoneRaw) : cardsQuery.OrderBy(card => card.PhoneRaw),
+        "vacancy" => sort.Descending ? cardsQuery.OrderByDescending(card => card.Vacancy) : cardsQuery.OrderBy(card => card.Vacancy),
+        "stage" => sort.Descending ? cardsQuery.OrderByDescending(card => card.Stage) : cardsQuery.OrderBy(card => card.Stage),
+        "created" => sort.Descending ? cardsQuery.OrderByDescending(card => card.CreatedAtUtc) : cardsQuery.OrderBy(card => card.CreatedAtUtc),
+        _ => sort.Descending
+            ? cardsQuery.OrderByDescending(card => card.HasOverdueTask).ThenByDescending(card => card.OpenTaskCount).ThenByDescending(card => card.HoursInStage)
+            : cardsQuery.OrderBy(card => card.HasOverdueTask).ThenBy(card => card.OpenTaskCount).ThenBy(card => card.HoursInStage)
+    };
+    var sortRoute = new
+    {
+        scope = Model.Scope,
+        search = Model.Search,
+        city = Model.City,
+        vacancy = Model.Vacancy,
+        overdueOnly = Model.OverdueOnly,
+        activeLoadOnly = Model.ActiveLoadOnly,
+        includeClosed = Model.IncludeClosed
+    };
 }
-<section class="crm-closed crm-queue-list card" aria-label="Очередь кандидатов">
+<section class="crm-closed crm-queue-list crm-table-list card" aria-label="Очередь кандидатов">
     <header class="crm-closed__header">
         <div>
             <h2>Очередь кандидатов</h2>
-            <p>Карточки без назначенного ответственного.</p>
+            <p>Карточки без ответственного — сначала кандидаты с риском.</p>
         </div>
-        <span class="crm-closed__count">@cards.Count</span>
+        <span class="crm-closed__count" title="Карточек в очереди">@cards.Count()</span>
     </header>
 
-    @if (cards.Count == 0)
+    @if (!cards.Any())
     {
         <div class="crm-closed__empty">
             <i class="fa-solid fa-inbox" aria-hidden="true"></i>
@@ -27,50 +50,64 @@
     else
     {
         <div class="crm-closed__table-wrap">
-            <table class="data-table data-table--cards crm-closed__table">
+            <table class="data-table data-table--cards crm-closed__table crm-table-list__table">
+                <colgroup>
+                    <col class="crm-table-list__candidate-col" />
+                    <col class="crm-table-list__contact-col" />
+                    <col class="crm-table-list__vacancy-col" />
+                    <col class="crm-table-list__stage-col" />
+                    <col class="crm-table-list__priority-col" />
+                    <col class="crm-table-list__date-col" />
+                    @if (Model.IsAdmin && Model.CanEdit && Model.Managers.Count > 0) { <col class="crm-table-list__action-col" /> }
+                </colgroup>
                 <thead>
                     <tr>
-                        <th>Кандидат</th>
-                        <th>Вакансия</th>
-                        <th>Этап</th>
-                        <th>Статус</th>
-                        @if (Model.IsAdmin && Model.CanEdit && Model.Managers.Count > 0)
-                        {
-                            <th>Ответственный</th>
-                        }
+                        <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Кандидат", Column = "candidate", Sort = sort, Controller = "Crm", Action = "Index", RouteValues = sortRoute })" />
+                        <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Контакты", Column = "phone", Sort = sort, Controller = "Crm", Action = "Index", RouteValues = sortRoute })" />
+                        <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Вакансия", Column = "vacancy", Sort = sort, Controller = "Crm", Action = "Index", RouteValues = sortRoute })" />
+                        <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Этап", Column = "stage", Sort = sort, Controller = "Crm", Action = "Index", RouteValues = sortRoute })" />
+                        <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Приоритет", Column = "priority", Sort = sort, Controller = "Crm", Action = "Index", RouteValues = sortRoute })" />
+                        <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "В очереди", Column = "created", Sort = sort, Controller = "Crm", Action = "Index", RouteValues = sortRoute })" />
+                        @if (Model.IsAdmin && Model.CanEdit && Model.Managers.Count > 0) { <th class="crm-table-list__action-head" scope="col">Назначить</th> }
                     </tr>
                 </thead>
                 <tbody>
                     @foreach (var card in cards)
                     {
+                        var initials = string.Concat(card.FullName.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(part => char.ToUpperInvariant(part[0])));
+                        var avatarUrl = Url.Action("Avatar", "Crm", new { id = card.Id });
                         <tr>
-                            <td class="cell-name" data-label="Кандидат">
-                                <a asp-action="Card" asp-route-id="@card.Id">@card.FullName</a>
-                                <small>@(card.Age?.ToString() ?? "—") лет · @card.City</small>
+                            <td class="crm-table-candidate" data-label="Кандидат">
+                                <a asp-action="Card" asp-route-id="@card.Id" class="crm-table-candidate__identity">
+                                    <span class="crm-table-candidate__avatar">@(string.IsNullOrWhiteSpace(initials) ? "?" : initials)<img src="@avatarUrl" alt="" loading="lazy" onerror="this.remove()" /></span>
+                                    <span class="crm-table-candidate__copy"><strong title="@card.FullName">@card.FullName</strong><small>@(card.Age?.ToString() ?? "—") лет</small></span>
+                                </a>
                             </td>
-                            <td data-label="Вакансия">@card.Vacancy</td>
+                            <td class="crm-table-contact" data-label="Контакты"><a href="tel:@card.PhoneRaw">@card.PhoneRaw</a><span>@card.City</span></td>
+                            <td class="crm-table-vacancy" data-label="Вакансия"><strong title="@card.Vacancy">@card.Vacancy</strong>@if (!string.IsNullOrWhiteSpace(card.AccountName)) { <span>@card.AccountName</span> }</td>
                             <td data-label="Этап"><span class="crm-queue-list__stage">@card.Stage</span></td>
-                            <td data-label="Статус">
+                            <td class="crm-table-status" data-label="Приоритет">
                                 @if (card.HasOverdueTask)
                                 {
                                     <span class="crm-overdue"><i class="fa-solid fa-clock" aria-hidden="true"></i> Просрочена</span>
                                 }
                                 else if (card.OpenTaskCount > 0)
                                 {
-                                    <span><i class="fa-solid fa-list-check" aria-hidden="true"></i> @card.OpenTaskCount задач</span>
+                                    <span class="crm-table-status__tasks"><i class="fa-solid fa-list-check" aria-hidden="true"></i> @card.OpenTaskCount задач</span>
                                 }
                                 else if (card.HoursInStage >= 24)
                                 {
-                                    <span class="crm-hot">В очереди @card.HoursInStage.ToString("0.#")ч</span>
+                                    <span class="crm-hot">Без движения @card.HoursInStage.ToString("0.#") ч</span>
                                 }
-                            else
-                            {
-                                <span>Новая карточка</span>
-                            }
+                                else
+                                {
+                                    <span class="crm-table-status__new">Новая карточка</span>
+                                }
                             </td>
+                            <td class="crm-table-time" data-label="В очереди"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(card.CreatedAtUtc, "datetime"))" /></td>
                             @if (Model.IsAdmin && Model.CanEdit && Model.Managers.Count > 0)
                             {
-                                <td data-label="Ответственный">
+                                <td class="crm-table-list__action" data-label="Назначить">
                                     <form asp-action="Assign" method="post" class="crm-queue-list__assign">
                                         <input type="hidden" name="id" value="@card.Id" />
                                         <input type="hidden" name="returnUrl" value="@(Context.Request.Path + Context.Request.QueryString)" />
@@ -80,7 +117,7 @@
                                                 <option value="@manager.UserId">@manager.DisplayName</option>
                                             }
                                         </select>
-                                        <button type="submit" aria-label="Назначить менеджера">Назначить</button>
+                                        <button type="submit" aria-label="Назначить менеджера"><i class="fa-solid fa-user-plus" aria-hidden="true"></i><span>Назначить</span></button>
                                     </form>
                                 </td>
                             }

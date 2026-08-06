@@ -106,6 +106,15 @@ public static class MonitoringTiming
     /// <summary>Интервал опроса DOM при ожидании откликов (мс).</summary>
     public const int CandidatesPagePollMs = 500;
 
+    /// <summary>Сколько подряд одинаковых снимков списка нужно, чтобы считать страницу стабильной.</summary>
+    public const int CandidatesPageStablePollsRequired = 2;
+
+    /// <summary>
+    /// После reload: если сигнатура совпадает с baseline, но DOM стабилен столько мс — принимаем
+    /// (пустой список или Avito не обновил карточки, но страница готова).
+    /// </summary>
+    public const int CandidatesBaselineStaleAcceptGraceMs = 12_000;
+
     /// <summary>Сколько раз повторять переключение субпрофиля с восстановлением страницы между попытками.</summary>
     public const int SubProfileSwitchMaxAttempts = 3;
 

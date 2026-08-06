@@ -164,11 +164,7 @@ public sealed partial class AdsPowerAvitoAutomationService
             if (await TrySwitchSubProfileOnPageOnceAsync(page, subProfileId, cancellationToken)
                     .ConfigureAwait(false))
             {
-                if (await VerifyActiveSubProfileOnPageAsync(page, subProfileId, cancellationToken)
-                        .ConfigureAwait(false))
-                {
-                    return true;
-                }
+                return true;
             }
 
             var postFailState = await ProbePageStateAsync(page, cancellationToken).ConfigureAwait(false);
@@ -337,7 +333,7 @@ public sealed partial class AdsPowerAvitoAutomationService
             return true;
         }
 
-        var switched = await TryClickSubProfileCardAsync(page, subProfileId, cancellationToken)
+        var switched = await TryClickSubProfileCardAndWaitCloseAsync(page, subProfileId, cancellationToken)
             .ConfigureAwait(false);
         if (!switched)
         {
@@ -357,6 +353,7 @@ public sealed partial class AdsPowerAvitoAutomationService
             return false;
         }
 
+        var sw = Stopwatch.StartNew();
         if (IsOnCandidatesResponsesPage(page.Url))
         {
             await NavigateAwayFromCandidatesForSwitchAsync(page, cancellationToken, nameof(VerifyActiveSubProfileOnPageAsync))
@@ -365,50 +362,49 @@ public sealed partial class AdsPowerAvitoAutomationService
 
         await EnsureSwitchModalAsync(page, cancellationToken, nameof(VerifyActiveSubProfileOnPageAsync))
             .ConfigureAwait(false);
-        var result = await AvitoInteractionWaiter.WaitOnPageAsync(
-                page,
-                AvitoInteractionWaiter.Target.SubProfileSwitch,
-                new AvitoInteractionWaiter.Options(
-                    MonitoringTiming.VerifySubProfileMaxWaitMs,
-                    MonitoringTiming.VerifySubProfilePollMs,
-                    subProfileId,
-                    "subprofile_switch"),
-                cancellationToken)
-            .ConfigureAwait(false);
+        if (!await AwaitProfileSwitchModalContentAsync(page, cancellationToken, nameof(VerifyActiveSubProfileOnPageAsync))
+                .ConfigureAwait(false))
+        {
+            await DismissProfileSwitchModalAsync(page, cancellationToken).ConfigureAwait(false);
+            return false;
+        }
+
+        var maxWaitMs = MonitoringTiming.VerifySubProfileMaxWaitMs;
+        var pollMs = MonitoringTiming.VerifySubProfilePollMs;
+
+        for (var elapsed = 0; elapsed < maxWaitMs; elapsed += pollMs)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (await IsTargetSubProfileAlreadyCurrentAsync(page, subProfileId).ConfigureAwait(false))
+            {
+                await DismissProfileSwitchModalAsync(page, cancellationToken).ConfigureAwait(false);
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"AdsPower profile-switch verify OK for subProfile {subProfileId} ({sw.ElapsedMilliseconds} ms).",
+                    DeskLinkAuditLogLevel.Info,
+                    memberName: nameof(VerifyActiveSubProfileOnPageAsync),
+                    properties: new Dictionary<string, object?>
+                    {
+                        ["step"] = "verify_ok",
+                        ["avito.subProfileId"] = subProfileId,
+                        ["verify.waitMs"] = sw.ElapsedMilliseconds
+                    });
+                return true;
+            }
+
+            await Task.Delay(pollMs, cancellationToken).ConfigureAwait(false);
+        }
 
         await DismissProfileSwitchModalAsync(page, cancellationToken).ConfigureAwait(false);
-        if (result.Status == AvitoInteractionWaiter.Status.Ready)
-        {
-            _ = GlobalLogger.Instance.LogAsync(
-                $"AdsPower profile-switch verify OK for subProfile {subProfileId} ({result.WaitMs} ms).",
-                DeskLinkAuditLogLevel.Info,
-                memberName: nameof(VerifyActiveSubProfileOnPageAsync),
-                properties: new Dictionary<string, object?>
-                {
-                    ["step"] = "verify_ok",
-                    ["avito.subProfileId"] = subProfileId,
-                    ["verify.waitMs"] = result.WaitMs,
-                    ["avito.currentSubProfileId"] = result.CurrentSubProfileId
-                });
-            return true;
-        }
-
-        if (result.Status is AvitoInteractionWaiter.Status.LoginRequired or AvitoInteractionWaiter.Status.CaptchaOrFirewall)
-        {
-            ThrowForInteractionFailure(result);
-        }
-
         _ = GlobalLogger.Instance.LogAsync(
-            $"AdsPower profile-switch verify timed out for subProfile {subProfileId} ({result.WaitMs} ms).",
+            $"AdsPower profile-switch verify timed out for subProfile {subProfileId} ({sw.ElapsedMilliseconds} ms).",
             DeskLinkAuditLogLevel.Warning,
             memberName: nameof(VerifyActiveSubProfileOnPageAsync),
             properties: new Dictionary<string, object?>
             {
                 ["step"] = "verify_timeout",
                 ["avito.subProfileId"] = subProfileId,
-                ["verify.waitMs"] = result.WaitMs,
-                ["ready.reason"] = result.Reason,
-                ["avito.currentSubProfileId"] = result.CurrentSubProfileId
+                ["verify.waitMs"] = sw.ElapsedMilliseconds
             });
         return false;
     }
@@ -425,15 +421,21 @@ public sealed partial class AdsPowerAvitoAutomationService
         var waitSw = Stopwatch.StartNew();
         await EnsureOnCandidatesPageAsync(page, adsPowerUserId, cancellationToken).ConfigureAwait(false);
 
+        var finalSignature = await AvitoCandidatesPageWaiter
+            .TryCaptureListSignatureAsync(executeScript, cancellationToken)
+            .ConfigureAwait(false);
+
         _ = GlobalLogger.Instance.LogAsync(
-            "AdsPower CDP candidates page action-ready (session).",
+            "AdsPower CDP candidates page stable (session).",
             DeskLinkAuditLogLevel.Info,
             memberName: nameof(ExtractCandidatesJsonOnPageAsync),
             properties: new Dictionary<string, object?>
             {
-                ["step"] = "candidates_ready",
+                ["step"] = "candidates_stable",
                 ["adsPower.userId"] = adsPowerUserId,
                 ["page.url"] = page.Url,
+                ["candidates.baselineSignature"] = "<handled-in-ensure>",
+                ["candidates.finalSignature"] = finalSignature ?? "<none>",
                 ["candidates.waitMs"] = waitSw.ElapsedMilliseconds
             });
 
@@ -498,14 +500,17 @@ public sealed partial class AdsPowerAvitoAutomationService
             }
         }
 
-        var sidebarReady = await AvitoInteractionWaiter.WaitOnPageAsync(
-                page,
-                AvitoInteractionWaiter.Target.ProfileBalance,
-                new AvitoInteractionWaiter.Options(12_000, 500, Operation: "balance_sidebar"),
-                cancellationToken)
-            .ConfigureAwait(false);
-        ThrowForInteractionFailure(sidebarReady);
-        // Timeout remains best-effort: Avito can render the money widget after the profile shell.
+        try
+        {
+            await page.WaitForSelectorAsync(
+                    "[data-marker='osp-sidebar/tools/money']",
+                    new WaitForSelectorOptions { Timeout = 12_000 })
+                .ConfigureAwait(false);
+        }
+        catch
+        {
+            // Sidebar иногда отрисовывается позже карточек — всё равно пробуем распарсить HTML.
+        }
 
         string html;
         try
@@ -608,6 +613,7 @@ public sealed partial class AdsPowerAvitoAutomationService
             }
         }
 
+        await WaitForBlockedItemsShellAsync(page, cancellationToken).ConfigureAwait(false);
         await WaitForBlockedItemsReadyAsync(page, cancellationToken).ConfigureAwait(false);
         await HumanDelay.AfterItemsRenderAsync(cancellationToken).ConfigureAwait(false);
 
@@ -631,26 +637,27 @@ public sealed partial class AdsPowerAvitoAutomationService
         string callerMemberName,
         CancellationToken cancellationToken)
     {
-        var result = await AvitoInteractionWaiter.WaitOnPageAsync(
-                page,
-                AvitoInteractionWaiter.Target.ProfileItems,
-                new AvitoInteractionWaiter.Options(30_000, 750, Operation: "profile_items_shell"),
-                cancellationToken)
-            .ConfigureAwait(false);
-        ThrowForInteractionFailure(result);
-        if (result.Status == AvitoInteractionWaiter.Status.TimedOut)
+        try
+        {
+            await page.WaitForSelectorAsync(
+                    "[data-marker='sorting-control'], [data-marker^='item-snippet/']",
+                    new WaitForSelectorOptions { Timeout = 30_000 })
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex)
         {
             _ = GlobalLogger.Instance.LogAsync(
-                "AdsPower profile-items: action-ready wait timed out.",
+                $"AdsPower profile-items: shell selector wait timed out: {ex.Message}",
                 DeskLinkAuditLogLevel.Warning,
                 memberName: callerMemberName,
                 properties: new Dictionary<string, object?>
                 {
                     ["step"] = "shell_timeout",
-                    ["page.url"] = result.Url,
-                    ["ready.reason"] = result.Reason
+                    ["page.url"] = page.Url
                 });
         }
+
+        cancellationToken.ThrowIfCancellationRequested();
     }
 
     private static async Task WaitForProfileItemsReadyAsync(
@@ -658,105 +665,114 @@ public sealed partial class AdsPowerAvitoAutomationService
         string callerMemberName,
         CancellationToken cancellationToken)
     {
-        var result = await AvitoInteractionWaiter.WaitOnPageAsync(
-                page,
-                AvitoInteractionWaiter.Target.ProfileItems,
-                new AvitoInteractionWaiter.Options(60_000, 750, Operation: "profile_items"),
-                cancellationToken)
-            .ConfigureAwait(false);
-        ThrowForInteractionFailure(result);
-        if (result.Status == AvitoInteractionWaiter.Status.TimedOut)
+        const string itemsReadyExpression = """
+            (() => {
+                const root = document.querySelector('#personal-items-root-element') || document.body;
+                const hasLoader = !!root.querySelector("[class*='styles-loader'], [class*='style-loader']");
+                if (hasLoader) return false;
+                const hasItems = !!document.querySelector("[data-marker^='item-snippet/']");
+                if (hasItems) return true;
+                const hasAddItemEmpty = !!root.querySelector("[data-marker='additem']");
+                const hasEmptyStateImg = !!root.querySelector("img[src*='emptystate_personal_items']");
+                if (hasAddItemEmpty || hasEmptyStateImg) return true;
+                const text = (root.innerText || '').toLowerCase();
+                const looksEmpty =
+                    /активн[а-я]*\s+объявлен[а-я]*\s+нет/.test(text) ||
+                    /нет\s+(активных\s+)?объявлен/.test(text) ||
+                    /у\s+вас\s+нет\s+активных/.test(text) ||
+                    /объявлен[а-я]*\s+не\s+найден/.test(text) ||
+                    /пока\s+пусто/.test(text) ||
+                    /можно\s+создать\s+новое/.test(text);
+                return looksEmpty;
+            })
+            """;
+
+        try
+        {
+            await page.WaitForFunctionAsync(
+                    itemsReadyExpression,
+                    new WaitForFunctionOptions { Timeout = 60_000, PollingInterval = 750 })
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex)
         {
             _ = GlobalLogger.Instance.LogAsync(
-                "AdsPower profile-items: action-ready wait timed out, capturing whatever is on the page.",
+                $"AdsPower profile-items: items wait timed out, capturing whatever is on the page: {ex.Message}",
                 DeskLinkAuditLogLevel.Warning,
                 memberName: callerMemberName,
                 properties: new Dictionary<string, object?>
                 {
                     ["step"] = "items_timeout",
-                    ["page.url"] = result.Url,
-                    ["ready.reason"] = result.Reason
+                    ["page.url"] = page.Url
                 });
         }
+
+        cancellationToken.ThrowIfCancellationRequested();
+    }
+
+    private static async Task WaitForBlockedItemsShellAsync(IPage page, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await page.WaitForSelectorAsync(
+                    "[data-marker='profile-items-tab/tab(rejected)'], [data-marker^='item-snippet/']",
+                    new WaitForSelectorOptions { Timeout = 30_000 })
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"AdsPower blocked-items: shell wait timed out: {ex.Message}",
+                DeskLinkAuditLogLevel.Warning,
+                memberName: nameof(LoadBlockedItemsHtmlOnPageAsync));
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
     }
 
     private static async Task WaitForBlockedItemsReadyAsync(IPage page, CancellationToken cancellationToken)
     {
-        var result = await AvitoInteractionWaiter.WaitOnPageAsync(
-                page,
-                AvitoInteractionWaiter.Target.BlockedItems,
-                new AvitoInteractionWaiter.Options(60_000, 750, Operation: "blocked_items"),
-                cancellationToken)
-            .ConfigureAwait(false);
-        ThrowForInteractionFailure(result);
-        if (result.Status == AvitoInteractionWaiter.Status.TimedOut)
+        const string blockedReadyExpression = """
+            (() => {
+                const root = document.querySelector('#personal-items-root-element') || document.body;
+                const hasLoader = !!root.querySelector("[class*='styles-loader'], [class*='style-loader']");
+                if (hasLoader) return false;
+                const hasItems = !!document.querySelector("[data-marker^='item-snippet/']");
+                if (hasItems) return true;
+                const hasAddItemEmpty = !!root.querySelector("[data-marker='additem']");
+                const hasEmptyStateImg = !!root.querySelector("img[src*='emptystate_personal_items']");
+                if (hasAddItemEmpty || hasEmptyStateImg) return true;
+                const text = (root.innerText || '').toLowerCase();
+                const looksEmpty =
+                    /объявлен[а-я]*\s+с\s+ошибк/.test(text) ||
+                    /нет\s+объявлен/.test(text) ||
+                    /объявлен[а-я]*\s+нет/.test(text) ||
+                    /пока\s+пусто/.test(text);
+                return looksEmpty;
+            })
+            """;
+
+        try
+        {
+            await page.WaitForFunctionAsync(
+                    blockedReadyExpression,
+                    new WaitForFunctionOptions { Timeout = 60_000, PollingInterval = 750 })
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex)
         {
             _ = GlobalLogger.Instance.LogAsync(
-                "AdsPower blocked-items: action-ready wait timed out, capturing whatever is on the page.",
+                $"AdsPower blocked-items: items wait timed out, capturing whatever is on the page: {ex.Message}",
                 DeskLinkAuditLogLevel.Warning,
                 memberName: nameof(LoadBlockedItemsHtmlOnPageAsync),
                 properties: new Dictionary<string, object?>
                 {
                     ["step"] = "items_timeout",
-                    ["page.url"] = result.Url,
-                    ["ready.reason"] = result.Reason
+                    ["page.url"] = page.Url
                 });
         }
-    }
 
-    private static void ThrowForInteractionFailure(AvitoInteractionWaiter.Result result)
-    {
-        if (result.Status == AvitoInteractionWaiter.Status.LoginRequired)
-        {
-            throw new AvitoLoginRequiredException(result.Url, result.PageState?.Title);
-        }
-
-        if (result.Status == AvitoInteractionWaiter.Status.CaptchaOrFirewall)
-        {
-            throw new AvitoCaptchaDetectedException(
-                result.PageState?.HasFirewallIp == true ? "firewall" : "captcha",
-                result.Url,
-                html: null);
-        }
-
-        if (result.Status is AvitoInteractionWaiter.Status.ProbeFailed or AvitoInteractionWaiter.Status.ContextMismatch)
-        {
-            throw new InvalidOperationException(
-                $"Avito interaction cannot continue for {result.Target}: {result.Reason}.");
-        }
-    }
-
-    private static async Task WaitForInteractionBestEffortAsync(
-        IPage page,
-        AvitoInteractionWaiter.Target target,
-        string operation,
-        string callerMemberName,
-        CancellationToken cancellationToken)
-    {
-        var result = await AvitoInteractionWaiter.WaitOnPageAsync(
-                page,
-                target,
-                new AvitoInteractionWaiter.Options(60_000, 750, Operation: operation),
-                cancellationToken)
-            .ConfigureAwait(false);
-        ThrowForInteractionFailure(result);
-        if (result.Status != AvitoInteractionWaiter.Status.TimedOut)
-        {
-            return;
-        }
-
-        _ = GlobalLogger.Instance.LogAsync(
-            $"AdsPower {operation}: action-ready wait timed out, preserving best-effort capture.",
-            DeskLinkAuditLogLevel.Warning,
-            memberName: callerMemberName,
-            properties: new Dictionary<string, object?>
-            {
-                ["step"] = "interaction_timeout",
-                ["avito.operation"] = operation,
-                ["ready.reason"] = result.Reason,
-                ["ready.waitMs"] = result.WaitMs,
-                ["page.url"] = result.Url
-            });
+        cancellationToken.ThrowIfCancellationRequested();
     }
 
     private sealed class AccountSession(
