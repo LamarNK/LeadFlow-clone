@@ -25,6 +25,15 @@ public sealed class OfficeStatisticsQueryService(
         string VacancyFilterKey) _cache;
     private static readonly object CacheLock = new();
 
+    /// <summary>Test-only: static statistics cache must not leak across InMemory DB fixtures.</summary>
+    internal static void ClearCacheForTests()
+    {
+        lock (CacheLock)
+        {
+            _cache = default;
+        }
+    }
+
     public async Task<OfficeStatisticsDto> GetStatisticsAsync(
         OfficeScope scope,
         Guid? officeFilter,
@@ -127,26 +136,33 @@ public sealed class OfficeStatisticsQueryService(
         var workerLookup = workers.ToDictionary(w => w.Id);
         var balances = BuildBalances(accountRows, snapshotBalancesByWorker, workerLookup);
         var accountInfrastructure = BuildAccountInfrastructure(accountRows, statsList);
-        var responsesQuery = db.CandidateResponses
-            .AsNoTracking()
-            .Where(x => x.WorkerId != null && workerIds.Contains(x.WorkerId.Value) && x.CollectedAt >= utcStart && x.CollectedAt < utcEnd);
 
-        // Scoped responses (worker / account / vacancy) without time filter — used for CRM office send counts.
+        // Scoped responses (worker / account / vacancy) without time filter — used for send-date joins.
         var scopedResponsesQuery = db.CandidateResponses
             .AsNoTracking()
             .Where(x => x.WorkerId != null && workerIds.Contains(x.WorkerId.Value));
         if (accountFilterSet is not null)
         {
-            responsesQuery = responsesQuery.Where(x => accountFilterSet.Contains(x.AccountId));
             scopedResponsesQuery = scopedResponsesQuery.Where(x => accountFilterSet.Contains(x.AccountId));
         }
 
-        responsesQuery = ApplyVacancyFilter(responsesQuery, vacancyFilterKey);
         scopedResponsesQuery = ApplyVacancyFilter(scopedResponsesQuery, vacancyFilterKey);
 
-        var dailyTrend = await BuildDailyTrendAsync(responsesQuery, startLocal, endLocal, ct);
-        var responses = await BuildResponsesPeriodAsync(responsesQuery, dailyTrend, ct);
-        var bitrixDeliveries = await BuildBitrixDeliveryStatsAsync(responsesQuery, scope, officeFilter, ct);
+        // Collected-in-period: totals, duplicates, errors, HR, etc.
+        var collectedQuery = scopedResponsesQuery
+            .Where(x => x.CollectedAt >= utcStart && x.CollectedAt < utcEnd);
+
+        // Bitrix "sent" metrics use actual send time, not CollectedAt.
+        var bitrixSends = await LoadBitrixSendEventsAsync(scopedResponsesQuery, utcStart, utcEnd, ct);
+
+        var dailyTrend = await BuildDailyTrendAsync(
+            collectedQuery,
+            bitrixSends,
+            startLocal,
+            endLocal,
+            ct);
+        var responses = await BuildResponsesPeriodAsync(collectedQuery, dailyTrend, ct);
+        var bitrixDeliveries = await BuildBitrixDeliveryStatsAsync(bitrixSends, scope, officeFilter, ct);
         var crmDeliveries = await BuildCrmDeliveryStatsAsync(
             scopedResponsesQuery,
             utcStart,
@@ -154,13 +170,14 @@ public sealed class OfficeStatisticsQueryService(
             scope,
             officeFilter,
             ct);
-        var hrInsights = await BuildHrInsightsAsync(responsesQuery, ct);
+        var hrInsights = await BuildHrInsightsAsync(collectedQuery, ct);
         var workerInfrastructure = await BuildWorkerInfrastructureAsync(
             workers,
             workerIds,
             utcStart,
             utcEnd,
             accountRows,
+            bitrixSends,
             ct);
         var monitoringCycles = await BuildMonitoringCyclesAsync(
             workerIds,
@@ -169,6 +186,7 @@ public sealed class OfficeStatisticsQueryService(
             startLocal,
             endLocal,
             accountRows,
+            bitrixSends,
             ct);
 
         var result = new OfficeStatisticsDto(
@@ -272,6 +290,7 @@ public sealed class OfficeStatisticsQueryService(
         DateTime startLocal,
         DateTime endLocal,
         IReadOnlyList<AccountProjection> accountRows,
+        IReadOnlyList<BitrixSendEvent> bitrixSends,
         CancellationToken ct)
     {
         var allowedAccountNames = accountRows
@@ -284,12 +303,19 @@ public sealed class OfficeStatisticsQueryService(
             return MonitoringCycleReportBuilder.Build([], startLocal, endLocal);
         }
 
-        var sentRows = await LoadSentMonitoringResponsesAsync(
-            workerIds,
-            utcStart,
-            utcEnd,
-            allowedAccountNames,
-            ct);
+        // One lead event per response, timestamp = actual Bitrix send.
+        var sentRows = bitrixSends
+            .GroupBy(x => x.ResponseId)
+            .Select(g =>
+            {
+                var first = g.OrderBy(x => x.SentAtUtc).First();
+                return new MonitoringCycleSentResponse(
+                    first.AccountName.Trim(),
+                    first.SubProfileName.Trim(),
+                    first.SentAtUtc);
+            })
+            .Where(x => allowedAccountNames.Contains(x.AccountName))
+            .ToList();
 
         // Prefer typed monitoring journal (no WorkerLogEntries scan).
         var journalCycles = await LoadMonitoringCycleJournalAsync(workerIds, utcStart, utcEnd, ct);
@@ -421,33 +447,60 @@ public sealed class OfficeStatisticsQueryService(
             .ToList();
     }
 
-    private async Task<IReadOnlyList<MonitoringCycleSentResponse>> LoadSentMonitoringResponsesAsync(
-        HashSet<Guid> workerIds,
+    /// <summary>
+    /// Successful Bitrix sends in [utcStart, utcEnd) by <b>send time</b>
+    /// (delivery CreatedAtUtc, or ProcessedAt for legacy rows without delivery records).
+    /// </summary>
+    private async Task<IReadOnlyList<BitrixSendEvent>> LoadBitrixSendEventsAsync(
+        IQueryable<CandidateResponseEntity> scopedResponses,
         DateTime utcStart,
         DateTime utcEnd,
-        IReadOnlySet<string> allowedAccountNames,
         CancellationToken ct)
     {
-        var sentResponses = await db.CandidateResponses
-            .AsNoTracking()
-            .Where(x => x.WorkerId != null && workerIds.Contains(x.WorkerId.Value))
-            .Where(x => x.Status == ResponseStatuses.Sent)
-            .Where(x => x.CollectedAt >= utcStart && x.CollectedAt < utcEnd)
-            .Select(x => new
-            {
-                x.AccountName,
-                x.AvitoSubProfileName,
-                TimestampUtc = x.ProcessedAt ?? x.CollectedAt
-            })
+        var fromDeliveries = await (
+            from d in db.ResponseBitrixDeliveries.AsNoTracking()
+            where d.Outcome == ResponseBitrixDeliveryOutcomes.Sent
+                  && d.CreatedAtUtc >= utcStart
+                  && d.CreatedAtUtc < utcEnd
+            join r in scopedResponses on d.ResponseId equals r.Id
+            select new BitrixSendEvent(
+                r.Id,
+                r.WorkerId,
+                r.AccountName,
+                r.AvitoSubProfileName,
+                d.CreatedAtUtc,
+                d.BitrixInstanceId))
             .ToListAsync(ct);
 
-        return sentResponses
-            .Select(x => new MonitoringCycleSentResponse(
-                x.AccountName.Trim(),
-                x.AvitoSubProfileName.Trim(),
-                x.TimestampUtc))
-            .Where(x => allowedAccountNames.Contains(x.AccountName))
-            .ToList();
+        var responsesWithAnyDelivery = db.ResponseBitrixDeliveries
+            .AsNoTracking()
+            .Select(d => d.ResponseId);
+
+        // Legacy: Status=Sent, no delivery rows — period by ProcessedAt (actual send/process time).
+        var legacy = await scopedResponses
+            .Where(r => r.Status == ResponseStatuses.Sent
+                        && r.ProcessedAt != null
+                        && r.ProcessedAt >= utcStart
+                        && r.ProcessedAt < utcEnd
+                        && !responsesWithAnyDelivery.Contains(r.Id))
+            .Select(r => new BitrixSendEvent(
+                r.Id,
+                r.WorkerId,
+                r.AccountName,
+                r.AvitoSubProfileName,
+                r.ProcessedAt!.Value,
+                r.BitrixInstanceId ?? Guid.Empty))
+            .ToListAsync(ct);
+
+        if (legacy.Count == 0)
+        {
+            return fromDeliveries;
+        }
+
+        var merged = new List<BitrixSendEvent>(fromDeliveries.Count + legacy.Count);
+        merged.AddRange(fromDeliveries);
+        merged.AddRange(legacy);
+        return merged;
     }
 
     private static BalanceStatisticsSection BuildBalances(
@@ -529,27 +582,34 @@ public sealed class OfficeStatisticsQueryService(
     }
 
     private static async Task<ResponsesPeriodSection> BuildResponsesPeriodAsync(
-        IQueryable<CandidateResponseEntity> query,
+        IQueryable<CandidateResponseEntity> collectedQuery,
         IReadOnlyList<DailyResponseBucketDto> dailyTrend,
         CancellationToken ct)
     {
         var total = dailyTrend.Sum(x => x.Total);
-        if (total == 0)
+        // Sent is by send date — can be > 0 even when nothing was collected in the period.
+        var sent = dailyTrend.Sum(x => x.Sent);
+        if (total == 0 && sent == 0)
         {
             return new ResponsesPeriodSection(0, 0, 0, 0, 0, 0, 0, 0, null);
         }
 
-        var sent = dailyTrend.Sum(x => x.Sent);
         var duplicates = dailyTrend.Sum(x => x.Duplicates);
         var errors = dailyTrend.Sum(x => x.Errors);
         var actionRequired = dailyTrend.Sum(x => x.ActionRequired);
         var inProgress = dailyTrend.Sum(x => x.InProgress);
-        var unique = total - duplicates;
-        var uniqueAuthors = await ResponseSummaryMetrics.CountUniqueAuthorsAsync(query, ct);
+        var unique = Math.Max(0, total - duplicates);
+        var uniqueAuthors = total == 0
+            ? 0
+            : await ResponseSummaryMetrics.CountUniqueAuthorsAsync(collectedQuery, ct);
 
-        var avgMinutes = await query
-            .Where(x => x.ProcessedAt != null)
-            .AverageAsync(x => (double?)(x.ProcessedAt!.Value - x.CollectedAt).TotalMinutes, ct);
+        double? avgMinutes = null;
+        if (total > 0)
+        {
+            avgMinutes = await collectedQuery
+                .Where(x => x.ProcessedAt != null)
+                .AverageAsync(x => (double?)(x.ProcessedAt!.Value - x.CollectedAt).TotalMinutes, ct);
+        }
 
         return new ResponsesPeriodSection(
             total,
@@ -564,41 +624,16 @@ public sealed class OfficeStatisticsQueryService(
     }
 
     private async Task<IReadOnlyList<BitrixDeliveryStatDto>> BuildBitrixDeliveryStatsAsync(
-        IQueryable<CandidateResponseEntity> responsesQuery,
+        IReadOnlyList<BitrixSendEvent> bitrixSends,
         OfficeScope scope,
         Guid? officeFilter,
         CancellationToken ct)
     {
-        // Prefer semi-join via Contains (IN subquery) over correlated EXISTS Any(...).
-        var periodResponseIds = responsesQuery.Select(r => r.Id);
-        var deliveryCounts = await db.ResponseBitrixDeliveries
-            .AsNoTracking()
-            .Where(d => d.Outcome == ResponseBitrixDeliveryOutcomes.Sent)
-            .Where(d => periodResponseIds.Contains(d.ResponseId))
-            .GroupBy(d => d.BitrixInstanceId)
-            .Select(g => new { BitrixInstanceId = g.Key, Count = g.Count() })
-            .ToListAsync(ct);
-
-        var responsesWithDelivery = db.ResponseBitrixDeliveries
-            .AsNoTracking()
-            .Select(d => d.ResponseId);
-        var legacyCounts = await responsesQuery
-            .Where(x => x.BitrixInstanceId != null && x.Status == ResponseStatuses.Sent)
-            .Where(x => !responsesWithDelivery.Contains(x.Id))
-            .GroupBy(x => x.BitrixInstanceId!.Value)
-            .Select(g => new { BitrixInstanceId = g.Key, Count = g.Count() })
-            .ToListAsync(ct);
-
-        var merged = new Dictionary<Guid, int>();
-        foreach (var row in deliveryCounts)
-        {
-            merged[row.BitrixInstanceId] = row.Count;
-        }
-
-        foreach (var row in legacyCounts)
-        {
-            merged[row.BitrixInstanceId] = merged.GetValueOrDefault(row.BitrixInstanceId) + row.Count;
-        }
+        // Count successful deliveries by instance at send time (not collection time).
+        var merged = bitrixSends
+            .Where(x => x.BitrixInstanceId != Guid.Empty)
+            .GroupBy(x => x.BitrixInstanceId)
+            .ToDictionary(g => g.Key, g => g.Count());
 
         if (merged.Count == 0)
         {
@@ -671,12 +706,13 @@ public sealed class OfficeStatisticsQueryService(
     }
 
     private static async Task<IReadOnlyList<DailyResponseBucketDto>> BuildDailyTrendAsync(
-        IQueryable<CandidateResponseEntity> query,
+        IQueryable<CandidateResponseEntity> collectedQuery,
+        IReadOnlyList<BitrixSendEvent> bitrixSends,
         DateTime startLocal,
         DateTime endLocal,
         CancellationToken ct)
     {
-        var rows = await query
+        var rows = await collectedQuery
             .GroupBy(x => new { Date = x.CollectedAt.Date, x.CollectedAt.Hour, x.Status })
             .Select(g => new HourlyStatusCount(g.Key.Date, g.Key.Hour, g.Key.Status, g.Count()))
             .ToListAsync(ct);
@@ -693,11 +729,9 @@ public sealed class OfficeStatisticsQueryService(
             }
 
             bucket.Total += row.Count;
+            // Sent is filled below from actual send timestamps — not from CollectedAt + Status.
             switch (row.Status)
             {
-                case ResponseStatuses.Sent:
-                    bucket.Sent += row.Count;
-                    break;
                 case ResponseStatuses.Duplicate:
                     bucket.Duplicates += row.Count;
                     break;
@@ -711,6 +745,25 @@ public sealed class OfficeStatisticsQueryService(
                     bucket.ActionRequired += row.Count;
                     break;
             }
+        }
+
+        // One count per response on the local day of its first Bitrix send in the period.
+        foreach (var sendGroup in bitrixSends.GroupBy(x => x.ResponseId))
+        {
+            var firstSend = sendGroup.Min(x => x.SentAtUtc);
+            var localDate = LocalCalendarDateRange.ToLocalDateFromStoredUtc(firstSend);
+            if (localDate < startLocal.Date || localDate > endLocal.Date)
+            {
+                continue;
+            }
+
+            if (!byDay.TryGetValue(localDate, out var bucket))
+            {
+                bucket = new DailyCounters();
+                byDay[localDate] = bucket;
+            }
+
+            bucket.Sent += 1;
         }
 
         var list = new List<DailyResponseBucketDto>((endLocal - startLocal).Days + 1);
@@ -791,6 +844,7 @@ public sealed class OfficeStatisticsQueryService(
         DateTime utcStart,
         DateTime utcEnd,
         IReadOnlyList<AccountProjection> accountRows,
+        IReadOnlyList<BitrixSendEvent> bitrixSends,
         CancellationToken ct)
     {
         var nowUtc = DateTime.UtcNow;
@@ -807,6 +861,7 @@ public sealed class OfficeStatisticsQueryService(
                         a.Status,
                         a.IsEnabledInPanel))));
 
+        // Collected-period totals/duplicates/errors still by CollectedAt.
         var responseStats = await db.CandidateResponses
             .AsNoTracking()
             .Where(x => x.WorkerId != null && workerIds.Contains(x.WorkerId.Value) && x.CollectedAt >= utcStart && x.CollectedAt < utcEnd)
@@ -815,7 +870,6 @@ public sealed class OfficeStatisticsQueryService(
             {
                 WorkerId = g.Key,
                 Total = g.Count(),
-                Sent = g.Count(x => x.Status == ResponseStatuses.Sent),
                 Duplicates = g.Count(x => x.Status == ResponseStatuses.Duplicate),
                 Errors = g.Count(x => x.Status == ResponseStatuses.Error || x.Status == ResponseStatuses.ActionRequired)
             })
@@ -825,18 +879,27 @@ public sealed class OfficeStatisticsQueryService(
             .Where(x => x.WorkerId is not null)
             .ToDictionary(x => x.WorkerId!.Value);
 
+        // PeriodSent: distinct responses with Bitrix send in the period, by worker.
+        var sentByWorker = bitrixSends
+            .Where(x => x.WorkerId is not null)
+            .GroupBy(x => x.WorkerId!.Value)
+            .ToDictionary(
+                g => g.Key,
+                g => g.Select(x => x.ResponseId).Distinct().Count());
+
         var items = workers
             .Select(w =>
             {
                 responseLookup.TryGetValue(w.Id, out var stats);
                 accountCounts.TryGetValue(w.Id, out var accounts);
+                sentByWorker.TryGetValue(w.Id, out var periodSent);
                 return new WorkerStatisticsRowDto(
                     w.Id,
                     w.DisplayName,
                     w.OfficeName,
                     WorkerOnlineRules.IsOnline(w.LastSeenAtUtc, nowUtc, connectionRegistry.IsConnected(w.Id)),
                     stats?.Total ?? 0,
-                    stats?.Sent ?? 0,
+                    periodSent,
                     stats?.Duplicates ?? 0,
                     stats?.Errors ?? 0,
                     accounts.Active,
@@ -963,4 +1026,12 @@ public sealed class OfficeStatisticsQueryService(
 
     private sealed record GroupedStatusRow(string? Key, string Status, int Count);
     private sealed record GroupedAgeStatusRow(int? Age, string Status, int Count);
+
+    private sealed record BitrixSendEvent(
+        Guid ResponseId,
+        Guid? WorkerId,
+        string AccountName,
+        string SubProfileName,
+        DateTime SentAtUtc,
+        Guid BitrixInstanceId);
 }

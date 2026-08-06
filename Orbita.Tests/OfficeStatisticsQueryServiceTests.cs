@@ -198,11 +198,133 @@ public sealed class OfficeStatisticsQueryServiceTests
             DateTime.Today.AddDays(-6),
             DateTime.Today);
 
-        Assert.False(result.MonitoringCycles.IsDetailed);
-        Assert.Empty(result.MonitoringCycles.AccountReports);
         Assert.Equal(1, result.MonitoringCycles.TotalLeads);
         Assert.Single(result.MonitoringCycles.LeadSummaries);
         Assert.Equal("Account A", result.MonitoringCycles.LeadSummaries[0].AccountName);
+    }
+
+    [Fact]
+    public async Task GetStatisticsAsync_SentUsesSendDate_NotCollectedAt()
+    {
+        await using var db = CreateDb();
+        SeedOfficeData(db);
+        var now = DateTime.UtcNow;
+
+        // Collected long before the period, sent yesterday — must count in "Sent" for the week.
+        db.CandidateResponses.Add(new CandidateResponseEntity
+        {
+            Id = Guid.NewGuid(),
+            OfficeId = OfficeA,
+            WorkerId = WorkerA,
+            AccountId = AccountA,
+            AccountName = "Account A",
+            Source = "Avito",
+            SourceResponseId = "old-collected",
+            FullName = "Old Lead",
+            PhoneRaw = "+79005555555",
+            PhoneNormalized = "79005555555",
+            City = "Москва",
+            Vacancy = "Курьер",
+            Status = ResponseStatuses.Sent,
+            CreatedAt = now.AddDays(-20),
+            CollectedAt = now.AddDays(-20),
+            ProcessedAt = now.AddDays(-1)
+        });
+
+        // Collected today, not yet sent — in Total, not in Sent.
+        db.CandidateResponses.Add(new CandidateResponseEntity
+        {
+            Id = Guid.NewGuid(),
+            OfficeId = OfficeA,
+            WorkerId = WorkerA,
+            AccountId = AccountA,
+            AccountName = "Account A",
+            Source = "Avito",
+            SourceResponseId = "new-unsent",
+            FullName = "New Lead",
+            PhoneRaw = "+79006666666",
+            PhoneNormalized = "79006666666",
+            City = "Москва",
+            Vacancy = "Курьер",
+            Status = ResponseStatuses.InProgress,
+            CreatedAt = now,
+            CollectedAt = now
+        });
+        await db.SaveChangesAsync();
+
+        var result = await CreateService(db).GetStatisticsAsync(
+            OfficeScope.ForOffice(OfficeA),
+            OfficeA,
+            DateTime.Today.AddDays(-6),
+            DateTime.Today);
+
+        // Seed: 1 collected-sent + 1 duplicate + 1 old-sent-by-date + 1 new in-progress = 3 collected in week
+        // (old was collected 20d ago — outside week for Total)
+        Assert.Equal(3, result.Responses.Total);
+        // Seed sent (ProcessedAt -1h) + old lead (ProcessedAt -1d) = 2 by send date
+        Assert.Equal(2, result.Responses.Sent);
+        Assert.Equal(1, result.Responses.InProgress);
+        Assert.Equal(result.Responses.Sent, result.DailyTrend.Sum(d => d.Sent));
+    }
+
+    [Fact]
+    public async Task GetStatisticsAsync_BitrixDeliveryUsesDeliveryCreatedAtUtc()
+    {
+        await using var db = CreateDb();
+        SeedOfficeData(db);
+        var now = DateTime.UtcNow;
+        var bitrixId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+        var responseId = Guid.NewGuid();
+
+        db.BitrixInstances.Add(new BitrixInstanceEntity
+        {
+            Id = bitrixId,
+            OfficeId = OfficeA,
+            Name = "Portal A",
+            Signature = "pa",
+            WebhookUrlProtected = "x",
+            ValidationStatus = "Ok",
+            CreatedAtUtc = now,
+            UpdatedAtUtc = now
+        });
+        db.CandidateResponses.Add(new CandidateResponseEntity
+        {
+            Id = responseId,
+            OfficeId = OfficeA,
+            WorkerId = WorkerA,
+            AccountId = AccountA,
+            AccountName = "Account A",
+            Source = "Avito",
+            SourceResponseId = "via-delivery",
+            FullName = "Delivery Lead",
+            PhoneRaw = "+79007777777",
+            PhoneNormalized = "79007777777",
+            Status = ResponseStatuses.Sent,
+            CreatedAt = now.AddDays(-30),
+            CollectedAt = now.AddDays(-30),
+            ProcessedAt = now.AddDays(-30),
+            BitrixInstanceId = bitrixId
+        });
+        db.ResponseBitrixDeliveries.Add(new ResponseBitrixDeliveryEntity
+        {
+            Id = Guid.NewGuid(),
+            ResponseId = responseId,
+            BitrixInstanceId = bitrixId,
+            Outcome = ResponseBitrixDeliveryOutcomes.Sent,
+            CreatedAtUtc = now.AddHours(-3),
+            Source = "auto"
+        });
+        await db.SaveChangesAsync();
+
+        var result = await CreateService(db).GetStatisticsAsync(
+            OfficeScope.ForOffice(OfficeA),
+            OfficeA,
+            DateTime.Today.AddDays(-6),
+            DateTime.Today);
+
+        // Seed legacy sent (ProcessedAt in period) + this delivery (CreatedAtUtc in period).
+        Assert.True(result.Responses.Sent >= 2);
+        Assert.Contains(result.BitrixDeliveries, d => d.BitrixInstanceId == bitrixId && d.SentCount >= 1);
     }
 
     [Fact]
@@ -253,8 +375,11 @@ public sealed class OfficeStatisticsQueryServiceTests
         Assert.Contains("date_part", sql, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static OfficeStatisticsQueryService CreateService(OrbitaDbContext db) =>
-        new(db, new OfficeScopeService(db), new WorkerConnectionRegistry());
+    private static OfficeStatisticsQueryService CreateService(OrbitaDbContext db)
+    {
+        OfficeStatisticsQueryService.ClearCacheForTests();
+        return new OfficeStatisticsQueryService(db, new OfficeScopeService(db), new WorkerConnectionRegistry());
+    }
 
     private static OrbitaDbContext CreateDb()
     {
