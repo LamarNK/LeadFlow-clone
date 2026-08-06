@@ -1222,7 +1222,6 @@ internal static class DesignPreviewData
 
     private static MonitoringCycleReportDto BuildMonitoringCyclePreview(DateTime from, DateTime to)
     {
-        var isDetailed = (to.Date - from.Date).Days == 0;
         var leadSummaries = new List<MonitoringCycleLeadSummaryDto>
         {
             new("Авито 1", 12, ["4/10 (Контракт РФ 4) = 1", "7/10 (контракт РФ 7) = 6"]),
@@ -1230,19 +1229,9 @@ internal static class DesignPreviewData
             new("Авито 30", 32, ["6/10 (Работа вахтой2) = 13", "9/10 (Кадровый отдел7) = 11"])
         };
 
-        if (!isDetailed)
-        {
-            return new MonitoringCycleReportDto(
-                false,
-                leadSummaries.Sum(x => x.TotalLeads),
-                1,
-                10,
-                ["  Авито 34: 10 не запущены — 1/10 (Кадровый Отдел10), 2/10 (Кадровый отдел9)"],
-                leadSummaries,
-                []);
-        }
-
         var previewDayUtc = DateTime.SpecifyKind(from.Date, DateTimeKind.Utc);
+        var secondDayUtc = DateTime.SpecifyKind(from.Date.AddDays(1), DateTimeKind.Utc);
+        var multiDay = (to.Date - from.Date).Days > 0;
         var accountReports = new List<MonitoringCycleAccountReportDto>
         {
             new(
@@ -1277,6 +1266,26 @@ internal static class DesignPreviewData
                 ],
                 [])
         };
+
+        if (multiDay)
+        {
+            accountReports.Add(new(
+                "Авито 1",
+                secondDayUtc,
+                10,
+                6,
+                8,
+                [
+                    new MonitoringCycleSubProfileRowDto(
+                        7,
+                        10,
+                        "контракт РФ 7",
+                        [secondDayUtc.AddHours(11).AddMinutes(4)],
+                        ["1"],
+                        [])
+                ],
+                []));
+        }
 
         return new MonitoringCycleReportDto(
             true,

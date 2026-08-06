@@ -103,7 +103,9 @@ internal static partial class MonitoringCycleReportBuilder
         IReadOnlySet<string>? allowedAccountNames = null,
         IReadOnlyList<MonitoringCycleSentResponse>? sentResponses = null)
     {
-        var isDetailed = (endLocal.Date - startLocal.Date).Days == 0;
+        // Journal has full cycle structure for any period length (day / week / month).
+        // IsDetailed no longer depends on single-day — that limit was only for log-scan cost.
+        const bool isDetailed = true;
         var sent = sentResponses ?? [];
         var filteredCycles = cycles
             .Where(c => allowedAccountNames is null || allowedAccountNames.Contains(c.AccountName))
@@ -337,11 +339,6 @@ internal static partial class MonitoringCycleReportBuilder
                     leadTotal,
                     leadParts));
 
-                if (!isDetailed)
-                {
-                    continue;
-                }
-
                 var rows = posToName.Keys
                     .OrderBy(x => x)
                     .Select(position =>
@@ -410,9 +407,10 @@ internal static partial class MonitoringCycleReportBuilder
             totalNotStartedPositions,
             notStartedSummaries,
             mergedLeadSummaries,
-            isDetailed
-                ? reports.OrderBy(x => ExtractAccountSortKey(x.AccountName)).ToList()
-                : []);
+            reports
+                .OrderBy(x => x.DateUtc)
+                .ThenBy(x => ExtractAccountSortKey(x.AccountName))
+                .ToList());
     }
 
     /// <summary>

@@ -1,7 +1,7 @@
 @model MonitoringCycleReportViewModel
 @{
     var periodDays = (ViewData["PeriodDays"] as int?) ?? 1;
-    var showAccounts = Model.IsDetailed && Model.AccountReports.Count > 0;
+    var showAccounts = Model.AccountReports.Count > 0;
 }
 @if (showAccounts)
 {

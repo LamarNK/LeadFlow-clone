@@ -79,7 +79,7 @@ public sealed class MonitoringCycleJournalTests
     }
 
     [Fact]
-    public void BuildFromJournal_MultiDay_SummaryWithoutAccountTables()
+    public void BuildFromJournal_MultiDay_IncludesAccountTablesPerDay()
     {
         var t1 = TimeZoneInfo.ConvertTimeToUtc(Day.AddHours(9), TimeZoneInfo.Local);
         var t2 = TimeZoneInfo.ConvertTimeToUtc(Day.AddDays(1).AddHours(11), TimeZoneInfo.Local);
@@ -121,10 +121,12 @@ public sealed class MonitoringCycleJournalTests
             allowedAccountNames: null,
             sent);
 
-        Assert.False(report.IsDetailed);
-        Assert.Empty(report.AccountReports);
+        Assert.True(report.IsDetailed);
+        Assert.Equal(2, report.AccountReports.Count);
         Assert.Equal(2, report.TotalLeads);
         Assert.Single(report.LeadSummaries);
+        Assert.All(report.AccountReports, a => Assert.Equal("Avito 1", a.AccountName));
+        Assert.True(report.AccountReports[0].DateUtc <= report.AccountReports[1].DateUtc);
     }
 
     [Fact]
@@ -321,7 +323,8 @@ public sealed class MonitoringCycleJournalTests
         Assert.Equal(1, result.MonitoringCycles.TotalLeads);
         Assert.Single(result.MonitoringCycles.LeadSummaries);
         Assert.Equal("Account A", result.MonitoringCycles.LeadSummaries[0].AccountName);
-        Assert.False(result.MonitoringCycles.IsDetailed);
+        Assert.True(result.MonitoringCycles.IsDetailed);
+        Assert.NotEmpty(result.MonitoringCycles.AccountReports);
     }
 
     private static OrbitaDbContext CreateDb()

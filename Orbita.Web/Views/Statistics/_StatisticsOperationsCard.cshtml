@@ -2,7 +2,7 @@
 @{
     var periodDays = (ViewData["PeriodDays"] as int?) ?? 1;
     var report = Model.MonitoringCycles;
-    var showAccountSearch = report.IsDetailed && report.AccountReports.Count > 0;
+    var showAccountSearch = report.AccountReports.Count > 0;
 }
 <div class="card card--statistics-operations">
     <div class="card-header">
@@ -64,11 +64,15 @@
                 @if (report.HasData)
                 {
                     <span class="statistics-operations-section-meta cell-muted">
-                        @if (periodDays == 1)
+                        @if (report.AccountReports.Count > 0)
                         {
                             <span>@report.AccountReports.Count акк.</span>
+                            @if (periodDays > 1)
+                            {
+                                <span> · @periodDays дн.</span>
+                            }
                         }
-                        else
+                        else if (periodDays > 1)
                         {
                             <span>@periodDays дн.</span>
                         }

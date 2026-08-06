@@ -320,7 +320,9 @@ internal static class StatisticsIndexBuilder
                 {
                     AccountName = account.AccountName,
                     DateUtc = account.DateUtc,
-                    HeaderText = $"{account.AccountName} — {account.SubProfileCount} суб-профилей, {FormatCycleCount(account.CycleCount)}",
+                    HeaderText =
+                        $"{account.AccountName} — {account.SubProfileCount} суб-профилей, {FormatCycleCount(account.CycleCount)}" +
+                        (account.TotalLeads > 0 ? $", {account.TotalLeads} в Битрикс24" : string.Empty),
                     SubProfileCount = account.SubProfileCount,
                     CycleCount = account.CycleCount,
                     TotalLeads = account.TotalLeads,
