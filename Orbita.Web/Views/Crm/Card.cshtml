@@ -313,7 +313,8 @@
                               <option value="@CrmTaskImportances.Medium" selected>Средняя</option>
                               <option value="@CrmTaskImportances.High">Высокая</option>
                           </select>
-                          <input type="datetime-local" name="dueAtUtc" />
+                          <input type="datetime-local" data-crm-deadline-local />
+                          <input type="hidden" name="dueAtUtc" data-crm-deadline-utc />
                         <textarea name="description" placeholder="Комментарий"></textarea>
                         <button class="settings-primary-btn" type="submit">Поставить задачу</button>
                     </form>
@@ -324,7 +325,7 @@
                         <article class="crm-task-row @(task.Status == CrmTaskStatuses.Completed ? "is-complete" : "") @(task.IsOverdue ? "is-overdue" : "")">
                             <div>
                                 <strong>@task.Title</strong>
-                                <span>@task.AssigneeName @if (task.DueAtUtc is DateTime due) { <text>· до @due.ToLocalTime().ToString("dd MMM, HH:mm")</text> } @if (task.IsOverdue) { <em class="crm-overdue">просрочено</em> }</span>
+                                <span>@task.AssigneeName @if (task.DueAtUtc is DateTime due) { <text>· до <time data-orbita-utc="@OrbitaTime.ToIsoUtc(due)" data-orbita-format="datetime"></time></text> } @if (task.IsOverdue) { <em class="crm-overdue">просрочено</em> }</span>
                                 @if (!string.IsNullOrWhiteSpace(task.Description)) { <p>@task.Description</p> }
                             </div>
                             @if (task.Status == CrmTaskStatuses.Open && (isCrmAdmin || task.AssigneeUserId == currentUserId))

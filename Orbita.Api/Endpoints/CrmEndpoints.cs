@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Http.Features;
 using Orbita.Api.Auth;
 using Orbita.Api.Data;
 using Orbita.Api.Hubs;
+using Orbita.Api.Helpers;
 using Orbita.Api.Models;
 using Orbita.Api.Options;
 using Orbita.Api.Services;
@@ -75,6 +76,53 @@ public static class CrmEndpoints
             return board is null
                 ? Results.NotFound(new { error = "Офис не найден." })
                 : Results.Ok(board);
+        });
+
+        crmBoard.MapGet("/analytics", async (
+            CrmAnalyticsQueryService analytics,
+            OfficeScopeService officeScope,
+            ClaimsPrincipal principal,
+            DateTime? fromUtc,
+            DateTime? toUtc,
+            Guid? officeId,
+            string? managerUserId,
+            CancellationToken ct) =>
+        {
+            var isAdmin = principal.IsInRole(PanelRoles.Admin);
+            var isManager = principal.IsInRole(PanelRoles.Manager);
+            var hasCrmBoardAccess = principal.HasClaim(PanelPermissions.ClaimType, PanelPermissions.CrmBoard)
+                || principal.HasClaim(PanelPermissions.ClaimType, PanelPermissions.Crm);
+            var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier)
+                         ?? principal.FindFirstValue("sub");
+            if (string.IsNullOrWhiteSpace(userId) || (!isAdmin && !isManager && !hasCrmBoardAccess))
+            {
+                return Results.Forbid();
+            }
+
+            if (fromUtc is not DateTime from || toUtc is not DateTime to)
+            {
+                return Results.BadRequest(new { error = "Укажите fromUtc и toUtc." });
+            }
+
+            var scope = await officeScope.ResolveAsync(principal, ct);
+            var result = await analytics.GetAsync(
+                scope,
+                userId,
+                isAdmin,
+                new CrmAnalyticsQuery(
+                    DateTimeUtcHelper.EnsureUtc(from),
+                    DateTimeUtcHelper.EnsureUtc(to),
+                    officeId,
+                    managerUserId),
+                ct);
+
+            return result.Outcome switch
+            {
+                CrmAnalyticsQueryOutcome.Success => Results.Ok(result.Data),
+                CrmAnalyticsQueryOutcome.BadRequest => Results.BadRequest(new { error = result.Error }),
+                CrmAnalyticsQueryOutcome.NotFound => Results.NotFound(new { error = result.Error }),
+                _ => Results.Forbid()
+            };
         });
 
         crmTasks.MapGet("/tasks", async (
@@ -325,6 +373,93 @@ public static class CrmEndpoints
             return task is null ? Results.NotFound() : Results.Ok(task);
         });
 
+        crmTasks.MapGet("/notifications", async (
+            Guid? officeId,
+            bool? unreadOnly,
+            int? limit,
+            CrmDeadlineNotificationService notifications,
+            OfficeScopeService officeScope,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            var scope = await officeScope.ResolveAsync(principal, ct);
+            var effectiveOfficeId = scope.ResolveFilter(officeId);
+            var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier)
+                         ?? principal.FindFirstValue("sub");
+            if (effectiveOfficeId is not Guid resolvedOfficeId || string.IsNullOrWhiteSpace(userId))
+            {
+                return Results.BadRequest(new { error = "Выберите офис, чтобы открыть уведомления CRM." });
+            }
+
+            return Results.Ok(await notifications.GetAsync(
+                resolvedOfficeId,
+                userId,
+                unreadOnly == true,
+                limit ?? 20,
+                ct));
+        });
+
+        crmTasks.MapGet("/notifications/summary", async (
+            Guid? officeId,
+            CrmDeadlineNotificationService notifications,
+            OfficeScopeService officeScope,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            var scope = await officeScope.ResolveAsync(principal, ct);
+            var effectiveOfficeId = scope.ResolveFilter(officeId);
+            var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier)
+                         ?? principal.FindFirstValue("sub");
+            if (effectiveOfficeId is not Guid resolvedOfficeId || string.IsNullOrWhiteSpace(userId))
+            {
+                return Results.BadRequest(new { error = "Выберите офис, чтобы открыть уведомления CRM." });
+            }
+
+            return Results.Ok(await notifications.GetSummaryAsync(resolvedOfficeId, userId, ct));
+        });
+
+        crmTasks.MapPost("/notifications/{notificationId:guid}/read", async (
+            Guid notificationId,
+            Guid? officeId,
+            CrmDeadlineNotificationService notifications,
+            OfficeScopeService officeScope,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            var scope = await officeScope.ResolveAsync(principal, ct);
+            var effectiveOfficeId = scope.ResolveFilter(officeId);
+            var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier)
+                         ?? principal.FindFirstValue("sub");
+            if (effectiveOfficeId is not Guid resolvedOfficeId || string.IsNullOrWhiteSpace(userId))
+            {
+                return Results.BadRequest(new { error = "Выберите офис, чтобы открыть уведомления CRM." });
+            }
+
+            return await notifications.MarkReadAsync(resolvedOfficeId, userId, notificationId, ct)
+                ? Results.NoContent()
+                : Results.NotFound();
+        });
+
+        crmTasks.MapPost("/notifications/read-all", async (
+            Guid? officeId,
+            CrmDeadlineNotificationService notifications,
+            OfficeScopeService officeScope,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            var scope = await officeScope.ResolveAsync(principal, ct);
+            var effectiveOfficeId = scope.ResolveFilter(officeId);
+            var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier)
+                         ?? principal.FindFirstValue("sub");
+            if (effectiveOfficeId is not Guid resolvedOfficeId || string.IsNullOrWhiteSpace(userId))
+            {
+                return Results.BadRequest(new { error = "Выберите офис, чтобы открыть уведомления CRM." });
+            }
+
+            var updated = await notifications.MarkAllReadAsync(resolvedOfficeId, userId, ct);
+            return Results.Ok(new { updated });
+        });
+
         crmTasks.MapPost("/tasks/{taskId:guid}/comments", async (Guid taskId, CrmTaskCommentCreateRequest request, CrmWorkspaceService workspace, ClaimsPrincipal principal, CancellationToken ct) =>
         {
             var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
@@ -402,7 +537,12 @@ public static class CrmEndpoints
 
         crmAdmin.MapPut("/offices/{officeId:guid}/settings", async (Guid officeId, CrmOfficeSettingsRequest request, CrmWorkspaceService workspace, ClaimsPrincipal principal, CancellationToken ct) =>
             principal.IsInRole(PanelRoles.Admin)
-                ? (await workspace.SetOfficeSettingsAsync(officeId, request.IsEnabled, request.RequireStageComment, ct) ? Results.NoContent() : Results.NotFound())
+                ? (await workspace.SetOfficeSettingsAsync(
+                    officeId,
+                    request.IsEnabled,
+                    request.RequireStageComment,
+                    request.DeadlineNotificationsEnabled,
+                    ct) ? Results.NoContent() : Results.NotFound())
                 : Results.Forbid());
 
         crmAdmin.MapPut("/offices/{officeId:guid}/funnel", async (

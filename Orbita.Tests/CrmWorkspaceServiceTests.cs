@@ -130,6 +130,53 @@ public sealed class CrmWorkspaceServiceTests
     }
 
     [Fact]
+    public async Task SetOfficeSettings_EnablesDeadlineNotificationsAndDismissesThemOnDisable()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var manager = await harness.CreateManagerAsync("deadline@test.local", capacity: 5, onShift: true);
+
+        Assert.True(await harness.Sut.SetOfficeSettingsAsync(
+            OfficeId,
+            enabled: true,
+            requireStageComment: false,
+            deadlineNotificationsEnabled: true));
+        var office = await harness.Db.Offices.SingleAsync(x => x.Id == OfficeId);
+        Assert.True(office.CrmDeadlineNotificationsEnabled);
+        Assert.NotNull(office.CrmDeadlineNotificationsEnabledAtUtc);
+
+        var task = await harness.Sut.CreateTaskAsync(
+            OfficeId,
+            new CrmTaskCreateRequest(null, "Проверить документы", null, manager.Id, DateTime.UtcNow.AddHours(2)),
+            manager.Id,
+            isAdmin: false);
+        Assert.NotNull(task);
+        var taskEntity = await harness.Db.CrmTasks.SingleAsync(x => x.Id == task.Id);
+        var notification = new CrmTaskNotificationEntity
+        {
+            Id = Guid.NewGuid(),
+            OfficeId = OfficeId,
+            TaskId = task.Id,
+            ReminderVersion = taskEntity.ReminderVersion,
+            RecipientUserId = manager.Id,
+            Kind = CrmTaskNotificationKinds.DueIn24Hours,
+            DueAtUtc = taskEntity.DueAtUtc!.Value,
+            CreatedAtUtc = DateTime.UtcNow
+        };
+        harness.Db.CrmTaskNotifications.Add(notification);
+        await harness.Db.SaveChangesAsync();
+
+        Assert.True(await harness.Sut.SetOfficeSettingsAsync(
+            OfficeId,
+            enabled: true,
+            requireStageComment: false,
+            deadlineNotificationsEnabled: false));
+        Assert.False(office.CrmDeadlineNotificationsEnabled);
+        Assert.Null(office.CrmDeadlineNotificationsEnabledAtUtc);
+        Assert.NotNull(notification.DismissedAtUtc);
+    }
+
+    [Fact]
     public async Task CreateCard_UsesFirstOfficeStage()
     {
         await using var harness = await Harness.CreateAsync();
@@ -352,6 +399,8 @@ public sealed class CrmWorkspaceServiceTests
             creator.Id,
             isAdmin: false);
         Assert.NotNull(task);
+        var taskEntity = await harness.Db.CrmTasks.SingleAsync(x => x.Id == task.Id);
+        var initialReminderVersion = taskEntity.ReminderVersion;
 
         var denied = await harness.Sut.UpdateTaskAsync(
             task.Id,
@@ -372,16 +421,43 @@ public sealed class CrmWorkspaceServiceTests
         Assert.Equal("Изменённая задача", afterUpdate.Task.Title);
         Assert.Equal(replacement.Id, afterUpdate.Task.AssigneeUserId);
         Assert.Equal(CrmTaskImportances.High, afterUpdate.Task.Importance);
+        Assert.NotEqual(initialReminderVersion, taskEntity.ReminderVersion);
+
+        var updatedReminderVersion = taskEntity.ReminderVersion;
+        var titleOnlyUpdate = await harness.Sut.UpdateTaskAsync(
+            task.Id,
+            new CrmTaskUpdateRequest("Уточнённое название", "Описание", replacement.Id, taskEntity.DueAtUtc, CrmTaskImportances.High),
+            creator.Id,
+            isAdmin: false);
+        Assert.True(titleOnlyUpdate.Ok);
+        Assert.Equal(updatedReminderVersion, taskEntity.ReminderVersion);
+
+        var pendingNotification = new CrmTaskNotificationEntity
+        {
+            Id = Guid.NewGuid(),
+            OfficeId = OfficeId,
+            TaskId = task.Id,
+            ReminderVersion = taskEntity.ReminderVersion,
+            RecipientUserId = replacement.Id,
+            Kind = CrmTaskNotificationKinds.DueIn24Hours,
+            DueAtUtc = taskEntity.DueAtUtc!.Value,
+            CreatedAtUtc = DateTime.UtcNow
+        };
+        harness.Db.CrmTaskNotifications.Add(pendingNotification);
+        await harness.Db.SaveChangesAsync();
 
         var cancelDenied = await harness.Sut.CancelTaskAsync(task.Id, replacement.Id, isAdmin: false);
         Assert.False(cancelDenied.Ok);
         Assert.True((await harness.Sut.CancelTaskAsync(task.Id, creator.Id, isAdmin: false)).Ok);
+        Assert.NotNull(pendingNotification.DismissedAtUtc);
         var cancelled = await harness.Sut.GetTaskAsync(task.Id, creator.Id, isAdmin: false);
         Assert.NotNull(cancelled);
         Assert.Equal(CrmTaskStatuses.Cancelled, cancelled.Task.Status);
         Assert.False(await harness.Sut.CompleteTaskAsync(task.Id, replacement.Id, isAdmin: false));
 
+        var beforeReopenVersion = taskEntity.ReminderVersion;
         Assert.True((await harness.Sut.ReopenTaskAsync(task.Id, creator.Id, isAdmin: false)).Ok);
+        Assert.NotEqual(beforeReopenVersion, taskEntity.ReminderVersion);
         Assert.True(await harness.Sut.CompleteTaskAsync(task.Id, replacement.Id, isAdmin: false));
         Assert.True((await harness.Sut.ReopenTaskAsync(task.Id, "admin", isAdmin: true)).Ok);
         var reopened = await harness.Sut.GetTaskAsync(task.Id, creator.Id, isAdmin: false);
@@ -540,7 +616,18 @@ public sealed class CrmWorkspaceServiceTests
             {
                 DataPath = attachmentRoot
             }));
-            var sut = new CrmWorkspaceService(db, users, distribution, taskAttachments: attachments);
+            var deadlineNotifications = new CrmDeadlineNotificationService(
+                db,
+                TimeProvider.System,
+                Options.Create(new CrmDeadlineNotificationOptions()),
+                new NoOpCrmNotificationRealtimeNotifier(),
+                sp.GetRequiredService<ILogger<CrmDeadlineNotificationService>>());
+            var sut = new CrmWorkspaceService(
+                db,
+                users,
+                distribution,
+                taskAttachments: attachments,
+                deadlineNotifications: deadlineNotifications);
             return new Harness(sp, db, users, sut, attachmentRoot);
         }
 
@@ -570,5 +657,13 @@ public sealed class CrmWorkspaceServiceTests
                 Directory.Delete(AttachmentRoot, recursive: true);
             }
         }
+    }
+
+    private sealed class NoOpCrmNotificationRealtimeNotifier : ICrmNotificationRealtimeNotifier
+    {
+        public Task NotifyAsync(
+            string recipientUserId,
+            CrmTaskNotificationDto notification,
+            CancellationToken ct = default) => Task.CompletedTask;
     }
 }

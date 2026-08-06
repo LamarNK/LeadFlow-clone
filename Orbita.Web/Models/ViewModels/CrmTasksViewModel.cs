@@ -7,4 +7,5 @@ public sealed record CrmTasksViewModel(
     IReadOnlyList<CrmManagerDto> Managers,
     string SelectedScope,
     string CurrentUserId,
-    bool IsAdmin);
+    bool IsAdmin,
+    int BrowserUtcOffsetMinutes = 0);

@@ -529,8 +529,21 @@
         if (!payload) return;
         var errorsEl = document.querySelector('[data-nav-badge="errors"]');
         var responsesEl = document.querySelector('[data-nav-badge="responses"]');
+        var crmTasksEl = document.querySelector('[data-nav-badge="crm-tasks"]');
         runtime.setBadge(errorsEl, payload.errorsToday);
         runtime.setBadge(responsesEl, payload.uniqueResponsesToday, ' уникальных откликов за сегодня');
+        var crmNotificationStateKnown = typeof payload.crmTaskNotificationsEnabled === 'boolean';
+        if (crmNotificationStateKnown) {
+            runtime.setBadge(crmTasksEl, payload.crmTaskNotificationsUnread, ' непрочитанных уведомлений CRM');
+            if (window.OrbitaNotifications) {
+                if (typeof window.OrbitaNotifications.setEnabled === 'function') {
+                    window.OrbitaNotifications.setEnabled(payload.crmTaskNotificationsEnabled);
+                }
+                if (typeof window.OrbitaNotifications.setUnreadCount === 'function') {
+                    window.OrbitaNotifications.setUnreadCount(payload.crmTaskNotificationsUnread);
+                }
+            }
+        }
     }
 
     runtime.setBadge = function setBadge(el, value, suffix) {

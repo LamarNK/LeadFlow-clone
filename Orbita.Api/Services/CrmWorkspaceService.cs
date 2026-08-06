@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Orbita.Api.Data;
+using Orbita.Api.Helpers;
 using Orbita.Contracts;
 
 namespace Orbita.Api.Services;
@@ -17,7 +18,8 @@ public sealed class CrmWorkspaceService(
     UserManager<IdentityUser> users,
     CrmLeadDistributionService leadDistribution,
     IPanelRealtimeNotifier? panelRealtime = null,
-    CrmTaskAttachmentStorageService? taskAttachments = null)
+    CrmTaskAttachmentStorageService? taskAttachments = null,
+    CrmDeadlineNotificationService? deadlineNotifications = null)
 {
     /// <summary>
     /// Create CRM card for a response in the target office (delivery path only).
@@ -279,7 +281,8 @@ public sealed class CrmWorkspaceService(
             query.OverdueOnly,
             query.ActiveLoadOnly,
             query.IncludeClosed,
-            officeStages);
+            officeStages,
+            office.CrmDeadlineNotificationsEnabled);
     }
 
     public async Task<bool> StartShiftAsync(Guid officeId, string userId, CancellationToken ct = default)
@@ -339,7 +342,12 @@ public sealed class CrmWorkspaceService(
         return true;
     }
 
-    public async Task<bool> SetOfficeSettingsAsync(Guid officeId, bool enabled, bool requireStageComment, CancellationToken ct = default)
+    public async Task<bool> SetOfficeSettingsAsync(
+        Guid officeId,
+        bool enabled,
+        bool requireStageComment,
+        bool? deadlineNotificationsEnabled = null,
+        CancellationToken ct = default)
     {
         var office = await db.Offices.FirstOrDefaultAsync(x => x.Id == officeId, ct);
         if (office is null)
@@ -347,8 +355,21 @@ public sealed class CrmWorkspaceService(
             return false;
         }
 
+        var now = DateTime.UtcNow;
         office.CrmEnabled = enabled;
         office.CrmRequireStageComment = requireStageComment;
+        var nextDeadlineNotificationsEnabled = enabled
+            && (deadlineNotificationsEnabled ?? office.CrmDeadlineNotificationsEnabled);
+        if (nextDeadlineNotificationsEnabled != office.CrmDeadlineNotificationsEnabled)
+        {
+            office.CrmDeadlineNotificationsEnabled = nextDeadlineNotificationsEnabled;
+            office.CrmDeadlineNotificationsEnabledAtUtc = nextDeadlineNotificationsEnabled ? now : null;
+            if (!nextDeadlineNotificationsEnabled && deadlineNotifications is not null)
+            {
+                await deadlineNotifications.DismissOfficeAsync(officeId, now, ct);
+            }
+        }
+
         await db.SaveChangesAsync(ct);
         NotifyBoardChanged(officeId);
         return true;
@@ -408,7 +429,11 @@ public sealed class CrmWorkspaceService(
         var office = await db.Offices.AsNoTracking().FirstOrDefaultAsync(x => x.Id == officeId, ct);
         return office is null
             ? null
-            : new CrmOfficeSettingsDto(office.CrmEnabled, office.CrmRequireStageComment, CrmStages.Resolve(office.CrmStagesJson));
+            : new CrmOfficeSettingsDto(
+                office.CrmEnabled,
+                office.CrmRequireStageComment,
+                CrmStages.Resolve(office.CrmStagesJson),
+                office.CrmDeadlineNotificationsEnabled);
     }
 
     public async Task<CrmCandidateDetailDto?> GetCardAsync(Guid cardId, string userId, bool isAdmin, CancellationToken ct = default)
@@ -743,6 +768,8 @@ public sealed class CrmWorkspaceService(
             return null;
         }
 
+        var now = DateTime.UtcNow;
+        var dueAtUtc = DateTimeUtcHelper.EnsureUtc(request.DueAtUtc);
         string? candidateName = null;
         if (request.CardId is Guid cardId)
         {
@@ -756,15 +783,14 @@ public sealed class CrmWorkspaceService(
                 .Where(x => x.Id == card.ResponseId)
                 .Select(x => x.FullName)
                 .FirstOrDefaultAsync(ct);
-            card.LastContactAtUtc = DateTime.UtcNow;
-            card.UpdatedAtUtc = DateTime.UtcNow;
-            if (request.DueAtUtc is DateTime due && (card.NextActionAtUtc is null || due < card.NextActionAtUtc))
+            card.LastContactAtUtc = now;
+            card.UpdatedAtUtc = now;
+            if (dueAtUtc is DateTime due && (card.NextActionAtUtc is null || due < card.NextActionAtUtc))
             {
                 card.NextActionAtUtc = due;
             }
         }
 
-        var now = DateTime.UtcNow;
         var actorName = await ResolveDisplayNameAsync(actorUserId, ct);
         var assigneeName = await ResolveDisplayNameAsync(request.AssigneeUserId, ct);
         var task = new CrmTaskEntity
@@ -777,8 +803,10 @@ public sealed class CrmWorkspaceService(
             AssigneeUserId = request.AssigneeUserId,
             CreatorUserId = actorUserId,
             CreatorName = actorName,
-            DueAtUtc = request.DueAtUtc,
+            DueAtUtc = dueAtUtc,
             Importance = request.Importance,
+            ReminderVersion = Guid.NewGuid(),
+            ReminderVersionChangedAtUtc = now,
             CreatedAtUtc = now
         };
         db.CrmTasks.Add(task);
@@ -788,10 +816,7 @@ public sealed class CrmWorkspaceService(
         }
 
         await db.SaveChangesAsync(ct);
-        if (request.CardId is Guid)
-        {
-            NotifyBoardChanged(officeId);
-        }
+        NotifyBoardChanged(officeId);
 
         return task is null
             ? null
@@ -865,6 +890,10 @@ public sealed class CrmWorkspaceService(
         var now = DateTime.UtcNow;
         task.Status = CrmTaskStatuses.Completed;
         task.CompletedAtUtc = now;
+        if (deadlineNotifications is not null)
+        {
+            await deadlineNotifications.DismissTaskAsync(task.Id, now, ct);
+        }
         if (task.CardId is Guid cardId)
         {
             var actorName = await ResolveDisplayNameAsync(userId, ct);
@@ -924,10 +953,23 @@ public sealed class CrmWorkspaceService(
         }
 
         var now = DateTime.UtcNow;
+        var dueAtUtc = DateTimeUtcHelper.EnsureUtc(request.DueAtUtc);
+        var reminderInputsChanged = task.AssigneeUserId != request.AssigneeUserId
+                                    || task.DueAtUtc != dueAtUtc;
+        if (reminderInputsChanged)
+        {
+            task.ReminderVersion = Guid.NewGuid();
+            task.ReminderVersionChangedAtUtc = now;
+            if (deadlineNotifications is not null)
+            {
+                await deadlineNotifications.DismissTaskAsync(task.Id, now, ct);
+            }
+        }
+
         task.Title = title;
         task.Description = description;
         task.AssigneeUserId = request.AssigneeUserId;
-        task.DueAtUtc = request.DueAtUtc;
+        task.DueAtUtc = dueAtUtc;
         task.Importance = request.Importance;
         if (task.CardId is Guid cardId)
         {
@@ -965,6 +1007,10 @@ public sealed class CrmWorkspaceService(
         var now = DateTime.UtcNow;
         task.Status = CrmTaskStatuses.Cancelled;
         task.CompletedAtUtc = now;
+        if (deadlineNotifications is not null)
+        {
+            await deadlineNotifications.DismissTaskAsync(task.Id, now, ct);
+        }
         if (task.CardId is Guid cardId)
         {
             AddHistory(cardId, "TaskCancelled", task.Title, userId, await ResolveDisplayNameAsync(userId, ct), now);
@@ -1001,6 +1047,12 @@ public sealed class CrmWorkspaceService(
         var now = DateTime.UtcNow;
         task.Status = CrmTaskStatuses.Open;
         task.CompletedAtUtc = null;
+        task.ReminderVersion = Guid.NewGuid();
+        task.ReminderVersionChangedAtUtc = now;
+        if (deadlineNotifications is not null)
+        {
+            await deadlineNotifications.DismissTaskAsync(task.Id, now, ct);
+        }
         if (task.CardId is Guid cardId)
         {
             AddHistory(cardId, "TaskReopened", task.Title, userId, await ResolveDisplayNameAsync(userId, ct), now);

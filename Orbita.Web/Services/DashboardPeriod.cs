@@ -22,10 +22,10 @@ public sealed record DashboardPeriod(DateTime From, DateTime To)
             (parsedFrom, parsedTo) = (parsedTo, parsedFrom);
         }
 
-        var spanDays = (parsedTo - parsedFrom).Days;
-        if (spanDays > MaxDays)
+        var inclusiveDays = (parsedTo - parsedFrom).Days + 1;
+        if (inclusiveDays > MaxDays)
         {
-            parsedTo = parsedFrom.AddDays(MaxDays);
+            parsedTo = parsedFrom.AddDays(MaxDays - 1);
         }
 
         return new DashboardPeriod(parsedFrom, parsedTo);

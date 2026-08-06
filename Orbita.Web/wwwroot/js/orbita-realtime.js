@@ -216,6 +216,13 @@
             .build();
 
         hub.on('PanelChanged', scheduleRefresh);
+        hub.on('CrmNotificationChanged', function (notification) {
+            if (window.OrbitaNotifications && typeof window.OrbitaNotifications.handleRealtime === 'function') {
+                window.OrbitaNotifications.handleRealtime(notification);
+            } else {
+                fetchNavBadges();
+            }
+        });
         hub.onreconnecting(function () {
             fetchAccessToken().catch(function () { });
             startPollingFallback();

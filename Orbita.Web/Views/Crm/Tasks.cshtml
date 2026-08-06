@@ -4,10 +4,14 @@
 @{
     ViewData["Title"] = "CRM — Задачи";
     var now = DateTime.UtcNow;
+    var browserUtcOffsetMinutes = Math.Clamp(Model.BrowserUtcOffsetMinutes, -14 * 60, 14 * 60);
+    var browserLocalNow = now.AddMinutes(browserUtcOffsetMinutes);
     var open = Model.Tasks.Where(x => x.Status == CrmTaskStatuses.Open).ToList();
     var overdue = open.Where(x => x.IsOverdue || (x.DueAtUtc is DateTime due && due < now)).OrderBy(x => x.DueAtUtc).ToList();
     var overdueIds = overdue.Select(x => x.Id).ToHashSet();
-    var todayEnd = now.Date.AddDays(1);
+    var todayEnd = DateTime.SpecifyKind(
+        browserLocalNow.Date.AddDays(1).AddMinutes(-browserUtcOffsetMinutes),
+        DateTimeKind.Utc);
     var today = open.Where(x => !overdueIds.Contains(x.Id) && x.DueAtUtc is DateTime due && due < todayEnd).OrderBy(x => x.DueAtUtc).ToList();
     var todayIds = today.Select(x => x.Id).ToHashSet();
     var later = open.Where(x => !overdueIds.Contains(x.Id) && !todayIds.Contains(x.Id)).OrderBy(x => x.DueAtUtc ?? DateTime.MaxValue).ToList();
@@ -29,7 +33,7 @@
 }
 <partial name="_PageHeader" model="header" />
 
-<main class="orbita-main crm-shell crm-task-dashboard">
+<main class="orbita-main crm-shell crm-task-dashboard" data-crm-tasks-utc-offset="@browserUtcOffsetMinutes">
     @if (TempData["CrmError"] is string error)
     {
         <div class="crm-notice crm-notice--error"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i>@error</div>
@@ -119,7 +123,7 @@
                 <label><span>Что нужно сделать</span><input name="title" required placeholder="Например, позвонить кандидату" /></label>
                 <label><span>Ответственный</span><select name="assigneeUserId" required>@foreach (var manager in Model.Managers) { <option value="@manager.UserId">@manager.DisplayName</option> }</select></label>
                 <label><span>Важность</span><select name="importance" required><option value="@CrmTaskImportances.Low">Низкая</option><option value="@CrmTaskImportances.Medium" selected>Средняя</option><option value="@CrmTaskImportances.High">Высокая</option></select></label>
-                <label><span>Срок</span><input type="datetime-local" name="dueAtUtc" /></label>
+                <label><span>Срок</span><input type="datetime-local" data-crm-deadline-local /><input type="hidden" name="dueAtUtc" data-crm-deadline-utc /></label>
                 <label class="crm-task-create-form__description"><span>Комментарий <small>необязательно</small></span><textarea name="description" placeholder="Контекст или следующий шаг"></textarea></label>
                 <footer class="crm-task-create-form__actions">
                     <button class="settings-secondary-btn" type="button" data-crm-task-create-close>Отмена</button>

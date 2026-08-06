@@ -27,6 +27,7 @@ services:
       Logs__SharedRoot: /app/Data/logs
       DataProtection__KeysPath: /app/Data/dataprotection-api
       BitrixWorkforce__PublicBaseUrl: http://localhost:8080
+      CrmDeadlineNotifications__Enabled: ${CRM_DEADLINE_NOTIFICATIONS_ENABLED:-false}
     depends_on:
       - postgres
     ports:

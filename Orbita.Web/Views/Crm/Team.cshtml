@@ -179,6 +179,10 @@
                             <input type="checkbox" name="requireStageComment" value="true" @(board.RequireStageComment ? "checked" : null) />
                             <span><strong>Комментарий при смене этапа</strong><small>Просить менеджера пояснить изменение статуса.</small></span>
                         </label>
+                        <label class="crm-setting-toggle">
+                            <input type="checkbox" name="deadlineNotificationsEnabled" value="true" @(board.DeadlineNotificationsEnabled ? "checked" : null) />
+                            <span><strong>Напоминания по срокам задач</strong><small>Персонально уведомлять ответственного за 24 часа, за час и при просрочке.</small></span>
+                        </label>
                     </div>
                     <div class="crm-form-footer">
                         <p class="crm-hint">Та же настройка, что в «Администрирование → Офисы». Выключение не останавливает Bitrix.</p>

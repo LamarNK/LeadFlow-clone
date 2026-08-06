@@ -59,6 +59,8 @@ else
     <link rel="stylesheet" href="~/css/orbita/responsive-data-tables.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/orbita/statistics.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/orbita/crm.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/orbita/crm-notifications.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/orbita/crm-analytics.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/orbita-mobile.css" asp-append-version="true" />
     @await RenderSectionAsync("Styles", required: false)
 </head>
@@ -110,10 +112,11 @@ else
             @if (can(PanelPermissions.CrmBoard))
             {
                 <a class="nav-item @(ctrl == "Crm" && act is "Index" or "Card" or null ? "active" : "")" href="@Url.Action("Index", "Crm")" title="CRM менеджеров"><i class="fa-solid fa-columns" aria-hidden="true"></i><span class="nav-item-label">CRM</span></a>
+                <a class="nav-item @(ctrl == "Crm" && act == "Analytics" ? "active" : "")" href="@Url.Action("Analytics", "Crm")" title="Аналитика CRM"><i class="fa-solid fa-chart-column" aria-hidden="true"></i><span class="nav-item-label">Аналитика CRM</span></a>
             }
             @if (can(PanelPermissions.CrmTasks))
             {
-                <a class="nav-item @(ctrl == "Crm" && act == "Tasks" ? "active" : "")" href="@Url.Action("Tasks", "Crm")" title="Мои задачи"><i class="fa-solid fa-list-check" aria-hidden="true"></i><span class="nav-item-label">Задачи</span><span class="nav-badge" data-nav-badge="crm-tasks" hidden></span></a>
+                <a class="nav-item @(ctrl == "Crm" && act is "Tasks" or "TaskDetails" ? "active" : "")" href="@Url.Action("Tasks", "Crm")" title="Мои задачи"><i class="fa-solid fa-list-check" aria-hidden="true"></i><span class="nav-item-label">Задачи</span><span class="nav-badge" data-nav-badge="crm-tasks" hidden></span></a>
             }
             @if (can(PanelPermissions.CrmBoard) && can(PanelPermissions.CrmTasks) && can(PanelPermissions.Administration))
             {
@@ -222,6 +225,7 @@ else
     </div>
 </div>
 <script src="~/js/orbita-time.js" asp-append-version="true"></script>
+<script src="~/js/orbita-crm-deadlines.js" asp-append-version="true"></script>
 <script src="~/js/orbita-live-shared.js" asp-append-version="true"></script>
 <script src="~/js/orbita/layout.js" asp-append-version="true"></script>
 <script src="~/js/orbita/sidebar.js" asp-append-version="true"></script>
@@ -231,6 +235,7 @@ else
 <script src="~/js/orbita/detail-modal.js" asp-append-version="true"></script>
 <script src="~/js/orbita/navigation.js" asp-append-version="true"></script>
 <script src="~/js/orbita/entry.js" asp-append-version="true"></script>
+<script src="~/js/orbita-crm-notifications.js" asp-append-version="true"></script>
 @if (!PreviewOptions.Value.Enabled)
 {
 <script src="~/lib/signalr/dist/browser/signalr.min.js" asp-append-version="true"></script>

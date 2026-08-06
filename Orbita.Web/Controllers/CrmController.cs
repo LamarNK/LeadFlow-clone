@@ -19,6 +19,56 @@ public sealed class CrmController(
 {
     [HttpGet]
     [Authorize(Policy = PanelPermissions.CrmBoard)]
+    public async Task<IActionResult> Analytics(
+        string? from,
+        string? to,
+        string? managerUserId,
+        CancellationToken ct = default)
+    {
+        var period = string.IsNullOrWhiteSpace(from) || string.IsNullOrWhiteSpace(to)
+            ? new DashboardPeriod(DateTime.Today.AddDays(-29), DateTime.Today)
+            : DashboardPeriod.Parse(from, to);
+        var (fromUtc, toUtc) = LocalCalendarDateRange.ToUtcRange(period);
+        var isAdmin = User.IsInRole(OrbitaRoles.Admin);
+        var selectedManagerUserId = isAdmin && !string.IsNullOrWhiteSpace(managerUserId)
+            ? managerUserId.Trim()
+            : null;
+        var analytics = await api.GetCrmAnalyticsAsync(
+            fromUtc,
+            toUtc,
+            officeContext.EffectiveOfficeId,
+            selectedManagerUserId,
+            ct);
+
+        return View(new CrmAnalyticsViewModel
+        {
+            Header = new PageHeaderViewModel
+            {
+                Title = "Аналитика CRM",
+                Subtitle = "Воронка, результаты и нагрузка команды",
+                ShowRefresh = true,
+                ShowDateRange = true,
+                DateRangeLabel = period.Label,
+                DateFrom = period.From,
+                DateTo = period.To,
+                ActivePeriodPreset = period.ActivePreset,
+                UpdatedAtUtc = analytics?.GeneratedAtUtc ?? DateTime.UtcNow
+            },
+            Analytics = analytics,
+            IsAdmin = isAdmin,
+            CurrentUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty,
+            SelectedManagerUserId = analytics?.ManagerUserId ?? selectedManagerUserId,
+            OfficeContextLabel = officeContext.ContextLabel
+                                 ?? analytics?.Funnels.FirstOrDefault()?.OfficeName
+                                 ?? "Мой офис",
+            ErrorMessage = analytics is null
+                ? "Не удалось загрузить CRM-аналитику. Обновите страницу или войдите в панель снова."
+                : null
+        });
+    }
+
+    [HttpGet]
+    [Authorize(Policy = PanelPermissions.CrmBoard)]
     public async Task<IActionResult> Index(
         Guid? officeId,
         string? search,
@@ -186,7 +236,8 @@ public sealed class CrmController(
             managers,
             selectedScope,
             User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty,
-            User.IsInRole(OrbitaRoles.Admin)));
+            User.IsInRole(OrbitaRoles.Admin),
+            ResolveBrowserUtcOffsetMinutes()));
     }
 
     [HttpGet]
@@ -445,6 +496,15 @@ public sealed class CrmController(
         ?? officeContext.EffectiveOfficeId
         ?? (previewOptions.Value.Enabled ? DesignPreviewData.PreviewOfficeId : null);
 
+    private int ResolveBrowserUtcOffsetMinutes()
+    {
+        const string cookieName = "orbita_utc_offset_minutes";
+        return Request.Cookies.TryGetValue(cookieName, out var raw)
+               && int.TryParse(raw, out var offset)
+            ? Math.Clamp(offset, -14 * 60, 14 * 60)
+            : 0;
+    }
+
     private IActionResult RedirectAfterCardMutation(string? returnUrl, string fallbackAction, object fallbackRouteValues)
     {
         if (!string.IsNullOrWhiteSpace(returnUrl) && Url.IsLocalUrl(returnUrl))
@@ -459,9 +519,19 @@ public sealed class CrmController(
     [Authorize(Policy = PanelPermissions.CrmBoard)]
     [ValidateAntiForgeryToken]
     [Authorize(Policy = PanelPermissions.Administration)]
-    public async Task<IActionResult> SaveOfficeSettings(Guid officeId, bool isEnabled, bool requireStageComment, CancellationToken ct = default)
+    public async Task<IActionResult> SaveOfficeSettings(
+        Guid officeId,
+        bool isEnabled,
+        bool requireStageComment,
+        bool deadlineNotificationsEnabled,
+        CancellationToken ct = default)
     {
-        var (_, error) = await api.SetCrmOfficeSettingsAsync(officeId, isEnabled, requireStageComment, ct);
+        var (_, error) = await api.SetCrmOfficeSettingsAsync(
+            officeId,
+            isEnabled,
+            requireStageComment,
+            deadlineNotificationsEnabled,
+            ct);
         if (error is not null) TempData["CrmError"] = error;
         else TempData["CrmOk"] = "Настройки CRM сохранены.";
         return RedirectToAction(nameof(Team));

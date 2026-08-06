@@ -293,13 +293,17 @@ public sealed class OrbitaApiClient(
     }
 
     public Task<IReadOnlyList<OfficeDto>?> GetOfficesAsync(CancellationToken ct = default) =>
-        GetAsync<IReadOnlyList<OfficeDto>>("api/v1/admin/offices", ct);
+        _preview.Enabled
+            ? Task.FromResult<IReadOnlyList<OfficeDto>?>(DesignPreviewData.Offices)
+            : GetAsync<IReadOnlyList<OfficeDto>>("api/v1/admin/offices", ct);
 
     public Task<IReadOnlyList<OfficeOptionDto>?> GetOfficeOptionsAsync(CancellationToken ct = default) =>
         GetAsync<IReadOnlyList<OfficeOptionDto>>("api/v1/panel/offices/options", ct);
 
     public Task<OfficeDetailDto?> GetOfficeAsync(Guid id, CancellationToken ct = default) =>
-        GetAsync<OfficeDetailDto>($"api/v1/admin/offices/{id}", ct);
+        _preview.Enabled
+            ? Task.FromResult(DesignPreviewData.GetOfficeDetail(id))
+            : GetAsync<OfficeDetailDto>($"api/v1/admin/offices/{id}", ct);
 
     public async Task<(OfficeDetailDto? Office, string? Error)> CreateOfficeAsync(string name, CancellationToken ct = default)
     {
@@ -1853,6 +1857,26 @@ public sealed class OrbitaApiClient(
         return board;
     }
 
+    public Task<CrmAnalyticsDto?> GetCrmAnalyticsAsync(
+        DateTime fromUtc,
+        DateTime toUtc,
+        Guid? officeId = null,
+        string? managerUserId = null,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return Task.FromResult<CrmAnalyticsDto?>(
+                DesignPreviewData.GetCrmAnalytics(officeId ?? officeContext.EffectiveOfficeId, fromUtc, toUtc, managerUserId));
+        }
+
+        var url = WithOfficeQuery("api/v1/crm/analytics", officeId);
+        url = AppendQuery(url, "fromUtc", fromUtc.ToUniversalTime().ToString("O"));
+        url = AppendQuery(url, "toUtc", toUtc.ToUniversalTime().ToString("O"));
+        url = AppendQuery(url, "managerUserId", managerUserId);
+        return GetAsync<CrmAnalyticsDto>(url, ct);
+    }
+
     /// <summary>
     /// Loads CRM board. ErrorCode: unauthorized | forbidden | bad_request | not_found | error | null on success.
     /// </summary>
@@ -1958,6 +1982,66 @@ public sealed class OrbitaApiClient(
         _preview.Enabled
             ? Task.FromResult(DesignPreviewData.GetCrmTask(taskId))
             : GetAsync<CrmTaskDetailDto>($"api/v1/crm/tasks/{taskId:D}", ct);
+
+    public Task<CrmTaskNotificationsDto?> GetCrmTaskNotificationsAsync(
+        bool unreadOnly = false,
+        int limit = 20,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return Task.FromResult<CrmTaskNotificationsDto?>(
+                DesignPreviewData.GetCrmTaskNotifications(unreadOnly, limit));
+        }
+
+        var url = WithOfficeQuery("api/v1/crm/notifications");
+        url = AppendQuery(url, "unreadOnly", unreadOnly ? "true" : "false");
+        url = AppendQuery(url, "limit", Math.Clamp(limit, 1, 50).ToString());
+        return GetAsync<CrmTaskNotificationsDto>(url, ct);
+    }
+
+    public Task<CrmTaskNotificationSummaryDto?> GetCrmTaskNotificationSummaryAsync(CancellationToken ct = default) =>
+        _preview.Enabled
+            ? Task.FromResult<CrmTaskNotificationSummaryDto?>(DesignPreviewData.GetCrmTaskNotificationSummary())
+            : GetAsync<CrmTaskNotificationSummaryDto>(WithOfficeQuery("api/v1/crm/notifications/summary"), ct);
+
+    public async Task<(bool Success, string? Error)> MarkCrmTaskNotificationReadAsync(
+        Guid notificationId,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return DesignPreviewData.MarkCrmTaskNotificationRead(notificationId);
+        }
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            WithOfficeQuery($"api/v1/crm/notifications/{notificationId:D}/read"));
+        using var response = await SendAuthenticatedAsync(request, ct);
+        return response is null
+            ? (false, InvalidApiSessionError)
+            : response.IsSuccessStatusCode
+                ? (true, null)
+                : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(bool Success, string? Error)> MarkAllCrmTaskNotificationsReadAsync(CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return DesignPreviewData.MarkAllCrmTaskNotificationsRead();
+        }
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            WithOfficeQuery("api/v1/crm/notifications/read-all"));
+        using var response = await SendAuthenticatedAsync(request, ct);
+        return response is null
+            ? (false, InvalidApiSessionError)
+            : response.IsSuccessStatusCode
+                ? (true, null)
+                : (false, await ReadApiErrorAsync(response, ct));
+    }
 
     public async Task<(CrmTaskAttachmentDto? Attachment, string? Error)> UploadCrmTaskAttachmentAsync(
         Guid taskId,
@@ -2209,16 +2293,27 @@ public sealed class OrbitaApiClient(
         return response is null ? (false, InvalidApiSessionError) : response.IsSuccessStatusCode ? (true, null) : (false, await ReadApiErrorAsync(response, ct));
     }
 
-    public async Task<(bool Success, string? Error)> SetCrmOfficeSettingsAsync(Guid officeId, bool enabled, bool requireStageComment, CancellationToken ct = default)
+    public async Task<(bool Success, string? Error)> SetCrmOfficeSettingsAsync(
+        Guid officeId,
+        bool enabled,
+        bool requireStageComment,
+        bool? deadlineNotificationsEnabled = null,
+        CancellationToken ct = default)
     {
         if (_preview.Enabled)
         {
-            return DesignPreviewData.SetCrmOfficeSettings(enabled, requireStageComment);
+            return DesignPreviewData.SetCrmOfficeSettings(
+                enabled,
+                requireStageComment,
+                deadlineNotificationsEnabled);
         }
 
         using var request = new HttpRequestMessage(HttpMethod.Put, $"api/v1/crm/offices/{officeId:D}/settings")
         {
-            Content = JsonContent.Create(new CrmOfficeSettingsRequest(enabled, requireStageComment))
+            Content = JsonContent.Create(new CrmOfficeSettingsRequest(
+                enabled,
+                requireStageComment,
+                deadlineNotificationsEnabled))
         };
         using var response = await SendAuthenticatedAsync(request, ct);
         return response is null ? (false, InvalidApiSessionError) : response.IsSuccessStatusCode ? (true, null) : (false, await ReadApiErrorAsync(response, ct));

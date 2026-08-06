@@ -65,7 +65,7 @@
                     </a>
                     <div class="crm-task-row__due @(isOverdue ? "is-overdue" : "")">
                         <small>Срок</small>
-                        @if (task.DueAtUtc is DateTime due) { <span><i class="fa-regular fa-calendar" aria-hidden="true"></i> до @due.ToLocalTime().ToString("dd MMM, HH:mm")</span> } else { <span class="is-empty">Не задан</span> }
+                        @if (task.DueAtUtc is DateTime due) { <span><i class="fa-regular fa-calendar" aria-hidden="true"></i> до <time data-orbita-utc="@OrbitaTime.ToIsoUtc(due)" data-orbita-format="datetime"></time></span> } else { <span class="is-empty">Не задан</span> }
                         @if (isOverdue) { <em>Просрочено</em> }
                         @if (task.Status == CrmTaskStatuses.Cancelled) { <em>Отменена</em> }
                     </div>
