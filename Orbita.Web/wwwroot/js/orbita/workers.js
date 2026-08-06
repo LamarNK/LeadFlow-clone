@@ -530,7 +530,7 @@
         var errorsEl = document.querySelector('[data-nav-badge="errors"]');
         var responsesEl = document.querySelector('[data-nav-badge="responses"]');
         runtime.setBadge(errorsEl, payload.errorsToday);
-        runtime.setBadge(responsesEl, payload.sentToCrm, ' в Битрикс24 за сегодня');
+        runtime.setBadge(responsesEl, payload.uniqueResponsesToday, ' уникальных откликов за сегодня');
     }
 
     runtime.setBadge = function setBadge(el, value, suffix) {

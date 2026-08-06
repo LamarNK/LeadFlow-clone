@@ -13,7 +13,7 @@ public sealed class NavBadgesService(OrbitaApiClient api, IOptions<DesignPreview
             var summary = DesignPreviewData.Summary;
             return new NavBadgesDto(
                 summary.Errors,
-                summary.SentToCrm,
+                summary.UniqueResponsesToday,
                 summary.ActionRequired,
                 DateTime.UtcNow);
         }
@@ -26,7 +26,7 @@ public sealed class NavBadgesService(OrbitaApiClient api, IOptions<DesignPreview
 
         return new NavBadgesDto(
             live.Errors,
-            live.SentToCrm,
+            live.UniqueResponsesToday,
             live.ActionRequired,
             live.AggregatedAtUtc);
     }

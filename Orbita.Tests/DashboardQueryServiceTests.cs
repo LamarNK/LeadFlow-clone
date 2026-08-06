@@ -69,6 +69,42 @@ public sealed class DashboardQueryServiceTests
         Assert.Equal(0, yesterdayPoint.DuplicateCount);
     }
 
+    [Fact]
+    public async Task GetGlobalSummaryAsync_ReportsTodayResponsesWithoutDuplicates()
+    {
+        await using var db = CreateDb();
+        var now = DateTime.UtcNow;
+        SeedWorker(db, now);
+        db.CandidateResponses.AddRange(
+            CreateResponse(now, ResponseStatuses.Sent),
+            CreateResponse(now, ResponseStatuses.Duplicate),
+            CreateResponse(now, ResponseStatuses.InProgress));
+        await db.SaveChangesAsync();
+
+        var summary = await CreateService(db).GetGlobalSummaryAsync(OfficeScope.ForOffice(OfficeId), OfficeId);
+
+        Assert.Equal(3, summary.TotalToday);
+        Assert.Equal(1, summary.Duplicates);
+        Assert.Equal(2, summary.UniqueResponsesToday);
+    }
+
+    private static CandidateResponseEntity CreateResponse(DateTime collectedAt, string status) => new()
+    {
+        Id = Guid.NewGuid(),
+        OfficeId = OfficeId,
+        WorkerId = WorkerId,
+        AccountId = AccountId,
+        AccountName = "acc-1",
+        Source = "Avito",
+        SourceResponseId = Guid.NewGuid().ToString(),
+        FullName = "User",
+        PhoneRaw = "+79001111111",
+        PhoneNormalized = "79001111111",
+        Status = status,
+        CreatedAt = collectedAt,
+        CollectedAt = collectedAt
+    };
+
     private static DashboardQueryService CreateService(OrbitaDbContext db) =>
         new(
             db,
