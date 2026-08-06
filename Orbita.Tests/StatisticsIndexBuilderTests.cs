@@ -69,6 +69,22 @@ public sealed class StatisticsIndexBuilderTests
     }
 
     [Fact]
+    public void Build_DeliveryLinks_OmitEmptyFilterIds()
+    {
+        var data = CreateData(lowBalanceCount: 0) with
+        {
+            BitrixDeliveries = [new BitrixDeliveryStatDto(Guid.NewGuid(), "Отдел подбора", 3)]
+        };
+
+        var model = BuildModel(data, DashboardPeriod.Today, new FakeOfficeContext());
+
+        var delivery = Assert.Single(model.BitrixDeliveries);
+        Assert.DoesNotContain(Guid.Empty.ToString(), delivery.ResponsesUrl);
+        Assert.DoesNotContain("workerId=", delivery.ResponsesUrl);
+        Assert.DoesNotContain("accountId=", delivery.ResponsesUrl);
+    }
+
+    [Fact]
     public void Build_ParsesMonitoringNotStartedRows()
     {
         var monitoring = new MonitoringCycleReportDto(

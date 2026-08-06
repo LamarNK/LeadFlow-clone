@@ -34,14 +34,14 @@ internal static class KpiCardLinks
             parts.Add($"status={Uri.EscapeDataString(status)}");
         }
 
-        if (workerId is not null)
+        if (workerId is Guid worker && worker != Guid.Empty)
         {
-            parts.Add($"workerId={workerId.Value}");
+            parts.Add($"workerId={worker}");
         }
 
-        if (accountId is not null)
+        if (accountId is Guid account && account != Guid.Empty)
         {
-            parts.Add($"accountId={accountId.Value}");
+            parts.Add($"accountId={account}");
         }
 
         if (!string.IsNullOrWhiteSpace(bitrixDestination))
