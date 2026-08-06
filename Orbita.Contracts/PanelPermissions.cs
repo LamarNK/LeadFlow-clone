@@ -20,6 +20,7 @@ public static class PanelPermissions
     public const string Crm = "crm";
     public const string CrmBoard = "crm-board";
     public const string CrmTasks = "crm-tasks";
+    public const string CrmAnalytics = "crm-analytics";
     public const string Administration = "administration";
     public const string ConfigurationClaimType = "orbita.permission-configured";
     public const string UserPermissionOverrideClaimType = "orbita.user-permission-override";
@@ -35,6 +36,7 @@ public static class PanelPermissions
         new(Settings, "Личные настройки", "Профиль, пароль и личные интеграции."),
         new(CrmBoard, "CRM: Воронка", "Рабочее место менеджера и карточки кандидатов."),
         new(CrmTasks, "CRM: Задачи", "Список, выполнение и планирование задач CRM."),
+        new(CrmAnalytics, "CRM: Аналитика", "Воронка, результаты и нагрузка команды CRM."),
         new(Administration, "Администрирование", "Пользователи, офисы, системные настройки и профили доступа.")
     ];
 
@@ -49,7 +51,7 @@ public static class PanelPermissions
         PanelRoles.Normalize(role) switch
         {
             PanelRoles.Admin => All.Select(x => x.Id).ToArray(),
-            PanelRoles.Manager => [CrmBoard, CrmTasks, Settings],
+            PanelRoles.Manager => [CrmBoard, CrmTasks, CrmAnalytics, Settings],
             _ => [Dashboard, Workers, Accounts, Statistics, Responses, Events, Settings]
         };
 
@@ -73,6 +75,7 @@ public static class PanelPermissions
             {
                 Add(CrmBoard);
                 Add(CrmTasks);
+                Add(CrmAnalytics);
             }
             else if (allowed.Contains(permission))
             {

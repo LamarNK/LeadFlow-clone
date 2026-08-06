@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Orbita.Api.Data;
@@ -309,6 +310,22 @@ public sealed class CrmAnalyticsQueryServiceTests
         Assert.Equal(CrmAnalyticsQueryOutcome.BadRequest, tooLong.Outcome);
     }
 
+    [Fact]
+    public async Task GetAsync_ExecutesOfficeSortWithRelationalProvider()
+    {
+        await using var harness = await Harness.CreateSqliteAsync(Now);
+        harness.AddOffice(OfficeOneId, "Ярославль", ["Новый"]);
+        await harness.Db.SaveChangesAsync();
+
+        var result = await harness.Sut.GetAsync(
+            OfficeScope.GlobalAdmin,
+            "admin",
+            isAdmin: true,
+            new CrmAnalyticsQuery(Now.UtcDateTime.AddDays(-1), Now.UtcDateTime.AddDays(1), OfficeOneId));
+
+        Assert.Equal(CrmAnalyticsQueryOutcome.Success, result.Outcome);
+    }
+
     private static CrmCandidateCardEntity NewCard(
         Guid officeId,
         string? managerUserId,
@@ -363,11 +380,16 @@ public sealed class CrmAnalyticsQueryServiceTests
     private sealed class Harness : IAsyncDisposable
     {
         private const string ManagerRoleId = "analytics-manager-role";
+        private readonly SqliteConnection? sqliteConnection;
 
-        private Harness(OrbitaDbContext db, CrmAnalyticsQueryService sut)
+        private Harness(
+            OrbitaDbContext db,
+            CrmAnalyticsQueryService sut,
+            SqliteConnection? sqliteConnection = null)
         {
             Db = db;
             Sut = sut;
+            this.sqliteConnection = sqliteConnection;
         }
 
         public OrbitaDbContext Db { get; }
@@ -389,6 +411,25 @@ public sealed class CrmAnalyticsQueryServiceTests
             });
             await db.SaveChangesAsync();
             return new Harness(db, new CrmAnalyticsQueryService(db, new FixedTimeProvider(now)));
+        }
+
+        public static async Task<Harness> CreateSqliteAsync(DateTimeOffset now)
+        {
+            var connection = new SqliteConnection("Data Source=:memory:");
+            await connection.OpenAsync();
+            var options = new DbContextOptionsBuilder<OrbitaDbContext>()
+                .UseSqlite(connection)
+                .Options;
+            var db = new OrbitaDbContext(options);
+            await db.Database.EnsureCreatedAsync();
+            db.Roles.Add(new IdentityRole
+            {
+                Id = ManagerRoleId,
+                Name = PanelRoles.Manager,
+                NormalizedName = PanelRoles.Manager.ToUpperInvariant()
+            });
+            await db.SaveChangesAsync();
+            return new Harness(db, new CrmAnalyticsQueryService(db, new FixedTimeProvider(now)), connection);
         }
 
         public void AddOffice(Guid id, string name, IReadOnlyList<string> stages)
@@ -441,7 +482,14 @@ public sealed class CrmAnalyticsQueryServiceTests
             });
         }
 
-        public async ValueTask DisposeAsync() => await Db.DisposeAsync();
+        public async ValueTask DisposeAsync()
+        {
+            await Db.DisposeAsync();
+            if (sqliteConnection is not null)
+            {
+                await sqliteConnection.DisposeAsync();
+            }
+        }
     }
 
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider

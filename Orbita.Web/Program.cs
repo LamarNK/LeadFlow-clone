@@ -78,7 +78,7 @@ builder.Services.AddAuthorization(options =>
     {
         options.AddPolicy(permission.Id, policy =>
         {
-            if (permission.Id is PanelPermissions.CrmBoard or PanelPermissions.CrmTasks)
+            if (permission.Id is PanelPermissions.CrmBoard or PanelPermissions.CrmTasks or PanelPermissions.CrmAnalytics)
             {
                 policy.RequireAssertion(context =>
                     context.User.HasClaim(PanelPermissions.ClaimType, permission.Id)

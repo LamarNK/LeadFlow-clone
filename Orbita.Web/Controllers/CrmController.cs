@@ -18,7 +18,7 @@ public sealed class CrmController(
     IOptions<DesignPreviewOptions> previewOptions) : Controller
 {
     [HttpGet]
-    [Authorize(Policy = PanelPermissions.CrmBoard)]
+    [Authorize(Policy = PanelPermissions.CrmAnalytics)]
     public async Task<IActionResult> Analytics(
         string? from,
         string? to,

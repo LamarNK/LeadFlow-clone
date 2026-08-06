@@ -27,6 +27,7 @@ public static class CrmEndpoints
     {
         var crmBoard = app.MapGroup("/api/v1/crm").RequireAuthorization(PanelPermissions.CrmBoard);
         var crmTasks = app.MapGroup("/api/v1/crm").RequireAuthorization(PanelPermissions.CrmTasks);
+        var crmAnalytics = app.MapGroup("/api/v1/crm").RequireAuthorization(PanelPermissions.CrmAnalytics);
         var crmAdmin = app.MapGroup("/api/v1/crm").RequireAuthorization(PanelPermissions.Administration);
 
         crmBoard.MapGet("/board", async (
@@ -78,7 +79,7 @@ public static class CrmEndpoints
                 : Results.Ok(board);
         });
 
-        crmBoard.MapGet("/analytics", async (
+        crmAnalytics.MapGet("/analytics", async (
             CrmAnalyticsQueryService analytics,
             OfficeScopeService officeScope,
             ClaimsPrincipal principal,
@@ -90,11 +91,11 @@ public static class CrmEndpoints
         {
             var isAdmin = principal.IsInRole(PanelRoles.Admin);
             var isManager = principal.IsInRole(PanelRoles.Manager);
-            var hasCrmBoardAccess = principal.HasClaim(PanelPermissions.ClaimType, PanelPermissions.CrmBoard)
+            var hasCrmAnalyticsAccess = principal.HasClaim(PanelPermissions.ClaimType, PanelPermissions.CrmAnalytics)
                 || principal.HasClaim(PanelPermissions.ClaimType, PanelPermissions.Crm);
             var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier)
                          ?? principal.FindFirstValue("sub");
-            if (string.IsNullOrWhiteSpace(userId) || (!isAdmin && !isManager && !hasCrmBoardAccess))
+            if (string.IsNullOrWhiteSpace(userId) || (!isAdmin && !isManager && !hasCrmAnalyticsAccess))
             {
                 return Results.Forbid();
             }

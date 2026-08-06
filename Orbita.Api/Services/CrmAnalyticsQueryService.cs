@@ -122,8 +122,8 @@ public sealed class CrmAnalyticsQueryService(
         }
 
         var offices = await officesQuery
-            .Select(x => new OfficeRow(x.Id, x.Name, x.CrmStagesJson))
             .OrderBy(x => x.Name)
+            .Select(x => new OfficeRow(x.Id, x.Name, x.CrmStagesJson))
             .ToListAsync(ct);
         if (effectiveOfficeId is Guid && offices.Count == 0)
         {
