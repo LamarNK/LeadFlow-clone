@@ -125,7 +125,8 @@ public sealed class OfficeStatisticsQueryService(
                 a.Status,
                 a.IsEnabledInPanel,
                 a.TotalBalance,
-                a.SubProfilesJson))
+                a.SubProfilesJson,
+                a.SubProfilesDisabledIdsJson))
             .ToListAsync(ct);
 
         if (accountFilterSet is not null)
@@ -321,12 +322,14 @@ public sealed class OfficeStatisticsQueryService(
         var journalCycles = await LoadMonitoringCycleJournalAsync(workerIds, utcStart, utcEnd, ct);
         if (journalCycles.Count > 0)
         {
+            var accountCatalog = BuildMonitoringAccountCatalog(accountRows);
             return MonitoringCycleReportBuilder.BuildFromJournal(
                 journalCycles,
                 startLocal,
                 endLocal,
                 allowedAccountNames,
-                sentRows);
+                sentRows,
+                accountCatalog);
         }
 
         // No journal yet for this period (old workers / pre-migration data).
@@ -1003,6 +1006,51 @@ public sealed class OfficeStatisticsQueryService(
         string OfficeName,
         DateTime? LastSeenAtUtc);
 
+    private static IReadOnlyDictionary<string, IReadOnlyList<MonitoringAccountSubProfileCatalogEntry>>
+        BuildMonitoringAccountCatalog(IReadOnlyList<AccountProjection> accountRows)
+    {
+        var map = new Dictionary<string, IReadOnlyList<MonitoringAccountSubProfileCatalogEntry>>(
+            StringComparer.OrdinalIgnoreCase);
+
+        foreach (var account in accountRows)
+        {
+            var name = account.DisplayName.Trim();
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                continue;
+            }
+
+            var profiles = SubProfileDeserializer.Deserialize(
+                account.SubProfilesJson,
+                account.SubProfilesDisabledIdsJson);
+            if (profiles is null || profiles.Count == 0)
+            {
+                continue;
+            }
+
+            var enabled = profiles
+                .Where(p => p.IsEnabledInPanel)
+                .Select((p, index) => new MonitoringAccountSubProfileCatalogEntry(
+                    index + 1,
+                    p.Id?.Trim() ?? string.Empty,
+                    string.IsNullOrWhiteSpace(p.Name) ? (p.Id ?? "—") : p.Name.Trim()))
+                .ToList();
+
+            if (enabled.Count == 0)
+            {
+                continue;
+            }
+
+            // If several workers share display name, keep the largest enabled set.
+            if (!map.TryGetValue(name, out var existing) || enabled.Count > existing.Count)
+            {
+                map[name] = enabled;
+            }
+        }
+
+        return map;
+    }
+
     private sealed record AccountProjection(
         Guid WorkerId,
         Guid AccountId,
@@ -1010,7 +1058,8 @@ public sealed class OfficeStatisticsQueryService(
         string Status,
         bool IsEnabledInPanel,
         decimal TotalBalance,
-        string SubProfilesJson);
+        string SubProfilesJson,
+        string SubProfilesDisabledIdsJson);
 
     private sealed class DailyCounters
     {

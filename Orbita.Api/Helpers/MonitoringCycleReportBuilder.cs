@@ -50,6 +50,12 @@ internal sealed record MonitoringSubProfileRunSnapshot(
     string? ErrorMessage,
     int PublishedCount);
 
+/// <summary>Enabled subprofiles of an account (panel order) for a full day matrix.</summary>
+internal sealed record MonitoringAccountSubProfileCatalogEntry(
+    int Position,
+    string Id,
+    string Name);
+
 internal static partial class MonitoringCycleReportBuilder
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
@@ -94,19 +100,22 @@ internal static partial class MonitoringCycleReportBuilder
     private static partial Regex NewWorkerSwitchMarkerRegex();
 
     /// <summary>
-    /// Полный отчёт из типизированного журнала запусков (+ лиды из Sent-откликов).
+    /// Полный отчёт из журнала запусков (+ лиды из Sent-откликов).
+    /// «Успешное завершение» = проход субпрофиля без ошибки (Outcome=Completed), не факт отправки лида.
+    /// Строки — все включённые субпрофили аккаунта (каталог), журнал накладывается поверх.
     /// </summary>
     public static MonitoringCycleReportDto BuildFromJournal(
         IReadOnlyList<MonitoringCycleRunSnapshot> cycles,
         DateTime startLocal,
         DateTime endLocal,
         IReadOnlySet<string>? allowedAccountNames = null,
-        IReadOnlyList<MonitoringCycleSentResponse>? sentResponses = null)
+        IReadOnlyList<MonitoringCycleSentResponse>? sentResponses = null,
+        IReadOnlyDictionary<string, IReadOnlyList<MonitoringAccountSubProfileCatalogEntry>>? accountCatalog = null)
     {
-        // Journal has full cycle structure for any period length (day / week / month).
-        // IsDetailed no longer depends on single-day — that limit was only for log-scan cost.
         const bool isDetailed = true;
         var sent = sentResponses ?? [];
+        var catalog = accountCatalog
+            ?? new Dictionary<string, IReadOnlyList<MonitoringAccountSubProfileCatalogEntry>>(StringComparer.OrdinalIgnoreCase);
         var filteredCycles = cycles
             .Where(c => allowedAccountNames is null || allowedAccountNames.Contains(c.AccountName))
             .Where(c =>
@@ -119,7 +128,6 @@ internal static partial class MonitoringCycleReportBuilder
 
         if (filteredCycles.Count == 0)
         {
-            // No journal rows yet — still show Bitrix lead totals for the period.
             return BuildSummaryFromSentResponses(sent, startLocal, endLocal, allowedAccountNames);
         }
 
@@ -147,31 +155,18 @@ internal static partial class MonitoringCycleReportBuilder
             {
                 var accountName = accountGroup.Key;
                 var accountCycles = accountGroup.OrderBy(c => c.StartedAtUtc).ToList();
-                // Only positions with real journal rows. Never invent "#3"…"#10" from Total alone —
-                // that false-flagged subprofiles that later ran (worker last-activity is a different source).
-                var posToName = new Dictionary<int, string>();
-                var posTimes = new Dictionary<int, List<DateTime?>>();
-                var posLeads = new Dictionary<int, List<string?>>();
-                var posErrors = new Dictionary<int, List<MonitoringCycleErrorDto>>();
+                catalog.TryGetValue(accountName, out var accountSubs);
+                accountSubs ??= [];
+
+                // Row identity: catalog first (full list of enabled subs), then any journal-only names.
+                var rowsMeta = BuildAccountDayRows(accountSubs, accountCycles);
+                var totalPositions = rowsMeta.Count;
+                var posToName = rowsMeta.ToDictionary(r => r.Position, r => r.Name);
+                var posTimes = rowsMeta.ToDictionary(r => r.Position, _ => new List<DateTime?>());
+                var posLeads = rowsMeta.ToDictionary(r => r.Position, _ => new List<string?>());
+                var posErrors = rowsMeta.ToDictionary(r => r.Position, _ => new List<MonitoringCycleErrorDto>());
+                var posHadRun = rowsMeta.ToDictionary(r => r.Position, _ => false);
                 var posExplicitNotStarted = new HashSet<int>();
-                var totalPositions = 0;
-
-                foreach (var cycle in accountCycles)
-                {
-                    foreach (var sp in cycle.SubProfiles)
-                    {
-                        totalPositions = Math.Max(totalPositions, Math.Max(sp.Total, sp.Position));
-                        posToName[sp.Position] = sp.SubProfileName;
-                        posTimes.TryAdd(sp.Position, []);
-                        posLeads.TryAdd(sp.Position, []);
-                        posErrors.TryAdd(sp.Position, []);
-                    }
-                }
-
-                if (totalPositions <= 0)
-                {
-                    totalPositions = posToName.Keys.DefaultIfEmpty(1).Max();
-                }
 
                 for (var cycleIndex = 0; cycleIndex < accountCycles.Count; cycleIndex++)
                 {
@@ -180,25 +175,38 @@ internal static partial class MonitoringCycleReportBuilder
                         ? accountCycles[cycleIndex + 1].StartedAtUtc
                         : LocalCalendarDateRange.GetUtcRangeForLocalCalendarDay(day).UtcEndExclusive;
                     var cycleEnd = cycle.FinishedAtUtc ?? nextCycleStart;
-                    var runsByPosition = cycle.SubProfiles
-                        .GroupBy(x => x.Position)
-                        .ToDictionary(g => g.Key, g => g.OrderBy(x => x.StartedAtUtc).Last());
-
                     var isLastCycle = cycleIndex == accountCycles.Count - 1;
                     var cycleInterrupted = isLastCycle
                         && cycle.Status is MonitoringCycleRunStatuses.Aborted
                             or MonitoringCycleRunStatuses.Failed
                             or MonitoringCycleRunStatuses.Running;
 
-                    // Only observed positions (no loop 1..Total inventing missing slots).
-                    foreach (var position in posToName.Keys.OrderBy(x => x))
+                    var runsByRow = new Dictionary<int, MonitoringSubProfileRunSnapshot>();
+                    foreach (var sp in cycle.SubProfiles.OrderBy(x => x.StartedAtUtc))
                     {
-                        if (!runsByPosition.TryGetValue(position, out var run))
+                        var rowPos = MatchRunToRowPosition(sp, rowsMeta);
+                        if (rowPos is null)
                         {
-                            // Known from another cycle that day, missing in this interrupted cycle.
+                            continue;
+                        }
+
+                        runsByRow[rowPos.Value] = sp;
+                    }
+
+                    foreach (var row in rowsMeta)
+                    {
+                        var position = row.Position;
+                        if (!runsByRow.TryGetValue(position, out var run))
+                        {
+                            var everCompleted = posTimes[position].Any(t => t is not null);
                             posTimes[position].Add(null);
                             posLeads[position].Add(null);
-                            if (cycleInterrupted)
+                            // "Не запущен" only if never successfully completed today and last cycle
+                            // cut short without starting this subprofile.
+                            if (cycleInterrupted
+                                && !everCompleted
+                                && !posHadRun[position]
+                                && runsByRow.Count > 0)
                             {
                                 posErrors[position].Add(new MonitoringCycleErrorDto(
                                     cycle.FinishedAtUtc ?? cycle.StartedAtUtc,
@@ -209,22 +217,25 @@ internal static partial class MonitoringCycleReportBuilder
                             continue;
                         }
 
-                        posToName[position] = run.SubProfileName;
-                        totalPositions = Math.Max(totalPositions, Math.Max(run.Total, run.Position));
+                        posHadRun[position] = true;
+                        posToName[position] = string.IsNullOrWhiteSpace(run.SubProfileName)
+                            ? posToName[position]
+                            : run.SubProfileName.Trim();
 
+                        // Successful completion = full pass OK (not “had responses / Bitrix leads”).
                         if (run.Outcome == MonitoringSubProfileRunOutcomes.Completed
                             && run.CompletedAtUtc is DateTime completedAt)
                         {
                             posTimes[position].Add(completedAt);
                             var windowEnd = cycle.SubProfiles
-                                .Where(x => x.Position > position)
+                                .Where(x => x.Position > run.Position)
                                 .OrderBy(x => x.Position)
                                 .Select(x => (DateTime?)x.StartedAtUtc)
                                 .FirstOrDefault() ?? cycleEnd;
                             var sentInWindow = CountSentInWindow(
                                 sent,
                                 accountName,
-                                run.SubProfileName,
+                                posToName[position],
                                 run.StartedAtUtc,
                                 windowEnd);
                             var leadCount = sentInWindow > 0 ? sentInWindow : run.PublishedCount;
@@ -252,14 +263,13 @@ internal static partial class MonitoringCycleReportBuilder
                         }
                         else
                         {
-                            // Started/skipped without completion — not "never queued".
+                            // Started but not finished — no completion tick, no "не запущен".
                             posTimes[position].Add(null);
                             posLeads[position].Add(null);
                         }
                     }
                 }
 
-                // Only count as "не запущен" when the last cycle was interrupted before that position.
                 var notStarted = posToName.Keys
                     .Where(position =>
                         posExplicitNotStarted.Contains(position)
@@ -296,7 +306,7 @@ internal static partial class MonitoringCycleReportBuilder
                     leadTotal,
                     leadParts));
 
-                var rows = posToName.Keys
+                var tableRows = posToName.Keys
                     .OrderBy(x => x)
                     .Select(position =>
                     {
@@ -321,10 +331,10 @@ internal static partial class MonitoringCycleReportBuilder
                 reports.Add(new MonitoringCycleAccountReportDto(
                     accountName,
                     dateUtc,
-                    posToName.Count,
+                    totalPositions,
                     accountCycles.Count,
                     leadTotal,
-                    rows,
+                    tableRows,
                     notStarted.Select(p => $"{p}/{totalPositions} ({posToName[p]})").ToList()));
             }
         }
@@ -698,6 +708,113 @@ internal static partial class MonitoringCycleReportBuilder
         {
             yield return day;
         }
+    }
+
+    private sealed record AccountDayRow(int Position, string Id, string Name);
+
+    /// <summary>
+    /// Catalog (enabled subs) first — full matrix like the worker page.
+    /// Journal-only names appended if missing from catalog.
+    /// </summary>
+    private static List<AccountDayRow> BuildAccountDayRows(
+        IReadOnlyList<MonitoringAccountSubProfileCatalogEntry> catalog,
+        IReadOnlyList<MonitoringCycleRunSnapshot> accountCycles)
+    {
+        var rows = new List<AccountDayRow>();
+        var usedIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var usedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var entry in catalog.OrderBy(x => x.Position))
+        {
+            var name = string.IsNullOrWhiteSpace(entry.Name) ? "—" : entry.Name.Trim();
+            var id = entry.Id?.Trim() ?? string.Empty;
+            rows.Add(new AccountDayRow(rows.Count + 1, id, name));
+            if (!string.IsNullOrWhiteSpace(id))
+            {
+                usedIds.Add(id);
+            }
+
+            usedNames.Add(name);
+        }
+
+        foreach (var cycle in accountCycles)
+        {
+            foreach (var sp in cycle.SubProfiles.OrderBy(x => x.Position).ThenBy(x => x.StartedAtUtc))
+            {
+                var id = sp.SubProfileId?.Trim() ?? string.Empty;
+                var name = string.IsNullOrWhiteSpace(sp.SubProfileName) ? "—" : sp.SubProfileName.Trim();
+                if ((!string.IsNullOrWhiteSpace(id) && usedIds.Contains(id))
+                    || usedNames.Contains(name))
+                {
+                    continue;
+                }
+
+                rows.Add(new AccountDayRow(rows.Count + 1, id, name));
+                if (!string.IsNullOrWhiteSpace(id))
+                {
+                    usedIds.Add(id);
+                }
+
+                usedNames.Add(name);
+            }
+        }
+
+        if (rows.Count == 0)
+        {
+            // Absolute fallback: journal positions only.
+            foreach (var sp in accountCycles.SelectMany(c => c.SubProfiles).OrderBy(x => x.Position))
+            {
+                var name = string.IsNullOrWhiteSpace(sp.SubProfileName) ? $"#{sp.Position}" : sp.SubProfileName.Trim();
+                if (rows.Any(r => r.Position == sp.Position))
+                {
+                    continue;
+                }
+
+                rows.Add(new AccountDayRow(sp.Position, sp.SubProfileId?.Trim() ?? string.Empty, name));
+            }
+
+            rows = rows.OrderBy(r => r.Position).ToList();
+            // Re-number densely 1..n for display consistency.
+            rows = rows.Select((r, i) => r with { Position = i + 1 }).ToList();
+        }
+
+        return rows;
+    }
+
+    private static int? MatchRunToRowPosition(
+        MonitoringSubProfileRunSnapshot run,
+        IReadOnlyList<AccountDayRow> rows)
+    {
+        var id = run.SubProfileId?.Trim() ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(id))
+        {
+            var byId = rows.FirstOrDefault(r =>
+                !string.IsNullOrWhiteSpace(r.Id)
+                && string.Equals(r.Id, id, StringComparison.OrdinalIgnoreCase));
+            if (byId is not null)
+            {
+                return byId.Position;
+            }
+        }
+
+        var name = run.SubProfileName?.Trim() ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(name))
+        {
+            var byName = rows.FirstOrDefault(r =>
+                string.Equals(r.Name, name, StringComparison.OrdinalIgnoreCase));
+            if (byName is not null)
+            {
+                return byName.Position;
+            }
+        }
+
+        // Last resort: journal position if it falls inside matrix.
+        if (run.Position > 0 && run.Position <= rows.Count)
+        {
+            return run.Position;
+        }
+
+        return null;
     }
 
     private static List<MonitoringCycleLogEvent> ParseEvents(

@@ -80,39 +80,67 @@ public sealed class MonitoringCycleJournalTests
     }
 
     [Fact]
-    public void BuildFromJournal_DoesNotInventMissingPositionsFromTotal()
+    public void BuildFromJournal_UsesAccountCatalog_AllEnabledSubs_NotOnlyJournalHits()
     {
         var cycleStart = TimeZoneInfo.ConvertTimeToUtc(Day.AddHours(16).AddMinutes(25), TimeZoneInfo.Local);
         var cycles = new List<MonitoringCycleRunSnapshot>
         {
             new(
                 Guid.NewGuid(),
-                "Avito 1",
+                "Avito 11 (3)",
                 cycleStart,
                 cycleStart.AddMinutes(8),
                 MonitoringCycleRunStatuses.Aborted,
                 [
                     new MonitoringSubProfileRunSnapshot(
-                        Guid.NewGuid(), "sp-1", "СлужуОтечеству6", 1, 10,
+                        Guid.NewGuid(), "sp-tv", "ТрудВахта4", 1, 10,
                         cycleStart, cycleStart.AddMinutes(7),
                         MonitoringSubProfileRunOutcomes.Completed, null, null, 0),
                     new MonitoringSubProfileRunSnapshot(
-                        Guid.NewGuid(), "sp-2", "СлужуОтечеству4", 2, 10,
+                        Guid.NewGuid(), "sp-v3", "Ветер3", 2, 10,
                         cycleStart.AddMinutes(7), null,
                         MonitoringSubProfileRunOutcomes.Started, null, null, 0)
                 ])
         };
 
-        var report = MonitoringCycleReportBuilder.BuildFromJournal(cycles, Day, Day);
+        var catalog = new Dictionary<string, IReadOnlyList<MonitoringAccountSubProfileCatalogEntry>>(
+            StringComparer.OrdinalIgnoreCase)
+        {
+            ["Avito 11 (3)"] =
+            [
+                new(1, "sp-wp10", "ВетерПеремен 10"),
+                new(2, "sp-wp5", "ВетерПеремен 5"),
+                new(3, "sp-wp6", "Ветер Перемен 6"),
+                new(4, "sp-wp7", "ВетерПеремен 7"),
+                new(5, "sp-wp8", "ВетерПеремен 8"),
+                new(6, "sp-wp9", "ВетерПеремен 9"),
+                new(7, "sp-wp", "ВетерПеремен"),
+                new(8, "sp-wp2", "ВетерПеремен2"),
+                new(9, "sp-v3", "Ветер3"),
+                new(10, "sp-tv", "ТрудВахта4")
+            ]
+        };
+
+        var report = MonitoringCycleReportBuilder.BuildFromJournal(
+            cycles, Day, Day, accountCatalog: catalog);
 
         Assert.Single(report.AccountReports);
-        Assert.Equal(2, report.AccountReports[0].Rows.Count);
-        Assert.Equal(0, report.AccountsWithNotStarted);
-        Assert.DoesNotContain(report.AccountReports[0].Rows, r => r.Name.StartsWith("#", StringComparison.Ordinal));
+        Assert.Equal(10, report.AccountReports[0].Rows.Count);
+        var trud = Assert.Single(report.AccountReports[0].Rows, r => r.Name == "ТрудВахта4");
+        Assert.NotEmpty(trud.CompletionTimesUtc);
+        // Completed earlier — must not get "Не запущен" spam.
+        Assert.DoesNotContain(trud.Errors, e => e.Detail.Contains("Не запущен", StringComparison.Ordinal));
+        var v3 = Assert.Single(report.AccountReports[0].Rows, r => r.Name == "Ветер3");
+        Assert.Empty(v3.CompletionTimesUtc);
+        // Started in last cycle but not completed — not "не запущен".
+        Assert.DoesNotContain(v3.Errors, e => e.Detail.Contains("Не запущен", StringComparison.Ordinal));
+        // Others never started in this interrupted cycle → not started.
+        Assert.True(report.AccountsWithNotStarted >= 1);
+        Assert.Contains(report.AccountReports[0].NotStartedPositions, x => x.Contains("ВетерПеремен 10"));
     }
 
     [Fact]
-    public void BuildFromJournal_MarksNotStartedOnlyWhenKnownFromEarlierCycle()
+    public void BuildFromJournal_CompletedEarlier_NotFlaggedNotStartedOnLaterAbort()
     {
         var t1 = TimeZoneInfo.ConvertTimeToUtc(Day.AddHours(10), TimeZoneInfo.Local);
         var t2 = TimeZoneInfo.ConvertTimeToUtc(Day.AddHours(14), TimeZoneInfo.Local);
@@ -142,7 +170,6 @@ public sealed class MonitoringCycleJournalTests
                     new MonitoringSubProfileRunSnapshot(
                         Guid.NewGuid(), "a", "профиль A", 1, 2, t2, t2.AddMinutes(3),
                         MonitoringSubProfileRunOutcomes.Completed, null, null, 0)
-                    // position 2 known from first cycle, missing in aborted second cycle
                 ])
         };
 
@@ -150,9 +177,8 @@ public sealed class MonitoringCycleJournalTests
 
         Assert.Equal(2, report.AccountReports[0].Rows.Count);
         var rowB = Assert.Single(report.AccountReports[0].Rows, r => r.Name == "профиль B");
-        // Completed earlier in the day — not in day-level "не запущены", but last aborted cycle notes the skip.
         Assert.NotEmpty(rowB.CompletionTimesUtc);
-        Assert.Contains(rowB.Errors, e => e.Detail.Contains("Не запущен", StringComparison.Ordinal));
+        Assert.DoesNotContain(rowB.Errors, e => e.Detail.Contains("Не запущен", StringComparison.Ordinal));
         Assert.Empty(report.AccountReports[0].NotStartedPositions);
     }
 

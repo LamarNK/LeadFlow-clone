@@ -54,7 +54,14 @@ else
         </section>
     </div>
 
-    @if (!report.IsDetailed && report.HasData)
+    @if (report.IsDetailed && report.AccountReports.Count > 0)
+    {
+        <p class="monitoring-report-hint cell-muted">
+            «Успешное завершение» — полный проход субпрофиля без ошибки (не сбор откликов).
+            «Битрикс24» — отправки за день. Пустая строка = в журнале проходов за день записи нет.
+        </p>
+    }
+    else if (!report.IsDetailed && report.HasData)
     {
         <p class="monitoring-report-hint cell-muted">
             Детальные таблицы появятся после обновления воркера (журнал проходов). Пока — сводка по отправкам в Битрикс24.
