@@ -192,7 +192,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
                         WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
                     }).ConfigureAwait(false);
                 }
-                catch (Exception ex) when (PuppeteerJsonEvaluator.IsRecoverableNavigationError(ex))
+                catch (Exception ex) when (IsRecoverableNavigationError(ex))
                 {
                     _ = GlobalLogger.Instance.LogAsync(
                         $"AdsPower profile-items navigation transient error, retrying after delay: {ex.Message}",
@@ -388,7 +388,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
                         WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
                     }).ConfigureAwait(false);
                 }
-                catch (Exception ex) when (PuppeteerJsonEvaluator.IsRecoverableNavigationError(ex))
+                catch (Exception ex) when (IsRecoverableNavigationError(ex))
                 {
                     await Task.Delay(1400, cancellationToken).ConfigureAwait(false);
                 }
@@ -917,7 +917,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
             }).ConfigureAwait(false);
         }
-        catch (Exception ex) when (PuppeteerJsonEvaluator.IsRecoverableNavigationError(ex))
+        catch (Exception ex) when (IsRecoverableNavigationError(ex))
         {
             await Task.Delay(1400, cancellationToken).ConfigureAwait(false);
         }
@@ -1139,7 +1139,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
                     WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
                 }).ConfigureAwait(false);
             }
-            catch (Exception ex) when (PuppeteerJsonEvaluator.IsRecoverableNavigationError(ex))
+            catch (Exception ex) when (IsRecoverableNavigationError(ex))
             {
                 await Task.Delay(1400, cancellationToken).ConfigureAwait(false);
                 await page.GoToAsync(target, new NavigationOptions
@@ -1254,7 +1254,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
                     });
                 return;
             }
-            catch (Exception ex) when (PuppeteerJsonEvaluator.IsRecoverableNavigationError(ex))
+            catch (Exception ex) when (IsRecoverableNavigationError(ex))
             {
                 _ = GlobalLogger.Instance.LogAsync(
                     $"AdsPower profile-switch: navigation retry {i + 1}/3: {ex.Message}",
@@ -1309,7 +1309,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
             }).ConfigureAwait(false);
         }
-        catch (Exception ex) when (PuppeteerJsonEvaluator.IsRecoverableNavigationError(ex))
+        catch (Exception ex) when (IsRecoverableNavigationError(ex))
         {
             await Task.Delay(1400, cancellationToken).ConfigureAwait(false);
             await page.GoToAsync(ProfileDashboardPageUrl, new NavigationOptions
@@ -1355,7 +1355,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
             }).ConfigureAwait(false);
         }
-        catch (Exception ex) when (PuppeteerJsonEvaluator.IsRecoverableNavigationError(ex))
+        catch (Exception ex) when (IsRecoverableNavigationError(ex))
         {
             await Task.Delay(1400, cancellationToken).ConfigureAwait(false);
         }
@@ -1541,7 +1541,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 {
                     await page.GoToAsync(targetUrl, navigationOptions).ConfigureAwait(false);
                 }
-                catch (Exception ex) when (PuppeteerJsonEvaluator.IsRecoverableNavigationError(ex))
+                catch (Exception ex) when (IsRecoverableNavigationError(ex))
                 {
                     await Task.Delay(3000, cancellationToken).ConfigureAwait(false);
                     await page.GoToAsync(targetUrl, navigationOptions).ConfigureAwait(false);
@@ -1677,7 +1677,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
             }).ConfigureAwait(false);
         }
-        catch (Exception ex) when (PuppeteerJsonEvaluator.IsRecoverableNavigationError(ex))
+        catch (Exception ex) when (IsRecoverableNavigationError(ex))
         {
             await Task.Delay(1400, cancellationToken).ConfigureAwait(false);
             await page.GoToAsync(ProfileItemsPageUrl, new NavigationOptions
@@ -1863,6 +1863,13 @@ public sealed partial class AdsPowerAvitoAutomationService(
 
         return url.StartsWith(target, StringComparison.OrdinalIgnoreCase);
     }
+
+    private static bool IsRecoverableNavigationError(Exception ex) =>
+        ex is PuppeteerException &&
+        (ex.Message.Contains("Execution Context was destroyed", StringComparison.OrdinalIgnoreCase) ||
+         ex.Message.Contains("Target closed", StringComparison.OrdinalIgnoreCase) ||
+         ex.Message.Contains("frame got detached", StringComparison.OrdinalIgnoreCase) ||
+         ex.Message.Contains("Response body is unavailable for redirect responses", StringComparison.OrdinalIgnoreCase));
 
     private Func<IReadOnlyCollection<string>, CancellationToken, Task<IReadOnlySet<string>>>? BuildResolveExistingSourceResponseIdsCallback(
         CandidatesMessengerEnrichmentHints? enrichmentHints)
@@ -2661,7 +2668,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
         {
             return await page.EvaluateExpressionAsync<T>(expression).ConfigureAwait(false);
         }
-        catch (Exception ex) when (PuppeteerJsonEvaluator.IsRecoverableNavigationError(ex))
+        catch (Exception ex) when (IsRecoverableNavigationError(ex))
         {
             await Task.Delay(1400, cancellationToken).ConfigureAwait(false);
             return await page.EvaluateExpressionAsync<T>(expression).ConfigureAwait(false);

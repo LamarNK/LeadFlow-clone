@@ -18,7 +18,12 @@
     ];
 
     function escapeHtml(text) {
-        return window.OrbitaLiveShared.escapeHtml(text == null ? '' : text);
+        if (text == null) return '';
+        return String(text)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
     }
 
     function highlightQuery(text, query) {

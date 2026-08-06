@@ -272,18 +272,14 @@
 }
 
 /* CRM and Bitrix delivery channels share the same compact status treatment. */
-.responses-deliveries,
-.responses-crm-deliveries,
-.responses-bitrix-deliveries {
+.responses-crm-deliveries {
     display: flex;
     flex-wrap: wrap;
     gap: 4px;
     max-width: 100%;
 }
 
-.responses-chip,
-.responses-crm-chip,
-.responses-bitrix-chip {
+.responses-crm-chip {
     display: inline-flex;
     max-width: 100%;
     align-items: center;
@@ -294,11 +290,6 @@
     border-radius: 6px;
     font-size: 0.78rem;
     line-height: 1.3;
-}
-
-.responses-bitrix-chip {
-    font-size: 11px;
-    text-decoration: none;
 }
 
 .responses-crm-chip-label,
@@ -315,36 +306,26 @@
     opacity: .85;
 }
 
-.responses-chip--sent,
-.responses-crm-chip--sent,
-.responses-bitrix-chip--sent {
+.responses-crm-chip--sent {
     border-color: #abefc6;
     background: #ecfdf3;
     color: #067647;
 }
 
-.responses-chip--duplicate,
-.responses-crm-chip--duplicate,
-.responses-bitrix-chip--duplicate {
+.responses-crm-chip--duplicate {
     border-color: #fedf89;
     background: #fffaeb;
     color: #b54708;
 }
 
-.responses-chip--error,
-.responses-chip--unavailable,
 .responses-crm-chip--error,
-.responses-crm-chip--unavailable,
-.responses-bitrix-chip--error,
-.responses-bitrix-chip--unavailable {
+.responses-crm-chip--unavailable {
     border-color: #fecdca;
     background: #fef3f2;
     color: #b42318;
 }
 
-.responses-chip--muted,
-.responses-crm-chip--muted,
-.responses-bitrix-chip--muted {
+.responses-crm-chip--muted {
     border-color: #eaecf0;
     background: #f2f4f7;
     color: #475467;
@@ -712,6 +693,27 @@
     color: #98a2b3;
 }
 
+.responses-bitrix-deliveries {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    max-width: 100%;
+}
+
+.responses-bitrix-chip {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 2px 6px;
+    border-radius: 6px;
+    font-size: 11px;
+    line-height: 1.3;
+    border: 1px solid transparent;
+    text-decoration: none;
+    max-width: 100%;
+}
+
 .responses-bitrix-chip-label {
     font-weight: 600;
     overflow-wrap: anywhere;
@@ -720,6 +722,31 @@
 .responses-bitrix-chip-outcome {
     opacity: 0.85;
     overflow-wrap: anywhere;
+}
+
+.responses-bitrix-chip--sent {
+    background: #ecfdf3;
+    border-color: #abefc6;
+    color: #067647;
+}
+
+.responses-bitrix-chip--duplicate {
+    background: #fffaeb;
+    border-color: #fedf89;
+    color: #b54708;
+}
+
+.responses-bitrix-chip--error,
+.responses-bitrix-chip--unavailable {
+    background: #fef3f2;
+    border-color: #fecdca;
+    color: #b42318;
+}
+
+.responses-bitrix-chip--muted {
+    background: #f2f4f7;
+    border-color: #eaecf0;
+    color: #475467;
 }
 
 a.responses-bitrix-chip--sent:hover {

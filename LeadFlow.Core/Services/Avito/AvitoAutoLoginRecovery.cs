@@ -1,7 +1,6 @@
 using System.Text.Json;
 using LeadFlow.Core.Logging.Audit;
 using LeadFlow.Core.Services;
-using LeadFlow.Core.Services.AdsPower;
 using PuppeteerSharp;
 using PuppeteerSharp.Input;
 
@@ -47,7 +46,7 @@ public static class AvitoAutoLoginRecovery
 
         try
         {
-            var text = PuppeteerJsonEvaluator.UnwrapJsonString(raw);
+            var text = UnwrapJsonString(raw);
             using var doc = JsonDocument.Parse(text);
             var root = doc.RootElement;
             return new ProbeState(
@@ -308,7 +307,7 @@ public static class AvitoAutoLoginRecovery
         {
             await page.ReloadAsync(45_000).ConfigureAwait(false);
         }
-        catch (Exception ex) when (PuppeteerJsonEvaluator.IsRecoverableNavigationError(ex))
+        catch (Exception ex) when (IsRecoverableNavigationError(ex))
         {
             await Task.Delay(1400, cancellationToken).ConfigureAwait(false);
             await page.ReloadAsync(45_000).ConfigureAwait(false);
@@ -327,7 +326,7 @@ public static class AvitoAutoLoginRecovery
         {
             await page.GoToAsync(ProfileDashboardPageUrl, options).ConfigureAwait(false);
         }
-        catch (Exception ex) when (PuppeteerJsonEvaluator.IsRecoverableNavigationError(ex))
+        catch (Exception ex) when (IsRecoverableNavigationError(ex))
         {
             await Task.Delay(1400, cancellationToken).ConfigureAwait(false);
             await page.GoToAsync(ProfileDashboardPageUrl, options).ConfigureAwait(false);
@@ -672,7 +671,7 @@ public static class AvitoAutoLoginRecovery
         {
             return await page.EvaluateExpressionAsync<string>($"JSON.stringify({script})").ConfigureAwait(false);
         }
-        catch (Exception ex) when (PuppeteerJsonEvaluator.IsRecoverableNavigationError(ex))
+        catch (Exception ex) when (IsRecoverableNavigationError(ex))
         {
             await Task.Delay(1400, cancellationToken).ConfigureAwait(false);
             return await page.EvaluateExpressionAsync<string>($"JSON.stringify({script})").ConfigureAwait(false);
@@ -692,7 +691,7 @@ public static class AvitoAutoLoginRecovery
 
         try
         {
-            using var doc = JsonDocument.Parse(PuppeteerJsonEvaluator.UnwrapJsonString(raw));
+            using var doc = JsonDocument.Parse(UnwrapJsonString(raw));
             return doc.RootElement.TryGetProperty(propertyName, out var prop)
                    && prop.ValueKind == JsonValueKind.True;
         }
@@ -702,4 +701,27 @@ public static class AvitoAutoLoginRecovery
         }
     }
 
+    private static bool IsRecoverableNavigationError(Exception ex) =>
+        ex is PuppeteerException &&
+        (ex.Message.Contains("Execution Context was destroyed", StringComparison.OrdinalIgnoreCase) ||
+         ex.Message.Contains("Target closed", StringComparison.OrdinalIgnoreCase) ||
+         ex.Message.Contains("frame got detached", StringComparison.OrdinalIgnoreCase));
+
+    private static string UnwrapJsonString(string raw)
+    {
+        var t = raw.Trim();
+        if (t.Length >= 2 && t.StartsWith('"') && t.EndsWith('"'))
+        {
+            try
+            {
+                return JsonSerializer.Deserialize<string>(t) ?? t;
+            }
+            catch
+            {
+                return t;
+            }
+        }
+
+        return t;
+    }
 }

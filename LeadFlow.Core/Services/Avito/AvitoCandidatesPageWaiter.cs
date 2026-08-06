@@ -1,7 +1,6 @@
 using System.Text.Json;
 using LeadFlow.Core.Logging.Audit;
 using LeadFlow.Core.Services;
-using LeadFlow.Core.Services.AdsPower;
 using PuppeteerSharp;
 
 namespace LeadFlow.Core.Services.Avito;
@@ -153,7 +152,7 @@ public static class AvitoCandidatesPageWaiter
 
         try
         {
-            var text = PuppeteerJsonEvaluator.UnwrapJsonString(raw);
+            var text = UnwrapJsonString(raw);
             using var doc = JsonDocument.Parse(text);
             var root = doc.RootElement;
 
@@ -182,6 +181,24 @@ public static class AvitoCandidatesPageWaiter
         {
             return null;
         }
+    }
+
+    private static string UnwrapJsonString(string raw)
+    {
+        var t = raw.Trim();
+        if (t.Length >= 2 && t.StartsWith('"') && t.EndsWith('"'))
+        {
+            try
+            {
+                return JsonSerializer.Deserialize<string>(t) ?? t;
+            }
+            catch
+            {
+                return t;
+            }
+        }
+
+        return t;
     }
 
     private sealed record CandidatesReadyProbe(
