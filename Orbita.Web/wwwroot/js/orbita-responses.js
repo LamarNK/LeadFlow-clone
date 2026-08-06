@@ -568,15 +568,109 @@
             });
     }
 
+    function resetDeliveryProgress(form) {
+        if (!form) return;
+        if (form._orbitaDeliveryProgressTimer) {
+            window.clearInterval(form._orbitaDeliveryProgressTimer);
+            form._orbitaDeliveryProgressTimer = null;
+        }
+
+        form.classList.remove('is-delivering');
+        form.removeAttribute('aria-busy');
+        form.querySelectorAll('[data-delivery-progress-disabled]').forEach(function (control) {
+            control.disabled = false;
+            control.removeAttribute('data-delivery-progress-disabled');
+        });
+
+        var panel = form.querySelector('[data-delivery-progress]');
+        if (panel) panel.hidden = true;
+        var submitBtn = form.querySelector('[data-deliver-submit], [data-bulk-deliver-submit]');
+        if (submitBtn) {
+            submitBtn.classList.remove('is-loading');
+            submitBtn.textContent = 'Отправить';
+        }
+    }
+
+    function beginDeliveryProgress(form, label) {
+        resetDeliveryProgress(form);
+
+        var panel = form.querySelector('[data-delivery-progress]');
+        var text = form.querySelector('[data-delivery-progress-text]');
+        var bar = form.querySelector('[data-delivery-progress-bar]');
+        var submitBtn = form.querySelector('[data-deliver-submit], [data-bulk-deliver-submit]');
+        var progress = 8;
+
+        function render(value, message) {
+            progress = Math.max(0, Math.min(100, value));
+            if (text) text.textContent = message;
+            if (bar) {
+                bar.style.width = progress + '%';
+                bar.parentElement.setAttribute('aria-valuenow', String(progress));
+            }
+        }
+
+        form.classList.add('is-delivering');
+        form.setAttribute('aria-busy', 'true');
+        form.querySelectorAll('button, input, select, textarea').forEach(function (control) {
+            if (!control.disabled) {
+                control.disabled = true;
+                control.setAttribute('data-delivery-progress-disabled', 'true');
+            }
+        });
+        if (panel) panel.hidden = false;
+        if (submitBtn) {
+            submitBtn.classList.add('is-loading');
+            submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i><span>Отправляем</span>';
+        }
+        render(progress, label);
+
+        form._orbitaDeliveryProgressTimer = window.setInterval(function () {
+            if (progress >= 88) return;
+            render(progress + Math.max(1, Math.ceil((90 - progress) / 9)), label + '…');
+        }, 650);
+
+        return {
+            complete: function (message) {
+                if (form._orbitaDeliveryProgressTimer) {
+                    window.clearInterval(form._orbitaDeliveryProgressTimer);
+                    form._orbitaDeliveryProgressTimer = null;
+                }
+                render(100, message);
+                if (submitBtn) {
+                    submitBtn.classList.remove('is-loading');
+                    submitBtn.innerHTML = '<i class="fa-solid fa-check" aria-hidden="true"></i><span>Готово</span>';
+                }
+            },
+            fail: function () {
+                resetDeliveryProgress(form);
+            }
+        };
+    }
+
+    function submitSingleDeliver(form, formData) {
+        return fetch(form.action, {
+            method: 'POST',
+            credentials: 'same-origin',
+            body: formData,
+            headers: { Accept: 'application/json' }
+        }).then(function (res) {
+            return res.json().then(function (payload) {
+                return { ok: res.ok, payload: payload };
+            }).catch(function () {
+                return { ok: res.ok, payload: null };
+            });
+        });
+    }
+
     function ensureSendModal() {
         var modal = document.getElementById('responsesSendBitrixDialog');
-        if (modal && modal.dataset.uiVersion === '5') return modal;
+        if (modal && modal.dataset.uiVersion === '6') return modal;
         if (modal) modal.remove();
 
         modal = document.createElement('dialog');
         modal.id = 'responsesSendBitrixDialog';
         modal.className = 'settings-dialog responses-send-dialog';
-        modal.dataset.uiVersion = '5';
+        modal.dataset.uiVersion = '6';
         modal.innerHTML =
             '<form method="post" class="settings-dialog-form responses-send-form" data-send-bitrix-form>' +
             '<input type="hidden" name="__RequestVerificationToken" />' +
@@ -616,6 +710,10 @@
             '</div>' +
             '</div>' +
             '<p class="responses-send-error" data-deliver-error hidden role="alert"></p>' +
+            '<section class="responses-delivery-progress" data-delivery-progress hidden aria-live="polite">' +
+            '<div class="responses-delivery-progress__label"><i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i><span data-delivery-progress-text>Отправляем…</span></div>' +
+            '<div class="responses-delivery-progress__track" role="progressbar" aria-label="Ход отправки" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span data-delivery-progress-bar></span></div>' +
+            '</section>' +
             '<div class="settings-dialog-actions">' +
             '<button type="button" class="settings-secondary-btn" data-send-bitrix-cancel>Отмена</button>' +
             '<button type="submit" class="settings-primary-btn" data-deliver-submit>Отправить</button>' +
@@ -623,6 +721,9 @@
         document.body.appendChild(modal);
 
         bindSendModalInteractions(modal);
+        modal.addEventListener('cancel', function (e) {
+            if (modal.querySelector('[data-send-bitrix-form].is-delivering')) e.preventDefault();
+        });
         return modal;
     }
 
@@ -684,13 +785,35 @@
                 return;
             }
 
+            e.preventDefault();
             saveDeliverPrefs(readDeliverPrefsFromForm(form));
 
-            var submitBtn = form.querySelector('[data-deliver-submit]');
-            if (submitBtn) {
-                submitBtn.disabled = true;
-                submitBtn.classList.add('is-loading');
-            }
+            var formData = new FormData(form);
+            var progress = beginDeliveryProgress(form, 'Отправляем отклик');
+            submitSingleDeliver(form, formData).then(function (result) {
+                if (!result.ok) {
+                    progress.fail();
+                    if (errorEl) {
+                        errorEl.hidden = false;
+                        errorEl.textContent = (result.payload && (result.payload.error || result.payload.message)) ||
+                            'Не удалось отправить отклик.';
+                    }
+                    return;
+                }
+
+                progress.complete('Отклик отправлен');
+                window.setTimeout(function () {
+                    modal.close();
+                    fetchSnapshot();
+                    toast('Отклик отправлен.', 'success');
+                }, 260);
+            }).catch(function () {
+                progress.fail();
+                if (errorEl) {
+                    errorEl.hidden = false;
+                    errorEl.textContent = 'Не удалось отправить отклик.';
+                }
+            });
         });
 
         modal._orbitaSyncChannels = syncChannelUi;
@@ -814,6 +937,7 @@
         var modal = ensureSendModal();
         var form = modal.querySelector('[data-send-bitrix-form]');
         if (!form) return;
+        resetDeliveryProgress(form);
 
         var token = document.querySelector('input[name="__RequestVerificationToken"]');
         var tokenInput = form.querySelector('input[name="__RequestVerificationToken"]');
@@ -894,13 +1018,13 @@
 
     function ensureBulkSendModal() {
         var modal = document.getElementById('responsesBulkSendBitrixDialog');
-        if (modal && modal.dataset.uiVersion === '3') return modal;
+        if (modal && modal.dataset.uiVersion === '4') return modal;
         if (modal) modal.remove();
 
         modal = document.createElement('dialog');
         modal.id = 'responsesBulkSendBitrixDialog';
         modal.className = 'settings-dialog responses-send-dialog';
-        modal.dataset.uiVersion = '3';
+        modal.dataset.uiVersion = '4';
         modal.innerHTML =
             '<form class="settings-dialog-form responses-send-form" data-bulk-deliver-form>' +
             '<h2 class="settings-dialog-title">Массовая отправка</h2>' +
@@ -927,6 +1051,10 @@
             '</div>' +
             '</div>' +
             '<p class="responses-send-error" data-deliver-error hidden role="alert"></p>' +
+            '<section class="responses-delivery-progress" data-delivery-progress hidden aria-live="polite">' +
+            '<div class="responses-delivery-progress__label"><i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i><span data-delivery-progress-text>Отправляем…</span></div>' +
+            '<div class="responses-delivery-progress__track" role="progressbar" aria-label="Ход отправки" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span data-delivery-progress-bar></span></div>' +
+            '</section>' +
             '<div class="settings-dialog-actions">' +
             '<button type="button" class="settings-secondary-btn" data-bulk-send-bitrix-cancel>Отмена</button>' +
             '<button type="submit" class="settings-primary-btn" data-bulk-deliver-submit>Отправить</button>' +
@@ -962,6 +1090,9 @@
         if (crmToggle) crmToggle.addEventListener('change', syncBulkChannels);
         if (bitrixToggle) bitrixToggle.addEventListener('change', syncBulkChannels);
         modal._orbitaSyncChannels = syncBulkChannels;
+        modal.addEventListener('cancel', function (e) {
+            if (form.classList.contains('is-delivering')) e.preventDefault();
+        });
         return modal;
     }
 
@@ -988,6 +1119,7 @@
         var modal = ensureBulkSendModal();
         var form = modal.querySelector('[data-bulk-deliver-form]');
         if (!form) return;
+        resetDeliveryProgress(form);
 
         var subtitle = modal.querySelector('[data-bulk-deliver-subtitle]');
         if (subtitle) {
@@ -1168,25 +1300,21 @@
 
             saveDeliverPrefs(readDeliverPrefsFromForm(form));
 
-            var submitBtn = form.querySelector('[data-bulk-deliver-submit]');
-            if (submitBtn) {
-                submitBtn.disabled = true;
-                submitBtn.classList.add('is-loading');
-            }
-
             var selectedCount = selectedIds.size;
-            submitBulkDeliver(form).then(function (result) {
-                if (submitBtn) {
-                    submitBtn.disabled = false;
-                    submitBtn.classList.remove('is-loading');
-                }
-                var modal = document.getElementById('responsesBulkSendBitrixDialog');
-                if (modal) modal.close();
+            var request = submitBulkDeliver(form);
+            var progress = beginDeliveryProgress(
+                form,
+                'Отправляем ' + selectedCount + ' ' + pluralizeResponses(selectedCount));
+            request.then(function (result) {
 
                 if (!result.ok) {
                     var err = (result.payload && (result.payload.error || result.payload.message)) ||
                         'Не удалось выполнить массовую отправку.';
-                    toast(err, 'error');
+                    progress.fail();
+                    if (errorEl) {
+                        errorEl.hidden = false;
+                        errorEl.textContent = err;
+                    }
                     return;
                 }
 
@@ -1196,17 +1324,22 @@
                 var total = data.total != null ? data.total : data.Total;
                 var msg = 'Отправлено: ' + (succeeded || 0) + ' из ' + (total || selectedCount);
                 if (failed > 0) msg += ', ошибок: ' + failed;
-                toast(msg, failed > 0 ? 'info' : 'success');
+                progress.complete('Обработано: ' + (total || selectedCount) + ' ' + pluralizeResponses(total || selectedCount));
+                window.setTimeout(function () {
+                    var modal = document.getElementById('responsesBulkSendBitrixDialog');
+                    if (modal) modal.close();
+                    toast(msg, failed > 0 ? 'info' : 'success');
 
-                // Always clear multi-select after a bulk send attempt that the server accepted.
-                clearSelection();
-                fetchSnapshot();
+                    // Always clear multi-select after a bulk send attempt that the server accepted.
+                    clearSelection();
+                    fetchSnapshot();
+                }, 260);
             }).catch(function () {
-                if (submitBtn) {
-                    submitBtn.disabled = false;
-                    submitBtn.classList.remove('is-loading');
+                progress.fail();
+                if (errorEl) {
+                    errorEl.hidden = false;
+                    errorEl.textContent = 'Не удалось выполнить массовую отправку.';
                 }
-                toast('Не удалось выполнить массовую отправку.', 'error');
             });
         });
     }
