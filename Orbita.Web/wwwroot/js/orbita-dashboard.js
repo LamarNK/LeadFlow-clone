@@ -680,13 +680,7 @@
         return Math.round(value * 100 / Math.max(1, total)) + '%';
     }
 
-    function escapeHtml(text) {
-        return String(text)
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;');
-    }
+    var escapeHtml = window.OrbitaLiveShared.escapeHtml;
 
     function workerDetailsUrl(id) {
         var root = getLiveRoot();

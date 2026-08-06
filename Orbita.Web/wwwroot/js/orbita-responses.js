@@ -662,32 +662,38 @@
         });
     }
 
-    function ensureSendModal() {
-        var modal = document.getElementById('responsesSendBitrixDialog');
-        if (modal && modal.dataset.uiVersion === '6') return modal;
-        if (modal) modal.remove();
+    function buildSendModalHtml(opts) {
+        opts = opts || {};
+        var isBulk = !!opts.isBulk;
 
-        modal = document.createElement('dialog');
-        modal.id = 'responsesSendBitrixDialog';
-        modal.className = 'settings-dialog responses-send-dialog';
-        modal.dataset.uiVersion = '6';
-        modal.innerHTML =
-            '<form method="post" class="settings-dialog-form responses-send-form" data-send-bitrix-form>' +
-            '<input type="hidden" name="__RequestVerificationToken" />' +
-            '<input type="hidden" name="Id" data-send-bitrix-response-id />' +
-            '<input type="hidden" name="From" data-send-bitrix-from />' +
-            '<input type="hidden" name="To" data-send-bitrix-to />' +
-            '<input type="hidden" name="Status" data-send-bitrix-status />' +
-            '<input type="hidden" name="WorkerId" data-send-bitrix-worker-id />' +
-            '<input type="hidden" name="AccountId" data-send-bitrix-account-id />' +
-            '<input type="hidden" name="BitrixDestination" data-send-bitrix-destination />' +
-            '<input type="hidden" name="Vacancy" data-send-bitrix-vacancy />' +
-            '<input type="hidden" name="Search" data-send-bitrix-search />' +
-            '<input type="hidden" name="Page" data-send-bitrix-page />' +
-            '<input type="hidden" name="Sort" data-send-bitrix-sort />' +
-            '<input type="hidden" name="Dir" data-send-bitrix-dir />' +
-            '<h2 class="settings-dialog-title">Отправить отклик</h2>' +
-            '<p class="settings-dialog-subtitle">Можно выбрать CRM и Bitrix24 вместе. Запоминаем последний выбор.</p>' +
+        var formAttrs = isBulk
+            ? ' class="settings-dialog-form responses-send-form" data-bulk-deliver-form'
+            : ' method="post" class="settings-dialog-form responses-send-form" data-send-bitrix-form';
+
+        var hiddenInputs = isBulk
+            ? ''
+            : '<input type="hidden" name="__RequestVerificationToken" />' +
+                '<input type="hidden" name="Id" data-send-bitrix-response-id />' +
+                '<input type="hidden" name="From" data-send-bitrix-from />' +
+                '<input type="hidden" name="To" data-send-bitrix-to />' +
+                '<input type="hidden" name="Status" data-send-bitrix-status />' +
+                '<input type="hidden" name="WorkerId" data-send-bitrix-worker-id />' +
+                '<input type="hidden" name="AccountId" data-send-bitrix-account-id />' +
+                '<input type="hidden" name="BitrixDestination" data-send-bitrix-destination />' +
+                '<input type="hidden" name="Vacancy" data-send-bitrix-vacancy />' +
+                '<input type="hidden" name="Search" data-send-bitrix-search />' +
+                '<input type="hidden" name="Page" data-send-bitrix-page />' +
+                '<input type="hidden" name="Sort" data-send-bitrix-sort />' +
+                '<input type="hidden" name="Dir" data-send-bitrix-dir />';
+
+        var subtitle = isBulk
+            ? '<p class="settings-dialog-subtitle" data-bulk-deliver-subtitle>Выберите каналы для выбранных откликов</p>'
+            : '<p class="settings-dialog-subtitle">Можно выбрать CRM и Bitrix24 вместе. Запоминаем последний выбор.</p>';
+
+        return '<form' + formAttrs + '>' +
+            hiddenInputs +
+            '<h2 class="settings-dialog-title">' + opts.title + '</h2>' +
+            subtitle +
             '<div class="responses-send-channels" role="group" aria-label="Каналы">' +
             '<label class="responses-send-check">' +
             '<input type="checkbox" name="ToCrm" value="true" checked data-deliver-to-crm />' +
@@ -715,9 +721,52 @@
             '<div class="responses-delivery-progress__track" role="progressbar" aria-label="Ход отправки" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span data-delivery-progress-bar></span></div>' +
             '</section>' +
             '<div class="settings-dialog-actions">' +
-            '<button type="button" class="settings-secondary-btn" data-send-bitrix-cancel>Отмена</button>' +
-            '<button type="submit" class="settings-primary-btn" data-deliver-submit>Отправить</button>' +
+            '<button type="button" class="settings-secondary-btn" ' + (isBulk ? 'data-bulk-send-bitrix-cancel' : 'data-send-bitrix-cancel') + '>Отмена</button>' +
+            '<button type="submit" class="settings-primary-btn" ' + (isBulk ? 'data-bulk-deliver-submit' : 'data-deliver-submit') + '>Отправить</button>' +
             '</div></form>';
+    }
+
+    function syncChannelToggles(form) {
+        if (!form) return;
+        var crmToggle = form.querySelector('[data-deliver-to-crm]');
+        var bitrixToggle = form.querySelector('[data-deliver-to-bitrix]');
+        var officeField = form.querySelector('[data-deliver-office-field]');
+        var bitrixField = form.querySelector('[data-deliver-bitrix-field]');
+        var errorEl = form.querySelector('[data-deliver-error]');
+
+        var toCrm = !!(crmToggle && crmToggle.checked);
+        var toBitrix = !!(bitrixToggle && bitrixToggle.checked);
+
+        if (officeField) officeField.hidden = !toCrm;
+        if (bitrixField) bitrixField.hidden = !toBitrix;
+
+        if (errorEl) {
+            errorEl.hidden = true;
+            errorEl.textContent = '';
+        }
+
+        // Disable options of hidden channels so they are not posted.
+        form.querySelectorAll('[data-deliver-office-option]').forEach(function (el) {
+            el.disabled = !toCrm;
+        });
+        form.querySelectorAll('[data-deliver-bitrix-option]').forEach(function (el) {
+            el.disabled = !toBitrix;
+        });
+
+        var submitBtn = form.querySelector('[data-deliver-submit], [data-bulk-deliver-submit]');
+        if (submitBtn) submitBtn.disabled = !toCrm && !toBitrix;
+    }
+
+    function ensureSendModal() {
+        var modal = document.getElementById('responsesSendBitrixDialog');
+        if (modal && modal.dataset.uiVersion === '6') return modal;
+        if (modal) modal.remove();
+
+        modal = document.createElement('dialog');
+        modal.id = 'responsesSendBitrixDialog';
+        modal.className = 'settings-dialog responses-send-dialog';
+        modal.dataset.uiVersion = '6';
+        modal.innerHTML = buildSendModalHtml({ title: 'Отправить отклик' });
         document.body.appendChild(modal);
 
         bindSendModalInteractions(modal);
@@ -734,36 +783,10 @@
 
         var crmToggle = form.querySelector('[data-deliver-to-crm]');
         var bitrixToggle = form.querySelector('[data-deliver-to-bitrix]');
-        var officeField = form.querySelector('[data-deliver-office-field]');
-        var bitrixField = form.querySelector('[data-deliver-bitrix-field]');
         var errorEl = form.querySelector('[data-deliver-error]');
 
-        function syncChannelUi() {
-            var toCrm = !!(crmToggle && crmToggle.checked);
-            var toBitrix = !!(bitrixToggle && bitrixToggle.checked);
-
-            if (officeField) officeField.hidden = !toCrm;
-            if (bitrixField) bitrixField.hidden = !toBitrix;
-
-            if (errorEl) {
-                errorEl.hidden = true;
-                errorEl.textContent = '';
-            }
-
-            // Disable options of hidden channels so they are not posted.
-            form.querySelectorAll('[data-deliver-office-option]').forEach(function (el) {
-                el.disabled = !toCrm;
-            });
-            form.querySelectorAll('[data-deliver-bitrix-option]').forEach(function (el) {
-                el.disabled = !toBitrix;
-            });
-
-            var submitBtn = form.querySelector('[data-deliver-submit]');
-            if (submitBtn) submitBtn.disabled = !toCrm && !toBitrix;
-        }
-
-        if (crmToggle) crmToggle.addEventListener('change', syncChannelUi);
-        if (bitrixToggle) bitrixToggle.addEventListener('change', syncChannelUi);
+        if (crmToggle) crmToggle.addEventListener('change', function () { syncChannelToggles(form); });
+        if (bitrixToggle) bitrixToggle.addEventListener('change', function () { syncChannelToggles(form); });
 
         form.addEventListener('submit', function (e) {
             var toCrm = !!(crmToggle && crmToggle.checked);
@@ -816,7 +839,7 @@
             });
         });
 
-        modal._orbitaSyncChannels = syncChannelUi;
+        modal._orbitaSyncChannels = function () { syncChannelToggles(form); };
     }
 
     function fillFilterFields(form) {
@@ -1025,71 +1048,19 @@
         modal.id = 'responsesBulkSendBitrixDialog';
         modal.className = 'settings-dialog responses-send-dialog';
         modal.dataset.uiVersion = '4';
-        modal.innerHTML =
-            '<form class="settings-dialog-form responses-send-form" data-bulk-deliver-form>' +
-            '<h2 class="settings-dialog-title">Массовая отправка</h2>' +
-            '<p class="settings-dialog-subtitle" data-bulk-deliver-subtitle>Выберите каналы для выбранных откликов</p>' +
-            '<div class="responses-send-channels" role="group" aria-label="Каналы">' +
-            '<label class="responses-send-check">' +
-            '<input type="checkbox" name="ToCrm" value="true" checked data-deliver-to-crm />' +
-            '<span>CRM офиса</span>' +
-            '</label>' +
-            '<label class="responses-send-check">' +
-            '<input type="checkbox" name="ToBitrix" value="true" data-deliver-to-bitrix />' +
-            '<span>Bitrix24</span>' +
-            '</label>' +
-            '</div>' +
-            '<div class="responses-send-fields">' +
-            '<div class="responses-send-multiselect" data-deliver-office-field hidden>' +
-            '<span class="settings-field-label">Офисы CRM <em>(можно несколько)</em></span>' +
-            '<div class="responses-send-check-list" data-deliver-office-list></div>' +
-            '<span class="responses-send-hint" data-deliver-office-hint></span>' +
-            '</div>' +
-            '<div class="responses-send-multiselect" data-deliver-bitrix-field hidden>' +
-            '<span class="settings-field-label">Порталы Bitrix24 <em>(можно несколько; пусто = схема офиса)</em></span>' +
-            '<div class="responses-send-check-list" data-deliver-bitrix-list></div>' +
-            '</div>' +
-            '</div>' +
-            '<p class="responses-send-error" data-deliver-error hidden role="alert"></p>' +
-            '<section class="responses-delivery-progress" data-delivery-progress hidden aria-live="polite">' +
-            '<div class="responses-delivery-progress__label"><i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i><span data-delivery-progress-text>Отправляем…</span></div>' +
-            '<div class="responses-delivery-progress__track" role="progressbar" aria-label="Ход отправки" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span data-delivery-progress-bar></span></div>' +
-            '</section>' +
-            '<div class="settings-dialog-actions">' +
-            '<button type="button" class="settings-secondary-btn" data-bulk-send-bitrix-cancel>Отмена</button>' +
-            '<button type="submit" class="settings-primary-btn" data-bulk-deliver-submit>Отправить</button>' +
-            '</div></form>';
+        modal.innerHTML = buildSendModalHtml({
+            title: 'Массовая отправка',
+            isBulk: true
+        });
         document.body.appendChild(modal);
 
         var form = modal.querySelector('[data-bulk-deliver-form]');
         var crmToggle = form.querySelector('[data-deliver-to-crm]');
         var bitrixToggle = form.querySelector('[data-deliver-to-bitrix]');
-        var officeField = form.querySelector('[data-deliver-office-field]');
-        var bitrixField = form.querySelector('[data-deliver-bitrix-field]');
-        var errorEl = form.querySelector('[data-deliver-error]');
 
-        function syncBulkChannels() {
-            var toCrm = !!(crmToggle && crmToggle.checked);
-            var toBitrix = !!(bitrixToggle && bitrixToggle.checked);
-            if (officeField) officeField.hidden = !toCrm;
-            if (bitrixField) bitrixField.hidden = !toBitrix;
-            form.querySelectorAll('[data-deliver-office-option]').forEach(function (el) {
-                el.disabled = !toCrm;
-            });
-            form.querySelectorAll('[data-deliver-bitrix-option]').forEach(function (el) {
-                el.disabled = !toBitrix;
-            });
-            if (errorEl) {
-                errorEl.hidden = true;
-                errorEl.textContent = '';
-            }
-            var submitBtn = form.querySelector('[data-bulk-deliver-submit]');
-            if (submitBtn) submitBtn.disabled = !toCrm && !toBitrix;
-        }
-
-        if (crmToggle) crmToggle.addEventListener('change', syncBulkChannels);
-        if (bitrixToggle) bitrixToggle.addEventListener('change', syncBulkChannels);
-        modal._orbitaSyncChannels = syncBulkChannels;
+        if (crmToggle) crmToggle.addEventListener('change', function () { syncChannelToggles(form); });
+        if (bitrixToggle) bitrixToggle.addEventListener('change', function () { syncChannelToggles(form); });
+        modal._orbitaSyncChannels = function () { syncChannelToggles(form); };
         modal.addEventListener('cancel', function (e) {
             if (form.classList.contains('is-delivering')) e.preventDefault();
         });

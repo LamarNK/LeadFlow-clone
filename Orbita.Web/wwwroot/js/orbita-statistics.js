@@ -520,15 +520,7 @@
         });
     }
 
-    function escapeHtml(text) {
-        return shared && typeof shared.escapeHtml === 'function'
-            ? shared.escapeHtml(text)
-            : String(text)
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;');
-    }
+    var escapeHtml = shared.escapeHtml;
 
     function workerDetailsUrl(workerId) {
         var root = getLiveRoot();
