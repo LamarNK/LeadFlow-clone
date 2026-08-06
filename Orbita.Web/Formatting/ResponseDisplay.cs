@@ -56,7 +56,31 @@ public static partial class ResponseDisplay
         createdAtUtc.ToLocalTime().ToString("dd.MM.yyyy HH:mm:ss", CultureInfo.InvariantCulture);
 
     public static string FormatAverageResponseMinutes(double? minutes) =>
-        minutes is > 0 and var avg ? $"{(int)Math.Round(avg)} минут" : "—";
+        FormatMinutes(minutes);
+
+    public static string FormatResponseCollectionDuration(DateTime createdAtUtc, DateTime collectedAtUtc) =>
+        collectedAtUtc > createdAtUtc
+            ? FormatMinutes((collectedAtUtc - createdAtUtc).TotalMinutes)
+            : "—";
+
+    private static string FormatMinutes(double? minutes)
+    {
+        if (minutes is not > 0)
+        {
+            return "—";
+        }
+
+        var totalMinutes = (int)Math.Round(minutes.Value);
+        var hours = totalMinutes / 60;
+        var remainingMinutes = totalMinutes % 60;
+
+        return hours switch
+        {
+            0 => $"{totalMinutes} мин",
+            _ when remainingMinutes == 0 => $"{hours} ч",
+            _ => $"{hours} ч {remainingMinutes} мин"
+        };
+    }
 
     public static string HtmlAttributeValue(string? value)
     {

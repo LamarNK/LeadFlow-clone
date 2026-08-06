@@ -841,27 +841,6 @@ public sealed class WorkerMonitoringService(
                     continue;
                 }
 
-                // Проверка давности отклика (пропускать старше N дней).
-                var responseCreatedAt = candidate.CreatedAt == default
-                    ? (candidate.CollectedAt == default ? DateTime.UtcNow : candidate.CollectedAt)
-                    : candidate.CreatedAt;
-                var ageFilterResult = ResponseCollectionFilter.EvaluateResponseAge(responseCreatedAt, settings.ResponseFilters);
-                if (!ageFilterResult.Pass)
-                {
-                    filteredResponseAge++;
-                    if (filterSamples.Count < 5)
-                    {
-                        filterSamples.Add(
-                            $"{candidate.FullName}|created={responseCreatedAt:yyyy-MM-dd}|{ageFilterResult.RejectReason}");
-                    }
-
-                    _ = GlobalLogger.Instance.LogAsync(
-                        $"Response collection filter skipped «{candidate.FullName}»: {ageFilterResult.RejectReason} (created={responseCreatedAt:yyyy-MM-dd}).",
-                        DeskLinkAuditLogLevel.Info,
-                        memberName: nameof(StreamProcessAccountResponsesAsync));
-                    continue;
-                }
-
                 var phoneNormalized = phoneNormalizer.Normalize(candidate.PhoneRaw) ?? string.Empty;
                 if (string.IsNullOrWhiteSpace(phoneNormalized))
                 {
@@ -880,9 +859,30 @@ public sealed class WorkerMonitoringService(
                     .GetAsync(candidate.AvitoSubProfileId, fullNameKey, cancellationToken)
                     .ConfigureAwait(false);
                 var alreadyInOrbit = matchedProfiles.Contains(i);
-                var watchingOpen = existingObs is not null
-                    && !existingObs.ClosedAfterStableSend
-                    && !string.IsNullOrWhiteSpace(existingObs.PublishedSourceResponseId);
+                var watchingOpen = ResponsePhoneObservationWatch.IsOpen(existingObs);
+
+                // Проверка давности отклика (пропускать старше N дней).
+                // Открытое phone-watch — не режем: окно наблюдения (например 5 суток) может быть
+                // длиннее фильтра «старше 3 дней», смена номера всё равно должна дойти.
+                var responseCreatedAt = candidate.CreatedAt == default
+                    ? (candidate.CollectedAt == default ? DateTime.UtcNow : candidate.CollectedAt)
+                    : candidate.CreatedAt;
+                var ageFilterResult = ResponseCollectionFilter.EvaluateResponseAge(responseCreatedAt, settings.ResponseFilters);
+                if (!ageFilterResult.Pass && !watchingOpen)
+                {
+                    filteredResponseAge++;
+                    if (filterSamples.Count < 5)
+                    {
+                        filterSamples.Add(
+                            $"{candidate.FullName}|created={responseCreatedAt:yyyy-MM-dd}|{ageFilterResult.RejectReason}");
+                    }
+
+                    _ = GlobalLogger.Instance.LogAsync(
+                        $"Response collection filter skipped «{candidate.FullName}»: {ageFilterResult.RejectReason} (created={responseCreatedAt:yyyy-MM-dd}).",
+                        DeskLinkAuditLogLevel.Info,
+                        memberName: nameof(StreamProcessAccountResponsesAsync));
+                    continue;
+                }
 
                 // Уже в Орбите и мы сами его не ведём в phone-watch — тихо игнор (без дублей в ленте).
                 if (alreadyInOrbit && !watchingOpen)

@@ -1,8 +1,35 @@
-@model Orbita.Contracts.CrmBoardDto
+@model Orbita.Web.Models.ViewModels.CrmTeamViewModel
+@using Orbita.Contracts
 @using Orbita.Web.Models.ViewModels
 @inject Orbita.Web.Services.IOfficeContext OfficeContext
 @{
+    var board = Model.Board;
+    var now = DateTime.UtcNow;
+    var openTasks = Model.Tasks.Where(x => x.Status == CrmTaskStatuses.Open).ToList();
+    var overdueTasks = openTasks.Where(x => x.IsOverdue || (x.DueAtUtc is DateTime due && due < now)).OrderBy(x => x.DueAtUtc).ToList();
+    var overdueTaskIds = overdueTasks.Select(x => x.Id).ToHashSet();
+    var todayEnd = now.Date.AddDays(1);
+    var todayTasks = openTasks.Where(x => !overdueTaskIds.Contains(x.Id) && x.DueAtUtc is DateTime due && due < todayEnd).OrderBy(x => x.DueAtUtc).ToList();
+    var todayTaskIds = todayTasks.Select(x => x.Id).ToHashSet();
+    var laterTasks = openTasks.Where(x => !overdueTaskIds.Contains(x.Id) && !todayTaskIds.Contains(x.Id)).OrderBy(x => x.DueAtUtc ?? DateTime.MaxValue).ToList();
+    var completedTasks = Model.Tasks.Where(x => x.Status == CrmTaskStatuses.Completed).OrderByDescending(x => x.CompletedAtUtc).Take(30).ToList();
+    var cancelledTasks = Model.Tasks.Where(x => x.Status == CrmTaskStatuses.Cancelled).OrderByDescending(x => x.CompletedAtUtc).Take(30).ToList();
+    var selectedTaskScope = Model.SelectedTaskScope;
+    var shownTaskCount = selectedTaskScope switch
+    {
+        "overdue" => overdueTasks.Count,
+        "today" => todayTasks.Count,
+        "later" => laterTasks.Count,
+        "completed" => completedTasks.Count,
+        "cancelled" => cancelledTasks.Count,
+        _ => openTasks.Count + completedTasks.Count + cancelledTasks.Count
+    };
     ViewData["Title"] = "CRM — Команда";
+    ViewData["CurrentCrmUserId"] = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+    ViewData["IsCrmAdmin"] = true;
+    ViewData["TaskDetailsFromTeam"] = true;
+    ViewData["TeamTaskScope"] = selectedTaskScope;
+    ViewData["CollapseCompletedTasks"] = true;
     var header = new PageHeaderViewModel
     {
         Title = "Команда CRM",
@@ -11,7 +38,7 @@
         UpdatedAtUtc = DateTime.UtcNow
     };
     var officeId = OfficeContext.EffectiveOfficeId;
-    var stageTotal = Math.Max(1, Model.TeamStats.TotalActiveCards);
+    var stageTotal = Math.Max(1, board.TeamStats.TotalActiveCards);
 }
 <partial name="_PageHeader" model="header" />
 
@@ -29,38 +56,74 @@
         <div class="crm-team-metrics">
             <article class="kpi-card crm-team-metric crm-team-metric--cards" style="--kpi-index: 0;">
                 <header class="kpi-card-head"><span class="kpi-icon-box kpi-icon-box--blue"><i class="fa-regular fa-folder-open" aria-hidden="true"></i></span><span class="kpi-card-label">Активные карточки</span></header>
-                <div class="kpi-card-metric crm-team-metric__metric"><b class="kpi-value">@Model.TeamStats.TotalActiveCards</b></div>
+                <div class="kpi-card-metric crm-team-metric__metric"><b class="kpi-value">@board.TeamStats.TotalActiveCards</b></div>
                 <p class="crm-team-metric__caption">В работе у команды</p>
             </article>
             <article class="kpi-card crm-team-metric crm-team-metric--queue" style="--kpi-index: 1;">
                 <header class="kpi-card-head"><span class="kpi-icon-box kpi-icon-box--orange"><i class="fa-solid fa-inbox" aria-hidden="true"></i></span><span class="kpi-card-label">Очередь</span></header>
-                <div class="kpi-card-metric crm-team-metric__metric"><b class="kpi-value">@Model.UnassignedCount</b></div>
+                <div class="kpi-card-metric crm-team-metric__metric"><b class="kpi-value">@board.UnassignedCount</b></div>
                 <p class="crm-team-metric__caption">Ждут распределения</p>
             </article>
             <article class="kpi-card crm-team-metric crm-team-metric--shift" style="--kpi-index: 2;">
                 <header class="kpi-card-head"><span class="kpi-icon-box kpi-icon-box--green"><i class="fa-solid fa-user-check" aria-hidden="true"></i></span><span class="kpi-card-label">На смене</span></header>
-                <div class="kpi-card-metric crm-team-metric__metric"><b class="kpi-value">@Model.TeamStats.OnShiftManagers</b></div>
+                <div class="kpi-card-metric crm-team-metric__metric"><b class="kpi-value">@board.TeamStats.OnShiftManagers</b></div>
                 <p class="crm-team-metric__caption">Менеджеров доступны</p>
             </article>
             <article class="kpi-card crm-team-metric crm-team-metric--assigned" style="--kpi-index: 3;">
                 <header class="kpi-card-head"><span class="kpi-icon-box kpi-icon-box--purple"><i class="fa-solid fa-arrow-right-arrow-left" aria-hidden="true"></i></span><span class="kpi-card-label">Выдано сегодня</span></header>
-                <div class="kpi-card-metric crm-team-metric__metric"><b class="kpi-value">@Model.TeamStats.AssignedToday</b></div>
+                <div class="kpi-card-metric crm-team-metric__metric"><b class="kpi-value">@board.TeamStats.AssignedToday</b></div>
                 <p class="crm-team-metric__caption">Карточек назначено</p>
             </article>
             <article class="kpi-card crm-team-metric crm-team-metric--closed" style="--kpi-index: 4;">
                 <header class="kpi-card-head"><span class="kpi-icon-box kpi-icon-box--green"><i class="fa-solid fa-circle-check" aria-hidden="true"></i></span><span class="kpi-card-label">Закрыто сегодня</span></header>
-                <div class="kpi-card-metric crm-team-metric__metric"><b class="kpi-value">@Model.TeamStats.ClosedToday</b></div>
+                <div class="kpi-card-metric crm-team-metric__metric"><b class="kpi-value">@board.TeamStats.ClosedToday</b></div>
                 <p class="crm-team-metric__caption">Завершено за смену</p>
             </article>
         </div>
     </section>
 
     <div class="crm-team-grid">
+        <section class="card crm-team-panel crm-team-panel--tasks crm-task-workspace" aria-label="Задачи команды">
+            <header class="crm-team-panel__header">
+                <div><h2>Задачи команды</h2><p>Контроль сроков по всем менеджерам выбранного офиса.</p></div>
+                <a class="crm-team-panel__action" asp-action="Tasks">Открыть задачи</a>
+            </header>
+
+            <div class="crm-team-task-summary">
+                <a class="crm-team-task-summary__item" asp-action="Team"><i class="fa-solid fa-list-check" aria-hidden="true"></i><span>Открытые</span><b>@openTasks.Count</b></a>
+                <a class="crm-team-task-summary__item is-overdue" asp-action="Team" asp-route-taskScope="overdue"><i class="fa-solid fa-calendar-xmark" aria-hidden="true"></i><span>Просрочено</span><b>@overdueTasks.Count</b></a>
+                <a class="crm-team-task-summary__item is-today" asp-action="Team" asp-route-taskScope="today"><i class="fa-solid fa-calendar-day" aria-hidden="true"></i><span>Сегодня</span><b>@todayTasks.Count</b></a>
+                <a class="crm-team-task-summary__item is-later" asp-action="Team" asp-route-taskScope="later"><i class="fa-solid fa-clock" aria-hidden="true"></i><span>Позже</span><b>@laterTasks.Count</b></a>
+            </div>
+
+            <nav class="crm-task-tabs" aria-label="Отбор задач команды">
+                <a class="@(selectedTaskScope == "all" ? "is-active" : "")" asp-action="Team">Все задачи</a>
+                <a class="@(selectedTaskScope == "overdue" ? "is-active" : "")" asp-action="Team" asp-route-taskScope="overdue">Просроченные @if (overdueTasks.Count > 0) { <span>@overdueTasks.Count</span> }</a>
+                <a class="@(selectedTaskScope == "today" ? "is-active" : "")" asp-action="Team" asp-route-taskScope="today">Сегодня @if (todayTasks.Count > 0) { <span>@todayTasks.Count</span> }</a>
+                <a class="@(selectedTaskScope == "later" ? "is-active" : "")" asp-action="Team" asp-route-taskScope="later">Позже @if (laterTasks.Count > 0) { <span>@laterTasks.Count</span> }</a>
+                <a class="@(selectedTaskScope == "completed" ? "is-active" : "")" asp-action="Team" asp-route-taskScope="completed">Завершённые</a>
+                <a class="@(selectedTaskScope == "cancelled" ? "is-active" : "")" asp-action="Team" asp-route-taskScope="cancelled">Отменённые</a>
+            </nav>
+
+            <div class="crm-task-groups">
+                @if (selectedTaskScope == "overdue" || (selectedTaskScope == "all" && overdueTasks.Count > 0)) { <partial name="_TaskGroup" model="@("Просрочено", (IReadOnlyList<CrmTaskDto>)overdueTasks, true)" /> }
+                @if (selectedTaskScope == "today" || (selectedTaskScope == "all" && todayTasks.Count > 0)) { <partial name="_TaskGroup" model="@("Сегодня", (IReadOnlyList<CrmTaskDto>)todayTasks, true)" /> }
+                @if (selectedTaskScope == "later" || (selectedTaskScope == "all" && laterTasks.Count > 0)) { <partial name="_TaskGroup" model="@("Позже", (IReadOnlyList<CrmTaskDto>)laterTasks, true)" /> }
+                @if (selectedTaskScope == "completed" || (selectedTaskScope == "all" && completedTasks.Count > 0)) { <partial name="_TaskGroup" model="@("Завершённые", (IReadOnlyList<CrmTaskDto>)completedTasks, false)" /> }
+                @if (selectedTaskScope == "cancelled" || (selectedTaskScope == "all" && cancelledTasks.Count > 0)) { <partial name="_TaskGroup" model="@("Отменённые", (IReadOnlyList<CrmTaskDto>)cancelledTasks, false)" /> }
+                @if (selectedTaskScope == "all" && Model.Tasks.Count == 0)
+                {
+                    <p class="crm-task-groups__empty">У команды пока нет задач.</p>
+                }
+            </div>
+            <footer class="crm-task-workspace__footer">Показано @shownTaskCount задач</footer>
+        </section>
+
         <section class="card crm-team-panel crm-team-panel--managers">
-            <header class="crm-team-panel__header"><div><h2>Менеджеры</h2><p>Ёмкость и текущая нагрузка по активным карточкам.</p></div><b>@Model.Managers.Count</b></header>
+            <header class="crm-team-panel__header"><div><h2>Менеджеры</h2><p>Ёмкость и текущая нагрузка по активным карточкам.</p></div><b>@board.Managers.Count</b></header>
             <div class="crm-manager-table">
                 <div class="crm-manager-table__head" aria-hidden="true"><span>Менеджер</span><span>Нагрузка</span><span>Лимит</span></div>
-                @foreach (var m in Model.Managers)
+                @foreach (var m in board.Managers)
                 {
                     var pct = m.Capacity <= 0 ? 0 : Math.Min(100, (int)Math.Round(100.0 * m.ActiveLoad / m.Capacity));
                     <article class="crm-manager-row @(pct >= 100 ? "is-at-limit" : null)">
@@ -79,7 +142,7 @@
                         </form>
                     </article>
                 }
-                @if (Model.Managers.Count == 0)
+                @if (board.Managers.Count == 0)
                 {
                     <p class="crm-empty">В офисе нет менеджеров с ролью Manager.</p>
                 }
@@ -89,12 +152,12 @@
         <section class="card crm-team-panel crm-team-panel--stages">
             <header class="crm-team-panel__header"><div><h2>По этапам</h2><p>Активные карточки текущего офиса.</p></div></header>
             <div class="crm-stage-counts">
-                @foreach (var stage in Model.TeamStats.StageCounts.OrderByDescending(x => x.Count))
+                @foreach (var stage in board.TeamStats.StageCounts.OrderByDescending(x => x.Count))
                 {
                     var pct = Math.Min(100, (int)Math.Round(100.0 * stage.Count / stageTotal));
                     <div class="crm-stage-count"><div><span>@stage.Stage</span><strong>@stage.Count</strong></div><i><b style="width:@pct%"></b></i></div>
                 }
-                @if (Model.TeamStats.StageCounts.Count == 0)
+                @if (board.TeamStats.StageCounts.Count == 0)
                 {
                     <p class="crm-empty">Нет данных</p>
                 }
@@ -109,15 +172,15 @@
                     <input type="hidden" name="officeId" value="@oid" />
                     <div class="crm-office-settings-form__options">
                         <label class="crm-setting-toggle">
-                            <input type="checkbox" name="isEnabled" value="true" @(Model.IsEnabled ? "checked" : null) />
+                            <input type="checkbox" name="isEnabled" value="true" @(board.IsEnabled ? "checked" : null) />
                             <span><strong>Принимать отклики в CRM</strong><small>Создавать карточки из откликов операторов.</small></span>
                         </label>
                         <label class="crm-setting-toggle">
-                            <input type="checkbox" name="requireStageComment" value="true" @(Model.RequireStageComment ? "checked" : null) />
+                            <input type="checkbox" name="requireStageComment" value="true" @(board.RequireStageComment ? "checked" : null) />
                             <span><strong>Комментарий при смене этапа</strong><small>Просить менеджера пояснить изменение статуса.</small></span>
                         </label>
                         <label class="crm-setting-toggle">
-                            <input type="checkbox" name="deadlineNotificationsEnabled" value="true" @(Model.DeadlineNotificationsEnabled ? "checked" : null) />
+                            <input type="checkbox" name="deadlineNotificationsEnabled" value="true" @(board.DeadlineNotificationsEnabled ? "checked" : null) />
                             <span><strong>Напоминания по срокам задач</strong><small>Персонально уведомлять ответственного за 24 часа, за час и при просрочке.</small></span>
                         </label>
                     </div>
@@ -139,9 +202,31 @@
             {
                 <form asp-action="SaveOfficeFunnel" method="post" class="crm-standard-form crm-funnel-form">
                     <input type="hidden" name="officeId" value="@funnelOfficeId" />
-                    <label for="stagesText">Этапы (один на строку, сверху вниз)</label>
-                    <textarea id="stagesText" name="stagesText" rows="@(Math.Max(6, Model.FunnelStages.Count + 2))" spellcheck="false">@string.Join(Environment.NewLine, Model.FunnelStages)</textarea>
-                    <p class="crm-hint">От @CrmStages.MinCount до @CrmStages.MaxCount уникальных этапов, до @CrmStages.MaxNameLength символов. Карточки с удалённых этапов переносятся на первый этап.</p>
+                    <div class="crm-funnel-editor" data-crm-funnel-editor data-min-stages="@CrmStages.MinCount" data-max-stages="@CrmStages.MaxCount">
+                        <textarea id="stagesText" name="stagesText" data-crm-funnel-value hidden>@string.Join(Environment.NewLine, board.FunnelStages)</textarea>
+                        <div class="crm-funnel-editor__summary">
+                            <span><i class="fa-solid fa-arrow-right-long" aria-hidden="true"></i>Путь кандидата</span>
+                            <b data-crm-funnel-count>@board.FunnelStages.Count этапов</b>
+                        </div>
+                        <ol class="crm-funnel-editor__stages" data-crm-funnel-stages aria-label="Этапы воронки">
+                            @for (var stageIndex = 0; stageIndex < board.FunnelStages.Count; stageIndex++)
+                            {
+                                var stage = board.FunnelStages[stageIndex];
+                                <li class="crm-funnel-editor__stage" data-crm-funnel-stage>
+                                    <span class="crm-funnel-editor__number" data-crm-funnel-number>@(stageIndex + 1)</span>
+                                    <button class="crm-funnel-editor__drag" type="button" draggable="true" data-crm-funnel-drag aria-label="Перетащить этап @stage" title="Перетащить этап"><i class="fa-solid fa-grip-vertical" aria-hidden="true"></i></button>
+                                    <input class="crm-funnel-editor__input" type="text" value="@stage" maxlength="@CrmStages.MaxNameLength" data-crm-funnel-stage-input aria-label="Название этапа @(stageIndex + 1)" />
+                                    <div class="crm-funnel-editor__controls">
+                                        <button type="button" data-crm-funnel-action="move-up" aria-label="Поднять этап" title="Поднять этап" @(stageIndex == 0 ? "disabled" : null)><i class="fa-solid fa-arrow-up" aria-hidden="true"></i></button>
+                                        <button type="button" data-crm-funnel-action="move-down" aria-label="Опустить этап" title="Опустить этап" @(stageIndex == board.FunnelStages.Count - 1 ? "disabled" : null)><i class="fa-solid fa-arrow-down" aria-hidden="true"></i></button>
+                                        <button type="button" class="is-danger" data-crm-funnel-action="remove" aria-label="Удалить этап" title="Удалить этап"><i class="fa-solid fa-trash-can" aria-hidden="true"></i></button>
+                                    </div>
+                                </li>
+                            }
+                        </ol>
+                        <button class="crm-funnel-editor__add" type="button" data-crm-funnel-action="add"><i class="fa-solid fa-plus" aria-hidden="true"></i>Добавить этап</button>
+                    </div>
+                    <p class="crm-hint">Перетащите этап или используйте стрелки для смены порядка. От @CrmStages.MinCount до @CrmStages.MaxCount уникальных этапов, до @CrmStages.MaxNameLength символов. Карточки с удалённых этапов переносятся на первый этап.</p>
                     <div class="crm-funnel-form__actions">
                         <button class="settings-primary-btn" type="submit">Сохранить воронку</button>
                         <button class="settings-secondary-btn" type="submit" name="resetDefault" value="true">Сбросить по умолчанию</button>

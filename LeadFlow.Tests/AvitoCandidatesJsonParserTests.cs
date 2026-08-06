@@ -56,6 +56,7 @@ public sealed class AvitoCandidatesJsonParserTests
                   "city": "Москва",
                   "vacancyUrl": "/item/1",
                   "messengerUrl": "https://www.avito.ru/messenger",
+                  "avatarUrl": "https://80.img.avito.st/image/1/1.avatar",
                   "rawText": "line",
                   "age": "25 лет"
                 }
@@ -71,6 +72,7 @@ public sealed class AvitoCandidatesJsonParserTests
         Assert.Equal("id-1", c.SourceResponseId);
         Assert.Equal("Продавец", c.Vacancy);
         Assert.Equal("Москва", c.City);
+        Assert.Equal("https://80.img.avito.st/image/1/1.avatar", c.AvatarUrl);
         Assert.Equal(25, c.Age);
         Assert.Equal(account.Id, c.AccountId);
         Assert.Equal("TestAcc", c.AccountName);

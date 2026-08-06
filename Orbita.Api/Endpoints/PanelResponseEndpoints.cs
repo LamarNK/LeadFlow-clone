@@ -198,6 +198,25 @@ public static class PanelResponseEndpoints
             return detail is null ? Results.NotFound() : Results.Ok(detail);
         });
 
+        responses.MapGet("/responses/{id:guid}/avatar", async (
+            Guid id,
+            ResponsesQueryService responses,
+            OfficeScopeService officeScope,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            var scope = await officeScope.ResolveAsync(principal, ct);
+            if (!scope.HasAccess)
+            {
+                return Results.Forbid();
+            }
+
+            var avatar = await responses.GetAvatarAsync(id, scope, ct);
+            return avatar is null
+                ? Results.NotFound()
+                : Results.File(avatar.Bytes, avatar.ContentType);
+        });
+
         responses.MapPost("/responses/{id:guid}/resend-bitrix", async (
             Guid id,
             CandidateIngestionService ingestion,

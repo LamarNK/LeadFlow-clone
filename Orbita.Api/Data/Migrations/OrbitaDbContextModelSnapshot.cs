@@ -512,16 +512,15 @@ namespace Orbita.Api.Data.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
 
+                    b.Property<string>("OperationMode")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
                     b.Property<DateTime?>("LastAssignedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<long?>("LastAssignedBitrixUserId")
                         .HasColumnType("bigint");
-
-                    b.Property<string>("OperationMode")
-                        .IsRequired()
-                        .HasMaxLength(16)
-                        .HasColumnType("character varying(16)");
 
                     b.HasKey("BitrixInstanceId", "Scenario", "OperationMode");
 
@@ -530,6 +529,12 @@ namespace Orbita.Api.Data.Migrations
 
             modelBuilder.Entity("Orbita.Api.Data.BitrixWorkforceDealStateEntity", b =>
                 {
+                    b.Property<Guid>("BitrixInstanceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<long>("DealId")
+                        .HasColumnType("bigint");
+
                     b.Property<string>("ActiveScenario")
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
@@ -539,12 +544,6 @@ namespace Orbita.Api.Data.Migrations
 
                     b.Property<DateTime?>("ActiveScenarioWriterHandledAtUtc")
                         .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("BitrixInstanceId")
-                        .HasColumnType("uuid");
-
-                    b.Property<long>("DealId")
-                        .HasColumnType("bigint");
 
                     b.Property<long?>("LastAppliedResponsibleId")
                         .HasColumnType("bigint");
@@ -639,6 +638,10 @@ namespace Orbita.Api.Data.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
 
+                    b.Property<string>("OperationMode")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
                     b.Property<long?>("FirstManagerId")
                         .HasColumnType("bigint");
 
@@ -650,11 +653,6 @@ namespace Orbita.Api.Data.Migrations
 
                     b.Property<int>("InitialReleasedCount")
                         .HasColumnType("integer");
-
-                    b.Property<string>("OperationMode")
-                        .IsRequired()
-                        .HasMaxLength(16)
-                        .HasColumnType("character varying(16)");
 
                     b.Property<DateTime?>("ReserveUntilUtc")
                         .HasColumnType("timestamp with time zone");
@@ -818,6 +816,13 @@ namespace Orbita.Api.Data.Migrations
 
                     b.Property<int?>("Age")
                         .HasColumnType("integer");
+
+                    b.Property<string>("AvatarContentType")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<byte[]>("AvatarImage")
+                        .HasColumnType("bytea");
 
                     b.Property<string>("AvitoSubProfileId")
                         .IsRequired()
@@ -2132,6 +2137,10 @@ namespace Orbita.Api.Data.Migrations
 
                     b.Property<bool>("ResponseHighlightEnabled")
                         .HasColumnType("boolean");
+
+                    b.Property<string>("ResponseHighlightTargetsJson")
+                        .HasMaxLength(16000)
+                        .HasColumnType("character varying(16000)");
 
                     b.Property<DateTime?>("StartedAtUtc")
                         .HasColumnType("timestamp with time zone");

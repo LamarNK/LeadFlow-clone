@@ -59,7 +59,10 @@ public sealed record ResponseListItemDto(
     string? PreviousPhoneNormalized = null,
     int? PhoneUnchangedHours = null,
     DateTime? PhoneChangedAtUtc = null,
-    string? PhoneMetricLabel = null);
+    string? PhoneMetricLabel = null,
+    bool HasAvatar = false,
+    IReadOnlyList<string>? HighlightLabels = null,
+    IReadOnlyList<ResponseCrmDeliveryDto>? CrmDeliveries = null);
 
 public sealed record ResponseDetailDto(
     Guid Id,
@@ -111,7 +114,8 @@ public sealed record ResponseDetailDto(
     int? PhoneUnchangedHours = null,
     DateTime? PhoneChangedAtUtc = null,
     string? PhoneMetricLabel = null,
-    IReadOnlyList<CandidatePhoneHistoryDto>? PhoneHistory = null);
+    IReadOnlyList<CandidatePhoneHistoryDto>? PhoneHistory = null,
+    bool HasAvatar = false);
 
 public sealed record ResponsesPageDto(
     IReadOnlyList<ResponseListItemDto> Items,

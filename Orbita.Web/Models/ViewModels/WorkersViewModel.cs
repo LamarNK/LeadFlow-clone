@@ -162,6 +162,7 @@ public sealed class WorkerDetailsViewModel
     public int? ResponseFilterMaxAgeDays { get; init; }
     public bool ResponseHighlightEnabled { get; init; }
     public string ResponseHighlightAgeBuckets { get; init; } = string.Empty;
+    public string? ResponseHighlightTargetsJson { get; init; }
     public IReadOnlyList<string> ResponseHighlightBucketOptions { get; init; } = [];
     public bool AutoScheduleEnabled { get; init; }
     public string AutoScheduleDays { get; init; } = string.Empty;

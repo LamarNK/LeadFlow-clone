@@ -18,7 +18,9 @@
         vacancy = Model.Vacancy,
         overdueOnly = Model.OverdueOnly,
         activeLoadOnly = Model.ActiveLoadOnly,
-        includeClosed = Model.IncludeClosed
+        includeClosed = Model.IncludeClosed,
+        sort = Context.Request.Query["sort"].ToString(),
+        dir = Context.Request.Query["dir"].ToString()
     })!;
 }
 <partial name="_PageHeader" model="header" />

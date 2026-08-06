@@ -35,7 +35,8 @@
             </span>
             <kbd class="orbita-search-kbd">Ctrl+K</kbd>
         </button>
-        @if (User.HasClaim(PanelPermissions.ClaimType, PanelPermissions.Crm)
+        @if ((User.HasClaim(PanelPermissions.ClaimType, PanelPermissions.CrmTasks)
+             || User.HasClaim(PanelPermissions.ClaimType, PanelPermissions.Crm))
              && OfficeContext.EffectiveOfficeId is Guid)
         {
             <div class="orbita-notifications" data-crm-notifications hidden>

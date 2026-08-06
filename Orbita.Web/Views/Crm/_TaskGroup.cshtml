@@ -3,6 +3,8 @@
 @{
     var currentUserId = ViewData["CurrentCrmUserId"] as string;
     var isAdmin = ViewData["IsCrmAdmin"] as bool? == true;
+    var fromTeam = ViewData["TaskDetailsFromTeam"] as bool? == true;
+    var teamTaskScope = ViewData["TeamTaskScope"] as string;
     var groupClass = Model.Title switch
     {
         "Просрочено" => "crm-task-group--overdue",
@@ -27,12 +29,19 @@
         "Отменённые" => "Отменённых задач пока нет.",
         _ => "Завершённых задач пока нет."
     };
+    var collapseCompletedByDefault = Model.Title == "Завершённые"
+        && ViewData["CollapseCompletedTasks"] as bool? == true
+        && teamTaskScope != "completed";
 }
-<section class="crm-task-group @groupClass">
-    <header class="crm-task-group__header">
+<details class="crm-task-group @groupClass @(collapseCompletedByDefault ? "crm-task-group--collapsible" : null)" open="@(!collapseCompletedByDefault)">
+    <summary class="crm-task-group__header">
         <span><i class="fa-solid @groupIcon" aria-hidden="true"></i> @Model.Title</span>
         <b>@Model.Items.Count</b>
-    </header>
+        @if (collapseCompletedByDefault)
+        {
+            <i class="fa-solid fa-chevron-down crm-task-group__chevron" aria-hidden="true"></i>
+        }
+    </summary>
     @if (Model.Items.Count == 0)
     {
         <p class="crm-task-group__empty">@emptyText</p>
@@ -45,7 +54,7 @@
                 var isOverdue = task.Status == CrmTaskStatuses.Open && (task.IsOverdue || (task.DueAtUtc is DateTime dueAt && dueAt < DateTime.UtcNow));
                 var canComplete = isAdmin || task.AssigneeUserId == currentUserId;
                 <article class="crm-task-row @(isOverdue ? "is-overdue" : "") @(task.Status == CrmTaskStatuses.Completed ? "is-complete" : "") @(task.Status == CrmTaskStatuses.Cancelled ? "is-cancelled" : "")">
-                    <a class="crm-task-row__main" asp-action="TaskDetails" asp-route-id="@task.Id">
+                    <a class="crm-task-row__main" asp-action="TaskDetails" asp-route-id="@task.Id" asp-route-fromTeam="@fromTeam" asp-route-teamTaskScope="@teamTaskScope">
                         <div class="crm-task-row__title"><strong>@task.Title</strong><span class="crm-task-importance crm-task-importance--@task.Importance.ToLowerInvariant()">@CrmTaskImportances.GetLabel(task.Importance)</span></div>
                         @if (!string.IsNullOrWhiteSpace(task.Description)) { <p>@task.Description</p> }
                         <div class="crm-task-row__people">
@@ -68,4 +77,4 @@
             }
         </div>
     }
-</section>
+</details>

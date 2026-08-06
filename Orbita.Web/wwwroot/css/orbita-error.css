@@ -1,0 +1,389 @@
+:root { color-scheme: dark; }
+
+html.orbita-error-html,
+body.orbita-error-body {
+    min-width: 320px;
+    min-height: 100%;
+    margin: 0;
+    background: #010814;
+}
+
+.orbita-error-body {
+    min-height: 100vh;
+    min-height: 100dvh;
+    overflow: hidden;
+    color: #f4f8ff;
+    font-family: Inter, "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.orbita-error-page {
+    box-sizing: border-box;
+    height: 100vh;
+    height: 100dvh;
+    padding: clamp(0px, 0.75vw, 12px);
+}
+
+.orbita-error-page *,
+.orbita-error-page *::before,
+.orbita-error-page *::after {
+    box-sizing: border-box;
+}
+
+.orbita-error-frame {
+    position: relative;
+    isolation: isolate;
+    height: 100%;
+    overflow: hidden;
+    border: 1px solid rgba(107, 151, 222, 0.13);
+    background:
+        linear-gradient(180deg, rgba(1, 8, 22, 0.17) 0%, rgba(1, 9, 26, 0.39) 67%, rgba(1, 7, 18, 0.2) 100%),
+        url("/images/error-space-background.png") center bottom / cover no-repeat;
+    box-shadow: inset 0 1px 0 rgba(138, 177, 242, 0.06);
+}
+
+.orbita-error-frame::before,
+.orbita-error-frame::after {
+    position: absolute;
+    z-index: -1;
+    content: "";
+    pointer-events: none;
+}
+
+.orbita-error-frame::before {
+    inset: 0;
+    background:
+        linear-gradient(90deg, rgba(1, 9, 25, 0.35), transparent 31%, transparent 69%, rgba(1, 9, 25, 0.36)),
+        radial-gradient(circle at 50% 44%, transparent 34%, rgba(1, 8, 22, 0.28) 79%);
+}
+
+.orbita-error-frame::after {
+    inset: 0;
+    opacity: 0.17;
+    background-image:
+        linear-gradient(rgba(67, 131, 236, 0.14) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(67, 131, 236, 0.14) 1px, transparent 1px);
+    background-size: 108px 108px;
+    mask-image: radial-gradient(circle at 50% 43%, black 0%, transparent 45%);
+}
+
+.orbita-error-copy {
+    position: absolute;
+    z-index: 3;
+    top: clamp(178px, 25vh, 236px);
+    left: 50%;
+    width: min(480px, calc(100% - 48px));
+    text-align: center;
+    transform: translateX(-50%);
+}
+
+.orbita-error-signal { display: none; }
+
+.orbita-error-code {
+    margin: 0;
+    color: #f7faff;
+    font-size: clamp(96px, 9.5vw, 146px);
+    font-weight: 760;
+    letter-spacing: -0.075em;
+    line-height: 0.82;
+    text-shadow: 0 3px 28px rgba(166, 192, 234, 0.18);
+}
+
+.orbita-error-copy h1 {
+    margin: 24px 0 13px;
+    color: #f7f9fe;
+    font-size: clamp(28px, 2.35vw, 38px);
+    font-weight: 680;
+    letter-spacing: -0.025em;
+    line-height: 1.12;
+}
+
+.orbita-error-description {
+    max-width: 440px;
+    margin: 0 auto;
+    color: rgba(202, 216, 239, 0.78);
+    font-size: 15px;
+    line-height: 1.55;
+}
+
+.orbita-error-actions {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 18px;
+    margin-top: 32px;
+}
+
+.orbita-error-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 11px;
+    min-width: 216px;
+    min-height: 52px;
+    padding: 0 22px;
+    border: 1px solid transparent;
+    border-radius: 7px;
+    color: #edf4ff;
+    font: inherit;
+    font-size: 14px;
+    font-weight: 650;
+    line-height: 1;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.orbita-error-actions > .orbita-error-button {
+    flex: 1 1 0;
+    min-width: 0;
+}
+
+.orbita-error-button:focus-visible,
+.orbita-error-logout button:focus-visible {
+    outline: 3px solid rgba(96, 165, 250, 0.62);
+    outline-offset: 3px;
+}
+
+.orbita-error-button--primary {
+    background: linear-gradient(135deg, #1e72f6, #154bc2);
+    box-shadow: 0 10px 26px rgba(15, 81, 210, 0.36), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+
+.orbita-error-button--secondary {
+    border-color: rgba(141, 181, 245, 0.33);
+    background: rgba(6, 27, 62, 0.43);
+    box-shadow: inset 0 1px 0 rgba(169, 198, 244, 0.06);
+}
+
+.orbita-error-logout { margin: 14px 0 0; }
+
+.orbita-error-logout button {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: rgba(206, 221, 244, 0.75);
+    font: inherit;
+    font-size: 13px;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    cursor: pointer;
+}
+
+.orbita-error-hint {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    width: min(356px, 100%);
+    margin: 36px auto 0;
+    padding: 22px 24px;
+    border: 1px solid rgba(79, 132, 215, 0.21);
+    border-radius: 11px;
+    background: linear-gradient(135deg, rgba(11, 39, 83, 0.72), rgba(11, 26, 56, 0.62));
+    box-shadow: inset 0 1px 0 rgba(151, 188, 249, 0.08), 0 15px 35px rgba(0, 0, 0, 0.17);
+    text-align: left;
+}
+
+.orbita-error-hint i {
+    display: grid;
+    flex: 0 0 auto;
+    width: 44px;
+    aspect-ratio: 1;
+    place-items: center;
+    border-radius: 50%;
+    background: rgba(28, 103, 223, 0.24);
+    color: #87bdff;
+    font-size: 22px;
+}
+
+.orbita-error-hint h2 {
+    margin: 2px 0 7px;
+    color: #f2f6ff;
+    font-size: 15px;
+    font-weight: 650;
+    line-height: 1.2;
+}
+
+.orbita-error-hint p {
+    margin: 0;
+    color: rgba(190, 209, 238, 0.77);
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.orbita-error-orbit-field {
+    position: absolute;
+    z-index: 1;
+    top: 43%;
+    left: 50%;
+    width: min(46vw, 640px);
+    min-width: 500px;
+    aspect-ratio: 1;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+}
+
+.orbita-error-orbit {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    box-sizing: border-box;
+    border: 1px solid rgba(66, 133, 239, 0.16);
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+}
+
+.orbita-error-orbit--one { width: 33%; height: 33%; border-color: rgba(61, 134, 246, 0.25); }
+.orbita-error-orbit--two { width: 56%; height: 56%; border-color: rgba(57, 130, 246, 0.22); }
+.orbita-error-orbit--three { width: 79%; height: 79%; border-color: rgba(46, 118, 227, 0.18); }
+.orbita-error-orbit--four { width: 100%; height: 100%; border-color: rgba(43, 112, 213, 0.15); }
+
+.orbita-error-axis {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+}
+
+.orbita-error-axis--horizontal {
+    width: 130%;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(56, 130, 239, 0.16) 22%, rgba(56, 130, 239, 0.16) 78%, transparent);
+}
+
+.orbita-error-axis--vertical {
+    width: 1px;
+    height: 130%;
+    background: linear-gradient(0deg, transparent, rgba(56, 130, 239, 0.14) 22%, rgba(56, 130, 239, 0.14) 78%, transparent);
+}
+
+.orbita-error-flight-path {
+    position: absolute;
+    top: 50%;
+    left: 51%;
+    width: 59%;
+    height: 1px;
+    border-top: 2px dashed rgba(24, 113, 255, 0.62);
+    border-radius: 50%;
+    transform: rotate(25deg) translateY(-50%);
+    transform-origin: left center;
+}
+
+.orbita-error-flight-path::before,
+.orbita-error-flight-path::after {
+    position: absolute;
+    content: "";
+}
+
+.orbita-error-flight-path::before {
+    top: -6px;
+    right: 7%;
+    width: 7px;
+    aspect-ratio: 1;
+    border-radius: 50%;
+    background: #70b3ff;
+    box-shadow: 0 0 14px 3px rgba(45, 141, 255, 0.87);
+}
+
+.orbita-error-flight-path::after {
+    top: -6px;
+    right: -2px;
+    width: 0;
+    height: 0;
+    border-width: 7px 0 7px 12px;
+    border-style: solid;
+    border-color: transparent transparent transparent #237aff;
+    filter: drop-shadow(0 0 5px rgba(44, 128, 255, 0.8));
+}
+
+.orbita-error-logo {
+    position: absolute;
+    z-index: 2;
+    top: 11%;
+    left: 50%;
+    width: clamp(74px, 7vw, 102px);
+    height: auto;
+    transform: translate(-50%, -50%);
+    filter: drop-shadow(0 0 23px rgba(21, 93, 255, 0.7));
+}
+
+.orbita-error-star {
+    position: absolute;
+    width: 4px;
+    aspect-ratio: 1;
+    border-radius: 50%;
+    background: #91beff;
+    box-shadow: 0 0 9px 2px rgba(58, 130, 255, 0.66);
+}
+
+.orbita-error-star--one { top: 23%; left: 16%; }
+.orbita-error-star--two { top: 26%; right: 11%; width: 3px; }
+.orbita-error-star--three { right: 6%; bottom: 26%; }
+
+.orbita-error-telemetry {
+    position: absolute;
+    z-index: 2;
+    inset: 0;
+    margin: 0;
+    pointer-events: none;
+}
+
+.orbita-error-telemetry__item {
+    position: absolute;
+    width: clamp(250px, 18vw, 286px);
+    padding: 19px 21px 17px;
+    border: 1px solid rgba(100, 148, 222, 0.23);
+    border-radius: 9px;
+    background: linear-gradient(135deg, rgba(7, 27, 61, 0.82), rgba(4, 15, 36, 0.71));
+    box-shadow: inset 0 1px 0 rgba(155, 186, 238, 0.08), 0 12px 34px rgba(0, 0, 0, 0.16);
+}
+
+.orbita-error-telemetry dt {
+    margin: 0 0 9px;
+    color: rgba(184, 202, 231, 0.56);
+    font-size: 11px;
+    line-height: 1;
+}
+
+.orbita-error-telemetry dd {
+    margin: 0;
+    overflow: hidden;
+    color: rgba(227, 235, 250, 0.9);
+    font-size: clamp(15px, 1.23vw, 19px);
+    font-weight: 650;
+    line-height: 1.22;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.orbita-error-telemetry__item--sector { top: 15%; left: 8.5%; }
+.orbita-error-telemetry__item--code { top: 16%; right: 8.5%; }
+.orbita-error-telemetry__item--code dd { color: #1682ff; font-size: clamp(20px, 1.9vw, 28px); }
+.orbita-error-telemetry__item--status { bottom: 28%; left: 8.5%; }
+.orbita-error-telemetry__item--time { right: 6.5%; bottom: 26%; width: clamp(230px, 18vw, 286px); }
+.orbita-error-telemetry__item--time dd { font-size: clamp(13px, 1.1vw, 16px); }
+
+@media (max-width: 980px) {
+    .orbita-error-orbit-field { width: min(64vw, 600px); min-width: 430px; }
+    .orbita-error-telemetry__item--sector { left: 4%; }
+    .orbita-error-telemetry__item--code { right: 4%; }
+    .orbita-error-telemetry__item--status { left: 4%; }
+    .orbita-error-telemetry__item--time { right: 4%; }
+}
+
+@media (max-width: 700px) {
+    .orbita-error-body { overflow-y: auto; }
+    .orbita-error-page { height: auto; min-height: 100dvh; padding: 0; }
+    .orbita-error-frame { min-height: 100dvh; border: 0; }
+    .orbita-error-copy { top: 130px; width: calc(100% - 36px); }
+    .orbita-error-code { font-size: clamp(82px, 28vw, 122px); }
+    .orbita-error-copy h1 { margin-top: 21px; font-size: 29px; }
+    .orbita-error-description { font-size: 13px; }
+    .orbita-error-actions { gap: 10px; margin-top: 26px; }
+    .orbita-error-button { width: 100%; min-width: 0; }
+    .orbita-error-hint { margin-top: 24px; padding: 17px; }
+    .orbita-error-orbit-field { top: 55%; width: 122vw; min-width: 0; }
+    .orbita-error-logo { top: 12%; width: 70px; }
+    .orbita-error-telemetry__item { display: none; }
+    .orbita-error-telemetry__item--code { display: block; top: 22px; right: 18px; width: 110px; padding: 10px 11px; }
+    .orbita-error-telemetry__item--code dt { margin-bottom: 5px; font-size: 9px; }
+    .orbita-error-telemetry__item--code dd { font-size: 23px; }
+}

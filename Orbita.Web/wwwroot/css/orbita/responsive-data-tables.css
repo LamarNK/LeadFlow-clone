@@ -1448,12 +1448,8 @@
     }
 
     [data-theme="dark"] .data-table--responses tbody tr.responses-row--highlighted {
-        background: linear-gradient(90deg, rgba(245, 158, 11, 0.2), rgba(245, 158, 11, 0.08));
-    }
-
-    [data-theme="dark"] .responses-age-highlight-badge {
-        background: rgba(245, 158, 11, 0.22);
-        color: #fcd34d;
+        background: color-mix(in srgb, var(--bg-card) 88%, #6b4b13);
+        box-shadow: inset 3px 0 0 #f2b84b;
     }
 }
 

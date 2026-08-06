@@ -41,7 +41,7 @@ public sealed class CrmAnalyticsQueryService(
 {
     private const string NoCloseReason = "Без причины";
     private const string RemovedStagesBucket = "Удалённые этапы";
-    private const int MaxPeriodDays = 367;
+    private const int MaxPeriodDays = LocalCalendarDateRange.MaxCalendarDays;
     private const string FunnelUpdatedSuffix = " (воронка обновлена)";
 
     public async Task<CrmAnalyticsQueryResult> GetAsync(

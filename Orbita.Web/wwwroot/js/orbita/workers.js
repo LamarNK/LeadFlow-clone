@@ -531,7 +531,7 @@
         var responsesEl = document.querySelector('[data-nav-badge="responses"]');
         var crmTasksEl = document.querySelector('[data-nav-badge="crm-tasks"]');
         runtime.setBadge(errorsEl, payload.errorsToday);
-        runtime.setBadge(responsesEl, payload.sentToCrm, ' в Битрикс24 за сегодня');
+        runtime.setBadge(responsesEl, payload.uniqueResponsesToday, ' уникальных откликов за сегодня');
         var crmNotificationStateKnown = typeof payload.crmTaskNotificationsEnabled === 'boolean';
         if (crmNotificationStateKnown) {
             runtime.setBadge(crmTasksEl, payload.crmTaskNotificationsUnread, ' непрочитанных уведомлений CRM');

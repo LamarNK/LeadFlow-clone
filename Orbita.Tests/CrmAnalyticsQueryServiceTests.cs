@@ -294,11 +294,18 @@ public sealed class CrmAnalyticsQueryServiceTests
             new CrmAnalyticsQuery(fromUtc, fromUtc));
         Assert.Equal(CrmAnalyticsQueryOutcome.BadRequest, reversed.Outcome);
 
+        var exactLimit = await harness.Sut.GetAsync(
+            OfficeScope.GlobalAdmin,
+            "admin",
+            isAdmin: true,
+            new CrmAnalyticsQuery(fromUtc, fromUtc.AddDays(366)));
+        Assert.Equal(CrmAnalyticsQueryOutcome.Success, exactLimit.Outcome);
+
         var tooLong = await harness.Sut.GetAsync(
             OfficeScope.GlobalAdmin,
             "admin",
             isAdmin: true,
-            new CrmAnalyticsQuery(fromUtc, fromUtc.AddDays(368)));
+            new CrmAnalyticsQuery(fromUtc, fromUtc.AddDays(366).AddTicks(1)));
         Assert.Equal(CrmAnalyticsQueryOutcome.BadRequest, tooLong.Outcome);
     }
 

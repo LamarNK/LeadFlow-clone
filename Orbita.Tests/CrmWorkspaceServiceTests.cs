@@ -284,6 +284,27 @@ public sealed class CrmWorkspaceServiceTests
     }
 
     [Fact]
+    public async Task GetCardAvatar_ManagerFromOwnOfficeReceivesStoredAvatar()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var owner = await harness.CreateManagerAsync("avatar-owner@test.local", capacity: 5, onShift: true);
+        var viewer = await harness.CreateManagerAsync("avatar-viewer@test.local", capacity: 5, onShift: true);
+        var response = await SeedResponseAsync(harness.Db);
+        response.AvatarImage = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+        response.AvatarContentType = "image/png";
+        var card = NewCard(response.Id, owner.Id);
+        harness.Db.CrmCandidateCards.Add(card);
+        await harness.Db.SaveChangesAsync();
+
+        var avatar = await harness.Sut.GetCardAvatarAsync(card.Id, viewer.Id, isAdmin: false);
+
+        Assert.NotNull(avatar);
+        Assert.Equal("image/png", avatar.ContentType);
+        Assert.Equal(response.AvatarImage, avatar.Bytes);
+    }
+
+    [Fact]
     public async Task Tasks_AreVisibleToCreatorAndAssigneeOnly_AndCommentsKeepAuthor()
     {
         await using var harness = await Harness.CreateAsync();

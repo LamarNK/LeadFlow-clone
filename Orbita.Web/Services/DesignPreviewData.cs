@@ -249,7 +249,7 @@ internal static class DesignPreviewData
             normalizedTo = normalizedFrom.AddDays(1);
         }
 
-        var periodDays = Math.Clamp((normalizedTo - normalizedFrom).TotalDays, 1d, DashboardPeriod.MaxDays + 1d);
+        var periodDays = Math.Clamp((normalizedTo - normalizedFrom).TotalDays, 1d, DashboardPeriod.MaxDays);
         var periodFactor = periodDays / 30d;
         int Scale(int value) => value == 0
             ? 0
@@ -2956,6 +2956,11 @@ internal static class DesignPreviewData
             var adId = rng.Next(10_000_000, 99_999_999).ToString();
             var phoneDigits = $"79{rng.Next(10, 99)}{rng.Next(1000000, 9999999)}";
             var hidePhone = i % 17 == 0;
+            var phoneChanged = !hidePhone && (i == 1 || i % 13 == 1);
+            var phoneUnchanged = !hidePhone && !phoneChanged && (i == 2 || i % 11 == 2);
+            var previousPhoneDigits = phoneChanged
+                ? $"{phoneDigits[..^2]}{(int.Parse(phoneDigits[^2..], CultureInfo.InvariantCulture) + 1) % 100:D2}"
+                : null;
             var createdAt = Now.AddMinutes(-(i * 4 + rng.Next(0, 20)));
 
             var bitrixEntityId = status == ResponseStatuses.Sent ? rng.Next(1000, 99999).ToString() : null;
@@ -2971,6 +2976,20 @@ internal static class DesignPreviewData
                 Age = age,
                 PhoneRaw = hidePhone ? string.Empty : $"+{phoneDigits}",
                 PhoneNormalized = hidePhone ? string.Empty : phoneDigits,
+                PhoneMetricKind = phoneChanged
+                    ? ResponsePhoneMetricKinds.PhoneChanged
+                    : phoneUnchanged
+                        ? ResponsePhoneMetricKinds.PhoneUnchanged
+                        : null,
+                PhoneMetricLabel = phoneChanged
+                    ? ResponsePhoneMetricKinds.FormatLabel(
+                        ResponsePhoneMetricKinds.PhoneChanged,
+                        previousPhone: ResponseDisplay.FormatPhone($"+{previousPhoneDigits}", previousPhoneDigits))
+                    : phoneUnchanged
+                        ? ResponsePhoneMetricKinds.FormatLabel(ResponsePhoneMetricKinds.PhoneUnchanged, unchangedHours: 48)
+                        : null,
+                PreviousPhoneRaw = previousPhoneDigits is null ? null : $"+{previousPhoneDigits}",
+                PreviousPhoneNormalized = previousPhoneDigits,
                 Vacancy = vacancies[i % vacancies.Length],
                 VacancyUrl = $"https://www.avito.ru/item/{adId}",
                 MessengerUrl = hidePhone ? string.Empty : $"https://www.avito.ru/profile/messenger/channel/{adId}",
@@ -3105,6 +3124,10 @@ internal static class DesignPreviewData
             Age = rowIndex % 4 == 0 ? 28 : rowIndex % 3 == 1 ? 34 : null,
             PhoneRaw = row.PhoneRaw,
             PhoneNormalized = row.PhoneNormalized,
+            PhoneMetricKind = row.PhoneMetricKind,
+            PhoneMetricLabel = row.PhoneMetricLabel,
+            PreviousPhoneRaw = row.PreviousPhoneRaw,
+            PreviousPhoneNormalized = row.PreviousPhoneNormalized,
             City = row.City,
             Vacancy = row.Vacancy,
             VacancyUrl = row.VacancyUrl,
@@ -3130,6 +3153,7 @@ internal static class DesignPreviewData
                 ? "Соискатель скрыл номер — узнать в чате"
                 : $"{row.FullName} · {row.City} · отклик на «{row.Vacancy}»",
             ChatMessages = BuildPreviewChatMessages(rowIndex, row.CreatedAtUtc),
+            PhoneHistory = BuildPreviewResponsePhoneHistory(row),
             CollectedAtUtc = row.CollectedAtUtc,
             CreatedAtUtc = row.CreatedAtUtc,
             ProcessedAtUtc = row.Status == ResponseStatuses.Sent
@@ -3137,6 +3161,26 @@ internal static class DesignPreviewData
                 : null,
             CanResend = row.CanResend
         };
+    }
+
+    private static IReadOnlyList<CandidatePhoneHistoryDto> BuildPreviewResponsePhoneHistory(ResponseRowViewModel row)
+    {
+        if (string.IsNullOrWhiteSpace(row.PreviousPhoneNormalized))
+        {
+            return [];
+        }
+
+        return
+        [
+            new CandidatePhoneHistoryDto(
+                row.PreviousPhoneRaw ?? row.PreviousPhoneNormalized,
+                row.PreviousPhoneNormalized,
+                row.CreatedAtUtc.AddDays(-2)),
+            new CandidatePhoneHistoryDto(
+                row.PhoneRaw,
+                row.PhoneNormalized,
+                row.CollectedAtUtc)
+        ];
     }
 
     private static int ParsePreviewResponseIndex(Guid id)

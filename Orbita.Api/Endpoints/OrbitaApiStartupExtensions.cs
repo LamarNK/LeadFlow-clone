@@ -161,7 +161,16 @@ public static class OrbitaApiStartupExtensions
                 options.AddPolicy(permission.Id, policy =>
                 {
                     policy.AddAuthenticationSchemes(JwtBearerDefaults.AuthenticationScheme);
-                    policy.RequireClaim(PanelPermissions.ClaimType, permission.Id);
+                    if (permission.Id is PanelPermissions.CrmBoard or PanelPermissions.CrmTasks)
+                    {
+                        policy.RequireAssertion(context =>
+                            context.User.HasClaim(PanelPermissions.ClaimType, permission.Id)
+                            || context.User.HasClaim(PanelPermissions.ClaimType, PanelPermissions.Crm));
+                    }
+                    else
+                    {
+                        policy.RequireClaim(PanelPermissions.ClaimType, permission.Id);
+                    }
                 });
             }
             options.AddPolicy("WorkerOrPanel", policy =>

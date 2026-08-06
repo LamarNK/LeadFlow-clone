@@ -24,7 +24,10 @@ public sealed record GlobalDashboardSummary(
     decimal TotalBalance,
     IReadOnlyList<ActivityPointDto> HourlyActivity,
     IReadOnlyList<ActivityPointDto> WeeklyByDayActivity,
-    DateTime AggregatedAtUtc);
+    DateTime AggregatedAtUtc)
+{
+    public int UniqueResponsesToday => Math.Max(0, TotalToday - Duplicates);
+}
 
 public sealed record WorkerListItem(
     Guid Id,
@@ -100,7 +103,8 @@ public sealed record WorkerDetail(
     bool AutoDeliverToCrm = false,
     bool AutoDeliverToBitrix = true,
     Guid OfficeId = default,
-    string OfficeName = "");
+    string OfficeName = "",
+    string? ResponseHighlightTargetsJson = null);
 
 public sealed record WorkerEventListItem(
     Guid Id,

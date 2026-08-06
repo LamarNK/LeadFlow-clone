@@ -16,15 +16,18 @@ public sealed class NavBadgesService(
         {
             var summary = DesignPreviewData.Summary;
             var canReadPreviewCrmNotifications = officeContext.EffectiveOfficeId is Guid
-                && httpContextAccessor.HttpContext?.User.HasClaim(
-                    PanelPermissions.ClaimType,
-                    PanelPermissions.Crm) == true;
+                && (httpContextAccessor.HttpContext?.User.HasClaim(
+                        PanelPermissions.ClaimType,
+                        PanelPermissions.CrmTasks) == true
+                    || httpContextAccessor.HttpContext?.User.HasClaim(
+                        PanelPermissions.ClaimType,
+                        PanelPermissions.Crm) == true);
             var previewCrmNotifications = canReadPreviewCrmNotifications
                 ? DesignPreviewData.GetCrmTaskNotificationSummary()
                 : null;
             return new NavBadgesDto(
                 summary.Errors,
-                summary.SentToCrm,
+                summary.UniqueResponsesToday,
                 summary.ActionRequired,
                 DateTime.UtcNow,
                 previewCrmNotifications?.Enabled == true ? previewCrmNotifications.UnreadCount : 0,
@@ -33,9 +36,12 @@ public sealed class NavBadgesService(
 
         var summaryTask = api.GetSummaryAsync(ct);
         var canReadCrmNotifications = officeContext.EffectiveOfficeId is Guid
-            && httpContextAccessor.HttpContext?.User.HasClaim(
-                PanelPermissions.ClaimType,
-                PanelPermissions.Crm) == true;
+            && (httpContextAccessor.HttpContext?.User.HasClaim(
+                    PanelPermissions.ClaimType,
+                    PanelPermissions.CrmTasks) == true
+                || httpContextAccessor.HttpContext?.User.HasClaim(
+                    PanelPermissions.ClaimType,
+                    PanelPermissions.Crm) == true);
         var crmNotificationsTask = canReadCrmNotifications
             ? api.GetCrmTaskNotificationSummaryAsync(ct)
             : Task.FromResult<CrmTaskNotificationSummaryDto?>(null);
@@ -55,7 +61,7 @@ public sealed class NavBadgesService(
 
         return new NavBadgesDto(
             live.Errors,
-            live.SentToCrm,
+            live.UniqueResponsesToday,
             live.ActionRequired,
             live.AggregatedAtUtc,
             crmNotifications?.Enabled == true ? crmNotifications.UnreadCount : 0,

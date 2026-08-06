@@ -1,6 +1,62 @@
 (function () {
     const serviceLogClampClass = 'service-log-entry__message--clamped';
 
+    function openServiceLogDetail(entry) {
+        const runtime = window.OrbitaRuntime;
+        if (!runtime || typeof runtime.openDetailModal !== 'function') return;
+
+        const message = entry.querySelector('[data-service-log-message]')?.textContent?.trim() || 'Сообщение отсутствует.';
+        const time = entry.querySelector('time')?.textContent?.trim() || '—';
+        const traceId = entry.querySelector('[data-service-log-copy]')?.getAttribute('data-copy-text')?.trim() || '';
+        const level = entry.getAttribute('data-log-level')?.trim() || '—';
+        const service = entry.getAttribute('data-log-service')?.trim() || '—';
+        const source = entry.getAttribute('data-log-source')?.trim() || '—';
+        const isTampered = entry.getAttribute('data-log-tampered') === 'true';
+
+        const sections = [
+            { label: 'Время', value: time },
+            { label: 'Уровень', value: level },
+            { label: 'Сервис', value: service },
+            { label: 'Источник', value: source },
+            { label: 'Целостность', value: isTampered ? 'Требует проверки' : 'Без замечаний' }
+        ];
+        if (traceId) {
+            sections.splice(4, 0, { label: 'Trace ID', value: traceId });
+        }
+
+        runtime.openDetailModal({
+            variant: 'log',
+            title: 'Запись лога',
+            subtitle: [level, service].filter(Boolean).join(' · '),
+            sections,
+            body: message,
+            appendBody: true,
+            copyText: message,
+            copyLabel: 'Копировать сообщение'
+        });
+    }
+
+    function initServiceLogDetails() {
+        if (document.documentElement.dataset.serviceLogDetailsBound === 'true') return;
+        document.documentElement.dataset.serviceLogDetailsBound = 'true';
+
+        document.addEventListener('click', (event) => {
+            if (event.target.closest('[data-service-log-copy], [data-service-log-expand]')) return;
+            const entry = event.target.closest('[data-service-log-entry]');
+            if (entry) openServiceLogDetail(entry);
+        });
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            if (event.target.closest('[data-service-log-copy], [data-service-log-expand]')) return;
+            const entry = event.target.closest('[data-service-log-entry]');
+            if (!entry) return;
+
+            event.preventDefault();
+            openServiceLogDetail(entry);
+        });
+    }
+
     function runSettingsInits() {
         document.querySelectorAll('[data-service-log-message]').forEach((messageEl) => {
             if (messageEl.__orbitaClamped) return;
@@ -16,6 +72,7 @@
                 const expandButton = document.createElement('button');
                 expandButton.type = 'button';
                 expandButton.className = 'service-log-entry__expand';
+                expandButton.setAttribute('data-service-log-expand', '');
                 expandButton.textContent = 'Показать полностью';
                 expandButton.addEventListener('click', () => {
                     const isClamped = messageEl.classList.toggle(serviceLogClampClass);
@@ -53,16 +110,21 @@
             const form = document.getElementById('editUserForm');
             const userIdInput = document.getElementById('editUserId');
             const userEmailLabel = document.getElementById('editUserEmail');
+            const userInitials = document.getElementById('editUserInitials');
             const fullNameInput = document.getElementById('editUserFullName');
             const originalFullNameInput = document.getElementById('editUserOriginalFullName');
             const roleInput = document.getElementById('editUserRole');
             const originalRoleInput = document.getElementById('editUserOriginalRole');
             const officeInput = document.getElementById('editUserOffice');
             const originalOfficeInput = document.getElementById('editUserOriginalOfficeId');
+            const originalUseProfilePermissionsInput = document.getElementById('editUserOriginalUseProfilePermissions');
+            const originalPermissionKeysInput = document.getElementById('editUserOriginalPermissionKeys');
             const passwordInput = document.getElementById('editUserPassword');
             const accessFields = document.getElementById('editUserAccessFields');
             const officeField = document.getElementById('editUserOfficeField');
             const passwordField = document.getElementById('editUserPasswordField');
+            const useProfilePermissionsInput = document.getElementById('editUserUseProfilePermissions');
+            const permissionInputs = document.querySelectorAll('[data-user-permission-checkbox]');
 
             const updateOfficeState = () => {
                 if (!form || !roleInput || !officeInput || !officeField) return;
@@ -70,6 +132,13 @@
                 const isAdmin = roleInput.value === 'Admin';
                 officeField.hidden = isCurrentUser || isAdmin;
                 officeInput.disabled = isCurrentUser || isAdmin;
+
+                if (useProfilePermissionsInput) {
+                    useProfilePermissionsInput.disabled = isCurrentUser;
+                    permissionInputs.forEach((input) => {
+                        input.disabled = isCurrentUser || useProfilePermissionsInput.checked;
+                    });
+                }
 
                 if (!isCurrentUser && !isAdmin && !officeInput.value && officeInput.options.length > 0) {
                     officeInput.selectedIndex = 0;
@@ -83,29 +152,46 @@
                 button.addEventListener('click', () => {
                     if (!form || !userIdInput || !userEmailLabel || !fullNameInput || !originalFullNameInput
                         || !roleInput || !originalRoleInput || !officeInput || !originalOfficeInput
-                        || !passwordInput || !accessFields || !passwordField) return;
+                        || !passwordInput || !accessFields || !passwordField || !useProfilePermissionsInput) return;
 
                     const isCurrentUser = button.getAttribute('data-user-is-current') === 'true';
                     const fullName = button.getAttribute('data-user-full-name') || '';
+                    const email = button.getAttribute('data-user-email') || '';
                     const role = button.getAttribute('data-user-role') || '';
                     const officeId = button.getAttribute('data-user-office-id') || '';
+                    const permissions = new Set((button.getAttribute('data-user-permissions') || '')
+                        .split(',')
+                        .filter(Boolean));
+                    const hasPermissionOverride = button.getAttribute('data-user-has-permission-override') === 'true';
 
                     form.dataset.currentUser = String(isCurrentUser);
                     userIdInput.value = button.getAttribute('data-user-id') || '';
-                    userEmailLabel.textContent = button.getAttribute('data-user-email') || '';
+                    userEmailLabel.textContent = email;
+                    if (userInitials) {
+                        const initials = fullName.trim().split(/\s+/).filter(Boolean).slice(0, 2)
+                            .map((part) => part.charAt(0)).join('').toLocaleUpperCase();
+                        userInitials.textContent = initials || email.charAt(0).toLocaleUpperCase() || 'П';
+                    }
                     fullNameInput.value = fullName;
                     originalFullNameInput.value = fullName;
                     roleInput.value = role;
                     originalRoleInput.value = role;
                     officeInput.value = officeId;
                     originalOfficeInput.value = officeId;
+                    originalUseProfilePermissionsInput.value = String(!hasPermissionOverride);
+                    originalPermissionKeysInput.value = Array.from(permissions).join(',');
                     passwordInput.value = '';
+                    useProfilePermissionsInput.checked = !hasPermissionOverride;
+                    permissionInputs.forEach((input) => {
+                        input.checked = permissions.has(input.value);
+                    });
                     accessFields.hidden = isCurrentUser;
                     passwordField.hidden = isCurrentUser;
                     updateOfficeState();
 
                     if (typeof editUserDialog.showModal === 'function') {
                         editUserDialog.showModal();
+                        window.requestAnimationFrame(() => fullNameInput.focus());
                     }
                 });
             });
@@ -113,6 +199,7 @@
             if (!editUserDialog.__orbitaDialogBound) {
                 editUserDialog.__orbitaDialogBound = true;
                 roleInput?.addEventListener('change', updateOfficeState);
+                useProfilePermissionsInput?.addEventListener('change', updateOfficeState);
 
                 document.querySelectorAll('[data-settings-dialog-close]').forEach((button) => {
                     button.addEventListener('click', () => button.closest('dialog')?.close());
@@ -146,6 +233,7 @@
 
     }
 
+    initServiceLogDetails();
     runSettingsInits();
     document.addEventListener('orbita:content-updated', runSettingsInits);
 })();

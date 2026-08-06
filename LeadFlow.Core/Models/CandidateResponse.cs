@@ -24,6 +24,11 @@ public sealed class CandidateResponse
     public string VacancyUrl { get; set; } = string.Empty;
     /// <summary>Ссылка на чат с кандидатом в мессенджере Avito (если удалось извлечь при парсинге).</summary>
     public string MessengerUrl { get; set; } = string.Empty;
+    /// <summary>
+    /// URL аватара, извлечённый из DOM. Это только промежуточное поле воркера:
+    /// в Orbita передаются скачанные байты, а не ссылка на CDN Avito.
+    /// </summary>
+    public string AvatarUrl { get; set; } = string.Empty;
 
     /// <summary>JSON-массив сообщений мини-чата Avito (<see cref="AvitoChatMessage"/>).</summary>
     public string ChatMessagesJson { get; set; } = string.Empty;

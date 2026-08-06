@@ -79,7 +79,8 @@ public sealed class SettingsService(
             _ => SettingsIndexBuilder.BuildUsersTab(
                 await api.GetPanelUsersAsync(ct) ?? [],
                 offices,
-                currentUserId)
+                currentUserId,
+                await api.GetAccessProfilesAsync(ct) ?? SettingsIndexBuilder.DefaultAccessProfiles)
         };
         return model with { Header = PageHeaderBuilder.SettingsAdmin() };
     }
@@ -397,6 +398,15 @@ public sealed class SettingsService(
         previewOptions.Value.Enabled
             ? Task.FromResult<(bool, string?)>((true, null))
             : api.UpdatePanelUserRoleAsync(userId, role, ct);
+
+    public Task<(bool Success, string? Error)> UpdateUserPermissionsAsync(
+        string userId,
+        bool useProfilePermissions,
+        IReadOnlyList<string> permissions,
+        CancellationToken ct = default) =>
+        previewOptions.Value.Enabled
+            ? Task.FromResult<(bool, string?)>((true, null))
+            : api.UpdatePanelUserPermissionsAsync(userId, useProfilePermissions, permissions, ct);
 
     public Task<(bool Success, string? Error)> LockUserAsync(string userId, CancellationToken ct = default) =>
         previewOptions.Value.Enabled

@@ -5,7 +5,7 @@ using Orbita.Web.Services;
 
 namespace Orbita.Web.Controllers;
 
-[Authorize(Policy = PanelPermissions.Crm)]
+[Authorize(Policy = PanelPermissions.CrmTasks)]
 [ApiController]
 [Route("Crm/Notifications")]
 public sealed class CrmNotificationsController(OrbitaApiClient api) : ControllerBase

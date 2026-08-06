@@ -25,4 +25,14 @@ public sealed class DashboardPeriodTests
         Assert.Equal(all.From, parsed.From);
         Assert.Equal(all.To, parsed.To);
     }
+
+    [Fact]
+    public void Parse_ClampsRangeToMaxInclusiveCalendarDays()
+    {
+        var parsed = DashboardPeriod.Parse("2025-01-01", "2026-01-02");
+
+        Assert.Equal(new DateTime(2025, 1, 1), parsed.From);
+        Assert.Equal(new DateTime(2026, 1, 1), parsed.To);
+        Assert.Equal(DashboardPeriod.MaxDays, (parsed.To - parsed.From).Days + 1);
+    }
 }

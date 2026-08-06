@@ -41,6 +41,22 @@
         return !!readRowValue(row, camelKey);
     }
 
+    function readHighlightLabels(row) {
+        var rawLabels = readRowValue(row, 'highlightLabels');
+        var labels = Array.isArray(rawLabels)
+            ? rawLabels
+            : [];
+        if (!labels.length) {
+            var fallbackLabel = readRowValue(row, 'highlightLabel');
+            if (fallbackLabel) labels = [fallbackLabel];
+        }
+
+        return labels
+            .filter(function (label) { return label && String(label).trim(); })
+            .map(function (label) { return String(label).trim(); })
+            .filter(function (label, index, all) { return all.indexOf(label) === index; });
+    }
+
     /** Matches CandidateGenders.FormatLabel on the server. */
     function formatGenderLabel(gender) {
         if (!gender) return '—';
@@ -48,6 +64,54 @@
         if (g === 'male') return 'Мужчина';
         if (g === 'female') return 'Женщина';
         return '—';
+    }
+
+    function candidateInitials(name) {
+        return String(name || '').trim().split(/\s+/).filter(Boolean).slice(0, 2)
+            .map(function (part) { return part.charAt(0).toLocaleUpperCase(); }).join('') || '—';
+    }
+
+    function formatRelativeResponseTime(value) {
+        var date = new Date(value);
+        var elapsed = Math.max(0, Date.now() - date.getTime());
+        if (!isFinite(elapsed)) return '—';
+        var minutes = Math.floor(elapsed / 60000);
+        if (minutes < 1) return 'только что';
+        if (minutes < 60) return minutes + ' мин назад';
+        var hours = Math.floor(minutes / 60);
+        if (hours < 24) return hours + ' ч назад';
+        var days = Math.floor(hours / 24);
+        return days + ' дн назад';
+    }
+
+    function localizeRelativeResponseTimes(root) {
+        (root || document).querySelectorAll('[data-response-relative-time]').forEach(function (element) {
+            element.textContent = formatRelativeResponseTime(element.getAttribute('data-orbita-utc'));
+        });
+    }
+
+    function formatCollectionDuration(createdAtUtc, collectedAtUtc) {
+        var createdAt = new Date(createdAtUtc);
+        var collectedAt = new Date(collectedAtUtc);
+        var elapsedMinutes = Math.round((collectedAt.getTime() - createdAt.getTime()) / 60000);
+        if (!isFinite(elapsedMinutes) || elapsedMinutes <= 0) return '—';
+
+        var hours = Math.floor(elapsedMinutes / 60);
+        var minutes = elapsedMinutes % 60;
+        if (hours === 0) return elapsedMinutes + ' мин';
+        return minutes === 0 ? hours + ' ч' : hours + ' ч ' + minutes + ' мин';
+    }
+
+    function renderResponseTimingCell(createdAtUtc, collectedAtUtc, shared) {
+        var duration = formatCollectionDuration(createdAtUtc, collectedAtUtc);
+        var gapText = duration === '—' ? 'Разница: —' : 'Через ' + duration;
+        return '<td class="responses-last-response" data-label="Отклик и сбор"><div class="responses-last-response__timeline">' +
+            '<div class="responses-last-response__event responses-last-response__event--response"><span class="responses-last-response__dot"><i class="fa-solid fa-paper-plane" aria-hidden="true"></i></span><div><span>Отклик</span><time data-orbita-utc="' +
+            shared.escapeHtml(createdAtUtc) + '" data-orbita-format="activity"></time></div></div>' +
+            '<div class="responses-last-response__gap"><span aria-hidden="true"></span><strong>' + shared.escapeHtml(gapText) + '</strong></div>' +
+            '<div class="responses-last-response__event responses-last-response__event--collection"><span class="responses-last-response__dot"><i class="fa-solid fa-box-archive" aria-hidden="true"></i></span><div><span>Сбор</span><time data-orbita-utc="' +
+            shared.escapeHtml(collectedAtUtc) + '" data-orbita-format="activity"></time></div></div>' +
+            '</div></td>';
     }
 
     function workerDetailsUrl(id) {
@@ -435,7 +499,7 @@
         if (messengerUrl) lines.push('Чат: ' + messengerUrl);
         if (vacancyUrl) lines.push('Вакансия (URL): ' + vacancyUrl);
 
-        var deliveries = snapshotRow ? readDeliveries(snapshotRow) : [];
+        var deliveries = snapshotRow ? readBitrixDeliveries(snapshotRow) : [];
         deliveries.forEach(function (delivery) {
             var label = readRowValue(delivery, 'bitrixLabel') || 'Битрикс';
             var outcome = readRowValue(delivery, 'outcomeLabel') || mapDeliveryOutcomeLabel(readRowValue(delivery, 'outcome'));
@@ -490,6 +554,7 @@
                 window.Orbita.openDetailModal({
                     title: payload.title,
                     subtitle: payload.subtitle,
+                    responseProfile: payload.profile || null,
                     sections: payload.sections || [],
                     chatMessages: payload.chatMessages || [],
                     links: (payload.links || []).map(function (l) {
@@ -503,15 +568,109 @@
             });
     }
 
+    function resetDeliveryProgress(form) {
+        if (!form) return;
+        if (form._orbitaDeliveryProgressTimer) {
+            window.clearInterval(form._orbitaDeliveryProgressTimer);
+            form._orbitaDeliveryProgressTimer = null;
+        }
+
+        form.classList.remove('is-delivering');
+        form.removeAttribute('aria-busy');
+        form.querySelectorAll('[data-delivery-progress-disabled]').forEach(function (control) {
+            control.disabled = false;
+            control.removeAttribute('data-delivery-progress-disabled');
+        });
+
+        var panel = form.querySelector('[data-delivery-progress]');
+        if (panel) panel.hidden = true;
+        var submitBtn = form.querySelector('[data-deliver-submit], [data-bulk-deliver-submit]');
+        if (submitBtn) {
+            submitBtn.classList.remove('is-loading');
+            submitBtn.textContent = 'Отправить';
+        }
+    }
+
+    function beginDeliveryProgress(form, label) {
+        resetDeliveryProgress(form);
+
+        var panel = form.querySelector('[data-delivery-progress]');
+        var text = form.querySelector('[data-delivery-progress-text]');
+        var bar = form.querySelector('[data-delivery-progress-bar]');
+        var submitBtn = form.querySelector('[data-deliver-submit], [data-bulk-deliver-submit]');
+        var progress = 8;
+
+        function render(value, message) {
+            progress = Math.max(0, Math.min(100, value));
+            if (text) text.textContent = message;
+            if (bar) {
+                bar.style.width = progress + '%';
+                bar.parentElement.setAttribute('aria-valuenow', String(progress));
+            }
+        }
+
+        form.classList.add('is-delivering');
+        form.setAttribute('aria-busy', 'true');
+        form.querySelectorAll('button, input, select, textarea').forEach(function (control) {
+            if (!control.disabled) {
+                control.disabled = true;
+                control.setAttribute('data-delivery-progress-disabled', 'true');
+            }
+        });
+        if (panel) panel.hidden = false;
+        if (submitBtn) {
+            submitBtn.classList.add('is-loading');
+            submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i><span>Отправляем</span>';
+        }
+        render(progress, label);
+
+        form._orbitaDeliveryProgressTimer = window.setInterval(function () {
+            if (progress >= 88) return;
+            render(progress + Math.max(1, Math.ceil((90 - progress) / 9)), label + '…');
+        }, 650);
+
+        return {
+            complete: function (message) {
+                if (form._orbitaDeliveryProgressTimer) {
+                    window.clearInterval(form._orbitaDeliveryProgressTimer);
+                    form._orbitaDeliveryProgressTimer = null;
+                }
+                render(100, message);
+                if (submitBtn) {
+                    submitBtn.classList.remove('is-loading');
+                    submitBtn.innerHTML = '<i class="fa-solid fa-check" aria-hidden="true"></i><span>Готово</span>';
+                }
+            },
+            fail: function () {
+                resetDeliveryProgress(form);
+            }
+        };
+    }
+
+    function submitSingleDeliver(form, formData) {
+        return fetch(form.action, {
+            method: 'POST',
+            credentials: 'same-origin',
+            body: formData,
+            headers: { Accept: 'application/json' }
+        }).then(function (res) {
+            return res.json().then(function (payload) {
+                return { ok: res.ok, payload: payload };
+            }).catch(function () {
+                return { ok: res.ok, payload: null };
+            });
+        });
+    }
+
     function ensureSendModal() {
         var modal = document.getElementById('responsesSendBitrixDialog');
-        if (modal && modal.dataset.uiVersion === '5') return modal;
+        if (modal && modal.dataset.uiVersion === '6') return modal;
         if (modal) modal.remove();
 
         modal = document.createElement('dialog');
         modal.id = 'responsesSendBitrixDialog';
         modal.className = 'settings-dialog responses-send-dialog';
-        modal.dataset.uiVersion = '5';
+        modal.dataset.uiVersion = '6';
         modal.innerHTML =
             '<form method="post" class="settings-dialog-form responses-send-form" data-send-bitrix-form>' +
             '<input type="hidden" name="__RequestVerificationToken" />' +
@@ -551,6 +710,10 @@
             '</div>' +
             '</div>' +
             '<p class="responses-send-error" data-deliver-error hidden role="alert"></p>' +
+            '<section class="responses-delivery-progress" data-delivery-progress hidden aria-live="polite">' +
+            '<div class="responses-delivery-progress__label"><i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i><span data-delivery-progress-text>Отправляем…</span></div>' +
+            '<div class="responses-delivery-progress__track" role="progressbar" aria-label="Ход отправки" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span data-delivery-progress-bar></span></div>' +
+            '</section>' +
             '<div class="settings-dialog-actions">' +
             '<button type="button" class="settings-secondary-btn" data-send-bitrix-cancel>Отмена</button>' +
             '<button type="submit" class="settings-primary-btn" data-deliver-submit>Отправить</button>' +
@@ -558,6 +721,9 @@
         document.body.appendChild(modal);
 
         bindSendModalInteractions(modal);
+        modal.addEventListener('cancel', function (e) {
+            if (modal.querySelector('[data-send-bitrix-form].is-delivering')) e.preventDefault();
+        });
         return modal;
     }
 
@@ -619,13 +785,35 @@
                 return;
             }
 
+            e.preventDefault();
             saveDeliverPrefs(readDeliverPrefsFromForm(form));
 
-            var submitBtn = form.querySelector('[data-deliver-submit]');
-            if (submitBtn) {
-                submitBtn.disabled = true;
-                submitBtn.classList.add('is-loading');
-            }
+            var formData = new FormData(form);
+            var progress = beginDeliveryProgress(form, 'Отправляем отклик');
+            submitSingleDeliver(form, formData).then(function (result) {
+                if (!result.ok) {
+                    progress.fail();
+                    if (errorEl) {
+                        errorEl.hidden = false;
+                        errorEl.textContent = (result.payload && (result.payload.error || result.payload.message)) ||
+                            'Не удалось отправить отклик.';
+                    }
+                    return;
+                }
+
+                progress.complete('Отклик отправлен');
+                window.setTimeout(function () {
+                    modal.close();
+                    fetchSnapshot();
+                    toast('Отклик отправлен.', 'success');
+                }, 260);
+            }).catch(function () {
+                progress.fail();
+                if (errorEl) {
+                    errorEl.hidden = false;
+                    errorEl.textContent = 'Не удалось отправить отклик.';
+                }
+            });
         });
 
         modal._orbitaSyncChannels = syncChannelUi;
@@ -749,6 +937,7 @@
         var modal = ensureSendModal();
         var form = modal.querySelector('[data-send-bitrix-form]');
         if (!form) return;
+        resetDeliveryProgress(form);
 
         var token = document.querySelector('input[name="__RequestVerificationToken"]');
         var tokenInput = form.querySelector('input[name="__RequestVerificationToken"]');
@@ -829,13 +1018,13 @@
 
     function ensureBulkSendModal() {
         var modal = document.getElementById('responsesBulkSendBitrixDialog');
-        if (modal && modal.dataset.uiVersion === '3') return modal;
+        if (modal && modal.dataset.uiVersion === '4') return modal;
         if (modal) modal.remove();
 
         modal = document.createElement('dialog');
         modal.id = 'responsesBulkSendBitrixDialog';
         modal.className = 'settings-dialog responses-send-dialog';
-        modal.dataset.uiVersion = '3';
+        modal.dataset.uiVersion = '4';
         modal.innerHTML =
             '<form class="settings-dialog-form responses-send-form" data-bulk-deliver-form>' +
             '<h2 class="settings-dialog-title">Массовая отправка</h2>' +
@@ -862,6 +1051,10 @@
             '</div>' +
             '</div>' +
             '<p class="responses-send-error" data-deliver-error hidden role="alert"></p>' +
+            '<section class="responses-delivery-progress" data-delivery-progress hidden aria-live="polite">' +
+            '<div class="responses-delivery-progress__label"><i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i><span data-delivery-progress-text>Отправляем…</span></div>' +
+            '<div class="responses-delivery-progress__track" role="progressbar" aria-label="Ход отправки" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span data-delivery-progress-bar></span></div>' +
+            '</section>' +
             '<div class="settings-dialog-actions">' +
             '<button type="button" class="settings-secondary-btn" data-bulk-send-bitrix-cancel>Отмена</button>' +
             '<button type="submit" class="settings-primary-btn" data-bulk-deliver-submit>Отправить</button>' +
@@ -897,6 +1090,9 @@
         if (crmToggle) crmToggle.addEventListener('change', syncBulkChannels);
         if (bitrixToggle) bitrixToggle.addEventListener('change', syncBulkChannels);
         modal._orbitaSyncChannels = syncBulkChannels;
+        modal.addEventListener('cancel', function (e) {
+            if (form.classList.contains('is-delivering')) e.preventDefault();
+        });
         return modal;
     }
 
@@ -923,6 +1119,7 @@
         var modal = ensureBulkSendModal();
         var form = modal.querySelector('[data-bulk-deliver-form]');
         if (!form) return;
+        resetDeliveryProgress(form);
 
         var subtitle = modal.querySelector('[data-bulk-deliver-subtitle]');
         if (subtitle) {
@@ -1103,25 +1300,21 @@
 
             saveDeliverPrefs(readDeliverPrefsFromForm(form));
 
-            var submitBtn = form.querySelector('[data-bulk-deliver-submit]');
-            if (submitBtn) {
-                submitBtn.disabled = true;
-                submitBtn.classList.add('is-loading');
-            }
-
             var selectedCount = selectedIds.size;
-            submitBulkDeliver(form).then(function (result) {
-                if (submitBtn) {
-                    submitBtn.disabled = false;
-                    submitBtn.classList.remove('is-loading');
-                }
-                var modal = document.getElementById('responsesBulkSendBitrixDialog');
-                if (modal) modal.close();
+            var request = submitBulkDeliver(form);
+            var progress = beginDeliveryProgress(
+                form,
+                'Отправляем ' + selectedCount + ' ' + pluralizeResponses(selectedCount));
+            request.then(function (result) {
 
                 if (!result.ok) {
                     var err = (result.payload && (result.payload.error || result.payload.message)) ||
                         'Не удалось выполнить массовую отправку.';
-                    toast(err, 'error');
+                    progress.fail();
+                    if (errorEl) {
+                        errorEl.hidden = false;
+                        errorEl.textContent = err;
+                    }
                     return;
                 }
 
@@ -1131,17 +1324,22 @@
                 var total = data.total != null ? data.total : data.Total;
                 var msg = 'Отправлено: ' + (succeeded || 0) + ' из ' + (total || selectedCount);
                 if (failed > 0) msg += ', ошибок: ' + failed;
-                toast(msg, failed > 0 ? 'info' : 'success');
+                progress.complete('Обработано: ' + (total || selectedCount) + ' ' + pluralizeResponses(total || selectedCount));
+                window.setTimeout(function () {
+                    var modal = document.getElementById('responsesBulkSendBitrixDialog');
+                    if (modal) modal.close();
+                    toast(msg, failed > 0 ? 'info' : 'success');
 
-                // Always clear multi-select after a bulk send attempt that the server accepted.
-                clearSelection();
-                fetchSnapshot();
+                    // Always clear multi-select after a bulk send attempt that the server accepted.
+                    clearSelection();
+                    fetchSnapshot();
+                }, 260);
             }).catch(function () {
-                if (submitBtn) {
-                    submitBtn.disabled = false;
-                    submitBtn.classList.remove('is-loading');
+                progress.fail();
+                if (errorEl) {
+                    errorEl.hidden = false;
+                    errorEl.textContent = 'Не удалось выполнить массовую отправку.';
                 }
-                toast('Не удалось выполнить массовую отправку.', 'error');
             });
         });
     }
@@ -1184,7 +1382,7 @@
         if (readRowBool(row, 'canSend')) {
             items += '<button type="button" class="row-menu-item" data-send-bitrix data-response-id="' + shared.escapeHtml(rowId) + '"><i class="fa-solid fa-paper-plane" aria-hidden="true"></i>Отправить…</button>';
         }
-        var deliveries = readDeliveries(row);
+        var deliveries = readBitrixDeliveries(row);
         deliveries.forEach(function (delivery) {
             var url = readRowValue(delivery, 'bitrixEntityUrl');
             var outcome = readRowValue(delivery, 'outcome');
@@ -1219,8 +1417,13 @@
         }
     }
 
-    function readDeliveries(row) {
+    function readBitrixDeliveries(row) {
         var deliveries = readRowValue(row, 'bitrixDeliveries');
+        return Array.isArray(deliveries) ? deliveries : [];
+    }
+
+    function readCrmDeliveries(row) {
+        var deliveries = readRowValue(row, 'crmDeliveries');
         return Array.isArray(deliveries) ? deliveries : [];
     }
 
@@ -1234,7 +1437,8 @@
             var tone = readRowValue(delivery, 'chipTone') || mapDeliveryChipTone(outcome);
             var url = readRowValue(delivery, 'bitrixEntityUrl');
             var errorMessage = readRowValue(delivery, 'errorMessage') || outcomeLabel;
-            var inner = '<span class="responses-bitrix-chip-label">' + shared.escapeHtml(label) + '</span>' +
+            var inner = '<span class="responses-delivery-chip-channel">Битрикс</span>' +
+                '<span class="responses-bitrix-chip-label">' + shared.escapeHtml(label) + '</span>' +
                 '<span class="responses-bitrix-chip-outcome">' + shared.escapeHtml(outcomeLabel) + '</span>';
             if (url) {
                 return '<a class="responses-bitrix-chip responses-bitrix-chip--' + shared.escapeHtml(tone) + '" href="' +
@@ -1249,15 +1453,37 @@
     function renderBitrixCell(row) {
         var shared = getShared();
         if (!shared) return '<span class="responses-bitrix-empty">—</span>';
-        var deliveries = readDeliveries(row);
+        var deliveries = readBitrixDeliveries(row);
         if (deliveries.length) {
             return renderBitrixDeliveries(deliveries);
         }
         var bitrixLabel = readRowValue(row, 'bitrixLabel');
         if (bitrixLabel) {
-            return '<span class="responses-bitrix-label">' + shared.escapeHtml(bitrixLabel) + '</span>';
+            return '<span class="responses-bitrix-label">Битрикс · ' + shared.escapeHtml(bitrixLabel) + '</span>';
         }
         return '<span class="responses-bitrix-empty">—</span>';
+    }
+
+    function renderCrmDeliveries(deliveries) {
+        var shared = getShared();
+        if (!shared || !deliveries.length) return '';
+        return '<div class="responses-crm-deliveries">' + deliveries.map(function (delivery) {
+            var officeName = readRowValue(delivery, 'officeName') || 'Офис';
+            var outcome = readRowValue(delivery, 'outcome') || '';
+            var outcomeLabel = readRowValue(delivery, 'outcomeLabel') || mapDeliveryOutcomeLabel(outcome);
+            var tone = readRowValue(delivery, 'chipTone') || mapDeliveryChipTone(outcome);
+            var title = readRowValue(delivery, 'errorMessage') || outcomeLabel;
+            return '<span class="responses-crm-chip responses-crm-chip--' + shared.escapeHtml(tone) + '" title="' +
+                shared.escapeAttr(title) + '"><span class="responses-delivery-chip-channel">CRM</span><span class="responses-crm-chip-label">' +
+                shared.escapeHtml(officeName) + '</span><span class="responses-crm-chip-outcome">' +
+                shared.escapeHtml(outcomeLabel) + '</span></span>';
+        }).join('') + '</div>';
+    }
+
+    function renderStatusDestinations(row) {
+        var crmHtml = renderCrmDeliveries(readCrmDeliveries(row));
+        var bitrixHtml = renderBitrixCell(row);
+        return crmHtml + (bitrixHtml.indexOf('responses-bitrix-empty') === -1 ? bitrixHtml : (crmHtml ? '' : bitrixHtml));
     }
 
     function renderResponses(rows) {
@@ -1276,30 +1502,38 @@
             var adHtml = vacancyUrl
                 ? '<a class="responses-ad-link" href="' + shared.escapeHtml(vacancyUrl) + '" target="_blank" rel="noopener">' + shared.escapeHtml(vacancy) + '</a>'
                 : '<span class="responses-ad-link">' + shared.escapeHtml(vacancy) + '</span>';
-            adHtml += '<span class="responses-ad-id">ID: ' + shared.escapeHtml(adId) + '</span>';
+            adHtml += '<span class="responses-ad-tags"><span>' + shared.escapeHtml(readRowValue(row, 'source') || 'Avito') +
+                '</span><span>ID: ' + shared.escapeHtml(adId) + '</span></span>';
 
             var phoneDisplay = shared.formatPhone(readRowValue(row, 'phoneRaw'), readRowValue(row, 'phoneNormalized'));
             var phoneHidden = readRowBool(row, 'isPhoneHidden');
-            var phoneCell = phoneHidden
-                ? '<span class="responses-phone-hidden">Скрыт</span>'
-                : '<span>' + shared.escapeHtml(phoneDisplay) + '</span>';
+            var phoneCell = '<div class="responses-phone__number"><i class="fa-solid fa-phone" aria-hidden="true"></i>' +
+                shared.escapeHtml(phoneHidden ? 'Скрыт' : phoneDisplay) + '</div>';
             var phoneMetricLabel = readRowValue(row, 'phoneMetricLabel') || '';
             var phoneMetricKind = readRowValue(row, 'phoneMetricKind') || '';
             if (phoneMetricLabel) {
                 var phoneMetricTone = phoneMetricKind === 'PhoneChanged'
                     ? 'responses-phone-metric--changed'
                     : 'responses-phone-metric--unchanged';
+                var previousPhoneRaw = readRowValue(row, 'previousPhoneRaw');
+                var previousPhoneNormalized = readRowValue(row, 'previousPhoneNormalized');
+                var phoneMetricText = phoneMetricKind === 'PhoneChanged' && previousPhoneNormalized
+                    ? 'Был: ' + shared.formatPhone(previousPhoneRaw, previousPhoneNormalized)
+                    : phoneMetricLabel;
                 phoneCell += '<span class="responses-phone-metric ' + phoneMetricTone + '" title="' +
-                    shared.escapeAttr(phoneMetricLabel) + '">' + shared.escapeHtml(phoneMetricLabel) + '</span>';
+                    shared.escapeAttr(phoneMetricLabel) + '">' + shared.escapeHtml(phoneMetricText) + '</span>';
             }
             var city = readRowValue(row, 'city');
             var cityDisplay = city && String(city).trim() ? shared.escapeHtml(city) : '—';
             var age = readRowValue(row, 'age');
             var ageDisplay = age > 0 ? String(age) : '—';
-            var isHighlighted = readRowBool(row, 'isHighlighted');
-            var highlightLabel = readRowValue(row, 'highlightLabel') || '';
-            var ageBadge = isHighlighted && highlightLabel
-                ? '<span class="responses-age-highlight-badge">' + shared.escapeHtml(highlightLabel) + '</span>'
+            var highlightLabels = readHighlightLabels(row);
+            var isHighlighted = readRowBool(row, 'isHighlighted') || highlightLabels.length > 0;
+            var highlightLabel = highlightLabels[0] || '';
+            var highlightsHtml = highlightLabels.length
+                ? '<div class="responses-candidate__highlights" aria-label="Причины выделения">' + highlightLabels.map(function (label) {
+                    return '<span class="responses-candidate__highlight">' + shared.escapeHtml(label) + '</span>';
+                }).join('') + '</div>'
                 : '';
             var genderDisplay = formatGenderLabel(readRowValue(row, 'gender'));
             var canSend = readRowBool(row, 'canSend');
@@ -1307,25 +1541,42 @@
             var respondedAtUtc = readRowValue(row, 'createdAtUtc');
             var statusTone = readRowValue(row, 'statusTone') || 'unique';
             var statusLabel = readRowValue(row, 'statusLabel') || '';
+            var statusShort = String(statusLabel).split('·')[0].trim();
+            var candidateMeta = [age > 0 ? String(age) : '', genderDisplay !== '—' ? genderDisplay : ''].filter(Boolean).join(' · ');
+            var avatarUrl = readRowValue(row, 'avatarUrl') || '';
+            var candidateHtml = '<div class="responses-candidate__identity"><span class="responses-candidate__avatar" aria-hidden="true">' +
+                shared.escapeHtml(candidateInitials(author)) +
+                (avatarUrl ? '<img src="' + shared.escapeAttr(avatarUrl) + '" alt="" loading="lazy">' : '') +
+                '</span><div class="responses-candidate__copy"><strong title="' +
+                shared.escapeAttr(author) + '">' + shared.escapeHtml(author) + '</strong>' +
+                (candidateMeta ? '<span>' + shared.escapeHtml(candidateMeta) + '</span>' : '') + highlightsHtml + '</div></div>';
+            var accountName = readRowValue(row, 'accountName') || '';
+            var accountSubProfile = readRowValue(row, 'avitoSubProfileName') || '';
+            var workerName = readRowValue(row, 'workerName') || '';
+            var accountHtml = '<a href="' + shared.escapeHtml(accountUrl) + '" title="' + shared.escapeAttr(accountName) + '">' +
+                shared.escapeHtml(accountName) + '</a>' +
+                (accountSubProfile ? '<span class="responses-account-sub" title="Субпрофиль Avito">' + shared.escapeHtml(accountSubProfile) + '</span>' : '') +
+                (workerName ? '<span class="responses-account-worker">' + shared.escapeHtml(workerName) + '</span>' : '');
+            var statusHtml = '<div class="responses-status__card"><span class="response-status-badge response-status-badge--' +
+                shared.escapeHtml(statusTone) + '" title="' + shared.escapeAttr(statusLabel) + '"><span class="response-status-badge__label">' +
+                shared.escapeHtml(statusShort) + '</span></span><div class="responses-status__destination">' + renderStatusDestinations(row) + '</div></div>';
+            var lastResponseHtml = renderResponseTimingCell(respondedAtUtc, collectedAtUtc, shared);
 
             var cardCopy = readRowValue(row, 'cardCopy') || '';
             return '<tr class="responses-row' + (isHighlighted ? ' responses-row--highlighted' : '') + '" data-response-id="' + shared.escapeHtml(rowId) + '" data-phone="' + shared.escapeHtml(phoneDisplay) + '" data-can-send="' + (canSend ? 'true' : 'false') + '" data-phone-hidden="' + (phoneHidden ? 'true' : 'false') + '" data-highlighted="' + (isHighlighted ? 'true' : 'false') + '" data-highlight-label="' + shared.escapeAttr(highlightLabel) + '" data-response-card="' + shared.escapeAttr(cardCopy) + '" data-detail-json-url="' + shared.escapeHtml(detailJsonUrl(rowId)) + '">' +
                 renderSelectCell(row) +
-                '<td class="responses-time" data-label="Сбор"><time data-orbita-utc="' + shared.escapeHtml(collectedAtUtc) + '" data-orbita-format="datetime"></time></td>' +
-                '<td class="responses-time responses-time--responded" data-label="Отклик"><time data-orbita-utc="' + shared.escapeHtml(respondedAtUtc) + '" data-orbita-format="datetime"></time></td>' +
-                '<td class="responses-author" data-label="Автор">' + shared.escapeHtml(author) + '</td>' +
+                '<td class="responses-candidate" data-label="Кандидат">' + candidateHtml + '</td>' +
                 '<td class="responses-phone" data-label="Телефон">' + phoneCell + '</td>' +
                 '<td class="responses-city" data-label="Город">' + cityDisplay + '</td>' +
-                '<td class="responses-age" data-label="Возраст">' + ageDisplay + ageBadge + '</td>' +
-                '<td class="responses-gender" data-label="Пол">' + shared.escapeHtml(genderDisplay) + '</td>' +
                 '<td class="responses-ad" data-label="Объявление">' + adHtml + '</td>' +
-                '<td class="cell-link responses-account" data-label="Аккаунт">' + shared.renderResponseAccountCell(readRowValue(row, 'accountName'), readRowValue(row, 'avitoSubProfileName'), accountUrl) + '</td>' +
-                '<td data-label="Статус"><span class="response-status-badge response-status-badge--' + shared.escapeHtml(statusTone) + '">' + shared.escapeHtml(statusLabel) + '</span></td>' +
-                '<td class="responses-bitrix" data-label="Битрикс">' + renderBitrixCell(row) + '</td>' +
+                '<td class="cell-link responses-account" data-label="Аккаунт">' + accountHtml + '</td>' +
+                '<td class="responses-status" data-label="Статус">' + statusHtml + '</td>' +
+                lastResponseHtml +
                 '<td class="data-table-menu" data-label="">' + renderResponseMenu(row, accountUrl, workerUrl) + '</td></tr>';
         }).join('');
 
         if (window.OrbitaTime) window.OrbitaTime.localizeAll(tbody);
+        localizeRelativeResponseTimes(tbody);
         closeRowMenus();
         shared.reinitLiveContent();
         initRowNavigation();
@@ -1382,6 +1633,7 @@
         initRowNavigation();
         initSendBitrixUi();
         initBulkSelection();
+        localizeRelativeResponseTimes();
         syncRowCheckboxes();
         updateBulkBar();
         var params = new URLSearchParams(window.location.search);

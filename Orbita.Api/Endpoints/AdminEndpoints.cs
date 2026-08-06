@@ -180,6 +180,30 @@ public static class AdminEndpoints
                 : Results.BadRequest(new { error });
         });
 
+        admin.MapPut("/users/{id}/permissions", async (
+            string id,
+            UpdatePanelUserPermissionsRequest request,
+            PanelUserService panelUsers,
+            ClaimsPrincipal principal,
+            HttpContext http,
+            CancellationToken ct) =>
+        {
+            var (user, error) = await panelUsers.SetPermissionOverrideAsync(
+                id,
+                request.UseProfilePermissions,
+                request.Permissions,
+                GetActor(principal, http),
+                ct);
+            if (error is null)
+            {
+                return Results.Ok(user);
+            }
+
+            return error.Contains("не найден", StringComparison.OrdinalIgnoreCase)
+                ? Results.NotFound(new { error })
+                : Results.BadRequest(new { error });
+        });
+
         admin.MapPost("/users/{id}/lock", async (
             string id,
             PanelUserService panelUsers,

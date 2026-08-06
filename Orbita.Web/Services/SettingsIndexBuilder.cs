@@ -61,9 +61,10 @@ internal static class SettingsIndexBuilder
         IReadOnlyList<PanelUserDto> users,
         IReadOnlyList<OfficeDto> offices,
         string? currentUserId,
+        IReadOnlyList<AccessProfileDto>? accessProfiles = null,
         string? statusMessage = null,
         string? errorMessage = null) =>
-        Build(users, offices, "users", currentUserId, statusMessage, errorMessage);
+        Build(users, offices, "users", currentUserId, statusMessage, errorMessage, accessProfiles);
 
     public static SettingsIndexViewModel BuildProfilesTab(
         IReadOnlyList<PanelUserDto> users,
@@ -243,13 +244,15 @@ internal static class SettingsIndexBuilder
         string? currentUserId,
         string? statusMessage = null,
         string? errorMessage = null,
-        IReadOnlyList<AccessProfileDto>? accessProfiles = null) =>
-        new()
+        IReadOnlyList<AccessProfileDto>? accessProfiles = null)
+    {
+        var profiles = accessProfiles ?? DefaultAccessProfiles;
+        return new SettingsIndexViewModel
         {
             ActiveTab = activeTab,
             Tabs = Tabs,
-            Users = users.Select(u => MapUser(u, offices, currentUserId)).ToList(),
-            Profiles = BuildProfiles(users, accessProfiles ?? DefaultAccessProfiles),
+            Users = users.Select(u => MapUser(u, offices, currentUserId, profiles)).ToList(),
+            Profiles = BuildProfiles(users, profiles),
             ProfileOptions = ProfileOptions,
             OfficeOptions = offices.Select(o => new EventFilterOptionViewModel
             {
@@ -259,13 +262,19 @@ internal static class SettingsIndexBuilder
             StatusMessage = statusMessage,
             ErrorMessage = errorMessage
         };
+    }
 
     private static PanelUserRowViewModel MapUser(
         PanelUserDto user,
         IReadOnlyList<OfficeDto> offices,
-        string? currentUserId)
+        string? currentUserId,
+        IReadOnlyList<AccessProfileDto> profiles)
     {
         var role = PanelRoles.Normalize(user.Role);
+        var profilePermissions = profiles
+            .FirstOrDefault(profile => profile.Id == PanelRoles.ProfileIdForRole(role))
+            ?.Permissions
+            ?? PanelPermissions.DefaultForRole(role);
         var office = user.OfficeId is Guid officeId
             ? offices.FirstOrDefault(x => x.Id == officeId)
             : null;
@@ -280,6 +289,8 @@ internal static class SettingsIndexBuilder
             ProfileId = PanelRoles.ProfileIdForRole(role),
             IsCurrentUser = string.Equals(user.Id, currentUserId, StringComparison.Ordinal),
             IsLocked = user.IsLocked,
+            HasPermissionOverride = user.PermissionOverride is not null,
+            EffectivePermissions = user.PermissionOverride ?? profilePermissions,
             BitrixStatus = office?.BitrixValidationStatus ?? BitrixValidationStatuses.NotConfigured,
             BitrixStatusLabel = bitrixLabel,
             BitrixStatusTone = bitrixTone,

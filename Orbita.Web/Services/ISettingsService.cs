@@ -94,6 +94,12 @@ public interface ISettingsService
 
     Task<(bool Success, string? Error)> UpdateUserRoleAsync(string userId, string role, CancellationToken ct = default);
 
+    Task<(bool Success, string? Error)> UpdateUserPermissionsAsync(
+        string userId,
+        bool useProfilePermissions,
+        IReadOnlyList<string> permissions,
+        CancellationToken ct = default);
+
     Task<(bool Success, string? Error)> LockUserAsync(string userId, CancellationToken ct = default);
 
     Task<(bool Success, string? Error)> UnlockUserAsync(string userId, CancellationToken ct = default);

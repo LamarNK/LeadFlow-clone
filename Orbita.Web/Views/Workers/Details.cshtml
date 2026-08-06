@@ -366,13 +366,13 @@
                     <div class="worker-settings-section">
                         <span class="worker-settings-section-title">Пометка откликов</span>
                         <p class="worker-settings-hint worker-settings-section-hint">
-                            Подсвечивает отклики этого воркера в общем списке. Например, можно отметить все карточки с возрастом 63+.
+                            Подсвечивает отклики этого воркера в общем списке — по возрасту, профилю или субпрофилю Avito.
                         </p>
                         <div class="settings-options worker-settings-options">
                             <div class="settings-option">
                                 <div class="settings-option-text">
                                     <span class="settings-option-label">Включить пометку откликов</span>
-                                    <span class="settings-option-desc">Подсветка работает только для выбранных возрастных групп ниже</span>
+                                    <span class="settings-option-desc">Выберите возрастные группы, профили или субпрофили ниже</span>
                                 </div>
                                 <label class="worker-toggle" title="Включить пометку откликов">
                                     <input type="checkbox"
@@ -390,7 +390,11 @@
                             @{
                                 var selectedHighlightBuckets = (Model.ResponseHighlightAgeBuckets ?? string.Empty)
                                     .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                                var selectedHighlightTargets = ResponseHighlightRules.ParseTargets(Model.ResponseHighlightTargetsJson)
+                                    .Select(x => x.ToFormValue())
+                                    .ToHashSet(StringComparer.Ordinal);
                             }
+                            <span class="worker-settings-subsection-title">Возраст кандидата</span>
                             <div class="worker-settings-chip-grid">
                                 @foreach (var bucket in Model.ResponseHighlightBucketOptions)
                                 {
@@ -402,6 +406,83 @@
                                                @(isChecked ? "checked" : null) />
                                         <span>@bucket</span>
                                     </label>
+                                }
+                            </div>
+                            <span class="worker-settings-subsection-title">Профили Avito</span>
+                            <div class="worker-highlight-profiles" data-worker-highlight-profiles>
+                                @foreach (var account in Model.Accounts)
+                                {
+                                    var profileTarget = new ResponseHighlightTarget(account.Id).ToFormValue();
+                                    var isProfileSelected = selectedHighlightTargets.Contains(profileTarget);
+                                    var hasSubProfiles = account.SubProfiles.Count > 0;
+                                    var selectedSubProfilesCount = account.SubProfiles.Count(subProfile =>
+                                        selectedHighlightTargets.Contains(new ResponseHighlightTarget(account.Id, subProfile.Id).ToFormValue()));
+                                    var isExpanded = isProfileSelected || selectedSubProfilesCount > 0;
+                                    var subProfilesLabel = account.SubProfiles.Count == 1
+                                        ? "1 субпрофиль"
+                                        : $"{account.SubProfiles.Count} субпрофилей";
+                                    <section class="worker-highlight-profile@(isExpanded ? " is-expanded" : string.Empty)" data-worker-highlight-profile>
+                                        <div class="worker-highlight-profile__header">
+                                            @if (hasSubProfiles)
+                                            {
+                                                <button type="button"
+                                                        class="worker-highlight-profile__toggle"
+                                                        data-worker-highlight-profile-toggle
+                                                        aria-expanded="@(isExpanded ? "true" : "false")"
+                                                        title="Показать субпрофили">
+                                                    <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+                                                    <span class="visually-hidden">Показать субпрофили</span>
+                                                </button>
+                                            }
+                                            else
+                                            {
+                                                <span class="worker-highlight-profile__toggle worker-highlight-profile__toggle--empty" aria-hidden="true">
+                                                    <i class="fa-solid fa-minus"></i>
+                                                </span>
+                                            }
+                                            <label class="worker-highlight-profile__account" title="Подсвечивать отклики со всего профиля">
+                                                <input type="checkbox"
+                                                       name="responseHighlightTargets"
+                                                       value="@profileTarget"
+                                                       @(isProfileSelected ? "checked" : null) />
+                                                <span>@account.DisplayName</span>
+                                            </label>
+                                            <span class="worker-highlight-profile__meta">
+                                                @if (hasSubProfiles)
+                                                {
+                                                    <span>@subProfilesLabel</span>
+                                                }
+                                                else
+                                                {
+                                                    <span>Без субпрофилей</span>
+                                                }
+                                                <span class="worker-highlight-profile__selected"
+                                                      data-worker-highlight-profile-selected
+                                                      @(isProfileSelected || selectedSubProfilesCount > 0 ? null : "hidden")>
+                                                    Выбрано: @(selectedSubProfilesCount + (isProfileSelected ? 1 : 0))
+                                                </span>
+                                            </span>
+                                        </div>
+                                        @if (hasSubProfiles)
+                                        {
+                                            <div class="worker-highlight-profile__subprofiles"
+                                                 data-worker-highlight-profile-panel
+                                                 aria-hidden="@(isExpanded ? "false" : "true")"
+                                                 @(isExpanded ? null : "hidden")>
+                                                @foreach (var subProfile in account.SubProfiles)
+                                                {
+                                                    var subProfileTarget = new ResponseHighlightTarget(account.Id, subProfile.Id).ToFormValue();
+                                                    <label class="worker-highlight-profile__subprofile">
+                                                        <input type="checkbox"
+                                                               name="responseHighlightTargets"
+                                                               value="@subProfileTarget"
+                                                               @(selectedHighlightTargets.Contains(subProfileTarget) ? "checked" : null) />
+                                                        <span>@subProfile.Name</span>
+                                                    </label>
+                                                }
+                                            </div>
+                                        }
+                                    </section>
                                 }
                             </div>
                         </div>

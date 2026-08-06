@@ -227,6 +227,7 @@ public sealed class WorkersService(
         int? phoneUnchangedHours = null,
         bool? autoDeliverToCrm = null,
         bool? autoDeliverToBitrix = null,
+        string? responseHighlightTargetsJson = null,
         CancellationToken ct = default) =>
         api.UpdateWorkerSettingsAsync(
             workerId,
@@ -250,6 +251,7 @@ public sealed class WorkersService(
             phoneUnchangedHours,
             autoDeliverToCrm,
             autoDeliverToBitrix,
+            responseHighlightTargetsJson,
             ct);
 
     public Task<(bool Success, string? Error)> UpdateWorkerAccountAsync(

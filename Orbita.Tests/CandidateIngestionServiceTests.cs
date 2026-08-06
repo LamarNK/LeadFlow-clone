@@ -434,6 +434,43 @@ public sealed class CandidateIngestionServiceTests
         Assert.NotEqual(Guid.Empty, stored.PersonId);
     }
 
+    [Fact]
+    public async Task IngestBatchAsync_ValidAvatarPayload_PersistsDownloadedImage()
+    {
+        await using var db = CreateDb();
+        SeedWorker(db, autoDistributionEnabled: false);
+        var png = new byte[] { 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a };
+
+        var request = new WorkerCandidateBatchRequest([
+            new WorkerCandidateDto(
+                Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc"),
+                "acc",
+                "Avito",
+                "avatar-source",
+                "",
+                "Иванов Иван",
+                25,
+                "male",
+                "+7 (900) 222-22-22",
+                "Москва",
+                "Курьер",
+                "",
+                "",
+                "",
+                "",
+                "",
+                DateTime.UtcNow,
+                AvatarContentType: "image/png",
+                AvatarImageBase64: Convert.ToBase64String(png))
+        ]);
+
+        await CreateService(db).IngestBatchAsync(WorkerId, request);
+
+        var stored = await db.CandidateResponses.SingleAsync(x => x.SourceResponseId == "avatar-source");
+        Assert.Equal("image/png", stored.AvatarContentType);
+        Assert.Equal(png, stored.AvatarImage);
+    }
+
     private static CandidateIngestionService CreateService(OrbitaDbContext db)
     {
         var bitrixOptions = Options.Create(new OrbitaBitrixSettings { CheckDuplicatesInBitrix = false });

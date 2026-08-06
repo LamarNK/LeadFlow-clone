@@ -32,9 +32,10 @@ public sealed class OrbitaAuthService(IHttpContextAccessor httpContextAccessor, 
             new Claim(ClaimTypes.Email, email),
             new Claim(ClaimTypes.Name, displayName),
             new Claim(ClaimTypes.Role, PanelRoles.Admin)
-        };
-        claims.AddRange(PanelPermissions.All.Select(permission =>
-            new Claim(PanelPermissions.ClaimType, permission.Id)));
+        }
+            .Concat(PanelPermissions.DefaultForRole(PanelRoles.Admin)
+                .Select(permission => new Claim(PanelPermissions.ClaimType, permission)))
+            .ToArray();
         var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
         var principal = new ClaimsPrincipal(identity);
 

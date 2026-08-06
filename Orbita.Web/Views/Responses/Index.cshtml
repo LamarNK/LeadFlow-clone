@@ -128,17 +128,13 @@
             <table class="data-table data-table--responses data-table--cards">
                 <colgroup>
                     <col class="responses-col--select" />
-                    <col class="responses-col--collected" />
-                    <col class="responses-col--responded" />
-                    <col class="responses-col--author" />
+                    <col class="responses-col--candidate" />
                     <col class="responses-col--phone" />
                     <col class="responses-col--city" />
-                    <col class="responses-col--age" />
-                    <col class="responses-col--gender" />
                     <col class="responses-col--vacancy" />
                     <col class="responses-col--account" />
                     <col class="responses-col--status" />
-                    <col class="responses-col--bitrix" />
+                    <col class="responses-col--last-response" />
                     <col class="responses-col--actions" />
                 </colgroup>
                 <thead>
@@ -150,17 +146,13 @@
                                    aria-label="Выбрать все на странице"
                                    title="Выбрать все на странице" />
                         </th>
-                        <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Сбор", Column = "time", Sort = Model.Sort, Controller = "Responses", Action = "Index", RouteValues = responsesSortRoute })" />
-                        <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Отклик", Column = "responded", Sort = Model.Sort, Controller = "Responses", Action = "Index", RouteValues = responsesSortRoute })" />
-                        <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Автор", Column = "author", Sort = Model.Sort, Controller = "Responses", Action = "Index", RouteValues = responsesSortRoute })" />
+                        <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Кандидат", Column = "author", Sort = Model.Sort, Controller = "Responses", Action = "Index", RouteValues = responsesSortRoute })" />
                         <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Телефон", Column = "phone", Sort = Model.Sort, Controller = "Responses", Action = "Index", RouteValues = responsesSortRoute })" />
                         <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Город", Column = "city", Sort = Model.Sort, Controller = "Responses", Action = "Index", RouteValues = responsesSortRoute })" />
-                        <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Возраст", Column = "age", Sort = Model.Sort, Controller = "Responses", Action = "Index", RouteValues = responsesSortRoute })" />
-                        <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Пол", Column = "gender", Sort = Model.Sort, Controller = "Responses", Action = "Index", RouteValues = responsesSortRoute })" />
                         <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Объявление", Column = "vacancy", Sort = Model.Sort, Controller = "Responses", Action = "Index", RouteValues = responsesSortRoute })" />
                         <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Аккаунт", Column = "account", Sort = Model.Sort, Controller = "Responses", Action = "Index", RouteValues = responsesSortRoute })" />
                         <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Статус", Column = "status", Sort = Model.Sort, Controller = "Responses", Action = "Index", RouteValues = responsesSortRoute })" />
-                        <th>Битрикс</th>
+                        <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Отклик и сбор", Column = "responded", Sort = Model.Sort, Controller = "Responses", Action = "Index", RouteValues = responsesSortRoute })" />
                         <th aria-hidden="true">Действия</th>
                     </tr>
                 </thead>
@@ -173,6 +165,22 @@
                     var adId = ResponseDisplay.DisplayAdId(row.SourceResponseId, row.VacancyUrl);
                     var author = ResponseDisplay.DisplayAuthor(row.FullName);
                     var city = ResponseDisplay.FormatCity(row.City);
+                    var initials = string.Concat(author.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(part => char.ToUpperInvariant(part[0])));
+                    var gender = CandidateGenders.FormatLabel(row.Gender);
+                    var candidateMeta = string.Join(" · ", new[]
+                    {
+                        row.Age is > 0 ? row.Age.Value.ToString() : null,
+                        gender != "—" ? gender : null
+                    }.Where(value => !string.IsNullOrWhiteSpace(value)));
+                    var shortStatus = row.StatusLabel.Split('·')[0].Trim();
+                    var createdAtIso = row.CreatedAtUtc.ToString("O");
+                    var createdAtFallback = row.CreatedAtUtc.ToLocalTime().ToString("dd.MM.yyyy HH:mm");
+                    var collectedAtIso = row.CollectedAtUtc.ToString("O");
+                    var collectedAtFallback = row.CollectedAtUtc.ToLocalTime().ToString("dd.MM.yyyy HH:mm");
+                    var collectionDuration = ResponseDisplay.FormatResponseCollectionDuration(row.CreatedAtUtc, row.CollectedAtUtc);
+                    var highlightLabels = row.HighlightLabels.Count > 0
+                        ? row.HighlightLabels.Where(label => !string.IsNullOrWhiteSpace(label)).Distinct(StringComparer.Ordinal).ToArray()
+                        : string.IsNullOrWhiteSpace(row.HighlightLabel) ? [] : [row.HighlightLabel];
                     <tr class="responses-row @(row.IsHighlighted ? "responses-row--highlighted" : null)"
                         data-response-id="@row.Id"
                         data-phone="@phoneDisplay"
@@ -189,35 +197,45 @@
                                    value="@row.Id"
                                    aria-label="Выбрать отклик" />
                         </td>
-                        <td class="responses-time" data-label="Сбор"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(row.CollectedAtUtc, "datetime"))" /></td>
-                        <td class="responses-time responses-time--responded" data-label="Отклик"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(row.CreatedAtUtc, "datetime"))" /></td>
-                        <td class="responses-author" data-label="Автор"><span class="responses-cell-clamp" title="@author">@author</span></td>
+                        <td class="responses-candidate" data-label="Кандидат">
+                            <div class="responses-candidate__identity">
+                                <span class="responses-candidate__avatar" aria-hidden="true">
+                                    @(string.IsNullOrWhiteSpace(initials) ? "—" : initials)
+                                    @if (!string.IsNullOrWhiteSpace(row.AvatarUrl))
+                                    {
+                                        <img src="@row.AvatarUrl" alt="" loading="lazy" />
+                                    }
+                                </span>
+                                <div class="responses-candidate__copy">
+                                    <strong title="@author">@author</strong>
+                                    @if (!string.IsNullOrWhiteSpace(candidateMeta)) { <span>@candidateMeta</span> }
+                                    @if (highlightLabels.Length > 0)
+                                    {
+                                        <div class="responses-candidate__highlights" aria-label="Причины выделения">
+                                            @foreach (var label in highlightLabels)
+                                            {
+                                                <span class="responses-candidate__highlight">@label</span>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        </td>
                         <td class="responses-phone" data-label="Телефон">
-                            @if (row.IsPhoneHidden)
-                            {
-                                <span class="responses-phone-hidden">Скрыт</span>
-                            }
-                            else
-                            {
-                                <span>@phoneDisplay</span>
-                            }
+                            <div class="responses-phone__number"><i class="fa-solid fa-phone" aria-hidden="true"></i>@(row.IsPhoneHidden ? "Скрыт" : phoneDisplay)</div>
                             @if (!string.IsNullOrWhiteSpace(row.PhoneMetricLabel))
                             {
                                 var phoneMetricTone = row.PhoneMetricKind == ResponsePhoneMetricKinds.PhoneChanged
                                     ? "responses-phone-metric--changed"
                                     : "responses-phone-metric--unchanged";
-                                <span class="responses-phone-metric @phoneMetricTone" title="@row.PhoneMetricLabel">@row.PhoneMetricLabel</span>
+                                var phoneMetricText = row.PhoneMetricKind == ResponsePhoneMetricKinds.PhoneChanged &&
+                                    !string.IsNullOrWhiteSpace(row.PreviousPhoneNormalized)
+                                    ? $"Был: {ResponseDisplay.FormatPhone(row.PreviousPhoneRaw, row.PreviousPhoneNormalized)}"
+                                    : row.PhoneMetricLabel;
+                                <span class="responses-phone-metric @phoneMetricTone" title="@row.PhoneMetricLabel">@phoneMetricText</span>
                             }
                         </td>
-                        <td class="responses-city" data-label="Город"><span class="responses-cell-clamp" title="@city">@city</span></td>
-                        <td class="responses-age" data-label="Возраст">
-                            @ResponseDisplay.FormatAge(row.Age)
-                            @if (row.IsHighlighted && !string.IsNullOrWhiteSpace(row.HighlightLabel))
-                            {
-                                <span class="responses-age-highlight-badge">@row.HighlightLabel</span>
-                            }
-                        </td>
-                        <td class="responses-gender" data-label="Пол">@CandidateGenders.FormatLabel(row.Gender)</td>
+                        <td class="responses-city" data-label="Город"><strong title="@city">@city</strong></td>
                         <td class="responses-ad" data-label="Объявление">
                             @if (!string.IsNullOrWhiteSpace(row.VacancyUrl))
                             {
@@ -227,7 +245,7 @@
                             {
                                 <span class="responses-ad-link" title="@row.Vacancy">@row.Vacancy</span>
                             }
-                            <span class="responses-ad-id">ID: @adId</span>
+                            <span class="responses-ad-tags"><span>@row.Source</span><span>ID: @adId</span></span>
                         </td>
                         <td class="cell-link responses-account" data-label="Аккаунт">
                             <a href="@accountUrl" title="@row.AccountName">@row.AccountName</a>
@@ -235,23 +253,42 @@
                             {
                                 <span class="responses-account-sub" title="Субпрофиль Avito">@row.AvitoSubProfileName</span>
                             }
+                            @if (!string.IsNullOrWhiteSpace(row.WorkerName)) { <span class="responses-account-worker">@row.WorkerName</span> }
                         </td>
-                        <td data-label="Статус">
-                            <span class="response-status-badge response-status-badge--@row.StatusTone">@row.StatusLabel</span>
+                        <td class="responses-status" data-label="Статус">
+                            <div class="responses-status__card">
+                                <span class="response-status-badge response-status-badge--@row.StatusTone" title="@row.StatusLabel"><span class="response-status-badge__label">@shortStatus</span></span>
+                                <div class="responses-status__destination">
+                                    @if (row.CrmDeliveries.Count > 0)
+                                    {
+                                        <partial name="_ResponseCrmDeliveries" model="row.CrmDeliveries" />
+                                    }
+                                    @if (row.BitrixDeliveries.Count > 0)
+                                    {
+                                        <partial name="_ResponseBitrixDeliveries" model="row.BitrixDeliveries" />
+                                    }
+                                    else if (!string.IsNullOrWhiteSpace(row.BitrixLabel))
+                                    {
+                                        <span class="responses-bitrix-label">@row.BitrixLabel</span>
+                                    }
+                                </div>
+                            </div>
                         </td>
-                        <td class="responses-bitrix" data-label="Битрикс">
-                            @if (row.BitrixDeliveries.Count > 0)
-                            {
-                                <partial name="_ResponseBitrixDeliveries" model="row.BitrixDeliveries" />
-                            }
-                            else if (!string.IsNullOrWhiteSpace(row.BitrixLabel))
-                            {
-                                <span class="responses-bitrix-label">@row.BitrixLabel</span>
-                            }
-                            else
-                            {
-                                <span class="responses-bitrix-empty">—</span>
-                            }
+                        <td class="responses-last-response" data-label="Отклик и сбор">
+                            <div class="responses-last-response__timeline">
+                                <div class="responses-last-response__event responses-last-response__event--response">
+                                    <span class="responses-last-response__dot"><i class="fa-solid fa-paper-plane" aria-hidden="true"></i></span>
+                                    <div><span>Отклик</span><time data-orbita-utc="@createdAtIso" data-orbita-format="activity">@createdAtFallback</time></div>
+                                </div>
+                                <div class="responses-last-response__gap">
+                                    <span aria-hidden="true"></span>
+                                    <strong>@(collectionDuration == "—" ? "Разница: —" : $"Через {collectionDuration}")</strong>
+                                </div>
+                                <div class="responses-last-response__event responses-last-response__event--collection">
+                                    <span class="responses-last-response__dot"><i class="fa-solid fa-box-archive" aria-hidden="true"></i></span>
+                                    <div><span>Сбор</span><time data-orbita-utc="@collectedAtIso" data-orbita-format="activity">@collectedAtFallback</time></div>
+                                </div>
+                            </div>
                         </td>
                         <td class="data-table-menu" data-label="">
                             <div class="row-menu" data-row-menu>

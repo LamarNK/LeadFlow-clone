@@ -1,0 +1,17 @@
+@model IReadOnlyList<ResponseCrmDeliveryViewModel>
+@if (Model is { Count: > 0 })
+{
+    <div class="responses-crm-deliveries">
+        @foreach (var delivery in Model)
+        {
+            var title = string.IsNullOrWhiteSpace(delivery.ErrorMessage)
+                ? delivery.OutcomeLabel
+                : delivery.ErrorMessage;
+            <span class="responses-crm-chip responses-crm-chip--@delivery.ChipTone" title="@title">
+                <span class="responses-delivery-chip-channel">CRM</span>
+                <span class="responses-crm-chip-label">@delivery.OfficeName</span>
+                <span class="responses-crm-chip-outcome">@delivery.OutcomeLabel</span>
+            </span>
+        }
+    </div>
+}

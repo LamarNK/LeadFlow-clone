@@ -250,6 +250,10 @@
                                 </td>
                                 <td data-label="Профиль">
                                     <span class="settings-role-pill">@user.RoleLabel</span>
+                                    @if (user.HasPermissionOverride)
+                                    {
+                                        <span class="settings-user-badge">Индивидуальные права</span>
+                                    }
                                 </td>
                                 <td data-label="Офис">
                                     @if (user.Role == PanelRoles.Admin)
@@ -288,6 +292,8 @@
                                                     data-user-full-name="@user.FullName"
                                                     data-user-role="@user.Role"
                                                     data-user-office-id="@(user.OfficeId?.ToString() ?? string.Empty)"
+                                                    data-user-permissions="@string.Join(',', user.EffectivePermissions)"
+                                                    data-user-has-permission-override="@user.HasPermissionOverride.ToString().ToLowerInvariant()"
                                                     data-user-is-current="@user.IsCurrentUser.ToString().ToLowerInvariant()">
                                                 Редактировать
                                             </button>
@@ -828,48 +834,93 @@
             }
         </div>
     }
-    <dialog class="settings-dialog" id="editUserDialog">
-        <form asp-action="UpdateUser" method="post" class="settings-dialog-form" id="editUserForm">
+    <dialog class="settings-dialog settings-dialog--user" id="editUserDialog">
+        <form asp-action="UpdateUser" method="post" class="settings-dialog-form settings-user-dialog" id="editUserForm">
             @Html.AntiForgeryToken()
             <input type="hidden" name="UserId" id="editUserId" />
             <input type="hidden" name="OriginalFullName" id="editUserOriginalFullName" />
             <input type="hidden" name="OriginalRole" id="editUserOriginalRole" />
             <input type="hidden" name="OriginalOfficeId" id="editUserOriginalOfficeId" />
-            <h2 class="settings-dialog-title">Редактировать пользователя</h2>
-            <p class="settings-dialog-subtitle" id="editUserEmail"></p>
-            <label class="settings-field">
-                <span class="settings-field-label">ФИО</span>
-                <input type="text" name="FullName" id="editUserFullName" required maxlength="256" autocomplete="name" />
-            </label>
-            <div class="settings-dialog-fields" id="editUserAccessFields">
-                <label class="settings-field">
-                    <span class="settings-field-label">Профиль</span>
-                    <select name="Role" class="settings-select" id="editUserRole">
-                        @foreach (var opt in Model.ProfileOptions)
-                        {
-                            <option value="@opt.Value">@opt.Label</option>
-                        }
-                    </select>
-                </label>
-                <label class="settings-field" id="editUserOfficeField">
-                    <span class="settings-field-label">Офис</span>
-                    <select name="OfficeId" class="settings-select" id="editUserOffice">
-                        @foreach (var opt in Model.OfficeOptions)
-                        {
-                            <option value="@opt.Value">@opt.Label</option>
-                        }
-                    </select>
-                </label>
+            <input type="hidden" name="OriginalUseProfilePermissions" id="editUserOriginalUseProfilePermissions" />
+            <input type="hidden" name="OriginalPermissionKeys" id="editUserOriginalPermissionKeys" />
+            <header class="settings-user-dialog__header">
+                <div class="settings-user-dialog__identity">
+                    <span class="settings-user-dialog__avatar" id="editUserInitials" aria-hidden="true">П</span>
+                    <div>
+                        <span class="settings-user-dialog__eyebrow">Пользователь</span>
+                        <h2 class="settings-dialog-title">Редактировать пользователя</h2>
+                        <p class="settings-dialog-subtitle" id="editUserEmail"></p>
+                    </div>
+                </div>
+                <button type="button" class="settings-user-dialog__close" data-settings-dialog-close aria-label="Закрыть"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+            </header>
+            <div class="settings-user-dialog__body">
+                <section class="settings-user-dialog__section">
+                    <header class="settings-user-dialog__section-head"><h3>Профиль</h3><p>Основные данные пользователя.</p></header>
+                    <label class="settings-field">
+                        <span class="settings-field-label">ФИО</span>
+                        <input type="text" name="FullName" id="editUserFullName" required maxlength="256" autocomplete="name" />
+                    </label>
+                </section>
+                <section class="settings-dialog-fields settings-user-dialog__section" id="editUserAccessFields">
+                    <header class="settings-user-dialog__section-head"><h3>Доступ</h3><p>Роль, офис и разрешения в панели.</p></header>
+                    <div class="settings-user-dialog__field-grid">
+                        <label class="settings-field">
+                            <span class="settings-field-label">Профиль</span>
+                            <select name="Role" class="settings-select" id="editUserRole">
+                                @foreach (var opt in Model.ProfileOptions)
+                                {
+                                    <option value="@opt.Value">@opt.Label</option>
+                                }
+                            </select>
+                        </label>
+                        <label class="settings-field" id="editUserOfficeField">
+                            <span class="settings-field-label">Офис</span>
+                            <select name="OfficeId" class="settings-select" id="editUserOffice">
+                                @foreach (var opt in Model.OfficeOptions)
+                                {
+                                    <option value="@opt.Value">@opt.Label</option>
+                                }
+                            </select>
+                        </label>
+                    </div>
+                    <div class="settings-field settings-user-dialog__permissions" id="editUserPermissionsField">
+                        <div class="settings-user-dialog__permissions-head">
+                            <span class="settings-field-label">Права доступа</span>
+                            <label class="settings-profile-permission">
+                                <input type="checkbox"
+                                       name="UseProfilePermissions"
+                                       value="true"
+                                       id="editUserUseProfilePermissions"
+                                       checked />
+                                <span>Как у профиля</span>
+                            </label>
+                        </div>
+                        <div class="settings-profile-permission-list" id="editUserPermissionsList">
+                            @foreach (var permission in PanelPermissions.All)
+                            {
+                                <label class="settings-profile-permission" title="@permission.Description">
+                                    <input type="checkbox"
+                                           name="Permissions"
+                                           value="@permission.Id"
+                                           data-user-permission-checkbox />
+                                    <span>@permission.Label</span>
+                                </label>
+                            }
+                        </div>
+                        <span class="settings-user-dialog__hint">Снимите «Как у профиля», чтобы назначить персональные права.</span>
+                    </div>
+                </section>
+                <section class="settings-field settings-user-dialog__section settings-user-dialog__section--password" id="editUserPasswordField">
+                    <header class="settings-user-dialog__section-head"><h3>Пароль</h3><p>Необязательное изменение.</p></header>
+                    <input type="password" name="Password" id="editUserPassword" minlength="8" autocomplete="new-password" placeholder="Оставьте пустым, чтобы не менять" />
+                    <span class="settings-user-dialog__hint">Минимум 8 символов.</span>
+                </section>
             </div>
-            <label class="settings-field" id="editUserPasswordField">
-                <span class="settings-field-label">Новый пароль</span>
-                <input type="password" name="Password" id="editUserPassword" minlength="8" autocomplete="new-password" />
-                <span class="settings-field-label">Оставьте пустым, чтобы не менять пароль.</span>
-            </label>
-            <div class="settings-dialog-actions">
+            <footer class="settings-dialog-actions">
                 <button type="button" class="settings-secondary-btn" data-settings-dialog-close>Отмена</button>
                 <button type="submit" class="settings-primary-btn">Сохранить</button>
-            </div>
+            </footer>
         </form>
     </dialog>
 </div>

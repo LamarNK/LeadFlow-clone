@@ -100,6 +100,12 @@ internal static class Program
         host.Services.AddSingleton(store);
         host.Services.AddSingleton<WorkerRuntimeState>();
         host.Services.AddHttpClient(nameof(OrbitaApiClient));
+        host.Services.AddHttpClient(nameof(AvitoAvatarDownloader), client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(10);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131 Safari/537.36");
+            client.DefaultRequestHeaders.Referrer = new Uri("https://www.avito.ru/");
+        });
         host.Services.AddSingleton<OrbitaApiClient>(sp =>
         {
             var factory = sp.GetRequiredService<IHttpClientFactory>();
@@ -107,6 +113,7 @@ internal static class Program
             return new OrbitaApiClient(http, sp.GetRequiredService<WorkerCredentials>());
         });
         host.Services.AddSingleton<OrbitaConfigProvider>();
+        host.Services.AddSingleton<AvitoAvatarDownloader>();
         host.Services.AddSingleton<OrbitaCandidateSink>();
         host.Services.AddSingleton<INewCandidateSink>(sp => sp.GetRequiredService<OrbitaCandidateSink>());
         host.Services.AddSingleton<WorkerEventSink>();

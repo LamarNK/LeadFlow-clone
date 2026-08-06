@@ -10,6 +10,15 @@ namespace Orbita.Web.Controllers;
 [Authorize(Policy = PanelPermissions.Responses)]
 public sealed class ResponsesController(IResponsesService responses) : Controller
 {
+    [HttpGet("/Responses/{id:guid}/Avatar")]
+    public async Task<IActionResult> Avatar(Guid id, CancellationToken ct = default)
+    {
+        var result = await responses.GetAvatarAsync(id, ct);
+        return result.Stream is null
+            ? NotFound()
+            : File(result.Stream, result.ContentType ?? "image/jpeg");
+    }
+
     [HttpGet]
     public async Task<IActionResult> Snapshot(
         string? from,
@@ -145,18 +154,31 @@ public sealed class ResponsesController(IResponsesService responses) : Controlle
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Deliver(DeliverResponseFormModel model, CancellationToken ct = default)
     {
+        var wantsJson = Request.Headers.Accept.ToString()
+            .Contains("application/json", StringComparison.OrdinalIgnoreCase);
+
         // Unchecked checkboxes are omitted from form posts.
         var toCrm = FormBindingHelper.ReadCheckbox(Request.Form, "ToCrm");
         var toBitrix = FormBindingHelper.ReadCheckbox(Request.Form, "ToBitrix");
 
         if (model.Id == Guid.Empty)
         {
+            if (wantsJson)
+            {
+                return BadRequest(new { error = "Укажите отклик." });
+            }
+
             TempData["ResponsesError"] = "Укажите отклик.";
             return RedirectToAction(nameof(Index), BuildRedirect(model));
         }
 
         if (!toCrm && !toBitrix)
         {
+            if (wantsJson)
+            {
+                return BadRequest(new { error = "Выберите канал: CRM и/или Bitrix." });
+            }
+
             TempData["ResponsesError"] = "Выберите канал: CRM и/или Bitrix.";
             return RedirectToAction(nameof(Index), BuildRedirect(model));
         }
@@ -171,6 +193,13 @@ public sealed class ResponsesController(IResponsesService responses) : Controlle
             toBitrix,
             bitrixIds,
             ct);
+        if (wantsJson)
+        {
+            return success
+                ? Ok(new { success = true })
+                : BadRequest(new { error = error ?? "Не удалось отправить отклик." });
+        }
+
         if (!success)
         {
             TempData["ResponsesError"] = error;

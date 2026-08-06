@@ -92,6 +92,7 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.Property(x => x.AdsPowerApiBaseUrl).HasMaxLength(512);
             entity.Property(x => x.AdsPowerApiKey).HasMaxLength(256);
             entity.Property(x => x.ResponseHighlightAgeBuckets).HasMaxLength(256);
+            entity.Property(x => x.ResponseHighlightTargetsJson).HasMaxLength(16000);
             entity.Property(x => x.AutoScheduleDays).HasMaxLength(64);
             entity.Property(x => x.AutoScheduleFromLocalTime).HasMaxLength(5);
             entity.Property(x => x.AutoScheduleToLocalTime).HasMaxLength(5);
@@ -169,6 +170,7 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.Property(x => x.PhoneMetricKind).HasMaxLength(32);
             entity.Property(x => x.PreviousPhoneRaw).HasMaxLength(64);
             entity.Property(x => x.PreviousPhoneNormalized).HasMaxLength(32);
+            entity.Property(x => x.AvatarContentType).HasMaxLength(32);
             entity.HasOne(x => x.Person).WithMany(x => x.Responses).HasForeignKey(x => x.PersonId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(x => x.Office).WithMany().HasForeignKey(x => x.OfficeId).OnDelete(DeleteBehavior.SetNull);
             entity.HasOne(x => x.Worker).WithMany().HasForeignKey(x => x.WorkerId).OnDelete(DeleteBehavior.SetNull);

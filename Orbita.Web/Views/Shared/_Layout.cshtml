@@ -84,7 +84,10 @@ else
             @{
                 var ctrl = ViewContext.RouteData.Values["controller"]?.ToString();
                 var act = ViewContext.RouteData.Values["action"]?.ToString();
-                var can = new Func<string, bool>(permission => User.HasClaim(PanelPermissions.ClaimType, permission));
+                var can = new Func<string, bool>(permission =>
+                    User.HasClaim(PanelPermissions.ClaimType, permission)
+                    || (permission is PanelPermissions.CrmBoard or PanelPermissions.CrmTasks
+                        && User.HasClaim(PanelPermissions.ClaimType, PanelPermissions.Crm)));
             }
             @if (can(PanelPermissions.Dashboard))
             {
@@ -106,15 +109,18 @@ else
             {
                 <a class="nav-item @(ctrl == "Responses" ? "active" : "")" href="@Url.Action("Index", "Responses")" title="Отклики"><i class="fa-solid fa-inbox" aria-hidden="true"></i><span class="nav-item-label">Отклики</span><span class="nav-badge" data-nav-badge="responses" hidden></span></a>
             }
-            @if (can(PanelPermissions.Crm))
+            @if (can(PanelPermissions.CrmBoard))
             {
                 <a class="nav-item @(ctrl == "Crm" && act is "Index" or "Card" or null ? "active" : "")" href="@Url.Action("Index", "Crm")" title="CRM менеджеров"><i class="fa-solid fa-columns" aria-hidden="true"></i><span class="nav-item-label">CRM</span></a>
                 <a class="nav-item @(ctrl == "Crm" && act == "Analytics" ? "active" : "")" href="@Url.Action("Analytics", "Crm")" title="Аналитика CRM"><i class="fa-solid fa-chart-column" aria-hidden="true"></i><span class="nav-item-label">Аналитика CRM</span></a>
+            }
+            @if (can(PanelPermissions.CrmTasks))
+            {
                 <a class="nav-item @(ctrl == "Crm" && act is "Tasks" or "TaskDetails" ? "active" : "")" href="@Url.Action("Tasks", "Crm")" title="Мои задачи"><i class="fa-solid fa-list-check" aria-hidden="true"></i><span class="nav-item-label">Задачи</span><span class="nav-badge" data-nav-badge="crm-tasks" hidden></span></a>
-                @if (can(PanelPermissions.Administration))
-                {
-                    <a class="nav-item @(ctrl == "Crm" && act == "Team" ? "active" : "")" href="@Url.Action("Team", "Crm")" title="Команда CRM"><i class="fa-solid fa-people-group" aria-hidden="true"></i><span class="nav-item-label">Команда CRM</span></a>
-                }
+            }
+            @if (can(PanelPermissions.CrmBoard) && can(PanelPermissions.CrmTasks) && can(PanelPermissions.Administration))
+            {
+                <a class="nav-item @(ctrl == "Crm" && act == "Team" ? "active" : "")" href="@Url.Action("Team", "Crm")" title="Команда CRM"><i class="fa-solid fa-people-group" aria-hidden="true"></i><span class="nav-item-label">Команда CRM</span></a>
             }
             @if (can(PanelPermissions.Events))
             {

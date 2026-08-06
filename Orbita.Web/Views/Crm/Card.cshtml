@@ -7,9 +7,14 @@
     var activeTab = ViewData["CrmTab"] as string ?? "activity";
     var card = Model.Card;
     var canEdit = Model.CanEdit;
+    var canAccessCrmTasks = ViewData["CanAccessCrmTasks"] as bool? == true;
     var currentUserId = ViewData["CurrentCrmUserId"] as string;
     var isCrmAdmin = ViewData["IsCrmAdmin"] as bool? == true;
     var vacancyUrl = !string.IsNullOrWhiteSpace(card.VacancyUrl) ? card.VacancyUrl : card.SourceUrl;
+    var phoneDigits = string.Concat(card.PhoneRaw.Where(char.IsDigit));
+    var messengerPhone = phoneDigits.Length == 11 && phoneDigits.StartsWith("8", StringComparison.Ordinal) ? "7" + phoneDigits[1..] : phoneDigits;
+    var phoneE164 = $"+{messengerPhone}";
+    var encodedPhone = Uri.EscapeDataString(phoneE164);
     string DisplayCrmAction(string action) => action switch
     {
         "Created" => "Карточка создана",
@@ -36,7 +41,10 @@
 
     <section class="crm-card-hero card">
         <div class="crm-card-hero__main">
-            <div class="crm-avatar">@(string.IsNullOrEmpty(card.FullName) ? "?" : card.FullName.Trim()[0])</div>
+            <div class="crm-avatar">
+                @(string.IsNullOrEmpty(card.FullName) ? "?" : card.FullName.Trim()[0])
+                <img src="@Url.Action("Avatar", "Crm", new { id = card.Id })" alt="" onerror="this.remove()" />
+            </div>
             <div>
                 <h1>@card.FullName</h1>
                 <p>
@@ -53,12 +61,24 @@
                     else if (!card.IsInActiveLoad) { <span class="crm-tag">Вне нагрузки</span> }
                 </p>
                 <div class="crm-card-hero__contacts">
-                    <a href="tel:@card.PhoneRaw" class="settings-secondary-btn"><i class="fa-solid fa-phone" aria-hidden="true"></i>@card.PhoneRaw</a>
+                    <details class="crm-phone-actions">
+                        <summary class="settings-secondary-btn" aria-label="Действия с номером @card.PhoneRaw"><i class="fa-solid fa-phone" aria-hidden="true"></i>@card.PhoneRaw<i class="fa-solid fa-chevron-down crm-phone-actions__caret" aria-hidden="true"></i></summary>
+                        <div class="crm-phone-actions__menu">
+                            <span class="crm-phone-actions__title">Связаться с кандидатом</span>
+                            <a href="tel:@card.PhoneRaw"><i class="fa-solid fa-phone" aria-hidden="true"></i>Позвонить</a>
+                            @if (!string.IsNullOrWhiteSpace(messengerPhone))
+                            {
+                                <a href="https://wa.me/@messengerPhone" target="_blank" rel="noopener"><i class="fa-brands fa-whatsapp" aria-hidden="true"></i>WhatsApp</a>
+                                <a href="tg://resolve?phone=@encodedPhone"><i class="fa-brands fa-telegram" aria-hidden="true"></i>Telegram</a>
+                                <a href="viber://chat?number=@encodedPhone"><i class="fa-brands fa-viber" aria-hidden="true"></i>Viber</a>
+                            }
+                            <button type="button" data-copy="@card.PhoneRaw" onclick="window.Orbita.copyText(this.dataset.copy, 'Телефон скопирован.');"><i class="fa-regular fa-copy" aria-hidden="true"></i>Копировать номер</button>
+                        </div>
+                    </details>
                     @if (!string.IsNullOrWhiteSpace(vacancyUrl))
                     {
                         <a href="@vacancyUrl" target="_blank" rel="noopener" class="settings-secondary-btn"><i class="fa-solid fa-tag" aria-hidden="true"></i>Объявление</a>
                     }
-                    <button type="button" class="settings-secondary-btn" data-copy="@card.PhoneRaw" onclick="window.Orbita.copyText(this.dataset.copy, 'Телефон скопирован.');"><i class="fa-regular fa-copy" aria-hidden="true"></i>Копировать</button>
                 </div>
             </div>
         </div>
@@ -154,10 +174,13 @@
                 <section class="card crm-side-panel">
                     <header>Быстрые действия</header>
                     <div class="crm-quick-actions">
-                        <form asp-action="FollowUp" method="post"><input type="hidden" name="id" value="@card.Id" /><input type="hidden" name="minutes" value="60" /><button type="submit">+1 ч</button></form>
-                        <form asp-action="FollowUp" method="post"><input type="hidden" name="id" value="@card.Id" /><input type="hidden" name="minutes" value="180" /><button type="submit">+3 ч</button></form>
-                        <form asp-action="FollowUp" method="post"><input type="hidden" name="id" value="@card.Id" /><input type="hidden" name="minutes" value="1440" /><button type="submit">Завтра</button></form>
-                        <form asp-action="FollowUp" method="post"><input type="hidden" name="id" value="@card.Id" /><input type="hidden" name="minutes" value="4320" /><button type="submit">+3 дн</button></form>
+                        @if (canAccessCrmTasks)
+                        {
+                            <form asp-action="FollowUp" method="post"><input type="hidden" name="id" value="@card.Id" /><input type="hidden" name="minutes" value="60" /><button type="submit">+1 ч</button></form>
+                            <form asp-action="FollowUp" method="post"><input type="hidden" name="id" value="@card.Id" /><input type="hidden" name="minutes" value="180" /><button type="submit">+3 ч</button></form>
+                            <form asp-action="FollowUp" method="post"><input type="hidden" name="id" value="@card.Id" /><input type="hidden" name="minutes" value="1440" /><button type="submit">Завтра</button></form>
+                            <form asp-action="FollowUp" method="post"><input type="hidden" name="id" value="@card.Id" /><input type="hidden" name="minutes" value="4320" /><button type="submit">+3 дн</button></form>
+                        }
                     </div>
                     <form asp-action="SetLoad" method="post" class="crm-side-form">
                         <input type="hidden" name="id" value="@card.Id" />
@@ -217,7 +240,10 @@
             <nav class="crm-tabs">
                 <a class="@(activeTab == "activity" ? "is-active" : "")" asp-action="Card" asp-route-id="@card.Id">Лента</a>
                 <a class="@(activeTab == "chat" ? "is-active" : "")" asp-action="Card" asp-route-id="@card.Id" asp-route-tab="chat">Чат @if (Model.Chat.Count > 0) { <span>@Model.Chat.Count</span> }</a>
-                <a class="@(activeTab == "tasks" ? "is-active" : "")" asp-action="Card" asp-route-id="@card.Id" asp-route-tab="tasks">Задачи <span>@Model.Tasks.Count(t => t.Status == CrmTaskStatuses.Open)</span></a>
+                @if (canAccessCrmTasks)
+                {
+                    <a class="@(activeTab == "tasks" ? "is-active" : "")" asp-action="Card" asp-route-id="@card.Id" asp-route-tab="tasks">Задачи <span>@Model.Tasks.Count(t => t.Status == CrmTaskStatuses.Open)</span></a>
+                }
                 <a class="@(activeTab == "history" ? "is-active" : "")" asp-action="Card" asp-route-id="@card.Id" asp-route-tab="history">История</a>
             </nav>
 

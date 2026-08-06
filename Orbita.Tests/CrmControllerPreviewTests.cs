@@ -85,6 +85,20 @@ public sealed class CrmControllerPreviewTests
         Assert.Equal(TimeSpan.FromDays(2), range.UtcEndExclusive - range.UtcStartInclusive);
     }
 
+    [Fact]
+    public async Task Team_InDesignPreview_ReturnsTeamTasksForSelectedOffice()
+    {
+        var (controller, _) = CreateController(previewEnabled: true);
+
+        var result = await controller.Team(taskScope: "overdue");
+
+        var view = Assert.IsType<ViewResult>(result);
+        var model = Assert.IsType<CrmTeamViewModel>(view.Model);
+        Assert.True(model.Board.IsAdmin);
+        Assert.NotEmpty(model.Tasks);
+        Assert.Equal("overdue", model.SelectedTaskScope);
+    }
+
     private static (CrmController Controller, HttpClient Http) CreateController(bool previewEnabled)
     {
         var httpContext = new DefaultHttpContext

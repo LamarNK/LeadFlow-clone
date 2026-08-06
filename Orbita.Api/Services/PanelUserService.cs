@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Orbita.Api.Data;
@@ -395,6 +396,93 @@ public sealed class PanelUserService(
         return (await MapAsync(user, ct), null);
     }
 
+    public async Task<(PanelUserDto? User, string? Error)> SetPermissionOverrideAsync(
+        string id,
+        bool useProfilePermissions,
+        IReadOnlyList<string> requestedPermissions,
+        AuditActor actor,
+        CancellationToken ct = default)
+    {
+        var user = await users.FindByIdAsync(id);
+        if (user is null)
+        {
+            return (null, "Пользователь не найден.");
+        }
+
+        var permissions = PanelPermissions.Normalize(requestedPermissions);
+        if (!useProfilePermissions && permissions.Count == 0)
+        {
+            return (null, "Выберите хотя бы один доступный раздел или используйте права профиля.");
+        }
+
+        if (!useProfilePermissions
+            && await IsAdminAsync(user)
+            && !permissions.Contains(PanelPermissions.Administration, StringComparer.Ordinal))
+        {
+            return (null, "У администратора должно остаться право «Администрирование».");
+        }
+
+        var currentClaims = await users.GetClaimsAsync(user);
+        foreach (var claim in currentClaims.Where(claim =>
+                     claim.Type is PanelPermissions.ClaimType or PanelPermissions.UserPermissionOverrideClaimType))
+        {
+            var result = await users.RemoveClaimAsync(user, claim);
+            if (!result.Succeeded)
+            {
+                return (null, string.Join("; ", result.Errors.Select(error => error.Description)));
+            }
+        }
+
+        if (!useProfilePermissions)
+        {
+            foreach (var permission in permissions)
+            {
+                var result = await users.AddClaimAsync(user, new Claim(PanelPermissions.ClaimType, permission));
+                if (!result.Succeeded)
+                {
+                    return (null, string.Join("; ", result.Errors.Select(error => error.Description)));
+                }
+            }
+
+            var markerResult = await users.AddClaimAsync(
+                user,
+                new Claim(PanelPermissions.UserPermissionOverrideClaimType, "true"));
+            if (!markerResult.Succeeded)
+            {
+                return (null, string.Join("; ", markerResult.Errors.Select(error => error.Description)));
+            }
+        }
+
+        await users.UpdateSecurityStampAsync(user);
+        await audit.LogAsync(
+            actor.UserId,
+            actor.Email,
+            PanelAuditActions.UserPermissionsUpdated,
+            "user",
+            id,
+            useProfilePermissions ? "profile" : $"permissions={string.Join(',', permissions)}",
+            actor.IpAddress,
+            ct);
+
+        await GlobalLogger.Instance.LogAsync(
+            $"Panel user permissions updated ({user.Email}, source={(useProfilePermissions ? "profile" : "override")}).",
+            DeskLinkAuditLogLevel.Warning);
+
+        return (await MapAsync(user, ct), null);
+    }
+
+    public async Task<IReadOnlyList<string>?> GetPermissionOverrideAsync(IdentityUser user)
+    {
+        var claims = await users.GetClaimsAsync(user);
+        if (!claims.Any(claim => claim.Type == PanelPermissions.UserPermissionOverrideClaimType))
+        {
+            return null;
+        }
+
+        return PanelPermissions.Normalize(
+            claims.Where(claim => claim.Type == PanelPermissions.ClaimType).Select(claim => claim.Value));
+    }
+
     public async Task<(PanelUserDto? User, string? Error)> SetOfficeAsync(
         string id,
         Guid? officeId,
@@ -619,6 +707,7 @@ public sealed class PanelUserService(
         var role = roles.FirstOrDefault(r => PanelRoles.All.Contains(r, StringComparer.OrdinalIgnoreCase))
                    ?? PanelRoles.Operator;
         var (officeId, officeName, fullName) = await GetProfileInfoAsync(user.Id, role, ct);
+        var permissionOverride = await GetPermissionOverrideAsync(user);
         return new PanelUserDto(
             user.Id,
             user.Email ?? user.UserName ?? string.Empty,
@@ -627,7 +716,8 @@ public sealed class PanelUserService(
             IsLocked(user),
             officeId,
             officeName,
-            fullName);
+            fullName,
+            permissionOverride);
     }
 
     private async Task<(Guid? OfficeId, string? OfficeName, string? FullName)> GetProfileInfoAsync(

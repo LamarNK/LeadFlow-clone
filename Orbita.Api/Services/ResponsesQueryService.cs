@@ -218,6 +218,54 @@ public sealed class ResponsesQueryService(
         return MapDetail(entity, portalHost, subProfileName, bitrixDeliveries, phoneHistory);
     }
 
+    public async Task<ResponseAvatarFile?> GetAvatarAsync(
+        Guid id,
+        OfficeScope scope,
+        CancellationToken ct = default)
+    {
+        var entity = await db.CandidateResponses
+            .AsNoTracking()
+            .Where(x => x.Id == id)
+            .Select(x => new
+            {
+                x.Id,
+                x.OfficeId,
+                WorkerOfficeId = x.Worker == null ? (Guid?)null : x.Worker.OfficeId,
+                x.AvatarImage
+            })
+            .FirstOrDefaultAsync(ct);
+        if (entity?.AvatarImage is not { Length: > 0 })
+        {
+            return null;
+        }
+
+        var sharedWithScope = false;
+        if (!scope.IsGlobalAdmin && scope.OfficeId is Guid scopeOfficeId)
+        {
+            sharedWithScope = await db.ResponseCrmDeliveries.AsNoTracking()
+                .AnyAsync(
+                    d => d.ResponseId == entity.Id
+                         && d.OfficeId == scopeOfficeId
+                         && d.Outcome == ResponseCrmDeliveryOutcomes.Sent,
+                    ct);
+            if (!sharedWithScope)
+            {
+                sharedWithScope = await db.CrmCandidateCards.AsNoTracking()
+                    .AnyAsync(c => c.ResponseId == entity.Id && c.OfficeId == scopeOfficeId, ct);
+            }
+        }
+
+        if (!scope.CanAccessResponse(entity.OfficeId, entity.WorkerOfficeId, sharedWithScope))
+        {
+            return null;
+        }
+
+        var contentType = CandidateResponseAvatar.DetectContentType(entity.AvatarImage);
+        return string.IsNullOrEmpty(contentType)
+            ? null
+            : new ResponseAvatarFile(entity.AvatarImage, contentType);
+    }
+
     private async Task<ResponsesPageDto> GetPageInternalAsync(
         OfficeScope scope,
         Guid? officeFilter,
@@ -281,6 +329,7 @@ public sealed class ResponsesQueryService(
                 x.Vacancy,
                 x.VacancyUrl,
                 x.MessengerUrl,
+                HasAvatar = x.AvatarImage != null,
                 x.City,
                 x.Status,
                 x.IsLocalDuplicate,
@@ -299,6 +348,7 @@ public sealed class ResponsesQueryService(
                 x.AvitoSubProfileName,
                 ResponseHighlightEnabled = x.Worker != null && x.Worker.ResponseHighlightEnabled,
                 ResponseHighlightAgeBuckets = x.Worker != null ? x.Worker.ResponseHighlightAgeBuckets : null,
+                ResponseHighlightTargetsJson = x.Worker != null ? x.Worker.ResponseHighlightTargetsJson : null,
                 x.CreatedAt,
                 x.CollectedAt,
                 x.ProcessedAt,
@@ -324,6 +374,7 @@ public sealed class ResponsesQueryService(
 
         var responseIds = rows.Select(x => x.Id).ToList();
         var deliveryLookup = await deliveries.LoadByResponseIdsAsync(responseIds, ct);
+        var crmDeliveryLookup = await LoadCrmDeliveriesByResponseIdsAsync(responseIds, ct);
 
         var items = rows
             .Select(x =>
@@ -332,13 +383,20 @@ public sealed class ResponsesQueryService(
                     x.BitrixPortalHost,
                     x.BitrixEntityType,
                     x.BitrixEntityId);
-                var isHighlighted = ResponseHighlightRules.IsHighlighted(
+                var highlightLabels = ResponseHighlightRules.GetHighlightLabels(
                     x.Age,
                     x.ResponseHighlightEnabled,
                     x.ResponseHighlightAgeBuckets,
-                    out var highlightLabel);
+                    x.AccountId,
+                    x.AvitoSubProfileId,
+                    x.ResponseHighlightTargetsJson);
+                var isHighlighted = highlightLabels.Count > 0;
+                var highlightLabel = highlightLabels.FirstOrDefault();
                 var bitrixDeliveries = deliveryLookup.TryGetValue(x.Id, out var loaded)
                     ? loaded
+                    : [];
+                var crmDeliveries = crmDeliveryLookup.TryGetValue(x.Id, out var loadedCrm)
+                    ? loadedCrm
                     : [];
                 var phoneMetricLabel = ResponsePhoneMetricKinds.FormatLabel(
                     x.PhoneMetricKind,
@@ -390,11 +448,50 @@ public sealed class ResponsesQueryService(
                     string.IsNullOrWhiteSpace(x.PreviousPhoneNormalized) ? null : x.PreviousPhoneNormalized,
                     x.PhoneUnchangedHours,
                     x.PhoneChangedAtUtc,
-                    string.IsNullOrWhiteSpace(phoneMetricLabel) ? null : phoneMetricLabel);
+                    string.IsNullOrWhiteSpace(phoneMetricLabel) ? null : phoneMetricLabel,
+                    x.HasAvatar,
+                    highlightLabels,
+                    crmDeliveries);
             })
             .ToList();
 
         return new ResponsesPageDto(items, total, page, pageSize);
+    }
+
+    private async Task<IReadOnlyDictionary<Guid, List<ResponseCrmDeliveryDto>>> LoadCrmDeliveriesByResponseIdsAsync(
+        IReadOnlyList<Guid> responseIds,
+        CancellationToken ct)
+    {
+        if (responseIds.Count == 0)
+        {
+            return new Dictionary<Guid, List<ResponseCrmDeliveryDto>>();
+        }
+
+        var rows = await db.ResponseCrmDeliveries
+            .AsNoTracking()
+            .Where(x => responseIds.Contains(x.ResponseId))
+            .Include(x => x.Office)
+            .OrderBy(x => x.CreatedAtUtc)
+            .Select(x => new
+            {
+                x.ResponseId,
+                Delivery = new ResponseCrmDeliveryDto(
+                    x.Id,
+                    x.OfficeId,
+                    x.Office.Name,
+                    x.Outcome,
+                    x.CardId,
+                    string.IsNullOrWhiteSpace(x.ErrorMessage) ? null : x.ErrorMessage,
+                    x.Source,
+                    x.CreatedAtUtc)
+            })
+            .ToListAsync(ct);
+
+        return rows
+            .GroupBy(x => x.ResponseId)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Select(x => x.Delivery).ToList());
     }
 
     private static readonly HashSet<string> AllowedSortColumns = new(StringComparer.OrdinalIgnoreCase)
@@ -790,6 +887,9 @@ public sealed class ResponsesQueryService(
             entity.PhoneUnchangedHours,
             entity.PhoneChangedAtUtc,
             string.IsNullOrWhiteSpace(phoneMetricLabel) ? null : phoneMetricLabel,
-            phoneHistory ?? []);
+            phoneHistory ?? [],
+            entity.AvatarImage is { Length: > 0 });
     }
 }
+
+public sealed record ResponseAvatarFile(byte[] Bytes, string ContentType);

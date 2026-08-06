@@ -165,6 +165,7 @@ public sealed class WorkersController(IWorkersService workers) : Controller
         int? responseFilterMaxAgeDays = null,
         bool responseHighlightEnabled = false,
         string[]? responseHighlightAgeBuckets = null,
+        string[]? responseHighlightTargets = null,
         bool autoScheduleEnabled = false,
         string[]? autoScheduleDays = null,
         string? autoScheduleFromLocalTime = null,
@@ -183,6 +184,7 @@ public sealed class WorkersController(IWorkersService workers) : Controller
         var autoScheduleDaysCsv = autoScheduleDays is { Length: > 0 }
             ? string.Join(',', autoScheduleDays.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim()))
             : null;
+        var responseHighlightTargetsJson = ResponseHighlightRules.NormalizeTargetsFormValues(responseHighlightTargets);
 
         // Unchecked checkboxes are omitted from form posts.
         autoDeliverToCrm = FormBindingHelper.ReadCheckbox(Request.Form, "autoDeliverToCrm");
@@ -210,6 +212,7 @@ public sealed class WorkersController(IWorkersService workers) : Controller
             phoneUnchangedHours,
             autoDeliverToCrm,
             autoDeliverToBitrix,
+            responseHighlightTargetsJson,
             ct);
         if (!success)
         {

@@ -163,6 +163,9 @@ public sealed class ResponsesService(
         return detail is null ? null : ResponsesIndexBuilder.MapDetailJson(ResponsesIndexBuilder.MapDetail(detail));
     }
 
+    public Task<(Stream? Stream, string? ContentType)> GetAvatarAsync(Guid id, CancellationToken ct = default) =>
+        api.GetResponseAvatarAsync(id, ct);
+
     public async Task<(bool Success, string? Error)> ResendToBitrixAsync(Guid id, CancellationToken ct = default)
     {
         if (previewOptions.Value.Enabled)

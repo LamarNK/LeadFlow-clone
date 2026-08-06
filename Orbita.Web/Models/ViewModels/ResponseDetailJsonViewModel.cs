@@ -4,12 +4,28 @@ public sealed class ResponseDetailJsonViewModel
 {
     public string Title { get; init; } = string.Empty;
     public string Subtitle { get; init; } = string.Empty;
+    public ResponseDetailProfileViewModel Profile { get; init; } = new();
     public IReadOnlyList<DetailSectionItemViewModel> Sections { get; init; } = [];
     public IReadOnlyList<DetailChatMessageViewModel> ChatMessages { get; init; } = [];
     public IReadOnlyList<DetailActionLinkViewModel> Links { get; init; } = [];
     public IReadOnlyList<DetailActionLinkViewModel> PrimaryActions { get; init; } = [];
     public string? CopyText { get; init; }
     public string CopyLabel { get; init; } = "Копировать карточку";
+}
+
+public sealed class ResponseDetailProfileViewModel
+{
+    public string CandidateName { get; init; } = string.Empty;
+    public string CandidateMeta { get; init; } = string.Empty;
+    public string StatusLabel { get; init; } = string.Empty;
+    public string StatusTone { get; init; } = "unique";
+    public string Phone { get; init; } = string.Empty;
+    public string? PhoneHref { get; init; }
+    public string? MessengerUrl { get; init; }
+    public string? AvatarUrl { get; init; }
+    public string Vacancy { get; init; } = string.Empty;
+    public string? VacancyUrl { get; init; }
+    public string Source { get; init; } = string.Empty;
 }
 
 public sealed class DetailSectionItemViewModel

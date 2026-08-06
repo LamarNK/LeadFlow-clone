@@ -29,6 +29,13 @@ public sealed class AccountController(
     }
 
     [AllowAnonymous]
+    [HttpGet]
+    public IActionResult AccessDenied()
+    {
+        return View(ErrorPageViewModel.ForStatusCode(StatusCodes.Status403Forbidden));
+    }
+
+    [AllowAnonymous]
     [HttpPost]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Login(LoginViewModel model, CancellationToken ct)
@@ -94,6 +101,8 @@ public sealed class AccountController(
                 .ToHashSet(StringComparer.Ordinal);
 
             if (permissions.Contains(PanelPermissions.Dashboard)) return ("Index", "Dashboard");
+            if (permissions.Contains(PanelPermissions.CrmBoard)) return ("Index", "Crm");
+            if (permissions.Contains(PanelPermissions.CrmTasks)) return ("Tasks", "Crm");
             if (permissions.Contains(PanelPermissions.Crm)) return ("Index", "Crm");
             if (permissions.Contains(PanelPermissions.Workers)) return ("Index", "Workers");
             if (permissions.Contains(PanelPermissions.Accounts)) return ("Index", "Accounts");
