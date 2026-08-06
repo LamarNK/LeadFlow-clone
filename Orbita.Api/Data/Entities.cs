@@ -257,6 +257,45 @@ public sealed class WorkerLogEntryEntity
     public WorkerEntity Worker { get; set; } = null!;
 }
 
+/// <summary>Один проход аккаунта (цикл субпрофилей) — типизированный журнал вместо разбора логов.</summary>
+public sealed class MonitoringCycleRunEntity
+{
+    public Guid Id { get; set; }
+    public Guid WorkerId { get; set; }
+    public Guid AccountId { get; set; }
+    public string AccountName { get; set; } = string.Empty;
+    public DateTime StartedAtUtc { get; set; }
+    public DateTime? FinishedAtUtc { get; set; }
+    public string Status { get; set; } = MonitoringCycleRunStatuses.Running;
+    public DateTime IngestedAtUtc { get; set; }
+    public DateTime UpdatedAtUtc { get; set; }
+
+    public WorkerEntity Worker { get; set; } = null!;
+    public ICollection<MonitoringSubProfileRunEntity> SubProfileRuns { get; set; } = [];
+}
+
+/// <summary>Проход одного субпрофиля внутри <see cref="MonitoringCycleRunEntity"/>.</summary>
+public sealed class MonitoringSubProfileRunEntity
+{
+    public Guid Id { get; set; }
+    public Guid CycleRunId { get; set; }
+    public string SubProfileId { get; set; } = string.Empty;
+    public string SubProfileName { get; set; } = string.Empty;
+    public int Position { get; set; }
+    public int Total { get; set; }
+    public DateTime StartedAtUtc { get; set; }
+    public DateTime? CompletedAtUtc { get; set; }
+    public string Outcome { get; set; } = MonitoringSubProfileRunOutcomes.Started;
+    public string? ErrorType { get; set; }
+    public string? ErrorMessage { get; set; }
+    public int FoundCount { get; set; }
+    public int PublishedCount { get; set; }
+    public int DeferredCount { get; set; }
+    public int SkippedDuplicateCount { get; set; }
+
+    public MonitoringCycleRunEntity CycleRun { get; set; } = null!;
+}
+
 public sealed class PanelUserBitrixSettingsEntity
 {
     public string UserId { get; set; } = string.Empty;

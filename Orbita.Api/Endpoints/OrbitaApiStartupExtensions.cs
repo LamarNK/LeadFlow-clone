@@ -256,6 +256,7 @@ public static class OrbitaApiStartupExtensions
         builder.Services.AddScoped<CrmTaskAttachmentStorageService>();
         builder.Services.AddHostedService<WorkerDiagnosticsCleanupService>();
         builder.Services.AddScoped<WorkerLogsService>();
+        builder.Services.AddScoped<MonitoringRunIngestService>();
         builder.Services.AddHostedService<WorkerLogsCleanupService>();
         builder.Services.Configure<FormOptions>(options =>
         {

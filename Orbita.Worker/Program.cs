@@ -164,6 +164,8 @@ internal static class Program
         host.Services.AddSingleton<ICandidateDuplicateRepository>(sp => sp.GetRequiredService<OrbitaCandidateDuplicateRepository>());
         host.Services.AddSingleton<WorkerActivityReporter>();
         host.Services.AddSingleton<IWorkerActivityReporter>(sp => sp.GetRequiredService<WorkerActivityReporter>());
+        host.Services.AddSingleton<MonitoringCycleJournalSink>();
+        host.Services.AddSingleton<IMonitoringCycleJournal>(sp => sp.GetRequiredService<MonitoringCycleJournalSink>());
         host.Services.AddSingleton<IWorkerMonitoringService, WorkerMonitoringService>();
 
         host.Services.AddSingleton<WorkerHubConnection>();

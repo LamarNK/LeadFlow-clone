@@ -187,6 +187,25 @@ public sealed class OfficeStatisticsQueryServiceTests
     }
 
     [Fact]
+    public async Task GetStatisticsAsync_Week_MonitoringCycles_UsesSentResponsesWithoutLogs()
+    {
+        await using var db = CreateDb();
+        SeedOfficeData(db);
+        // No WorkerLogEntries seeded — multi-day monitoring must work from CandidateResponses alone.
+        var result = await CreateService(db).GetStatisticsAsync(
+            OfficeScope.ForOffice(OfficeA),
+            OfficeA,
+            DateTime.Today.AddDays(-6),
+            DateTime.Today);
+
+        Assert.False(result.MonitoringCycles.IsDetailed);
+        Assert.Empty(result.MonitoringCycles.AccountReports);
+        Assert.Equal(1, result.MonitoringCycles.TotalLeads);
+        Assert.Single(result.MonitoringCycles.LeadSummaries);
+        Assert.Equal("Account A", result.MonitoringCycles.LeadSummaries[0].AccountName);
+    }
+
+    [Fact]
     public void CandidateResponses_HasIndexForStatisticsWorkerAndPeriodFilter()
     {
         using var db = CreateDb();

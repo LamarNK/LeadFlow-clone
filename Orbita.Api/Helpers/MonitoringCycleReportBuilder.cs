@@ -28,6 +28,28 @@ internal sealed record MonitoringCycleSentResponse(
     string SubProfileName,
     DateTime TimestampUtc);
 
+/// <summary>Снимок цикла из типизированного журнала (без логов).</summary>
+internal sealed record MonitoringCycleRunSnapshot(
+    Guid Id,
+    string AccountName,
+    DateTime StartedAtUtc,
+    DateTime? FinishedAtUtc,
+    string Status,
+    IReadOnlyList<MonitoringSubProfileRunSnapshot> SubProfiles);
+
+internal sealed record MonitoringSubProfileRunSnapshot(
+    Guid Id,
+    string SubProfileId,
+    string SubProfileName,
+    int Position,
+    int Total,
+    DateTime StartedAtUtc,
+    DateTime? CompletedAtUtc,
+    string Outcome,
+    string? ErrorType,
+    string? ErrorMessage,
+    int PublishedCount);
+
 internal static partial class MonitoringCycleReportBuilder
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
@@ -71,6 +93,388 @@ internal static partial class MonitoringCycleReportBuilder
     [GeneratedRegex(@"переключение субпрофиля", RegexOptions.CultureInvariant)]
     private static partial Regex NewWorkerSwitchMarkerRegex();
 
+    /// <summary>
+    /// Полный отчёт из типизированного журнала запусков (+ лиды из Sent-откликов).
+    /// </summary>
+    public static MonitoringCycleReportDto BuildFromJournal(
+        IReadOnlyList<MonitoringCycleRunSnapshot> cycles,
+        DateTime startLocal,
+        DateTime endLocal,
+        IReadOnlySet<string>? allowedAccountNames = null,
+        IReadOnlyList<MonitoringCycleSentResponse>? sentResponses = null)
+    {
+        var isDetailed = (endLocal.Date - startLocal.Date).Days == 0;
+        var sent = sentResponses ?? [];
+        var filteredCycles = cycles
+            .Where(c => allowedAccountNames is null || allowedAccountNames.Contains(c.AccountName))
+            .Where(c =>
+            {
+                var day = LocalCalendarDateRange.ToLocalDateFromStoredUtc(c.StartedAtUtc);
+                return day >= startLocal.Date && day <= endLocal.Date;
+            })
+            .OrderBy(c => c.StartedAtUtc)
+            .ToList();
+
+        if (filteredCycles.Count == 0)
+        {
+            // No journal rows yet — still show Bitrix lead totals for the period.
+            return BuildSummaryFromSentResponses(sent, startLocal, endLocal, allowedAccountNames);
+        }
+
+        var reports = new List<MonitoringCycleAccountReportDto>();
+        var notStartedSummaries = new List<string>();
+        var leadSummaries = new List<MonitoringCycleLeadSummaryDto>();
+        var totalNotStartedPositions = 0;
+        var accountsWithNotStarted = 0;
+
+        foreach (var day in EnumerateDays(startLocal, endLocal))
+        {
+            var dayCycles = filteredCycles
+                .Where(c => LocalCalendarDateRange.ToLocalDateFromStoredUtc(c.StartedAtUtc) == day.Date)
+                .ToList();
+            if (dayCycles.Count == 0)
+            {
+                continue;
+            }
+
+            var byAccount = dayCycles
+                .GroupBy(c => c.AccountName, StringComparer.OrdinalIgnoreCase)
+                .OrderBy(g => ExtractAccountSortKey(g.Key));
+
+            foreach (var accountGroup in byAccount)
+            {
+                var accountName = accountGroup.Key;
+                var accountCycles = accountGroup.OrderBy(c => c.StartedAtUtc).ToList();
+                var posToName = new Dictionary<int, string>();
+                var posTimes = new Dictionary<int, List<DateTime?>>();
+                var posLeads = new Dictionary<int, List<string?>>();
+                var posErrors = new Dictionary<int, List<MonitoringCycleErrorDto>>();
+                var totalPositions = 0;
+
+                foreach (var cycle in accountCycles)
+                {
+                    foreach (var sp in cycle.SubProfiles.OrderBy(x => x.Position))
+                    {
+                        totalPositions = Math.Max(totalPositions, Math.Max(sp.Total, sp.Position));
+                        if (!posToName.ContainsKey(sp.Position))
+                        {
+                            posToName[sp.Position] = sp.SubProfileName;
+                        }
+
+                        if (!posTimes.ContainsKey(sp.Position))
+                        {
+                            posTimes[sp.Position] = [];
+                            posLeads[sp.Position] = [];
+                            posErrors[sp.Position] = [];
+                        }
+                    }
+                }
+
+                if (totalPositions <= 0)
+                {
+                    totalPositions = posToName.Keys.DefaultIfEmpty(1).Max();
+                }
+
+                // Ensure all positions 1..total known from any cycle are tracked.
+                for (var position = 1; position <= totalPositions; position++)
+                {
+                    if (!posToName.ContainsKey(position))
+                    {
+                        // Unknown name until observed; keep placeholder only if some cycle declared total.
+                        continue;
+                    }
+
+                    posTimes.TryAdd(position, []);
+                    posLeads.TryAdd(position, []);
+                    posErrors.TryAdd(position, []);
+                }
+
+                for (var cycleIndex = 0; cycleIndex < accountCycles.Count; cycleIndex++)
+                {
+                    var cycle = accountCycles[cycleIndex];
+                    var nextCycleStart = cycleIndex + 1 < accountCycles.Count
+                        ? accountCycles[cycleIndex + 1].StartedAtUtc
+                        : LocalCalendarDateRange.GetUtcRangeForLocalCalendarDay(day).UtcEndExclusive;
+                    var cycleEnd = cycle.FinishedAtUtc ?? nextCycleStart;
+                    var runsByPosition = cycle.SubProfiles
+                        .GroupBy(x => x.Position)
+                        .ToDictionary(g => g.Key, g => g.OrderBy(x => x.StartedAtUtc).Last());
+
+                    var declaredTotal = cycle.SubProfiles.Select(x => x.Total).DefaultIfEmpty(totalPositions).Max();
+                    declaredTotal = Math.Max(declaredTotal, totalPositions);
+
+                    for (var position = 1; position <= declaredTotal; position++)
+                    {
+                        if (!posToName.ContainsKey(position) && !runsByPosition.ContainsKey(position))
+                        {
+                            // Position never declared for this account on this day — skip until we know the name.
+                            if (runsByPosition.Count > 0)
+                            {
+                                // Still track not-started slots when total is known from other positions.
+                                var sampleTotal = cycle.SubProfiles.Select(x => x.Total).DefaultIfEmpty(0).Max();
+                                if (sampleTotal < position)
+                                {
+                                    continue;
+                                }
+
+                                posToName[position] = $"#{position}";
+                                posTimes.TryAdd(position, []);
+                                posLeads.TryAdd(position, []);
+                                posErrors.TryAdd(position, []);
+                            }
+                            else
+                            {
+                                continue;
+                            }
+                        }
+
+                        if (!posTimes.ContainsKey(position))
+                        {
+                            posTimes[position] = [];
+                            posLeads[position] = [];
+                            posErrors[position] = [];
+                        }
+
+                        if (!runsByPosition.TryGetValue(position, out var run))
+                        {
+                            // Not started in this cycle (aborted before queue).
+                            posTimes[position].Add(null);
+                            posLeads[position].Add(null);
+                            if (cycleIndex == accountCycles.Count - 1
+                                && cycle.Status is MonitoringCycleRunStatuses.Aborted
+                                    or MonitoringCycleRunStatuses.Failed
+                                    or MonitoringCycleRunStatuses.Running)
+                            {
+                                posErrors[position].Add(new MonitoringCycleErrorDto(
+                                    cycle.FinishedAtUtc ?? cycle.StartedAtUtc,
+                                    "Не запущен (прервано до очереди)"));
+                            }
+
+                            continue;
+                        }
+
+                        posToName[position] = run.SubProfileName;
+                        if (run.Outcome == MonitoringSubProfileRunOutcomes.Completed
+                            && run.CompletedAtUtc is DateTime completedAt)
+                        {
+                            posTimes[position].Add(completedAt);
+                            var windowEnd = cycle.SubProfiles
+                                .Where(x => x.Position > position)
+                                .OrderBy(x => x.Position)
+                                .Select(x => (DateTime?)x.StartedAtUtc)
+                                .FirstOrDefault() ?? cycleEnd;
+                            var sentInWindow = CountSentInWindow(
+                                sent,
+                                accountName,
+                                run.SubProfileName,
+                                run.StartedAtUtc,
+                                windowEnd);
+                            // Prefer delivery-based count; fall back to journal published counter.
+                            var leadCount = sentInWindow > 0 ? sentInWindow : run.PublishedCount;
+                            posLeads[position].Add(leadCount > 0
+                                ? leadCount.ToString(CultureInfo.InvariantCulture)
+                                : "—");
+                        }
+                        else if (run.Outcome == MonitoringSubProfileRunOutcomes.Failed)
+                        {
+                            posTimes[position].Add(null);
+                            posLeads[position].Add(null);
+                            var detail = !string.IsNullOrWhiteSpace(run.ErrorMessage)
+                                ? run.ErrorMessage!
+                                : !string.IsNullOrWhiteSpace(run.ErrorType)
+                                    ? run.ErrorType!
+                                    : "Ошибка прохода";
+                            if (detail.Length > 80)
+                            {
+                                detail = detail[..80];
+                            }
+
+                            posErrors[position].Add(new MonitoringCycleErrorDto(
+                                run.CompletedAtUtc ?? run.StartedAtUtc,
+                                detail));
+                        }
+                        else
+                        {
+                            // Started / skipped without completion.
+                            posTimes[position].Add(null);
+                            posLeads[position].Add(null);
+                        }
+                    }
+
+                    totalPositions = Math.Max(totalPositions, declaredTotal);
+                }
+
+                var notStarted = posToName.Keys
+                    .Where(position => posTimes.TryGetValue(position, out var times) && times.All(t => t is null))
+                    .OrderBy(x => x)
+                    .ToList();
+
+                if (notStarted.Count > 0)
+                {
+                    accountsWithNotStarted++;
+                    totalNotStartedPositions += notStarted.Count;
+                    var names = string.Join(", ", notStarted.Select(p => $"{p}/{totalPositions} ({posToName[p]})"));
+                    notStartedSummaries.Add($"  {accountName}: {notStarted.Count} не запущены — {names}");
+                }
+
+                var leadTotal = CountSentForAccountOnDay(sent, accountName, day);
+                var leadParts = new List<string>();
+                foreach (var position in posToName.Keys.OrderBy(x => x))
+                {
+                    var positionLeadTotal = CountSentForSubProfileOnDay(
+                        sent,
+                        accountName,
+                        posToName[position],
+                        day);
+                    if (positionLeadTotal > 0)
+                    {
+                        leadParts.Add($"{position}/{totalPositions} ({posToName[position]}) = {positionLeadTotal}");
+                    }
+                }
+
+                leadSummaries.Add(new MonitoringCycleLeadSummaryDto(
+                    accountName,
+                    leadTotal,
+                    leadParts));
+
+                if (!isDetailed)
+                {
+                    continue;
+                }
+
+                var rows = posToName.Keys
+                    .OrderBy(x => x)
+                    .Select(position =>
+                    {
+                        var times = posTimes[position].Where(t => t is not null).Select(t => t!.Value).ToList();
+                        var leads = posLeads[position].Where(v => v is not null).Select(v => v!).ToList();
+                        var errors = posErrors[position]
+                            .GroupBy(e => (e.TimestampUtc, e.Detail))
+                            .Select(g => g.First())
+                            .OrderBy(e => e.TimestampUtc)
+                            .ToList();
+                        return new MonitoringCycleSubProfileRowDto(
+                            position,
+                            totalPositions,
+                            posToName[position],
+                            times,
+                            leads,
+                            errors);
+                    })
+                    .ToList();
+
+                var dateUtc = LocalCalendarDateRange.GetUtcRangeForLocalCalendarDay(day).UtcStartInclusive;
+                reports.Add(new MonitoringCycleAccountReportDto(
+                    accountName,
+                    dateUtc,
+                    posToName.Count,
+                    accountCycles.Count,
+                    leadTotal,
+                    rows,
+                    notStarted.Select(p => $"{p}/{totalPositions} ({posToName[p]})").ToList()));
+            }
+        }
+
+        var mergedLeadSummaries = leadSummaries
+            .GroupBy(x => x.AccountName, StringComparer.OrdinalIgnoreCase)
+            .Select(g => new MonitoringCycleLeadSummaryDto(
+                g.Key,
+                g.Sum(x => x.TotalLeads),
+                g.SelectMany(x => x.Breakdown).Distinct(StringComparer.Ordinal).ToList()))
+            .OrderBy(x => ExtractAccountSortKey(x.AccountName))
+            .ToList();
+
+        // Accounts with sent leads but no journal cycles still appear in totals.
+        var journalAccountNames = mergedLeadSummaries
+            .Select(x => x.AccountName)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var sentOnly = BuildSummaryFromSentResponses(sent, startLocal, endLocal, allowedAccountNames);
+        foreach (var extra in sentOnly.LeadSummaries)
+        {
+            if (journalAccountNames.Contains(extra.AccountName))
+            {
+                continue;
+            }
+
+            mergedLeadSummaries.Add(extra);
+        }
+
+        mergedLeadSummaries = mergedLeadSummaries
+            .OrderBy(x => ExtractAccountSortKey(x.AccountName))
+            .ToList();
+
+        return new MonitoringCycleReportDto(
+            isDetailed,
+            mergedLeadSummaries.Sum(x => x.TotalLeads),
+            accountsWithNotStarted,
+            totalNotStartedPositions,
+            notStartedSummaries,
+            mergedLeadSummaries,
+            isDetailed
+                ? reports.OrderBy(x => ExtractAccountSortKey(x.AccountName)).ToList()
+                : []);
+    }
+
+    /// <summary>
+    /// Сводка «Мониторинг циклов» только из отправленных откликов (без логов и без журнала).
+    /// </summary>
+    public static MonitoringCycleReportDto BuildSummaryFromSentResponses(
+        IReadOnlyList<MonitoringCycleSentResponse> sentResponses,
+        DateTime startLocal,
+        DateTime endLocal,
+        IReadOnlySet<string>? allowedAccountNames = null)
+    {
+        var start = startLocal.Date;
+        var end = endLocal.Date;
+        var filtered = sentResponses
+            .Where(x =>
+            {
+                if (allowedAccountNames is not null && !allowedAccountNames.Contains(x.AccountName))
+                {
+                    return false;
+                }
+
+                var localDate = LocalCalendarDateRange.ToLocalDateFromStoredUtc(x.TimestampUtc);
+                return localDate >= start && localDate <= end;
+            })
+            .ToList();
+
+        if (filtered.Count == 0)
+        {
+            return Empty(isDetailed: false);
+        }
+
+        var leadSummaries = filtered
+            .GroupBy(x => x.AccountName, StringComparer.OrdinalIgnoreCase)
+            .Select(accountGroup =>
+            {
+                var breakdown = accountGroup
+                    .GroupBy(
+                        x => string.IsNullOrWhiteSpace(x.SubProfileName) ? "—" : x.SubProfileName.Trim(),
+                        StringComparer.OrdinalIgnoreCase)
+                    .OrderByDescending(g => g.Count())
+                    .ThenBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
+                    .Select(g => $"{g.Key} = {g.Count().ToString(CultureInfo.InvariantCulture)}")
+                    .ToList();
+
+                return new MonitoringCycleLeadSummaryDto(
+                    accountGroup.First().AccountName,
+                    accountGroup.Count(),
+                    breakdown);
+            })
+            .OrderBy(x => ExtractAccountSortKey(x.AccountName))
+            .ToList();
+
+        return new MonitoringCycleReportDto(
+            IsDetailed: false,
+            TotalLeads: leadSummaries.Sum(x => x.TotalLeads),
+            AccountsWithNotStarted: 0,
+            NotStartedPositions: 0,
+            NotStartedSummaries: [],
+            LeadSummaries: leadSummaries,
+            AccountReports: []);
+    }
+
     public static MonitoringCycleReportDto Build(
         IEnumerable<(DateTime TimestampUtc, string Message, string? PropertiesJson)> logRows,
         DateTime startLocal,
@@ -80,9 +484,23 @@ internal static partial class MonitoringCycleReportBuilder
     {
         var isDetailed = (endLocal.Date - startLocal.Date).Days == 0;
         var sent = sentResponses ?? [];
+
+        // Multi-day UI shows only lead totals; rebuild from data and ignore logs.
+        if (!isDetailed)
+        {
+            return BuildSummaryFromSentResponses(sent, startLocal, endLocal, allowedAccountNames);
+        }
+
         var events = ParseEvents(logRows, allowedAccountNames);
         if (events.Count == 0)
         {
+            // Even for a single day, fall back to response data when cycle logs are missing.
+            if (sent.Count > 0)
+            {
+                var fallback = BuildSummaryFromSentResponses(sent, startLocal, endLocal, allowedAccountNames);
+                return fallback with { IsDetailed = true };
+            }
+
             return Empty(isDetailed);
         }
 

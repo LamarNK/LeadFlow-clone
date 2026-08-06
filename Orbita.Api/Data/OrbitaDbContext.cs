@@ -16,6 +16,8 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
     public DbSet<WorkerEventEntity> WorkerEvents => Set<WorkerEventEntity>();
     public DbSet<WorkerDiagnosticAttachmentEntity> WorkerDiagnosticAttachments => Set<WorkerDiagnosticAttachmentEntity>();
     public DbSet<WorkerLogEntryEntity> WorkerLogEntries => Set<WorkerLogEntryEntity>();
+    public DbSet<MonitoringCycleRunEntity> MonitoringCycleRuns => Set<MonitoringCycleRunEntity>();
+    public DbSet<MonitoringSubProfileRunEntity> MonitoringSubProfileRuns => Set<MonitoringSubProfileRunEntity>();
     public DbSet<PanelAuditLogEntity> PanelAuditLogs => Set<PanelAuditLogEntity>();
     public DbSet<PanelUserBitrixSettingsEntity> PanelUserBitrixSettings => Set<PanelUserBitrixSettingsEntity>();
     public DbSet<CandidatePersonEntity> CandidatePersons => Set<CandidatePersonEntity>();
@@ -494,6 +496,32 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.Property(x => x.TraceId).HasMaxLength(64);
             entity.Property(x => x.DedupHash).HasMaxLength(64);
             entity.HasOne(x => x.Worker).WithMany().HasForeignKey(x => x.WorkerId);
+        });
+
+        modelBuilder.Entity<MonitoringCycleRunEntity>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.WorkerId, x.StartedAtUtc });
+            entity.HasIndex(x => new { x.AccountId, x.StartedAtUtc });
+            entity.Property(x => x.AccountName).HasMaxLength(200);
+            entity.Property(x => x.Status).HasMaxLength(32);
+            entity.HasOne(x => x.Worker).WithMany().HasForeignKey(x => x.WorkerId);
+            entity.HasMany(x => x.SubProfileRuns)
+                .WithOne(x => x.CycleRun)
+                .HasForeignKey(x => x.CycleRunId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<MonitoringSubProfileRunEntity>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.CycleRunId, x.Position });
+            entity.HasIndex(x => x.StartedAtUtc);
+            entity.Property(x => x.SubProfileId).HasMaxLength(128);
+            entity.Property(x => x.SubProfileName).HasMaxLength(200);
+            entity.Property(x => x.Outcome).HasMaxLength(32);
+            entity.Property(x => x.ErrorType).HasMaxLength(64);
+            entity.Property(x => x.ErrorMessage).HasMaxLength(500);
         });
 
         modelBuilder.Entity<PanelUserBitrixSettingsEntity>(entity =>

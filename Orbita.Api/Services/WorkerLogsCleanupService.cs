@@ -28,6 +28,13 @@ public sealed class WorkerLogsCleanupService(
                 {
                     logger.LogInformation("Удалено устаревших записей логов воркеров: {Count}", removed);
                 }
+
+                var monitoringRuns = scope.ServiceProvider.GetRequiredService<MonitoringRunIngestService>();
+                var prunedRuns = await monitoringRuns.PruneExpiredAsync(stoppingToken).ConfigureAwait(false);
+                if (prunedRuns > 0)
+                {
+                    logger.LogInformation("Удалено устаревших записей журнала мониторинг-циклов: {Count}", prunedRuns);
+                }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {

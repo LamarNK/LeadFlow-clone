@@ -269,6 +269,38 @@ public sealed class OfficeStatisticsQueryService(
             return MonitoringCycleReportBuilder.Build([], startLocal, endLocal);
         }
 
+        var sentRows = await LoadSentMonitoringResponsesAsync(
+            workerIds,
+            utcStart,
+            utcEnd,
+            allowedAccountNames,
+            ct);
+
+        // Prefer typed monitoring journal (no WorkerLogEntries scan).
+        var journalCycles = await LoadMonitoringCycleJournalAsync(workerIds, utcStart, utcEnd, ct);
+        if (journalCycles.Count > 0)
+        {
+            return MonitoringCycleReportBuilder.BuildFromJournal(
+                journalCycles,
+                startLocal,
+                endLocal,
+                allowedAccountNames,
+                sentRows);
+        }
+
+        // No journal yet for this period (old workers / pre-migration data).
+        var isDetailed = (endLocal.Date - startLocal.Date).Days == 0;
+        if (!isDetailed)
+        {
+            // Multi-day without journal: response-data summary only (never scan week of logs).
+            return MonitoringCycleReportBuilder.BuildSummaryFromSentResponses(
+                sentRows,
+                startLocal,
+                endLocal,
+                allowedAccountNames);
+        }
+
+        // Single day legacy fallback: parse WorkerLogEntries for cycle matrix.
         var logRows = await db.WorkerLogEntries
             .AsNoTracking()
             .Where(x => workerIds.Contains(x.WorkerId))
@@ -293,6 +325,94 @@ public sealed class OfficeStatisticsQueryService(
             .Select(x => (x.TimestampUtc, x.Message, PropertiesJson: (string?)null))
             .ToList();
 
+        return MonitoringCycleReportBuilder.Build(rows, startLocal, endLocal, allowedAccountNames, sentRows);
+    }
+
+    private async Task<IReadOnlyList<MonitoringCycleRunSnapshot>> LoadMonitoringCycleJournalAsync(
+        HashSet<Guid> workerIds,
+        DateTime utcStart,
+        DateTime utcEnd,
+        CancellationToken ct)
+    {
+        var cycleRows = await db.MonitoringCycleRuns
+            .AsNoTracking()
+            .Where(x => workerIds.Contains(x.WorkerId))
+            .Where(x => x.StartedAtUtc >= utcStart && x.StartedAtUtc < utcEnd)
+            .Select(x => new
+            {
+                x.Id,
+                x.AccountName,
+                x.StartedAtUtc,
+                x.FinishedAtUtc,
+                x.Status
+            })
+            .ToListAsync(ct);
+
+        if (cycleRows.Count == 0)
+        {
+            return [];
+        }
+
+        var cycleIds = cycleRows.Select(x => x.Id).ToList();
+        var subRows = await db.MonitoringSubProfileRuns
+            .AsNoTracking()
+            .Where(x => cycleIds.Contains(x.CycleRunId))
+            .Select(x => new
+            {
+                x.Id,
+                x.CycleRunId,
+                x.SubProfileId,
+                x.SubProfileName,
+                x.Position,
+                x.Total,
+                x.StartedAtUtc,
+                x.CompletedAtUtc,
+                x.Outcome,
+                x.ErrorType,
+                x.ErrorMessage,
+                x.PublishedCount
+            })
+            .ToListAsync(ct);
+
+        var subsByCycle = subRows
+            .GroupBy(x => x.CycleRunId)
+            .ToDictionary(
+                g => g.Key,
+                g => (IReadOnlyList<MonitoringSubProfileRunSnapshot>)g
+                    .Select(s => new MonitoringSubProfileRunSnapshot(
+                        s.Id,
+                        s.SubProfileId,
+                        s.SubProfileName,
+                        s.Position,
+                        s.Total,
+                        s.StartedAtUtc,
+                        s.CompletedAtUtc,
+                        s.Outcome,
+                        s.ErrorType,
+                        s.ErrorMessage,
+                        s.PublishedCount))
+                    .OrderBy(s => s.Position)
+                    .ThenBy(s => s.StartedAtUtc)
+                    .ToList());
+
+        return cycleRows
+            .Select(c => new MonitoringCycleRunSnapshot(
+                c.Id,
+                c.AccountName.Trim(),
+                c.StartedAtUtc,
+                c.FinishedAtUtc,
+                c.Status,
+                subsByCycle.GetValueOrDefault(c.Id) ?? []))
+            .ToList();
+    }
+
+    private async Task<IReadOnlyList<MonitoringCycleSentResponse>> LoadSentMonitoringResponsesAsync(
+        HashSet<Guid> workerIds,
+        DateTime utcStart,
+        DateTime utcEnd,
+        IReadOnlySet<string> allowedAccountNames,
+        CancellationToken ct)
+    {
         var sentResponses = await db.CandidateResponses
             .AsNoTracking()
             .Where(x => x.WorkerId != null && workerIds.Contains(x.WorkerId.Value))
@@ -306,15 +426,13 @@ public sealed class OfficeStatisticsQueryService(
             })
             .ToListAsync(ct);
 
-        var sentRows = sentResponses
+        return sentResponses
             .Select(x => new MonitoringCycleSentResponse(
                 x.AccountName.Trim(),
                 x.AvitoSubProfileName.Trim(),
                 x.TimestampUtc))
             .Where(x => allowedAccountNames.Contains(x.AccountName))
             .ToList();
-
-        return MonitoringCycleReportBuilder.Build(rows, startLocal, endLocal, allowedAccountNames, sentRows);
     }
 
     private static BalanceStatisticsSection BuildBalances(
@@ -436,17 +554,22 @@ public sealed class OfficeStatisticsQueryService(
         Guid? officeFilter,
         CancellationToken ct)
     {
+        // Prefer semi-join via Contains (IN subquery) over correlated EXISTS Any(...).
+        var periodResponseIds = responsesQuery.Select(r => r.Id);
         var deliveryCounts = await db.ResponseBitrixDeliveries
             .AsNoTracking()
             .Where(d => d.Outcome == ResponseBitrixDeliveryOutcomes.Sent)
-            .Where(d => responsesQuery.Any(r => r.Id == d.ResponseId))
+            .Where(d => periodResponseIds.Contains(d.ResponseId))
             .GroupBy(d => d.BitrixInstanceId)
             .Select(g => new { BitrixInstanceId = g.Key, Count = g.Count() })
             .ToListAsync(ct);
 
+        var responsesWithDelivery = db.ResponseBitrixDeliveries
+            .AsNoTracking()
+            .Select(d => d.ResponseId);
         var legacyCounts = await responsesQuery
             .Where(x => x.BitrixInstanceId != null && x.Status == ResponseStatuses.Sent)
-            .Where(x => !db.ResponseBitrixDeliveries.Any(d => d.ResponseId == x.Id))
+            .Where(x => !responsesWithDelivery.Contains(x.Id))
             .GroupBy(x => x.BitrixInstanceId!.Value)
             .Select(g => new { BitrixInstanceId = g.Key, Count = g.Count() })
             .ToListAsync(ct);

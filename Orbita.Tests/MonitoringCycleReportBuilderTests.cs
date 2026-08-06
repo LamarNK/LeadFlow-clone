@@ -63,18 +63,15 @@ public sealed class MonitoringCycleReportBuilderTests
     }
 
     [Fact]
-    public void Build_MultiDay_ReturnsSummaryOnly()
+    public void Build_MultiDay_ReturnsSummaryOnly_FromSentResponses_IgnoresLogs()
     {
         var completionUtc = TimeZoneInfo.ConvertTimeToUtc(Day.AddHours(1).AddMinutes(2), TimeZoneInfo.Local);
+        // Logs alone are not enough for multi-day (and should not be required).
         var rows = new List<(DateTime TimestampUtc, string Message, string? PropertiesJson)>
         {
             (
                 TimeZoneInfo.ConvertTimeToUtc(Day.AddHours(1), TimeZoneInfo.Local),
                 "Avito Pro переключаем суб-профиль 1/10 (отклики+объявления, стрим) для Avito 1: контракт РФ 1 (id=1).",
-                null),
-            (
-                completionUtc,
-                "Суб-профиль «контракт РФ 1» аккаунта Avito 1: новых для LeadFlow 4, обработано сейчас 4 (лимит аккаунта 4/10), отложено на следующие циклы 0.",
                 null)
         };
         var sent = Enumerable.Range(0, 4)
@@ -90,8 +87,64 @@ public sealed class MonitoringCycleReportBuilderTests
 
         Assert.False(report.IsDetailed);
         Assert.Empty(report.AccountReports);
+        Assert.Equal(0, report.AccountsWithNotStarted);
         Assert.Single(report.LeadSummaries);
         Assert.Equal(4, report.LeadSummaries[0].TotalLeads);
+        Assert.Contains("контракт РФ 1 = 4", report.LeadSummaries[0].Breakdown);
+    }
+
+    [Fact]
+    public void BuildSummaryFromSentResponses_GroupsByAccountAndSubProfile()
+    {
+        var t1 = TimeZoneInfo.ConvertTimeToUtc(Day.AddHours(2), TimeZoneInfo.Local);
+        var t2 = TimeZoneInfo.ConvertTimeToUtc(Day.AddDays(1).AddHours(3), TimeZoneInfo.Local);
+        var sent = new List<MonitoringCycleSentResponse>
+        {
+            Sent("Avito 2", "профиль B", t1),
+            Sent("Avito 1", "профиль A", t1),
+            Sent("Avito 1", "профиль A", t1.AddMinutes(1)),
+            Sent("Avito 1", "профиль C", t2),
+            Sent("Other", "x", t1)
+        };
+
+        var report = MonitoringCycleReportBuilder.BuildSummaryFromSentResponses(
+            sent,
+            Day,
+            Day.AddDays(2),
+            new HashSet<string>(["Avito 1", "Avito 2"], StringComparer.OrdinalIgnoreCase));
+
+        Assert.False(report.IsDetailed);
+        Assert.Equal(4, report.TotalLeads);
+        Assert.Equal(2, report.LeadSummaries.Count);
+        Assert.Equal("Avito 1", report.LeadSummaries[0].AccountName);
+        Assert.Equal(3, report.LeadSummaries[0].TotalLeads);
+        Assert.Contains("профиль A = 2", report.LeadSummaries[0].Breakdown);
+        Assert.Contains("профиль C = 1", report.LeadSummaries[0].Breakdown);
+        Assert.Equal("Avito 2", report.LeadSummaries[1].AccountName);
+        Assert.DoesNotContain(report.LeadSummaries, x => x.AccountName == "Other");
+    }
+
+    [Fact]
+    public void Build_SingleDay_WithoutLogs_FallsBackToSentSummary()
+    {
+        var t = TimeZoneInfo.ConvertTimeToUtc(Day.AddHours(4), TimeZoneInfo.Local);
+        var sent = new List<MonitoringCycleSentResponse>
+        {
+            Sent("Avito 1", "main", t),
+            Sent("Avito 1", "main", t.AddSeconds(1))
+        };
+
+        var report = MonitoringCycleReportBuilder.Build(
+            [],
+            Day,
+            Day,
+            new HashSet<string>(["Avito 1"], StringComparer.OrdinalIgnoreCase),
+            sent);
+
+        Assert.True(report.IsDetailed);
+        Assert.Equal(2, report.TotalLeads);
+        Assert.Single(report.LeadSummaries);
+        Assert.Empty(report.AccountReports);
     }
 
     [Fact]

@@ -1,0 +1,46 @@
+namespace LeadFlow.Core.Services.Worker;
+
+/// <summary>
+/// Типизированный журнал проходов мониторинга (цикл аккаунта / субпрофили).
+/// В LeadFlow desktop — no-op; в Orbita.Worker — отправка в API.
+/// </summary>
+public interface IMonitoringCycleJournal
+{
+    /// <summary>Начать проход аккаунта (новый cycle run).</summary>
+    Guid BeginCycle(Guid accountId, string accountName);
+
+    /// <summary>Начать проход субпрофиля (position — 1-based).</summary>
+    Guid BeginSubProfile(
+        Guid cycleId,
+        string subProfileId,
+        string subProfileName,
+        int position,
+        int total);
+
+    /// <summary>Успешное завершение прохода субпрофиля (в т.ч. с 0 новых откликов).</summary>
+    void CompleteSubProfile(
+        Guid cycleId,
+        Guid subProfileRunId,
+        int foundCount,
+        int publishedCount,
+        int deferredCount = 0,
+        int skippedDuplicateCount = 0);
+
+    /// <summary>Ошибка прохода субпрофиля.</summary>
+    void FailSubProfile(
+        Guid cycleId,
+        Guid subProfileRunId,
+        string? errorType,
+        string? errorMessage);
+
+    /// <summary>Цикл завершён нормально (все субпрофили в очереди отработаны).</summary>
+    void CompleteCycle(Guid cycleId);
+
+    /// <summary>Цикл прерван (блокирующая ошибка, капча, остановка).</summary>
+    void AbortCycle(Guid cycleId);
+
+    /// <summary>Цикл завершился фатальной ошибкой аккаунта.</summary>
+    void FailCycle(Guid cycleId);
+
+    Task FlushAsync(CancellationToken cancellationToken = default);
+}

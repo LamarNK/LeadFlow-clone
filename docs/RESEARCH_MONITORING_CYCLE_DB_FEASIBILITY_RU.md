@@ -56,24 +56,26 @@
 
 ## Рекомендуемое решение
 
-### 1. Немедленно: гибридная статистика
+### 1. Немедленно: гибридная статистика (сделано частично)
 
-- Оставить `WorkerLogEntries` источником `Switch`, completion и границ циклов.
-- Лиды для Bitrix считать через `ResponseBitrixDeliveries(Outcome = Sent, CreatedAtUtc)` с join к `CandidateResponses` по `ResponseId`; для исторических строк без delivery-записи оставить совместимый fallback на `CandidateResponses.Status == Sent`.
+- **Период > 1 дня (неделя/месяц):** сводка «Мониторинг циклов» строится **только** из `CandidateResponses` (`Status == Sent`) — без скана `WorkerLogEntries`. UI и так не показывает детальные таблицы; тяжёлый `ILIKE` по логам за неделю приводил к таймауту `/statistics`.
+- **Один день:** `WorkerLogEntries` остаются источником `Switch`, completion и границ циклов; лиды в ячейках — из `CandidateResponses` (`Sent`). Если логов нет, fallback — сводка по отправленным откликам.
 - `WorkerEvents` показывать как диагностические ошибки аккаунта, не приписывая их конкретному циклу или субпрофилю без явной связи.
 
-Это устраняет зависимость количества лидов от текстовых счётчиков логов и использует точное время доставки Bitrix, сохраняя корректные границы циклов.
+Это убирает зависимость недельной статистики от текстового разбора логов. Полная детализация циклов за любой период — только после журнала запусков (п. 2).
 
-### 2. Для полной замены: append-only журнал запусков
+### 2. Журнал запусков — **реализовано**
 
-Добавить две сущности (или аналогичный доменный event stream):
+Таблицы:
 
-- `MonitoringCycleRun`: `Id`, `WorkerId`, `AccountId`, `CycleStartedAtUtc`, `CycleFinishedAtUtc`, итоговый статус.
-- `MonitoringSubProfileRun`: `Id`, `CycleRunId`, `SubProfileId`, `SubProfileName`, `Position`, `Total`, `StartedAtUtc`, `CompletedAtUtc`, `Outcome`, `ErrorType`, `ErrorMessage`, счётчики найденных/отфильтрованных/отправленных.
+- `MonitoringCycleRuns`: `Id`, `WorkerId`, `AccountId`, `AccountName`, `StartedAtUtc`, `FinishedAtUtc`, `Status` (`Running`/`Completed`/`Aborted`/`Failed`).
+- `MonitoringSubProfileRuns`: `Id`, `CycleRunId`, `SubProfileId`, `SubProfileName`, `Position`, `Total`, `StartedAtUtc`, `CompletedAtUtc`, `Outcome`, `ErrorType`, `ErrorMessage`, счётчики `Found`/`Published`/`Deferred`/`SkippedDuplicate`.
 
-Воркер должен записывать `started`, `completed` и `failed` в момент переключения и завершения. Ключи должны быть ID аккаунта/субпрофиля, а имя — только отображаемой копией. В таком журнале нулевой успешный проход будет отдельной строкой, а «не запущен» будет выводиться как отсутствующий ожидаемый `MonitoringSubProfileRun` после начала `MonitoringCycleRun`.
+API: `POST /api/v1/workers/telemetry/monitoring-runs` (идемпотентный upsert по `Id`).  
+Воркер: `IMonitoringCycleJournal` / `MonitoringCycleJournalSink` пишет события из `WorkerMonitoringService`.  
+Статистика: `OfficeStatisticsQueryService` строит «Мониторинг циклов» из журнала (`BuildFromJournal`); multi-day без логов; single-day legacy fallback на `WorkerLogEntries` только если журнала за период нет.
 
-Логи при этом полезно сохранить для диагностики и текста ошибки, но отчёт сможет строиться из типизированных БД-событий.
+Retention: 60 дней (`MonitoringRunIngestService.PruneExpiredAsync`).
 
 ### Исторические данные
 

@@ -220,6 +220,23 @@ public static class WorkerEndpoints
             return await telemetry.SaveEventsAsync(request, ct) ? Results.Ok() : Results.NotFound();
         }).RequireAuthorization("Worker");
 
+        workers.MapPost("/telemetry/monitoring-runs", async (
+            MonitoringRunBatchRequest request,
+            MonitoringRunIngestService ingest,
+            ClaimsPrincipal user,
+            CancellationToken ct) =>
+        {
+            if (!TryGetWorkerId(user, out var workerId))
+            {
+                return Results.Forbid();
+            }
+
+            var (accepted, error) = await ingest.IngestBatchAsync(workerId, request, ct);
+            return error is not null
+                ? Results.BadRequest(new { error })
+                : Results.Ok(new { accepted });
+        }).RequireAuthorization("Worker");
+
         workers.MapPost("/diagnostics/upload", async (
             HttpRequest request,
             WorkerDiagnosticsService diagnostics,

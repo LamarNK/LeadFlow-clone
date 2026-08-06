@@ -178,6 +178,15 @@ public sealed class OrbitaApiClient
         await _http.SendAsync(request, ct).ConfigureAwait(false);
     }
 
+    public async Task<bool> SendMonitoringRunsAsync(MonitoringRunBatchRequest batch, CancellationToken ct)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/workers/telemetry/monitoring-runs");
+        ApplyAuth(request);
+        request.Content = JsonContent.Create(batch);
+        var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
+        return response.IsSuccessStatusCode;
+    }
+
     public async Task<WorkerDiagnosticUploadResponse?> UploadDiagnosticAsync(
         HttpContent content,
         CancellationToken ct)
