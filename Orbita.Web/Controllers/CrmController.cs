@@ -18,6 +18,55 @@ public sealed class CrmController(
     IOptions<DesignPreviewOptions> previewOptions) : Controller
 {
     [HttpGet]
+    public async Task<IActionResult> Analytics(
+        string? from,
+        string? to,
+        string? managerUserId,
+        CancellationToken ct = default)
+    {
+        var period = string.IsNullOrWhiteSpace(from) || string.IsNullOrWhiteSpace(to)
+            ? new DashboardPeriod(DateTime.Today.AddDays(-29), DateTime.Today)
+            : DashboardPeriod.Parse(from, to);
+        var (fromUtc, toUtc) = LocalCalendarDateRange.ToUtcRange(period);
+        var isAdmin = User.IsInRole(OrbitaRoles.Admin);
+        var selectedManagerUserId = isAdmin && !string.IsNullOrWhiteSpace(managerUserId)
+            ? managerUserId.Trim()
+            : null;
+        var analytics = await api.GetCrmAnalyticsAsync(
+            fromUtc,
+            toUtc,
+            officeContext.EffectiveOfficeId,
+            selectedManagerUserId,
+            ct);
+
+        return View(new CrmAnalyticsViewModel
+        {
+            Header = new PageHeaderViewModel
+            {
+                Title = "Аналитика CRM",
+                Subtitle = "Воронка, результаты и нагрузка команды",
+                ShowRefresh = true,
+                ShowDateRange = true,
+                DateRangeLabel = period.Label,
+                DateFrom = period.From,
+                DateTo = period.To,
+                ActivePeriodPreset = period.ActivePreset,
+                UpdatedAtUtc = analytics?.GeneratedAtUtc ?? DateTime.UtcNow
+            },
+            Analytics = analytics,
+            IsAdmin = isAdmin,
+            CurrentUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty,
+            SelectedManagerUserId = analytics?.ManagerUserId ?? selectedManagerUserId,
+            OfficeContextLabel = officeContext.ContextLabel
+                                 ?? analytics?.Funnels.FirstOrDefault()?.OfficeName
+                                 ?? "Мой офис",
+            ErrorMessage = analytics is null
+                ? "Не удалось загрузить CRM-аналитику. Обновите страницу или войдите в панель снова."
+                : null
+        });
+    }
+
+    [HttpGet]
     public async Task<IActionResult> Index(
         Guid? officeId,
         string? search,

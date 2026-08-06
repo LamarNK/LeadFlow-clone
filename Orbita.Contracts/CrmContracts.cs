@@ -170,6 +170,79 @@ public sealed record CrmBoardQuery(
     bool ActiveLoadOnly = false,
     bool IncludeClosed = false);
 
+/// <summary>
+/// CRM analytics filter. The period is a half-open UTC interval: [FromUtc, ToUtc).
+/// </summary>
+public sealed record CrmAnalyticsQuery(
+    DateTime FromUtc,
+    DateTime ToUtc,
+    Guid? OfficeId = null,
+    string? ManagerUserId = null);
+
+public sealed record CrmAnalyticsDto(
+    DateTime FromUtc,
+    DateTime ToUtc,
+    Guid? OfficeId,
+    string? ManagerUserId,
+    CrmAnalyticsCardMetricsDto Cards,
+    IReadOnlyList<CrmAnalyticsCloseReasonDto> CloseReasons,
+    IReadOnlyList<CrmAnalyticsOfficeFunnelDto> Funnels,
+    IReadOnlyList<CrmAnalyticsManagerOptionDto> ManagerOptions,
+    IReadOnlyList<CrmAnalyticsManagerDto> Managers,
+    DateTime GeneratedAtUtc);
+
+public sealed record CrmAnalyticsCardMetricsDto(
+    int Received,
+    int Assigned,
+    int Active,
+    int Closed,
+    int SuccessfulClosed,
+    double AssignmentRatePercent,
+    double CloseRatePercent,
+    double SuccessRatePercent,
+    double SuccessAmongClosedPercent);
+
+public sealed record CrmAnalyticsCloseReasonDto(
+    string Reason,
+    int Count,
+    double PercentOfClosed);
+
+public sealed record CrmAnalyticsOfficeFunnelDto(
+    Guid OfficeId,
+    string OfficeName,
+    int Received,
+    IReadOnlyList<CrmAnalyticsFunnelStageDto> Stages);
+
+public sealed record CrmAnalyticsFunnelStageDto(
+    string Stage,
+    int Position,
+    int CurrentCount,
+    int ReachedCount,
+    double ConversionFromPreviousPercent,
+    double ConversionFromReceivedPercent,
+    bool IsArchive = false);
+
+public sealed record CrmAnalyticsManagerOptionDto(
+    string UserId,
+    string DisplayName,
+    Guid OfficeId,
+    string OfficeName);
+
+public sealed record CrmAnalyticsManagerDto(
+    Guid OfficeId,
+    string OfficeName,
+    string UserId,
+    string DisplayName,
+    bool IsShiftActive,
+    int Capacity,
+    int CurrentAssignedCards,
+    int ActiveLoad,
+    double CapacityUtilizationPercent,
+    int CardsInPeriod,
+    int TasksTotal,
+    int OpenTasks,
+    int OverdueTasks);
+
 public sealed record CrmBoardDto(
     bool IsEnabled,
     bool RequireStageComment,

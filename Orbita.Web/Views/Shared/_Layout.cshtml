@@ -60,6 +60,7 @@ else
     <link rel="stylesheet" href="~/css/orbita/statistics.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/orbita/crm.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/orbita/crm-notifications.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/orbita/crm-analytics.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/orbita-mobile.css" asp-append-version="true" />
     @await RenderSectionAsync("Styles", required: false)
 </head>
@@ -108,6 +109,7 @@ else
             @if (can(PanelPermissions.Crm))
             {
                 <a class="nav-item @(ctrl == "Crm" && act is "Index" or "Card" or null ? "active" : "")" href="@Url.Action("Index", "Crm")" title="CRM менеджеров"><i class="fa-solid fa-columns" aria-hidden="true"></i><span class="nav-item-label">CRM</span></a>
+                <a class="nav-item @(ctrl == "Crm" && act == "Analytics" ? "active" : "")" href="@Url.Action("Analytics", "Crm")" title="Аналитика CRM"><i class="fa-solid fa-chart-column" aria-hidden="true"></i><span class="nav-item-label">Аналитика CRM</span></a>
                 <a class="nav-item @(ctrl == "Crm" && act is "Tasks" or "TaskDetails" ? "active" : "")" href="@Url.Action("Tasks", "Crm")" title="Мои задачи"><i class="fa-solid fa-list-check" aria-hidden="true"></i><span class="nav-item-label">Задачи</span><span class="nav-badge" data-nav-badge="crm-tasks" hidden></span></a>
                 @if (can(PanelPermissions.Administration))
                 {

@@ -258,6 +258,7 @@ public static class OrbitaApiStartupExtensions
         builder.Services.AddScoped<CrmWorkspaceService>();
         builder.Services.AddScoped<CrmDeadlineNotificationService>();
         builder.Services.AddSingleton<ICrmNotificationRealtimeNotifier, CrmNotificationRealtimeNotifier>();
+        builder.Services.AddScoped<CrmAnalyticsQueryService>();
         builder.Services.AddScoped<BitrixInstanceService>();
         builder.Services.AddScoped<BitrixWorkforceSettingsService>();
         builder.Services.AddScoped<BitrixWorkforceEventReceiver>();

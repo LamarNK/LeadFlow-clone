@@ -232,6 +232,227 @@ internal static class DesignPreviewData
         }
     }
 
+    public static CrmAnalyticsDto GetCrmAnalytics(
+        Guid? officeId,
+        DateTime fromUtc,
+        DateTime toUtc,
+        string? managerUserId = null)
+    {
+        var normalizedFrom = fromUtc.Kind == DateTimeKind.Utc
+            ? fromUtc
+            : DateTime.SpecifyKind(fromUtc, DateTimeKind.Utc);
+        var normalizedTo = toUtc.Kind == DateTimeKind.Utc
+            ? toUtc
+            : DateTime.SpecifyKind(toUtc, DateTimeKind.Utc);
+        if (normalizedTo <= normalizedFrom)
+        {
+            normalizedTo = normalizedFrom.AddDays(1);
+        }
+
+        var periodDays = Math.Clamp((normalizedTo - normalizedFrom).TotalDays, 1d, DashboardPeriod.MaxDays + 1d);
+        var periodFactor = periodDays / 30d;
+        int Scale(int value) => value == 0
+            ? 0
+            : Math.Max(1, (int)Math.Round(value * periodFactor, MidpointRounding.AwayFromZero));
+
+        var managerBaselines = new[]
+        {
+            new PreviewCrmAnalyticsManager(
+                PreviewOfficeId, "Основной", PreviewManagerElena, "Елена Воронцова", true,
+                10, 21, 7, 57, 29, 28, 14, 8, 5, 1),
+            new PreviewCrmAnalyticsManager(
+                PreviewOfficeId, "Основной", PreviewManagerIgor, "Игорь Белов", true,
+                10, 24, 9, 54, 24, 30, 13, 9, 6, 2),
+            new PreviewCrmAnalyticsManager(
+                PreviewOffice2Id, "Сибирь", "preview-manager-tatiana", "Татьяна Орлова", true,
+                12, 18, 10, 32, 15, 17, 7, 7, 4, 0),
+            new PreviewCrmAnalyticsManager(
+                PreviewOffice2Id, "Сибирь", "preview-manager-denis", "Денис Карпов", false,
+                10, 15, 5, 28, 14, 14, 5, 6, 3, 1)
+        };
+        var officeBaselines = new[]
+        {
+            new PreviewCrmAnalyticsOffice(PreviewOfficeId, "Основной", 118, 111, 55, 63, 29),
+            new PreviewCrmAnalyticsOffice(PreviewOffice2Id, "Сибирь", 66, 60, 31, 35, 13)
+        };
+
+        var scopedOffices = officeBaselines
+            .Where(x => officeId is null || x.OfficeId == officeId)
+            .ToList();
+        var managerOptions = managerBaselines
+            .Where(x => officeId is null || x.OfficeId == officeId)
+            .Select(x => new CrmAnalyticsManagerOptionDto(x.UserId, x.DisplayName, x.OfficeId, x.OfficeName))
+            .OrderBy(x => x.OfficeName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(x => x.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var selectedManagers = managerBaselines
+            .Where(x => (officeId is null || x.OfficeId == officeId)
+                        && (string.IsNullOrWhiteSpace(managerUserId)
+                            || string.Equals(x.UserId, managerUserId, StringComparison.Ordinal)))
+            .ToList();
+
+        PreviewCrmAnalyticsTotals totals;
+        if (!string.IsNullOrWhiteSpace(managerUserId))
+        {
+            totals = selectedManagers.Aggregate(
+                PreviewCrmAnalyticsTotals.Empty,
+                (current, manager) => current.Add(new PreviewCrmAnalyticsTotals(
+                    manager.Received,
+                    manager.Received,
+                    manager.Active,
+                    manager.Closed,
+                    manager.SuccessfulClosed)));
+        }
+        else
+        {
+            totals = scopedOffices.Aggregate(
+                PreviewCrmAnalyticsTotals.Empty,
+                (current, office) => current.Add(new PreviewCrmAnalyticsTotals(
+                    office.Received,
+                    office.Assigned,
+                    office.Active,
+                    office.Closed,
+                    office.SuccessfulClosed)));
+        }
+
+        var received = Scale(totals.Received);
+        var assigned = Math.Min(received, Scale(totals.Assigned));
+        var active = Math.Min(received, Scale(totals.Active));
+        var closed = Math.Max(0, received - active);
+        var successful = Math.Min(closed, Scale(totals.SuccessfulClosed));
+        var cards = new CrmAnalyticsCardMetricsDto(
+            received,
+            assigned,
+            active,
+            closed,
+            successful,
+            PreviewPercent(assigned, received),
+            PreviewPercent(closed, received),
+            PreviewPercent(successful, received),
+            PreviewPercent(successful, closed));
+
+        var closeReasons = BuildPreviewCrmCloseReasons(cards.Closed, cards.SuccessfulClosed);
+        var funnels = scopedOffices
+            .Select(office =>
+            {
+                var officeTotals = string.IsNullOrWhiteSpace(managerUserId)
+                    ? new PreviewCrmAnalyticsTotals(office.Received, office.Assigned, office.Active, office.Closed, office.SuccessfulClosed)
+                    : selectedManagers
+                        .Where(x => x.OfficeId == office.OfficeId)
+                        .Aggregate(
+                            PreviewCrmAnalyticsTotals.Empty,
+                            (current, manager) => current.Add(new PreviewCrmAnalyticsTotals(
+                                manager.Received,
+                                manager.Received,
+                                manager.Active,
+                                manager.Closed,
+                                manager.SuccessfulClosed)));
+                return BuildPreviewCrmFunnel(
+                    office.OfficeId,
+                    office.OfficeName,
+                    Scale(officeTotals.Received),
+                    Scale(officeTotals.Received));
+            })
+            .ToList();
+        var managers = selectedManagers
+            .Select(x => new CrmAnalyticsManagerDto(
+                x.OfficeId,
+                x.OfficeName,
+                x.UserId,
+                x.DisplayName,
+                x.IsShiftActive,
+                x.Capacity,
+                x.CurrentAssignedCards,
+                x.ActiveLoad,
+                PreviewPercent(x.ActiveLoad, x.Capacity),
+                Scale(x.Received),
+                x.TasksTotal,
+                x.OpenTasks,
+                x.OverdueTasks))
+            .OrderBy(x => x.OfficeName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(x => x.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return new CrmAnalyticsDto(
+            normalizedFrom,
+            normalizedTo,
+            officeId,
+            string.IsNullOrWhiteSpace(managerUserId) ? null : managerUserId,
+            cards,
+            closeReasons,
+            funnels,
+            managerOptions,
+            managers,
+            DateTime.UtcNow);
+    }
+
+    private static IReadOnlyList<CrmAnalyticsCloseReasonDto> BuildPreviewCrmCloseReasons(
+        int closed,
+        int successful)
+    {
+        var remaining = Math.Max(0, closed - successful);
+        var refused = (int)Math.Round(remaining * .43d, MidpointRounding.AwayFromZero);
+        var unreachable = (int)Math.Round(remaining * .30d, MidpointRounding.AwayFromZero);
+        var duplicate = (int)Math.Round(remaining * .17d, MidpointRounding.AwayFromZero);
+        var other = Math.Max(0, remaining - refused - unreachable - duplicate);
+        return
+        [
+            new(CrmCloseReasons.Success, successful, PreviewPercent(successful, closed)),
+            new(CrmCloseReasons.Refused, refused, PreviewPercent(refused, closed)),
+            new(CrmCloseReasons.Unreachable, unreachable, PreviewPercent(unreachable, closed)),
+            new(CrmCloseReasons.Duplicate, duplicate, PreviewPercent(duplicate, closed)),
+            new(CrmCloseReasons.Other, other, PreviewPercent(other, closed))
+        ];
+    }
+
+    private static CrmAnalyticsOfficeFunnelDto BuildPreviewCrmFunnel(
+        Guid officeId,
+        string officeName,
+        int received,
+        int currentTotal)
+    {
+        var stageNames = CrmStages.Default;
+        var reachRatios = new[] { 1d, .75d, .58d, .43d, .33d, .25d, .19d };
+        var currentWeights = new[] { .26d, .19d, .15d, .13d, .11d, .09d, .07d };
+        var currentCounts = AllocatePreviewCounts(currentTotal, currentWeights);
+        var reachedCounts = new int[stageNames.Count];
+        for (var i = 0; i < stageNames.Count; i++)
+        {
+            var reached = i == 0
+                ? received
+                : (int)Math.Round(received * reachRatios[Math.Min(i, reachRatios.Length - 1)], MidpointRounding.AwayFromZero);
+            reachedCounts[i] = Math.Min(i == 0 ? received : reachedCounts[i - 1], Math.Max(0, reached));
+        }
+
+        var stages = stageNames
+            .Select((stage, index) => new CrmAnalyticsFunnelStageDto(
+                stage,
+                index,
+                currentCounts[index],
+                reachedCounts[index],
+                index == 0
+                    ? PreviewPercent(reachedCounts[index], received)
+                    : PreviewPercent(reachedCounts[index], reachedCounts[index - 1]),
+                PreviewPercent(reachedCounts[index], received)))
+            .ToList();
+        return new CrmAnalyticsOfficeFunnelDto(officeId, officeName, received, stages);
+    }
+
+    private static int[] AllocatePreviewCounts(int total, IReadOnlyList<double> weights)
+    {
+        var counts = weights.Select(weight => (int)Math.Floor(total * weight)).ToArray();
+        var remainder = Math.Max(0, total - counts.Sum());
+        for (var i = 0; i < remainder; i++)
+        {
+            counts[i % counts.Length]++;
+        }
+
+        return counts;
+    }
+
+    private static double PreviewPercent(int numerator, int denominator) =>
+        denominator <= 0 ? 0d : Math.Round(numerator * 100d / denominator, 2);
+
     public static CrmCandidateDetailDto? GetCrmCard(Guid cardId)
     {
         lock (CrmSync)
@@ -799,6 +1020,50 @@ internal static class DesignPreviewData
         public DateTime? NextActionAtUtc { get; set; } = Now.AddHours(2);
         public bool IsClosed { get; set; }
         public string? CloseReason { get; set; }
+    }
+
+    private sealed record PreviewCrmAnalyticsOffice(
+        Guid OfficeId,
+        string OfficeName,
+        int Received,
+        int Assigned,
+        int Active,
+        int Closed,
+        int SuccessfulClosed);
+
+    private sealed record PreviewCrmAnalyticsManager(
+        Guid OfficeId,
+        string OfficeName,
+        string UserId,
+        string DisplayName,
+        bool IsShiftActive,
+        int Capacity,
+        int CurrentAssignedCards,
+        int ActiveLoad,
+        int Received,
+        int Active,
+        int Closed,
+        int SuccessfulClosed,
+        int TasksTotal,
+        int OpenTasks,
+        int OverdueTasks);
+
+    private sealed record PreviewCrmAnalyticsTotals(
+        int Received,
+        int Assigned,
+        int Active,
+        int Closed,
+        int SuccessfulClosed)
+    {
+        public static PreviewCrmAnalyticsTotals Empty { get; } = new(0, 0, 0, 0, 0);
+
+        public PreviewCrmAnalyticsTotals Add(PreviewCrmAnalyticsTotals other) =>
+            new(
+                Received + other.Received,
+                Assigned + other.Assigned,
+                Active + other.Active,
+                Closed + other.Closed,
+                SuccessfulClosed + other.SuccessfulClosed);
     }
 
     public static GlobalDashboardSummary Summary => new(
