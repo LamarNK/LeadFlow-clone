@@ -499,7 +499,7 @@
         if (messengerUrl) lines.push('Чат: ' + messengerUrl);
         if (vacancyUrl) lines.push('Вакансия (URL): ' + vacancyUrl);
 
-        var deliveries = snapshotRow ? readDeliveries(snapshotRow) : [];
+        var deliveries = snapshotRow ? readBitrixDeliveries(snapshotRow) : [];
         deliveries.forEach(function (delivery) {
             var label = readRowValue(delivery, 'bitrixLabel') || 'Битрикс';
             var outcome = readRowValue(delivery, 'outcomeLabel') || mapDeliveryOutcomeLabel(readRowValue(delivery, 'outcome'));
@@ -1382,7 +1382,7 @@
         if (readRowBool(row, 'canSend')) {
             items += '<button type="button" class="row-menu-item" data-send-bitrix data-response-id="' + shared.escapeHtml(rowId) + '"><i class="fa-solid fa-paper-plane" aria-hidden="true"></i>Отправить…</button>';
         }
-        var deliveries = readDeliveries(row);
+        var deliveries = readBitrixDeliveries(row);
         deliveries.forEach(function (delivery) {
             var url = readRowValue(delivery, 'bitrixEntityUrl');
             var outcome = readRowValue(delivery, 'outcome');
