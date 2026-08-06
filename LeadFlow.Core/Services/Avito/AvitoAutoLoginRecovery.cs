@@ -461,19 +461,18 @@ public static class AvitoAutoLoginRecovery
 
     private static async Task<bool> WaitForCredentialInputsAsync(IPage page, CancellationToken cancellationToken)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        try
+        var result = await AvitoInteractionWaiter.WaitOnPageAsync(
+                page,
+                AvitoInteractionWaiter.Target.LoginForm,
+                new AvitoInteractionWaiter.Options(6_000, 250, Operation: "login_form"),
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (result.Status == AvitoInteractionWaiter.Status.ProbeFailed)
         {
-            await page.WaitForSelectorAsync(
-                    "[data-marker='login-form/password/input'], form[data-marker='login-form'] input[name='password'], input[type='password']",
-                    new WaitForSelectorOptions { Timeout = 6_000, Visible = true })
-                .ConfigureAwait(false);
-            return true;
+            throw new InvalidOperationException($"Avito login-form probe failed: {result.Reason}.");
         }
-        catch
-        {
-            return false;
-        }
+
+        return result.Status == AvitoInteractionWaiter.Status.Ready;
     }
 
     private static async Task<bool> TryTypeOrbitCredentialsAsync(
@@ -628,22 +627,18 @@ public static class AvitoAutoLoginRecovery
 
     private static async Task WaitForAuthSettleAsync(IPage page, CancellationToken cancellationToken)
     {
-        for (var elapsed = 0; elapsed < MonitoringTiming.AutoLoginPostSubmitMaxWaitMs;
-             elapsed += MonitoringTiming.AutoLoginPostSubmitPollMs)
+        var result = await AvitoInteractionWaiter.WaitOnPageAsync(
+                page,
+                AvitoInteractionWaiter.Target.AuthorizedProfile,
+                new AvitoInteractionWaiter.Options(
+                    MonitoringTiming.AutoLoginPostSubmitMaxWaitMs,
+                    MonitoringTiming.AutoLoginPostSubmitPollMs,
+                    Operation: "authorized_profile"),
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (result.Status == AvitoInteractionWaiter.Status.ProbeFailed)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            var state = await ProbeAsync(page, cancellationToken).ConfigureAwait(false);
-            if (state is { IsAuthorized: true } or { NeedsLogin: false, HasCaptcha: false })
-            {
-                return;
-            }
-
-            if (state is { HasCaptcha: true })
-            {
-                return;
-            }
-
-            await Task.Delay(MonitoringTiming.AutoLoginPostSubmitPollMs, cancellationToken).ConfigureAwait(false);
+            throw new InvalidOperationException($"Avito authorized-profile probe failed: {result.Reason}.");
         }
     }
 

@@ -400,7 +400,8 @@ public static class AvitoCandidatesPageScripts
         """;
 
     /// <summary>
-    /// Снимок готовности списка: complete, нет loader, сигнатура первых карточек (для стабильности после reload / смены суб-профиля).
+    /// Снимок доступности списка: данные или подтверждённое пустое состояние.
+    /// readyState сохраняется только для диагностики и не блокирует работу воркера.
     /// </summary>
     public static string BuildWaitForReadyProbeScript() =>
         """
@@ -448,8 +449,8 @@ public static class AvitoCandidatesPageScripts
                 );
 
             const contentReady =
-                document.readyState === "complete" &&
-                (hasListData || emptyConfirmed || (!loading && itemCount === 0 && statusCount === 0));
+                hasListData ||
+                (emptyConfirmed && !loading);
 
             return JSON.stringify({
                 readyState: document.readyState,

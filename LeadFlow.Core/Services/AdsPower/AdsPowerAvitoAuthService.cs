@@ -21,11 +21,6 @@ public sealed class AdsPowerAvitoAuthService(
     /// </summary>
     private const string AvitoProfileUrl = "https://www.avito.ru/profile/basic";
 
-    /// <summary>
-    /// Селектор имени пользователя в боковой панели Avito Pro. Используем как «маркер готовности» страницы.
-    /// </summary>
-    private const string ProfileNameSelector = "[data-marker='osp-sidebar/tools/profile/name']";
-
     public async Task<AdsPowerAvitoAuthResult> CheckAuthorizationAsync(
         AdsPowerConnectionOptions options,
         string adsPowerUserId,
@@ -374,44 +369,40 @@ public sealed class AdsPowerAvitoAuthService(
         }
     }
 
-    /// <summary>
-    /// Ждёт появления имени в боковой панели до 12 секунд. Если страница — login, ждать нечего и сразу идём дальше.
-    /// </summary>
+    /// <summary>Ждёт только DOM-маркер профиля, не полную загрузку страницы.</summary>
     private static async Task WaitForProfileSidebarAsync(IPage page, CancellationToken cancellationToken)
     {
-        var url = page.Url ?? string.Empty;
-        if (url.Contains("avito.ru/login", StringComparison.OrdinalIgnoreCase))
+        var result = await AvitoInteractionWaiter.WaitOnPageAsync(
+                page,
+                AvitoInteractionWaiter.Target.ProfileSidebar,
+                new AvitoInteractionWaiter.Options(12_000, 500, Operation: "profile_sidebar"),
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (result.Status == AvitoInteractionWaiter.Status.Ready)
         {
-            await Task.Delay(TimeSpan.FromMilliseconds(1400), cancellationToken).ConfigureAwait(false);
-            return;
-        }
-
-        try
-        {
-            await page.WaitForSelectorAsync(
-                ProfileNameSelector,
-                new WaitForSelectorOptions { Timeout = 12_000, Visible = false }).ConfigureAwait(false);
             Log(
                 DeskLinkAuditLogLevel.Info,
-                "Profile sidebar selector appeared.",
+                "Profile sidebar is action-ready.",
                 new Dictionary<string, object?>
                 {
                     ["step"] = "sidebar_ready",
-                    ["selector"] = ProfileNameSelector
+                    ["ready.waitMs"] = result.WaitMs,
+                    ["page.url"] = result.Url
                 });
+            return;
         }
-        catch (Exception ex)
-        {
-            Log(
-                DeskLinkAuditLogLevel.Warning,
-                $"Profile sidebar selector did not appear in time ({ex.GetType().Name}). Continuing with what we have.",
-                new Dictionary<string, object?>
-                {
-                    ["step"] = "sidebar_timeout",
-                    ["selector"] = ProfileNameSelector
-                });
-            await Task.Delay(TimeSpan.FromMilliseconds(2000), cancellationToken).ConfigureAwait(false);
-        }
+
+        Log(
+            result.Status == AvitoInteractionWaiter.Status.TimedOut ? DeskLinkAuditLogLevel.Warning : DeskLinkAuditLogLevel.Info,
+            $"Profile sidebar is not action-ready: {result.Status} ({result.Reason}).",
+            new Dictionary<string, object?>
+            {
+                ["step"] = "sidebar_not_ready",
+                ["ready.status"] = result.Status.ToString(),
+                ["ready.reason"] = result.Reason,
+                ["ready.waitMs"] = result.WaitMs,
+                ["page.url"] = result.Url
+            });
     }
 
     /// <summary>
