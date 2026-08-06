@@ -69,13 +69,91 @@ public sealed class MonitoringCycleJournalTests
         Assert.Equal(2, report.TotalLeads);
         Assert.Single(report.AccountReports);
         Assert.Equal(1, report.AccountReports[0].CycleCount);
-        Assert.Equal(3, report.AccountReports[0].Rows.Count);
+        // Only positions with journal rows — no synthetic "#3" from Total=3.
+        Assert.Equal(2, report.AccountReports[0].Rows.Count);
         Assert.Equal("профиль A", report.AccountReports[0].Rows[0].Name);
         Assert.Single(report.AccountReports[0].Rows[0].CompletionTimesUtc);
         Assert.Equal(["2"], report.AccountReports[0].Rows[0].LeadsPerCycle);
         Assert.True(report.AccountReports[0].Rows[1].Errors.Count > 0);
-        Assert.Contains(report.AccountReports[0].NotStartedPositions, x => x.Contains("3/3"));
-        Assert.True(report.AccountsWithNotStarted >= 1);
+        Assert.DoesNotContain(report.AccountReports[0].Rows, r => r.Name.StartsWith("#", StringComparison.Ordinal));
+        Assert.Empty(report.AccountReports[0].NotStartedPositions);
+    }
+
+    [Fact]
+    public void BuildFromJournal_DoesNotInventMissingPositionsFromTotal()
+    {
+        var cycleStart = TimeZoneInfo.ConvertTimeToUtc(Day.AddHours(16).AddMinutes(25), TimeZoneInfo.Local);
+        var cycles = new List<MonitoringCycleRunSnapshot>
+        {
+            new(
+                Guid.NewGuid(),
+                "Avito 1",
+                cycleStart,
+                cycleStart.AddMinutes(8),
+                MonitoringCycleRunStatuses.Aborted,
+                [
+                    new MonitoringSubProfileRunSnapshot(
+                        Guid.NewGuid(), "sp-1", "СлужуОтечеству6", 1, 10,
+                        cycleStart, cycleStart.AddMinutes(7),
+                        MonitoringSubProfileRunOutcomes.Completed, null, null, 0),
+                    new MonitoringSubProfileRunSnapshot(
+                        Guid.NewGuid(), "sp-2", "СлужуОтечеству4", 2, 10,
+                        cycleStart.AddMinutes(7), null,
+                        MonitoringSubProfileRunOutcomes.Started, null, null, 0)
+                ])
+        };
+
+        var report = MonitoringCycleReportBuilder.BuildFromJournal(cycles, Day, Day);
+
+        Assert.Single(report.AccountReports);
+        Assert.Equal(2, report.AccountReports[0].Rows.Count);
+        Assert.Equal(0, report.AccountsWithNotStarted);
+        Assert.DoesNotContain(report.AccountReports[0].Rows, r => r.Name.StartsWith("#", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void BuildFromJournal_MarksNotStartedOnlyWhenKnownFromEarlierCycle()
+    {
+        var t1 = TimeZoneInfo.ConvertTimeToUtc(Day.AddHours(10), TimeZoneInfo.Local);
+        var t2 = TimeZoneInfo.ConvertTimeToUtc(Day.AddHours(14), TimeZoneInfo.Local);
+        var cycles = new List<MonitoringCycleRunSnapshot>
+        {
+            new(
+                Guid.NewGuid(),
+                "Avito 1",
+                t1,
+                t1.AddMinutes(30),
+                MonitoringCycleRunStatuses.Completed,
+                [
+                    new MonitoringSubProfileRunSnapshot(
+                        Guid.NewGuid(), "a", "профиль A", 1, 2, t1, t1.AddMinutes(10),
+                        MonitoringSubProfileRunOutcomes.Completed, null, null, 1),
+                    new MonitoringSubProfileRunSnapshot(
+                        Guid.NewGuid(), "b", "профиль B", 2, 2, t1.AddMinutes(10), t1.AddMinutes(20),
+                        MonitoringSubProfileRunOutcomes.Completed, null, null, 0)
+                ]),
+            new(
+                Guid.NewGuid(),
+                "Avito 1",
+                t2,
+                t2.AddMinutes(5),
+                MonitoringCycleRunStatuses.Aborted,
+                [
+                    new MonitoringSubProfileRunSnapshot(
+                        Guid.NewGuid(), "a", "профиль A", 1, 2, t2, t2.AddMinutes(3),
+                        MonitoringSubProfileRunOutcomes.Completed, null, null, 0)
+                    // position 2 known from first cycle, missing in aborted second cycle
+                ])
+        };
+
+        var report = MonitoringCycleReportBuilder.BuildFromJournal(cycles, Day, Day);
+
+        Assert.Equal(2, report.AccountReports[0].Rows.Count);
+        var rowB = Assert.Single(report.AccountReports[0].Rows, r => r.Name == "профиль B");
+        // Completed earlier in the day — not in day-level "не запущены", but last aborted cycle notes the skip.
+        Assert.NotEmpty(rowB.CompletionTimesUtc);
+        Assert.Contains(rowB.Errors, e => e.Detail.Contains("Не запущен", StringComparison.Ordinal));
+        Assert.Empty(report.AccountReports[0].NotStartedPositions);
     }
 
     [Fact]

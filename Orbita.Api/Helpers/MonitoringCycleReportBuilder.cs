@@ -147,48 +147,30 @@ internal static partial class MonitoringCycleReportBuilder
             {
                 var accountName = accountGroup.Key;
                 var accountCycles = accountGroup.OrderBy(c => c.StartedAtUtc).ToList();
+                // Only positions with real journal rows. Never invent "#3"…"#10" from Total alone —
+                // that false-flagged subprofiles that later ran (worker last-activity is a different source).
                 var posToName = new Dictionary<int, string>();
                 var posTimes = new Dictionary<int, List<DateTime?>>();
                 var posLeads = new Dictionary<int, List<string?>>();
                 var posErrors = new Dictionary<int, List<MonitoringCycleErrorDto>>();
+                var posExplicitNotStarted = new HashSet<int>();
                 var totalPositions = 0;
 
                 foreach (var cycle in accountCycles)
                 {
-                    foreach (var sp in cycle.SubProfiles.OrderBy(x => x.Position))
+                    foreach (var sp in cycle.SubProfiles)
                     {
                         totalPositions = Math.Max(totalPositions, Math.Max(sp.Total, sp.Position));
-                        if (!posToName.ContainsKey(sp.Position))
-                        {
-                            posToName[sp.Position] = sp.SubProfileName;
-                        }
-
-                        if (!posTimes.ContainsKey(sp.Position))
-                        {
-                            posTimes[sp.Position] = [];
-                            posLeads[sp.Position] = [];
-                            posErrors[sp.Position] = [];
-                        }
+                        posToName[sp.Position] = sp.SubProfileName;
+                        posTimes.TryAdd(sp.Position, []);
+                        posLeads.TryAdd(sp.Position, []);
+                        posErrors.TryAdd(sp.Position, []);
                     }
                 }
 
                 if (totalPositions <= 0)
                 {
                     totalPositions = posToName.Keys.DefaultIfEmpty(1).Max();
-                }
-
-                // Ensure all positions 1..total known from any cycle are tracked.
-                for (var position = 1; position <= totalPositions; position++)
-                {
-                    if (!posToName.ContainsKey(position))
-                    {
-                        // Unknown name until observed; keep placeholder only if some cycle declared total.
-                        continue;
-                    }
-
-                    posTimes.TryAdd(position, []);
-                    posLeads.TryAdd(position, []);
-                    posErrors.TryAdd(position, []);
                 }
 
                 for (var cycleIndex = 0; cycleIndex < accountCycles.Count; cycleIndex++)
@@ -202,60 +184,34 @@ internal static partial class MonitoringCycleReportBuilder
                         .GroupBy(x => x.Position)
                         .ToDictionary(g => g.Key, g => g.OrderBy(x => x.StartedAtUtc).Last());
 
-                    var declaredTotal = cycle.SubProfiles.Select(x => x.Total).DefaultIfEmpty(totalPositions).Max();
-                    declaredTotal = Math.Max(declaredTotal, totalPositions);
+                    var isLastCycle = cycleIndex == accountCycles.Count - 1;
+                    var cycleInterrupted = isLastCycle
+                        && cycle.Status is MonitoringCycleRunStatuses.Aborted
+                            or MonitoringCycleRunStatuses.Failed
+                            or MonitoringCycleRunStatuses.Running;
 
-                    for (var position = 1; position <= declaredTotal; position++)
+                    // Only observed positions (no loop 1..Total inventing missing slots).
+                    foreach (var position in posToName.Keys.OrderBy(x => x))
                     {
-                        if (!posToName.ContainsKey(position) && !runsByPosition.ContainsKey(position))
-                        {
-                            // Position never declared for this account on this day — skip until we know the name.
-                            if (runsByPosition.Count > 0)
-                            {
-                                // Still track not-started slots when total is known from other positions.
-                                var sampleTotal = cycle.SubProfiles.Select(x => x.Total).DefaultIfEmpty(0).Max();
-                                if (sampleTotal < position)
-                                {
-                                    continue;
-                                }
-
-                                posToName[position] = $"#{position}";
-                                posTimes.TryAdd(position, []);
-                                posLeads.TryAdd(position, []);
-                                posErrors.TryAdd(position, []);
-                            }
-                            else
-                            {
-                                continue;
-                            }
-                        }
-
-                        if (!posTimes.ContainsKey(position))
-                        {
-                            posTimes[position] = [];
-                            posLeads[position] = [];
-                            posErrors[position] = [];
-                        }
-
                         if (!runsByPosition.TryGetValue(position, out var run))
                         {
-                            // Not started in this cycle (aborted before queue).
+                            // Known from another cycle that day, missing in this interrupted cycle.
                             posTimes[position].Add(null);
                             posLeads[position].Add(null);
-                            if (cycleIndex == accountCycles.Count - 1
-                                && cycle.Status is MonitoringCycleRunStatuses.Aborted
-                                    or MonitoringCycleRunStatuses.Failed
-                                    or MonitoringCycleRunStatuses.Running)
+                            if (cycleInterrupted)
                             {
                                 posErrors[position].Add(new MonitoringCycleErrorDto(
                                     cycle.FinishedAtUtc ?? cycle.StartedAtUtc,
                                     "Не запущен (прервано до очереди)"));
+                                posExplicitNotStarted.Add(position);
                             }
 
                             continue;
                         }
 
                         posToName[position] = run.SubProfileName;
+                        totalPositions = Math.Max(totalPositions, Math.Max(run.Total, run.Position));
+
                         if (run.Outcome == MonitoringSubProfileRunOutcomes.Completed
                             && run.CompletedAtUtc is DateTime completedAt)
                         {
@@ -271,7 +227,6 @@ internal static partial class MonitoringCycleReportBuilder
                                 run.SubProfileName,
                                 run.StartedAtUtc,
                                 windowEnd);
-                            // Prefer delivery-based count; fall back to journal published counter.
                             var leadCount = sentInWindow > 0 ? sentInWindow : run.PublishedCount;
                             posLeads[position].Add(leadCount > 0
                                 ? leadCount.ToString(CultureInfo.InvariantCulture)
@@ -297,17 +252,19 @@ internal static partial class MonitoringCycleReportBuilder
                         }
                         else
                         {
-                            // Started / skipped without completion.
+                            // Started/skipped without completion — not "never queued".
                             posTimes[position].Add(null);
                             posLeads[position].Add(null);
                         }
                     }
-
-                    totalPositions = Math.Max(totalPositions, declaredTotal);
                 }
 
+                // Only count as "не запущен" when the last cycle was interrupted before that position.
                 var notStarted = posToName.Keys
-                    .Where(position => posTimes.TryGetValue(position, out var times) && times.All(t => t is null))
+                    .Where(position =>
+                        posExplicitNotStarted.Contains(position)
+                        && posTimes.TryGetValue(position, out var times)
+                        && times.All(t => t is null))
                     .OrderBy(x => x)
                     .ToList();
 
