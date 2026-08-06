@@ -12,7 +12,14 @@ public sealed class WorkerLogUploadService(
         IReadOnlyList<WorkerLogEntryUploadDto> entries,
         CancellationToken cancellationToken = default)
     {
-        if (credentials.WorkerId is null || entries.Count == 0)
+        // null = «не удалось» → курсор LastSyncedUtc не двигаем (см. WorkerLogSyncService).
+        // Раньше return 0 при WorkerId == null сдвигал курсор без реальной отправки.
+        if (credentials.WorkerId is null)
+        {
+            return null;
+        }
+
+        if (entries.Count == 0)
         {
             return 0;
         }

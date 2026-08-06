@@ -162,7 +162,7 @@ public sealed class WorkerLogsServiceTests
         new(db, Options.Create(new WorkerLogsOptions
         {
             RetentionDays = retentionDays,
-            MaxBatchSize = 500
+            MaxBatchSize = 2000
         }));
 
     private static async Task SeedWorkerAsync(OrbitaDbContext db)
