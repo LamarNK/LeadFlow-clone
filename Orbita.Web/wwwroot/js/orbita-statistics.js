@@ -721,31 +721,56 @@
         }).join('');
     }
 
-    function renderBitrixDeliveries(rows) {
+    function renderDeliveries(bitrixRows, crmRows) {
         var container = document.querySelector('[data-statistics-bitrix-deliveries]');
         if (!container) return;
 
-        if (!rows || rows.length === 0) {
+        var deliveries = (bitrixRows || []).map(function (row) {
+            return {
+                channel: 'Битрикс24',
+                channelKind: 'bitrix',
+                url: row.responsesUrl || row.ResponsesUrl || '#',
+                label: row.label || row.Label || 'Битрикс',
+                count: Number(row.sentCount != null ? row.sentCount : row.SentCount) || 0
+            };
+        }).concat((crmRows || []).map(function (row) {
+            return {
+                channel: 'CRM',
+                channelKind: 'crm',
+                url: row.responsesUrl || row.ResponsesUrl || '#',
+                label: row.label || row.Label || 'Офис CRM',
+                count: Number(row.sentCount != null ? row.sentCount : row.SentCount) || 0
+            };
+        })).filter(function (row) { return row.count > 0; })
+            .sort(function (left, right) { return right.count - left.count || left.label.localeCompare(right.label); });
+
+        var totalEl = document.querySelector('[data-statistics-bitrix-total]');
+        var total = deliveries.reduce(function (sum, row) { return sum + row.count; }, 0);
+        if (totalEl) totalEl.textContent = total + ' всего за период';
+
+        if (!deliveries.length) {
             container.innerHTML = '<div class="table-empty-state">'
                 + '<i class="fa-solid fa-paper-plane" aria-hidden="true"></i>'
                 + '<p class="table-empty-title">Нет отправок за период</p>'
-                + '<p class="table-empty-desc">Отклики ещё не отправлялись в Битрикс24 за выбранный период.</p>'
+                + '<p class="table-empty-desc">Отклики ещё не отправлялись в CRM или Битрикс24.</p>'
                 + '</div>';
             return;
         }
 
-        container.innerHTML = '<table class="data-table data-table--compact statistics-bitrix-table">'
-            + '<thead><tr><th>Битрикс</th><th class="cell-num">Отправлено</th></tr></thead><tbody>'
-            + rows.map(function (row) {
-                var url = row.responsesUrl || row.ResponsesUrl || '#';
-                var label = row.label || row.Label || 'Битрикс';
-                var count = row.sentCount != null ? row.sentCount : row.SentCount;
-                return '<tr>'
-                    + '<td><a href="' + escapeHtml(url) + '" class="statistics-bitrix-link">' + escapeHtml(label) + '</a></td>'
-                    + '<td class="cell-num">' + count + '</td>'
-                    + '</tr>';
-            }).join('')
-            + '</tbody></table>';
+        var maxCount = Math.max.apply(null, deliveries.map(function (row) { return row.count; })) || 1;
+        var bars = deliveries.map(function (row) {
+            var width = Math.round((row.count / maxCount) * 1000) / 10;
+            var share = Math.round((row.count / total) * 1000) / 10;
+            return '<a class="statistics-bitrix-bar statistics-bitrix-bar--' + row.channelKind + '" href="' + escapeHtml(row.url) + '" style="--statistics-bitrix-bar-width:' + width + '%"'
+                + ' aria-label="' + escapeHtml(row.channel + ', ' + row.label + ': ' + row.count + ' отправлено, ' + share + '% от всех отправок') + '">'
+                + '<span class="statistics-bitrix-bar__label"><i aria-hidden="true"></i><span class="statistics-bitrix-bar__label-text" title="' + escapeHtml(row.label) + '">' + escapeHtml(row.label) + '</span><em class="statistics-bitrix-bar__channel">' + row.channel + '</em></span>'
+                + '<span class="statistics-bitrix-bar__track" aria-hidden="true"><b></b></span>'
+                + '<strong>' + row.count + '</strong><small>' + share + '%</small></a>';
+        }).join('');
+
+        container.innerHTML = '<div class="statistics-bitrix-chart">'
+            + '<div class="statistics-bitrix-chart__total"><span>Всего отправлено</span><strong>' + total + '</strong><small>за выбранный период</small></div>'
+            + '<div class="statistics-bitrix-chart__bars" aria-label="Распределение отправок по каналам">' + bars + '</div></div>';
     }
 
     function renderAgeBuckets(rows) {
@@ -856,7 +881,7 @@
 
         renderWorkers(snapshot.workers || [], showOfficeColumn);
         updateSummaryMeta(snapshot.summary);
-        renderBitrixDeliveries(snapshot.bitrixDeliveries || []);
+        renderDeliveries(snapshot.bitrixDeliveries || [], snapshot.crmDeliveries || []);
 
         if (snapshot.hrInsights) {
             renderHrTable('Города', snapshot.hrInsights.topCities);

@@ -1209,6 +1209,10 @@ internal static class DesignPreviewData
                 new BitrixDeliveryStatDto(Guid.Parse("11111111-1111-1111-1111-111111111101"), "HR Москва", 186),
                 new BitrixDeliveryStatDto(Guid.Parse("11111111-1111-1111-1111-111111111102"), "Кадры СПб", 124)
             ],
+            [
+                new CrmDeliveryStatDto(Guid.Parse("11111111-1111-1111-1111-111111111201"), "Офис Москва", 94),
+                new CrmDeliveryStatDto(Guid.Parse("11111111-1111-1111-1111-111111111202"), "Офис Екатеринбург", 58)
+            ],
             new HrInsightsDto(
                 [new HrMetricDto("Москва", 420, 310, "73.8%", "34.1%"), new HrMetricDto("Санкт-Петербург", 280, 190, "67.9%", "22.7%")],
                 [new HrMetricDto("Курьер", 360, 250, "69.4%", "29.2%"), new HrMetricDto("Водитель", 210, 140, "66.7%", "17.0%")],

@@ -7,12 +7,18 @@ public sealed record OfficeStatisticsDto(
     ResponsesPeriodSection Responses,
     IReadOnlyList<DailyResponseBucketDto> DailyTrend,
     IReadOnlyList<BitrixDeliveryStatDto> BitrixDeliveries,
+    IReadOnlyList<CrmDeliveryStatDto> CrmDeliveries,
     HrInsightsDto HrInsights,
     MonitoringCycleReportDto MonitoringCycles,
     DateTime AggregatedAtUtc);
 
 public sealed record BitrixDeliveryStatDto(
     Guid BitrixInstanceId,
+    string Label,
+    int SentCount);
+
+public sealed record CrmDeliveryStatDto(
+    Guid OfficeId,
     string Label,
     int SentCount);
 

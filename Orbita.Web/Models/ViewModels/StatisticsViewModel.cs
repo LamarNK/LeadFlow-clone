@@ -14,6 +14,7 @@ public sealed class StatisticsViewModel
     public AccountStatsViewModel AccountStats { get; init; } = AccountStatsViewModel.Empty;
     public IReadOnlyList<StatisticsWorkerRowViewModel> Workers { get; init; } = [];
     public IReadOnlyList<BitrixDeliveryStatRowViewModel> BitrixDeliveries { get; init; } = [];
+    public IReadOnlyList<CrmDeliveryStatRowViewModel> CrmDeliveries { get; init; } = [];
     public HrInsightsViewModel HrInsights { get; init; } = HrInsightsViewModel.Empty;
     public MonitoringCycleReportViewModel MonitoringCycles { get; init; } = MonitoringCycleReportViewModel.Empty;
     public StatisticsSummaryViewModel Summary { get; init; } = new();
@@ -30,6 +31,7 @@ public sealed class StatisticsLiveSnapshotViewModel
     public AccountStatsViewModel AccountStats { get; init; } = AccountStatsViewModel.Empty;
     public IReadOnlyList<StatisticsWorkerRowViewModel> Workers { get; init; } = [];
     public IReadOnlyList<BitrixDeliveryStatRowViewModel> BitrixDeliveries { get; init; } = [];
+    public IReadOnlyList<CrmDeliveryStatRowViewModel> CrmDeliveries { get; init; } = [];
     public HrInsightsViewModel HrInsights { get; init; } = HrInsightsViewModel.Empty;
     public StatisticsSummaryViewModel Summary { get; init; } = new();
 }
@@ -37,6 +39,14 @@ public sealed class StatisticsLiveSnapshotViewModel
 public sealed class BitrixDeliveryStatRowViewModel
 {
     public Guid BitrixInstanceId { get; init; }
+    public string Label { get; init; } = string.Empty;
+    public int SentCount { get; init; }
+    public string ResponsesUrl { get; init; } = string.Empty;
+}
+
+public sealed class CrmDeliveryStatRowViewModel
+{
+    public Guid OfficeId { get; init; }
     public string Label { get; init; } = string.Empty;
     public int SentCount { get; init; }
     public string ResponsesUrl { get; init; } = string.Empty;

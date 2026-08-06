@@ -131,16 +131,29 @@ public sealed class OfficeStatisticsQueryService(
             .AsNoTracking()
             .Where(x => x.WorkerId != null && workerIds.Contains(x.WorkerId.Value) && x.CollectedAt >= utcStart && x.CollectedAt < utcEnd);
 
+        // Scoped responses (worker / account / vacancy) without time filter — used for CRM office send counts.
+        var scopedResponsesQuery = db.CandidateResponses
+            .AsNoTracking()
+            .Where(x => x.WorkerId != null && workerIds.Contains(x.WorkerId.Value));
         if (accountFilterSet is not null)
         {
             responsesQuery = responsesQuery.Where(x => accountFilterSet.Contains(x.AccountId));
+            scopedResponsesQuery = scopedResponsesQuery.Where(x => accountFilterSet.Contains(x.AccountId));
         }
 
         responsesQuery = ApplyVacancyFilter(responsesQuery, vacancyFilterKey);
+        scopedResponsesQuery = ApplyVacancyFilter(scopedResponsesQuery, vacancyFilterKey);
 
         var dailyTrend = await BuildDailyTrendAsync(responsesQuery, startLocal, endLocal, ct);
         var responses = await BuildResponsesPeriodAsync(responsesQuery, dailyTrend, ct);
         var bitrixDeliveries = await BuildBitrixDeliveryStatsAsync(responsesQuery, scope, officeFilter, ct);
+        var crmDeliveries = await BuildCrmDeliveryStatsAsync(
+            scopedResponsesQuery,
+            utcStart,
+            utcEnd,
+            scope,
+            officeFilter,
+            ct);
         var hrInsights = await BuildHrInsightsAsync(responsesQuery, ct);
         var workerInfrastructure = await BuildWorkerInfrastructureAsync(
             workers,
@@ -165,6 +178,7 @@ public sealed class OfficeStatisticsQueryService(
             responses,
             dailyTrend,
             bitrixDeliveries,
+            crmDeliveries,
             hrInsights,
             monitoringCycles,
             nowUtc);
@@ -244,6 +258,7 @@ public sealed class OfficeStatisticsQueryService(
             new AccountInfrastructureSection(0, new DashboardAccountStatusCounts(0, 0, 0, 0), 0, 0),
             new WorkerInfrastructureSection(0, 0, []),
             new ResponsesPeriodSection(0, 0, 0, 0, 0, 0, 0, 0, null),
+            [],
             [],
             [],
             new HrInsightsDto([], [], [], [], "н/д", "0%"),
@@ -611,6 +626,45 @@ public sealed class OfficeStatisticsQueryService(
                 x.Id,
                 ResponseBitrixDeliveryService.FormatBitrixLabel(x.Name, x.Signature),
                 merged[x.Id]))
+            .OrderByDescending(x => x.SentCount)
+            .ThenBy(x => x.Label, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private async Task<IReadOnlyList<CrmDeliveryStatDto>> BuildCrmDeliveryStatsAsync(
+        IQueryable<CandidateResponseEntity> scopedResponses,
+        DateTime utcStart,
+        DateTime utcEnd,
+        OfficeScope scope,
+        Guid? officeFilter,
+        CancellationToken ct)
+    {
+        // CRM sends by actual delivery CreatedAtUtc.
+        var deliveriesQuery =
+            from d in db.ResponseCrmDeliveries.AsNoTracking()
+            where d.Outcome == ResponseCrmDeliveryOutcomes.Sent
+                  && d.CreatedAtUtc >= utcStart
+                  && d.CreatedAtUtc < utcEnd
+            join r in scopedResponses on d.ResponseId equals r.Id
+            select d;
+
+        var effectiveOfficeId = scope.ResolveFilter(officeFilter);
+        if (effectiveOfficeId is Guid officeId)
+        {
+            deliveriesQuery = deliveriesQuery.Where(d => d.OfficeId == officeId);
+        }
+        else if (!scope.IsGlobalAdmin)
+        {
+            return [];
+        }
+
+        var rows = await deliveriesQuery
+            .GroupBy(d => new { d.OfficeId, OfficeName = d.Office.Name })
+            .Select(g => new { g.Key.OfficeId, g.Key.OfficeName, Count = g.Count() })
+            .ToListAsync(ct);
+
+        return rows
+            .Select(x => new CrmDeliveryStatDto(x.OfficeId, x.OfficeName, x.Count))
             .OrderByDescending(x => x.SentCount)
             .ThenBy(x => x.Label, StringComparer.OrdinalIgnoreCase)
             .ToList();

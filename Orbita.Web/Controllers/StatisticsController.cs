@@ -67,6 +67,7 @@ public sealed class StatisticsController(
             AccountStats = model.AccountStats,
             Workers = model.Workers,
             BitrixDeliveries = model.BitrixDeliveries,
+            CrmDeliveries = model.CrmDeliveries,
             HrInsights = model.HrInsights,
             Summary = model.Summary
         });

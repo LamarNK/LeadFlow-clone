@@ -87,6 +87,7 @@ internal static class StatisticsIndexBuilder
                 })
                 .ToList(),
             BitrixDeliveries = MapBitrixDeliveries(data.BitrixDeliveries, period, filters),
+            CrmDeliveries = MapCrmDeliveries(data.CrmDeliveries, period, filters),
             HrInsights = MapHrInsights(data.HrInsights),
             MonitoringCycles = MapMonitoringCycles(data.MonitoringCycles),
             Summary = summary,
@@ -222,6 +223,23 @@ internal static class StatisticsIndexBuilder
                 workerId: filters.WorkerIds.FirstOrDefault(),
                 accountId: filters.AccountIds.FirstOrDefault(),
                 bitrixDestination: row.BitrixInstanceId.ToString()) ?? "/Responses"
+        }).ToList();
+
+    private static IReadOnlyList<CrmDeliveryStatRowViewModel> MapCrmDeliveries(
+        IReadOnlyList<CrmDeliveryStatDto> rows,
+        DashboardPeriod period,
+        StatisticsFiltersViewModel filters) =>
+        rows.Select(row => new CrmDeliveryStatRowViewModel
+        {
+            OfficeId = row.OfficeId,
+            Label = row.Label,
+            SentCount = row.SentCount,
+            ResponsesUrl = KpiCardLinks.Responses(
+                period.From,
+                period.To,
+                status: "sent",
+                workerId: filters.WorkerIds.FirstOrDefault(),
+                accountId: filters.AccountIds.FirstOrDefault()) ?? "/Responses"
         }).ToList();
 
     private static HrInsightsViewModel MapHrInsights(HrInsightsDto insights) =>

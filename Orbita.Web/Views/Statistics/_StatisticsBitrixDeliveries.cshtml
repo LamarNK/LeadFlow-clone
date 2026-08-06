@@ -1,40 +1,74 @@
 @model StatisticsViewModel
+@using System.Globalization
+@{
+    var deliveries = Model.BitrixDeliveries
+        .Select(row => new
+        {
+            Channel = "Битрикс24",
+            ChannelKind = "bitrix",
+            row.Label,
+            row.SentCount,
+            row.ResponsesUrl
+        })
+        .Concat(Model.CrmDeliveries.Select(row => new
+        {
+            Channel = "CRM",
+            ChannelKind = "crm",
+            row.Label,
+            row.SentCount,
+            row.ResponsesUrl
+        }))
+        .Where(row => row.SentCount > 0)
+        .OrderByDescending(row => row.SentCount)
+        .ThenBy(row => row.Label, StringComparer.CurrentCultureIgnoreCase)
+        .ToList();
+    var total = deliveries.Sum(row => row.SentCount);
+    var maxSent = Math.Max(1, deliveries.Count == 0 ? 1 : deliveries.Max(row => row.SentCount));
+}
 <div class="card card--statistics-bitrix">
     <div class="card-header">
-        <h2>Отправки в Битрикс24</h2>
-        <span class="card-header-meta">@Model.Summary.PeriodSent всего за период</span>
+        <div>
+            <h2>Отправки</h2>
+            <span class="card-header-subtitle">В CRM и Битрикс24 за выбранный период</span>
+        </div>
+        <span class="card-header-meta" data-statistics-bitrix-total>@total всего за период</span>
     </div>
-    <div class="card-body card-body-table" data-statistics-bitrix-deliveries>
-        @if (Model.BitrixDeliveries.Count == 0)
+    <div class="card-body" data-statistics-bitrix-deliveries>
+        @if (deliveries.Count == 0)
         {
             <partial name="_TableEmptyState" model="@(new TableEmptyStateViewModel
             {
                 IconClass = "fa-solid fa-paper-plane",
                 Title = "Нет отправок за период",
-                Description = "Отклики ещё не отправлялись в Битрикс24 за выбранный период."
+                Description = "Отклики ещё не отправлялись в CRM или Битрикс24."
             })" />
         }
         else
         {
-            <table class="data-table data-table--compact statistics-bitrix-table">
-                <thead>
-                    <tr>
-                        <th>Битрикс</th>
-                        <th class="cell-num">Отправлено</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var row in Model.BitrixDeliveries)
+            <div class="statistics-bitrix-chart">
+                <div class="statistics-bitrix-chart__total">
+                    <span>Всего отправлено</span>
+                    <strong>@total</strong>
+                    <small>за выбранный период</small>
+                </div>
+                <div class="statistics-bitrix-chart__bars" aria-label="Распределение отправок по каналам">
+                    @foreach (var row in deliveries)
                     {
-                        <tr>
-                            <td>
-                                <a href="@row.ResponsesUrl" class="statistics-bitrix-link">@row.Label</a>
-                            </td>
-                            <td class="cell-num">@row.SentCount</td>
-                        </tr>
+                        var barWidth = (row.SentCount * 100d / maxSent).ToString("0.#", CultureInfo.InvariantCulture);
+                        var share = (row.SentCount * 100d / total).ToString("0.#", CultureInfo.InvariantCulture);
+                        <a class="statistics-bitrix-bar statistics-bitrix-bar--@row.ChannelKind" href="@row.ResponsesUrl" style="--statistics-bitrix-bar-width:@barWidth%" aria-label="@row.Channel, @row.Label: @row.SentCount отправлено, @share% от всех отправок">
+                            <span class="statistics-bitrix-bar__label">
+                                <i aria-hidden="true"></i>
+                                <span class="statistics-bitrix-bar__label-text" title="@row.Label">@row.Label</span>
+                                <em class="statistics-bitrix-bar__channel">@row.Channel</em>
+                            </span>
+                            <span class="statistics-bitrix-bar__track" aria-hidden="true"><b></b></span>
+                            <strong>@row.SentCount</strong>
+                            <small>@share%</small>
+                        </a>
                     }
-                </tbody>
-            </table>
+                </div>
+            </div>
         }
     </div>
 </div>
