@@ -158,6 +158,82 @@ public sealed class OfficeStatisticsQueryServiceTests
         Assert.Equal(2, result.DailyTrend.Sum(d => d.Total));
     }
 
+    [Fact]
+    public async Task GetStatisticsAsync_Week_ReturnsSummaryAndTrendForEveryStatus()
+    {
+        await using var db = CreateDb();
+        SeedOfficeData(db);
+        var now = DateTime.UtcNow;
+        db.CandidateResponses.AddRange(
+            CreateResponse(ResponseStatuses.Error, now.AddDays(-3)),
+            CreateResponse(ResponseStatuses.ActionRequired, now.AddDays(-4)),
+            CreateResponse(ResponseStatuses.InProgress, now.AddDays(-5)));
+        await db.SaveChangesAsync();
+
+        var result = await CreateService(db).GetStatisticsAsync(
+            OfficeScope.ForOffice(OfficeA),
+            OfficeA,
+            DateTime.Today.AddDays(-6),
+            DateTime.Today);
+
+        Assert.Equal(5, result.Responses.Total);
+        Assert.Equal(1, result.Responses.Sent);
+        Assert.Equal(1, result.Responses.Duplicates);
+        Assert.Equal(1, result.Responses.Errors);
+        Assert.Equal(1, result.Responses.ActionRequired);
+        Assert.Equal(1, result.Responses.InProgress);
+        Assert.Equal(7, result.DailyTrend.Count);
+        Assert.Equal(result.Responses.Total, result.DailyTrend.Sum(x => x.Total));
+    }
+
+    [Fact]
+    public void CandidateResponses_HasIndexForStatisticsWorkerAndPeriodFilter()
+    {
+        using var db = CreateDb();
+        var entity = db.Model.FindEntityType(typeof(CandidateResponseEntity));
+
+        Assert.NotNull(entity);
+        Assert.Contains(
+            entity!.GetIndexes(),
+            index => index.Properties.Select(property => property.Name)
+                .SequenceEqual([nameof(CandidateResponseEntity.WorkerId), nameof(CandidateResponseEntity.CollectedAt)]));
+    }
+
+    [Fact]
+    public void ProcessedDurationAverage_TranslatesForPostgreSql()
+    {
+        using var db = new OrbitaDbContext(
+            new DbContextOptionsBuilder<OrbitaDbContext>()
+                .UseNpgsql("Host=localhost;Database=orbita;Username=orbita;Password=orbita")
+                .Options);
+
+        var sql = db.CandidateResponses
+            .Where(x => x.ProcessedAt != null)
+            .GroupBy(_ => 1)
+            .Select(group => group.Average(x => (double?)(x.ProcessedAt!.Value - x.CollectedAt).TotalMinutes))
+            .ToQueryString();
+
+        Assert.Contains("avg", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("date_part", sql, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void DailyTrendAggregation_TranslatesToGroupedPostgreSqlQuery()
+    {
+        using var db = new OrbitaDbContext(
+            new DbContextOptionsBuilder<OrbitaDbContext>()
+                .UseNpgsql("Host=localhost;Database=orbita;Username=orbita;Password=orbita")
+                .Options);
+
+        var sql = db.CandidateResponses
+            .GroupBy(x => new { Date = x.CollectedAt.Date, x.CollectedAt.Hour, x.Status })
+            .Select(group => new { group.Key.Date, group.Key.Hour, group.Key.Status, Count = group.Count() })
+            .ToQueryString();
+
+        Assert.Contains("GROUP BY", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("date_part", sql, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static OfficeStatisticsQueryService CreateService(OrbitaDbContext db) =>
         new(db, new OfficeScopeService(db), new WorkerConnectionRegistry());
 
@@ -321,4 +397,23 @@ public sealed class OfficeStatisticsQueryServiceTests
 
         db.SaveChanges();
     }
+
+    private static CandidateResponseEntity CreateResponse(string status, DateTime collectedAt) => new()
+    {
+        Id = Guid.NewGuid(),
+        OfficeId = OfficeA,
+        WorkerId = WorkerA,
+        AccountId = AccountA,
+        AccountName = "Account A",
+        Source = "Avito",
+        SourceResponseId = Guid.NewGuid().ToString("N"),
+        FullName = "Test User",
+        PhoneRaw = "+79000000000",
+        PhoneNormalized = Guid.NewGuid().ToString("N"),
+        City = "Москва",
+        Vacancy = "Курьер",
+        Status = status,
+        CreatedAt = collectedAt,
+        CollectedAt = collectedAt
+    };
 }

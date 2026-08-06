@@ -138,8 +138,8 @@ public sealed class OfficeStatisticsQueryService(
 
         responsesQuery = ApplyVacancyFilter(responsesQuery, vacancyFilterKey);
 
-        var responses = await BuildResponsesPeriodAsync(responsesQuery, ct);
         var dailyTrend = await BuildDailyTrendAsync(responsesQuery, startLocal, endLocal, ct);
+        var responses = await BuildResponsesPeriodAsync(responsesQuery, dailyTrend, ct);
         var bitrixDeliveries = await BuildBitrixDeliveryStatsAsync(responsesQuery, scope, officeFilter, ct);
         var hrInsights = await BuildHrInsightsAsync(responsesQuery, ct);
         var workerInfrastructure = await BuildWorkerInfrastructureAsync(
@@ -397,31 +397,26 @@ public sealed class OfficeStatisticsQueryService(
 
     private static async Task<ResponsesPeriodSection> BuildResponsesPeriodAsync(
         IQueryable<CandidateResponseEntity> query,
+        IReadOnlyList<DailyResponseBucketDto> dailyTrend,
         CancellationToken ct)
     {
-        var total = await query.CountAsync(ct);
+        var total = dailyTrend.Sum(x => x.Total);
         if (total == 0)
         {
             return new ResponsesPeriodSection(0, 0, 0, 0, 0, 0, 0, 0, null);
         }
 
-        var sent = await query.CountAsync(x => x.Status == ResponseStatuses.Sent, ct);
-        var duplicates = await query.CountAsync(x => x.Status == ResponseStatuses.Duplicate, ct);
-        var errors = await query.CountAsync(x => x.Status == ResponseStatuses.Error, ct);
-        var actionRequired = await query.CountAsync(x => x.Status == ResponseStatuses.ActionRequired, ct);
-        var inProgress = await query.CountAsync(x => x.Status == ResponseStatuses.InProgress, ct);
+        var sent = dailyTrend.Sum(x => x.Sent);
+        var duplicates = dailyTrend.Sum(x => x.Duplicates);
+        var errors = dailyTrend.Sum(x => x.Errors);
+        var actionRequired = dailyTrend.Sum(x => x.ActionRequired);
+        var inProgress = dailyTrend.Sum(x => x.InProgress);
         var unique = total - duplicates;
         var uniqueAuthors = await ResponseSummaryMetrics.CountUniqueAuthorsAsync(query, ct);
 
-        double? avgMinutes = null;
-        var processed = await query
+        var avgMinutes = await query
             .Where(x => x.ProcessedAt != null)
-            .Select(x => new { x.CollectedAt, ProcessedAt = x.ProcessedAt!.Value })
-            .ToListAsync(ct);
-        if (processed.Count > 0)
-        {
-            avgMinutes = processed.Average(x => (x.ProcessedAt - x.CollectedAt).TotalMinutes);
-        }
+            .AverageAsync(x => (double?)(x.ProcessedAt!.Value - x.CollectedAt).TotalMinutes, ct);
 
         return new ResponsesPeriodSection(
             total,
@@ -505,36 +500,38 @@ public sealed class OfficeStatisticsQueryService(
         CancellationToken ct)
     {
         var rows = await query
-            .Select(x => new { x.CollectedAt, x.Status })
+            .GroupBy(x => new { Date = x.CollectedAt.Date, x.CollectedAt.Hour, x.Status })
+            .Select(g => new HourlyStatusCount(g.Key.Date, g.Key.Hour, g.Key.Status, g.Count()))
             .ToListAsync(ct);
 
         var byDay = new Dictionary<DateTime, DailyCounters>();
         foreach (var row in rows)
         {
-            var localDate = LocalCalendarDateRange.ToLocalDateFromStoredUtc(row.CollectedAt);
+            var utcHour = DateTime.SpecifyKind(row.Date.AddHours(row.Hour), DateTimeKind.Utc);
+            var localDate = LocalCalendarDateRange.ToLocalDateFromStoredUtc(utcHour);
             if (!byDay.TryGetValue(localDate, out var bucket))
             {
                 bucket = new DailyCounters();
                 byDay[localDate] = bucket;
             }
 
-            bucket.Total++;
+            bucket.Total += row.Count;
             switch (row.Status)
             {
                 case ResponseStatuses.Sent:
-                    bucket.Sent++;
+                    bucket.Sent += row.Count;
                     break;
                 case ResponseStatuses.Duplicate:
-                    bucket.Duplicates++;
+                    bucket.Duplicates += row.Count;
                     break;
                 case ResponseStatuses.Error:
-                    bucket.Errors++;
+                    bucket.Errors += row.Count;
                     break;
                 case ResponseStatuses.InProgress:
-                    bucket.InProgress++;
+                    bucket.InProgress += row.Count;
                     break;
                 case ResponseStatuses.ActionRequired:
-                    bucket.ActionRequired++;
+                    bucket.ActionRequired += row.Count;
                     break;
             }
         }
@@ -784,6 +781,8 @@ public sealed class OfficeStatisticsQueryService(
         public int Duplicates { get; set; }
         public int Errors { get; set; }
     }
+
+    private sealed record HourlyStatusCount(DateTime Date, int Hour, string Status, int Count);
 
     private sealed record GroupedStatusRow(string? Key, string Status, int Count);
     private sealed record GroupedAgeStatusRow(int? Age, string Status, int Count);

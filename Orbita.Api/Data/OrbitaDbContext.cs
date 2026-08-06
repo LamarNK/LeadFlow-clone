@@ -159,6 +159,7 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.HasIndex(x => new { x.OfficeId, x.AccountId, x.AvitoSubProfileId, x.CardFingerprint });
             entity.HasIndex(x => new { x.OfficeId, x.CreatedAt });
             entity.HasIndex(x => new { x.OfficeId, x.CollectedAt });
+            entity.HasIndex(x => new { x.WorkerId, x.CollectedAt });
             entity.HasIndex(x => new { x.AccountId, x.SourceResponseId })
                 .IsUnique()
                 .HasFilter("\"SourceResponseId\" <> ''");
