@@ -21,23 +21,54 @@ public sealed class AccessProfileService(
             }
 
             var claims = await roles.GetClaimsAsync(role);
-            if (claims.Any(x => x.Type == PanelPermissions.ConfigurationClaimType))
+            if (!claims.Any(x => x.Type == PanelPermissions.ConfigurationClaimType))
             {
-                continue;
+                foreach (var claim in claims.Where(x => x.Type == PanelPermissions.ClaimType))
+                {
+                    await roles.RemoveClaimAsync(role, claim);
+                }
+
+                foreach (var permission in PanelPermissions.DefaultForRole(profile.Role))
+                {
+                    await roles.AddClaimAsync(role, new Claim(PanelPermissions.ClaimType, permission));
+                }
+
+                await roles.AddClaimAsync(role, new Claim(PanelPermissions.ConfigurationClaimType, "true"));
+                claims = await roles.GetClaimsAsync(role);
             }
 
-            foreach (var claim in claims.Where(x => x.Type == PanelPermissions.ClaimType))
+            if (await UpgradeCrmAnalyticsAccessAsync(role, claims))
             {
-                await roles.RemoveClaimAsync(role, claim);
+                foreach (var user in await users.GetUsersInRoleAsync(profile.Role))
+                {
+                    await users.UpdateSecurityStampAsync(user);
+                }
             }
-
-            foreach (var permission in PanelPermissions.DefaultForRole(profile.Role))
-            {
-                await roles.AddClaimAsync(role, new Claim(PanelPermissions.ClaimType, permission));
-            }
-
-            await roles.AddClaimAsync(role, new Claim(PanelPermissions.ConfigurationClaimType, "true"));
         }
+    }
+
+    private async Task<bool> UpgradeCrmAnalyticsAccessAsync(IdentityRole role, IEnumerable<Claim> claims)
+    {
+        if (claims.Any(claim => claim.Type == PanelPermissions.PermissionUpgradeClaimType
+                                && claim.Value == PanelPermissions.CrmAnalyticsUpgrade))
+        {
+            return false;
+        }
+
+        var permissions = claims
+            .Where(claim => claim.Type == PanelPermissions.ClaimType)
+            .Select(claim => claim.Value)
+            .ToArray();
+        var addAnalytics = PanelPermissions.NeedsCrmAnalyticsUpgrade(permissions);
+        if (addAnalytics)
+        {
+            await roles.AddClaimAsync(role, new Claim(PanelPermissions.ClaimType, PanelPermissions.CrmAnalytics));
+        }
+
+        await roles.AddClaimAsync(
+            role,
+            new Claim(PanelPermissions.PermissionUpgradeClaimType, PanelPermissions.CrmAnalyticsUpgrade));
+        return addAnalytics;
     }
 
     public async Task<IReadOnlyList<AccessProfileDto>> GetAllAsync(CancellationToken ct = default)

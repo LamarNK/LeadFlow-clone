@@ -45,4 +45,14 @@ public sealed class PanelPermissionsTests
 
         Assert.Equal("CRM: Аналитика", permission.Label);
     }
+
+    [Theory]
+    [InlineData(PanelPermissions.CrmBoard, true)]
+    [InlineData(PanelPermissions.Crm, true)]
+    [InlineData(PanelPermissions.CrmAnalytics, false)]
+    [InlineData(PanelPermissions.CrmTasks, false)]
+    public void NeedsCrmAnalyticsUpgrade_PreservesExistingAnalyticsAccess(string permission, bool expected)
+    {
+        Assert.Equal(expected, PanelPermissions.NeedsCrmAnalyticsUpgrade([permission]));
+    }
 }

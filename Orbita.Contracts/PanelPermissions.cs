@@ -24,6 +24,8 @@ public static class PanelPermissions
     public const string Administration = "administration";
     public const string ConfigurationClaimType = "orbita.permission-configured";
     public const string UserPermissionOverrideClaimType = "orbita.user-permission-override";
+    public const string PermissionUpgradeClaimType = "orbita.permission-upgrade";
+    public const string CrmAnalyticsUpgrade = "crm-analytics-v1";
 
     public static readonly IReadOnlyList<PanelPermissionDefinition> All =
     [
@@ -54,6 +56,13 @@ public static class PanelPermissions
             PanelRoles.Manager => [CrmBoard, CrmTasks, CrmAnalytics, Settings],
             _ => [Dashboard, Workers, Accounts, Statistics, Responses, Events, Settings]
         };
+
+    public static bool NeedsCrmAnalyticsUpgrade(IEnumerable<string>? permissions)
+    {
+        var current = permissions?.ToHashSet(StringComparer.Ordinal) ?? [];
+        return !current.Contains(CrmAnalytics)
+               && (current.Contains(CrmBoard) || current.Contains(Crm));
+    }
 
     public static IReadOnlyList<string> Normalize(IEnumerable<string>? permissions)
     {

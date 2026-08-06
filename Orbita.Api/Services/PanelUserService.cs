@@ -451,6 +451,18 @@ public sealed class PanelUserService(
             {
                 return (null, string.Join("; ", markerResult.Errors.Select(error => error.Description)));
             }
+
+            if (!currentClaims.Any(claim => claim.Type == PanelPermissions.PermissionUpgradeClaimType
+                                            && claim.Value == PanelPermissions.CrmAnalyticsUpgrade))
+            {
+                var upgradeMarkerResult = await users.AddClaimAsync(
+                    user,
+                    new Claim(PanelPermissions.PermissionUpgradeClaimType, PanelPermissions.CrmAnalyticsUpgrade));
+                if (!upgradeMarkerResult.Succeeded)
+                {
+                    return (null, string.Join("; ", upgradeMarkerResult.Errors.Select(error => error.Description)));
+                }
+            }
         }
 
         await users.UpdateSecurityStampAsync(user);
@@ -477,6 +489,24 @@ public sealed class PanelUserService(
         if (!claims.Any(claim => claim.Type == PanelPermissions.UserPermissionOverrideClaimType))
         {
             return null;
+        }
+
+        if (!claims.Any(claim => claim.Type == PanelPermissions.PermissionUpgradeClaimType
+                                 && claim.Value == PanelPermissions.CrmAnalyticsUpgrade))
+        {
+            var permissions = claims
+                .Where(claim => claim.Type == PanelPermissions.ClaimType)
+                .Select(claim => claim.Value)
+                .ToArray();
+            if (PanelPermissions.NeedsCrmAnalyticsUpgrade(permissions))
+            {
+                await users.AddClaimAsync(user, new Claim(PanelPermissions.ClaimType, PanelPermissions.CrmAnalytics));
+            }
+
+            await users.AddClaimAsync(
+                user,
+                new Claim(PanelPermissions.PermissionUpgradeClaimType, PanelPermissions.CrmAnalyticsUpgrade));
+            claims = await users.GetClaimsAsync(user);
         }
 
         return PanelPermissions.Normalize(
