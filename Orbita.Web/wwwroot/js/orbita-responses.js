@@ -41,6 +41,22 @@
         return !!readRowValue(row, camelKey);
     }
 
+    function readHighlightLabels(row) {
+        var rawLabels = readRowValue(row, 'highlightLabels');
+        var labels = Array.isArray(rawLabels)
+            ? rawLabels
+            : [];
+        if (!labels.length) {
+            var fallbackLabel = readRowValue(row, 'highlightLabel');
+            if (fallbackLabel) labels = [fallbackLabel];
+        }
+
+        return labels
+            .filter(function (label) { return label && String(label).trim(); })
+            .map(function (label) { return String(label).trim(); })
+            .filter(function (label, index, all) { return all.indexOf(label) === index; });
+    }
+
     /** Matches CandidateGenders.FormatLabel on the server. */
     function formatGenderLabel(gender) {
         if (!gender) return '—';
@@ -1268,8 +1284,13 @@
         }
     }
 
-    function readDeliveries(row) {
+    function readBitrixDeliveries(row) {
         var deliveries = readRowValue(row, 'bitrixDeliveries');
+        return Array.isArray(deliveries) ? deliveries : [];
+    }
+
+    function readCrmDeliveries(row) {
+        var deliveries = readRowValue(row, 'crmDeliveries');
         return Array.isArray(deliveries) ? deliveries : [];
     }
 
@@ -1283,7 +1304,8 @@
             var tone = readRowValue(delivery, 'chipTone') || mapDeliveryChipTone(outcome);
             var url = readRowValue(delivery, 'bitrixEntityUrl');
             var errorMessage = readRowValue(delivery, 'errorMessage') || outcomeLabel;
-            var inner = '<span class="responses-bitrix-chip-label">' + shared.escapeHtml(label) + '</span>' +
+            var inner = '<span class="responses-delivery-chip-channel">Битрикс</span>' +
+                '<span class="responses-bitrix-chip-label">' + shared.escapeHtml(label) + '</span>' +
                 '<span class="responses-bitrix-chip-outcome">' + shared.escapeHtml(outcomeLabel) + '</span>';
             if (url) {
                 return '<a class="responses-bitrix-chip responses-bitrix-chip--' + shared.escapeHtml(tone) + '" href="' +
@@ -1298,15 +1320,37 @@
     function renderBitrixCell(row) {
         var shared = getShared();
         if (!shared) return '<span class="responses-bitrix-empty">—</span>';
-        var deliveries = readDeliveries(row);
+        var deliveries = readBitrixDeliveries(row);
         if (deliveries.length) {
             return renderBitrixDeliveries(deliveries);
         }
         var bitrixLabel = readRowValue(row, 'bitrixLabel');
         if (bitrixLabel) {
-            return '<span class="responses-bitrix-label">' + shared.escapeHtml(bitrixLabel) + '</span>';
+            return '<span class="responses-bitrix-label">Битрикс · ' + shared.escapeHtml(bitrixLabel) + '</span>';
         }
         return '<span class="responses-bitrix-empty">—</span>';
+    }
+
+    function renderCrmDeliveries(deliveries) {
+        var shared = getShared();
+        if (!shared || !deliveries.length) return '';
+        return '<div class="responses-crm-deliveries">' + deliveries.map(function (delivery) {
+            var officeName = readRowValue(delivery, 'officeName') || 'Офис';
+            var outcome = readRowValue(delivery, 'outcome') || '';
+            var outcomeLabel = readRowValue(delivery, 'outcomeLabel') || mapDeliveryOutcomeLabel(outcome);
+            var tone = readRowValue(delivery, 'chipTone') || mapDeliveryChipTone(outcome);
+            var title = readRowValue(delivery, 'errorMessage') || outcomeLabel;
+            return '<span class="responses-crm-chip responses-crm-chip--' + shared.escapeHtml(tone) + '" title="' +
+                shared.escapeAttr(title) + '"><span class="responses-delivery-chip-channel">CRM</span><span class="responses-crm-chip-label">' +
+                shared.escapeHtml(officeName) + '</span><span class="responses-crm-chip-outcome">' +
+                shared.escapeHtml(outcomeLabel) + '</span></span>';
+        }).join('') + '</div>';
+    }
+
+    function renderStatusDestinations(row) {
+        var crmHtml = renderCrmDeliveries(readCrmDeliveries(row));
+        var bitrixHtml = renderBitrixCell(row);
+        return crmHtml + (bitrixHtml.indexOf('responses-bitrix-empty') === -1 ? bitrixHtml : (crmHtml ? '' : bitrixHtml));
     }
 
     function renderResponses(rows) {
@@ -1350,10 +1394,13 @@
             var cityDisplay = city && String(city).trim() ? shared.escapeHtml(city) : '—';
             var age = readRowValue(row, 'age');
             var ageDisplay = age > 0 ? String(age) : '—';
-            var isHighlighted = readRowBool(row, 'isHighlighted');
-            var highlightLabel = readRowValue(row, 'highlightLabel') || '';
-            var ageBadge = isHighlighted && highlightLabel
-                ? '<span class="responses-age-highlight-badge">' + shared.escapeHtml(highlightLabel) + '</span>'
+            var highlightLabels = readHighlightLabels(row);
+            var isHighlighted = readRowBool(row, 'isHighlighted') || highlightLabels.length > 0;
+            var highlightLabel = highlightLabels[0] || '';
+            var highlightsHtml = highlightLabels.length
+                ? '<div class="responses-candidate__highlights" aria-label="Причины выделения">' + highlightLabels.map(function (label) {
+                    return '<span class="responses-candidate__highlight">' + shared.escapeHtml(label) + '</span>';
+                }).join('') + '</div>'
                 : '';
             var genderDisplay = formatGenderLabel(readRowValue(row, 'gender'));
             var canSend = readRowBool(row, 'canSend');
@@ -1369,7 +1416,7 @@
                 (avatarUrl ? '<img src="' + shared.escapeAttr(avatarUrl) + '" alt="" loading="lazy">' : '') +
                 '</span><div class="responses-candidate__copy"><strong title="' +
                 shared.escapeAttr(author) + '">' + shared.escapeHtml(author) + '</strong>' +
-                (candidateMeta ? '<span>' + shared.escapeHtml(candidateMeta) + '</span>' : '') + ageBadge + '</div></div>';
+                (candidateMeta ? '<span>' + shared.escapeHtml(candidateMeta) + '</span>' : '') + highlightsHtml + '</div></div>';
             var accountName = readRowValue(row, 'accountName') || '';
             var accountSubProfile = readRowValue(row, 'avitoSubProfileName') || '';
             var workerName = readRowValue(row, 'workerName') || '';
@@ -1379,7 +1426,7 @@
                 (workerName ? '<span class="responses-account-worker">' + shared.escapeHtml(workerName) + '</span>' : '');
             var statusHtml = '<div class="responses-status__card"><span class="response-status-badge response-status-badge--' +
                 shared.escapeHtml(statusTone) + '" title="' + shared.escapeAttr(statusLabel) + '"><span class="response-status-badge__label">' +
-                shared.escapeHtml(statusShort) + '</span></span><div class="responses-status__destination">' + renderBitrixCell(row) + '</div></div>';
+                shared.escapeHtml(statusShort) + '</span></span><div class="responses-status__destination">' + renderStatusDestinations(row) + '</div></div>';
             var lastResponseHtml = renderResponseTimingCell(respondedAtUtc, collectedAtUtc, shared);
 
             var cardCopy = readRowValue(row, 'cardCopy') || '';
@@ -1390,7 +1437,7 @@
                 '<td class="responses-city" data-label="Город">' + cityDisplay + '</td>' +
                 '<td class="responses-ad" data-label="Объявление">' + adHtml + '</td>' +
                 '<td class="cell-link responses-account" data-label="Аккаунт">' + accountHtml + '</td>' +
-                '<td class="responses-status" data-label="Статус (Битрикс)">' + statusHtml + '</td>' +
+                '<td class="responses-status" data-label="Статус">' + statusHtml + '</td>' +
                 lastResponseHtml +
                 '<td class="data-table-menu" data-label="">' + renderResponseMenu(row, accountUrl, workerUrl) + '</td></tr>';
         }).join('');

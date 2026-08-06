@@ -1,6 +1,62 @@
 (function () {
     const serviceLogClampClass = 'service-log-entry__message--clamped';
 
+    function openServiceLogDetail(entry) {
+        const runtime = window.OrbitaRuntime;
+        if (!runtime || typeof runtime.openDetailModal !== 'function') return;
+
+        const message = entry.querySelector('[data-service-log-message]')?.textContent?.trim() || 'Сообщение отсутствует.';
+        const time = entry.querySelector('time')?.textContent?.trim() || '—';
+        const traceId = entry.querySelector('[data-service-log-copy]')?.getAttribute('data-copy-text')?.trim() || '';
+        const level = entry.getAttribute('data-log-level')?.trim() || '—';
+        const service = entry.getAttribute('data-log-service')?.trim() || '—';
+        const source = entry.getAttribute('data-log-source')?.trim() || '—';
+        const isTampered = entry.getAttribute('data-log-tampered') === 'true';
+
+        const sections = [
+            { label: 'Время', value: time },
+            { label: 'Уровень', value: level },
+            { label: 'Сервис', value: service },
+            { label: 'Источник', value: source },
+            { label: 'Целостность', value: isTampered ? 'Требует проверки' : 'Без замечаний' }
+        ];
+        if (traceId) {
+            sections.splice(4, 0, { label: 'Trace ID', value: traceId });
+        }
+
+        runtime.openDetailModal({
+            variant: 'log',
+            title: 'Запись лога',
+            subtitle: [level, service].filter(Boolean).join(' · '),
+            sections,
+            body: message,
+            appendBody: true,
+            copyText: message,
+            copyLabel: 'Копировать сообщение'
+        });
+    }
+
+    function initServiceLogDetails() {
+        if (document.documentElement.dataset.serviceLogDetailsBound === 'true') return;
+        document.documentElement.dataset.serviceLogDetailsBound = 'true';
+
+        document.addEventListener('click', (event) => {
+            if (event.target.closest('[data-service-log-copy], [data-service-log-expand]')) return;
+            const entry = event.target.closest('[data-service-log-entry]');
+            if (entry) openServiceLogDetail(entry);
+        });
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            if (event.target.closest('[data-service-log-copy], [data-service-log-expand]')) return;
+            const entry = event.target.closest('[data-service-log-entry]');
+            if (!entry) return;
+
+            event.preventDefault();
+            openServiceLogDetail(entry);
+        });
+    }
+
     function runSettingsInits() {
         document.querySelectorAll('[data-service-log-message]').forEach((messageEl) => {
             if (messageEl.__orbitaClamped) return;
@@ -16,6 +72,7 @@
                 const expandButton = document.createElement('button');
                 expandButton.type = 'button';
                 expandButton.className = 'service-log-entry__expand';
+                expandButton.setAttribute('data-service-log-expand', '');
                 expandButton.textContent = 'Показать полностью';
                 expandButton.addEventListener('click', () => {
                     const isClamped = messageEl.classList.toggle(serviceLogClampClass);
@@ -176,6 +233,7 @@
 
     }
 
+    initServiceLogDetails();
     runSettingsInits();
     document.addEventListener('orbita:content-updated', runSettingsInits);
 })();

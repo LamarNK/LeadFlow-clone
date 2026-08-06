@@ -82,9 +82,11 @@ public sealed class ResponseRowViewModel
     public string? BitrixEntityUrl { get; init; }
     public string? BitrixLabel { get; init; }
     public IReadOnlyList<ResponseBitrixDeliveryViewModel> BitrixDeliveries { get; init; } = [];
+    public IReadOnlyList<ResponseCrmDeliveryViewModel> CrmDeliveries { get; init; } = [];
     public string CardCopy { get; init; } = string.Empty;
     public bool IsHighlighted { get; init; }
     public string? HighlightLabel { get; init; }
+    public IReadOnlyList<string> HighlightLabels { get; init; } = [];
     public string? PhoneMetricKind { get; init; }
     public string? PhoneMetricLabel { get; init; }
     public string? PreviousPhoneRaw { get; init; }
@@ -101,6 +103,17 @@ public sealed class ResponseBitrixDeliveryViewModel
     public string OutcomeLabel { get; init; } = string.Empty;
     public string ChipTone { get; init; } = "muted";
     public string? BitrixEntityUrl { get; init; }
+    public string? ErrorMessage { get; init; }
+    public DateTime CreatedAtUtc { get; init; }
+}
+
+public sealed class ResponseCrmDeliveryViewModel
+{
+    public Guid Id { get; init; }
+    public string OfficeName { get; init; } = string.Empty;
+    public string Outcome { get; init; } = string.Empty;
+    public string OutcomeLabel { get; init; } = string.Empty;
+    public string ChipTone { get; init; } = "muted";
     public string? ErrorMessage { get; init; }
     public DateTime CreatedAtUtc { get; init; }
 }

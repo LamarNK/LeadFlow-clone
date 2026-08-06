@@ -51,4 +51,24 @@ public sealed class ResponseHighlightRulesTests
         Assert.Equal("Субпрофиль", selectedLabel);
         Assert.False(other);
     }
+
+    [Fact]
+    public void GetHighlightLabels_ReturnsEveryMatchingRule()
+    {
+        var targets = ResponseHighlightRules.NormalizeTargetsFormValues(
+            [
+                new ResponseHighlightTarget(AccountId).ToFormValue(),
+                new ResponseHighlightTarget(AccountId, "sub-profile-1").ToFormValue()
+            ]);
+
+        var labels = ResponseHighlightRules.GetHighlightLabels(
+            age: 74,
+            enabled: true,
+            ageBucketsCsv: "63+",
+            accountId: AccountId,
+            subProfileId: "sub-profile-1",
+            targetsJson: targets);
+
+        Assert.Equal(["Возраст: 63+", "Профиль Avito", "Субпрофиль Avito"], labels);
+    }
 }

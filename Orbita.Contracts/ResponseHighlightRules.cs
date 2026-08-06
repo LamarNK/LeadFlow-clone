@@ -155,6 +155,51 @@ public static class ResponseHighlightRules
         return false;
     }
 
+    /// <summary>
+    /// Возвращает все причины, по которым отклик нужно выделить. Новый критерий
+    /// добавляется отдельной меткой, не меняя отображение уже существующих.
+    /// </summary>
+    public static IReadOnlyList<string> GetHighlightLabels(
+        int? age,
+        bool enabled,
+        string? ageBucketsCsv,
+        Guid accountId,
+        string? subProfileId,
+        string? targetsJson)
+    {
+        if (!enabled)
+        {
+            return [];
+        }
+
+        var labels = new List<string>();
+        if (IsHighlighted(age, enabled, ageBucketsCsv, out var ageBucket) && !string.IsNullOrWhiteSpace(ageBucket))
+        {
+            labels.Add($"Возраст: {ageBucket}");
+        }
+
+        foreach (var target in ParseTargets(targetsJson))
+        {
+            if (target.AccountId != accountId)
+            {
+                continue;
+            }
+
+            if (target.SubProfileId is null)
+            {
+                labels.Add("Профиль Avito");
+                continue;
+            }
+
+            if (string.Equals(target.SubProfileId, subProfileId, StringComparison.Ordinal))
+            {
+                labels.Add("Субпрофиль Avito");
+            }
+        }
+
+        return labels.Distinct(StringComparer.Ordinal).ToArray();
+    }
+
     private static string? SerializeTargets(IReadOnlyList<ResponseHighlightTarget> targets) =>
         targets.Count == 0 ? null : JsonSerializer.Serialize(targets, JsonOptions);
 

@@ -151,7 +151,7 @@
                         <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Город", Column = "city", Sort = Model.Sort, Controller = "Responses", Action = "Index", RouteValues = responsesSortRoute })" />
                         <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Объявление", Column = "vacancy", Sort = Model.Sort, Controller = "Responses", Action = "Index", RouteValues = responsesSortRoute })" />
                         <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Аккаунт", Column = "account", Sort = Model.Sort, Controller = "Responses", Action = "Index", RouteValues = responsesSortRoute })" />
-                        <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Статус (Битрикс)", Column = "status", Sort = Model.Sort, Controller = "Responses", Action = "Index", RouteValues = responsesSortRoute })" />
+                        <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Статус", Column = "status", Sort = Model.Sort, Controller = "Responses", Action = "Index", RouteValues = responsesSortRoute })" />
                         <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Отклик и сбор", Column = "responded", Sort = Model.Sort, Controller = "Responses", Action = "Index", RouteValues = responsesSortRoute })" />
                         <th aria-hidden="true">Действия</th>
                     </tr>
@@ -178,6 +178,9 @@
                     var collectedAtIso = row.CollectedAtUtc.ToString("O");
                     var collectedAtFallback = row.CollectedAtUtc.ToLocalTime().ToString("dd.MM.yyyy HH:mm");
                     var collectionDuration = ResponseDisplay.FormatResponseCollectionDuration(row.CreatedAtUtc, row.CollectedAtUtc);
+                    var highlightLabels = row.HighlightLabels.Count > 0
+                        ? row.HighlightLabels.Where(label => !string.IsNullOrWhiteSpace(label)).Distinct(StringComparer.Ordinal).ToArray()
+                        : string.IsNullOrWhiteSpace(row.HighlightLabel) ? [] : [row.HighlightLabel];
                     <tr class="responses-row @(row.IsHighlighted ? "responses-row--highlighted" : null)"
                         data-response-id="@row.Id"
                         data-phone="@phoneDisplay"
@@ -206,7 +209,15 @@
                                 <div class="responses-candidate__copy">
                                     <strong title="@author">@author</strong>
                                     @if (!string.IsNullOrWhiteSpace(candidateMeta)) { <span>@candidateMeta</span> }
-                                    @if (row.IsHighlighted && !string.IsNullOrWhiteSpace(row.HighlightLabel)) { <em>@row.HighlightLabel</em> }
+                                    @if (highlightLabels.Length > 0)
+                                    {
+                                        <div class="responses-candidate__highlights" aria-label="Причины выделения">
+                                            @foreach (var label in highlightLabels)
+                                            {
+                                                <span class="responses-candidate__highlight">@label</span>
+                                            }
+                                        </div>
+                                    }
                                 </div>
                             </div>
                         </td>
@@ -248,6 +259,10 @@
                             <div class="responses-status__card">
                                 <span class="response-status-badge response-status-badge--@row.StatusTone" title="@row.StatusLabel"><span class="response-status-badge__label">@shortStatus</span></span>
                                 <div class="responses-status__destination">
+                                    @if (row.CrmDeliveries.Count > 0)
+                                    {
+                                        <partial name="_ResponseCrmDeliveries" model="row.CrmDeliveries" />
+                                    }
                                     @if (row.BitrixDeliveries.Count > 0)
                                     {
                                         <partial name="_ResponseBitrixDeliveries" model="row.BitrixDeliveries" />

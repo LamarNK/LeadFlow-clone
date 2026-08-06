@@ -579,6 +579,7 @@
     gap: 14px;
     padding: 14px 20px;
     border-bottom: 1px solid #f2f4f7;
+    cursor: pointer;
     transition: background 0.15s ease;
 }
 
@@ -602,6 +603,13 @@
 
 .service-log-entry:hover {
     background: #fafafb;
+}
+
+.service-log-entry:focus-visible {
+    position: relative;
+    z-index: 1;
+    outline: 2px solid #76a7ff;
+    outline-offset: -2px;
 }
 
 .service-log-entry--tampered {
@@ -741,6 +749,107 @@
 
 [data-theme="dark"] .service-log-entry:hover {
     background: rgba(255, 255, 255, 0.03);
+}
+
+/* Log details reuse the shared detail modal as a right-side drawer. */
+.orbita-detail-modal--log {
+    align-items: stretch;
+    justify-content: flex-end;
+    padding: 0;
+}
+
+.orbita-detail-modal--log .orbita-detail-modal__dialog {
+    width: min(560px, 100vw);
+    max-height: none;
+    min-height: 100%;
+    border-width: 0 0 0 1px;
+    border-radius: 18px 0 0 18px;
+    animation: service-log-detail-enter 0.2s ease-out;
+}
+
+.orbita-detail-modal--log .orbita-detail-modal__head {
+    align-items: center;
+    padding: 20px 24px 16px;
+    border-bottom: 1px solid #e9edf3;
+}
+
+.orbita-detail-modal--log .orbita-detail-modal__body {
+    padding: 20px 24px 24px;
+}
+
+.orbita-detail-modal--log .orbita-detail-modal__foot {
+    padding: 14px 24px 20px;
+    border-top: 1px solid #e9edf3;
+    background: #fbfcfe;
+}
+
+.orbita-detail-modal--log .orbita-detail-sections {
+    grid-template-columns: minmax(104px, 30%) minmax(0, 1fr);
+    gap: 12px 16px;
+}
+
+.orbita-detail-modal--log .orbita-detail-sections dd {
+    overflow-wrap: anywhere;
+}
+
+.orbita-detail-modal--log .orbita-detail-text {
+    margin: 22px 0 0;
+    padding: 14px;
+    border: 1px solid #e8edf4;
+    border-radius: 12px;
+    background: #f8fafc;
+    color: #344054;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.55;
+}
+
+@keyframes service-log-detail-enter {
+    from { transform: translateX(22px); opacity: 0.5; }
+    to { transform: translateX(0); opacity: 1; }
+}
+
+[data-theme="dark"] .orbita-detail-modal--log .orbita-detail-modal__head,
+[data-theme="dark"] .orbita-detail-modal--log .orbita-detail-modal__foot {
+    border-color: var(--border);
+    background: color-mix(in srgb, var(--bg-card) 90%, #000);
+}
+
+[data-theme="dark"] .orbita-detail-modal--log .orbita-detail-text {
+    border-color: var(--border);
+    background: color-mix(in srgb, var(--bg-card) 84%, #000);
+    color: var(--text-primary);
+}
+
+@media (max-width: 640px) {
+    .orbita-detail-modal--log {
+        align-items: flex-end;
+    }
+
+    .orbita-detail-modal--log .orbita-detail-modal__dialog {
+        width: 100%;
+        min-height: 0;
+        max-height: min(86vh, 760px);
+        border-width: 1px 0 0;
+        border-radius: 18px 18px 0 0;
+        animation-name: service-log-detail-enter-mobile;
+    }
+
+    .orbita-detail-modal--log .orbita-detail-modal__head,
+    .orbita-detail-modal--log .orbita-detail-modal__body {
+        padding-right: 18px;
+        padding-left: 18px;
+    }
+
+    .orbita-detail-modal--log .orbita-detail-modal__foot {
+        padding-right: 18px;
+        padding-left: 18px;
+    }
+}
+
+@keyframes service-log-detail-enter-mobile {
+    from { transform: translateY(22px); opacity: 0.5; }
+    to { transform: translateY(0); opacity: 1; }
 }
 
 [data-theme="dark"] .service-log-entry__time {

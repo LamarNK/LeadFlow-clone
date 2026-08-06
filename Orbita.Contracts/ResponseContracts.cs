@@ -60,7 +60,9 @@ public sealed record ResponseListItemDto(
     int? PhoneUnchangedHours = null,
     DateTime? PhoneChangedAtUtc = null,
     string? PhoneMetricLabel = null,
-    bool HasAvatar = false);
+    bool HasAvatar = false,
+    IReadOnlyList<string>? HighlightLabels = null,
+    IReadOnlyList<ResponseCrmDeliveryDto>? CrmDeliveries = null);
 
 public sealed record ResponseDetailDto(
     Guid Id,

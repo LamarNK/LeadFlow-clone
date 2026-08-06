@@ -374,6 +374,7 @@ public sealed class ResponsesQueryService(
 
         var responseIds = rows.Select(x => x.Id).ToList();
         var deliveryLookup = await deliveries.LoadByResponseIdsAsync(responseIds, ct);
+        var crmDeliveryLookup = await LoadCrmDeliveriesByResponseIdsAsync(responseIds, ct);
 
         var items = rows
             .Select(x =>
@@ -382,16 +383,20 @@ public sealed class ResponsesQueryService(
                     x.BitrixPortalHost,
                     x.BitrixEntityType,
                     x.BitrixEntityId);
-                var isHighlighted = ResponseHighlightRules.IsHighlighted(
+                var highlightLabels = ResponseHighlightRules.GetHighlightLabels(
                     x.Age,
                     x.ResponseHighlightEnabled,
                     x.ResponseHighlightAgeBuckets,
                     x.AccountId,
                     x.AvitoSubProfileId,
-                    x.ResponseHighlightTargetsJson,
-                    out var highlightLabel);
+                    x.ResponseHighlightTargetsJson);
+                var isHighlighted = highlightLabels.Count > 0;
+                var highlightLabel = highlightLabels.FirstOrDefault();
                 var bitrixDeliveries = deliveryLookup.TryGetValue(x.Id, out var loaded)
                     ? loaded
+                    : [];
+                var crmDeliveries = crmDeliveryLookup.TryGetValue(x.Id, out var loadedCrm)
+                    ? loadedCrm
                     : [];
                 var phoneMetricLabel = ResponsePhoneMetricKinds.FormatLabel(
                     x.PhoneMetricKind,
@@ -444,11 +449,49 @@ public sealed class ResponsesQueryService(
                     x.PhoneUnchangedHours,
                     x.PhoneChangedAtUtc,
                     string.IsNullOrWhiteSpace(phoneMetricLabel) ? null : phoneMetricLabel,
-                    x.HasAvatar);
+                    x.HasAvatar,
+                    highlightLabels,
+                    crmDeliveries);
             })
             .ToList();
 
         return new ResponsesPageDto(items, total, page, pageSize);
+    }
+
+    private async Task<IReadOnlyDictionary<Guid, List<ResponseCrmDeliveryDto>>> LoadCrmDeliveriesByResponseIdsAsync(
+        IReadOnlyList<Guid> responseIds,
+        CancellationToken ct)
+    {
+        if (responseIds.Count == 0)
+        {
+            return new Dictionary<Guid, List<ResponseCrmDeliveryDto>>();
+        }
+
+        var rows = await db.ResponseCrmDeliveries
+            .AsNoTracking()
+            .Where(x => responseIds.Contains(x.ResponseId))
+            .Include(x => x.Office)
+            .OrderBy(x => x.CreatedAtUtc)
+            .Select(x => new
+            {
+                x.ResponseId,
+                Delivery = new ResponseCrmDeliveryDto(
+                    x.Id,
+                    x.OfficeId,
+                    x.Office.Name,
+                    x.Outcome,
+                    x.CardId,
+                    string.IsNullOrWhiteSpace(x.ErrorMessage) ? null : x.ErrorMessage,
+                    x.Source,
+                    x.CreatedAtUtc)
+            })
+            .ToListAsync(ct);
+
+        return rows
+            .GroupBy(x => x.ResponseId)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Select(x => x.Delivery).ToList());
     }
 
     private static readonly HashSet<string> AllowedSortColumns = new(StringComparer.OrdinalIgnoreCase)

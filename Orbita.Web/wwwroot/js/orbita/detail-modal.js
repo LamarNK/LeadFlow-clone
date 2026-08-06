@@ -546,6 +546,7 @@
         if (!detailModal || !detailTitle || !detailBody) return;
 
         var isResponseDetail = !!options.responseProfile;
+        var isLogDetail = options.variant === 'log';
         detailTitle.textContent = isResponseDetail ? 'Детали отклика' : (options.title || 'Детали');
         if (detailSubtitle) {
             if (!isResponseDetail && options.subtitle) {
@@ -558,8 +559,9 @@
         }
         detailCloseHandler = options.onClose || null;
         detailBody.textContent = '';
-        detailModal.classList.remove('orbita-detail-modal--chat');
+        detailModal.classList.remove('orbita-detail-modal--chat', 'orbita-detail-modal--log');
         detailModal.classList.toggle('orbita-detail-modal--response', isResponseDetail);
+        detailModal.classList.toggle('orbita-detail-modal--log', isLogDetail);
 
         if (isResponseDetail) {
             detailBody.appendChild(createResponseDetail(options));
@@ -571,7 +573,8 @@
             detailBody.appendChild(img);
         }
 
-        if (!isResponseDetail && options.sections && options.sections.length) {
+        var hasSections = !isResponseDetail && options.sections && options.sections.length;
+        if (hasSections) {
             var dl = document.createElement('dl');
             dl.className = 'orbita-detail-sections';
             options.sections.forEach(function (section) {
@@ -601,7 +604,9 @@
                 dl.appendChild(dd);
             });
             detailBody.appendChild(dl);
-        } else if (!isResponseDetail && options.body) {
+        }
+
+        if (!isResponseDetail && options.body && (!hasSections || options.appendBody)) {
             var text = document.createElement('p');
             text.className = 'orbita-detail-text';
             text.textContent = options.body;
@@ -658,7 +663,7 @@
             detailCloseHandler = null;
         }
         detailModal.setAttribute('hidden', '');
-        detailModal.classList.remove('orbita-detail-modal--media', 'orbita-detail-modal--chat', 'orbita-detail-modal--response');
+        detailModal.classList.remove('orbita-detail-modal--media', 'orbita-detail-modal--chat', 'orbita-detail-modal--response', 'orbita-detail-modal--log');
         runtime.setDetailFooter(null);
     }
 

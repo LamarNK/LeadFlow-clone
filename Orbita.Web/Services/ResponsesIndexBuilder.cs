@@ -109,6 +109,7 @@ internal static class ResponsesIndexBuilder
         var canSend = CanSendToBitrix(item.Status);
         var statusLabel = MapStatusLabel(item);
         var bitrixDeliveries = MapDeliveries(item.BitrixDeliveries);
+        var crmDeliveries = MapCrmDeliveries(item.CrmDeliveries ?? []);
         return new()
         {
             Id = item.Id,
@@ -140,6 +141,7 @@ internal static class ResponsesIndexBuilder
             BitrixEntityUrl = item.BitrixEntityUrl,
             BitrixLabel = MapBitrixColumn(item),
             BitrixDeliveries = bitrixDeliveries,
+            CrmDeliveries = crmDeliveries,
             CardCopy = BuildCardCopy(
                 item.FullName,
                 item.PhoneRaw,
@@ -160,6 +162,9 @@ internal static class ResponsesIndexBuilder
                 item.BitrixEntityId),
             IsHighlighted = item.IsHighlighted,
             HighlightLabel = item.HighlightLabel,
+            HighlightLabels = item.HighlightLabels is { Count: > 0 }
+                ? item.HighlightLabels.Where(label => !string.IsNullOrWhiteSpace(label)).ToArray()
+                : string.IsNullOrWhiteSpace(item.HighlightLabel) ? [] : [item.HighlightLabel],
             PhoneMetricKind = string.IsNullOrWhiteSpace(item.PhoneMetricKind) ? null : item.PhoneMetricKind,
             PhoneMetricLabel = item.PhoneMetricLabel,
             PreviousPhoneRaw = item.PreviousPhoneRaw,
@@ -406,6 +411,21 @@ internal static class ResponsesIndexBuilder
                 OutcomeLabel = MapDeliveryOutcomeLabel(d.Outcome),
                 ChipTone = MapDeliveryChipTone(d.Outcome),
                 BitrixEntityUrl = d.BitrixEntityUrl,
+                ErrorMessage = d.ErrorMessage,
+                CreatedAtUtc = d.CreatedAtUtc
+            })
+            .ToList();
+
+    private static IReadOnlyList<ResponseCrmDeliveryViewModel> MapCrmDeliveries(
+        IReadOnlyList<ResponseCrmDeliveryDto> deliveries) =>
+        deliveries
+            .Select(d => new ResponseCrmDeliveryViewModel
+            {
+                Id = d.Id,
+                OfficeName = d.OfficeName,
+                Outcome = d.Outcome,
+                OutcomeLabel = MapDeliveryOutcomeLabel(d.Outcome),
+                ChipTone = MapDeliveryChipTone(d.Outcome),
                 ErrorMessage = d.ErrorMessage,
                 CreatedAtUtc = d.CreatedAtUtc
             })
