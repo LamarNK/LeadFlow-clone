@@ -1,0 +1,292 @@
+@model CrmAnalyticsViewModel
+@using Orbita.Contracts
+@using Orbita.Web.Models.ViewModels
+@{
+    ViewData["Title"] = "CRM — Аналитика";
+    string Percent(double value) => $"{value:0.#}%";
+}
+
+<partial name="_PageHeader" model="Model.Header" />
+
+<main class="orbita-main crm-analytics">
+    @if (Model.Analytics is not { } analytics)
+    {
+        <section class="card crm-analytics-empty" role="status">
+            <span class="crm-analytics-empty__icon"><i class="fa-solid fa-chart-column" aria-hidden="true"></i></span>
+            <h2>Аналитика временно недоступна</h2>
+            <p>@Model.ErrorMessage</p>
+            <a class="settings-primary-btn" href="@Url.Action("Analytics", "Crm")">Повторить</a>
+        </section>
+    }
+    else
+    {
+        var cards = analytics.Cards;
+        var selectedManager = analytics.ManagerOptions.FirstOrDefault(x =>
+            string.Equals(x.UserId, Model.SelectedManagerUserId, StringComparison.Ordinal));
+        var managerLabel = selectedManager?.DisplayName
+                           ?? analytics.Managers.FirstOrDefault()?.DisplayName
+                           ?? "Мои показатели";
+        var visibleFunnels = analytics.Funnels
+            .Where(x => x.Received > 0 || string.IsNullOrWhiteSpace(analytics.ManagerUserId))
+            .ToList();
+        var kpis = new[]
+        {
+            new { Label = "Получено кандидатов", Value = cards.Received.ToString("N0"), Caption = "Карточек создано за период", Icon = "fa-solid fa-user-plus", Tone = "blue" },
+            new { Label = "Назначено", Value = cards.Assigned.ToString("N0"), Caption = $"{Percent(cards.AssignmentRatePercent)} от полученных", Icon = "fa-solid fa-user-check", Tone = "indigo" },
+            new { Label = "Активные", Value = cards.Active.ToString("N0"), Caption = "Сейчас не закрыты", Icon = "fa-regular fa-folder-open", Tone = "orange" },
+            new { Label = "Закрытые", Value = cards.Closed.ToString("N0"), Caption = $"{Percent(cards.CloseRatePercent)} от полученных", Icon = "fa-solid fa-box-archive", Tone = "slate" },
+            new { Label = "Успешно закрыто", Value = cards.SuccessfulClosed.ToString("N0"), Caption = $"{Percent(cards.SuccessAmongClosedPercent)} среди закрытых", Icon = "fa-solid fa-circle-check", Tone = "green" },
+            new { Label = "Конверсия в успех", Value = Percent(cards.SuccessRatePercent), Caption = "Получено → успешное закрытие", Icon = "fa-solid fa-arrow-trend-up", Tone = "purple" }
+        };
+
+        <section class="card crm-analytics-filter-card" aria-label="Фильтры аналитики">
+            <form method="get" asp-controller="Crm" asp-action="Analytics" class="crm-analytics-filters">
+                <input type="hidden" name="from" value="@Model.Header.DateFrom.ToString("yyyy-MM-dd")" data-period-form-from />
+                <input type="hidden" name="to" value="@Model.Header.DateTo.ToString("yyyy-MM-dd")" data-period-form-to />
+
+                <div class="crm-analytics-filter crm-analytics-filter--office">
+                    <span class="crm-analytics-filter__label">Офис</span>
+                    <strong><i class="fa-regular fa-building" aria-hidden="true"></i>@Model.OfficeContextLabel</strong>
+                    <small>Меняется переключателем в шапке</small>
+                </div>
+
+                <label class="crm-analytics-filter crm-analytics-filter--manager">
+                    <span class="crm-analytics-filter__label">Менеджер</span>
+                    @if (Model.IsAdmin)
+                    {
+                        <select name="managerUserId" aria-label="Фильтр по менеджеру">
+                            <option value="">Все менеджеры</option>
+                            @foreach (var officeGroup in analytics.ManagerOptions.GroupBy(x => new { x.OfficeId, x.OfficeName }))
+                            {
+                                <optgroup label="@officeGroup.Key.OfficeName">
+                                    @foreach (var option in officeGroup)
+                                    {
+                                        <option value="@option.UserId" selected="@(string.Equals(option.UserId, Model.SelectedManagerUserId, StringComparison.Ordinal) ? "selected" : null)">@option.DisplayName</option>
+                                    }
+                                </optgroup>
+                            }
+                        </select>
+                    }
+                    else
+                    {
+                        <select disabled aria-label="Текущий менеджер">
+                            <option>@managerLabel</option>
+                        </select>
+                        <small>Менеджеру доступны только свои показатели</small>
+                    }
+                </label>
+
+                <div class="crm-analytics-filter-actions">
+                    @if (Model.IsAdmin)
+                    {
+                        <button type="submit" class="settings-primary-btn">Применить</button>
+                    }
+                    <a class="settings-secondary-btn" href="@Url.Action("Analytics", "Crm")">Сбросить</a>
+                </div>
+            </form>
+        </section>
+
+        <details class="crm-analytics-methodology">
+            <summary><i class="fa-solid fa-circle-info" aria-hidden="true"></i>Как считаются показатели</summary>
+            <p>KPI показывают карточки, созданные в выбранный период, и их состояние на сейчас. Фильтр менеджера использует текущего ответственного. Нагрузка и задачи — текущий снимок, поэтому не зависят от периода. «Дошли» определяется по максимальному достигнутому этапу: карточка учитывается на нём и на всех предыдущих этапах воронки.</p>
+        </details>
+
+        <section class="crm-analytics-kpis" aria-label="Ключевые показатели CRM">
+            @for (var i = 0; i < kpis.Length; i++)
+            {
+                var kpi = kpis[i];
+                <article class="card crm-analytics-kpi crm-analytics-kpi--@kpi.Tone" style="--analytics-index:@i">
+                    <header>
+                        <span class="crm-analytics-kpi__icon"><i class="@kpi.Icon" aria-hidden="true"></i></span>
+                        <span>@kpi.Label</span>
+                    </header>
+                    <strong>@kpi.Value</strong>
+                    <p>@kpi.Caption</p>
+                </article>
+            }
+        </section>
+
+        <div class="crm-analytics-grid">
+            <section class="card crm-analytics-panel crm-analytics-panel--reasons">
+                <header class="crm-analytics-panel__header">
+                    <div>
+                        <h2>Результаты закрытия</h2>
+                        <p>Доля каждой причины среди закрытых карточек периода.</p>
+                    </div>
+                    <span>@cards.Closed.ToString("N0") закрыто</span>
+                </header>
+                @if (cards.Closed == 0 || analytics.CloseReasons.All(x => x.Count == 0))
+                {
+                    <div class="crm-analytics-panel-empty"><i class="fa-regular fa-circle-check" aria-hidden="true"></i><span>За период нет закрытых карточек</span></div>
+                }
+                else
+                {
+                    <div class="crm-analytics-reasons">
+                        @foreach (var reason in analytics.CloseReasons.Where(x => x.Count > 0).OrderByDescending(x => x.Count))
+                        {
+                            var isSuccess = string.Equals(reason.Reason, CrmCloseReasons.Success, StringComparison.Ordinal);
+                            var width = Math.Clamp(reason.PercentOfClosed, 0d, 100d).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+                            <div class="crm-analytics-reason @(isSuccess ? "is-success" : null)">
+                                <div class="crm-analytics-reason__line">
+                                    <span>@reason.Reason</span>
+                                    <strong>@reason.Count.ToString("N0") <small>@Percent(reason.PercentOfClosed)</small></strong>
+                                </div>
+                                <span class="crm-analytics-progress" aria-hidden="true"><i style="width:@(width)%"></i></span>
+                            </div>
+                        }
+                    </div>
+                }
+            </section>
+
+            <section class="card crm-analytics-panel crm-analytics-panel--summary">
+                <header class="crm-analytics-panel__header">
+                    <div>
+                        <h2>Путь до результата</h2>
+                        <p>Краткая сводка выбранной когорты.</p>
+                    </div>
+                </header>
+                <div class="crm-analytics-path">
+                    <div><span>Получено</span><strong>@cards.Received.ToString("N0")</strong></div>
+                    <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+                    <div><span>Назначено</span><strong>@cards.Assigned.ToString("N0")</strong><small>@Percent(cards.AssignmentRatePercent)</small></div>
+                    <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+                    <div><span>Закрыто</span><strong>@cards.Closed.ToString("N0")</strong><small>@Percent(cards.CloseRatePercent)</small></div>
+                    <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+                    <div class="is-success"><span>Успех</span><strong>@cards.SuccessfulClosed.ToString("N0")</strong><small>@Percent(cards.SuccessRatePercent)</small></div>
+                </div>
+            </section>
+        </div>
+
+        <section class="card crm-analytics-panel crm-analytics-funnels">
+            <header class="crm-analytics-panel__header">
+                <div>
+                    <h2>Воронка по этапам</h2>
+                    <p>«Дошли» — карточка достигла этого этапа или прошла дальше; «сейчас» — её текущий или последний этап, включая закрытые.</p>
+                </div>
+            </header>
+            @if (visibleFunnels.Count == 0)
+            {
+                <div class="crm-analytics-panel-empty"><i class="fa-solid fa-filter-circle-xmark" aria-hidden="true"></i><span>По выбранным фильтрам нет карточек</span></div>
+            }
+            else
+            {
+                @foreach (var funnel in visibleFunnels)
+                {
+                    <article class="crm-analytics-funnel">
+                        <header>
+                            <div>
+                                <span class="crm-analytics-funnel__office"><i class="fa-regular fa-building" aria-hidden="true"></i>@funnel.OfficeName</span>
+                                <strong>@funnel.Received.ToString("N0") получено</strong>
+                            </div>
+                            @if (analytics.Funnels.Count > 1)
+                            {
+                                <small>Воронки офисов считаются отдельно</small>
+                            }
+                        </header>
+                        <div class="crm-analytics-funnel-scroll">
+                            <div class="crm-analytics-funnel-stages" style="--stage-count:@Math.Max(1, funnel.Stages.Count)">
+                                @for (var stageIndex = 0; stageIndex < funnel.Stages.Count; stageIndex++)
+                                {
+                                    var stage = funnel.Stages[stageIndex];
+                                    if (stageIndex > 0 && !stage.IsArchive)
+                                    {
+                                        <div class="crm-analytics-funnel-connector" aria-label="Конверсия с прошлого этапа @Percent(stage.ConversionFromPreviousPercent)">
+                                            <span>@Percent(stage.ConversionFromPreviousPercent)</span>
+                                            <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+                                        </div>
+                                    }
+                                    else if (stage.IsArchive)
+                                    {
+                                        <div class="crm-analytics-funnel-connector crm-analytics-funnel-connector--archive" aria-hidden="true">
+                                            <span>архив</span>
+                                            <i class="fa-solid fa-box-archive"></i>
+                                        </div>
+                                    }
+                                    <div class="crm-analytics-funnel-stage @(stage.IsArchive ? "is-archive" : null)">
+                                        <span class="crm-analytics-funnel-stage__position">
+                                            @if (stage.IsArchive) { <i class="fa-solid fa-box-archive" aria-hidden="true"></i> }
+                                            else { @(stage.Position + 1) }
+                                        </span>
+                                        <h3>@stage.Stage</h3>
+                                        <div class="crm-analytics-funnel-stage__metrics">
+                                            <div><span>Дошли</span><strong>@stage.ReachedCount.ToString("N0")</strong></div>
+                                            <div><span>Сейчас</span><strong>@stage.CurrentCount.ToString("N0")</strong></div>
+                                        </div>
+                                        <p>@(stage.IsArchive
+                                            ? "Последний этап удалён из текущей настройки"
+                                            : $"{Percent(stage.ConversionFromReceivedPercent)} от полученных")</p>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    </article>
+                }
+            }
+        </section>
+
+        <section class="card crm-analytics-panel crm-analytics-managers">
+            <header class="crm-analytics-panel__header">
+                <div>
+                    <h2>Нагрузка менеджеров</h2>
+                    <p>Карточки за период сопоставлены с текущим ответственным; нагрузка и задачи показаны на сейчас.</p>
+                </div>
+                <span>@analytics.Managers.Count менеджеров</span>
+            </header>
+            @if (analytics.Managers.Count == 0)
+            {
+                <div class="crm-analytics-panel-empty"><i class="fa-solid fa-users-slash" aria-hidden="true"></i><span>Нет менеджеров по выбранным фильтрам</span></div>
+            }
+            else
+            {
+                var showOffice = analytics.Managers.Select(x => x.OfficeId).Distinct().Count() > 1;
+                <div class="crm-analytics-table-wrap">
+                    <table class="crm-analytics-table">
+                        <thead>
+                            <tr>
+                                <th>Менеджер</th>
+                                @if (showOffice) { <th>Офис</th> }
+                                <th>Карточки за период</th>
+                                <th>Текущие карточки</th>
+                                <th>Нагрузка / лимит</th>
+                                <th>Задачи</th>
+                                <th>Просрочено</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var manager in analytics.Managers)
+                            {
+                                var hasCapacity = manager.Capacity > 0;
+                                var utilization = hasCapacity
+                                    ? Math.Clamp(manager.CapacityUtilizationPercent, 0d, 100d)
+                                    : 0d;
+                                var utilizationWidth = utilization.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+                                <tr class="@(hasCapacity && manager.CapacityUtilizationPercent >= 100 ? "is-at-limit" : null)">
+                                    <td data-label="Менеджер">
+                                        <span class="crm-analytics-manager">
+                                            <i class="@(manager.IsShiftActive ? "is-online" : null)" aria-hidden="true"></i>
+                                            <span><strong>@manager.DisplayName</strong><small>@(manager.IsShiftActive ? "На смене" : "Не на смене")</small></span>
+                                        </span>
+                                    </td>
+                                    @if (showOffice) { <td data-label="Офис">@manager.OfficeName</td> }
+                                    <td data-label="За период"><strong>@manager.CardsInPeriod.ToString("N0")</strong></td>
+                                    <td data-label="Текущие карточки">@manager.CurrentAssignedCards.ToString("N0")</td>
+                                    <td data-label="Нагрузка / лимит">
+                                        <div class="crm-analytics-load">
+                                            <span>
+                                                <strong>@manager.ActiveLoad</strong> / @(hasCapacity ? manager.Capacity.ToString() : "—")
+                                                <small>@(hasCapacity ? Percent(manager.CapacityUtilizationPercent) : "лимит не задан")</small>
+                                            </span>
+                                            <span class="crm-analytics-progress"><i style="width:@(utilizationWidth)%"></i></span>
+                                        </div>
+                                    </td>
+                                    <td data-label="Задачи"><strong>@manager.OpenTasks</strong> открыто <small>из @manager.TasksTotal</small></td>
+                                    <td data-label="Просрочено"><span class="crm-analytics-overdue @(manager.OverdueTasks > 0 ? "has-overdue" : null)">@manager.OverdueTasks</span></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+    }
+</main>

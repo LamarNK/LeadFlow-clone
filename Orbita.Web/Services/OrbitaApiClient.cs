@@ -1813,6 +1813,26 @@ public sealed class OrbitaApiClient(
         return board;
     }
 
+    public Task<CrmAnalyticsDto?> GetCrmAnalyticsAsync(
+        DateTime fromUtc,
+        DateTime toUtc,
+        Guid? officeId = null,
+        string? managerUserId = null,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return Task.FromResult<CrmAnalyticsDto?>(
+                DesignPreviewData.GetCrmAnalytics(officeId ?? officeContext.EffectiveOfficeId, fromUtc, toUtc, managerUserId));
+        }
+
+        var url = WithOfficeQuery("api/v1/crm/analytics", officeId);
+        url = AppendQuery(url, "fromUtc", fromUtc.ToUniversalTime().ToString("O"));
+        url = AppendQuery(url, "toUtc", toUtc.ToUniversalTime().ToString("O"));
+        url = AppendQuery(url, "managerUserId", managerUserId);
+        return GetAsync<CrmAnalyticsDto>(url, ct);
+    }
+
     /// <summary>
     /// Loads CRM board. ErrorCode: unauthorized | forbidden | bad_request | not_found | error | null on success.
     /// </summary>

@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Http.Features;
 using Orbita.Api.Auth;
 using Orbita.Api.Data;
 using Orbita.Api.Hubs;
+using Orbita.Api.Helpers;
 using Orbita.Api.Models;
 using Orbita.Api.Options;
 using Orbita.Api.Services;
@@ -70,6 +71,51 @@ public static class CrmEndpoints
             return board is null
                 ? Results.NotFound(new { error = "Офис не найден." })
                 : Results.Ok(board);
+        });
+
+        crm.MapGet("/analytics", async (
+            CrmAnalyticsQueryService analytics,
+            OfficeScopeService officeScope,
+            ClaimsPrincipal principal,
+            DateTime? fromUtc,
+            DateTime? toUtc,
+            Guid? officeId,
+            string? managerUserId,
+            CancellationToken ct) =>
+        {
+            var isAdmin = principal.IsInRole(PanelRoles.Admin);
+            var isManager = principal.IsInRole(PanelRoles.Manager);
+            var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier)
+                         ?? principal.FindFirstValue("sub");
+            if (string.IsNullOrWhiteSpace(userId) || (!isAdmin && !isManager))
+            {
+                return Results.Forbid();
+            }
+
+            if (fromUtc is not DateTime from || toUtc is not DateTime to)
+            {
+                return Results.BadRequest(new { error = "Укажите fromUtc и toUtc." });
+            }
+
+            var scope = await officeScope.ResolveAsync(principal, ct);
+            var result = await analytics.GetAsync(
+                scope,
+                userId,
+                isAdmin,
+                new CrmAnalyticsQuery(
+                    DateTimeUtcHelper.EnsureUtc(from),
+                    DateTimeUtcHelper.EnsureUtc(to),
+                    officeId,
+                    managerUserId),
+                ct);
+
+            return result.Outcome switch
+            {
+                CrmAnalyticsQueryOutcome.Success => Results.Ok(result.Data),
+                CrmAnalyticsQueryOutcome.BadRequest => Results.BadRequest(new { error = result.Error }),
+                CrmAnalyticsQueryOutcome.NotFound => Results.NotFound(new { error = result.Error }),
+                _ => Results.Forbid()
+            };
         });
 
         crm.MapGet("/tasks", async (

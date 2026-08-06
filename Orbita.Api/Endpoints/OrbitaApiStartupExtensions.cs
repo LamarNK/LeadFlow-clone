@@ -255,6 +255,7 @@ public static class OrbitaApiStartupExtensions
         });
         builder.Services.AddScoped<CrmLeadDistributionService>();
         builder.Services.AddScoped<CrmWorkspaceService>();
+        builder.Services.AddScoped<CrmAnalyticsQueryService>();
         builder.Services.AddScoped<BitrixInstanceService>();
         builder.Services.AddScoped<BitrixWorkforceSettingsService>();
         builder.Services.AddScoped<BitrixWorkforceEventReceiver>();
