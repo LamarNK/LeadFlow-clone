@@ -186,6 +186,8 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.HasKey(x => x.Id);
             entity.HasIndex(x => x.ResponseId);
             entity.HasIndex(x => new { x.ResponseId, x.CreatedAtUtc });
+            // Statistics/dashboard: filter successful sends by send time.
+            entity.HasIndex(x => new { x.Outcome, x.CreatedAtUtc });
             entity.Property(x => x.Outcome).HasMaxLength(16);
             entity.Property(x => x.Source).HasMaxLength(16);
             entity.Property(x => x.ErrorMessage).HasMaxLength(2000);

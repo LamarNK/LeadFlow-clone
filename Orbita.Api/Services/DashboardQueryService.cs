@@ -21,6 +21,15 @@ public sealed class DashboardQueryService(
     private static (DateTime ExpiresUtc, GlobalDashboardSummary? Value, OfficeScope Scope, Guid? OfficeFilter) _summaryCache;
     private static readonly object _cacheLock = new();
 
+    /// <summary>Test-only: static summary cache must not leak across InMemory DB fixtures.</summary>
+    internal static void ClearCacheForTests()
+    {
+        lock (_cacheLock)
+        {
+            _summaryCache = default;
+        }
+    }
+
     public async Task<GlobalDashboardSummary> GetGlobalSummaryAsync(
         OfficeScope scope,
         Guid? officeFilter = null,
@@ -42,6 +51,8 @@ public sealed class DashboardQueryService(
         }
 
         var todayStart = nowUtc.Date;
+        var weeklyStartLocal = DateTime.Today.AddDays(-(LocalCalendarDateRange.MaxCalendarDays - 1));
+        var (_, _, weeklyUtcStart, weeklyUtcEnd) = LocalCalendarDateRange.Normalize(weeklyStartLocal, DateTime.Today);
         var workersQuery = officeScope
             .ApplyWorkerFilter(db.Workers.AsNoTracking(), scope, officeFilter)
             .Where(x => x.MachineName != LeadFlowImportWorker.MachineName);
@@ -53,6 +64,10 @@ public sealed class DashboardQueryService(
         // Compute response counts from source of truth (CandidateResponses) for accuracy
         // instead of relying on (often zero) pushed snapshots.
         var responseStats = await ComputeTodayResponseStatsAsync(workerIds, todayStart, ct);
+
+        // "Sent" is counted by actual send time (CRM + Bitrix deliveries), not the response
+        // collection date — a response collected yesterday but sent today counts for today.
+        var sendTimestamps = await LoadSendTimestampsAsync(workerIds, weeklyUtcStart, weeklyUtcEnd, ct);
 
         // Keep snapshot data only for account-level details (ads counts, balances) and activity charts
         var latestSnapshots = await db.WorkerSnapshots
@@ -75,7 +90,7 @@ public sealed class DashboardQueryService(
 
         // Prefer real response counts; fall back to snapshot sums only for fields not derivable from responses (ads etc.)
         int totalToday = responseStats.TotalToday;
-        int sentToCrm = responseStats.Sent;
+        int sentToCrm = sendTimestamps.Count(t => t >= todayStart);
         int duplicates = responseStats.Duplicates;
         int inProgress = responseStats.InProgress;
         int actionRequired = responseStats.ActionRequired;
@@ -133,13 +148,15 @@ public sealed class DashboardQueryService(
             HourlyActivity: await ComputeHourlyActivityFromDbAsync(
                 workerIds,
                 todayStart,
+                sendTimestamps,
                 workerEventErrors.Hourly,
                 ct),
             WeeklyByDayActivity: WorkerEventErrorStatsHelper.MergeDailyErrors(
                 await ComputeDailyActivityFromDbAsync(
                     workerIds,
-                    DateTime.Today.AddDays(-(LocalCalendarDateRange.MaxCalendarDays - 1)),
+                    weeklyStartLocal,
                     DateTime.Today,
+                    sendTimestamps,
                     ct),
                 workerEventErrors.Daily),
             AggregatedAtUtc: nowUtc);
@@ -282,10 +299,17 @@ public sealed class DashboardQueryService(
         }
 
         var todayStart = nowUtc.Date;
+        var todayEndUtc = LocalCalendarDateRange.GetUtcRangeForLocalCalendarDay(DateTime.Today).UtcEndExclusive;
         var workerEventErrors = await ComputeWorkerEventErrorStatsAsync(new HashSet<Guid> { workerId }, todayStart, ct);
+        var workerSendTimestamps = await LoadSendTimestampsAsync(
+            new HashSet<Guid> { workerId },
+            todayStart,
+            todayEndUtc,
+            ct);
         var hourlyActivity = await ComputeHourlyActivityFromDbAsync(
             new HashSet<Guid> { workerId },
             todayStart,
+            workerSendTimestamps,
             workerEventErrors.Hourly,
             ct);
         if (stats is not null)
@@ -660,6 +684,7 @@ public sealed class DashboardQueryService(
         HashSet<Guid> workerIds,
         DateTime startLocal,
         DateTime endLocal,
+        IReadOnlyList<DateTime> sendTimestamps,
         CancellationToken ct)
     {
         var (rangeStart, rangeEnd, utcStart, utcEnd) = LocalCalendarDateRange.Normalize(startLocal, endLocal);
@@ -688,15 +713,28 @@ public sealed class DashboardQueryService(
             }
 
             bucket.Total++;
-            switch (row.Status)
+            if (row.Status == ResponseStatuses.Duplicate)
             {
-                case ResponseStatuses.Sent:
-                    bucket.Sent++;
-                    break;
-                case ResponseStatuses.Duplicate:
-                    bucket.Duplicates++;
-                    break;
+                bucket.Duplicates++;
             }
+        }
+
+        // "Sent" by actual send date (CRM + Bitrix), not response collection date.
+        foreach (var sentAtUtc in sendTimestamps)
+        {
+            var localDate = LocalCalendarDateRange.ToLocalDateFromStoredUtc(sentAtUtc);
+            if (localDate < startLocal.Date || localDate > endLocal.Date)
+            {
+                continue;
+            }
+
+            if (!byDay.TryGetValue(localDate, out var bucket))
+            {
+                bucket = new DailyResponseCounters();
+                byDay[localDate] = bucket;
+            }
+
+            bucket.Sent++;
         }
 
         return BuildDailyActivity(rangeStart, rangeEnd, byDay);
@@ -742,6 +780,7 @@ public sealed class DashboardQueryService(
     private async Task<IReadOnlyList<ActivityPointDto>> ComputeHourlyActivityFromDbAsync(
         HashSet<Guid> workerIds,
         DateTime todayStartUtc,
+        IReadOnlyList<DateTime> sendTimestamps,
         IReadOnlyList<int> hourlyEventErrors,
         CancellationToken ct)
     {
@@ -766,16 +805,28 @@ public sealed class DashboardQueryService(
                 }
 
                 newCounts[hour]++;
-                if (row.Status == ResponseStatuses.Sent)
-                {
-                    sentCounts[hour]++;
-                }
-
                 if (row.Status == ResponseStatuses.Duplicate)
                 {
                     duplicateCounts[hour]++;
                 }
             }
+        }
+
+        // "Sent" by actual send hour (CRM + Bitrix), not response collection hour.
+        foreach (var sentAtUtc in sendTimestamps)
+        {
+            if (sentAtUtc < todayStartUtc)
+            {
+                continue;
+            }
+
+            var hour = UtcHour(sentAtUtc);
+            if (hour is < 0 or > 23)
+            {
+                continue;
+            }
+
+            sentCounts[hour]++;
         }
 
         var errorHourly = hourlyEventErrors.Count == 24
@@ -839,27 +890,102 @@ public sealed class DashboardQueryService(
     }
 
     // Computes today response aggregates directly from CandidateResponses (source of truth).
-    // This makes dashboard/worker-list numbers accurate even when workers send empty snapshots.
-    private async Task<(int TotalToday, int Sent, int Duplicates, int Errors, int InProgress, int ActionRequired)>
+    // "Sent" is not derived here — it uses actual send timestamps (CRM + Bitrix deliveries).
+    private async Task<(int TotalToday, int Duplicates, int Errors, int InProgress, int ActionRequired)>
         ComputeTodayResponseStatsAsync(HashSet<Guid> workerIds, DateTime todayStartUtc, CancellationToken ct)
     {
         if (workerIds.Count == 0)
-            return (0, 0, 0, 0, 0, 0);
+            return (0, 0, 0, 0, 0);
 
         var query = db.CandidateResponses.AsNoTracking()
             .Where(x => x.WorkerId != null && workerIds.Contains(x.WorkerId.Value) && x.CollectedAt >= todayStartUtc);
 
         var totalToday = await query.CountAsync(ct);
         if (totalToday == 0)
-            return (0, 0, 0, 0, 0, 0);
+            return (0, 0, 0, 0, 0);
 
-        var sent = await query.CountAsync(x => x.Status == ResponseStatuses.Sent, ct);
         var duplicates = await query.CountAsync(x => x.Status == ResponseStatuses.Duplicate, ct);
         var errors = await query.CountAsync(x => x.Status == ResponseStatuses.Error, ct);
         var actionReq = await query.CountAsync(x => x.Status == ResponseStatuses.ActionRequired, ct);
         var inProgress = await query.CountAsync(x => x.Status == ResponseStatuses.InProgress, ct);
 
-        return (totalToday, sent, duplicates, errors + actionReq, inProgress, actionReq);
+        return (totalToday, duplicates, errors + actionReq, inProgress, actionReq);
+    }
+
+    // Successful sends (CRM + Bitrix) in [utcStart, utcEnd) by actual send time.
+    // One entry per successful delivery event; legacy rows that predate the delivery
+    // journal are counted once by their process/send time (or CRM card creation time).
+    private async Task<IReadOnlyList<DateTime>> LoadSendTimestampsAsync(
+        HashSet<Guid> workerIds,
+        DateTime utcStart,
+        DateTime utcEnd,
+        CancellationToken ct)
+    {
+        if (workerIds.Count == 0)
+        {
+            return [];
+        }
+
+        var scopedResponseIds = db.CandidateResponses.AsNoTracking()
+            .Where(x => x.WorkerId != null && workerIds.Contains(x.WorkerId.Value))
+            .Select(x => x.Id);
+
+        var result = new List<DateTime>();
+
+        var bitrixSends = await db.ResponseBitrixDeliveries.AsNoTracking()
+            .Where(d => d.Outcome == ResponseBitrixDeliveryOutcomes.Sent
+                && d.CreatedAtUtc >= utcStart
+                && d.CreatedAtUtc < utcEnd
+                && scopedResponseIds.Contains(d.ResponseId))
+            .Select(d => d.CreatedAtUtc)
+            .ToListAsync(ct);
+        result.AddRange(bitrixSends);
+
+        var crmSends = await db.ResponseCrmDeliveries.AsNoTracking()
+            .Where(d => d.Outcome == ResponseCrmDeliveryOutcomes.Sent
+                && d.CreatedAtUtc >= utcStart
+                && d.CreatedAtUtc < utcEnd
+                && scopedResponseIds.Contains(d.ResponseId))
+            .Select(d => d.CreatedAtUtc)
+            .ToListAsync(ct);
+        result.AddRange(crmSends);
+
+        // Legacy rows created before the delivery journal existed: Status=Sent responses
+        // without any journal entry or CRM card are counted by their process/send time once.
+        var responsesWithBitrixDelivery = db.ResponseBitrixDeliveries.AsNoTracking().Select(d => d.ResponseId);
+        var responsesWithCrmDelivery = db.ResponseCrmDeliveries.AsNoTracking().Select(d => d.ResponseId);
+        var responsesWithCrmCard = db.CrmCandidateCards.AsNoTracking().Select(c => c.ResponseId);
+        var legacySends = await db.CandidateResponses.AsNoTracking()
+            .Where(x => x.WorkerId != null
+                && workerIds.Contains(x.WorkerId.Value)
+                && x.Status == ResponseStatuses.Sent
+                && x.ProcessedAt != null
+                && x.ProcessedAt >= utcStart
+                && x.ProcessedAt < utcEnd
+                && !responsesWithBitrixDelivery.Contains(x.Id)
+                && !responsesWithCrmDelivery.Contains(x.Id)
+                && !responsesWithCrmCard.Contains(x.Id))
+            .Select(x => x.ProcessedAt!.Value)
+            .ToListAsync(ct);
+        result.AddRange(legacySends);
+
+        // Legacy CRM cards: card creation time is the CRM send time when no CRM delivery
+        // journal entry exists for the same response and office.
+        var crmDeliveryKeys = db.ResponseCrmDeliveries.AsNoTracking()
+            .Select(d => new { d.ResponseId, d.OfficeId });
+        var legacyCrmCards = await (
+            from card in db.CrmCandidateCards.AsNoTracking()
+            where card.CreatedAtUtc >= utcStart
+                && card.CreatedAtUtc < utcEnd
+                && !crmDeliveryKeys.Any(d => d.ResponseId == card.ResponseId && d.OfficeId == card.OfficeId)
+            join response in db.CandidateResponses.AsNoTracking()
+                on card.ResponseId equals response.Id
+            where response.WorkerId != null && workerIds.Contains(response.WorkerId.Value)
+            select card.CreatedAtUtc)
+            .ToListAsync(ct);
+        result.AddRange(legacyCrmCards);
+
+        return result;
     }
 
     private async Task<WorkerEventErrorStats> ComputeWorkerEventErrorStatsAsync(

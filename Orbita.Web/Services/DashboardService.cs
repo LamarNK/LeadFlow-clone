@@ -190,7 +190,7 @@ public sealed class DashboardService(
             {
                 Key = "sent",
                 Href = KpiCardLinks.Dashboard("sent", period.From, period.To),
-                Label = "В Битрикс24",
+                Label = "Отправленные",
                 Value = periodStats.Sent.ToString(),
                 CountValue = periodStats.Sent,
                 Delta = sentShare,

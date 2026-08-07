@@ -1576,7 +1576,7 @@ internal static class DesignPreviewData
                 {
                     Key = "sent",
                     Href = KpiCardLinks.Dashboard("sent", period.From, period.To),
-                    Label = "В Битрикс24",
+                    Label = "Отправленные",
                     Value = "1100",
                     CountValue = 1100,
                     Delta = "89.1%",

@@ -12,10 +12,12 @@ public sealed class DashboardQueryServiceTests
     private static readonly Guid OfficeId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
     private static readonly Guid WorkerId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
     private static readonly Guid AccountId = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc");
+    private static readonly Guid BitrixInstanceId = Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd");
 
     [Fact]
     public async Task GetGlobalSummaryAsync_WeeklyByDayActivity_UsesDatabaseNotSnapshots()
     {
+        DashboardQueryService.ClearCacheForTests();
         await using var db = CreateDb();
         var now = DateTime.UtcNow;
         var yesterdayLocal = DateTime.Today.AddDays(-1);
@@ -55,7 +57,9 @@ public sealed class DashboardQueryServiceTests
             PhoneNormalized = "79001111111",
             Status = ResponseStatuses.Sent,
             CreatedAt = utcStart.AddHours(3),
-            CollectedAt = utcStart.AddHours(3)
+            CollectedAt = utcStart.AddHours(3),
+            // Legacy send path: sent time comes from ProcessedAt when no delivery journal exists.
+            ProcessedAt = utcStart.AddHours(3)
         });
         await db.SaveChangesAsync();
 
@@ -70,8 +74,99 @@ public sealed class DashboardQueryServiceTests
     }
 
     [Fact]
+    public async Task GetGlobalSummaryAsync_SentCountedBySendDate_NotCollectionDate()
+    {
+        DashboardQueryService.ClearCacheForTests();
+        await using var db = CreateDb();
+        var now = DateTime.UtcNow;
+        var yesterdayLocal = DateTime.Today.AddDays(-1);
+        var utcStart = Orbita.Api.Helpers.LocalCalendarDateRange
+            .GetUtcRangeForLocalCalendarDay(yesterdayLocal)
+            .UtcStartInclusive;
+
+        SeedWorker(db, now);
+        var todayNoon = now.Date.AddHours(12);
+        // Collected yesterday, but actually sent today via a delivery journal entry.
+        var responseId = Guid.NewGuid();
+        db.CandidateResponses.Add(new CandidateResponseEntity
+        {
+            Id = responseId,
+            OfficeId = OfficeId,
+            WorkerId = WorkerId,
+            AccountId = AccountId,
+            AccountName = "acc-1",
+            Source = "Avito",
+            SourceResponseId = "collected-yesterday-sent-today",
+            FullName = "User",
+            PhoneRaw = "+79001111111",
+            PhoneNormalized = "79001111111",
+            Status = ResponseStatuses.Sent,
+            CreatedAt = utcStart.AddHours(3),
+            CollectedAt = utcStart.AddHours(3),
+            ProcessedAt = todayNoon
+        });
+        db.ResponseBitrixDeliveries.Add(new ResponseBitrixDeliveryEntity
+        {
+            Id = Guid.NewGuid(),
+            ResponseId = responseId,
+            BitrixInstanceId = BitrixInstanceId,
+            Outcome = ResponseBitrixDeliveryOutcomes.Sent,
+            CreatedAtUtc = todayNoon,
+            Source = "auto"
+        });
+        await db.SaveChangesAsync();
+
+        var summary = await CreateService(db).GetGlobalSummaryAsync(OfficeScope.ForOffice(OfficeId), OfficeId);
+
+        // Sent lands on today (send time), not on yesterday (collection time).
+        Assert.Equal(1, summary.SentToCrm);
+        Assert.Equal(0, summary.WeeklyByDayActivity
+            .Single(point => point.LocalDate == yesterdayLocal).SentCount);
+    }
+
+    [Fact]
+    public async Task GetGlobalSummaryAsync_SentCountsCrmAndBitrixDeliveries()
+    {
+        DashboardQueryService.ClearCacheForTests();
+        await using var db = CreateDb();
+        var now = DateTime.UtcNow;
+        var todayStart = now.Date;
+        SeedWorker(db, now);
+
+        var bitrixResponseId = Guid.NewGuid();
+        db.CandidateResponses.Add(CreateResponse(todayStart.AddHours(10), ResponseStatuses.Sent, bitrixResponseId));
+        db.ResponseBitrixDeliveries.Add(new ResponseBitrixDeliveryEntity
+        {
+            Id = Guid.NewGuid(),
+            ResponseId = bitrixResponseId,
+            BitrixInstanceId = BitrixInstanceId,
+            Outcome = ResponseBitrixDeliveryOutcomes.Sent,
+            CreatedAtUtc = todayStart.AddHours(10),
+            Source = "auto"
+        });
+
+        var crmResponseId = Guid.NewGuid();
+        db.CandidateResponses.Add(CreateResponse(todayStart.AddHours(11), ResponseStatuses.Sent, crmResponseId));
+        db.ResponseCrmDeliveries.Add(new ResponseCrmDeliveryEntity
+        {
+            Id = Guid.NewGuid(),
+            ResponseId = crmResponseId,
+            OfficeId = OfficeId,
+            Outcome = ResponseCrmDeliveryOutcomes.Sent,
+            CreatedAtUtc = todayStart.AddHours(11),
+            Source = "auto"
+        });
+        await db.SaveChangesAsync();
+
+        var summary = await CreateService(db).GetGlobalSummaryAsync(OfficeScope.ForOffice(OfficeId), OfficeId);
+
+        Assert.Equal(2, summary.SentToCrm);
+    }
+
+    [Fact]
     public async Task GetGlobalSummaryAsync_ReportsTodayResponsesWithoutDuplicates()
     {
+        DashboardQueryService.ClearCacheForTests();
         await using var db = CreateDb();
         var now = DateTime.UtcNow;
         SeedWorker(db, now);
@@ -88,9 +183,12 @@ public sealed class DashboardQueryServiceTests
         Assert.Equal(2, summary.UniqueResponsesToday);
     }
 
-    private static CandidateResponseEntity CreateResponse(DateTime collectedAt, string status) => new()
+    private static CandidateResponseEntity CreateResponse(DateTime collectedAt, string status) =>
+        CreateResponse(collectedAt, status, Guid.NewGuid());
+
+    private static CandidateResponseEntity CreateResponse(DateTime collectedAt, string status, Guid id) => new()
     {
-        Id = Guid.NewGuid(),
+        Id = id,
         OfficeId = OfficeId,
         WorkerId = WorkerId,
         AccountId = AccountId,
@@ -149,6 +247,17 @@ public sealed class DashboardQueryServiceTests
             DisplayName = "acc-1",
             Status = "Ok",
             IsEnabledInPanel = true,
+            UpdatedAtUtc = now
+        });
+        db.BitrixInstances.Add(new BitrixInstanceEntity
+        {
+            Id = BitrixInstanceId,
+            OfficeId = OfficeId,
+            Name = "Portal",
+            Signature = "p",
+            WebhookUrlProtected = "x",
+            ValidationStatus = "Ok",
+            CreatedAtUtc = now,
             UpdatedAtUtc = now
         });
     }

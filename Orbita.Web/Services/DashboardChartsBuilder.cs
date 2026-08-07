@@ -8,7 +8,7 @@ internal static class DashboardChartsBuilder
     private static readonly (string Label, string Color, Func<ActivityPointDto, int> Select)[] ActivityMetrics =
     [
         ("Откликов", "#2563eb", p => p.NewCount),
-        ("В Битрикс24", "#15803d", p => p.SentCount),
+        ("Отправленные", "#15803d", p => p.SentCount),
         ("Дублей", "#16a34a", p => p.DuplicateCount),
         ("Ошибок", "#f59e0b", p => p.ErrorCount)
     ];
@@ -221,7 +221,7 @@ internal static class DashboardChartsBuilder
     private static string TooltipLabelFor(string kpiLabel) => kpiLabel switch
     {
         "Откликов всего" => "Откликов",
-        "В Битрикс24" => "В Битрикс24",
+        "Отправленные" => "Отправленные",
         "Дублей" => "Дублей",
         "Ошибок" => "Ошибок",
         "Аккаунтов активно" => "Аккаунтов",
