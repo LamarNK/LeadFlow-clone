@@ -1010,6 +1010,35 @@ public sealed class OrbitaApiClient(
             ? Task.FromResult<ResponseDetailDto?>(null)
             : GetAsync<ResponseDetailDto>($"api/v1/panel/responses/{id}", ct);
 
+    public async Task<(UpdateResponseResultDto? Result, string? Error)> UpdateResponseAsync(
+        Guid id,
+        UpdateResponseRequest body,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return (new UpdateResponseResultDto(true, null), null);
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Put, $"api/v1/panel/responses/{id:D}");
+        request.Content = JsonContent.Create(body);
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (null, InvalidApiSessionError);
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            return (null, await ReadApiErrorAsync(response, ct));
+        }
+
+        var result = await response.Content.ReadFromJsonAsync<UpdateResponseResultDto>(ApiJsonOptions, ct);
+        return result is null
+            ? (null, "Не удалось прочитать ответ API.")
+            : (result, null);
+    }
+
     public async Task<(Stream? Stream, string? ContentType)> GetResponseAvatarAsync(Guid id, CancellationToken ct = default)
     {
         if (_preview.Enabled)

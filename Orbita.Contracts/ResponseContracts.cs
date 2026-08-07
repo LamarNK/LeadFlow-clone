@@ -175,3 +175,18 @@ public sealed record BulkSendBitrixResultDto(
     int Succeeded,
     int Failed,
     IReadOnlyList<BulkSendBitrixItemResultDto> Items);
+
+/// <summary>
+/// Operator edit of candidate fields on a collected response (not source/system IDs).
+/// </summary>
+public sealed record UpdateResponseRequest(
+    string FullName,
+    string PhoneRaw,
+    string City,
+    int? Age,
+    string? Gender);
+
+public sealed record UpdateResponseResultDto(
+    bool Success,
+    string? ErrorMessage,
+    ResponseDetailDto? Detail = null);

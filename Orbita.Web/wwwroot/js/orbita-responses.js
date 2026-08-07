@@ -551,9 +551,13 @@
             .then(function (payload) {
                 if (!payload) return;
                 updateResponseUrl(id);
+                var responseId = payload.responseId || id;
                 window.Orbita.openDetailModal({
                     title: payload.title,
                     subtitle: payload.subtitle,
+                    responseId: responseId,
+                    canEdit: payload.canEdit !== false && !!payload.edit,
+                    edit: payload.edit || null,
                     responseProfile: payload.profile || null,
                     sections: payload.sections || [],
                     chatMessages: payload.chatMessages || [],
@@ -563,10 +567,15 @@
                     primaryActions: payload.primaryActions || [],
                     copyText: payload.copyText || '',
                     copyLabel: payload.copyLabel || 'Копировать',
-                    onClose: function () { updateResponseUrl(null); }
+                    onClose: function () { updateResponseUrl(null); },
+                    onSaved: function (savedId) {
+                        openResponseDetail(savedId || responseId);
+                    }
                 });
             });
     }
+
+
 
     function resetDeliveryProgress(form) {
         if (!form) return;
@@ -1648,6 +1657,8 @@
     window.OrbitaResponses = window.OrbitaResponses || {};
     window.OrbitaResponses.openSendBitrixModal = openSendBitrixModal;
     window.OrbitaResponses.getRowCardCopy = getRowCardCopy;
+    window.OrbitaResponses.reloadDetail = openResponseDetail;
+    window.OrbitaResponses.openDetail = openResponseDetail;
 
     initResponsesPage();
     document.addEventListener('orbita:content-updated', initResponsesPage);

@@ -1,4 +1,6 @@
 (function (runtime) {
+    var activeResponseDetailOptions = null;
+
     function responseInitials(name) {
         return String(name || '').trim().split(/\s+/).filter(Boolean).slice(0, 2)
             .map(function (part) { return part.charAt(0).toLocaleUpperCase(); }).join('') || '—';
@@ -17,7 +19,25 @@
         return icon;
     }
 
-    function appendResponseFact(list, section) {
+    var responseEditableLabels = {
+        'Телефон': 'phone',
+        'Город': 'city',
+        'Возраст': 'age',
+        'Пол': 'gender'
+    };
+
+    var responseReadonlyFactLabels = {
+        'История номеров': true,
+        'Аккаунт': true,
+        'Воркер': true,
+        'Источник': true,
+        'ID отклика': true,
+        'Сбор': true,
+        'Отклик': true
+    };
+
+    function appendResponseFact(list, section, options) {
+        options = options || {};
         var row = document.createElement('div');
         row.className = 'orbita-response-detail__fact';
 
@@ -26,7 +46,10 @@
         row.appendChild(label);
 
         var value = document.createElement('dd');
-        if (section.values && section.values.length) {
+        var editKey = responseEditableLabels[section.label];
+        if (options.editing && editKey && options.edit) {
+            value.appendChild(createResponseEditControl(editKey, options.edit));
+        } else if (section.values && section.values.length) {
             var values = document.createElement('ul');
             values.className = 'orbita-response-detail__fact-values';
             section.values.forEach(function (item) {
@@ -47,6 +70,78 @@
         }
         row.appendChild(value);
         list.appendChild(row);
+    }
+
+    function createResponseEditControl(key, edit) {
+        if (key === 'gender') {
+            var select = document.createElement('select');
+            select.className = 'orbita-response-detail__input';
+            select.setAttribute('data-response-edit-field', 'gender');
+            [
+                { value: '', label: 'Не указан' },
+                { value: 'male', label: 'Мужчина' },
+                { value: 'female', label: 'Женщина' }
+            ].forEach(function (option) {
+                var opt = document.createElement('option');
+                opt.value = option.value;
+                opt.textContent = option.label;
+                if ((edit.gender || '') === option.value) opt.selected = true;
+                select.appendChild(opt);
+            });
+            return select;
+        }
+
+        var input = document.createElement('input');
+        input.className = 'orbita-response-detail__input';
+        input.setAttribute('data-response-edit-field', key);
+        if (key === 'age') {
+            input.type = 'number';
+            input.min = '14';
+            input.max = '99';
+            input.inputMode = 'numeric';
+            input.placeholder = 'Возраст';
+            input.value = edit.age != null && edit.age !== '' ? String(edit.age) : '';
+        } else if (key === 'phone') {
+            input.type = 'tel';
+            input.autocomplete = 'tel';
+            input.placeholder = '+7 …';
+            input.value = edit.phone || '';
+        } else if (key === 'city') {
+            input.type = 'text';
+            input.autocomplete = 'address-level2';
+            input.placeholder = 'Город';
+            input.value = edit.city || '';
+        } else {
+            input.type = 'text';
+            input.value = edit[key] || '';
+        }
+        return input;
+    }
+
+    function collectResponseEditValues(root) {
+        var values = {
+            fullName: '',
+            phone: '',
+            city: '',
+            age: '',
+            gender: ''
+        };
+        if (!root) return values;
+        root.querySelectorAll('[data-response-edit-field]').forEach(function (el) {
+            var key = el.getAttribute('data-response-edit-field');
+            if (!key) return;
+            values[key] = (el.value || '').trim();
+        });
+        return values;
+    }
+
+    function getResponseUpdateUrl() {
+        var root = document.querySelector('[data-response-update-url]');
+        if (root) {
+            var fromAttr = root.getAttribute('data-response-update-url');
+            if (fromAttr) return fromAttr;
+        }
+        return '/Responses/Update';
     }
 
     function createResponseChatBubble(message) {
@@ -70,8 +165,13 @@
         var profile = options.responseProfile || {};
         var sections = options.sections || [];
         var messages = options.chatMessages || [];
+        var edit = options.edit || null;
+        var editing = !!options.editing && !!edit;
         var detail = document.createElement('div');
-        detail.className = 'orbita-response-detail';
+        detail.className = 'orbita-response-detail' + (editing ? ' orbita-response-detail--editing' : '');
+        if (options.responseId) {
+            detail.setAttribute('data-response-id', options.responseId);
+        }
 
         var hero = document.createElement('header');
         hero.className = 'orbita-response-detail__hero';
@@ -79,8 +179,8 @@
         identity.className = 'orbita-response-detail__identity';
         var avatar = document.createElement('span');
         avatar.className = 'orbita-response-detail__avatar';
-        avatar.textContent = responseInitials(profile.candidateName || options.title);
-        if (profile.avatarUrl) {
+        avatar.textContent = responseInitials((edit && edit.fullName) || profile.candidateName || options.title);
+        if (profile.avatarUrl && !editing) {
             var avatarImage = document.createElement('img');
             avatarImage.src = profile.avatarUrl;
             avatarImage.alt = '';
@@ -92,28 +192,46 @@
         var person = document.createElement('div');
         var nameLine = document.createElement('div');
         nameLine.className = 'orbita-response-detail__name-line';
-        var name = document.createElement('h2');
-        name.textContent = profile.candidateName || options.title || 'Кандидат';
-        nameLine.appendChild(name);
-        if (profile.statusLabel) {
+        if (editing) {
+            var nameInput = document.createElement('input');
+            nameInput.type = 'text';
+            nameInput.className = 'orbita-response-detail__input orbita-response-detail__input--name';
+            nameInput.setAttribute('data-response-edit-field', 'fullName');
+            nameInput.value = edit.fullName || profile.candidateName || '';
+            nameInput.placeholder = 'ФИО кандидата';
+            nameInput.autocomplete = 'name';
+            nameInput.setAttribute('aria-label', 'ФИО');
+            nameLine.appendChild(nameInput);
+        } else {
+            var name = document.createElement('h2');
+            name.textContent = profile.candidateName || options.title || 'Кандидат';
+            nameLine.appendChild(name);
+        }
+        if (profile.statusLabel && !editing) {
             var status = document.createElement('span');
             status.className = 'orbita-response-detail__status orbita-response-detail__status--' + responseTone(profile.statusTone);
             status.textContent = profile.statusLabel;
             nameLine.appendChild(status);
         }
         person.appendChild(nameLine);
-        if (profile.candidateMeta) {
+        if (profile.candidateMeta && !editing) {
             var meta = document.createElement('p');
             meta.className = 'orbita-response-detail__meta';
             meta.textContent = profile.candidateMeta;
             person.appendChild(meta);
+        }
+        if (editing) {
+            var editHint = document.createElement('p');
+            editHint.className = 'orbita-response-detail__meta';
+            editHint.textContent = 'Редактирование данных кандидата';
+            person.appendChild(editHint);
         }
         identity.appendChild(person);
         hero.appendChild(identity);
 
         var quickActions = document.createElement('div');
         quickActions.className = 'orbita-response-detail__quick-actions';
-        if (profile.phoneHref) {
+        if (!editing && profile.phoneHref) {
             var phoneAction = document.createElement('a');
             phoneAction.className = 'orbita-response-detail__quick-action';
             phoneAction.href = 'tel:' + profile.phoneHref;
@@ -123,7 +241,7 @@
             phoneAction.appendChild(phoneLabel);
             quickActions.appendChild(phoneAction);
         }
-        if (profile.phone && profile.phone !== 'Скрыт') {
+        if (!editing && profile.phone && profile.phone !== 'Скрыт') {
             var copyPhone = document.createElement('button');
             copyPhone.type = 'button';
             copyPhone.className = 'orbita-response-detail__quick-action orbita-response-detail__quick-action--icon';
@@ -133,7 +251,7 @@
             copyPhone.addEventListener('click', function () { runtime.copyText(profile.phone); });
             quickActions.appendChild(copyPhone);
         }
-        if (profile.messengerUrl) {
+        if (!editing && profile.messengerUrl) {
             var messenger = document.createElement('a');
             messenger.className = 'orbita-response-detail__quick-action orbita-response-detail__quick-action--icon';
             messenger.href = profile.messengerUrl;
@@ -194,11 +312,17 @@
         info.appendChild(infoTitle);
         var facts = document.createElement('dl');
         facts.className = 'orbita-response-detail__facts';
-        var factLabels = ['Телефон', 'История номеров', 'Город', 'Аккаунт', 'Воркер', 'Источник', 'ID отклика', 'Сбор', 'Отклик'];
+        var factLabels = ['Телефон', 'История номеров', 'Возраст', 'Пол', 'Город', 'Аккаунт', 'Воркер', 'Источник', 'ID отклика', 'Сбор', 'Отклик'];
         var routeSections = [];
+        var factOptions = { editing: editing, edit: edit };
         sections.forEach(function (section) {
             if (factLabels.indexOf(section.label) >= 0) {
-                appendResponseFact(facts, section);
+                // ID отклика и системные поля не редактируются.
+                if (editing && responseReadonlyFactLabels[section.label]) {
+                    appendResponseFact(facts, section);
+                } else {
+                    appendResponseFact(facts, section, factOptions);
+                }
             } else if (['Возраст', 'Пол', 'Объявление'].indexOf(section.label) < 0) {
                 routeSections.push(section);
             }
@@ -213,7 +337,7 @@
         }
         left.appendChild(info);
 
-        if (routeSections.length) {
+        if (routeSections.length && !editing) {
             var routing = document.createElement('section');
             routing.className = 'orbita-response-detail__panel orbita-response-detail__panel--routing';
             var routingTitle = document.createElement('h3');
@@ -247,6 +371,127 @@
         layout.appendChild(chat);
         detail.appendChild(layout);
         return detail;
+    }
+
+    function rebuildResponseDetailBody(options) {
+        if (!detailBody) return;
+        detailBody.textContent = '';
+        detailBody.appendChild(createResponseDetail(options));
+    }
+
+    function setResponseDetailMode(options, editing) {
+        var next = Object.assign({}, options, { editing: !!editing });
+        activeResponseDetailOptions = next;
+        if (detailTitle) {
+            detailTitle.textContent = editing ? 'Редактирование отклика' : 'Детали отклика';
+        }
+        rebuildResponseDetailBody(next);
+        runtime.setDetailFooter({
+            links: editing ? [] : (next.links || []),
+            copyText: editing ? '' : (next.copyText || ''),
+            copyLabel: next.copyLabel || 'Копировать',
+            dismiss: null,
+            primaryActions: buildResponseFooterActions(next)
+        });
+        if (editing && detailBody) {
+            var focusField = detailBody.querySelector('[data-response-edit-field="fullName"]');
+            if (focusField && typeof focusField.focus === 'function') focusField.focus();
+        }
+    }
+
+    function buildResponseFooterActions(options) {
+        var actions = [];
+        if (options.editing) {
+            actions.push({ action: 'response-cancel-edit', label: 'Отмена', tone: 'ghost' });
+            actions.push({
+                action: 'response-save-edit',
+                label: 'Сохранить',
+                tone: 'primary',
+                responseId: options.responseId
+            });
+            return actions;
+        }
+
+        if (options.canEdit && options.responseId && options.edit) {
+            actions.push({
+                action: 'response-edit',
+                label: 'Редактировать',
+                tone: 'ghost',
+                responseId: options.responseId
+            });
+        }
+
+        (options.primaryActions || []).forEach(function (action) {
+            actions.push(action);
+        });
+        return actions;
+    }
+
+    async function saveResponseDetailEdit(options) {
+        var root = detailBody ? detailBody.querySelector('.orbita-response-detail') : null;
+        var values = collectResponseEditValues(root);
+        if (!values.fullName) {
+            if (runtime.showToast) runtime.showToast('Укажите ФИО кандидата.', { variant: 'error' });
+            return;
+        }
+        if (!values.phone) {
+            if (runtime.showToast) runtime.showToast('Укажите телефон.', { variant: 'error' });
+            return;
+        }
+
+        var fields = {
+            Id: options.responseId,
+            FullName: values.fullName,
+            PhoneRaw: values.phone,
+            City: values.city,
+            Gender: values.gender || ''
+        };
+        if (values.age) fields.Age = values.age;
+
+        var saveBtn = detailPrimary
+            ? detailPrimary.querySelector('[data-response-save-edit]')
+            : null;
+        if (saveBtn) {
+            saveBtn.disabled = true;
+            saveBtn.textContent = 'Сохраняем…';
+        }
+
+        try {
+            var result = await runtime.postForm(getResponseUpdateUrl(), fields);
+            if (!result.ok) {
+                var message = (result.payload && result.payload.error) || 'Не удалось сохранить отклик.';
+                if (runtime.showToast) runtime.showToast(message, { variant: 'error' });
+                if (saveBtn) {
+                    saveBtn.disabled = false;
+                    saveBtn.textContent = 'Сохранить';
+                }
+                return;
+            }
+
+            if (runtime.showToast) runtime.showToast('Данные отклика сохранены.', { variant: 'success' });
+            if (typeof options.onSaved === 'function') {
+                options.onSaved(options.responseId);
+            } else if (window.OrbitaResponses && typeof window.OrbitaResponses.reloadDetail === 'function') {
+                window.OrbitaResponses.reloadDetail(options.responseId);
+            } else {
+                setResponseDetailMode(Object.assign({}, options, {
+                    editing: false,
+                    edit: {
+                        fullName: values.fullName,
+                        phone: values.phone,
+                        city: values.city,
+                        age: values.age || null,
+                        gender: values.gender || ''
+                    }
+                }), false);
+            }
+        } catch (e) {
+            if (runtime.showToast) runtime.showToast('Не удалось сохранить отклик.', { variant: 'error' });
+            if (saveBtn) {
+                saveBtn.disabled = false;
+                saveBtn.textContent = 'Сохранить';
+            }
+        }
     }
 
     runtime.getRowDetailLinks = function getRowDetailLinks(row) {
@@ -364,6 +609,47 @@
         }
 
         items.forEach(function (action) {
+            if (action.action === 'response-edit') {
+                var editBtn = document.createElement('button');
+                editBtn.type = 'button';
+                editBtn.className = 'orbita-detail-modal__action orbita-detail-modal__action--ghost';
+                editBtn.innerHTML = '<i class="fa-solid fa-pen" aria-hidden="true"></i><span>' +
+                    (action.label || 'Редактировать') + '</span>';
+                editBtn.addEventListener('click', function () {
+                    if (!activeResponseDetailOptions) return;
+                    setResponseDetailMode(activeResponseDetailOptions, true);
+                });
+                detailPrimary.appendChild(editBtn);
+                return;
+            }
+
+            if (action.action === 'response-cancel-edit') {
+                var cancelBtn = document.createElement('button');
+                cancelBtn.type = 'button';
+                cancelBtn.className = 'orbita-detail-modal__action orbita-detail-modal__action--ghost';
+                cancelBtn.textContent = action.label || 'Отмена';
+                cancelBtn.addEventListener('click', function () {
+                    if (!activeResponseDetailOptions) return;
+                    setResponseDetailMode(activeResponseDetailOptions, false);
+                });
+                detailPrimary.appendChild(cancelBtn);
+                return;
+            }
+
+            if (action.action === 'response-save-edit') {
+                var saveBtn = document.createElement('button');
+                saveBtn.type = 'button';
+                saveBtn.className = 'orbita-detail-modal__action orbita-detail-modal__action--primary';
+                saveBtn.setAttribute('data-response-save-edit', '1');
+                saveBtn.textContent = action.label || 'Сохранить';
+                saveBtn.addEventListener('click', function () {
+                    if (!activeResponseDetailOptions) return;
+                    saveResponseDetailEdit(activeResponseDetailOptions);
+                });
+                detailPrimary.appendChild(saveBtn);
+                return;
+            }
+
             if (action.action === 'captcha-solve' && action.payload && window.OrbitaCaptchaSolver) {
                 var btn = document.createElement('button');
                 btn.type = 'button';
@@ -547,7 +833,9 @@
 
         var isResponseDetail = !!options.responseProfile;
         var isLogDetail = options.variant === 'log';
-        detailTitle.textContent = isResponseDetail ? 'Детали отклика' : (options.title || 'Детали');
+        detailTitle.textContent = isResponseDetail
+            ? (options.editing ? 'Редактирование отклика' : 'Детали отклика')
+            : (options.title || 'Детали');
         if (detailSubtitle) {
             if (!isResponseDetail && options.subtitle) {
                 detailSubtitle.textContent = options.subtitle;
@@ -564,8 +852,13 @@
         detailModal.classList.toggle('orbita-detail-modal--log', isLogDetail);
 
         if (isResponseDetail) {
-            detailBody.appendChild(createResponseDetail(options));
-        } else if (options.attachmentUrl) {
+            activeResponseDetailOptions = Object.assign({}, options, { editing: !!options.editing });
+            detailBody.appendChild(createResponseDetail(activeResponseDetailOptions));
+        } else {
+            activeResponseDetailOptions = null;
+        }
+
+        if (!isResponseDetail && options.attachmentUrl) {
             var img = document.createElement('img');
             img.className = 'orbita-detail-screenshot';
             img.alt = 'Скриншот страницы';
@@ -643,17 +936,29 @@
             detailBody.appendChild(chat);
         }
 
+        var footerActions = isResponseDetail
+            ? buildResponseFooterActions(activeResponseDetailOptions)
+            : (options.primaryActions || []);
         runtime.setDetailFooter({
-            links: options.links || [],
-            copyText: options.copyText || '',
+            links: (isResponseDetail && activeResponseDetailOptions && activeResponseDetailOptions.editing)
+                ? []
+                : (options.links || []),
+            copyText: (isResponseDetail && activeResponseDetailOptions && activeResponseDetailOptions.editing)
+                ? ''
+                : (options.copyText || ''),
             copyLabel: options.copyLabel || 'Копировать',
             dismiss: options.dismiss || null,
-            primaryActions: options.primaryActions || []
+            primaryActions: footerActions
         });
         detailModal.classList.toggle('orbita-detail-modal--media', !!options.attachmentUrl);
         detailModal.removeAttribute('hidden');
         detailBody.scrollTop = 0;
         runtime.closeAllPopovers();
+
+        if (isResponseDetail && activeResponseDetailOptions && activeResponseDetailOptions.editing) {
+            var focusField = detailBody.querySelector('[data-response-edit-field="fullName"]');
+            if (focusField && typeof focusField.focus === 'function') focusField.focus();
+        }
     }
 
     runtime.closeDetailModal = function closeDetailModal() {
@@ -662,6 +967,7 @@
             detailCloseHandler();
             detailCloseHandler = null;
         }
+        activeResponseDetailOptions = null;
         detailModal.setAttribute('hidden', '');
         detailModal.classList.remove('orbita-detail-modal--media', 'orbita-detail-modal--chat', 'orbita-detail-modal--response', 'orbita-detail-modal--log');
         runtime.setDetailFooter(null);

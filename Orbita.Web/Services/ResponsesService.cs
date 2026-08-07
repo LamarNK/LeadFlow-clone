@@ -163,6 +163,34 @@ public sealed class ResponsesService(
         return detail is null ? null : ResponsesIndexBuilder.MapDetailJson(ResponsesIndexBuilder.MapDetail(detail));
     }
 
+    public async Task<(bool Success, string? Error)> UpdateAsync(
+        Guid id,
+        string fullName,
+        string phoneRaw,
+        string city,
+        int? age,
+        string? gender,
+        CancellationToken ct = default)
+    {
+        if (previewOptions.Value.Enabled)
+        {
+            return (true, null);
+        }
+
+        var (result, error) = await api.UpdateResponseAsync(
+            id,
+            new UpdateResponseRequest(fullName, phoneRaw, city, age, gender),
+            ct);
+        if (result is null)
+        {
+            return (false, error ?? "Не удалось выполнить запрос.");
+        }
+
+        return result.Success
+            ? (true, null)
+            : (false, result.ErrorMessage ?? error ?? "Не удалось сохранить отклик.");
+    }
+
     public Task<(Stream? Stream, string? ContentType)> GetAvatarAsync(Guid id, CancellationToken ct = default) =>
         api.GetResponseAvatarAsync(id, ct);
 

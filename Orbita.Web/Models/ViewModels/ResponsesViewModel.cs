@@ -188,6 +188,16 @@ public sealed class ResponseDetailViewModel
     public bool CanResend { get; init; }
 }
 
+public sealed class UpdateResponseFormModel
+{
+    public Guid Id { get; set; }
+    public string? FullName { get; set; }
+    public string? PhoneRaw { get; set; }
+    public string? City { get; set; }
+    public int? Age { get; set; }
+    public string? Gender { get; set; }
+}
+
 public sealed class BulkSendResponsesToBitrixFormModel
 {
     public List<Guid> ResponseIds { get; set; } = [];

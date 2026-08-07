@@ -294,6 +294,7 @@ public static class OrbitaApiStartupExtensions
         builder.Services.AddScoped<OfficeBitrixSettingsService>();
         builder.Services.AddScoped<OfficeBitrixIntegrationService>();
         builder.Services.AddScoped<ResponsesQueryService>();
+        builder.Services.AddScoped<ResponseEditService>();
         builder.Services.AddSingleton<PhoneNormalizer>();
         builder.Services.AddSingleton<CandidateParser>();
         builder.Services.AddSingleton<BitrixClient>();

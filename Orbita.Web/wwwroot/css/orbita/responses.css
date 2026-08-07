@@ -1324,6 +1324,56 @@ a.responses-bitrix-chip--duplicate:hover {
 .orbita-detail-modal--response .orbita-detail-modal__body { padding: 0; color: #35445c; white-space: normal; word-break: normal; }
 .orbita-detail-modal--response .orbita-detail-modal__foot { min-height: 76px; padding: 16px 28px; border-top: 1px solid #e9edf3; background: #fbfcfe; }
 .orbita-response-detail { min-height: 0; }
+.orbita-response-detail--editing .orbita-response-detail__history { opacity: .72; }
+.orbita-response-detail__input {
+    width: 100%;
+    max-width: 100%;
+    min-height: 36px;
+    padding: 7px 11px;
+    border: 1px solid #d5deec;
+    border-radius: 9px;
+    background: #fff;
+    color: #24344d;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 650;
+    box-sizing: border-box;
+    transition: border-color .15s ease, box-shadow .15s ease;
+}
+.orbita-response-detail__input:focus {
+    outline: none;
+    border-color: #6d94e8;
+    box-shadow: 0 0 0 3px rgba(64, 120, 230, .14);
+}
+.orbita-response-detail__input--name {
+    min-height: 44px;
+    max-width: min(420px, 100%);
+    font-size: 20px;
+    font-weight: 750;
+    letter-spacing: -.02em;
+}
+.orbita-response-detail__input[type="number"] { max-width: 120px; }
+select.orbita-response-detail__input { max-width: 180px; cursor: pointer; }
+[data-theme="dark"] .orbita-response-detail__input {
+    border-color: var(--border);
+    background: var(--bg-card);
+    color: var(--text-primary);
+}
+.orbita-detail-modal__primary {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+.orbita-detail-modal__action--primary {
+    background: #2f6fed;
+    color: #fff;
+}
+.orbita-detail-modal__action--primary:hover { background: #245dcf; }
+.orbita-detail-modal__action--primary:disabled {
+    opacity: .65;
+    cursor: wait;
+}
 .orbita-response-detail__hero { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 30px 82px 28px 30px; border-bottom: 1px solid #e9edf3; }
 .orbita-response-detail__identity { display: flex; align-items: center; gap: 16px; min-width: 0; }
 .orbita-response-detail__avatar { position: relative; display: grid; width: 72px; height: 72px; flex: 0 0 auto; place-items: center; overflow: hidden; border-radius: 50%; background: linear-gradient(145deg, #e6edf9, #f7f9fc); color: #415574; font-size: 21px; font-weight: 750; letter-spacing: -.05em; }.orbita-response-detail__avatar > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }

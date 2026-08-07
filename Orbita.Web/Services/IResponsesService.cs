@@ -54,6 +54,15 @@ public interface IResponsesService
 
     Task<ResponseDetailJsonViewModel?> GetDetailJsonAsync(Guid id, CancellationToken ct = default);
 
+    Task<(bool Success, string? Error)> UpdateAsync(
+        Guid id,
+        string fullName,
+        string phoneRaw,
+        string city,
+        int? age,
+        string? gender,
+        CancellationToken ct = default);
+
     Task<(Stream? Stream, string? ContentType)> GetAvatarAsync(Guid id, CancellationToken ct = default);
 
     /// <summary>Fresh office/Bitrix options for the deliver modal (not cached on the page).</summary>

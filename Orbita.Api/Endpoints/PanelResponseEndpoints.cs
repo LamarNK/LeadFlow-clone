@@ -198,6 +198,26 @@ public static class PanelResponseEndpoints
             return detail is null ? Results.NotFound() : Results.Ok(detail);
         });
 
+        responses.MapPut("/responses/{id:guid}", async (
+            Guid id,
+            UpdateResponseRequest request,
+            ResponseEditService responseEdit,
+            OfficeScopeService officeScope,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            var scope = await officeScope.ResolveAsync(principal, ct);
+            if (!scope.HasAccess)
+            {
+                return Results.Forbid();
+            }
+
+            var result = await responseEdit.UpdateAsync(id, request, scope, ct);
+            return result.Success
+                ? Results.Ok(result)
+                : Results.BadRequest(new { error = result.ErrorMessage ?? "Не удалось сохранить отклик." });
+        });
+
         responses.MapGet("/responses/{id:guid}/avatar", async (
             Guid id,
             ResponsesQueryService responses,

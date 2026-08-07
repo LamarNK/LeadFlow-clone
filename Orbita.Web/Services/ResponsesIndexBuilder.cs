@@ -603,7 +603,7 @@ internal static class ResponsesIndexBuilder
             new() { Label = "Телефон", Value = phone.Length > 0 ? phone : "Скрыт" },
             new() { Label = "Возраст", Value = detail.Age?.ToString() ?? "—" },
             new() { Label = "Пол", Value = CandidateGenders.FormatLabel(detail.Gender) },
-            new() { Label = "Город", Value = detail.City },
+            new() { Label = "Город", Value = string.IsNullOrWhiteSpace(detail.City) ? "—" : detail.City },
             new() { Label = "Объявление", Value = detail.Vacancy, Href = detail.VacancyUrl },
             new() { Label = "Аккаунт", Value = ResponseDisplay.FormatAccountWithSubProfile(detail.AccountName, detail.AvitoSubProfileName) },
             new() { Label = "Воркер", Value = detail.WorkerName },
@@ -711,6 +711,18 @@ internal static class ResponsesIndexBuilder
         {
             Title = ResponseDisplay.DisplayAuthor(detail.FullName),
             Subtitle = $"{detail.StatusLabel} · сбор {ResponseDisplay.FormatCreatedAtLocal(detail.CollectedAtUtc)} · отклик {ResponseDisplay.FormatCreatedAtLocal(detail.CreatedAtUtc)}",
+            ResponseId = detail.Id,
+            CanEdit = true,
+            Edit = new ResponseDetailEditViewModel
+            {
+                FullName = detail.FullName?.Trim() ?? string.Empty,
+                Phone = string.IsNullOrWhiteSpace(detail.PhoneRaw)
+                    ? (detail.PhoneNormalized ?? string.Empty)
+                    : detail.PhoneRaw.Trim(),
+                City = detail.City?.Trim() ?? string.Empty,
+                Age = detail.Age is > 0 ? detail.Age : null,
+                Gender = NormalizeEditableGender(detail.Gender)
+            },
             Profile = new ResponseDetailProfileViewModel
             {
                 CandidateName = ResponseDisplay.DisplayAuthor(detail.FullName),
@@ -739,5 +751,13 @@ internal static class ResponsesIndexBuilder
             CopyText = detail.CardCopy,
             CopyLabel = "Копировать карточку"
         };
+    }
+
+    private static string NormalizeEditableGender(string? gender)
+    {
+        var value = CandidateGenders.NormalizeFilterValue(gender);
+        return value is CandidateGenders.Male or CandidateGenders.Female
+            ? value
+            : string.Empty;
     }
 }

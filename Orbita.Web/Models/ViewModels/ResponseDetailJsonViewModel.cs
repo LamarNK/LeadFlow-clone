@@ -4,6 +4,9 @@ public sealed class ResponseDetailJsonViewModel
 {
     public string Title { get; init; } = string.Empty;
     public string Subtitle { get; init; } = string.Empty;
+    public Guid ResponseId { get; init; }
+    public bool CanEdit { get; init; }
+    public ResponseDetailEditViewModel? Edit { get; init; }
     public ResponseDetailProfileViewModel Profile { get; init; } = new();
     public IReadOnlyList<DetailSectionItemViewModel> Sections { get; init; } = [];
     public IReadOnlyList<DetailChatMessageViewModel> ChatMessages { get; init; } = [];
@@ -11,6 +14,15 @@ public sealed class ResponseDetailJsonViewModel
     public IReadOnlyList<DetailActionLinkViewModel> PrimaryActions { get; init; } = [];
     public string? CopyText { get; init; }
     public string CopyLabel { get; init; } = "Копировать карточку";
+}
+
+public sealed class ResponseDetailEditViewModel
+{
+    public string FullName { get; init; } = string.Empty;
+    public string Phone { get; init; } = string.Empty;
+    public string City { get; init; } = string.Empty;
+    public int? Age { get; init; }
+    public string Gender { get; init; } = string.Empty;
 }
 
 public sealed class ResponseDetailProfileViewModel

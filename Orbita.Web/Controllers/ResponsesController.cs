@@ -71,6 +71,29 @@ public sealed class ResponsesController(IResponsesService responses) : Controlle
         return Json(json);
     }
 
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Update(UpdateResponseFormModel model, CancellationToken ct = default)
+    {
+        if (model.Id == Guid.Empty)
+        {
+            return BadRequest(new { error = "Укажите отклик." });
+        }
+
+        var (success, error) = await responses.UpdateAsync(
+            model.Id,
+            model.FullName ?? string.Empty,
+            model.PhoneRaw ?? string.Empty,
+            model.City ?? string.Empty,
+            model.Age,
+            model.Gender,
+            ct);
+
+        return success
+            ? Ok(new { success = true })
+            : BadRequest(new { error = error ?? "Не удалось сохранить отклик." });
+    }
+
     [HttpGet]
     public async Task<IActionResult> Index(
         string? from,
