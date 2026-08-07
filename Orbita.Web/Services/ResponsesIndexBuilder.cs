@@ -70,7 +70,7 @@ internal static class ResponsesIndexBuilder
             {
                 Key = "sent",
                 Href = KpiCardLinks.ResponsesCard("sent", from, to, workerId, accountId),
-                Label = "В Битрикс24",
+                Label = "Отправленные",
                 Value = summary.Sent.ToString(),
                 CountValue = summary.Sent,
                 Delta = Pct(summary.Sent),

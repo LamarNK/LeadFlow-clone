@@ -85,7 +85,21 @@ public sealed class ResponsesQueryService(
         }
 
         var duplicates = await query.CountAsync(x => x.Status == ResponseStatuses.Duplicate, ct);
-        var sent = await query.CountAsync(x => x.Status == ResponseStatuses.Sent, ct);
+        var sent = await CountSentAsync(
+            scope,
+            officeFilter,
+            status,
+            search,
+            vacancy,
+            workerId,
+            accountId,
+            bitrixDestination,
+            gender,
+            ageFrom,
+            ageTo,
+            fromUtc,
+            toUtc,
+            ct);
         var unique = total - duplicates;
         var uniqueAuthors = await ResponseSummaryMetrics.CountUniqueAuthorsAsync(query, ct);
 
@@ -106,6 +120,86 @@ public sealed class ResponsesQueryService(
             sent,
             uniqueAuthors,
             avgMinutes > 0 ? avgMinutes : null);
+    }
+
+    /// <summary>
+    /// "Sent" counts every successful delivery (CRM + Bitrix) by its actual send date
+    /// (delivery CreatedAtUtc / card creation / ProcessedAt for legacy rows), not by collection date.
+    /// </summary>
+    private async Task<int> CountSentAsync(
+        OfficeScope scope,
+        Guid? officeFilter,
+        string? status,
+        string? search,
+        string? vacancy,
+        Guid? workerId,
+        Guid? accountId,
+        string? bitrixDestination,
+        string? gender,
+        int? ageFrom,
+        int? ageTo,
+        DateTime? fromUtc,
+        DateTime? toUtc,
+        CancellationToken ct)
+    {
+        var scopedQuery = BuildFilteredQueryCore(
+            scope,
+            officeFilter,
+            status,
+            search,
+            vacancy,
+            workerId,
+            accountId,
+            bitrixDestination,
+            gender,
+            ageFrom,
+            ageTo);
+        var scopedResponseIds = scopedQuery.Select(x => x.Id);
+
+        var bitrixSends = await db.ResponseBitrixDeliveries
+            .AsNoTracking()
+            .CountAsync(d =>
+                d.Outcome == ResponseBitrixDeliveryOutcomes.Sent
+                && d.CreatedAtUtc >= (fromUtc ?? DateTime.MinValue)
+                && d.CreatedAtUtc < (toUtc ?? DateTime.MaxValue)
+                && scopedResponseIds.Contains(d.ResponseId), ct);
+
+        var crmSends = await db.ResponseCrmDeliveries
+            .AsNoTracking()
+            .CountAsync(d =>
+                d.Outcome == ResponseCrmDeliveryOutcomes.Sent
+                && d.CreatedAtUtc >= (fromUtc ?? DateTime.MinValue)
+                && d.CreatedAtUtc < (toUtc ?? DateTime.MaxValue)
+                && scopedResponseIds.Contains(d.ResponseId), ct);
+
+        // Legacy rows created before the delivery journal existed: Status=Sent responses
+        // without any journal entry or CRM card are counted by their process/send time once.
+        var responsesWithBitrixDelivery = db.ResponseBitrixDeliveries.AsNoTracking().Select(d => d.ResponseId);
+        var responsesWithCrmDelivery = db.ResponseCrmDeliveries.AsNoTracking().Select(d => d.ResponseId);
+        var responsesWithCrmCard = db.CrmCandidateCards.AsNoTracking().Select(c => c.ResponseId);
+        var legacySends = await scopedQuery
+            .CountAsync(x =>
+                x.Status == ResponseStatuses.Sent
+                && x.ProcessedAt != null
+                && x.ProcessedAt >= (fromUtc ?? DateTime.MinValue)
+                && x.ProcessedAt < (toUtc ?? DateTime.MaxValue)
+                && !responsesWithBitrixDelivery.Contains(x.Id)
+                && !responsesWithCrmDelivery.Contains(x.Id)
+                && !responsesWithCrmCard.Contains(x.Id), ct);
+
+        // Legacy CRM cards: card creation time is the CRM send time when no CRM delivery
+        // journal entry exists for the same response and office.
+        var crmDeliveryKeys = db.ResponseCrmDeliveries.AsNoTracking()
+            .Select(d => new { d.ResponseId, d.OfficeId });
+        var legacyCrmCards = await db.CrmCandidateCards
+            .AsNoTracking()
+            .CountAsync(card =>
+                card.CreatedAtUtc >= (fromUtc ?? DateTime.MinValue)
+                && card.CreatedAtUtc < (toUtc ?? DateTime.MaxValue)
+                && !crmDeliveryKeys.Any(d => d.ResponseId == card.ResponseId && d.OfficeId == card.OfficeId)
+                && scopedResponseIds.Contains(card.ResponseId), ct);
+
+        return bitrixSends + crmSends + legacySends + legacyCrmCards;
     }
 
     public async Task<IReadOnlyList<ResponseFilterAccountDto>> GetFilterAccountsAsync(
@@ -586,6 +680,49 @@ public sealed class ResponsesQueryService(
         DateTime? fromUtc,
         DateTime? toUtc)
     {
+        var query = BuildFilteredQueryCore(
+            scope,
+            officeFilter,
+            status,
+            search,
+            vacancy,
+            workerId,
+            accountId,
+            bitrixDestination,
+            gender,
+            ageFrom,
+            ageTo);
+
+        if (fromUtc is not null)
+        {
+            query = query.Where(x => x.CollectedAt >= fromUtc.Value);
+        }
+
+        if (toUtc is not null)
+        {
+            query = query.Where(x => x.CollectedAt < toUtc.Value);
+        }
+
+        return query;
+    }
+
+    /// <summary>
+    /// Same filters as <see cref="BuildFilteredQuery"/> but without the CollectedAt period range —
+    /// used to count sends by their actual send date (delivery CreatedAtUtc / ProcessedAt).
+    /// </summary>
+    private IQueryable<CandidateResponseEntity> BuildFilteredQueryCore(
+        OfficeScope scope,
+        Guid? officeFilter,
+        string? status,
+        string? search,
+        string? vacancy,
+        Guid? workerId,
+        Guid? accountId,
+        string? bitrixDestination,
+        string? gender,
+        int? ageFrom,
+        int? ageTo)
+    {
         var query = db.CandidateResponses
             .AsNoTracking()
             .Include(x => x.Worker)
@@ -605,16 +742,6 @@ public sealed class ResponsesQueryService(
 
         query = ApplyStatusFilter(query, status);
         query = ApplyBitrixDestinationFilter(query, bitrixDestination);
-
-        if (fromUtc is not null)
-        {
-            query = query.Where(x => x.CollectedAt >= fromUtc.Value);
-        }
-
-        if (toUtc is not null)
-        {
-            query = query.Where(x => x.CollectedAt < toUtc.Value);
-        }
 
         query = ApplySearchFilter(query, search);
         query = ApplyVacancyFilter(query, vacancy);

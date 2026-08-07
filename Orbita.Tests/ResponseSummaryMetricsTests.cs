@@ -126,6 +126,129 @@ public sealed class ResponseSummaryMetricsTests
         Assert.Equal(45d, summary.AvgResponseMinutes!.Value);
     }
 
+    [Fact]
+    public async Task GetSummaryAsync_SentCountsDeliveriesBySendDate_NotCollectionDate()
+    {
+        await using var db = CreateDb();
+        SeedOffice(db);
+        var now = DateTime.UtcNow;
+        var bitrixId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+
+        db.BitrixInstances.Add(new BitrixInstanceEntity
+        {
+            Id = bitrixId,
+            OfficeId = OfficeId,
+            Name = "Portal A",
+            Signature = "pa",
+            WebhookUrlProtected = "x",
+            ValidationStatus = "Ok",
+            CreatedAtUtc = now,
+            UpdatedAtUtc = now
+        });
+
+        var viaDeliveryId = Guid.NewGuid();
+        var legacySentId = Guid.NewGuid();
+        var crmCardId = Guid.NewGuid();
+
+        db.CandidateResponses.AddRange(
+            new CandidateResponseEntity
+            {
+                Id = viaDeliveryId,
+                OfficeId = OfficeId,
+                WorkerId = WorkerId,
+                AccountId = Guid.NewGuid(),
+                AccountName = "acc",
+                Source = "Avito",
+                SourceResponseId = "via-delivery",
+                FullName = "Delivery Lead",
+                PhoneRaw = "+79007777777",
+                PhoneNormalized = "79007777777",
+                Status = ResponseStatuses.Sent,
+                CreatedAt = now.AddDays(-20),
+                CollectedAt = now.AddDays(-20),
+                ProcessedAt = now.AddDays(-20),
+                BitrixInstanceId = bitrixId
+            },
+            new CandidateResponseEntity
+            {
+                Id = legacySentId,
+                OfficeId = OfficeId,
+                WorkerId = WorkerId,
+                AccountId = Guid.NewGuid(),
+                AccountName = "acc",
+                Source = "Avito",
+                SourceResponseId = "legacy-sent",
+                FullName = "Legacy Lead",
+                PhoneRaw = "+79008888888",
+                PhoneNormalized = "79008888888",
+                Status = ResponseStatuses.Sent,
+                CreatedAt = now.AddDays(-20),
+                CollectedAt = now.AddDays(-20),
+                ProcessedAt = now.AddDays(-2)
+            },
+            new CandidateResponseEntity
+            {
+                Id = crmCardId,
+                OfficeId = OfficeId,
+                WorkerId = WorkerId,
+                AccountId = Guid.NewGuid(),
+                AccountName = "acc",
+                Source = "Avito",
+                SourceResponseId = "crm-card",
+                FullName = "Crm Lead",
+                PhoneRaw = "+79009999999",
+                PhoneNormalized = "79009999999",
+                Status = ResponseStatuses.Sent,
+                CreatedAt = now.AddDays(-20),
+                CollectedAt = now.AddDays(-20),
+                ProcessedAt = now.AddDays(-20)
+            },
+            CreateResponse("collected-unsent", Guid.NewGuid(), "79910004455", now.AddHours(-1)));
+
+        db.ResponseBitrixDeliveries.Add(new ResponseBitrixDeliveryEntity
+        {
+            Id = Guid.NewGuid(),
+            ResponseId = viaDeliveryId,
+            BitrixInstanceId = bitrixId,
+            Outcome = ResponseBitrixDeliveryOutcomes.Sent,
+            CreatedAtUtc = now.AddHours(-3),
+            Source = "auto"
+        });
+        db.CrmCandidateCards.Add(new CrmCandidateCardEntity
+        {
+            Id = Guid.NewGuid(),
+            ResponseId = crmCardId,
+            OfficeId = OfficeId,
+            Stage = "Лид",
+            CreatedAtUtc = now.AddDays(-1),
+            UpdatedAtUtc = now.AddDays(-1),
+            StageChangedAtUtc = now.AddDays(-1),
+            IsInActiveLoad = true
+        });
+        await db.SaveChangesAsync();
+
+        var sut = new ResponsesQueryService(db, new ResponseBitrixDeliveryService(db));
+        var summary = await sut.GetSummaryAsync(
+            OfficeScope.ForOffice(OfficeId),
+            OfficeId,
+            status: null,
+            search: null,
+            vacancy: null,
+            workerId: null,
+            accountId: null,
+            bitrixDestination: null,
+            gender: null,
+            ageFrom: null,
+            ageTo: null,
+            fromUtc: now.AddDays(-6),
+            toUtc: now);
+
+        // Only the collected-unsent response was collected in the period.
+        Assert.Equal(1, summary.Total);
+        // Bitrix delivery + legacy ProcessedAt send + legacy CRM card = 3 by actual send date.
+        Assert.Equal(3, summary.Sent);
+    }
+
     private static OrbitaDbContext CreateDb()
     {
         var options = new DbContextOptionsBuilder<OrbitaDbContext>()
