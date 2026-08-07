@@ -555,7 +555,7 @@
             return;
         }
         el.removeAttribute('hidden');
-        el.textContent = count > 99 ? '99+' : String(count);
+        el.textContent = count > 999 ? '999+' : String(count);
         el.setAttribute('aria-label', count + (suffix || ' новых'));
     }
 

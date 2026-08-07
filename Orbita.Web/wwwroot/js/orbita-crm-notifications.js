@@ -34,7 +34,7 @@
         var readAll = root.querySelector('[data-crm-notifications-read-all]');
         var count = parseInt(unreadCount, 10) || 0;
         if (badge) {
-            badge.textContent = count > 99 ? '99+' : String(count);
+            badge.textContent = count > 999 ? '999+' : String(count);
             badge.toggleAttribute('hidden', count <= 0);
         }
         if (caption) {
