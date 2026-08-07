@@ -12,7 +12,7 @@ public sealed class MonitoringRunIngestConcurrencyTests
     private const string ConnectionStringVariable = "ORBITA_TEST_POSTGRES_CONNECTION_STRING";
 
     [PostgreSqlFact]
-    public async Task IngestBatch_ConcurrentInsertOfSameCycle_RetriesAndConverges()
+    public async Task IngestBatch_ConcurrentInsertOfSameCycle_UpsertConverges()
     {
         var baseConnectionString = Environment.GetEnvironmentVariable(ConnectionStringVariable)!;
         var schema = $"monitoring_race_{Guid.NewGuid():N}";
@@ -94,9 +94,9 @@ public sealed class MonitoringRunIngestConcurrencyTests
                         ])
                 ]);
 
-            // Blocker держит незакоммиченную вставку того же цикла: SELECT инжекта
-            // не увидит строку, его INSERT упрётся в блокировку и после коммита
-            // упадёт с duplicate key. Инжект должен это пережить и сойтись к update.
+            // Blocker держит незакоммиченную вставку того же цикла: concurrent
+            // ingest упрётся в unique conflict и через ON CONFLICT DO UPDATE
+            // должен сойтись к одной строке (цикл + субпрофиль).
             await using var blocker = new OrbitaDbContext(options);
             await blocker.Database.BeginTransactionAsync();
             blocker.MonitoringCycleRuns.Add(new MonitoringCycleRunEntity

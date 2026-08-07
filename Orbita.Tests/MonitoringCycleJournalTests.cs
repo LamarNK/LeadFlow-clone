@@ -332,6 +332,82 @@ public sealed class MonitoringCycleJournalTests
     }
 
     [Fact]
+    public async Task IngestBatch_SkipsCycleOwnedByAnotherWorker()
+    {
+        await using var db = CreateDb();
+        var ownerWorkerId = Guid.NewGuid();
+        var otherWorkerId = Guid.NewGuid();
+        var officeId = Guid.NewGuid();
+        var now = DateTime.UtcNow;
+        db.Offices.Add(new OfficeEntity
+        {
+            Id = officeId,
+            Name = "O",
+            RegistrationSecretHash = "h",
+            CreatedAtUtc = now,
+            IsEnabled = true
+        });
+        db.Workers.Add(new WorkerEntity
+        {
+            Id = ownerWorkerId,
+            OfficeId = officeId,
+            DisplayName = "owner",
+            MachineName = "m1",
+            ApiKeyHash = "h1",
+            AppVersion = "1",
+            MonitoringStatus = "Running",
+            CreatedAtUtc = now
+        });
+        db.Workers.Add(new WorkerEntity
+        {
+            Id = otherWorkerId,
+            OfficeId = officeId,
+            DisplayName = "other",
+            MachineName = "m2",
+            ApiKeyHash = "h2",
+            AppVersion = "1",
+            MonitoringStatus = "Running",
+            CreatedAtUtc = now
+        });
+        var cycleId = Guid.NewGuid();
+        var accountId = Guid.NewGuid();
+        db.MonitoringCycleRuns.Add(new MonitoringCycleRunEntity
+        {
+            Id = cycleId,
+            WorkerId = ownerWorkerId,
+            AccountId = accountId,
+            AccountName = "Avito 1",
+            StartedAtUtc = now,
+            Status = MonitoringCycleRunStatuses.Running,
+            IngestedAtUtc = now,
+            UpdatedAtUtc = now
+        });
+        await db.SaveChangesAsync();
+
+        var result = await new MonitoringRunIngestService(db).IngestBatchAsync(
+            otherWorkerId,
+            new MonitoringRunBatchRequest(
+                otherWorkerId,
+                [
+                    new MonitoringCycleRunUploadDto(
+                        cycleId,
+                        accountId,
+                        "hijack",
+                        now,
+                        now,
+                        MonitoringCycleRunStatuses.Completed,
+                        [])
+                ]));
+
+        Assert.Null(result.Error);
+        Assert.Equal(0, result.Accepted);
+        var cycle = await db.MonitoringCycleRuns.SingleAsync();
+        Assert.Equal(ownerWorkerId, cycle.WorkerId);
+        Assert.Equal(MonitoringCycleRunStatuses.Running, cycle.Status);
+        Assert.Equal("Avito 1", cycle.AccountName);
+    }
+
+    [Fact]
     public async Task GetStatisticsAsync_UsesJournalForWeekWithoutLogs()
     {
         await using var db = CreateDb();

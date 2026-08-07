@@ -12,52 +12,9 @@ public sealed class MonitoringRunIngestService(OrbitaDbContext db)
     public const int MaxSubProfilesPerCycle = 40;
     public const int RetentionDays = 60;
 
-    private const int MaxSaveAttempts = 3;
+    private const int MaxEfSaveAttempts = 3;
 
     public async Task<(int Accepted, string? Error)> IngestBatchAsync(
-        Guid workerId,
-        MonitoringRunBatchRequest request,
-        CancellationToken ct = default)
-    {
-        // Один и тот же цикл может прийти в двух перекрывающихся запросах (буфер
-        // воркера шлёт батчи fire-and-forget): оба запроса могут прочитать цикл
-        // как отсутствующий и попытаться вставить его одновременно. Проигравшая
-        // вставка падает с unique violation, а из-за abort всего мульти-стейтмент
-        // батча Npgsql маскирует её как DbUpdateConcurrencyException. Повторяем
-        // сохранение со свежим чтением — сходится к update существующей строки.
-        for (var attempt = 0; ; attempt++)
-        {
-            try
-            {
-                return await IngestCoreAsync(workerId, request, ct).ConfigureAwait(false);
-            }
-            catch (DbUpdateConcurrencyException) when (attempt < MaxSaveAttempts - 1)
-            {
-                db.ChangeTracker.Clear();
-            }
-            catch (DbUpdateException ex) when (
-                attempt < MaxSaveAttempts - 1
-                && IsUniqueViolation(ex))
-            {
-                db.ChangeTracker.Clear();
-            }
-        }
-    }
-
-    private static bool IsUniqueViolation(DbUpdateException ex)
-    {
-        for (Exception? current = ex; current is not null; current = current.InnerException)
-        {
-            if (current is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private async Task<(int Accepted, string? Error)> IngestCoreAsync(
         Guid workerId,
         MonitoringRunBatchRequest request,
         CancellationToken ct = default)
@@ -78,12 +35,191 @@ public sealed class MonitoringRunIngestService(OrbitaDbContext db)
             return (0, $"Не более {MaxCyclesPerBatch} циклов в одном батче.");
         }
 
+        foreach (var cycleDto in cycles)
+        {
+            var subCount = cycleDto.SubProfiles?.Count ?? 0;
+            if (subCount > MaxSubProfilesPerCycle)
+            {
+                return (0, $"Не более {MaxSubProfilesPerCycle} субпрофилей на цикл.");
+            }
+        }
+
         var workerExists = await db.Workers.AsNoTracking().AnyAsync(w => w.Id == workerId, ct);
         if (!workerExists)
         {
             return (0, "Воркер не найден.");
         }
 
+        // PostgreSQL: настоящий upsert (ON CONFLICT) — безопасен при параллельных POST
+        // одного и того же цикла. EF read-then-insert даёт unique violation / concurrency.
+        if (db.Database.IsNpgsql())
+        {
+            return await IngestViaPostgresUpsertAsync(workerId, cycles, ct).ConfigureAwait(false);
+        }
+
+        // InMemory / SQLite в тестах — прежний EF-путь с retry.
+        return await IngestViaEfAsync(workerId, cycles, ct).ConfigureAwait(false);
+    }
+
+    private async Task<(int Accepted, string? Error)> IngestViaPostgresUpsertAsync(
+        Guid workerId,
+        IReadOnlyList<MonitoringCycleRunUploadDto> cycles,
+        CancellationToken ct)
+    {
+        var nowUtc = DateTime.UtcNow;
+        var accepted = 0;
+
+        await using var tx = await db.Database.BeginTransactionAsync(ct).ConfigureAwait(false);
+        try
+        {
+            foreach (var cycleDto in cycles)
+            {
+                if (cycleDto.Id == Guid.Empty || cycleDto.AccountId == Guid.Empty)
+                {
+                    continue;
+                }
+
+                var status = NormalizeStatus(cycleDto.Status);
+                var accountName = NormalizeAccountName(cycleDto.AccountName, cycleDto.AccountId);
+                var startedAtUtc = EnsureUtc(cycleDto.StartedAtUtc);
+                DateTime? finishedAtUtc = cycleDto.FinishedAtUtc is null
+                    ? null
+                    : EnsureUtc(cycleDto.FinishedAtUtc.Value);
+
+                // rows = 0, если строка чужого воркера (DO UPDATE WHERE не сработал).
+                var cycleRows = await db.Database.ExecuteSqlInterpolatedAsync($"""
+                    INSERT INTO "MonitoringCycleRuns" (
+                        "Id", "WorkerId", "AccountId", "AccountName",
+                        "StartedAtUtc", "FinishedAtUtc", "Status",
+                        "IngestedAtUtc", "UpdatedAtUtc")
+                    VALUES (
+                        {cycleDto.Id}, {workerId}, {cycleDto.AccountId}, {accountName},
+                        {startedAtUtc}, {finishedAtUtc}, {status},
+                        {nowUtc}, {nowUtc})
+                    ON CONFLICT ("Id") DO UPDATE SET
+                        "AccountId" = EXCLUDED."AccountId",
+                        "AccountName" = EXCLUDED."AccountName",
+                        "StartedAtUtc" = EXCLUDED."StartedAtUtc",
+                        "FinishedAtUtc" = COALESCE(EXCLUDED."FinishedAtUtc", "MonitoringCycleRuns"."FinishedAtUtc"),
+                        "Status" = EXCLUDED."Status",
+                        "UpdatedAtUtc" = EXCLUDED."UpdatedAtUtc"
+                    WHERE "MonitoringCycleRuns"."WorkerId" = EXCLUDED."WorkerId"
+                    """, ct).ConfigureAwait(false);
+
+                if (cycleRows <= 0)
+                {
+                    continue;
+                }
+
+                foreach (var subDto in cycleDto.SubProfiles ?? [])
+                {
+                    if (subDto.Id == Guid.Empty || subDto.Position <= 0)
+                    {
+                        continue;
+                    }
+
+                    var outcome = NormalizeOutcome(subDto.Outcome);
+                    var subName = NormalizeSubProfileName(subDto.SubProfileName);
+                    var subProfileId = Truncate(subDto.SubProfileId?.Trim() ?? string.Empty, 128);
+                    var position = subDto.Position;
+                    var total = Math.Max(subDto.Total, subDto.Position);
+                    var subStarted = EnsureUtc(subDto.StartedAtUtc);
+                    DateTime? subCompleted = subDto.CompletedAtUtc is null
+                        ? null
+                        : EnsureUtc(subDto.CompletedAtUtc.Value);
+                    var errorType = TruncateOptional(subDto.ErrorType, 64);
+                    var errorMessage = TruncateOptional(subDto.ErrorMessage, 500);
+                    var found = Math.Max(0, subDto.FoundCount);
+                    var published = Math.Max(0, subDto.PublishedCount);
+                    var deferred = Math.Max(0, subDto.DeferredCount);
+                    var skippedDup = Math.Max(0, subDto.SkippedDuplicateCount);
+
+                    await db.Database.ExecuteSqlInterpolatedAsync($"""
+                        INSERT INTO "MonitoringSubProfileRuns" (
+                            "Id", "CycleRunId", "SubProfileId", "SubProfileName",
+                            "Position", "Total", "StartedAtUtc", "CompletedAtUtc",
+                            "Outcome", "ErrorType", "ErrorMessage",
+                            "FoundCount", "PublishedCount", "DeferredCount", "SkippedDuplicateCount")
+                        VALUES (
+                            {subDto.Id}, {cycleDto.Id}, {subProfileId}, {subName},
+                            {position}, {total}, {subStarted}, {subCompleted},
+                            {outcome}, {errorType}, {errorMessage},
+                            {found}, {published}, {deferred}, {skippedDup})
+                        ON CONFLICT ("Id") DO UPDATE SET
+                            "CycleRunId" = EXCLUDED."CycleRunId",
+                            "SubProfileId" = EXCLUDED."SubProfileId",
+                            "SubProfileName" = EXCLUDED."SubProfileName",
+                            "Position" = EXCLUDED."Position",
+                            "Total" = EXCLUDED."Total",
+                            "StartedAtUtc" = EXCLUDED."StartedAtUtc",
+                            "CompletedAtUtc" = EXCLUDED."CompletedAtUtc",
+                            "Outcome" = EXCLUDED."Outcome",
+                            "ErrorType" = EXCLUDED."ErrorType",
+                            "ErrorMessage" = EXCLUDED."ErrorMessage",
+                            "FoundCount" = EXCLUDED."FoundCount",
+                            "PublishedCount" = EXCLUDED."PublishedCount",
+                            "DeferredCount" = EXCLUDED."DeferredCount",
+                            "SkippedDuplicateCount" = EXCLUDED."SkippedDuplicateCount"
+                        """, ct).ConfigureAwait(false);
+                }
+
+                accepted++;
+            }
+
+            await tx.CommitAsync(ct).ConfigureAwait(false);
+            return (accepted, null);
+        }
+        catch
+        {
+            await tx.RollbackAsync(ct).ConfigureAwait(false);
+            throw;
+        }
+    }
+
+    private async Task<(int Accepted, string? Error)> IngestViaEfAsync(
+        Guid workerId,
+        IReadOnlyList<MonitoringCycleRunUploadDto> cycles,
+        CancellationToken ct)
+    {
+        // Один и тот же цикл может прийти в двух перекрывающихся запросах.
+        // На EF (InMemory/SQLite) нет ON CONFLICT — retry со свежим чтением.
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                return await IngestViaEfCoreAsync(workerId, cycles, ct).ConfigureAwait(false);
+            }
+            catch (DbUpdateConcurrencyException) when (attempt < MaxEfSaveAttempts - 1)
+            {
+                db.ChangeTracker.Clear();
+            }
+            catch (DbUpdateException ex) when (
+                attempt < MaxEfSaveAttempts - 1
+                && IsUniqueViolation(ex))
+            {
+                db.ChangeTracker.Clear();
+            }
+        }
+    }
+
+    private static bool IsUniqueViolation(DbUpdateException ex)
+    {
+        for (Exception? current = ex; current is not null; current = current.InnerException)
+        {
+            if (current is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private async Task<(int Accepted, string? Error)> IngestViaEfCoreAsync(
+        Guid workerId,
+        IReadOnlyList<MonitoringCycleRunUploadDto> cycles,
+        CancellationToken ct)
+    {
         var nowUtc = DateTime.UtcNow;
         var accepted = 0;
 
@@ -94,18 +230,8 @@ public sealed class MonitoringRunIngestService(OrbitaDbContext db)
                 continue;
             }
 
-            var subDtos = cycleDto.SubProfiles ?? [];
-            if (subDtos.Count > MaxSubProfilesPerCycle)
-            {
-                return (0, $"Не более {MaxSubProfilesPerCycle} субпрофилей на цикл.");
-            }
-
             var status = NormalizeStatus(cycleDto.Status);
-            var accountName = Truncate(cycleDto.AccountName?.Trim() ?? string.Empty, 200);
-            if (string.IsNullOrWhiteSpace(accountName))
-            {
-                accountName = cycleDto.AccountId.ToString("D");
-            }
+            var accountName = NormalizeAccountName(cycleDto.AccountName, cycleDto.AccountId);
 
             var existing = await db.MonitoringCycleRuns
                 .Include(x => x.SubProfileRuns)
@@ -145,7 +271,7 @@ public sealed class MonitoringRunIngestService(OrbitaDbContext db)
             }
 
             var byId = existing.SubProfileRuns.ToDictionary(x => x.Id);
-            foreach (var subDto in subDtos)
+            foreach (var subDto in cycleDto.SubProfiles ?? [])
             {
                 if (subDto.Id == Guid.Empty || subDto.Position <= 0)
                 {
@@ -153,11 +279,7 @@ public sealed class MonitoringRunIngestService(OrbitaDbContext db)
                 }
 
                 var outcome = NormalizeOutcome(subDto.Outcome);
-                var subName = Truncate(subDto.SubProfileName?.Trim() ?? string.Empty, 200);
-                if (string.IsNullOrWhiteSpace(subName))
-                {
-                    subName = "—";
-                }
+                var subName = NormalizeSubProfileName(subDto.SubProfileName);
 
                 if (!byId.TryGetValue(subDto.Id, out var subEntity))
                 {
@@ -204,6 +326,18 @@ public sealed class MonitoringRunIngestService(OrbitaDbContext db)
         return await db.MonitoringCycleRuns
             .Where(x => x.StartedAtUtc < cutoff)
             .ExecuteDeleteAsync(ct);
+    }
+
+    private static string NormalizeAccountName(string? accountName, Guid accountId)
+    {
+        var name = Truncate(accountName?.Trim() ?? string.Empty, 200);
+        return string.IsNullOrWhiteSpace(name) ? accountId.ToString("D") : name;
+    }
+
+    private static string NormalizeSubProfileName(string? name)
+    {
+        var subName = Truncate(name?.Trim() ?? string.Empty, 200);
+        return string.IsNullOrWhiteSpace(subName) ? "—" : subName;
     }
 
     private static string NormalizeStatus(string? status) =>
