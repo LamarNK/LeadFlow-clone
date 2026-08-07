@@ -18,6 +18,7 @@ public sealed class MonitoringCycleJournalSink(
     private readonly object _flushGate = new();
     private DateTime _lastFlushUtc = DateTime.MinValue;
     private volatile bool _disposed;
+    private int _flushing;
 
     private sealed class MutableCycle
     {
@@ -175,6 +176,15 @@ public sealed class MonitoringCycleJournalSink(
             return;
         }
 
+        // Флаши вызываются fire-and-forget из каждого события цикла. Не даём им
+        // перекрываться: два параллельных POST с одним и тем же циклом приводят
+        // к гонке в API (оба читают цикл как новый и оба вставляют его).
+        // Пропущенный цикл останется Dirty и будет отправлен в следующем тике.
+        if (Interlocked.CompareExchange(ref _flushing, 1, 0) != 0)
+        {
+            return;
+        }
+
         try
         {
             await FlushInternalAsync(CancellationToken.None).ConfigureAwait(false);
@@ -182,6 +192,10 @@ public sealed class MonitoringCycleJournalSink(
         catch
         {
             // best effort — next flush will retry dirty cycles
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _flushing, 0);
         }
     }
 

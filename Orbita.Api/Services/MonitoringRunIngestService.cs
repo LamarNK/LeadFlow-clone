@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using Orbita.Api.Data;
 using Orbita.Contracts;
 
@@ -11,7 +12,52 @@ public sealed class MonitoringRunIngestService(OrbitaDbContext db)
     public const int MaxSubProfilesPerCycle = 40;
     public const int RetentionDays = 60;
 
+    private const int MaxSaveAttempts = 3;
+
     public async Task<(int Accepted, string? Error)> IngestBatchAsync(
+        Guid workerId,
+        MonitoringRunBatchRequest request,
+        CancellationToken ct = default)
+    {
+        // Один и тот же цикл может прийти в двух перекрывающихся запросах (буфер
+        // воркера шлёт батчи fire-and-forget): оба запроса могут прочитать цикл
+        // как отсутствующий и попытаться вставить его одновременно. Проигравшая
+        // вставка падает с unique violation, а из-за abort всего мульти-стейтмент
+        // батча Npgsql маскирует её как DbUpdateConcurrencyException. Повторяем
+        // сохранение со свежим чтением — сходится к update существующей строки.
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                return await IngestCoreAsync(workerId, request, ct).ConfigureAwait(false);
+            }
+            catch (DbUpdateConcurrencyException) when (attempt < MaxSaveAttempts - 1)
+            {
+                db.ChangeTracker.Clear();
+            }
+            catch (DbUpdateException ex) when (
+                attempt < MaxSaveAttempts - 1
+                && IsUniqueViolation(ex))
+            {
+                db.ChangeTracker.Clear();
+            }
+        }
+    }
+
+    private static bool IsUniqueViolation(DbUpdateException ex)
+    {
+        for (Exception? current = ex; current is not null; current = current.InnerException)
+        {
+            if (current is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private async Task<(int Accepted, string? Error)> IngestCoreAsync(
         Guid workerId,
         MonitoringRunBatchRequest request,
         CancellationToken ct = default)
