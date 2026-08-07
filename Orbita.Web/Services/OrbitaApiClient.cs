@@ -72,10 +72,17 @@ public sealed class OrbitaApiClient(
         return payload;
     }
 
-    public Task<GlobalDashboardSummary?> GetSummaryAsync(CancellationToken ct = default) =>
-        _preview.Enabled
-            ? Task.FromResult<GlobalDashboardSummary?>(DesignPreviewData.GetSummary(officeContext.EffectiveOfficeId))
-            : GetAsync<GlobalDashboardSummary>(WithOfficeQuery("api/v1/dashboard/summary"), ct);
+    public Task<GlobalDashboardSummary?> GetSummaryAsync(int timeZoneOffsetMinutes = 0, CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return Task.FromResult<GlobalDashboardSummary?>(DesignPreviewData.GetSummary(officeContext.EffectiveOfficeId));
+        }
+
+        var path = WithOfficeQuery("api/v1/dashboard/summary");
+        path = AppendQuery(path, "tz", timeZoneOffsetMinutes.ToString());
+        return GetAsync<GlobalDashboardSummary>(path, ct);
+    }
 
     public Task<IReadOnlyList<WorkerListItem>?> GetWorkersAsync(CancellationToken ct = default) =>
         _preview.Enabled
@@ -944,6 +951,7 @@ public sealed class OrbitaApiClient(
         IReadOnlyList<Guid>? workerIds = null,
         IReadOnlyList<Guid>? accountIds = null,
         string? vacancy = null,
+        int timeZoneOffsetMinutes = 0,
         CancellationToken ct = default)
     {
         if (_preview.Enabled)
@@ -952,7 +960,7 @@ public sealed class OrbitaApiClient(
                 DesignPreviewData.GetStatistics(officeContext.EffectiveOfficeId, from, to, workerIds, accountIds));
         }
 
-        var query = BuildStatisticsQuery(from, to, workerIds, accountIds, vacancy);
+        var query = BuildStatisticsQuery(from, to, workerIds, accountIds, vacancy, timeZoneOffsetMinutes);
         return GetAsync<OfficeStatisticsDto>(WithOfficeQuery($"api/v1/panel/statistics?{query}"), ct);
     }
 
@@ -961,12 +969,14 @@ public sealed class OrbitaApiClient(
         DateTime to,
         IReadOnlyList<Guid>? workerIds,
         IReadOnlyList<Guid>? accountIds,
-        string? vacancy = null)
+        string? vacancy = null,
+        int timeZoneOffsetMinutes = 0)
     {
         var parts = new List<string>
         {
             $"from={from:yyyy-MM-dd}",
-            $"to={to:yyyy-MM-dd}"
+            $"to={to:yyyy-MM-dd}",
+            $"tz={timeZoneOffsetMinutes}"
         };
 
         if (workerIds is not null)

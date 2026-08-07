@@ -3,11 +3,35 @@
         return n < 10 ? '0' + n : String(n);
     }
 
+    /** JS getTimezoneOffset(): minutes to add to local wall time to get UTC. */
+    function timeZoneOffsetMinutes() {
+        return new Date().getTimezoneOffset();
+    }
+
+    function persistTimeZoneCookie() {
+        try {
+            document.cookie = 'orbita_tz=' + timeZoneOffsetMinutes()
+                + ';path=/;max-age=31536000;samesite=lax';
+        } catch (e) { /* ignore */ }
+    }
+
+    function formatLocalDateIso(date) {
+        return date.getFullYear()
+            + '-' + pad2(date.getMonth() + 1)
+            + '-' + pad2(date.getDate());
+    }
+
+    function todayLocalDateIso() {
+        return formatLocalDateIso(new Date());
+    }
+
     function parseUtc(iso) {
         if (!iso) return null;
         var date = new Date(iso);
         return Number.isNaN(date.getTime()) ? null : date;
     }
+
+    persistTimeZoneCookie();
 
     function sameCalendarDay(a, b) {
         return a.getFullYear() === b.getFullYear()
@@ -120,7 +144,11 @@
         localizeAll: localizeAll,
         utcHourToLocalLabel: utcHourToLocalLabel,
         localizeHourlyLabels: localizeHourlyLabels,
-        localizeHourlyChart: localizeHourlyChart
+        localizeHourlyChart: localizeHourlyChart,
+        timeZoneOffsetMinutes: timeZoneOffsetMinutes,
+        persistTimeZoneCookie: persistTimeZoneCookie,
+        formatLocalDateIso: formatLocalDateIso,
+        todayLocalDateIso: todayLocalDateIso
     };
 
     if (document.readyState === 'loading') {

@@ -35,7 +35,14 @@ public sealed class StatisticsService(
         var accountOptions = BuildAccountOptions(accounts);
         var activeFilterChips = FilterChipsBuilder.ForStatistics(filters, period, workerOptions, accountOptions);
 
-        var data = await api.GetStatisticsAsync(period.From, period.To, filters.WorkerIds, filters.AccountIds, filters.VacancyQuery, ct);
+        var data = await api.GetStatisticsAsync(
+            period.From,
+            period.To,
+            filters.WorkerIds,
+            filters.AccountIds,
+            filters.VacancyQuery,
+            period.TimeZoneOffsetMinutes,
+            ct);
         if (data is null)
         {
             return new StatisticsViewModel

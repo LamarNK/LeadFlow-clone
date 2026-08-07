@@ -125,7 +125,7 @@
                                        class="orbita-period-input"
                                        data-period-from
                                        value="@Model.DateFrom.ToString("yyyy-MM-dd")"
-                                       max="@DateTime.Today.ToString("yyyy-MM-dd")" />
+                                       max="@Model.DateMax.ToString("yyyy-MM-dd")" />
                             </label>
                             <label class="orbita-period-field">
                                 <span class="orbita-period-field-label">По</span>
@@ -133,7 +133,7 @@
                                        class="orbita-period-input"
                                        data-period-to
                                        value="@Model.DateTo.ToString("yyyy-MM-dd")"
-                                       max="@DateTime.Today.ToString("yyyy-MM-dd")" />
+                                       max="@Model.DateMax.ToString("yyyy-MM-dd")" />
                             </label>
                         </div>
                         <button type="button" class="orbita-period-apply" data-period-apply>Применить</button>

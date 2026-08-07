@@ -4,6 +4,7 @@ using Microsoft.Extensions.Options;
 using System.Security.Claims;
 using Orbita.Contracts;
 using Orbita.Web.Authorization;
+using Orbita.Web.Helpers;
 using Orbita.Web.Models.ViewModels;
 using Orbita.Web.Options;
 using Orbita.Web.Services;
@@ -25,9 +26,10 @@ public sealed class CrmController(
         string? managerUserId,
         CancellationToken ct = default)
     {
+        var tz = BrowserTimeZone.Resolve(HttpContext);
         var period = string.IsNullOrWhiteSpace(from) || string.IsNullOrWhiteSpace(to)
-            ? new DashboardPeriod(DateTime.Today.AddDays(-29), DateTime.Today)
-            : DashboardPeriod.Parse(from, to);
+            ? DashboardPeriod.CreateLastDays(30, tz)
+            : DashboardPeriod.Parse(from, to, tz);
         var (fromUtc, toUtc) = LocalCalendarDateRange.ToUtcRange(period);
         var isAdmin = User.IsInRole(OrbitaRoles.Admin);
         var selectedManagerUserId = isAdmin && !string.IsNullOrWhiteSpace(managerUserId)
@@ -51,6 +53,7 @@ public sealed class CrmController(
                 DateRangeLabel = period.Label,
                 DateFrom = period.From,
                 DateTo = period.To,
+                DateMax = period.LocalToday,
                 ActivePeriodPreset = period.ActivePreset,
                 UpdatedAtUtc = analytics?.GeneratedAtUtc ?? DateTime.UtcNow
             },

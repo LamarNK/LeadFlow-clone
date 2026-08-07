@@ -17,7 +17,7 @@ public sealed class DashboardService(
             return DesignPreviewData.BuildDashboardViewModel(period, officeContext);
         }
 
-        var summary = await api.GetSummaryAsync(ct);
+        var summary = await api.GetSummaryAsync(period.TimeZoneOffsetMinutes, ct);
         if (summary is null)
         {
             return new DashboardViewModel
@@ -175,7 +175,7 @@ public sealed class DashboardService(
             new()
             {
                 Key = "responses",
-                Href = KpiCardLinks.Dashboard("responses", period.From, period.To),
+                Href = KpiCardLinks.Dashboard("responses", period.From, period.To, period.TimeZoneOffsetMinutes),
                 Label = "Откликов всего",
                 Value = periodStats.Responses.ToString(),
                 CountValue = periodStats.Responses,
@@ -189,7 +189,7 @@ public sealed class DashboardService(
             new()
             {
                 Key = "sent",
-                Href = KpiCardLinks.Dashboard("sent", period.From, period.To),
+                Href = KpiCardLinks.Dashboard("sent", period.From, period.To, period.TimeZoneOffsetMinutes),
                 Label = "Отправленные",
                 Value = periodStats.Sent.ToString(),
                 CountValue = periodStats.Sent,
@@ -203,7 +203,7 @@ public sealed class DashboardService(
             new()
             {
                 Key = "duplicates",
-                Href = KpiCardLinks.Dashboard("duplicates", period.From, period.To),
+                Href = KpiCardLinks.Dashboard("duplicates", period.From, period.To, period.TimeZoneOffsetMinutes),
                 Label = "Дублей",
                 Value = periodStats.Duplicates.ToString(),
                 CountValue = periodStats.Duplicates,
@@ -217,7 +217,7 @@ public sealed class DashboardService(
             new()
             {
                 Key = "errors",
-                Href = KpiCardLinks.Dashboard("errors", period.From, period.To),
+                Href = KpiCardLinks.Dashboard("errors", period.From, period.To, period.TimeZoneOffsetMinutes),
                 Label = "Ошибок",
                 Value = periodStats.Errors.ToString(),
                 CountValue = periodStats.Errors,
@@ -231,7 +231,7 @@ public sealed class DashboardService(
             new()
             {
                 Key = "accounts",
-                Href = KpiCardLinks.Dashboard("accounts", period.From, period.To),
+                Href = KpiCardLinks.Dashboard("accounts", period.From, period.To, period.TimeZoneOffsetMinutes),
                 Label = "Аккаунтов активно",
                 Value = $"{summary.AccountStatusCounts.Active} / {summary.ConnectedAccounts}",
                 CountValue = summary.AccountStatusCounts.Active,
@@ -246,7 +246,7 @@ public sealed class DashboardService(
             new()
             {
                 Key = "workers",
-                Href = KpiCardLinks.Dashboard("workers", period.From, period.To),
+                Href = KpiCardLinks.Dashboard("workers", period.From, period.To, period.TimeZoneOffsetMinutes),
                 Label = "Воркеров онлайн",
                 Value = $"{summary.OnlineWorkers} / {summary.TotalWorkers}",
                 CountValue = summary.OnlineWorkers,

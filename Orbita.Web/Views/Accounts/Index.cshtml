@@ -33,7 +33,7 @@
      data-worker-details-url="@Url.Action("Details", "Workers", new { id = "__id__" })"
      data-account-search-url="@Url.Action("Index", "Accounts", new { q = "__q__" })"
      data-responses-filter-url="@Url.Action("Index", "Responses", new { accountId = "__id__" })"
-     data-metric-today="@DateTime.Today.ToString("yyyy-MM-dd")"
+
      data-account-metric-responses-url="@($"/Responses?from=__today__&to=__today__&workerId=__workerId__&accountId=__accountId__")"
      data-account-metric-unique-url="@($"/Responses?from=__today__&to=__today__&status=unique&workerId=__workerId__&accountId=__accountId__")"
      data-account-metric-errors-url="@($"/Events?level=errors&workerId=__workerId__&accountId=__accountId__")">

@@ -238,14 +238,14 @@ internal static class FilterChipsBuilder
 
     private static (string Key, string? Value)[] ResponsesFilterPairs(
         ResponsesFilterViewModel filters,
-        string from,
-        string to,
+        DashboardPeriod period,
         params (string Key, string? Value)[] overrides)
     {
         var pairs = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
         {
-            ["from"] = from,
-            ["to"] = to,
+            ["from"] = period.FromIso,
+            ["to"] = period.ToIso,
+            ["tz"] = period.TimeZoneOffsetMinutes.ToString(),
             ["status"] = filters.Status,
             ["workerId"] = filters.WorkerId?.ToString(),
             ["accountId"] = filters.AccountId?.ToString(),
@@ -278,11 +278,10 @@ internal static class FilterChipsBuilder
     {
         const string path = "/Responses";
         var chips = new List<ActiveFilterChipViewModel>();
-        var from = filters.DateFrom.ToString("yyyy-MM-dd");
-        var to = filters.DateTo.ToString("yyyy-MM-dd");
 
         if (!period.IsTodayOnly && !period.IsAllTime)
         {
+            var today = period.LocalToday.ToString("yyyy-MM-dd");
             chips.Add(new ActiveFilterChipViewModel
             {
                 Label = $"Период: {period.Label}",
@@ -292,8 +291,9 @@ internal static class FilterChipsBuilder
                     ListPageSizeDefaults.Responses,
                     ResponsesFilterPairs(
                         filters,
-                        DateTime.Today.ToString("yyyy-MM-dd"),
-                        DateTime.Today.ToString("yyyy-MM-dd")))
+                        period,
+                        ("from", today),
+                        ("to", today)))
             });
         }
 
@@ -306,7 +306,7 @@ internal static class FilterChipsBuilder
                     path,
                     pageSize,
                     ListPageSizeDefaults.Responses,
-                    ResponsesFilterPairs(filters, from, to, ("search", null)))
+                    ResponsesFilterPairs(filters, period, ("search", null)))
             });
         }
 
@@ -319,7 +319,7 @@ internal static class FilterChipsBuilder
                     path,
                     pageSize,
                     ListPageSizeDefaults.Responses,
-                    ResponsesFilterPairs(filters, from, to, ("status", null)))
+                    ResponsesFilterPairs(filters, period, ("status", null)))
             });
         }
 
@@ -332,7 +332,7 @@ internal static class FilterChipsBuilder
                     path,
                     pageSize,
                     ListPageSizeDefaults.Responses,
-                    ResponsesFilterPairs(filters, from, to, ("workerId", null)))
+                    ResponsesFilterPairs(filters, period, ("workerId", null)))
             });
         }
 
@@ -345,7 +345,7 @@ internal static class FilterChipsBuilder
                     path,
                     pageSize,
                     ListPageSizeDefaults.Responses,
-                    ResponsesFilterPairs(filters, from, to, ("accountId", null)))
+                    ResponsesFilterPairs(filters, period, ("accountId", null)))
             });
         }
 
@@ -358,7 +358,7 @@ internal static class FilterChipsBuilder
                     path,
                     pageSize,
                     ListPageSizeDefaults.Responses,
-                    ResponsesFilterPairs(filters, from, to, ("bitrixDestination", null)))
+                    ResponsesFilterPairs(filters, period, ("bitrixDestination", null)))
             });
         }
 
@@ -371,7 +371,7 @@ internal static class FilterChipsBuilder
                     path,
                     pageSize,
                     ListPageSizeDefaults.Responses,
-                    ResponsesFilterPairs(filters, from, to, ("gender", null)))
+                    ResponsesFilterPairs(filters, period, ("gender", null)))
             });
         }
 
@@ -391,7 +391,7 @@ internal static class FilterChipsBuilder
                     path,
                     pageSize,
                     ListPageSizeDefaults.Responses,
-                    ResponsesFilterPairs(filters, from, to, ("ageFrom", null), ("ageTo", null)))
+                    ResponsesFilterPairs(filters, period, ("ageFrom", null), ("ageTo", null)))
             });
         }
 
@@ -404,7 +404,7 @@ internal static class FilterChipsBuilder
                     path,
                     pageSize,
                     ListPageSizeDefaults.Responses,
-                    ResponsesFilterPairs(filters, from, to, ("vacancy", null)))
+                    ResponsesFilterPairs(filters, period, ("vacancy", null)))
             });
         }
 
@@ -522,13 +522,15 @@ internal static class FilterChipsBuilder
         var chips = new List<ActiveFilterChipViewModel>();
         var from = period.From.ToString("yyyy-MM-dd");
         var to = period.To.ToString("yyyy-MM-dd");
+        var tz = period.TimeZoneOffsetMinutes.ToString();
 
         foreach (var workerId in filters.WorkerIds)
         {
             var pairs = new List<(string Key, string? Value)>
             {
                 ("from", from),
-                ("to", to)
+                ("to", to),
+                ("tz", tz)
             };
             pairs.AddRange(filters.WorkerIds
                 .Where(id => id != workerId)
@@ -547,7 +549,8 @@ internal static class FilterChipsBuilder
             var pairs = new List<(string Key, string? Value)>
             {
                 ("from", from),
-                ("to", to)
+                ("to", to),
+                ("tz", tz)
             };
             pairs.AddRange(filters.WorkerIds.Select(id => ("workerIds", (string?)id.ToString())));
             pairs.AddRange(filters.AccountIds
@@ -566,7 +569,8 @@ internal static class FilterChipsBuilder
             var pairs = new List<(string Key, string? Value)>
             {
                 ("from", from),
-                ("to", to)
+                ("to", to),
+                ("tz", tz)
             };
             pairs.AddRange(filters.WorkerIds.Select(id => ("workerIds", (string?)id.ToString())));
             pairs.AddRange(filters.AccountIds.Select(id => ("accountIds", (string?)id.ToString())));

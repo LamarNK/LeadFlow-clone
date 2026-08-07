@@ -46,6 +46,7 @@ public static class DashboardEndpoints
 
         dashboard.MapGet("/summary", async (
             Guid? officeId,
+            int? tz,
             DashboardQueryService query,
             OfficeScopeService officeScope,
             ClaimsPrincipal principal,
@@ -57,7 +58,7 @@ public static class DashboardEndpoints
                 return Results.Forbid();
             }
 
-            return Results.Ok(await query.GetGlobalSummaryAsync(scope, officeId, ct));
+            return Results.Ok(await query.GetGlobalSummaryAsync(scope, officeId, tz, ct));
         });
 
         var workerRead = app.MapGroup("/api/v1").RequireAuthorization(PanelPermissions.Workers);

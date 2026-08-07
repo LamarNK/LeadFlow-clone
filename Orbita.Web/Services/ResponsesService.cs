@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Options;
 using Orbita.Contracts;
+using Orbita.Web.Helpers;
 using Orbita.Web.Models.ViewModels;
 using Orbita.Web.Options;
 
@@ -8,6 +9,7 @@ namespace Orbita.Web.Services;
 public sealed class ResponsesService(
     OrbitaApiClient api,
     IOfficeContext officeContext,
+    IHttpContextAccessor httpContextAccessor,
     IOptions<DesignPreviewOptions> previewOptions) : IResponsesService
 {
     public async Task<ResponsesIndexViewModel> GetIndexAsync(
@@ -31,7 +33,7 @@ public sealed class ResponsesService(
     {
         page = Math.Max(1, page);
         pageSize = ListPageSizeDefaults.Normalize(pageSize, ListPageSizeDefaults.Responses);
-        var period = DashboardPeriod.Parse(from, to);
+        var period = DashboardPeriod.Parse(from, to, BrowserTimeZone.Resolve(httpContextAccessor.HttpContext));
         var tableSort = TableSort.Parse(sort, sortDir, TableSort.Responses.Default, TableSort.Responses.Columns);
         var filters = new ResponsesFilterViewModel
         {
@@ -54,7 +56,7 @@ public sealed class ResponsesService(
             return DesignPreviewData.BuildResponsesIndexViewModel(filters, selectedId, pageSize.Value, sort, sortDir);
         }
 
-        var (fromUtc, toUtc) = ToUtcRange(period);
+        var (fromUtc, toUtc) = LocalCalendarDateRange.ToUtcRange(period);
         var query = BuildQueryParams(
             status,
             search,
@@ -125,7 +127,13 @@ public sealed class ResponsesService(
             Filters = filters,
             PeriodLabel = period.Label,
             ActivePeriodPreset = period.ActivePreset,
-            KpiCards = ResponsesIndexBuilder.BuildKpiCards(summary, period.From, period.To, workerId, accountId),
+            KpiCards = ResponsesIndexBuilder.BuildKpiCards(
+                summary,
+                period.From,
+                period.To,
+                workerId,
+                accountId,
+                period.TimeZoneOffsetMinutes),
             Statuses = ResponsesIndexBuilder.StatusOptions,
             Workers = workerOptions,
             Accounts = accountOptions,
@@ -435,11 +443,4 @@ public sealed class ResponsesService(
 
     private static int? NormalizeAgeFilter(int? value) =>
         value is >= 0 and <= 120 ? value : null;
-
-    private static (DateTime FromUtc, DateTime ToUtcExclusive) ToUtcRange(DashboardPeriod period)
-    {
-        var fromLocal = DateTime.SpecifyKind(period.From.Date, DateTimeKind.Local);
-        var toExclusiveLocal = DateTime.SpecifyKind(period.To.Date.AddDays(1), DateTimeKind.Local);
-        return (fromLocal.ToUniversalTime(), toExclusiveLocal.ToUniversalTime());
-    }
 }

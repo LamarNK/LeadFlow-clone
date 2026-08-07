@@ -33,6 +33,7 @@ public static class PageHeaderBuilder
                 DateRangeLabel = period.Label,
                 DateFrom = period.From,
                 DateTo = period.To,
+                DateMax = period.LocalToday,
                 ActivePeriodPreset = period.ActivePreset
             };
         }
@@ -61,6 +62,7 @@ public static class PageHeaderBuilder
             DateRangeLabel = header.DateRangeLabel,
             DateFrom = header.DateFrom,
             DateTo = header.DateTo,
+            DateMax = header.DateMax,
             ActivePeriodPreset = header.ActivePeriodPreset,
             UserDisplayName = header.UserDisplayName,
             UserEmail = header.UserEmail,

@@ -253,7 +253,15 @@
     }
 
     function metricToday() {
-        return getLiveAttr('data-metric-today') || new Date().toISOString().slice(0, 10);
+        if (window.OrbitaTime && typeof window.OrbitaTime.todayLocalDateIso === 'function') {
+            return window.OrbitaTime.todayLocalDateIso();
+        }
+        var now = new Date();
+        var m = now.getMonth() + 1;
+        var d = now.getDate();
+        return now.getFullYear()
+            + '-' + (m < 10 ? '0' + m : String(m))
+            + '-' + (d < 10 ? '0' + d : String(d));
     }
 
     function normalizeMetricId(value) {

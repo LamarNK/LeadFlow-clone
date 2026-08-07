@@ -20,6 +20,7 @@ public sealed class DashboardQueryServiceTests
         DashboardQueryService.ClearCacheForTests();
         await using var db = CreateDb();
         var now = DateTime.UtcNow;
+        // No browser tz → API uses server OS local calendar (null offset).
         var yesterdayLocal = DateTime.Today.AddDays(-1);
         var utcStart = Orbita.Api.Helpers.LocalCalendarDateRange
             .GetUtcRangeForLocalCalendarDay(yesterdayLocal)
@@ -85,7 +86,10 @@ public sealed class DashboardQueryServiceTests
             .UtcStartInclusive;
 
         SeedWorker(db, now);
-        var todayNoon = now.Date.AddHours(12);
+        var todayLocalStartUtc = Orbita.Api.Helpers.LocalCalendarDateRange
+            .GetUtcRangeForLocalCalendarDay(DateTime.Today)
+            .UtcStartInclusive;
+        var todayNoon = todayLocalStartUtc.AddHours(12);
         // Collected yesterday, but actually sent today via a delivery journal entry.
         var responseId = Guid.NewGuid();
         db.CandidateResponses.Add(new CandidateResponseEntity
@@ -130,7 +134,9 @@ public sealed class DashboardQueryServiceTests
         DashboardQueryService.ClearCacheForTests();
         await using var db = CreateDb();
         var now = DateTime.UtcNow;
-        var todayStart = now.Date;
+        var todayStart = Orbita.Api.Helpers.LocalCalendarDateRange
+            .GetUtcRangeForLocalCalendarDay(DateTime.Today)
+            .UtcStartInclusive;
         SeedWorker(db, now);
 
         var bitrixResponseId = Guid.NewGuid();

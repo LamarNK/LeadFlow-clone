@@ -42,10 +42,16 @@ public sealed class OfficeStatisticsQueryService(
         IReadOnlyList<Guid>? workerIdsFilter = null,
         IReadOnlyList<Guid>? accountIdsFilter = null,
         string? vacancyFilter = null,
+        int? timeZoneOffsetMinutes = null,
         CancellationToken ct = default)
     {
         var nowUtc = DateTime.UtcNow;
-        var (startLocal, endLocal, utcStart, utcEnd) = LocalCalendarDateRange.Normalize(from, to);
+        // Panel always sends tz; null keeps OS-local for direct API callers.
+        var (startLocal, endLocal, utcStart, utcEnd) = LocalCalendarDateRange.Normalize(
+            from,
+            to,
+            timeZoneOffsetMinutes,
+            nowUtc);
         var workerFilterSet = NormalizeFilter(workerIdsFilter);
         var accountFilterSet = NormalizeFilter(accountIdsFilter);
         var workerFilterKey = BuildFilterKey(workerFilterSet);
@@ -161,6 +167,7 @@ public sealed class OfficeStatisticsQueryService(
             bitrixSends,
             startLocal,
             endLocal,
+            timeZoneOffsetMinutes,
             ct);
         var responses = await BuildResponsesPeriodAsync(collectedQuery, dailyTrend, ct);
         var bitrixDeliveries = await BuildBitrixDeliveryStatsAsync(bitrixSends, scope, officeFilter, ct);
@@ -738,6 +745,7 @@ public sealed class OfficeStatisticsQueryService(
         IReadOnlyList<BitrixSendEvent> bitrixSends,
         DateTime startLocal,
         DateTime endLocal,
+        int? timeZoneOffsetMinutes,
         CancellationToken ct)
     {
         var rows = await collectedQuery
@@ -749,7 +757,7 @@ public sealed class OfficeStatisticsQueryService(
         foreach (var row in rows)
         {
             var utcHour = DateTime.SpecifyKind(row.Date.AddHours(row.Hour), DateTimeKind.Utc);
-            var localDate = LocalCalendarDateRange.ToLocalDateFromStoredUtc(utcHour);
+            var localDate = LocalCalendarDateRange.ToLocalDateFromStoredUtc(utcHour, timeZoneOffsetMinutes);
             if (!byDay.TryGetValue(localDate, out var bucket))
             {
                 bucket = new DailyCounters();
@@ -779,7 +787,7 @@ public sealed class OfficeStatisticsQueryService(
         foreach (var sendGroup in bitrixSends.GroupBy(x => x.ResponseId))
         {
             var firstSend = sendGroup.Min(x => x.SentAtUtc);
-            var localDate = LocalCalendarDateRange.ToLocalDateFromStoredUtc(firstSend);
+            var localDate = LocalCalendarDateRange.ToLocalDateFromStoredUtc(firstSend, timeZoneOffsetMinutes);
             if (localDate < startLocal.Date || localDate > endLocal.Date)
             {
                 continue;

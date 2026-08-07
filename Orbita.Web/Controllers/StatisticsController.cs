@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Orbita.Contracts;
+using Orbita.Web.Helpers;
 using Orbita.Web.Models.ViewModels;
 using Orbita.Web.Services;
 
@@ -21,7 +22,7 @@ public sealed class StatisticsController(
         string? vacancy,
         CancellationToken ct)
     {
-        var period = DashboardPeriod.Parse(from, to);
+        var period = DashboardPeriod.Parse(from, to, BrowserTimeZone.Resolve(HttpContext));
         var model = await statistics.GetIndexAsync(
             period,
             StatisticsService.NormalizeIds(workerIds),
@@ -46,7 +47,7 @@ public sealed class StatisticsController(
         string? vacancy,
         CancellationToken ct)
     {
-        var period = DashboardPeriod.Parse(from, to);
+        var period = DashboardPeriod.Parse(from, to, BrowserTimeZone.Resolve(HttpContext));
         var model = await statistics.GetIndexAsync(
             period,
             StatisticsService.NormalizeIds(workerIds),

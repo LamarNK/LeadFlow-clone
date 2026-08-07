@@ -33,6 +33,7 @@ public sealed class DashboardQueryService(
     public async Task<GlobalDashboardSummary> GetGlobalSummaryAsync(
         OfficeScope scope,
         Guid? officeFilter = null,
+        int? timeZoneOffsetMinutes = null,
         CancellationToken ct = default)
     {
         var nowUtc = DateTime.UtcNow;
@@ -50,9 +51,15 @@ public sealed class DashboardQueryService(
             }
         }
 
-        var todayStart = nowUtc.Date;
-        var weeklyStartLocal = DateTime.Today.AddDays(-(LocalCalendarDateRange.MaxCalendarDays - 1));
-        var (_, _, weeklyUtcStart, weeklyUtcEnd) = LocalCalendarDateRange.Normalize(weeklyStartLocal, DateTime.Today);
+        var todayLocal = LocalCalendarDateRange.GetLocalCalendarDate(nowUtc, timeZoneOffsetMinutes);
+        var todayStart = LocalCalendarDateRange.GetUtcRangeForLocalCalendarDay(todayLocal, timeZoneOffsetMinutes)
+            .UtcStartInclusive;
+        var weeklyStartLocal = todayLocal.AddDays(-(LocalCalendarDateRange.MaxCalendarDays - 1));
+        var (_, _, weeklyUtcStart, weeklyUtcEnd) = LocalCalendarDateRange.Normalize(
+            weeklyStartLocal,
+            todayLocal,
+            timeZoneOffsetMinutes,
+            nowUtc);
         var workersQuery = officeScope
             .ApplyWorkerFilter(db.Workers.AsNoTracking(), scope, officeFilter)
             .Where(x => x.MachineName != LeadFlowImportWorker.MachineName);
@@ -155,8 +162,9 @@ public sealed class DashboardQueryService(
                 await ComputeDailyActivityFromDbAsync(
                     workerIds,
                     weeklyStartLocal,
-                    DateTime.Today,
+                    todayLocal,
                     sendTimestamps,
+                    timeZoneOffsetMinutes,
                     ct),
                 workerEventErrors.Daily),
             AggregatedAtUtc: nowUtc);
@@ -685,9 +693,13 @@ public sealed class DashboardQueryService(
         DateTime startLocal,
         DateTime endLocal,
         IReadOnlyList<DateTime> sendTimestamps,
+        int? timeZoneOffsetMinutes,
         CancellationToken ct)
     {
-        var (rangeStart, rangeEnd, utcStart, utcEnd) = LocalCalendarDateRange.Normalize(startLocal, endLocal);
+        var (rangeStart, rangeEnd, utcStart, utcEnd) = LocalCalendarDateRange.Normalize(
+            startLocal,
+            endLocal,
+            timeZoneOffsetMinutes);
         if (workerIds.Count == 0)
         {
             return BuildEmptyDailyActivity(rangeStart, rangeEnd);
@@ -705,7 +717,7 @@ public sealed class DashboardQueryService(
         var byDay = new Dictionary<DateTime, DailyResponseCounters>();
         foreach (var row in rows)
         {
-            var localDate = LocalCalendarDateRange.ToLocalDateFromStoredUtc(row.CollectedAt);
+            var localDate = LocalCalendarDateRange.ToLocalDateFromStoredUtc(row.CollectedAt, timeZoneOffsetMinutes);
             if (!byDay.TryGetValue(localDate, out var bucket))
             {
                 bucket = new DailyResponseCounters();
@@ -722,7 +734,7 @@ public sealed class DashboardQueryService(
         // "Sent" by actual send date (CRM + Bitrix), not response collection date.
         foreach (var sentAtUtc in sendTimestamps)
         {
-            var localDate = LocalCalendarDateRange.ToLocalDateFromStoredUtc(sentAtUtc);
+            var localDate = LocalCalendarDateRange.ToLocalDateFromStoredUtc(sentAtUtc, timeZoneOffsetMinutes);
             if (localDate < startLocal.Date || localDate > endLocal.Date)
             {
                 continue;

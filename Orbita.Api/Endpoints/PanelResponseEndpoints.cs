@@ -128,6 +128,7 @@ public static class PanelResponseEndpoints
             Guid[]? workerIds,
             Guid[]? accountIds,
             string? vacancy,
+            int? tz,
             CancellationToken ct) =>
         {
             var scope = await officeScope.ResolveAsync(principal, ct);
@@ -144,6 +145,7 @@ public static class PanelResponseEndpoints
                 workerIds,
                 accountIds,
                 vacancy,
+                timeZoneOffsetMinutes: tz,
                 ct));
         });
 

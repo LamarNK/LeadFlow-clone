@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Orbita.Contracts;
+using Orbita.Web.Helpers;
 using Orbita.Web.Models.ViewModels;
 using Orbita.Web.Services;
 
@@ -16,7 +17,7 @@ public sealed class DashboardController(
     [HttpGet]
     public async Task<IActionResult> Index(string? from, string? to, CancellationToken ct)
     {
-        var period = DashboardPeriod.Parse(from, to);
+        var period = DashboardPeriod.Parse(from, to, BrowserTimeZone.Resolve(HttpContext));
         var model = await dashboard.GetDashboardAsync(period, ct);
         if (!string.IsNullOrWhiteSpace(model.ErrorMessage) && IsApiSessionMissing())
         {
@@ -34,7 +35,7 @@ public sealed class DashboardController(
     [HttpGet]
     public async Task<IActionResult> Snapshot(string? from, string? to, CancellationToken ct)
     {
-        var period = DashboardPeriod.Parse(from, to);
+        var period = DashboardPeriod.Parse(from, to, BrowserTimeZone.Resolve(HttpContext));
         var model = await dashboard.GetDashboardAsync(period, ct);
         if (!string.IsNullOrWhiteSpace(model.ErrorMessage))
         {

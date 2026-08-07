@@ -45,8 +45,8 @@ public sealed record ResponsesFilterViewModel
     public int? AgeTo { get; init; }
     public string? VacancyQuery { get; init; }
     public string? SearchQuery { get; init; }
-    public DateTime DateFrom { get; init; } = DateTime.Today;
-    public DateTime DateTo { get; init; } = DateTime.Today;
+    public DateTime DateFrom { get; init; } = DateTime.UtcNow.Date;
+    public DateTime DateTo { get; init; } = DateTime.UtcNow.Date;
     public int Page { get; init; } = 1;
 }
 

@@ -49,6 +49,7 @@
     }
 
     runtime.initPeriodPicker = function initPeriodPicker() {
+        runtime.ensureLocalPeriodParams();
         document.querySelectorAll('[data-orbita-period-menu]').forEach(function (menu) {
             if (menu.hasAttribute('data-orbita-period-menu-bound')) return;
             menu.setAttribute('data-orbita-period-menu-bound', '1');
@@ -120,10 +121,18 @@
         return null;
     }
 
+    runtime.timeZoneOffsetMinutes = function timeZoneOffsetMinutes() {
+        if (window.OrbitaTime && typeof window.OrbitaTime.timeZoneOffsetMinutes === 'function') {
+            return window.OrbitaTime.timeZoneOffsetMinutes();
+        }
+        return new Date().getTimezoneOffset();
+    }
+
     runtime.navigateWithPeriod = function navigateWithPeriod(from, to) {
         var url = new URL(window.location.href);
         url.searchParams.set('from', from);
         url.searchParams.set('to', to);
+        url.searchParams.set('tz', String(runtime.timeZoneOffsetMinutes()));
         var target = url.pathname + url.search;
         // prefer fast client nav when available (keeps SPA feel)
         if (typeof runtime.navigateTo === 'function') {
@@ -140,11 +149,38 @@
     }
 
     runtime.formatIsoDate = function formatIsoDate(date) {
+        if (window.OrbitaTime && typeof window.OrbitaTime.formatLocalDateIso === 'function') {
+            return window.OrbitaTime.formatLocalDateIso(date);
+        }
         var year = date.getFullYear();
         var month = String(date.getMonth() + 1).padStart(2, '0');
         var day = String(date.getDate()).padStart(2, '0');
         return year + '-' + month + '-' + day;
     }
+
+    // Period pages always carry local from/to/tz (server never invents "today" alone).
+    runtime.ensureLocalPeriodParams = function ensureLocalPeriodParams() {
+        if (!document.querySelector('[data-orbita-period-menu]')) return;
+        var url = new URL(window.location.href);
+        var from = url.searchParams.get('from');
+        var to = url.searchParams.get('to');
+        var tz = url.searchParams.get('tz');
+        var expectedTz = String(runtime.timeZoneOffsetMinutes());
+        if (!from || !to) {
+            var today = runtime.formatIsoDate(new Date());
+            runtime.navigateWithPeriod(today, today);
+            return;
+        }
+        if (tz !== expectedTz) {
+            url.searchParams.set('tz', expectedTz);
+            var target = url.pathname + url.search;
+            if (typeof runtime.navigateTo === 'function') {
+                runtime.navigateTo(target, true);
+            } else {
+                window.location.replace(target);
+            }
+        }
+    };
 
     runtime.resetFloatingDropdown = function resetFloatingDropdown(dropdown) {
         if (!dropdown) return;

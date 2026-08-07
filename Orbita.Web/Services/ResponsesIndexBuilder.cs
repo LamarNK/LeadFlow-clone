@@ -23,7 +23,8 @@ internal static class ResponsesIndexBuilder
         DateTime from,
         DateTime to,
         Guid? workerId = null,
-        Guid? accountId = null)
+        Guid? accountId = null,
+        int timeZoneOffsetMinutes = 0)
     {
         var total = Math.Max(1, summary.Total);
         string Pct(int value) => $"{value * 100.0 / total:0.#}%";
@@ -33,7 +34,7 @@ internal static class ResponsesIndexBuilder
             new()
             {
                 Key = "total",
-                Href = KpiCardLinks.ResponsesCard("total", from, to, workerId, accountId),
+                Href = KpiCardLinks.ResponsesCard("total", from, to, workerId, accountId, timeZoneOffsetMinutes),
                 Label = "Всего откликов",
                 Value = summary.Total.ToString(),
                 CountValue = summary.Total,
@@ -45,7 +46,7 @@ internal static class ResponsesIndexBuilder
             new()
             {
                 Key = "unique",
-                Href = KpiCardLinks.ResponsesCard("unique", from, to, workerId, accountId),
+                Href = KpiCardLinks.ResponsesCard("unique", from, to, workerId, accountId, timeZoneOffsetMinutes),
                 Label = "Уникальных",
                 Value = summary.Unique.ToString(),
                 CountValue = summary.Unique,
@@ -57,7 +58,7 @@ internal static class ResponsesIndexBuilder
             new()
             {
                 Key = "duplicates",
-                Href = KpiCardLinks.ResponsesCard("duplicates", from, to, workerId, accountId),
+                Href = KpiCardLinks.ResponsesCard("duplicates", from, to, workerId, accountId, timeZoneOffsetMinutes),
                 Label = "Дублей",
                 Value = summary.Duplicates.ToString(),
                 CountValue = summary.Duplicates,
@@ -69,7 +70,7 @@ internal static class ResponsesIndexBuilder
             new()
             {
                 Key = "sent",
-                Href = KpiCardLinks.ResponsesCard("sent", from, to, workerId, accountId),
+                Href = KpiCardLinks.ResponsesCard("sent", from, to, workerId, accountId, timeZoneOffsetMinutes),
                 Label = "Отправленные",
                 Value = summary.Sent.ToString(),
                 CountValue = summary.Sent,
@@ -81,7 +82,7 @@ internal static class ResponsesIndexBuilder
             new()
             {
                 Key = "unique_authors",
-                Href = KpiCardLinks.ResponsesCard("unique_authors", from, to, workerId, accountId),
+                Href = KpiCardLinks.ResponsesCard("unique_authors", from, to, workerId, accountId, timeZoneOffsetMinutes),
                 Label = "Уникальных авторов",
                 Value = summary.UniqueAuthors.ToString(),
                 CountValue = summary.UniqueAuthors,

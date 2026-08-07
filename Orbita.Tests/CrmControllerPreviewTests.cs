@@ -48,9 +48,11 @@ public sealed class CrmControllerPreviewTests
     public async Task Analytics_InDesignPreview_UsesLocalCalendarHalfOpenUtcRange()
     {
         var (controller, _) = CreateController(previewEnabled: true);
-        var from = DateTime.Today.AddDays(-2);
-        var to = DateTime.Today.AddDays(-1);
-        var expected = Orbita.Api.Helpers.LocalCalendarDateRange.Normalize(from, to);
+        // Controller has no browser tz cookie → offset 0 (UTC calendar days).
+        var today = Orbita.Api.Helpers.LocalCalendarDateRange.GetLocalCalendarDate(DateTime.UtcNow, 0);
+        var from = today.AddDays(-2);
+        var to = today.AddDays(-1);
+        var expected = Orbita.Api.Helpers.LocalCalendarDateRange.Normalize(from, to, 0);
 
         var result = await controller.Analytics(
             from.ToString("yyyy-MM-dd"),
@@ -69,16 +71,13 @@ public sealed class CrmControllerPreviewTests
     [Fact]
     public void LocalCalendarDateRange_WithUtcPlusFive_UsesPreviousUtcDateAndExclusiveEnd()
     {
-        var zone = TimeZoneInfo.CreateCustomTimeZone(
-            "crm-analytics-utc-plus-five",
-            TimeSpan.FromHours(5),
-            "UTC+05",
-            "UTC+05");
+        // UTC+5 → JS getTimezoneOffset = -300
         var period = new DashboardPeriod(
             new DateTime(2026, 8, 1),
-            new DateTime(2026, 8, 2));
+            new DateTime(2026, 8, 2),
+            TimeZoneOffsetMinutes: -300);
 
-        var range = Orbita.Web.Services.LocalCalendarDateRange.ToUtcRange(period, zone);
+        var range = Orbita.Web.Services.LocalCalendarDateRange.ToUtcRange(period);
 
         Assert.Equal(new DateTime(2026, 7, 31, 19, 0, 0, DateTimeKind.Utc), range.UtcStartInclusive);
         Assert.Equal(new DateTime(2026, 8, 2, 19, 0, 0, DateTimeKind.Utc), range.UtcEndExclusive);

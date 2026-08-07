@@ -4,11 +4,11 @@ namespace Orbita.Web.Services;
 
 internal static class KpiCardLinks
 {
-    public static string? Dashboard(string key, DateTime from, DateTime to) => key switch
+    public static string? Dashboard(string key, DateTime from, DateTime to, int timeZoneOffsetMinutes = 0) => key switch
     {
-        "responses" => Responses(from, to),
-        "sent" => Responses(from, to, status: "sent"),
-        "duplicates" => Responses(from, to, status: "duplicate"),
+        "responses" => Responses(from, to, timeZoneOffsetMinutes: timeZoneOffsetMinutes),
+        "sent" => Responses(from, to, status: "sent", timeZoneOffsetMinutes: timeZoneOffsetMinutes),
+        "duplicates" => Responses(from, to, status: "duplicate", timeZoneOffsetMinutes: timeZoneOffsetMinutes),
         "errors" => "/Events?level=errors",
         "accounts" => "/Accounts",
         "workers" => "/Workers",
@@ -21,12 +21,14 @@ internal static class KpiCardLinks
         string? status = null,
         Guid? workerId = null,
         Guid? accountId = null,
-        string? bitrixDestination = null)
+        string? bitrixDestination = null,
+        int timeZoneOffsetMinutes = 0)
     {
         var parts = new List<string>
         {
             $"from={from:yyyy-MM-dd}",
-            $"to={to:yyyy-MM-dd}"
+            $"to={to:yyyy-MM-dd}",
+            $"tz={timeZoneOffsetMinutes}"
         };
 
         if (!string.IsNullOrWhiteSpace(status))
@@ -52,13 +54,19 @@ internal static class KpiCardLinks
         return $"/Responses?{string.Join("&", parts)}";
     }
 
-    public static string? ResponsesCard(string key, DateTime from, DateTime to, Guid? workerId = null, Guid? accountId = null) => key switch
+    public static string? ResponsesCard(
+        string key,
+        DateTime from,
+        DateTime to,
+        Guid? workerId = null,
+        Guid? accountId = null,
+        int timeZoneOffsetMinutes = 0) => key switch
     {
-        "total" => Responses(from, to, workerId: workerId, accountId: accountId),
-        "unique" => Responses(from, to, status: "unique", workerId: workerId, accountId: accountId),
-        "duplicates" => Responses(from, to, status: "duplicate", workerId: workerId, accountId: accountId),
-        "sent" => Responses(from, to, status: "sent", workerId: workerId, accountId: accountId),
-        "unique_authors" => Responses(from, to, workerId: workerId, accountId: accountId),
+        "total" => Responses(from, to, workerId: workerId, accountId: accountId, timeZoneOffsetMinutes: timeZoneOffsetMinutes),
+        "unique" => Responses(from, to, status: "unique", workerId: workerId, accountId: accountId, timeZoneOffsetMinutes: timeZoneOffsetMinutes),
+        "duplicates" => Responses(from, to, status: "duplicate", workerId: workerId, accountId: accountId, timeZoneOffsetMinutes: timeZoneOffsetMinutes),
+        "sent" => Responses(from, to, status: "sent", workerId: workerId, accountId: accountId, timeZoneOffsetMinutes: timeZoneOffsetMinutes),
+        "unique_authors" => Responses(from, to, workerId: workerId, accountId: accountId, timeZoneOffsetMinutes: timeZoneOffsetMinutes),
         _ => null
     };
 
@@ -72,23 +80,33 @@ internal static class KpiCardLinks
         _ => null
     };
 
-    public static string AccountTodayResponses(Guid workerId, Guid accountId) =>
-        Responses(DateTime.Today, DateTime.Today, workerId: workerId, accountId: accountId)!;
+    public static string AccountTodayResponses(Guid workerId, Guid accountId, int timeZoneOffsetMinutes = 0)
+    {
+        var today = DashboardPeriod.GetLocalCalendarDate(DateTime.UtcNow, timeZoneOffsetMinutes);
+        return Responses(today, today, workerId: workerId, accountId: accountId, timeZoneOffsetMinutes: timeZoneOffsetMinutes)!;
+    }
 
-    public static string AccountTodayUnique(Guid workerId, Guid accountId) =>
-        Responses(DateTime.Today, DateTime.Today, status: "unique", workerId: workerId, accountId: accountId)!;
+    public static string AccountTodayUnique(Guid workerId, Guid accountId, int timeZoneOffsetMinutes = 0)
+    {
+        var today = DashboardPeriod.GetLocalCalendarDate(DateTime.UtcNow, timeZoneOffsetMinutes);
+        return Responses(today, today, status: "unique", workerId: workerId, accountId: accountId, timeZoneOffsetMinutes: timeZoneOffsetMinutes)!;
+    }
 
     public static string AccountErrors(Guid workerId, Guid accountId) =>
         $"/Events?level=errors&workerId={workerId}&accountId={accountId}";
 
-    public static string? WorkerDetailsCard(string key, Guid workerId) => key switch
+    public static string? WorkerDetailsCard(string key, Guid workerId, int timeZoneOffsetMinutes = 0)
     {
-        "accounts" => "#worker-accounts",
-        "responses" => Responses(DateTime.Today, DateTime.Today, workerId: workerId),
-        "duplicates" => Responses(DateTime.Today, DateTime.Today, status: "duplicate", workerId: workerId),
-        "errors" => $"/Events?level=errors&workerId={workerId}",
-        _ => null
-    };
+        var today = DashboardPeriod.GetLocalCalendarDate(DateTime.UtcNow, timeZoneOffsetMinutes);
+        return key switch
+        {
+            "accounts" => "#worker-accounts",
+            "responses" => Responses(today, today, workerId: workerId, timeZoneOffsetMinutes: timeZoneOffsetMinutes),
+            "duplicates" => Responses(today, today, status: "duplicate", workerId: workerId, timeZoneOffsetMinutes: timeZoneOffsetMinutes),
+            "errors" => $"/Events?level=errors&workerId={workerId}",
+            _ => null
+        };
+    }
 
     public static string? AccountsCard(string key) => key switch
     {

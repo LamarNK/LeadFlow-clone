@@ -34,7 +34,7 @@ public sealed class NavBadgesService(
                 previewCrmNotifications?.Enabled);
         }
 
-        var summaryTask = api.GetSummaryAsync(ct);
+        var summaryTask = api.GetSummaryAsync(Helpers.BrowserTimeZone.Resolve(httpContextAccessor.HttpContext), ct);
         var canReadCrmNotifications = officeContext.EffectiveOfficeId is Guid
             && (httpContextAccessor.HttpContext?.User.HasClaim(
                     PanelPermissions.ClaimType,
