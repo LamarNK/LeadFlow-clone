@@ -961,11 +961,29 @@ internal static class DesignPreviewData
         }
     }
 
-    private static IReadOnlyList<CrmManagerDto> BuildPreviewCrmManagers() =>
-    [
-        new(PreviewManagerElena, "Елена Воронцова", _previewCrmShiftActive, 10, PreviewCrmCandidates.Count(candidate => candidate.ManagerUserId == PreviewManagerElena && candidate.IsInActiveLoad && !candidate.IsClosed)),
-        new(PreviewManagerIgor, "Игорь Белов", true, 10, PreviewCrmCandidates.Count(candidate => candidate.ManagerUserId == PreviewManagerIgor && candidate.IsInActiveLoad && !candidate.IsClosed))
-    ];
+    private static IReadOnlyList<CrmManagerDto> BuildPreviewCrmManagers()
+    {
+        var now = DateTime.UtcNow;
+        return
+        [
+            new(
+                PreviewManagerElena,
+                "Елена Воронцова",
+                _previewCrmShiftActive,
+                10,
+                PreviewCrmCandidates.Count(candidate => candidate.ManagerUserId == PreviewManagerElena && candidate.IsInActiveLoad && !candidate.IsClosed),
+                _previewCrmShiftActive ? now.AddHours(-3).AddMinutes(-20) : null,
+                _previewCrmShiftActive ? null : now.AddHours(-5)),
+            new(
+                PreviewManagerIgor,
+                "Игорь Белов",
+                true,
+                10,
+                PreviewCrmCandidates.Count(candidate => candidate.ManagerUserId == PreviewManagerIgor && candidate.IsInActiveLoad && !candidate.IsClosed),
+                now.AddHours(-1).AddMinutes(-5),
+                now.AddDays(-1).AddHours(-2))
+        ];
+    }
 
     private static CrmCandidateCardDto ToPreviewCrmCard(PreviewCrmCandidate candidate)
     {

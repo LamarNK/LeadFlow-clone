@@ -308,6 +308,7 @@ public static class OrbitaApiStartupExtensions
         builder.Services.AddHostedService<ServiceLogsCleanupService>();
         builder.Services.AddHostedService<WorkerScheduleHostedService>();
         builder.Services.AddHostedService<CrmDeadlineNotificationHostedService>();
+        builder.Services.AddHostedService<CrmShiftSweeperService>();
         builder.Services.AddHostedService<BitrixWorkforceHostedService>();
         builder.Services.AddScoped<WebhookSecretProtector>();
         builder.Services.AddScoped<AvitoAccountSecretProtector>();

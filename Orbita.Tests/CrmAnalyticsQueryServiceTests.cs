@@ -478,7 +478,8 @@ public sealed class CrmAnalyticsQueryServiceTests
                 OfficeId = officeId,
                 FullName = fullName,
                 CrmCapacity = capacity,
-                CrmShiftActive = onShift
+                CrmShiftActive = onShift,
+                CrmShiftStartedAtUtc = onShift ? DateTime.UtcNow : null
             });
         }
 

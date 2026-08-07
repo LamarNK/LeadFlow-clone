@@ -1,5 +1,6 @@
 @model Orbita.Web.Models.ViewModels.CrmTeamViewModel
 @using Orbita.Contracts
+@using Orbita.Web.Formatting
 @using Orbita.Web.Models.ViewModels
 @inject Orbita.Web.Services.IOfficeContext OfficeContext
 @{
@@ -120,16 +121,17 @@
         </section>
 
         <section class="card crm-team-panel crm-team-panel--managers">
-            <header class="crm-team-panel__header"><div><h2>Менеджеры</h2><p>Ёмкость и текущая нагрузка по активным карточкам.</p></div><b>@board.Managers.Count</b></header>
+            <header class="crm-team-panel__header"><div><h2>Менеджеры</h2><p>Ёмкость, нагрузка и статус смены.</p></div><b>@board.Managers.Count</b></header>
             <div class="crm-manager-table">
                 <div class="crm-manager-table__head" aria-hidden="true"><span>Менеджер</span><span>Нагрузка</span><span>Лимит</span></div>
                 @foreach (var m in board.Managers)
                 {
                     var pct = m.Capacity <= 0 ? 0 : Math.Min(100, (int)Math.Round(100.0 * m.ActiveLoad / m.Capacity));
-                    <article class="crm-manager-row @(pct >= 100 ? "is-at-limit" : null)">
+                    var shiftLine = CrmShiftDisplay.FormatStatusLine(m.IsShiftActive, m.ShiftStartedAtUtc, m.LastShiftEndedAtUtc, now);
+                    <article class="crm-manager-row @(pct >= 100 ? "is-at-limit" : null) @(m.IsShiftActive ? "is-on-shift" : null)">
                         <div class="crm-manager-row__name">
                             <span class="crm-manager-row__identity"><i class="fa-solid fa-circle @(m.IsShiftActive ? "is-online" : "")" aria-hidden="true"></i><strong>@m.DisplayName</strong></span>
-                            <span>@(m.IsShiftActive ? "на смене" : "не на смене")</span>
+                            <span class="crm-manager-row__shift" title="@shiftLine">@shiftLine</span>
                         </div>
                         <div class="crm-manager-row__load">
                             <strong>@m.ActiveLoad / @m.Capacity</strong>

@@ -105,6 +105,9 @@ public sealed class CrmWorkspaceService(
             return null;
         }
 
+        // Самовосстановление UI: забытый «Стоп» не должен показывать «На смене» сутками.
+        await ExpireStaleShiftsAsync(ct);
+
         query ??= new CrmBoardQuery();
         var scope = NormalizeScope(query.Scope);
         var profile = await db.PanelUserProfiles.AsNoTracking().FirstOrDefaultAsync(x => x.UserId == userId, ct);
@@ -216,21 +219,23 @@ public sealed class CrmWorkspaceService(
             }
         }
 
-        var managerDtos = managers
-            .Where(x => isAdmin || x.Profile.UserId == userId)
-            .Select(x => new CrmManagerDto(
-                x.Profile.UserId,
-                x.Name,
-                x.Profile.CrmShiftActive,
-                x.Profile.CrmCapacity,
-                loads.GetValueOrDefault(x.Profile.UserId)))
+        var shiftMeta = await LoadManagerShiftMetaAsync(
+            officeId,
+            managers.Select(x => x.Profile.UserId),
+            ct);
+        CrmManagerDto MapManager((PanelUserProfileEntity Profile, string Name) m) =>
+            ToManagerDto(m, loads, now, shiftMeta);
+
+        var allManagerDtos = managers.Select(MapManager).ToList();
+        var managerDtos = allManagerDtos
+            .Where(x => isAdmin || x.UserId == userId)
             .ToList();
 
         var dayStart = now.Date;
         var teamStats = new CrmTeamStatsDto(
             await db.CrmCandidateCards.CountAsync(x => x.OfficeId == officeId && !x.IsClosed, ct),
             await db.CrmCandidateCards.CountAsync(x => x.OfficeId == officeId && x.ManagerUserId == null && !x.IsClosed, ct),
-            managers.Count(x => x.Profile.CrmShiftActive),
+            managers.Count(x => IsOnShift(x.Profile, now)),
             managers.Count,
             await db.CrmCandidateCards.CountAsync(x => x.OfficeId == officeId && x.IsClosed && x.ClosedAtUtc >= dayStart, ct),
             await (
@@ -258,16 +263,11 @@ public sealed class CrmWorkspaceService(
         return new CrmBoardDto(
             office.CrmEnabled,
             office.CrmRequireStageComment,
-            profile?.CrmShiftActive == true,
+            profile is not null && IsOnShift(profile, now),
             profile?.CrmCapacity ?? 10,
             loads.GetValueOrDefault(userId),
             stageDtos,
-            isAdmin ? managers.Select(x => new CrmManagerDto(
-                x.Profile.UserId,
-                x.Name,
-                x.Profile.CrmShiftActive,
-                x.Profile.CrmCapacity,
-                loads.GetValueOrDefault(x.Profile.UserId))).ToList() : managerDtos,
+            isAdmin ? allManagerDtos : managerDtos,
             teamStats.UnassignedCount,
             openTaskCount,
             overdueTaskCount,
@@ -294,7 +294,19 @@ public sealed class CrmWorkspaceService(
         }
 
         await using var tx = await db.Database.BeginTransactionAsync(ct);
+        var now = DateTime.UtcNow;
+        // Редкий повторный старт / «зависшая» open-запись — закрываем перед новой.
+        await CloseOpenShiftsAsync(
+            officeId,
+            userId,
+            now,
+            CrmShiftEndReasons.Superseded,
+            endedByUserId: userId,
+            fallbackStartedAtUtc: profile.CrmShiftStartedAtUtc,
+            ct);
+        OpenShiftRecord(officeId, userId, now);
         profile.CrmShiftActive = true;
+        profile.CrmShiftStartedAtUtc = now;
         var actorName = await ResolveDisplayNameAsync(userId, ct);
         await leadDistribution.FillManagerFromQueueOnShiftStartAsync(
             officeId,
@@ -317,10 +329,146 @@ public sealed class CrmWorkspaceService(
             return false;
         }
 
+        var now = DateTime.UtcNow;
+        await CloseOpenShiftsAsync(
+            officeId,
+            userId,
+            now,
+            CrmShiftEndReasons.Manual,
+            endedByUserId: userId,
+            fallbackStartedAtUtc: profile.CrmShiftStartedAtUtc,
+            ct);
         profile.CrmShiftActive = false;
+        profile.CrmShiftStartedAtUtc = null;
         await db.SaveChangesAsync(ct);
         NotifyBoardChanged(officeId);
         return true;
+    }
+
+    /// <summary>
+    /// Снять CRM-смены, у которых вышел <see cref="CrmShiftRules.MaxDuration"/>
+    /// или нет времени старта (legacy «зависшие» смены).
+    /// </summary>
+    /// <returns>Сколько профилей закрыто.</returns>
+    public async Task<int> ExpireStaleShiftsAsync(CancellationToken ct = default)
+    {
+        var now = DateTime.UtcNow;
+        var active = await db.PanelUserProfiles
+            .Where(x => x.CrmShiftActive)
+            .ToListAsync(ct);
+        if (active.Count == 0)
+        {
+            return 0;
+        }
+
+        var expiredOfficeIds = new HashSet<Guid>();
+        var count = 0;
+        foreach (var profile in active)
+        {
+            if (!CrmShiftRules.ShouldAutoStop(profile.CrmShiftActive, profile.CrmShiftStartedAtUtc, now))
+            {
+                continue;
+            }
+
+            if (profile.OfficeId is Guid officeId)
+            {
+                await CloseOpenShiftsAsync(
+                    officeId,
+                    profile.UserId,
+                    now,
+                    CrmShiftRules.ResolveAutoEndReason(profile.CrmShiftStartedAtUtc),
+                    endedByUserId: null,
+                    fallbackStartedAtUtc: profile.CrmShiftStartedAtUtc,
+                    ct);
+                expiredOfficeIds.Add(officeId);
+            }
+
+            profile.CrmShiftActive = false;
+            profile.CrmShiftStartedAtUtc = null;
+            count++;
+        }
+
+        if (count == 0)
+        {
+            return 0;
+        }
+
+        await db.SaveChangesAsync(ct);
+        foreach (var officeId in expiredOfficeIds)
+        {
+            NotifyBoardChanged(officeId);
+        }
+
+        return count;
+    }
+
+    private void OpenShiftRecord(Guid officeId, string managerUserId, DateTime startedAtUtc)
+    {
+        db.CrmManagerShifts.Add(new CrmManagerShiftEntity
+        {
+            Id = Guid.NewGuid(),
+            OfficeId = officeId,
+            ManagerUserId = managerUserId,
+            StartedAtUtc = startedAtUtc,
+            EndedAtUtc = null,
+            EndReason = null,
+            EndedByUserId = null
+        });
+    }
+
+    /// <summary>
+    /// Закрыть открытые записи истории; если их нет, но есть fallback-старт — создать
+    /// закрытую запись (для сидов / legacy-профилей без history-row).
+    /// </summary>
+    private async Task CloseOpenShiftsAsync(
+        Guid officeId,
+        string managerUserId,
+        DateTime endedAtUtc,
+        string endReason,
+        string? endedByUserId,
+        DateTime? fallbackStartedAtUtc,
+        CancellationToken ct)
+    {
+        var open = await db.CrmManagerShifts
+            .Where(x => x.OfficeId == officeId
+                        && x.ManagerUserId == managerUserId
+                        && x.EndedAtUtc == null)
+            .ToListAsync(ct);
+
+        if (open.Count > 0)
+        {
+            foreach (var shift in open)
+            {
+                shift.EndedAtUtc = endedAtUtc < shift.StartedAtUtc ? shift.StartedAtUtc : endedAtUtc;
+                shift.EndReason = endReason;
+                shift.EndedByUserId = endedByUserId;
+            }
+
+            return;
+        }
+
+        // Нет open-row: профиль был «на смене» без истории (seed/legacy) — фиксируем факт для аналитики.
+        if (fallbackStartedAtUtc is null && endReason is CrmShiftEndReasons.Superseded)
+        {
+            return;
+        }
+
+        var started = fallbackStartedAtUtc ?? endedAtUtc;
+        if (started > endedAtUtc)
+        {
+            started = endedAtUtc;
+        }
+
+        db.CrmManagerShifts.Add(new CrmManagerShiftEntity
+        {
+            Id = Guid.NewGuid(),
+            OfficeId = officeId,
+            ManagerUserId = managerUserId,
+            StartedAtUtc = started,
+            EndedAtUtc = endedAtUtc,
+            EndReason = endReason,
+            EndedByUserId = endedByUserId
+        });
     }
 
     public async Task<bool> SetCapacityAsync(Guid officeId, string managerUserId, int capacity, CancellationToken ct = default)
@@ -488,12 +636,7 @@ public sealed class CrmWorkspaceService(
             tasks.Select(x => ToTaskDto(x, names, card.Response.FullName, now)).ToList(),
             history.Select(x => new CrmHistoryDto(x.Id, x.Action, x.Details, x.ActorUserId, x.ActorName, x.CreatedAtUtc)).ToList(),
             activity,
-            managers.Select(x => new CrmManagerDto(
-                x.Profile.UserId,
-                x.Name,
-                x.Profile.CrmShiftActive,
-                x.Profile.CrmCapacity,
-                loads.GetValueOrDefault(x.Profile.UserId))).ToList(),
+            managers.Select(x => ToManagerDto(x, loads, now)).ToList(),
             officeStages,
             canEdit,
             chat,
@@ -1108,6 +1251,7 @@ public sealed class CrmWorkspaceService(
                 x.CreatedAtUtc))
             .ToListAsync(ct);
         var now = DateTime.UtcNow;
+        IReadOnlyDictionary<string, int> noLoads = new Dictionary<string, int>(StringComparer.Ordinal);
         return new CrmTaskDetailDto(
             ToTaskDto(task, names, candidateName, now),
             comments,
@@ -1115,12 +1259,7 @@ public sealed class CrmWorkspaceService(
             attachments,
             canManage,
             canManage
-                ? managers.Select(x => new CrmManagerDto(
-                    x.Profile.UserId,
-                    x.Name,
-                    x.Profile.CrmShiftActive,
-                    x.Profile.CrmCapacity,
-                    0)).ToList()
+                ? managers.Select(x => ToManagerDto(x, noLoads, now)).ToList()
                 : []);
     }
 
@@ -1308,6 +1447,86 @@ public sealed class CrmWorkspaceService(
         }
 
         return await db.PanelUserProfiles.FirstOrDefaultAsync(x => x.OfficeId == officeId && x.UserId == userId, ct);
+    }
+
+    private static bool IsOnShift(PanelUserProfileEntity profile, DateTime utcNow) =>
+        CrmShiftRules.IsEffectivelyOnShift(profile.CrmShiftActive, profile.CrmShiftStartedAtUtc, utcNow);
+
+    private sealed record ManagerShiftMeta(
+        IReadOnlyDictionary<string, DateTime> OpenStartedAtUtc,
+        IReadOnlyDictionary<string, DateTime> LastEndedAtUtc);
+
+    private async Task<ManagerShiftMeta> LoadManagerShiftMetaAsync(
+        Guid officeId,
+        IEnumerable<string> managerUserIds,
+        CancellationToken ct)
+    {
+        var ids = managerUserIds.ToHashSet(StringComparer.Ordinal);
+        if (ids.Count == 0)
+        {
+            return new ManagerShiftMeta(
+                new Dictionary<string, DateTime>(StringComparer.Ordinal),
+                new Dictionary<string, DateTime>(StringComparer.Ordinal));
+        }
+
+        var shifts = await db.CrmManagerShifts.AsNoTracking()
+            .Where(x => x.OfficeId == officeId && ids.Contains(x.ManagerUserId))
+            .Select(x => new { x.ManagerUserId, x.StartedAtUtc, x.EndedAtUtc })
+            .ToListAsync(ct);
+
+        var open = shifts
+            .Where(x => x.EndedAtUtc is null)
+            .GroupBy(x => x.ManagerUserId, StringComparer.Ordinal)
+            .ToDictionary(
+                g => g.Key,
+                g => g.Max(x => x.StartedAtUtc),
+                StringComparer.Ordinal);
+
+        var lastEnded = shifts
+            .Where(x => x.EndedAtUtc is DateTime)
+            .GroupBy(x => x.ManagerUserId, StringComparer.Ordinal)
+            .ToDictionary(
+                g => g.Key,
+                g => g.Max(x => x.EndedAtUtc!.Value),
+                StringComparer.Ordinal);
+
+        return new ManagerShiftMeta(open, lastEnded);
+    }
+
+    private static CrmManagerDto ToManagerDto(
+        (PanelUserProfileEntity Profile, string Name) manager,
+        IReadOnlyDictionary<string, int> loads,
+        DateTime utcNow,
+        ManagerShiftMeta? shiftMeta = null)
+    {
+        var onShift = IsOnShift(manager.Profile, utcNow);
+        DateTime? startedAt = null;
+        if (onShift)
+        {
+            startedAt = manager.Profile.CrmShiftStartedAtUtc;
+            if (startedAt is null
+                && shiftMeta is not null
+                && shiftMeta.OpenStartedAtUtc.TryGetValue(manager.Profile.UserId, out var openStart))
+            {
+                startedAt = openStart;
+            }
+        }
+
+        DateTime? lastEnded = null;
+        if (shiftMeta is not null
+            && shiftMeta.LastEndedAtUtc.TryGetValue(manager.Profile.UserId, out var ended))
+        {
+            lastEnded = ended;
+        }
+
+        return new CrmManagerDto(
+            manager.Profile.UserId,
+            manager.Name,
+            onShift,
+            manager.Profile.CrmCapacity,
+            loads.GetValueOrDefault(manager.Profile.UserId),
+            startedAt,
+            lastEnded);
     }
 
     private static bool CanAccessTask(CrmTaskEntity task, string userId, bool isAdmin) =>

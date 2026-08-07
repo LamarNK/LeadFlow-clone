@@ -80,7 +80,144 @@ public sealed class CrmWorkspaceServiceTests
 
         Assert.Equal(2, await harness.Db.CrmCandidateCards.CountAsync(x => x.ManagerUserId == manager.Id));
         Assert.Equal(1, await harness.Db.CrmCandidateCards.CountAsync(x => x.ManagerUserId == null));
-        Assert.True(await harness.Db.PanelUserProfiles.Where(x => x.UserId == manager.Id).Select(x => x.CrmShiftActive).SingleAsync());
+        var profile = await harness.Db.PanelUserProfiles.SingleAsync(x => x.UserId == manager.Id);
+        Assert.True(profile.CrmShiftActive);
+        Assert.NotNull(profile.CrmShiftStartedAtUtc);
+
+        var history = Assert.Single(await harness.Db.CrmManagerShifts.Where(x => x.ManagerUserId == manager.Id).ToListAsync());
+        Assert.Equal(OfficeId, history.OfficeId);
+        Assert.Null(history.EndedAtUtc);
+        Assert.Null(history.EndReason);
+        Assert.Equal(profile.CrmShiftStartedAtUtc, history.StartedAtUtc);
+    }
+
+    [Fact]
+    public async Task StopShift_ClearsStartedAt_AndClosesHistory()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var manager = await harness.CreateManagerAsync("stop@test.local", capacity: 2, onShift: false);
+        Assert.True(await harness.Sut.StartShiftAsync(OfficeId, manager.Id));
+
+        var ok = await harness.Sut.StopShiftAsync(OfficeId, manager.Id);
+        Assert.True(ok);
+
+        var profile = await harness.Db.PanelUserProfiles.SingleAsync(x => x.UserId == manager.Id);
+        Assert.False(profile.CrmShiftActive);
+        Assert.Null(profile.CrmShiftStartedAtUtc);
+
+        var history = Assert.Single(await harness.Db.CrmManagerShifts.Where(x => x.ManagerUserId == manager.Id).ToListAsync());
+        Assert.NotNull(history.EndedAtUtc);
+        Assert.Equal(CrmShiftEndReasons.Manual, history.EndReason);
+        Assert.Equal(manager.Id, history.EndedByUserId);
+        Assert.True(history.EndedAtUtc >= history.StartedAtUtc);
+    }
+
+    [Fact]
+    public async Task ExpireStaleShifts_StopsShiftOlderThanMaxDuration()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var manager = await harness.CreateManagerAsync("stale@test.local", capacity: 2, onShift: false);
+        Assert.True(await harness.Sut.StartShiftAsync(OfficeId, manager.Id));
+        var profile = await harness.Db.PanelUserProfiles.SingleAsync(x => x.UserId == manager.Id);
+        var started = DateTime.UtcNow - CrmShiftRules.MaxDuration - TimeSpan.FromMinutes(1);
+        profile.CrmShiftStartedAtUtc = started;
+        var open = await harness.Db.CrmManagerShifts.SingleAsync(x => x.ManagerUserId == manager.Id && x.EndedAtUtc == null);
+        open.StartedAtUtc = started;
+        await harness.Db.SaveChangesAsync();
+
+        var expired = await harness.Sut.ExpireStaleShiftsAsync();
+        Assert.Equal(1, expired);
+
+        await harness.Db.Entry(profile).ReloadAsync();
+        Assert.False(profile.CrmShiftActive);
+        Assert.Null(profile.CrmShiftStartedAtUtc);
+
+        await harness.Db.Entry(open).ReloadAsync();
+        Assert.NotNull(open.EndedAtUtc);
+        Assert.Equal(CrmShiftEndReasons.AutoMaxDuration, open.EndReason);
+        Assert.Null(open.EndedByUserId);
+    }
+
+    [Fact]
+    public async Task ExpireStaleShifts_StopsLegacyActiveWithoutStartTime()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var manager = await harness.CreateManagerAsync("legacy@test.local", capacity: 2, onShift: true);
+        var profile = await harness.Db.PanelUserProfiles.SingleAsync(x => x.UserId == manager.Id);
+        profile.CrmShiftStartedAtUtc = null;
+        await harness.Db.SaveChangesAsync();
+
+        var expired = await harness.Sut.ExpireStaleShiftsAsync();
+        Assert.Equal(1, expired);
+        Assert.False(profile.CrmShiftActive);
+
+        var history = Assert.Single(await harness.Db.CrmManagerShifts.Where(x => x.ManagerUserId == manager.Id).ToListAsync());
+        Assert.NotNull(history.EndedAtUtc);
+        Assert.Equal(CrmShiftEndReasons.LegacyCleanup, history.EndReason);
+    }
+
+    [Fact]
+    public async Task StartShift_WhenAlreadyOpen_SupersedesPreviousHistory()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var manager = await harness.CreateManagerAsync("restart@test.local", capacity: 2, onShift: false);
+        Assert.True(await harness.Sut.StartShiftAsync(OfficeId, manager.Id));
+        Assert.True(await harness.Sut.StartShiftAsync(OfficeId, manager.Id));
+
+        var rows = await harness.Db.CrmManagerShifts
+            .Where(x => x.ManagerUserId == manager.Id)
+            .OrderBy(x => x.StartedAtUtc)
+            .ToListAsync();
+        Assert.Equal(2, rows.Count);
+        Assert.Equal(CrmShiftEndReasons.Superseded, rows[0].EndReason);
+        Assert.NotNull(rows[0].EndedAtUtc);
+        Assert.Null(rows[1].EndedAtUtc);
+    }
+
+    [Fact]
+    public async Task GetBoard_Managers_ExposeShiftTiming()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var onShift = await harness.CreateManagerAsync("onshift-board@test.local", capacity: 5, onShift: false);
+        var offShift = await harness.CreateManagerAsync("offshift-board@test.local", capacity: 5, onShift: false);
+        Assert.True(await harness.Sut.StartShiftAsync(OfficeId, onShift.Id));
+        Assert.True(await harness.Sut.StartShiftAsync(OfficeId, offShift.Id));
+        Assert.True(await harness.Sut.StopShiftAsync(OfficeId, offShift.Id));
+
+        var board = await harness.Sut.GetBoardAsync(OfficeId, onShift.Id, isAdmin: true);
+        Assert.NotNull(board);
+
+        var active = Assert.Single(board!.Managers, x => x.UserId == onShift.Id);
+        Assert.True(active.IsShiftActive);
+        Assert.NotNull(active.ShiftStartedAtUtc);
+        Assert.Null(active.LastShiftEndedAtUtc);
+
+        var inactive = Assert.Single(board.Managers, x => x.UserId == offShift.Id);
+        Assert.False(inactive.IsShiftActive);
+        Assert.Null(inactive.ShiftStartedAtUtc);
+        Assert.NotNull(inactive.LastShiftEndedAtUtc);
+    }
+
+    [Fact]
+    public async Task CreateCard_DoesNotAssignToStaleShift()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var manager = await harness.CreateManagerAsync("stale-assign@test.local", capacity: 5, onShift: true);
+        var profile = await harness.Db.PanelUserProfiles.SingleAsync(x => x.UserId == manager.Id);
+        profile.CrmShiftStartedAtUtc = DateTime.UtcNow - CrmShiftRules.MaxDuration - TimeSpan.FromHours(1);
+        await harness.Db.SaveChangesAsync();
+        var response = await SeedResponseAsync(harness.Db);
+
+        await harness.Sut.CreateCardForResponseAsync(response);
+
+        var card = Assert.Single(harness.Db.CrmCandidateCards);
+        Assert.Null(card.ManagerUserId);
     }
 
     [Fact]
@@ -642,7 +779,8 @@ public sealed class CrmWorkspaceServiceTests
                 UserId = user.Id,
                 OfficeId = OfficeId,
                 CrmCapacity = capacity,
-                CrmShiftActive = onShift
+                CrmShiftActive = onShift,
+                CrmShiftStartedAtUtc = onShift ? DateTime.UtcNow : null
             });
             await Db.SaveChangesAsync();
             return user;

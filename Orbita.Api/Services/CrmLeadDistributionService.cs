@@ -169,13 +169,14 @@ public sealed class CrmLeadDistributionService(
             .ToListAsync(ct);
         var loads = await GetActiveLoadsAsync(officeId, ct);
 
+        var now = DateTime.UtcNow;
         return profiles
             .Select(p => new CrmLeadDistribution.ManagerCandidate(
                 p.UserId,
                 p.CrmCapacity,
                 loads.GetValueOrDefault(p.UserId),
                 p.CrmLastAutoAssignmentAtUtc,
-                p.CrmShiftActive))
+                CrmShiftRules.IsEffectivelyOnShift(p.CrmShiftActive, p.CrmShiftStartedAtUtc, now)))
             .ToList();
     }
 

@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Orbita.Api.Data;
@@ -11,9 +12,11 @@ using Orbita.Api.Data;
 namespace Orbita.Api.Data.Migrations
 {
     [DbContext(typeof(OrbitaDbContext))]
-    partial class OrbitaDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260807193430_AddCrmShiftStartedAtUtc")]
+    partial class AddCrmShiftStartedAtUtc
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1228,43 +1231,6 @@ namespace Orbita.Api.Data.Migrations
                     b.HasIndex("CardId", "CreatedAtUtc");
 
                     b.ToTable("CrmCandidateNotes");
-                });
-
-            modelBuilder.Entity("Orbita.Api.Data.CrmManagerShiftEntity", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("EndReason")
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
-
-                    b.Property<DateTime?>("EndedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("EndedByUserId")
-                        .HasMaxLength(128)
-                        .HasColumnType("character varying(128)");
-
-                    b.Property<string>("ManagerUserId")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("character varying(128)");
-
-                    b.Property<Guid>("OfficeId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("StartedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ManagerUserId", "EndedAtUtc");
-
-                    b.HasIndex("OfficeId", "StartedAtUtc");
-
-                    b.ToTable("CrmManagerShifts");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.CrmTaskAttachmentEntity", b =>
@@ -2685,17 +2651,6 @@ namespace Orbita.Api.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Response");
-                });
-
-            modelBuilder.Entity("Orbita.Api.Data.CrmManagerShiftEntity", b =>
-                {
-                    b.HasOne("Orbita.Api.Data.OfficeEntity", "Office")
-                        .WithMany()
-                        .HasForeignKey("OfficeId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Office");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.CrmTaskAttachmentEntity", b =>

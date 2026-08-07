@@ -30,6 +30,7 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
     public DbSet<CrmTaskCommentEntity> CrmTaskComments => Set<CrmTaskCommentEntity>();
     public DbSet<CrmTaskAttachmentEntity> CrmTaskAttachments => Set<CrmTaskAttachmentEntity>();
     public DbSet<CrmCandidateHistoryEntity> CrmCandidateHistory => Set<CrmCandidateHistoryEntity>();
+    public DbSet<CrmManagerShiftEntity> CrmManagerShifts => Set<CrmManagerShiftEntity>();
     public DbSet<ResponseBitrixDeliveryEntity> ResponseBitrixDeliveries => Set<ResponseBitrixDeliveryEntity>();
     public DbSet<ResponseCrmDeliveryEntity> ResponseCrmDeliveries => Set<ResponseCrmDeliveryEntity>();
     public DbSet<BitrixInstanceEntity> BitrixInstances => Set<BitrixInstanceEntity>();
@@ -286,6 +287,22 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.Property(x => x.Details).HasMaxLength(2000);
             entity.Property(x => x.ActorUserId).HasMaxLength(128);
             entity.Property(x => x.ActorName).HasMaxLength(256);
+        });
+
+        modelBuilder.Entity<CrmManagerShiftEntity>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.ManagerUserId).HasMaxLength(128);
+            entity.Property(x => x.EndReason).HasMaxLength(32);
+            entity.Property(x => x.EndedByUserId).HasMaxLength(128);
+            // Активные смены менеджера + история по менеджеру.
+            entity.HasIndex(x => new { x.ManagerUserId, x.EndedAtUtc });
+            // Аналитика по офису / периоду.
+            entity.HasIndex(x => new { x.OfficeId, x.StartedAtUtc });
+            entity.HasOne(x => x.Office)
+                .WithMany()
+                .HasForeignKey(x => x.OfficeId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
         modelBuilder.Entity<ResponseBitrixDeliveryEntity>(entity =>
         {

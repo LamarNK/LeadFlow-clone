@@ -225,6 +225,7 @@ public sealed class CrmAnalyticsQueryService(
                 OfficeId = x.OfficeId!.Value,
                 x.FullName,
                 x.CrmShiftActive,
+                x.CrmShiftStartedAtUtc,
                 x.CrmCapacity
             })
             .ToListAsync(ct);
@@ -335,7 +336,11 @@ public sealed class CrmAnalyticsQueryService(
                     string.IsNullOrWhiteSpace(fullName)
                         ? userNames.GetValueOrDefault(key.UserId, key.UserId)
                         : fullName,
-                    profile?.CrmShiftActive == true,
+                    profile is not null
+                        && CrmShiftRules.IsEffectivelyOnShift(
+                            profile.CrmShiftActive,
+                            profile.CrmShiftStartedAtUtc,
+                            DateTime.UtcNow),
                     profile?.CrmCapacity ?? 0);
             })
             .ToList();

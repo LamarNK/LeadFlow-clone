@@ -274,7 +274,11 @@ public sealed record CrmManagerDto(
     string DisplayName,
     bool IsShiftActive,
     int Capacity,
-    int ActiveLoad);
+    int ActiveLoad,
+    /// <summary>Начало текущей смены (UTC), если <see cref="IsShiftActive"/>.</summary>
+    DateTime? ShiftStartedAtUtc = null,
+    /// <summary>Конец последней закрытой смены (UTC) — «когда вышел» / последний раз.</summary>
+    DateTime? LastShiftEndedAtUtc = null);
 
 public sealed record CrmTeamStatsDto(
     int TotalActiveCards,

@@ -48,7 +48,37 @@ public sealed class PanelUserProfileEntity
     public Guid? OfficeId { get; set; }
     public int CrmCapacity { get; set; } = 10;
     public bool CrmShiftActive { get; set; }
+
+    /// <summary>
+    /// UTC-момент старта текущей CRM-смены. Null, если смена не активна
+    /// или legacy-запись до появления поля (такие смены автозакрываются).
+    /// </summary>
+    public DateTime? CrmShiftStartedAtUtc { get; set; }
+
     public DateTime? CrmLastAutoAssignmentAtUtc { get; set; }
+
+    public OfficeEntity? Office { get; set; }
+}
+
+/// <summary>
+/// История CRM-смен менеджера (для аналитики: длительность, забытый стоп и т.п.).
+/// Открытая смена: <see cref="EndedAtUtc"/> == null.
+/// </summary>
+public sealed class CrmManagerShiftEntity
+{
+    public Guid Id { get; set; }
+    public Guid OfficeId { get; set; }
+    public string ManagerUserId { get; set; } = string.Empty;
+    public DateTime StartedAtUtc { get; set; }
+
+    /// <summary>Null, пока смена активна.</summary>
+    public DateTime? EndedAtUtc { get; set; }
+
+    /// <summary><see cref="Orbita.Contracts.CrmShiftEndReasons"/>; null, пока открыта.</summary>
+    public string? EndReason { get; set; }
+
+    /// <summary>Кто завершил (userId). Null при автозакрытии / legacy.</summary>
+    public string? EndedByUserId { get; set; }
 
     public OfficeEntity? Office { get; set; }
 }

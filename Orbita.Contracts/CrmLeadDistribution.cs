@@ -14,6 +14,7 @@ namespace Orbita.Contracts;
 /// <item>Новый лид → менеджеры на смене с free capacity; min(load/capacity); tie-break — кто давно не получал.</item>
 /// <item>Старт смены → добрать из unassigned FIFO (старые первыми) ровно freeSlots.</item>
 /// <item>Нет свободных → лид остаётся без ManagerUserId (очередь).</item>
+/// <item>«На смене» — только эффективная смена (<see cref="CrmShiftRules"/>): забытый «Стоп» после MaxDuration не получает лиды.</item>
 /// </list>
 /// </para>
 /// </summary>
