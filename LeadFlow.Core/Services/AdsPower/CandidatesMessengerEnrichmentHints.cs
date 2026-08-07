@@ -11,6 +11,7 @@ public sealed record CandidatesMessengerEnrichmentHints(
     ResponseCollectionFilters? ResponseFilters = null,
     AvitoMessengerAutoReplySettings? MessengerAutoReply = null,
     /// <summary>
-    /// true = открытое phone-watch наблюдение (sub+FIO) — нельзя скипать phone-reveal.
+    /// true = открытое phone-watch наблюдение (sub+FIO) — нельзя скипать phone-reveal
+    /// и messenger-enrich (чат нужно перечитывать, пока следим за номером).
     /// </summary>
     Func<string, CancellationToken, Task<bool>>? IsOpenPhoneWatchAsync = null);

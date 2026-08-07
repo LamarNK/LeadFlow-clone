@@ -2083,16 +2083,31 @@ public sealed partial class AdsPowerAvitoAutomationService(
 
             var domIndex = ReadCandidateDomIndex(item, i);
             var sourceResponseIdForSkip = item["sourceResponseId"]?.GetValue<string>() ?? string.Empty;
+            var fullNameForWatch = item["fullName"]?.GetValue<string>() ?? string.Empty;
             var isKnownSourceId = existingSourceIdsFromDb is not null
                 && !string.IsNullOrWhiteSpace(sourceResponseIdForSkip)
                 && existingSourceIdsFromDb.Contains(sourceResponseIdForSkip.Trim());
             if (isKnownSourceId)
             {
+                // Уже в базе: чат не трогаем, если нет unread — кроме open phone-watch
+                // (кандидат может ответить, пока следим за сменой номера).
                 var hasUnread = await TryReadCandidateChatUnreadAsync(page, domIndex, cancellationToken)
                     .ConfigureAwait(false);
                 if (!hasUnread)
                 {
-                    continue;
+                    var openPhoneWatch = false;
+                    if (enrichmentHints?.IsOpenPhoneWatchAsync is not null
+                        && !string.IsNullOrWhiteSpace(fullNameForWatch))
+                    {
+                        openPhoneWatch = await enrichmentHints
+                            .IsOpenPhoneWatchAsync(fullNameForWatch, cancellationToken)
+                            .ConfigureAwait(false);
+                    }
+
+                    if (!openPhoneWatch)
+                    {
+                        continue;
+                    }
                 }
             }
 

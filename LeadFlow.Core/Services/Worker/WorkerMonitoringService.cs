@@ -966,11 +966,32 @@ public sealed class WorkerMonitoringService(
                     utcNow);
 
                 // Skip: тот же номер в окне / окно закрыто / нет данных.
+                // Пока phone-watch открыт — всё равно досылаем отклик, если есть чат:
+                // API обновит ChatMessagesJson только при фактическом изменении.
                 if (decision.Action == ResponsePhoneWatchAction.Skip)
                 {
                     await _phoneObservationStore
                         .UpsertAsync(decision.NextObservation, cancellationToken)
                         .ConfigureAwait(false);
+
+                    if (ResponsePhoneWatchChatRefresh.ShouldPublish(
+                            watchingOpen,
+                            decision.Action,
+                            candidate.ChatMessagesJson))
+                    {
+                        ApplyPhoneWatchDecision(candidate, decision, phoneNormalized);
+                        await PublishCandidateAsync(candidate, cancellationToken).ConfigureAwait(false);
+                        publishedCount++;
+                        publishedTotal++;
+
+                        if (!cancellationToken.IsCancellationRequested)
+                        {
+                            await HumanDelay.BetweenResponsesAsync(cancellationToken).ConfigureAwait(false);
+                        }
+
+                        continue;
+                    }
+
                     skippedPersonDuplicates++;
                     continue;
                 }
