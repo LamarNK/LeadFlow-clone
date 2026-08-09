@@ -68,16 +68,16 @@ public static class AuthenticationEndpoints
             }
 
             var roles = await users.GetRolesAsync(user);
-            var isAdmin = roles.Contains(PanelRoles.Admin, StringComparer.OrdinalIgnoreCase);
+            var isGlobalAdmin = roles.Any(r => PanelRoles.IsGlobalAdmin(r));
             Guid? officeId = null;
-            if (!isAdmin)
+            if (!isGlobalAdmin)
             {
                 officeId = await panelUsers.GetOfficeIdForUserAsync(user.Id, ct);
                 if (officeId is null)
                 {
                     await audit.LogAsync(user.Id, user.Email, PanelAuditActions.LoginFailed, "user", user.Id, "office_not_assigned", ip, ct);
                     return Results.Json(
-                        new { error = "Оператору не назначен офис. Обратитесь к администратору." },
+                        new { error = "Пользователю не назначен офис. Обратитесь к администратору." },
                         statusCode: StatusCodes.Status403Forbidden);
                 }
             }

@@ -62,6 +62,45 @@ public sealed class PanelPermissionsTests
         Assert.Contains(PanelPermissions.CrmTeam, permissions);
     }
 
+    [Fact]
+    public void DefaultForRole_OfficeLeadHasAdminTabsWithoutAdministration()
+    {
+        var permissions = PanelPermissions.DefaultForRole(PanelRoles.OfficeLead);
+
+        Assert.Contains(PanelPermissions.Dashboard, permissions);
+        Assert.Contains(PanelPermissions.Workers, permissions);
+        Assert.Contains(PanelPermissions.CrmBoard, permissions);
+        Assert.Contains(PanelPermissions.CrmTeam, permissions);
+        Assert.DoesNotContain(PanelPermissions.Administration, permissions);
+        Assert.Equal(
+            PanelPermissions.All.Count(x => x.Id != PanelPermissions.Administration),
+            permissions.Count);
+    }
+
+    [Fact]
+    public void Profiles_IncludeOfficeLead()
+    {
+        var profile = Assert.Single(PanelPermissions.Profiles, x => x.Id == "office-lead");
+
+        Assert.Equal(PanelRoles.OfficeLead, profile.Role);
+        Assert.Equal("Руководитель офиса", profile.Name);
+    }
+
+    [Theory]
+    [InlineData(PanelRoles.Admin, true, true)]
+    [InlineData(PanelRoles.OfficeLead, false, true)]
+    [InlineData(PanelRoles.Manager, false, false)]
+    [InlineData(PanelRoles.Operator, false, false)]
+    public void RoleHelpers_DistinguishGlobalAdminAndElevatedOfficeAccess(
+        string role,
+        bool isGlobalAdmin,
+        bool hasElevatedOfficeAccess)
+    {
+        Assert.Equal(isGlobalAdmin, PanelRoles.IsGlobalAdmin(role));
+        Assert.Equal(hasElevatedOfficeAccess, PanelRoles.HasElevatedOfficeAccess(role));
+        Assert.Equal(!isGlobalAdmin, PanelRoles.RequiresOfficeAssignment(role));
+    }
+
     [Theory]
     [InlineData(PanelPermissions.CrmBoard, true)]
     [InlineData(PanelPermissions.Crm, true)]

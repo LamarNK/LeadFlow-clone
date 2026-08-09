@@ -19,9 +19,10 @@ internal static class SettingsIndexBuilder
 
     public static readonly IReadOnlyList<EventFilterOptionViewModel> ProfileOptions =
     [
-        new() { Value = PanelRoles.Operator, Label = "Оператор" },
-        new() { Value = PanelRoles.Manager, Label = "Менеджер" },
-        new() { Value = PanelRoles.Admin, Label = "Администратор" }
+        new() { Value = PanelRoles.Operator, Label = PanelRoles.Label(PanelRoles.Operator) },
+        new() { Value = PanelRoles.Manager, Label = PanelRoles.Label(PanelRoles.Manager) },
+        new() { Value = PanelRoles.OfficeLead, Label = PanelRoles.Label(PanelRoles.OfficeLead) },
+        new() { Value = PanelRoles.Admin, Label = PanelRoles.Label(PanelRoles.Admin) }
     ];
 
     public static readonly IReadOnlyList<AccessProfileDto> DefaultAccessProfiles =
@@ -125,7 +126,7 @@ internal static class SettingsIndexBuilder
             Profile = new ProfileSettingsViewModel
             {
                 Email = profile.Email,
-                RoleLabel = RoleLabel(PanelRoles.Normalize(profile.Role)),
+                RoleLabel = PanelRoles.Label(profile.Role),
                 PasswordPolicy = policy is null ? null : MapPasswordPolicy(policy)
             }
         };
@@ -273,8 +274,9 @@ internal static class SettingsIndexBuilder
         static int RoleOrder(string role) => role switch
         {
             PanelRoles.Admin => 0,
-            PanelRoles.Manager => 1,
-            _ => 2
+            PanelRoles.OfficeLead => 1,
+            PanelRoles.Manager => 2,
+            _ => 3
         };
 
         static IReadOnlyList<PanelUserRowViewModel> SortUsers(IEnumerable<PanelUserRowViewModel> source) =>
@@ -360,7 +362,7 @@ internal static class SettingsIndexBuilder
             FullName = user.FullName,
             Email = user.Email,
             Role = role,
-            RoleLabel = RoleLabel(role),
+            RoleLabel = PanelRoles.Label(role),
             ProfileId = PanelRoles.ProfileIdForRole(role),
             IsCurrentUser = string.Equals(user.Id, currentUserId, StringComparison.Ordinal),
             IsLocked = user.IsLocked,
@@ -629,10 +631,4 @@ internal static class SettingsIndexBuilder
             _ => ("Не настроено", "neutral")
         };
 
-    private static string RoleLabel(string role) => role switch
-    {
-        PanelRoles.Admin => "Администратор",
-        PanelRoles.Manager => "Менеджер",
-        _ => "Оператор"
-    };
 }

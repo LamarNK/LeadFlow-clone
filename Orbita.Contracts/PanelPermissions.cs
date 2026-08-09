@@ -48,6 +48,11 @@ public static class PanelPermissions
     public static readonly IReadOnlyList<PanelAccessProfileDefinition> Profiles =
     [
         new("admin", PanelRoles.Admin, "Администратор", "Полный доступ к панели и настройкам."),
+        new(
+            "office-lead",
+            PanelRoles.OfficeLead,
+            "Руководитель офиса",
+            "Права как у администратора, но только в своём офисе и без раздела «Администрирование»."),
         new("manager", PanelRoles.Manager, "Менеджер", "Работа с CRM и личными настройками."),
         new("operator", PanelRoles.Operator, "Оператор", "Работа с панелью мониторинга и личными настройками.")
     ];
@@ -56,6 +61,10 @@ public static class PanelPermissions
         PanelRoles.Normalize(role) switch
         {
             PanelRoles.Admin => All.Select(x => x.Id).ToArray(),
+            PanelRoles.OfficeLead => All
+                .Where(x => x.Id != Administration)
+                .Select(x => x.Id)
+                .ToArray(),
             PanelRoles.Manager => [CrmBoard, CrmTasks, CrmAnalytics, Settings],
             _ => [Dashboard, Workers, Accounts, Statistics, Responses, Events, Settings]
         };

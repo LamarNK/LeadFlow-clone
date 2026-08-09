@@ -47,7 +47,7 @@ public static class CrmEndpoints
         {
             var scope = await officeScope.ResolveAsync(principal, ct);
             var effectiveOfficeId = scope.ResolveFilter(officeId);
-            var isAdmin = principal.IsInRole(PanelRoles.Admin);
+            var isAdmin = PanelRoles.HasElevatedOfficeAccess(principal);
             var isManager = principal.IsInRole(PanelRoles.Manager);
             var hasCrmBoardAccess = principal.HasClaim(PanelPermissions.ClaimType, PanelPermissions.CrmBoard)
                 || principal.HasClaim(PanelPermissions.ClaimType, PanelPermissions.Crm)
@@ -64,9 +64,9 @@ public static class CrmEndpoints
             {
                 return Results.BadRequest(new
                 {
-                    error = isAdmin
+                    error = PanelRoles.IsGlobalAdmin(principal)
                         ? "Выберите офис в переключателе, чтобы открыть CRM."
-                        : "Менеджеру не назначен офис. Обратитесь к администратору."
+                        : "Не назначен офис. Обратитесь к администратору."
                 });
             }
 
@@ -91,7 +91,7 @@ public static class CrmEndpoints
             string? managerUserId,
             CancellationToken ct) =>
         {
-            var isAdmin = principal.IsInRole(PanelRoles.Admin);
+            var isAdmin = PanelRoles.HasElevatedOfficeAccess(principal);
             var isManager = principal.IsInRole(PanelRoles.Manager);
             var hasCrmAnalyticsAccess = principal.HasClaim(PanelPermissions.ClaimType, PanelPermissions.CrmAnalytics)
                 || principal.HasClaim(PanelPermissions.ClaimType, PanelPermissions.Crm);
@@ -137,7 +137,7 @@ public static class CrmEndpoints
         {
             var scope = await officeScope.ResolveAsync(principal, ct);
             var effectiveOfficeId = scope.ResolveFilter(officeId);
-            var isAdmin = principal.IsInRole(PanelRoles.Admin);
+            var isAdmin = PanelRoles.HasElevatedOfficeAccess(principal);
             var isManager = principal.IsInRole(PanelRoles.Manager);
             var hasCrmTasksAccess = principal.HasClaim(PanelPermissions.ClaimType, PanelPermissions.CrmTasks)
                 || principal.HasClaim(PanelPermissions.ClaimType, PanelPermissions.Crm)
@@ -154,9 +154,9 @@ public static class CrmEndpoints
             {
                 return Results.BadRequest(new
                 {
-                    error = isAdmin
+                    error = PanelRoles.IsGlobalAdmin(principal)
                         ? "Выберите офис в переключателе, чтобы открыть CRM."
-                        : "Менеджеру не назначен офис. Обратитесь к администратору."
+                        : "Не назначен офис. Обратитесь к администратору."
                 });
             }
 
@@ -172,7 +172,7 @@ public static class CrmEndpoints
         {
             var scope = await officeScope.ResolveAsync(principal, ct);
             var effectiveOfficeId = scope.ResolveFilter(officeId);
-            var isAdmin = principal.IsInRole(PanelRoles.Admin);
+            var isAdmin = PanelRoles.HasElevatedOfficeAccess(principal);
             var isManager = principal.IsInRole(PanelRoles.Manager);
             var hasCrmTasksAccess = principal.HasClaim(PanelPermissions.ClaimType, PanelPermissions.CrmTasks)
                 || principal.HasClaim(PanelPermissions.ClaimType, PanelPermissions.Crm);
@@ -187,9 +187,9 @@ public static class CrmEndpoints
             {
                 return Results.BadRequest(new
                 {
-                    error = isAdmin
+                    error = PanelRoles.IsGlobalAdmin(principal)
                         ? "Выберите офис в переключателе, чтобы открыть CRM."
-                        : "Менеджеру не назначен офис. Обратитесь к администратору."
+                        : "Не назначен офис. Обратитесь к администратору."
                 });
             }
 
@@ -214,7 +214,7 @@ public static class CrmEndpoints
             var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
             if (scope.OfficeId is not Guid officeId || string.IsNullOrWhiteSpace(userId)
                 || (!principal.IsInRole(PanelRoles.Manager)
-                    && !principal.IsInRole(PanelRoles.Admin)
+                    && !PanelRoles.HasElevatedOfficeAccess(principal)
                     && !principal.HasClaim(PanelPermissions.ClaimType, PanelPermissions.CrmBoard)
                     && !principal.HasClaim(PanelPermissions.ClaimType, PanelPermissions.Crm)))
             {
@@ -234,7 +234,7 @@ public static class CrmEndpoints
             var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
             if (scope.OfficeId is not Guid officeId || string.IsNullOrWhiteSpace(userId)
                 || (!principal.IsInRole(PanelRoles.Manager)
-                    && !principal.IsInRole(PanelRoles.Admin)
+                    && !PanelRoles.HasElevatedOfficeAccess(principal)
                     && !principal.HasClaim(PanelPermissions.ClaimType, PanelPermissions.CrmBoard)
                     && !principal.HasClaim(PanelPermissions.ClaimType, PanelPermissions.Crm)))
             {
@@ -248,7 +248,7 @@ public static class CrmEndpoints
         {
             var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
             if (string.IsNullOrWhiteSpace(userId)) return Results.Forbid();
-            var card = await workspace.GetCardAsync(cardId, userId, principal.IsInRole(PanelRoles.Admin), ct);
+            var card = await workspace.GetCardAsync(cardId, userId, PanelRoles.HasElevatedOfficeAccess(principal), ct);
             return card is null ? Results.NotFound() : Results.Ok(card);
         });
 
@@ -256,7 +256,7 @@ public static class CrmEndpoints
         {
             var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
             if (string.IsNullOrWhiteSpace(userId)) return Results.Forbid();
-            var avatar = await workspace.GetCardAvatarAsync(cardId, userId, principal.IsInRole(PanelRoles.Admin), ct);
+            var avatar = await workspace.GetCardAvatarAsync(cardId, userId, PanelRoles.HasElevatedOfficeAccess(principal), ct);
             return avatar is null
                 ? Results.NotFound()
                 : Results.File(avatar.Bytes, avatar.ContentType);
@@ -266,7 +266,7 @@ public static class CrmEndpoints
         {
             var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
             if (string.IsNullOrWhiteSpace(userId)) return Results.Forbid();
-            var (ok, error) = await workspace.MoveAsync(cardId, request.Stage, request.Comment, userId, principal.IsInRole(PanelRoles.Admin), ct);
+            var (ok, error) = await workspace.MoveAsync(cardId, request.Stage, request.Comment, userId, PanelRoles.HasElevatedOfficeAccess(principal), ct);
             return ok ? Results.NoContent() : Results.BadRequest(new { error = error ?? "Не удалось сменить этап." });
         });
 
@@ -274,21 +274,21 @@ public static class CrmEndpoints
         {
             var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
             if (string.IsNullOrWhiteSpace(userId)) return Results.Forbid();
-            return await workspace.AssignAsync(cardId, request.ManagerUserId, userId, principal.IsInRole(PanelRoles.Admin), ct) ? Results.NoContent() : Results.NotFound();
+            return await workspace.AssignAsync(cardId, request.ManagerUserId, userId, PanelRoles.HasElevatedOfficeAccess(principal), ct) ? Results.NoContent() : Results.NotFound();
         });
 
         crmBoard.MapPost("/cards/{cardId:guid}/active-load/{isInActiveLoad:bool}", async (Guid cardId, bool isInActiveLoad, CrmWorkspaceService workspace, ClaimsPrincipal principal, CancellationToken ct) =>
         {
             var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
             if (string.IsNullOrWhiteSpace(userId)) return Results.Forbid();
-            return await workspace.SetActiveLoadAsync(cardId, isInActiveLoad, userId, principal.IsInRole(PanelRoles.Admin), ct) ? Results.NoContent() : Results.NotFound();
+            return await workspace.SetActiveLoadAsync(cardId, isInActiveLoad, userId, PanelRoles.HasElevatedOfficeAccess(principal), ct) ? Results.NoContent() : Results.NotFound();
         });
 
         crmBoard.MapPost("/cards/{cardId:guid}/close", async (Guid cardId, CrmCloseRequest request, CrmWorkspaceService workspace, ClaimsPrincipal principal, CancellationToken ct) =>
         {
             var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
             if (string.IsNullOrWhiteSpace(userId)) return Results.Forbid();
-            var (ok, error) = await workspace.CloseAsync(cardId, request.Reason, request.Comment, userId, principal.IsInRole(PanelRoles.Admin), ct);
+            var (ok, error) = await workspace.CloseAsync(cardId, request.Reason, request.Comment, userId, PanelRoles.HasElevatedOfficeAccess(principal), ct);
             return ok ? Results.NoContent() : Results.BadRequest(new { error = error ?? "Не удалось закрыть карточку." });
         });
 
@@ -296,21 +296,21 @@ public static class CrmEndpoints
         {
             var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
             if (string.IsNullOrWhiteSpace(userId)) return Results.Forbid();
-            return await workspace.ReopenAsync(cardId, userId, principal.IsInRole(PanelRoles.Admin), ct) ? Results.NoContent() : Results.NotFound();
+            return await workspace.ReopenAsync(cardId, userId, PanelRoles.HasElevatedOfficeAccess(principal), ct) ? Results.NoContent() : Results.NotFound();
         });
 
         crmBoard.MapPost("/cards/{cardId:guid}/notes", async (Guid cardId, CrmNoteCreateRequest request, CrmWorkspaceService workspace, ClaimsPrincipal principal, CancellationToken ct) =>
         {
             var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
             if (string.IsNullOrWhiteSpace(userId)) return Results.Forbid();
-            return await workspace.AddNoteAsync(cardId, request.Text, userId, principal.IsInRole(PanelRoles.Admin), ct) ? Results.NoContent() : Results.BadRequest();
+            return await workspace.AddNoteAsync(cardId, request.Text, userId, PanelRoles.HasElevatedOfficeAccess(principal), ct) ? Results.NoContent() : Results.BadRequest();
         });
 
         crmBoard.MapPost("/cards/{cardId:guid}/follow-up", async (Guid cardId, CrmFollowUpRequest request, CrmWorkspaceService workspace, ClaimsPrincipal principal, CancellationToken ct) =>
         {
             var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
             if (string.IsNullOrWhiteSpace(userId)) return Results.Forbid();
-            var task = await workspace.CreateFollowUpAsync(cardId, request.Minutes, request.Title, userId, principal.IsInRole(PanelRoles.Admin), ct);
+            var task = await workspace.CreateFollowUpAsync(cardId, request.Minutes, request.Title, userId, PanelRoles.HasElevatedOfficeAccess(principal), ct);
             return task is null ? Results.BadRequest() : Results.Created($"/api/v1/crm/tasks/{task.Id}", task);
         }).RequireAuthorization(PanelPermissions.CrmTasks);
 
@@ -319,7 +319,7 @@ public static class CrmEndpoints
             var scope = await officeScope.ResolveAsync(principal, ct);
             var effectiveOfficeId = scope.ResolveFilter(officeId);
             var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
-            var isAdmin = principal.IsInRole(PanelRoles.Admin);
+            var isAdmin = PanelRoles.HasElevatedOfficeAccess(principal);
             var hasCrmTasksAccess = principal.HasClaim(PanelPermissions.ClaimType, PanelPermissions.CrmTasks)
                 || principal.HasClaim(PanelPermissions.ClaimType, PanelPermissions.Crm);
             if (effectiveOfficeId is not Guid resolvedOfficeId
@@ -333,7 +333,7 @@ public static class CrmEndpoints
         {
             var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
             if (string.IsNullOrWhiteSpace(userId)) return Results.Forbid();
-            return await workspace.CompleteTaskAsync(taskId, userId, principal.IsInRole(PanelRoles.Admin), ct) ? Results.NoContent() : Results.NotFound();
+            return await workspace.CompleteTaskAsync(taskId, userId, PanelRoles.HasElevatedOfficeAccess(principal), ct) ? Results.NoContent() : Results.NotFound();
         });
 
         crmTasks.MapPut("/tasks/{taskId:guid}", async (
@@ -349,7 +349,7 @@ public static class CrmEndpoints
                 taskId,
                 request,
                 userId,
-                principal.IsInRole(PanelRoles.Admin),
+                PanelRoles.HasElevatedOfficeAccess(principal),
                 ct);
             return ok ? Results.NoContent() : Results.BadRequest(new { error = error ?? "Не удалось обновить задачу." });
         });
@@ -358,7 +358,7 @@ public static class CrmEndpoints
         {
             var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
             if (string.IsNullOrWhiteSpace(userId)) return Results.Forbid();
-            var (ok, error) = await workspace.CancelTaskAsync(taskId, userId, principal.IsInRole(PanelRoles.Admin), ct);
+            var (ok, error) = await workspace.CancelTaskAsync(taskId, userId, PanelRoles.HasElevatedOfficeAccess(principal), ct);
             return ok ? Results.NoContent() : Results.BadRequest(new { error = error ?? "Не удалось отменить задачу." });
         });
 
@@ -366,7 +366,7 @@ public static class CrmEndpoints
         {
             var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
             if (string.IsNullOrWhiteSpace(userId)) return Results.Forbid();
-            var (ok, error) = await workspace.ReopenTaskAsync(taskId, userId, principal.IsInRole(PanelRoles.Admin), ct);
+            var (ok, error) = await workspace.ReopenTaskAsync(taskId, userId, PanelRoles.HasElevatedOfficeAccess(principal), ct);
             return ok ? Results.NoContent() : Results.BadRequest(new { error = error ?? "Не удалось вернуть задачу в работу." });
         });
 
@@ -374,7 +374,7 @@ public static class CrmEndpoints
         {
             var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
             if (string.IsNullOrWhiteSpace(userId)) return Results.Forbid();
-            var task = await workspace.GetTaskAsync(taskId, userId, principal.IsInRole(PanelRoles.Admin), ct);
+            var task = await workspace.GetTaskAsync(taskId, userId, PanelRoles.HasElevatedOfficeAccess(principal), ct);
             return task is null ? Results.NotFound() : Results.Ok(task);
         });
 
@@ -469,7 +469,7 @@ public static class CrmEndpoints
         {
             var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
             if (string.IsNullOrWhiteSpace(userId)) return Results.Forbid();
-            var comment = await workspace.AddTaskCommentAsync(taskId, request.Text, userId, principal.IsInRole(PanelRoles.Admin), ct);
+            var comment = await workspace.AddTaskCommentAsync(taskId, request.Text, userId, PanelRoles.HasElevatedOfficeAccess(principal), ct);
             return comment is null
                 ? Results.BadRequest()
                 : Results.Created($"/api/v1/crm/tasks/{taskId:D}#comment-{comment.Id:D}", comment);
@@ -504,7 +504,7 @@ public static class CrmEndpoints
                 file.FileName,
                 file.ContentType,
                 userId,
-                principal.IsInRole(PanelRoles.Admin),
+                PanelRoles.HasElevatedOfficeAccess(principal),
                 ct);
             return attachment is null
                 ? Results.BadRequest(new { error = error ?? "Не удалось сохранить вложение." })
@@ -524,7 +524,7 @@ public static class CrmEndpoints
                 taskId,
                 attachmentId,
                 userId,
-                principal.IsInRole(PanelRoles.Admin),
+                PanelRoles.HasElevatedOfficeAccess(principal),
                 ct);
             return attachment.Stream is null
                 ? Results.NotFound()
@@ -584,6 +584,6 @@ public static class CrmEndpoints
     }
 
     private static bool CanManageCrmTeam(ClaimsPrincipal principal) =>
-        principal.IsInRole(PanelRoles.Admin)
+        PanelRoles.HasElevatedOfficeAccess(principal)
         || principal.HasClaim(PanelPermissions.ClaimType, PanelPermissions.CrmTeam);
 }

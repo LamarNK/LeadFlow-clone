@@ -95,7 +95,7 @@ public sealed class PanelUserService(
         {
             UserId = user.Id,
             FullName = normalizedFullName,
-            OfficeId = normalizedRole == PanelRoles.Admin ? null : officeId
+            OfficeId = PanelRoles.IsGlobalAdmin(normalizedRole) ? null : officeId
         });
         await db.SaveChangesAsync(ct);
 
@@ -347,7 +347,7 @@ public sealed class PanelUserService(
         }
 
         var profile = await db.PanelUserProfiles.FirstOrDefaultAsync(x => x.UserId == id, ct);
-        if (normalizedRole == PanelRoles.Admin)
+        if (PanelRoles.IsGlobalAdmin(normalizedRole))
         {
             if (profile is null)
             {
@@ -363,7 +363,7 @@ public sealed class PanelUserService(
             var defaultOffice = await db.Offices.OrderBy(x => x.CreatedAtUtc).FirstOrDefaultAsync(ct);
             if (defaultOffice is null)
             {
-                return (null, "Сначала создайте офис и назначьте его оператору.");
+                return (null, "Сначала создайте офис и назначьте его пользователю.");
             }
 
             if (profile is null)
@@ -720,14 +720,14 @@ public sealed class PanelUserService(
 
     private async Task<string?> ValidateOfficeAssignmentAsync(string role, Guid? officeId, CancellationToken ct)
     {
-        if (role == PanelRoles.Admin)
+        if (!PanelRoles.RequiresOfficeAssignment(role))
         {
             return officeId is not null ? "Администратор не привязан к офису." : null;
         }
 
         if (officeId is not Guid resolvedOfficeId)
         {
-            return "Для менеджера или оператора нужно выбрать офис.";
+            return "Для этого профиля нужно выбрать офис.";
         }
 
         if (!await db.Offices.AnyAsync(x => x.Id == resolvedOfficeId && x.IsEnabled, ct))
@@ -793,7 +793,7 @@ public sealed class PanelUserService(
                 x.Office != null ? x.Office.Name : null,
                 x.FullName))
             .FirstOrDefaultAsync(ct);
-        return role == PanelRoles.Admin
+        return PanelRoles.IsGlobalAdmin(role)
             ? (null, null, profile.Item3)
             : profile;
     }

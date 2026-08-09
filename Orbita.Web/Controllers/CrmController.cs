@@ -31,7 +31,7 @@ public sealed class CrmController(
             ? DashboardPeriod.CreateLastDays(30, tz)
             : DashboardPeriod.Parse(from, to, tz);
         var (fromUtc, toUtc) = LocalCalendarDateRange.ToUtcRange(period);
-        var isAdmin = User.IsInRole(OrbitaRoles.Admin);
+        var isAdmin = PanelRoles.HasElevatedOfficeAccess(User);
         var selectedManagerUserId = isAdmin && !string.IsNullOrWhiteSpace(managerUserId)
             ? managerUserId.Trim()
             : null;
@@ -84,7 +84,7 @@ public sealed class CrmController(
         CancellationToken ct = default)
     {
         officeId = ResolveOfficeId(officeId);
-        if (User.IsInRole(OrbitaRoles.Admin) && officeId is null)
+        if (PanelRoles.IsGlobalAdmin(User) && officeId is null)
         {
             ViewData["CrmUnavailableMessage"] =
                 "Выберите офис в переключателе в шапке, чтобы открыть CRM.";
@@ -190,7 +190,7 @@ public sealed class CrmController(
         if (card is null) return NotFound();
         ViewData["CrmTab"] = tab is "tasks" or "history" or "chat" ? tab : "activity";
         ViewData["CanAccessCrmTasks"] = canAccessTasks;
-        ViewData["IsCrmAdmin"] = User.IsInRole(OrbitaRoles.Admin);
+        ViewData["IsCrmAdmin"] = PanelRoles.HasElevatedOfficeAccess(User);
         ViewData["CurrentCrmUserId"] = User.FindFirstValue(ClaimTypes.NameIdentifier);
         return View(card);
     }
@@ -210,7 +210,7 @@ public sealed class CrmController(
     public async Task<IActionResult> Tasks(string? scope, CancellationToken ct = default)
     {
         var officeId = ResolveOfficeId(null);
-        if (User.IsInRole(OrbitaRoles.Admin) && officeId is null)
+        if (PanelRoles.IsGlobalAdmin(User) && officeId is null)
         {
             ViewData["CrmUnavailableMessage"] =
                 "Выберите офис в переключателе в шапке, чтобы открыть CRM.";
@@ -239,7 +239,7 @@ public sealed class CrmController(
             managers,
             selectedScope,
             User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty,
-            User.IsInRole(OrbitaRoles.Admin),
+            PanelRoles.HasElevatedOfficeAccess(User),
             ResolveBrowserUtcOffsetMinutes()));
     }
 

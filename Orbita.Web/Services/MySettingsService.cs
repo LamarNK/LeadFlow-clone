@@ -138,12 +138,7 @@ public sealed class MySettingsService(OrbitaApiClient api, IOptions<DesignPrevie
         {
             Email = profile.Email,
             Role = profile.Role,
-            RoleLabel = profile.Role switch
-            {
-                PanelRoles.Admin => "Администратор",
-                PanelRoles.Manager => "Менеджер",
-                _ => "Оператор"
-            },
+            RoleLabel = PanelRoles.Label(profile.Role),
             PasswordPolicy = policy is null ? null : MapPasswordPolicy(policy)
         };
     }
