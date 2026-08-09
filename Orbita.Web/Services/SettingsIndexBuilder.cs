@@ -247,11 +247,13 @@ internal static class SettingsIndexBuilder
         IReadOnlyList<AccessProfileDto>? accessProfiles = null)
     {
         var profiles = accessProfiles ?? DefaultAccessProfiles;
+        var mappedUsers = users.Select(u => MapUser(u, offices, currentUserId, profiles)).ToList();
         return new SettingsIndexViewModel
         {
             ActiveTab = activeTab,
             Tabs = Tabs,
-            Users = users.Select(u => MapUser(u, offices, currentUserId, profiles)).ToList(),
+            Users = mappedUsers,
+            UserGroups = BuildUserGroups(mappedUsers, offices),
             Profiles = BuildProfiles(users, profiles),
             ProfileOptions = ProfileOptions,
             OfficeOptions = offices.Select(o => new EventFilterOptionViewModel
@@ -262,6 +264,79 @@ internal static class SettingsIndexBuilder
             StatusMessage = statusMessage,
             ErrorMessage = errorMessage
         };
+    }
+
+    internal static IReadOnlyList<PanelUserGroupViewModel> BuildUserGroups(
+        IReadOnlyList<PanelUserRowViewModel> users,
+        IReadOnlyList<OfficeDto> offices)
+    {
+        static int RoleOrder(string role) => role switch
+        {
+            PanelRoles.Admin => 0,
+            PanelRoles.Manager => 1,
+            _ => 2
+        };
+
+        static IReadOnlyList<PanelUserRowViewModel> SortUsers(IEnumerable<PanelUserRowViewModel> source) =>
+            source
+                .OrderBy(x => RoleOrder(x.Role))
+                .ThenBy(x => string.IsNullOrWhiteSpace(x.FullName) ? x.Email : x.FullName, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(x => x.Email, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+        var groups = new List<PanelUserGroupViewModel>();
+
+        var admins = SortUsers(users.Where(x => x.Role == PanelRoles.Admin));
+        if (admins.Count > 0)
+        {
+            groups.Add(new PanelUserGroupViewModel
+            {
+                Key = "admins",
+                Title = "Администраторы",
+                Subtitle = "Доступ ко всем офисам",
+                Kind = "admins",
+                Users = admins
+            });
+        }
+
+        var nonAdmins = users.Where(x => x.Role != PanelRoles.Admin).ToList();
+        var officeOrder = offices
+            .OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        foreach (var office in officeOrder)
+        {
+            var officeUsers = SortUsers(nonAdmins.Where(x => x.OfficeId == office.Id));
+            if (officeUsers.Count == 0)
+            {
+                continue;
+            }
+
+            groups.Add(new PanelUserGroupViewModel
+            {
+                Key = $"office:{office.Id:D}",
+                Title = office.Name,
+                Subtitle = "Офис",
+                Kind = "office",
+                OfficeId = office.Id.ToString("D"),
+                Users = officeUsers
+            });
+        }
+
+        var unassigned = SortUsers(nonAdmins.Where(x => x.OfficeId is null));
+        if (unassigned.Count > 0)
+        {
+            groups.Add(new PanelUserGroupViewModel
+            {
+                Key = "unassigned",
+                Title = "Без офиса",
+                Subtitle = "Нужно назначить офис",
+                Kind = "unassigned",
+                Users = unassigned
+            });
+        }
+
+        return groups;
     }
 
     private static PanelUserRowViewModel MapUser(

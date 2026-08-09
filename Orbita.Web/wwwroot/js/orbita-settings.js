@@ -57,7 +57,70 @@
         });
     }
 
+    function initUsersListFilters() {
+        document.querySelectorAll('[data-settings-users]').forEach((root) => {
+            if (root.__orbitaUsersFilterBound) return;
+            root.__orbitaUsersFilterBound = true;
+
+            const searchInput = root.querySelector('[data-settings-users-search]');
+            const roleSelect = root.querySelector('[data-settings-users-role]');
+            const officeSelect = root.querySelector('[data-settings-users-office]');
+            const emptyState = root.querySelector('[data-settings-users-empty]');
+            const groups = Array.from(root.querySelectorAll('[data-settings-user-group]'));
+            const rows = Array.from(root.querySelectorAll('[data-settings-user-row]'));
+
+            const apply = () => {
+                const query = (searchInput?.value || '').trim().toLocaleLowerCase();
+                const role = roleSelect?.value || '';
+                const office = officeSelect?.value || '';
+                let visibleRows = 0;
+
+                rows.forEach((row) => {
+                    const rowRole = row.getAttribute('data-user-role') || '';
+                    const rowOffice = row.getAttribute('data-user-office-id') || '';
+                    const rowKind = row.getAttribute('data-user-group-kind') || '';
+                    const searchText = (row.getAttribute('data-user-search') || '').toLocaleLowerCase();
+
+                    const matchesQuery = !query || searchText.includes(query);
+                    const matchesRole = !role || rowRole === role;
+                    let matchesOffice = true;
+                    if (office === 'admins') {
+                        matchesOffice = rowKind === 'admins' || rowRole === 'Admin';
+                    } else if (office === 'unassigned') {
+                        matchesOffice = rowKind === 'unassigned' || (!rowOffice && rowRole !== 'Admin');
+                    } else if (office) {
+                        matchesOffice = rowOffice === office;
+                    }
+
+                    const visible = matchesQuery && matchesRole && matchesOffice;
+                    row.hidden = !visible;
+                    if (visible) visibleRows += 1;
+                });
+
+                groups.forEach((group) => {
+                    const groupRows = group.querySelectorAll('[data-settings-user-row]');
+                    let groupVisible = 0;
+                    groupRows.forEach((row) => {
+                        if (!row.hidden) groupVisible += 1;
+                    });
+                    group.hidden = groupVisible === 0;
+                    const countEl = group.querySelector('[data-settings-user-group-count]');
+                    if (countEl) countEl.textContent = String(groupVisible);
+                });
+
+                if (emptyState) {
+                    emptyState.hidden = visibleRows > 0 || rows.length === 0;
+                }
+            };
+
+            searchInput?.addEventListener('input', apply);
+            roleSelect?.addEventListener('change', apply);
+            officeSelect?.addEventListener('change', apply);
+        });
+    }
+
     function runSettingsInits() {
+        initUsersListFilters();
         document.querySelectorAll('[data-service-log-message]').forEach((messageEl) => {
             if (messageEl.__orbitaClamped) return;
             messageEl.__orbitaClamped = true;

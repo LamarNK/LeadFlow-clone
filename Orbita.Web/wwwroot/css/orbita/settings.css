@@ -276,8 +276,116 @@
 
 .settings-table-wrap { overflow-x: auto; }
 
+.settings-users-body {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.settings-users-toolbar {
+    display: grid;
+    grid-template-columns: minmax(180px, 1.4fr) minmax(140px, 0.7fr) minmax(160px, 0.8fr);
+    gap: 12px;
+    align-items: end;
+}
+
+.settings-users-groups {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+
+.settings-user-group {
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    overflow: hidden;
+    background: var(--surface, #fff);
+}
+
+.settings-user-group[hidden] {
+    display: none !important;
+}
+
+.settings-user-group__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(148, 163, 184, 0.08);
+}
+
+.settings-user-group__title-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.settings-user-group__title {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 650;
+    color: var(--text-primary);
+}
+
+.settings-user-group__subtitle {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.settings-user-group__count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 28px;
+    height: 28px;
+    padding: 0 8px;
+    border-radius: 999px;
+    background: rgba(37, 99, 235, 0.12);
+    color: #2563eb;
+    font-size: 13px;
+    font-weight: 650;
+}
+
+.settings-user-group .data-table {
+    margin: 0;
+}
+
+.settings-user-group .data-table thead th {
+    background: transparent;
+}
+
+.settings-users-empty {
+    margin: 8px 0 0;
+    padding: 20px 8px;
+    text-align: center;
+    color: var(--text-secondary);
+    font-size: 14px;
+}
+
 .settings-user-email {
     font-weight: 600;
+}
+
+[data-theme="dark"] .settings-user-group {
+    background: rgba(15, 23, 42, 0.35);
+}
+
+[data-theme="dark"] .settings-user-group__header {
+    background: rgba(148, 163, 184, 0.08);
+}
+
+[data-theme="dark"] .settings-user-group__count {
+    background: rgba(96, 165, 250, 0.16);
+    color: #93c5fd;
+}
+
+@media (max-width: 900px) {
+    .settings-users-toolbar {
+        grid-template-columns: 1fr;
+    }
 }
 
 .settings-user-badge {

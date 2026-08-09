@@ -231,131 +231,200 @@
     }
     else if (Model.ActiveTab == "users")
     {
+        var userGroups = Model.UserGroups;
         <div class="settings-grid settings-grid--users">
             <div class="card card--settings-users">
                 <div class="card-header settings-card-header">
                     <div>
                         <h2 class="settings-card-title">Пользователи панели</h2>
-                        <p class="settings-card-subtitle">Учётные записи с доступом к Орбите</p>
+                        <p class="settings-card-subtitle">Разделены по офисам · всего @Model.Users.Count</p>
                     </div>
                 </div>
-                <div class="card-body card-body-table settings-table-wrap">
-                    <table class="data-table data-table--settings-users data-table--cards">
-                        <thead>
-                        <tr>
-                            <th>ФИО</th>
-                            <th>Email</th>
-                            <th>Профиль</th>
-                            <th>Офис</th>
-                            <th>Bitrix24</th>
-                            <th class="data-table-actions-col">Действия</th>
-                        </tr>
-                        </thead>
-                        <tbody>
-                        @foreach (var user in Model.Users)
-                        {
-                            <tr>
-                                <td data-label="ФИО">
-                                    @(string.IsNullOrWhiteSpace(user.FullName) ? "—" : user.FullName)
-                                </td>
-                                <td class="cell-name" data-label="Email">
-                                    <span class="settings-user-email">@user.Email</span>
-                                    @if (user.IsCurrentUser)
-                                    {
-                                        <span class="settings-user-badge">Вы</span>
-                                    }
-                                    @if (user.IsLocked)
-                                    {
-                                        <span class="settings-user-badge settings-user-badge--locked">Заблокирован</span>
-                                    }
-                                </td>
-                                <td data-label="Профиль">
-                                    <span class="settings-role-pill">@user.RoleLabel</span>
-                                    @if (user.HasPermissionOverride)
-                                    {
-                                        <span class="settings-user-badge">Индивидуальные права</span>
-                                    }
-                                </td>
-                                <td data-label="Офис">
-                                    @if (user.Role == PanelRoles.Admin)
-                                    {
-                                        <span class="settings-role-pill">Все офисы</span>
-                                    }
-                                    else
-                                    {
-                                        <span>@(user.OfficeName ?? "—")</span>
-                                    }
-                                </td>
-                                <td data-label="Bitrix24">
-                                    @if (user.OfficeId is Guid userOfficeId)
-                                    {
-                                        <a class="settings-bitrix-status settings-bitrix-status--@user.BitrixStatusTone"
-                                           href="@Url.Action("Index", new { tab = "offices", officeId = userOfficeId })">
-                                            @user.BitrixStatusLabel
-                                        </a>
-                                    }
-                                    else
-                                    {
-                                        <span class="settings-bitrix-status settings-bitrix-status--@user.BitrixStatusTone">@user.BitrixStatusLabel</span>
-                                    }
-                                </td>
-                                <td class="data-table-menu" data-label="">
-                                    <div class="row-menu" data-row-menu>
-                                        <button type="button" class="row-menu-btn" aria-label="Действия" aria-expanded="false" aria-haspopup="true">
-                                            <i class="fa-solid fa-ellipsis-vertical" aria-hidden="true"></i>
-                                        </button>
-                                        <div class="row-menu-dropdown" hidden>
-                                            <button type="button"
-                                                    class="row-menu-item"
-                                                    data-settings-edit-user
-                                                    data-user-id="@user.Id"
-                                                    data-user-email="@user.Email"
-                                                    data-user-full-name="@user.FullName"
-                                                    data-user-role="@user.Role"
-                                                    data-user-office-id="@(user.OfficeId?.ToString() ?? string.Empty)"
-                                                    data-user-permissions="@string.Join(',', user.EffectivePermissions)"
-                                                    data-user-has-permission-override="@user.HasPermissionOverride.ToString().ToLowerInvariant()"
-                                                    data-user-is-current="@user.IsCurrentUser.ToString().ToLowerInvariant()">
-                                                Редактировать
-                                            </button>
-                                            @if (!user.IsCurrentUser)
+                <div class="card-body settings-users-body" data-settings-users>
+                    <div class="settings-users-toolbar" role="search">
+                        <label class="settings-filter-field settings-filter-field--grow">
+                            <span class="settings-filter-label">Поиск</span>
+                            <input type="search"
+                                   class="settings-input"
+                                   data-settings-users-search
+                                   placeholder="ФИО или email"
+                                   autocomplete="off" />
+                        </label>
+                        <label class="settings-filter-field">
+                            <span class="settings-filter-label">Профиль</span>
+                            <select class="settings-select" data-settings-users-role>
+                                <option value="">Все профили</option>
+                                @foreach (var opt in Model.ProfileOptions)
+                                {
+                                    <option value="@opt.Value">@opt.Label</option>
+                                }
+                            </select>
+                        </label>
+                        <label class="settings-filter-field">
+                            <span class="settings-filter-label">Офис</span>
+                            <select class="settings-select" data-settings-users-office>
+                                <option value="">Все офисы</option>
+                                <option value="admins">Администраторы</option>
+                                @foreach (var opt in Model.OfficeOptions)
+                                {
+                                    <option value="@opt.Value">@opt.Label</option>
+                                }
+                                <option value="unassigned">Без офиса</option>
+                            </select>
+                        </label>
+                    </div>
+
+                    @if (userGroups.Count == 0)
+                    {
+                        <p class="settings-users-empty">Пользователей пока нет.</p>
+                    }
+                    else
+                    {
+                        <div class="settings-users-groups">
+                            @foreach (var group in userGroups)
+                            {
+                                <section class="settings-user-group"
+                                         data-settings-user-group
+                                         data-group-kind="@group.Kind"
+                                         data-group-office-id="@(group.OfficeId ?? string.Empty)">
+                                    <header class="settings-user-group__header">
+                                        <div class="settings-user-group__title-wrap">
+                                            <h3 class="settings-user-group__title">@group.Title</h3>
+                                            @if (!string.IsNullOrWhiteSpace(group.Subtitle))
                                             {
-                                                @if (user.IsLocked)
-                                                {
-                                                    <form asp-action="UnlockUser" method="post" class="settings-inline-form">
-                                                        @Html.AntiForgeryToken()
-                                                        <input type="hidden" name="userId" value="@user.Id" />
-                                                        <button type="submit" class="row-menu-item">Разблокировать</button>
-                                                    </form>
-                                                }
-                                                else
-                                                {
-                                                    <form asp-action="LockUser" method="post" class="settings-inline-form">
-                                                        @Html.AntiForgeryToken()
-                                                        <input type="hidden" name="userId" value="@user.Id" />
-                                                        <button type="submit" class="row-menu-item">Заблокировать</button>
-                                                    </form>
-                                                }
-                                                <form asp-action="RevokeUserSessions" method="post" class="settings-inline-form">
-                                                    @Html.AntiForgeryToken()
-                                                    <input type="hidden" name="userId" value="@user.Id" />
-                                                    <button type="submit" class="row-menu-item">Завершить сессии</button>
-                                                </form>
-                                                <form asp-action="DeleteUser" method="post" class="settings-inline-form">
-                                                    @Html.AntiForgeryToken()
-                                                    <input type="hidden" name="userId" value="@user.Id" />
-                                                    <button type="submit" class="row-menu-item row-menu-item--danger">
-                                                        Удалить
-                                                    </button>
-                                                </form>
+                                                <span class="settings-user-group__subtitle">@group.Subtitle</span>
                                             }
                                         </div>
+                                        <span class="settings-user-group__count" data-settings-user-group-count>@group.Users.Count</span>
+                                    </header>
+                                    <div class="settings-table-wrap">
+                                        <table class="data-table data-table--settings-users data-table--cards">
+                                            <thead>
+                                            <tr>
+                                                <th>ФИО</th>
+                                                <th>Email</th>
+                                                <th>Профиль</th>
+                                                <th>Офис</th>
+                                                <th>Bitrix24</th>
+                                                <th class="data-table-actions-col">Действия</th>
+                                            </tr>
+                                            </thead>
+                                            <tbody>
+                                            @foreach (var user in group.Users)
+                                            {
+                                                var searchText = $"{user.FullName} {user.Email}".Trim();
+                                                <tr data-settings-user-row
+                                                    data-user-role="@user.Role"
+                                                    data-user-office-id="@(user.OfficeId?.ToString("D") ?? string.Empty)"
+                                                    data-user-group-kind="@group.Kind"
+                                                    data-user-search="@searchText">
+                                                    <td data-label="ФИО">
+                                                        @(string.IsNullOrWhiteSpace(user.FullName) ? "—" : user.FullName)
+                                                    </td>
+                                                    <td class="cell-name" data-label="Email">
+                                                        <span class="settings-user-email">@user.Email</span>
+                                                        @if (user.IsCurrentUser)
+                                                        {
+                                                            <span class="settings-user-badge">Вы</span>
+                                                        }
+                                                        @if (user.IsLocked)
+                                                        {
+                                                            <span class="settings-user-badge settings-user-badge--locked">Заблокирован</span>
+                                                        }
+                                                    </td>
+                                                    <td data-label="Профиль">
+                                                        <span class="settings-role-pill">@user.RoleLabel</span>
+                                                        @if (user.HasPermissionOverride)
+                                                        {
+                                                            <span class="settings-user-badge">Индивидуальные права</span>
+                                                        }
+                                                    </td>
+                                                    <td data-label="Офис">
+                                                        @if (user.Role == PanelRoles.Admin)
+                                                        {
+                                                            <span class="settings-role-pill">Все офисы</span>
+                                                        }
+                                                        else
+                                                        {
+                                                            <span>@(user.OfficeName ?? "—")</span>
+                                                        }
+                                                    </td>
+                                                    <td data-label="Bitrix24">
+                                                        @if (user.OfficeId is Guid userOfficeId)
+                                                        {
+                                                            <a class="settings-bitrix-status settings-bitrix-status--@user.BitrixStatusTone"
+                                                               href="@Url.Action("Index", new { tab = "offices", officeId = userOfficeId })">
+                                                                @user.BitrixStatusLabel
+                                                            </a>
+                                                        }
+                                                        else
+                                                        {
+                                                            <span class="settings-bitrix-status settings-bitrix-status--@user.BitrixStatusTone">@user.BitrixStatusLabel</span>
+                                                        }
+                                                    </td>
+                                                    <td class="data-table-menu" data-label="">
+                                                        <div class="row-menu" data-row-menu>
+                                                            <button type="button" class="row-menu-btn" aria-label="Действия" aria-expanded="false" aria-haspopup="true">
+                                                                <i class="fa-solid fa-ellipsis-vertical" aria-hidden="true"></i>
+                                                            </button>
+                                                            <div class="row-menu-dropdown" hidden>
+                                                                <button type="button"
+                                                                        class="row-menu-item"
+                                                                        data-settings-edit-user
+                                                                        data-user-id="@user.Id"
+                                                                        data-user-email="@user.Email"
+                                                                        data-user-full-name="@user.FullName"
+                                                                        data-user-role="@user.Role"
+                                                                        data-user-office-id="@(user.OfficeId?.ToString() ?? string.Empty)"
+                                                                        data-user-permissions="@string.Join(',', user.EffectivePermissions)"
+                                                                        data-user-has-permission-override="@user.HasPermissionOverride.ToString().ToLowerInvariant()"
+                                                                        data-user-is-current="@user.IsCurrentUser.ToString().ToLowerInvariant()">
+                                                                    Редактировать
+                                                                </button>
+                                                                @if (!user.IsCurrentUser)
+                                                                {
+                                                                    @if (user.IsLocked)
+                                                                    {
+                                                                        <form asp-action="UnlockUser" method="post" class="settings-inline-form">
+                                                                            @Html.AntiForgeryToken()
+                                                                            <input type="hidden" name="userId" value="@user.Id" />
+                                                                            <button type="submit" class="row-menu-item">Разблокировать</button>
+                                                                        </form>
+                                                                    }
+                                                                    else
+                                                                    {
+                                                                        <form asp-action="LockUser" method="post" class="settings-inline-form">
+                                                                            @Html.AntiForgeryToken()
+                                                                            <input type="hidden" name="userId" value="@user.Id" />
+                                                                            <button type="submit" class="row-menu-item">Заблокировать</button>
+                                                                        </form>
+                                                                    }
+                                                                    <form asp-action="RevokeUserSessions" method="post" class="settings-inline-form">
+                                                                        @Html.AntiForgeryToken()
+                                                                        <input type="hidden" name="userId" value="@user.Id" />
+                                                                        <button type="submit" class="row-menu-item">Завершить сессии</button>
+                                                                    </form>
+                                                                    <form asp-action="DeleteUser" method="post" class="settings-inline-form">
+                                                                        @Html.AntiForgeryToken()
+                                                                        <input type="hidden" name="userId" value="@user.Id" />
+                                                                        <button type="submit" class="row-menu-item row-menu-item--danger">
+                                                                            Удалить
+                                                                        </button>
+                                                                    </form>
+                                                                }
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            }
+                                            </tbody>
+                                        </table>
                                     </div>
-                                </td>
-                            </tr>
-                        }
-                        </tbody>
-                    </table>
+                                </section>
+                            }
+                        </div>
+                        <p class="settings-users-empty" data-settings-users-empty hidden>Никого не найдено по выбранным условиям.</p>
+                    }
                 </div>
             </div>
 

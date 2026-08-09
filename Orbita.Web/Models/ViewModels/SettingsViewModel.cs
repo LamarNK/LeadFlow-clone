@@ -9,6 +9,7 @@ public sealed record SettingsIndexViewModel
     public required string ActiveTab { get; init; }
     public required IReadOnlyList<SettingsTabViewModel> Tabs { get; init; }
     public IReadOnlyList<PanelUserRowViewModel> Users { get; init; } = [];
+    public IReadOnlyList<PanelUserGroupViewModel> UserGroups { get; init; } = [];
     public IReadOnlyList<AccessProfileRowViewModel> Profiles { get; init; } = [];
     public IReadOnlyList<EventFilterOptionViewModel> ProfileOptions { get; init; } = [];
     public WorkersSettingsViewModel? Workers { get; init; }
@@ -44,6 +45,16 @@ public sealed class PanelUserRowViewModel
     public string BitrixStatusTone { get; init; } = "neutral";
     public Guid? OfficeId { get; init; }
     public string? OfficeName { get; init; }
+}
+
+public sealed class PanelUserGroupViewModel
+{
+    public required string Key { get; init; }
+    public required string Title { get; init; }
+    public string? Subtitle { get; init; }
+    public string Kind { get; init; } = "office";
+    public string? OfficeId { get; init; }
+    public IReadOnlyList<PanelUserRowViewModel> Users { get; init; } = [];
 }
 
 public sealed class OfficesSettingsViewModel
