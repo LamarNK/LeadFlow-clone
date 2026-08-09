@@ -282,6 +282,41 @@
     gap: 16px;
 }
 
+.settings-users-overview {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 6px;
+}
+
+.settings-users-overview__item {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 4px;
+    padding: 5px 8px;
+    border-radius: 7px;
+    background: rgba(37, 99, 235, .07);
+    color: #526178;
+    font-size: 11px;
+    line-height: 1.2;
+    white-space: nowrap;
+}
+
+.settings-users-overview__item strong {
+    color: #2563eb;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+}
+
+.settings-users-overview__item--warning {
+    background: rgba(239, 68, 68, .08);
+    color: #9f2d26;
+}
+
+.settings-users-overview__item--warning strong {
+    color: #d92d20;
+}
+
 .settings-users-toolbar {
     display: grid;
     grid-template-columns: minmax(180px, 1.4fr) minmax(140px, 0.7fr) minmax(160px, 0.8fr);
@@ -289,15 +324,35 @@
     align-items: end;
 }
 
+.settings-users-search-control {
+    position: relative;
+    display: block;
+}
+
+.settings-users-search-control > i {
+    position: absolute;
+    top: 50%;
+    left: 13px;
+    color: #98a2b3;
+    font-size: 13px;
+    pointer-events: none;
+    transform: translateY(-50%);
+}
+
+.settings-users-search-control .settings-input {
+    width: 100%;
+    padding-left: 36px;
+}
+
 .settings-users-groups {
     display: flex;
     flex-direction: column;
-    gap: 18px;
+    gap: 14px;
 }
 
 .settings-user-group {
     border: 1px solid var(--border);
-    border-radius: 14px;
+    border-radius: 12px;
     overflow: hidden;
     background: var(--surface, #fff);
 }
@@ -311,9 +366,38 @@
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    padding: 12px 16px;
+    padding: 11px 14px;
     border-bottom: 1px solid var(--border);
-    background: rgba(148, 163, 184, 0.08);
+    background: color-mix(in srgb, var(--surface, #fff) 92%, #edf3ff);
+}
+
+.settings-user-group__identity {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    min-width: 0;
+}
+
+.settings-user-group__icon {
+    display: grid;
+    width: 28px;
+    height: 28px;
+    flex: 0 0 auto;
+    place-items: center;
+    border-radius: 8px;
+    background: #eaf2ff;
+    color: #2563eb;
+    font-size: 12px;
+}
+
+.settings-user-group__icon--admins {
+    background: #ede9fe;
+    color: #6d28d9;
+}
+
+.settings-user-group__icon--unassigned {
+    background: #fff3df;
+    color: #b54708;
 }
 
 .settings-user-group__title-wrap {
@@ -339,11 +423,11 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 28px;
-    height: 28px;
+    min-width: 26px;
+    height: 26px;
     padding: 0 8px;
-    border-radius: 999px;
-    background: rgba(37, 99, 235, 0.12);
+    border-radius: 7px;
+    background: #eaf2ff;
     color: #2563eb;
     font-size: 13px;
     font-weight: 650;
@@ -354,7 +438,116 @@
 }
 
 .settings-user-group .data-table thead th {
+    padding-top: 9px;
+    padding-bottom: 9px;
     background: transparent;
+    color: #8a96a8;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .045em;
+    text-transform: uppercase;
+}
+
+.data-table--settings-users tbody tr {
+    transition: background .16s ease;
+}
+
+.data-table--settings-users tbody tr:hover {
+    background: rgba(37, 99, 235, .035);
+}
+
+.data-table--settings-users td {
+    padding-top: 11px;
+    padding-bottom: 11px;
+    vertical-align: middle;
+}
+
+.settings-user-person {
+    min-width: 210px;
+}
+
+.settings-user-person,
+.settings-user-person__content {
+    display: flex;
+    align-items: center;
+}
+
+.settings-user-avatar {
+    display: grid;
+    width: 34px;
+    height: 34px;
+    flex: 0 0 auto;
+    margin-right: 10px;
+    place-items: center;
+    border: 1px solid #e7edf6;
+    border-radius: 50%;
+    background: linear-gradient(145deg, #f4f7fb, #eaf0f8);
+    color: #526178;
+    font-size: 12px;
+    font-weight: 750;
+}
+
+.settings-user-person__content {
+    flex-wrap: wrap;
+    gap: 3px 6px;
+    min-width: 0;
+}
+
+.settings-user-person__name {
+    width: 100%;
+    overflow: hidden;
+    color: var(--text-primary);
+    font-size: 13px;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.settings-user-email {
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 500;
+    overflow-wrap: anywhere;
+}
+
+.settings-user-access {
+    min-width: 135px;
+}
+
+.settings-user-access__hint {
+    display: block;
+    margin-top: 4px;
+    color: var(--text-secondary);
+    font-size: 11px;
+    line-height: 1.2;
+}
+
+.settings-user-office {
+    min-width: 130px;
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.settings-user-office > span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.settings-user-office i {
+    color: #7e8da3;
+    font-size: 12px;
+}
+
+.data-table--settings-users .settings-bitrix-status {
+    display: inline-flex;
+    align-items: center;
+    min-height: 26px;
+    padding: 0 8px;
+    border-radius: 7px;
+    font-size: 11px;
+    font-weight: 650;
+    text-decoration: none;
 }
 
 .settings-users-empty {
@@ -366,7 +559,7 @@
 }
 
 .settings-user-email {
-    font-weight: 600;
+    font-weight: 500;
 }
 
 [data-theme="dark"] .settings-user-group {
@@ -377,13 +570,36 @@
     background: rgba(148, 163, 184, 0.08);
 }
 
+[data-theme="dark"] .settings-user-group__icon {
+    background: rgba(96, 165, 250, .16);
+    color: #93c5fd;
+}
+
+[data-theme="dark"] .settings-user-group__icon--admins {
+    background: rgba(167, 139, 250, .18);
+    color: #c4b5fd;
+}
+
+[data-theme="dark"] .settings-user-group__icon--unassigned {
+    background: rgba(245, 158, 11, .16);
+    color: #fcd34d;
+}
+
 [data-theme="dark"] .settings-user-group__count {
     background: rgba(96, 165, 250, 0.16);
     color: #93c5fd;
 }
 
 @media (max-width: 900px) {
+    .settings-users-overview {
+        justify-content: flex-start;
+    }
+
     .settings-users-toolbar {
+        grid-template-columns: 1fr;
+    }
+
+    .settings-grid--users {
         grid-template-columns: 1fr;
     }
 }
