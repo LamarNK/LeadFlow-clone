@@ -232,39 +232,23 @@
     else if (Model.ActiveTab == "users")
     {
         var userGroups = Model.UserGroups;
-        var lockedUsersCount = Model.Users.Count(user => user.IsLocked);
-        var customAccessUsersCount = Model.Users.Count(user => user.HasPermissionOverride);
         <div class="settings-grid settings-grid--users">
             <div class="card card--settings-users">
                 <div class="card-header settings-card-header">
                     <div>
                         <h2 class="settings-card-title">Пользователи панели</h2>
-                        <p class="settings-card-subtitle">Доступы сгруппированы по офисам и профилям</p>
-                    </div>
-                    <div class="settings-users-overview" aria-label="Сводка по пользователям">
-                        <span class="settings-users-overview__item"><strong>@Model.Users.Count</strong> всего</span>
-                        @if (lockedUsersCount > 0)
-                        {
-                            <span class="settings-users-overview__item settings-users-overview__item--warning"><strong>@lockedUsersCount</strong> заблокировано</span>
-                        }
-                        @if (customAccessUsersCount > 0)
-                        {
-                            <span class="settings-users-overview__item"><strong>@customAccessUsersCount</strong> с особыми правами</span>
-                        }
+                        <p class="settings-card-subtitle">Всего @Model.Users.Count · сгруппированы по офисам</p>
                     </div>
                 </div>
                 <div class="card-body settings-users-body" data-settings-users>
                     <div class="settings-users-toolbar" role="search">
                         <label class="settings-filter-field settings-filter-field--grow">
                             <span class="settings-filter-label">Поиск</span>
-                            <span class="settings-users-search-control">
-                                <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
-                                <input type="search"
-                                       class="settings-input"
-                                       data-settings-users-search
-                                       placeholder="ФИО или email"
-                                       autocomplete="off" />
-                            </span>
+                            <input type="search"
+                                   class="settings-input"
+                                   data-settings-users-search
+                                   placeholder="ФИО или email"
+                                   autocomplete="off" />
                         </label>
                         <label class="settings-filter-field">
                             <span class="settings-filter-label">Профиль</span>
@@ -299,26 +283,17 @@
                         <div class="settings-users-groups">
                             @foreach (var group in userGroups)
                             {
-                                var groupIcon = group.Kind switch
-                                {
-                                    "admins" => "fa-solid fa-shield-halved",
-                                    "unassigned" => "fa-solid fa-triangle-exclamation",
-                                    _ => "fa-regular fa-building"
-                                };
                                 <section class="settings-user-group"
                                          data-settings-user-group
                                          data-group-kind="@group.Kind"
                                          data-group-office-id="@(group.OfficeId ?? string.Empty)">
                                     <header class="settings-user-group__header">
-                                        <div class="settings-user-group__identity">
-                                            <span class="settings-user-group__icon settings-user-group__icon--@group.Kind"><i class="@groupIcon" aria-hidden="true"></i></span>
-                                            <div class="settings-user-group__title-wrap">
-                                                <h3 class="settings-user-group__title">@group.Title</h3>
-                                                @if (!string.IsNullOrWhiteSpace(group.Subtitle))
-                                                {
-                                                    <span class="settings-user-group__subtitle">@group.Subtitle</span>
-                                                }
-                                            </div>
+                                        <div class="settings-user-group__title-wrap">
+                                            <h3 class="settings-user-group__title">@group.Title</h3>
+                                            @if (!string.IsNullOrWhiteSpace(group.Subtitle))
+                                            {
+                                                <span class="settings-user-group__subtitle">@group.Subtitle</span>
+                                            }
                                         </div>
                                         <span class="settings-user-group__count" data-settings-user-group-count>@group.Users.Count</span>
                                     </header>
@@ -338,28 +313,25 @@
                                             {
                                                 var searchText = $"{user.FullName} {user.Email}".Trim();
                                                 var displayName = string.IsNullOrWhiteSpace(user.FullName) ? user.Email : user.FullName.Trim();
-                                                var nameParts = displayName.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-                                                var initials = nameParts.Length == 0
-                                                    ? "П"
-                                                    : string.Concat(nameParts.Take(2).Select(part => char.ToUpperInvariant(part[0])));
                                                 <tr data-settings-user-row
                                                     data-user-role="@user.Role"
                                                     data-user-office-id="@(user.OfficeId?.ToString("D") ?? string.Empty)"
                                                     data-user-group-kind="@group.Kind"
                                                     data-user-search="@searchText">
                                                     <td class="settings-user-person" data-label="Пользователь">
-                                                        <span class="settings-user-avatar" aria-hidden="true">@initials</span>
                                                         <span class="settings-user-person__content">
                                                             <strong class="settings-user-person__name">@displayName</strong>
                                                             <span class="settings-user-email">@user.Email</span>
-                                                            @if (user.IsCurrentUser)
-                                                            {
-                                                                <span class="settings-user-badge">Вы</span>
-                                                            }
-                                                            @if (user.IsLocked)
-                                                            {
-                                                                <span class="settings-user-badge settings-user-badge--locked">Заблокирован</span>
-                                                            }
+                                                            <span class="settings-user-person__badges">
+                                                                @if (user.IsCurrentUser)
+                                                                {
+                                                                    <span class="settings-user-badge">Вы</span>
+                                                                }
+                                                                @if (user.IsLocked)
+                                                                {
+                                                                    <span class="settings-user-badge settings-user-badge--locked">Заблокирован</span>
+                                                                }
+                                                            </span>
                                                         </span>
                                                     </td>
                                                     <td class="settings-user-access" data-label="Доступ">
@@ -376,11 +348,11 @@
                                                     <td class="settings-user-office" data-label="Офис">
                                                         @if (user.Role == PanelRoles.Admin)
                                                         {
-                                                            <span><i class="fa-solid fa-globe" aria-hidden="true"></i>Все офисы</span>
+                                                            <span>Все офисы</span>
                                                         }
                                                         else
                                                         {
-                                                            <span><i class="fa-regular fa-building" aria-hidden="true"></i>@(user.OfficeName ?? "Не назначен")</span>
+                                                            <span>@(user.OfficeName ?? "Не назначен")</span>
                                                         }
                                                     </td>
                                                     <td data-label="Bitrix24">
