@@ -21,11 +21,13 @@ public static class PanelPermissions
     public const string CrmBoard = "crm-board";
     public const string CrmTasks = "crm-tasks";
     public const string CrmAnalytics = "crm-analytics";
+    public const string CrmTeam = "crm-team";
     public const string Administration = "administration";
     public const string ConfigurationClaimType = "orbita.permission-configured";
     public const string UserPermissionOverrideClaimType = "orbita.user-permission-override";
     public const string PermissionUpgradeClaimType = "orbita.permission-upgrade";
     public const string CrmAnalyticsUpgrade = "crm-analytics-v1";
+    public const string CrmTeamUpgrade = "crm-team-v1";
 
     public static readonly IReadOnlyList<PanelPermissionDefinition> All =
     [
@@ -39,6 +41,7 @@ public static class PanelPermissions
         new(CrmBoard, "CRM: Воронка", "Рабочее место менеджера и карточки кандидатов."),
         new(CrmTasks, "CRM: Задачи", "Список, выполнение и планирование задач CRM."),
         new(CrmAnalytics, "CRM: Аналитика", "Воронка, результаты и нагрузка команды CRM."),
+        new(CrmTeam, "Команда CRM", "Нагрузка команды, очередь и настройки CRM офиса."),
         new(Administration, "Администрирование", "Пользователи, офисы, системные настройки и профили доступа.")
     ];
 
@@ -62,6 +65,19 @@ public static class PanelPermissions
         var current = permissions?.ToHashSet(StringComparer.Ordinal) ?? [];
         return !current.Contains(CrmAnalytics)
                && (current.Contains(CrmBoard) || current.Contains(Crm));
+    }
+
+    /// <summary>
+    /// Pre-permission gate was Administration + CRM board + CRM tasks.
+    /// Grant the explicit tab to users who already had that combination.
+    /// </summary>
+    public static bool NeedsCrmTeamUpgrade(IEnumerable<string>? permissions)
+    {
+        var current = permissions?.ToHashSet(StringComparer.Ordinal) ?? [];
+        return !current.Contains(CrmTeam)
+               && current.Contains(Administration)
+               && current.Contains(CrmBoard)
+               && current.Contains(CrmTasks);
     }
 
     public static IReadOnlyList<string> Normalize(IEnumerable<string>? permissions)

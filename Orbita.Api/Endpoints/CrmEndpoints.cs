@@ -28,7 +28,7 @@ public static class CrmEndpoints
         var crmBoard = app.MapGroup("/api/v1/crm").RequireAuthorization(PanelPermissions.CrmBoard);
         var crmTasks = app.MapGroup("/api/v1/crm").RequireAuthorization(PanelPermissions.CrmTasks);
         var crmAnalytics = app.MapGroup("/api/v1/crm").RequireAuthorization(PanelPermissions.CrmAnalytics);
-        var crmAdmin = app.MapGroup("/api/v1/crm").RequireAuthorization(PanelPermissions.Administration);
+        var crmAdmin = app.MapGroup("/api/v1/crm").RequireAuthorization(PanelPermissions.CrmTeam);
 
         crmBoard.MapGet("/board", async (
             CrmWorkspaceService workspace,
@@ -50,7 +50,9 @@ public static class CrmEndpoints
             var isAdmin = principal.IsInRole(PanelRoles.Admin);
             var isManager = principal.IsInRole(PanelRoles.Manager);
             var hasCrmBoardAccess = principal.HasClaim(PanelPermissions.ClaimType, PanelPermissions.CrmBoard)
-                || principal.HasClaim(PanelPermissions.ClaimType, PanelPermissions.Crm);
+                || principal.HasClaim(PanelPermissions.ClaimType, PanelPermissions.Crm)
+                || principal.HasClaim(PanelPermissions.ClaimType, PanelPermissions.CrmTeam);
+            var hasCrmTeamAccess = principal.HasClaim(PanelPermissions.ClaimType, PanelPermissions.CrmTeam);
             var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier)
                          ?? principal.FindFirstValue("sub");
             if (string.IsNullOrWhiteSpace(userId) || (!isAdmin && !isManager && !hasCrmBoardAccess))
@@ -71,7 +73,7 @@ public static class CrmEndpoints
             var board = await workspace.GetBoardAsync(
                 resolvedOfficeId,
                 userId,
-                isAdmin,
+                isAdmin || hasCrmTeamAccess,
                 new CrmBoardQuery(search, scopeFilter, city, vacancy, overdueOnly, activeLoadOnly, includeClosed),
                 ct);
             return board is null
@@ -138,7 +140,9 @@ public static class CrmEndpoints
             var isAdmin = principal.IsInRole(PanelRoles.Admin);
             var isManager = principal.IsInRole(PanelRoles.Manager);
             var hasCrmTasksAccess = principal.HasClaim(PanelPermissions.ClaimType, PanelPermissions.CrmTasks)
-                || principal.HasClaim(PanelPermissions.ClaimType, PanelPermissions.Crm);
+                || principal.HasClaim(PanelPermissions.ClaimType, PanelPermissions.Crm)
+                || principal.HasClaim(PanelPermissions.ClaimType, PanelPermissions.CrmTeam);
+            var hasCrmTeamAccess = principal.HasClaim(PanelPermissions.ClaimType, PanelPermissions.CrmTeam);
             var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier)
                          ?? principal.FindFirstValue("sub");
             if (string.IsNullOrWhiteSpace(userId) || (!isAdmin && !isManager && !hasCrmTasksAccess))
@@ -156,7 +160,7 @@ public static class CrmEndpoints
                 });
             }
 
-            return Results.Ok(await workspace.GetTasksAsync(resolvedOfficeId, userId, isAdmin, ct));
+            return Results.Ok(await workspace.GetTasksAsync(resolvedOfficeId, userId, isAdmin || hasCrmTeamAccess, ct));
         });
 
         crmTasks.MapGet("/tasks/managers", async (
@@ -532,12 +536,12 @@ public static class CrmEndpoints
         });
 
         crmAdmin.MapGet("/offices/{officeId:guid}/settings", async (Guid officeId, CrmWorkspaceService workspace, ClaimsPrincipal principal, CancellationToken ct) =>
-            principal.IsInRole(PanelRoles.Admin)
+            CanManageCrmTeam(principal)
                 ? Results.Ok(await workspace.GetOfficeSettingsAsync(officeId, ct))
                 : Results.Forbid());
 
         crmAdmin.MapPut("/offices/{officeId:guid}/settings", async (Guid officeId, CrmOfficeSettingsRequest request, CrmWorkspaceService workspace, ClaimsPrincipal principal, CancellationToken ct) =>
-            principal.IsInRole(PanelRoles.Admin)
+            CanManageCrmTeam(principal)
                 ? (await workspace.SetOfficeSettingsAsync(
                     officeId,
                     request.IsEnabled,
@@ -553,7 +557,7 @@ public static class CrmEndpoints
             ClaimsPrincipal principal,
             CancellationToken ct) =>
         {
-            if (!principal.IsInRole(PanelRoles.Admin))
+            if (!CanManageCrmTeam(principal))
             {
                 return Results.Forbid();
             }
@@ -570,7 +574,7 @@ public static class CrmEndpoints
 
         crmAdmin.MapPut("/managers/{managerUserId}/capacity", async (string managerUserId, Guid? officeId, CrmCapacityRequest request, CrmWorkspaceService workspace, OfficeScopeService officeScope, ClaimsPrincipal principal, CancellationToken ct) =>
         {
-            if (!principal.IsInRole(PanelRoles.Admin)) return Results.Forbid();
+            if (!CanManageCrmTeam(principal)) return Results.Forbid();
             var scope = await officeScope.ResolveAsync(principal, ct);
             var effectiveOfficeId = scope.ResolveFilter(officeId);
             if (effectiveOfficeId is not Guid resolvedOfficeId) return Results.BadRequest();
@@ -578,4 +582,8 @@ public static class CrmEndpoints
         });
 
     }
+
+    private static bool CanManageCrmTeam(ClaimsPrincipal principal) =>
+        principal.IsInRole(PanelRoles.Admin)
+        || principal.HasClaim(PanelPermissions.ClaimType, PanelPermissions.CrmTeam);
 }

@@ -37,7 +37,19 @@ public sealed class AccessProfileService(
                 claims = await roles.GetClaimsAsync(role);
             }
 
+            var upgraded = false;
             if (await UpgradeCrmAnalyticsAccessAsync(role, claims))
+            {
+                upgraded = true;
+                claims = await roles.GetClaimsAsync(role);
+            }
+
+            if (await UpgradeCrmTeamAccessAsync(role, claims))
+            {
+                upgraded = true;
+            }
+
+            if (upgraded)
             {
                 foreach (var user in await users.GetUsersInRoleAsync(profile.Role))
                 {
@@ -69,6 +81,30 @@ public sealed class AccessProfileService(
             role,
             new Claim(PanelPermissions.PermissionUpgradeClaimType, PanelPermissions.CrmAnalyticsUpgrade));
         return addAnalytics;
+    }
+
+    private async Task<bool> UpgradeCrmTeamAccessAsync(IdentityRole role, IEnumerable<Claim> claims)
+    {
+        if (claims.Any(claim => claim.Type == PanelPermissions.PermissionUpgradeClaimType
+                                && claim.Value == PanelPermissions.CrmTeamUpgrade))
+        {
+            return false;
+        }
+
+        var permissions = claims
+            .Where(claim => claim.Type == PanelPermissions.ClaimType)
+            .Select(claim => claim.Value)
+            .ToArray();
+        var addTeam = PanelPermissions.NeedsCrmTeamUpgrade(permissions);
+        if (addTeam)
+        {
+            await roles.AddClaimAsync(role, new Claim(PanelPermissions.ClaimType, PanelPermissions.CrmTeam));
+        }
+
+        await roles.AddClaimAsync(
+            role,
+            new Claim(PanelPermissions.PermissionUpgradeClaimType, PanelPermissions.CrmTeamUpgrade));
+        return addTeam;
     }
 
     public async Task<IReadOnlyList<AccessProfileDto>> GetAllAsync(CancellationToken ct = default)

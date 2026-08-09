@@ -121,7 +121,7 @@ else
             {
                 <a class="nav-item @(ctrl == "Crm" && act is "Tasks" or "TaskDetails" ? "active" : "")" href="@Url.Action("Tasks", "Crm")" title="Мои задачи"><i class="fa-solid fa-list-check" aria-hidden="true"></i><span class="nav-item-label">Задачи</span><span class="nav-badge" data-nav-badge="crm-tasks" hidden></span></a>
             }
-            @if (can(PanelPermissions.CrmBoard) && can(PanelPermissions.CrmTasks) && can(PanelPermissions.Administration))
+            @if (can(PanelPermissions.CrmTeam))
             {
                 <a class="nav-item @(ctrl == "Crm" && act == "Team" ? "active" : "")" href="@Url.Action("Team", "Crm")" title="Команда CRM"><i class="fa-solid fa-people-group" aria-hidden="true"></i><span class="nav-item-label">Команда CRM</span></a>
             }

@@ -262,9 +262,7 @@ public sealed class CrmController(
     }
 
     [HttpGet]
-    [Authorize(Policy = PanelPermissions.CrmBoard)]
-    [Authorize(Policy = PanelPermissions.CrmTasks)]
-    [Authorize(Policy = PanelPermissions.Administration)]
+    [Authorize(Policy = PanelPermissions.CrmTeam)]
     public async Task<IActionResult> Team(string? taskScope, CancellationToken ct = default)
     {
         var officeId = ResolveOfficeId(null);
@@ -519,9 +517,8 @@ public sealed class CrmController(
     }
 
     [HttpPost]
-    [Authorize(Policy = PanelPermissions.CrmBoard)]
+    [Authorize(Policy = PanelPermissions.CrmTeam)]
     [ValidateAntiForgeryToken]
-    [Authorize(Policy = PanelPermissions.Administration)]
     public async Task<IActionResult> SaveOfficeSettings(
         Guid officeId,
         bool isEnabled,
@@ -541,9 +538,8 @@ public sealed class CrmController(
     }
 
     [HttpPost]
-    [Authorize(Policy = PanelPermissions.CrmBoard)]
+    [Authorize(Policy = PanelPermissions.CrmTeam)]
     [ValidateAntiForgeryToken]
-    [Authorize(Policy = PanelPermissions.Administration)]
     public async Task<IActionResult> SaveOfficeFunnel(Guid officeId, string? stagesText, bool resetDefault = false, CancellationToken ct = default)
     {
         IReadOnlyList<string> stages = resetDefault
@@ -558,9 +554,8 @@ public sealed class CrmController(
     }
 
     [HttpPost]
-    [Authorize(Policy = PanelPermissions.CrmBoard)]
+    [Authorize(Policy = PanelPermissions.CrmTeam)]
     [ValidateAntiForgeryToken]
-    [Authorize(Policy = PanelPermissions.Administration)]
     public async Task<IActionResult> SaveCapacity(string managerUserId, int capacity, CancellationToken ct = default)
     {
         var (_, error) = await api.SetCrmManagerCapacityAsync(managerUserId, capacity, ct: ct);

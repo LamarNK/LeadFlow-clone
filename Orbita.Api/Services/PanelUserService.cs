@@ -463,6 +463,18 @@ public sealed class PanelUserService(
                     return (null, string.Join("; ", upgradeMarkerResult.Errors.Select(error => error.Description)));
                 }
             }
+
+            if (!currentClaims.Any(claim => claim.Type == PanelPermissions.PermissionUpgradeClaimType
+                                            && claim.Value == PanelPermissions.CrmTeamUpgrade))
+            {
+                var teamUpgradeMarkerResult = await users.AddClaimAsync(
+                    user,
+                    new Claim(PanelPermissions.PermissionUpgradeClaimType, PanelPermissions.CrmTeamUpgrade));
+                if (!teamUpgradeMarkerResult.Succeeded)
+                {
+                    return (null, string.Join("; ", teamUpgradeMarkerResult.Errors.Select(error => error.Description)));
+                }
+            }
         }
 
         await users.UpdateSecurityStampAsync(user);
@@ -506,6 +518,24 @@ public sealed class PanelUserService(
             await users.AddClaimAsync(
                 user,
                 new Claim(PanelPermissions.PermissionUpgradeClaimType, PanelPermissions.CrmAnalyticsUpgrade));
+            claims = await users.GetClaimsAsync(user);
+        }
+
+        if (!claims.Any(claim => claim.Type == PanelPermissions.PermissionUpgradeClaimType
+                                 && claim.Value == PanelPermissions.CrmTeamUpgrade))
+        {
+            var permissions = claims
+                .Where(claim => claim.Type == PanelPermissions.ClaimType)
+                .Select(claim => claim.Value)
+                .ToArray();
+            if (PanelPermissions.NeedsCrmTeamUpgrade(permissions))
+            {
+                await users.AddClaimAsync(user, new Claim(PanelPermissions.ClaimType, PanelPermissions.CrmTeam));
+            }
+
+            await users.AddClaimAsync(
+                user,
+                new Claim(PanelPermissions.PermissionUpgradeClaimType, PanelPermissions.CrmTeamUpgrade));
             claims = await users.GetClaimsAsync(user);
         }
 
