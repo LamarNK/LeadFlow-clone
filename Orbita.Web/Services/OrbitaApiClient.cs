@@ -376,6 +376,20 @@ public sealed class OrbitaApiClient(
         return result is null ? (null, "Не удалось прочитать ответ API.") : (result, null);
     }
 
+    public async Task<(bool Success, string? Error)> DeleteOfficeAsync(Guid id, CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Delete, $"api/v1/admin/offices/{id}");
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (false, InvalidApiSessionError);
+        }
+
+        return response.IsSuccessStatusCode
+            ? (true, null)
+            : (false, await ReadApiErrorAsync(response, ct));
+    }
+
     public async Task<(bool Success, string? Error)> CreatePanelUserAsync(
         string email,
         string fullName,

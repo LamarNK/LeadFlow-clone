@@ -494,6 +494,35 @@ public static class AdminEndpoints
             return Results.Ok(result);
         });
 
+        admin.MapDelete("/offices/{id:guid}", async (
+            Guid id,
+            OfficeAdminService offices,
+            PanelAuditService audit,
+            ClaimsPrincipal principal,
+            HttpContext http,
+            CancellationToken ct) =>
+        {
+            var (success, error, officeName) = await offices.DeleteAsync(id, ct);
+            if (!success)
+            {
+                return error is not null && error.Contains("не найден", StringComparison.OrdinalIgnoreCase)
+                    ? Results.NotFound(new { error })
+                    : Results.BadRequest(new { error });
+            }
+
+            await audit.LogAsync(
+                principal.FindFirstValue(ClaimTypes.NameIdentifier),
+                principal.FindFirstValue(ClaimTypes.Email),
+                PanelAuditOfficeActions.OfficeDeleted,
+                "office",
+                id.ToString(),
+                officeName,
+                http.Connection.RemoteIpAddress?.ToString(),
+                ct);
+
+            return Results.Ok(new { id, name = officeName });
+        });
+
         admin.MapGet("/offices/{id:guid}/registration", async (Guid id, OfficeAdminService offices, CancellationToken ct) =>
         {
             var info = await offices.GetRegistrationInfoAsync(id, ct);

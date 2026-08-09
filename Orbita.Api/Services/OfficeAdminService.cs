@@ -145,6 +145,167 @@ public sealed class OfficeAdminService(OrbitaDbContext db)
         return (new RotateOfficeRegistrationSecretResponse(office.Id, secret), null);
     }
 
+    /// <summary>
+    /// Deletes an office. Blocked when it is the last office or still has workers.
+    /// Operators are unlinked; office-owned CRM/Bitrix data is cleaned up first
+    /// because several FKs use Restrict rather than cascade.
+    /// </summary>
+    public async Task<(bool Success, string? Error, string? OfficeName)> DeleteAsync(
+        Guid id,
+        CancellationToken ct = default)
+    {
+        var office = await db.Offices.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (office is null)
+        {
+            return (false, "Офис не найден.", null);
+        }
+
+        if (await db.Offices.CountAsync(ct) <= 1)
+        {
+            return (false, "Нельзя удалить последний офис.", null);
+        }
+
+        var workerCount = await db.Workers.CountAsync(x => x.OfficeId == id, ct);
+        if (workerCount > 0)
+        {
+            return (
+                false,
+                $"Нельзя удалить офис: к нему привязано воркеров — {workerCount}. Сначала удалите или перенесите воркеры.",
+                null);
+        }
+
+        var profiles = await db.PanelUserProfiles.Where(x => x.OfficeId == id).ToListAsync(ct);
+        foreach (var profile in profiles)
+        {
+            profile.OfficeId = null;
+        }
+
+        await CleanupOfficeOwnedDataAsync(id, ct);
+
+        db.Offices.Remove(office);
+        await db.SaveChangesAsync(ct);
+        return (true, null, office.Name);
+    }
+
+    private async Task CleanupOfficeOwnedDataAsync(Guid officeId, CancellationToken ct)
+    {
+        // Prefer tracked RemoveRange over ExecuteDelete so unit tests (InMemory) work
+        // and Restrict FKs are cleared before Office removal.
+
+        var crmDeliveries = await db.ResponseCrmDeliveries
+            .Where(x => x.OfficeId == officeId)
+            .ToListAsync(ct);
+        db.ResponseCrmDeliveries.RemoveRange(crmDeliveries);
+
+        var bitrixIds = await db.BitrixInstances
+            .Where(x => x.OfficeId == officeId)
+            .Select(x => x.Id)
+            .ToListAsync(ct);
+
+        if (bitrixIds.Count > 0)
+        {
+            var bitrixDeliveries = await db.ResponseBitrixDeliveries
+                .Where(x => bitrixIds.Contains(x.BitrixInstanceId))
+                .ToListAsync(ct);
+            db.ResponseBitrixDeliveries.RemoveRange(bitrixDeliveries);
+
+            var workforceAssignments = await db.BitrixWorkforceAssignments
+                .Where(x => bitrixIds.Contains(x.BitrixInstanceId))
+                .ToListAsync(ct);
+            db.BitrixWorkforceAssignments.RemoveRange(workforceAssignments);
+        }
+
+        // Distribution nodes Restrict→BitrixInstance: drop routes (and nodes) before Bitrix cascade.
+        var routes = await db.DistributionRoutes
+            .Where(x => x.OfficeId == officeId)
+            .ToListAsync(ct);
+        if (routes.Count > 0)
+        {
+            var routeIds = routes.Select(x => x.Id).ToList();
+            var roundRobin = await db.DistributionRoundRobinStates
+                .Where(x => routeIds.Contains(x.RouteId))
+                .ToListAsync(ct);
+            db.DistributionRoundRobinStates.RemoveRange(roundRobin);
+
+            var nodes = await db.DistributionNodes
+                .Where(x => routeIds.Contains(x.RouteId))
+                .ToListAsync(ct);
+            // Children first (self-FK ParentNodeId).
+            db.DistributionNodes.RemoveRange(nodes.Where(x => x.ParentNodeId != null));
+            db.DistributionNodes.RemoveRange(nodes.Where(x => x.ParentNodeId is null));
+            db.DistributionRoutes.RemoveRange(routes);
+        }
+
+        // CRM cards/tasks have OfficeId without cascade FKs — remove explicitly.
+        var cards = await db.CrmCandidateCards
+            .Where(x => x.OfficeId == officeId)
+            .ToListAsync(ct);
+        var cardIds = cards.Select(x => x.Id).ToList();
+
+        if (cardIds.Count > 0)
+        {
+            var notes = await db.CrmCandidateNotes
+                .Where(x => cardIds.Contains(x.CardId))
+                .ToListAsync(ct);
+            db.CrmCandidateNotes.RemoveRange(notes);
+
+            var history = await db.CrmCandidateHistory
+                .Where(x => cardIds.Contains(x.CardId))
+                .ToListAsync(ct);
+            db.CrmCandidateHistory.RemoveRange(history);
+        }
+
+        var tasks = await db.CrmTasks
+            .Where(x => x.OfficeId == officeId
+                || (x.CardId != null && cardIds.Contains(x.CardId.Value)))
+            .ToListAsync(ct);
+        var taskIds = tasks.Select(x => x.Id).ToList();
+
+        var notifications = await db.CrmTaskNotifications
+            .Where(x => x.OfficeId == officeId || taskIds.Contains(x.TaskId))
+            .ToListAsync(ct);
+        db.CrmTaskNotifications.RemoveRange(notifications);
+
+        if (taskIds.Count > 0)
+        {
+            var comments = await db.CrmTaskComments
+                .Where(x => taskIds.Contains(x.TaskId))
+                .ToListAsync(ct);
+            db.CrmTaskComments.RemoveRange(comments);
+
+            var attachments = await db.CrmTaskAttachments
+                .Where(x => taskIds.Contains(x.TaskId))
+                .ToListAsync(ct);
+            db.CrmTaskAttachments.RemoveRange(attachments);
+
+            db.CrmTasks.RemoveRange(tasks);
+        }
+
+        if (cards.Count > 0)
+        {
+            db.CrmCandidateCards.RemoveRange(cards);
+        }
+
+        var shifts = await db.CrmManagerShifts
+            .Where(x => x.OfficeId == officeId)
+            .ToListAsync(ct);
+        db.CrmManagerShifts.RemoveRange(shifts);
+
+        var captchas = await db.CaptchaSessions
+            .Where(x => x.OfficeId == officeId)
+            .ToListAsync(ct);
+        db.CaptchaSessions.RemoveRange(captchas);
+
+        if (bitrixIds.Count > 0)
+        {
+            // Remove Bitrix rows here so Restrict paths are already clear before Office delete.
+            var bitrixInstances = await db.BitrixInstances
+                .Where(x => bitrixIds.Contains(x.Id))
+                .ToListAsync(ct);
+            db.BitrixInstances.RemoveRange(bitrixInstances);
+        }
+    }
+
     public async Task<OfficeRegistrationInfoDto?> GetRegistrationInfoAsync(Guid id, CancellationToken ct = default)
     {
         var office = await db.Offices.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);

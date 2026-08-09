@@ -88,6 +88,8 @@ public interface ISettingsService
         Guid officeId,
         CancellationToken ct = default);
 
+    Task<(bool Success, string? Error)> DeleteOfficeAsync(Guid officeId, CancellationToken ct = default);
+
     Task<(bool Success, string? Error)> DeleteUserAsync(string userId, CancellationToken ct = default);
 
     Task<(bool Success, string? Error)> ResetUserPasswordAsync(string userId, string password, CancellationToken ct = default);

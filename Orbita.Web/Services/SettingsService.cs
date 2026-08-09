@@ -378,6 +378,11 @@ public sealed class SettingsService(
         return result is null ? (false, error, null) : (true, null, result.RegistrationSecret);
     }
 
+    public Task<(bool Success, string? Error)> DeleteOfficeAsync(Guid officeId, CancellationToken ct = default) =>
+        previewOptions.Value.Enabled
+            ? Task.FromResult<(bool, string?)>((true, null))
+            : api.DeleteOfficeAsync(officeId, ct);
+
     public Task<(bool Success, string? Error)> DeleteUserAsync(string userId, CancellationToken ct = default) =>
         previewOptions.Value.Enabled
             ? Task.FromResult<(bool, string?)>((true, null))

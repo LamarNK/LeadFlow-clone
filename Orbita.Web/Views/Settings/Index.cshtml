@@ -182,6 +182,27 @@
                                 </form>
                             </div>
                         </section>
+
+                        <section class="settings-office-section settings-office-section--danger">
+                            <div class="settings-office-section-head">
+                                <div>
+                                    <h3 class="settings-office-section-title">Удаление офиса</h3>
+                                    <p class="settings-office-section-hint">
+                                        Удаляет офис и связанные настройки (Bitrix, схема распределения, CRM-карточки).
+                                        Операторы отвязываются от офиса. Удаление недоступно, если есть привязанные воркеры или это последний офис.
+                                    </p>
+                                </div>
+                            </div>
+                            <form asp-action="DeleteOffice"
+                                  method="post"
+                                  class="settings-office-delete-form"
+                                  data-confirm-message="Удалить офис «@selected.Name»? Это действие нельзя отменить."
+                                  onsubmit="return confirm(this.getAttribute('data-confirm-message'));">
+                                @Html.AntiForgeryToken()
+                                <input type="hidden" name="officeId" value="@selected.Id" />
+                                <button type="submit" class="settings-danger-btn">Удалить офис</button>
+                            </form>
+                        </section>
                     </div>
                 </div>
             }

@@ -227,6 +227,19 @@ public sealed class SettingsController(
 
     [HttpPost]
     [ValidateAntiForgeryToken]
+    public async Task<IActionResult> DeleteOffice(Guid officeId, CancellationToken ct = default)
+    {
+        var (success, error) = await settings.DeleteOfficeAsync(officeId, ct);
+        TempData[success ? "SettingsStatus" : "SettingsError"] = success
+            ? "Офис удалён."
+            : error;
+        return success
+            ? RedirectToAction(nameof(Index), new { tab = "offices" })
+            : RedirectToAction(nameof(Index), new { tab = "offices", officeId });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> UpdateUserRole(UpdatePanelUserRoleFormModel model, CancellationToken ct = default)
     {
         var (success, error) = await settings.UpdateUserRoleAsync(model.UserId, model.Role, ct);

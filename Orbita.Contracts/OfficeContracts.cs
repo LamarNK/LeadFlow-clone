@@ -80,6 +80,7 @@ public static class PanelAuditOfficeActions
 {
     public const string OfficeCreated = "office.created";
     public const string OfficeUpdated = "office.updated";
+    public const string OfficeDeleted = "office.deleted";
     public const string OfficeRegistrationRotated = "office.registration_rotated";
     public const string UserOfficeUpdated = "user.office_updated";
     public const string BitrixTransmissionUpdated = "office.bitrix_transmission_updated";

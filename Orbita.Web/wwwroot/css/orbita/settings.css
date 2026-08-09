@@ -164,9 +164,37 @@
 }
 
 .settings-office-section--bitrix,
-.settings-office-section--secret {
+.settings-office-section--secret,
+.settings-office-section--danger {
     padding-top: 20px;
     border-top: 1px solid var(--border);
+}
+
+.settings-office-delete-form {
+    margin: 0;
+}
+
+.settings-danger-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    height: 44px;
+    padding: 0 16px;
+    border-radius: 10px;
+    border: 1px solid #fecdca;
+    background: #fff5f5;
+    color: #b42318;
+    font-size: 14px;
+    font-weight: 500;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.settings-danger-btn:hover {
+    background: #fee4e2;
+    border-color: #f97066;
 }
 
 .settings-options--bitrix-transmission {
