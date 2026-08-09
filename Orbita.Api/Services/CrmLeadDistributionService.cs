@@ -162,10 +162,17 @@ public sealed class CrmLeadDistributionService(
         Guid officeId,
         CancellationToken ct)
     {
-        var managerUsers = await users.GetUsersInRoleAsync(PanelRoles.Manager);
-        var ids = managerUsers.Select(x => x.Id).ToHashSet(StringComparer.Ordinal);
+        var deskUserIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var role in PanelRoles.CrmDeskRoles)
+        {
+            foreach (var user in await users.GetUsersInRoleAsync(role))
+            {
+                deskUserIds.Add(user.Id);
+            }
+        }
+
         var profiles = await db.PanelUserProfiles
-            .Where(x => x.OfficeId == officeId && ids.Contains(x.UserId))
+            .Where(x => x.OfficeId == officeId && deskUserIds.Contains(x.UserId))
             .ToListAsync(ct);
         var loads = await GetActiveLoadsAsync(officeId, ct);
 

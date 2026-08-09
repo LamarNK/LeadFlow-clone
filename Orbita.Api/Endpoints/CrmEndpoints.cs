@@ -48,7 +48,7 @@ public static class CrmEndpoints
             var scope = await officeScope.ResolveAsync(principal, ct);
             var effectiveOfficeId = scope.ResolveFilter(officeId);
             var isAdmin = PanelRoles.HasElevatedOfficeAccess(principal);
-            var isManager = principal.IsInRole(PanelRoles.Manager);
+            var isManager = PanelRoles.IsCrmDeskRole(principal);
             var hasCrmBoardAccess = principal.HasClaim(PanelPermissions.ClaimType, PanelPermissions.CrmBoard)
                 || principal.HasClaim(PanelPermissions.ClaimType, PanelPermissions.Crm)
                 || principal.HasClaim(PanelPermissions.ClaimType, PanelPermissions.CrmTeam);
@@ -92,7 +92,7 @@ public static class CrmEndpoints
             CancellationToken ct) =>
         {
             var isAdmin = PanelRoles.HasElevatedOfficeAccess(principal);
-            var isManager = principal.IsInRole(PanelRoles.Manager);
+            var isManager = PanelRoles.IsCrmDeskRole(principal);
             var hasCrmAnalyticsAccess = principal.HasClaim(PanelPermissions.ClaimType, PanelPermissions.CrmAnalytics)
                 || principal.HasClaim(PanelPermissions.ClaimType, PanelPermissions.Crm);
             var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier)
@@ -138,7 +138,7 @@ public static class CrmEndpoints
             var scope = await officeScope.ResolveAsync(principal, ct);
             var effectiveOfficeId = scope.ResolveFilter(officeId);
             var isAdmin = PanelRoles.HasElevatedOfficeAccess(principal);
-            var isManager = principal.IsInRole(PanelRoles.Manager);
+            var isManager = PanelRoles.IsCrmDeskRole(principal);
             var hasCrmTasksAccess = principal.HasClaim(PanelPermissions.ClaimType, PanelPermissions.CrmTasks)
                 || principal.HasClaim(PanelPermissions.ClaimType, PanelPermissions.Crm)
                 || principal.HasClaim(PanelPermissions.ClaimType, PanelPermissions.CrmTeam);
@@ -173,7 +173,7 @@ public static class CrmEndpoints
             var scope = await officeScope.ResolveAsync(principal, ct);
             var effectiveOfficeId = scope.ResolveFilter(officeId);
             var isAdmin = PanelRoles.HasElevatedOfficeAccess(principal);
-            var isManager = principal.IsInRole(PanelRoles.Manager);
+            var isManager = PanelRoles.IsCrmDeskRole(principal);
             var hasCrmTasksAccess = principal.HasClaim(PanelPermissions.ClaimType, PanelPermissions.CrmTasks)
                 || principal.HasClaim(PanelPermissions.ClaimType, PanelPermissions.Crm);
             var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier)
@@ -213,7 +213,7 @@ public static class CrmEndpoints
             var scope = await officeScope.ResolveAsync(principal, ct);
             var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
             if (scope.OfficeId is not Guid officeId || string.IsNullOrWhiteSpace(userId)
-                || (!principal.IsInRole(PanelRoles.Manager)
+                || (!PanelRoles.IsCrmDeskRole(principal)
                     && !PanelRoles.HasElevatedOfficeAccess(principal)
                     && !principal.HasClaim(PanelPermissions.ClaimType, PanelPermissions.CrmBoard)
                     && !principal.HasClaim(PanelPermissions.ClaimType, PanelPermissions.Crm)))
@@ -233,7 +233,7 @@ public static class CrmEndpoints
             var scope = await officeScope.ResolveAsync(principal, ct);
             var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
             if (scope.OfficeId is not Guid officeId || string.IsNullOrWhiteSpace(userId)
-                || (!principal.IsInRole(PanelRoles.Manager)
+                || (!PanelRoles.IsCrmDeskRole(principal)
                     && !PanelRoles.HasElevatedOfficeAccess(principal)
                     && !principal.HasClaim(PanelPermissions.ClaimType, PanelPermissions.CrmBoard)
                     && !principal.HasClaim(PanelPermissions.ClaimType, PanelPermissions.Crm)))
@@ -324,7 +324,7 @@ public static class CrmEndpoints
                 || principal.HasClaim(PanelPermissions.ClaimType, PanelPermissions.Crm);
             if (effectiveOfficeId is not Guid resolvedOfficeId
                 || string.IsNullOrWhiteSpace(userId)
-                || (!isAdmin && !principal.IsInRole(PanelRoles.Manager) && !hasCrmTasksAccess)) return Results.Forbid();
+                || (!isAdmin && !PanelRoles.IsCrmDeskRole(principal) && !hasCrmTasksAccess)) return Results.Forbid();
             var task = await workspace.CreateTaskAsync(resolvedOfficeId, request, userId, isAdmin, ct);
             return task is null ? Results.BadRequest() : Results.Created($"/api/v1/crm/tasks/{task.Id}", task);
         });

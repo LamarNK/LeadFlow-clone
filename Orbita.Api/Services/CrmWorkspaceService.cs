@@ -1437,9 +1437,9 @@ public sealed class CrmWorkspaceService(
         bool allowAdmin = true)
     {
         var user = await users.FindByIdAsync(userId);
-        if (user is null || !await users.IsInRoleAsync(user, PanelRoles.Manager))
+        if (user is null || !await IsCrmDeskUserAsync(user))
         {
-            // Admin may set capacity / assign without manager role on some setups — still require profile.
+            // Admin may set capacity / assign without desk role on some setups — still require profile.
             if (!allowAdmin || user is null || !await users.IsInRoleAsync(user, PanelRoles.Admin))
             {
                 return null;
@@ -1447,6 +1447,19 @@ public sealed class CrmWorkspaceService(
         }
 
         return await db.PanelUserProfiles.FirstOrDefaultAsync(x => x.OfficeId == officeId && x.UserId == userId, ct);
+    }
+
+    private async Task<bool> IsCrmDeskUserAsync(IdentityUser user)
+    {
+        foreach (var role in PanelRoles.CrmDeskRoles)
+        {
+            if (await users.IsInRoleAsync(user, role))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static bool IsOnShift(PanelUserProfileEntity profile, DateTime utcNow) =>
@@ -1573,15 +1586,30 @@ public sealed class CrmWorkspaceService(
 
     private async Task<List<(PanelUserProfileEntity Profile, string Name)>> GetManagersAsync(Guid officeId, CancellationToken ct)
     {
-        var managerUsers = await users.GetUsersInRoleAsync(PanelRoles.Manager);
-        var ids = managerUsers.Select(x => x.Id).ToHashSet(StringComparer.Ordinal);
+        var deskUsers = await LoadCrmDeskUsersAsync(ct);
+        var ids = deskUsers.Select(x => x.Id).ToHashSet(StringComparer.Ordinal);
         var profiles = await db.PanelUserProfiles.Where(x => x.OfficeId == officeId && ids.Contains(x.UserId)).ToListAsync(ct);
-        var names = managerUsers.ToDictionary(x => x.Id, x => DisplayName(x), StringComparer.Ordinal);
+        var names = deskUsers.ToDictionary(x => x.Id, x => DisplayName(x), StringComparer.Ordinal);
         return profiles.Select(x => (
             x,
             string.IsNullOrWhiteSpace(x.FullName)
                 ? names.GetValueOrDefault(x.UserId, x.UserId)
                 : x.FullName)).ToList();
+    }
+
+    private async Task<List<IdentityUser>> LoadCrmDeskUsersAsync(CancellationToken ct)
+    {
+        _ = ct;
+        var byId = new Dictionary<string, IdentityUser>(StringComparer.Ordinal);
+        foreach (var role in PanelRoles.CrmDeskRoles)
+        {
+            foreach (var user in await users.GetUsersInRoleAsync(role))
+            {
+                byId[user.Id] = user;
+            }
+        }
+
+        return byId.Values.ToList();
     }
 
     private async Task<string> ResolveDisplayNameAsync(string userId, CancellationToken ct)

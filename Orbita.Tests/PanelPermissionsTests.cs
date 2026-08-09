@@ -87,17 +87,19 @@ public sealed class PanelPermissionsTests
     }
 
     [Theory]
-    [InlineData(PanelRoles.Admin, true, true)]
-    [InlineData(PanelRoles.OfficeLead, false, true)]
-    [InlineData(PanelRoles.Manager, false, false)]
-    [InlineData(PanelRoles.Operator, false, false)]
-    public void RoleHelpers_DistinguishGlobalAdminAndElevatedOfficeAccess(
+    [InlineData(PanelRoles.Admin, true, true, false)]
+    [InlineData(PanelRoles.OfficeLead, false, true, true)]
+    [InlineData(PanelRoles.Manager, false, false, true)]
+    [InlineData(PanelRoles.Operator, false, false, false)]
+    public void RoleHelpers_DistinguishGlobalAdminElevatedAndDeskAccess(
         string role,
         bool isGlobalAdmin,
-        bool hasElevatedOfficeAccess)
+        bool hasElevatedOfficeAccess,
+        bool isCrmDeskRole)
     {
         Assert.Equal(isGlobalAdmin, PanelRoles.IsGlobalAdmin(role));
         Assert.Equal(hasElevatedOfficeAccess, PanelRoles.HasElevatedOfficeAccess(role));
+        Assert.Equal(isCrmDeskRole, PanelRoles.IsCrmDeskRole(role));
         Assert.Equal(!isGlobalAdmin, PanelRoles.RequiresOfficeAssignment(role));
     }
 

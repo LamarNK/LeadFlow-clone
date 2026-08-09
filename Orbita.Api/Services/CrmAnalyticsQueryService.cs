@@ -236,9 +236,12 @@ public sealed class CrmAnalyticsQueryService(
             return new ManagerProfilesResult([], [], "Профиль менеджера не найден в назначенном офисе.");
         }
 
+        var deskRoleNames = PanelRoles.CrmDeskRoles
+            .Select(role => role.ToUpperInvariant())
+            .ToArray();
         var managerRoleIds = db.Roles
             .AsNoTracking()
-            .Where(x => x.NormalizedName == PanelRoles.Manager.ToUpperInvariant())
+            .Where(x => x.NormalizedName != null && deskRoleNames.Contains(x.NormalizedName))
             .Select(x => x.Id);
         var currentManagerUserIds = (await db.UserRoles
                 .AsNoTracking()

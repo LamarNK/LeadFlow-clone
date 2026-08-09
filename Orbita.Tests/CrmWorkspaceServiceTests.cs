@@ -64,6 +64,30 @@ public sealed class CrmWorkspaceServiceTests
     }
 
     [Fact]
+    public async Task StartShift_OfficeLead_CanStartShiftAndReceiveQueueCards()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var lead = await harness.CreateDeskUserAsync(
+            "office-lead@test.local",
+            capacity: 2,
+            onShift: false,
+            PanelRoles.OfficeLead);
+        var r1 = await SeedResponseAsync(harness.Db, "lead-src-1");
+        var r2 = await SeedResponseAsync(harness.Db, "lead-src-2");
+        harness.Db.CrmCandidateCards.AddRange(NewCard(r1.Id), NewCard(r2.Id));
+        await harness.Db.SaveChangesAsync();
+
+        var ok = await harness.Sut.StartShiftAsync(OfficeId, lead.Id);
+        Assert.True(ok);
+
+        Assert.Equal(2, await harness.Db.CrmCandidateCards.CountAsync(x => x.ManagerUserId == lead.Id));
+        var profile = await harness.Db.PanelUserProfiles.SingleAsync(x => x.UserId == lead.Id);
+        Assert.True(profile.CrmShiftActive);
+        Assert.Single(await harness.Db.CrmManagerShifts.Where(x => x.ManagerUserId == lead.Id).ToListAsync());
+    }
+
+    [Fact]
     public async Task StartShift_FillsFreeSlotsFromUnassignedQueue()
     {
         await using var harness = await Harness.CreateAsync();
@@ -741,9 +765,12 @@ public sealed class CrmWorkspaceServiceTests
             await db.Database.EnsureCreatedAsync();
 
             var roleManager = sp.GetRequiredService<RoleManager<IdentityRole>>();
-            if (!await roleManager.RoleExistsAsync(PanelRoles.Manager))
+            foreach (var role in PanelRoles.CrmDeskRoles)
             {
-                await roleManager.CreateAsync(new IdentityRole(PanelRoles.Manager));
+                if (!await roleManager.RoleExistsAsync(role))
+                {
+                    await roleManager.CreateAsync(new IdentityRole(role));
+                }
             }
 
             var users = sp.GetRequiredService<UserManager<IdentityUser>>();
@@ -768,12 +795,19 @@ public sealed class CrmWorkspaceServiceTests
             return new Harness(sp, db, users, sut, attachmentRoot);
         }
 
-        public async Task<IdentityUser> CreateManagerAsync(string email, int capacity, bool onShift)
+        public Task<IdentityUser> CreateManagerAsync(string email, int capacity, bool onShift) =>
+            CreateDeskUserAsync(email, capacity, onShift, PanelRoles.Manager);
+
+        public async Task<IdentityUser> CreateDeskUserAsync(
+            string email,
+            int capacity,
+            bool onShift,
+            string role)
         {
             var user = new IdentityUser { UserName = email, Email = email, EmailConfirmed = true };
             var result = await Users.CreateAsync(user, "Password1!");
             Assert.True(result.Succeeded, string.Join("; ", result.Errors.Select(e => e.Description)));
-            await Users.AddToRoleAsync(user, PanelRoles.Manager);
+            await Users.AddToRoleAsync(user, role);
             Db.PanelUserProfiles.Add(new PanelUserProfileEntity
             {
                 UserId = user.Id,

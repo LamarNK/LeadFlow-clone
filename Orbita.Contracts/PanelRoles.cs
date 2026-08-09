@@ -15,6 +15,12 @@ public static class PanelRoles
 
     public static readonly IReadOnlyList<string> All = [Admin, OfficeLead, Operator, Manager];
 
+    /// <summary>
+    /// Roles that work the CRM desk: own cards, shifts, capacity, lead distribution.
+    /// OfficeLead is a desk role with extra office-wide rights.
+    /// </summary>
+    public static readonly IReadOnlyList<string> CrmDeskRoles = [Manager, OfficeLead];
+
     public static string Normalize(string? role) =>
         string.Equals(role, Admin, StringComparison.OrdinalIgnoreCase) ? Admin :
         string.Equals(role, OfficeLead, StringComparison.OrdinalIgnoreCase) ? OfficeLead :
@@ -57,6 +63,16 @@ public static class PanelRoles
 
     public static bool HasElevatedOfficeAccess(ClaimsPrincipal principal) =>
         principal.IsInRole(Admin) || principal.IsInRole(OfficeLead);
+
+    /// <summary>Manager or office lead — can run a CRM shift and receive cards.</summary>
+    public static bool IsCrmDeskRole(string? role)
+    {
+        var normalized = Normalize(role);
+        return normalized is Manager or OfficeLead;
+    }
+
+    public static bool IsCrmDeskRole(ClaimsPrincipal principal) =>
+        principal.IsInRole(Manager) || principal.IsInRole(OfficeLead);
 
     public static bool RequiresOfficeAssignment(string? role) =>
         !IsGlobalAdmin(role);
