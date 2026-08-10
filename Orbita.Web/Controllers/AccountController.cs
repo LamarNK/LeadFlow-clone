@@ -48,7 +48,8 @@ public sealed class AccountController(
         LoginResponse? result;
         try
         {
-            result = await api.LoginAsync(model.Email, model.Password, ct);
+            // Always request a long-lived session (14d JWT + persistent cookies).
+            result = await api.LoginAsync(model.Email, model.Password, rememberMe: true, ct);
         }
         catch (HttpRequestException ex)
         {
@@ -82,7 +83,7 @@ public sealed class AccountController(
             return RedirectToAction("Index", "Dashboard");
         }
 
-        await auth.SignInAsync(result.Token, result.Email, ct);
+        await auth.SignInAsync(result.Token, result.Email, rememberMe: true, ct);
 
         // The cookie principal is refreshed only on the next request, so choose the
         // landing page from the permissions embedded in the just-issued JWT.

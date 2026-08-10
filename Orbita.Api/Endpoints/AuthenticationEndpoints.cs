@@ -84,18 +84,22 @@ public static class AuthenticationEndpoints
 
             var permissions = await panelUsers.GetPermissionOverrideAsync(user)
                 ?? await accessProfiles.GetPermissionsForRolesAsync(roles, ct);
-            var token = JwtTokenFactory.CreateToken(user, roles, permissions, config, officeId);
+            // Always issue a 14-day session so closing the browser/tab does not force re-login.
+            var token = JwtTokenFactory.CreateToken(
+                user,
+                roles,
+                permissions,
+                config,
+                officeId,
+                rememberMe: true);
             await audit.LogAsync(user.Id, user.Email, PanelAuditActions.LoginSucceeded, "user", user.Id, null, ip, ct);
             await GlobalLogger.Instance.LogAsync(
                 $"Login succeeded ({request.Email}).",
                 DeskLinkAuditLogLevel.Info);
             return Results.Ok(new LoginResponse(token, user.Email ?? request.Email));
         });
-
-        app.Run();
-
     }
 }
 
-public sealed record LoginRequest(string Email, string Password);
+public sealed record LoginRequest(string Email, string Password, bool RememberMe = false);
 public sealed record LoginResponse(string Token, string Email);

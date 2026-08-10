@@ -21,12 +21,25 @@ namespace Orbita.Api.Endpoints;
 
 public static class JwtTokenFactory
 {
+    public static readonly TimeSpan DefaultLifetime = TimeSpan.FromHours(12);
+    public static readonly TimeSpan RememberMeLifetime = TimeSpan.FromDays(14);
+
     public static string CreateToken(
         IdentityUser user,
         IEnumerable<string> roles,
         IEnumerable<string> permissions,
         IConfiguration config,
-        Guid? officeId = null)
+        Guid? officeId = null,
+        bool rememberMe = false) =>
+        CreateToken(user, roles, permissions, config, officeId, rememberMe ? RememberMeLifetime : DefaultLifetime);
+
+    public static string CreateToken(
+        IdentityUser user,
+        IEnumerable<string> roles,
+        IEnumerable<string> permissions,
+        IConfiguration config,
+        Guid? officeId,
+        TimeSpan lifetime)
     {
         var key = config["Jwt:Key"] ?? "OrbitaDevSigningKey_ChangeInProduction_32chars!";
         var issuer = config["Jwt:Issuer"] ?? "Orbita";
@@ -58,11 +71,16 @@ public static class JwtTokenFactory
             claims.Add(new Claim(OfficeClaims.OfficeId, resolvedOfficeId.ToString()));
         }
 
+        if (lifetime <= TimeSpan.Zero)
+        {
+            lifetime = DefaultLifetime;
+        }
+
         var token = new System.IdentityModel.Tokens.Jwt.JwtSecurityToken(
             issuer,
             audience,
             claims,
-            expires: DateTime.UtcNow.AddHours(12),
+            expires: DateTime.UtcNow.Add(lifetime),
             signingCredentials: credentials);
 
         return new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler().WriteToken(token);

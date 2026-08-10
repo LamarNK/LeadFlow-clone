@@ -8,14 +8,17 @@ namespace Orbita.Web.Services;
 
 public sealed class OrbitaAuthService(IHttpContextAccessor httpContextAccessor, AuthSession session)
 {
-    public Task SignInAsync(string token, string email, CancellationToken ct = default)
+    public Task SignInAsync(string token, string email, CancellationToken ct = default) =>
+        SignInAsync(token, email, rememberMe: false, ct);
+
+    public Task SignInAsync(string token, string email, bool rememberMe, CancellationToken ct = default)
     {
         if (string.Equals(token, AuthSession.DesignPreviewToken, StringComparison.Ordinal))
         {
             return SignInPreviewAsync(email, email, ct);
         }
 
-        return SignInWithJwtAsync(token, email, ct);
+        return SignInWithJwtAsync(token, email, rememberMe, ct);
     }
 
     public async Task SignInPreviewAsync(string email, string displayName, CancellationToken ct = default)
@@ -60,7 +63,7 @@ public sealed class OrbitaAuthService(IHttpContextAccessor httpContextAccessor, 
             });
     }
 
-    private async Task SignInWithJwtAsync(string token, string email, CancellationToken ct)
+    private async Task SignInWithJwtAsync(string token, string email, bool rememberMe, CancellationToken ct)
     {
         session.Token = token;
         session.Email = email;
@@ -78,13 +81,17 @@ public sealed class OrbitaAuthService(IHttpContextAccessor httpContextAccessor, 
             ClaimTypes.Role);
         var principal = new ClaimsPrincipal(identity);
 
+        // Persistent cookies always (up to JWT expiry, typically 14d) so closing the browser
+        // does not force re-login. rememberMe is kept for callers but treated as always-on.
+        _ = rememberMe;
+        var expires = new DateTimeOffset(DateTime.SpecifyKind(jwt.ValidTo, DateTimeKind.Utc));
         await context.SignInAsync(
             CookieAuthenticationDefaults.AuthenticationScheme,
             principal,
             new AuthenticationProperties
             {
                 IsPersistent = true,
-                ExpiresUtc = jwt.ValidTo
+                ExpiresUtc = expires
             });
 
         context.Response.Cookies.Append(
@@ -95,7 +102,7 @@ public sealed class OrbitaAuthService(IHttpContextAccessor httpContextAccessor, 
                 HttpOnly = true,
                 Secure = context.Request.IsHttps,
                 SameSite = SameSiteMode.Lax,
-                Expires = jwt.ValidTo
+                Expires = expires
             });
     }
 
