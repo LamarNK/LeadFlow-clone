@@ -31,7 +31,10 @@ public sealed class OrbitaApiClient(
         && !string.Equals(token, AuthSession.DesignPreviewToken, StringComparison.Ordinal)
         && token.Count(c => c == '.') >= 2;
 
-    public Task<LoginResponse?> LoginAsync(string email, string password, CancellationToken ct = default)
+    public Task<LoginResponse?> LoginAsync(string email, string password, CancellationToken ct = default) =>
+        LoginAsync(email, password, rememberMe: false, ct);
+
+    public Task<LoginResponse?> LoginAsync(string email, string password, bool rememberMe, CancellationToken ct = default)
     {
         if (_preview.Enabled)
         {
@@ -44,14 +47,14 @@ public sealed class OrbitaApiClient(
             return Task.FromResult<LoginResponse?>(null);
         }
 
-        return LoginViaApiAsync(email, password, ct);
+        return LoginViaApiAsync(email, password, rememberMe, ct);
     }
 
-    private async Task<LoginResponse?> LoginViaApiAsync(string email, string password, CancellationToken ct)
+    private async Task<LoginResponse?> LoginViaApiAsync(string email, string password, bool rememberMe, CancellationToken ct)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/auth/login")
         {
-            Content = JsonContent.Create(new { email, password })
+            Content = JsonContent.Create(new { email, password, rememberMe })
         };
         using var response = await SendAsyncSafe(request, HttpCompletionOption.ResponseContentRead, ct);
         if (response is null)
@@ -2207,6 +2210,81 @@ public sealed class OrbitaApiClient(
         return response is null ? (false, InvalidApiSessionError) : response.IsSuccessStatusCode ? (true, null) : (false, await ReadApiErrorAsync(response, ct));
     }
 
+    public async Task<(bool Success, string? Error)> UpdateCrmCardAsync(Guid cardId, CrmCardUpdateRequest body, CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return DesignPreviewData.UpdateCrmCard(cardId, body);
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Put, $"api/v1/crm/cards/{cardId:D}")
+        {
+            Content = JsonContent.Create(body)
+        };
+        using var response = await SendAuthenticatedAsync(request, ct);
+        return response is null ? (false, InvalidApiSessionError) : response.IsSuccessStatusCode ? (true, null) : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(bool Success, string? Error)> AddCrmContactPhoneAsync(
+        Guid cardId,
+        string phoneRaw,
+        string? label = null,
+        bool setAsPrimary = false,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled) return (true, null);
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"api/v1/crm/cards/{cardId:D}/phones")
+        {
+            Content = JsonContent.Create(new CrmContactPhoneCreateRequest(phoneRaw, label, setAsPrimary))
+        };
+        using var response = await SendAuthenticatedAsync(request, ct);
+        return response is null ? (false, InvalidApiSessionError) : response.IsSuccessStatusCode ? (true, null) : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(bool Success, string? Error)> RemoveCrmContactPhoneAsync(Guid cardId, Guid phoneId, CancellationToken ct = default)
+    {
+        if (_preview.Enabled) return (true, null);
+        using var request = new HttpRequestMessage(HttpMethod.Delete, $"api/v1/crm/cards/{cardId:D}/phones/{phoneId:D}");
+        using var response = await SendAuthenticatedAsync(request, ct);
+        return response is null ? (false, InvalidApiSessionError) : response.IsSuccessStatusCode ? (true, null) : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(bool Success, string? Error)> SetCrmPrimaryPhoneAsync(Guid cardId, Guid phoneId, CancellationToken ct = default)
+    {
+        if (_preview.Enabled) return (true, null);
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"api/v1/crm/cards/{cardId:D}/phones/{phoneId:D}/primary");
+        using var response = await SendAuthenticatedAsync(request, ct);
+        return response is null ? (false, InvalidApiSessionError) : response.IsSuccessStatusCode ? (true, null) : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(bool Success, string? Error)> MarkCrmChatReadAsync(Guid cardId, CancellationToken ct = default)
+    {
+        if (_preview.Enabled) return (true, null);
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"api/v1/crm/cards/{cardId:D}/chat/read");
+        using var response = await SendAuthenticatedAsync(request, ct);
+        return response is null ? (false, InvalidApiSessionError) : response.IsSuccessStatusCode ? (true, null) : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(Guid? CardId, string? Error)> CreateManualCrmCardAsync(CrmManualCardCreateRequest body, CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return (Guid.NewGuid(), null);
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, WithOfficeQuery("api/v1/crm/cards/manual"))
+        {
+            Content = JsonContent.Create(body)
+        };
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null) return (null, InvalidApiSessionError);
+        if (!response.IsSuccessStatusCode) return (null, await ReadApiErrorAsync(response, ct));
+        var payload = await response.Content.ReadFromJsonAsync<CrmManualCardCreateResult>(ApiJsonOptions, ct);
+        return payload is null || payload.Id == Guid.Empty
+            ? (null, "Карточка создана, но ответ API не распознан.")
+            : (payload.Id, null);
+    }
+
     public async Task<(bool Success, string? Error)> CloseCrmCardAsync(Guid cardId, string reason, string? comment = null, CancellationToken ct = default)
     {
         if (_preview.Enabled)
@@ -2277,14 +2355,17 @@ public sealed class OrbitaApiClient(
         return (await response.Content.ReadFromJsonAsync<CrmTaskDto>(ApiJsonOptions, ct), null);
     }
 
-    public async Task<(bool Success, string? Error)> CompleteCrmTaskAsync(Guid taskId, CancellationToken ct = default)
+    public async Task<(bool Success, string? Error)> CompleteCrmTaskAsync(Guid taskId, string comment, CancellationToken ct = default)
     {
         if (_preview.Enabled)
         {
-            return DesignPreviewData.CompleteCrmTask(taskId);
+            return DesignPreviewData.CompleteCrmTask(taskId, comment);
         }
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, $"api/v1/crm/tasks/{taskId:D}/complete");
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"api/v1/crm/tasks/{taskId:D}/complete")
+        {
+            Content = JsonContent.Create(new CrmTaskCompleteRequest(comment))
+        };
         using var response = await SendAuthenticatedAsync(request, ct);
         return response is null ? (false, InvalidApiSessionError) : response.IsSuccessStatusCode ? (true, null) : (false, await ReadApiErrorAsync(response, ct));
     }

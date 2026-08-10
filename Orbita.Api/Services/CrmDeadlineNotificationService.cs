@@ -89,39 +89,56 @@ public sealed class CrmDeadlineNotificationService(
         CancellationToken ct = default)
     {
         limit = Math.Clamp(limit, 1, 50);
-        if (!await IsEnabledForOfficeAsync(officeId, ct))
+        var deadlineEnabled = await IsEnabledForOfficeAsync(officeId, ct);
+        var deskAlertsQuery = db.CrmDeskAlerts
+            .Where(x => x.OfficeId == officeId && x.RecipientUserId == recipientUserId);
+        var deskUnread = await deskAlertsQuery.CountAsync(x => x.ReadAtUtc == null, ct);
+
+        var taskItems = new List<CrmTaskNotificationDto>();
+        var taskUnread = 0;
+        if (deadlineEnabled)
         {
-            return new CrmTaskNotificationsDto(0, [], Enabled: false);
+            var active = ActiveForUser(officeId, recipientUserId);
+            taskUnread = await active.CountAsync(x => x.ReadAtUtc == null, ct);
+            var rowsQuery = unreadOnly ? active.Where(x => x.ReadAtUtc == null) : active;
+            var rows = await rowsQuery
+                .OrderByDescending(x => x.CreatedAtUtc)
+                .Take(limit)
+                .ToListAsync(ct);
+
+            var taskIds = rows.Select(x => x.TaskId).Distinct().ToArray();
+            var tasks = await db.CrmTasks.AsNoTracking()
+                .Where(x => taskIds.Contains(x.Id))
+                .Select(x => new { x.Id, x.CardId, x.Title })
+                .ToDictionaryAsync(x => x.Id, ct);
+
+            taskItems = rows
+                .Where(row => tasks.ContainsKey(row.TaskId))
+                .Select(row =>
+                {
+                    var task = tasks[row.TaskId];
+                    return Map(row, task.CardId, task.Title);
+                })
+                .ToList();
         }
 
-        var active = ActiveForUser(officeId, recipientUserId);
-        var unreadCount = await active.CountAsync(x => x.ReadAtUtc == null, ct);
-        if (unreadOnly)
-        {
-            active = active.Where(x => x.ReadAtUtc == null);
-        }
-
-        var rows = await active
+        var alertsQuery = unreadOnly ? deskAlertsQuery.Where(x => x.ReadAtUtc == null) : deskAlertsQuery;
+        var alerts = await alertsQuery
             .OrderByDescending(x => x.CreatedAtUtc)
             .Take(limit)
             .ToListAsync(ct);
+        var alertItems = alerts.Select(MapDeskAlert).ToList();
 
-        var taskIds = rows.Select(x => x.TaskId).Distinct().ToArray();
-        var tasks = await db.CrmTasks.AsNoTracking()
-            .Where(x => taskIds.Contains(x.Id))
-            .Select(x => new { x.Id, x.CardId, x.Title })
-            .ToDictionaryAsync(x => x.Id, ct);
-
-        var items = rows
-            .Where(row => tasks.ContainsKey(row.TaskId))
-            .Select(row =>
-            {
-                var task = tasks[row.TaskId];
-                return Map(row, task.CardId, task.Title);
-            })
+        var items = taskItems
+            .Concat(alertItems)
+            .OrderByDescending(x => x.CreatedAtUtc)
+            .Take(limit)
             .ToList();
 
-        return new CrmTaskNotificationsDto(unreadCount, items, Enabled: true);
+        var enabled = deadlineEnabled || deskUnread > 0 || alertItems.Count > 0 || taskItems.Count > 0;
+        // Always show CRM notification shell for desk roles once they have CRM office context.
+        enabled = true;
+        return new CrmTaskNotificationsDto(taskUnread + deskUnread, items, Enabled: enabled);
     }
 
     public async Task<CrmTaskNotificationSummaryDto> GetSummaryAsync(
@@ -129,14 +146,13 @@ public sealed class CrmDeadlineNotificationService(
         string recipientUserId,
         CancellationToken ct = default)
     {
-        if (!await IsEnabledForOfficeAsync(officeId, ct))
-        {
-            return new CrmTaskNotificationSummaryDto(0, Enabled: false);
-        }
-
-        return new CrmTaskNotificationSummaryDto(
-            await ActiveForUser(officeId, recipientUserId).CountAsync(x => x.ReadAtUtc == null, ct),
-            Enabled: true);
+        var deadlineEnabled = await IsEnabledForOfficeAsync(officeId, ct);
+        var taskUnread = deadlineEnabled
+            ? await ActiveForUser(officeId, recipientUserId).CountAsync(x => x.ReadAtUtc == null, ct)
+            : 0;
+        var deskUnread = await db.CrmDeskAlerts
+            .CountAsync(x => x.OfficeId == officeId && x.RecipientUserId == recipientUserId && x.ReadAtUtc == null, ct);
+        return new CrmTaskNotificationSummaryDto(taskUnread + deskUnread, Enabled: true);
     }
 
     public async Task<bool> MarkReadAsync(
@@ -147,14 +163,29 @@ public sealed class CrmDeadlineNotificationService(
     {
         var notification = await ActiveForUser(officeId, recipientUserId)
             .FirstOrDefaultAsync(x => x.Id == notificationId, ct);
-        if (notification is null)
+        if (notification is not null)
+        {
+            if (notification.ReadAtUtc is null)
+            {
+                notification.ReadAtUtc = DateTimeUtcHelper.EnsureUtc(timeProvider.GetUtcNow().UtcDateTime);
+                await db.SaveChangesAsync(ct);
+            }
+
+            return true;
+        }
+
+        var alert = await db.CrmDeskAlerts
+            .FirstOrDefaultAsync(
+                x => x.Id == notificationId && x.OfficeId == officeId && x.RecipientUserId == recipientUserId,
+                ct);
+        if (alert is null)
         {
             return false;
         }
 
-        if (notification.ReadAtUtc is null)
+        if (alert.ReadAtUtc is null)
         {
-            notification.ReadAtUtc = DateTimeUtcHelper.EnsureUtc(timeProvider.GetUtcNow().UtcDateTime);
+            alert.ReadAtUtc = DateTimeUtcHelper.EnsureUtc(timeProvider.GetUtcNow().UtcDateTime);
             await db.SaveChangesAsync(ct);
         }
 
@@ -166,23 +197,45 @@ public sealed class CrmDeadlineNotificationService(
         string recipientUserId,
         CancellationToken ct = default)
     {
+        var now = DateTimeUtcHelper.EnsureUtc(timeProvider.GetUtcNow().UtcDateTime);
+        var count = 0;
         var notifications = await ActiveForUser(officeId, recipientUserId)
             .Where(x => x.ReadAtUtc == null)
             .ToListAsync(ct);
-        if (notifications.Count == 0)
-        {
-            return 0;
-        }
-
-        var now = DateTimeUtcHelper.EnsureUtc(timeProvider.GetUtcNow().UtcDateTime);
         foreach (var notification in notifications)
         {
             notification.ReadAtUtc = now;
+            count++;
         }
 
-        await db.SaveChangesAsync(ct);
-        return notifications.Count;
+        var alerts = await db.CrmDeskAlerts
+            .Where(x => x.OfficeId == officeId && x.RecipientUserId == recipientUserId && x.ReadAtUtc == null)
+            .ToListAsync(ct);
+        foreach (var alert in alerts)
+        {
+            alert.ReadAtUtc = now;
+            count++;
+        }
+
+        if (count > 0)
+        {
+            await db.SaveChangesAsync(ct);
+        }
+
+        return count;
     }
+
+    private static CrmTaskNotificationDto MapDeskAlert(CrmDeskAlertEntity alert) =>
+        new(
+            alert.Id,
+            Guid.Empty,
+            alert.CardId,
+            alert.Kind,
+            alert.Title,
+            alert.Message,
+            alert.CreatedAtUtc,
+            alert.CreatedAtUtc,
+            alert.ReadAtUtc);
 
     /// <summary>Queues stale task notifications for dismissal in the caller's unit of work.</summary>
     public async Task DismissTaskAsync(Guid taskId, DateTime atUtc, CancellationToken ct = default)

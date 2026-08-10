@@ -255,11 +255,116 @@ public sealed class CrmWorkspaceServiceTests
         harness.Db.CrmCandidateCards.Add(card);
         await harness.Db.SaveChangesAsync();
 
+        var (denied, deniedError) = await harness.Sut.CloseAsync(card.Id, CrmCloseReasons.Refused, "  ", manager.Id, isAdmin: false);
+        Assert.False(denied);
+        Assert.Contains("комментарий", deniedError, StringComparison.OrdinalIgnoreCase);
+        Assert.False(card.IsClosed);
+
         var (ok, error) = await harness.Sut.CloseAsync(card.Id, CrmCloseReasons.Refused, "не интересно", manager.Id, isAdmin: false);
         Assert.True(ok, error);
         Assert.True(card.IsClosed);
         Assert.False(card.IsInActiveLoad);
         Assert.Equal(CrmCloseReasons.Refused, card.CloseReason);
+        Assert.Contains(harness.Db.CrmCandidateNotes, n => n.CardId == card.Id && n.Text == "не интересно");
+    }
+
+    [Fact]
+    public async Task CreateManualCard_CreatesResponseAndCard()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var manager = await harness.CreateManagerAsync("manual@test.local", capacity: 5, onShift: true);
+
+        var (cardId, error) = await harness.Sut.CreateManualCardAsync(
+            OfficeId,
+            new CrmManualCardCreateRequest("Сидоров Сидор", "89001234567", "Уфа", "Водитель", 28, "Битрикс", null, null, AssignToMe: true),
+            manager.Id,
+            isAdmin: false);
+        Assert.True(cardId is not null, error);
+        var card = await harness.Db.CrmCandidateCards.Include(x => x.Response).SingleAsync(x => x.Id == cardId);
+        Assert.Equal(manager.Id, card.ManagerUserId);
+        Assert.Equal("Сидоров Сидор", card.Response.FullName);
+        Assert.Equal("79001234567", card.Response.PhoneNormalized);
+        Assert.Equal("Manual", card.Response.Source);
+        Assert.Contains(harness.Db.CandidateContactPhones, p => p.PersonId == card.Response.PersonId && p.IsPrimary);
+    }
+
+    [Fact]
+    public async Task AddContactPhone_AndSetPrimary_NotifiesManagerWhenChangedByAdmin()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var manager = await harness.CreateManagerAsync("phone-mgr@test.local", capacity: 5, onShift: true);
+        var lead = await harness.CreateDeskUserAsync("phone-lead@test.local", capacity: 5, onShift: true, PanelRoles.OfficeLead);
+        var response = await SeedResponseAsync(harness.Db);
+        var card = NewCard(response.Id, manager.Id);
+        harness.Db.CrmCandidateCards.Add(card);
+        await harness.Db.SaveChangesAsync();
+
+        var (phone, addError) = await harness.Sut.AddContactPhoneAsync(
+            card.Id,
+            new CrmContactPhoneCreateRequest("89991112233", "Доп", SetAsPrimary: false),
+            lead.Id,
+            isAdmin: true);
+        Assert.True(phone is not null, addError);
+        Assert.True(string.IsNullOrEmpty(addError));
+
+        var (ok, setError) = await harness.Sut.SetPrimaryContactPhoneAsync(card.Id, phone!.Id, lead.Id, isAdmin: true);
+        Assert.True(ok, setError);
+        await harness.Db.Entry(response).ReloadAsync();
+        Assert.Equal("79991112233", response.PhoneNormalized);
+        Assert.Contains(
+            harness.Db.CrmDeskAlerts,
+            a => a.RecipientUserId == manager.Id && a.Kind == CrmTaskNotificationKinds.PhoneChanged);
+    }
+
+    [Fact]
+    public async Task UpdateCard_UpdatesResponseFieldsAndHistory()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var manager = await harness.CreateManagerAsync("edit@test.local", capacity: 5, onShift: true);
+        var outsider = await harness.CreateManagerAsync("outsider-edit@test.local", capacity: 5, onShift: true);
+        var response = await SeedResponseAsync(harness.Db);
+        var card = NewCard(response.Id, manager.Id);
+        harness.Db.CrmCandidateCards.Add(card);
+        await harness.Db.SaveChangesAsync();
+
+        var denied = await harness.Sut.UpdateCardAsync(
+            card.Id,
+            new CrmCardUpdateRequest("Петров Пётр", "79991112233", "Казань", "Токарь", 30),
+            outsider.Id,
+            isAdmin: false);
+        Assert.False(denied.Ok);
+
+        var (ok, error) = await harness.Sut.UpdateCardAsync(
+            card.Id,
+            new CrmCardUpdateRequest(
+                "Петров Пётр",
+                "8 (999) 111-22-33",
+                "Казань",
+                "Токарь",
+                30,
+                "manual-42",
+                "Авито HQ",
+                "https://example.com/src",
+                "https://example.com/vac",
+                "https://t.me/test"),
+            manager.Id,
+            isAdmin: false);
+        Assert.True(ok, error);
+
+        await harness.Db.Entry(response).ReloadAsync();
+        Assert.Equal("Петров Пётр", response.FullName);
+        Assert.Equal("79991112233", response.PhoneNormalized);
+        Assert.Equal("Казань", response.City);
+        Assert.Equal("Токарь", response.Vacancy);
+        Assert.Equal(30, response.Age);
+        Assert.Equal("manual-42", response.SourceResponseId);
+        Assert.Equal("Авито HQ", response.AccountName);
+        Assert.Contains(
+            harness.Db.CrmCandidateHistory,
+            h => h.CardId == card.Id && h.Action == "CardUpdated" && h.Details!.Contains("ФИО"));
     }
 
     [Fact]
@@ -388,28 +493,47 @@ public sealed class CrmWorkspaceServiceTests
     }
 
     [Fact]
-    public async Task GetBoard_ManagerSeesTeamReadOnlyAndOwnMineEditable()
+    public void ManagerDefaultPermissions_ExcludeTeamAndAnalytics()
+    {
+        var permissions = PanelPermissions.DefaultForRole(PanelRoles.Manager);
+        Assert.Contains(PanelPermissions.CrmBoard, permissions);
+        Assert.Contains(PanelPermissions.CrmTasks, permissions);
+        Assert.DoesNotContain(PanelPermissions.CrmTeam, permissions);
+        Assert.DoesNotContain(PanelPermissions.CrmAnalytics, permissions);
+
+        var senior = PanelPermissions.DefaultForRole(PanelRoles.SeniorManager);
+        Assert.Contains(PanelPermissions.CrmTeam, senior);
+        Assert.Contains(PanelPermissions.CrmAnalytics, senior);
+    }
+
+    [Fact]
+    public async Task GetBoard_ManagerTeamScopeForcedToMine_AndOnlyOwnCards()
     {
         await using var harness = await Harness.CreateAsync();
         SeedOffice(harness.Db, crmEnabled: true);
         var manager = await harness.CreateManagerAsync("view@test.local", capacity: 5, onShift: true);
-        var response = await SeedResponseAsync(harness.Db);
-        var card = NewCard(response.Id, manager.Id);
-        card.Stage = CrmStages.Lead;
-        harness.Db.CrmCandidateCards.Add(card);
+        var other = await harness.CreateManagerAsync("other-view@test.local", capacity: 5, onShift: true);
+        var ownResponse = await SeedResponseAsync(harness.Db, "own-src");
+        var foreignResponse = await SeedResponseAsync(harness.Db, "foreign-src");
+        var ownCard = NewCard(ownResponse.Id, manager.Id);
+        ownCard.Stage = CrmStages.Lead;
+        var foreignCard = NewCard(foreignResponse.Id, other.Id);
+        foreignCard.Stage = CrmStages.Lead;
+        harness.Db.CrmCandidateCards.AddRange(ownCard, foreignCard);
         await harness.Db.SaveChangesAsync();
 
+        // Manager requesting Team is forced to Mine — only own assigned cards.
         var team = await harness.Sut.GetBoardAsync(
             OfficeId,
             manager.Id,
             isAdmin: false,
             new CrmBoardQuery(Scope: CrmBoardScopes.Team));
         Assert.NotNull(team);
-        Assert.Equal(CrmBoardScopes.Team, team.Scope);
-        Assert.False(team.CanEdit);
-        var teamCard = Assert.Single(team.Stages.SelectMany(s => s.Cards), c => c.Id == card.Id);
-        Assert.Equal(manager.Id, teamCard.ManagerUserId);
-        Assert.Equal("view@test.local", teamCard.ManagerName);
+        Assert.Equal(CrmBoardScopes.Mine, team.Scope);
+        Assert.True(team.CanEdit);
+        var visibleIds = team.Stages.SelectMany(s => s.Cards).Select(c => c.Id).ToHashSet();
+        Assert.Contains(ownCard.Id, visibleIds);
+        Assert.DoesNotContain(foreignCard.Id, visibleIds);
 
         var mine = await harness.Sut.GetBoardAsync(
             OfficeId,
@@ -422,7 +546,7 @@ public sealed class CrmWorkspaceServiceTests
     }
 
     [Fact]
-    public async Task GetCard_ManagerViewsOwnOfficeCardReadOnly()
+    public async Task GetCard_ManagerCannotOpenForeignCard_OwnerCanEdit()
     {
         await using var harness = await Harness.CreateAsync();
         SeedOffice(harness.Db, crmEnabled: true);
@@ -434,10 +558,7 @@ public sealed class CrmWorkspaceServiceTests
         await harness.Db.SaveChangesAsync();
 
         var detail = await harness.Sut.GetCardAsync(card.Id, viewer.Id, isAdmin: false);
-        Assert.NotNull(detail);
-        Assert.False(detail.CanEdit);
-        Assert.Equal(owner.Id, detail.Card.ManagerUserId);
-        Assert.Equal("owner@test.local", detail.Card.ManagerName);
+        Assert.Null(detail);
 
         var own = await harness.Sut.GetCardAsync(card.Id, owner.Id, isAdmin: false);
         Assert.NotNull(own);
@@ -445,7 +566,67 @@ public sealed class CrmWorkspaceServiceTests
     }
 
     [Fact]
-    public async Task GetCardAvatar_ManagerFromOwnOfficeReceivesStoredAvatar()
+    public async Task GetCard_ElevatedCanOpenForeignCard()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var owner = await harness.CreateManagerAsync("owner-elev@test.local", capacity: 5, onShift: true);
+        var lead = await harness.CreateDeskUserAsync(
+            "senior@test.local",
+            capacity: 5,
+            onShift: true,
+            PanelRoles.SeniorManager);
+        var response = await SeedResponseAsync(harness.Db);
+        var card = NewCard(response.Id, owner.Id);
+        harness.Db.CrmCandidateCards.Add(card);
+        await harness.Db.SaveChangesAsync();
+
+        var detail = await harness.Sut.GetCardAsync(card.Id, lead.Id, isAdmin: true);
+        Assert.NotNull(detail);
+        Assert.True(detail.CanEdit);
+        Assert.Equal(owner.Id, detail.Card.ManagerUserId);
+    }
+
+    [Fact]
+    public async Task GetCard_ElevatedFromOtherOffice_IsDenied()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var otherOfficeId = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc");
+        harness.Db.Offices.Add(new OfficeEntity
+        {
+            Id = otherOfficeId,
+            Name = "Other Office",
+            RegistrationSecretHash = "hash2",
+            CreatedAtUtc = DateTime.UtcNow,
+            IsEnabled = true,
+            CrmEnabled = true
+        });
+        await harness.Db.SaveChangesAsync();
+
+        var owner = await harness.CreateManagerAsync("owner-office-a@test.local", capacity: 5, onShift: true);
+        var foreignSenior = await harness.CreateDeskUserAsync(
+            "senior-office-b@test.local",
+            capacity: 5,
+            onShift: true,
+            PanelRoles.SeniorManager,
+            officeId: otherOfficeId);
+        var response = await SeedResponseAsync(harness.Db);
+        var card = NewCard(response.Id, owner.Id);
+        harness.Db.CrmCandidateCards.Add(card);
+        await harness.Db.SaveChangesAsync();
+
+        Assert.Null(await harness.Sut.GetCardAsync(card.Id, foreignSenior.Id, isAdmin: true));
+        Assert.False((await harness.Sut.UpdateCardAsync(
+            card.Id,
+            new CrmCardUpdateRequest("X", "79991112233", "City", "Job", 30),
+            foreignSenior.Id,
+            isAdmin: true)).Ok);
+        Assert.False(await harness.Sut.AssignAsync(card.Id, owner.Id, foreignSenior.Id, isAdmin: true));
+    }
+
+    [Fact]
+    public async Task GetCardAvatar_OwnerReceivesStoredAvatar_ForeignDenied()
     {
         await using var harness = await Harness.CreateAsync();
         SeedOffice(harness.Db, crmEnabled: true);
@@ -458,8 +639,9 @@ public sealed class CrmWorkspaceServiceTests
         harness.Db.CrmCandidateCards.Add(card);
         await harness.Db.SaveChangesAsync();
 
-        var avatar = await harness.Sut.GetCardAvatarAsync(card.Id, viewer.Id, isAdmin: false);
+        Assert.Null(await harness.Sut.GetCardAvatarAsync(card.Id, viewer.Id, isAdmin: false));
 
+        var avatar = await harness.Sut.GetCardAvatarAsync(card.Id, owner.Id, isAdmin: false);
         Assert.NotNull(avatar);
         Assert.Equal("image/png", avatar.ContentType);
         Assert.Equal(response.AvatarImage, avatar.Bytes);
@@ -510,8 +692,9 @@ public sealed class CrmWorkspaceServiceTests
 
         Assert.Null(await harness.Sut.GetTaskAsync(task.Id, outsider.Id, isAdmin: false));
         Assert.Null(await harness.Sut.AddTaskCommentAsync(task.Id, "Нет доступа", outsider.Id, isAdmin: false));
-        Assert.False(await harness.Sut.CompleteTaskAsync(task.Id, creator.Id, isAdmin: false));
-        Assert.True(await harness.Sut.CompleteTaskAsync(task.Id, assignee.Id, isAdmin: false));
+        Assert.False((await harness.Sut.CompleteTaskAsync(task.Id, "готово", creator.Id, isAdmin: false)).Ok);
+        Assert.False((await harness.Sut.CompleteTaskAsync(task.Id, "   ", assignee.Id, isAdmin: false)).Ok);
+        Assert.True((await harness.Sut.CompleteTaskAsync(task.Id, "Созвон проведён, анкета отправлена", assignee.Id, isAdmin: false)).Ok);
     }
 
     [Fact]
@@ -614,12 +797,12 @@ public sealed class CrmWorkspaceServiceTests
         var cancelled = await harness.Sut.GetTaskAsync(task.Id, creator.Id, isAdmin: false);
         Assert.NotNull(cancelled);
         Assert.Equal(CrmTaskStatuses.Cancelled, cancelled.Task.Status);
-        Assert.False(await harness.Sut.CompleteTaskAsync(task.Id, replacement.Id, isAdmin: false));
+        Assert.False((await harness.Sut.CompleteTaskAsync(task.Id, "готово", replacement.Id, isAdmin: false)).Ok);
 
         var beforeReopenVersion = taskEntity.ReminderVersion;
         Assert.True((await harness.Sut.ReopenTaskAsync(task.Id, creator.Id, isAdmin: false)).Ok);
         Assert.NotEqual(beforeReopenVersion, taskEntity.ReminderVersion);
-        Assert.True(await harness.Sut.CompleteTaskAsync(task.Id, replacement.Id, isAdmin: false));
+        Assert.True((await harness.Sut.CompleteTaskAsync(task.Id, "Документы получены", replacement.Id, isAdmin: false)).Ok);
         Assert.True((await harness.Sut.ReopenTaskAsync(task.Id, "admin", isAdmin: true)).Ok);
         var reopened = await harness.Sut.GetTaskAsync(task.Id, creator.Id, isAdmin: false);
         Assert.NotNull(reopened);
@@ -802,7 +985,8 @@ public sealed class CrmWorkspaceServiceTests
             string email,
             int capacity,
             bool onShift,
-            string role)
+            string role,
+            Guid? officeId = null)
         {
             var user = new IdentityUser { UserName = email, Email = email, EmailConfirmed = true };
             var result = await Users.CreateAsync(user, "Password1!");
@@ -811,7 +995,7 @@ public sealed class CrmWorkspaceServiceTests
             Db.PanelUserProfiles.Add(new PanelUserProfileEntity
             {
                 UserId = user.Id,
-                OfficeId = OfficeId,
+                OfficeId = officeId ?? OfficeId,
                 CrmCapacity = capacity,
                 CrmShiftActive = onShift,
                 CrmShiftStartedAtUtc = onShift ? DateTime.UtcNow : null

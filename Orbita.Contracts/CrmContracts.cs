@@ -123,9 +123,15 @@ public static class CrmTaskNotificationKinds
     public const string DueIn24Hours = "due_24h";
     public const string DueIn1Hour = "due_1h";
     public const string Overdue = "overdue";
+    public const string PhoneChanged = "phone_changed";
 
     public static bool IsValid(string? kind) =>
-        kind is DueIn24Hours or DueIn1Hour or Overdue;
+        kind is DueIn24Hours or DueIn1Hour or Overdue or PhoneChanged;
+}
+
+public static class CrmContactPhoneLimits
+{
+    public const int MaxPhonesPerPerson = 5;
 }
 
 public static class CrmTaskAttachmentLimits
@@ -316,7 +322,9 @@ public sealed record CrmCandidateCardDto(
     string? SourceUrl,
     string? VacancyUrl,
     string? AccountName,
-    string? SourceResponseId);
+    string? SourceResponseId,
+    /// <summary>Unread chat messages for the current viewer (0 if none / no chat).</summary>
+    int ChatUnreadCount = 0);
 
 public sealed record CrmCandidateDetailDto(
     CrmCandidateCardDto Card,
@@ -328,7 +336,9 @@ public sealed record CrmCandidateDetailDto(
     IReadOnlyList<string> Stages,
     bool CanEdit,
     IReadOnlyList<CrmChatMessageDto> Chat,
-    IReadOnlyList<CrmPhoneHistoryDto> PhoneHistory);
+    IReadOnlyList<CrmPhoneHistoryDto> PhoneHistory,
+    IReadOnlyList<CrmContactPhoneDto> ContactPhones = null!,
+    int ChatUnreadCount = 0);
 
 public sealed record CrmChatMessageDto(
     string Text,
@@ -339,6 +349,29 @@ public sealed record CrmPhoneHistoryDto(
     string PhoneRaw,
     string PhoneNormalized,
     DateTime RecordedAtUtc);
+
+public sealed record CrmContactPhoneDto(
+    Guid Id,
+    string PhoneRaw,
+    string PhoneNormalized,
+    bool IsPrimary,
+    string? Label,
+    DateTime CreatedAtUtc);
+
+public sealed record CrmContactPhoneCreateRequest(string PhoneRaw, string? Label = null, bool SetAsPrimary = false);
+
+public sealed record CrmManualCardCreateRequest(
+    string FullName,
+    string PhoneRaw,
+    string? City = null,
+    string? Vacancy = null,
+    int? Age = null,
+    string? Source = null,
+    string? SourceResponseId = null,
+    string? Stage = null,
+    bool AssignToMe = true);
+
+public sealed record CrmManualCardCreateResult(Guid Id);
 
 public sealed record CrmNoteDto(
     Guid Id,
@@ -427,6 +460,19 @@ public sealed record CrmActivityItemDto(
 public sealed record CrmAssignRequest(string ManagerUserId);
 public sealed record CrmMoveRequest(string Stage, string? Comment = null);
 public sealed record CrmNoteCreateRequest(string Text);
+
+/// <summary>CRM card field edit. Updates the linked candidate response (+ person sync).</summary>
+public sealed record CrmCardUpdateRequest(
+    string FullName,
+    string PhoneRaw,
+    string City,
+    string Vacancy,
+    int? Age = null,
+    string? SourceResponseId = null,
+    string? AccountName = null,
+    string? SourceUrl = null,
+    string? VacancyUrl = null,
+    string? MessengerUrl = null);
 public sealed record CrmTaskCreateRequest(
     Guid? CardId,
     string Title,
@@ -443,6 +489,8 @@ public sealed record CrmTaskUpdateRequest(
     string Importance = CrmTaskImportances.Medium);
 
 public sealed record CrmTaskCommentCreateRequest(string Text);
+/// <summary>Comment is required by the service; empty/missing body is rejected with 400.</summary>
+public sealed record CrmTaskCompleteRequest(string? Comment = null);
 public sealed record CrmFollowUpRequest(int Minutes, string? Title = null);
 public sealed record CrmCloseRequest(string Reason, string? Comment = null);
 public sealed record CrmCapacityRequest(int Capacity);

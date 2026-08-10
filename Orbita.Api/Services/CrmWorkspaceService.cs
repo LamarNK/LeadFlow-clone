@@ -19,8 +19,16 @@ public sealed class CrmWorkspaceService(
     CrmLeadDistributionService leadDistribution,
     IPanelRealtimeNotifier? panelRealtime = null,
     CrmTaskAttachmentStorageService? taskAttachments = null,
-    CrmDeadlineNotificationService? deadlineNotifications = null)
+    CrmDeadlineNotificationService? deadlineNotifications = null,
+    PhoneNormalizer? phoneNormalizer = null,
+    CandidateParser? candidateParser = null,
+    CandidatePersonPhoneService? personPhone = null,
+    ICrmNotificationRealtimeNotifier? crmNotificationRealtime = null)
 {
+    private readonly PhoneNormalizer _phoneNormalizer = phoneNormalizer ?? new PhoneNormalizer();
+    private readonly CandidateParser _candidateParser = candidateParser ?? new CandidateParser();
+    private readonly CandidatePersonPhoneService _personPhone = personPhone ?? new CandidatePersonPhoneService(db);
+    private readonly List<(string RecipientUserId, CrmTaskNotificationDto Dto)> _pendingPhoneRealtime = [];
     /// <summary>
     /// Create CRM card for a response in the target office (delivery path only).
     /// Does not call SaveChanges — caller owns the unit of work unless <paramref name="save"/> is true.
@@ -109,7 +117,14 @@ public sealed class CrmWorkspaceService(
         await ExpireStaleShiftsAsync(ct);
 
         query ??= new CrmBoardQuery();
+        // isAdmin here means elevated office access (Admin / OfficeLead / SeniorManager), not only global admin.
         var scope = NormalizeScope(query.Scope);
+        if (!isAdmin && scope is CrmBoardScopes.Team or CrmBoardScopes.Unassigned)
+        {
+            // Manager: only own leads — force Mine (Team / queue are elevated-only).
+            scope = CrmBoardScopes.Mine;
+        }
+
         var profile = await db.PanelUserProfiles.AsNoTracking().FirstOrDefaultAsync(x => x.UserId == userId, ct);
         var managers = await GetManagersAsync(officeId, ct);
         var names = managers.ToDictionary(x => x.Profile.UserId, x => x.Name, StringComparer.Ordinal);
@@ -123,7 +138,10 @@ public sealed class CrmWorkspaceService(
         cardsQuery = scope switch
         {
             CrmBoardScopes.Unassigned => cardsQuery.Where(x => x.ManagerUserId == null && !x.IsClosed),
-            CrmBoardScopes.Closed => cardsQuery.Where(x => x.IsClosed),
+            // Elevated: all closed in office. Manager: only own closed.
+            CrmBoardScopes.Closed => isAdmin
+                ? cardsQuery.Where(x => x.IsClosed)
+                : cardsQuery.Where(x => x.IsClosed && x.ManagerUserId == userId),
             CrmBoardScopes.Team => cardsQuery.Where(x => !x.IsClosed || query.IncludeClosed),
             _ => cardsQuery.Where(x => x.ManagerUserId == userId && (!x.IsClosed || query.IncludeClosed))
         };
@@ -171,20 +189,24 @@ public sealed class CrmWorkspaceService(
                 g => g.Key,
                 g => (Count: g.Count(), Overdue: g.Any(t => t.DueAtUtc is DateTime due && due < now)));
 
+        var chatUnreadByCard = await LoadChatUnreadCountsAsync(cardIds, userId, cards, ct);
+
         if (query.OverdueOnly)
         {
             cards = cards.Where(x => taskStats.GetValueOrDefault(x.Id).Overdue
                 || (x.NextActionAtUtc is DateTime next && next < now)).ToList();
         }
 
+        CrmCandidateCardDto MapCard(CrmCandidateCardEntity x)
+        {
+            var stats = taskStats.GetValueOrDefault(x.Id);
+            return ToCardDto(x, names, stats.Count, stats.Overdue, now, chatUnreadByCard.GetValueOrDefault(x.Id));
+        }
+
         var officeStages = CrmStages.Resolve(office.CrmStagesJson);
         var stageDtos = officeStages.Select(stage =>
         {
-            var stageCards = cards.Where(x => x.Stage == stage && !x.IsClosed).Select(x =>
-            {
-                var stats = taskStats.GetValueOrDefault(x.Id);
-                return ToCardDto(x, names, stats.Count, stats.Overdue, now);
-            }).ToList();
+            var stageCards = cards.Where(x => x.Stage == stage && !x.IsClosed).Select(MapCard).ToList();
             return new CrmStageDto(stage, stageCards, stageCards.Count);
         }).ToList();
 
@@ -198,21 +220,13 @@ public sealed class CrmWorkspaceService(
             .ToList();
         foreach (var orphan in orphanStages)
         {
-            var stageCards = cards.Where(x => x.Stage == orphan && !x.IsClosed).Select(x =>
-            {
-                var stats = taskStats.GetValueOrDefault(x.Id);
-                return ToCardDto(x, names, stats.Count, stats.Overdue, now);
-            }).ToList();
+            var stageCards = cards.Where(x => x.Stage == orphan && !x.IsClosed).Select(MapCard).ToList();
             stageDtos.Add(new CrmStageDto(orphan, stageCards, stageCards.Count));
         }
 
         if (scope == CrmBoardScopes.Closed || query.IncludeClosed)
         {
-            var closedCards = cards.Where(x => x.IsClosed).Select(x =>
-            {
-                var stats = taskStats.GetValueOrDefault(x.Id);
-                return ToCardDto(x, names, stats.Count, stats.Overdue, now);
-            }).ToList();
+            var closedCards = cards.Where(x => x.IsClosed).Select(MapCard).ToList();
             if (closedCards.Count > 0)
             {
                 stageDtos = stageDtos.Concat([new CrmStageDto("Закрыто", closedCards, closedCards.Count)]).ToList();
@@ -596,11 +610,14 @@ public sealed class CrmWorkspaceService(
             return null;
         }
 
-        var canEdit = isAdmin || card.ManagerUserId == userId;
+        // Elevated or assigned owner only — managers cannot open foreign cards (read or write).
         if (!await CanAccessCardAsync(card.OfficeId, card.ManagerUserId, userId, isAdmin, ct))
         {
             return null;
         }
+
+        // Elevated (same office / global admin) or assigned owner may edit.
+        var canEdit = isAdmin || string.Equals(card.ManagerUserId, userId, StringComparison.Ordinal);
 
         var officeStagesJson = await db.Offices.AsNoTracking()
             .Where(x => x.Id == card.OfficeId)
@@ -617,8 +634,10 @@ public sealed class CrmWorkspaceService(
             .ToListAsync(ct);
         var tasks = await db.CrmTasks.AsNoTracking()
             .Where(x => x.CardId == cardId)
-            .OrderBy(x => x.Status)
-            .ThenBy(x => x.DueAtUtc)
+            .OrderBy(x => x.Status == CrmTaskStatuses.Open ? 0 : x.Status == CrmTaskStatuses.Completed ? 1 : 2)
+            .ThenBy(x => x.Status == CrmTaskStatuses.Open && x.DueAtUtc != null && x.DueAtUtc < now ? 0 : 1)
+            .ThenBy(x => x.DueAtUtc ?? DateTime.MaxValue)
+            .ThenByDescending(x => x.CreatedAtUtc)
             .ToListAsync(ct);
         var history = await db.CrmCandidateHistory.AsNoTracking()
             .Where(x => x.CardId == cardId)
@@ -630,8 +649,16 @@ public sealed class CrmWorkspaceService(
         var activity = BuildActivity(notes, tasks, history, names);
         var chat = ParseChatMessages(card.Response.ChatMessagesJson);
         var phoneHistory = BuildPhoneHistory(card.Response);
+        var contactPhones = await LoadContactPhonesAsync(card.Response, ct);
+        var chatHash = ComputeChatContentHash(card.Response.ChatMessagesJson);
+        var chatRead = await db.CrmCardChatReads.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.CardId == cardId && x.UserId == userId, ct);
+        var chatUnread = chat.Count > 0
+            && (chatRead is null || !string.Equals(chatRead.ContentHash, chatHash, StringComparison.Ordinal))
+            ? chat.Count
+            : 0;
         return new CrmCandidateDetailDto(
-            ToCardDto(card, names, openCount, hasOverdue, now),
+            ToCardDto(card, names, openCount, hasOverdue, now, chatUnread),
             notes.Select(x => new CrmNoteDto(x.Id, x.AuthorUserId, x.AuthorName, x.Text, x.CreatedAtUtc)).ToList(),
             tasks.Select(x => ToTaskDto(x, names, card.Response.FullName, now)).ToList(),
             history.Select(x => new CrmHistoryDto(x.Id, x.Action, x.Details, x.ActorUserId, x.ActorName, x.CreatedAtUtc)).ToList(),
@@ -640,7 +667,9 @@ public sealed class CrmWorkspaceService(
             officeStages,
             canEdit,
             chat,
-            phoneHistory);
+            phoneHistory,
+            contactPhones,
+            chatUnread);
     }
 
     public async Task<ResponseAvatarFile?> GetCardAvatarAsync(
@@ -682,8 +711,9 @@ public sealed class CrmWorkspaceService(
         var now = DateTime.UtcNow;
         var tasks = await db.CrmTasks.AsNoTracking()
             .Where(x => x.OfficeId == officeId && (isAdmin || x.AssigneeUserId == userId || x.CreatorUserId == userId))
-            .OrderBy(x => x.Status)
-            .ThenBy(x => x.DueAtUtc)
+            .OrderBy(x => x.Status == CrmTaskStatuses.Open ? 0 : x.Status == CrmTaskStatuses.Completed ? 1 : 2)
+            .ThenBy(x => x.Status == CrmTaskStatuses.Open && x.DueAtUtc != null && x.DueAtUtc < now ? 0 : 1)
+            .ThenBy(x => x.DueAtUtc ?? DateTime.MaxValue)
             .ThenByDescending(x => x.CreatedAtUtc)
             .Take(300)
             .ToListAsync(ct);
@@ -770,7 +800,9 @@ public sealed class CrmWorkspaceService(
         }
 
         var card = await db.CrmCandidateCards.FirstOrDefaultAsync(x => x.Id == cardId, ct);
-        if (card is null || await GetManagerProfileAsync(card.OfficeId, managerUserId, ct) is null)
+        if (card is null
+            || !await CanAccessCardAsync(card.OfficeId, card.ManagerUserId, actorUserId, isElevated: true, ct)
+            || await GetManagerProfileAsync(card.OfficeId, managerUserId, ct) is null)
         {
             return false;
         }
@@ -816,6 +848,11 @@ public sealed class CrmWorkspaceService(
             return (false, "Неизвестная причина закрытия.");
         }
 
+        if (string.IsNullOrWhiteSpace(comment))
+        {
+            return (false, "При закрытии сделки обязателен комментарий с причиной и деталями.");
+        }
+
         var card = await FindAccessibleCardAsync(cardId, actorUserId, isAdmin, ct);
         if (card is null)
         {
@@ -824,6 +861,7 @@ public sealed class CrmWorkspaceService(
 
         var now = DateTime.UtcNow;
         var actorName = await ResolveDisplayNameAsync(actorUserId, ct);
+        var commentText = comment.Trim();
         card.IsClosed = true;
         card.CloseReason = reason;
         card.ClosedAtUtc = now;
@@ -831,18 +869,15 @@ public sealed class CrmWorkspaceService(
         card.UpdatedAtUtc = now;
         card.LastContactAtUtc = now;
         AddHistory(card.Id, "Closed", reason, actorUserId, actorName, now);
-        if (!string.IsNullOrWhiteSpace(comment))
+        db.CrmCandidateNotes.Add(new CrmCandidateNoteEntity
         {
-            db.CrmCandidateNotes.Add(new CrmCandidateNoteEntity
-            {
-                Id = Guid.NewGuid(),
-                CardId = card.Id,
-                AuthorUserId = actorUserId,
-                AuthorName = actorName,
-                Text = comment.Trim(),
-                CreatedAtUtc = now
-            });
-        }
+            Id = Guid.NewGuid(),
+            CardId = card.Id,
+            AuthorUserId = actorUserId,
+            AuthorName = actorName,
+            Text = commentText,
+            CreatedAtUtc = now
+        });
 
         await db.SaveChangesAsync(ct);
         NotifyBoardChanged(card.OfficeId);
@@ -895,6 +930,591 @@ public sealed class CrmWorkspaceService(
         await db.SaveChangesAsync(ct);
         NotifyBoardChanged(card.OfficeId);
         return true;
+    }
+
+    public async Task<(bool Ok, string? Error)> UpdateCardAsync(
+        Guid cardId,
+        CrmCardUpdateRequest request,
+        string actorUserId,
+        bool isAdmin,
+        CancellationToken ct = default)
+    {
+        const int minAge = 14;
+        const int maxAge = 99;
+
+        var card = await db.CrmCandidateCards
+            .Include(x => x.Response)
+                .ThenInclude(x => x.Person)
+            .FirstOrDefaultAsync(x => x.Id == cardId, ct);
+        if (card is null
+            || !await CanAccessCardAsync(card.OfficeId, card.ManagerUserId, actorUserId, isAdmin, ct))
+        {
+            return (false, "Карточка не найдена.");
+        }
+
+        var fullName = (request.FullName ?? string.Empty).Trim();
+        if (fullName.Length == 0)
+        {
+            return (false, "Укажите ФИО кандидата.");
+        }
+
+        if (fullName.Length > 256)
+        {
+            return (false, "ФИО слишком длинное.");
+        }
+
+        var phoneRaw = (request.PhoneRaw ?? string.Empty).Trim();
+        var phoneNormalized = _phoneNormalizer.Normalize(phoneRaw);
+        if (string.IsNullOrWhiteSpace(phoneNormalized))
+        {
+            return (false, "Укажите корректный телефон.");
+        }
+
+        var city = (request.City ?? string.Empty).Trim();
+        if (city.Length > 256)
+        {
+            return (false, "Город слишком длинный.");
+        }
+
+        var vacancy = (request.Vacancy ?? string.Empty).Trim();
+        if (vacancy.Length > 512)
+        {
+            return (false, "Вакансия слишком длинная.");
+        }
+
+        int? age = request.Age;
+        if (age is int ageValue && ageValue is < minAge or > maxAge)
+        {
+            return (false, $"Возраст должен быть от {minAge} до {maxAge}.");
+        }
+
+        if (age is null || age < minAge)
+        {
+            age = null;
+        }
+
+        string Clamp(string? value, int max) =>
+            string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim().Length <= max ? value.Trim() : value.Trim()[..max];
+
+        var sourceResponseId = Clamp(request.SourceResponseId, 128);
+        var accountName = Clamp(request.AccountName, 256);
+        var sourceUrl = Clamp(request.SourceUrl, 1024);
+        var vacancyUrl = Clamp(request.VacancyUrl, 1024);
+        var messengerUrl = Clamp(request.MessengerUrl, 1024);
+
+        var response = card.Response;
+        var (firstName, lastName, middleName) = _candidateParser.ParseName(fullName);
+        var changes = new List<string>();
+        void Track(string label, string? before, string? after)
+        {
+            before ??= string.Empty;
+            after ??= string.Empty;
+            if (!string.Equals(before, after, StringComparison.Ordinal))
+            {
+                changes.Add(label);
+            }
+        }
+
+        Track("ФИО", response.FullName, fullName);
+        Track("телефон", response.PhoneRaw, phoneRaw);
+        Track("город", response.City, city);
+        Track("вакансия", response.Vacancy, vacancy);
+        Track("возраст", response.Age?.ToString(CultureInfo.InvariantCulture), age?.ToString(CultureInfo.InvariantCulture));
+        Track("ID отклика", response.SourceResponseId, sourceResponseId);
+        Track("источник", response.AccountName, accountName);
+        Track("ссылка", response.SourceUrl, sourceUrl);
+        Track("объявление", response.VacancyUrl, vacancyUrl);
+        Track("мессенджер", response.MessengerUrl, messengerUrl);
+
+        var phoneChanged = !string.Equals(response.PhoneNormalized, phoneNormalized, StringComparison.Ordinal);
+
+        response.FullName = fullName;
+        response.FirstName = firstName;
+        response.LastName = lastName;
+        response.MiddleName = middleName;
+        response.Age = age;
+        response.City = city;
+        response.Vacancy = vacancy;
+        response.SourceResponseId = sourceResponseId;
+        response.AccountName = accountName;
+        response.SourceUrl = sourceUrl;
+        response.VacancyUrl = vacancyUrl;
+        response.MessengerUrl = messengerUrl;
+
+        if (phoneChanged)
+        {
+            response.PreviousPhoneRaw = response.PhoneRaw;
+            response.PreviousPhoneNormalized = response.PhoneNormalized;
+            response.PhoneMetricKind = ResponsePhoneMetricKinds.PhoneChanged;
+            response.PhoneChangedAtUtc = DateTime.UtcNow;
+            response.PhoneRaw = phoneRaw;
+            response.PhoneNormalized = phoneNormalized;
+        }
+        else if (!string.Equals(response.PhoneRaw, phoneRaw, StringComparison.Ordinal))
+        {
+            response.PhoneRaw = phoneRaw;
+        }
+
+        var person = response.Person;
+        if (person is not null)
+        {
+            person.FullName = fullName;
+            person.FirstName = firstName;
+            person.LastName = lastName;
+            person.MiddleName = middleName;
+            person.Age = age;
+            person.City = city;
+            person.UpdatedAtUtc = DateTime.UtcNow;
+        }
+
+        var now = DateTime.UtcNow;
+        var actorName = await ResolveDisplayNameAsync(actorUserId, ct);
+        card.UpdatedAtUtc = now;
+        if (changes.Count > 0)
+        {
+            AddHistory(
+                card.Id,
+                "CardUpdated",
+                string.Join(", ", changes),
+                actorUserId,
+                actorName,
+                now);
+        }
+
+        if (phoneChanged && person is not null)
+        {
+            await SyncPrimaryContactPhoneAsync(person.Id, phoneRaw, phoneNormalized, actorUserId, now, ct);
+            await _personPhone.ApplyPhoneFromResponseAsync(
+                person,
+                phoneRaw,
+                phoneNormalized,
+                response.Id,
+                ct,
+                save: false);
+            await QueuePhoneChangedAlertAsync(
+                card,
+                actorUserId,
+                response.PreviousPhoneRaw,
+                phoneRaw,
+                now,
+                ct);
+        }
+
+        await db.SaveChangesAsync(ct);
+        if (phoneChanged)
+        {
+            await FlushPhoneChangedRealtimeAsync(ct);
+        }
+
+        NotifyBoardChanged(card.OfficeId);
+        return (true, null);
+    }
+
+    public async Task<(CrmContactPhoneDto? Phone, string? Error)> AddContactPhoneAsync(
+        Guid cardId,
+        CrmContactPhoneCreateRequest request,
+        string actorUserId,
+        bool isAdmin,
+        CancellationToken ct = default)
+    {
+        var card = await db.CrmCandidateCards
+            .Include(x => x.Response)
+                .ThenInclude(x => x.Person)
+            .FirstOrDefaultAsync(x => x.Id == cardId, ct);
+        if (card is null
+            || !await CanAccessCardAsync(card.OfficeId, card.ManagerUserId, actorUserId, isAdmin, ct))
+        {
+            return (null, "Карточка не найдена.");
+        }
+
+        var phoneRaw = (request.PhoneRaw ?? string.Empty).Trim();
+        var phoneNormalized = _phoneNormalizer.Normalize(phoneRaw);
+        if (string.IsNullOrWhiteSpace(phoneNormalized))
+        {
+            return (null, "Укажите корректный телефон.");
+        }
+
+        var personId = card.Response.PersonId;
+        await EnsureContactPhonesSeededAsync(card, actorUserId, ct);
+
+        if (await db.CandidateContactPhones.AnyAsync(
+                x => x.PersonId == personId && x.PhoneNormalized == phoneNormalized, ct))
+        {
+            return (null, "Такой номер уже есть у кандидата.");
+        }
+
+        var count = await db.CandidateContactPhones.CountAsync(x => x.PersonId == personId, ct);
+        if (count >= CrmContactPhoneLimits.MaxPhonesPerPerson)
+        {
+            return (null, $"Можно добавить не больше {CrmContactPhoneLimits.MaxPhonesPerPerson} номеров.");
+        }
+
+        var now = DateTime.UtcNow;
+        var setPrimary = request.SetAsPrimary;
+        string? previousPrimary = null;
+        if (setPrimary)
+        {
+            previousPrimary = card.Response.PhoneRaw;
+            await ClearPrimaryContactFlagsAsync(personId, ct);
+            card.Response.PreviousPhoneRaw = card.Response.PhoneRaw;
+            card.Response.PreviousPhoneNormalized = card.Response.PhoneNormalized;
+            card.Response.PhoneMetricKind = ResponsePhoneMetricKinds.PhoneChanged;
+            card.Response.PhoneChangedAtUtc = now;
+            card.Response.PhoneRaw = phoneRaw;
+            card.Response.PhoneNormalized = phoneNormalized;
+            if (card.Response.Person is not null)
+            {
+                await _personPhone.ApplyPhoneFromResponseAsync(
+                    card.Response.Person,
+                    phoneRaw,
+                    phoneNormalized,
+                    card.Response.Id,
+                    ct,
+                    save: false);
+            }
+
+            await QueuePhoneChangedAlertAsync(card, actorUserId, previousPrimary, phoneRaw, now, ct);
+        }
+
+        var entity = new CandidateContactPhoneEntity
+        {
+            Id = Guid.NewGuid(),
+            PersonId = personId,
+            PhoneRaw = phoneRaw,
+            PhoneNormalized = phoneNormalized,
+            IsPrimary = setPrimary,
+            Label = string.IsNullOrWhiteSpace(request.Label) ? null : request.Label.Trim(),
+            CreatedAtUtc = now,
+            CreatedByUserId = actorUserId
+        };
+        db.CandidateContactPhones.Add(entity);
+        card.UpdatedAtUtc = now;
+        var actorName = await ResolveDisplayNameAsync(actorUserId, ct);
+        AddHistory(card.Id, "PhoneAdded", phoneRaw, actorUserId, actorName, now);
+        await db.SaveChangesAsync(ct);
+        if (setPrimary)
+        {
+            await FlushPhoneChangedRealtimeAsync(ct);
+        }
+
+        NotifyBoardChanged(card.OfficeId);
+        return (new CrmContactPhoneDto(entity.Id, entity.PhoneRaw, entity.PhoneNormalized, entity.IsPrimary, entity.Label, entity.CreatedAtUtc), null);
+    }
+
+    public async Task<(bool Ok, string? Error)> RemoveContactPhoneAsync(
+        Guid cardId,
+        Guid phoneId,
+        string actorUserId,
+        bool isAdmin,
+        CancellationToken ct = default)
+    {
+        var card = await db.CrmCandidateCards
+            .Include(x => x.Response)
+            .FirstOrDefaultAsync(x => x.Id == cardId, ct);
+        if (card is null
+            || !await CanAccessCardAsync(card.OfficeId, card.ManagerUserId, actorUserId, isAdmin, ct))
+        {
+            return (false, "Карточка не найдена.");
+        }
+
+        var phone = await db.CandidateContactPhones
+            .FirstOrDefaultAsync(x => x.Id == phoneId && x.PersonId == card.Response.PersonId, ct);
+        if (phone is null)
+        {
+            return (false, "Номер не найден.");
+        }
+
+        if (phone.IsPrimary || string.Equals(phone.PhoneNormalized, card.Response.PhoneNormalized, StringComparison.Ordinal))
+        {
+            return (false, "Нельзя удалить основной номер. Сначала назначьте другой основным.");
+        }
+
+        db.CandidateContactPhones.Remove(phone);
+        var now = DateTime.UtcNow;
+        card.UpdatedAtUtc = now;
+        var actorName = await ResolveDisplayNameAsync(actorUserId, ct);
+        AddHistory(card.Id, "PhoneRemoved", phone.PhoneRaw, actorUserId, actorName, now);
+        await db.SaveChangesAsync(ct);
+        NotifyBoardChanged(card.OfficeId);
+        return (true, null);
+    }
+
+    public async Task<(bool Ok, string? Error)> SetPrimaryContactPhoneAsync(
+        Guid cardId,
+        Guid phoneId,
+        string actorUserId,
+        bool isAdmin,
+        CancellationToken ct = default)
+    {
+        var card = await db.CrmCandidateCards
+            .Include(x => x.Response)
+                .ThenInclude(x => x.Person)
+            .FirstOrDefaultAsync(x => x.Id == cardId, ct);
+        if (card is null
+            || !await CanAccessCardAsync(card.OfficeId, card.ManagerUserId, actorUserId, isAdmin, ct))
+        {
+            return (false, "Карточка не найдена.");
+        }
+
+        var phone = await db.CandidateContactPhones
+            .FirstOrDefaultAsync(x => x.Id == phoneId && x.PersonId == card.Response.PersonId, ct);
+        if (phone is null)
+        {
+            return (false, "Номер не найден.");
+        }
+
+        if (string.Equals(card.Response.PhoneNormalized, phone.PhoneNormalized, StringComparison.Ordinal))
+        {
+            await ClearPrimaryContactFlagsAsync(card.Response.PersonId, ct);
+            phone.IsPrimary = true;
+            await db.SaveChangesAsync(ct);
+            return (true, null);
+        }
+
+        var now = DateTime.UtcNow;
+        var previousRaw = card.Response.PhoneRaw;
+        await ClearPrimaryContactFlagsAsync(card.Response.PersonId, ct);
+        phone.IsPrimary = true;
+        card.Response.PreviousPhoneRaw = card.Response.PhoneRaw;
+        card.Response.PreviousPhoneNormalized = card.Response.PhoneNormalized;
+        card.Response.PhoneMetricKind = ResponsePhoneMetricKinds.PhoneChanged;
+        card.Response.PhoneChangedAtUtc = now;
+        card.Response.PhoneRaw = phone.PhoneRaw;
+        card.Response.PhoneNormalized = phone.PhoneNormalized;
+        card.UpdatedAtUtc = now;
+
+        if (card.Response.Person is not null)
+        {
+            await _personPhone.ApplyPhoneFromResponseAsync(
+                card.Response.Person,
+                phone.PhoneRaw,
+                phone.PhoneNormalized,
+                card.Response.Id,
+                ct,
+                save: false);
+        }
+
+        var actorName = await ResolveDisplayNameAsync(actorUserId, ct);
+        AddHistory(card.Id, "PhonePrimary", phone.PhoneRaw, actorUserId, actorName, now);
+        await QueuePhoneChangedAlertAsync(card, actorUserId, previousRaw, phone.PhoneRaw, now, ct);
+        await db.SaveChangesAsync(ct);
+        await FlushPhoneChangedRealtimeAsync(ct);
+        NotifyBoardChanged(card.OfficeId);
+        return (true, null);
+    }
+
+    public async Task<bool> MarkChatReadAsync(Guid cardId, string userId, bool isAdmin, CancellationToken ct = default)
+    {
+        var card = await db.CrmCandidateCards.AsNoTracking()
+            .Include(x => x.Response)
+            .FirstOrDefaultAsync(x => x.Id == cardId, ct);
+        if (card is null
+            || !await CanAccessCardAsync(card.OfficeId, card.ManagerUserId, userId, isAdmin, ct))
+        {
+            return false;
+        }
+
+        var hash = ComputeChatContentHash(card.Response.ChatMessagesJson);
+        var now = DateTime.UtcNow;
+        var existing = await db.CrmCardChatReads
+            .FirstOrDefaultAsync(x => x.CardId == cardId && x.UserId == userId, ct);
+        if (existing is null)
+        {
+            db.CrmCardChatReads.Add(new CrmCardChatReadEntity
+            {
+                CardId = cardId,
+                UserId = userId,
+                LastReadAtUtc = now,
+                ContentHash = hash
+            });
+        }
+        else
+        {
+            existing.LastReadAtUtc = now;
+            existing.ContentHash = hash;
+        }
+
+        await db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    public async Task<(Guid? CardId, string? Error)> CreateManualCardAsync(
+        Guid officeId,
+        CrmManualCardCreateRequest request,
+        string actorUserId,
+        bool isAdmin,
+        CancellationToken ct = default)
+    {
+        var fullName = (request.FullName ?? string.Empty).Trim();
+        if (fullName.Length == 0)
+        {
+            return (null, "Укажите ФИО кандидата.");
+        }
+
+        var phoneRaw = (request.PhoneRaw ?? string.Empty).Trim();
+        var phoneNormalized = _phoneNormalizer.Normalize(phoneRaw);
+        if (string.IsNullOrWhiteSpace(phoneNormalized))
+        {
+            return (null, "Укажите корректный телефон.");
+        }
+
+        var office = await db.Offices.AsNoTracking()
+            .Where(x => x.Id == officeId)
+            .Select(x => new { x.CrmEnabled, x.IsEnabled, x.CrmStagesJson })
+            .FirstOrDefaultAsync(ct);
+        if (office is null || !office.IsEnabled)
+        {
+            return (null, "Офис не найден или отключён.");
+        }
+
+        if (!office.CrmEnabled)
+        {
+            return (null, "CRM выключена для офиса.");
+        }
+
+        if (!isAdmin)
+        {
+            var profileOffice = await db.PanelUserProfiles.AsNoTracking()
+                .Where(x => x.UserId == actorUserId)
+                .Select(x => x.OfficeId)
+                .FirstOrDefaultAsync(ct);
+            if (profileOffice != officeId)
+            {
+                return (null, "Нет доступа к офису.");
+            }
+        }
+
+        var stages = CrmStages.Resolve(office.CrmStagesJson);
+        var stage = string.IsNullOrWhiteSpace(request.Stage) ? stages[0] : request.Stage.Trim();
+        if (!CrmStages.Contains(stages, stage))
+        {
+            return (null, "Неизвестный этап.");
+        }
+
+        var sourceResponseId = string.IsNullOrWhiteSpace(request.SourceResponseId)
+            ? $"manual-{Guid.NewGuid():N}"
+            : request.SourceResponseId.Trim();
+
+        // Same AccountId (Empty) + SourceResponseId is unique in DB — fail early with a clear message.
+        var sourceTaken = await db.CandidateResponses.AsNoTracking()
+            .AnyAsync(
+                x => x.AccountId == Guid.Empty
+                     && x.SourceResponseId == sourceResponseId
+                     && x.SourceResponseId != string.Empty,
+                ct);
+        if (sourceTaken)
+        {
+            return (null, "Отклик с таким ID уже существует. Укажите другой ID отклика.");
+        }
+
+        // Soft signal: existing CRM card for same phone in office (do not block — manager may still create).
+        var existingCardId = await db.CrmCandidateCards.AsNoTracking()
+            .Where(x => x.OfficeId == officeId && x.Response.PhoneNormalized == phoneNormalized)
+            .Select(x => (Guid?)x.Id)
+            .FirstOrDefaultAsync(ct);
+        if (existingCardId is Guid existingId)
+        {
+            // Prefer linking managers to the existing card rather than silent duplicates.
+            return (null, $"Кандидат с этим телефоном уже есть в CRM. Откройте карточку: {existingId:D}");
+        }
+
+        var now = DateTime.UtcNow;
+        var (firstName, lastName, middleName) = _candidateParser.ParseName(fullName);
+        var person = new CandidatePersonEntity
+        {
+            Id = Guid.NewGuid(),
+            OfficeId = officeId,
+            FullName = fullName,
+            FirstName = firstName,
+            LastName = lastName,
+            MiddleName = middleName,
+            Age = request.Age is >= 14 and <= 99 ? request.Age : null,
+            City = request.City?.Trim() ?? string.Empty,
+            PhoneRaw = phoneRaw,
+            PhoneNormalized = phoneNormalized,
+            CreatedAtUtc = now,
+            UpdatedAtUtc = now
+        };
+        var response = new CandidateResponseEntity
+        {
+            Id = Guid.NewGuid(),
+            PersonId = person.Id,
+            OfficeId = officeId,
+            AccountId = Guid.Empty,
+            AccountName = string.IsNullOrWhiteSpace(request.Source) ? "Ручной ввод" : request.Source.Trim(),
+            Source = "Manual",
+            SourceResponseId = sourceResponseId,
+            FullName = fullName,
+            FirstName = firstName,
+            LastName = lastName,
+            MiddleName = middleName,
+            Age = person.Age,
+            PhoneRaw = phoneRaw,
+            PhoneNormalized = phoneNormalized,
+            City = person.City,
+            Vacancy = request.Vacancy?.Trim() ?? string.Empty,
+            Status = ResponseStatuses.New,
+            CreatedAt = now,
+            CollectedAt = now
+        };
+
+        db.CandidatePersons.Add(person);
+        db.CandidateResponses.Add(response);
+        db.CandidateContactPhones.Add(new CandidateContactPhoneEntity
+        {
+            Id = Guid.NewGuid(),
+            PersonId = person.Id,
+            PhoneRaw = phoneRaw,
+            PhoneNormalized = phoneNormalized,
+            IsPrimary = true,
+            CreatedAtUtc = now,
+            CreatedByUserId = actorUserId
+        });
+        db.CandidatePhoneHistory.Add(new CandidatePhoneHistoryEntity
+        {
+            Id = Guid.NewGuid(),
+            PersonId = person.Id,
+            ResponseId = response.Id,
+            PhoneRaw = phoneRaw,
+            PhoneNormalized = phoneNormalized,
+            RecordedAtUtc = now
+        });
+
+        var card = new CrmCandidateCardEntity
+        {
+            Id = Guid.NewGuid(),
+            ResponseId = response.Id,
+            OfficeId = officeId,
+            Stage = stage,
+            CreatedAtUtc = now,
+            UpdatedAtUtc = now,
+            StageChangedAtUtc = now,
+            IsInActiveLoad = true
+        };
+        if (request.AssignToMe)
+        {
+            card.ManagerUserId = actorUserId;
+        }
+
+        db.CrmCandidateCards.Add(card);
+        var actorName = await ResolveDisplayNameAsync(actorUserId, ct);
+        AddHistory(card.Id, "Created", "Карточка создана вручную", actorUserId, actorName, now);
+        if (request.AssignToMe)
+        {
+            AddHistory(card.Id, "Assigned", actorName, actorUserId, actorName, now);
+        }
+
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException)
+        {
+            return (null, "Не удалось сохранить отклик (возможен дубль ID). Проверьте ID отклика и телефон.");
+        }
+
+        NotifyBoardChanged(officeId);
+        return (card.Id, null);
     }
 
     public async Task<CrmTaskDto?> CreateTaskAsync(
@@ -1020,17 +1640,46 @@ public sealed class CrmWorkspaceService(
             ct);
     }
 
-    public async Task<bool> CompleteTaskAsync(Guid taskId, string userId, bool isAdmin, CancellationToken ct = default)
+    public async Task<(bool Ok, string? Error)> CompleteTaskAsync(
+        Guid taskId,
+        string comment,
+        string userId,
+        bool isAdmin,
+        CancellationToken ct = default)
     {
-        var task = await db.CrmTasks.FirstOrDefaultAsync(x => x.Id == taskId, ct);
-        if (task is null
-            || task.Status != CrmTaskStatuses.Open
-            || (!isAdmin && task.AssigneeUserId != userId))
+        if (string.IsNullOrWhiteSpace(comment))
         {
-            return false;
+            return (false, "При выполнении задачи обязателен комментарий: что сделано.");
+        }
+
+        var task = await db.CrmTasks.FirstOrDefaultAsync(x => x.Id == taskId, ct);
+        if (task is null)
+        {
+            return (false, "Задача не найдена.");
+        }
+
+        if (task.Status != CrmTaskStatuses.Open)
+        {
+            return (false, "Выполнить можно только задачу в работе.");
+        }
+
+        if (!isAdmin && task.AssigneeUserId != userId)
+        {
+            return (false, "Выполнить задачу может только ответственный или руководитель.");
         }
 
         var now = DateTime.UtcNow;
+        var actorName = await ResolveDisplayNameAsync(userId, ct);
+        var commentText = comment.Trim();
+        db.CrmTaskComments.Add(new CrmTaskCommentEntity
+        {
+            Id = Guid.NewGuid(),
+            TaskId = task.Id,
+            AuthorUserId = userId,
+            AuthorName = actorName,
+            Text = commentText,
+            CreatedAtUtc = now
+        });
         task.Status = CrmTaskStatuses.Completed;
         task.CompletedAtUtc = now;
         if (deadlineNotifications is not null)
@@ -1039,7 +1688,6 @@ public sealed class CrmWorkspaceService(
         }
         if (task.CardId is Guid cardId)
         {
-            var actorName = await ResolveDisplayNameAsync(userId, ct);
             AddHistory(cardId, "TaskCompleted", task.Title, userId, actorName, now);
             await RefreshTaskCardNextActionAsync(task, now, markContact: true, ct);
         }
@@ -1047,7 +1695,7 @@ public sealed class CrmWorkspaceService(
         await db.SaveChangesAsync(ct);
         NotifyBoardChanged(task.OfficeId);
 
-        return true;
+        return (true, null);
     }
 
     public async Task<(bool Ok, string? Error)> UpdateTaskAsync(
@@ -1427,8 +2075,18 @@ public sealed class CrmWorkspaceService(
             CreatedAtUtc = at ?? DateTime.UtcNow
         });
 
-    private async Task<CrmCandidateCardEntity?> FindAccessibleCardAsync(Guid cardId, string userId, bool isAdmin, CancellationToken ct) =>
-        await db.CrmCandidateCards.FirstOrDefaultAsync(x => x.Id == cardId && (isAdmin || x.ManagerUserId == userId), ct);
+    private async Task<CrmCandidateCardEntity?> FindAccessibleCardAsync(Guid cardId, string userId, bool isAdmin, CancellationToken ct)
+    {
+        var card = await db.CrmCandidateCards.FirstOrDefaultAsync(x => x.Id == cardId, ct);
+        if (card is null)
+        {
+            return null;
+        }
+
+        return await CanAccessCardAsync(card.OfficeId, card.ManagerUserId, userId, isAdmin, ct)
+            ? card
+            : null;
+    }
 
     private async Task<PanelUserProfileEntity?> GetManagerProfileAsync(
         Guid officeId,
@@ -1645,24 +2303,79 @@ public sealed class CrmWorkspaceService(
             _ => CrmBoardScopes.Mine
         };
 
+    /// <summary>
+    /// Card access: owner always; elevated roles only within their office (global Admin: any office).
+    /// </summary>
     private async Task<bool> CanAccessCardAsync(
         Guid cardOfficeId,
         string? managerUserId,
         string userId,
-        bool isAdmin,
+        bool isElevated,
         CancellationToken ct)
     {
-        if (isAdmin || managerUserId == userId)
+        if (string.Equals(managerUserId, userId, StringComparison.Ordinal))
         {
             return true;
         }
 
-        // Managers may open cards of their own office (team / queue) in read-only mode.
+        if (!isElevated)
+        {
+            return false;
+        }
+
+        var user = await users.FindByIdAsync(userId);
+        if (user is not null && await users.IsInRoleAsync(user, PanelRoles.Admin))
+        {
+            return true;
+        }
+
         var ownOfficeId = await db.PanelUserProfiles.AsNoTracking()
             .Where(x => x.UserId == userId)
             .Select(x => x.OfficeId)
             .FirstOrDefaultAsync(ct);
-        return ownOfficeId == cardOfficeId;
+        return ownOfficeId is Guid oid && oid != Guid.Empty && oid == cardOfficeId;
+    }
+
+    /// <summary>
+    /// Board badges: hash compare only (no chat JSON parse). Value is 1 when unread, 0 when read/absent.
+    /// Exact counts are computed on card detail.
+    /// </summary>
+    private async Task<Dictionary<Guid, int>> LoadChatUnreadCountsAsync(
+        IReadOnlyList<Guid> cardIds,
+        string userId,
+        IReadOnlyList<CrmCandidateCardEntity> cards,
+        CancellationToken ct)
+    {
+        var result = new Dictionary<Guid, int>();
+        if (cardIds.Count == 0)
+        {
+            return result;
+        }
+
+        var reads = await db.CrmCardChatReads.AsNoTracking()
+            .Where(x => x.UserId == userId && cardIds.Contains(x.CardId))
+            .ToDictionaryAsync(x => x.CardId, x => x.ContentHash, ct);
+
+        foreach (var card in cards)
+        {
+            var json = card.Response.ChatMessagesJson;
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                continue;
+            }
+
+            var hash = ComputeChatContentHash(json);
+            if (reads.TryGetValue(card.Id, out var readHash)
+                && string.Equals(readHash, hash, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            // 1 = has unread (badge); full count only on card open.
+            result[card.Id] = 1;
+        }
+
+        return result;
     }
 
     private static CrmCandidateCardDto ToCardDto(
@@ -1670,7 +2383,8 @@ public sealed class CrmWorkspaceService(
         IReadOnlyDictionary<string, string> names,
         int openTaskCount,
         bool hasOverdue,
-        DateTime now)
+        DateTime now,
+        int chatUnreadCount = 0)
     {
         var stageAt = card.StageChangedAtUtc == default ? card.CreatedAtUtc : card.StageChangedAtUtc;
         var hours = Math.Max(0, (now - stageAt).TotalHours);
@@ -1699,7 +2413,8 @@ public sealed class CrmWorkspaceService(
             string.IsNullOrWhiteSpace(card.Response.SourceUrl) ? null : card.Response.SourceUrl,
             string.IsNullOrWhiteSpace(card.Response.VacancyUrl) ? null : card.Response.VacancyUrl,
             string.IsNullOrWhiteSpace(card.Response.AccountName) ? null : card.Response.AccountName,
-            string.IsNullOrWhiteSpace(card.Response.SourceResponseId) ? null : card.Response.SourceResponseId);
+            string.IsNullOrWhiteSpace(card.Response.SourceResponseId) ? null : card.Response.SourceResponseId,
+            chatUnreadCount);
     }
 
     private static CrmTaskDto ToTaskDto(
@@ -1755,6 +2470,7 @@ public sealed class CrmWorkspaceService(
 
     private static string MapHistoryTitle(string action) => action switch
     {
+        "CardUpdated" => "Карточка изменена",
         "Created" => "Карточка создана",
         "Assigned" => "Назначен ответственный",
         "StageChanged" => "Смена этапа",
@@ -1770,6 +2486,185 @@ public sealed class CrmWorkspaceService(
 
     private void NotifyBoardChanged(Guid officeId) =>
         panelRealtime?.Notify([PanelChangeKind.Crm], officeId);
+
+    private async Task EnsureContactPhonesSeededAsync(
+        CrmCandidateCardEntity card,
+        string actorUserId,
+        CancellationToken ct)
+    {
+        var personId = card.Response.PersonId;
+        if (await db.CandidateContactPhones.AnyAsync(x => x.PersonId == personId, ct))
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(card.Response.PhoneNormalized))
+        {
+            return;
+        }
+
+        // Same unit of work as caller — avoid intermediate SaveChanges (unique-index races).
+        db.CandidateContactPhones.Add(new CandidateContactPhoneEntity
+        {
+            Id = Guid.NewGuid(),
+            PersonId = personId,
+            PhoneRaw = card.Response.PhoneRaw,
+            PhoneNormalized = card.Response.PhoneNormalized,
+            IsPrimary = true,
+            CreatedAtUtc = DateTime.UtcNow,
+            CreatedByUserId = actorUserId
+        });
+    }
+
+    private async Task ClearPrimaryContactFlagsAsync(Guid personId, CancellationToken ct)
+    {
+        var phones = await db.CandidateContactPhones.Where(x => x.PersonId == personId && x.IsPrimary).ToListAsync(ct);
+        foreach (var phone in phones)
+        {
+            phone.IsPrimary = false;
+        }
+    }
+
+    private async Task SyncPrimaryContactPhoneAsync(
+        Guid personId,
+        string phoneRaw,
+        string phoneNormalized,
+        string actorUserId,
+        DateTime now,
+        CancellationToken ct)
+    {
+        await ClearPrimaryContactFlagsAsync(personId, ct);
+        var existing = await db.CandidateContactPhones
+            .FirstOrDefaultAsync(x => x.PersonId == personId && x.PhoneNormalized == phoneNormalized, ct);
+        if (existing is null)
+        {
+            db.CandidateContactPhones.Add(new CandidateContactPhoneEntity
+            {
+                Id = Guid.NewGuid(),
+                PersonId = personId,
+                PhoneRaw = phoneRaw,
+                PhoneNormalized = phoneNormalized,
+                IsPrimary = true,
+                CreatedAtUtc = now,
+                CreatedByUserId = actorUserId
+            });
+        }
+        else
+        {
+            existing.PhoneRaw = phoneRaw;
+            existing.IsPrimary = true;
+        }
+    }
+
+    /// <summary>Stages a desk alert without SaveChanges — caller must SaveChanges then FlushPhoneChangedRealtimeAsync.</summary>
+    private async Task QueuePhoneChangedAlertAsync(
+        CrmCandidateCardEntity card,
+        string actorUserId,
+        string previousPhoneRaw,
+        string newPhoneRaw,
+        DateTime now,
+        CancellationToken ct)
+    {
+        var recipient = card.ManagerUserId;
+        if (string.IsNullOrWhiteSpace(recipient) || string.Equals(recipient, actorUserId, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        var title = card.Response?.FullName;
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            title = await db.CandidateResponses.AsNoTracking()
+                .Where(x => x.Id == card.ResponseId)
+                .Select(x => x.FullName)
+                .FirstOrDefaultAsync(ct) ?? "Кандидат";
+        }
+
+        var alert = new CrmDeskAlertEntity
+        {
+            Id = Guid.NewGuid(),
+            OfficeId = card.OfficeId,
+            RecipientUserId = recipient,
+            Kind = CrmTaskNotificationKinds.PhoneChanged,
+            CardId = card.Id,
+            Title = title,
+            Message = $"Изменён телефон: {previousPhoneRaw} → {newPhoneRaw}",
+            CreatedAtUtc = now
+        };
+        db.CrmDeskAlerts.Add(alert);
+        _pendingPhoneRealtime.Add((
+            recipient,
+            new CrmTaskNotificationDto(
+                alert.Id,
+                Guid.Empty,
+                card.Id,
+                alert.Kind,
+                alert.Title,
+                alert.Message,
+                now,
+                now,
+                null)));
+    }
+
+    private async Task FlushPhoneChangedRealtimeAsync(CancellationToken ct)
+    {
+        if (crmNotificationRealtime is null || _pendingPhoneRealtime.Count == 0)
+        {
+            _pendingPhoneRealtime.Clear();
+            return;
+        }
+
+        foreach (var (recipient, dto) in _pendingPhoneRealtime)
+        {
+            await crmNotificationRealtime.NotifyAsync(recipient, dto, ct);
+        }
+
+        _pendingPhoneRealtime.Clear();
+    }
+
+    private async Task<IReadOnlyList<CrmContactPhoneDto>> LoadContactPhonesAsync(
+        CandidateResponseEntity response,
+        CancellationToken ct)
+    {
+        var phones = await db.CandidateContactPhones.AsNoTracking()
+            .Where(x => x.PersonId == response.PersonId)
+            .OrderByDescending(x => x.IsPrimary)
+            .ThenBy(x => x.CreatedAtUtc)
+            .ToListAsync(ct);
+        if (phones.Count > 0)
+        {
+            return phones
+                .Select(x => new CrmContactPhoneDto(x.Id, x.PhoneRaw, x.PhoneNormalized, x.IsPrimary, x.Label, x.CreatedAtUtc))
+                .ToList();
+        }
+
+        if (string.IsNullOrWhiteSpace(response.PhoneNormalized))
+        {
+            return [];
+        }
+
+        return
+        [
+            new CrmContactPhoneDto(
+                Guid.Empty,
+                response.PhoneRaw,
+                response.PhoneNormalized,
+                true,
+                null,
+                response.CreatedAt)
+        ];
+    }
+
+    private static string ComputeChatContentHash(string? chatMessagesJson)
+    {
+        if (string.IsNullOrWhiteSpace(chatMessagesJson))
+        {
+            return string.Empty;
+        }
+
+        var hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(chatMessagesJson));
+        return Convert.ToHexString(hash.AsSpan(0, 16));
+    }
 
     private static IReadOnlyList<CrmPhoneHistoryDto> BuildPhoneHistory(CandidateResponseEntity response)
     {

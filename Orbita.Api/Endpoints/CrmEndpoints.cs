@@ -52,7 +52,6 @@ public static class CrmEndpoints
             var hasCrmBoardAccess = principal.HasClaim(PanelPermissions.ClaimType, PanelPermissions.CrmBoard)
                 || principal.HasClaim(PanelPermissions.ClaimType, PanelPermissions.Crm)
                 || principal.HasClaim(PanelPermissions.ClaimType, PanelPermissions.CrmTeam);
-            var hasCrmTeamAccess = principal.HasClaim(PanelPermissions.ClaimType, PanelPermissions.CrmTeam);
             var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier)
                          ?? principal.FindFirstValue("sub");
             if (string.IsNullOrWhiteSpace(userId) || (!isAdmin && !isManager && !hasCrmBoardAccess))
@@ -70,10 +69,11 @@ public static class CrmEndpoints
                 });
             }
 
+            // Elevated roles only: team claim alone must not grant CanEdit / office-wide board powers.
             var board = await workspace.GetBoardAsync(
                 resolvedOfficeId,
                 userId,
-                isAdmin || hasCrmTeamAccess,
+                isAdmin,
                 new CrmBoardQuery(search, scopeFilter, city, vacancy, overdueOnly, activeLoadOnly, includeClosed),
                 ct);
             return board is null
@@ -142,7 +142,6 @@ public static class CrmEndpoints
             var hasCrmTasksAccess = principal.HasClaim(PanelPermissions.ClaimType, PanelPermissions.CrmTasks)
                 || principal.HasClaim(PanelPermissions.ClaimType, PanelPermissions.Crm)
                 || principal.HasClaim(PanelPermissions.ClaimType, PanelPermissions.CrmTeam);
-            var hasCrmTeamAccess = principal.HasClaim(PanelPermissions.ClaimType, PanelPermissions.CrmTeam);
             var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier)
                          ?? principal.FindFirstValue("sub");
             if (string.IsNullOrWhiteSpace(userId) || (!isAdmin && !isManager && !hasCrmTasksAccess))
@@ -160,7 +159,7 @@ public static class CrmEndpoints
                 });
             }
 
-            return Results.Ok(await workspace.GetTasksAsync(resolvedOfficeId, userId, isAdmin || hasCrmTeamAccess, ct));
+            return Results.Ok(await workspace.GetTasksAsync(resolvedOfficeId, userId, isAdmin, ct));
         });
 
         crmTasks.MapGet("/tasks/managers", async (
@@ -306,6 +305,110 @@ public static class CrmEndpoints
             return await workspace.AddNoteAsync(cardId, request.Text, userId, PanelRoles.HasElevatedOfficeAccess(principal), ct) ? Results.NoContent() : Results.BadRequest();
         });
 
+        crmBoard.MapPut("/cards/{cardId:guid}", async (
+            Guid cardId,
+            CrmCardUpdateRequest request,
+            CrmWorkspaceService workspace,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrWhiteSpace(userId)) return Results.Forbid();
+            var (ok, error) = await workspace.UpdateCardAsync(
+                cardId,
+                request,
+                userId,
+                PanelRoles.HasElevatedOfficeAccess(principal),
+                ct);
+            return ok
+                ? Results.NoContent()
+                : Results.BadRequest(new { error = error ?? "Не удалось сохранить карточку." });
+        });
+
+        crmBoard.MapPost("/cards/{cardId:guid}/phones", async (
+            Guid cardId,
+            CrmContactPhoneCreateRequest request,
+            CrmWorkspaceService workspace,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrWhiteSpace(userId)) return Results.Forbid();
+            var (phone, error) = await workspace.AddContactPhoneAsync(
+                cardId, request, userId, PanelRoles.HasElevatedOfficeAccess(principal), ct);
+            return phone is null
+                ? Results.BadRequest(new { error = error ?? "Не удалось добавить номер." })
+                : Results.Ok(phone);
+        });
+
+        crmBoard.MapDelete("/cards/{cardId:guid}/phones/{phoneId:guid}", async (
+            Guid cardId,
+            Guid phoneId,
+            CrmWorkspaceService workspace,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrWhiteSpace(userId)) return Results.Forbid();
+            var (ok, error) = await workspace.RemoveContactPhoneAsync(
+                cardId, phoneId, userId, PanelRoles.HasElevatedOfficeAccess(principal), ct);
+            return ok ? Results.NoContent() : Results.BadRequest(new { error = error ?? "Не удалось удалить номер." });
+        });
+
+        crmBoard.MapPost("/cards/{cardId:guid}/phones/{phoneId:guid}/primary", async (
+            Guid cardId,
+            Guid phoneId,
+            CrmWorkspaceService workspace,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrWhiteSpace(userId)) return Results.Forbid();
+            var (ok, error) = await workspace.SetPrimaryContactPhoneAsync(
+                cardId, phoneId, userId, PanelRoles.HasElevatedOfficeAccess(principal), ct);
+            return ok ? Results.NoContent() : Results.BadRequest(new { error = error ?? "Не удалось назначить основной номер." });
+        });
+
+        crmBoard.MapPost("/cards/{cardId:guid}/chat/read", async (
+            Guid cardId,
+            CrmWorkspaceService workspace,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrWhiteSpace(userId)) return Results.Forbid();
+            return await workspace.MarkChatReadAsync(cardId, userId, PanelRoles.HasElevatedOfficeAccess(principal), ct)
+                ? Results.NoContent()
+                : Results.NotFound();
+        });
+
+        crmBoard.MapPost("/cards/manual", async (
+            Guid? officeId,
+            CrmManualCardCreateRequest request,
+            CrmWorkspaceService workspace,
+            OfficeScopeService officeScope,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            var scope = await officeScope.ResolveAsync(principal, ct);
+            var effectiveOfficeId = scope.ResolveFilter(officeId);
+            var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrWhiteSpace(userId) || effectiveOfficeId is not Guid resolvedOfficeId)
+            {
+                return Results.Forbid();
+            }
+
+            var (cardId, error) = await workspace.CreateManualCardAsync(
+                resolvedOfficeId,
+                request,
+                userId,
+                PanelRoles.HasElevatedOfficeAccess(principal),
+                ct);
+            return cardId is Guid id
+                ? Results.Created($"/api/v1/crm/cards/{id:D}", new CrmManualCardCreateResult(id))
+                : Results.BadRequest(new { error = error ?? "Не удалось создать отклик." });
+        });
+
         crmBoard.MapPost("/cards/{cardId:guid}/follow-up", async (Guid cardId, CrmFollowUpRequest request, CrmWorkspaceService workspace, ClaimsPrincipal principal, CancellationToken ct) =>
         {
             var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
@@ -329,11 +432,26 @@ public static class CrmEndpoints
             return task is null ? Results.BadRequest() : Results.Created($"/api/v1/crm/tasks/{task.Id}", task);
         });
 
-        crmTasks.MapPost("/tasks/{taskId:guid}/complete", async (Guid taskId, CrmWorkspaceService workspace, ClaimsPrincipal principal, CancellationToken ct) =>
+        crmTasks.MapPost("/tasks/{taskId:guid}/complete", async (
+            Guid taskId,
+            CrmWorkspaceService workspace,
+            ClaimsPrincipal principal,
+            CancellationToken ct,
+            CrmTaskCompleteRequest? request = null) =>
         {
             var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
             if (string.IsNullOrWhiteSpace(userId)) return Results.Forbid();
-            return await workspace.CompleteTaskAsync(taskId, userId, PanelRoles.HasElevatedOfficeAccess(principal), ct) ? Results.NoContent() : Results.NotFound();
+            // Missing/empty body → same 400 as empty comment (no 415/model-binding crash).
+            var comment = request?.Comment;
+            var (ok, error) = await workspace.CompleteTaskAsync(
+                taskId,
+                comment ?? string.Empty,
+                userId,
+                PanelRoles.HasElevatedOfficeAccess(principal),
+                ct);
+            return ok
+                ? Results.NoContent()
+                : Results.BadRequest(new { error = error ?? "Не удалось выполнить задачу." });
         });
 
         crmTasks.MapPut("/tasks/{taskId:guid}", async (

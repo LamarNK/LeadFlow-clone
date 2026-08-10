@@ -479,7 +479,9 @@ internal static class DesignPreviewData
                 _previewCrmStages.ToList(),
                 true,
                 BuildPreviewChat(candidate.Id),
-                BuildPreviewPhoneHistory(candidate));
+                BuildPreviewPhoneHistory(candidate),
+                [new CrmContactPhoneDto(Guid.Empty, candidate.PhoneRaw, candidate.PhoneRaw, true, null, DateTime.UtcNow)],
+                ChatUnreadCount: 0);
         }
     }
 
@@ -668,17 +670,32 @@ internal static class DesignPreviewData
         }
     }
 
+    public static (bool Success, string? Error) UpdateCrmCard(Guid cardId, CrmCardUpdateRequest request)
+    {
+        lock (CrmSync)
+        {
+            var candidate = PreviewCrmCandidates.FirstOrDefault(item => item.Id == cardId);
+            if (candidate is null) return (false, "Карточка не найдена.");
+            if (string.IsNullOrWhiteSpace(request.FullName)) return (false, "Укажите ФИО кандидата.");
+            if (string.IsNullOrWhiteSpace(request.PhoneRaw)) return (false, "Укажите корректный телефон.");
+            // Preview model fields are mostly immutable; accept edit for UI smoke only.
+            AddPreviewCrmHistory("CardUpdated", "поля карточки");
+            return (true, null);
+        }
+    }
+
     public static (bool Success, string? Error) CloseCrmCard(Guid cardId, string reason, string? comment)
     {
         lock (CrmSync)
         {
             var candidate = PreviewCrmCandidates.FirstOrDefault(item => item.Id == cardId);
             if (candidate is null || !CrmCloseReasons.IsValid(reason)) return (false, "Не удалось закрыть карточку.");
+            if (string.IsNullOrWhiteSpace(comment)) return (false, "При закрытии сделки обязателен комментарий с причиной и деталями.");
             candidate.IsClosed = true;
             candidate.CloseReason = reason;
             candidate.IsInActiveLoad = false;
             AddPreviewCrmHistory("Closed", reason);
-            if (!string.IsNullOrWhiteSpace(comment)) AddCrmNote(cardId, comment);
+            AddCrmNote(cardId, comment);
             return (true, null);
         }
     }
@@ -742,10 +759,11 @@ internal static class DesignPreviewData
         }
     }
 
-    public static (bool Success, string? Error) CompleteCrmTask(Guid taskId)
+    public static (bool Success, string? Error) CompleteCrmTask(Guid taskId, string? comment = null)
     {
         lock (CrmSync)
         {
+            if (string.IsNullOrWhiteSpace(comment)) return (false, "При выполнении задачи обязателен комментарий: что сделано.");
             var index = PreviewCrmTasks.FindIndex(task => task.Id == taskId);
             if (index < 0) return (false, "Задача не найдена.");
             var task = PreviewCrmTasks[index];

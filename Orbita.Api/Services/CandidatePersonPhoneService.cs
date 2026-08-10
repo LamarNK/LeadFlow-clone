@@ -5,12 +5,16 @@ namespace Orbita.Api.Services;
 
 public sealed class CandidatePersonPhoneService(OrbitaDbContext db)
 {
+    /// <param name="save">
+    /// When false, stages person + history only — caller owns the unit of work.
+    /// </param>
     public async Task ApplyPhoneFromResponseAsync(
         CandidatePersonEntity person,
         string phoneRaw,
         string phoneNormalized,
         Guid? responseId,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        bool save = true)
     {
         if (string.IsNullOrWhiteSpace(phoneNormalized))
         {
@@ -26,7 +30,11 @@ public sealed class CandidatePersonPhoneService(OrbitaDbContext db)
             person.PhoneNormalized = phoneNormalized;
             person.UpdatedAtUtc = DateTime.UtcNow;
             AppendHistory(person.Id, phoneRaw, phoneNormalized, responseId);
-            await db.SaveChangesAsync(ct);
+            if (save)
+            {
+                await db.SaveChangesAsync(ct);
+            }
+
             return;
         }
 
@@ -35,7 +43,10 @@ public sealed class CandidatePersonPhoneService(OrbitaDbContext db)
             if (!hasHistory)
             {
                 AppendHistory(person.Id, phoneRaw, phoneNormalized, responseId);
-                await db.SaveChangesAsync(ct);
+                if (save)
+                {
+                    await db.SaveChangesAsync(ct);
+                }
             }
 
             return;
@@ -50,7 +61,10 @@ public sealed class CandidatePersonPhoneService(OrbitaDbContext db)
         person.PhoneNormalized = phoneNormalized;
         person.UpdatedAtUtc = DateTime.UtcNow;
         AppendHistory(person.Id, phoneRaw, phoneNormalized, responseId);
-        await db.SaveChangesAsync(ct);
+        if (save)
+        {
+            await db.SaveChangesAsync(ct);
+        }
     }
 
     private void AppendHistory(
