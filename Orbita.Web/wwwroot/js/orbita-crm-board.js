@@ -374,10 +374,53 @@
             viewport.addEventListener('scroll', () => window.requestAnimationFrame(syncJumpScroll), { passive: true });
         }
 
+        const focusStageKey = 'orbita.crm.board.focusStage';
+
+        const resolveFocusStageName = () => {
+            try {
+                const params = new URLSearchParams(window.location.search || '');
+                const fromQuery = (params.get('stage') || '').trim();
+                if (fromQuery) return fromQuery;
+            } catch { /* ignore */ }
+            try {
+                return (sessionStorage.getItem(focusStageKey) || '').trim();
+            } catch {
+                return '';
+            }
+        };
+
+        const rememberFocusStage = (stageName) => {
+            if (!stageName) return;
+            try { sessionStorage.setItem(focusStageKey, stageName); } catch { /* ignore */ }
+        };
+
+        const restoreFocusStage = () => {
+            const stageName = resolveFocusStageName();
+            if (!stageName) return;
+            const list = stages();
+            const target = list.find((stage) => (stage.getAttribute('data-stage') || '') === stageName);
+            if (!target) return;
+            // Instant jump on first paint so managers land on the stage they left.
+            viewport.scrollTo({ left: Math.max(0, target.offsetLeft - getPaddingLeft()), behavior: 'auto' });
+            rememberFocusStage(stageName);
+            updateControls();
+        };
+
+        root.addEventListener('click', (event) => {
+            const openCard = event.target.closest('[data-crm-open-card]');
+            if (!openCard) return;
+            const stageName = openCard.getAttribute('data-crm-stage')
+                || openCard.closest('.crm-stage')?.getAttribute('data-stage')
+                || '';
+            rememberFocusStage(stageName);
+        });
+
         // Layout may settle after SPA swap / fonts; refresh a couple of frames later
         updateControls();
+        restoreFocusStage();
         window.requestAnimationFrame(() => {
             updateControls();
+            restoreFocusStage();
             window.requestAnimationFrame(updateControls);
         });
 

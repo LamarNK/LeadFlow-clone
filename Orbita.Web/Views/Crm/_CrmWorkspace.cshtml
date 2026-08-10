@@ -42,6 +42,31 @@
             {
                 <a class="crm-toolbar__urgent" asp-action="Tasks"><i class="fa-solid fa-clock" aria-hidden="true"></i>Открыть просроченные задачи</a>
             }
+            @if (Model.CanEdit && Model.IsEnabled)
+            {
+                <details class="crm-manual-create">
+                    <summary class="crm-toolbar__urgent"><i class="fa-solid fa-user-plus" aria-hidden="true"></i>Создать отклик</summary>
+                    <form asp-action="CreateManual" method="post" class="crm-manual-create__form">
+                        <label>ФИО<input name="fullName" required maxlength="256" /></label>
+                        <label>Телефон<input name="phoneRaw" required maxlength="64" /></label>
+                        <label>Город<input name="city" maxlength="256" /></label>
+                        <label>Вакансия<input name="vacancy" maxlength="512" /></label>
+                        <label>Возраст<input name="age" type="number" min="14" max="99" /></label>
+                        <label>Источник<input name="source" maxlength="256" placeholder="Битрикс / вручную" /></label>
+                        <label>ID отклика<input name="sourceResponseId" maxlength="128" /></label>
+                        <label>Этап
+                            <select name="stage">
+                                @foreach (var st in Model.Stages)
+                                {
+                                    <option value="@st.Name">@st.Name</option>
+                                }
+                            </select>
+                        </label>
+                        <label class="crm-checkbox-label"><input type="checkbox" name="assignToMe" value="true" checked /> Назначить на меня</label>
+                        <button class="settings-primary-btn" type="submit">Создать</button>
+                    </form>
+                </details>
+            }
         </div>
         @if (Model.IsShiftActive)
         {
@@ -65,9 +90,17 @@
         <div class="crm-filters__primary">
             <div class="crm-scope-tabs" role="tablist">
                 <a class="@(Model.Scope == CrmBoardScopes.Mine ? "is-active" : "")" href="@ScopeUrl(CrmBoardScopes.Mine)">Мои</a>
-                <a class="@(Model.Scope == CrmBoardScopes.Team ? "is-active" : "")" href="@ScopeUrl(CrmBoardScopes.Team)">Команда</a>
-                <a class="@(Model.Scope == CrmBoardScopes.Unassigned ? "is-active" : "")" href="@ScopeUrl(CrmBoardScopes.Unassigned)">Очередь <span>@Model.UnassignedCount</span></a>
-                <a class="@(Model.Scope == CrmBoardScopes.Closed ? "is-active" : "")" href="@ScopeUrl(CrmBoardScopes.Closed)">Закрытые</a>
+                @if (Model.IsAdmin)
+                {
+                    <a class="@(Model.Scope == CrmBoardScopes.Team ? "is-active" : "")" href="@ScopeUrl(CrmBoardScopes.Team)">Команда</a>
+                    <a class="@(Model.Scope == CrmBoardScopes.Unassigned ? "is-active" : "")" href="@ScopeUrl(CrmBoardScopes.Unassigned)">Очередь <span>@Model.UnassignedCount</span></a>
+                    <a class="@(Model.Scope == CrmBoardScopes.Closed ? "is-active" : "")" href="@ScopeUrl(CrmBoardScopes.Closed)">Закрытые</a>
+                }
+                else
+                {
+                    @* Manager: own closed cards via Mine + includeClosed filter *@
+                    <a class="@(Model.Scope == CrmBoardScopes.Closed ? "is-active" : "")" href="@ScopeUrl(CrmBoardScopes.Closed)">Мои закрытые</a>
+                }
             </div>
             <input type="hidden" name="scope" value="@Model.Scope" />
             <input type="search" name="search" value="@Model.Search" placeholder="ФИО, телефон, город…" aria-label="Поиск кандидата" data-orbita-live-search data-orbita-debounce-ms="350" />

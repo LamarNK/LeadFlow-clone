@@ -68,10 +68,23 @@
                         @if (task.DueAtUtc is DateTime due) { <span><i class="fa-regular fa-calendar" aria-hidden="true"></i> до <time data-orbita-utc="@OrbitaTime.ToIsoUtc(due)" data-orbita-format="datetime"></time></span> } else { <span class="is-empty">Не задан</span> }
                         @if (isOverdue) { <em>Просрочено</em> }
                         @if (task.Status == CrmTaskStatuses.Cancelled) { <em>Отменена</em> }
+                        <span class="crm-task-row__times">
+                            <small>Поставлена</small>
+                            <time data-orbita-utc="@OrbitaTime.ToIsoUtc(task.CreatedAtUtc)" data-orbita-format="datetime"></time>
+                            @if (task.CompletedAtUtc is DateTime completedAt)
+                            {
+                                <small>@(task.Status == CrmTaskStatuses.Cancelled ? "Закрыта" : "Выполнена")</small>
+                                <time data-orbita-utc="@OrbitaTime.ToIsoUtc(completedAt)" data-orbita-format="datetime"></time>
+                            }
+                        </span>
                     </div>
                     @if (Model.ShowComplete && task.Status == CrmTaskStatuses.Open && canComplete)
                     {
-                        <form asp-action="CompleteTask" method="post"><input type="hidden" name="taskId" value="@task.Id" /><button class="crm-task-row__complete" type="submit"><i class="fa-solid fa-check" aria-hidden="true"></i> Выполнить</button></form>
+                        <form asp-action="CompleteTask" method="post" class="crm-task-complete-form">
+                            <input type="hidden" name="taskId" value="@task.Id" />
+                            <textarea name="comment" required minlength="1" placeholder="Что сделано?" rows="2"></textarea>
+                            <button class="crm-task-row__complete" type="submit"><i class="fa-solid fa-check" aria-hidden="true"></i> Выполнить</button>
+                        </form>
                     }
                 </article>
             }

@@ -10,6 +10,11 @@
     var canAccessCrmTasks = ViewData["CanAccessCrmTasks"] as bool? == true;
     var currentUserId = ViewData["CurrentCrmUserId"] as string;
     var isCrmAdmin = ViewData["IsCrmAdmin"] as bool? == true;
+    var boardReturnStage = Context.Request.Query["stage"].ToString();
+    if (string.IsNullOrWhiteSpace(boardReturnStage))
+    {
+        boardReturnStage = card.Stage;
+    }
     var vacancyUrl = !string.IsNullOrWhiteSpace(card.VacancyUrl) ? card.VacancyUrl : card.SourceUrl;
     var phoneDigits = string.Concat(card.PhoneRaw.Where(char.IsDigit));
     var messengerPhone = phoneDigits.Length == 11 && phoneDigits.StartsWith("8", StringComparison.Ordinal) ? "7" + phoneDigits[1..] : phoneDigits;
@@ -25,6 +30,7 @@
         "Closed" => "Карточка закрыта",
         "Reopened" => "Карточка открыта снова",
         "Note" => "Комментарий",
+        "CardUpdated" => "Карточка изменена",
         "TaskCreated" => "Задача создана",
         "TaskCompleted" => "Задача выполнена",
         _ => action
@@ -33,7 +39,7 @@
 <partial name="_PageHeader" model="header" />
 
 <div class="orbita-main crm-shell crm-card-page">
-    <a asp-action="Index" class="crm-back"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i>К воронке</a>
+    <a asp-action="Index" asp-route-stage="@boardReturnStage" class="crm-back" data-crm-back-to-board data-crm-stage="@boardReturnStage"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i>К воронке</a>
     @if (TempData["CrmError"] is string error)
     {
         <div class="crm-notice crm-notice--error"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i>@error</div>
@@ -120,6 +126,43 @@
                 <header>Контакты и поля</header>
                 <dl>
                     <div><dt>Телефон</dt><dd>@card.PhoneRaw</dd></div>
+                    @{
+                        var contactPhones = Model.ContactPhones ?? Array.Empty<CrmContactPhoneDto>();
+                    }
+                    @if (contactPhones.Count > 0)
+                    {
+                        <div>
+                            <dt>Контакты</dt>
+                            <dd class="crm-phone-history">
+                                @foreach (var ph in contactPhones)
+                                {
+                                    <span>
+                                        <i class="fa-solid fa-phone" aria-hidden="true"></i>@ph.PhoneRaw
+                                        @if (ph.IsPrimary) { <em>основной</em> }
+                                        else if (!string.IsNullOrWhiteSpace(ph.Label)) { <em>@ph.Label</em> }
+                                        @if (canEdit && ph.Id != Guid.Empty)
+                                        {
+                                            if (!ph.IsPrimary)
+                                            {
+                                                <form asp-action="SetPrimaryPhone" method="post" class="crm-inline-form">
+                                                    <input type="hidden" name="id" value="@card.Id" />
+                                                    <input type="hidden" name="phoneId" value="@ph.Id" />
+                                                    <input type="hidden" name="stage" value="@boardReturnStage" />
+                                                    <button type="submit" class="crm-link-btn">Основной</button>
+                                                </form>
+                                                <form asp-action="RemovePhone" method="post" class="crm-inline-form">
+                                                    <input type="hidden" name="id" value="@card.Id" />
+                                                    <input type="hidden" name="phoneId" value="@ph.Id" />
+                                                    <input type="hidden" name="stage" value="@boardReturnStage" />
+                                                    <button type="submit" class="crm-link-btn is-danger">Удалить</button>
+                                                </form>
+                                            }
+                                        }
+                                    </span>
+                                }
+                            </dd>
+                        </div>
+                    }
                     @if (Model.PhoneHistory.Count > 1)
                     {
                         <div>
@@ -167,6 +210,38 @@
                         <div><dt>След. действие</dt><dd class="@(next < DateTime.UtcNow ? "crm-overdue" : "")">@next.ToLocalTime().ToString("dd.MM.yyyy HH:mm")</dd></div>
                     }
                 </dl>
+                @if (canEdit)
+                {
+                    <details class="crm-card-edit">
+                        <summary><i class="fa-solid fa-plus" aria-hidden="true"></i>Добавить телефон</summary>
+                        <form asp-action="AddPhone" method="post" class="crm-side-form crm-card-edit__form">
+                            <input type="hidden" name="id" value="@card.Id" />
+                            <input type="hidden" name="stage" value="@boardReturnStage" />
+                            <label>Номер<input name="phoneRaw" required maxlength="64" placeholder="+7 …" /></label>
+                            <label>Подпись<input name="label" maxlength="64" placeholder="Рабочий / доп." /></label>
+                            <label class="crm-checkbox-label"><input type="checkbox" name="setAsPrimary" value="true" /> Сделать основным</label>
+                            <button class="settings-secondary-btn" type="submit">Добавить</button>
+                        </form>
+                    </details>
+                    <details class="crm-card-edit">
+                        <summary><i class="fa-solid fa-pen" aria-hidden="true"></i>Редактировать данные</summary>
+                        <form asp-action="UpdateCard" method="post" class="crm-side-form crm-card-edit__form">
+                            <input type="hidden" name="id" value="@card.Id" />
+                            <input type="hidden" name="stage" value="@boardReturnStage" />
+                            <label>ФИО<input name="fullName" value="@card.FullName" required maxlength="256" /></label>
+                            <label>Телефон (основной)<input name="phoneRaw" value="@card.PhoneRaw" required maxlength="64" /></label>
+                            <label>Город<input name="city" value="@card.City" maxlength="256" /></label>
+                            <label>Вакансия<input name="vacancy" value="@card.Vacancy" maxlength="512" /></label>
+                            <label>Возраст<input name="age" type="number" min="14" max="99" value="@(card.Age?.ToString() ?? "")" /></label>
+                            <label>Источник<input name="accountName" value="@card.AccountName" maxlength="256" /></label>
+                            <label>ID отклика<input name="sourceResponseId" value="@card.SourceResponseId" maxlength="128" /></label>
+                            <label>Ссылка на отклик<input name="sourceUrl" value="@card.SourceUrl" maxlength="1024" /></label>
+                            <label>Ссылка на объявление<input name="vacancyUrl" value="@card.VacancyUrl" maxlength="1024" /></label>
+                            <label>Мессенджер<input name="messengerUrl" value="@card.MessengerUrl" maxlength="1024" /></label>
+                            <button class="settings-primary-btn" type="submit">Сохранить</button>
+                        </form>
+                    </details>
+                }
             </section>
 
             @if (canEdit)
@@ -176,14 +251,15 @@
                     <div class="crm-quick-actions">
                         @if (canAccessCrmTasks)
                         {
-                            <form asp-action="FollowUp" method="post"><input type="hidden" name="id" value="@card.Id" /><input type="hidden" name="minutes" value="60" /><button type="submit">+1 ч</button></form>
-                            <form asp-action="FollowUp" method="post"><input type="hidden" name="id" value="@card.Id" /><input type="hidden" name="minutes" value="180" /><button type="submit">+3 ч</button></form>
-                            <form asp-action="FollowUp" method="post"><input type="hidden" name="id" value="@card.Id" /><input type="hidden" name="minutes" value="1440" /><button type="submit">Завтра</button></form>
-                            <form asp-action="FollowUp" method="post"><input type="hidden" name="id" value="@card.Id" /><input type="hidden" name="minutes" value="4320" /><button type="submit">+3 дн</button></form>
+                            <form asp-action="FollowUp" method="post"><input type="hidden" name="id" value="@card.Id" /><input type="hidden" name="stage" value="@boardReturnStage" /><input type="hidden" name="minutes" value="60" /><button type="submit">+1 ч</button></form>
+                            <form asp-action="FollowUp" method="post"><input type="hidden" name="id" value="@card.Id" /><input type="hidden" name="stage" value="@boardReturnStage" /><input type="hidden" name="minutes" value="180" /><button type="submit">+3 ч</button></form>
+                            <form asp-action="FollowUp" method="post"><input type="hidden" name="id" value="@card.Id" /><input type="hidden" name="stage" value="@boardReturnStage" /><input type="hidden" name="minutes" value="1440" /><button type="submit">Завтра</button></form>
+                            <form asp-action="FollowUp" method="post"><input type="hidden" name="id" value="@card.Id" /><input type="hidden" name="stage" value="@boardReturnStage" /><input type="hidden" name="minutes" value="4320" /><button type="submit">+3 дн</button></form>
                         }
                     </div>
                     <form asp-action="SetLoad" method="post" class="crm-side-form">
                         <input type="hidden" name="id" value="@card.Id" />
+                        <input type="hidden" name="stage" value="@boardReturnStage" />
                         <input type="hidden" name="active" value="@(!card.IsInActiveLoad)" />
                         <button class="settings-secondary-btn" type="submit">@(card.IsInActiveLoad ? "Снять с нагрузки" : "Вернуть в нагрузку")</button>
                     </form>
@@ -191,6 +267,7 @@
                     {
                         <form asp-action="Assign" method="post" class="crm-side-form">
                             <input type="hidden" name="id" value="@card.Id" />
+                            <input type="hidden" name="stage" value="@boardReturnStage" />
                             <label>Переназначить
                                 <select name="managerUserId">
                                     @foreach (var m in Model.Managers)
@@ -213,6 +290,7 @@
                     {
                         <form asp-action="Close" method="post" class="crm-side-form">
                             <input type="hidden" name="id" value="@card.Id" />
+                            <input type="hidden" name="stage" value="@boardReturnStage" />
                             <label>Закрыть
                                 <select name="reason" required>
                                     @foreach (var reason in CrmCloseReasons.All)
@@ -221,7 +299,7 @@
                                     }
                                 </select>
                             </label>
-                            <textarea name="comment" placeholder="Комментарий (необяз.)"></textarea>
+                            <textarea name="comment" required minlength="1" placeholder="Комментарий обязателен: причина и детали"></textarea>
                             <button class="settings-secondary-btn crm-btn-danger" type="submit">Закрыть карточку</button>
                         </form>
                     }
@@ -229,6 +307,7 @@
                     {
                         <form asp-action="Reopen" method="post" class="crm-side-form">
                             <input type="hidden" name="id" value="@card.Id" />
+                            <input type="hidden" name="stage" value="@boardReturnStage" />
                             <button class="settings-primary-btn" type="submit">Вернуть в работу</button>
                         </form>
                     }
@@ -238,13 +317,13 @@
 
         <section class="crm-card-main card">
             <nav class="crm-tabs">
-                <a class="@(activeTab == "activity" ? "is-active" : "")" asp-action="Card" asp-route-id="@card.Id">Лента</a>
-                <a class="@(activeTab == "chat" ? "is-active" : "")" asp-action="Card" asp-route-id="@card.Id" asp-route-tab="chat">Чат @if (Model.Chat.Count > 0) { <span>@Model.Chat.Count</span> }</a>
+                <a class="@(activeTab == "activity" ? "is-active" : "")" asp-action="Card" asp-route-id="@card.Id" asp-route-stage="@boardReturnStage">Лента</a>
+                <a class="@(activeTab == "chat" ? "is-active" : "") @(Model.ChatUnreadCount > 0 ? "has-unread" : "")" asp-action="Card" asp-route-id="@card.Id" asp-route-tab="chat" asp-route-stage="@boardReturnStage">Чат @if (Model.ChatUnreadCount > 0) { <span class="crm-tab-badge is-unread">@Model.ChatUnreadCount</span> } else if (Model.Chat.Count > 0) { <span>@Model.Chat.Count</span> }</a>
                 @if (canAccessCrmTasks)
                 {
-                    <a class="@(activeTab == "tasks" ? "is-active" : "")" asp-action="Card" asp-route-id="@card.Id" asp-route-tab="tasks">Задачи <span>@Model.Tasks.Count(t => t.Status == CrmTaskStatuses.Open)</span></a>
+                    <a class="@(activeTab == "tasks" ? "is-active" : "")" asp-action="Card" asp-route-id="@card.Id" asp-route-tab="tasks" asp-route-stage="@boardReturnStage">Задачи <span>@Model.Tasks.Count(t => t.Status == CrmTaskStatuses.Open)</span></a>
                 }
-                <a class="@(activeTab == "history" ? "is-active" : "")" asp-action="Card" asp-route-id="@card.Id" asp-route-tab="history">История</a>
+                <a class="@(activeTab == "history" ? "is-active" : "")" asp-action="Card" asp-route-id="@card.Id" asp-route-tab="history" asp-route-stage="@boardReturnStage">История</a>
             </nav>
 
             @if (activeTab == "activity")
@@ -253,6 +332,7 @@
                 {
                     <form asp-action="AddNote" method="post" class="crm-composer">
                         <input type="hidden" name="id" value="@card.Id" />
+                        <input type="hidden" name="stage" value="@boardReturnStage" />
                         <textarea name="text" required placeholder="Комментарий по кандидату…"></textarea>
                         <button class="settings-primary-btn" type="submit">Добавить</button>
                     </form>
@@ -275,12 +355,12 @@
             {
                 @if (Model.Chat.Count > 0)
                 {
-                    <div class="crm-chat">
+                    <div class="crm-chat" data-crm-chat-thread data-card-id="@card.Id" data-mark-read="@(ViewData["MarkChatReadOnLoad"] as bool? == true ? "1" : "0")">
                         @foreach (var msg in Model.Chat)
                         {
                             var sender = msg.Tone == "outgoing" ? "Вы" : msg.Tone == "system" ? "Avito" : "Кандидат";
                             var avatar = msg.Tone == "outgoing" ? "В" : msg.Tone == "system" ? "A" : (string.IsNullOrWhiteSpace(card.FullName) ? "К" : card.FullName.Trim()[0].ToString());
-                            <article class="crm-chat__msg crm-chat__msg--@msg.Tone">
+                            <article class="crm-chat__msg crm-chat__msg--@msg.Tone @(Model.ChatUnreadCount > 0 ? "is-unread-context" : "")">
                                 <span class="crm-chat__avatar" aria-hidden="true">@avatar</span>
                                 <div class="crm-chat__bubble">
                                     <header><strong>@sender</strong><time>@msg.TimeLabel</time></header>
@@ -301,6 +381,7 @@
                 {
                     <form asp-action="CreateTask" method="post" class="crm-task-create">
                         <input type="hidden" name="cardId" value="@card.Id" />
+                        <input type="hidden" name="stage" value="@boardReturnStage" />
                         <input name="title" required placeholder="Что сделать" />
                           <select name="assigneeUserId" required>
                               @foreach (var m in Model.Managers)
@@ -322,17 +403,28 @@
                 <div class="crm-task-list">
                     @foreach (var task in Model.Tasks)
                     {
-                        <article class="crm-task-row @(task.Status == CrmTaskStatuses.Completed ? "is-complete" : "") @(task.IsOverdue ? "is-overdue" : "")">
+                        <article class="crm-task-row @(task.Status == CrmTaskStatuses.Completed ? "is-complete" : "") @(task.Status == CrmTaskStatuses.Cancelled ? "is-cancelled" : "") @(task.IsOverdue ? "is-overdue" : "")">
                             <div>
                                 <strong>@task.Title</strong>
                                 <span>@task.AssigneeName @if (task.DueAtUtc is DateTime due) { <text>· до <time data-orbita-utc="@OrbitaTime.ToIsoUtc(due)" data-orbita-format="datetime"></time></text> } @if (task.IsOverdue) { <em class="crm-overdue">просрочено</em> }</span>
+                                <span class="crm-task-row__times">
+                                    <small>Поставлена</small>
+                                    <time data-orbita-utc="@OrbitaTime.ToIsoUtc(task.CreatedAtUtc)" data-orbita-format="datetime"></time>
+                                    @if (task.CompletedAtUtc is DateTime completedAt)
+                                    {
+                                        <small>@(task.Status == CrmTaskStatuses.Cancelled ? "Закрыта" : "Выполнена")</small>
+                                        <time data-orbita-utc="@OrbitaTime.ToIsoUtc(completedAt)" data-orbita-format="datetime"></time>
+                                    }
+                                </span>
                                 @if (!string.IsNullOrWhiteSpace(task.Description)) { <p>@task.Description</p> }
                             </div>
                             @if (task.Status == CrmTaskStatuses.Open && (isCrmAdmin || task.AssigneeUserId == currentUserId))
                             {
-                                <form asp-action="CompleteTask" method="post">
+                                <form asp-action="CompleteTask" method="post" class="crm-task-complete-form">
                                     <input type="hidden" name="taskId" value="@task.Id" />
                                     <input type="hidden" name="cardId" value="@card.Id" />
+                                    <input type="hidden" name="stage" value="@boardReturnStage" />
+                                    <textarea name="comment" required minlength="1" placeholder="Что сделано?" rows="2"></textarea>
                                     <button class="settings-secondary-btn" type="submit">Выполнить</button>
                                 </form>
                             }
@@ -365,15 +457,30 @@
 <script>
 (function () {
     var input = document.getElementById('stageComment');
-    if (!input) return;
-    document.querySelectorAll('form[action*="Move"], form .crm-stage-rail form').forEach(function () {});
-    document.querySelectorAll('[data-stage-comment]').forEach(function (hidden) {
-        var form = hidden.closest('form');
-        if (!form) return;
-        form.addEventListener('submit', function () {
-            hidden.value = input.value || '';
+    if (input) {
+        document.querySelectorAll('[data-stage-comment]').forEach(function (hidden) {
+            var form = hidden.closest('form');
+            if (!form) return;
+            form.addEventListener('submit', function () {
+                hidden.value = input.value || '';
+            });
         });
-    });
+    }
+
+    // Remember funnel stage so "К воронке" and board restore land on the same stage.
+    try {
+        var stage = '@boardReturnStage'.trim();
+        if (stage) sessionStorage.setItem('orbita.crm.board.focusStage', stage);
+    } catch (e) { /* ignore */ }
+
+    // Mark chat read via POST only (never on GET) after the user actually opened the tab.
+    var thread = document.querySelector('[data-crm-chat-thread][data-mark-read="1"]');
+    if (thread) {
+        var cardId = thread.getAttribute('data-card-id');
+        if (cardId && window.Orbita && typeof window.Orbita.postForm === 'function') {
+            window.Orbita.postForm('/Crm/MarkChatRead', { id: cardId }).catch(function () { });
+        }
+    }
 })();
 </script>
 }

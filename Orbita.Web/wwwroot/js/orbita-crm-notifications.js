@@ -25,6 +25,7 @@
     function kindLabel(kind) {
         if (kind === 'overdue') return 'Просрочено';
         if (kind === 'due_1h') return 'Срок через час';
+        if (kind === 'phone_changed') return 'Смена телефона';
         return 'Срок через 24 часа';
     }
 
@@ -38,7 +39,7 @@
             badge.toggleAttribute('hidden', count <= 0);
         }
         if (caption) {
-            caption.textContent = count > 0 ? count + ' непрочитанных' : 'CRM-задачи';
+            caption.textContent = count > 0 ? count + ' непрочитанных' : 'CRM-уведомления';
         }
         if (readAll) readAll.toggleAttribute('hidden', count <= 0);
     }
@@ -90,13 +91,18 @@
             button.type = 'button';
             button.className = 'orbita-notification-item' + (item.readAtUtc ? ' is-read' : ' is-unread');
             button.setAttribute('data-notification-id', item.id);
-            button.setAttribute('data-task-id', item.taskId);
+            button.setAttribute('data-task-id', item.taskId || '');
+            if (item.cardId) button.setAttribute('data-card-id', item.cardId);
             button.setAttribute('data-is-read', item.readAtUtc ? '1' : '0');
 
             var icon = document.createElement('span');
-            icon.className = 'orbita-notification-item__icon ' + (item.kind === 'overdue' ? 'is-overdue' : 'is-upcoming');
+            icon.className = 'orbita-notification-item__icon ' + (item.kind === 'overdue' ? 'is-overdue' : item.kind === 'phone_changed' ? 'is-phone' : 'is-upcoming');
             var iconGlyph = document.createElement('i');
-            iconGlyph.className = item.kind === 'overdue' ? 'fa-solid fa-triangle-exclamation' : 'fa-regular fa-clock';
+            iconGlyph.className = item.kind === 'overdue'
+                ? 'fa-solid fa-triangle-exclamation'
+                : item.kind === 'phone_changed'
+                    ? 'fa-solid fa-phone'
+                    : 'fa-regular fa-clock';
             icon.appendChild(iconGlyph);
 
             var body = document.createElement('span');
@@ -167,6 +173,10 @@
 
     function openTask(root, item) {
         var navigate = function () {
+            if (item.cardId && (!item.taskId || item.taskId === '00000000-0000-0000-0000-000000000000')) {
+                window.location.href = '/Crm/Card/' + encodeURIComponent(item.cardId);
+                return;
+            }
             window.location.href = '/Crm/TaskDetails/' + encodeURIComponent(item.taskId);
         };
         if (item.readAtUtc) {

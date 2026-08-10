@@ -186,12 +186,15 @@ public sealed class CrmController(
             return Forbid();
         }
 
+        var resolvedTab = tab is "tasks" or "history" or "chat" ? tab : "activity";
         var card = await api.GetCrmCardAsync(id, ct);
         if (card is null) return NotFound();
-        ViewData["CrmTab"] = tab is "tasks" or "history" or "chat" ? tab : "activity";
+        ViewData["CrmTab"] = resolvedTab;
         ViewData["CanAccessCrmTasks"] = canAccessTasks;
         ViewData["IsCrmAdmin"] = PanelRoles.HasElevatedOfficeAccess(User);
         ViewData["CurrentCrmUserId"] = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        // Chat mark-read is POST-only (see MarkChatRead) so GET stays free of side effects.
+        ViewData["MarkChatReadOnLoad"] = resolvedTab == "chat" && card.ChatUnreadCount > 0;
         return View(card);
     }
 
@@ -316,85 +319,188 @@ public sealed class CrmController(
     [HttpPost]
     [Authorize(Policy = PanelPermissions.CrmBoard)]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> SetLoad(Guid id, bool active, string? returnUrl, CancellationToken ct = default)
+    public async Task<IActionResult> SetLoad(Guid id, bool active, string? returnUrl, string? stage, CancellationToken ct = default)
     {
         var (_, error) = await api.SetCrmCardActiveLoadAsync(id, active, ct);
         if (error is not null) TempData["CrmError"] = error;
-        return RedirectAfterCardMutation(returnUrl, nameof(Card), new { id });
+        return RedirectAfterCardMutation(returnUrl, nameof(Card), new { id, stage });
     }
 
     [HttpPost]
     [Authorize(Policy = PanelPermissions.CrmBoard)]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Assign(Guid id, string managerUserId, string? returnUrl, CancellationToken ct = default)
+    public async Task<IActionResult> Assign(Guid id, string managerUserId, string? returnUrl, string? stage, CancellationToken ct = default)
     {
         var (_, error) = await api.AssignCrmCardAsync(id, managerUserId, ct);
         if (error is not null) TempData["CrmError"] = error;
-        return RedirectAfterCardMutation(returnUrl, nameof(Card), new { id });
+        return RedirectAfterCardMutation(returnUrl, nameof(Card), new { id, stage });
     }
 
     [HttpPost]
     [Authorize(Policy = PanelPermissions.CrmBoard)]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Close(Guid id, string reason, string? comment, CancellationToken ct = default)
+    public async Task<IActionResult> UpdateCard(
+        Guid id,
+        string fullName,
+        string phoneRaw,
+        string city,
+        string vacancy,
+        int? age,
+        string? sourceResponseId,
+        string? accountName,
+        string? sourceUrl,
+        string? vacancyUrl,
+        string? messengerUrl,
+        string? stage,
+        CancellationToken ct = default)
+    {
+        var (_, error) = await api.UpdateCrmCardAsync(
+            id,
+            new CrmCardUpdateRequest(
+                fullName,
+                phoneRaw,
+                city,
+                vacancy,
+                age,
+                sourceResponseId,
+                accountName,
+                sourceUrl,
+                vacancyUrl,
+                messengerUrl),
+            ct);
+        if (error is not null) TempData["CrmError"] = error;
+        return RedirectToAction(nameof(Card), new { id, stage });
+    }
+
+    [HttpPost]
+    [Authorize(Policy = PanelPermissions.CrmBoard)]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Close(Guid id, string reason, string? comment, string? stage, CancellationToken ct = default)
     {
         var (_, error) = await api.CloseCrmCardAsync(id, reason, comment, ct);
         if (error is not null) TempData["CrmError"] = error;
-        return RedirectToAction(nameof(Card), new { id });
+        return RedirectToAction(nameof(Card), new { id, stage });
     }
 
     [HttpPost]
     [Authorize(Policy = PanelPermissions.CrmBoard)]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Reopen(Guid id, CancellationToken ct = default)
+    public async Task<IActionResult> AddPhone(Guid id, string phoneRaw, string? label, bool setAsPrimary, string? stage, CancellationToken ct = default)
+    {
+        var (_, error) = await api.AddCrmContactPhoneAsync(id, phoneRaw, label, setAsPrimary, ct);
+        if (error is not null) TempData["CrmError"] = error;
+        return RedirectToAction(nameof(Card), new { id, stage });
+    }
+
+    [HttpPost]
+    [Authorize(Policy = PanelPermissions.CrmBoard)]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> RemovePhone(Guid id, Guid phoneId, string? stage, CancellationToken ct = default)
+    {
+        var (_, error) = await api.RemoveCrmContactPhoneAsync(id, phoneId, ct);
+        if (error is not null) TempData["CrmError"] = error;
+        return RedirectToAction(nameof(Card), new { id, stage });
+    }
+
+    [HttpPost]
+    [Authorize(Policy = PanelPermissions.CrmBoard)]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SetPrimaryPhone(Guid id, Guid phoneId, string? stage, CancellationToken ct = default)
+    {
+        var (_, error) = await api.SetCrmPrimaryPhoneAsync(id, phoneId, ct);
+        if (error is not null) TempData["CrmError"] = error;
+        return RedirectToAction(nameof(Card), new { id, stage });
+    }
+
+    [HttpPost]
+    [Authorize(Policy = PanelPermissions.CrmBoard)]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> MarkChatRead(Guid id, string? stage, CancellationToken ct = default)
+    {
+        await api.MarkCrmChatReadAsync(id, ct);
+        // Always JSON: this action is only invoked via XHR after the chat tab is shown.
+        return Ok(new { ok = true });
+    }
+
+    [HttpPost]
+    [Authorize(Policy = PanelPermissions.CrmBoard)]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> CreateManual(
+        string fullName,
+        string phoneRaw,
+        string? city,
+        string? vacancy,
+        int? age,
+        string? source,
+        string? sourceResponseId,
+        string? stage,
+        bool assignToMe = false,
+        CancellationToken ct = default)
+    {
+        var (cardId, error) = await api.CreateManualCrmCardAsync(
+            new CrmManualCardCreateRequest(fullName, phoneRaw, city, vacancy, age, source, sourceResponseId, stage, assignToMe),
+            ct);
+        if (error is not null || cardId is null)
+        {
+            TempData["CrmError"] = error ?? "Не удалось создать отклик.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        return RedirectToAction(nameof(Card), new { id = cardId.Value, stage });
+    }
+
+    [HttpPost]
+    [Authorize(Policy = PanelPermissions.CrmBoard)]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Reopen(Guid id, string? stage, CancellationToken ct = default)
     {
         var (_, error) = await api.ReopenCrmCardAsync(id, ct);
         if (error is not null) TempData["CrmError"] = error;
-        return RedirectToAction(nameof(Card), new { id });
+        return RedirectToAction(nameof(Card), new { id, stage });
     }
 
     [HttpPost]
     [Authorize(Policy = PanelPermissions.CrmBoard)]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> AddNote(Guid id, string text, CancellationToken ct = default)
+    public async Task<IActionResult> AddNote(Guid id, string text, string? stage, CancellationToken ct = default)
     {
         var (_, error) = await api.AddCrmNoteAsync(id, text, ct);
         if (error is not null) TempData["CrmError"] = error;
-        return RedirectToAction(nameof(Card), new { id });
+        return RedirectToAction(nameof(Card), new { id, stage });
     }
 
     [HttpPost]
     [Authorize(Policy = PanelPermissions.CrmBoard)]
     [Authorize(Policy = PanelPermissions.CrmTasks)]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> FollowUp(Guid id, int minutes, string? title, CancellationToken ct = default)
+    public async Task<IActionResult> FollowUp(Guid id, int minutes, string? title, string? stage, CancellationToken ct = default)
     {
         var (_, error) = await api.CreateCrmFollowUpAsync(id, minutes, title, ct);
         if (error is not null) TempData["CrmError"] = error;
-        return RedirectToAction(nameof(Card), new { id, tab = "tasks" });
+        return RedirectToAction(nameof(Card), new { id, tab = "tasks", stage });
     }
 
     [HttpPost]
     [Authorize(Policy = PanelPermissions.CrmTasks)]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> CreateTask(Guid? cardId, string title, string? description, string assigneeUserId, DateTime? dueAtUtc, string? importance, string? returnUrl, CancellationToken ct = default)
+    public async Task<IActionResult> CreateTask(Guid? cardId, string title, string? description, string assigneeUserId, DateTime? dueAtUtc, string? importance, string? returnUrl, string? stage, CancellationToken ct = default)
     {
         var (_, error) = await api.CreateCrmTaskAsync(new CrmTaskCreateRequest(cardId, title, description, assigneeUserId, dueAtUtc, importance ?? CrmTaskImportances.Medium), ct);
         if (error is not null) TempData["CrmError"] = error;
         return cardId is Guid id
-            ? RedirectAfterCardMutation(returnUrl, nameof(Card), new { id, tab = "tasks" })
+            ? RedirectAfterCardMutation(returnUrl, nameof(Card), new { id, tab = "tasks", stage })
             : RedirectToAction(nameof(Tasks));
     }
 
     [HttpPost]
     [Authorize(Policy = PanelPermissions.CrmTasks)]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> CompleteTask(Guid taskId, Guid? cardId, CancellationToken ct = default)
+    public async Task<IActionResult> CompleteTask(Guid taskId, Guid? cardId, string? comment, string? stage, CancellationToken ct = default)
     {
-        var (_, error) = await api.CompleteCrmTaskAsync(taskId, ct);
+        var (_, error) = await api.CompleteCrmTaskAsync(taskId, comment ?? string.Empty, ct);
         if (error is not null) TempData["CrmError"] = error;
         return cardId is Guid id
-            ? RedirectToAction(nameof(Card), new { id, tab = "tasks" })
+            ? RedirectToAction(nameof(Card), new { id, tab = "tasks", stage })
             : RedirectToAction(nameof(TaskDetails), new { id = taskId });
     }
 

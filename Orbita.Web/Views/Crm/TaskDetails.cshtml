@@ -59,9 +59,10 @@
         <div class="crm-task-detail-actions">
             @if (Model.CanComplete && isOpen)
             {
-                <form asp-action="CompleteTask" method="post">
+                <form asp-action="CompleteTask" method="post" class="crm-task-complete-form crm-task-complete-form--header">
                     @Html.AntiForgeryToken()
                     <input type="hidden" name="taskId" value="@task.Id" />
+                    <textarea name="comment" required minlength="1" placeholder="Что сделано? Комментарий обязателен" rows="2"></textarea>
                     <button class="crm-task-detail-complete" type="submit"><i class="fa-solid fa-check" aria-hidden="true"></i>Выполнить задачу</button>
                 </form>
             }
@@ -106,7 +107,12 @@
                     <div><dt><i class="fa-regular fa-calendar" aria-hidden="true"></i>Срок исполнения</dt><dd class="@(task.IsOverdue ? "is-overdue" : "")">@if (task.DueAtUtc is DateTime deadline) { <time data-orbita-utc="@OrbitaTime.ToIsoUtc(deadline)" data-orbita-format="datetime"></time> } else { <text>Не задан</text> }</dd></div>
                     <div><dt><i class="fa-regular fa-user" aria-hidden="true"></i>Автор задачи</dt><dd>@task.CreatorName</dd></div>
                     <div><dt><i class="fa-regular fa-user" aria-hidden="true"></i>Ответственный</dt><dd>@task.AssigneeName</dd></div>
-                    <div><dt><i class="fa-regular fa-clock" aria-hidden="true"></i>Создана</dt><dd>@createdLabel</dd></div>
+                    <div><dt><i class="fa-regular fa-clock" aria-hidden="true"></i>Поставлена</dt><dd><time data-orbita-utc="@OrbitaTime.ToIsoUtc(task.CreatedAtUtc)" data-orbita-format="datetime">@createdLabel</time></dd></div>
+                    @if (task.CompletedAtUtc is DateTime completedAtField)
+                    {
+                        var completedLabel = completedAtField.ToLocalTime().ToString("dd MMMM yyyy, HH:mm", russianCulture);
+                        <div><dt><i class="fa-regular fa-circle-check" aria-hidden="true"></i>@(isCancelled ? "Закрыта" : "Выполнена")</dt><dd><time data-orbita-utc="@OrbitaTime.ToIsoUtc(completedAtField)" data-orbita-format="datetime">@completedLabel</time></dd></div>
+                    }
                     @if (task.CardId is Guid cardId)
                     {
                         <div><dt><i class="fa-regular fa-address-card" aria-hidden="true"></i>Кандидат</dt><dd><a asp-action="Card" asp-route-id="@cardId" asp-route-tab="tasks">@(task.CandidateName ?? "Открыть карточку") <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a></dd></div>
