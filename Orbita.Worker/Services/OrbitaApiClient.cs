@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.Json;
 using LeadFlow.Core.Logging.Audit;
 using Orbita.Contracts;
 
@@ -7,6 +8,11 @@ namespace Orbita.Worker.Services;
 
 public sealed class OrbitaApiClient
 {
+    private static readonly JsonSerializerOptions JsonReadOptions = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
+
     private readonly HttpClient _http;
     private readonly WorkerCredentials _credentials;
 
@@ -213,10 +219,24 @@ public sealed class OrbitaApiClient
         var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Worker logs/batch failed HTTP {(int)response.StatusCode}.",
+                DeskLinkAuditLogLevel.Warning,
+                memberName: nameof(UploadLogsBatchAsync),
+                filePath: "OrbitaApiClient.cs",
+                properties: new Dictionary<string, object?>
+                {
+                    ["http.statusCode"] = (int)response.StatusCode,
+                    ["http.path"] = "api/v1/workers/logs/batch",
+                    ["batch.count"] = batch.Entries?.Count ?? 0
+                });
             return null;
         }
 
-        var payload = await response.Content.ReadFromJsonAsync<WorkerLogsUploadResponse>(ct).ConfigureAwait(false);
+        // camelCase "accepted" с API — без case-insensitive десериализация даёт Accepted=0.
+        var payload = await response.Content
+            .ReadFromJsonAsync<WorkerLogsUploadResponse>(JsonReadOptions, ct)
+            .ConfigureAwait(false);
         return payload?.Accepted ?? 0;
     }
 

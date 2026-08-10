@@ -31,7 +31,13 @@ public sealed class WorkerLogSyncState
             var state = JsonSerializer.Deserialize<StateDto>(json, JsonOptions);
             if (state?.LastSyncedUtc is { } synced)
             {
-                LastSyncedUtc = synced;
+                // JSON без Z часто приходит Unspecified — считаем UTC (так и пишем).
+                LastSyncedUtc = synced.Kind switch
+                {
+                    DateTimeKind.Utc => synced,
+                    DateTimeKind.Local => synced.ToUniversalTime(),
+                    _ => DateTime.SpecifyKind(synced, DateTimeKind.Utc)
+                };
             }
         }
         catch
