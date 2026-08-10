@@ -22,6 +22,7 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
     public DbSet<PanelUserBitrixSettingsEntity> PanelUserBitrixSettings => Set<PanelUserBitrixSettingsEntity>();
     public DbSet<CandidatePersonEntity> CandidatePersons => Set<CandidatePersonEntity>();
     public DbSet<CandidatePhoneHistoryEntity> CandidatePhoneHistory => Set<CandidatePhoneHistoryEntity>();
+    public DbSet<CandidateContactPhoneEntity> CandidateContactPhones => Set<CandidateContactPhoneEntity>();
     public DbSet<CandidateResponseEntity> CandidateResponses => Set<CandidateResponseEntity>();
     public DbSet<CrmCandidateCardEntity> CrmCandidateCards => Set<CrmCandidateCardEntity>();
     public DbSet<CrmCandidateNoteEntity> CrmCandidateNotes => Set<CrmCandidateNoteEntity>();
@@ -30,6 +31,8 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
     public DbSet<CrmTaskCommentEntity> CrmTaskComments => Set<CrmTaskCommentEntity>();
     public DbSet<CrmTaskAttachmentEntity> CrmTaskAttachments => Set<CrmTaskAttachmentEntity>();
     public DbSet<CrmCandidateHistoryEntity> CrmCandidateHistory => Set<CrmCandidateHistoryEntity>();
+    public DbSet<CrmCardChatReadEntity> CrmCardChatReads => Set<CrmCardChatReadEntity>();
+    public DbSet<CrmDeskAlertEntity> CrmDeskAlerts => Set<CrmDeskAlertEntity>();
     public DbSet<CrmManagerShiftEntity> CrmManagerShifts => Set<CrmManagerShiftEntity>();
     public DbSet<ResponseBitrixDeliveryEntity> ResponseBitrixDeliveries => Set<ResponseBitrixDeliveryEntity>();
     public DbSet<ResponseCrmDeliveryEntity> ResponseCrmDeliveries => Set<ResponseCrmDeliveryEntity>();
@@ -149,6 +152,18 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.Property(x => x.PhoneNormalized).HasMaxLength(32);
             entity.HasOne(x => x.Person).WithMany(x => x.PhoneHistory).HasForeignKey(x => x.PersonId).OnDelete(DeleteBehavior.Cascade);
             entity.HasOne(x => x.Response).WithMany().HasForeignKey(x => x.ResponseId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<CandidateContactPhoneEntity>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => x.PersonId);
+            entity.HasIndex(x => new { x.PersonId, x.PhoneNormalized }).IsUnique();
+            entity.Property(x => x.PhoneRaw).HasMaxLength(64);
+            entity.Property(x => x.PhoneNormalized).HasMaxLength(32);
+            entity.Property(x => x.Label).HasMaxLength(64);
+            entity.Property(x => x.CreatedByUserId).HasMaxLength(128);
+            entity.HasOne(x => x.Person).WithMany().HasForeignKey(x => x.PersonId).OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<CandidateResponseEntity>(entity =>
@@ -287,6 +302,35 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.Property(x => x.Details).HasMaxLength(2000);
             entity.Property(x => x.ActorUserId).HasMaxLength(128);
             entity.Property(x => x.ActorName).HasMaxLength(256);
+        });
+
+        modelBuilder.Entity<CrmCardChatReadEntity>(entity =>
+        {
+            entity.HasKey(x => new { x.CardId, x.UserId });
+            entity.Property(x => x.UserId).HasMaxLength(128);
+            entity.Property(x => x.ContentHash).HasMaxLength(64);
+            entity.HasOne<CrmCandidateCardEntity>()
+                .WithMany()
+                .HasForeignKey(x => x.CardId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<CrmDeskAlertEntity>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.OfficeId, x.RecipientUserId, x.ReadAtUtc, x.CreatedAtUtc });
+            entity.Property(x => x.RecipientUserId).HasMaxLength(128);
+            entity.Property(x => x.Kind).HasMaxLength(32);
+            entity.Property(x => x.Title).HasMaxLength(256);
+            entity.Property(x => x.Message).HasMaxLength(1000);
+            entity.HasOne<OfficeEntity>()
+                .WithMany()
+                .HasForeignKey(x => x.OfficeId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<CrmCandidateCardEntity>()
+                .WithMany()
+                .HasForeignKey(x => x.CardId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
         modelBuilder.Entity<CrmManagerShiftEntity>(entity =>

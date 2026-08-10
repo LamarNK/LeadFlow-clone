@@ -817,3 +817,40 @@ public sealed class CrmCandidateHistoryEntity
     public string ActorName { get; set; } = string.Empty;
     public DateTime CreatedAtUtc { get; set; }
 }
+
+/// <summary>Additional active contact phones for a candidate person (beyond primary on response).</summary>
+public sealed class CandidateContactPhoneEntity
+{
+    public Guid Id { get; set; }
+    public Guid PersonId { get; set; }
+    public string PhoneRaw { get; set; } = string.Empty;
+    public string PhoneNormalized { get; set; } = string.Empty;
+    public bool IsPrimary { get; set; }
+    public string? Label { get; set; }
+    public DateTime CreatedAtUtc { get; set; }
+    public string? CreatedByUserId { get; set; }
+    public CandidatePersonEntity Person { get; set; } = null!;
+}
+
+/// <summary>Per-user CRM chat read watermark for a card.</summary>
+public sealed class CrmCardChatReadEntity
+{
+    public Guid CardId { get; set; }
+    public string UserId { get; set; } = string.Empty;
+    public DateTime LastReadAtUtc { get; set; }
+    public string ContentHash { get; set; } = string.Empty;
+}
+
+/// <summary>Non-task desk alerts (phone change, etc.).</summary>
+public sealed class CrmDeskAlertEntity
+{
+    public Guid Id { get; set; }
+    public Guid OfficeId { get; set; }
+    public string RecipientUserId { get; set; } = string.Empty;
+    public string Kind { get; set; } = string.Empty;
+    public Guid? CardId { get; set; }
+    public string Title { get; set; } = string.Empty;
+    public string Message { get; set; } = string.Empty;
+    public DateTime CreatedAtUtc { get; set; }
+    public DateTime? ReadAtUtc { get; set; }
+}
