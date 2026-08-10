@@ -28,6 +28,8 @@ public static class PanelPermissions
     public const string PermissionUpgradeClaimType = "orbita.permission-upgrade";
     public const string CrmAnalyticsUpgrade = "crm-analytics-v1";
     public const string CrmTeamUpgrade = "crm-team-v1";
+    /// <summary>Strips team/analytics from Manager role so desk-only defaults stick after upgrades.</summary>
+    public const string ManagerDeskOnlyUpgrade = "manager-desk-v1";
 
     public static readonly IReadOnlyList<PanelPermissionDefinition> All =
     [
@@ -47,13 +49,18 @@ public static class PanelPermissions
 
     public static readonly IReadOnlyList<PanelAccessProfileDefinition> Profiles =
     [
-        new("admin", PanelRoles.Admin, "Администратор", "Полный доступ к панели и настройкам."),
+        new("admin", PanelRoles.Admin, "Администратор", "Технический доступ к панели и настройкам (не CRM desk)."),
         new(
             "office-lead",
             PanelRoles.OfficeLead,
-            "Руководитель офиса",
-            "Права как у администратора, но только в своём офисе и без раздела «Администрирование»."),
-        new("manager", PanelRoles.Manager, "Менеджер", "Работа с CRM и личными настройками."),
+            "Руководитель",
+            "Полный доступ CRM и панели в своём офисе, без раздела «Администрирование»."),
+        new(
+            "senior-manager",
+            PanelRoles.SeniorManager,
+            "Старший менеджер",
+            "Лиды всех менеджеров офиса, раздел «Команда», перераспределение лидов."),
+        new("manager", PanelRoles.Manager, "Менеджер", "Только свои лиды CRM и личные настройки."),
         new("operator", PanelRoles.Operator, "Оператор", "Работа с панелью мониторинга и личными настройками.")
     ];
 
@@ -65,7 +72,12 @@ public static class PanelPermissions
                 .Where(x => x.Id != Administration)
                 .Select(x => x.Id)
                 .ToArray(),
-            PanelRoles.Manager => [CrmBoard, CrmTasks, CrmAnalytics, Settings],
+            PanelRoles.SeniorManager =>
+            [
+                CrmBoard, CrmTasks, CrmAnalytics, CrmTeam, Settings
+            ],
+            // Manager: only own CRM desk work — no team board / analytics by default.
+            PanelRoles.Manager => [CrmBoard, CrmTasks, Settings],
             _ => [Dashboard, Workers, Accounts, Statistics, Responses, Events, Settings]
         };
 

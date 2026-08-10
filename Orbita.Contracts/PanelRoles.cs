@@ -6,40 +6,50 @@ public static class PanelRoles
 {
     public const string Admin = "Admin";
     /// <summary>
-    /// Office-scoped elevated role: admin-like panel access within one office,
+    /// Office-scoped elevated role: full CRM + panel access within one office,
     /// without global administration.
     /// </summary>
     public const string OfficeLead = "OfficeLead";
+    /// <summary>
+    /// CRM senior: sees all office managers' leads, team board, reassignment.
+    /// No system administration.
+    /// </summary>
+    public const string SeniorManager = "SeniorManager";
     public const string Operator = "Operator";
     public const string Manager = "Manager";
 
-    public static readonly IReadOnlyList<string> All = [Admin, OfficeLead, Operator, Manager];
+    public static readonly IReadOnlyList<string> All =
+        [Admin, OfficeLead, SeniorManager, Operator, Manager];
 
     /// <summary>
     /// Roles that work the CRM desk: own cards, shifts, capacity, lead distribution.
-    /// OfficeLead is a desk role with extra office-wide rights.
     /// </summary>
-    public static readonly IReadOnlyList<string> CrmDeskRoles = [Manager, OfficeLead];
+    public static readonly IReadOnlyList<string> CrmDeskRoles =
+        [Manager, SeniorManager, OfficeLead];
 
     public static string Normalize(string? role) =>
         string.Equals(role, Admin, StringComparison.OrdinalIgnoreCase) ? Admin :
         string.Equals(role, OfficeLead, StringComparison.OrdinalIgnoreCase) ? OfficeLead :
+        string.Equals(role, SeniorManager, StringComparison.OrdinalIgnoreCase) ? SeniorManager :
         string.Equals(role, Manager, StringComparison.OrdinalIgnoreCase) ? Manager : Operator;
 
     public static string ProfileIdForRole(string role) =>
         string.Equals(role, Admin, StringComparison.OrdinalIgnoreCase) ? "admin" :
         string.Equals(role, OfficeLead, StringComparison.OrdinalIgnoreCase) ? "office-lead" :
+        string.Equals(role, SeniorManager, StringComparison.OrdinalIgnoreCase) ? "senior-manager" :
         string.Equals(role, Manager, StringComparison.OrdinalIgnoreCase) ? "manager" : "operator";
 
     public static string RoleForProfileId(string? profileId) =>
         string.Equals(profileId, "admin", StringComparison.OrdinalIgnoreCase) ? Admin :
         string.Equals(profileId, "office-lead", StringComparison.OrdinalIgnoreCase) ? OfficeLead :
+        string.Equals(profileId, "senior-manager", StringComparison.OrdinalIgnoreCase) ? SeniorManager :
         string.Equals(profileId, "manager", StringComparison.OrdinalIgnoreCase) ? Manager : Operator;
 
     public static string Label(string? role) => Normalize(role) switch
     {
         Admin => "Администратор",
-        OfficeLead => "Руководитель офиса",
+        OfficeLead => "Руководитель",
+        SeniorManager => "Старший менеджер",
         Manager => "Менеджер",
         _ => "Оператор"
     };
@@ -53,26 +63,30 @@ public static class PanelRoles
 
     /// <summary>
     /// Elevated access within the current office (team CRM, all cards/managers).
-    /// Global admins are included; office leads are elevated only inside their office scope.
+    /// Global admins, office leads and senior managers.
     /// </summary>
     public static bool HasElevatedOfficeAccess(string? role)
     {
         var normalized = Normalize(role);
-        return normalized is Admin or OfficeLead;
+        return normalized is Admin or OfficeLead or SeniorManager;
     }
 
     public static bool HasElevatedOfficeAccess(ClaimsPrincipal principal) =>
-        principal.IsInRole(Admin) || principal.IsInRole(OfficeLead);
+        principal.IsInRole(Admin)
+        || principal.IsInRole(OfficeLead)
+        || principal.IsInRole(SeniorManager);
 
-    /// <summary>Manager or office lead — can run a CRM shift and receive cards.</summary>
+    /// <summary>CRM desk role that can run a shift and receive cards.</summary>
     public static bool IsCrmDeskRole(string? role)
     {
         var normalized = Normalize(role);
-        return normalized is Manager or OfficeLead;
+        return normalized is Manager or SeniorManager or OfficeLead;
     }
 
     public static bool IsCrmDeskRole(ClaimsPrincipal principal) =>
-        principal.IsInRole(Manager) || principal.IsInRole(OfficeLead);
+        principal.IsInRole(Manager)
+        || principal.IsInRole(SeniorManager)
+        || principal.IsInRole(OfficeLead);
 
     public static bool RequiresOfficeAssignment(string? role) =>
         !IsGlobalAdmin(role);

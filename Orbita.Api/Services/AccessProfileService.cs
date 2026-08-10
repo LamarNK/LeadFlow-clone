@@ -38,6 +38,12 @@ public sealed class AccessProfileService(
             }
 
             var upgraded = false;
+            if (await UpgradeManagerDeskOnlyAsync(role, claims))
+            {
+                upgraded = true;
+                claims = await roles.GetClaimsAsync(role);
+            }
+
             if (await UpgradeCrmAnalyticsAccessAsync(role, claims))
             {
                 upgraded = true;
@@ -59,8 +65,53 @@ public sealed class AccessProfileService(
         }
     }
 
+    /// <summary>
+    /// Manager is desk-only: no analytics/team tabs by default. Strip legacy grants once.
+    /// </summary>
+    private async Task<bool> UpgradeManagerDeskOnlyAsync(IdentityRole role, IEnumerable<Claim> claims)
+    {
+        if (!string.Equals(role.Name, PanelRoles.Manager, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (claims.Any(claim => claim.Type == PanelPermissions.PermissionUpgradeClaimType
+                                && claim.Value == PanelPermissions.ManagerDeskOnlyUpgrade))
+        {
+            return false;
+        }
+
+        var changed = false;
+        foreach (var claim in claims.Where(c =>
+                     c.Type == PanelPermissions.ClaimType
+                     && (c.Value == PanelPermissions.CrmAnalytics || c.Value == PanelPermissions.CrmTeam)).ToList())
+        {
+            await roles.RemoveClaimAsync(role, claim);
+            changed = true;
+        }
+
+        await roles.AddClaimAsync(
+            role,
+            new Claim(PanelPermissions.PermissionUpgradeClaimType, PanelPermissions.ManagerDeskOnlyUpgrade));
+        return changed;
+    }
+
     private async Task<bool> UpgradeCrmAnalyticsAccessAsync(IdentityRole role, IEnumerable<Claim> claims)
     {
+        // Manager must stay desk-only — never re-grant analytics via legacy board→analytics upgrade.
+        if (string.Equals(role.Name, PanelRoles.Manager, StringComparison.OrdinalIgnoreCase))
+        {
+            if (!claims.Any(claim => claim.Type == PanelPermissions.PermissionUpgradeClaimType
+                                    && claim.Value == PanelPermissions.CrmAnalyticsUpgrade))
+            {
+                await roles.AddClaimAsync(
+                    role,
+                    new Claim(PanelPermissions.PermissionUpgradeClaimType, PanelPermissions.CrmAnalyticsUpgrade));
+            }
+
+            return false;
+        }
+
         if (claims.Any(claim => claim.Type == PanelPermissions.PermissionUpgradeClaimType
                                 && claim.Value == PanelPermissions.CrmAnalyticsUpgrade))
         {
