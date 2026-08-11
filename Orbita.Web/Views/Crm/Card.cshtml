@@ -377,10 +377,67 @@
                 <div class="crm-feed">
                     @foreach (var item in Model.Activity)
                     {
-                        <article class="crm-feed-item crm-feed-item--@item.Kind @(item.IsPinned ? "is-pinned" : "")">
-                            <div class="crm-feed-item__icon"><i class="fa-solid @(item.IsPinned ? "fa-thumbtack" : item.Kind switch { "note" => "fa-comment", "task" => "fa-list-check", "task-done" => "fa-check", _ => "fa-clock" })" aria-hidden="true"></i></div>
-                            <div>
-                                <header><strong>@DisplayCrmAction(item.Title)</strong><span>@item.ActorName · <time data-orbita-utc="@OrbitaTime.ToIsoUtc(item.AtUtc)" data-orbita-format="datetime-short-ru"></time></span></header>
+                        var feedTask = item.TaskId is Guid taskId
+                            ? Model.Tasks.FirstOrDefault(task => task.Id == taskId)
+                            : null;
+                        var isOpenTask = item.Kind == "task" && feedTask?.Status == CrmTaskStatuses.Open;
+                        var feedTone = item.Kind switch
+                        {
+                            "note" => "note",
+                            "task-done" => "completed",
+                            "task" when isOpenTask && feedTask?.IsOverdue == true => "task-overdue",
+                            "task" when isOpenTask => "task-active",
+                            "task" => "completed",
+                            _ => "system"
+                        };
+                        var showFeedIcon = feedTone is "note" or "task-active" or "task-overdue";
+                        var feedIcon = item.IsPinned
+                            ? "fa-thumbtack"
+                            : feedTone switch
+                            {
+                                "note" => "fa-comment-dots",
+                                "task-overdue" => "fa-calendar-xmark",
+                                _ => "fa-calendar-check"
+                            };
+                        var displayTitle = DisplayCrmAction(item.Title);
+                        var systemTone = displayTitle switch
+                        {
+                            "Смена этапа" => "stage",
+                            "Назначен ответственный" => "assignment",
+                            "Карточка создана" or "Карточка изменена" or "Карточка закрыта" or "Карточка открыта снова" => "card",
+                            _ when displayTitle.StartsWith("Задача", StringComparison.Ordinal) => "task",
+                            _ => "event"
+                        };
+                        var systemLabel = systemTone switch
+                        {
+                            "stage" => "Этап",
+                            "assignment" => "Ответственный",
+                            "card" => "Карточка",
+                            "task" => "Задача",
+                            _ => "Событие"
+                        };
+                        <article class="crm-feed-item crm-feed-item--@feedTone @(item.IsPinned ? "is-pinned" : "")">
+                            @if (showFeedIcon)
+                            {
+                                <div class="crm-feed-item__icon"><i class="fa-solid @feedIcon" aria-hidden="true"></i></div>
+                            }
+                            <div class="crm-feed-item__content">
+                                <header>
+                                    @if (feedTone == "system")
+                                    {
+                                        <span class="crm-feed-item__category crm-feed-item__category--@systemTone">@systemLabel</span>
+                                    }
+                                    <strong>@displayTitle</strong>
+                                    @if (feedTone == "task-active")
+                                    {
+                                        <span class="crm-feed-item__status crm-feed-item__status--active">Актуальное дело</span>
+                                    }
+                                    else if (feedTone == "task-overdue")
+                                    {
+                                        <span class="crm-feed-item__status crm-feed-item__status--overdue">Просрочено</span>
+                                    }
+                                    <span class="crm-feed-item__meta">@item.ActorName · <time data-orbita-utc="@OrbitaTime.ToIsoUtc(item.AtUtc)" data-orbita-format="datetime-short-ru"></time></span>
+                                </header>
                                 @if (item.Kind == "task-done")
                                 {
                                     @if (!string.IsNullOrWhiteSpace(item.Body))

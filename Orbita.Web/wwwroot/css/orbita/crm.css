@@ -485,15 +485,35 @@
 .crm-tabs a.is-active { border-bottom-color: #3538cd; color: #3538cd; }
 .crm-tabs span { margin-left: 4px; color: #98a2b3; font-size: 11px; }
 .crm-composer { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: end; margin: 14px 16px; padding: 12px; border: 1px solid #eef2f7; border-radius: 10px; background: #f8fafc; }
-.crm-feed { display: grid; gap: 0; padding: 0 16px; }
-.crm-feed-item { display: grid; grid-template-columns: 32px 1fr; gap: 10px; padding: 12px 0; border-bottom: 1px solid #f2f4f7; }
-.crm-feed-item__icon { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; background: #eff4ff; color: #3538cd; font-size: 11px; }
-.crm-feed-item header { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
+.crm-feed { display: grid; gap: 8px; padding: 0 16px 14px; }
+.crm-feed-item { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 11px; padding: 12px; border: 1px solid #edf0f4; border-radius: 12px; background: #fff; transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease; }
+.crm-feed-item__content { min-width: 0; }
+.crm-feed-item__icon { width: 36px; height: 36px; display: inline-flex; align-items: center; justify-content: center; border-radius: 11px; background: #e9efff; color: #315be8; font-size: 15px; box-shadow: 0 3px 8px rgba(49,91,232,.12); }
+.crm-feed-item header { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; }
 .crm-feed-item strong { color: #101828; font-size: 13px; }
-.crm-feed-item header span { color: #98a2b3; font-size: 11px; }
+.crm-feed-item header .crm-feed-item__meta { margin-left: auto; color: #98a2b3; font-size: 11px; }
 .crm-feed-item p { margin: 5px 0 0; color: #475467; font-size: 13px; line-height: 1.45; }
-.crm-feed-item.is-pinned { margin: 0 -10px; padding: 12px 10px; border-radius: 8px; background: #fffaeb; }
-.crm-feed-item.is-pinned .crm-feed-item__icon { background: #fef0c7; color: #b54708; }
+.crm-feed-item--task-active { border-color: #f6dfa0; background: #fffae9; box-shadow: inset 3px 0 0 #e9a900, 0 4px 12px rgba(183,125,0,.07); }
+.crm-feed-item--task-active .crm-feed-item__icon { background: #fff0b8; color: #a86600; box-shadow: 0 3px 8px rgba(168,102,0,.13); }
+.crm-feed-item--task-overdue { border-color: #f5c2c0; background: #fff4f3; box-shadow: inset 3px 0 0 #e5484d, 0 4px 12px rgba(197,48,48,.08); }
+.crm-feed-item--task-overdue .crm-feed-item__icon { background: #ffe1df; color: #c52f35; box-shadow: 0 3px 8px rgba(197,47,53,.13); }
+.crm-feed-item--note { border-color: #ceddfd; background: #f3f7ff; box-shadow: inset 3px 0 0 #5b7cfa, 0 4px 12px rgba(55,89,190,.06); }
+.crm-feed-item--note .crm-feed-item__icon { background: #dfe8ff; color: #3d5feb; }
+.crm-feed-item--note.is-pinned { border-color: #d8cef9; background: #f7f4ff; box-shadow: inset 3px 0 0 #8065d8, 0 4px 12px rgba(91,67,166,.07); }
+.crm-feed-item--note.is-pinned .crm-feed-item__icon { background: #e9e1ff; color: #6546bd; }
+.crm-feed-item--completed, .crm-feed-item--system { grid-template-columns: minmax(0, 1fr); background: #fafbfc; box-shadow: none; }
+.crm-feed-item--completed { opacity: .72; }
+.crm-feed-item--completed strong, .crm-feed-item--system strong { color: #667085; font-size: 12px; font-weight: 650; }
+.crm-feed-item--completed p, .crm-feed-item--system p { color: #7d899c; font-size: 12px; }
+.crm-feed-item--system { padding: 9px 12px; border-color: #f0f2f5; }
+.crm-feed-item--system header { gap: 6px; }
+.crm-feed-item__status, .crm-feed-item__category { display: inline-flex; align-items: center; min-height: 20px; padding: 0 7px; border-radius: 999px; font-size: 9px !important; font-weight: 750; line-height: 1; white-space: nowrap; }
+.crm-feed-item__status--active { background: #ffecad; color: #8a5700 !important; }
+.crm-feed-item__status--overdue { background: #ffd9d6; color: #b4232a !important; }
+.crm-feed-item__category { background: #eef1f5; color: #7b8798 !important; }
+.crm-feed-item__category--stage { background: #edf4ff; color: #3970c8 !important; }
+.crm-feed-item__category--assignment { background: #eef7f3; color: #38765e !important; }
+.crm-feed-item__category--task { background: #fff5e8; color: #a36118 !important; }
 .crm-inline-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
 .crm-inline-actions form { margin: 0; }
 .crm-inline-actions button, .crm-inline-actions summary { display: inline-flex; align-items: center; gap: 5px; padding: 0; border: 0; background: transparent; color: #667085; font: inherit; font-size: 11px; cursor: pointer; list-style: none; }
@@ -627,7 +647,13 @@
 [data-theme="dark"] .crm-field-link { color: var(--text-primary); }
 [data-theme="dark"] .crm-phone-history span,
 [data-theme="dark"] .crm-phone-history em { color: var(--text-secondary); }
-[data-theme="dark"] .crm-feed-item { border-bottom-color: var(--border); }
+[data-theme="dark"] .crm-feed-item { border-color: var(--border); background: color-mix(in srgb, var(--bg-card) 88%, #000); }
+[data-theme="dark"] .crm-feed-item--task-active { border-color: #6f591d; background: color-mix(in srgb, #8a6100 18%, var(--bg-card)); box-shadow: inset 3px 0 0 #dcae32; }
+[data-theme="dark"] .crm-feed-item--task-overdue { border-color: #71363b; background: color-mix(in srgb, #8d252d 18%, var(--bg-card)); box-shadow: inset 3px 0 0 #e05d65; }
+[data-theme="dark"] .crm-feed-item--note { border-color: #364a78; background: color-mix(in srgb, #315be8 12%, var(--bg-card)); box-shadow: inset 3px 0 0 #6f8dff; }
+[data-theme="dark"] .crm-feed-item--note.is-pinned { border-color: #594779; background: color-mix(in srgb, #6846bd 13%, var(--bg-card)); box-shadow: inset 3px 0 0 #9d82ee; }
+[data-theme="dark"] .crm-feed-item--completed, [data-theme="dark"] .crm-feed-item--system { background: color-mix(in srgb, var(--bg-card) 76%, #000); }
+[data-theme="dark"] .crm-feed-item--completed strong, [data-theme="dark"] .crm-feed-item--system strong { color: var(--text-secondary); }
 [data-theme="dark"] .crm-feed-item header span,
 [data-theme="dark"] .crm-feed-item p { color: var(--text-secondary); }
 [data-theme="dark"] .crm-feed-item p { color: var(--text-primary); }
