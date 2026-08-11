@@ -113,8 +113,8 @@ public sealed class CrmControllerPreviewTests
             description,
             card.Managers[0].UserId,
             DateTime.UtcNow.AddHours(1),
-            CrmTaskImportances.Medium,
-            CrmTaskTypes.Decision,
+            importance: null,
+            taskType: CrmTaskTypes.Decision,
             returnUrl: null,
             stage: null);
 
@@ -123,6 +123,7 @@ public sealed class CrmControllerPreviewTests
         var task = Assert.Single(updatedCard.Tasks, item => item.Description == description);
         Assert.Equal(CrmTaskTypes.Decision, task.TaskType);
         Assert.Equal("Что решил", task.Title);
+        Assert.Equal(CrmTaskImportances.Medium, task.Importance);
     }
 
     private static (CrmController Controller, HttpClient Http) CreateController(bool previewEnabled)
