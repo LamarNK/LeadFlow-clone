@@ -65,7 +65,7 @@
                     : Url.Action("TaskDetails", new { id = task.Id, fromTeam, teamTaskScope });
                 <article class="crm-task-row @(isOverdue ? "is-overdue" : "") @(task.Status == CrmTaskStatuses.Completed ? "is-complete" : "") @(task.Status == CrmTaskStatuses.Cancelled ? "is-cancelled" : "")">
                     <a class="crm-task-row__main" href="@taskTargetUrl">
-                        <div class="crm-task-row__title"><strong>@task.Title</strong><span class="crm-task-type">@CrmTaskTypes.GetLabel(task.TaskType)</span><span class="crm-task-importance crm-task-importance--@task.Importance.ToLowerInvariant()">@CrmTaskImportances.GetLabel(task.Importance)</span></div>
+                        <div class="crm-task-row__title"><strong>@task.Title</strong><span class="crm-task-importance crm-task-importance--@task.Importance.ToLowerInvariant()">@CrmTaskImportances.GetLabel(task.Importance)</span></div>
                         @if (!string.IsNullOrWhiteSpace(task.Description)) { <p>@task.Description</p> }
                         <div class="crm-task-row__people">
                             <span><small>Кандидат</small>@if (task.CardId is Guid) { <span>@(task.CandidateName ?? "Карточка")</span> } else { <em>Личная задача</em> }</span>

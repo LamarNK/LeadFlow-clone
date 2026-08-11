@@ -123,7 +123,6 @@
                 <button type="button" class="crm-task-modal__close" data-crm-task-create-close aria-label="Закрыть"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
             </header>
             <form asp-action="CreateTask" method="post" class="crm-standard-form crm-task-create-form crm-task-create-form--modal">
-                <label><span>Что нужно сделать</span><input name="title" required placeholder="Например, позвонить кандидату" /></label>
                 <label><span>Тип задачи</span><select name="taskType" required>
                     <option value="" selected disabled>Выберите тип</option>
                     @foreach (var taskType in CrmTaskTypes.All)

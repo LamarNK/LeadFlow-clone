@@ -25,7 +25,8 @@ public sealed class CrmControllerPreviewTests
 
         var view = Assert.IsType<ViewResult>(result);
         Assert.Null(view.ViewName);
-        Assert.IsType<CrmBoardDto>(view.Model);
+        var board = Assert.IsType<CrmBoardDto>(view.Model);
+        Assert.True(board.RequireStageComment);
     }
 
     [Fact]
@@ -96,6 +97,32 @@ public sealed class CrmControllerPreviewTests
         Assert.True(model.Board.IsAdmin);
         Assert.NotEmpty(model.Tasks);
         Assert.Equal("overdue", model.SelectedTaskScope);
+    }
+
+    [Fact]
+    public async Task CreateTask_InDesignPreview_UsesTaskTypeAsTitle()
+    {
+        var (controller, _) = CreateController(previewEnabled: true);
+        var cardId = Guid.Parse("90000000-0000-0000-0000-000000000001");
+        var card = DesignPreviewData.GetCrmCard(cardId);
+        Assert.NotNull(card);
+        var description = $"Решение кандидата {Guid.NewGuid():N}";
+
+        await controller.CreateTask(
+            cardId,
+            description,
+            card.Managers[0].UserId,
+            DateTime.UtcNow.AddHours(1),
+            CrmTaskImportances.Medium,
+            CrmTaskTypes.Decision,
+            returnUrl: null,
+            stage: null);
+
+        var updatedCard = DesignPreviewData.GetCrmCard(cardId);
+        Assert.NotNull(updatedCard);
+        var task = Assert.Single(updatedCard.Tasks, item => item.Description == description);
+        Assert.Equal(CrmTaskTypes.Decision, task.TaskType);
+        Assert.Equal("Что решил", task.Title);
     }
 
     private static (CrmController Controller, HttpClient Http) CreateController(bool previewEnabled)

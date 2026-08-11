@@ -467,7 +467,6 @@
                     <form asp-action="CreateTask" method="post" class="crm-task-create">
                         <input type="hidden" name="cardId" value="@card.Id" />
                         <input type="hidden" name="stage" value="@boardReturnStage" />
-                        <input name="title" required placeholder="Что сделать" />
                           <select name="taskType" required aria-label="Тип задачи">
                               <option value="" selected disabled>Выберите тип задачи</option>
                               @foreach (var taskType in CrmTaskTypes.All)
@@ -509,7 +508,6 @@
                         <article class="crm-task-row @(task.Status == CrmTaskStatuses.Completed ? "is-complete" : "") @(task.Status == CrmTaskStatuses.Cancelled ? "is-cancelled" : "") @(task.IsOverdue ? "is-overdue" : "")">
                             <div>
                                 <strong>@task.Title</strong>
-                                <span><small>Тип</small> · @CrmTaskTypes.GetLabel(task.TaskType)</span>
                                 <span>@task.AssigneeName @if (task.DueAtUtc is DateTime due) { <text>· до <time data-orbita-utc="@OrbitaTime.ToIsoUtc(due)" data-orbita-format="datetime-short-ru"></time></text> } @if (task.IsOverdue) { <em class="crm-overdue">просрочено</em> }</span>
                                 <span class="crm-task-row__times">
                                     <small>Поставлена</small>
@@ -566,7 +564,6 @@
                                         <form asp-action="UpdateTask" method="post" class="crm-standard-form">
                                             <input type="hidden" name="taskId" value="@task.Id" />
                                             <input type="hidden" name="cardId" value="@card.Id" />
-                                            <input name="title" value="@task.Title" maxlength="500" required />
                                             <select name="taskType" required aria-label="Тип задачи">
                                                 @if (!CrmTaskTypes.IsValid(task.TaskType))
                                                 {

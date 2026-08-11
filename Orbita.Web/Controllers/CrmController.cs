@@ -525,8 +525,12 @@ public sealed class CrmController(
     [HttpPost]
     [Authorize(Policy = PanelPermissions.CrmTasks)]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> CreateTask(Guid? cardId, string title, string? description, string assigneeUserId, DateTime? dueAtUtc, string? importance, string? taskType, string? returnUrl, string? stage, CancellationToken ct = default)
+    public async Task<IActionResult> CreateTask(Guid? cardId, string? description, string assigneeUserId, DateTime? dueAtUtc, string? importance, string? taskType, string? returnUrl, string? stage, CancellationToken ct = default)
     {
+        var normalizedTaskType = taskType ?? string.Empty;
+        var title = CrmTaskTypes.IsValid(normalizedTaskType)
+            ? CrmTaskTypes.GetLabel(normalizedTaskType)
+            : string.Empty;
         var (_, error) = await api.CreateCrmTaskAsync(new CrmTaskCreateRequest(
             cardId,
             title,
@@ -534,7 +538,7 @@ public sealed class CrmController(
             assigneeUserId,
             dueAtUtc,
             importance ?? CrmTaskImportances.Medium,
-            taskType ?? string.Empty), ct);
+            normalizedTaskType), ct);
         if (error is not null) TempData["CrmError"] = error;
         return cardId is Guid id
             ? RedirectAfterCardMutation(returnUrl, nameof(Card), new { id, tab = "tasks", stage })
@@ -558,7 +562,6 @@ public sealed class CrmController(
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> UpdateTask(
         Guid taskId,
-        string title,
         string? description,
         string assigneeUserId,
         DateTime? dueAtUtc,
@@ -567,6 +570,10 @@ public sealed class CrmController(
         Guid? cardId,
         CancellationToken ct = default)
     {
+        var normalizedTaskType = taskType ?? string.Empty;
+        var title = CrmTaskTypes.IsValid(normalizedTaskType)
+            ? CrmTaskTypes.GetLabel(normalizedTaskType)
+            : string.Empty;
         var (_, error) = await api.UpdateCrmTaskAsync(
             taskId,
             new CrmTaskUpdateRequest(
@@ -575,7 +582,7 @@ public sealed class CrmController(
                 assigneeUserId,
                 dueAtUtc,
                 importance ?? CrmTaskImportances.Medium,
-                taskType),
+                normalizedTaskType),
             ct);
         if (error is not null) TempData["CrmError"] = error;
         return cardId is Guid id

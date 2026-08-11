@@ -132,7 +132,6 @@
                     <form asp-action="UpdateTask" method="post" class="crm-standard-form crm-task-edit__form">
                         @Html.AntiForgeryToken()
                         <input type="hidden" name="taskId" value="@task.Id" />
-                        <label><span>Название</span><input name="title" value="@task.Title" maxlength="500" required /></label>
                         <label><span>Тип задачи</span><select name="taskType" required>
                             @if (!CrmTaskTypes.IsValid(task.TaskType))
                             {
