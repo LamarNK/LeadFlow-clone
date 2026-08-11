@@ -506,7 +506,23 @@ internal static class DesignPreviewData
                     CanEdit: x.CanEdit,
                     CanDelete: x.CanDelete,
                     CanPin: x.CanPin))
-                .Concat(tasks.Select(t => new CrmActivityItemDto(t.Status == CrmTaskStatuses.Completed ? "task-done" : "task", t.Title, t.Description, t.CreatorName, t.CompletedAtUtc ?? t.CreatedAtUtc, t.Id)))
+                .Concat(tasks.Select(t =>
+                {
+                    var completionComment = t.Status == CrmTaskStatuses.Completed && t.CompletedAtUtc is DateTime completedAt
+                        ? taskComments
+                            .Where(comment => comment.TaskId == t.Id && Math.Abs((comment.CreatedAtUtc - completedAt).TotalSeconds) <= 5)
+                            .OrderBy(comment => Math.Abs((comment.CreatedAtUtc - completedAt).TotalSeconds))
+                            .FirstOrDefault()
+                        : null;
+                    return new CrmActivityItemDto(
+                        t.Status == CrmTaskStatuses.Completed ? "task-done" : "task",
+                        t.Title,
+                        t.Description,
+                        completionComment?.AuthorName ?? t.CreatorName,
+                        t.CompletedAtUtc ?? t.CreatedAtUtc,
+                        t.Id,
+                        CompletionReason: completionComment?.Text);
+                }))
                 .Concat(history
                     .Where(h => h.Action is not "Note"
                         and not "NoteUpdated"
@@ -883,7 +899,23 @@ internal static class DesignPreviewData
             if (index < 0) return (false, "Задача не найдена.");
             var task = PreviewCrmTasks[index];
             if (task.Status != CrmTaskStatuses.Open) return (false, "Выполнить можно только задачу в работе.");
-            PreviewCrmTasks[index] = task with { Status = CrmTaskStatuses.Completed, CompletedAtUtc = DateTime.UtcNow, IsOverdue = false };
+            var completedAt = DateTime.UtcNow;
+            PreviewCrmTasks[index] = task with { Status = CrmTaskStatuses.Completed, CompletedAtUtc = completedAt, IsOverdue = false };
+            if (!PreviewCrmTaskComments.TryGetValue(taskId, out var comments))
+            {
+                comments = [];
+                PreviewCrmTaskComments[taskId] = comments;
+            }
+
+            comments.Add(new CrmTaskCommentDto(
+                Guid.NewGuid(),
+                taskId,
+                "preview-admin",
+                "Администратор",
+                comment.Trim(),
+                completedAt,
+                CanEdit: true,
+                CanDelete: true));
             AddPreviewCrmHistory("TaskCompleted", task.Title);
             return (true, null);
         }

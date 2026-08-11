@@ -381,7 +381,21 @@
                             <div class="crm-feed-item__icon"><i class="fa-solid @(item.IsPinned ? "fa-thumbtack" : item.Kind switch { "note" => "fa-comment", "task" => "fa-list-check", "task-done" => "fa-check", _ => "fa-clock" })" aria-hidden="true"></i></div>
                             <div>
                                 <header><strong>@DisplayCrmAction(item.Title)</strong><span>@item.ActorName · <time data-orbita-utc="@OrbitaTime.ToIsoUtc(item.AtUtc)" data-orbita-format="datetime-short-ru"></time></span></header>
-                                @if (!string.IsNullOrWhiteSpace(item.Body)) { <p>@item.Body</p> }
+                                @if (item.Kind == "task-done")
+                                {
+                                    @if (!string.IsNullOrWhiteSpace(item.Body))
+                                    {
+                                        <p><strong>Комментарий:</strong> @item.Body</p>
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(item.CompletionReason))
+                                    {
+                                        <p><strong>Причина закрытия:</strong> @item.CompletionReason</p>
+                                    }
+                                }
+                                else if (!string.IsNullOrWhiteSpace(item.Body))
+                                {
+                                    <p>@item.Body</p>
+                                }
                                 @if (item.Kind == "note" && item.NoteId is Guid noteId)
                                 {
                                     <div class="crm-inline-actions">

@@ -673,7 +673,7 @@ public sealed class CrmWorkspaceService(
         var openCount = tasks.Count(x => x.Status == CrmTaskStatuses.Open);
         var hasOverdue = tasks.Any(x => x.Status == CrmTaskStatuses.Open && x.DueAtUtc is DateTime due && due < now);
 
-        var activity = BuildActivity(notes, tasks, history, names, userId, isAdmin, canEdit);
+        var activity = BuildActivity(notes, tasks, taskComments, history, names, userId, isAdmin, canEdit);
         var chat = ParseChatMessages(card.Response.ChatMessagesJson);
         var phoneHistory = BuildPhoneHistory(card.Response);
         var contactPhones = await LoadContactPhonesAsync(card.Response, ct);
@@ -2770,6 +2770,7 @@ public sealed class CrmWorkspaceService(
     private static IReadOnlyList<CrmActivityItemDto> BuildActivity(
         IReadOnlyList<CrmCandidateNoteEntity> notes,
         IReadOnlyList<CrmTaskEntity> tasks,
+        IReadOnlyList<CrmTaskCommentEntity> taskComments,
         IReadOnlyList<CrmCandidateHistoryEntity> history,
         IReadOnlyDictionary<string, string> names,
         string userId,
@@ -2794,13 +2795,24 @@ public sealed class CrmWorkspaceService(
                 CanDelete: canManageNote,
                 CanPin: canEditCard);
         }));
-        items.AddRange(tasks.Select(t => new CrmActivityItemDto(
-            t.Status == CrmTaskStatuses.Completed ? "task-done" : "task",
-            t.Title,
-            t.Description,
-            string.IsNullOrWhiteSpace(t.CreatorName) ? names.GetValueOrDefault(t.CreatorUserId, t.CreatorUserId) : t.CreatorName,
-            t.CompletedAtUtc ?? t.CreatedAtUtc,
-            t.Id)));
+        var commentsByTask = taskComments
+            .GroupBy(comment => comment.TaskId)
+            .ToDictionary(group => group.Key, group => group.ToList());
+        items.AddRange(tasks.Select(t =>
+        {
+            var completionComment = FindCompletionComment(t, commentsByTask);
+            var creatorName = string.IsNullOrWhiteSpace(t.CreatorName)
+                ? names.GetValueOrDefault(t.CreatorUserId, t.CreatorUserId)
+                : t.CreatorName;
+            return new CrmActivityItemDto(
+                t.Status == CrmTaskStatuses.Completed ? "task-done" : "task",
+                t.Title,
+                t.Description,
+                completionComment?.AuthorName ?? creatorName,
+                t.CompletedAtUtc ?? t.CreatedAtUtc,
+                t.Id,
+                CompletionReason: completionComment?.Text);
+        }));
         items.AddRange(history
             .Where(h => h.Action is not "Note"
                 and not "NoteUpdated"
@@ -2819,6 +2831,23 @@ public sealed class CrmWorkspaceService(
             .ThenByDescending(x => x.AtUtc)
             .Take(80)
             .ToList();
+    }
+
+    private static CrmTaskCommentEntity? FindCompletionComment(
+        CrmTaskEntity task,
+        IReadOnlyDictionary<Guid, List<CrmTaskCommentEntity>> commentsByTask)
+    {
+        if (task.Status != CrmTaskStatuses.Completed
+            || task.CompletedAtUtc is not DateTime completedAt
+            || !commentsByTask.TryGetValue(task.Id, out var comments))
+        {
+            return null;
+        }
+
+        return comments
+            .Where(comment => Math.Abs((comment.CreatedAtUtc - completedAt).TotalSeconds) <= 5)
+            .OrderBy(comment => Math.Abs((comment.CreatedAtUtc - completedAt).TotalSeconds))
+            .FirstOrDefault();
     }
 
     private static string MapHistoryTitle(string action) => action switch

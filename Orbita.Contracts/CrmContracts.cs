@@ -522,7 +522,8 @@ public sealed record CrmActivityItemDto(
     bool IsPinned = false,
     bool CanEdit = false,
     bool CanDelete = false,
-    bool CanPin = false);
+    bool CanPin = false,
+    string? CompletionReason = null);
 
 public sealed record CrmAssignRequest(string ManagerUserId);
 public sealed record CrmMoveRequest(string Stage, string? Comment = null);

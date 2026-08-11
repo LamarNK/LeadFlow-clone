@@ -982,6 +982,47 @@ public sealed class CrmWorkspaceServiceTests
         Assert.Empty(harness.Db.CrmCandidateNotes);
     }
 
+    [Fact]
+    public async Task CompleteTask_CardActivityIncludesDescriptionAndCompletionReason()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var manager = await harness.CreateManagerAsync("task-feed@test.local", capacity: 5, onShift: true);
+        var profile = await harness.Db.PanelUserProfiles.SingleAsync(x => x.UserId == manager.Id);
+        profile.FullName = "Мария Сидорова";
+        var response = await SeedResponseAsync(harness.Db, "task-feed");
+        var card = NewCard(response.Id, manager.Id);
+        harness.Db.CrmCandidateCards.Add(card);
+        await harness.Db.SaveChangesAsync();
+
+        var task = await harness.Sut.CreateTaskAsync(
+            OfficeId,
+            new CrmTaskCreateRequest(
+                card.Id,
+                "Связаться",
+                "Уточнить готовность выйти на смену",
+                manager.Id,
+                DateTime.UtcNow.AddHours(1)),
+            manager.Id,
+            isAdmin: false);
+        Assert.NotNull(task);
+
+        Assert.True((await harness.Sut.CompleteTaskAsync(
+            task.Id,
+            "Кандидат подтвердил выход",
+            manager.Id,
+            isAdmin: false)).Ok);
+
+        var detail = await harness.Sut.GetCardAsync(card.Id, manager.Id, isAdmin: false);
+        Assert.NotNull(detail);
+        var activity = Assert.Single(detail.Activity, item => item.TaskId == task.Id);
+        Assert.Equal("task-done", activity.Kind);
+        Assert.Equal("Связаться", activity.Title);
+        Assert.Equal("Уточнить готовность выйти на смену", activity.Body);
+        Assert.Equal("Кандидат подтвердил выход", activity.CompletionReason);
+        Assert.Equal("Мария Сидорова", activity.ActorName);
+    }
+
     private static CrmCandidateCardEntity NewCard(Guid responseId, string? managerId = null) => new()
     {
         Id = Guid.NewGuid(),
