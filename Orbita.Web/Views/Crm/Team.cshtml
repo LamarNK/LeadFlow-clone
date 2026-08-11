@@ -127,11 +127,34 @@
                 @foreach (var m in board.Managers)
                 {
                     var pct = m.Capacity <= 0 ? 0 : Math.Min(100, (int)Math.Round(100.0 * m.ActiveLoad / m.Capacity));
-                    var shiftLine = CrmShiftDisplay.FormatStatusLine(m.IsShiftActive, m.ShiftStartedAtUtc, m.LastShiftEndedAtUtc, now);
+                    var shiftDuration = m.IsShiftActive && m.ShiftStartedAtUtc is DateTime started
+                        ? CrmShiftDisplay.FormatDurationSince(started, now)
+                        : null;
                     <article class="crm-manager-row @(pct >= 100 ? "is-at-limit" : null) @(m.IsShiftActive ? "is-on-shift" : null)">
                         <div class="crm-manager-row__name">
                             <span class="crm-manager-row__identity"><i class="fa-solid fa-circle @(m.IsShiftActive ? "is-online" : "")" aria-hidden="true"></i><strong>@m.DisplayName</strong></span>
-                            <span class="crm-manager-row__shift" title="@shiftLine">@shiftLine</span>
+                            <span class="crm-manager-row__shift">
+                                @if (m.IsShiftActive)
+                                {
+                                    <text>на смене</text>
+                                    @if (!string.IsNullOrWhiteSpace(shiftDuration))
+                                    {
+                                        <text> · @shiftDuration</text>
+                                    }
+                                    @if (m.ShiftStartedAtUtc is DateTime shiftStartedAtUtc)
+                                    {
+                                        <text> · с </text><time data-orbita-utc="@OrbitaTime.ToIsoUtc(shiftStartedAtUtc)" data-orbita-format="time-short"></time>
+                                    }
+                                }
+                                else if (m.LastShiftEndedAtUtc is DateTime lastShiftEndedAtUtc)
+                                {
+                                    <text>не на смене · вышел </text><time data-orbita-utc="@OrbitaTime.ToIsoUtc(lastShiftEndedAtUtc)" data-orbita-format="activity"></time>
+                                }
+                                else
+                                {
+                                    <text>не на смене</text>
+                                }
+                            </span>
                         </div>
                         <div class="crm-manager-row__load">
                             <strong>@m.ActiveLoad / @m.Capacity</strong>

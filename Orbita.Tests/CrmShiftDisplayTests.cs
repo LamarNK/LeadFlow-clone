@@ -7,28 +7,10 @@ public sealed class CrmShiftDisplayTests
     private static readonly DateTime Now = new(2026, 8, 8, 15, 0, 0, DateTimeKind.Utc);
 
     [Fact]
-    public void FormatStatusLine_OnShift_ShowsDurationAndSince()
+    public void FormatDurationSince_UsesUtcInstants()
     {
         var started = Now.AddHours(-2).AddMinutes(-15);
-        var line = CrmShiftDisplay.FormatStatusLine(true, started, lastShiftEndedAtUtc: null, Now);
-        Assert.Contains("на смене", line, StringComparison.Ordinal);
-        Assert.Contains("2 ч 15 мин", line, StringComparison.Ordinal);
-        Assert.Contains("с ", line, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void FormatStatusLine_OffShift_ShowsWhenLeft()
-    {
-        var ended = Now.AddHours(-3);
-        var line = CrmShiftDisplay.FormatStatusLine(false, null, ended, Now);
-        Assert.Contains("не на смене", line, StringComparison.Ordinal);
-        Assert.Contains("вышел", line, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void FormatStatusLine_NeverWorked_IsPlainOff()
-    {
-        Assert.Equal("не на смене", CrmShiftDisplay.FormatStatusLine(false, null, null, Now));
+        Assert.Equal("2 ч 15 мин", CrmShiftDisplay.FormatDurationSince(started, Now));
     }
 
     [Theory]

@@ -124,7 +124,7 @@
             <div><small>Задачи</small><strong class="@(card.HasOverdueTask ? "crm-overdue" : "")">@card.OpenTaskCount</strong></div>
             @if (card.NextActionAtUtc is DateTime nextAction)
             {
-                <div><small>Следующее действие</small><strong class="@(nextAction < DateTime.UtcNow ? "crm-overdue" : "")">@nextAction.ToLocalTime().ToString("dd.MM, HH:mm")</strong></div>
+                <div><small>Следующее действие</small><strong class="@(nextAction < DateTime.UtcNow ? "crm-overdue" : "")"><time data-orbita-utc="@OrbitaTime.ToIsoUtc(nextAction)" data-orbita-format="datetime"></time></strong></div>
             }
         </div>
     </section>
@@ -200,7 +200,7 @@
                             <dd class="crm-phone-history">
                                 @foreach (var ph in Model.PhoneHistory)
                                 {
-                                    <span><i class="fa-solid fa-phone" aria-hidden="true"></i>@ph.PhoneRaw<em>@ph.RecordedAtUtc.ToLocalTime().ToString("dd.MM.yyyy HH:mm")</em></span>
+                                    <span><i class="fa-solid fa-phone" aria-hidden="true"></i>@ph.PhoneRaw<em><time data-orbita-utc="@OrbitaTime.ToIsoUtc(ph.RecordedAtUtc)" data-orbita-format="datetime"></time></em></span>
                                 }
                             </dd>
                         </div>
@@ -240,14 +240,14 @@
                     <div><dt>Этап</dt><dd>@card.Stage</dd></div>
                     <div><dt>Ответственный</dt><dd>@(card.ManagerName ?? "Не назначен")</dd></div>
                     <div><dt>Нагрузка</dt><dd>@(card.IsInActiveLoad ? "В активной работе" : "Вне нагрузки")</dd></div>
-                    <div><dt>Создана</dt><dd>@card.CreatedAtUtc.ToLocalTime().ToString("dd.MM.yyyy HH:mm")</dd></div>
+                    <div><dt>Создана</dt><dd><time data-orbita-utc="@OrbitaTime.ToIsoUtc(card.CreatedAtUtc)" data-orbita-format="datetime"></time></dd></div>
                     @if (card.LastContactAtUtc is DateTime last)
                     {
-                        <div><dt>Контакт</dt><dd>@last.ToLocalTime().ToString("dd.MM.yyyy HH:mm")</dd></div>
+                        <div><dt>Контакт</dt><dd><time data-orbita-utc="@OrbitaTime.ToIsoUtc(last)" data-orbita-format="datetime"></time></dd></div>
                     }
                     @if (card.NextActionAtUtc is DateTime next)
                     {
-                        <div><dt>След. действие</dt><dd class="@(next < DateTime.UtcNow ? "crm-overdue" : "")">@next.ToLocalTime().ToString("dd.MM.yyyy HH:mm")</dd></div>
+                        <div><dt>След. действие</dt><dd class="@(next < DateTime.UtcNow ? "crm-overdue" : "")"><time data-orbita-utc="@OrbitaTime.ToIsoUtc(next)" data-orbita-format="datetime"></time></dd></div>
                     }
                 </dl>
                 @if (canEdit)
@@ -365,7 +365,7 @@
                         <article class="crm-feed-item crm-feed-item--@item.Kind @(item.IsPinned ? "is-pinned" : "")">
                             <div class="crm-feed-item__icon"><i class="fa-solid @(item.IsPinned ? "fa-thumbtack" : item.Kind switch { "note" => "fa-comment", "task" => "fa-list-check", "task-done" => "fa-check", _ => "fa-clock" })" aria-hidden="true"></i></div>
                             <div>
-                                <header><strong>@DisplayCrmAction(item.Title)</strong><span>@item.ActorName · @item.AtUtc.ToLocalTime().ToString("dd MMM, HH:mm")</span></header>
+                                <header><strong>@DisplayCrmAction(item.Title)</strong><span>@item.ActorName · <time data-orbita-utc="@OrbitaTime.ToIsoUtc(item.AtUtc)" data-orbita-format="datetime"></time></span></header>
                                 @if (!string.IsNullOrWhiteSpace(item.Body)) { <p>@item.Body</p> }
                                 @if (item.Kind == "note" && item.NoteId is Guid noteId)
                                 {
@@ -613,7 +613,7 @@
                     @foreach (var item in Model.History)
                     {
                         <article>
-                            <time>@item.CreatedAtUtc.ToLocalTime().ToString("dd MMM, HH:mm")</time>
+                            <time data-orbita-utc="@OrbitaTime.ToIsoUtc(item.CreatedAtUtc)" data-orbita-format="datetime"></time>
                             <div>
                                 <strong>@DisplayCrmAction(item.Action)</strong>
                                 @if (!string.IsNullOrWhiteSpace(item.Details)) { <span>@item.Details</span> }

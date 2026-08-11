@@ -1,10 +1,8 @@
 @model Orbita.Contracts.CrmTaskDetailDto
-@using System.Globalization
 @using Orbita.Contracts
 @using Orbita.Web.Models.ViewModels
 @{
     var task = Model.Task;
-    var russianCulture = CultureInfo.GetCultureInfo("ru-RU");
     var isCompleted = task.Status == CrmTaskStatuses.Completed;
     var isCancelled = task.Status == CrmTaskStatuses.Cancelled;
     var isOpen = task.Status == CrmTaskStatuses.Open;
@@ -12,9 +10,6 @@
     var statusName = isCompleted ? "Выполнена" : isCancelled ? "Отменена" : "В работе";
     var taskListUrl = ViewData["TaskListUrl"] as string ?? Url.Action("Tasks");
     var taskListTitle = ViewData["TaskListTitle"] as string ?? "Задачи";
-    var dueLabel = task.DueAtUtc is DateTime due ? due.ToLocalTime().ToString("dd MMMM yyyy, HH:mm", russianCulture) : "Не задан";
-    var dueInputValue = task.DueAtUtc?.ToLocalTime().ToString("yyyy-MM-ddTHH:mm");
-    var createdLabel = task.CreatedAtUtc.ToLocalTime().ToString("dd MMMM yyyy, HH:mm", russianCulture);
     string FormatFileSize(long bytes) => bytes switch
     {
         >= 1024 * 1024 => $"{bytes / 1024d / 1024d:0.#} МБ",
@@ -113,11 +108,10 @@
                     <div><dt><i class="fa-regular fa-calendar" aria-hidden="true"></i>Срок исполнения</dt><dd class="@(task.IsOverdue ? "is-overdue" : "")">@if (task.DueAtUtc is DateTime deadline) { <time data-orbita-utc="@OrbitaTime.ToIsoUtc(deadline)" data-orbita-format="datetime"></time> } else { <text>Не задан</text> }</dd></div>
                     <div><dt><i class="fa-regular fa-user" aria-hidden="true"></i>Автор задачи</dt><dd>@task.CreatorName</dd></div>
                     <div><dt><i class="fa-regular fa-user" aria-hidden="true"></i>Ответственный</dt><dd>@task.AssigneeName</dd></div>
-                    <div><dt><i class="fa-regular fa-clock" aria-hidden="true"></i>Поставлена</dt><dd><time data-orbita-utc="@OrbitaTime.ToIsoUtc(task.CreatedAtUtc)" data-orbita-format="datetime">@createdLabel</time></dd></div>
+                    <div><dt><i class="fa-regular fa-clock" aria-hidden="true"></i>Поставлена</dt><dd><time data-orbita-utc="@OrbitaTime.ToIsoUtc(task.CreatedAtUtc)" data-orbita-format="datetime"></time></dd></div>
                     @if (task.CompletedAtUtc is DateTime completedAtField)
                     {
-                        var completedLabel = completedAtField.ToLocalTime().ToString("dd MMMM yyyy, HH:mm", russianCulture);
-                        <div><dt><i class="fa-regular fa-circle-check" aria-hidden="true"></i>@(isCancelled ? "Закрыта" : "Выполнена")</dt><dd><time data-orbita-utc="@OrbitaTime.ToIsoUtc(completedAtField)" data-orbita-format="datetime">@completedLabel</time></dd></div>
+                        <div><dt><i class="fa-regular fa-circle-check" aria-hidden="true"></i>@(isCancelled ? "Закрыта" : "Выполнена")</dt><dd><time data-orbita-utc="@OrbitaTime.ToIsoUtc(completedAtField)" data-orbita-format="datetime"></time></dd></div>
                     }
                     @if (task.CardId is Guid cardId)
                     {
@@ -200,7 +194,7 @@
                             <div class="crm-task-comment__body">
                                 <header><strong>@comment.AuthorName</strong>@if (isAssignee) { <em>Ответственный</em> }</header>
                                 <p>@comment.Text</p>
-                                <time>@comment.CreatedAtUtc.ToLocalTime().ToString("dd MMMM, HH:mm", russianCulture)@if (comment.UpdatedAtUtc is not null) { <text> · изменён</text> }</time>
+                                <time><span data-orbita-utc="@OrbitaTime.ToIsoUtc(comment.CreatedAtUtc)" data-orbita-format="datetime"></span>@if (comment.UpdatedAtUtc is not null) { <text> · изменён</text> }</time>
                                 @if (comment.CanEdit || comment.CanDelete)
                                 {
                                     <div class="crm-inline-actions">
@@ -255,9 +249,9 @@
                 <ol>
                     @if (task.CompletedAtUtc is DateTime completedAt)
                     {
-                        <li class="is-current"><time>@completedAt.ToLocalTime().ToString("dd MMMM, HH:mm", russianCulture)</time><strong>@(isCancelled ? task.CreatorName : task.AssigneeName)</strong><p>@(isCancelled ? "Отменил(а) задачу" : "Выполнил(а) задачу")</p></li>
+                        <li class="is-current"><time data-orbita-utc="@OrbitaTime.ToIsoUtc(completedAt)" data-orbita-format="datetime"></time><strong>@(isCancelled ? task.CreatorName : task.AssigneeName)</strong><p>@(isCancelled ? "Отменил(а) задачу" : "Выполнил(а) задачу")</p></li>
                     }
-                    <li><time>@createdLabel</time><strong>@task.CreatorName</strong><p>Создал(а) задачу</p></li>
+                    <li><time data-orbita-utc="@OrbitaTime.ToIsoUtc(task.CreatedAtUtc)" data-orbita-format="datetime"></time><strong>@task.CreatorName</strong><p>Создал(а) задачу</p></li>
                 </ol>
             </section>
 
@@ -289,7 +283,7 @@
                             <li>
                                 <a asp-action="DownloadTaskAttachment" asp-route-taskId="@task.Id" asp-route-attachmentId="@attachment.Id">
                                     <i class="fa-regular fa-file-lines" aria-hidden="true"></i>
-                                    <span><strong>@attachment.FileName</strong><small>@FormatFileSize(attachment.SizeBytes) · @attachment.UploadedByName · @attachment.CreatedAtUtc.ToLocalTime().ToString("dd MMM, HH:mm", russianCulture)</small></span>
+                                    <span><strong>@attachment.FileName</strong><small>@FormatFileSize(attachment.SizeBytes) · @attachment.UploadedByName · <time data-orbita-utc="@OrbitaTime.ToIsoUtc(attachment.CreatedAtUtc)" data-orbita-format="datetime"></time></small></span>
                                     <i class="fa-solid fa-download" aria-hidden="true"></i>
                                 </a>
                             </li>
