@@ -116,9 +116,11 @@
                     }
                     return;
                 }
+                comment = comment.trim();
             }
 
             if (window.Orbita && typeof window.Orbita.postForm === 'function') {
+                sourceTile.setAttribute('aria-busy', 'true');
                 window.Orbita.postForm('/Crm/MoveAjax', { id: cardId, stage: stageName, comment: comment })
                     .then(function (result) {
                         if (!result.ok || !result.payload || result.payload.ok !== true) {
@@ -128,13 +130,26 @@
                             }
                             return;
                         }
-                        if (window.OrbitaLive && typeof window.OrbitaLive.scheduleRefresh === 'function') {
-                            window.OrbitaLive.scheduleRefresh({ kinds: ['Crm'] });
-                        } else {
-                            refreshBoard();
+
+                        if (window.Orbita && typeof window.Orbita.toast === 'function') {
+                            window.Orbita.toast('Карточка перемещена.', { variant: 'success' });
+                        }
+                        return refreshBoard().catch(function () {
+                            if (window.Orbita && typeof window.Orbita.toast === 'function') {
+                                window.Orbita.toast('Этап сохранён, но доска не обновилась. Обновите страницу.', { variant: 'error' });
+                            }
+                        });
+                    })
+                    .catch(function () {
+                        if (window.Orbita && typeof window.Orbita.toast === 'function') {
+                            window.Orbita.toast('Не удалось переместить карточку. Проверьте соединение и повторите.', { variant: 'error' });
                         }
                     })
-                    .catch(function () { });
+                    .finally(function () {
+                        if (sourceTile.isConnected) sourceTile.removeAttribute('aria-busy');
+                    });
+            } else if (window.Orbita && typeof window.Orbita.toast === 'function') {
+                window.Orbita.toast('Не удалось отправить смену этапа. Обновите страницу.', { variant: 'error' });
             }
         });
 
@@ -731,6 +746,62 @@
         });
     };
 
+    const initCrmCardPage = () => {
+        const page = document.querySelector('.crm-card-page');
+        if (!page || page.dataset.crmCardReady === 'true') return;
+        page.dataset.crmCardReady = 'true';
+
+        const stageCommentInput = page.querySelector('#stageComment');
+        if (stageCommentInput) {
+            page.querySelectorAll('[data-stage-comment]').forEach((hidden) => {
+                const form = hidden.closest('form');
+                if (!form) return;
+                form.addEventListener('submit', () => {
+                    hidden.value = stageCommentInput.value.trim();
+                });
+            });
+        }
+
+        const cardEditForm = page.querySelector('[data-crm-card-inline-edit]');
+        const cardEditToggle = page.querySelector('[data-crm-card-inline-edit-toggle]');
+        const cardEditCancel = page.querySelector('[data-crm-card-inline-edit-cancel]');
+        if (cardEditForm && cardEditToggle) {
+            const setCardEditing = (editing) => {
+                cardEditForm.classList.toggle('is-editing', editing);
+                cardEditToggle.setAttribute('aria-expanded', editing ? 'true' : 'false');
+                if (editing) {
+                    const nameInput = cardEditForm.querySelector('[name="fullName"]');
+                    if (nameInput) {
+                        nameInput.focus();
+                        nameInput.select();
+                    }
+                } else {
+                    cardEditForm.reset();
+                }
+            };
+
+            cardEditToggle.addEventListener('click', () => setCardEditing(true));
+            if (cardEditCancel) {
+                cardEditCancel.addEventListener('click', () => setCardEditing(false));
+            }
+        }
+
+        const boardBackLink = page.querySelector('[data-crm-back-to-board]');
+        const returnStage = (boardBackLink?.getAttribute('data-crm-stage') || '').trim();
+        if (returnStage) {
+            try { sessionStorage.setItem('orbita.crm.board.focusStage', returnStage); } catch { /* ignore */ }
+        }
+
+        const thread = page.querySelector('[data-crm-chat-thread][data-mark-read="1"]');
+        if (thread) {
+            thread.setAttribute('data-mark-read', '0');
+            const cardId = thread.getAttribute('data-card-id');
+            if (cardId && window.Orbita && typeof window.Orbita.postForm === 'function') {
+                window.Orbita.postForm('/Crm/MarkChatRead', { id: cardId }).catch(function () { });
+            }
+        }
+    };
+
     const initCrmBoardPage = () => {
         // Drop refreshers for boards removed by content swap
         refreshers.forEach((fn) => {
@@ -740,6 +811,7 @@
         document.querySelectorAll('[data-crm-board-carousel]').forEach(initBoardNavigation);
         document.querySelectorAll('[data-crm-funnel-editor]').forEach(initCrmFunnelEditor);
         initManualCreateModal();
+        initCrmCardPage();
         restoreBoardBackLinks();
 
         if (window.OrbitaLive && typeof window.OrbitaLive.register === 'function'

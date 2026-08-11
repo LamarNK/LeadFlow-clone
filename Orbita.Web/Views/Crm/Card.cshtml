@@ -628,57 +628,5 @@
 </div>
 
 @section Scripts {
-<script>
-(function () {
-    var input = document.getElementById('stageComment');
-    if (input) {
-        document.querySelectorAll('[data-stage-comment]').forEach(function (hidden) {
-            var form = hidden.closest('form');
-            if (!form) return;
-            form.addEventListener('submit', function () {
-                hidden.value = input.value || '';
-            });
-        });
-    }
-
-    var cardEditForm = document.querySelector('[data-crm-card-inline-edit]');
-    var cardEditToggle = document.querySelector('[data-crm-card-inline-edit-toggle]');
-    var cardEditCancel = document.querySelector('[data-crm-card-inline-edit-cancel]');
-    if (cardEditForm && cardEditToggle) {
-        function setCardEditing(editing) {
-            cardEditForm.classList.toggle('is-editing', editing);
-            cardEditToggle.setAttribute('aria-expanded', editing ? 'true' : 'false');
-            if (editing) {
-                var nameInput = cardEditForm.querySelector('[name="fullName"]');
-                if (nameInput) {
-                    nameInput.focus();
-                    nameInput.select();
-                }
-            } else {
-                cardEditForm.reset();
-            }
-        }
-
-        cardEditToggle.addEventListener('click', function () { setCardEditing(true); });
-        if (cardEditCancel) {
-            cardEditCancel.addEventListener('click', function () { setCardEditing(false); });
-        }
-    }
-
-    // Remember funnel stage so "К воронке" and board restore land on the same stage.
-    try {
-        var stage = '@boardReturnStage'.trim();
-        if (stage) sessionStorage.setItem('orbita.crm.board.focusStage', stage);
-    } catch (e) { /* ignore */ }
-
-    // Mark chat read via POST only (never on GET) after the user actually opened the tab.
-    var thread = document.querySelector('[data-crm-chat-thread][data-mark-read="1"]');
-    if (thread) {
-        var cardId = thread.getAttribute('data-card-id');
-        if (cardId && window.Orbita && typeof window.Orbita.postForm === 'function') {
-            window.Orbita.postForm('/Crm/MarkChatRead', { id: cardId }).catch(function () { });
-        }
-    }
-})();
-</script>
+<script src="~/js/orbita-crm-board.js" asp-append-version="true"></script>
 }
