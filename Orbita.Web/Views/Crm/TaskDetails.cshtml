@@ -47,7 +47,7 @@
                 <h1>@task.Title</h1>
                 @if (task.DueAtUtc is DateTime dueAt)
                 {
-                    <span class="crm-task-detail-due @(task.IsOverdue ? "is-overdue" : "")"><i class="fa-regular fa-calendar" aria-hidden="true"></i><time data-orbita-utc="@OrbitaTime.ToIsoUtc(dueAt)" data-orbita-format="datetime"></time></span>
+                    <span class="crm-task-detail-due @(task.IsOverdue ? "is-overdue" : "")"><i class="fa-regular fa-calendar" aria-hidden="true"></i><time data-orbita-utc="@OrbitaTime.ToIsoUtc(dueAt)" data-orbita-format="datetime-ru"></time></span>
                 }
             </div>
         </div>
@@ -105,13 +105,13 @@
                 <dl class="crm-task-detail-fields">
                     <div><dt><i class="fa-solid fa-list-check" aria-hidden="true"></i>Тип задачи</dt><dd>@CrmTaskTypes.GetLabel(task.TaskType)</dd></div>
                     <div><dt><i class="fa-regular fa-star" aria-hidden="true"></i>Важность</dt><dd><span class="crm-task-importance crm-task-importance--@task.Importance.ToLowerInvariant()">@CrmTaskImportances.GetLabel(task.Importance)</span></dd></div>
-                    <div><dt><i class="fa-regular fa-calendar" aria-hidden="true"></i>Срок исполнения</dt><dd class="@(task.IsOverdue ? "is-overdue" : "")">@if (task.DueAtUtc is DateTime deadline) { <time data-orbita-utc="@OrbitaTime.ToIsoUtc(deadline)" data-orbita-format="datetime"></time> } else { <text>Не задан</text> }</dd></div>
+                    <div><dt><i class="fa-regular fa-calendar" aria-hidden="true"></i>Срок исполнения</dt><dd class="@(task.IsOverdue ? "is-overdue" : "")">@if (task.DueAtUtc is DateTime deadline) { <time data-orbita-utc="@OrbitaTime.ToIsoUtc(deadline)" data-orbita-format="datetime-ru"></time> } else { <text>Не задан</text> }</dd></div>
                     <div><dt><i class="fa-regular fa-user" aria-hidden="true"></i>Автор задачи</dt><dd>@task.CreatorName</dd></div>
                     <div><dt><i class="fa-regular fa-user" aria-hidden="true"></i>Ответственный</dt><dd>@task.AssigneeName</dd></div>
-                    <div><dt><i class="fa-regular fa-clock" aria-hidden="true"></i>Поставлена</dt><dd><time data-orbita-utc="@OrbitaTime.ToIsoUtc(task.CreatedAtUtc)" data-orbita-format="datetime"></time></dd></div>
+                    <div><dt><i class="fa-regular fa-clock" aria-hidden="true"></i>Поставлена</dt><dd><time data-orbita-utc="@OrbitaTime.ToIsoUtc(task.CreatedAtUtc)" data-orbita-format="datetime-ru"></time></dd></div>
                     @if (task.CompletedAtUtc is DateTime completedAtField)
                     {
-                        <div><dt><i class="fa-regular fa-circle-check" aria-hidden="true"></i>@(isCancelled ? "Закрыта" : "Выполнена")</dt><dd><time data-orbita-utc="@OrbitaTime.ToIsoUtc(completedAtField)" data-orbita-format="datetime"></time></dd></div>
+                        <div><dt><i class="fa-regular fa-circle-check" aria-hidden="true"></i>@(isCancelled ? "Закрыта" : "Выполнена")</dt><dd><time data-orbita-utc="@OrbitaTime.ToIsoUtc(completedAtField)" data-orbita-format="datetime-ru"></time></dd></div>
                     }
                     @if (task.CardId is Guid cardId)
                     {
@@ -194,7 +194,7 @@
                             <div class="crm-task-comment__body">
                                 <header><strong>@comment.AuthorName</strong>@if (isAssignee) { <em>Ответственный</em> }</header>
                                 <p>@comment.Text</p>
-                                <time><span data-orbita-utc="@OrbitaTime.ToIsoUtc(comment.CreatedAtUtc)" data-orbita-format="datetime"></span>@if (comment.UpdatedAtUtc is not null) { <text> · изменён</text> }</time>
+                                <time><span data-orbita-utc="@OrbitaTime.ToIsoUtc(comment.CreatedAtUtc)" data-orbita-format="datetime-short-ru"></span>@if (comment.UpdatedAtUtc is not null) { <text> · изменён</text> }</time>
                                 @if (comment.CanEdit || comment.CanDelete)
                                 {
                                     <div class="crm-inline-actions">
@@ -249,9 +249,9 @@
                 <ol>
                     @if (task.CompletedAtUtc is DateTime completedAt)
                     {
-                        <li class="is-current"><time data-orbita-utc="@OrbitaTime.ToIsoUtc(completedAt)" data-orbita-format="datetime"></time><strong>@(isCancelled ? task.CreatorName : task.AssigneeName)</strong><p>@(isCancelled ? "Отменил(а) задачу" : "Выполнил(а) задачу")</p></li>
+                        <li class="is-current"><time data-orbita-utc="@OrbitaTime.ToIsoUtc(completedAt)" data-orbita-format="datetime-short-ru"></time><strong>@(isCancelled ? task.CreatorName : task.AssigneeName)</strong><p>@(isCancelled ? "Отменил(а) задачу" : "Выполнил(а) задачу")</p></li>
                     }
-                    <li><time data-orbita-utc="@OrbitaTime.ToIsoUtc(task.CreatedAtUtc)" data-orbita-format="datetime"></time><strong>@task.CreatorName</strong><p>Создал(а) задачу</p></li>
+                    <li><time data-orbita-utc="@OrbitaTime.ToIsoUtc(task.CreatedAtUtc)" data-orbita-format="datetime-short-ru"></time><strong>@task.CreatorName</strong><p>Создал(а) задачу</p></li>
                 </ol>
             </section>
 
@@ -283,7 +283,7 @@
                             <li>
                                 <a asp-action="DownloadTaskAttachment" asp-route-taskId="@task.Id" asp-route-attachmentId="@attachment.Id">
                                     <i class="fa-regular fa-file-lines" aria-hidden="true"></i>
-                                    <span><strong>@attachment.FileName</strong><small>@FormatFileSize(attachment.SizeBytes) · @attachment.UploadedByName · <time data-orbita-utc="@OrbitaTime.ToIsoUtc(attachment.CreatedAtUtc)" data-orbita-format="datetime"></time></small></span>
+                                    <span><strong>@attachment.FileName</strong><small>@FormatFileSize(attachment.SizeBytes) · @attachment.UploadedByName · <time data-orbita-utc="@OrbitaTime.ToIsoUtc(attachment.CreatedAtUtc)" data-orbita-format="datetime-short-ru"></time></small></span>
                                     <i class="fa-solid fa-download" aria-hidden="true"></i>
                                 </a>
                             </li>

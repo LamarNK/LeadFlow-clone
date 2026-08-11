@@ -53,12 +53,24 @@
             return 'вчера ' + time;
         }
 
-        var datePart = pad2(date.getDate()) + '.' + pad2(date.getMonth() + 1);
+        var dateOptions = { day: 'numeric', month: 'short' };
         if (date.getFullYear() !== now.getFullYear()) {
-            datePart += '.' + date.getFullYear();
+            dateOptions.year = 'numeric';
         }
 
+        var datePart = date.toLocaleDateString('ru-RU', dateOptions);
+
         return datePart + ' ' + time;
+    }
+
+    function formatRussianDateTime(date, includeYear) {
+        var options = { day: 'numeric', month: includeYear ? 'long' : 'short' };
+        if (includeYear || date.getFullYear() !== new Date().getFullYear()) {
+            options.year = 'numeric';
+        }
+
+        return date.toLocaleDateString('ru-RU', options)
+            + ', ' + pad2(date.getHours()) + ':' + pad2(date.getMinutes());
     }
 
     function formatLocal(date, format) {
@@ -72,6 +84,10 @@
             case 'datetime':
                 return pad2(date.getDate()) + '.' + pad2(date.getMonth() + 1) + '.' + date.getFullYear()
                     + ' ' + pad2(date.getHours()) + ':' + pad2(date.getMinutes());
+            case 'datetime-ru':
+                return formatRussianDateTime(date, true);
+            case 'datetime-short-ru':
+                return formatRussianDateTime(date, false);
             case 'datetime-seconds':
                 return pad2(date.getDate()) + '.' + pad2(date.getMonth() + 1) + '.' + date.getFullYear()
                     + ' ' + pad2(date.getHours()) + ':' + pad2(date.getMinutes()) + ':' + pad2(date.getSeconds());
@@ -93,7 +109,7 @@
             el.setAttribute('datetime', iso);
         }
         if (format === 'activity') {
-            el.title = formatLocal(date, 'datetime');
+            el.title = formatLocal(date, 'datetime-ru');
         }
     }
 

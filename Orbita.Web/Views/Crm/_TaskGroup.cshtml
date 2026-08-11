@@ -65,16 +65,16 @@
                     </a>
                     <div class="crm-task-row__due @(isOverdue ? "is-overdue" : "")">
                         <small>Срок</small>
-                        @if (task.DueAtUtc is DateTime due) { <span><i class="fa-regular fa-calendar" aria-hidden="true"></i> до <time data-orbita-utc="@OrbitaTime.ToIsoUtc(due)" data-orbita-format="datetime"></time></span> } else { <span class="is-empty">Не задан</span> }
+                        @if (task.DueAtUtc is DateTime due) { <span><i class="fa-regular fa-calendar" aria-hidden="true"></i> до <time data-orbita-utc="@OrbitaTime.ToIsoUtc(due)" data-orbita-format="datetime-short-ru"></time></span> } else { <span class="is-empty">Не задан</span> }
                         @if (isOverdue) { <em>Просрочено</em> }
                         @if (task.Status == CrmTaskStatuses.Cancelled) { <em>Отменена</em> }
                         <span class="crm-task-row__times">
                             <small>Поставлена</small>
-                            <time data-orbita-utc="@OrbitaTime.ToIsoUtc(task.CreatedAtUtc)" data-orbita-format="datetime"></time>
+                            <time data-orbita-utc="@OrbitaTime.ToIsoUtc(task.CreatedAtUtc)" data-orbita-format="datetime-short-ru"></time>
                             @if (task.CompletedAtUtc is DateTime completedAt)
                             {
                                 <small>@(task.Status == CrmTaskStatuses.Cancelled ? "Закрыта" : "Выполнена")</small>
-                                <time data-orbita-utc="@OrbitaTime.ToIsoUtc(completedAt)" data-orbita-format="datetime"></time>
+                                <time data-orbita-utc="@OrbitaTime.ToIsoUtc(completedAt)" data-orbita-format="datetime-short-ru"></time>
                             }
                         </span>
                     </div>
