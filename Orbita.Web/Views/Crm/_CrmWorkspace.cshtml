@@ -37,14 +37,10 @@
         <div>
             <span class="crm-pill @(Model.IsShiftActive ? "is-on" : "")">@(Model.IsShiftActive ? "На смене" : "Не на смене")</span>
             <strong class="crm-toolbar__load">@Model.ActiveLoad <span>/ @Model.Capacity</span></strong>
-            <p>Нагрузка · открытых задач @Model.OpenTaskCount@if (Model.OverdueTaskCount > 0) { <text> · </text><em class="crm-overdue">просрочено @Model.OverdueTaskCount</em> }</p>
-            @if (Model.OverdueTaskCount > 0)
-            {
-                <a class="crm-toolbar__urgent" asp-action="Tasks"><i class="fa-solid fa-clock" aria-hidden="true"></i>Открыть просроченные задачи</a>
-            }
+            <p>Нагрузка · открытых задач @Model.OpenTaskCount@if (Model.OverdueTaskCount > 0) { <text> · </text><a class="crm-toolbar__overdue" asp-action="Tasks">просрочено @Model.OverdueTaskCount</a> }</p>
             @if (Model.IsAdmin && Model.IsEnabled)
             {
-                <button type="button" class="crm-toolbar__urgent crm-manual-create-trigger" data-crm-manual-create-open aria-haspopup="dialog" aria-controls="crm-manual-create-modal">
+                <button type="button" class="crm-manual-create-trigger" data-crm-manual-create-open aria-haspopup="dialog" aria-controls="crm-manual-create-modal">
                     <i class="fa-solid fa-user-plus" aria-hidden="true"></i>Создать отклик
                 </button>
             }

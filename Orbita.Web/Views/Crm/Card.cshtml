@@ -20,8 +20,7 @@
     var messengerPhone = phoneDigits.Length == 11 && phoneDigits.StartsWith("8", StringComparison.Ordinal) ? "7" + phoneDigits[1..] : phoneDigits;
     var phoneE164 = $"+{messengerPhone}";
     var encodedPhone = Uri.EscapeDataString(phoneE164);
-    var hasCandidateMessagesWithoutAvito = Model.Chat.Any(message => message.Tone == "incoming")
-        && !Model.Chat.Any(message => message.Tone == "system");
+    var hasCandidateMessages = Model.Chat.Any(message => message.Tone == "incoming");
     string DisplayCrmAction(string action) => action switch
     {
         "Created" => "Карточка создана",
@@ -319,7 +318,7 @@
         <section class="crm-card-main card">
             <nav class="crm-tabs">
                 <a class="@(activeTab == "activity" ? "is-active" : "")" asp-action="Card" asp-route-id="@card.Id" asp-route-stage="@boardReturnStage">Лента</a>
-                <a class="@(activeTab == "chat" ? "is-active" : "") @(hasCandidateMessagesWithoutAvito ? "has-candidate-only-messages" : "")" asp-action="Card" asp-route-id="@card.Id" asp-route-tab="chat" asp-route-stage="@boardReturnStage">Чат @if (Model.Chat.Count > 0) { <span>@Model.Chat.Count</span> }</a>
+                <a class="@(activeTab == "chat" ? "is-active" : "") @(hasCandidateMessages ? "has-candidate-messages" : "")" asp-action="Card" asp-route-id="@card.Id" asp-route-tab="chat" asp-route-stage="@boardReturnStage">Чат @if (Model.Chat.Count > 0) { <span>@Model.Chat.Count</span> }</a>
                 @if (canAccessCrmTasks)
                 {
                     <a class="@(activeTab == "tasks" ? "is-active" : "")" asp-action="Card" asp-route-id="@card.Id" asp-route-tab="tasks" asp-route-stage="@boardReturnStage">Задачи <span>@Model.Tasks.Count(t => t.Status == CrmTaskStatuses.Open)</span></a>

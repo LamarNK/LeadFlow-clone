@@ -181,6 +181,8 @@
 .crm-shift-action:focus-visible { outline: 3px solid rgba(37, 99, 235, .18); outline-offset: 2px; }
 .crm-toolbar__urgent { display: inline-flex; align-items: center; gap: 6px; margin-top: 7px; color: #b42318; font-size: 11px; font-weight: 700; }
 .crm-toolbar__urgent:hover { color: #912018; text-decoration: underline; }
+.crm-toolbar__overdue { color: #b42318; font-weight: 700; text-decoration: none; }
+.crm-toolbar__overdue:hover { color: #912018; text-decoration: underline; }
 .crm-toolbar__load { display: block; margin-top: 4px; color: #101828; font-size: 22px; letter-spacing: -.03em; }
 .crm-toolbar__load span { color: #98a2b3; font-size: 14px; font-weight: 600; }
 .crm-toolbar__stats { display: grid; grid-template-columns: repeat(4, minmax(90px, 1fr)); gap: 12px; flex: 1; }
@@ -655,18 +657,18 @@
 }
 .crm-task-row__times time { color: var(--text-primary); font-size: 12px; }
 
-.crm-tabs a.has-candidate-only-messages,
-.crm-tabs a.has-candidate-only-messages span {
+.crm-tabs a.has-candidate-messages,
+.crm-tabs a.has-candidate-messages span {
     color: #b91c1c;
 }
-.crm-tabs a.has-candidate-only-messages span {
+.crm-tabs a.has-candidate-messages span {
     background: rgba(239, 68, 68, .16);
     border-radius: 99px;
     padding: 1px 7px;
     font-weight: 800;
 }
-[data-theme="dark"] .crm-tabs a.has-candidate-only-messages,
-[data-theme="dark"] .crm-tabs a.has-candidate-only-messages span {
+[data-theme="dark"] .crm-tabs a.has-candidate-messages,
+[data-theme="dark"] .crm-tabs a.has-candidate-messages span {
     color: #fca5a5;
 }
 
@@ -712,7 +714,8 @@
     gap: 8px;
     font-weight: 600 !important;
 }
-.crm-manual-create-trigger { border: 0; background: transparent; font: inherit; cursor: pointer; }
+.crm-manual-create-trigger { display: inline-flex; align-items: center; gap: 6px; margin-top: 7px; padding: 0; border: 0; background: transparent; color: var(--text-secondary); font: inherit; font-size: 11px; font-weight: 650; cursor: pointer; }
+.crm-manual-create-trigger:hover { color: var(--text-primary); text-decoration: underline; }
 .crm-manual-create-modal[hidden] { display: none; }
 .crm-manual-create-modal { position: fixed; z-index: 1200; inset: 0; display: grid; place-items: center; padding: 24px; }
 .crm-manual-create-modal__backdrop { position: absolute; inset: 0; background: rgba(16, 24, 40, .42); backdrop-filter: blur(2px); }
