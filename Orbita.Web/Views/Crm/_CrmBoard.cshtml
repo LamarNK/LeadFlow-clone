@@ -73,7 +73,6 @@
                                     <small>Ответственный</small>
                                     <strong>@(card.ManagerName ?? "Не назначен")</strong>
                                 </span>
-                                <span class="@(card.HoursInStage >= 24 ? "crm-hot" : "")" title="В этапе">@card.HoursInStage.ToString("0.#")ч</span>
                                 @if (card.OpenTaskCount > 0)
                                 {
                                     <span class="crm-tile__tasks @(hasOverdueTask ? "is-overdue" : "is-active")"><i class="fa-solid fa-list-check" aria-hidden="true"></i>@card.OpenTaskCount</span>
