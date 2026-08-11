@@ -598,6 +598,33 @@
         sync();
     };
 
+    const initManualCreateModal = () => {
+        document.querySelectorAll('[data-crm-manual-create-modal]').forEach((modal) => {
+            if (modal.dataset.manualCreateBound === 'true') return;
+            modal.dataset.manualCreateBound = 'true';
+
+            const closeModal = () => {
+                modal.hidden = true;
+                document.body.classList.remove('orbita-modal-open');
+            };
+            const openModal = () => {
+                modal.hidden = false;
+                document.body.classList.add('orbita-modal-open');
+                window.setTimeout(() => modal.querySelector('input[name="fullName"]')?.focus(), 0);
+            };
+
+            document.querySelectorAll('[data-crm-manual-create-open]').forEach((trigger) => {
+                trigger.addEventListener('click', openModal);
+            });
+            modal.querySelectorAll('[data-crm-manual-create-close]').forEach((trigger) => {
+                trigger.addEventListener('click', closeModal);
+            });
+            modal.addEventListener('keydown', (event) => {
+                if (event.key === 'Escape') closeModal();
+            });
+        });
+    };
+
     const initCrmBoardPage = () => {
         // Drop refreshers for boards removed by content swap
         refreshers.forEach((fn) => {
@@ -606,6 +633,7 @@
 
         document.querySelectorAll('[data-crm-board-carousel]').forEach(initBoardNavigation);
         document.querySelectorAll('[data-crm-funnel-editor]').forEach(initCrmFunnelEditor);
+        initManualCreateModal();
 
         if (window.OrbitaLive && typeof window.OrbitaLive.register === 'function'
             && document.querySelector('[data-orbita-live][data-orbita-live-page="crm"]')) {

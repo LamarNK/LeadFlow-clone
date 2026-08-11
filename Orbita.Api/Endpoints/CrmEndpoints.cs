@@ -390,6 +390,12 @@ public static class CrmEndpoints
             ClaimsPrincipal principal,
             CancellationToken ct) =>
         {
+            var isAdmin = PanelRoles.HasElevatedOfficeAccess(principal);
+            if (!isAdmin)
+            {
+                return Results.Forbid();
+            }
+
             var scope = await officeScope.ResolveAsync(principal, ct);
             var effectiveOfficeId = scope.ResolveFilter(officeId);
             var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
@@ -402,7 +408,7 @@ public static class CrmEndpoints
                 resolvedOfficeId,
                 request,
                 userId,
-                PanelRoles.HasElevatedOfficeAccess(principal),
+                isAdmin,
                 ct);
             return cardId is Guid id
                 ? Results.Created($"/api/v1/crm/cards/{id:D}", new CrmManualCardCreateResult(id))

@@ -343,33 +343,37 @@ public sealed class CrmController(
         Guid id,
         string fullName,
         string phoneRaw,
-        string city,
-        string vacancy,
-        int? age,
-        string? sourceResponseId,
-        string? accountName,
-        string? sourceUrl,
-        string? vacancyUrl,
-        string? messengerUrl,
+        string? tab,
         string? stage,
         CancellationToken ct = default)
     {
-        var (_, error) = await api.UpdateCrmCardAsync(
-            id,
-            new CrmCardUpdateRequest(
-                fullName,
-                phoneRaw,
-                city,
-                vacancy,
-                age,
-                sourceResponseId,
-                accountName,
-                sourceUrl,
-                vacancyUrl,
-                messengerUrl),
-            ct);
+        var current = await api.GetCrmCardAsync(id, ct);
+        string? error;
+        if (current is null)
+        {
+            error = "Карточка не найдена.";
+        }
+        else
+        {
+            // The inline editor is deliberately limited to the candidate's name and primary phone.
+            // Values maintained by CRM integrations (including source IDs) are preserved server-side.
+            (_, error) = await api.UpdateCrmCardAsync(
+                id,
+                new CrmCardUpdateRequest(
+                    fullName,
+                    phoneRaw,
+                    current.Card.City,
+                    current.Card.Vacancy,
+                    current.Card.Age,
+                    current.Card.SourceResponseId,
+                    current.Card.AccountName,
+                    current.Card.SourceUrl,
+                    current.Card.VacancyUrl,
+                    current.Card.MessengerUrl),
+                ct);
+        }
         if (error is not null) TempData["CrmError"] = error;
-        return RedirectToAction(nameof(Card), new { id, stage });
+        return RedirectToAction(nameof(Card), new { id, tab, stage });
     }
 
     [HttpPost]
@@ -437,6 +441,11 @@ public sealed class CrmController(
         bool assignToMe = false,
         CancellationToken ct = default)
     {
+        if (!PanelRoles.HasElevatedOfficeAccess(User))
+        {
+            return Forbid();
+        }
+
         var (cardId, error) = await api.CreateManualCrmCardAsync(
             new CrmManualCardCreateRequest(fullName, phoneRaw, city, vacancy, age, source, sourceResponseId, stage, assignToMe),
             ct);

@@ -1345,6 +1345,11 @@ public sealed class CrmWorkspaceService(
         bool isAdmin,
         CancellationToken ct = default)
     {
+        if (!isAdmin)
+        {
+            return (null, "Создавать отклики вручную могут только администратор, руководитель офиса или старший менеджер.");
+        }
+
         var fullName = (request.FullName ?? string.Empty).Trim();
         if (fullName.Length == 0)
         {

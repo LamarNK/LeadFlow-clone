@@ -42,10 +42,34 @@
             {
                 <a class="crm-toolbar__urgent" asp-action="Tasks"><i class="fa-solid fa-clock" aria-hidden="true"></i>Открыть просроченные задачи</a>
             }
-            @if (Model.CanEdit && Model.IsEnabled)
+            @if (Model.IsAdmin && Model.IsEnabled)
             {
-                <details class="crm-manual-create">
-                    <summary class="crm-toolbar__urgent"><i class="fa-solid fa-user-plus" aria-hidden="true"></i>Создать отклик</summary>
+                <button type="button" class="crm-toolbar__urgent crm-manual-create-trigger" data-crm-manual-create-open aria-haspopup="dialog" aria-controls="crm-manual-create-modal">
+                    <i class="fa-solid fa-user-plus" aria-hidden="true"></i>Создать отклик
+                </button>
+            }
+        </div>
+        @if (Model.IsShiftActive)
+        {
+            <form asp-action="StopShift" method="post"><button class="crm-shift-action crm-shift-action--stop" type="submit"><i class="fa-solid fa-stop" aria-hidden="true"></i>Стоп смены</button></form>
+        }
+        else
+        {
+            <form asp-action="StartShift" method="post"><button class="crm-shift-action crm-shift-action--start" type="submit"><i class="fa-solid fa-play" aria-hidden="true"></i>Старт смены</button></form>
+        }
+    </div>
+    @if (Model.IsAdmin && Model.IsEnabled)
+    {
+        <div class="crm-manual-create-modal" id="crm-manual-create-modal" data-crm-manual-create-modal hidden>
+            <div class="crm-manual-create-modal__backdrop" data-crm-manual-create-close></div>
+            <section class="crm-manual-create-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="crm-manual-create-title" tabindex="-1">
+                <header class="crm-manual-create-modal__header">
+                    <div>
+                        <h2 id="crm-manual-create-title">Создать отклик</h2>
+                        <p>Добавьте кандидата в воронку вручную.</p>
+                    </div>
+                    <button type="button" class="crm-manual-create-modal__close" data-crm-manual-create-close aria-label="Закрыть"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+                </header>
                     <form asp-action="CreateManual" method="post" class="crm-manual-create__form">
                         <label>ФИО<input name="fullName" required maxlength="256" /></label>
                         <label>Телефон<input name="phoneRaw" required maxlength="64" /></label>
@@ -63,20 +87,14 @@
                             </select>
                         </label>
                         <label class="crm-checkbox-label"><input type="checkbox" name="assignToMe" value="true" checked /> Назначить на меня</label>
-                        <button class="settings-primary-btn" type="submit">Создать</button>
+                        <footer class="crm-manual-create__actions">
+                            <button class="settings-secondary-btn" type="button" data-crm-manual-create-close>Отмена</button>
+                            <button class="settings-primary-btn" type="submit"><i class="fa-solid fa-plus" aria-hidden="true"></i>Создать отклик</button>
+                        </footer>
                     </form>
-                </details>
-            }
+            </section>
         </div>
-        @if (Model.IsShiftActive)
-        {
-            <form asp-action="StopShift" method="post"><button class="crm-shift-action crm-shift-action--stop" type="submit"><i class="fa-solid fa-stop" aria-hidden="true"></i>Стоп смены</button></form>
-        }
-        else
-        {
-            <form asp-action="StartShift" method="post"><button class="crm-shift-action crm-shift-action--start" type="submit"><i class="fa-solid fa-play" aria-hidden="true"></i>Старт смены</button></form>
-        }
-    </div>
+    }
     <div class="crm-toolbar__stats">
         <div><small>В работе</small><strong>@Model.TeamStats.TotalActiveCards</strong></div>
         <div><small>Очередь</small><strong>@Model.UnassignedCount</strong></div>

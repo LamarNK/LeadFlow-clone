@@ -269,24 +269,46 @@ public sealed class CrmWorkspaceServiceTests
     }
 
     [Fact]
-    public async Task CreateManualCard_CreatesResponseAndCard()
+    public async Task CreateManualCard_ElevatedUserCreatesResponseAndCard()
     {
         await using var harness = await Harness.CreateAsync();
         SeedOffice(harness.Db, crmEnabled: true);
-        var manager = await harness.CreateManagerAsync("manual@test.local", capacity: 5, onShift: true);
+        var seniorManager = await harness.CreateDeskUserAsync(
+            "manual@test.local",
+            capacity: 5,
+            onShift: true,
+            PanelRoles.SeniorManager);
 
         var (cardId, error) = await harness.Sut.CreateManualCardAsync(
             OfficeId,
             new CrmManualCardCreateRequest("Сидоров Сидор", "89001234567", "Уфа", "Водитель", 28, "Битрикс", null, null, AssignToMe: true),
-            manager.Id,
-            isAdmin: false);
+            seniorManager.Id,
+            isAdmin: true);
         Assert.True(cardId is not null, error);
         var card = await harness.Db.CrmCandidateCards.Include(x => x.Response).SingleAsync(x => x.Id == cardId);
-        Assert.Equal(manager.Id, card.ManagerUserId);
+        Assert.Equal(seniorManager.Id, card.ManagerUserId);
         Assert.Equal("Сидоров Сидор", card.Response.FullName);
         Assert.Equal("79001234567", card.Response.PhoneNormalized);
         Assert.Equal("Manual", card.Response.Source);
         Assert.Contains(harness.Db.CandidateContactPhones, p => p.PersonId == card.Response.PersonId && p.IsPrimary);
+    }
+
+    [Fact]
+    public async Task CreateManualCard_ManagerIsDenied()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var manager = await harness.CreateManagerAsync("manual-manager@test.local", capacity: 5, onShift: true);
+
+        var (cardId, error) = await harness.Sut.CreateManualCardAsync(
+            OfficeId,
+            new CrmManualCardCreateRequest("Сидоров Сидор", "89001234567"),
+            manager.Id,
+            isAdmin: false);
+
+        Assert.Null(cardId);
+        Assert.Equal("Создавать отклики вручную могут только администратор, руководитель офиса или старший менеджер.", error);
+        Assert.Empty(harness.Db.CrmCandidateCards);
     }
 
     [Fact]

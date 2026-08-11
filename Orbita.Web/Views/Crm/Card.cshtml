@@ -20,6 +20,8 @@
     var messengerPhone = phoneDigits.Length == 11 && phoneDigits.StartsWith("8", StringComparison.Ordinal) ? "7" + phoneDigits[1..] : phoneDigits;
     var phoneE164 = $"+{messengerPhone}";
     var encodedPhone = Uri.EscapeDataString(phoneE164);
+    var hasCandidateMessagesWithoutAvito = Model.Chat.Any(message => message.Tone == "incoming")
+        && !Model.Chat.Any(message => message.Tone == "system");
     string DisplayCrmAction(string action) => action switch
     {
         "Created" => "Карточка создана",
@@ -46,13 +48,20 @@
     }
 
     <section class="crm-card-hero card">
+        <form asp-action="UpdateCard" method="post" class="crm-card-inline-edit-form" data-crm-card-inline-edit>
+            <input type="hidden" name="id" value="@card.Id" />
+            <input type="hidden" name="stage" value="@boardReturnStage" />
+            <input type="hidden" name="tab" value="@activeTab" />
         <div class="crm-card-hero__main">
             <div class="crm-avatar">
                 @(string.IsNullOrEmpty(card.FullName) ? "?" : card.FullName.Trim()[0])
                 <img src="@Url.Action("Avatar", "Crm", new { id = card.Id })" alt="" onerror="this.remove()" />
             </div>
             <div>
-                <h1>@card.FullName</h1>
+                <h1>
+                    <span class="crm-card-inline-edit__name-value">@card.FullName</span>
+                    <input class="crm-card-inline-edit__name-input" name="fullName" value="@card.FullName" required maxlength="256" aria-label="ФИО кандидата" />
+                </h1>
                 <p>
                     @(card.Age?.ToString() ?? "—") лет · @card.City ·
                     @if (!string.IsNullOrWhiteSpace(vacancyUrl))
@@ -67,7 +76,7 @@
                     else if (!card.IsInActiveLoad) { <span class="crm-tag">Вне нагрузки</span> }
                 </p>
                 <div class="crm-card-hero__contacts">
-                    <details class="crm-phone-actions">
+                    <details class="crm-phone-actions crm-card-inline-edit__phone-display">
                         <summary class="settings-secondary-btn" aria-label="Действия с номером @card.PhoneRaw"><i class="fa-solid fa-phone" aria-hidden="true"></i>@card.PhoneRaw<i class="fa-solid fa-chevron-down crm-phone-actions__caret" aria-hidden="true"></i></summary>
                         <div class="crm-phone-actions__menu">
                             <span class="crm-phone-actions__title">Связаться с кандидатом</span>
@@ -81,13 +90,23 @@
                             <button type="button" data-copy="@card.PhoneRaw" onclick="window.Orbita.copyText(this.dataset.copy, 'Телефон скопирован.');"><i class="fa-regular fa-copy" aria-hidden="true"></i>Копировать номер</button>
                         </div>
                     </details>
+                    <input class="crm-card-inline-edit__phone-input" name="phoneRaw" value="@card.PhoneRaw" required maxlength="64" aria-label="Основной телефон" />
                     @if (!string.IsNullOrWhiteSpace(vacancyUrl))
                     {
                         <a href="@vacancyUrl" target="_blank" rel="noopener" class="settings-secondary-btn"><i class="fa-solid fa-tag" aria-hidden="true"></i>Объявление</a>
                     }
+                    @if (canEdit)
+                    {
+                        <button type="button" class="settings-secondary-btn crm-card-inline-edit__toggle" data-crm-card-inline-edit-toggle aria-expanded="false"><i class="fa-solid fa-pen" aria-hidden="true"></i>Редактировать</button>
+                        <div class="crm-card-inline-edit__actions">
+                            <button class="settings-primary-btn" type="submit">Сохранить</button>
+                            <button class="settings-secondary-btn" type="button" data-crm-card-inline-edit-cancel>Отмена</button>
+                        </div>
+                    }
                 </div>
             </div>
         </div>
+        </form>
         <div class="crm-card-hero__side">
             <div><small>Ответственный</small><strong>@(card.ManagerName ?? "Не назначен")</strong></div>
             <div><small>В этапе</small><strong class="@(card.HoursInStage >= 24 ? "crm-hot" : "")">@card.HoursInStage.ToString("0.#") ч</strong></div>
@@ -223,24 +242,6 @@
                             <button class="settings-secondary-btn" type="submit">Добавить</button>
                         </form>
                     </details>
-                    <details class="crm-card-edit">
-                        <summary><i class="fa-solid fa-pen" aria-hidden="true"></i>Редактировать данные</summary>
-                        <form asp-action="UpdateCard" method="post" class="crm-side-form crm-card-edit__form">
-                            <input type="hidden" name="id" value="@card.Id" />
-                            <input type="hidden" name="stage" value="@boardReturnStage" />
-                            <label>ФИО<input name="fullName" value="@card.FullName" required maxlength="256" /></label>
-                            <label>Телефон (основной)<input name="phoneRaw" value="@card.PhoneRaw" required maxlength="64" /></label>
-                            <label>Город<input name="city" value="@card.City" maxlength="256" /></label>
-                            <label>Вакансия<input name="vacancy" value="@card.Vacancy" maxlength="512" /></label>
-                            <label>Возраст<input name="age" type="number" min="14" max="99" value="@(card.Age?.ToString() ?? "")" /></label>
-                            <label>Источник<input name="accountName" value="@card.AccountName" maxlength="256" /></label>
-                            <label>ID отклика<input name="sourceResponseId" value="@card.SourceResponseId" maxlength="128" /></label>
-                            <label>Ссылка на отклик<input name="sourceUrl" value="@card.SourceUrl" maxlength="1024" /></label>
-                            <label>Ссылка на объявление<input name="vacancyUrl" value="@card.VacancyUrl" maxlength="1024" /></label>
-                            <label>Мессенджер<input name="messengerUrl" value="@card.MessengerUrl" maxlength="1024" /></label>
-                            <button class="settings-primary-btn" type="submit">Сохранить</button>
-                        </form>
-                    </details>
                 }
             </section>
 
@@ -318,7 +319,7 @@
         <section class="crm-card-main card">
             <nav class="crm-tabs">
                 <a class="@(activeTab == "activity" ? "is-active" : "")" asp-action="Card" asp-route-id="@card.Id" asp-route-stage="@boardReturnStage">Лента</a>
-                <a class="@(activeTab == "chat" ? "is-active" : "") @(Model.ChatUnreadCount > 0 ? "has-unread" : "")" asp-action="Card" asp-route-id="@card.Id" asp-route-tab="chat" asp-route-stage="@boardReturnStage">Чат @if (Model.ChatUnreadCount > 0) { <span class="crm-tab-badge is-unread">@Model.ChatUnreadCount</span> } else if (Model.Chat.Count > 0) { <span>@Model.Chat.Count</span> }</a>
+                <a class="@(activeTab == "chat" ? "is-active" : "") @(hasCandidateMessagesWithoutAvito ? "has-candidate-only-messages" : "")" asp-action="Card" asp-route-id="@card.Id" asp-route-tab="chat" asp-route-stage="@boardReturnStage">Чат @if (Model.Chat.Count > 0) { <span>@Model.Chat.Count</span> }</a>
                 @if (canAccessCrmTasks)
                 {
                     <a class="@(activeTab == "tasks" ? "is-active" : "")" asp-action="Card" asp-route-id="@card.Id" asp-route-tab="tasks" asp-route-stage="@boardReturnStage">Задачи <span>@Model.Tasks.Count(t => t.Status == CrmTaskStatuses.Open)</span></a>
@@ -360,7 +361,7 @@
                         {
                             var sender = msg.Tone == "outgoing" ? "Вы" : msg.Tone == "system" ? "Avito" : "Кандидат";
                             var avatar = msg.Tone == "outgoing" ? "В" : msg.Tone == "system" ? "A" : (string.IsNullOrWhiteSpace(card.FullName) ? "К" : card.FullName.Trim()[0].ToString());
-                            <article class="crm-chat__msg crm-chat__msg--@msg.Tone @(Model.ChatUnreadCount > 0 ? "is-unread-context" : "")">
+                            <article class="crm-chat__msg crm-chat__msg--@msg.Tone">
                                 <span class="crm-chat__avatar" aria-hidden="true">@avatar</span>
                                 <div class="crm-chat__bubble">
                                     <header><strong>@sender</strong><time>@msg.TimeLabel</time></header>
@@ -465,6 +466,30 @@
                 hidden.value = input.value || '';
             });
         });
+    }
+
+    var cardEditForm = document.querySelector('[data-crm-card-inline-edit]');
+    var cardEditToggle = document.querySelector('[data-crm-card-inline-edit-toggle]');
+    var cardEditCancel = document.querySelector('[data-crm-card-inline-edit-cancel]');
+    if (cardEditForm && cardEditToggle) {
+        function setCardEditing(editing) {
+            cardEditForm.classList.toggle('is-editing', editing);
+            cardEditToggle.setAttribute('aria-expanded', editing ? 'true' : 'false');
+            if (editing) {
+                var nameInput = cardEditForm.querySelector('[name="fullName"]');
+                if (nameInput) {
+                    nameInput.focus();
+                    nameInput.select();
+                }
+            } else {
+                cardEditForm.reset();
+            }
+        }
+
+        cardEditToggle.addEventListener('click', function () { setCardEditing(true); });
+        if (cardEditCancel) {
+            cardEditCancel.addEventListener('click', function () { setCardEditing(false); });
+        }
     }
 
     // Remember funnel stage so "К воронке" and board restore land on the same stage.
