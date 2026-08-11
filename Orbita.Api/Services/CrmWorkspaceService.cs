@@ -130,6 +130,8 @@ public sealed class CrmWorkspaceService(
         var names = managers.ToDictionary(x => x.Profile.UserId, x => x.Name, StringComparer.Ordinal);
         var loads = await leadDistribution.GetActiveLoadsAsync(officeId, ct);
         var now = DateTime.UtcNow;
+        var hasSearch = !string.IsNullOrWhiteSpace(query.Search);
+        var includeClosed = query.IncludeClosed || hasSearch;
 
         var cardsQuery = db.CrmCandidateCards.AsNoTracking()
             .Include(x => x.Response)
@@ -137,23 +139,34 @@ public sealed class CrmWorkspaceService(
 
         cardsQuery = scope switch
         {
-            CrmBoardScopes.Unassigned => cardsQuery.Where(x => x.ManagerUserId == null && !x.IsClosed),
+            CrmBoardScopes.Unassigned => cardsQuery.Where(x => x.ManagerUserId == null && (!x.IsClosed || includeClosed)),
             // Elevated: all closed in office. Manager: only own closed.
             CrmBoardScopes.Closed => isAdmin
                 ? cardsQuery.Where(x => x.IsClosed)
                 : cardsQuery.Where(x => x.IsClosed && x.ManagerUserId == userId),
-            CrmBoardScopes.Team => cardsQuery.Where(x => !x.IsClosed || query.IncludeClosed),
-            _ => cardsQuery.Where(x => x.ManagerUserId == userId && (!x.IsClosed || query.IncludeClosed))
+            CrmBoardScopes.Team => cardsQuery.Where(x => !x.IsClosed || includeClosed),
+            _ => cardsQuery.Where(x => x.ManagerUserId == userId && (!x.IsClosed || includeClosed))
         };
 
-        if (!string.IsNullOrWhiteSpace(query.Search))
+        if (hasSearch)
         {
-            var term = query.Search.Trim();
+            var term = query.Search!.Trim();
+            var lowered = term.ToLower();
+            var digits = SearchQueryNormalizer.ExtractDigits(term);
+            var normalizedPhoneDigits = digits.Length == 11 && digits.StartsWith('8')
+                ? $"7{digits[1..]}"
+                : digits;
+            var searchByPhone = digits.Length >= 4;
             cardsQuery = cardsQuery.Where(x =>
-                x.Response.FullName.Contains(term) ||
+                x.Response.FullName.ToLower().Contains(lowered) ||
+                x.Response.City.ToLower().Contains(lowered) ||
+                x.Response.Vacancy.ToLower().Contains(lowered) ||
                 x.Response.PhoneRaw.Contains(term) ||
-                x.Response.City.Contains(term) ||
-                x.Response.Vacancy.Contains(term));
+                (searchByPhone && (
+                    x.Response.PhoneNormalized.Contains(normalizedPhoneDigits) ||
+                    x.Response.PreviousPhoneNormalized.Contains(normalizedPhoneDigits) ||
+                    db.CandidatePhoneHistory.Any(history =>
+                        history.PersonId == x.Response.PersonId && history.PhoneNormalized.Contains(normalizedPhoneDigits)))));
         }
 
         if (!string.IsNullOrWhiteSpace(query.City))
@@ -224,7 +237,7 @@ public sealed class CrmWorkspaceService(
             stageDtos.Add(new CrmStageDto(orphan, stageCards, stageCards.Count));
         }
 
-        if (scope == CrmBoardScopes.Closed || query.IncludeClosed)
+        if (scope == CrmBoardScopes.Closed || includeClosed)
         {
             var closedCards = cards.Where(x => x.IsClosed).Select(MapCard).ToList();
             if (closedCards.Count > 0)
@@ -531,6 +544,14 @@ public sealed class CrmWorkspaceService(
                 await deadlineNotifications.DismissOfficeAsync(officeId, now, ct);
             }
         }
+        else if (nextDeadlineNotificationsEnabled && office.CrmDeadlineNotificationsEnabledAtUtc is null)
+        {
+            office.CrmDeadlineNotificationsEnabledAtUtc = now;
+        }
+        else if (!nextDeadlineNotificationsEnabled && office.CrmDeadlineNotificationsEnabledAtUtc is not null)
+        {
+            office.CrmDeadlineNotificationsEnabledAtUtc = null;
+        }
 
         await db.SaveChangesAsync(ct);
         NotifyBoardChanged(officeId);
@@ -630,7 +651,8 @@ public sealed class CrmWorkspaceService(
         var now = DateTime.UtcNow;
         var notes = await db.CrmCandidateNotes.AsNoTracking()
             .Where(x => x.CardId == cardId)
-            .OrderByDescending(x => x.CreatedAtUtc)
+            .OrderByDescending(x => x.IsPinned)
+            .ThenByDescending(x => x.CreatedAtUtc)
             .ToListAsync(ct);
         var tasks = await db.CrmTasks.AsNoTracking()
             .Where(x => x.CardId == cardId)
@@ -639,6 +661,11 @@ public sealed class CrmWorkspaceService(
             .ThenBy(x => x.DueAtUtc ?? DateTime.MaxValue)
             .ThenByDescending(x => x.CreatedAtUtc)
             .ToListAsync(ct);
+        var taskIds = tasks.Select(x => x.Id).ToList();
+        var taskComments = await db.CrmTaskComments.AsNoTracking()
+            .Where(x => taskIds.Contains(x.TaskId))
+            .OrderBy(x => x.CreatedAtUtc)
+            .ToListAsync(ct);
         var history = await db.CrmCandidateHistory.AsNoTracking()
             .Where(x => x.CardId == cardId)
             .OrderByDescending(x => x.CreatedAtUtc)
@@ -646,7 +673,7 @@ public sealed class CrmWorkspaceService(
         var openCount = tasks.Count(x => x.Status == CrmTaskStatuses.Open);
         var hasOverdue = tasks.Any(x => x.Status == CrmTaskStatuses.Open && x.DueAtUtc is DateTime due && due < now);
 
-        var activity = BuildActivity(notes, tasks, history, names);
+        var activity = BuildActivity(notes, tasks, history, names, userId, isAdmin, canEdit);
         var chat = ParseChatMessages(card.Response.ChatMessagesJson);
         var phoneHistory = BuildPhoneHistory(card.Response);
         var contactPhones = await LoadContactPhonesAsync(card.Response, ct);
@@ -659,7 +686,21 @@ public sealed class CrmWorkspaceService(
             : 0;
         return new CrmCandidateDetailDto(
             ToCardDto(card, names, openCount, hasOverdue, now, chatUnread),
-            notes.Select(x => new CrmNoteDto(x.Id, x.AuthorUserId, x.AuthorName, x.Text, x.CreatedAtUtc)).ToList(),
+            notes.Select(x =>
+            {
+                var canManageNote = isAdmin || x.AuthorUserId == userId;
+                return new CrmNoteDto(
+                    x.Id,
+                    x.AuthorUserId,
+                    x.AuthorName,
+                    x.Text,
+                    x.CreatedAtUtc,
+                    x.IsPinned,
+                    x.UpdatedAtUtc,
+                    canManageNote,
+                    canManageNote,
+                    canEdit);
+            }).ToList(),
             tasks.Select(x => ToTaskDto(x, names, card.Response.FullName, now)).ToList(),
             history.Select(x => new CrmHistoryDto(x.Id, x.Action, x.Details, x.ActorUserId, x.ActorName, x.CreatedAtUtc)).ToList(),
             activity,
@@ -669,7 +710,22 @@ public sealed class CrmWorkspaceService(
             chat,
             phoneHistory,
             contactPhones,
-            chatUnread);
+            chatUnread,
+            taskComments.Select(x =>
+            {
+                var canManageComment = isAdmin || x.AuthorUserId == userId;
+                return new CrmTaskCommentDto(
+                    x.Id,
+                    x.TaskId,
+                    x.AuthorUserId,
+                    x.AuthorName,
+                    x.Text,
+                    x.CreatedAtUtc,
+                    x.UpdatedAtUtc,
+                    canManageComment,
+                    canManageComment);
+            }).ToList(),
+            CrmClientTimeResolver.Resolve(card.Response.City, now));
     }
 
     public async Task<ResponseAvatarFile?> GetCardAvatarAsync(
@@ -908,7 +964,8 @@ public sealed class CrmWorkspaceService(
     public async Task<bool> AddNoteAsync(Guid cardId, string text, string actorUserId, bool isAdmin, CancellationToken ct = default)
     {
         var card = await FindAccessibleCardAsync(cardId, actorUserId, isAdmin, ct);
-        if (card is null || string.IsNullOrWhiteSpace(text))
+        var normalized = text?.Trim();
+        if (card is null || string.IsNullOrWhiteSpace(normalized) || normalized.Length > 4000)
         {
             return false;
         }
@@ -921,7 +978,7 @@ public sealed class CrmWorkspaceService(
             CardId = cardId,
             AuthorUserId = actorUserId,
             AuthorName = actorName,
-            Text = text.Trim(),
+            Text = normalized,
             CreatedAtUtc = now
         });
         card.LastContactAtUtc = now;
@@ -1522,6 +1579,121 @@ public sealed class CrmWorkspaceService(
         return (card.Id, null);
     }
 
+    public async Task<(bool Ok, string? Error)> UpdateNoteAsync(
+        Guid cardId,
+        Guid noteId,
+        string text,
+        string actorUserId,
+        bool isAdmin,
+        CancellationToken ct = default)
+    {
+        var card = await FindAccessibleCardAsync(cardId, actorUserId, isAdmin, ct);
+        if (card is null)
+        {
+            return (false, "Карточка не найдена или недоступна для изменения.");
+        }
+
+        var note = await db.CrmCandidateNotes.FirstOrDefaultAsync(x => x.Id == noteId && x.CardId == cardId, ct);
+        if (note is null)
+        {
+            return (false, "Комментарий не найден.");
+        }
+
+        if (!isAdmin && note.AuthorUserId != actorUserId)
+        {
+            return (false, "Изменить комментарий может его автор или администратор.");
+        }
+
+        var normalized = text?.Trim();
+        if (string.IsNullOrWhiteSpace(normalized) || normalized.Length > 4000)
+        {
+            return (false, "Комментарий обязателен и не должен превышать 4000 символов.");
+        }
+
+        var now = DateTime.UtcNow;
+        note.Text = normalized;
+        note.UpdatedAtUtc = now;
+        card.UpdatedAtUtc = now;
+        AddHistory(card.Id, "NoteUpdated", null, actorUserId, await ResolveDisplayNameAsync(actorUserId, ct), now);
+        await db.SaveChangesAsync(ct);
+        NotifyBoardChanged(card.OfficeId);
+        return (true, null);
+    }
+
+    public async Task<(bool Ok, string? Error)> DeleteNoteAsync(
+        Guid cardId,
+        Guid noteId,
+        string actorUserId,
+        bool isAdmin,
+        CancellationToken ct = default)
+    {
+        var card = await FindAccessibleCardAsync(cardId, actorUserId, isAdmin, ct);
+        if (card is null)
+        {
+            return (false, "Карточка не найдена или недоступна для изменения.");
+        }
+
+        var note = await db.CrmCandidateNotes.FirstOrDefaultAsync(x => x.Id == noteId && x.CardId == cardId, ct);
+        if (note is null)
+        {
+            return (false, "Комментарий не найден.");
+        }
+
+        if (!isAdmin && note.AuthorUserId != actorUserId)
+        {
+            return (false, "Удалить комментарий может его автор или администратор.");
+        }
+
+        var now = DateTime.UtcNow;
+        db.CrmCandidateNotes.Remove(note);
+        card.UpdatedAtUtc = now;
+        AddHistory(card.Id, "NoteDeleted", null, actorUserId, await ResolveDisplayNameAsync(actorUserId, ct), now);
+        await db.SaveChangesAsync(ct);
+        NotifyBoardChanged(card.OfficeId);
+        return (true, null);
+    }
+
+    public async Task<(bool Ok, string? Error)> SetNotePinnedAsync(
+        Guid cardId,
+        Guid noteId,
+        bool isPinned,
+        string actorUserId,
+        bool isAdmin,
+        CancellationToken ct = default)
+    {
+        var card = await FindAccessibleCardAsync(cardId, actorUserId, isAdmin, ct);
+        if (card is null)
+        {
+            return (false, "Карточка не найдена или недоступна для изменения.");
+        }
+
+        var note = await db.CrmCandidateNotes.FirstOrDefaultAsync(x => x.Id == noteId && x.CardId == cardId, ct);
+        if (note is null)
+        {
+            return (false, "Комментарий не найден.");
+        }
+
+        if (note.IsPinned == isPinned)
+        {
+            return (true, null);
+        }
+
+        var now = DateTime.UtcNow;
+        note.IsPinned = isPinned;
+        note.UpdatedAtUtc = now;
+        card.UpdatedAtUtc = now;
+        AddHistory(
+            card.Id,
+            isPinned ? "NotePinned" : "NoteUnpinned",
+            null,
+            actorUserId,
+            await ResolveDisplayNameAsync(actorUserId, ct),
+            now);
+        await db.SaveChangesAsync(ct);
+        NotifyBoardChanged(card.OfficeId);
+        return (true, null);
+    }
+
     public async Task<CrmTaskDto?> CreateTaskAsync(
         Guid officeId,
         CrmTaskCreateRequest request,
@@ -1718,7 +1890,7 @@ public sealed class CrmWorkspaceService(
 
         if (!CanManageTask(task, userId, isAdmin))
         {
-            return (false, "Изменять задачу может её автор или администратор.");
+            return (false, "Изменять задачу может её автор, ответственный или администратор.");
         }
 
         if (task.Status != CrmTaskStatuses.Open)
@@ -1792,7 +1964,7 @@ public sealed class CrmWorkspaceService(
 
         if (!CanManageTask(task, userId, isAdmin))
         {
-            return (false, "Отменять задачу может её автор или администратор.");
+            return (false, "Отменять задачу может её автор, ответственный или администратор.");
         }
 
         if (task.Status != CrmTaskStatuses.Open)
@@ -1832,7 +2004,7 @@ public sealed class CrmWorkspaceService(
 
         if (!CanManageTask(task, userId, isAdmin))
         {
-            return (false, "Возвращать задачу в работу может её автор или администратор.");
+            return (false, "Возвращать задачу в работу может её автор, ответственный или администратор.");
         }
 
         if (task.Status == CrmTaskStatuses.Open)
@@ -1860,6 +2032,58 @@ public sealed class CrmWorkspaceService(
         return (true, null);
     }
 
+    public async Task<(bool Ok, string? Error)> DeleteTaskAsync(
+        Guid taskId,
+        string userId,
+        bool isAdmin,
+        CancellationToken ct = default)
+    {
+        var task = await db.CrmTasks.FirstOrDefaultAsync(x => x.Id == taskId, ct);
+        if (task is null)
+        {
+            return (false, "Задача не найдена.");
+        }
+
+        if (!CanManageTask(task, userId, isAdmin))
+        {
+            return (false, "Удалить задачу может её автор, ответственный или администратор.");
+        }
+
+        var attachmentPaths = taskAttachments is null
+            ? []
+            : await db.CrmTaskAttachments.AsNoTracking()
+                .Where(x => x.TaskId == taskId)
+                .Select(x => x.RelativePath)
+                .ToListAsync(ct);
+        var now = DateTime.UtcNow;
+        if (deadlineNotifications is not null)
+        {
+            await deadlineNotifications.DismissTaskAsync(task.Id, now, ct);
+        }
+
+        if (task.CardId is Guid cardId)
+        {
+            AddHistory(cardId, "TaskDeleted", task.Title, userId, await ResolveDisplayNameAsync(userId, ct), now);
+            // Исключаем удаляемую задачу из расчёта следующего действия карточки.
+            task.Status = CrmTaskStatuses.Cancelled;
+            await RefreshTaskCardNextActionAsync(task, now, markContact: false, ct);
+        }
+
+        var officeId = task.OfficeId;
+        db.CrmTasks.Remove(task);
+        await db.SaveChangesAsync(ct);
+        if (taskAttachments is not null)
+        {
+            foreach (var path in attachmentPaths)
+            {
+                taskAttachments.TryDelete(path);
+            }
+        }
+
+        NotifyBoardChanged(officeId);
+        return (true, null);
+    }
+
     public async Task<CrmTaskDetailDto?> GetTaskAsync(
         Guid taskId,
         string userId,
@@ -1881,17 +2105,24 @@ public sealed class CrmWorkspaceService(
                 .Select(x => x.Response.FullName)
                 .FirstOrDefaultAsync(ct)
             : null;
-        var comments = await db.CrmTaskComments.AsNoTracking()
+        var commentEntities = await db.CrmTaskComments.AsNoTracking()
             .Where(x => x.TaskId == taskId)
             .OrderBy(x => x.CreatedAtUtc)
-            .Select(x => new CrmTaskCommentDto(
+            .ToListAsync(ct);
+        var comments = commentEntities.Select(x =>
+        {
+            var canManageComment = isAdmin || x.AuthorUserId == userId;
+            return new CrmTaskCommentDto(
                 x.Id,
                 x.TaskId,
                 x.AuthorUserId,
                 x.AuthorName,
                 x.Text,
-                x.CreatedAtUtc))
-            .ToListAsync(ct);
+                x.CreatedAtUtc,
+                x.UpdatedAtUtc,
+                canManageComment,
+                canManageComment);
+        }).ToList();
         var attachments = await db.CrmTaskAttachments.AsNoTracking()
             .Where(x => x.TaskId == taskId)
             .OrderByDescending(x => x.CreatedAtUtc)
@@ -2028,7 +2259,8 @@ public sealed class CrmWorkspaceService(
         bool isAdmin,
         CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(text))
+        var normalized = text?.Trim();
+        if (string.IsNullOrWhiteSpace(normalized) || normalized.Length > 4000)
         {
             return null;
         }
@@ -2046,7 +2278,7 @@ public sealed class CrmWorkspaceService(
             TaskId = taskId,
             AuthorUserId = userId,
             AuthorName = await ResolveDisplayNameAsync(userId, ct),
-            Text = text.Trim(),
+            Text = normalized,
             CreatedAtUtc = now
         };
         db.CrmTaskComments.Add(comment);
@@ -2058,7 +2290,78 @@ public sealed class CrmWorkspaceService(
             comment.AuthorUserId,
             comment.AuthorName,
             comment.Text,
-            comment.CreatedAtUtc);
+            comment.CreatedAtUtc,
+            null,
+            true,
+            true);
+    }
+
+    public async Task<(bool Ok, string? Error)> UpdateTaskCommentAsync(
+        Guid taskId,
+        Guid commentId,
+        string text,
+        string userId,
+        bool isAdmin,
+        CancellationToken ct = default)
+    {
+        var task = await db.CrmTasks.AsNoTracking().FirstOrDefaultAsync(x => x.Id == taskId, ct);
+        if (task is null || !CanAccessTask(task, userId, isAdmin))
+        {
+            return (false, "Задача не найдена.");
+        }
+
+        var comment = await db.CrmTaskComments.FirstOrDefaultAsync(x => x.Id == commentId && x.TaskId == taskId, ct);
+        if (comment is null)
+        {
+            return (false, "Комментарий задачи не найден.");
+        }
+
+        if (!isAdmin && comment.AuthorUserId != userId)
+        {
+            return (false, "Изменить комментарий может его автор или администратор.");
+        }
+
+        var normalized = text?.Trim();
+        if (string.IsNullOrWhiteSpace(normalized) || normalized.Length > 4000)
+        {
+            return (false, "Комментарий обязателен и не должен превышать 4000 символов.");
+        }
+
+        comment.Text = normalized;
+        comment.UpdatedAtUtc = DateTime.UtcNow;
+        await db.SaveChangesAsync(ct);
+        NotifyBoardChanged(task.OfficeId);
+        return (true, null);
+    }
+
+    public async Task<(bool Ok, string? Error)> DeleteTaskCommentAsync(
+        Guid taskId,
+        Guid commentId,
+        string userId,
+        bool isAdmin,
+        CancellationToken ct = default)
+    {
+        var task = await db.CrmTasks.AsNoTracking().FirstOrDefaultAsync(x => x.Id == taskId, ct);
+        if (task is null || !CanAccessTask(task, userId, isAdmin))
+        {
+            return (false, "Задача не найдена.");
+        }
+
+        var comment = await db.CrmTaskComments.FirstOrDefaultAsync(x => x.Id == commentId && x.TaskId == taskId, ct);
+        if (comment is null)
+        {
+            return (false, "Комментарий задачи не найден.");
+        }
+
+        if (!isAdmin && comment.AuthorUserId != userId)
+        {
+            return (false, "Удалить комментарий может его автор или администратор.");
+        }
+
+        db.CrmTaskComments.Remove(comment);
+        await db.SaveChangesAsync(ct);
+        NotifyBoardChanged(task.OfficeId);
+        return (true, null);
     }
 
     public async Task<int> CountOpenTasksAsync(Guid officeId, string userId, bool isAdmin, CancellationToken ct = default) =>
@@ -2209,7 +2512,7 @@ public sealed class CrmWorkspaceService(
         isAdmin || task.AssigneeUserId == userId || task.CreatorUserId == userId;
 
     private static bool CanManageTask(CrmTaskEntity task, string userId, bool isAdmin) =>
-        isAdmin || task.CreatorUserId == userId;
+        isAdmin || task.CreatorUserId == userId || task.AssigneeUserId == userId;
 
     private async Task RefreshTaskCardNextActionAsync(
         CrmTaskEntity task,
@@ -2450,11 +2753,29 @@ public sealed class CrmWorkspaceService(
         IReadOnlyList<CrmCandidateNoteEntity> notes,
         IReadOnlyList<CrmTaskEntity> tasks,
         IReadOnlyList<CrmCandidateHistoryEntity> history,
-        IReadOnlyDictionary<string, string> names)
+        IReadOnlyDictionary<string, string> names,
+        string userId,
+        bool isAdmin,
+        bool canEditCard)
     {
         var items = new List<CrmActivityItemDto>();
-        items.AddRange(notes.Select(n => new CrmActivityItemDto(
-            "note", "Комментарий", n.Text, n.AuthorName, n.CreatedAtUtc)));
+        items.AddRange(notes.Select(n =>
+        {
+            var canManageNote = isAdmin || n.AuthorUserId == userId;
+            return new CrmActivityItemDto(
+                "note",
+                n.IsPinned
+                    ? "Закреплённый комментарий"
+                    : n.UpdatedAtUtc is null ? "Комментарий" : "Комментарий изменён",
+                n.Text,
+                n.AuthorName,
+                n.UpdatedAtUtc ?? n.CreatedAtUtc,
+                NoteId: n.Id,
+                IsPinned: n.IsPinned,
+                CanEdit: canManageNote,
+                CanDelete: canManageNote,
+                CanPin: canEditCard);
+        }));
         items.AddRange(tasks.Select(t => new CrmActivityItemDto(
             t.Status == CrmTaskStatuses.Completed ? "task-done" : "task",
             t.Title,
@@ -2463,14 +2784,23 @@ public sealed class CrmWorkspaceService(
             t.CompletedAtUtc ?? t.CreatedAtUtc,
             t.Id)));
         items.AddRange(history
-            .Where(h => h.Action is not "Note" and not "TaskCreated" and not "TaskCompleted")
+            .Where(h => h.Action is not "Note"
+                and not "NoteUpdated"
+                and not "NotePinned"
+                and not "NoteUnpinned"
+                and not "TaskCreated"
+                and not "TaskCompleted")
             .Select(h => new CrmActivityItemDto(
                 "history",
                 MapHistoryTitle(h.Action),
                 h.Details,
                 h.ActorName,
                 h.CreatedAtUtc)));
-        return items.OrderByDescending(x => x.AtUtc).Take(80).ToList();
+        return items
+            .OrderByDescending(x => x.IsPinned)
+            .ThenByDescending(x => x.AtUtc)
+            .Take(80)
+            .ToList();
     }
 
     private static string MapHistoryTitle(string action) => action switch
@@ -2486,6 +2816,11 @@ public sealed class CrmWorkspaceService(
         "TaskUpdated" => "Задача изменена",
         "TaskCancelled" => "Задача отменена",
         "TaskReopened" => "Задача возвращена в работу",
+        "TaskDeleted" => "Задача удалена",
+        "NoteUpdated" => "Комментарий изменён",
+        "NoteDeleted" => "Комментарий удалён",
+        "NotePinned" => "Комментарий закреплён",
+        "NoteUnpinned" => "Комментарий откреплён",
         _ => action
     };
 

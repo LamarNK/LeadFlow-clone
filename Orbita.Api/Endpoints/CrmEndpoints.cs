@@ -415,6 +415,50 @@ public static class CrmEndpoints
                 : Results.BadRequest(new { error = error ?? "Не удалось создать отклик." });
         });
 
+        crmBoard.MapPut("/cards/{cardId:guid}/notes/{noteId:guid}", async (
+            Guid cardId,
+            Guid noteId,
+            CrmNoteUpdateRequest request,
+            CrmWorkspaceService workspace,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrWhiteSpace(userId)) return Results.Forbid();
+            var (ok, error) = await workspace.UpdateNoteAsync(
+                cardId, noteId, request.Text, userId, PanelRoles.HasElevatedOfficeAccess(principal), ct);
+            return ok ? Results.NoContent() : Results.BadRequest(new { error = error ?? "Не удалось изменить комментарий." });
+        });
+
+        crmBoard.MapDelete("/cards/{cardId:guid}/notes/{noteId:guid}", async (
+            Guid cardId,
+            Guid noteId,
+            CrmWorkspaceService workspace,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrWhiteSpace(userId)) return Results.Forbid();
+            var (ok, error) = await workspace.DeleteNoteAsync(
+                cardId, noteId, userId, PanelRoles.HasElevatedOfficeAccess(principal), ct);
+            return ok ? Results.NoContent() : Results.BadRequest(new { error = error ?? "Не удалось удалить комментарий." });
+        });
+
+        crmBoard.MapPost("/cards/{cardId:guid}/notes/{noteId:guid}/pin", async (
+            Guid cardId,
+            Guid noteId,
+            CrmNotePinRequest request,
+            CrmWorkspaceService workspace,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrWhiteSpace(userId)) return Results.Forbid();
+            var (ok, error) = await workspace.SetNotePinnedAsync(
+                cardId, noteId, request.IsPinned, userId, PanelRoles.HasElevatedOfficeAccess(principal), ct);
+            return ok ? Results.NoContent() : Results.BadRequest(new { error = error ?? "Не удалось закрепить комментарий." });
+        });
+
         crmBoard.MapPost("/cards/{cardId:guid}/follow-up", async (Guid cardId, CrmFollowUpRequest request, CrmWorkspaceService workspace, ClaimsPrincipal principal, CancellationToken ct) =>
         {
             var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
@@ -476,6 +520,19 @@ public static class CrmEndpoints
                 PanelRoles.HasElevatedOfficeAccess(principal),
                 ct);
             return ok ? Results.NoContent() : Results.BadRequest(new { error = error ?? "Не удалось обновить задачу." });
+        });
+
+        crmTasks.MapDelete("/tasks/{taskId:guid}", async (
+            Guid taskId,
+            CrmWorkspaceService workspace,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrWhiteSpace(userId)) return Results.Forbid();
+            var (ok, error) = await workspace.DeleteTaskAsync(
+                taskId, userId, PanelRoles.HasElevatedOfficeAccess(principal), ct);
+            return ok ? Results.NoContent() : Results.BadRequest(new { error = error ?? "Не удалось удалить задачу." });
         });
 
         crmTasks.MapPost("/tasks/{taskId:guid}/cancel", async (Guid taskId, CrmWorkspaceService workspace, ClaimsPrincipal principal, CancellationToken ct) =>
@@ -597,6 +654,35 @@ public static class CrmEndpoints
             return comment is null
                 ? Results.BadRequest()
                 : Results.Created($"/api/v1/crm/tasks/{taskId:D}#comment-{comment.Id:D}", comment);
+        });
+
+        crmTasks.MapPut("/tasks/{taskId:guid}/comments/{commentId:guid}", async (
+            Guid taskId,
+            Guid commentId,
+            CrmTaskCommentUpdateRequest request,
+            CrmWorkspaceService workspace,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrWhiteSpace(userId)) return Results.Forbid();
+            var (ok, error) = await workspace.UpdateTaskCommentAsync(
+                taskId, commentId, request.Text, userId, PanelRoles.HasElevatedOfficeAccess(principal), ct);
+            return ok ? Results.NoContent() : Results.BadRequest(new { error = error ?? "Не удалось изменить комментарий." });
+        });
+
+        crmTasks.MapDelete("/tasks/{taskId:guid}/comments/{commentId:guid}", async (
+            Guid taskId,
+            Guid commentId,
+            CrmWorkspaceService workspace,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrWhiteSpace(userId)) return Results.Forbid();
+            var (ok, error) = await workspace.DeleteTaskCommentAsync(
+                taskId, commentId, userId, PanelRoles.HasElevatedOfficeAccess(principal), ct);
+            return ok ? Results.NoContent() : Results.BadRequest(new { error = error ?? "Не удалось удалить комментарий." });
         });
 
         crmTasks.MapPost("/tasks/{taskId:guid}/attachments", async (

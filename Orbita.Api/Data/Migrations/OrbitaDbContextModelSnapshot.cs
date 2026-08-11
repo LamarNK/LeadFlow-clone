@@ -1261,14 +1261,22 @@ namespace Orbita.Api.Data.Migrations
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<bool>("IsPinned")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
                     b.Property<string>("Text")
                         .IsRequired()
                         .HasMaxLength(4000)
                         .HasColumnType("character varying(4000)");
 
+                    b.Property<DateTime?>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
                     b.HasKey("Id");
 
-                    b.HasIndex("CardId", "CreatedAtUtc");
+                    b.HasIndex("CardId", "IsPinned", "CreatedAtUtc");
 
                     b.ToTable("CrmCandidateNotes");
                 });
@@ -1452,6 +1460,9 @@ namespace Orbita.Api.Data.Migrations
                         .IsRequired()
                         .HasMaxLength(4000)
                         .HasColumnType("character varying(4000)");
+
+                    b.Property<DateTime?>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
 
@@ -1818,7 +1829,9 @@ namespace Orbita.Api.Data.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<bool>("CrmDeadlineNotificationsEnabled")
-                        .HasColumnType("boolean");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
 
                     b.Property<DateTime?>("CrmDeadlineNotificationsEnabledAtUtc")
                         .HasColumnType("timestamp with time zone");

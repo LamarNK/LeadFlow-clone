@@ -88,6 +88,11 @@
                                 <button type="submit"><i class="fa-solid fa-rotate-left" aria-hidden="true"></i>Вернуть в работу</button>
                             </form>
                         }
+                        <form asp-action="DeleteTask" method="post" onsubmit="return confirm('Удалить задачу без возможности восстановления?');">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="taskId" value="@task.Id" />
+                            <button type="submit" class="is-danger"><i class="fa-solid fa-trash" aria-hidden="true"></i>Удалить задачу</button>
+                        </form>
                     </div>
                 </details>
             }
@@ -177,7 +182,32 @@
                             <div class="crm-task-comment__body">
                                 <header><strong>@comment.AuthorName</strong>@if (isAssignee) { <em>Ответственный</em> }</header>
                                 <p>@comment.Text</p>
-                                <time>@comment.CreatedAtUtc.ToLocalTime().ToString("dd MMMM, HH:mm", russianCulture)</time>
+                                <time>@comment.CreatedAtUtc.ToLocalTime().ToString("dd MMMM, HH:mm", russianCulture)@if (comment.UpdatedAtUtc is not null) { <text> · изменён</text> }</time>
+                                @if (comment.CanEdit || comment.CanDelete)
+                                {
+                                    <div class="crm-inline-actions">
+                                        @if (comment.CanEdit)
+                                        {
+                                            <details>
+                                                <summary><i class="fa-solid fa-pen" aria-hidden="true"></i>Изменить</summary>
+                                                <form asp-action="UpdateTaskComment" method="post" class="crm-inline-edit-form">
+                                                    <input type="hidden" name="taskId" value="@task.Id" />
+                                                    <input type="hidden" name="commentId" value="@comment.Id" />
+                                                    <textarea name="text" maxlength="4000" required>@comment.Text</textarea>
+                                                    <button class="settings-primary-btn" type="submit">Сохранить</button>
+                                                </form>
+                                            </details>
+                                        }
+                                        @if (comment.CanDelete)
+                                        {
+                                            <form asp-action="DeleteTaskComment" method="post" onsubmit="return confirm('Удалить комментарий?');">
+                                                <input type="hidden" name="taskId" value="@task.Id" />
+                                                <input type="hidden" name="commentId" value="@comment.Id" />
+                                                <button type="submit" class="is-danger"><i class="fa-solid fa-trash" aria-hidden="true"></i>Удалить</button>
+                                            </form>
+                                        }
+                                    </div>
+                                }
                             </div>
                         </article>
                     }

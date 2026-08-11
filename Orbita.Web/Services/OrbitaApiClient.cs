@@ -2324,6 +2324,47 @@ public sealed class OrbitaApiClient(
         return response is null ? (false, InvalidApiSessionError) : response.IsSuccessStatusCode ? (true, null) : (false, await ReadApiErrorAsync(response, ct));
     }
 
+    public async Task<(bool Success, string? Error)> UpdateCrmNoteAsync(
+        Guid cardId,
+        Guid noteId,
+        string text,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled) return DesignPreviewData.UpdateCrmNote(cardId, noteId, text);
+        using var request = new HttpRequestMessage(HttpMethod.Put, $"api/v1/crm/cards/{cardId:D}/notes/{noteId:D}")
+        {
+            Content = JsonContent.Create(new CrmNoteUpdateRequest(text))
+        };
+        using var response = await SendAuthenticatedAsync(request, ct);
+        return response is null ? (false, InvalidApiSessionError) : response.IsSuccessStatusCode ? (true, null) : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(bool Success, string? Error)> DeleteCrmNoteAsync(
+        Guid cardId,
+        Guid noteId,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled) return DesignPreviewData.DeleteCrmNote(cardId, noteId);
+        using var request = new HttpRequestMessage(HttpMethod.Delete, $"api/v1/crm/cards/{cardId:D}/notes/{noteId:D}");
+        using var response = await SendAuthenticatedAsync(request, ct);
+        return response is null ? (false, InvalidApiSessionError) : response.IsSuccessStatusCode ? (true, null) : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(bool Success, string? Error)> SetCrmNotePinnedAsync(
+        Guid cardId,
+        Guid noteId,
+        bool isPinned,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled) return DesignPreviewData.SetCrmNotePinned(cardId, noteId, isPinned);
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"api/v1/crm/cards/{cardId:D}/notes/{noteId:D}/pin")
+        {
+            Content = JsonContent.Create(new CrmNotePinRequest(isPinned))
+        };
+        using var response = await SendAuthenticatedAsync(request, ct);
+        return response is null ? (false, InvalidApiSessionError) : response.IsSuccessStatusCode ? (true, null) : (false, await ReadApiErrorAsync(response, ct));
+    }
+
     public async Task<(CrmTaskDto? Task, string? Error)> CreateCrmTaskAsync(CrmTaskCreateRequest task, CancellationToken ct = default)
     {
         if (_preview.Enabled)
@@ -2412,6 +2453,14 @@ public sealed class OrbitaApiClient(
         return response is null ? (false, InvalidApiSessionError) : response.IsSuccessStatusCode ? (true, null) : (false, await ReadApiErrorAsync(response, ct));
     }
 
+    public async Task<(bool Success, string? Error)> DeleteCrmTaskAsync(Guid taskId, CancellationToken ct = default)
+    {
+        if (_preview.Enabled) return DesignPreviewData.DeleteCrmTask(taskId);
+        using var request = new HttpRequestMessage(HttpMethod.Delete, $"api/v1/crm/tasks/{taskId:D}");
+        using var response = await SendAuthenticatedAsync(request, ct);
+        return response is null ? (false, InvalidApiSessionError) : response.IsSuccessStatusCode ? (true, null) : (false, await ReadApiErrorAsync(response, ct));
+    }
+
     public async Task<(bool Success, string? Error)> AddCrmTaskCommentAsync(Guid taskId, string text, CancellationToken ct = default)
     {
         if (_preview.Enabled)
@@ -2423,6 +2472,32 @@ public sealed class OrbitaApiClient(
         {
             Content = JsonContent.Create(new CrmTaskCommentCreateRequest(text))
         };
+        using var response = await SendAuthenticatedAsync(request, ct);
+        return response is null ? (false, InvalidApiSessionError) : response.IsSuccessStatusCode ? (true, null) : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(bool Success, string? Error)> UpdateCrmTaskCommentAsync(
+        Guid taskId,
+        Guid commentId,
+        string text,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled) return DesignPreviewData.UpdateCrmTaskComment(taskId, commentId, text);
+        using var request = new HttpRequestMessage(HttpMethod.Put, $"api/v1/crm/tasks/{taskId:D}/comments/{commentId:D}")
+        {
+            Content = JsonContent.Create(new CrmTaskCommentUpdateRequest(text))
+        };
+        using var response = await SendAuthenticatedAsync(request, ct);
+        return response is null ? (false, InvalidApiSessionError) : response.IsSuccessStatusCode ? (true, null) : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(bool Success, string? Error)> DeleteCrmTaskCommentAsync(
+        Guid taskId,
+        Guid commentId,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled) return DesignPreviewData.DeleteCrmTaskComment(taskId, commentId);
+        using var request = new HttpRequestMessage(HttpMethod.Delete, $"api/v1/crm/tasks/{taskId:D}/comments/{commentId:D}");
         using var response = await SendAuthenticatedAsync(request, ct);
         return response is null ? (false, InvalidApiSessionError) : response.IsSuccessStatusCode ? (true, null) : (false, await ReadApiErrorAsync(response, ct));
     }

@@ -125,11 +125,29 @@
             });
         });
     };
+    runtime.initCrmClientTimes = function initCrmClientTimes() {
+        function update() {
+            document.querySelectorAll('[data-crm-client-time]').forEach(function (element) {
+                var offset = Number(element.getAttribute('data-utc-offset-minutes'));
+                if (!Number.isFinite(offset)) return;
+                var clientDate = new Date(Date.now() + offset * 60000);
+                element.textContent = String(clientDate.getUTCHours()).padStart(2, '0')
+                    + ':' + String(clientDate.getUTCMinutes()).padStart(2, '0');
+            });
+        }
+
+        update();
+        if (!runtime.crmClientTimeTimer) {
+            runtime.crmClientTimeTimer = window.setInterval(update, 30000);
+        }
+    };
     runtime.initCrmTaskAttachments();
     runtime.initCrmTaskEditButtons();
+    runtime.initCrmClientTimes();
     runtime.initBitrixValidateButtons();
     window.Orbita.initWorkerRestartButtons = runtime.initWorkerRestartButtons;
     window.Orbita.initCrmTaskEditButtons = runtime.initCrmTaskEditButtons;
+    window.Orbita.initCrmClientTimes = runtime.initCrmClientTimes;
     window.Orbita.initWorkerAccountEnableToggles = runtime.initWorkerAccountEnableToggles;
     window.Orbita.initAvitoCredentialsButtons = runtime.initAvitoCredentialsButtons;
     window.Orbita.openDetailModal = runtime.openDetailModal;

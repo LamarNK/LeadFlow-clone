@@ -752,7 +752,7 @@ public sealed class CrmWorkspaceServiceTests
     }
 
     [Fact]
-    public async Task TaskAuthorOrAdmin_CanEditCancelAndReopenTask()
+    public async Task TaskAuthorAssigneeOrAdmin_CanEditCancelAndReopenTask()
     {
         await using var harness = await Harness.CreateAsync();
         SeedOffice(harness.Db, crmEnabled: true);
@@ -768,12 +768,12 @@ public sealed class CrmWorkspaceServiceTests
         var taskEntity = await harness.Db.CrmTasks.SingleAsync(x => x.Id == task.Id);
         var initialReminderVersion = taskEntity.ReminderVersion;
 
-        var denied = await harness.Sut.UpdateTaskAsync(
+        var assigneeUpdate = await harness.Sut.UpdateTaskAsync(
             task.Id,
             new CrmTaskUpdateRequest("Изменённая задача", "Описание", replacement.Id, DateTime.UtcNow.AddDays(1), CrmTaskImportances.High),
             assignee.Id,
             isAdmin: false);
-        Assert.False(denied.Ok);
+        Assert.True(assigneeUpdate.Ok);
 
         var updated = await harness.Sut.UpdateTaskAsync(
             task.Id,
@@ -812,9 +812,7 @@ public sealed class CrmWorkspaceServiceTests
         harness.Db.CrmTaskNotifications.Add(pendingNotification);
         await harness.Db.SaveChangesAsync();
 
-        var cancelDenied = await harness.Sut.CancelTaskAsync(task.Id, replacement.Id, isAdmin: false);
-        Assert.False(cancelDenied.Ok);
-        Assert.True((await harness.Sut.CancelTaskAsync(task.Id, creator.Id, isAdmin: false)).Ok);
+        Assert.True((await harness.Sut.CancelTaskAsync(task.Id, replacement.Id, isAdmin: false)).Ok);
         Assert.NotNull(pendingNotification.DismissedAtUtc);
         var cancelled = await harness.Sut.GetTaskAsync(task.Id, creator.Id, isAdmin: false);
         Assert.NotNull(cancelled);
@@ -872,6 +870,92 @@ public sealed class CrmWorkspaceServiceTests
         using var downloaded = new MemoryStream();
         await downloadStream.CopyToAsync(downloaded);
         Assert.Equal([1, 2, 3, 4], downloaded.ToArray());
+    }
+
+    [Fact]
+    public async Task SearchByHistoricalPhone_IncludesClosedCard()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var manager = await harness.CreateManagerAsync("history-search@test.local", capacity: 5, onShift: true);
+        var response = await SeedResponseAsync(harness.Db, "history-search");
+        harness.Db.CandidatePhoneHistory.Add(new CandidatePhoneHistoryEntity
+        {
+            Id = Guid.NewGuid(),
+            PersonId = response.PersonId,
+            ResponseId = response.Id,
+            PhoneRaw = "+7 (912) 345-67-89",
+            PhoneNormalized = "79123456789",
+            RecordedAtUtc = DateTime.UtcNow.AddDays(-1)
+        });
+        var card = NewCard(response.Id, manager.Id);
+        card.IsClosed = true;
+        card.CloseReason = CrmCloseReasons.Other;
+        card.ClosedAtUtc = DateTime.UtcNow;
+        harness.Db.CrmCandidateCards.Add(card);
+        await harness.Db.SaveChangesAsync();
+
+        var board = await harness.Sut.GetBoardAsync(
+            OfficeId,
+            manager.Id,
+            isAdmin: false,
+            new CrmBoardQuery(Search: "8 (912) 345-67-89", Scope: CrmBoardScopes.Mine));
+
+        Assert.NotNull(board);
+        Assert.False(board.IncludeClosed);
+        Assert.Contains(board.Stages.SelectMany(x => x.Cards), x => x.Id == card.Id && x.IsClosed);
+    }
+
+    [Fact]
+    public async Task CardNotesAndTaskComments_CanBeManagedFromCard()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var manager = await harness.CreateManagerAsync("card-actions@test.local", capacity: 5, onShift: true);
+        var response = await SeedResponseAsync(harness.Db, "card-actions");
+        response.City = "Екатеринбург";
+        var card = NewCard(response.Id, manager.Id);
+        harness.Db.CrmCandidateCards.Add(card);
+        await harness.Db.SaveChangesAsync();
+
+        Assert.True(await harness.Sut.AddNoteAsync(card.Id, "Первый текст", manager.Id, isAdmin: false));
+        var note = await harness.Db.CrmCandidateNotes.SingleAsync(x => x.CardId == card.Id);
+        Assert.True((await harness.Sut.SetNotePinnedAsync(card.Id, note.Id, true, manager.Id, isAdmin: false)).Ok);
+        Assert.True((await harness.Sut.UpdateNoteAsync(card.Id, note.Id, "Обновлённый текст", manager.Id, isAdmin: false)).Ok);
+
+        var task = await harness.Sut.CreateTaskAsync(
+            OfficeId,
+            new CrmTaskCreateRequest(card.Id, "Позвонить", null, manager.Id, DateTime.UtcNow.AddHours(1)),
+            manager.Id,
+            isAdmin: false);
+        Assert.NotNull(task);
+        var comment = await harness.Sut.AddTaskCommentAsync(task.Id, "Согласовано", manager.Id, isAdmin: false);
+        Assert.NotNull(comment);
+        Assert.True((await harness.Sut.UpdateTaskCommentAsync(
+            task.Id, comment.Id, "Перенесли звонок", manager.Id, isAdmin: false)).Ok);
+
+        var detail = await harness.Sut.GetCardAsync(card.Id, manager.Id, isAdmin: false);
+        Assert.NotNull(detail);
+        Assert.NotNull(detail.ClientTime);
+        Assert.Equal(300, detail.ClientTime.UtcOffsetMinutes);
+        var detailNote = Assert.Single(detail.Notes);
+        Assert.True(detailNote.IsPinned);
+        Assert.Equal("Обновлённый текст", detailNote.Text);
+        Assert.True(detailNote.CanEdit);
+        var noteActivity = Assert.Single(detail.Activity.Where(x => x.Kind == "note"));
+        Assert.Equal("Закреплённый комментарий", noteActivity.Title);
+        Assert.DoesNotContain(detail.Activity, x => x.Kind == "history" && x.Title is
+            "Комментарий изменён" or "Комментарий закреплён" or "Комментарий откреплён");
+        var detailComment = Assert.Single(detail.TaskComments!);
+        Assert.Equal("Перенесли звонок", detailComment.Text);
+        Assert.True(detailComment.CanDelete);
+
+        Assert.True((await harness.Sut.DeleteTaskCommentAsync(
+            task.Id, comment.Id, manager.Id, isAdmin: false)).Ok);
+        Assert.True((await harness.Sut.DeleteTaskAsync(task.Id, manager.Id, isAdmin: false)).Ok);
+        Assert.Empty(harness.Db.CrmTasks);
+        Assert.True((await harness.Sut.DeleteNoteAsync(card.Id, note.Id, manager.Id, isAdmin: false)).Ok);
+        Assert.Empty(harness.Db.CrmCandidateNotes);
     }
 
     private static CrmCandidateCardEntity NewCard(Guid responseId, string? managerId = null) => new()

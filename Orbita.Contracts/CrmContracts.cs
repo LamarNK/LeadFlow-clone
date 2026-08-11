@@ -11,12 +11,22 @@ public static class CrmStages
     public const string Negotiations = "Переговоры";
     public const string Questionnaire = "Анкета";
     public const string Ticket = "Билет";
+    public const string PreparingToSend = "Готовится к отправке";
+    public const string InTransit = "В пути";
+    public const string Signing = "На подписании";
+    public const string DealSuccessful = "Сделка успешна";
 
     public const int MinCount = 1;
     public const int MaxCount = 20;
     public const int MaxNameLength = 64;
 
     public static readonly IReadOnlyList<string> All =
+    [
+        Lead, Ndz73, Ndz26, Substitution, Negotiations, Questionnaire, Ticket,
+        PreparingToSend, InTransit, Signing, DealSuccessful
+    ];
+
+    private static readonly IReadOnlyList<string> LegacyDefault =
     [
         Lead, Ndz73, Ndz26, Substitution, Negotiations, Questionnaire, Ticket
     ];
@@ -77,6 +87,11 @@ public static class CrmStages
         {
             var parsed = JsonSerializer.Deserialize<List<string>>(stagesJson);
             var normalized = Normalize(parsed);
+            if (normalized is not null && normalized.SequenceEqual(LegacyDefault, StringComparer.Ordinal))
+            {
+                return Default;
+            }
+
             return normalized ?? Default;
         }
         catch (JsonException)
@@ -338,7 +353,15 @@ public sealed record CrmCandidateDetailDto(
     IReadOnlyList<CrmChatMessageDto> Chat,
     IReadOnlyList<CrmPhoneHistoryDto> PhoneHistory,
     IReadOnlyList<CrmContactPhoneDto> ContactPhones = null!,
-    int ChatUnreadCount = 0);
+    int ChatUnreadCount = 0,
+    IReadOnlyList<CrmTaskCommentDto>? TaskComments = null,
+    CrmClientTimeDto? ClientTime = null);
+
+public sealed record CrmClientTimeDto(
+    int UtcOffsetMinutes,
+    DateTime LocalTime,
+    string TimeZoneLabel,
+    string SourceLabel);
 
 public sealed record CrmChatMessageDto(
     string Text,
@@ -378,7 +401,12 @@ public sealed record CrmNoteDto(
     string AuthorUserId,
     string AuthorName,
     string Text,
-    DateTime CreatedAtUtc);
+    DateTime CreatedAtUtc,
+    bool IsPinned = false,
+    DateTime? UpdatedAtUtc = null,
+    bool CanEdit = false,
+    bool CanDelete = false,
+    bool CanPin = false);
 
 public sealed record CrmTaskDto(
     Guid Id,
@@ -403,7 +431,10 @@ public sealed record CrmTaskCommentDto(
     string AuthorUserId,
     string AuthorName,
     string Text,
-    DateTime CreatedAtUtc);
+    DateTime CreatedAtUtc,
+    DateTime? UpdatedAtUtc = null,
+    bool CanEdit = false,
+    bool CanDelete = false);
 
 public sealed record CrmTaskAttachmentDto(
     Guid Id,
@@ -455,11 +486,18 @@ public sealed record CrmActivityItemDto(
     string? Body,
     string ActorName,
     DateTime AtUtc,
-    Guid? TaskId = null);
+    Guid? TaskId = null,
+    Guid? NoteId = null,
+    bool IsPinned = false,
+    bool CanEdit = false,
+    bool CanDelete = false,
+    bool CanPin = false);
 
 public sealed record CrmAssignRequest(string ManagerUserId);
 public sealed record CrmMoveRequest(string Stage, string? Comment = null);
 public sealed record CrmNoteCreateRequest(string Text);
+public sealed record CrmNoteUpdateRequest(string Text);
+public sealed record CrmNotePinRequest(bool IsPinned);
 
 /// <summary>CRM card field edit. Updates the linked candidate response (+ person sync).</summary>
 public sealed record CrmCardUpdateRequest(
@@ -489,6 +527,7 @@ public sealed record CrmTaskUpdateRequest(
     string Importance = CrmTaskImportances.Medium);
 
 public sealed record CrmTaskCommentCreateRequest(string Text);
+public sealed record CrmTaskCommentUpdateRequest(string Text);
 /// <summary>Comment is required by the service; empty/missing body is rejected with 400.</summary>
 public sealed record CrmTaskCompleteRequest(string? Comment = null);
 public sealed record CrmFollowUpRequest(int Minutes, string? Title = null);

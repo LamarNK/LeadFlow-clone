@@ -15,6 +15,10 @@
     {
         boardReturnStage = card.Stage;
     }
+    var defaultTaskAssigneeUserId = Model.Managers.FirstOrDefault(x => x.UserId == card.ManagerUserId)?.UserId
+        ?? Model.Managers.FirstOrDefault(x => x.UserId == currentUserId)?.UserId
+        ?? Model.Managers.FirstOrDefault()?.UserId;
+    var taskComments = Model.TaskComments ?? [];
     var vacancyUrl = !string.IsNullOrWhiteSpace(card.VacancyUrl) ? card.VacancyUrl : card.SourceUrl;
     var phoneDigits = string.Concat(card.PhoneRaw.Where(char.IsDigit));
     var messengerPhone = phoneDigits.Length == 11 && phoneDigits.StartsWith("8", StringComparison.Ordinal) ? "7" + phoneDigits[1..] : phoneDigits;
@@ -34,6 +38,14 @@
         "CardUpdated" => "Карточка изменена",
         "TaskCreated" => "Задача создана",
         "TaskCompleted" => "Задача выполнена",
+        "TaskUpdated" => "Задача изменена",
+        "TaskCancelled" => "Задача отменена",
+        "TaskReopened" => "Задача возвращена в работу",
+        "TaskDeleted" => "Задача удалена",
+        "NoteUpdated" => "Комментарий изменён",
+        "NoteDeleted" => "Комментарий удалён",
+        "NotePinned" => "Комментарий закреплён",
+        "NoteUnpinned" => "Комментарий откреплён",
         _ => action
     };
 }
@@ -194,6 +206,16 @@
                         </div>
                     }
                     <div><dt>Город</dt><dd>@card.City</dd></div>
+                    @if (Model.ClientTime is not null)
+                    {
+                        <div>
+                            <dt>Время клиента</dt>
+                            <dd>
+                                <strong data-crm-client-time data-utc-offset-minutes="@Model.ClientTime.UtcOffsetMinutes">@Model.ClientTime.LocalTime.ToString("HH:mm")</strong>
+                                <small>@Model.ClientTime.TimeZoneLabel · по городу</small>
+                            </dd>
+                        </div>
+                    }
                     <div>
                         <dt>Вакансия</dt>
                         <dd>
@@ -340,11 +362,45 @@
                 <div class="crm-feed">
                     @foreach (var item in Model.Activity)
                     {
-                        <article class="crm-feed-item crm-feed-item--@item.Kind">
-                            <div class="crm-feed-item__icon"><i class="fa-solid @(item.Kind switch { "note" => "fa-comment", "task" => "fa-list-check", "task-done" => "fa-check", _ => "fa-clock" })" aria-hidden="true"></i></div>
+                        <article class="crm-feed-item crm-feed-item--@item.Kind @(item.IsPinned ? "is-pinned" : "")">
+                            <div class="crm-feed-item__icon"><i class="fa-solid @(item.IsPinned ? "fa-thumbtack" : item.Kind switch { "note" => "fa-comment", "task" => "fa-list-check", "task-done" => "fa-check", _ => "fa-clock" })" aria-hidden="true"></i></div>
                             <div>
                                 <header><strong>@DisplayCrmAction(item.Title)</strong><span>@item.ActorName · @item.AtUtc.ToLocalTime().ToString("dd MMM, HH:mm")</span></header>
                                 @if (!string.IsNullOrWhiteSpace(item.Body)) { <p>@item.Body</p> }
+                                @if (item.Kind == "note" && item.NoteId is Guid noteId)
+                                {
+                                    <div class="crm-inline-actions">
+                                        @if (item.CanPin)
+                                        {
+                                            <form asp-action="PinNote" method="post">
+                                                <input type="hidden" name="id" value="@card.Id" />
+                                                <input type="hidden" name="noteId" value="@noteId" />
+                                                <input type="hidden" name="isPinned" value="@((!item.IsPinned).ToString().ToLowerInvariant())" />
+                                                <button type="submit"><i class="fa-solid fa-thumbtack" aria-hidden="true"></i>@(item.IsPinned ? "Открепить" : "Закрепить")</button>
+                                            </form>
+                                        }
+                                        @if (item.CanEdit)
+                                        {
+                                            <details>
+                                                <summary><i class="fa-solid fa-pen" aria-hidden="true"></i>Изменить</summary>
+                                                <form asp-action="UpdateNote" method="post" class="crm-inline-edit-form">
+                                                    <input type="hidden" name="id" value="@card.Id" />
+                                                    <input type="hidden" name="noteId" value="@noteId" />
+                                                    <textarea name="text" maxlength="4000" required>@item.Body</textarea>
+                                                    <button class="settings-primary-btn" type="submit">Сохранить</button>
+                                                </form>
+                                            </details>
+                                        }
+                                        @if (item.CanDelete)
+                                        {
+                                            <form asp-action="DeleteNote" method="post" onsubmit="return confirm('Удалить комментарий?');">
+                                                <input type="hidden" name="id" value="@card.Id" />
+                                                <input type="hidden" name="noteId" value="@noteId" />
+                                                <button type="submit" class="is-danger"><i class="fa-solid fa-trash" aria-hidden="true"></i>Удалить</button>
+                                            </form>
+                                        }
+                                    </div>
+                                }
                             </div>
                         </article>
                     }
@@ -386,7 +442,14 @@
                           <select name="assigneeUserId" required>
                               @foreach (var m in Model.Managers)
                               {
-                                  <option value="@m.UserId">@m.DisplayName</option>
+                                  if (m.UserId == defaultTaskAssigneeUserId)
+                                  {
+                                      <option value="@m.UserId" selected>@m.DisplayName</option>
+                                  }
+                                  else
+                                  {
+                                      <option value="@m.UserId">@m.DisplayName</option>
+                                  }
                               }
                           </select>
                           <select name="importance" required aria-label="Важность задачи">
@@ -403,6 +466,8 @@
                 <div class="crm-task-list">
                     @foreach (var task in Model.Tasks)
                     {
+                        var canManageTask = isCrmAdmin || task.CreatorUserId == currentUserId || task.AssigneeUserId == currentUserId;
+                        var comments = taskComments.Where(x => x.TaskId == task.Id).ToList();
                         <article class="crm-task-row @(task.Status == CrmTaskStatuses.Completed ? "is-complete" : "") @(task.Status == CrmTaskStatuses.Cancelled ? "is-cancelled" : "") @(task.IsOverdue ? "is-overdue" : "")">
                             <div>
                                 <strong>@task.Title</strong>
@@ -417,6 +482,96 @@
                                     }
                                 </span>
                                 @if (!string.IsNullOrWhiteSpace(task.Description)) { <p>@task.Description</p> }
+                                @if (comments.Count > 0)
+                                {
+                                    <div class="crm-task-inline-comments">
+                                        @foreach (var comment in comments)
+                                        {
+                                            <div>
+                                                <strong>@comment.AuthorName</strong><span>@comment.Text</span>
+                                                @if (comment.CanEdit || comment.CanDelete)
+                                                {
+                                                    <div class="crm-inline-actions">
+                                                        @if (comment.CanEdit)
+                                                        {
+                                                            <details>
+                                                                <summary>Изменить</summary>
+                                                                <form asp-action="UpdateTaskComment" method="post" class="crm-inline-edit-form">
+                                                                    <input type="hidden" name="taskId" value="@task.Id" />
+                                                                    <input type="hidden" name="commentId" value="@comment.Id" />
+                                                                    <input type="hidden" name="cardId" value="@card.Id" />
+                                                                    <textarea name="text" maxlength="4000" required>@comment.Text</textarea>
+                                                                    <button class="settings-primary-btn" type="submit">Сохранить</button>
+                                                                </form>
+                                                            </details>
+                                                        }
+                                                        @if (comment.CanDelete)
+                                                        {
+                                                            <form asp-action="DeleteTaskComment" method="post" onsubmit="return confirm('Удалить комментарий задачи?');">
+                                                                <input type="hidden" name="taskId" value="@task.Id" />
+                                                                <input type="hidden" name="commentId" value="@comment.Id" />
+                                                                <input type="hidden" name="cardId" value="@card.Id" />
+                                                                <button type="submit" class="is-danger">Удалить</button>
+                                                            </form>
+                                                        }
+                                                    </div>
+                                                }
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                                @if (canManageTask)
+                                {
+                                    <form asp-action="AddTaskComment" method="post" class="crm-task-inline-comment-form">
+                                        <input type="hidden" name="taskId" value="@task.Id" />
+                                        <input type="hidden" name="cardId" value="@card.Id" />
+                                        <input name="text" maxlength="4000" required placeholder="Комментарий к задаче" />
+                                        <button type="submit">Добавить</button>
+                                    </form>
+                                }
+                                @if (canManageTask)
+                                {
+                                    <details class="crm-task-inline-editor">
+                                        <summary>Редактировать задачу</summary>
+                                        <form asp-action="UpdateTask" method="post" class="crm-standard-form">
+                                            <input type="hidden" name="taskId" value="@task.Id" />
+                                            <input type="hidden" name="cardId" value="@card.Id" />
+                                            <input name="title" value="@task.Title" maxlength="500" required />
+                                            <select name="assigneeUserId" required>
+                                                @foreach (var manager in Model.Managers)
+                                                {
+                                                    if (manager.UserId == task.AssigneeUserId) { <option value="@manager.UserId" selected>@manager.DisplayName</option> }
+                                                    else { <option value="@manager.UserId">@manager.DisplayName</option> }
+                                                }
+                                            </select>
+                                            <select name="importance" required>
+                                                @foreach (var importance in CrmTaskImportances.All)
+                                                {
+                                                    if (importance == task.Importance) { <option value="@importance" selected>@CrmTaskImportances.GetLabel(importance)</option> }
+                                                    else { <option value="@importance">@CrmTaskImportances.GetLabel(importance)</option> }
+                                                }
+                                            </select>
+                                            <input type="datetime-local" data-crm-deadline-local data-initial-utc="@OrbitaTime.ToIsoUtc(task.DueAtUtc)" />
+                                            <input type="hidden" name="dueAtUtc" value="@OrbitaTime.ToIsoUtc(task.DueAtUtc)" data-crm-deadline-utc />
+                                            <textarea name="description" maxlength="4000">@task.Description</textarea>
+                                            <button class="settings-primary-btn" type="submit">Сохранить</button>
+                                        </form>
+                                    </details>
+                                }
+                            </div>
+                            <div class="crm-task-row-actions">
+                                @if (canManageTask && task.Status == CrmTaskStatuses.Open)
+                                {
+                                    <form asp-action="CancelTask" method="post"><input type="hidden" name="taskId" value="@task.Id" /><input type="hidden" name="cardId" value="@card.Id" /><button type="submit">Отменить</button></form>
+                                }
+                                else if (canManageTask)
+                                {
+                                    <form asp-action="ReopenTask" method="post"><input type="hidden" name="taskId" value="@task.Id" /><input type="hidden" name="cardId" value="@card.Id" /><button type="submit">Вернуть</button></form>
+                                }
+                                @if (canManageTask)
+                                {
+                                    <form asp-action="DeleteTask" method="post" onsubmit="return confirm('Удалить задачу без возможности восстановления?');"><input type="hidden" name="taskId" value="@task.Id" /><input type="hidden" name="cardId" value="@card.Id" /><button type="submit" class="crm-btn-danger">Удалить</button></form>
+                                }
                             </div>
                             @if (task.Status == CrmTaskStatuses.Open && (isCrmAdmin || task.AssigneeUserId == currentUserId))
                             {

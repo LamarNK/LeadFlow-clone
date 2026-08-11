@@ -117,6 +117,7 @@ public sealed class CrmController(
             return View("Unavailable");
         }
 
+        ViewData["CurrentCrmUserId"] = User.FindFirstValue(ClaimTypes.NameIdentifier);
         return View(board);
     }
 
@@ -143,6 +144,7 @@ public sealed class CrmController(
             officeId,
             new CrmBoardQuery(search, scope, city, vacancy, overdueOnly, activeLoadOnly, includeClosed),
             ct);
+        ViewData["CurrentCrmUserId"] = User.FindFirstValue(ClaimTypes.NameIdentifier);
         return board is null ? NoContent() : PartialView("_CrmWorkspace", board);
     }
 
@@ -297,6 +299,7 @@ public sealed class CrmController(
         }
 
         if (!board.IsAdmin) return Forbid();
+        ViewData["CurrentCrmUserId"] = User.FindFirstValue(ClaimTypes.NameIdentifier);
         var selectedTaskScope = taskScope?.ToLowerInvariant() switch
         {
             "overdue" or "today" or "later" or "completed" or "cancelled" => taskScope.ToLowerInvariant(),
@@ -480,6 +483,36 @@ public sealed class CrmController(
 
     [HttpPost]
     [Authorize(Policy = PanelPermissions.CrmBoard)]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> UpdateNote(Guid id, Guid noteId, string text, CancellationToken ct = default)
+    {
+        var (_, error) = await api.UpdateCrmNoteAsync(id, noteId, text, ct);
+        if (error is not null) TempData["CrmError"] = error;
+        return RedirectToAction(nameof(Card), new { id });
+    }
+
+    [HttpPost]
+    [Authorize(Policy = PanelPermissions.CrmBoard)]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> DeleteNote(Guid id, Guid noteId, CancellationToken ct = default)
+    {
+        var (_, error) = await api.DeleteCrmNoteAsync(id, noteId, ct);
+        if (error is not null) TempData["CrmError"] = error;
+        return RedirectToAction(nameof(Card), new { id });
+    }
+
+    [HttpPost]
+    [Authorize(Policy = PanelPermissions.CrmBoard)]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> PinNote(Guid id, Guid noteId, bool isPinned, CancellationToken ct = default)
+    {
+        var (_, error) = await api.SetCrmNotePinnedAsync(id, noteId, isPinned, ct);
+        if (error is not null) TempData["CrmError"] = error;
+        return RedirectToAction(nameof(Card), new { id });
+    }
+
+    [HttpPost]
+    [Authorize(Policy = PanelPermissions.CrmBoard)]
     [Authorize(Policy = PanelPermissions.CrmTasks)]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> FollowUp(Guid id, int minutes, string? title, string? stage, CancellationToken ct = default)
@@ -523,6 +556,7 @@ public sealed class CrmController(
         string assigneeUserId,
         DateTime? dueAtUtc,
         string? importance,
+        Guid? cardId,
         CancellationToken ct = default)
     {
         var (_, error) = await api.UpdateCrmTaskAsync(
@@ -530,37 +564,90 @@ public sealed class CrmController(
             new CrmTaskUpdateRequest(title, description, assigneeUserId, dueAtUtc, importance ?? CrmTaskImportances.Medium),
             ct);
         if (error is not null) TempData["CrmError"] = error;
-        return RedirectToAction(nameof(TaskDetails), new { id = taskId });
+        return cardId is Guid id
+            ? RedirectToAction(nameof(Card), new { id, tab = "tasks" })
+            : RedirectToAction(nameof(TaskDetails), new { id = taskId });
     }
 
     [HttpPost]
     [Authorize(Policy = PanelPermissions.CrmTasks)]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> CancelTask(Guid taskId, CancellationToken ct = default)
+    public async Task<IActionResult> CancelTask(Guid taskId, Guid? cardId, CancellationToken ct = default)
     {
         var (_, error) = await api.CancelCrmTaskAsync(taskId, ct);
         if (error is not null) TempData["CrmError"] = error;
-        return RedirectToAction(nameof(TaskDetails), new { id = taskId });
+        return cardId is Guid id
+            ? RedirectToAction(nameof(Card), new { id, tab = "tasks" })
+            : RedirectToAction(nameof(TaskDetails), new { id = taskId });
     }
 
     [HttpPost]
     [Authorize(Policy = PanelPermissions.CrmTasks)]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> ReopenTask(Guid taskId, CancellationToken ct = default)
+    public async Task<IActionResult> ReopenTask(Guid taskId, Guid? cardId, CancellationToken ct = default)
     {
         var (_, error) = await api.ReopenCrmTaskAsync(taskId, ct);
         if (error is not null) TempData["CrmError"] = error;
-        return RedirectToAction(nameof(TaskDetails), new { id = taskId });
+        return cardId is Guid id
+            ? RedirectToAction(nameof(Card), new { id, tab = "tasks" })
+            : RedirectToAction(nameof(TaskDetails), new { id = taskId });
     }
 
     [HttpPost]
     [Authorize(Policy = PanelPermissions.CrmTasks)]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> AddTaskComment(Guid taskId, string text, CancellationToken ct = default)
+    public async Task<IActionResult> DeleteTask(Guid taskId, Guid? cardId, CancellationToken ct = default)
+    {
+        var (_, error) = await api.DeleteCrmTaskAsync(taskId, ct);
+        if (error is not null) TempData["CrmError"] = error;
+        return cardId is Guid id
+            ? RedirectToAction(nameof(Card), new { id, tab = "tasks" })
+            : RedirectToAction(nameof(Tasks));
+    }
+
+    [HttpPost]
+    [Authorize(Policy = PanelPermissions.CrmTasks)]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> AddTaskComment(Guid taskId, Guid? cardId, string text, CancellationToken ct = default)
     {
         var (_, error) = await api.AddCrmTaskCommentAsync(taskId, text, ct);
         if (error is not null) TempData["CrmError"] = error;
-        return RedirectToAction(nameof(TaskDetails), new { id = taskId });
+        return cardId is Guid id
+            ? RedirectToAction(nameof(Card), new { id, tab = "tasks" })
+            : RedirectToAction(nameof(TaskDetails), new { id = taskId });
+    }
+
+    [HttpPost]
+    [Authorize(Policy = PanelPermissions.CrmTasks)]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> UpdateTaskComment(
+        Guid taskId,
+        Guid commentId,
+        Guid? cardId,
+        string text,
+        CancellationToken ct = default)
+    {
+        var (_, error) = await api.UpdateCrmTaskCommentAsync(taskId, commentId, text, ct);
+        if (error is not null) TempData["CrmError"] = error;
+        return cardId is Guid id
+            ? RedirectToAction(nameof(Card), new { id, tab = "tasks" })
+            : RedirectToAction(nameof(TaskDetails), new { id = taskId });
+    }
+
+    [HttpPost]
+    [Authorize(Policy = PanelPermissions.CrmTasks)]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> DeleteTaskComment(
+        Guid taskId,
+        Guid commentId,
+        Guid? cardId,
+        CancellationToken ct = default)
+    {
+        var (_, error) = await api.DeleteCrmTaskCommentAsync(taskId, commentId, ct);
+        if (error is not null) TempData["CrmError"] = error;
+        return cardId is Guid id
+            ? RedirectToAction(nameof(Card), new { id, tab = "tasks" })
+            : RedirectToAction(nameof(TaskDetails), new { id = taskId });
     }
 
     [HttpPost]

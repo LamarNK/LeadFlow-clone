@@ -66,6 +66,7 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.Property(x => x.BitrixValidationMessage).HasMaxLength(2000);
             entity.Property(x => x.BitrixUpdatedByUserId).HasMaxLength(128);
             entity.Property(x => x.CrmStagesJson).HasMaxLength(4000);
+            entity.Property(x => x.CrmDeadlineNotificationsEnabled).HasDefaultValue(true);
             entity.HasIndex(x => x.Name).IsUnique();
         });
 
@@ -228,10 +229,11 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
         modelBuilder.Entity<CrmCandidateNoteEntity>(entity =>
         {
             entity.HasKey(x => x.Id);
-            entity.HasIndex(x => new { x.CardId, x.CreatedAtUtc });
+            entity.HasIndex(x => new { x.CardId, x.IsPinned, x.CreatedAtUtc });
             entity.Property(x => x.AuthorUserId).HasMaxLength(128);
             entity.Property(x => x.AuthorName).HasMaxLength(256);
             entity.Property(x => x.Text).HasMaxLength(4000);
+            entity.Property(x => x.IsPinned).HasDefaultValue(false);
         });
 
         modelBuilder.Entity<CrmTaskEntity>(entity =>

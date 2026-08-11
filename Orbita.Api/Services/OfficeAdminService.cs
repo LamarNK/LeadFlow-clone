@@ -63,13 +63,15 @@ public sealed class OfficeAdminService(OrbitaDbContext db)
         }
 
         var secret = ApiKeyService.GenerateApiKey();
+        var now = DateTime.UtcNow;
         var office = new OfficeEntity
         {
             Id = Guid.NewGuid(),
             Name = trimmedName,
             RegistrationSecretHash = ApiKeyService.HashApiKey(secret),
-            CreatedAtUtc = DateTime.UtcNow,
-            IsEnabled = true
+            CreatedAtUtc = now,
+            IsEnabled = true,
+            CrmDeadlineNotificationsEnabledAtUtc = now
         };
 
         db.Offices.Add(office);
@@ -102,6 +104,7 @@ public sealed class OfficeAdminService(OrbitaDbContext db)
             return (null, "Офис с таким названием уже существует.");
         }
 
+        var wasCrmEnabled = office.CrmEnabled;
         office.Name = trimmedName;
         office.IsEnabled = isEnabled;
         office.BitrixTransmissionEnabled = bitrixTransmissionEnabled;
@@ -109,6 +112,12 @@ public sealed class OfficeAdminService(OrbitaDbContext db)
 
         var route = await db.DistributionRoutes.FirstOrDefaultAsync(x => x.OfficeId == office.Id, ct);
         var now = DateTime.UtcNow;
+        if (crmEnabled
+            && office.CrmDeadlineNotificationsEnabled
+            && (!wasCrmEnabled || office.CrmDeadlineNotificationsEnabledAtUtc is null))
+        {
+            office.CrmDeadlineNotificationsEnabledAtUtc = now;
+        }
         if (route is null)
         {
             db.DistributionRoutes.Add(new DistributionRouteEntity
@@ -352,13 +361,15 @@ public sealed class OfficeAdminService(OrbitaDbContext db)
             ? ApiKeyService.GenerateApiKey()
             : registrationSecret.Trim();
 
+        var now = DateTime.UtcNow;
         var office = new OfficeEntity
         {
             Id = Guid.NewGuid(),
             Name = "Основной",
             RegistrationSecretHash = ApiKeyService.HashApiKey(secret),
-            CreatedAtUtc = DateTime.UtcNow,
-            IsEnabled = true
+            CreatedAtUtc = now,
+            IsEnabled = true,
+            CrmDeadlineNotificationsEnabledAtUtc = now
         };
 
         db.Offices.Add(office);

@@ -19,7 +19,7 @@ public sealed class OfficeEntity
     public bool CrmRequireStageComment { get; set; }
 
     /// <summary>Включить персональные напоминания по срокам CRM-задач для этого офиса.</summary>
-    public bool CrmDeadlineNotificationsEnabled { get; set; }
+    public bool CrmDeadlineNotificationsEnabled { get; set; } = true;
 
     /// <summary>
     /// Момент последнего включения напоминаний. Задачи, не изменявшиеся после него,
@@ -748,7 +748,9 @@ public sealed class CrmCandidateNoteEntity
     public string AuthorUserId { get; set; } = string.Empty;
     public string AuthorName { get; set; } = string.Empty;
     public string Text { get; set; } = string.Empty;
+    public bool IsPinned { get; set; }
     public DateTime CreatedAtUtc { get; set; }
+    public DateTime? UpdatedAtUtc { get; set; }
 }
 
 public sealed class CrmTaskEntity
@@ -792,6 +794,7 @@ public sealed class CrmTaskCommentEntity
     public string AuthorName { get; set; } = string.Empty;
     public string Text { get; set; } = string.Empty;
     public DateTime CreatedAtUtc { get; set; }
+    public DateTime? UpdatedAtUtc { get; set; }
 }
 
 public sealed class CrmTaskAttachmentEntity

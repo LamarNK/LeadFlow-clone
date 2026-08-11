@@ -61,7 +61,7 @@ internal static class DesignPreviewData
     {
         [Guid.Parse("90000000-0000-0000-0000-000000000001")] =
         [
-            new(Guid.Parse("91000000-0000-0000-0000-000000000001"), PreviewManagerElena, "Елена Воронцова", "Созвониться после 18:00, кандидат сейчас на работе.", Now.AddMinutes(-28))
+            new(Guid.Parse("91000000-0000-0000-0000-000000000001"), PreviewManagerElena, "Елена Воронцова", "Созвониться после 18:00, кандидат сейчас на работе.", Now.AddMinutes(-28), CanEdit: true, CanDelete: true, CanPin: true)
         ]
     };
     private static readonly List<CrmTaskDto> PreviewCrmTasks =
@@ -74,7 +74,7 @@ internal static class DesignPreviewData
     {
         [Guid.Parse("92000000-0000-0000-0000-000000000001")] =
         [
-            new(Guid.Parse("92500000-0000-0000-0000-000000000001"), Guid.Parse("92000000-0000-0000-0000-000000000001"), PreviewManagerElena, "Елена Воронцова", "Кандидат обещал прислать документы после смены.", Now.AddMinutes(-35))
+            new(Guid.Parse("92500000-0000-0000-0000-000000000001"), Guid.Parse("92000000-0000-0000-0000-000000000001"), PreviewManagerElena, "Елена Воронцова", "Кандидат обещал прислать документы после смены.", Now.AddMinutes(-35), CanEdit: true, CanDelete: true)
         ]
     };
     private static readonly Dictionary<Guid, List<CrmTaskAttachmentDto>> PreviewCrmTaskAttachments = new()
@@ -134,14 +134,22 @@ internal static class DesignPreviewData
             query ??= new CrmBoardQuery();
             var managers = BuildPreviewCrmManagers();
             var cards = PreviewCrmCandidates.AsEnumerable();
-            if (!string.IsNullOrWhiteSpace(query.Search))
+            var hasSearch = !string.IsNullOrWhiteSpace(query.Search);
+            var includeClosed = query.IncludeClosed || hasSearch;
+            if (hasSearch)
             {
-                var term = query.Search.Trim();
+                var term = query.Search!.Trim();
+                var digits = SearchQueryNormalizer.ExtractDigits(term);
+                var normalizedPhoneDigits = digits.Length == 11 && digits.StartsWith('8')
+                    ? $"7{digits[1..]}"
+                    : digits;
+                var searchByPhone = digits.Length >= 4;
                 cards = cards.Where(c =>
                     c.FullName.Contains(term, StringComparison.OrdinalIgnoreCase) ||
-                    c.PhoneRaw.Contains(term, StringComparison.OrdinalIgnoreCase) ||
                     c.City.Contains(term, StringComparison.OrdinalIgnoreCase) ||
-                    c.Vacancy.Contains(term, StringComparison.OrdinalIgnoreCase));
+                    c.Vacancy.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                    c.PhoneRaw.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                    (searchByPhone && NormalizePreviewPhone(c.PhoneRaw).Contains(normalizedPhoneDigits, StringComparison.Ordinal)));
             }
 
             if (!string.IsNullOrWhiteSpace(query.City))
@@ -161,13 +169,13 @@ internal static class DesignPreviewData
 
             if (query.Scope == CrmBoardScopes.Unassigned)
             {
-                cards = cards.Where(c => c.ManagerUserId is null && !c.IsClosed);
+                cards = cards.Where(c => c.ManagerUserId is null && (!c.IsClosed || includeClosed));
             }
             else if (query.Scope == CrmBoardScopes.Closed)
             {
                 cards = cards.Where(c => c.IsClosed);
             }
-            else if (!query.IncludeClosed)
+            else if (!includeClosed)
             {
                 cards = cards.Where(c => !c.IsClosed);
             }
@@ -183,7 +191,7 @@ internal static class DesignPreviewData
                     return new CrmStageDto(stage, stageCards, stageCards.Count);
                 })
                 .ToList();
-            if (query.Scope == CrmBoardScopes.Closed || query.IncludeClosed)
+            if (query.Scope == CrmBoardScopes.Closed || includeClosed)
             {
                 var closedCards = list
                     .Where(c => c.IsClosed)
@@ -230,6 +238,14 @@ internal static class DesignPreviewData
                 _previewCrmStages.ToList(),
                 _previewCrmDeadlineNotificationsEnabled);
         }
+    }
+
+    private static string NormalizePreviewPhone(string value)
+    {
+        var digits = SearchQueryNormalizer.ExtractDigits(value);
+        return digits.Length == 11 && digits.StartsWith('8')
+            ? $"7{digits[1..]}"
+            : digits;
     }
 
     public static CrmAnalyticsDto GetCrmAnalytics(
@@ -412,8 +428,15 @@ internal static class DesignPreviewData
         int currentTotal)
     {
         var stageNames = CrmStages.Default;
-        var reachRatios = new[] { 1d, .75d, .58d, .43d, .33d, .25d, .19d };
-        var currentWeights = new[] { .26d, .19d, .15d, .13d, .11d, .09d, .07d };
+        var reachRatios = new[] { 1d, .82d, .7d, .6d, .51d, .43d, .36d, .3d, .25d, .2d, .16d };
+        var currentWeights = Enumerable.Range(0, stageNames.Count)
+            .Select(index => Math.Pow(.82d, index))
+            .ToArray();
+        var weightTotal = currentWeights.Sum();
+        for (var i = 0; i < currentWeights.Length; i++)
+        {
+            currentWeights[i] /= weightTotal;
+        }
         var currentCounts = AllocatePreviewCounts(currentTotal, currentWeights);
         var reachedCounts = new int[stageNames.Count];
         for (var i = 0; i < stageNames.Count; i++)
@@ -460,14 +483,40 @@ internal static class DesignPreviewData
             var candidate = PreviewCrmCandidates.FirstOrDefault(item => item.Id == cardId);
             if (candidate is null) return null;
             var notes = PreviewCrmNotes.TryGetValue(cardId, out var n)
-                ? n.OrderByDescending(note => note.CreatedAtUtc).ToList()
+                ? n.OrderByDescending(note => note.IsPinned).ThenByDescending(note => note.CreatedAtUtc).ToList()
                 : [];
             var tasks = PreviewCrmTasks.Where(task => task.CardId == cardId).OrderBy(task => task.Status).ThenBy(task => task.DueAtUtc).ToList();
+            var taskIds = tasks.Select(task => task.Id).ToHashSet();
+            var taskComments = PreviewCrmTaskComments
+                .Where(pair => taskIds.Contains(pair.Key))
+                .SelectMany(pair => pair.Value)
+                .OrderBy(comment => comment.CreatedAtUtc)
+                .ToList();
             var history = PreviewCrmHistory.OrderByDescending(item => item.CreatedAtUtc).ToList();
-            var activity = notes.Select(x => new CrmActivityItemDto("note", "Комментарий", x.Text, x.AuthorName, x.CreatedAtUtc))
+            var activity = notes.Select(x => new CrmActivityItemDto(
+                    "note",
+                    x.IsPinned
+                        ? "Закреплённый комментарий"
+                        : x.UpdatedAtUtc is null ? "Комментарий" : "Комментарий изменён",
+                    x.Text,
+                    x.AuthorName,
+                    x.UpdatedAtUtc ?? x.CreatedAtUtc,
+                    NoteId: x.Id,
+                    IsPinned: x.IsPinned,
+                    CanEdit: x.CanEdit,
+                    CanDelete: x.CanDelete,
+                    CanPin: x.CanPin))
                 .Concat(tasks.Select(t => new CrmActivityItemDto(t.Status == CrmTaskStatuses.Completed ? "task-done" : "task", t.Title, t.Description, t.CreatorName, t.CompletedAtUtc ?? t.CreatedAtUtc, t.Id)))
-                .Concat(history.Select(h => new CrmActivityItemDto("history", h.Action, h.Details, h.ActorName, h.CreatedAtUtc)))
-                .OrderByDescending(x => x.AtUtc)
+                .Concat(history
+                    .Where(h => h.Action is not "Note"
+                        and not "NoteUpdated"
+                        and not "NotePinned"
+                        and not "NoteUnpinned"
+                        and not "TaskCreated"
+                        and not "TaskCompleted")
+                    .Select(h => new CrmActivityItemDto("history", h.Action, h.Details, h.ActorName, h.CreatedAtUtc)))
+                .OrderByDescending(x => x.IsPinned)
+                .ThenByDescending(x => x.AtUtc)
                 .ToList();
             return new CrmCandidateDetailDto(
                 ToPreviewCrmCard(candidate),
@@ -481,7 +530,9 @@ internal static class DesignPreviewData
                 BuildPreviewChat(candidate.Id),
                 BuildPreviewPhoneHistory(candidate),
                 [new CrmContactPhoneDto(Guid.Empty, candidate.PhoneRaw, candidate.PhoneRaw, true, null, DateTime.UtcNow)],
-                ChatUnreadCount: 0);
+                ChatUnreadCount: 0,
+                TaskComments: taskComments,
+                ClientTime: CrmClientTimeResolver.Resolve(candidate.City, DateTime.UtcNow));
         }
     }
 
@@ -724,8 +775,60 @@ internal static class DesignPreviewData
                 notes = [];
                 PreviewCrmNotes[cardId] = notes;
             }
-            notes.Add(new CrmNoteDto(Guid.NewGuid(), "preview-admin", "Администратор", text.Trim(), DateTime.UtcNow));
+            notes.Add(new CrmNoteDto(Guid.NewGuid(), "preview-admin", "Администратор", text.Trim(), DateTime.UtcNow, CanEdit: true, CanDelete: true, CanPin: true));
             AddPreviewCrmHistory("Note", text.Trim());
+            return (true, null);
+        }
+    }
+
+    public static (bool Success, string? Error) UpdateCrmNote(Guid cardId, Guid noteId, string text)
+    {
+        lock (CrmSync)
+        {
+            if (string.IsNullOrWhiteSpace(text)
+                || !PreviewCrmNotes.TryGetValue(cardId, out var notes))
+            {
+                return (false, "Введите текст комментария.");
+            }
+
+            var index = notes.FindIndex(note => note.Id == noteId);
+            if (index < 0) return (false, "Комментарий не найден.");
+            notes[index] = notes[index] with { Text = text.Trim(), UpdatedAtUtc = DateTime.UtcNow };
+            AddPreviewCrmHistory("NoteUpdated", text.Trim());
+            return (true, null);
+        }
+    }
+
+    public static (bool Success, string? Error) DeleteCrmNote(Guid cardId, Guid noteId)
+    {
+        lock (CrmSync)
+        {
+            if (!PreviewCrmNotes.TryGetValue(cardId, out var notes))
+            {
+                return (false, "Комментарий не найден.");
+            }
+
+            var index = notes.FindIndex(note => note.Id == noteId);
+            if (index < 0) return (false, "Комментарий не найден.");
+            notes.RemoveAt(index);
+            AddPreviewCrmHistory("NoteDeleted", noteId.ToString("D"));
+            return (true, null);
+        }
+    }
+
+    public static (bool Success, string? Error) SetCrmNotePinned(Guid cardId, Guid noteId, bool isPinned)
+    {
+        lock (CrmSync)
+        {
+            if (!PreviewCrmNotes.TryGetValue(cardId, out var notes))
+            {
+                return (false, "Комментарий не найден.");
+            }
+
+            var index = notes.FindIndex(note => note.Id == noteId);
+            if (index < 0) return (false, "Комментарий не найден.");
+            notes[index] = notes[index] with { IsPinned = isPinned, CanEdit = true, CanDelete = true, CanPin = true };
+            AddPreviewCrmHistory(isPinned ? "NotePinned" : "NoteUnpinned", notes[index].Text);
             return (true, null);
         }
     }
@@ -841,6 +944,27 @@ internal static class DesignPreviewData
         }
     }
 
+    public static (bool Success, string? Error) DeleteCrmTask(Guid taskId)
+    {
+        lock (CrmSync)
+        {
+            var index = PreviewCrmTasks.FindIndex(task => task.Id == taskId);
+            if (index < 0) return (false, "Задача не найдена.");
+            var task = PreviewCrmTasks[index];
+            PreviewCrmTasks.RemoveAt(index);
+            PreviewCrmTaskComments.Remove(taskId);
+            if (PreviewCrmTaskAttachments.Remove(taskId, out var attachments))
+            {
+                foreach (var attachment in attachments)
+                {
+                    PreviewCrmTaskAttachmentContent.Remove(attachment.Id);
+                }
+            }
+            AddPreviewCrmHistory("TaskDeleted", task.Title);
+            return (true, null);
+        }
+    }
+
     public static (bool Success, string? Error) AddCrmTaskComment(Guid taskId, string text)
     {
         lock (CrmSync)
@@ -862,7 +986,42 @@ internal static class DesignPreviewData
                 "preview-admin",
                 "Администратор",
                 text.Trim(),
-                DateTime.UtcNow));
+                DateTime.UtcNow,
+                CanEdit: true,
+                CanDelete: true));
+            return (true, null);
+        }
+    }
+
+    public static (bool Success, string? Error) UpdateCrmTaskComment(Guid taskId, Guid commentId, string text)
+    {
+        lock (CrmSync)
+        {
+            if (string.IsNullOrWhiteSpace(text)
+                || !PreviewCrmTaskComments.TryGetValue(taskId, out var comments))
+            {
+                return (false, "Введите текст комментария.");
+            }
+
+            var index = comments.FindIndex(comment => comment.Id == commentId);
+            if (index < 0) return (false, "Комментарий не найден.");
+            comments[index] = comments[index] with { Text = text.Trim(), UpdatedAtUtc = DateTime.UtcNow };
+            return (true, null);
+        }
+    }
+
+    public static (bool Success, string? Error) DeleteCrmTaskComment(Guid taskId, Guid commentId)
+    {
+        lock (CrmSync)
+        {
+            if (!PreviewCrmTaskComments.TryGetValue(taskId, out var comments))
+            {
+                return (false, "Комментарий не найден.");
+            }
+
+            var index = comments.FindIndex(comment => comment.Id == commentId);
+            if (index < 0) return (false, "Комментарий не найден.");
+            comments.RemoveAt(index);
             return (true, null);
         }
     }

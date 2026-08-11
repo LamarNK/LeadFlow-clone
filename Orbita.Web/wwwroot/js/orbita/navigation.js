@@ -180,6 +180,8 @@
         runtime.initDetailOpenButtons();
         runtime.initCrmTaskCreateModal();
         runtime.initCrmTaskAttachments?.();
+        runtime.initCrmTaskEditButtons?.();
+        runtime.initCrmClientTimes?.();
 
         // Re-localize any new time elements
         if (window.OrbitaTime && window.OrbitaTime.localizeAll) {
@@ -500,6 +502,96 @@
                 form.submit(); // fallback
             }
         }, true);
+
+        // CRM mutations stay inside the shell: submit the form, follow its redirect,
+        // and replace only the page content instead of reloading the whole document.
+        document.addEventListener('submit', async function (e) {
+            if (e.defaultPrevented) return;
+            var form = e.target.closest('form');
+            if (!form || !form.closest('.orbita-content') || form.hasAttribute('data-orbita-full-submit')) return;
+
+            var method = (form.getAttribute('method') || 'get').toLowerCase();
+            if (method !== 'post') return;
+
+            var actionUrl;
+            try {
+                actionUrl = new URL(form.action || window.location.href, window.location.origin);
+            } catch (ex) {
+                return;
+            }
+            if (actionUrl.origin !== window.location.origin || !actionUrl.pathname.toLowerCase().startsWith('/crm')) return;
+            if (form.hasAttribute('data-orbita-post-pending')) {
+                e.preventDefault();
+                return;
+            }
+
+            e.preventDefault();
+            var postData;
+            try {
+                postData = new FormData(form, e.submitter || undefined);
+            } catch (formDataError) {
+                postData = new FormData(form);
+                if (e.submitter && e.submitter.name) {
+                    postData.set(e.submitter.name, e.submitter.value || '');
+                }
+            }
+            form.setAttribute('data-orbita-post-pending', '1');
+            var submitters = Array.prototype.slice.call(form.querySelectorAll('button[type="submit"], input[type="submit"]'));
+            submitters.forEach(function (button) { button.disabled = true; });
+            runtime.showPageLoading();
+            var recoveryPath = window.location.pathname + window.location.search;
+
+            try {
+                var response = await fetch(actionUrl.pathname + actionUrl.search, {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: { 'X-Orbita-Content-Only': '1' },
+                    body: postData
+                });
+                if (!response.ok) {
+                    throw new Error('CRM form failed: ' + response.status);
+                }
+
+                var html = await response.text();
+                var finalUrl = new URL(response.url || window.location.href, window.location.origin);
+                recoveryPath = finalUrl.pathname + finalUrl.search;
+                var nextHtml = html;
+                if (/<!doctype|<html[\s>]/i.test(html)) {
+                    var parsed = new DOMParser().parseFromString(html, 'text/html');
+                    var parsedContent = parsed.querySelector('.orbita-content');
+                    if (!parsedContent) throw new Error('CRM response has no content container');
+                    nextHtml = parsedContent.innerHTML;
+                }
+
+                var content = document.querySelector('.orbita-content');
+                if (!content) throw new Error('Current content container is missing');
+                content.innerHTML = nextHtml;
+
+                var meta = content.querySelector('.orbita-page-meta');
+                var pageTitle = meta && meta.getAttribute('data-orbita-page-title');
+                var pageKey = meta && meta.getAttribute('data-orbita-controller');
+                if (meta) meta.remove();
+                if (pageTitle) document.title = pageTitle;
+
+                var finalPath = finalUrl.pathname + finalUrl.search;
+                history.replaceState({ orbitaNav: true }, '', finalPath);
+                runtime.updateActiveNav(finalPath);
+                runtime.reinitAfterContentSwap();
+                await ensurePageScripts(finalPath, pageKey);
+                document.dispatchEvent(new CustomEvent('orbita:content-updated', {
+                    detail: { path: finalPath, key: pageKey }
+                }));
+                runtime.restoreSearchFocus();
+            } catch (error) {
+                console.warn('CRM mutation navigation failed', error);
+                // The form may already have been accepted, so recover with a safe GET.
+                runtime.navigateTo(recoveryPath, false);
+            } finally {
+                form.removeAttribute('data-orbita-post-pending');
+                submitters.forEach(function (button) { button.disabled = false; });
+                runtime.hidePageLoading();
+            }
+        }, false);
     }
 
     runtime.initClientNavigation();

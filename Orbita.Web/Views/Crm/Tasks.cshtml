@@ -20,6 +20,8 @@
     var selectedScope = Model.SelectedScope;
     ViewData["CurrentCrmUserId"] = Model.CurrentUserId;
     ViewData["IsCrmAdmin"] = Model.IsAdmin;
+    var defaultAssigneeUserId = Model.Managers.FirstOrDefault(x => x.UserId == Model.CurrentUserId)?.UserId
+        ?? Model.Managers.FirstOrDefault()?.UserId;
     var shownCount = selectedScope switch
     {
         "overdue" => overdue.Count,
@@ -121,7 +123,7 @@
             </header>
             <form asp-action="CreateTask" method="post" class="crm-standard-form crm-task-create-form crm-task-create-form--modal">
                 <label><span>Что нужно сделать</span><input name="title" required placeholder="Например, позвонить кандидату" /></label>
-                <label><span>Ответственный</span><select name="assigneeUserId" required>@foreach (var manager in Model.Managers) { <option value="@manager.UserId">@manager.DisplayName</option> }</select></label>
+                <label><span>Ответственный</span><select name="assigneeUserId" required>@foreach (var manager in Model.Managers) { if (manager.UserId == defaultAssigneeUserId) { <option value="@manager.UserId" selected>@manager.DisplayName</option> } else { <option value="@manager.UserId">@manager.DisplayName</option> } }</select></label>
                 <label><span>Важность</span><select name="importance" required><option value="@CrmTaskImportances.Low">Низкая</option><option value="@CrmTaskImportances.Medium" selected>Средняя</option><option value="@CrmTaskImportances.High">Высокая</option></select></label>
                 <label><span>Срок</span><input type="datetime-local" data-crm-deadline-local /><input type="hidden" name="dueAtUtc" data-crm-deadline-utc /></label>
                 <label class="crm-task-create-form__description"><span>Комментарий <small>необязательно</small></span><textarea name="description" placeholder="Контекст или следующий шаг"></textarea></label>

@@ -2,6 +2,7 @@
 @using Orbita.Contracts
 @{
     var boardReturnUrl = $"{Context.Request.Path}{Context.Request.QueryString}";
+    var currentUserId = ViewData["CurrentCrmUserId"] as string;
 }
 <section class="crm-board-card card" aria-label="Воронка кандидатов" data-crm-board-carousel data-crm-require-stage-comment="@(Model.RequireStageComment ? "true" : "false")">
     <div class="crm-board-toolbar">
@@ -51,7 +52,9 @@
                     <div class="crm-stage__cards">
                     @foreach (var card in stage.Cards)
                     {
-                        var defaultAssigneeUserId = card.ManagerUserId ?? Model.Managers.FirstOrDefault()?.UserId;
+                        var defaultAssigneeUserId = card.ManagerUserId
+                            ?? Model.Managers.FirstOrDefault(x => x.UserId == currentUserId)?.UserId
+                            ?? Model.Managers.FirstOrDefault()?.UserId;
                         var adUrl = !string.IsNullOrWhiteSpace(card.VacancyUrl) ? card.VacancyUrl : card.SourceUrl;
                         <article class="crm-tile @(card.IsClosed ? "is-closed" : "") @(card.HasOverdueTask ? "is-overdue" : "") @(card.HoursInStage >= 24 ? "is-stalled" : "")"
                                  @if (Model.CanEdit && !card.IsClosed) { <text>draggable="true" data-card-id="@card.Id" data-card-stage="@card.Stage"</text> }>
