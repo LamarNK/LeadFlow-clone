@@ -495,6 +495,30 @@
             try { sessionStorage.setItem(focusStageKey, stageName); } catch { /* ignore */ }
         };
 
+        const captureStageScrollTops = () => {
+            const positions = {};
+            stages().forEach((stage) => {
+                const stageName = (stage.getAttribute('data-stage') || '').trim();
+                const cards = stage.querySelector('.crm-stage__cards');
+                if (stageName && cards) positions[stageName] = cards.scrollTop;
+            });
+            return positions;
+        };
+
+        const restoreStageScrollTops = () => {
+            const positions = storedBoardState?.stageScrollTops;
+            if (!positions || typeof positions !== 'object') return;
+
+            stages().forEach((stage) => {
+                const stageName = (stage.getAttribute('data-stage') || '').trim();
+                const cards = stage.querySelector('.crm-stage__cards');
+                const savedTop = Number(positions[stageName]);
+                if (!stageName || !cards || !Number.isFinite(savedTop)) return;
+                const maxScroll = Math.max(0, cards.scrollHeight - cards.clientHeight);
+                cards.scrollTop = Math.min(maxScroll, Math.max(0, savedTop));
+            });
+        };
+
         const rememberBoardPosition = (stageName) => {
             const nextState = {
                 version: 1,
@@ -504,6 +528,7 @@
                 jumpsScrollLeft: jumpsStrip ? jumpsStrip.scrollLeft : 0,
                 windowScrollX: window.scrollX,
                 windowScrollY: window.scrollY,
+                stageScrollTops: captureStageScrollTops(),
                 focusStage: stageName || storedBoardState?.focusStage || '',
                 savedAt: Date.now()
             };
@@ -523,6 +548,7 @@
             if (jumpsStrip && Number.isFinite(storedBoardState.jumpsScrollLeft)) {
                 jumpsStrip.scrollLeft = Math.max(0, storedBoardState.jumpsScrollLeft);
             }
+            restoreStageScrollTops();
             if (Number.isFinite(storedBoardState.windowScrollY)) {
                 window.scrollTo({
                     left: Number.isFinite(storedBoardState.windowScrollX) ? storedBoardState.windowScrollX : 0,
@@ -558,13 +584,17 @@
         });
 
         let savePositionFrame = 0;
-        viewport.addEventListener('scroll', () => {
+        const schedulePositionSave = () => {
             if (savePositionFrame) return;
             savePositionFrame = window.requestAnimationFrame(() => {
                 savePositionFrame = 0;
                 rememberBoardPosition('');
             });
-        }, { passive: true });
+        };
+        viewport.addEventListener('scroll', schedulePositionSave, { passive: true });
+        stages().forEach((stage) => {
+            stage.querySelector('.crm-stage__cards')?.addEventListener('scroll', schedulePositionSave, { passive: true });
+        });
 
         // Layout may settle after SPA swap / fonts; refresh a couple of frames later
         updateControls();
