@@ -289,21 +289,6 @@
             {
                 <section class="card crm-side-panel">
                     <header>Быстрые действия</header>
-                    <div class="crm-quick-actions">
-                        @if (canAccessCrmTasks)
-                        {
-                            <form asp-action="FollowUp" method="post"><input type="hidden" name="id" value="@card.Id" /><input type="hidden" name="stage" value="@boardReturnStage" /><input type="hidden" name="minutes" value="60" /><button type="submit">+1 ч</button></form>
-                            <form asp-action="FollowUp" method="post"><input type="hidden" name="id" value="@card.Id" /><input type="hidden" name="stage" value="@boardReturnStage" /><input type="hidden" name="minutes" value="180" /><button type="submit">+3 ч</button></form>
-                            <form asp-action="FollowUp" method="post"><input type="hidden" name="id" value="@card.Id" /><input type="hidden" name="stage" value="@boardReturnStage" /><input type="hidden" name="minutes" value="1440" /><button type="submit">Завтра</button></form>
-                            <form asp-action="FollowUp" method="post"><input type="hidden" name="id" value="@card.Id" /><input type="hidden" name="stage" value="@boardReturnStage" /><input type="hidden" name="minutes" value="4320" /><button type="submit">+3 дн</button></form>
-                        }
-                    </div>
-                    <form asp-action="SetLoad" method="post" class="crm-side-form">
-                        <input type="hidden" name="id" value="@card.Id" />
-                        <input type="hidden" name="stage" value="@boardReturnStage" />
-                        <input type="hidden" name="active" value="@(!card.IsInActiveLoad)" />
-                        <button class="settings-secondary-btn" type="submit">@(card.IsInActiveLoad ? "Снять с нагрузки" : "Вернуть в нагрузку")</button>
-                    </form>
                     @if (ViewData["IsCrmAdmin"] as bool? == true && Model.Managers.Count > 0)
                     {
                         <form asp-action="Assign" method="post" class="crm-side-form">

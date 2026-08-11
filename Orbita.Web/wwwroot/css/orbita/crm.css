@@ -477,9 +477,7 @@
 .crm-side-panel dl > div { display: grid; gap: 2px; padding: 8px 0; border-bottom: 1px solid #f2f4f7; }
 .crm-side-panel dt { color: #98a2b3; font-size: 11px; }
 .crm-side-panel dd { margin: 0; color: #344054; font-size: 13px; }
-.crm-quick-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 10px; }
-.crm-quick-actions button, .crm-side-form button { width: 100%; min-height: 34px; border: 1px solid #d0d5dd; border-radius: 8px; background: #fff; color: #344054; font: inherit; font-size: 12px; font-weight: 650; cursor: pointer; }
-.crm-quick-actions button:hover { border-color: #84adff; color: #3538cd; }
+.crm-side-form button { width: 100%; min-height: 34px; border: 1px solid #d0d5dd; border-radius: 8px; background: #fff; color: #344054; font: inherit; font-size: 12px; font-weight: 650; cursor: pointer; }
 .crm-side-form { display: grid; gap: 8px; margin-top: 10px; }
 .crm-side-form label { display: grid; gap: 4px; color: #667085; font-size: 11px; font-weight: 650; }
 .crm-side-form select, .crm-side-form textarea, .crm-composer textarea, .crm-task-create input, .crm-task-create select, .crm-task-create textarea, .crm-standard-form input, .crm-standard-form select, .crm-standard-form textarea { width: 100%; border: 1px solid #d0d5dd; border-radius: 8px; background: #fff; color: #344054; font: inherit; font-size: 12px; padding: 8px 10px; }
@@ -649,7 +647,7 @@
 [data-theme="dark"] .crm-tile__actions a, [data-theme="dark"] .crm-tile__actions button { border-color: var(--border); background: var(--bg-card); color: var(--text-secondary); }
 [data-theme="dark"] .crm-tile__actions a:hover, [data-theme="dark"] .crm-tile__actions button:hover { background: rgba(98,114,243,.16); color: #a5b4fc; }
 [data-theme="dark"] .crm-tile__actions, [data-theme="dark"] .crm-tile__quick-menu > div { border-color: var(--border); background: var(--bg-card); box-shadow: 0 4px 12px rgba(0,0,0,.35); }
-[data-theme="dark"] .crm-tile, [data-theme="dark"] .crm-filters__form input, [data-theme="dark"] .crm-side-form select, [data-theme="dark"] .crm-side-form textarea, [data-theme="dark"] .crm-composer textarea, [data-theme="dark"] .crm-task-create input, [data-theme="dark"] .crm-task-create select, [data-theme="dark"] .crm-task-create textarea, [data-theme="dark"] .crm-standard-form input, [data-theme="dark"] .crm-standard-form select, [data-theme="dark"] .crm-standard-form textarea, [data-theme="dark"] .crm-quick-actions button, [data-theme="dark"] .crm-side-form button { background: var(--bg-card); border-color: var(--border); color: var(--text-primary); }
+[data-theme="dark"] .crm-tile, [data-theme="dark"] .crm-filters__form input, [data-theme="dark"] .crm-side-form select, [data-theme="dark"] .crm-side-form textarea, [data-theme="dark"] .crm-composer textarea, [data-theme="dark"] .crm-task-create input, [data-theme="dark"] .crm-task-create select, [data-theme="dark"] .crm-task-create textarea, [data-theme="dark"] .crm-standard-form input, [data-theme="dark"] .crm-standard-form select, [data-theme="dark"] .crm-standard-form textarea, [data-theme="dark"] .crm-side-form button { background: var(--bg-card); border-color: var(--border); color: var(--text-primary); }
 [data-theme="dark"] .crm-tile.has-active-task { border-color: #8d721f; background: color-mix(in srgb, #a77700 22%, var(--bg-card)); box-shadow: inset 3px 0 0 #e0ad2f, 0 1px 2px rgba(0,0,0,.2); }
 [data-theme="dark"] .crm-tile.is-overdue { border-color: #9d444c; background: color-mix(in srgb, #9a2d35 25%, var(--bg-card)); box-shadow: inset 3px 0 0 #ed626a, 0 1px 2px rgba(0,0,0,.2); }
 [data-theme="dark"] .crm-tile__tasks.is-active { color: #f3c95f; }
