@@ -365,8 +365,8 @@
 .crm-tile:hover, .crm-tile:focus-within { border-color: #b2ccff; box-shadow: 0 4px 12px rgba(37,99,235,.08); transform: translateY(-1px); }
 .crm-tile__body { display: block; padding: 11px; color: #344054; text-decoration: none; }
 .crm-tile__body:hover { color: #344054; }
-.crm-tile.is-overdue { border-color: #fecdca; background: #fffbfa; }
-.crm-tile.is-stalled:not(.is-overdue) { border-color: #fedf89; }
+.crm-tile.has-active-task { border-color: #f0c95e; background: #fff9df; box-shadow: inset 3px 0 0 #e3aa18, 0 1px 2px rgba(16,24,40,.04); }
+.crm-tile.is-overdue { border-color: #f97066; background: #fff1f0; box-shadow: inset 3px 0 0 #e5484d, 0 1px 2px rgba(16,24,40,.04); }
 .crm-tile.is-closed { opacity: .72; }
 .crm-tile__top { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; }
 .crm-tile__top strong { color: #101828; font-size: 12px; line-height: 1.35; }
@@ -377,6 +377,9 @@
 .crm-tile__foot .crm-tile__assignee { min-width: 0; color: #667085; }
 .crm-tile__assignee small { color: #98a2b3; font-size: inherit; }
 .crm-tile__assignee strong { overflow: hidden; color: #344054; font-size: inherit; text-overflow: ellipsis; white-space: nowrap; }
+.crm-tile__tasks { font-weight: 750; }
+.crm-tile__tasks.is-active { color: #9a6700; }
+.crm-tile__tasks.is-overdue { color: #b42318; }
 .crm-tile__actions { position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 3; display: flex; align-items: center; gap: 5px; padding: 4px; border: 1px solid #e4e7ec; border-radius: 8px; background: #fff; box-shadow: 0 4px 12px rgba(16,24,40,.14); opacity: 0; transform: translateY(6px); pointer-events: none; transition: opacity .16s ease, transform .16s ease; }
 .crm-tile:hover .crm-tile__actions, .crm-tile:focus-within .crm-tile__actions { opacity: 1; transform: translateY(0); pointer-events: auto; }
 .crm-tile__actions form { display: contents; }
@@ -647,6 +650,10 @@
 [data-theme="dark"] .crm-tile__actions a:hover, [data-theme="dark"] .crm-tile__actions button:hover { background: rgba(98,114,243,.16); color: #a5b4fc; }
 [data-theme="dark"] .crm-tile__actions, [data-theme="dark"] .crm-tile__quick-menu > div { border-color: var(--border); background: var(--bg-card); box-shadow: 0 4px 12px rgba(0,0,0,.35); }
 [data-theme="dark"] .crm-tile, [data-theme="dark"] .crm-filters__form input, [data-theme="dark"] .crm-side-form select, [data-theme="dark"] .crm-side-form textarea, [data-theme="dark"] .crm-composer textarea, [data-theme="dark"] .crm-task-create input, [data-theme="dark"] .crm-task-create select, [data-theme="dark"] .crm-task-create textarea, [data-theme="dark"] .crm-standard-form input, [data-theme="dark"] .crm-standard-form select, [data-theme="dark"] .crm-standard-form textarea, [data-theme="dark"] .crm-quick-actions button, [data-theme="dark"] .crm-side-form button { background: var(--bg-card); border-color: var(--border); color: var(--text-primary); }
+[data-theme="dark"] .crm-tile.has-active-task { border-color: #8d721f; background: color-mix(in srgb, #a77700 22%, var(--bg-card)); box-shadow: inset 3px 0 0 #e0ad2f, 0 1px 2px rgba(0,0,0,.2); }
+[data-theme="dark"] .crm-tile.is-overdue { border-color: #9d444c; background: color-mix(in srgb, #9a2d35 25%, var(--bg-card)); box-shadow: inset 3px 0 0 #ed626a, 0 1px 2px rgba(0,0,0,.2); }
+[data-theme="dark"] .crm-tile__tasks.is-active { color: #f3c95f; }
+[data-theme="dark"] .crm-tile__tasks.is-overdue { color: #ff8a8f; }
 [data-theme="dark"] .crm-tile__top strong, [data-theme="dark"] .crm-card-hero h1, [data-theme="dark"] .crm-toolbar__load, [data-theme="dark"] .crm-toolbar__stats strong, [data-theme="dark"] .crm-feed-item strong, [data-theme="dark"] .crm-manager-row__name strong { color: var(--text-primary); }
 [data-theme="dark"] .crm-phone-actions__menu { border-color: var(--border); background: var(--bg-card); box-shadow: 0 12px 26px rgba(0,0,0,.35); }
 [data-theme="dark"] .crm-phone-actions__menu a, [data-theme="dark"] .crm-phone-actions__menu button { color: var(--text-secondary); }
