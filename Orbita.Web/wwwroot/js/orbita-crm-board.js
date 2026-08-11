@@ -5,6 +5,7 @@
     const refreshers = new Set();
     const boardStateKey = 'orbita.crm.board.position.v1';
     const cardTaskReturnKey = 'orbita.crm.card.taskReturn.v1';
+    const cardOpenAtTopKey = 'orbita.crm.card.openAtTop.v1';
 
     const normalizeBoardPath = (pathname) => {
         const normalized = (pathname || '').replace(/\/+$/, '').toLowerCase();
@@ -45,6 +46,20 @@
 
     const clearCardTaskReturn = () => {
         try { sessionStorage.removeItem(cardTaskReturnKey); } catch { /* ignore */ }
+    };
+
+    const markCardOpenAtTop = () => {
+        try { sessionStorage.setItem(cardOpenAtTopKey, String(Date.now())); } catch { /* ignore */ }
+    };
+
+    const consumeCardOpenAtTop = () => {
+        try {
+            const savedAt = Number(sessionStorage.getItem(cardOpenAtTopKey));
+            sessionStorage.removeItem(cardOpenAtTopKey);
+            return Number.isFinite(savedAt) && Date.now() - savedAt < 2 * 60 * 1000;
+        } catch {
+            return false;
+        }
     };
 
     const readCardTaskReturn = (cardId) => {
@@ -581,6 +596,7 @@
                 || '';
             clearCardTaskReturn();
             rememberBoardPosition(stageName);
+            markCardOpenAtTop();
         });
 
         let savePositionFrame = 0;
@@ -813,6 +829,15 @@
         const page = document.querySelector('.crm-card-page');
         if (!page || page.dataset.crmCardReady === 'true') return;
         page.dataset.crmCardReady = 'true';
+
+        if (consumeCardOpenAtTop()) {
+            const scrollToCardTop = () => window.scrollTo({ left: 0, top: 0, behavior: 'auto' });
+            scrollToCardTop();
+            window.requestAnimationFrame(() => {
+                scrollToCardTop();
+                window.requestAnimationFrame(scrollToCardTop);
+            });
+        }
 
         const cardId = (page.getAttribute('data-crm-card-id') || '').trim();
         const taskBackLink = page.querySelector('[data-crm-back-to-tasks]');
