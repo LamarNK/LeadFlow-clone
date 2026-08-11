@@ -765,6 +765,7 @@ public sealed class CrmTaskEntity
     public string CreatorName { get; set; } = string.Empty;
     public DateTime? DueAtUtc { get; set; }
     public string Importance { get; set; } = CrmTaskImportances.Medium;
+    public string TaskType { get; set; } = CrmTaskTypes.Unspecified;
     public string Status { get; set; } = CrmTaskStatuses.Open;
     public Guid ReminderVersion { get; set; } = Guid.NewGuid();
     public DateTime ReminderVersionChangedAtUtc { get; set; }

@@ -133,6 +133,36 @@ public static class CrmTaskImportances
     };
 }
 
+public static class CrmTaskTypes
+{
+    public const string Unspecified = "Unspecified";
+    public const string Contact = "Contact";
+    public const string CallBack = "CallBack";
+    public const string FollowUp = "FollowUp";
+    public const string BuyTicket = "BuyTicket";
+    public const string Send = "Send";
+    public const string Meet = "Meet";
+    public const string SignContract = "SignContract";
+
+    public static readonly IReadOnlyList<string> All =
+        [Contact, CallBack, FollowUp, BuyTicket, Send, Meet, SignContract];
+
+    public static bool IsValid(string? taskType) =>
+        All.Contains(taskType ?? string.Empty, StringComparer.Ordinal);
+
+    public static string GetLabel(string? taskType) => taskType switch
+    {
+        Contact => "Связаться",
+        CallBack => "Перезвонить",
+        FollowUp => "Дожать",
+        BuyTicket => "Купить билет",
+        Send => "Отправить",
+        Meet => "Встретить",
+        SignContract => "Подписать контракт",
+        _ => "Тип не указан"
+    };
+}
+
 public static class CrmTaskNotificationKinds
 {
     public const string DueIn24Hours = "due_24h";
@@ -423,7 +453,8 @@ public sealed record CrmTaskDto(
     DateTime CreatedAtUtc,
     DateTime? CompletedAtUtc,
     bool IsOverdue,
-    string Importance = CrmTaskImportances.Medium);
+    string Importance = CrmTaskImportances.Medium,
+    string TaskType = CrmTaskTypes.Unspecified);
 
 public sealed record CrmTaskCommentDto(
     Guid Id,
@@ -517,14 +548,16 @@ public sealed record CrmTaskCreateRequest(
     string? Description,
     string AssigneeUserId,
     DateTime? DueAtUtc,
-    string Importance = CrmTaskImportances.Medium);
+    string Importance = CrmTaskImportances.Medium,
+    string TaskType = CrmTaskTypes.Contact);
 
 public sealed record CrmTaskUpdateRequest(
     string Title,
     string? Description,
     string AssigneeUserId,
     DateTime? DueAtUtc,
-    string Importance = CrmTaskImportances.Medium);
+    string Importance = CrmTaskImportances.Medium,
+    string? TaskType = null);
 
 public sealed record CrmTaskCommentCreateRequest(string Text);
 public sealed record CrmTaskCommentUpdateRequest(string Text);

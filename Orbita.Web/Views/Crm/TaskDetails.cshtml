@@ -108,6 +108,7 @@
         <div class="crm-task-detail-primary">
             <section class="crm-task-detail-card crm-task-detail-card--info">
                 <dl class="crm-task-detail-fields">
+                    <div><dt><i class="fa-solid fa-list-check" aria-hidden="true"></i>Тип задачи</dt><dd>@CrmTaskTypes.GetLabel(task.TaskType)</dd></div>
                     <div><dt><i class="fa-regular fa-star" aria-hidden="true"></i>Важность</dt><dd><span class="crm-task-importance crm-task-importance--@task.Importance.ToLowerInvariant()">@CrmTaskImportances.GetLabel(task.Importance)</span></dd></div>
                     <div><dt><i class="fa-regular fa-calendar" aria-hidden="true"></i>Срок исполнения</dt><dd class="@(task.IsOverdue ? "is-overdue" : "")">@if (task.DueAtUtc is DateTime deadline) { <time data-orbita-utc="@OrbitaTime.ToIsoUtc(deadline)" data-orbita-format="datetime"></time> } else { <text>Не задан</text> }</dd></div>
                     <div><dt><i class="fa-regular fa-user" aria-hidden="true"></i>Автор задачи</dt><dd>@task.CreatorName</dd></div>
@@ -138,6 +139,23 @@
                         @Html.AntiForgeryToken()
                         <input type="hidden" name="taskId" value="@task.Id" />
                         <label><span>Название</span><input name="title" value="@task.Title" maxlength="500" required /></label>
+                        <label><span>Тип задачи</span><select name="taskType" required>
+                            @if (!CrmTaskTypes.IsValid(task.TaskType))
+                            {
+                                <option value="" selected disabled>Выберите тип задачи</option>
+                            }
+                            @foreach (var taskType in CrmTaskTypes.All)
+                            {
+                                if (taskType == task.TaskType)
+                                {
+                                    <option value="@taskType" selected>@CrmTaskTypes.GetLabel(taskType)</option>
+                                }
+                                else
+                                {
+                                    <option value="@taskType">@CrmTaskTypes.GetLabel(taskType)</option>
+                                }
+                            }
+                        </select></label>
                         <label><span>Ответственный</span><select name="assigneeUserId" required>
                             @foreach (var manager in Model.Managers)
                             {

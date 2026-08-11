@@ -683,12 +683,20 @@ public sealed class CrmWorkspaceServiceTests
 
         var task = await harness.Sut.CreateTaskAsync(
             OfficeId,
-            new CrmTaskCreateRequest(null, "Позвонить кандидату", "Уточнить время", assignee.Id, DateTime.UtcNow.AddHours(1), CrmTaskImportances.High),
+            new CrmTaskCreateRequest(
+                null,
+                "Позвонить кандидату",
+                "Уточнить время",
+                assignee.Id,
+                DateTime.UtcNow.AddHours(1),
+                CrmTaskImportances.High,
+                CrmTaskTypes.CallBack),
             creator.Id,
             isAdmin: false);
 
         Assert.NotNull(task);
         Assert.Equal(CrmTaskImportances.High, task.Importance);
+        Assert.Equal(CrmTaskTypes.CallBack, task.TaskType);
         Assert.Equal("Иван Петров", task.CreatorName);
         Assert.Equal("Мария Сидорова", task.AssigneeName);
         Assert.Contains((await harness.Sut.GetTasksAsync(OfficeId, creator.Id, isAdmin: false)).Select(x => x.Id), id => id == task.Id);
@@ -705,6 +713,7 @@ public sealed class CrmWorkspaceServiceTests
         Assert.NotNull(detail);
         Assert.True(detail.CanComplete);
         Assert.Equal(CrmTaskImportances.High, detail.Task.Importance);
+        Assert.Equal(CrmTaskTypes.CallBack, detail.Task.TaskType);
         Assert.Single(detail.Comments);
         Assert.Equal("Созвон согласован", detail.Comments[0].Text);
 
@@ -738,6 +747,20 @@ public sealed class CrmWorkspaceServiceTests
             isAdmin: false);
         Assert.Null(foreignAssigneeTask);
 
+        var invalidTypeTask = await harness.Sut.CreateTaskAsync(
+            OfficeId,
+            new CrmTaskCreateRequest(
+                null,
+                "Не создать без типа",
+                null,
+                assignee.Id,
+                null,
+                CrmTaskImportances.Medium,
+                "Unknown"),
+            creator.Id,
+            isAdmin: false);
+        Assert.Null(invalidTypeTask);
+
         var response = await SeedResponseAsync(harness.Db);
         var card = NewCard(response.Id, creator.Id);
         harness.Db.CrmCandidateCards.Add(card);
@@ -770,14 +793,14 @@ public sealed class CrmWorkspaceServiceTests
 
         var assigneeUpdate = await harness.Sut.UpdateTaskAsync(
             task.Id,
-            new CrmTaskUpdateRequest("Изменённая задача", "Описание", replacement.Id, DateTime.UtcNow.AddDays(1), CrmTaskImportances.High),
+            new CrmTaskUpdateRequest("Изменённая задача", "Описание", replacement.Id, DateTime.UtcNow.AddDays(1), CrmTaskImportances.High, CrmTaskTypes.SignContract),
             assignee.Id,
             isAdmin: false);
         Assert.True(assigneeUpdate.Ok);
 
         var updated = await harness.Sut.UpdateTaskAsync(
             task.Id,
-            new CrmTaskUpdateRequest("Изменённая задача", "Описание", replacement.Id, DateTime.UtcNow.AddDays(1), CrmTaskImportances.High),
+            new CrmTaskUpdateRequest("Изменённая задача", "Описание", replacement.Id, DateTime.UtcNow.AddDays(1), CrmTaskImportances.High, CrmTaskTypes.SignContract),
             creator.Id,
             isAdmin: false);
         Assert.True(updated.Ok);
@@ -787,6 +810,7 @@ public sealed class CrmWorkspaceServiceTests
         Assert.Equal("Изменённая задача", afterUpdate.Task.Title);
         Assert.Equal(replacement.Id, afterUpdate.Task.AssigneeUserId);
         Assert.Equal(CrmTaskImportances.High, afterUpdate.Task.Importance);
+        Assert.Equal(CrmTaskTypes.SignContract, afterUpdate.Task.TaskType);
         Assert.NotEqual(initialReminderVersion, taskEntity.ReminderVersion);
 
         var updatedReminderVersion = taskEntity.ReminderVersion;

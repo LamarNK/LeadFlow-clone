@@ -525,9 +525,16 @@ public sealed class CrmController(
     [HttpPost]
     [Authorize(Policy = PanelPermissions.CrmTasks)]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> CreateTask(Guid? cardId, string title, string? description, string assigneeUserId, DateTime? dueAtUtc, string? importance, string? returnUrl, string? stage, CancellationToken ct = default)
+    public async Task<IActionResult> CreateTask(Guid? cardId, string title, string? description, string assigneeUserId, DateTime? dueAtUtc, string? importance, string? taskType, string? returnUrl, string? stage, CancellationToken ct = default)
     {
-        var (_, error) = await api.CreateCrmTaskAsync(new CrmTaskCreateRequest(cardId, title, description, assigneeUserId, dueAtUtc, importance ?? CrmTaskImportances.Medium), ct);
+        var (_, error) = await api.CreateCrmTaskAsync(new CrmTaskCreateRequest(
+            cardId,
+            title,
+            description,
+            assigneeUserId,
+            dueAtUtc,
+            importance ?? CrmTaskImportances.Medium,
+            taskType ?? string.Empty), ct);
         if (error is not null) TempData["CrmError"] = error;
         return cardId is Guid id
             ? RedirectAfterCardMutation(returnUrl, nameof(Card), new { id, tab = "tasks", stage })
@@ -556,12 +563,19 @@ public sealed class CrmController(
         string assigneeUserId,
         DateTime? dueAtUtc,
         string? importance,
+        string? taskType,
         Guid? cardId,
         CancellationToken ct = default)
     {
         var (_, error) = await api.UpdateCrmTaskAsync(
             taskId,
-            new CrmTaskUpdateRequest(title, description, assigneeUserId, dueAtUtc, importance ?? CrmTaskImportances.Medium),
+            new CrmTaskUpdateRequest(
+                title,
+                description,
+                assigneeUserId,
+                dueAtUtc,
+                importance ?? CrmTaskImportances.Medium,
+                taskType),
             ct);
         if (error is not null) TempData["CrmError"] = error;
         return cardId is Guid id

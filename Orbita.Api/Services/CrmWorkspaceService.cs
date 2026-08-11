@@ -1703,6 +1703,7 @@ public sealed class CrmWorkspaceService(
     {
         if (string.IsNullOrWhiteSpace(request.Title)
             || !CrmTaskImportances.IsValid(request.Importance)
+            || !CrmTaskTypes.IsValid(request.TaskType)
             || await GetManagerProfileAsync(officeId, request.AssigneeUserId, ct, allowAdmin: false) is null)
         {
             return null;
@@ -1745,6 +1746,7 @@ public sealed class CrmWorkspaceService(
             CreatorName = actorName,
             DueAtUtc = dueAtUtc,
             Importance = request.Importance,
+            TaskType = request.TaskType,
             ReminderVersion = Guid.NewGuid(),
             ReminderVersionChangedAtUtc = now,
             CreatedAtUtc = now
@@ -1775,7 +1777,8 @@ public sealed class CrmWorkspaceService(
                 task.CreatedAtUtc,
                 null,
                 task.DueAtUtc is DateTime d && d < now,
-                task.Importance);
+                task.Importance,
+                task.TaskType);
     }
 
     public async Task<CrmTaskDto?> CreateFollowUpAsync(
@@ -1811,7 +1814,14 @@ public sealed class CrmWorkspaceService(
 
         return await CreateTaskAsync(
             card.OfficeId,
-            new CrmTaskCreateRequest(cardId, label, null, actorUserId, due),
+            new CrmTaskCreateRequest(
+                cardId,
+                label,
+                null,
+                actorUserId,
+                due,
+                CrmTaskImportances.Medium,
+                CrmTaskTypes.CallBack),
             actorUserId,
             isAdmin,
             ct);
@@ -1915,6 +1925,12 @@ public sealed class CrmWorkspaceService(
             return (false, "Укажите корректную важность задачи.");
         }
 
+        var taskType = request.TaskType ?? task.TaskType;
+        if (!CrmTaskTypes.IsValid(taskType))
+        {
+            return (false, "Выберите тип задачи.");
+        }
+
         if (await GetManagerProfileAsync(task.OfficeId, request.AssigneeUserId, ct, allowAdmin: false) is null)
         {
             return (false, "Ответственный должен быть менеджером этого офиса.");
@@ -1939,6 +1955,7 @@ public sealed class CrmWorkspaceService(
         task.AssigneeUserId = request.AssigneeUserId;
         task.DueAtUtc = dueAtUtc;
         task.Importance = request.Importance;
+        task.TaskType = taskType;
         if (task.CardId is Guid cardId)
         {
             AddHistory(cardId, "TaskUpdated", task.Title, userId, await ResolveDisplayNameAsync(userId, ct), now);
@@ -2747,7 +2764,8 @@ public sealed class CrmWorkspaceService(
             task.CreatedAtUtc,
             task.CompletedAtUtc,
             task.Status == CrmTaskStatuses.Open && task.DueAtUtc is DateTime due && due < now,
-            task.Importance);
+            task.Importance,
+            task.TaskType);
 
     private static IReadOnlyList<CrmActivityItemDto> BuildActivity(
         IReadOnlyList<CrmCandidateNoteEntity> notes,

@@ -1529,6 +1529,13 @@ namespace Orbita.Api.Data.Migrations
                         .HasMaxLength(16)
                         .HasColumnType("character varying(16)");
 
+                    b.Property<string>("TaskType")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasDefaultValue("Unspecified");
+
                     b.Property<string>("Title")
                         .IsRequired()
                         .HasMaxLength(500)

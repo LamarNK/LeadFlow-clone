@@ -837,14 +837,19 @@ internal static class DesignPreviewData
     {
         lock (CrmSync)
         {
-            if (string.IsNullOrWhiteSpace(request.Title) || !CrmTaskImportances.IsValid(request.Importance)) return (null, "Выберите важность задачи.");
+            if (string.IsNullOrWhiteSpace(request.Title)
+                || !CrmTaskImportances.IsValid(request.Importance)
+                || !CrmTaskTypes.IsValid(request.TaskType))
+            {
+                return (null, "Проверьте название, тип и важность задачи.");
+            }
             var assignee = BuildPreviewCrmManagers().FirstOrDefault(manager => manager.UserId == request.AssigneeUserId);
             if (assignee is null) return (null, "Исполнитель не найден.");
             var candidateName = request.CardId is Guid id
                 ? PreviewCrmCandidates.FirstOrDefault(c => c.Id == id)?.FullName
                 : null;
             var due = request.DueAtUtc;
-            var task = new CrmTaskDto(Guid.NewGuid(), request.CardId, candidateName, request.Title.Trim(), request.Description?.Trim(), assignee.UserId, assignee.DisplayName, "preview-admin", "Администратор", due, CrmTaskStatuses.Open, DateTime.UtcNow, null, due is DateTime d && d < DateTime.UtcNow, request.Importance);
+            var task = new CrmTaskDto(Guid.NewGuid(), request.CardId, candidateName, request.Title.Trim(), request.Description?.Trim(), assignee.UserId, assignee.DisplayName, "preview-admin", "Администратор", due, CrmTaskStatuses.Open, DateTime.UtcNow, null, due is DateTime d && d < DateTime.UtcNow, request.Importance, request.TaskType);
             PreviewCrmTasks.Add(task);
             AddPreviewCrmHistory("TaskCreated", task.Title);
             return (task, null);
@@ -858,7 +863,14 @@ internal static class DesignPreviewData
             var label = string.IsNullOrWhiteSpace(title)
                 ? minutes <= 60 ? "Перезвонить через час" : $"Перезвонить через {minutes / 60} ч"
                 : title.Trim();
-            return CreateCrmTask(new CrmTaskCreateRequest(cardId, label, null, PreviewManagerElena, DateTime.UtcNow.AddMinutes(minutes)));
+            return CreateCrmTask(new CrmTaskCreateRequest(
+                cardId,
+                label,
+                null,
+                PreviewManagerElena,
+                DateTime.UtcNow.AddMinutes(minutes),
+                CrmTaskImportances.Medium,
+                CrmTaskTypes.CallBack));
         }
     }
 
@@ -883,12 +895,15 @@ internal static class DesignPreviewData
         {
             var index = PreviewCrmTasks.FindIndex(task => task.Id == taskId);
             if (index < 0) return (false, "Задача не найдена.");
-            if (string.IsNullOrWhiteSpace(update.Title) || !CrmTaskImportances.IsValid(update.Importance))
+            var task = PreviewCrmTasks[index];
+            var taskType = update.TaskType ?? task.TaskType;
+            if (string.IsNullOrWhiteSpace(update.Title)
+                || !CrmTaskImportances.IsValid(update.Importance)
+                || !CrmTaskTypes.IsValid(taskType))
             {
-                return (false, "Проверьте название и важность задачи.");
+                return (false, "Проверьте название, тип и важность задачи.");
             }
 
-            var task = PreviewCrmTasks[index];
             if (task.Status != CrmTaskStatuses.Open) return (false, "Можно изменить только задачу в работе.");
             var assignee = BuildPreviewCrmManagers().FirstOrDefault(manager => manager.UserId == update.AssigneeUserId);
             if (assignee is null) return (false, "Исполнитель не найден.");
@@ -900,6 +915,7 @@ internal static class DesignPreviewData
                 AssigneeName = assignee.DisplayName,
                 DueAtUtc = update.DueAtUtc,
                 Importance = update.Importance,
+                TaskType = taskType,
                 IsOverdue = update.DueAtUtc is DateTime due && due < DateTime.UtcNow
             };
             AddPreviewCrmHistory("TaskUpdated", update.Title.Trim());

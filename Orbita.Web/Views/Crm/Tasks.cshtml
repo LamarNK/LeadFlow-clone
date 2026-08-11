@@ -123,6 +123,13 @@
             </header>
             <form asp-action="CreateTask" method="post" class="crm-standard-form crm-task-create-form crm-task-create-form--modal">
                 <label><span>Что нужно сделать</span><input name="title" required placeholder="Например, позвонить кандидату" /></label>
+                <label><span>Тип задачи</span><select name="taskType" required>
+                    <option value="" selected disabled>Выберите тип</option>
+                    @foreach (var taskType in CrmTaskTypes.All)
+                    {
+                        <option value="@taskType">@CrmTaskTypes.GetLabel(taskType)</option>
+                    }
+                </select></label>
                 <label><span>Ответственный</span><select name="assigneeUserId" required>@foreach (var manager in Model.Managers) { if (manager.UserId == defaultAssigneeUserId) { <option value="@manager.UserId" selected>@manager.DisplayName</option> } else { <option value="@manager.UserId">@manager.DisplayName</option> } }</select></label>
                 <label><span>Важность</span><select name="importance" required><option value="@CrmTaskImportances.Low">Низкая</option><option value="@CrmTaskImportances.Medium" selected>Средняя</option><option value="@CrmTaskImportances.High">Высокая</option></select></label>
                 <label><span>Срок</span><input type="datetime-local" data-crm-deadline-local /><input type="hidden" name="dueAtUtc" data-crm-deadline-utc /></label>

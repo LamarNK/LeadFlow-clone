@@ -248,6 +248,7 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.Property(x => x.CreatorUserId).HasMaxLength(128);
             entity.Property(x => x.CreatorName).HasMaxLength(256);
             entity.Property(x => x.Importance).HasMaxLength(16).HasDefaultValue(CrmTaskImportances.Medium);
+            entity.Property(x => x.TaskType).HasMaxLength(32).HasDefaultValue(CrmTaskTypes.Unspecified);
             entity.Property(x => x.Status).HasMaxLength(16);
         });
 

@@ -130,6 +130,13 @@
                                                             <input type="hidden" name="assigneeUserId" value="@defaultAssigneeUserId" />
                                                             <input type="hidden" name="importance" value="@CrmTaskImportances.Medium" />
                                                             <input type="hidden" name="returnUrl" value="@boardReturnUrl" />
+                                                            <select name="taskType" required aria-label="Тип задачи">
+                                                                <option value="" selected disabled>Тип задачи</option>
+                                                                @foreach (var taskType in CrmTaskTypes.All)
+                                                                {
+                                                                    <option value="@taskType">@CrmTaskTypes.GetLabel(taskType)</option>
+                                                                }
+                                                            </select>
                                                             <input type="text" name="title" required placeholder="Новая задача" aria-label="Новая задача для @card.FullName" />
                                                             <button type="submit"><i class="fa-solid fa-list-check" aria-hidden="true"></i>Поставить</button>
                                                         </form>
