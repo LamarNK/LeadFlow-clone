@@ -13,7 +13,7 @@ internal static class ResponsesIndexBuilder
         new() { Value = "", Label = "Все статусы" },
         new() { Value = "unique", Label = "Уникальный" },
         new() { Value = "duplicate", Label = "Дубль" },
-        new() { Value = "sent", Label = "Отправлен в Bitrix24" },
+        new() { Value = "sent", Label = "Отправлен" },
         new() { Value = "action_required", Label = "Ожидает CRM" },
         new() { Value = "error", Label = "Ошибка Bitrix" }
     ];
@@ -325,21 +325,39 @@ internal static class ResponsesIndexBuilder
         return options;
     }
 
+    /// <summary>
+    /// Combined CRM + Bitrix destination filter. CRM values use prefix <c>crm:{officeId}</c>;
+    /// Bitrix values remain a raw instance GUID for backward-compatible URLs.
+    /// </summary>
     public static IReadOnlyList<EventFilterOptionViewModel> BuildBitrixDestinationOptions(
-        IReadOnlyList<BitrixInstanceListItemDto> instances)
+        IReadOnlyList<BitrixInstanceListItemDto> instances,
+        IReadOnlyList<OfficeOptionDto>? crmOffices = null)
     {
         var options = new List<EventFilterOptionViewModel>
         {
-            new() { Value = "", Label = "Все Битриксы" },
+            new() { Value = "", Label = "Все" },
             new() { Value = "not_sent", Label = "Не отправлен" }
         };
+
+        if (crmOffices is { Count: > 0 })
+        {
+            options.AddRange(crmOffices
+                .Where(x => x.IsEnabled && x.CrmEnabled)
+                .OrderBy(x => x.Name, StringComparer.CurrentCultureIgnoreCase)
+                .Select(x => new EventFilterOptionViewModel
+                {
+                    Value = $"crm:{x.Id:D}",
+                    Label = $"CRM · {x.Name}"
+                }));
+        }
+
         options.AddRange(instances
             .Where(x => x.IsEnabled)
-            .OrderBy(x => x.Name)
+            .OrderBy(x => x.Name, StringComparer.CurrentCultureIgnoreCase)
             .Select(x => new EventFilterOptionViewModel
             {
                 Value = x.Id.ToString(),
-                Label = FormatBitrixLabel(x.Name, x.Signature)
+                Label = $"Битрикс · {FormatBitrixLabel(x.Name, x.Signature)}"
             }));
         return options;
     }

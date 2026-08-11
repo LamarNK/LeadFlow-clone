@@ -108,7 +108,9 @@ public sealed class ResponsesService(
 
         var workerOptions = ResponsesIndexBuilder.BuildWorkerOptions(workers);
         var accountOptions = ResponsesIndexBuilder.BuildAccountOptions(accounts);
-        var bitrixDestinationOptions = ResponsesIndexBuilder.BuildBitrixDestinationOptions(bitrixInstances);
+        var bitrixDestinationOptions = ResponsesIndexBuilder.BuildBitrixDestinationOptions(
+            bitrixInstances,
+            officeOptionsDto);
         var genderOptions = ResponsesIndexBuilder.GenderOptions;
         var vacancyFilterOptions = ResponsesIndexBuilder.BuildVacancyOptions(vacancyOptions);
         var activeFilterChips = FilterChipsBuilder.ForResponses(

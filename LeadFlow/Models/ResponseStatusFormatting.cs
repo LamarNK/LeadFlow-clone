@@ -19,7 +19,7 @@ public static class ResponseStatusFormatting
     {
         ResponseStatus.New => "Новый отклик",
         ResponseStatus.InProgress => "В обработке",
-        ResponseStatus.Sent => "Отправлен в Bitrix24",
+        ResponseStatus.Sent => "Отправлен",
         ResponseStatus.Duplicate => "Найден дубль",
         ResponseStatus.Error => "Ошибка обработки",
         ResponseStatus.ActionRequired => "Нужно действие",

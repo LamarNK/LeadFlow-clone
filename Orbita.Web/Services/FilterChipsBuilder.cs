@@ -353,7 +353,7 @@ internal static class FilterChipsBuilder
         {
             chips.Add(new ActiveFilterChipViewModel
             {
-                Label = $"Битрикс: {OptionLabel(bitrixDestinations, filters.BitrixDestination) ?? filters.BitrixDestination}",
+                Label = $"CRM: {OptionLabel(bitrixDestinations, filters.BitrixDestination) ?? filters.BitrixDestination}",
                 RemoveUrl = BuildListUrl(
                     path,
                     pageSize,

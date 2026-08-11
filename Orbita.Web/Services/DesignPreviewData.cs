@@ -2529,6 +2529,9 @@ internal static class DesignPreviewData
         new(PreviewOffice2Id, "Сибирь", true, Now.AddDays(-14), 6, 0, BitrixValidationStatuses.NotConfigured, null)
     ];
 
+    public static IReadOnlyList<OfficeOptionDto> PreviewCrmOfficeOptions =>
+        Offices.Select(o => new OfficeOptionDto(o.Id, o.Name, o.IsEnabled, CrmEnabled: true)).ToList();
+
     public static OfficeBitrixIntegrationDto OfficeBitrixIntegration =>
         new(
             PreviewOfficeId,
@@ -2913,7 +2916,9 @@ internal static class DesignPreviewData
             Statuses = ResponsesIndexBuilder.StatusOptions,
             Workers = BuildPreviewWorkerOptions(),
             Accounts = accountOptions,
-            BitrixDestinations = ResponsesIndexBuilder.BuildBitrixDestinationOptions(PreviewBitrixInstances),
+            BitrixDestinations = ResponsesIndexBuilder.BuildBitrixDestinationOptions(
+                PreviewBitrixInstances,
+                PreviewCrmOfficeOptions),
             Genders = ResponsesIndexBuilder.GenderOptions,
             Vacancies = ResponsesIndexBuilder.BuildVacancyOptions(
                 filtered
@@ -2947,7 +2952,9 @@ internal static class DesignPreviewData
                 ResponsesIndexBuilder.StatusOptions,
                 BuildPreviewWorkerOptions(),
                 accountOptions,
-                ResponsesIndexBuilder.BuildBitrixDestinationOptions(PreviewBitrixInstances),
+                ResponsesIndexBuilder.BuildBitrixDestinationOptions(
+                    PreviewBitrixInstances,
+                    PreviewCrmOfficeOptions),
                 ResponsesIndexBuilder.GenderOptions,
                 pageSize.Value),
             Sort = tableSort

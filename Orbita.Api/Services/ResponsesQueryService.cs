@@ -804,7 +804,26 @@ public sealed class ResponsesQueryService(
                 && x.BitrixInstanceId == null
                 && !db.ResponseBitrixDeliveries.Any(d =>
                     d.ResponseId == x.Id
-                    && d.Outcome == ResponseBitrixDeliveryOutcomes.Sent));
+                    && d.Outcome == ResponseBitrixDeliveryOutcomes.Sent)
+                && !db.ResponseCrmDeliveries.Any(d =>
+                    d.ResponseId == x.Id
+                    && d.Outcome == ResponseCrmDeliveryOutcomes.Sent));
+        }
+
+        // CRM office: crm:{officeId}
+        if (bitrixDestination.StartsWith("crm:", StringComparison.OrdinalIgnoreCase))
+        {
+            var officeRaw = bitrixDestination["crm:".Length..];
+            if (!Guid.TryParse(officeRaw, out var officeId))
+            {
+                return query;
+            }
+
+            return query.Where(x =>
+                db.ResponseCrmDeliveries.Any(d =>
+                    d.ResponseId == x.Id
+                    && d.OfficeId == officeId
+                    && d.Outcome == ResponseCrmDeliveryOutcomes.Sent));
         }
 
         if (!Guid.TryParse(bitrixDestination, out var instanceId))
