@@ -3,6 +3,59 @@
     const scrollBehavior = () => (reducedMotion() ? 'auto' : 'smooth');
 
     const refreshers = new Set();
+    const boardStateKey = 'orbita.crm.board.position.v1';
+
+    const normalizeBoardPath = (pathname) => {
+        const normalized = (pathname || '').replace(/\/+$/, '').toLowerCase();
+        return normalized === '/crm/index' ? '/crm' : (normalized || '/crm');
+    };
+
+    const normalizeBoardUrl = (value) => {
+        try {
+            const url = new URL(value || (window.location.pathname + window.location.search), window.location.origin);
+            url.searchParams.delete('stage');
+            url.searchParams.sort();
+            const query = url.searchParams.toString();
+            return normalizeBoardPath(url.pathname) + (query ? '?' + query : '');
+        } catch {
+            return normalizeBoardPath(window.location.pathname);
+        }
+    };
+
+    const readStoredBoardState = () => {
+        try {
+            const state = JSON.parse(sessionStorage.getItem(boardStateKey) || 'null');
+            if (!state || state.version !== 1) return null;
+            return state;
+        } catch {
+            return null;
+        }
+    };
+
+    const readBoardState = () => {
+        const state = readStoredBoardState();
+        if (!state) return null;
+        return normalizeBoardUrl(state.boardUrl || state.pathname) === normalizeBoardUrl() ? state : null;
+    };
+
+    const writeBoardState = (state) => {
+        try { sessionStorage.setItem(boardStateKey, JSON.stringify(state)); } catch { /* ignore */ }
+    };
+
+    const restoreBoardBackLinks = () => {
+        const state = readStoredBoardState();
+        if (!state || !state.boardUrl) return;
+
+        try {
+            const boardUrl = new URL(state.boardUrl, window.location.origin);
+            if (boardUrl.origin !== window.location.origin) return;
+            if (normalizeBoardPath(boardUrl.pathname) !== normalizeBoardPath(state.pathname)) return;
+            const localUrl = boardUrl.pathname + boardUrl.search + boardUrl.hash;
+            document.querySelectorAll('[data-crm-back-to-board]').forEach((link) => {
+                link.setAttribute('href', localUrl);
+            });
+        } catch { /* ignore */ }
+    };
 
     if (!window.__orbitaCrmBoardResizeBound) {
         window.__orbitaCrmBoardResizeBound = true;
@@ -375,6 +428,7 @@
         }
 
         const focusStageKey = 'orbita.crm.board.focusStage';
+        let storedBoardState = readBoardState();
 
         const resolveFocusStageName = () => {
             try {
@@ -392,6 +446,46 @@
         const rememberFocusStage = (stageName) => {
             if (!stageName) return;
             try { sessionStorage.setItem(focusStageKey, stageName); } catch { /* ignore */ }
+        };
+
+        const rememberBoardPosition = (stageName) => {
+            const nextState = {
+                version: 1,
+                pathname: window.location.pathname,
+                boardUrl: window.location.pathname + window.location.search,
+                scrollLeft: viewport.scrollLeft,
+                jumpsScrollLeft: jumpsStrip ? jumpsStrip.scrollLeft : 0,
+                windowScrollX: window.scrollX,
+                windowScrollY: window.scrollY,
+                focusStage: stageName || storedBoardState?.focusStage || '',
+                savedAt: Date.now()
+            };
+            storedBoardState = nextState;
+            writeBoardState(nextState);
+            if (nextState.focusStage) rememberFocusStage(nextState.focusStage);
+        };
+
+        const restoreBoardPosition = () => {
+            if (!storedBoardState || !Number.isFinite(storedBoardState.scrollLeft)) return false;
+
+            const maxScroll = Math.max(0, viewport.scrollWidth - viewport.clientWidth);
+            viewport.scrollTo({
+                left: Math.min(maxScroll, Math.max(0, storedBoardState.scrollLeft)),
+                behavior: 'auto'
+            });
+            if (jumpsStrip && Number.isFinite(storedBoardState.jumpsScrollLeft)) {
+                jumpsStrip.scrollLeft = Math.max(0, storedBoardState.jumpsScrollLeft);
+            }
+            if (Number.isFinite(storedBoardState.windowScrollY)) {
+                window.scrollTo({
+                    left: Number.isFinite(storedBoardState.windowScrollX) ? storedBoardState.windowScrollX : 0,
+                    top: Math.max(0, storedBoardState.windowScrollY),
+                    behavior: 'auto'
+                });
+            }
+            if (storedBoardState.focusStage) rememberFocusStage(storedBoardState.focusStage);
+            updateControls();
+            return true;
         };
 
         const restoreFocusStage = () => {
@@ -412,16 +506,28 @@
             const stageName = openCard.getAttribute('data-crm-stage')
                 || openCard.closest('.crm-stage')?.getAttribute('data-stage')
                 || '';
-            rememberFocusStage(stageName);
+            rememberBoardPosition(stageName);
         });
+
+        let savePositionFrame = 0;
+        viewport.addEventListener('scroll', () => {
+            if (savePositionFrame) return;
+            savePositionFrame = window.requestAnimationFrame(() => {
+                savePositionFrame = 0;
+                rememberBoardPosition('');
+            });
+        }, { passive: true });
 
         // Layout may settle after SPA swap / fonts; refresh a couple of frames later
         updateControls();
-        restoreFocusStage();
+        if (!restoreBoardPosition()) restoreFocusStage();
         window.requestAnimationFrame(() => {
             updateControls();
-            restoreFocusStage();
-            window.requestAnimationFrame(updateControls);
+            if (!restoreBoardPosition()) restoreFocusStage();
+            window.requestAnimationFrame(() => {
+                updateControls();
+                if (!restoreBoardPosition()) restoreFocusStage();
+            });
         });
 
         initBoardDragAndDrop(root);
@@ -634,6 +740,7 @@
         document.querySelectorAll('[data-crm-board-carousel]').forEach(initBoardNavigation);
         document.querySelectorAll('[data-crm-funnel-editor]').forEach(initCrmFunnelEditor);
         initManualCreateModal();
+        restoreBoardBackLinks();
 
         if (window.OrbitaLive && typeof window.OrbitaLive.register === 'function'
             && document.querySelector('[data-orbita-live][data-orbita-live-page="crm"]')) {
