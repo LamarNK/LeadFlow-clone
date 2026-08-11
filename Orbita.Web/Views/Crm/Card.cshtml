@@ -561,15 +561,6 @@
                                 }
                                 @if (canModifyOpenTask)
                                 {
-                                    <form asp-action="AddTaskComment" method="post" class="crm-task-inline-comment-form">
-                                        <input type="hidden" name="taskId" value="@task.Id" />
-                                        <input type="hidden" name="cardId" value="@card.Id" />
-                                        <input name="text" maxlength="4000" required placeholder="Комментарий к задаче" />
-                                        <button type="submit">Добавить</button>
-                                    </form>
-                                }
-                                @if (canModifyOpenTask)
-                                {
                                     <details class="crm-task-inline-editor">
                                         <summary>Редактировать задачу</summary>
                                         <form asp-action="UpdateTask" method="post" class="crm-standard-form">

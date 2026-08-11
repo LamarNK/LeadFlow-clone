@@ -42,7 +42,7 @@ internal static class DesignPreviewData
     private const string PreviewManagerIgor = "preview-manager-igor";
     private static bool _previewCrmShiftActive = true;
     private static bool _previewCrmEnabled = true;
-    private static bool _previewCrmRequireComment;
+    private static bool _previewCrmRequireComment = true;
     private static bool _previewCrmDeadlineNotificationsEnabled = true;
     private static List<string> _previewCrmStages = CrmStages.Default.ToList();
     private static readonly List<PreviewCrmCandidate> PreviewCrmCandidates =
