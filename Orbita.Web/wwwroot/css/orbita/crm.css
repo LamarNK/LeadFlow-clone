@@ -437,12 +437,15 @@
 .crm-avatar { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 52px; height: 52px; overflow: hidden; border-radius: 14px; background: linear-gradient(135deg,#dbeafe,#c7d2fe); color: #3730a3; font-size: 20px; font-weight: 800; flex: 0 0 auto; }
 .crm-avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .crm-card-hero h1 { margin: 0; color: #101828; font-size: 22px; letter-spacing: -.02em; }
-.crm-card-inline-edit__name-input, .crm-card-inline-edit__phone-input, .crm-card-inline-edit__actions { display: none; }
+.crm-card-inline-edit__name-input, .crm-card-inline-edit__phone-input, .crm-card-inline-edit__age-input, .crm-card-inline-edit__city-input, .crm-card-inline-edit__age-unit, .crm-card-inline-edit__actions { display: none; }
 .crm-card-inline-edit__name-input { width: min(100%, 420px); padding: 2px 6px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg-card); color: var(--text-primary); font: inherit; font-size: inherit; font-weight: inherit; letter-spacing: inherit; }
 .crm-card-inline-edit__phone-input { min-height: 34px; min-width: 180px; padding: 0 10px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg-card); color: var(--text-primary); font: inherit; font-size: 12px; }
+.crm-card-inline-edit__age-input, .crm-card-inline-edit__city-input { height: 28px; padding: 0 7px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg-card); color: var(--text-primary); font: inherit; font-size: 12px; }
+.crm-card-inline-edit__age-input { width: 58px; }
+.crm-card-inline-edit__city-input { width: min(180px, 100%); }
 .crm-card-inline-edit__actions { align-items: center; gap: 7px; }
-.crm-card-inline-edit-form.is-editing .crm-card-inline-edit__name-value, .crm-card-inline-edit-form.is-editing .crm-card-inline-edit__phone-display, .crm-card-inline-edit-form.is-editing .crm-card-inline-edit__toggle { display: none; }
-.crm-card-inline-edit-form.is-editing .crm-card-inline-edit__name-input, .crm-card-inline-edit-form.is-editing .crm-card-inline-edit__phone-input { display: block; }
+.crm-card-inline-edit-form.is-editing .crm-card-inline-edit__name-value, .crm-card-inline-edit-form.is-editing .crm-card-inline-edit__phone-display, .crm-card-inline-edit-form.is-editing .crm-card-inline-edit__age-value, .crm-card-inline-edit-form.is-editing .crm-card-inline-edit__city-value, .crm-card-inline-edit-form.is-editing .crm-card-inline-edit__toggle { display: none; }
+.crm-card-inline-edit-form.is-editing .crm-card-inline-edit__name-input, .crm-card-inline-edit-form.is-editing .crm-card-inline-edit__phone-input, .crm-card-inline-edit-form.is-editing .crm-card-inline-edit__age-input, .crm-card-inline-edit-form.is-editing .crm-card-inline-edit__city-input, .crm-card-inline-edit-form.is-editing .crm-card-inline-edit__age-unit { display: inline-block; }
 .crm-card-inline-edit-form.is-editing .crm-card-inline-edit__actions { display: inline-flex; }
 .crm-card-hero p { margin: 4px 0 0; color: #667085; font-size: 13px; }
 .crm-card-hero__contacts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
@@ -484,7 +487,8 @@
 .crm-tabs a { padding: 14px 2px 12px; border-bottom: 2px solid transparent; color: #667085; font-size: 13px; font-weight: 650; }
 .crm-tabs a.is-active { border-bottom-color: #3538cd; color: #3538cd; }
 .crm-tabs span { margin-left: 4px; color: #98a2b3; font-size: 11px; }
-.crm-composer { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: end; margin: 14px 16px; padding: 12px; border: 1px solid #eef2f7; border-radius: 10px; background: #f8fafc; }
+.crm-composer { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: stretch; margin: 14px 16px; padding: 12px; border: 1px solid #eef2f7; border-radius: 10px; background: #f8fafc; }
+.crm-composer > .settings-primary-btn { min-height: 64px; }
 .crm-feed { display: grid; gap: 0; padding: 0 16px; }
 .crm-feed-item { display: grid; grid-template-columns: 32px 1fr; gap: 10px; padding: 12px 0; border-bottom: 1px solid #f2f4f7; }
 .crm-feed-item__icon { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; background: #eff4ff; color: #3538cd; font-size: 11px; }
@@ -780,9 +784,7 @@
 @media (max-width: 600px) { .crm-manual-create-modal { align-items: end; padding: 10px; }.crm-manual-create-modal__dialog { max-height: calc(100vh - 20px); border-radius: 12px; }.crm-manual-create-modal__header, .crm-manual-create__form { padding-right: 16px; padding-left: 16px; }.crm-manual-create__form { grid-template-columns: 1fr; }.crm-manual-create__actions { justify-content: stretch; }.crm-manual-create__actions .settings-secondary-btn, .crm-manual-create__actions .settings-primary-btn { flex: 1 1 0; } }
 
 .crm-card-edit {
-    margin-top: 14px;
-    padding-top: 12px;
-    border-top: 1px solid var(--border);
+    margin: -2px 0 12px;
 }
 .crm-card-edit > summary {
     cursor: pointer;
@@ -790,12 +792,11 @@
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    color: var(--text-secondary);
     font-size: 12px;
     font-weight: 700;
 }
 .crm-card-edit > summary::-webkit-details-marker { display: none; }
-.crm-card-edit[open] > summary { margin-bottom: 12px; color: var(--text-primary); }
+.crm-card-edit[open] > summary { margin-bottom: 12px; }
 .crm-card-edit__form label {
     display: grid;
     gap: 4px;

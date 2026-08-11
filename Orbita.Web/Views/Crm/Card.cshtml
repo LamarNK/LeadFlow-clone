@@ -74,7 +74,11 @@
                     <input class="crm-card-inline-edit__name-input" name="fullName" value="@card.FullName" required maxlength="256" aria-label="ФИО кандидата" />
                 </h1>
                 <p>
-                    @(card.Age?.ToString() ?? "—") лет · @card.City ·
+                    <span class="crm-card-inline-edit__age-value">@(card.Age?.ToString() ?? "—") лет</span>
+                    <input class="crm-card-inline-edit__age-input" name="age" type="number" value="@card.Age" min="14" max="99" aria-label="Возраст кандидата" />
+                    <span class="crm-card-inline-edit__age-unit">лет</span> ·
+                    <span class="crm-card-inline-edit__city-value">@card.City</span>
+                    <input class="crm-card-inline-edit__city-input" name="city" value="@card.City" maxlength="256" aria-label="Город кандидата" /> ·
                     @if (!string.IsNullOrWhiteSpace(vacancyUrl))
                     {
                         <a class="crm-vacancy-link" href="@vacancyUrl" target="_blank" rel="noopener" title="Открыть объявление">@card.Vacancy <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a>
@@ -154,6 +158,20 @@
         <aside class="crm-card-side">
             <section class="card crm-side-panel">
                 <header>Контакты и поля</header>
+                @if (canEdit)
+                {
+                    <details class="crm-card-edit">
+                        <summary class="settings-secondary-btn"><i class="fa-solid fa-plus" aria-hidden="true"></i>Добавить телефон</summary>
+                        <form asp-action="AddPhone" method="post" class="crm-side-form crm-card-edit__form">
+                            <input type="hidden" name="id" value="@card.Id" />
+                            <input type="hidden" name="stage" value="@boardReturnStage" />
+                            <label>Номер<input name="phoneRaw" required maxlength="64" placeholder="+7 …" /></label>
+                            <label>Подпись<input name="label" maxlength="64" placeholder="Рабочий / доп." /></label>
+                            <label class="crm-checkbox-label"><input type="checkbox" name="setAsPrimary" value="true" /> Сделать основным</label>
+                            <button class="settings-primary-btn" type="submit">Добавить</button>
+                        </form>
+                    </details>
+                }
                 <dl>
                     <div><dt>Телефон</dt><dd>@card.PhoneRaw</dd></div>
                     @{
@@ -250,20 +268,6 @@
                         <div><dt>След. действие</dt><dd class="@(next < DateTime.UtcNow ? "crm-overdue" : "")">@next.ToLocalTime().ToString("dd.MM.yyyy HH:mm")</dd></div>
                     }
                 </dl>
-                @if (canEdit)
-                {
-                    <details class="crm-card-edit">
-                        <summary><i class="fa-solid fa-plus" aria-hidden="true"></i>Добавить телефон</summary>
-                        <form asp-action="AddPhone" method="post" class="crm-side-form crm-card-edit__form">
-                            <input type="hidden" name="id" value="@card.Id" />
-                            <input type="hidden" name="stage" value="@boardReturnStage" />
-                            <label>Номер<input name="phoneRaw" required maxlength="64" placeholder="+7 …" /></label>
-                            <label>Подпись<input name="label" maxlength="64" placeholder="Рабочий / доп." /></label>
-                            <label class="crm-checkbox-label"><input type="checkbox" name="setAsPrimary" value="true" /> Сделать основным</label>
-                            <button class="settings-secondary-btn" type="submit">Добавить</button>
-                        </form>
-                    </details>
-                }
             </section>
 
             @if (canEdit)
@@ -609,57 +613,5 @@
 </div>
 
 @section Scripts {
-<script>
-(function () {
-    var input = document.getElementById('stageComment');
-    if (input) {
-        document.querySelectorAll('[data-stage-comment]').forEach(function (hidden) {
-            var form = hidden.closest('form');
-            if (!form) return;
-            form.addEventListener('submit', function () {
-                hidden.value = input.value || '';
-            });
-        });
-    }
-
-    var cardEditForm = document.querySelector('[data-crm-card-inline-edit]');
-    var cardEditToggle = document.querySelector('[data-crm-card-inline-edit-toggle]');
-    var cardEditCancel = document.querySelector('[data-crm-card-inline-edit-cancel]');
-    if (cardEditForm && cardEditToggle) {
-        function setCardEditing(editing) {
-            cardEditForm.classList.toggle('is-editing', editing);
-            cardEditToggle.setAttribute('aria-expanded', editing ? 'true' : 'false');
-            if (editing) {
-                var nameInput = cardEditForm.querySelector('[name="fullName"]');
-                if (nameInput) {
-                    nameInput.focus();
-                    nameInput.select();
-                }
-            } else {
-                cardEditForm.reset();
-            }
-        }
-
-        cardEditToggle.addEventListener('click', function () { setCardEditing(true); });
-        if (cardEditCancel) {
-            cardEditCancel.addEventListener('click', function () { setCardEditing(false); });
-        }
-    }
-
-    // Remember funnel stage so "К воронке" and board restore land on the same stage.
-    try {
-        var stage = '@boardReturnStage'.trim();
-        if (stage) sessionStorage.setItem('orbita.crm.board.focusStage', stage);
-    } catch (e) { /* ignore */ }
-
-    // Mark chat read via POST only (never on GET) after the user actually opened the tab.
-    var thread = document.querySelector('[data-crm-chat-thread][data-mark-read="1"]');
-    if (thread) {
-        var cardId = thread.getAttribute('data-card-id');
-        if (cardId && window.Orbita && typeof window.Orbita.postForm === 'function') {
-            window.Orbita.postForm('/Crm/MarkChatRead', { id: cardId }).catch(function () { });
-        }
-    }
-})();
-</script>
+<script src="~/js/orbita-crm-card.js" asp-append-version="true"></script>
 }
