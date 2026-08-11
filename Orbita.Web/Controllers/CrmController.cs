@@ -346,6 +346,8 @@ public sealed class CrmController(
         Guid id,
         string fullName,
         string phoneRaw,
+        int? age,
+        string city,
         string? tab,
         string? stage,
         CancellationToken ct = default)
@@ -358,16 +360,15 @@ public sealed class CrmController(
         }
         else
         {
-            // The inline editor is deliberately limited to the candidate's name and primary phone.
             // Values maintained by CRM integrations (including source IDs) are preserved server-side.
             (_, error) = await api.UpdateCrmCardAsync(
                 id,
                 new CrmCardUpdateRequest(
                     fullName,
                     phoneRaw,
-                    current.Card.City,
+                    city,
                     current.Card.Vacancy,
-                    current.Card.Age,
+                    age,
                     current.Card.SourceResponseId,
                     current.Card.AccountName,
                     current.Card.SourceUrl,

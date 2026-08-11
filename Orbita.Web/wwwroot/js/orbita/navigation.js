@@ -231,7 +231,7 @@
         } else if (key === 'responses') {
             scripts = ['/js/orbita-responses.js'];
         } else if (key === 'crm' || p.startsWith('/crm')) {
-            scripts = ['/js/orbita-crm-board.js'];
+            scripts = ['/js/orbita-crm-board.js', '/js/orbita-crm-card.js'];
         } else if (key === 'mysettings') {
             scripts = [
                 '/js/orbita-bitrix-instances.js',
