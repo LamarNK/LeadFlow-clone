@@ -770,6 +770,7 @@ public sealed class CrmTaskEntity
     public Guid ReminderVersion { get; set; } = Guid.NewGuid();
     public DateTime ReminderVersionChangedAtUtc { get; set; }
     public DateTime CreatedAtUtc { get; set; }
+    public DateTime? UpdatedAtUtc { get; set; }
     public DateTime? CompletedAtUtc { get; set; }
 }
 

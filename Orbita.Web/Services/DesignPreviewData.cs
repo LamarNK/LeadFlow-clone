@@ -518,7 +518,7 @@ internal static class DesignPreviewData
                         t.Title,
                         t.Description,
                         completionComment?.AuthorName ?? t.CreatorName,
-                        t.CompletedAtUtc ?? t.CreatedAtUtc,
+                        t.CompletedAtUtc ?? t.UpdatedAtUtc ?? t.CreatedAtUtc,
                         t.Id,
                         CompletionReason: completionComment?.Text);
                 }))
@@ -528,6 +528,7 @@ internal static class DesignPreviewData
                         and not "NotePinned"
                         and not "NoteUnpinned"
                         and not "TaskCreated"
+                        and not "TaskUpdated"
                         and not "TaskCompleted")
                     .Select(h =>
                     {
@@ -955,6 +956,7 @@ internal static class DesignPreviewData
                 DueAtUtc = update.DueAtUtc,
                 Importance = update.Importance,
                 TaskType = taskType,
+                UpdatedAtUtc = DateTime.UtcNow,
                 IsOverdue = update.DueAtUtc is DateTime due && due < DateTime.UtcNow
             };
             AddPreviewCrmHistory("TaskUpdated", update.Title.Trim());

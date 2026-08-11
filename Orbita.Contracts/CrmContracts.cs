@@ -456,7 +456,8 @@ public sealed record CrmTaskDto(
     DateTime? CompletedAtUtc,
     bool IsOverdue,
     string Importance = CrmTaskImportances.Medium,
-    string TaskType = CrmTaskTypes.Unspecified);
+    string TaskType = CrmTaskTypes.Unspecified,
+    DateTime? UpdatedAtUtc = null);
 
 public sealed record CrmTaskCommentDto(
     Guid Id,

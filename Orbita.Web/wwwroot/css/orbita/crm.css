@@ -500,12 +500,16 @@
 .crm-feed-item--task-active .crm-feed-item__icon { background: #fff0b8; color: #956000; }
 .crm-feed-item--task-overdue { border-color: #efb8b6; background: #fff8f7; box-shadow: inset 3px 0 0 #df3f45; }
 .crm-feed-item--task-overdue .crm-feed-item__icon { background: #ffe1df; color: #bd2f35; }
+.crm-feed-item__task-times { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 9px; padding-top: 8px; border-top: 1px solid rgba(152, 162, 179, .22); }
+.crm-feed-item__task-times span { display: inline-flex; align-items: baseline; gap: 5px; color: #667085; font-size: 11px; }
+.crm-feed-item__task-times small { color: #98a2b3; font-size: 9px; font-weight: 750; letter-spacing: .025em; text-transform: uppercase; }
 .crm-feed-item__task-comment { color: #3f4b61; font-size: 13px; font-weight: 600; line-height: 1.45; }
+.crm-feed-item__task-result { color: #344054; }
 .crm-feed-item--note { border-color: #cbdafb; background: #f7f9ff; box-shadow: inset 3px 0 0 #5b7cfa; }
 .crm-feed-item--note .crm-feed-item__icon { background: #dfe8ff; color: #3d5feb; }
 .crm-feed-item--note.is-pinned { border-color: #d8cef9; background: #faf8ff; box-shadow: inset 3px 0 0 #8065d8; }
 .crm-feed-item--note.is-pinned .crm-feed-item__icon { background: #e9e1ff; color: #6546bd; }
-.crm-feed-item--completed { grid-template-columns: minmax(0, 1fr); padding: 10px 16px; border: 0; border-bottom: 1px solid #edf0f4; border-radius: 0; background: transparent; opacity: .62; box-shadow: none; }
+.crm-feed-item--completed { grid-template-columns: minmax(0, 1fr); padding: 10px 16px; border: 0; border-bottom: 1px solid #edf0f4; border-radius: 0; background: transparent; opacity: .78; box-shadow: none; }
 .crm-feed-item--completed strong, .crm-feed-item--system strong { color: #667085; font-size: 12px; font-weight: 650; }
 .crm-feed-item--completed p, .crm-feed-item--system p { color: #7d899c; font-size: 12px; }
 .crm-feed-item--system { grid-template-columns: 12px minmax(0, 1fr); gap: 10px; padding: 9px 4px 10px; border: 0; border-bottom: 1px solid #edf0f4; border-radius: 0; background: transparent; box-shadow: none; }
@@ -660,6 +664,9 @@
 [data-theme="dark"] .crm-feed-item--note { border-color: #364a78; background: color-mix(in srgb, #315be8 12%, var(--bg-card)); box-shadow: inset 3px 0 0 #6f8dff; }
 [data-theme="dark"] .crm-feed-item--note.is-pinned { border-color: #594779; background: color-mix(in srgb, #6846bd 13%, var(--bg-card)); box-shadow: inset 3px 0 0 #9d82ee; }
 [data-theme="dark"] .crm-feed-item--completed, [data-theme="dark"] .crm-feed-item--system { background: transparent; }
+[data-theme="dark"] .crm-feed-item__task-times { border-top-color: var(--border); }
+[data-theme="dark"] .crm-feed-item__task-times span { color: var(--text-secondary); }
+[data-theme="dark"] .crm-feed-item__task-times small { color: #aab4c5; }
 [data-theme="dark"] .crm-feed-item--system::before { background: var(--bg-card); }
 [data-theme="dark"] .crm-feed-item--completed strong, [data-theme="dark"] .crm-feed-item--system strong { color: var(--text-secondary); }
 [data-theme="dark"] .crm-feed-item header span,

@@ -418,17 +418,35 @@
                                     <div class="crm-feed-item__heading">
                                         <strong>@displayTitle</strong>
                                     </div>
-                                    <span class="crm-feed-item__meta">@item.ActorName · <time data-orbita-utc="@OrbitaTime.ToIsoUtc(item.AtUtc)" data-orbita-format="datetime-short-ru"></time></span>
+                                    @if (feedTask is not null)
+                                    {
+                                        <span class="crm-feed-item__meta">@item.ActorName</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="crm-feed-item__meta">@item.ActorName · <time data-orbita-utc="@OrbitaTime.ToIsoUtc(item.AtUtc)" data-orbita-format="datetime-short-ru"></time></span>
+                                    }
                                 </header>
-                                @if (item.Kind == "task-done")
+                                @if (feedTask is not null)
                                 {
+                                    <div class="crm-feed-item__task-times" aria-label="Время работы с задачей">
+                                        <span><small>Создано</small><time data-orbita-utc="@OrbitaTime.ToIsoUtc(feedTask.CreatedAtUtc)" data-orbita-format="datetime-short-ru"></time></span>
+                                        @if (feedTask.UpdatedAtUtc is DateTime updatedAt)
+                                        {
+                                            <span><small>Изменено</small><time data-orbita-utc="@OrbitaTime.ToIsoUtc(updatedAt)" data-orbita-format="datetime-short-ru"></time></span>
+                                        }
+                                        @if (feedTask.CompletedAtUtc is DateTime completedAt)
+                                        {
+                                            <span><small>Закрыто</small><time data-orbita-utc="@OrbitaTime.ToIsoUtc(completedAt)" data-orbita-format="datetime-short-ru"></time></span>
+                                        }
+                                    </div>
                                     @if (!string.IsNullOrWhiteSpace(item.Body))
                                     {
-                                        <p><strong>Комментарий:</strong> @item.Body</p>
+                                        <p class="crm-feed-item__task-comment"><strong>Комментарий:</strong> @item.Body</p>
                                     }
                                     @if (!string.IsNullOrWhiteSpace(item.CompletionReason))
                                     {
-                                        <p><strong>Причина закрытия:</strong> @item.CompletionReason</p>
+                                        <p class="crm-feed-item__task-result"><strong>Причина закрытия:</strong> @item.CompletionReason</p>
                                     }
                                 }
                                 else if (!string.IsNullOrWhiteSpace(item.ActionComment))
@@ -443,7 +461,7 @@
                                 }
                                 else if (!string.IsNullOrWhiteSpace(item.Body))
                                 {
-                                    <p class="@(item.Kind == "task" ? "crm-feed-item__task-comment" : null)">@item.Body</p>
+                                    <p>@item.Body</p>
                                 }
                                 @if (item.Kind == "note" && item.NoteId is Guid noteId)
                                 {

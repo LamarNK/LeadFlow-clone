@@ -1768,7 +1768,8 @@ public sealed class CrmWorkspaceService(
                 null,
                 task.DueAtUtc is DateTime d && d < now,
                 task.Importance,
-                task.TaskType);
+                task.TaskType,
+                task.UpdatedAtUtc);
     }
 
     public async Task<CrmTaskDto?> CreateFollowUpAsync(
@@ -1946,6 +1947,7 @@ public sealed class CrmWorkspaceService(
         task.DueAtUtc = dueAtUtc;
         task.Importance = request.Importance;
         task.TaskType = taskType;
+        task.UpdatedAtUtc = now;
         if (task.CardId is Guid cardId)
         {
             AddHistory(cardId, "TaskUpdated", task.Title, userId, await ResolveDisplayNameAsync(userId, ct), now);
@@ -2755,7 +2757,8 @@ public sealed class CrmWorkspaceService(
             task.CompletedAtUtc,
             task.Status == CrmTaskStatuses.Open && task.DueAtUtc is DateTime due && due < now,
             task.Importance,
-            task.TaskType);
+            task.TaskType,
+            task.UpdatedAtUtc);
 
     private static IReadOnlyList<CrmActivityItemDto> BuildActivity(
         IReadOnlyList<CrmCandidateNoteEntity> notes,
@@ -2799,7 +2802,7 @@ public sealed class CrmWorkspaceService(
                 t.Title,
                 t.Description,
                 completionComment?.AuthorName ?? creatorName,
-                t.CompletedAtUtc ?? t.CreatedAtUtc,
+                t.CompletedAtUtc ?? t.UpdatedAtUtc ?? t.CreatedAtUtc,
                 t.Id,
                 CompletionReason: completionComment?.Text);
         }));
@@ -2809,6 +2812,7 @@ public sealed class CrmWorkspaceService(
                 and not "NotePinned"
                 and not "NoteUnpinned"
                 and not "TaskCreated"
+                and not "TaskUpdated"
                 and not "TaskCompleted")
             .Select(h =>
             {

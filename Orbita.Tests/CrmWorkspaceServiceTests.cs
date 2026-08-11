@@ -1020,6 +1020,18 @@ public sealed class CrmWorkspaceServiceTests
             isAdmin: false);
         Assert.NotNull(task);
 
+        Assert.True((await harness.Sut.UpdateTaskAsync(
+            task.Id,
+            new CrmTaskUpdateRequest(
+                "Связаться",
+                "Уточнить готовность и время выхода на смену",
+                manager.Id,
+                task.DueAtUtc,
+                CrmTaskImportances.Medium,
+                CrmTaskTypes.Contact),
+            manager.Id,
+            isAdmin: false)).Ok);
+
         Assert.True((await harness.Sut.CompleteTaskAsync(
             task.Id,
             "Кандидат подтвердил выход",
@@ -1031,9 +1043,15 @@ public sealed class CrmWorkspaceServiceTests
         var activity = Assert.Single(detail.Activity, item => item.TaskId == task.Id);
         Assert.Equal("task-done", activity.Kind);
         Assert.Equal("Связаться", activity.Title);
-        Assert.Equal("Уточнить готовность выйти на смену", activity.Body);
+        Assert.Equal("Уточнить готовность и время выхода на смену", activity.Body);
         Assert.Equal("Кандидат подтвердил выход", activity.CompletionReason);
         Assert.Equal("Мария Сидорова", activity.ActorName);
+        var completedTask = Assert.Single(detail.Tasks, item => item.Id == task.Id);
+        Assert.NotNull(completedTask.UpdatedAtUtc);
+        Assert.NotNull(completedTask.CompletedAtUtc);
+        Assert.True(completedTask.UpdatedAtUtc >= completedTask.CreatedAtUtc);
+        Assert.True(completedTask.CompletedAtUtc >= completedTask.UpdatedAtUtc);
+        Assert.DoesNotContain(detail.Activity, item => item.Title == "Задача изменена");
     }
 
     private static CrmCandidateCardEntity NewCard(Guid responseId, string? managerId = null) => new()
