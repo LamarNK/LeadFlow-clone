@@ -474,6 +474,8 @@
                     @foreach (var task in Model.Tasks)
                     {
                         var canManageTask = isCrmAdmin || task.CreatorUserId == currentUserId || task.AssigneeUserId == currentUserId;
+                        var isTaskOpen = task.Status == CrmTaskStatuses.Open;
+                        var canModifyOpenTask = canManageTask && isTaskOpen;
                         var comments = taskComments.Where(x => x.TaskId == task.Id).ToList();
                         <article class="crm-task-row @(task.Status == CrmTaskStatuses.Completed ? "is-complete" : "") @(task.Status == CrmTaskStatuses.Cancelled ? "is-cancelled" : "") @(task.IsOverdue ? "is-overdue" : "")">
                             <div>
@@ -497,7 +499,7 @@
                                         {
                                             <div>
                                                 <strong>@comment.AuthorName</strong><span>@comment.Text</span>
-                                                @if (comment.CanEdit || comment.CanDelete)
+                                                @if (isTaskOpen && (comment.CanEdit || comment.CanDelete))
                                                 {
                                                     <div class="crm-inline-actions">
                                                         @if (comment.CanEdit)
@@ -528,7 +530,7 @@
                                         }
                                     </div>
                                 }
-                                @if (canManageTask)
+                                @if (canModifyOpenTask)
                                 {
                                     <form asp-action="AddTaskComment" method="post" class="crm-task-inline-comment-form">
                                         <input type="hidden" name="taskId" value="@task.Id" />
@@ -537,7 +539,7 @@
                                         <button type="submit">Добавить</button>
                                     </form>
                                 }
-                                @if (canManageTask)
+                                @if (canModifyOpenTask)
                                 {
                                     <details class="crm-task-inline-editor">
                                         <summary>Редактировать задачу</summary>
@@ -579,20 +581,17 @@
                                 }
                             </div>
                             <div class="crm-task-row-actions">
-                                @if (canManageTask && task.Status == CrmTaskStatuses.Open)
+                                @if (canModifyOpenTask)
                                 {
                                     <form asp-action="CancelTask" method="post"><input type="hidden" name="taskId" value="@task.Id" /><input type="hidden" name="cardId" value="@card.Id" /><button type="submit">Отменить</button></form>
+                                    <form asp-action="DeleteTask" method="post" onsubmit="return confirm('Удалить задачу без возможности восстановления?');"><input type="hidden" name="taskId" value="@task.Id" /><input type="hidden" name="cardId" value="@card.Id" /><button type="submit" class="crm-btn-danger">Удалить</button></form>
                                 }
                                 else if (canManageTask)
                                 {
                                     <form asp-action="ReopenTask" method="post"><input type="hidden" name="taskId" value="@task.Id" /><input type="hidden" name="cardId" value="@card.Id" /><button type="submit">Вернуть</button></form>
                                 }
-                                @if (canManageTask)
-                                {
-                                    <form asp-action="DeleteTask" method="post" onsubmit="return confirm('Удалить задачу без возможности восстановления?');"><input type="hidden" name="taskId" value="@task.Id" /><input type="hidden" name="cardId" value="@card.Id" /><button type="submit" class="crm-btn-danger">Удалить</button></form>
-                                }
                             </div>
-                            @if (task.Status == CrmTaskStatuses.Open && (isCrmAdmin || task.AssigneeUserId == currentUserId))
+                            @if (isTaskOpen && (isCrmAdmin || task.AssigneeUserId == currentUserId))
                             {
                                 <form asp-action="CompleteTask" method="post" class="crm-task-complete-form">
                                     <input type="hidden" name="taskId" value="@task.Id" />

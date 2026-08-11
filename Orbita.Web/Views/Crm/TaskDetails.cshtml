@@ -74,6 +74,11 @@
                                 <input type="hidden" name="taskId" value="@task.Id" />
                                 <button type="submit" class="is-danger"><i class="fa-solid fa-ban" aria-hidden="true"></i>Отменить задачу</button>
                             </form>
+                            <form asp-action="DeleteTask" method="post" onsubmit="return confirm('Удалить задачу без возможности восстановления?');">
+                                @Html.AntiForgeryToken()
+                                <input type="hidden" name="taskId" value="@task.Id" />
+                                <button type="submit" class="is-danger"><i class="fa-solid fa-trash" aria-hidden="true"></i>Удалить задачу</button>
+                            </form>
                         }
                         else
                         {
@@ -83,11 +88,6 @@
                                 <button type="submit"><i class="fa-solid fa-rotate-left" aria-hidden="true"></i>Вернуть в работу</button>
                             </form>
                         }
-                        <form asp-action="DeleteTask" method="post" onsubmit="return confirm('Удалить задачу без возможности восстановления?');">
-                            @Html.AntiForgeryToken()
-                            <input type="hidden" name="taskId" value="@task.Id" />
-                            <button type="submit" class="is-danger"><i class="fa-solid fa-trash" aria-hidden="true"></i>Удалить задачу</button>
-                        </form>
                     </div>
                 </details>
             }
@@ -195,7 +195,7 @@
                                 <header><strong>@comment.AuthorName</strong>@if (isAssignee) { <em>Ответственный</em> }</header>
                                 <p>@comment.Text</p>
                                 <time><span data-orbita-utc="@OrbitaTime.ToIsoUtc(comment.CreatedAtUtc)" data-orbita-format="datetime-short-ru"></span>@if (comment.UpdatedAtUtc is not null) { <text> · изменён</text> }</time>
-                                @if (comment.CanEdit || comment.CanDelete)
+                                @if (isOpen && (comment.CanEdit || comment.CanDelete))
                                 {
                                     <div class="crm-inline-actions">
                                         @if (comment.CanEdit)
@@ -228,12 +228,15 @@
                         <p class="crm-task-detail-empty">Комментариев пока нет — оставьте первый.</p>
                     }
                 </div>
-                <form asp-action="AddTaskComment" method="post" class="crm-task-comment-composer">
-                    <input type="hidden" name="taskId" value="@task.Id" />
-                    <span class="crm-task-comment-composer__avatar">@Initials(task.AssigneeName)</span>
-                    <textarea name="text" required placeholder="Напишите комментарий…" aria-label="Комментарий к задаче"></textarea>
-                    <button type="submit" aria-label="Добавить комментарий" title="Добавить комментарий"><i class="fa-solid fa-paper-plane" aria-hidden="true"></i></button>
-                </form>
+                @if (isOpen)
+                {
+                    <form asp-action="AddTaskComment" method="post" class="crm-task-comment-composer">
+                        <input type="hidden" name="taskId" value="@task.Id" />
+                        <span class="crm-task-comment-composer__avatar">@Initials(task.AssigneeName)</span>
+                        <textarea name="text" required placeholder="Напишите комментарий…" aria-label="Комментарий к задаче"></textarea>
+                        <button type="submit" aria-label="Добавить комментарий" title="Добавить комментарий"><i class="fa-solid fa-paper-plane" aria-hidden="true"></i></button>
+                    </form>
+                }
             </section>
         </div>
 
