@@ -20,6 +20,7 @@
     var selectedScope = Model.SelectedScope;
     ViewData["CurrentCrmUserId"] = Model.CurrentUserId;
     ViewData["IsCrmAdmin"] = Model.IsAdmin;
+    ViewData["TaskListScope"] = selectedScope;
     var defaultAssigneeUserId = Model.Managers.FirstOrDefault(x => x.UserId == Model.CurrentUserId)?.UserId
         ?? Model.Managers.FirstOrDefault()?.UserId;
     var shownCount = selectedScope switch

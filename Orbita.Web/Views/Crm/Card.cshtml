@@ -15,6 +15,14 @@
     {
         boardReturnStage = card.Stage;
     }
+    var returnTo = Context.Request.Query["returnTo"].ToString();
+    var taskReturnScope = Context.Request.Query["taskScope"].ToString();
+    var taskReturnUrl = returnTo switch
+    {
+        "tasks" => Url.Action("Tasks", new { scope = taskReturnScope == "all" ? null : taskReturnScope }),
+        "team-tasks" => Url.Action("Team", new { taskScope = taskReturnScope == "all" ? null : taskReturnScope }),
+        _ => null
+    };
     var defaultTaskAssigneeUserId = Model.Managers.FirstOrDefault(x => x.UserId == card.ManagerUserId)?.UserId
         ?? Model.Managers.FirstOrDefault(x => x.UserId == currentUserId)?.UserId
         ?? Model.Managers.FirstOrDefault()?.UserId;
@@ -51,8 +59,15 @@
 }
 <partial name="_PageHeader" model="header" />
 
-<div class="orbita-main crm-shell crm-card-page">
-    <a asp-action="Index" asp-route-stage="@boardReturnStage" class="crm-back" data-crm-back-to-board data-crm-stage="@boardReturnStage"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i>К воронке</a>
+<div class="orbita-main crm-shell crm-card-page" data-crm-card-id="@card.Id">
+    @if (!string.IsNullOrWhiteSpace(taskReturnUrl))
+    {
+        <a href="@taskReturnUrl" class="crm-back" data-crm-back-to-tasks><i class="fa-solid fa-arrow-left" aria-hidden="true"></i>К задачам</a>
+    }
+    else
+    {
+        <a asp-action="Index" asp-route-stage="@boardReturnStage" class="crm-back" data-crm-back-to-board data-crm-stage="@boardReturnStage"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i>К воронке</a>
+    }
     @if (TempData["CrmError"] is string error)
     {
         <div class="crm-notice crm-notice--error"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i>@error</div>

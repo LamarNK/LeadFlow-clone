@@ -4,6 +4,7 @@
 
     const refreshers = new Set();
     const boardStateKey = 'orbita.crm.board.position.v1';
+    const cardTaskReturnKey = 'orbita.crm.card.taskReturn.v1';
 
     const normalizeBoardPath = (pathname) => {
         const normalized = (pathname || '').replace(/\/+$/, '').toLowerCase();
@@ -40,6 +41,37 @@
 
     const writeBoardState = (state) => {
         try { sessionStorage.setItem(boardStateKey, JSON.stringify(state)); } catch { /* ignore */ }
+    };
+
+    const clearCardTaskReturn = () => {
+        try { sessionStorage.removeItem(cardTaskReturnKey); } catch { /* ignore */ }
+    };
+
+    const readCardTaskReturn = (cardId) => {
+        try {
+            const state = JSON.parse(sessionStorage.getItem(cardTaskReturnKey) || 'null');
+            if (!state || state.version !== 1 || state.cardId !== cardId || !state.url) return null;
+            if (!Number.isFinite(state.savedAt) || Date.now() - state.savedAt > 8 * 60 * 60 * 1000) return null;
+            const url = new URL(state.url, window.location.origin);
+            if (url.origin !== window.location.origin || !url.pathname.toLowerCase().startsWith('/crm')) return null;
+            return { url: url.pathname + url.search + url.hash };
+        } catch {
+            return null;
+        }
+    };
+
+    const rememberCardTaskReturn = (cardId, url) => {
+        if (!cardId || !url) return;
+        try {
+            const target = new URL(url, window.location.origin);
+            if (target.origin !== window.location.origin || !target.pathname.toLowerCase().startsWith('/crm')) return;
+            sessionStorage.setItem(cardTaskReturnKey, JSON.stringify({
+                version: 1,
+                cardId,
+                url: target.pathname + target.search + target.hash,
+                savedAt: Date.now()
+            }));
+        } catch { /* ignore */ }
     };
 
     const restoreBoardBackLinks = () => {
@@ -521,6 +553,7 @@
             const stageName = openCard.getAttribute('data-crm-stage')
                 || openCard.closest('.crm-stage')?.getAttribute('data-stage')
                 || '';
+            clearCardTaskReturn();
             rememberBoardPosition(stageName);
         });
 
@@ -751,6 +784,21 @@
         if (!page || page.dataset.crmCardReady === 'true') return;
         page.dataset.crmCardReady = 'true';
 
+        const cardId = (page.getAttribute('data-crm-card-id') || '').trim();
+        const taskBackLink = page.querySelector('[data-crm-back-to-tasks]');
+        const boardBackLink = page.querySelector('[data-crm-back-to-board]');
+        if (taskBackLink) {
+            rememberCardTaskReturn(cardId, taskBackLink.getAttribute('href'));
+        } else if (boardBackLink) {
+            const storedReturn = readCardTaskReturn(cardId);
+            if (storedReturn) {
+                boardBackLink.setAttribute('href', storedReturn.url);
+                boardBackLink.removeAttribute('data-crm-back-to-board');
+                boardBackLink.setAttribute('data-crm-back-to-tasks', '');
+                boardBackLink.innerHTML = '<i class="fa-solid fa-arrow-left" aria-hidden="true"></i>К задачам';
+            }
+        }
+
         const stageCommentInput = page.querySelector('#stageComment');
         if (stageCommentInput) {
             page.querySelectorAll('[data-stage-comment]').forEach((hidden) => {
@@ -786,8 +834,7 @@
             }
         }
 
-        const boardBackLink = page.querySelector('[data-crm-back-to-board]');
-        const returnStage = (boardBackLink?.getAttribute('data-crm-stage') || '').trim();
+        const returnStage = (page.querySelector('[data-crm-back-to-board]')?.getAttribute('data-crm-stage') || '').trim();
         if (returnStage) {
             try { sessionStorage.setItem('orbita.crm.board.focusStage', returnStage); } catch { /* ignore */ }
         }
