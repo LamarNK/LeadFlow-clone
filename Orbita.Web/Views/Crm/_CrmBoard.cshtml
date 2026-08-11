@@ -4,7 +4,7 @@
     var boardReturnUrl = $"{Context.Request.Path}{Context.Request.QueryString}";
     var currentUserId = ViewData["CurrentCrmUserId"] as string;
 }
-<section class="crm-board-card card" aria-label="Воронка кандидатов" data-crm-board-carousel data-crm-require-stage-comment="@(Model.RequireStageComment ? "true" : "false")">
+<section class="crm-board-card card" aria-label="Воронка кандидатов" data-crm-board-carousel data-crm-require-stage-comment="true">
     <div class="crm-board-toolbar">
         <div class="crm-board-toolbar__meta">
             <strong>Этапы воронки</strong>
@@ -43,7 +43,6 @@
                 var stage = Model.Stages[stageIndex];
                 var hasRisk = stage.Cards.Any(card => card.HasOverdueTask || card.HoursInStage >= 24);
                 var hasUnassigned = stage.Cards.Any(card => !card.IsClosed && string.IsNullOrWhiteSpace(card.ManagerUserId));
-                var nextStage = stageIndex < Model.Stages.Count - 1 ? Model.Stages[stageIndex + 1].Name : null;
                 <section class="crm-stage @(hasRisk ? "is-risk" : "") @(hasUnassigned ? "has-unassigned" : "")" data-stage="@stage.Name" data-stage-index="@stageIndex" id="crm-stage-@stageIndex">
                     <header class="crm-stage__head">
                         <h3>@stage.Name</h3>
@@ -92,10 +91,6 @@
                                         @if (!card.IsInActiveLoad)
                                         {
                                             <form asp-action="SetLoad" method="post"><input type="hidden" name="id" value="@card.Id" /><input type="hidden" name="active" value="true" /><input type="hidden" name="returnUrl" value="@boardReturnUrl" /><button type="submit" title="Вернуть в активную нагрузку"><i class="fa-solid fa-bolt" aria-hidden="true"></i><span>В нагрузку</span></button></form>
-                                        }
-                                        @if (nextStage is not null && !Model.RequireStageComment)
-                                        {
-                                            <form asp-action="Move" method="post"><input type="hidden" name="id" value="@card.Id" /><input type="hidden" name="stage" value="@nextStage" /><input type="hidden" name="returnUrl" value="@boardReturnUrl" /><button type="submit" title="Перевести на этап «@nextStage»"><i class="fa-solid fa-arrow-right" aria-hidden="true"></i><span>Дальше</span></button></form>
                                         }
                                         @if (Model.IsAdmin || defaultAssigneeUserId is not null)
                                         {

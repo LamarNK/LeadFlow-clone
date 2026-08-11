@@ -512,6 +512,10 @@
 .crm-feed-item--system .crm-feed-item__content { display: grid; grid-template-columns: minmax(210px, .7fr) minmax(180px, 1.3fr); align-items: center; gap: 8px 20px; }
 .crm-feed-item--system header { align-content: center; }
 .crm-feed-item--system p { margin: 0; }
+.crm-feed-item__action-details { display: grid; gap: 5px; }
+.crm-feed-item__action-details p { display: grid; grid-template-columns: 86px minmax(0, 1fr); gap: 8px; align-items: baseline; }
+.crm-feed-item__action-details small { color: #98a2b3; font-size: 9px; font-weight: 750; letter-spacing: .025em; text-transform: uppercase; }
+.crm-feed-item__action-details span { color: #59677f; font-size: 12px; }
 .crm-feed-item--system-stage::before { border-color: #7aa2e3; background: #eaf2ff; }
 .crm-feed-item--system-assignment::before { border-color: #71a98e; background: #edf8f2; }
 .crm-feed-item--system-task::before { border-color: #d5a25e; background: #fff5e7; }

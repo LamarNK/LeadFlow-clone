@@ -201,8 +201,9 @@
                             <span><strong>Принимать отклики в CRM</strong><small>Создавать карточки из откликов операторов.</small></span>
                         </label>
                         <label class="crm-setting-toggle">
-                            <input type="checkbox" name="requireStageComment" value="true" @(board.RequireStageComment ? "checked" : null) />
-                            <span><strong>Комментарий при смене этапа</strong><small>Просить менеджера пояснить изменение статуса.</small></span>
+                            <input type="hidden" name="requireStageComment" value="true" />
+                            <input type="checkbox" checked disabled />
+                            <span><strong>Комментарий при смене этапа</strong><small>Обязателен для всех офисов и не может быть отключён.</small></span>
                         </label>
                         <label class="crm-setting-toggle">
                             <input type="checkbox" name="deadlineNotificationsEnabled" value="true" @(board.DeadlineNotificationsEnabled ? "checked" : null) />

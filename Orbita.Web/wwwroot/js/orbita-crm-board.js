@@ -804,8 +804,17 @@
             page.querySelectorAll('[data-stage-comment]').forEach((hidden) => {
                 const form = hidden.closest('form');
                 if (!form) return;
-                form.addEventListener('submit', () => {
-                    hidden.value = stageCommentInput.value.trim();
+                form.addEventListener('submit', (event) => {
+                    const comment = stageCommentInput.value.trim();
+                    if (!comment) {
+                        event.preventDefault();
+                        stageCommentInput.focus();
+                        if (window.Orbita && typeof window.Orbita.toast === 'function') {
+                            window.Orbita.toast('Для смены этапа нужен комментарий.', { variant: 'error' });
+                        }
+                        return;
+                    }
+                    hidden.value = comment;
                 });
             });
         }

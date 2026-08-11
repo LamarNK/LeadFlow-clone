@@ -148,8 +148,8 @@
     {
         <section class="crm-stage-rail card">
             <div class="crm-stage-rail__comment">
-                <label for="stageComment">Комментарий к смене этапа (если требуется в офисе)</label>
-                <input id="stageComment" type="text" form="crm-stage-forms" name="comment" placeholder="Необязательно, если офис не требует" />
+                <label for="stageComment">Комментарий к смене этапа <span aria-hidden="true">*</span></label>
+                <input id="stageComment" type="text" required aria-required="true" placeholder="Обязательно укажите причину перехода" />
             </div>
             <div class="crm-stage-rail__stages" style="--crm-stage-count: @Model.Stages.Count">
             @foreach (var stage in Model.Stages)
@@ -438,6 +438,16 @@
                                     {
                                         <p><strong>Причина закрытия:</strong> @item.CompletionReason</p>
                                     }
+                                }
+                                else if (!string.IsNullOrWhiteSpace(item.ActionComment))
+                                {
+                                    <div class="crm-feed-item__action-details">
+                                        @if (!string.IsNullOrWhiteSpace(item.Body))
+                                        {
+                                            <p><small>@(systemTone == "stage" ? "Переход" : systemTone == "card" ? "Причина" : "Детали")</small><span>@item.Body</span></p>
+                                        }
+                                        <p><small>Комментарий</small><span>@item.ActionComment</span></p>
+                                    </div>
                                 }
                                 else if (!string.IsNullOrWhiteSpace(item.Body))
                                 {

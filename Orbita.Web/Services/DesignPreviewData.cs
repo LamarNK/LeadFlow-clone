@@ -42,7 +42,6 @@ internal static class DesignPreviewData
     private const string PreviewManagerIgor = "preview-manager-igor";
     private static bool _previewCrmShiftActive = true;
     private static bool _previewCrmEnabled = true;
-    private static bool _previewCrmRequireComment = true;
     private static bool _previewCrmDeadlineNotificationsEnabled = true;
     private static List<string> _previewCrmStages = CrmStages.Default.ToList();
     private static readonly List<PreviewCrmCandidate> PreviewCrmCandidates =
@@ -216,7 +215,7 @@ internal static class DesignPreviewData
                 _previewCrmStages.Select(s => new CrmStageCountDto(s, PreviewCrmCandidates.Count(c => c.Stage == s && !c.IsClosed))).ToList());
             return new CrmBoardDto(
                 _previewCrmEnabled,
-                _previewCrmRequireComment,
+                true,
                 _previewCrmShiftActive,
                 10,
                 activeLoad,
@@ -530,7 +529,17 @@ internal static class DesignPreviewData
                         and not "NoteUnpinned"
                         and not "TaskCreated"
                         and not "TaskCompleted")
-                    .Select(h => new CrmActivityItemDto("history", h.Action, h.Details, h.ActorName, h.CreatedAtUtc)))
+                    .Select(h =>
+                    {
+                        var activityDetails = CrmActivityDetails.Split(h.Details);
+                        return new CrmActivityItemDto(
+                            "history",
+                            h.Action,
+                            activityDetails.Details,
+                            h.ActorName,
+                            h.CreatedAtUtc,
+                            ActionComment: activityDetails.Comment);
+                    }))
                 .OrderByDescending(x => x.IsPinned)
                 .ThenByDescending(x => x.AtUtc)
                 .ToList();
@@ -697,14 +706,13 @@ internal static class DesignPreviewData
         {
             var candidate = PreviewCrmCandidates.FirstOrDefault(item => item.Id == cardId);
             if (candidate is null || !CrmStages.Contains(_previewCrmStages, stage)) return (false, "Карточка или этап не найдены.");
-            if (_previewCrmRequireComment && string.IsNullOrWhiteSpace(comment)) return (false, "Нужен комментарий при смене этапа.");
+            if (string.IsNullOrWhiteSpace(comment)) return (false, "Нужен комментарий при смене этапа.");
+            var previousStage = candidate.Stage;
             candidate.Stage = stage;
             candidate.StageChangedAtUtc = DateTime.UtcNow;
-            AddPreviewCrmHistory("StageChanged", stage);
-            if (!string.IsNullOrWhiteSpace(comment))
-            {
-                AddCrmNote(cardId, comment);
-            }
+            AddPreviewCrmHistory(
+                "StageChanged",
+                CrmActivityDetails.WithComment($"{previousStage} → {stage}", comment));
 
             return (true, null);
         }
@@ -761,8 +769,7 @@ internal static class DesignPreviewData
             candidate.IsClosed = true;
             candidate.CloseReason = reason;
             candidate.IsInActiveLoad = false;
-            AddPreviewCrmHistory("Closed", reason);
-            AddCrmNote(cardId, comment);
+            AddPreviewCrmHistory("Closed", CrmActivityDetails.WithComment(reason, comment));
             return (true, null);
         }
     }
@@ -1144,7 +1151,6 @@ internal static class DesignPreviewData
         lock (CrmSync)
         {
             _previewCrmEnabled = enabled;
-            _previewCrmRequireComment = requireStageComment;
             if (deadlineNotificationsEnabled is bool notificationsEnabled)
             {
                 _previewCrmDeadlineNotificationsEnabled = notificationsEnabled;

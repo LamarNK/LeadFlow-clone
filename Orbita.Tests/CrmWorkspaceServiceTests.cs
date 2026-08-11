@@ -265,7 +265,11 @@ public sealed class CrmWorkspaceServiceTests
         Assert.True(card.IsClosed);
         Assert.False(card.IsInActiveLoad);
         Assert.Equal(CrmCloseReasons.Refused, card.CloseReason);
-        Assert.Contains(harness.Db.CrmCandidateNotes, n => n.CardId == card.Id && n.Text == "не интересно");
+        Assert.DoesNotContain(harness.Db.CrmCandidateNotes, n => n.CardId == card.Id && n.Text == "не интересно");
+        var detail = await harness.Sut.GetCardAsync(card.Id, manager.Id, isAdmin: false);
+        var closeActivity = Assert.Single(detail!.Activity, item => item.Title == "Карточка закрыта");
+        Assert.Equal(CrmCloseReasons.Refused, closeActivity.Body);
+        Assert.Equal("не интересно", closeActivity.ActionComment);
     }
 
     [Fact]
@@ -499,8 +503,17 @@ public sealed class CrmWorkspaceServiceTests
         Assert.Equal("Неизвестный этап.", error);
 
         (ok, error) = await harness.Sut.MoveAsync(card.Id, "Б", null, manager.Id, isAdmin: false);
+        Assert.False(ok);
+        Assert.Contains("комментарий", error, StringComparison.OrdinalIgnoreCase);
+
+        (ok, error) = await harness.Sut.MoveAsync(card.Id, "Б", "Кандидат готов продолжить", manager.Id, isAdmin: false);
         Assert.True(ok, error);
         Assert.Equal("Б", card.Stage);
+        Assert.DoesNotContain(harness.Db.CrmCandidateNotes, note => note.CardId == card.Id);
+        var detail = await harness.Sut.GetCardAsync(card.Id, manager.Id, isAdmin: false);
+        var stageActivity = Assert.Single(detail!.Activity, item => item.Title == "Смена этапа");
+        Assert.Equal("А → Б", stageActivity.Body);
+        Assert.Equal("Кандидат готов продолжить", stageActivity.ActionComment);
     }
 
     [Fact]

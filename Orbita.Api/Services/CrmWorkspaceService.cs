@@ -289,7 +289,7 @@ public sealed class CrmWorkspaceService(
 
         return new CrmBoardDto(
             office.CrmEnabled,
-            office.CrmRequireStageComment,
+            true,
             profile is not null && IsOnShift(profile, now),
             profile?.CrmCapacity ?? 10,
             loads.GetValueOrDefault(userId),
@@ -532,7 +532,7 @@ public sealed class CrmWorkspaceService(
 
         var now = DateTime.UtcNow;
         office.CrmEnabled = enabled;
-        office.CrmRequireStageComment = requireStageComment;
+        office.CrmRequireStageComment = true;
         var nextDeadlineNotificationsEnabled = enabled
             && (deadlineNotificationsEnabled ?? office.CrmDeadlineNotificationsEnabled);
         if (nextDeadlineNotificationsEnabled != office.CrmDeadlineNotificationsEnabled)
@@ -614,7 +614,7 @@ public sealed class CrmWorkspaceService(
             ? null
             : new CrmOfficeSettingsDto(
                 office.CrmEnabled,
-                office.CrmRequireStageComment,
+                true,
                 CrmStages.Resolve(office.CrmStagesJson),
                 office.CrmDeadlineNotificationsEnabled);
     }
@@ -808,7 +808,7 @@ public sealed class CrmWorkspaceService(
 
         var officeMeta = await db.Offices.AsNoTracking()
             .Where(x => x.Id == card.OfficeId)
-            .Select(x => new { x.CrmRequireStageComment, x.CrmStagesJson })
+            .Select(x => new { x.CrmStagesJson })
             .FirstOrDefaultAsync(ct);
         var officeStages = CrmStages.Resolve(officeMeta?.CrmStagesJson);
         if (!CrmStages.Contains(officeStages, stage))
@@ -816,7 +816,7 @@ public sealed class CrmWorkspaceService(
             return (false, "Неизвестный этап.");
         }
 
-        if (officeMeta?.CrmRequireStageComment == true && string.IsNullOrWhiteSpace(comment))
+        if (string.IsNullOrWhiteSpace(comment))
         {
             return (false, "Нужен комментарий при смене этапа.");
         }
@@ -828,20 +828,13 @@ public sealed class CrmWorkspaceService(
         card.StageChangedAtUtc = now;
         card.UpdatedAtUtc = now;
         card.LastContactAtUtc = now;
-        AddHistory(card.Id, "StageChanged", $"{previous} → {stage}", actorUserId, actorName, now);
-        if (!string.IsNullOrWhiteSpace(comment))
-        {
-            db.CrmCandidateNotes.Add(new CrmCandidateNoteEntity
-            {
-                Id = Guid.NewGuid(),
-                CardId = card.Id,
-                AuthorUserId = actorUserId,
-                AuthorName = actorName,
-                Text = comment.Trim(),
-                CreatedAtUtc = now
-            });
-            AddHistory(card.Id, "Note", "Комментарий к смене этапа", actorUserId, actorName, now);
-        }
+        AddHistory(
+            card.Id,
+            "StageChanged",
+            CrmActivityDetails.WithComment($"{previous} → {stage}", comment),
+            actorUserId,
+            actorName,
+            now);
 
         await db.SaveChangesAsync(ct);
         NotifyBoardChanged(card.OfficeId);
@@ -924,16 +917,13 @@ public sealed class CrmWorkspaceService(
         card.IsInActiveLoad = false;
         card.UpdatedAtUtc = now;
         card.LastContactAtUtc = now;
-        AddHistory(card.Id, "Closed", reason, actorUserId, actorName, now);
-        db.CrmCandidateNotes.Add(new CrmCandidateNoteEntity
-        {
-            Id = Guid.NewGuid(),
-            CardId = card.Id,
-            AuthorUserId = actorUserId,
-            AuthorName = actorName,
-            Text = commentText,
-            CreatedAtUtc = now
-        });
+        AddHistory(
+            card.Id,
+            "Closed",
+            CrmActivityDetails.WithComment(reason, commentText),
+            actorUserId,
+            actorName,
+            now);
 
         await db.SaveChangesAsync(ct);
         NotifyBoardChanged(card.OfficeId);
@@ -2820,12 +2810,17 @@ public sealed class CrmWorkspaceService(
                 and not "NoteUnpinned"
                 and not "TaskCreated"
                 and not "TaskCompleted")
-            .Select(h => new CrmActivityItemDto(
-                "history",
-                MapHistoryTitle(h.Action),
-                h.Details,
-                h.ActorName,
-                h.CreatedAtUtc)));
+            .Select(h =>
+            {
+                var activityDetails = CrmActivityDetails.Split(h.Details);
+                return new CrmActivityItemDto(
+                    "history",
+                    MapHistoryTitle(h.Action),
+                    activityDetails.Details,
+                    h.ActorName,
+                    h.CreatedAtUtc,
+                    ActionComment: activityDetails.Comment);
+            }));
         return items
             .OrderByDescending(x => x.IsPinned)
             .ThenByDescending(x => x.AtUtc)

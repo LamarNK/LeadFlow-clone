@@ -525,7 +525,32 @@ public sealed record CrmActivityItemDto(
     bool CanEdit = false,
     bool CanDelete = false,
     bool CanPin = false,
-    string? CompletionReason = null);
+    string? CompletionReason = null,
+    string? ActionComment = null);
+
+public static class CrmActivityDetails
+{
+    private const string CommentSeparator = "\nКомментарий: ";
+
+    public static string WithComment(string? details, string comment)
+    {
+        var normalizedDetails = details?.Trim();
+        var normalizedComment = comment.Trim();
+        return string.IsNullOrWhiteSpace(normalizedDetails)
+            ? $"Комментарий: {normalizedComment}"
+            : $"{normalizedDetails}{CommentSeparator}{normalizedComment}";
+    }
+
+    public static (string? Details, string? Comment) Split(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return (null, null);
+        var separatorIndex = value.IndexOf(CommentSeparator, StringComparison.Ordinal);
+        if (separatorIndex < 0) return (value.Trim(), null);
+        return (
+            value[..separatorIndex].Trim(),
+            value[(separatorIndex + CommentSeparator.Length)..].Trim());
+    }
+}
 
 public sealed record CrmAssignRequest(string ManagerUserId);
 public sealed record CrmMoveRequest(string Stage, string? Comment = null);
@@ -571,7 +596,7 @@ public sealed record CrmCloseRequest(string Reason, string? Comment = null);
 public sealed record CrmCapacityRequest(int Capacity);
 public sealed record CrmOfficeSettingsRequest(
     bool IsEnabled,
-    bool RequireStageComment = false,
+    bool RequireStageComment = true,
     bool? DeadlineNotificationsEnabled = null);
 
 public sealed record CrmOfficeSettingsDto(
