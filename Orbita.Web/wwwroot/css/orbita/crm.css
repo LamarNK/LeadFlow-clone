@@ -500,6 +500,7 @@
 .crm-feed-item--task-active .crm-feed-item__icon { background: #fff0b8; color: #956000; }
 .crm-feed-item--task-overdue { border-color: #efb8b6; background: #fff8f7; box-shadow: inset 3px 0 0 #df3f45; }
 .crm-feed-item--task-overdue .crm-feed-item__icon { background: #ffe1df; color: #bd2f35; }
+.crm-feed-item__task-comment { color: #3f4b61; font-size: 13px; font-weight: 600; line-height: 1.45; }
 .crm-feed-item--note { border-color: #cbdafb; background: #f7f9ff; box-shadow: inset 3px 0 0 #5b7cfa; }
 .crm-feed-item--note .crm-feed-item__icon { background: #dfe8ff; color: #3d5feb; }
 .crm-feed-item--note.is-pinned { border-color: #d8cef9; background: #faf8ff; box-shadow: inset 3px 0 0 #8065d8; }
@@ -519,9 +520,6 @@
 .crm-feed-item--system-stage::before { border-color: #7aa2e3; background: #eaf2ff; }
 .crm-feed-item--system-assignment::before { border-color: #71a98e; background: #edf8f2; }
 .crm-feed-item--system-task::before { border-color: #d5a25e; background: #fff5e7; }
-.crm-feed-item__status { display: inline-flex; align-items: center; min-height: 19px; padding: 0 7px; border-radius: 999px; font-size: 9px !important; font-weight: 750; line-height: 1; white-space: nowrap; }
-.crm-feed-item__status--active { background: #ffecad; color: #8a5700 !important; }
-.crm-feed-item__status--overdue { background: #ffd9d6; color: #b4232a !important; }
 @media (max-width: 760px) { .crm-feed-item--system .crm-feed-item__content { grid-template-columns: 1fr; gap: 3px; } }
 .crm-inline-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
 .crm-inline-actions form { margin: 0; }

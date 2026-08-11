@@ -417,14 +417,6 @@
                                 <header>
                                     <div class="crm-feed-item__heading">
                                         <strong>@displayTitle</strong>
-                                        @if (feedTone == "task-active")
-                                        {
-                                            <span class="crm-feed-item__status crm-feed-item__status--active">Актуальное дело</span>
-                                        }
-                                        else if (feedTone == "task-overdue")
-                                        {
-                                            <span class="crm-feed-item__status crm-feed-item__status--overdue">Просрочено</span>
-                                        }
                                     </div>
                                     <span class="crm-feed-item__meta">@item.ActorName · <time data-orbita-utc="@OrbitaTime.ToIsoUtc(item.AtUtc)" data-orbita-format="datetime-short-ru"></time></span>
                                 </header>
@@ -451,7 +443,7 @@
                                 }
                                 else if (!string.IsNullOrWhiteSpace(item.Body))
                                 {
-                                    <p>@item.Body</p>
+                                    <p class="@(item.Kind == "task" ? "crm-feed-item__task-comment" : null)">@item.Body</p>
                                 }
                                 @if (item.Kind == "note" && item.NoteId is Guid noteId)
                                 {
