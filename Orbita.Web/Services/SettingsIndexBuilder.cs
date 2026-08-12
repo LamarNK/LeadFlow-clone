@@ -21,6 +21,7 @@ internal static class SettingsIndexBuilder
     [
         new() { Value = PanelRoles.Operator, Label = PanelRoles.Label(PanelRoles.Operator) },
         new() { Value = PanelRoles.Manager, Label = PanelRoles.Label(PanelRoles.Manager) },
+        new() { Value = PanelRoles.SeniorManager, Label = PanelRoles.Label(PanelRoles.SeniorManager) },
         new() { Value = PanelRoles.OfficeLead, Label = PanelRoles.Label(PanelRoles.OfficeLead) },
         new() { Value = PanelRoles.Admin, Label = PanelRoles.Label(PanelRoles.Admin) }
     ];
@@ -275,8 +276,9 @@ internal static class SettingsIndexBuilder
         {
             PanelRoles.Admin => 0,
             PanelRoles.OfficeLead => 1,
-            PanelRoles.Manager => 2,
-            _ => 3
+            PanelRoles.SeniorManager => 2,
+            PanelRoles.Manager => 3,
+            _ => 4
         };
 
         static IReadOnlyList<PanelUserRowViewModel> SortUsers(IEnumerable<PanelUserRowViewModel> source) =>

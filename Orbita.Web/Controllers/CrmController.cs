@@ -306,7 +306,140 @@ public sealed class CrmController(
             _ => "all"
         };
 
-        return View(new CrmTeamViewModel(board, tasks, selectedTaskScope));
+        var canManageStaff = OfficeStaffRules.CanManageStaff(User);
+        IReadOnlyList<PanelUserDto> staff = [];
+        if (canManageStaff)
+        {
+            staff = await api.GetOfficeStaffUsersAsync(officeId, ct) ?? [];
+        }
+
+        return View(new CrmTeamViewModel(board, tasks, selectedTaskScope, canManageStaff, staff));
+    }
+
+    [HttpPost]
+    [Authorize(Policy = PanelPermissions.CrmTeam)]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> CreateOfficeStaff(
+        string fullName,
+        string email,
+        string password,
+        string role,
+        CancellationToken ct = default)
+    {
+        if (!OfficeStaffRules.CanManageStaff(User))
+        {
+            return Forbid();
+        }
+
+        var officeId = ResolveOfficeId(null);
+        var (success, error) = await api.CreateOfficeStaffUserAsync(email, fullName, password, role, officeId, ct);
+        TempData[success ? "CrmOk" : "CrmError"] = success ? "Сотрудник добавлен." : error;
+        return RedirectToAction(nameof(Team));
+    }
+
+    [HttpPost]
+    [Authorize(Policy = PanelPermissions.CrmTeam)]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> UpdateOfficeStaffFullName(
+        string userId,
+        string fullName,
+        CancellationToken ct = default)
+    {
+        if (!OfficeStaffRules.CanManageStaff(User))
+        {
+            return Forbid();
+        }
+
+        var officeId = ResolveOfficeId(null);
+        var (success, error) = await api.UpdateOfficeStaffFullNameAsync(userId, fullName, officeId, ct);
+        TempData[success ? "CrmOk" : "CrmError"] = success ? "ФИО обновлено." : error;
+        return RedirectToAction(nameof(Team));
+    }
+
+    [HttpPost]
+    [Authorize(Policy = PanelPermissions.CrmTeam)]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> UpdateOfficeStaffRole(
+        string userId,
+        string role,
+        CancellationToken ct = default)
+    {
+        if (!OfficeStaffRules.CanManageStaff(User))
+        {
+            return Forbid();
+        }
+
+        var officeId = ResolveOfficeId(null);
+        var (success, error) = await api.UpdateOfficeStaffRoleAsync(userId, role, officeId, ct);
+        TempData[success ? "CrmOk" : "CrmError"] = success ? "Должность обновлена." : error;
+        return RedirectToAction(nameof(Team));
+    }
+
+    [HttpPost]
+    [Authorize(Policy = PanelPermissions.CrmTeam)]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ResetOfficeStaffPassword(
+        string userId,
+        string password,
+        CancellationToken ct = default)
+    {
+        if (!OfficeStaffRules.CanManageStaff(User))
+        {
+            return Forbid();
+        }
+
+        var officeId = ResolveOfficeId(null);
+        var (success, error) = await api.ResetOfficeStaffPasswordAsync(userId, password, officeId, ct);
+        TempData[success ? "CrmOk" : "CrmError"] = success ? "Пароль обновлён." : error;
+        return RedirectToAction(nameof(Team));
+    }
+
+    [HttpPost]
+    [Authorize(Policy = PanelPermissions.CrmTeam)]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> LockOfficeStaff(string userId, CancellationToken ct = default)
+    {
+        if (!OfficeStaffRules.CanManageStaff(User))
+        {
+            return Forbid();
+        }
+
+        var officeId = ResolveOfficeId(null);
+        var (success, error) = await api.LockOfficeStaffUserAsync(userId, officeId, ct);
+        TempData[success ? "CrmOk" : "CrmError"] = success ? "Сотрудник заблокирован." : error;
+        return RedirectToAction(nameof(Team));
+    }
+
+    [HttpPost]
+    [Authorize(Policy = PanelPermissions.CrmTeam)]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> UnlockOfficeStaff(string userId, CancellationToken ct = default)
+    {
+        if (!OfficeStaffRules.CanManageStaff(User))
+        {
+            return Forbid();
+        }
+
+        var officeId = ResolveOfficeId(null);
+        var (success, error) = await api.UnlockOfficeStaffUserAsync(userId, officeId, ct);
+        TempData[success ? "CrmOk" : "CrmError"] = success ? "Сотрудник разблокирован." : error;
+        return RedirectToAction(nameof(Team));
+    }
+
+    [HttpPost]
+    [Authorize(Policy = PanelPermissions.CrmTeam)]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> DeleteOfficeStaff(string userId, CancellationToken ct = default)
+    {
+        if (!OfficeStaffRules.CanManageStaff(User))
+        {
+            return Forbid();
+        }
+
+        var officeId = ResolveOfficeId(null);
+        var (success, error) = await api.DeleteOfficeStaffUserAsync(userId, officeId, ct);
+        TempData[success ? "CrmOk" : "CrmError"] = success ? "Сотрудник удалён." : error;
+        return RedirectToAction(nameof(Team));
     }
 
     [HttpPost]

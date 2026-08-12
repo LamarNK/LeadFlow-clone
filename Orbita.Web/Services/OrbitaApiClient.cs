@@ -223,6 +223,194 @@ public sealed class OrbitaApiClient(
     public Task<IReadOnlyList<PanelUserDto>?> GetPanelUsersAsync(CancellationToken ct = default) =>
         GetAsync<IReadOnlyList<PanelUserDto>>("api/v1/admin/users", ct);
 
+    public Task<IReadOnlyList<PanelUserDto>?> GetOfficeStaffUsersAsync(
+        Guid? officeId = null,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return Task.FromResult<IReadOnlyList<PanelUserDto>?>(DesignPreviewData.GetOfficeStaffUsers(officeId));
+        }
+
+        return GetAsync<IReadOnlyList<PanelUserDto>>(WithOfficeQuery("api/v1/office-staff/users", officeId), ct);
+    }
+
+    public async Task<(bool Success, string? Error)> CreateOfficeStaffUserAsync(
+        string email,
+        string fullName,
+        string password,
+        string role,
+        Guid? officeId = null,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return DesignPreviewData.CreateOfficeStaffUser(email, fullName, password, role, officeId);
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, WithOfficeQuery("api/v1/office-staff/users", officeId));
+        request.Content = JsonContent.Create(new CreatePanelUserRequest(email, password, role, officeId, fullName));
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (false, InvalidApiSessionError);
+        }
+
+        return response.IsSuccessStatusCode
+            ? (true, null)
+            : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(bool Success, string? Error)> UpdateOfficeStaffFullNameAsync(
+        string userId,
+        string fullName,
+        Guid? officeId = null,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return DesignPreviewData.UpdateOfficeStaffFullName(userId, fullName);
+        }
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Put,
+            WithOfficeQuery($"api/v1/office-staff/users/{Uri.EscapeDataString(userId)}/full-name", officeId));
+        request.Content = JsonContent.Create(new UpdatePanelUserFullNameRequest(fullName));
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (false, InvalidApiSessionError);
+        }
+
+        return response.IsSuccessStatusCode
+            ? (true, null)
+            : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(bool Success, string? Error)> UpdateOfficeStaffRoleAsync(
+        string userId,
+        string role,
+        Guid? officeId = null,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return DesignPreviewData.UpdateOfficeStaffRole(userId, role);
+        }
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Put,
+            WithOfficeQuery($"api/v1/office-staff/users/{Uri.EscapeDataString(userId)}/role", officeId));
+        request.Content = JsonContent.Create(new UpdatePanelUserRoleRequest(role));
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (false, InvalidApiSessionError);
+        }
+
+        return response.IsSuccessStatusCode
+            ? (true, null)
+            : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(bool Success, string? Error)> ResetOfficeStaffPasswordAsync(
+        string userId,
+        string password,
+        Guid? officeId = null,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return (true, null);
+        }
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            WithOfficeQuery($"api/v1/office-staff/users/{Uri.EscapeDataString(userId)}/password", officeId));
+        request.Content = JsonContent.Create(new ResetPanelUserPasswordRequest(password));
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (false, InvalidApiSessionError);
+        }
+
+        return response.IsSuccessStatusCode
+            ? (true, null)
+            : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(bool Success, string? Error)> LockOfficeStaffUserAsync(
+        string userId,
+        Guid? officeId = null,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return DesignPreviewData.SetOfficeStaffLocked(userId, locked: true);
+        }
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            WithOfficeQuery($"api/v1/office-staff/users/{Uri.EscapeDataString(userId)}/lock", officeId));
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (false, InvalidApiSessionError);
+        }
+
+        return response.IsSuccessStatusCode
+            ? (true, null)
+            : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(bool Success, string? Error)> UnlockOfficeStaffUserAsync(
+        string userId,
+        Guid? officeId = null,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return DesignPreviewData.SetOfficeStaffLocked(userId, locked: false);
+        }
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            WithOfficeQuery($"api/v1/office-staff/users/{Uri.EscapeDataString(userId)}/unlock", officeId));
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (false, InvalidApiSessionError);
+        }
+
+        return response.IsSuccessStatusCode
+            ? (true, null)
+            : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(bool Success, string? Error)> DeleteOfficeStaffUserAsync(
+        string userId,
+        Guid? officeId = null,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return DesignPreviewData.DeleteOfficeStaffUser(userId);
+        }
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Delete,
+            WithOfficeQuery($"api/v1/office-staff/users/{Uri.EscapeDataString(userId)}", officeId));
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (false, InvalidApiSessionError);
+        }
+
+        return response.IsSuccessStatusCode
+            ? (true, null)
+            : (false, await ReadApiErrorAsync(response, ct));
+    }
+
     public Task<ServiceLogsPageDto?> GetServiceLogsAsync(
         string? q,
         string? level,

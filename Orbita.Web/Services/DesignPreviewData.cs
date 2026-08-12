@@ -2734,9 +2734,153 @@ internal static class DesignPreviewData
     public static IReadOnlyList<PanelUserDto> PanelUsers =>
     [
         new("preview-admin", "admin@orbita.local", true, PanelRoles.Admin, false, FullName: "Администратор Орбита"),
+        new("preview-office-lead", "lead@orbita.local", true, PanelRoles.OfficeLead, false, PreviewOfficeId, "Основной", "Марина Ковалёва"),
         new(PreviewManagerElena, "elena@orbita.local", true, PanelRoles.Manager, false, PreviewOfficeId, "Основной", "Елена Воронцова"),
+        new(PreviewManagerIgor, "igor@orbita.local", true, PanelRoles.SeniorManager, false, PreviewOfficeId, "Основной", "Игорь Савельев"),
         new("preview-operator", "operator@orbita.local", true, PanelRoles.Operator, true, PreviewOfficeId, "Основной", "Алексей Селезнёв")
     ];
+
+    private static readonly object OfficeStaffSync = new();
+    private static List<PanelUserDto>? _previewOfficeStaff;
+
+    private static List<PanelUserDto> PreviewOfficeStaff
+    {
+        get
+        {
+            lock (OfficeStaffSync)
+            {
+                return _previewOfficeStaff ??= PanelUsers
+                    .Where(x => x.OfficeId == PreviewOfficeId && OfficeStaffRules.IsAssignableRole(x.Role))
+                    .ToList();
+            }
+        }
+    }
+
+    public static IReadOnlyList<PanelUserDto> GetOfficeStaffUsers(Guid? officeId)
+    {
+        var oid = officeId ?? PreviewOfficeId;
+        lock (OfficeStaffSync)
+        {
+            return PreviewOfficeStaff
+                .Where(x => x.OfficeId == oid)
+                .OrderBy(x => x.Role == PanelRoles.SeniorManager ? 0 : 1)
+                .ThenBy(x => x.FullName ?? x.Email, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+    }
+
+    public static (bool Success, string? Error) CreateOfficeStaffUser(
+        string email,
+        string fullName,
+        string password,
+        string role,
+        Guid? officeId)
+    {
+        _ = password;
+        var roleError = OfficeStaffRules.ValidateAssignableRole(role);
+        if (roleError is not null)
+        {
+            return (false, roleError);
+        }
+
+        if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(fullName))
+        {
+            return (false, "Email и ФИО обязательны.");
+        }
+
+        var oid = officeId ?? PreviewOfficeId;
+        var officeName = Offices.FirstOrDefault(o => o.Id == oid)?.Name ?? "Офис";
+        lock (OfficeStaffSync)
+        {
+            if (PreviewOfficeStaff.Any(x => string.Equals(x.Email, email.Trim(), StringComparison.OrdinalIgnoreCase)))
+            {
+                return (false, "Пользователь с таким email уже существует.");
+            }
+
+            PreviewOfficeStaff.Add(new PanelUserDto(
+                $"preview-staff-{Guid.NewGuid():N}"[..28],
+                email.Trim(),
+                true,
+                PanelRoles.Normalize(role),
+                false,
+                oid,
+                officeName,
+                fullName.Trim()));
+        }
+
+        return (true, null);
+    }
+
+    public static (bool Success, string? Error) UpdateOfficeStaffFullName(string userId, string fullName)
+    {
+        if (string.IsNullOrWhiteSpace(fullName) || fullName.Trim().Length > 256)
+        {
+            return (false, "ФИО обязательно и не должно превышать 256 символов.");
+        }
+
+        lock (OfficeStaffSync)
+        {
+            var idx = PreviewOfficeStaff.FindIndex(x => x.Id == userId);
+            if (idx < 0)
+            {
+                return (false, "Пользователь не найден.");
+            }
+
+            var u = PreviewOfficeStaff[idx];
+            PreviewOfficeStaff[idx] = u with { FullName = fullName.Trim() };
+        }
+
+        return (true, null);
+    }
+
+    public static (bool Success, string? Error) UpdateOfficeStaffRole(string userId, string role)
+    {
+        var roleError = OfficeStaffRules.ValidateAssignableRole(role);
+        if (roleError is not null)
+        {
+            return (false, roleError);
+        }
+
+        lock (OfficeStaffSync)
+        {
+            var idx = PreviewOfficeStaff.FindIndex(x => x.Id == userId);
+            if (idx < 0)
+            {
+                return (false, "Пользователь не найден.");
+            }
+
+            var u = PreviewOfficeStaff[idx];
+            PreviewOfficeStaff[idx] = u with { Role = PanelRoles.Normalize(role) };
+        }
+
+        return (true, null);
+    }
+
+    public static (bool Success, string? Error) SetOfficeStaffLocked(string userId, bool locked)
+    {
+        lock (OfficeStaffSync)
+        {
+            var idx = PreviewOfficeStaff.FindIndex(x => x.Id == userId);
+            if (idx < 0)
+            {
+                return (false, "Пользователь не найден.");
+            }
+
+            var u = PreviewOfficeStaff[idx];
+            PreviewOfficeStaff[idx] = u with { IsLocked = locked };
+        }
+
+        return (true, null);
+    }
+
+    public static (bool Success, string? Error) DeleteOfficeStaffUser(string userId)
+    {
+        lock (OfficeStaffSync)
+        {
+            var removed = PreviewOfficeStaff.RemoveAll(x => x.Id == userId);
+            return removed > 0 ? (true, null) : (false, "Пользователь не найден.");
+        }
+    }
 
     public static PanelProfileDto PanelProfile =>
         new("admin@orbita.local", PanelRoles.Admin);

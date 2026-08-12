@@ -97,6 +97,10 @@ public sealed class CrmControllerPreviewTests
         Assert.True(model.Board.IsAdmin);
         Assert.NotEmpty(model.Tasks);
         Assert.Equal("overdue", model.SelectedTaskScope);
+        Assert.True(model.CanManageStaff);
+        Assert.NotNull(model.Staff);
+        Assert.NotEmpty(model.Staff);
+        Assert.All(model.Staff, x => Assert.True(OfficeStaffRules.IsAssignableRole(x.Role)));
     }
 
     [Fact]

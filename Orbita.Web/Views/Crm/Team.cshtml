@@ -120,6 +120,161 @@
             <footer class="crm-task-workspace__footer">Показано @shownTaskCount задач</footer>
         </section>
 
+        @if (Model.CanManageStaff)
+        {
+            var staff = Model.Staff ?? Array.Empty<PanelUserDto>();
+            <section class="card crm-team-panel crm-team-panel--staff" aria-label="Управление сотрудниками">
+                <header class="crm-team-panel__header">
+                    <div>
+                        <h2>Управление сотрудниками</h2>
+                        <p>Создание аккаунтов менеджеров и распределение должностей в офисе.</p>
+                    </div>
+                    <b>@staff.Count</b>
+                </header>
+
+                <div class="crm-staff-layout">
+                    <div class="crm-staff-table" data-crm-staff-table>
+                        <div class="crm-staff-table__head" aria-hidden="true">
+                            <span>Сотрудник</span>
+                            <span>Должность</span>
+                            <span>Статус</span>
+                            <span>Действия</span>
+                        </div>
+                        @if (staff.Count == 0)
+                        {
+                            <p class="crm-empty">Пока нет менеджеров. Добавьте первого сотрудника справа.</p>
+                        }
+                        @foreach (var member in staff)
+                        {
+                            <article class="crm-staff-row @(member.IsLocked ? "is-locked" : null)">
+                                <div class="crm-staff-row__identity">
+                                    <strong>@(string.IsNullOrWhiteSpace(member.FullName) ? member.Email : member.FullName)</strong>
+                                    <span>@member.Email</span>
+                                </div>
+                                <div class="crm-staff-row__role">
+                                    <form asp-action="UpdateOfficeStaffRole" method="post" class="crm-staff-inline-form">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="userId" value="@member.Id" />
+                                        <label>
+                                            <span class="visually-hidden">Должность</span>
+                                            <select name="role" aria-label="Должность @member.Email" onchange="this.form.requestSubmit()">
+                                                @foreach (var opt in OfficeStaffRules.RoleOptions)
+                                                {
+                                                    if (member.Role == opt.Value)
+                                                    {
+                                                        <option value="@opt.Value" selected>@opt.Label</option>
+                                                    }
+                                                    else
+                                                    {
+                                                        <option value="@opt.Value">@opt.Label</option>
+                                                    }
+                                                }
+                                            </select>
+                                        </label>
+                                    </form>
+                                </div>
+                                <div class="crm-staff-row__status">
+                                    @if (member.IsLocked)
+                                    {
+                                        <span class="crm-staff-badge crm-staff-badge--locked">Заблокирован</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="crm-staff-badge crm-staff-badge--active">Активен</span>
+                                    }
+                                </div>
+                                <div class="crm-staff-row__actions">
+                                    <details class="crm-staff-menu">
+                                        <summary aria-label="Действия для @member.Email"><i class="fa-solid fa-ellipsis" aria-hidden="true"></i></summary>
+                                        <div class="crm-staff-menu__panel">
+                                            <form asp-action="UpdateOfficeStaffFullName" method="post" class="crm-staff-menu-form">
+                                                @Html.AntiForgeryToken()
+                                                <input type="hidden" name="userId" value="@member.Id" />
+                                                <label>
+                                                    <span>ФИО</span>
+                                                    <input type="text" name="fullName" required maxlength="256" value="@member.FullName" autocomplete="name" />
+                                                </label>
+                                                <button type="submit" class="settings-secondary-btn">Сохранить ФИО</button>
+                                            </form>
+                                            <form asp-action="ResetOfficeStaffPassword" method="post" class="crm-staff-menu-form">
+                                                @Html.AntiForgeryToken()
+                                                <input type="hidden" name="userId" value="@member.Id" />
+                                                <label>
+                                                    <span>Новый пароль</span>
+                                                    <input type="password" name="password" required minlength="8" autocomplete="new-password" placeholder="Минимум 8 символов" />
+                                                </label>
+                                                <button type="submit" class="settings-secondary-btn">Сбросить пароль</button>
+                                            </form>
+                                            @if (member.IsLocked)
+                                            {
+                                                <form asp-action="UnlockOfficeStaff" method="post">
+                                                    @Html.AntiForgeryToken()
+                                                    <input type="hidden" name="userId" value="@member.Id" />
+                                                    <button type="submit" class="crm-staff-menu__btn">Разблокировать</button>
+                                                </form>
+                                            }
+                                            else
+                                            {
+                                                <form asp-action="LockOfficeStaff" method="post">
+                                                    @Html.AntiForgeryToken()
+                                                    <input type="hidden" name="userId" value="@member.Id" />
+                                                    <button type="submit" class="crm-staff-menu__btn">Заблокировать</button>
+                                                </form>
+                                            }
+                                            <form asp-action="DeleteOfficeStaff" method="post"
+                                                  onsubmit="return confirm('Удалить сотрудника @member.Email? Это действие нельзя отменить.');">
+                                                @Html.AntiForgeryToken()
+                                                <input type="hidden" name="userId" value="@member.Id" />
+                                                <button type="submit" class="crm-staff-menu__btn crm-staff-menu__btn--danger">Удалить</button>
+                                            </form>
+                                        </div>
+                                    </details>
+                                </div>
+                            </article>
+                        }
+                    </div>
+
+                    <form asp-action="CreateOfficeStaff" method="post" class="crm-standard-form crm-staff-create-form">
+                        @Html.AntiForgeryToken()
+                        <h3>Новый сотрудник</h3>
+                        <p class="crm-hint">Доступ появится сразу после создания. Должности: менеджер и старший менеджер.</p>
+                        <label class="crm-field">
+                            <span>ФИО</span>
+                            <input type="text" name="fullName" required maxlength="256" placeholder="Иванов Иван Иванович" autocomplete="name" />
+                        </label>
+                        <label class="crm-field">
+                            <span>Email</span>
+                            <input type="email" name="email" required placeholder="manager@example.com" autocomplete="username" />
+                        </label>
+                        <label class="crm-field">
+                            <span>Пароль</span>
+                            <input type="password" name="password" required minlength="8" placeholder="Минимум 8 символов" autocomplete="new-password" />
+                        </label>
+                        <label class="crm-field">
+                            <span>Должность</span>
+                            <select name="role" required>
+                                @foreach (var opt in OfficeStaffRules.RoleOptions)
+                                {
+                                    if (opt.Value == PanelRoles.Manager)
+                                    {
+                                        <option value="@opt.Value" selected>@opt.Label</option>
+                                    }
+                                    else
+                                    {
+                                        <option value="@opt.Value">@opt.Label</option>
+                                    }
+                                }
+                            </select>
+                        </label>
+                        <button type="submit" class="settings-primary-btn">
+                            <i class="fa-solid fa-user-plus" aria-hidden="true"></i>
+                            <span>Добавить</span>
+                        </button>
+                    </form>
+                </div>
+            </section>
+        }
+
         <section class="card crm-team-panel crm-team-panel--managers">
             <header class="crm-team-panel__header"><div><h2>Менеджеры</h2><p>Ёмкость, нагрузка и статус смены.</p></div><b>@board.Managers.Count</b></header>
             <div class="crm-manager-table">
