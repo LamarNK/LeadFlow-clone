@@ -737,6 +737,74 @@ public sealed class BitrixInstanceSettingsPersistenceTests
         Assert.Single(db.BitrixInstances.Where(x => x.Id == instanceId));
     }
 
+    [Fact]
+    public async Task DeleteAsync_WithDeliveryHistory_RemovesInstanceAndDeliveries()
+    {
+        var options = new DbContextOptionsBuilder<OrbitaDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
+            .Options;
+        await using var db = new OrbitaDbContext(options);
+        var officeId = Guid.NewGuid();
+        var instanceId = Guid.NewGuid();
+        var responseId = Guid.NewGuid();
+        var now = DateTime.UtcNow;
+        db.Offices.Add(new OfficeEntity
+        {
+            Id = officeId,
+            Name = "Office",
+            RegistrationSecretHash = "hash",
+            CreatedAtUtc = now
+        });
+        db.BitrixInstances.Add(new BitrixInstanceEntity
+        {
+            Id = instanceId,
+            OfficeId = officeId,
+            Name = "Отложеные",
+            IntegrationSettingsJson = string.Empty,
+            CreatedAtUtc = now,
+            UpdatedAtUtc = now
+        });
+        db.CandidateResponses.Add(new CandidateResponseEntity
+        {
+            Id = responseId,
+            OfficeId = officeId,
+            FullName = "Test",
+            Status = "Sent",
+            Source = "avito",
+            BitrixInstanceId = instanceId,
+            CreatedAt = now,
+            CollectedAt = now
+        });
+        db.ResponseBitrixDeliveries.Add(new ResponseBitrixDeliveryEntity
+        {
+            Id = Guid.NewGuid(),
+            ResponseId = responseId,
+            BitrixInstanceId = instanceId,
+            Outcome = "Sent",
+            Source = "auto",
+            CreatedAtUtc = now
+        });
+        await db.SaveChangesAsync();
+
+        var sut = new BitrixInstanceService(
+            db,
+            null!,
+            null!,
+            Options.Create(new OrbitaBitrixSettings()),
+            new PanelAuditService(db));
+
+        var (success, error) = await sut.DeleteAsync(
+            instanceId,
+            OfficeScope.ForOffice(officeId),
+            officeId: null);
+
+        Assert.True(success, error);
+        Assert.Null(error);
+        Assert.Empty(db.BitrixInstances);
+        Assert.Empty(db.ResponseBitrixDeliveries);
+        Assert.Null(db.CandidateResponses.Single().BitrixInstanceId);
+    }
+
     private sealed class StubHttpClientFactory(HttpMessageHandler handler) : IHttpClientFactory
     {
         public HttpClient CreateClient(string name) => new(handler, disposeHandler: false);

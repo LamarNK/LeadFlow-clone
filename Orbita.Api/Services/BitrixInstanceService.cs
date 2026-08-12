@@ -432,8 +432,26 @@ public sealed class BitrixInstanceService(
             "system",
             "Cancelled because the Bitrix24 connection was deleted.",
             ct);
+
+        // Restrict FKs block BitrixInstances delete until dependent rows are removed.
+        // CandidateResponses.BitrixInstanceId is SetNull; deliveries/assignments are Restrict.
+        db.ResponseBitrixDeliveries.RemoveRange(
+            db.ResponseBitrixDeliveries.Where(x => x.BitrixInstanceId == id));
+        db.BitrixWorkforceAssignments.RemoveRange(
+            db.BitrixWorkforceAssignments.Where(x => x.BitrixInstanceId == id));
+
         db.BitrixInstances.Remove(entity);
-        await db.SaveChangesAsync(ct);
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException)
+        {
+            return (
+                false,
+                "Нельзя удалить Битрикс: есть связанные данные. Сначала уберите его из схемы связей или отключите.");
+        }
+
         if (settingsGateTransaction is not null)
         {
             await settingsGateTransaction.CommitAsync(ct);
