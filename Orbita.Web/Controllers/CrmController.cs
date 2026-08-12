@@ -378,6 +378,61 @@ public sealed class CrmController(
     [HttpPost]
     [Authorize(Policy = PanelPermissions.CrmTeam)]
     [ValidateAntiForgeryToken]
+    public async Task<IActionResult> UpdateOfficeStaff(
+        string userId,
+        string fullName,
+        string role,
+        string? password,
+        int? capacity,
+        CancellationToken ct = default)
+    {
+        if (!OfficeStaffRules.CanManageStaff(User))
+        {
+            return Forbid();
+        }
+
+        var officeId = ResolveOfficeId(null);
+        var (success, error) = await api.UpdateOfficeStaffFullNameAsync(userId, fullName, officeId, ct);
+        if (!success)
+        {
+            TempData["CrmError"] = error;
+            return RedirectToAction(nameof(Team));
+        }
+
+        (success, error) = await api.UpdateOfficeStaffRoleAsync(userId, role, officeId, ct);
+        if (!success)
+        {
+            TempData["CrmError"] = error;
+            return RedirectToAction(nameof(Team));
+        }
+
+        if (!string.IsNullOrWhiteSpace(password))
+        {
+            (success, error) = await api.ResetOfficeStaffPasswordAsync(userId, password, officeId, ct);
+            if (!success)
+            {
+                TempData["CrmError"] = error;
+                return RedirectToAction(nameof(Team));
+            }
+        }
+
+        if (capacity is not null)
+        {
+            var (_, capacityError) = await api.SetCrmManagerCapacityAsync(userId, capacity.Value, ct: ct);
+            if (capacityError is not null)
+            {
+                TempData["CrmError"] = capacityError;
+                return RedirectToAction(nameof(Team));
+            }
+        }
+
+        TempData["CrmOk"] = "Изменения сотрудника сохранены.";
+        return RedirectToAction(nameof(Team));
+    }
+
+    [HttpPost]
+    [Authorize(Policy = PanelPermissions.CrmTeam)]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> ResetOfficeStaffPassword(
         string userId,
         string password,

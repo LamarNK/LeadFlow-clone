@@ -120,213 +120,125 @@
             <footer class="crm-task-workspace__footer">Показано @shownTaskCount задач</footer>
         </section>
 
-        @if (Model.CanManageStaff)
-        {
+        @{
             var staff = Model.Staff ?? Array.Empty<PanelUserDto>();
-            <section class="card crm-team-panel crm-team-panel--staff" aria-label="Управление сотрудниками">
-                <header class="crm-team-panel__header">
-                    <div>
-                        <h2>Управление сотрудниками</h2>
-                        <p>Создание аккаунтов менеджеров и распределение должностей в офисе.</p>
-                    </div>
-                    <b>@staff.Count</b>
-                </header>
+            var managerDetails = board.Managers.ToDictionary(x => x.UserId, StringComparer.Ordinal);
+            var staffLabel = staff.Count == 1 ? "сотрудник" : staff.Count is > 1 and < 5 ? "сотрудника" : "сотрудников";
+        }
+        <section class="card crm-team-panel crm-team-panel--managers" data-crm-staff-manager-page>
+            <header class="crm-team-panel__header crm-staff-header">
+                <div><h2>Менеджеры</h2><p>Команда, доступы и нагрузка выбранного офиса.</p></div>
+                <div class="crm-staff-header__actions">
+                    <b>@(Model.CanManageStaff ? staff.Count : board.Managers.Count)</b>
+                    @if (Model.CanManageStaff)
+                    {
+                        <button type="button" class="settings-primary-btn crm-staff-add-trigger" data-crm-staff-add-open aria-haspopup="dialog" aria-controls="crm-staff-create-modal"><i class="fa-solid fa-user-plus" aria-hidden="true"></i>Добавить</button>
+                    }
+                </div>
+            </header>
 
-                <div class="crm-staff-layout">
-                    <div class="crm-staff-table" data-crm-staff-table>
-                        <div class="crm-staff-table__head" aria-hidden="true">
-                            <span>Сотрудник</span>
-                            <span>Должность</span>
-                            <span>Статус</span>
-                            <span>Действия</span>
-                        </div>
-                        @if (staff.Count == 0)
+            @if (Model.CanManageStaff)
+            {
+                <div class="crm-staff-controls">
+                    <label class="crm-staff-search">
+                        <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                        <input type="search" data-crm-staff-search placeholder="Поиск по имени или email" autocomplete="off" />
+                    </label>
+                    <div class="crm-staff-filters" role="group" aria-label="Фильтр по должности">
+                        <button type="button" class="is-active" data-crm-staff-filter="all">Все <span>@staff.Count</span></button>
+                        @foreach (var option in OfficeStaffRules.RoleOptions)
                         {
-                            <p class="crm-empty">Пока нет менеджеров. Добавьте первого сотрудника справа.</p>
+                            var count = staff.Count(x => PanelRoles.Normalize(x.Role) == option.Value);
+                            <button type="button" data-crm-staff-filter="@option.Value">@option.Label <span>@count</span></button>
                         }
-                        @foreach (var member in staff)
+                    </div>
+                    <p class="crm-staff-controls__count" data-crm-staff-result-count>@staff.Count @staffLabel</p>
+                </div>
+
+                <div class="crm-staff-groups" data-crm-staff-groups>
+                    @foreach (var option in OfficeStaffRules.RoleOptions)
+                    {
+                        var members = staff.Where(x => PanelRoles.Normalize(x.Role) == option.Value).ToList();
+                        var membersLabel = members.Count == 1 ? "сотрудник" : members.Count is > 1 and < 5 ? "сотрудника" : "сотрудников";
+                        if (members.Count == 0)
                         {
-                            <article class="crm-staff-row @(member.IsLocked ? "is-locked" : null)">
-                                <div class="crm-staff-row__identity">
-                                    <strong>@(string.IsNullOrWhiteSpace(member.FullName) ? member.Email : member.FullName)</strong>
-                                    <span>@member.Email</span>
-                                </div>
-                                <div class="crm-staff-row__role">
-                                    <form asp-action="UpdateOfficeStaffRole" method="post" class="crm-staff-inline-form">
-                                        @Html.AntiForgeryToken()
-                                        <input type="hidden" name="userId" value="@member.Id" />
-                                        <label>
-                                            <span class="visually-hidden">Должность</span>
-                                            <select name="role" aria-label="Должность @member.Email" onchange="this.form.requestSubmit()">
-                                                @foreach (var opt in OfficeStaffRules.RoleOptions)
-                                                {
-                                                    if (member.Role == opt.Value)
-                                                    {
-                                                        <option value="@opt.Value" selected>@opt.Label</option>
-                                                    }
-                                                    else
-                                                    {
-                                                        <option value="@opt.Value">@opt.Label</option>
-                                                    }
-                                                }
-                                            </select>
-                                        </label>
-                                    </form>
-                                </div>
-                                <div class="crm-staff-row__status">
-                                    @if (member.IsLocked)
-                                    {
-                                        <span class="crm-staff-badge crm-staff-badge--locked">Заблокирован</span>
-                                    }
-                                    else
-                                    {
-                                        <span class="crm-staff-badge crm-staff-badge--active">Активен</span>
-                                    }
-                                </div>
-                                <div class="crm-staff-row__actions">
-                                    <details class="crm-staff-menu">
-                                        <summary aria-label="Действия для @member.Email"><i class="fa-solid fa-ellipsis" aria-hidden="true"></i></summary>
-                                        <div class="crm-staff-menu__panel">
-                                            <form asp-action="UpdateOfficeStaffFullName" method="post" class="crm-staff-menu-form">
-                                                @Html.AntiForgeryToken()
-                                                <input type="hidden" name="userId" value="@member.Id" />
-                                                <label>
-                                                    <span>ФИО</span>
-                                                    <input type="text" name="fullName" required maxlength="256" value="@member.FullName" autocomplete="name" />
-                                                </label>
-                                                <button type="submit" class="settings-secondary-btn">Сохранить ФИО</button>
-                                            </form>
-                                            <form asp-action="ResetOfficeStaffPassword" method="post" class="crm-staff-menu-form">
-                                                @Html.AntiForgeryToken()
-                                                <input type="hidden" name="userId" value="@member.Id" />
-                                                <label>
-                                                    <span>Новый пароль</span>
-                                                    <input type="password" name="password" required minlength="8" autocomplete="new-password" placeholder="Минимум 8 символов" />
-                                                </label>
-                                                <button type="submit" class="settings-secondary-btn">Сбросить пароль</button>
-                                            </form>
-                                            @if (member.IsLocked)
+                            continue;
+                        }
+
+                        <section class="crm-staff-group" data-crm-staff-role-group="@option.Value">
+                            <header>
+                                <span class="crm-staff-group__icon"><i class="fa-solid @(option.Value == PanelRoles.SeniorManager ? "fa-medal" : "fa-user-tie")" aria-hidden="true"></i></span>
+                                <div><h3>@option.Label</h3><p>@members.Count @membersLabel</p></div>
+                            </header>
+                            <div class="crm-staff-list">
+                                @foreach (var member in members)
+                                {
+                                    managerDetails.TryGetValue(member.Id, out var manager);
+                                    var displayName = string.IsNullOrWhiteSpace(member.FullName) ? member.Email : member.FullName;
+                                    var pct = manager is null || manager.Capacity <= 0 ? 0 : Math.Min(100, (int)Math.Round(100.0 * manager.ActiveLoad / manager.Capacity));
+                                    var searchText = $"{displayName} {member.Email} {option.Label}";
+                                    var avatarInitial = string.IsNullOrWhiteSpace(displayName) ? "?" : displayName[..1].ToUpperInvariant();
+                                    <article class="crm-staff-row @(member.IsLocked ? "is-locked" : null)" data-crm-staff-row data-staff-role="@option.Value" data-staff-search="@searchText">
+                                        <div class="crm-staff-row__identity">
+                                            <span class="crm-staff-avatar" aria-hidden="true">@avatarInitial</span>
+                                            <div><strong>@displayName</strong><span>@member.Email</span></div>
+                                        </div>
+                                        <div class="crm-staff-row__workload">
+                                            @if (manager is not null)
                                             {
-                                                <form asp-action="UnlockOfficeStaff" method="post">
-                                                    @Html.AntiForgeryToken()
-                                                    <input type="hidden" name="userId" value="@member.Id" />
-                                                    <button type="submit" class="crm-staff-menu__btn">Разблокировать</button>
-                                                </form>
+                                                <span>Нагрузка <strong>@manager.ActiveLoad / @manager.Capacity</strong></span>
+                                                <i class="crm-progress"><b style="width:@pct%"></b></i>
                                             }
                                             else
                                             {
-                                                <form asp-action="LockOfficeStaff" method="post">
-                                                    @Html.AntiForgeryToken()
-                                                    <input type="hidden" name="userId" value="@member.Id" />
-                                                    <button type="submit" class="crm-staff-menu__btn">Заблокировать</button>
-                                                </form>
+                                                <span>Нагрузка появится с первой сменой</span>
                                             }
-                                            <form asp-action="DeleteOfficeStaff" method="post"
-                                                  onsubmit="return confirm('Удалить сотрудника @member.Email? Это действие нельзя отменить.');">
-                                                @Html.AntiForgeryToken()
-                                                <input type="hidden" name="userId" value="@member.Id" />
-                                                <button type="submit" class="crm-staff-menu__btn crm-staff-menu__btn--danger">Удалить</button>
-                                            </form>
                                         </div>
-                                    </details>
-                                </div>
-                            </article>
-                        }
-                    </div>
-
-                    <form asp-action="CreateOfficeStaff" method="post" class="crm-standard-form crm-staff-create-form">
-                        @Html.AntiForgeryToken()
-                        <h3>Новый сотрудник</h3>
-                        <p class="crm-hint">Доступ появится сразу после создания. Должности: менеджер и старший менеджер.</p>
-                        <label class="crm-field">
-                            <span>ФИО</span>
-                            <input type="text" name="fullName" required maxlength="256" placeholder="Иванов Иван Иванович" autocomplete="name" />
-                        </label>
-                        <label class="crm-field">
-                            <span>Email</span>
-                            <input type="email" name="email" required placeholder="manager@example.com" autocomplete="username" />
-                        </label>
-                        <label class="crm-field">
-                            <span>Пароль</span>
-                            <input type="password" name="password" required minlength="8" placeholder="Минимум 8 символов" autocomplete="new-password" />
-                        </label>
-                        <label class="crm-field">
-                            <span>Должность</span>
-                            <select name="role" required>
-                                @foreach (var opt in OfficeStaffRules.RoleOptions)
-                                {
-                                    if (opt.Value == PanelRoles.Manager)
-                                    {
-                                        <option value="@opt.Value" selected>@opt.Label</option>
-                                    }
-                                    else
-                                    {
-                                        <option value="@opt.Value">@opt.Label</option>
-                                    }
+                                        <div class="crm-staff-row__status">
+                                            <span class="crm-staff-badge @(member.IsLocked ? "crm-staff-badge--locked" : "crm-staff-badge--active")">@(member.IsLocked ? "Заблокирован" : manager?.IsShiftActive == true ? "На смене" : "Активен")</span>
+                                        </div>
+                                        <button type="button"
+                                                class="crm-staff-row__edit"
+                                                data-crm-staff-edit
+                                                data-staff-id="@member.Id"
+                                                data-staff-name="@displayName"
+                                                data-staff-email="@member.Email"
+                                                data-staff-role="@option.Value"
+                                                data-staff-locked="@member.IsLocked.ToString().ToLowerInvariant()"
+                                                data-staff-has-capacity="@(manager is not null ? "true" : "false")"
+                                                data-staff-capacity="@(manager?.Capacity ?? 0)"
+                                                aria-label="Редактировать @displayName">
+                                            <i class="fa-solid fa-pen" aria-hidden="true"></i><span>Изменить</span>
+                                        </button>
+                                    </article>
                                 }
-                            </select>
-                        </label>
-                        <button type="submit" class="settings-primary-btn">
-                            <i class="fa-solid fa-user-plus" aria-hidden="true"></i>
-                            <span>Добавить</span>
-                        </button>
-                    </form>
+                            </div>
+                        </section>
+                    }
+                    <p class="crm-empty" data-crm-staff-empty hidden>По вашему запросу сотрудники не найдены.</p>
+                    @if (staff.Count == 0)
+                    {
+                        <p class="crm-empty">В этом офисе пока нет менеджеров. Добавьте первого сотрудника.</p>
+                    }
                 </div>
-            </section>
-        }
-
-        <section class="card crm-team-panel crm-team-panel--managers">
-            <header class="crm-team-panel__header"><div><h2>Менеджеры</h2><p>Ёмкость, нагрузка и статус смены.</p></div><b>@board.Managers.Count</b></header>
-            <div class="crm-manager-table">
-                <div class="crm-manager-table__head" aria-hidden="true"><span>Менеджер</span><span>Нагрузка</span><span>Лимит</span></div>
-                @foreach (var m in board.Managers)
-                {
-                    var pct = m.Capacity <= 0 ? 0 : Math.Min(100, (int)Math.Round(100.0 * m.ActiveLoad / m.Capacity));
-                    var shiftDuration = m.IsShiftActive && m.ShiftStartedAtUtc is DateTime started
-                        ? CrmShiftDisplay.FormatDurationSince(started, now)
-                        : null;
-                    <article class="crm-manager-row @(pct >= 100 ? "is-at-limit" : null) @(m.IsShiftActive ? "is-on-shift" : null)">
-                        <div class="crm-manager-row__name">
-                            <span class="crm-manager-row__identity"><i class="fa-solid fa-circle @(m.IsShiftActive ? "is-online" : "")" aria-hidden="true"></i><strong>@m.DisplayName</strong></span>
-                            <span class="crm-manager-row__shift">
-                                @if (m.IsShiftActive)
-                                {
-                                    <text>на смене</text>
-                                    @if (!string.IsNullOrWhiteSpace(shiftDuration))
-                                    {
-                                        <text> · @shiftDuration</text>
-                                    }
-                                    @if (m.ShiftStartedAtUtc is DateTime shiftStartedAtUtc)
-                                    {
-                                        <text> · с </text><time data-orbita-utc="@OrbitaTime.ToIsoUtc(shiftStartedAtUtc)" data-orbita-format="time-short"></time>
-                                    }
-                                }
-                                else if (m.LastShiftEndedAtUtc is DateTime lastShiftEndedAtUtc)
-                                {
-                                    <text>не на смене · вышел </text><time data-orbita-utc="@OrbitaTime.ToIsoUtc(lastShiftEndedAtUtc)" data-orbita-format="activity"></time>
-                                }
-                                else
-                                {
-                                    <text>не на смене</text>
-                                }
-                            </span>
-                        </div>
-                        <div class="crm-manager-row__load">
-                            <strong>@m.ActiveLoad / @m.Capacity</strong>
-                            <span class="crm-progress"><i style="width:@pct%"></i></span>
-                        </div>
-                        <form asp-action="SaveCapacity" method="post" class="crm-capacity-form">
-                            <input type="hidden" name="managerUserId" value="@m.UserId" />
-                            <label><span>Лимит</span><input type="number" name="capacity" min="1" max="100" value="@m.Capacity" aria-label="Лимит нагрузки для @m.DisplayName" /></label>
-                            <button class="settings-secondary-btn" type="submit">Сохранить</button>
-                        </form>
-                    </article>
-                }
-                @if (board.Managers.Count == 0)
-                {
-                    <p class="crm-empty">В офисе нет менеджеров с ролью Manager.</p>
-                }
-            </div>
+            }
+            else
+            {
+                <div class="crm-manager-table">
+                    @foreach (var m in board.Managers)
+                    {
+                        var pct = m.Capacity <= 0 ? 0 : Math.Min(100, (int)Math.Round(100.0 * m.ActiveLoad / m.Capacity));
+                        <article class="crm-manager-row @(pct >= 100 ? "is-at-limit" : null) @(m.IsShiftActive ? "is-on-shift" : null)">
+                            <div class="crm-manager-row__name"><span class="crm-manager-row__identity"><i class="fa-solid fa-circle @(m.IsShiftActive ? "is-online" : "")" aria-hidden="true"></i><strong>@m.DisplayName</strong></span><span class="crm-manager-row__shift">@(m.IsShiftActive ? "на смене" : "не на смене")</span></div>
+                            <div class="crm-manager-row__load"><strong>@m.ActiveLoad / @m.Capacity</strong><span class="crm-progress"><i style="width:@pct%"></i></span></div>
+                        </article>
+                    }
+                    @if (board.Managers.Count == 0)
+                    {
+                        <p class="crm-empty">В офисе нет менеджеров.</p>
+                    }
+                </div>
+            }
         </section>
 
         <section class="card crm-team-panel crm-team-panel--stages">
@@ -421,3 +333,62 @@
         </section>
     </div>
 </main>
+
+@if (Model.CanManageStaff)
+{
+    <div class="crm-staff-modal" id="crm-staff-create-modal" data-crm-staff-create-modal hidden>
+        <div class="crm-staff-modal__backdrop" data-crm-staff-modal-close></div>
+        <section class="crm-staff-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="crm-staff-create-title" tabindex="-1">
+            <header class="crm-staff-modal__header">
+                <div><h2 id="crm-staff-create-title">Новый менеджер</h2><p>Доступ к CRM появится сразу после создания аккаунта.</p></div>
+                <button type="button" class="crm-staff-modal__close" data-crm-staff-modal-close aria-label="Закрыть"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+            </header>
+            <form asp-action="CreateOfficeStaff" method="post" class="crm-staff-form">
+                @Html.AntiForgeryToken()
+                <label class="crm-field"><span>ФИО</span><input type="text" name="fullName" required maxlength="256" placeholder="Иванов Иван Иванович" autocomplete="name" /></label>
+                <label class="crm-field"><span>Email</span><input type="email" name="email" required placeholder="manager@example.com" autocomplete="username" /></label>
+                <label class="crm-field"><span>Должность</span><select name="role" required>@foreach (var option in OfficeStaffRules.RoleOptions) { if (option.Value == PanelRoles.Manager) { <option value="@option.Value" selected>@option.Label</option> } else { <option value="@option.Value">@option.Label</option> } }</select></label>
+                <label class="crm-field"><span>Пароль</span><input type="password" name="password" required minlength="8" placeholder="Минимум 8 символов" autocomplete="new-password" /></label>
+                <footer class="crm-staff-form__actions"><button type="button" class="settings-secondary-btn" data-crm-staff-modal-close>Отмена</button><button type="submit" class="settings-primary-btn"><i class="fa-solid fa-user-plus" aria-hidden="true"></i>Создать аккаунт</button></footer>
+            </form>
+        </section>
+    </div>
+
+    <div class="crm-staff-modal" id="crm-staff-edit-modal" data-crm-staff-edit-modal hidden>
+        <div class="crm-staff-modal__backdrop" data-crm-staff-modal-close></div>
+        <section class="crm-staff-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="crm-staff-edit-title" tabindex="-1">
+            <header class="crm-staff-modal__header">
+                <div><h2 id="crm-staff-edit-title">Редактирование сотрудника</h2><p data-crm-staff-edit-email></p></div>
+                <button type="button" class="crm-staff-modal__close" data-crm-staff-modal-close aria-label="Закрыть"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+            </header>
+            <form asp-action="UpdateOfficeStaff" method="post" class="crm-staff-form" data-crm-staff-edit-form>
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="userId" data-crm-staff-edit-id />
+                <label class="crm-field"><span>ФИО</span><input type="text" name="fullName" required maxlength="256" autocomplete="name" data-crm-staff-edit-name /></label>
+                <label class="crm-field"><span>Должность</span><select name="role" data-crm-staff-edit-role>@foreach (var option in OfficeStaffRules.RoleOptions) { <option value="@option.Value">@option.Label</option> }</select></label>
+                <label class="crm-field" data-crm-staff-capacity-field hidden><span>Лимит нагрузки</span><input type="number" name="capacity" min="1" max="100" data-crm-staff-edit-capacity /></label>
+                <label class="crm-field"><span>Новый пароль <small>необязательно</small></span><input type="password" name="password" minlength="8" placeholder="Оставьте пустым, чтобы не менять" autocomplete="new-password" data-crm-staff-edit-password /></label>
+                <footer class="crm-staff-form__actions"><button type="button" class="settings-secondary-btn" data-crm-staff-modal-close>Отмена</button><button type="submit" class="settings-primary-btn"><i class="fa-solid fa-check" aria-hidden="true"></i>Сохранить изменения</button></footer>
+            </form>
+            <section class="crm-staff-modal__account-actions" aria-label="Действия с аккаунтом">
+                <div><strong>Аккаунт</strong><p data-crm-staff-account-state></p></div>
+                <div class="crm-staff-modal__account-buttons">
+                    <form method="post" data-crm-staff-lock-form>
+                        @Html.AntiForgeryToken()
+                        <input type="hidden" name="userId" data-crm-staff-lock-id />
+                        <button type="submit" class="settings-secondary-btn" data-crm-staff-lock-button></button>
+                    </form>
+                    <form asp-action="DeleteOfficeStaff" method="post" data-crm-staff-delete-form>
+                        @Html.AntiForgeryToken()
+                        <input type="hidden" name="userId" data-crm-staff-delete-id />
+                        <button type="submit" class="crm-staff-delete-btn"><i class="fa-solid fa-trash-can" aria-hidden="true"></i>Удалить</button>
+                    </form>
+                </div>
+            </section>
+        </section>
+    </div>
+}
+
+@section Scripts {
+    <script src="~/js/orbita-crm-team.js" asp-append-version="true"></script>
+}
