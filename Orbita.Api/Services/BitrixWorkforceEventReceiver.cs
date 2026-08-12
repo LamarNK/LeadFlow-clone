@@ -72,7 +72,8 @@ public sealed class BitrixWorkforceEventReceiver(OrbitaDbContext db)
         credential.LastAcceptedAtUtc = now;
         if (configuration is null
             || configuration.OperationMode == BitrixWorkforceDistribution.DisabledMode
-            || !credential.BitrixInstance.IsEnabled)
+            || !credential.BitrixInstance.IsEnabled
+            || credential.BitrixInstance.DeletedAtUtc is not null)
         {
             await db.SaveChangesAsync(ct);
             return new(BitrixWorkforceReceiveOutcome.Ignored, "Workforce distribution is disabled.");

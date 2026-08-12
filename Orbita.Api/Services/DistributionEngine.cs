@@ -52,7 +52,12 @@ public sealed class DistributionEngine(OrbitaDbContext db)
         {
             var instance = await db.BitrixInstances
                 .AsNoTracking()
-                .FirstOrDefaultAsync(x => x.Id == node.BitrixInstanceId && x.OfficeId == officeId && x.IsEnabled, ct);
+                .FirstOrDefaultAsync(
+                    x => x.Id == node.BitrixInstanceId
+                         && x.OfficeId == officeId
+                         && x.IsEnabled
+                         && x.DeletedAtUtc == null,
+                    ct);
             if (instance is null)
             {
                 return ([], "Схема содержит отключённый или неизвестный Битрикс.");

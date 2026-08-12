@@ -491,6 +491,8 @@ public sealed class BitrixInstanceEntity
     public DateTime? LastValidatedAtUtc { get; set; }
     public string IntegrationSettingsJson { get; set; } = string.Empty;
     public bool IsEnabled { get; set; } = true;
+    /// <summary>Soft-delete: hidden from settings/selection, kept for delivery history.</summary>
+    public DateTime? DeletedAtUtc { get; set; }
     public int? LeadExportLimit { get; set; }
     public int LeadExportSessionCount { get; set; }
     public DateTime? LeadExportSessionStartedAtUtc { get; set; }
@@ -499,6 +501,8 @@ public sealed class BitrixInstanceEntity
     public string? UpdatedByUserId { get; set; }
 
     public OfficeEntity Office { get; set; } = null!;
+
+    public bool IsDeleted => DeletedAtUtc is not null;
 }
 
 public sealed class BitrixWorkforceConfigurationEntity

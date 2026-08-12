@@ -632,7 +632,7 @@ public sealed class BitrixInstanceSettingsPersistenceTests
     }
 
     [Fact]
-    public async Task DeleteAsync_OfficeOperatorScope_RemovesUnusedInstance()
+    public async Task DeleteAsync_OfficeOperatorScope_SoftDeletesUnusedInstance()
     {
         var options = new DbContextOptionsBuilder<OrbitaDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
@@ -653,6 +653,7 @@ public sealed class BitrixInstanceSettingsPersistenceTests
             OfficeId = officeId,
             Name = "отложенные 1",
             IntegrationSettingsJson = string.Empty,
+            IsEnabled = true,
             CreatedAtUtc = DateTime.UtcNow,
             UpdatedAtUtc = DateTime.UtcNow
         });
@@ -673,7 +674,10 @@ public sealed class BitrixInstanceSettingsPersistenceTests
 
         Assert.True(success, error);
         Assert.Null(error);
-        Assert.Empty(db.BitrixInstances.Where(x => x.Id == instanceId));
+        var remaining = db.BitrixInstances.Single(x => x.Id == instanceId);
+        Assert.NotNull(remaining.DeletedAtUtc);
+        Assert.False(remaining.IsEnabled);
+        Assert.Empty(await sut.ListAsync(OfficeScope.ForOffice(officeId), officeId: null));
     }
 
     [Fact]
@@ -738,7 +742,7 @@ public sealed class BitrixInstanceSettingsPersistenceTests
     }
 
     [Fact]
-    public async Task DeleteAsync_WithDeliveryHistory_RemovesInstanceAndDeliveries()
+    public async Task DeleteAsync_WithDeliveryHistory_KeepsHistoryAndHidesFromList()
     {
         var options = new DbContextOptionsBuilder<OrbitaDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
@@ -761,6 +765,7 @@ public sealed class BitrixInstanceSettingsPersistenceTests
             OfficeId = officeId,
             Name = "Отложеные",
             IntegrationSettingsJson = string.Empty,
+            IsEnabled = true,
             CreatedAtUtc = now,
             UpdatedAtUtc = now
         });
@@ -800,9 +805,11 @@ public sealed class BitrixInstanceSettingsPersistenceTests
 
         Assert.True(success, error);
         Assert.Null(error);
-        Assert.Empty(db.BitrixInstances);
-        Assert.Empty(db.ResponseBitrixDeliveries);
-        Assert.Null(db.CandidateResponses.Single().BitrixInstanceId);
+        Assert.NotNull(db.BitrixInstances.Single().DeletedAtUtc);
+        Assert.Single(db.ResponseBitrixDeliveries);
+        Assert.Equal(instanceId, db.CandidateResponses.Single().BitrixInstanceId);
+        Assert.Empty(await sut.ListAsync(OfficeScope.ForOffice(officeId), officeId: null));
+        Assert.Empty(await sut.GetEnabledForOfficeAsync(officeId));
     }
 
     private sealed class StubHttpClientFactory(HttpMessageHandler handler) : IHttpClientFactory

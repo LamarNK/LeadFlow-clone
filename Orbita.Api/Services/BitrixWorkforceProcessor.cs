@@ -91,7 +91,9 @@ public sealed class BitrixWorkforceProcessor(
             var instance = await db.BitrixInstances
                 .AsNoTracking()
                 .FirstOrDefaultAsync(
-                    x => x.Id == configuration.BitrixInstanceId && x.IsEnabled,
+                    x => x.Id == configuration.BitrixInstanceId
+                         && x.IsEnabled
+                         && x.DeletedAtUtc == null,
                     ct);
             if (instance is null)
             {
@@ -1339,6 +1341,7 @@ public sealed class BitrixWorkforceProcessor(
                 (workforce, portal) => new { Workforce = workforce, Portal = portal })
             .Where(x => x.Portal.Id != instance.Id
                         && x.Portal.IsEnabled
+                        && x.Portal.DeletedAtUtc == null
                         && x.Workforce.OperationMode == BitrixWorkforceDistribution.WriterMode
                         && x.Workforce.DealCategoryId == configuration.DealCategoryId)
             .Select(x => x.Portal)

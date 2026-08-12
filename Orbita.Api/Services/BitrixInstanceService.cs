@@ -29,7 +29,7 @@ public sealed class BitrixInstanceService(
 
         return await db.BitrixInstances
             .AsNoTracking()
-            .Where(x => x.OfficeId == resolvedOfficeId)
+            .Where(x => x.OfficeId == resolvedOfficeId && x.DeletedAtUtc == null)
             .OrderBy(x => x.Name)
             .Select(x => new BitrixInstanceListItemDto(
                 x.Id,
@@ -50,7 +50,8 @@ public sealed class BitrixInstanceService(
         Guid? officeId,
         CancellationToken ct = default)
     {
-        var entity = await db.BitrixInstances.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
+        var entity = await db.BitrixInstances.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == id && x.DeletedAtUtc == null, ct);
         if (entity is null || !CanAccessOffice(scope, officeId, entity.OfficeId))
         {
             return null;
@@ -131,7 +132,9 @@ public sealed class BitrixInstanceService(
         string actorUserId,
         CancellationToken ct = default)
     {
-        var entity = await db.BitrixInstances.FirstOrDefaultAsync(x => x.Id == id, ct);
+        var entity = await db.BitrixInstances.FirstOrDefaultAsync(
+            x => x.Id == id && x.DeletedAtUtc == null,
+            ct);
         if (entity is null || !CanAccessOffice(scope, officeId, entity.OfficeId))
         {
             return (null, "Битрикс не найден.");
@@ -151,6 +154,7 @@ public sealed class BitrixInstanceService(
                 .ToListAsync(ct);
             await db.Entry(entity).ReloadAsync(ct);
             if (db.Entry(entity).State == EntityState.Detached
+                || entity.DeletedAtUtc is not null
                 || !CanAccessOffice(scope, officeId, entity.OfficeId))
             {
                 return (null, "Битрикс не найден.");
@@ -399,7 +403,9 @@ public sealed class BitrixInstanceService(
         Guid? officeId,
         CancellationToken ct = default)
     {
-        var entity = await db.BitrixInstances.FirstOrDefaultAsync(x => x.Id == id, ct);
+        var entity = await db.BitrixInstances.FirstOrDefaultAsync(
+            x => x.Id == id && x.DeletedAtUtc == null,
+            ct);
         if (entity is null || !CanAccessOffice(scope, officeId, entity.OfficeId))
         {
             return (false, "Битрикс не найден.");
@@ -414,6 +420,7 @@ public sealed class BitrixInstanceService(
                 .ToListAsync(ct);
             await db.Entry(entity).ReloadAsync(ct);
             if (db.Entry(entity).State == EntityState.Detached
+                || entity.DeletedAtUtc is not null
                 || !CanAccessOffice(scope, officeId, entity.OfficeId))
             {
                 return (false, "Битрикс не найден.");
@@ -427,30 +434,17 @@ public sealed class BitrixInstanceService(
         }
 
         var name = entity.Name;
+        var now = DateTime.UtcNow;
+        // Soft-delete: hide from settings/selection, keep row for delivery history joins.
+        entity.DeletedAtUtc = now;
+        entity.IsEnabled = false;
+        entity.UpdatedAtUtc = now;
         await SuspendWorkforceAsync(
             id,
             "system",
             "Cancelled because the Bitrix24 connection was deleted.",
             ct);
-
-        // Restrict FKs block BitrixInstances delete until dependent rows are removed.
-        // CandidateResponses.BitrixInstanceId is SetNull; deliveries/assignments are Restrict.
-        db.ResponseBitrixDeliveries.RemoveRange(
-            db.ResponseBitrixDeliveries.Where(x => x.BitrixInstanceId == id));
-        db.BitrixWorkforceAssignments.RemoveRange(
-            db.BitrixWorkforceAssignments.Where(x => x.BitrixInstanceId == id));
-
-        db.BitrixInstances.Remove(entity);
-        try
-        {
-            await db.SaveChangesAsync(ct);
-        }
-        catch (DbUpdateException)
-        {
-            return (
-                false,
-                "Нельзя удалить Битрикс: есть связанные данные. Сначала уберите его из схемы связей или отключите.");
-        }
+        await db.SaveChangesAsync(ct);
 
         if (settingsGateTransaction is not null)
         {
@@ -479,7 +473,9 @@ public sealed class BitrixInstanceService(
         bool persistResult,
         CancellationToken ct = default)
     {
-        var entity = await db.BitrixInstances.FirstOrDefaultAsync(x => x.Id == id, ct);
+        var entity = await db.BitrixInstances.FirstOrDefaultAsync(
+            x => x.Id == id && x.DeletedAtUtc == null,
+            ct);
         if (entity is null || !CanAccessOffice(scope, officeId, entity.OfficeId))
         {
             return (null, "Битрикс не найден.");
@@ -521,7 +517,7 @@ public sealed class BitrixInstanceService(
     public async Task<IReadOnlyList<BitrixInstanceEntity>> GetEnabledForOfficeAsync(Guid officeId, CancellationToken ct = default) =>
         await db.BitrixInstances
             .AsNoTracking()
-            .Where(x => x.OfficeId == officeId && x.IsEnabled)
+            .Where(x => x.OfficeId == officeId && x.IsEnabled && x.DeletedAtUtc == null)
             .OrderBy(x => x.Name)
             .ToListAsync(ct);
 

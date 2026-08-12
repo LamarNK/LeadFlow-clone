@@ -369,6 +369,7 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
         {
             entity.HasKey(x => x.Id);
             entity.HasIndex(x => x.OfficeId);
+            entity.HasIndex(x => new { x.OfficeId, x.DeletedAtUtc });
             entity.Property(x => x.Name).HasMaxLength(200);
             entity.Property(x => x.Signature).HasMaxLength(200);
             entity.Property(x => x.WebhookUrlProtected).HasMaxLength(2048);
@@ -377,6 +378,7 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.Property(x => x.ValidationMessage).HasMaxLength(2000);
             entity.Property(x => x.IntegrationSettingsJson).HasMaxLength(4000);
             entity.Property(x => x.UpdatedByUserId).HasMaxLength(128);
+            entity.Ignore(x => x.IsDeleted);
             entity.HasOne(x => x.Office).WithMany().HasForeignKey(x => x.OfficeId).OnDelete(DeleteBehavior.Cascade);
         });
 

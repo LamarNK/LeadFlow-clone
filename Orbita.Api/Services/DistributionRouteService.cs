@@ -189,7 +189,12 @@ public sealed class DistributionRouteService(OrbitaDbContext db, PanelAuditServi
 
         var bitrixIds = nodes.Select(x => x.BitrixInstanceId).Distinct().ToList();
         var validBitrixCount = await db.BitrixInstances
-            .CountAsync(x => x.OfficeId == officeId && x.IsEnabled && bitrixIds.Contains(x.Id), ct);
+            .CountAsync(
+                x => x.OfficeId == officeId
+                     && x.IsEnabled
+                     && x.DeletedAtUtc == null
+                     && bitrixIds.Contains(x.Id),
+                ct);
         if (validBitrixCount != bitrixIds.Count)
         {
             return "Схема содержит неизвестный или отключённый Битрикс.";

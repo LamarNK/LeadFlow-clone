@@ -292,6 +292,9 @@ namespace Orbita.Api.Data.Migrations
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateTime?>("DeletedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("IntegrationSettingsJson")
                         .IsRequired()
                         .HasMaxLength(4000)
@@ -353,6 +356,8 @@ namespace Orbita.Api.Data.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("OfficeId");
+
+                    b.HasIndex("OfficeId", "DeletedAtUtc");
 
                     b.ToTable("BitrixInstances");
                 });

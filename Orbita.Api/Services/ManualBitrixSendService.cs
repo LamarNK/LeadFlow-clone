@@ -32,7 +32,9 @@ public sealed class ManualBitrixSendService(
         }
 
         var instance = await db.BitrixInstances
-            .FirstOrDefaultAsync(x => x.Id == bitrixInstanceId && x.IsEnabled, ct);
+            .FirstOrDefaultAsync(
+                x => x.Id == bitrixInstanceId && x.IsEnabled && x.DeletedAtUtc == null,
+                ct);
         if (instance is null)
         {
             return new SendBitrixResultDto(false, ResponseStatuses.Error, null, null, null, "Битрикс не найден или отключён.");
