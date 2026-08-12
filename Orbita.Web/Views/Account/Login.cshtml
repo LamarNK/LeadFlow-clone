@@ -25,12 +25,17 @@
 <div class="auth-page">
     <div class="auth-card">
         <header class="auth-brand">
-            <img class="auth-logo" src="~/images/logo.png" alt="" asp-append-version="true" />
+            <img class="auth-logo auth-logo--compact" src="~/images/logo.png" alt="" asp-append-version="true" />
             <div class="auth-brand-text">
                 <h1 class="auth-title">Орбита</h1>
                 <p class="auth-subtitle">Панель управления</p>
             </div>
         </header>
+
+        <div class="auth-intro">
+            <h2>С возвращением</h2>
+            <p>Войдите, чтобы продолжить работу.</p>
+        </div>
 
         <form class="auth-form" asp-action="Login" method="post" novalidate>
             @Html.AntiForgeryToken()
@@ -78,7 +83,10 @@
                 <span asp-validation-for="Password" class="auth-field-error"></span>
             </div>
 
-            <button class="auth-submit" type="submit">Войти</button>
+            <button class="auth-submit" type="submit">
+                <span>Войти</span>
+                <i class="fa-solid fa-arrow-right" aria-hidden="true"></i>
+            </button>
         </form>
 
         @if (Model.DesignPreviewEnabled)
