@@ -42,7 +42,7 @@ public sealed class CrmAnalyticsQueryServiceTests
             "Новый",
             fromUtc.AddDays(2),
             isClosed: true,
-            closeReason: CrmCloseReasons.Refused,
+            closeReason: CrmCloseReasons.NotRelevant,
             activeLoad: false);
         var atExclusiveBoundary = NewCard(OfficeOneId, ManagerOneId, "Новый", toUtc);
         var oldCurrent = NewCard(OfficeOneId, ManagerOneId, "Анкета", fromUtc.AddDays(-2), activeLoad: true);
@@ -80,7 +80,7 @@ public sealed class CrmAnalyticsQueryServiceTests
 
         var reasons = data.CloseReasons.ToDictionary(x => x.Reason, StringComparer.Ordinal);
         Assert.Equal(1, reasons[CrmCloseReasons.Success].Count);
-        Assert.Equal(1, reasons[CrmCloseReasons.Refused].Count);
+        Assert.Equal(1, reasons[CrmCloseReasons.NotRelevant].Count);
         Assert.Equal(data.Cards.Closed, reasons.Values.Sum(x => x.Count));
 
         var funnel = Assert.Single(data.Funnels);

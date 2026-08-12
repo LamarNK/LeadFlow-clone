@@ -255,20 +255,20 @@ public sealed class CrmWorkspaceServiceTests
         harness.Db.CrmCandidateCards.Add(card);
         await harness.Db.SaveChangesAsync();
 
-        var (denied, deniedError) = await harness.Sut.CloseAsync(card.Id, CrmCloseReasons.Refused, "  ", manager.Id, isAdmin: false);
+        var (denied, deniedError) = await harness.Sut.CloseAsync(card.Id, CrmCloseReasons.NotRelevant, "  ", manager.Id, isAdmin: false);
         Assert.False(denied);
         Assert.Contains("комментарий", deniedError, StringComparison.OrdinalIgnoreCase);
         Assert.False(card.IsClosed);
 
-        var (ok, error) = await harness.Sut.CloseAsync(card.Id, CrmCloseReasons.Refused, "не интересно", manager.Id, isAdmin: false);
+        var (ok, error) = await harness.Sut.CloseAsync(card.Id, CrmCloseReasons.NotRelevant, "не интересно", manager.Id, isAdmin: false);
         Assert.True(ok, error);
         Assert.True(card.IsClosed);
         Assert.False(card.IsInActiveLoad);
-        Assert.Equal(CrmCloseReasons.Refused, card.CloseReason);
+        Assert.Equal(CrmCloseReasons.NotRelevant, card.CloseReason);
         Assert.DoesNotContain(harness.Db.CrmCandidateNotes, n => n.CardId == card.Id && n.Text == "не интересно");
         var detail = await harness.Sut.GetCardAsync(card.Id, manager.Id, isAdmin: false);
         var closeActivity = Assert.Single(detail!.Activity, item => item.Title == "Карточка закрыта");
-        Assert.Equal(CrmCloseReasons.Refused, closeActivity.Body);
+        Assert.Equal(CrmCloseReasons.NotRelevant, closeActivity.Body);
         Assert.Equal("не интересно", closeActivity.ActionComment);
     }
 
@@ -927,7 +927,7 @@ public sealed class CrmWorkspaceServiceTests
         });
         var card = NewCard(response.Id, manager.Id);
         card.IsClosed = true;
-        card.CloseReason = CrmCloseReasons.Other;
+        card.CloseReason = CrmCloseReasons.NotRelevant;
         card.ClosedAtUtc = DateTime.UtcNow;
         harness.Db.CrmCandidateCards.Add(card);
         await harness.Db.SaveChangesAsync();

@@ -188,15 +188,29 @@ public static class CrmTaskAttachmentLimits
 
 public static class CrmCloseReasons
 {
-    public const string Refused = "Отказ";
-    public const string Unreachable = "Недозвон";
-    public const string Duplicate = "Дубль";
+    public const string NoAnswer = "НДЗ";
+    public const string Woman = "Женщина";
+    public const string Contract = "Контракт";
+    public const string SelectedOthers = "Выбрали других";
+    public const string Age = "Возраст";
+    public const string Health = "Здоровье";
+    public const string AlreadyAtSvo = "Уже был на СВО";
+    public const string NotRelevant = "Неактуально";
+    public const string Disappeared = "Исчез, слился";
     public const string Success = "Успех";
-    public const string Other = "Другое";
 
     public static readonly IReadOnlyList<string> All =
     [
-        Refused, Unreachable, Duplicate, Success, Other
+        NoAnswer,
+        Woman,
+        Contract,
+        SelectedOthers,
+        Age,
+        Health,
+        AlreadyAtSvo,
+        NotRelevant,
+        Disappeared,
+        Success
     ];
 
     public static bool IsValid(string? reason) =>
