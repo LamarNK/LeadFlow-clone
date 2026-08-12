@@ -231,6 +231,15 @@
                         <article class="crm-manager-row @(pct >= 100 ? "is-at-limit" : null) @(m.IsShiftActive ? "is-on-shift" : null)">
                             <div class="crm-manager-row__name"><span class="crm-manager-row__identity"><i class="fa-solid fa-circle @(m.IsShiftActive ? "is-online" : "")" aria-hidden="true"></i><strong>@m.DisplayName</strong></span><span class="crm-manager-row__shift">@(m.IsShiftActive ? "на смене" : "не на смене")</span></div>
                             <div class="crm-manager-row__load"><strong>@m.ActiveLoad / @m.Capacity</strong><span class="crm-progress"><i style="width:@pct%"></i></span></div>
+                            @if (User.IsInRole(PanelRoles.SeniorManager))
+                            {
+                                <form asp-action="SaveCapacity" method="post" class="crm-capacity-form">
+                                    @Html.AntiForgeryToken()
+                                    <input type="hidden" name="managerUserId" value="@m.UserId" />
+                                    <label>Лимит<input type="number" name="capacity" min="1" max="100" value="@m.Capacity" aria-label="Лимит нагрузки для @m.DisplayName" /></label>
+                                    <button type="submit" class="settings-secondary-btn">Сохранить</button>
+                                </form>
+                            }
                         </article>
                     }
                     @if (board.Managers.Count == 0)
