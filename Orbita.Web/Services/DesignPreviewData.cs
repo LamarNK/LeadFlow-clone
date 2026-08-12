@@ -406,18 +406,21 @@ internal static class DesignPreviewData
         int successful)
     {
         var remaining = Math.Max(0, closed - successful);
-        var refused = (int)Math.Round(remaining * .43d, MidpointRounding.AwayFromZero);
-        var unreachable = (int)Math.Round(remaining * .30d, MidpointRounding.AwayFromZero);
-        var duplicate = (int)Math.Round(remaining * .17d, MidpointRounding.AwayFromZero);
-        var other = Math.Max(0, remaining - refused - unreachable - duplicate);
-        return
-        [
-            new(CrmCloseReasons.Success, successful, PreviewPercent(successful, closed)),
-            new(CrmCloseReasons.Refused, refused, PreviewPercent(refused, closed)),
-            new(CrmCloseReasons.Unreachable, unreachable, PreviewPercent(unreachable, closed)),
-            new(CrmCloseReasons.Duplicate, duplicate, PreviewPercent(duplicate, closed)),
-            new(CrmCloseReasons.Other, other, PreviewPercent(other, closed))
-        ];
+        var unsuccessfulReasons = CrmCloseReasons.All
+            .Where(reason => !string.Equals(reason, CrmCloseReasons.Success, StringComparison.Ordinal))
+            .ToArray();
+        var perReason = remaining / unsuccessfulReasons.Length;
+        var remainder = remaining % unsuccessfulReasons.Length;
+
+        return CrmCloseReasons.All
+            .Select((reason, index) =>
+            {
+                var count = string.Equals(reason, CrmCloseReasons.Success, StringComparison.Ordinal)
+                    ? successful
+                    : perReason + (index < remainder ? 1 : 0);
+                return new CrmAnalyticsCloseReasonDto(reason, count, PreviewPercent(count, closed));
+            })
+            .ToArray();
     }
 
     private static CrmAnalyticsOfficeFunnelDto BuildPreviewCrmFunnel(

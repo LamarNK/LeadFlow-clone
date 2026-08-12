@@ -55,7 +55,9 @@
                             ?? Model.Managers.FirstOrDefault(x => x.UserId == currentUserId)?.UserId
                             ?? Model.Managers.FirstOrDefault()?.UserId;
                         var adUrl = !string.IsNullOrWhiteSpace(card.VacancyUrl) ? card.VacancyUrl : card.SourceUrl;
-                        <article class="crm-tile @(card.IsClosed ? "is-closed" : "") @(card.HasOverdueTask ? "is-overdue" : "") @(card.HoursInStage >= 24 ? "is-stalled" : "")"
+                        var hasOverdueTask = !card.IsClosed && card.HasOverdueTask;
+                        var hasActiveTask = !card.IsClosed && card.OpenTaskCount > 0 && !hasOverdueTask;
+                        <article class="crm-tile @(card.IsClosed ? "is-closed" : "") @(hasOverdueTask ? "is-overdue" : "") @(hasActiveTask ? "has-active-task" : "")"
                                  @if (Model.CanEdit && !card.IsClosed) { <text>draggable="true" data-card-id="@card.Id" data-card-stage="@card.Stage"</text> }>
                             <a asp-action="Card" asp-route-id="@card.Id" asp-route-stage="@stage.Name" class="crm-tile__body" data-crm-open-card data-crm-stage="@stage.Name">
                             <div class="crm-tile__top">
@@ -71,10 +73,9 @@
                                     <small>Ответственный</small>
                                     <strong>@(card.ManagerName ?? "Не назначен")</strong>
                                 </span>
-                                <span class="@(card.HoursInStage >= 24 ? "crm-hot" : "")" title="В этапе">@card.HoursInStage.ToString("0.#")ч</span>
                                 @if (card.OpenTaskCount > 0)
                                 {
-                                    <span class="@(card.HasOverdueTask ? "crm-overdue" : "")"><i class="fa-solid fa-list-check" aria-hidden="true"></i>@card.OpenTaskCount</span>
+                                    <span class="crm-tile__tasks @(hasOverdueTask ? "is-overdue" : "is-active")"><i class="fa-solid fa-list-check" aria-hidden="true"></i>@card.OpenTaskCount</span>
                                 }
                             </footer>
                             </a>
