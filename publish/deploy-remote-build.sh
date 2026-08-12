@@ -65,6 +65,20 @@ build_docker_image() {
   docker build --progress=plain "${build_args[@]}" .
 }
 
+acquire_deploy_lock() {
+  local lock_file="${LEADFLOW_DEPLOY_LOCK_FILE:-$remote_dir/.leadflow-deploy.lock}"
+
+  if ! command -v flock >/dev/null 2>&1; then
+    echo "flock is required to serialize Orbita deployments."
+    exit 1
+  fi
+
+  echo "== Waiting for deployment lock: $lock_file =="
+  exec 9>"$lock_file"
+  flock -x 9
+  echo "== Acquired deployment lock: $lock_file =="
+}
+
 context_archive="${1:?context archive is required}"
 dockerfile_rel="${2:?dockerfile path is required}"
 image_tag="${3:?image tag is required}"
@@ -159,6 +173,7 @@ if [[ ! -f "$dockerfile_rel" ]]; then
 fi
 
 build_docker_image
+acquire_deploy_lock
 compose_src="$cache_dir/deploy/control-panel/docker-compose.images.yml"
 if [[ -f "$compose_src" ]]; then
   cp "$compose_src" "$remote_dir/docker-compose.images.yml"
@@ -180,6 +195,8 @@ fi
 
 if [[ "$service" == "notifybot-api" ]]; then
   docker compose -f docker-compose.images.yml --env-file .env up -d --force-recreate notifybot-postgres notifybot-api
+elif [[ "$service" == "web" ]]; then
+  docker compose -f docker-compose.images.yml --env-file .env up -d --force-recreate --no-deps "$service"
 else
   docker compose -f docker-compose.images.yml --env-file .env up -d --force-recreate "$service"
 fi
