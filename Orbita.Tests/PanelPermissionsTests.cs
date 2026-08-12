@@ -5,12 +5,12 @@ namespace Orbita.Tests;
 public sealed class PanelPermissionsTests
 {
     [Fact]
-    public void DefaultForRole_ManagerGetsCrmBoardTasksAnalyticsAndPersonalSettings()
+    public void DefaultForRole_ManagerGetsCrmBoardTasksAndPersonalSettings()
     {
         var permissions = PanelPermissions.DefaultForRole(PanelRoles.Manager);
 
         Assert.Equal(
-            [PanelPermissions.CrmBoard, PanelPermissions.CrmTasks, PanelPermissions.CrmAnalytics, PanelPermissions.Settings],
+            [PanelPermissions.CrmBoard, PanelPermissions.CrmTasks, PanelPermissions.Settings],
             permissions);
     }
 
@@ -83,7 +83,7 @@ public sealed class PanelPermissionsTests
         var profile = Assert.Single(PanelPermissions.Profiles, x => x.Id == "office-lead");
 
         Assert.Equal(PanelRoles.OfficeLead, profile.Role);
-        Assert.Equal("Руководитель офиса", profile.Name);
+        Assert.Equal("Руководитель", profile.Name);
     }
 
     [Theory]

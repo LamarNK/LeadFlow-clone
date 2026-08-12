@@ -23,6 +23,46 @@ public sealed class PanelUserService(
         return result;
     }
 
+    /// <summary>
+    /// Users in <paramref name="officeId"/> with Manager or SeniorManager role (office-staff roster).
+    /// </summary>
+    public async Task<IReadOnlyList<PanelUserDto>> ListStaffByOfficeAsync(Guid officeId, CancellationToken ct = default)
+    {
+        var userIds = await db.PanelUserProfiles
+            .AsNoTracking()
+            .Where(x => x.OfficeId == officeId)
+            .Select(x => x.UserId)
+            .ToListAsync(ct);
+
+        var result = new List<PanelUserDto>();
+        foreach (var userId in userIds)
+        {
+            var user = await users.FindByIdAsync(userId);
+            if (user is null)
+            {
+                continue;
+            }
+
+            var dto = await MapAsync(user, ct);
+            if (OfficeStaffRules.IsAssignableRole(dto.Role))
+            {
+                result.Add(dto);
+            }
+        }
+
+        return result
+            .OrderBy(x => x.Role == PanelRoles.SeniorManager ? 0 : 1)
+            .ThenBy(x => string.IsNullOrWhiteSpace(x.FullName) ? x.Email : x.FullName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(x => x.Email, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    public async Task<PanelUserDto?> GetByIdAsync(string userId, CancellationToken ct = default)
+    {
+        var user = await users.FindByIdAsync(userId);
+        return user is null ? null : await MapAsync(user, ct);
+    }
+
     public async Task<PanelProfileDto?> GetProfileAsync(string userId, CancellationToken ct = default)
     {
         var user = await users.FindByIdAsync(userId);
