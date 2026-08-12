@@ -631,6 +631,112 @@ public sealed class BitrixInstanceSettingsPersistenceTests
         Assert.Equal(assignmentId, preservedGuard.LastAssignmentId);
     }
 
+    [Fact]
+    public async Task DeleteAsync_OfficeOperatorScope_RemovesUnusedInstance()
+    {
+        var options = new DbContextOptionsBuilder<OrbitaDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
+            .Options;
+        await using var db = new OrbitaDbContext(options);
+        var officeId = Guid.NewGuid();
+        var instanceId = Guid.NewGuid();
+        db.Offices.Add(new OfficeEntity
+        {
+            Id = officeId,
+            Name = "Office",
+            RegistrationSecretHash = "hash",
+            CreatedAtUtc = DateTime.UtcNow
+        });
+        db.BitrixInstances.Add(new BitrixInstanceEntity
+        {
+            Id = instanceId,
+            OfficeId = officeId,
+            Name = "отложенные 1",
+            IntegrationSettingsJson = string.Empty,
+            CreatedAtUtc = DateTime.UtcNow,
+            UpdatedAtUtc = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var sut = new BitrixInstanceService(
+            db,
+            null!,
+            null!,
+            Options.Create(new OrbitaBitrixSettings()),
+            new PanelAuditService(db));
+
+        // Same scope operators get after OfficeScopeService resolves their office claim.
+        var (success, error) = await sut.DeleteAsync(
+            instanceId,
+            OfficeScope.ForOffice(officeId),
+            officeId: null);
+
+        Assert.True(success, error);
+        Assert.Null(error);
+        Assert.Empty(db.BitrixInstances.Where(x => x.Id == instanceId));
+    }
+
+    [Fact]
+    public async Task DeleteAsync_WhenUsedInDistributionRoute_ReturnsClearError()
+    {
+        var options = new DbContextOptionsBuilder<OrbitaDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
+            .Options;
+        await using var db = new OrbitaDbContext(options);
+        var officeId = Guid.NewGuid();
+        var instanceId = Guid.NewGuid();
+        var routeId = Guid.NewGuid();
+        db.Offices.Add(new OfficeEntity
+        {
+            Id = officeId,
+            Name = "Office",
+            RegistrationSecretHash = "hash",
+            CreatedAtUtc = DateTime.UtcNow
+        });
+        db.BitrixInstances.Add(new BitrixInstanceEntity
+        {
+            Id = instanceId,
+            OfficeId = officeId,
+            Name = "отложенные 2",
+            IntegrationSettingsJson = string.Empty,
+            CreatedAtUtc = DateTime.UtcNow,
+            UpdatedAtUtc = DateTime.UtcNow
+        });
+        db.DistributionRoutes.Add(new DistributionRouteEntity
+        {
+            Id = routeId,
+            OfficeId = officeId,
+            IsAutoDistributionEnabled = true,
+            UpdatedAtUtc = DateTime.UtcNow
+        });
+        db.DistributionNodes.Add(new DistributionNodeEntity
+        {
+            Id = Guid.NewGuid(),
+            RouteId = routeId,
+            BitrixInstanceId = instanceId,
+            SortOrder = 0
+        });
+        await db.SaveChangesAsync();
+
+        var sut = new BitrixInstanceService(
+            db,
+            null!,
+            null!,
+            Options.Create(new OrbitaBitrixSettings()),
+            new PanelAuditService(db));
+
+        var (success, error) = await sut.DeleteAsync(
+            instanceId,
+            OfficeScope.ForOffice(officeId),
+            officeId: null);
+
+        Assert.False(success);
+        Assert.Equal(
+            "Битрикс используется в схеме связей. Сначала удалите его из редактора связей.",
+            error);
+        Assert.Single(db.BitrixInstances.Where(x => x.Id == instanceId));
+    }
+
     private sealed class StubHttpClientFactory(HttpMessageHandler handler) : IHttpClientFactory
     {
         public HttpClient CreateClient(string name) => new(handler, disposeHandler: false);

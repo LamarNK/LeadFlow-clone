@@ -271,6 +271,8 @@ public static class PanelResponseEndpoints
             return Results.Ok(await bitrixInstances.ListAsync(scope, officeId, ct));
         });
 
+        // Office-scoped write: operators manage Bitrix for their office in My Settings.
+        // Authorization is Settings permission + OfficeScope (same as distribution-route).
         settings.MapPost("/bitrix-instances", async (
             CreateBitrixInstanceRequest request,
             BitrixInstanceService bitrixInstances,
@@ -279,11 +281,6 @@ public static class PanelResponseEndpoints
             Guid? officeId,
             CancellationToken ct) =>
         {
-            if (!principal.IsInRole(PanelRoles.Admin))
-            {
-                return Results.Forbid();
-            }
-
             var scope = await officeScope.ResolveAsync(principal, ct);
             if (!scope.HasAccess)
             {
@@ -322,11 +319,6 @@ public static class PanelResponseEndpoints
             Guid? officeId,
             CancellationToken ct) =>
         {
-            if (!principal.IsInRole(PanelRoles.Admin))
-            {
-                return Results.Forbid();
-            }
-
             var scope = await officeScope.ResolveAsync(principal, ct);
             if (!scope.HasAccess)
             {
@@ -346,11 +338,6 @@ public static class PanelResponseEndpoints
             Guid? officeId,
             CancellationToken ct) =>
         {
-            if (!principal.IsInRole(PanelRoles.Admin))
-            {
-                return Results.Forbid();
-            }
-
             var scope = await officeScope.ResolveAsync(principal, ct);
             if (!scope.HasAccess)
             {
@@ -387,11 +374,6 @@ public static class PanelResponseEndpoints
             Guid? officeId,
             CancellationToken ct) =>
         {
-            if (!principal.IsInRole(PanelRoles.Admin))
-            {
-                return Results.Forbid();
-            }
-
             var scope = await officeScope.ResolveAsync(principal, ct);
             if (!scope.HasAccess)
             {

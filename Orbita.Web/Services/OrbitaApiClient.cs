@@ -1818,7 +1818,13 @@ public sealed class OrbitaApiClient(
             // ignore parse errors
         }
 
-        return "Не удалось выполнить операцию.";
+        return response.StatusCode switch
+        {
+            System.Net.HttpStatusCode.Forbidden => "Недостаточно прав для этой операции.",
+            System.Net.HttpStatusCode.Unauthorized => InvalidApiSessionError,
+            System.Net.HttpStatusCode.NotFound => "Объект не найден.",
+            _ => "Не удалось выполнить операцию."
+        };
     }
 
     public async Task<(CaptchaSessionDto? Session, CaptchaSessionConflictDto? Conflict, string? Error)> CreateCaptchaSessionAsync(
