@@ -52,7 +52,7 @@
 .orbita-confirm {
     position: fixed;
     inset: 0;
-    z-index: 130;
+    z-index: 1300;
     display: flex;
     align-items: center;
     justify-content: center;

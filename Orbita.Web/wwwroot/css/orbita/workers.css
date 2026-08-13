@@ -221,6 +221,10 @@
     padding: 20px 24px;
 }
 
+.card--settings-worker-releases-list {
+    margin-top: 20px;
+}
+
 .settings-release-upload-form {
     display: flex;
     flex-direction: column;
