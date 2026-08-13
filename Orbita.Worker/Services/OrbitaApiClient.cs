@@ -98,6 +98,52 @@ public sealed class OrbitaApiClient
         return await response.Content.ReadFromJsonAsync<WorkerCandidateLookupResponse>(ct).ConfigureAwait(false);
     }
 
+    public async Task<IReadOnlyList<WorkerPendingChatMessageDto>> GetPendingChatMessagesAsync(
+        Guid accountId,
+        CancellationToken ct)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"api/v1/workers/pending-chat-messages?accountId={accountId:D}");
+        ApplyAuth(request);
+        var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            return [];
+        }
+
+        return await response.Content.ReadFromJsonAsync<List<WorkerPendingChatMessageDto>>(JsonReadOptions, ct)
+                   .ConfigureAwait(false)
+               ?? [];
+    }
+
+    public async Task<bool> AckOutboundChatAsync(
+        IReadOnlyList<Guid> sentIds,
+        CancellationToken ct)
+    {
+        if (sentIds.Count == 0)
+        {
+            return true;
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/workers/outbound-chat/ack");
+        ApplyAuth(request);
+        request.Content = JsonContent.Create(new WorkerOutboundChatAckRequest(sentIds));
+        var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
+        return response.IsSuccessStatusCode;
+    }
+
+    public async Task<bool> ClaimOutboundChatAsync(Guid messageId, CancellationToken ct)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/workers/outbound-chat/claim")
+        {
+            Content = JsonContent.Create(new WorkerOutboundChatClaimRequest(messageId))
+        };
+        ApplyAuth(request);
+        var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
+        return response.IsSuccessStatusCode;
+    }
+
     public async Task<WorkerCandidateIngestionResultDto?> SubmitCandidatesAsync(
         WorkerCandidateBatchRequest batch,
         CancellationToken ct)

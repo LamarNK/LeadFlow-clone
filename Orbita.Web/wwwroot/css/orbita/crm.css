@@ -422,6 +422,11 @@
 .crm-chat__msg--system .crm-chat__bubble header { justify-content: center; margin-bottom: 2px; }
 .crm-chat__msg--system .crm-chat__bubble header strong { color: var(--text-secondary); }
 .crm-chat__msg--system p { font-size: 12px; font-style: italic; }
+.crm-chat__status { display: flex; align-items: center; gap: 10px; margin-top: 6px; color: var(--text-secondary); font-size: 10px; }
+.crm-chat__msg--planned .crm-chat__bubble { border-style: dashed; opacity: .92; }
+.crm-chat__cancel { margin: 0; }
+.crm-chat__cancel button { border: 0; background: none; color: var(--text-secondary); font: inherit; font-size: 10px; text-decoration: underline; cursor: pointer; padding: 0; }
+.crm-chat__cancel button:hover { color: var(--text-primary); }
 @media (max-width: 600px) { .crm-chat { padding: 16px; border-radius: 12px; } .crm-chat__msg { max-width: 94%; } .crm-chat__avatar { flex-basis: 25px; width: 25px; height: 25px; } }
 .crm-phone-history { display: grid; gap: 6px; }
 .crm-phone-history span { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
@@ -777,7 +782,8 @@
 [data-theme="dark"] .crm-chat__bubble,
 [data-theme="dark"] .crm-chat__msg p { color: var(--text-primary); }
 [data-theme="dark"] .crm-chat__bubble header,
-[data-theme="dark"] .crm-chat__bubble time { color: var(--text-secondary); }
+[data-theme="dark"] .crm-chat__bubble time,
+[data-theme="dark"] .crm-chat__status { color: var(--text-secondary); }
 [data-theme="dark"] .crm-stage-rail__comment label,
 [data-theme="dark"] .crm-tabs a { color: var(--text-secondary); }
 [data-theme="dark"] .crm-tabs a.is-active { color: var(--text-primary); }

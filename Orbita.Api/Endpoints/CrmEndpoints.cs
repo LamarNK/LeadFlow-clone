@@ -382,6 +382,38 @@ public static class CrmEndpoints
                 : Results.NotFound();
         });
 
+        crmBoard.MapPost("/cards/{cardId:guid}/chat", async (
+            Guid cardId,
+            CrmChatSendRequest request,
+            CrmWorkspaceService workspace,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrWhiteSpace(userId)) return Results.Forbid();
+            var (ok, error) = await workspace.QueueChatMessageAsync(
+                cardId, request.Text, userId, PanelRoles.HasElevatedOfficeAccess(principal), ct);
+            return ok
+                ? Results.NoContent()
+                : Results.BadRequest(new { error = error ?? "Не удалось поставить сообщение в очередь." });
+        });
+
+        crmBoard.MapPost("/cards/{cardId:guid}/chat/{messageId:guid}/cancel", async (
+            Guid cardId,
+            Guid messageId,
+            CrmWorkspaceService workspace,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrWhiteSpace(userId)) return Results.Forbid();
+            var (ok, error) = await workspace.CancelChatMessageAsync(
+                cardId, messageId, userId, PanelRoles.HasElevatedOfficeAccess(principal), ct);
+            return ok
+                ? Results.NoContent()
+                : Results.BadRequest(new { error = error ?? "Не удалось отменить сообщение." });
+        });
+
         crmBoard.MapPost("/cards/manual", async (
             Guid? officeId,
             CrmManualCardCreateRequest request,

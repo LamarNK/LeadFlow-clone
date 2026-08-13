@@ -841,6 +841,23 @@ public sealed class CandidateContactPhoneEntity
     public CandidatePersonEntity Person { get; set; } = null!;
 }
 
+/// <summary>Сообщение менеджера в чат Avito: сначала в очереди, затем отправлено воркером.</summary>
+public sealed class CrmOutboundChatMessageEntity
+{
+    public Guid Id { get; set; }
+    public Guid CardId { get; set; }
+    public Guid ResponseId { get; set; }
+    public string AuthorUserId { get; set; } = string.Empty;
+    public string AuthorName { get; set; } = string.Empty;
+    public string Text { get; set; } = string.Empty;
+    public string Status { get; set; } = CrmOutboundChatStatuses.Planned;
+    public DateTime CreatedAtUtc { get; set; }
+    public DateTime? SentAtUtc { get; set; }
+    public DateTime? CancelledAtUtc { get; set; }
+    public string? DeliveryClaimedByWorkerId { get; set; }
+    public DateTime? DeliveryClaimedAtUtc { get; set; }
+}
+
 /// <summary>Per-user CRM chat read watermark for a card.</summary>
 public sealed class CrmCardChatReadEntity
 {

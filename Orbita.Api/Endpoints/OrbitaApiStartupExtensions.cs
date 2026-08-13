@@ -295,6 +295,7 @@ public static class OrbitaApiStartupExtensions
         builder.Services.AddScoped<CandidateIngestionService>();
         builder.Services.AddScoped<BitrixLegacyMigrationService>();
         builder.Services.AddScoped<CandidateLookupService>();
+        builder.Services.AddScoped<WorkerOutboundChatService>();
         builder.Services.AddScoped<WorkerMonitoringStatsService>();
         builder.Services.AddScoped<CandidatePersonMatchService>();
         builder.Services.AddScoped<CandidatePersonPhoneService>();

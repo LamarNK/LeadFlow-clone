@@ -674,7 +674,9 @@ public sealed class CrmWorkspaceService(
         var hasOverdue = tasks.Any(x => x.Status == CrmTaskStatuses.Open && x.DueAtUtc is DateTime due && due < now);
 
         var activity = BuildActivity(notes, tasks, taskComments, history, names, userId, isAdmin, canEdit);
-        var chat = ParseChatMessages(card.Response.ChatMessagesJson);
+        var avitoChat = ParseChatMessages(card.Response.ChatMessagesJson);
+        var outboundChat = await LoadOutboundChatAsync(cardId, userId, isAdmin, ct);
+        var chat = CrmChatThreadMerger.Merge(avitoChat, outboundChat);
         var phoneHistory = BuildPhoneHistory(card.Response);
         var contactPhones = await LoadContactPhonesAsync(card.Response, ct);
         var chatHash = ComputeChatContentHash(card.Response.ChatMessagesJson);
@@ -917,6 +919,16 @@ public sealed class CrmWorkspaceService(
         card.IsInActiveLoad = false;
         card.UpdatedAtUtc = now;
         card.LastContactAtUtc = now;
+        var pendingMessages = await db.CrmOutboundChatMessages
+            .Where(message => message.CardId == card.Id
+                              && message.Status == CrmOutboundChatStatuses.Planned
+                              && message.CancelledAtUtc == null)
+            .ToListAsync(ct);
+        foreach (var message in pendingMessages)
+        {
+            message.CancelledAtUtc = now;
+            AddHistory(card.Id, "ChatCancelled", message.Text, actorUserId, actorName, now);
+        }
         AddHistory(
             card.Id,
             "Closed",
@@ -1383,6 +1395,130 @@ public sealed class CrmWorkspaceService(
 
         await db.SaveChangesAsync(ct);
         return true;
+    }
+
+    public async Task<(bool Ok, string? Error)> QueueChatMessageAsync(
+        Guid cardId,
+        string text,
+        string actorUserId,
+        bool isAdmin,
+        CancellationToken ct = default)
+    {
+        var card = await db.CrmCandidateCards
+            .Include(x => x.Response)
+            .FirstOrDefaultAsync(x => x.Id == cardId, ct);
+        if (card is null || !await CanAccessCardAsync(card.OfficeId, card.ManagerUserId, actorUserId, isAdmin, ct))
+        {
+            return (false, "Карточка не найдена.");
+        }
+
+        var canEdit = isAdmin || string.Equals(card.ManagerUserId, actorUserId, StringComparison.Ordinal);
+        if (!canEdit)
+        {
+            return (false, "Недостаточно прав, чтобы писать в чат.");
+        }
+
+        if (card.IsClosed)
+        {
+            return (false, "Нельзя писать в чат закрытой карточки.");
+        }
+
+        if (string.IsNullOrWhiteSpace(card.Response.SourceResponseId))
+        {
+            return (false, "Нет привязки к отклику Avito — сообщение нельзя поставить в очередь.");
+        }
+
+        var normalized = text?.Trim() ?? string.Empty;
+        if (normalized.Length == 0)
+        {
+            return (false, "Введите текст сообщения.");
+        }
+
+        if (normalized.Length > CrmOutboundChatStatuses.MaxTextLength)
+        {
+            return (false, $"Сообщение длиннее {CrmOutboundChatStatuses.MaxTextLength} символов.");
+        }
+
+        var now = DateTime.UtcNow;
+        var actorName = await ResolveDisplayNameAsync(actorUserId, ct);
+        db.CrmOutboundChatMessages.Add(new CrmOutboundChatMessageEntity
+        {
+            Id = Guid.NewGuid(),
+            CardId = card.Id,
+            ResponseId = card.ResponseId,
+            AuthorUserId = actorUserId,
+            AuthorName = actorName,
+            Text = normalized,
+            Status = CrmOutboundChatStatuses.Planned,
+            CreatedAtUtc = now
+        });
+        card.LastContactAtUtc = now;
+        card.UpdatedAtUtc = now;
+        AddHistory(card.Id, "ChatQueued", normalized, actorUserId, actorName, now);
+        await db.SaveChangesAsync(ct);
+        NotifyBoardChanged(card.OfficeId);
+        return (true, null);
+    }
+
+    public async Task<(bool Ok, string? Error)> CancelChatMessageAsync(
+        Guid cardId,
+        Guid messageId,
+        string actorUserId,
+        bool isAdmin,
+        CancellationToken ct = default)
+    {
+        var card = await FindAccessibleCardAsync(cardId, actorUserId, isAdmin, ct);
+        if (card is null)
+        {
+            return (false, "Карточка не найдена.");
+        }
+
+        var message = await db.CrmOutboundChatMessages.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == messageId && x.CardId == cardId, ct);
+        if (message is null || message.CancelledAtUtc is not null)
+        {
+            return (false, "Сообщение не найдено.");
+        }
+
+        if (!string.Equals(message.Status, CrmOutboundChatStatuses.Planned, StringComparison.Ordinal))
+        {
+            return (false, "Отменить можно только запланированное сообщение.");
+        }
+
+        if (!isAdmin && !string.Equals(message.AuthorUserId, actorUserId, StringComparison.Ordinal))
+        {
+            return (false, "Недостаточно прав, чтобы отменить это сообщение.");
+        }
+
+        var now = DateTime.UtcNow;
+        var actorName = await ResolveDisplayNameAsync(actorUserId, ct);
+        var cancellable = db.CrmOutboundChatMessages
+            .Where(x => x.Id == messageId
+                        && x.CardId == cardId
+                        && x.Status == CrmOutboundChatStatuses.Planned
+                        && x.CancelledAtUtc == null);
+        var cancelled = 0;
+        if (db.Database.IsRelational())
+        {
+            cancelled = await cancellable.ExecuteUpdateAsync(setters => setters
+                .SetProperty(x => x.CancelledAtUtc, now), ct);
+        }
+        else if (await cancellable.SingleOrDefaultAsync(ct) is { } trackedMessage)
+        {
+            trackedMessage.CancelledAtUtc = now;
+            await db.SaveChangesAsync(ct);
+            cancelled = 1;
+        }
+        if (cancelled != 1)
+        {
+            return (false, "Сообщение уже передано воркеру для отправки.");
+        }
+
+        card.UpdatedAtUtc = now;
+        AddHistory(card.Id, "ChatCancelled", message.Text, actorUserId, actorName, now);
+        await db.SaveChangesAsync(ct);
+        NotifyBoardChanged(card.OfficeId);
+        return (true, null);
     }
 
     public async Task<(Guid? CardId, string? Error)> CreateManualCardAsync(
@@ -2867,6 +3003,9 @@ public sealed class CrmWorkspaceService(
         "NoteDeleted" => "Комментарий удалён",
         "NotePinned" => "Комментарий закреплён",
         "NoteUnpinned" => "Комментарий откреплён",
+        "ChatQueued" => "Сообщение поставлено в очередь",
+        "ChatSent" => "Сообщение отправлено в Avito",
+        "ChatCancelled" => "Сообщение в чат отменено",
         _ => action
     };
 
@@ -3122,6 +3261,45 @@ public sealed class CrmWorkspaceService(
         {
             return [];
         }
+    }
+
+    private async Task<IReadOnlyList<CrmChatMessageDto>> LoadOutboundChatAsync(
+        Guid cardId,
+        string userId,
+        bool isAdmin,
+        CancellationToken ct)
+    {
+        var outbound = await db.CrmOutboundChatMessages.AsNoTracking()
+            .Where(x => x.CardId == cardId && x.CancelledAtUtc == null)
+            .OrderBy(x => x.CreatedAtUtc)
+            .ToListAsync(ct);
+        if (outbound.Count == 0)
+        {
+            return [];
+        }
+
+        return outbound.Select(message =>
+        {
+            var canCancel = string.Equals(message.Status, CrmOutboundChatStatuses.Planned, StringComparison.Ordinal)
+                && (isAdmin || string.Equals(message.AuthorUserId, userId, StringComparison.Ordinal));
+            var at = message.Status == CrmOutboundChatStatuses.Sent
+                ? message.SentAtUtc ?? message.CreatedAtUtc
+                : message.CreatedAtUtc;
+            return new CrmChatMessageDto(
+                message.Text,
+                FormatMessageTime(at),
+                "outgoing",
+                message.Id,
+                message.Status,
+                CrmOutboundChatStatuses.GetLabel(message.Status),
+                canCancel);
+        }).ToList();
+    }
+
+    private static string FormatMessageTime(DateTime at)
+    {
+        var utc = at.Kind == DateTimeKind.Utc ? at : DateTime.SpecifyKind(at, DateTimeKind.Utc);
+        return utc.ToLocalTime().ToString("dd MMM HH:mm", CultureInfo.GetCultureInfo("ru-RU"));
     }
 
     private static string FormatMessageTime(string? at)

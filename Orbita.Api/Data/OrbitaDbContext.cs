@@ -32,6 +32,7 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
     public DbSet<CrmTaskAttachmentEntity> CrmTaskAttachments => Set<CrmTaskAttachmentEntity>();
     public DbSet<CrmCandidateHistoryEntity> CrmCandidateHistory => Set<CrmCandidateHistoryEntity>();
     public DbSet<CrmCardChatReadEntity> CrmCardChatReads => Set<CrmCardChatReadEntity>();
+    public DbSet<CrmOutboundChatMessageEntity> CrmOutboundChatMessages => Set<CrmOutboundChatMessageEntity>();
     public DbSet<CrmDeskAlertEntity> CrmDeskAlerts => Set<CrmDeskAlertEntity>();
     public DbSet<CrmManagerShiftEntity> CrmManagerShifts => Set<CrmManagerShiftEntity>();
     public DbSet<ResponseBitrixDeliveryEntity> ResponseBitrixDeliveries => Set<ResponseBitrixDeliveryEntity>();
@@ -312,6 +313,22 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.HasKey(x => new { x.CardId, x.UserId });
             entity.Property(x => x.UserId).HasMaxLength(128);
             entity.Property(x => x.ContentHash).HasMaxLength(64);
+            entity.HasOne<CrmCandidateCardEntity>()
+                .WithMany()
+                .HasForeignKey(x => x.CardId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<CrmOutboundChatMessageEntity>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.ResponseId, x.Status, x.CreatedAtUtc });
+            entity.HasIndex(x => new { x.CardId, x.CreatedAtUtc });
+            entity.Property(x => x.AuthorUserId).HasMaxLength(128);
+            entity.Property(x => x.AuthorName).HasMaxLength(256);
+            entity.Property(x => x.Text).HasMaxLength(CrmOutboundChatStatuses.MaxTextLength);
+            entity.Property(x => x.Status).HasMaxLength(16);
+            entity.Property(x => x.DeliveryClaimedByWorkerId).HasMaxLength(128);
             entity.HasOne<CrmCandidateCardEntity>()
                 .WithMany()
                 .HasForeignKey(x => x.CardId)

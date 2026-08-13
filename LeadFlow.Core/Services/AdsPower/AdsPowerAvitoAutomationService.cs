@@ -2087,10 +2087,14 @@ public sealed partial class AdsPowerAvitoAutomationService(
             var isKnownSourceId = existingSourceIdsFromDb is not null
                 && !string.IsNullOrWhiteSpace(sourceResponseIdForSkip)
                 && existingSourceIdsFromDb.Contains(sourceResponseIdForSkip.Trim());
+            var pendingForCandidate = ResolvePendingForCandidate(
+                enrichmentHints?.PendingBySourceResponseId,
+                sourceResponseIdForSkip);
             if (isKnownSourceId)
             {
                 // Уже в базе: чат не трогаем, если нет unread — кроме open phone-watch
-                // (кандидат может ответить, пока следим за сменой номера).
+                // (кандидат может ответить, пока следим за сменой номера)
+                // и кроме очереди исходящих менеджера.
                 var hasUnread = await TryReadCandidateChatUnreadAsync(page, domIndex, cancellationToken)
                     .ConfigureAwait(false);
                 if (!hasUnread)
@@ -2104,7 +2108,11 @@ public sealed partial class AdsPowerAvitoAutomationService(
                             .ConfigureAwait(false);
                     }
 
-                    if (!openPhoneWatch)
+                    if (MessengerEnrichmentSkip.ShouldSkipKnownCandidate(
+                            isKnownSourceId,
+                            hasUnread,
+                            openPhoneWatch,
+                            pendingForCandidate.Count > 0))
                     {
                         continue;
                     }
@@ -2116,6 +2124,9 @@ public sealed partial class AdsPowerAvitoAutomationService(
                     domIndex,
                     candidatesReturnUrl,
                     enrichmentHints?.MessengerAutoReply,
+                    pendingForCandidate,
+                    enrichmentHints?.ClaimOutboundChatForDeliveryAsync,
+                    enrichmentHints?.AckOutboundChatSentAsync,
                     cancellationToken)
                 .ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(enrichment.ChannelUrl) && enrichment.ChatMessages.Count == 0)
@@ -2218,11 +2229,28 @@ public sealed partial class AdsPowerAvitoAutomationService(
         }
     }
 
+    private static IReadOnlyList<WorkerPendingChatMessageDto> ResolvePendingForCandidate(
+        IReadOnlyDictionary<string, IReadOnlyList<WorkerPendingChatMessageDto>>? pendingBySource,
+        string? sourceResponseId)
+    {
+        if (pendingBySource is null || string.IsNullOrWhiteSpace(sourceResponseId))
+        {
+            return [];
+        }
+
+        return pendingBySource.TryGetValue(sourceResponseId.Trim(), out var pending)
+            ? pending
+            : [];
+    }
+
     private async Task<MessengerCardEnrichmentResult> TryEnrichMessengerForCandidateCardAsync(
         IPage page,
         int candidateIndex,
         string candidatesReturnUrl,
         AvitoMessengerAutoReplySettings? autoReply,
+        IReadOnlyList<WorkerPendingChatMessageDto> pendingOutbound,
+        Func<Guid, CancellationToken, Task<bool>>? claimOutboundChatForDeliveryAsync,
+        Func<IReadOnlyList<Guid>, CancellationToken, Task>? ackOutboundChatSentAsync,
         CancellationToken cancellationToken)
     {
         await CloseMiniMessengerPanelIfOpenAsync(page, cancellationToken).ConfigureAwait(false);
@@ -2282,12 +2310,64 @@ public sealed partial class AdsPowerAvitoAutomationService(
 
         var chatMessages = await CollectMiniMessengerMessagesAsync(page, cancellationToken).ConfigureAwait(false);
         autoReply ??= new AvitoMessengerAutoReplySettings();
-        if (autoReply.Enabled
-            && AvitoChatAutoReplyEvaluator.NeedsAutoReply(
-                ParseMiniMessengerMessages(chatMessages),
-                autoReply.Message))
+        var parsedChat = ParseMiniMessengerMessages(chatMessages);
+        if (pendingOutbound.Count > 0)
         {
-            if (await TrySendMiniMessengerAutoReplyAsync(page, autoReply.Message, cancellationToken).ConfigureAwait(false))
+            var decision = AvitoPendingChatSendEvaluator.Evaluate(parsedChat, pendingOutbound);
+            var acked = new List<Guid>();
+            foreach (var item in decision.AlreadyInChat)
+            {
+                if (claimOutboundChatForDeliveryAsync is not null
+                    && await claimOutboundChatForDeliveryAsync(item.Id, cancellationToken).ConfigureAwait(false))
+                {
+                    acked.Add(item.Id);
+                }
+            }
+
+            foreach (var item in decision.ToSend)
+            {
+                if (claimOutboundChatForDeliveryAsync is null
+                    || !await claimOutboundChatForDeliveryAsync(item.Id, cancellationToken).ConfigureAwait(false))
+                {
+                    continue;
+                }
+
+                if (await TrySendMiniMessengerTextAsync(page, item.Text, "manager-outbound", cancellationToken)
+                        .ConfigureAwait(false))
+                {
+                    acked.Add(item.Id);
+                }
+                else
+                {
+                    break;
+                }
+            }
+
+            if (acked.Count > 0 && ackOutboundChatSentAsync is not null)
+            {
+                try
+                {
+                    await ackOutboundChatSentAsync(acked, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    _ = GlobalLogger.Instance.LogAsync(
+                        $"AdsPower outbound chat ack failed: {ex.Message}.",
+                        DeskLinkAuditLogLevel.Warning,
+                        memberName: nameof(TryEnrichMessengerForCandidateCardAsync));
+                }
+            }
+
+            if (acked.Count > 0)
+            {
+                chatMessages = await CollectMiniMessengerMessagesAsync(page, cancellationToken).ConfigureAwait(false);
+            }
+        }
+        else if (autoReply.Enabled
+            && AvitoChatAutoReplyEvaluator.NeedsAutoReply(parsedChat, autoReply.Message))
+        {
+            if (await TrySendMiniMessengerTextAsync(page, autoReply.Message, "auto-reply", cancellationToken)
+                    .ConfigureAwait(false))
             {
                 chatMessages = await CollectMiniMessengerMessagesAsync(page, cancellationToken).ConfigureAwait(false);
             }
@@ -2469,44 +2549,47 @@ public sealed partial class AdsPowerAvitoAutomationService(
     private static IReadOnlyList<AvitoChatMessage> ParseMiniMessengerMessages(JsonArray chatMessages) =>
         AvitoChatMessagesJson.Parse(chatMessages.ToJsonString());
 
-    private async Task<bool> TrySendMiniMessengerAutoReplyAsync(
+    private async Task<bool> TrySendMiniMessengerTextAsync(
         IPage page,
-        string autoReplyMessage,
+        string messageText,
+        string purpose,
         CancellationToken cancellationToken)
     {
         await HumanDelay.BeforeMessengerAutoReplySendAsync(cancellationToken).ConfigureAwait(false);
 
         var sendRaw = await EvaluateWithRetryAsync<string>(
                 page,
-                AvitoCandidatesPageScripts.BuildSendMiniMessengerReplyScript(autoReplyMessage),
+                AvitoCandidatesPageScripts.BuildSendMiniMessengerReplyScript(messageText),
                 cancellationToken)
             .ConfigureAwait(false);
         if (!TryParseMessengerSendStep(sendRaw, out var sent, out var reason) || !sent)
         {
             _ = GlobalLogger.Instance.LogAsync(
-                $"AdsPower messenger auto-reply failed: {reason ?? "unknown"}.",
+                $"AdsPower messenger {purpose} failed: {reason ?? "unknown"}.",
                 DeskLinkAuditLogLevel.Warning,
-                memberName: nameof(TrySendMiniMessengerAutoReplyAsync),
+                memberName: nameof(TrySendMiniMessengerTextAsync),
                 properties: new Dictionary<string, object?>
                 {
                     ["page.url"] = page.Url,
-                    ["messenger.autoReply.reason"] = reason
+                    ["messenger.send.purpose"] = purpose,
+                    ["messenger.send.reason"] = reason
                 });
             return false;
         }
 
-        var appeared = await WaitForEmployerAutoReplyInChatAsync(page, autoReplyMessage, cancellationToken).ConfigureAwait(false);
+        var appeared = await WaitForEmployerAutoReplyInChatAsync(page, messageText, cancellationToken).ConfigureAwait(false);
         _ = GlobalLogger.Instance.LogAsync(
             appeared
-                ? "AdsPower messenger auto-reply sent."
-                : "AdsPower messenger auto-reply submitted, but outgoing message was not confirmed in chat history.",
+                ? $"AdsPower messenger {purpose} sent."
+                : $"AdsPower messenger {purpose} submitted, but outgoing message was not confirmed in chat history.",
             appeared ? DeskLinkAuditLogLevel.Info : DeskLinkAuditLogLevel.Warning,
-            memberName: nameof(TrySendMiniMessengerAutoReplyAsync),
+            memberName: nameof(TrySendMiniMessengerTextAsync),
             properties: new Dictionary<string, object?>
             {
                 ["page.url"] = page.Url,
-                ["messenger.autoReply.confirmed"] = appeared,
-                ["messenger.autoReply.method"] = reason
+                ["messenger.send.purpose"] = purpose,
+                ["messenger.send.confirmed"] = appeared,
+                ["messenger.send.method"] = reason
             });
 
         return appeared;

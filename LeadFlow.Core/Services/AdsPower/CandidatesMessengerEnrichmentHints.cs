@@ -14,4 +14,7 @@ public sealed record CandidatesMessengerEnrichmentHints(
     /// true = открытое phone-watch наблюдение (sub+FIO) — нельзя скипать phone-reveal
     /// и messenger-enrich (чат нужно перечитывать, пока следим за номером).
     /// </summary>
-    Func<string, CancellationToken, Task<bool>>? IsOpenPhoneWatchAsync = null);
+    Func<string, CancellationToken, Task<bool>>? IsOpenPhoneWatchAsync = null,
+    IReadOnlyDictionary<string, IReadOnlyList<WorkerPendingChatMessageDto>>? PendingBySourceResponseId = null,
+    Func<Guid, CancellationToken, Task<bool>>? ClaimOutboundChatForDeliveryAsync = null,
+    Func<IReadOnlyList<Guid>, CancellationToken, Task>? AckOutboundChatSentAsync = null);

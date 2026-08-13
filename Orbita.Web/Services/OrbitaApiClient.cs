@@ -2459,6 +2459,25 @@ public sealed class OrbitaApiClient(
         return response is null ? (false, InvalidApiSessionError) : response.IsSuccessStatusCode ? (true, null) : (false, await ReadApiErrorAsync(response, ct));
     }
 
+    public async Task<(bool Success, string? Error)> QueueCrmChatMessageAsync(Guid cardId, string text, CancellationToken ct = default)
+    {
+        if (_preview.Enabled) return (true, null);
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"api/v1/crm/cards/{cardId:D}/chat")
+        {
+            Content = JsonContent.Create(new CrmChatSendRequest(text))
+        };
+        using var response = await SendAuthenticatedAsync(request, ct);
+        return response is null ? (false, InvalidApiSessionError) : response.IsSuccessStatusCode ? (true, null) : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(bool Success, string? Error)> CancelCrmChatMessageAsync(Guid cardId, Guid messageId, CancellationToken ct = default)
+    {
+        if (_preview.Enabled) return (true, null);
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"api/v1/crm/cards/{cardId:D}/chat/{messageId:D}/cancel");
+        using var response = await SendAuthenticatedAsync(request, ct);
+        return response is null ? (false, InvalidApiSessionError) : response.IsSuccessStatusCode ? (true, null) : (false, await ReadApiErrorAsync(response, ct));
+    }
+
     public async Task<(Guid? CardId, string? Error)> CreateManualCrmCardAsync(CrmManualCardCreateRequest body, CancellationToken ct = default)
     {
         if (_preview.Enabled)

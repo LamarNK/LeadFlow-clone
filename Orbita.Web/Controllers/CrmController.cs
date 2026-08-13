@@ -621,6 +621,26 @@ public sealed class CrmController(
     [HttpPost]
     [Authorize(Policy = PanelPermissions.CrmBoard)]
     [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SendChat(Guid id, string text, string? stage, CancellationToken ct = default)
+    {
+        var (_, error) = await api.QueueCrmChatMessageAsync(id, text, ct);
+        if (error is not null) TempData["CrmError"] = error;
+        return RedirectToAction(nameof(Card), new { id, tab = "chat", stage });
+    }
+
+    [HttpPost]
+    [Authorize(Policy = PanelPermissions.CrmBoard)]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> CancelChat(Guid id, Guid messageId, string? stage, CancellationToken ct = default)
+    {
+        var (_, error) = await api.CancelCrmChatMessageAsync(id, messageId, ct);
+        if (error is not null) TempData["CrmError"] = error;
+        return RedirectToAction(nameof(Card), new { id, tab = "chat", stage });
+    }
+
+    [HttpPost]
+    [Authorize(Policy = PanelPermissions.CrmBoard)]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> CreateManual(
         string fullName,
         string phoneRaw,

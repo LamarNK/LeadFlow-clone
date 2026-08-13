@@ -35,12 +35,15 @@ public sealed class WorkerMonitoringService(
     IWorkerPendingUpdateCoordinator pendingUpdateCoordinator,
     IBrowserMonitorSource browserMonitorSource,
     IResponsePhoneObservationStore? phoneObservationStore = null,
-    IMonitoringCycleJournal? monitoringCycleJournal = null) : IWorkerMonitoringService
+    IMonitoringCycleJournal? monitoringCycleJournal = null,
+    IOutboundChatDispatch? outboundChatDispatch = null) : IWorkerMonitoringService
 {
     private readonly IResponsePhoneObservationStore _phoneObservationStore =
         phoneObservationStore ?? new NullResponsePhoneObservationStore();
     private readonly IMonitoringCycleJournal _cycleJournal =
         monitoringCycleJournal ?? NullMonitoringCycleJournal.Instance;
+    private readonly IOutboundChatDispatch _outboundChat =
+        outboundChatDispatch ?? NullOutboundChatDispatch.Instance;
 
     private const int LoopRecoveryPauseMinutes = 12;
     private const int MaxLoopRecoveryFailuresBeforeStop = 10;
@@ -805,7 +808,19 @@ public sealed class WorkerMonitoringService(
             // оставляем default
         }
 
-        async Task<CandidateBatchPublishResult> ProcessBatchInlineAsync(IReadOnlyList<CandidateResponse> batch)
+        IReadOnlyList<WorkerPendingChatMessageDto> pendingAll = [];
+        try
+        {
+            pendingAll = await _outboundChat.GetPendingAsync(account.Id, cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            pendingAll = [];
+        }
+
+        async Task<CandidateBatchPublishResult> ProcessBatchInlineAsync(
+            IReadOnlyList<CandidateResponse> batch,
+            IReadOnlyDictionary<string, IReadOnlyList<WorkerPendingChatMessageDto>>? pendingBySource = null)
         {
             if (batch.Count == 0)
             {
@@ -876,6 +891,25 @@ public sealed class WorkerMonitoringService(
                     candidate.Gender,
                     candidate.RawText);
                 candidate.Gender = CandidateGenderResolver.ToStoredGender(genderResolution);
+
+                var alreadyInOrbitEarly = matchedProfiles.Contains(i);
+                var hasPendingOutbound = pendingBySource is not null
+                    && !string.IsNullOrWhiteSpace(candidate.SourceResponseId)
+                    && pendingBySource.ContainsKey(candidate.SourceResponseId.Trim());
+                if (alreadyInOrbitEarly
+                    && hasPendingOutbound
+                    && !string.IsNullOrWhiteSpace(candidate.ChatMessagesJson))
+                {
+                    await PublishCandidateAsync(candidate, cancellationToken).ConfigureAwait(false);
+                    publishedCount++;
+                    publishedTotal++;
+                    if (!cancellationToken.IsCancellationRequested)
+                    {
+                        await HumanDelay.BetweenResponsesAsync(cancellationToken).ConfigureAwait(false);
+                    }
+
+                    continue;
+                }
 
                 var filterResult = ResponseCollectionFilter.Evaluate(
                     candidate.Age,
@@ -1174,6 +1208,7 @@ public sealed class WorkerMonitoringService(
                 }
 
                 var singleRunId = _cycleJournal.BeginSubProfile(cycleId, string.Empty, "—", 1, 1);
+                var singlePending = GroupPendingOutbound(pendingAll, avitoSubProfileId: null);
                 var singleProfileHints = new CandidatesMessengerEnrichmentHints(
                     account.Id,
                     settings.DuplicateScope,
@@ -1182,7 +1217,10 @@ public sealed class WorkerMonitoringService(
                     IsOpenPhoneWatchAsync: (fullName, ct) => IsOpenPhoneWatchForHintsAsync(
                         avitoSubProfileId: null,
                         fullName,
-                        ct));
+                        ct),
+                    PendingBySourceResponseId: singlePending,
+                    ClaimOutboundChatForDeliveryAsync: _outboundChat.ClaimForDeliveryAsync,
+                    AckOutboundChatSentAsync: _outboundChat.AckSentAsync);
                 var rawJson = await session
                     .ExtractCandidatesJsonAsync(singleProfileHints, cancellationToken)
                     .ConfigureAwait(false);
@@ -1191,7 +1229,7 @@ public sealed class WorkerMonitoringService(
                     .ConfigureAwait(false);
                 WorkerMonitoringLogger.ExtractionSummary(account, null, singleParse.Summary);
                 var singleBatch = singleParse.Candidates;
-                var singlePublishResult = await ProcessBatchInlineAsync(singleBatch).ConfigureAwait(false);
+                var singlePublishResult = await ProcessBatchInlineAsync(singleBatch, singlePending).ConfigureAwait(false);
                 WorkerMonitoringLogger.ExtractionPublished(
                     account,
                     null,
@@ -1328,6 +1366,7 @@ public sealed class WorkerMonitoringService(
                         sub.Id,
                         sub.Name,
                         "Читает отклики");
+                    var pendingForSub = GroupPendingOutbound(pendingAll, sub.Id);
                     var messengerHints = new CandidatesMessengerEnrichmentHints(
                         account.Id,
                         settings.DuplicateScope,
@@ -1337,7 +1376,10 @@ public sealed class WorkerMonitoringService(
                         IsOpenPhoneWatchAsync: (fullName, ct) => IsOpenPhoneWatchForHintsAsync(
                             sub.Id,
                             fullName,
-                            ct));
+                            ct),
+                        PendingBySourceResponseId: pendingForSub,
+                        ClaimOutboundChatForDeliveryAsync: _outboundChat.ClaimForDeliveryAsync,
+                        AckOutboundChatSentAsync: _outboundChat.AckSentAsync);
                     var rawJson = await session
                         .ExtractCandidatesJsonAsync(messengerHints, cancellationToken)
                         .ConfigureAwait(false);
@@ -1365,7 +1407,7 @@ public sealed class WorkerMonitoringService(
                         r.AvitoSubProfileName = sub.Name;
                     }
 
-                    var publishResult = await ProcessBatchInlineAsync(batch).ConfigureAwait(false);
+                    var publishResult = await ProcessBatchInlineAsync(batch, pendingForSub).ConfigureAwait(false);
                     WorkerMonitoringLogger.ExtractionPublished(
                         account,
                         sub,
@@ -1689,6 +1731,31 @@ public sealed class WorkerMonitoringService(
                 pageState,
                 "обновление субпрофилей").ConfigureAwait(false);
         }
+    }
+
+    private static IReadOnlyDictionary<string, IReadOnlyList<WorkerPendingChatMessageDto>> GroupPendingOutbound(
+        IReadOnlyList<WorkerPendingChatMessageDto> pending,
+        string? avitoSubProfileId)
+    {
+        if (pending.Count == 0)
+        {
+            return new Dictionary<string, IReadOnlyList<WorkerPendingChatMessageDto>>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        IEnumerable<WorkerPendingChatMessageDto> filtered = pending;
+        if (!string.IsNullOrWhiteSpace(avitoSubProfileId))
+        {
+            filtered = pending.Where(item =>
+                string.IsNullOrWhiteSpace(item.AvitoSubProfileId)
+                || string.Equals(item.AvitoSubProfileId, avitoSubProfileId, StringComparison.Ordinal));
+        }
+
+        return filtered
+            .GroupBy(item => item.SourceResponseId.Trim(), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                group => group.Key,
+                IReadOnlyList<WorkerPendingChatMessageDto> (group) => group.ToList(),
+                StringComparer.OrdinalIgnoreCase);
     }
 
     private static bool IsAdsStatsStale(AvitoAccount account)

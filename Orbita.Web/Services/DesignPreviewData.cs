@@ -567,17 +567,29 @@ internal static class DesignPreviewData
 
     private static IReadOnlyList<CrmChatMessageDto> BuildPreviewChat(Guid cardId)
     {
-        var count = (int)(cardId.GetHashCode() & 0x3);
-        var messages = new List<CrmChatMessageDto>();
-        for (var i = 0; i < count; i++)
-        {
-            messages.Add(new CrmChatMessageDto(
-                $"Пример сообщения из переписки кандидата #{i + 1}. Заполняется из отклика.",
-                DateTime.UtcNow.AddMinutes(-10 * (i + 1)).ToString("dd MMM HH:mm"),
-                i % 2 == 0 ? "incoming" : "outgoing"));
-        }
-
-        return messages;
+        var now = DateTime.UtcNow;
+        return
+        [
+            new CrmChatMessageDto(
+                "Здравствуйте! Ещё актуально?",
+                now.AddMinutes(-40).ToString("dd MMM HH:mm"),
+                "incoming"),
+            new CrmChatMessageDto(
+                "Да, напишите номер — перезвоним.",
+                now.AddMinutes(-25).ToString("dd MMM HH:mm"),
+                "outgoing",
+                Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+                CrmOutboundChatStatuses.Sent,
+                CrmOutboundChatStatuses.GetLabel(CrmOutboundChatStatuses.Sent)),
+            new CrmChatMessageDto(
+                "Когда вам удобно созвониться?",
+                now.AddMinutes(-5).ToString("dd MMM HH:mm"),
+                "outgoing",
+                cardId,
+                CrmOutboundChatStatuses.Planned,
+                CrmOutboundChatStatuses.GetLabel(CrmOutboundChatStatuses.Planned),
+                CanCancel: true)
+        ];
     }
 
     private static IReadOnlyList<CrmPhoneHistoryDto> BuildPreviewPhoneHistory(PreviewCrmCandidate candidate) =>

@@ -163,6 +163,16 @@ public sealed record WorkerCandidateLookupResponse(
     IReadOnlyList<string> ExistingCardFingerprints,
     IReadOnlyList<int> MatchedProfileIndexes);
 
+public sealed record WorkerPendingChatMessageDto(
+    Guid Id,
+    string SourceResponseId,
+    string Text,
+    string? AvitoSubProfileId = null,
+    DateTime QueuedAtUtc = default);
+
+public sealed record WorkerOutboundChatAckRequest(IReadOnlyList<Guid> SentIds);
+public sealed record WorkerOutboundChatClaimRequest(Guid MessageId);
+
 public sealed record WorkerMonitoringStatsDto(
     double HistoricalHeatScore,
     DashboardStatsDto Stats);

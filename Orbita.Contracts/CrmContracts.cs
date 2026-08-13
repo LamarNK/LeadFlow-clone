@@ -412,7 +412,29 @@ public sealed record CrmClientTimeDto(
 public sealed record CrmChatMessageDto(
     string Text,
     string TimeLabel,
-    string Tone);
+    string Tone,
+    Guid? Id = null,
+    string? Status = null,
+    string? StatusLabel = null,
+    bool CanCancel = false);
+
+public static class CrmOutboundChatStatuses
+{
+    public const string Planned = "planned";
+    public const string Sending = "sending";
+    public const string Sent = "sent";
+    public const int MaxTextLength = 2000;
+
+    public static string GetLabel(string? status) => status switch
+    {
+        Planned => "Запланировано",
+        Sending => "Отправляется",
+        Sent => "Отправлено",
+        _ => string.Empty
+    };
+}
+
+public sealed record CrmChatSendRequest(string Text);
 
 public sealed record CrmPhoneHistoryDto(
     string PhoneRaw,

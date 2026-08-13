@@ -54,8 +54,12 @@
         "NoteDeleted" => "Комментарий удалён",
         "NotePinned" => "Комментарий закреплён",
         "NoteUnpinned" => "Комментарий откреплён",
+        "ChatQueued" => "Сообщение поставлено в очередь",
+        "ChatSent" => "Сообщение отправлено в Avito",
+        "ChatCancelled" => "Сообщение в чат отменено",
         _ => action
     };
+    var canSendChat = canEdit && !card.IsClosed && !string.IsNullOrWhiteSpace(card.SourceResponseId);
 }
 <partial name="_PageHeader" model="header" />
 
@@ -494,6 +498,23 @@
             }
             else if (activeTab == "chat")
             {
+                @if (canSendChat)
+                {
+                    <form asp-action="SendChat" method="post" class="crm-composer">
+                        <input type="hidden" name="id" value="@card.Id" />
+                        <input type="hidden" name="stage" value="@boardReturnStage" />
+                        <textarea name="text" maxlength="2000" required placeholder="Сообщение кандидату. Воркер отправит его при следующем проходе этого отклика."></textarea>
+                        <button class="settings-primary-btn" type="submit">Отправить</button>
+                    </form>
+                }
+                else if (canEdit && card.IsClosed)
+                {
+                    <p class="crm-empty">Карточка закрыта — писать в чат нельзя.</p>
+                }
+                else if (canEdit && string.IsNullOrWhiteSpace(card.SourceResponseId))
+                {
+                    <p class="crm-empty">Нет привязки к отклику Avito — сообщение нельзя поставить в очередь.</p>
+                }
                 @if (Model.Chat.Count > 0)
                 {
                     <div class="crm-chat" data-crm-chat-thread data-card-id="@card.Id" data-mark-read="@(ViewData["MarkChatReadOnLoad"] as bool? == true ? "1" : "0")">
@@ -501,17 +522,33 @@
                         {
                             var sender = msg.Tone == "outgoing" ? "Вы" : msg.Tone == "system" ? "Avito" : "Кандидат";
                             var avatar = msg.Tone == "outgoing" ? "В" : msg.Tone == "system" ? "A" : (string.IsNullOrWhiteSpace(card.FullName) ? "К" : card.FullName.Trim()[0].ToString());
-                            <article class="crm-chat__msg crm-chat__msg--@msg.Tone">
+                            var statusClass = string.IsNullOrWhiteSpace(msg.Status) ? "" : $" crm-chat__msg--{msg.Status}";
+                            <article class="crm-chat__msg crm-chat__msg--@msg.Tone@statusClass">
                                 <span class="crm-chat__avatar" aria-hidden="true">@avatar</span>
                                 <div class="crm-chat__bubble">
                                     <header><strong>@sender</strong><time>@msg.TimeLabel</time></header>
                                     <p>@msg.Text</p>
+                                    @if (!string.IsNullOrWhiteSpace(msg.StatusLabel))
+                                    {
+                                        <footer class="crm-chat__status">
+                                            <span>@msg.StatusLabel · @msg.TimeLabel</span>
+                                            @if (msg.CanCancel && msg.Id is Guid outboundId)
+                                            {
+                                                <form asp-action="CancelChat" method="post" class="crm-chat__cancel">
+                                                    <input type="hidden" name="id" value="@card.Id" />
+                                                    <input type="hidden" name="messageId" value="@outboundId" />
+                                                    <input type="hidden" name="stage" value="@boardReturnStage" />
+                                                    <button type="submit">Отменить</button>
+                                                </form>
+                                            }
+                                        </footer>
+                                    }
                                 </div>
                             </article>
                         }
                     </div>
                 }
-                else
+                else if (!canSendChat)
                 {
                     <p class="crm-empty">Переписка не сохранена для этого отклика.</p>
                 }

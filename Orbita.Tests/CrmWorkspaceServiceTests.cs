@@ -273,6 +273,31 @@ public sealed class CrmWorkspaceServiceTests
     }
 
     [Fact]
+    public async Task Close_CancelsPlannedOutboundChatMessages()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var manager = await harness.CreateManagerAsync("close-chat@test.local", capacity: 5, onShift: true);
+        var response = await SeedResponseAsync(harness.Db, "src-close-chat");
+        var card = NewCard(response.Id, manager.Id);
+        harness.Db.CrmCandidateCards.Add(card);
+        await harness.Db.SaveChangesAsync();
+        Assert.True((await harness.Sut.QueueChatMessageAsync(card.Id, "Не отправлять", manager.Id, isAdmin: false)).Ok);
+
+        var (ok, error) = await harness.Sut.CloseAsync(
+            card.Id,
+            CrmCloseReasons.NotRelevant,
+            "Закрываем карточку",
+            manager.Id,
+            isAdmin: false);
+
+        Assert.True(ok, error);
+        var message = Assert.Single(harness.Db.CrmOutboundChatMessages);
+        Assert.NotNull(message.CancelledAtUtc);
+        Assert.Equal(CrmOutboundChatStatuses.Planned, message.Status);
+    }
+
+    [Fact]
     public async Task CreateManualCard_ElevatedUserCreatesResponseAndCard()
     {
         await using var harness = await Harness.CreateAsync();
@@ -1052,6 +1077,124 @@ public sealed class CrmWorkspaceServiceTests
         Assert.True(completedTask.UpdatedAtUtc >= completedTask.CreatedAtUtc);
         Assert.True(completedTask.CompletedAtUtc >= completedTask.UpdatedAtUtc);
         Assert.DoesNotContain(detail.Activity, item => item.Title == "Задача изменена");
+    }
+
+    [Fact]
+    public async Task QueueChatMessage_Owner_CreatesPlannedMessage()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var manager = await harness.CreateManagerAsync("chat@test.local", capacity: 5, onShift: true);
+        var response = await SeedResponseAsync(harness.Db, "avito-src-1");
+        var card = NewCard(response.Id, manager.Id);
+        harness.Db.CrmCandidateCards.Add(card);
+        await harness.Db.SaveChangesAsync();
+
+        var (ok, error) = await harness.Sut.QueueChatMessageAsync(card.Id, "  Напишите номер  ", manager.Id, isAdmin: false);
+
+        Assert.True(ok, error);
+        var stored = Assert.Single(harness.Db.CrmOutboundChatMessages);
+        Assert.Equal("Напишите номер", stored.Text);
+        Assert.Equal(CrmOutboundChatStatuses.Planned, stored.Status);
+        Assert.Null(stored.SentAtUtc);
+        var detail = await harness.Sut.GetCardAsync(card.Id, manager.Id, isAdmin: false);
+        var planned = Assert.Single(detail!.Chat);
+        Assert.Equal("Напишите номер", planned.Text);
+        Assert.Equal(CrmOutboundChatStatuses.Planned, planned.Status);
+        Assert.Equal("Запланировано", planned.StatusLabel);
+        Assert.True(planned.CanCancel);
+        Assert.False(string.IsNullOrWhiteSpace(planned.TimeLabel));
+    }
+
+    [Fact]
+    public async Task QueueChatMessage_WithoutSourceResponseId_Fails()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var manager = await harness.CreateManagerAsync("nosrc@test.local", capacity: 5, onShift: true);
+        var response = await SeedResponseAsync(harness.Db, " ");
+        response.SourceResponseId = "";
+        var card = NewCard(response.Id, manager.Id);
+        harness.Db.CrmCandidateCards.Add(card);
+        await harness.Db.SaveChangesAsync();
+
+        var (ok, error) = await harness.Sut.QueueChatMessageAsync(card.Id, "Привет", manager.Id, isAdmin: false);
+
+        Assert.False(ok);
+        Assert.Contains("Avito", error, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(harness.Db.CrmOutboundChatMessages);
+    }
+
+    [Fact]
+    public async Task QueueChatMessage_ClosedCard_Fails()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var manager = await harness.CreateManagerAsync("closed-chat@test.local", capacity: 5, onShift: true);
+        var response = await SeedResponseAsync(harness.Db, "src-closed");
+        var card = NewCard(response.Id, manager.Id);
+        card.IsClosed = true;
+        harness.Db.CrmCandidateCards.Add(card);
+        await harness.Db.SaveChangesAsync();
+
+        var (ok, error) = await harness.Sut.QueueChatMessageAsync(card.Id, "Привет", manager.Id, isAdmin: false);
+
+        Assert.False(ok);
+        Assert.Contains("закрытой", error, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task CancelChatMessage_Planned_HidesFromThread()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var manager = await harness.CreateManagerAsync("cancel-chat@test.local", capacity: 5, onShift: true);
+        var response = await SeedResponseAsync(harness.Db, "src-cancel");
+        var card = NewCard(response.Id, manager.Id);
+        harness.Db.CrmCandidateCards.Add(card);
+        await harness.Db.SaveChangesAsync();
+        await harness.Sut.QueueChatMessageAsync(card.Id, "Отменить меня", manager.Id, isAdmin: false);
+        var messageId = Assert.Single(harness.Db.CrmOutboundChatMessages).Id;
+
+        var (ok, error) = await harness.Sut.CancelChatMessageAsync(card.Id, messageId, manager.Id, isAdmin: false);
+
+        Assert.True(ok, error);
+        var detail = await harness.Sut.GetCardAsync(card.Id, manager.Id, isAdmin: false);
+        Assert.Empty(detail!.Chat);
+    }
+
+    [Fact]
+    public async Task GetCard_MergesSentOutboundWithAvitoOutgoing()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var manager = await harness.CreateManagerAsync("merge-chat@test.local", capacity: 5, onShift: true);
+        var response = await SeedResponseAsync(harness.Db, "src-merge");
+        response.ChatMessagesJson =
+            """[{"text":"Ещё актуально?","at":"2026-08-13T10:00:00Z","side":"left","isPlatform":false},{"text":"Да, напишите номер","at":"2026-08-13T10:05:00Z","side":"right","isPlatform":false}]""";
+        var card = NewCard(response.Id, manager.Id);
+        harness.Db.CrmCandidateCards.Add(card);
+        harness.Db.CrmOutboundChatMessages.Add(new CrmOutboundChatMessageEntity
+        {
+            Id = Guid.NewGuid(),
+            CardId = card.Id,
+            ResponseId = response.Id,
+            AuthorUserId = manager.Id,
+            AuthorName = "Менеджер",
+            Text = "Да, напишите номер",
+            Status = CrmOutboundChatStatuses.Sent,
+            CreatedAtUtc = DateTime.UtcNow.AddMinutes(-10),
+            SentAtUtc = DateTime.UtcNow.AddMinutes(-5)
+        });
+        await harness.Db.SaveChangesAsync();
+
+        var detail = await harness.Sut.GetCardAsync(card.Id, manager.Id, isAdmin: false);
+
+        Assert.Equal(2, detail!.Chat.Count);
+        Assert.Equal("incoming", detail.Chat[0].Tone);
+        Assert.Equal(CrmOutboundChatStatuses.Sent, detail.Chat[1].Status);
+        Assert.Equal("Отправлено", detail.Chat[1].StatusLabel);
+        Assert.False(detail.Chat[1].CanCancel);
     }
 
     private static CrmCandidateCardEntity NewCard(Guid responseId, string? managerId = null) => new()

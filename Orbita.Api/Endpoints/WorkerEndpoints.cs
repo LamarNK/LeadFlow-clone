@@ -185,6 +185,52 @@ public static class WorkerEndpoints
             return result is null ? Results.NotFound() : Results.Ok(result);
         }).RequireAuthorization("Worker");
 
+        workers.MapGet("/pending-chat-messages", async (
+            Guid accountId,
+            WorkerOutboundChatService outboundChat,
+            ClaimsPrincipal user,
+            CancellationToken ct) =>
+        {
+            if (!TryGetWorkerId(user, out var workerId) || accountId == Guid.Empty)
+            {
+                return Results.Forbid();
+            }
+
+            var pending = await outboundChat.GetPendingAsync(workerId, accountId, ct);
+            return Results.Ok(pending);
+        }).RequireAuthorization("Worker");
+
+        workers.MapPost("/outbound-chat/ack", async (
+            WorkerOutboundChatAckRequest request,
+            WorkerOutboundChatService outboundChat,
+            ClaimsPrincipal user,
+            CancellationToken ct) =>
+        {
+            if (!TryGetWorkerId(user, out var workerId))
+            {
+                return Results.Forbid();
+            }
+
+            var ok = await outboundChat.AckSentAsync(workerId, request.SentIds, ct);
+            return ok ? Results.NoContent() : Results.Forbid();
+        }).RequireAuthorization("Worker");
+
+        workers.MapPost("/outbound-chat/claim", async (
+            WorkerOutboundChatClaimRequest request,
+            WorkerOutboundChatService outboundChat,
+            ClaimsPrincipal user,
+            CancellationToken ct) =>
+        {
+            if (!TryGetWorkerId(user, out var workerId))
+            {
+                return Results.Forbid();
+            }
+
+            return await outboundChat.ClaimForDeliveryAsync(workerId, request.MessageId, ct)
+                ? Results.NoContent()
+                : Results.NotFound();
+        }).RequireAuthorization("Worker");
+
         workers.MapGet("/updates/check", async (
             string? currentVersion,
             WorkerReleaseService releases,
