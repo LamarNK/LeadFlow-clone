@@ -119,8 +119,38 @@
         });
     }
 
+    function initCreateUserForm() {
+        document.querySelectorAll('.settings-create-user-form').forEach((form) => {
+            if (form.__orbitaCreateUserBound) return;
+
+            const roleInput = form.querySelector('[data-settings-create-user-role]');
+            const officeInput = form.querySelector('[data-settings-create-user-office]');
+            const officeField = form.querySelector('[data-settings-create-user-office-field]');
+            if (!roleInput || !officeInput || !officeField) return;
+
+            form.__orbitaCreateUserBound = true;
+
+            const updateOfficeState = () => {
+                const isAdmin = roleInput.value === 'Admin';
+                officeField.hidden = isAdmin;
+                officeInput.disabled = isAdmin;
+                officeInput.required = !isAdmin;
+
+                if (isAdmin) {
+                    officeInput.value = '';
+                } else if (!officeInput.value && officeInput.options.length > 0) {
+                    officeInput.selectedIndex = 0;
+                }
+            };
+
+            roleInput.addEventListener('change', updateOfficeState);
+            updateOfficeState();
+        });
+    }
+
     function runSettingsInits() {
         initUsersListFilters();
+        initCreateUserForm();
         document.querySelectorAll('[data-service-log-message]').forEach((messageEl) => {
             if (messageEl.__orbitaClamped) return;
             messageEl.__orbitaClamped = true;

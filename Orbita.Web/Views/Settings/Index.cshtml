@@ -456,9 +456,13 @@
                             <span class="settings-field-label">Пароль</span>
                             <input type="password" name="Password" required minlength="8" placeholder="Минимум 8 символов" autocomplete="new-password" />
                         </label>
-                        <label class="settings-field">
+                        <label class="settings-field" data-settings-create-user-office-field>
                             <span class="settings-field-label">Офис</span>
-                            <select name="OfficeId" class="settings-select" aria-label="Офис нового пользователя">
+                            <select name="OfficeId"
+                                    class="settings-select"
+                                    aria-label="Офис нового пользователя"
+                                    data-settings-create-user-office
+                                    required>
                                 @foreach (var opt in Model.OfficeOptions)
                                 {
                                     <option value="@opt.Value">@opt.Label</option>
@@ -467,7 +471,11 @@
                         </label>
                         <label class="settings-field">
                             <span class="settings-field-label">Профиль</span>
-                            <select name="Role" class="settings-select" aria-label="Профиль нового пользователя">
+                            <select name="Role"
+                                    class="settings-select"
+                                    aria-label="Профиль нового пользователя"
+                                    data-settings-create-user-role
+                                    required>
                                 @foreach (var opt in Model.ProfileOptions)
                                 {
                                     if (opt.Value == PanelRoles.Operator)
