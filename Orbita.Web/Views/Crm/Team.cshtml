@@ -40,6 +40,7 @@
     };
     var officeId = OfficeContext.EffectiveOfficeId;
     var stageTotal = Math.Max(1, board.TeamStats.TotalActiveCards);
+    string FormatShiftTime(DateTime timestampUtc) => timestampUtc.ToLocalTime().ToString("dd.MM.yyyy HH:mm");
 }
 <partial name="_PageHeader" model="header" />
 
@@ -178,6 +179,11 @@
                                     var pct = manager is null || manager.Capacity <= 0 ? 0 : Math.Min(100, (int)Math.Round(100.0 * manager.ActiveLoad / manager.Capacity));
                                     var searchText = $"{displayName} {member.Email} {option.Label}";
                                     var avatarInitial = string.IsNullOrWhiteSpace(displayName) ? "?" : displayName[..1].ToUpperInvariant();
+                                    var shiftDetails = manager?.IsShiftActive == true && manager.ShiftStartedAtUtc is DateTime startedAt
+                                        ? $"На смене с {FormatShiftTime(startedAt)} · {CrmShiftDisplay.FormatDurationSince(startedAt)}"
+                                        : manager?.LastShiftEndedAtUtc is DateTime endedAt
+                                            ? $"Вышел в {FormatShiftTime(endedAt)}"
+                                            : null;
                                     <article class="crm-staff-row @(member.IsLocked ? "is-locked" : null)" data-crm-staff-row data-staff-role="@option.Value" data-staff-search="@searchText">
                                         <div class="crm-staff-row__identity">
                                             <span class="crm-staff-avatar" aria-hidden="true">@avatarInitial</span>
@@ -196,6 +202,10 @@
                                         </div>
                                         <div class="crm-staff-row__status">
                                             <span class="crm-staff-badge @(member.IsLocked ? "crm-staff-badge--locked" : "crm-staff-badge--active")">@(member.IsLocked ? "Заблокирован" : manager?.IsShiftActive == true ? "На смене" : "Активен")</span>
+                                            @if (!member.IsLocked && shiftDetails is not null)
+                                            {
+                                                <small class="crm-staff-row__shift">@shiftDetails</small>
+                                            }
                                         </div>
                                         <button type="button"
                                                 class="crm-staff-row__edit"
@@ -228,8 +238,13 @@
                     @foreach (var m in board.Managers)
                     {
                         var pct = m.Capacity <= 0 ? 0 : Math.Min(100, (int)Math.Round(100.0 * m.ActiveLoad / m.Capacity));
+                        var shiftDetails = m.IsShiftActive && m.ShiftStartedAtUtc is DateTime startedAt
+                            ? $"на смене с {FormatShiftTime(startedAt)} · {CrmShiftDisplay.FormatDurationSince(startedAt)}"
+                            : m.LastShiftEndedAtUtc is DateTime endedAt
+                                ? $"вышел в {FormatShiftTime(endedAt)}"
+                                : "не на смене";
                         <article class="crm-manager-row @(pct >= 100 ? "is-at-limit" : null) @(m.IsShiftActive ? "is-on-shift" : null)">
-                            <div class="crm-manager-row__name"><span class="crm-manager-row__identity"><i class="fa-solid fa-circle @(m.IsShiftActive ? "is-online" : "")" aria-hidden="true"></i><strong>@m.DisplayName</strong></span><span class="crm-manager-row__shift">@(m.IsShiftActive ? "на смене" : "не на смене")</span></div>
+                            <div class="crm-manager-row__name"><span class="crm-manager-row__identity"><i class="fa-solid fa-circle @(m.IsShiftActive ? "is-online" : "")" aria-hidden="true"></i><strong>@m.DisplayName</strong></span><span class="crm-manager-row__shift">@shiftDetails</span></div>
                             <div class="crm-manager-row__load"><strong>@m.ActiveLoad / @m.Capacity</strong><span class="crm-progress"><i style="width:@pct%"></i></span></div>
                             @if (User.IsInRole(PanelRoles.SeniorManager))
                             {
