@@ -404,6 +404,122 @@ public sealed class SettingsController(
     public IActionResult EditBitrixInstance(Guid officeId, Guid id, string? tab = "integrations") =>
         RedirectToAction(nameof(Index), new { tab, officeId, instanceId = id });
 
+    [HttpGet]
+    public async Task<IActionResult> BitrixCrmImport(
+        Guid officeId,
+        Guid instanceId,
+        int categoryId = 0,
+        [FromServices] OrbitaApiClient api = null!,
+        CancellationToken ct = default)
+    {
+        var instance = await api.GetBitrixInstanceAsync(instanceId, officeId, ct);
+        if (instance is null)
+        {
+            return NotFound();
+        }
+
+        return View(new BitrixCrmImportPageViewModel
+        {
+            OfficeId = officeId,
+            BitrixInstanceId = instanceId,
+            BitrixInstanceLabel = string.IsNullOrWhiteSpace(instance.Signature)
+                ? instance.Name
+                : $"{instance.Name} · {instance.Signature}",
+            PortalHost = instance.PortalHost ?? string.Empty,
+            CategoryId = Math.Max(0, categoryId)
+        });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> PreviewBitrixCrmImport(
+        Guid officeId,
+        Guid bitrixInstanceId,
+        int categoryId,
+        [FromServices] OrbitaApiClient api,
+        CancellationToken ct = default)
+    {
+        var instance = await api.GetBitrixInstanceAsync(bitrixInstanceId, officeId, ct);
+        if (instance is null)
+        {
+            return NotFound();
+        }
+
+        var (preview, error) = await api.PreviewBitrixCrmImportAsync(
+            bitrixInstanceId,
+            new BitrixCrmImportPreviewRequest(Math.Max(0, categoryId), BitrixCrmImportStages.Default),
+            officeId,
+            ct);
+        return View("BitrixCrmImport", BuildBitrixCrmImportPage(instance, Math.Max(0, categoryId), preview, null, null, error));
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ExecuteBitrixCrmImport(
+        ExecuteBitrixCrmImportFormModel model,
+        [FromServices] OrbitaApiClient api,
+        CancellationToken ct = default)
+    {
+        var instance = await api.GetBitrixInstanceAsync(model.BitrixInstanceId, model.OfficeId, ct);
+        if (instance is null)
+        {
+            return NotFound();
+        }
+
+        if (!model.Confirmed || model.DealIds.Count == 0)
+        {
+            var (preview, previewError) = await api.PreviewBitrixCrmImportAsync(
+                model.BitrixInstanceId,
+                new BitrixCrmImportPreviewRequest(model.CategoryId, BitrixCrmImportStages.Default),
+                model.OfficeId,
+                ct);
+            var error = previewError ?? "Выберите хотя бы одну карточку и подтвердите импорт.";
+            return View("BitrixCrmImport", BuildBitrixCrmImportPage(instance, model.CategoryId, preview, null, null, error));
+        }
+
+        var (result, importError) = await api.ExecuteBitrixCrmImportAsync(
+            model.BitrixInstanceId,
+            new BitrixCrmImportExecuteRequest(model.CategoryId, BitrixCrmImportStages.Default, model.DealIds),
+            model.OfficeId,
+            ct);
+        var (freshPreview, refreshError) = await api.PreviewBitrixCrmImportAsync(
+            model.BitrixInstanceId,
+            new BitrixCrmImportPreviewRequest(model.CategoryId, BitrixCrmImportStages.Default),
+            model.OfficeId,
+            ct);
+        var status = result is null
+            ? null
+            : $"Импорт завершён: создано {result.Created}, обновлено {result.Updated}, уже было {result.AlreadyImported}, пропущено {result.Skipped}.";
+        return View("BitrixCrmImport", BuildBitrixCrmImportPage(
+            instance,
+            model.CategoryId,
+            freshPreview,
+            result,
+            status,
+            importError ?? refreshError));
+    }
+
+    private static BitrixCrmImportPageViewModel BuildBitrixCrmImportPage(
+        BitrixInstanceDto instance,
+        int categoryId,
+        BitrixCrmImportPreviewDto? preview,
+        BitrixCrmImportResultDto? result,
+        string? status,
+        string? error) => new()
+    {
+        OfficeId = instance.OfficeId,
+        BitrixInstanceId = instance.Id,
+        BitrixInstanceLabel = string.IsNullOrWhiteSpace(instance.Signature)
+            ? instance.Name
+            : $"{instance.Name} · {instance.Signature}",
+        PortalHost = instance.PortalHost ?? string.Empty,
+        CategoryId = categoryId,
+        Preview = preview,
+        Result = result,
+        StatusMessage = status,
+        ErrorMessage = error
+    };
+
     [HttpPost]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> SaveBitrixInstance(

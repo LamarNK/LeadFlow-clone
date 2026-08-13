@@ -279,6 +279,7 @@ public static class OrbitaApiStartupExtensions
         builder.Services.AddSingleton<ICrmNotificationRealtimeNotifier, CrmNotificationRealtimeNotifier>();
         builder.Services.AddScoped<CrmAnalyticsQueryService>();
         builder.Services.AddScoped<BitrixInstanceService>();
+        builder.Services.AddScoped<BitrixCrmImportService>();
         builder.Services.AddScoped<BitrixWorkforceSettingsService>();
         builder.Services.AddScoped<BitrixWorkforceEventReceiver>();
         builder.Services.AddScoped<BitrixWorkforceProcessor>();
@@ -309,6 +310,7 @@ public static class OrbitaApiStartupExtensions
         builder.Services.AddSingleton<CandidateParser>();
         builder.Services.AddSingleton<BitrixClient>();
         builder.Services.AddSingleton<IBitrixWorkforceClient, BitrixWorkforceClient>();
+        builder.Services.AddScoped<IBitrixCrmImportClient, BitrixCrmImportClient>();
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.Configure<OrbitaBitrixSettings>(builder.Configuration.GetSection("Bitrix"));
         builder.Services.Configure<BitrixWorkforceOptions>(
@@ -357,6 +359,11 @@ public static class OrbitaApiStartupExtensions
         builder.Services.AddHttpClient(nameof(BitrixWorkforceClient), client =>
             {
                 client.Timeout = TimeSpan.FromSeconds(30);
+            })
+            .RemoveAllLoggers();
+        builder.Services.AddHttpClient(nameof(BitrixCrmImportClient), client =>
+            {
+                client.Timeout = TimeSpan.FromMinutes(5);
             })
             .RemoveAllLoggers();
 

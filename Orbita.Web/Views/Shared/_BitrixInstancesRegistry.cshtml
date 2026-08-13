@@ -102,6 +102,11 @@
                                 <span class="settings-bitrix-status settings-bitrix-status--@item.ValidationStatusTone">@item.ValidationStatusLabel</span>
                             </td>
                             <td class="data-table-actions-col" data-label="">
+                                @if (User.IsInRole(PanelRoles.Admin) && officeId is Guid importOfficeId && item.IsEnabled)
+                                {
+                                    <a class="settings-link-btn"
+                                       href="@Url.Action("BitrixCrmImport", "Settings", new { officeId = importOfficeId, instanceId = item.Id })">Импорт в CRM</a>
+                                }
                                 <a class="settings-link-btn"
                                    href="@Url.Action("EditBitrixInstance", controller, controller == "Settings"
                                        ? new { officeId, id = item.Id }

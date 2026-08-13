@@ -392,6 +392,45 @@ public static class PanelResponseEndpoints
             return error is not null ? Results.BadRequest(new { error }) : Results.Ok(validation);
         });
 
+        settings.MapPost("/bitrix-instances/{id:guid}/crm-import/preview", async (
+            Guid id,
+            BitrixCrmImportPreviewRequest request,
+            BitrixCrmImportService crmImport,
+            OfficeScopeService officeScope,
+            ClaimsPrincipal principal,
+            Guid? officeId,
+            CancellationToken ct) =>
+        {
+            var scope = await officeScope.ResolveAsync(principal, ct);
+            if (!scope.HasAccess)
+            {
+                return Results.Forbid();
+            }
+
+            var (preview, error) = await crmImport.PreviewAsync(id, scope, officeId, request, ct);
+            return error is not null ? Results.BadRequest(new { error }) : Results.Ok(preview);
+        });
+
+        settings.MapPost("/bitrix-instances/{id:guid}/crm-import", async (
+            Guid id,
+            BitrixCrmImportExecuteRequest request,
+            BitrixCrmImportService crmImport,
+            OfficeScopeService officeScope,
+            ClaimsPrincipal principal,
+            Guid? officeId,
+            CancellationToken ct) =>
+        {
+            var scope = await officeScope.ResolveAsync(principal, ct);
+            if (!scope.HasAccess)
+            {
+                return Results.Forbid();
+            }
+
+            var actorUserId = principal.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+            var (result, error) = await crmImport.ImportAsync(id, scope, officeId, request, actorUserId, ct);
+            return error is not null ? Results.BadRequest(new { error }) : Results.Ok(result);
+        });
+
         settings.MapGet("/distribution-route", async (
             DistributionRouteService distributionRoute,
             OfficeScopeService officeScope,

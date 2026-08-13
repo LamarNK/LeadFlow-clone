@@ -1,0 +1,180 @@
+@model BitrixCrmImportPageViewModel
+@{
+    ViewData["Title"] = "Импорт из Bitrix24";
+    var preview = Model.Preview;
+    var importable = preview?.Deals
+        .Where(x => x.Action is BitrixCrmImportActions.Create or BitrixCrmImportActions.UpdateExisting)
+        .ToList() ?? [];
+    static string ActionLabel(string action) => action switch
+    {
+        BitrixCrmImportActions.Create => "Создать",
+        BitrixCrmImportActions.UpdateExisting => "Обновить найденную",
+        BitrixCrmImportActions.AlreadyImported => "Уже импортирована",
+        BitrixCrmImportActions.MissingPhone => "Пропустить",
+        _ => action
+    };
+}
+<partial name="_PageHeader" model="@(new PageHeaderViewModel
+{
+    Title = "Импорт из Bitrix24",
+    Subtitle = "Безопасный перенос карточек, комментариев и дел в CRM Орбиты",
+    ShowRefresh = false
+})" />
+
+<div class="orbita-main settings-page bitrix-import-page">
+    <div class="bitrix-import-nav">
+        <a class="settings-link-btn" href="@Url.Action("Index", "Settings", new { tab = "integrations", officeId = Model.OfficeId, instanceId = Model.BitrixInstanceId })">
+            <i class="fa-solid fa-arrow-left" aria-hidden="true"></i> К интеграциям
+        </a>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(Model.StatusMessage))
+    {
+        <div class="settings-alert settings-alert--success" role="status">@Model.StatusMessage</div>
+    }
+    @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+    {
+        <div class="settings-alert settings-alert--error" role="alert">@Model.ErrorMessage</div>
+    }
+
+    <section class="card bitrix-import-summary">
+        <div class="card-header settings-card-header">
+            <div>
+                <h2 class="settings-card-title">@Model.BitrixInstanceLabel</h2>
+                <p class="settings-card-subtitle">@(string.IsNullOrWhiteSpace(Model.PortalHost) ? "Портал Bitrix24" : Model.PortalHost)</p>
+            </div>
+            <span class="settings-status-pill">Офис 1</span>
+        </div>
+        <div class="card-body">
+            <div class="bitrix-import-scope">
+                <div><span>Воронка Bitrix</span><strong>Общая, ID @Model.CategoryId</strong></div>
+                <div><span>Этапы</span><strong>Анкета и Переговоры</strong></div>
+                <div><span>Переносим</span><strong>ответственного, комментарии и дела</strong></div>
+                <div><span>Защита</span><strong>по ID сделки и телефону</strong></div>
+            </div>
+            <form asp-action="PreviewBitrixCrmImport" method="post" class="bitrix-import-preview-form">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="officeId" value="@Model.OfficeId" />
+                <input type="hidden" name="bitrixInstanceId" value="@Model.BitrixInstanceId" />
+                <label class="settings-field bitrix-import-category">
+                    <span class="settings-field-label">ID воронки</span>
+                    <input type="number" name="categoryId" value="@Model.CategoryId" min="0" />
+                </label>
+                <button type="submit" class="settings-primary-btn">
+                    <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i> Сформировать предпросмотр
+                </button>
+            </form>
+            <p class="settings-bitrix-hint">На этом шаге в CRM ничего не записывается. Орбита только читает данные из Bitrix24 и показывает план.</p>
+        </div>
+    </section>
+
+    @if (preview is not null)
+    {
+        <section class="bitrix-import-stats" aria-label="Сводка импорта">
+            <div class="card"><span>Найдено</span><strong>@preview.Deals.Count</strong></div>
+            <div class="card bitrix-import-stat--create"><span>Создать</span><strong>@preview.CreateCount</strong></div>
+            <div class="card bitrix-import-stat--update"><span>Обновить</span><strong>@preview.UpdateCount</strong></div>
+            <div class="card"><span>Уже импортировано</span><strong>@preview.AlreadyImportedCount</strong></div>
+            <div class="card bitrix-import-stat--skip"><span>Пропустить</span><strong>@preview.SkippedCount</strong></div>
+        </section>
+
+        <section class="card bitrix-import-managers">
+            <div class="card-header settings-card-header">
+                <div>
+                    <h2 class="settings-card-title">Сопоставление ответственных</h2>
+                    <p class="settings-card-subtitle">Сотрудники связываются по полному ФИО внутри Офиса 1.</p>
+                </div>
+            </div>
+            <div class="card-body bitrix-import-manager-list">
+                @foreach (var manager in preview.Managers)
+                {
+                    <div class="bitrix-import-manager @(manager.IsMatched ? "is-matched" : "is-missing")">
+                        <i class="fa-solid @(manager.IsMatched ? "fa-circle-check" : "fa-triangle-exclamation")" aria-hidden="true"></i>
+                        <span>@manager.BitrixName</span>
+                        <i class="fa-solid fa-arrow-right" aria-hidden="true"></i>
+                        <strong>@(manager.OrbitaName ?? "Не найден в Орбите")</strong>
+                    </div>
+                }
+            </div>
+        </section>
+
+        <form asp-action="ExecuteBitrixCrmImport" method="post" class="card bitrix-import-plan">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="OfficeId" value="@Model.OfficeId" />
+            <input type="hidden" name="BitrixInstanceId" value="@Model.BitrixInstanceId" />
+            <input type="hidden" name="CategoryId" value="@Model.CategoryId" />
+            <div class="card-header settings-card-header">
+                <div>
+                    <h2 class="settings-card-title">План переноса</h2>
+                    <p class="settings-card-subtitle">Отмечены только карточки, которые можно безопасно создать или связать.</p>
+                </div>
+                <span class="settings-office-count">@importable.Count</span>
+            </div>
+            <div class="card-body card-body-table settings-table-wrap">
+                <table class="data-table data-table--cards bitrix-import-table">
+                    <thead>
+                    <tr>
+                        <th></th>
+                        <th>Кандидат</th>
+                        <th>Этап</th>
+                        <th>Ответственный</th>
+                        <th>Данные</th>
+                        <th>Действие</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var deal in preview.Deals)
+                    {
+                        var canImport = deal.Action is BitrixCrmImportActions.Create or BitrixCrmImportActions.UpdateExisting;
+                        <tr class="@(!canImport ? "bitrix-import-row--disabled" : null)">
+                            <td data-label="Выбрать">
+                                @if (canImport)
+                                {
+                                    <input type="checkbox" name="DealIds" value="@deal.DealId" checked aria-label="Импортировать сделку @deal.DealId" />
+                                }
+                            </td>
+                            <td data-label="Кандидат">
+                                <strong>@deal.CandidateName</strong>
+                                <span class="bitrix-import-muted">Сделка #@deal.DealId · @(string.IsNullOrWhiteSpace(deal.Phone) ? "без телефона" : deal.Phone)</span>
+                            </td>
+                            <td data-label="Этап"><span class="settings-status-pill">@deal.StageName</span></td>
+                            <td data-label="Ответственный">
+                                <strong>@(deal.OrbitaResponsibleName ?? deal.BitrixResponsibleName)</strong>
+                                @if (deal.OrbitaResponsibleName is null && !string.IsNullOrWhiteSpace(deal.BitrixResponsibleName))
+                                {
+                                    <span class="bitrix-import-warning">Нет точного совпадения</span>
+                                }
+                            </td>
+                            <td data-label="Данные">
+                                <span>@(string.IsNullOrWhiteSpace(deal.City) ? "Город не указан" : deal.City)</span>
+                                <span class="bitrix-import-muted">@deal.CommentCount комм. · @deal.ActivityCount дел</span>
+                            </td>
+                            <td data-label="Действие">
+                                <span class="bitrix-import-action bitrix-import-action--@deal.Action">@ActionLabel(deal.Action)</span>
+                                @if (!string.IsNullOrWhiteSpace(deal.Warning))
+                                {
+                                    <span class="bitrix-import-warning">@deal.Warning</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+            <div class="bitrix-import-confirm">
+                <label class="bitrix-import-confirm-check">
+                    <input type="checkbox" name="Confirmed" value="true" required />
+                    <span>Я проверил этапы и ответственных. Выполнить импорт выбранных карточек в Офис 1.</span>
+                </label>
+                <button type="submit" class="settings-primary-btn" @(importable.Count == 0 ? "disabled" : null)
+                        onclick="return confirm('Импортировать выбранные карточки из Bitrix24 в Орбиту?');">
+                    <i class="fa-solid fa-file-import" aria-hidden="true"></i> Импортировать выбранные
+                </button>
+            </div>
+        </form>
+    }
+</div>
+
+@section Styles {
+    <link rel="stylesheet" href="~/css/orbita/bitrix-import.css" asp-append-version="true" />
+}

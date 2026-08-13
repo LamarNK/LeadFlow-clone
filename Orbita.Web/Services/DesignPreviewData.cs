@@ -3174,6 +3174,30 @@ internal static class DesignPreviewData
             Now.AddHours(-2));
     }
 
+    public static BitrixCrmImportPreviewDto PreviewBitrixCrmImport => new(
+        PreviewBitrixInstanceId,
+        PreviewOfficeId,
+        "b24-l7qyiy.bitrix24.ru",
+        0,
+        [
+            new BitrixCrmImportStageSummaryDto("Анкета", "UC_SAMPLE_QUESTIONNAIRE", 2),
+            new BitrixCrmImportStageSummaryDto("Переговоры", "UC_SAMPLE_NEGOTIATIONS", 2)
+        ],
+        [
+            new BitrixCrmImportManagerMatchDto(12, "Елена Воронцова", "preview-manager-elena", "Елена Воронцова", true),
+            new BitrixCrmImportManagerMatchDto(18, "Игорь Белов", "preview-manager-igor", "Игорь Белов", true)
+        ],
+        [
+            new BitrixCrmImportDealPreviewDto(41769, "Александр Иванов", "+7 900 111-22-33", "Подольск", "Сварщик", "Переговоры", 12, "Елена Воронцова", "preview-manager-elena", "Елена Воронцова", 3, 1, BitrixCrmImportActions.Create, null, null),
+            new BitrixCrmImportDealPreviewDto(41770, "Сергей Петров", "+7 900 222-33-44", "Тула", "Водитель", "Анкета", 18, "Игорь Белов", "preview-manager-igor", "Игорь Белов", 2, 2, BitrixCrmImportActions.Create, null, null),
+            new BitrixCrmImportDealPreviewDto(41771, "Максим Соколов", "+7 900 333-44-55", "Казань", "Монтажник", "Анкета", 12, "Елена Воронцова", "preview-manager-elena", "Елена Воронцова", 1, 1, BitrixCrmImportActions.UpdateExisting, Guid.Parse("90000000-0000-0000-0000-000000000009"), "Найдена существующая карточка с тем же телефоном."),
+            new BitrixCrmImportDealPreviewDto(41772, "Кандидат без телефона", string.Empty, "Омск", "Электрик", "Переговоры", 18, "Игорь Белов", "preview-manager-igor", "Игорь Белов", 0, 0, BitrixCrmImportActions.MissingPhone, null, "У сделки нет телефона в связанном контакте.")
+        ],
+        2,
+        1,
+        0,
+        1);
+
     public static DistributionRouteDto PreviewDistributionRoute =>
         new(
             Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),

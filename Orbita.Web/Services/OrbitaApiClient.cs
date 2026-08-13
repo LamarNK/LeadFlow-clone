@@ -1307,6 +1307,67 @@ public sealed class OrbitaApiClient(
             ? Task.FromResult(DesignPreviewData.GetPreviewBitrixInstance(id))
             : GetAsync<BitrixInstanceDto>(WithOfficeQuery($"api/v1/panel/bitrix-instances/{id:D}", officeId), ct);
 
+    public async Task<(BitrixCrmImportPreviewDto? Preview, string? Error)> PreviewBitrixCrmImportAsync(
+        Guid id,
+        BitrixCrmImportPreviewRequest importRequest,
+        Guid? officeId = null,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return (DesignPreviewData.PreviewBitrixCrmImport, null);
+        }
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            WithOfficeQuery($"api/v1/panel/bitrix-instances/{id:D}/crm-import/preview", officeId));
+        request.Content = JsonContent.Create(importRequest);
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (null, InvalidApiSessionError);
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            return (null, await ReadApiErrorAsync(response, ct));
+        }
+
+        var preview = await response.Content.ReadFromJsonAsync<BitrixCrmImportPreviewDto>(ApiJsonOptions, ct);
+        return preview is null ? (null, "Не удалось прочитать предпросмотр импорта.") : (preview, null);
+    }
+
+    public async Task<(BitrixCrmImportResultDto? Result, string? Error)> ExecuteBitrixCrmImportAsync(
+        Guid id,
+        BitrixCrmImportExecuteRequest importRequest,
+        Guid? officeId = null,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            var selected = importRequest.DealIds?.Count ?? DesignPreviewData.PreviewBitrixCrmImport.Deals.Count;
+            return (new BitrixCrmImportResultDto(selected, selected, 0, 0, 0, []), null);
+        }
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            WithOfficeQuery($"api/v1/panel/bitrix-instances/{id:D}/crm-import", officeId));
+        request.Content = JsonContent.Create(importRequest);
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (null, InvalidApiSessionError);
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            return (null, await ReadApiErrorAsync(response, ct));
+        }
+
+        var result = await response.Content.ReadFromJsonAsync<BitrixCrmImportResultDto>(ApiJsonOptions, ct);
+        return result is null ? (null, "Не удалось прочитать результат импорта.") : (result, null);
+    }
+
     public Task<BitrixWorkforceSettingsDto?> GetBitrixWorkforceSettingsAsync(
         Guid id,
         Guid? officeId = null,

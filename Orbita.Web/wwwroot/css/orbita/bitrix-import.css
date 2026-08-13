@@ -1,0 +1,154 @@
+.bitrix-import-page {
+    display: grid;
+    gap: 18px;
+}
+
+.bitrix-import-nav {
+    display: flex;
+}
+
+.bitrix-import-summary .card-body {
+    display: grid;
+    gap: 18px;
+}
+
+.bitrix-import-scope,
+.bitrix-import-stats {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.bitrix-import-scope > div,
+.bitrix-import-stats > .card {
+    display: grid;
+    gap: 6px;
+    padding: 14px 16px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--bg-card) 86%, var(--bg-page));
+}
+
+.bitrix-import-scope span,
+.bitrix-import-stats span {
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.bitrix-import-stats {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.bitrix-import-stats strong {
+    font-size: 25px;
+}
+
+.bitrix-import-stat--create { border-left: 4px solid #23a66f !important; }
+.bitrix-import-stat--update { border-left: 4px solid #4e73df !important; }
+.bitrix-import-stat--skip { border-left: 4px solid #e39b23 !important; }
+
+.bitrix-import-preview-form {
+    display: flex;
+    align-items: end;
+    gap: 12px;
+}
+
+.bitrix-import-category {
+    width: 160px;
+}
+
+.bitrix-import-manager-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.bitrix-import-manager {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+}
+
+.bitrix-import-manager.is-matched > :first-child { color: #23a66f; }
+.bitrix-import-manager.is-missing > :first-child { color: #e39b23; }
+
+.bitrix-import-table td {
+    vertical-align: middle;
+}
+
+.bitrix-import-table td > strong,
+.bitrix-import-table td > span {
+    display: block;
+}
+
+.bitrix-import-row--disabled {
+    opacity: .58;
+}
+
+.bitrix-import-muted,
+.bitrix-import-warning {
+    margin-top: 4px;
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.bitrix-import-warning {
+    color: #c07a08;
+}
+
+.bitrix-import-action {
+    display: inline-flex !important;
+    width: fit-content;
+    padding: 5px 9px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--bg-card) 86%, var(--bg-page));
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.bitrix-import-action--create { color: #118255; background: rgba(35, 166, 111, .12); }
+.bitrix-import-action--update_existing { color: #3458c7; background: rgba(78, 115, 223, .12); }
+.bitrix-import-action--missing_phone { color: #a16500; background: rgba(227, 155, 35, .14); }
+
+.bitrix-import-confirm {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    padding: 18px;
+    border-top: 1px solid var(--border);
+}
+
+.bitrix-import-confirm-check {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    max-width: 760px;
+    font-weight: 600;
+}
+
+@media (max-width: 1000px) {
+    .bitrix-import-scope,
+    .bitrix-import-stats,
+    .bitrix-import-manager-list {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 640px) {
+    .bitrix-import-scope,
+    .bitrix-import-stats,
+    .bitrix-import-manager-list {
+        grid-template-columns: 1fr;
+    }
+
+    .bitrix-import-preview-form,
+    .bitrix-import-confirm {
+        align-items: stretch;
+        flex-direction: column;
+    }
+}

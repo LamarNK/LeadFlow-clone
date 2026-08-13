@@ -26,6 +26,28 @@ public sealed class BitrixInstancesRegistryViewModel
     public BitrixInstanceEditorViewModel? Editor { get; init; }
 }
 
+public sealed class BitrixCrmImportPageViewModel
+{
+    public required Guid OfficeId { get; init; }
+    public required Guid BitrixInstanceId { get; init; }
+    public string BitrixInstanceLabel { get; init; } = string.Empty;
+    public string PortalHost { get; init; } = string.Empty;
+    public int CategoryId { get; init; }
+    public BitrixCrmImportPreviewDto? Preview { get; init; }
+    public BitrixCrmImportResultDto? Result { get; init; }
+    public string? StatusMessage { get; init; }
+    public string? ErrorMessage { get; init; }
+}
+
+public sealed class ExecuteBitrixCrmImportFormModel
+{
+    public Guid OfficeId { get; set; }
+    public Guid BitrixInstanceId { get; set; }
+    public int CategoryId { get; set; }
+    public List<long> DealIds { get; set; } = [];
+    public bool Confirmed { get; set; }
+}
+
 public sealed class BitrixInstanceListItemViewModel
 {
     public required Guid Id { get; init; }
