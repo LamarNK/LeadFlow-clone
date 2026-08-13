@@ -25,25 +25,6 @@ public sealed class CrmDeadlineNotificationServiceTests
     };
 
     [Fact]
-    public async Task ProcessDueTasks_GlobalSwitchDisabled_DoesNothing()
-    {
-        await using var harness = Harness.Create(globalEnabled: false);
-        var officeId = harness.AddOffice();
-        harness.AddProfile("manager-a", officeId);
-        harness.AddTask(officeId, "manager-a", harness.Now.AddMinutes(30));
-        await harness.Db.SaveChangesAsync();
-
-        var created = await harness.Sut.ProcessDueTasksAsync();
-
-        Assert.Equal(0, created);
-        Assert.Empty(harness.Db.CrmTaskNotifications);
-        Assert.Empty(harness.Realtime.Sent);
-        var summary = await harness.Sut.GetSummaryAsync(officeId, "manager-a");
-        Assert.False(summary.Enabled);
-        Assert.Equal(0, summary.UnreadCount);
-    }
-
-    [Fact]
     public async Task ProcessDueTasks_RequiresAllOfficeFlagsAndMatchingProfile()
     {
         await using var harness = Harness.Create();
@@ -424,7 +405,7 @@ public sealed class CrmDeadlineNotificationServiceTests
         public CrmDeadlineNotificationService Sut { get; }
         public DateTime Now => Time.GetUtcNow().UtcDateTime;
 
-        public static Harness Create(bool globalEnabled = true, int batchSize = 200)
+        public static Harness Create(int batchSize = 200)
         {
             var options = new DbContextOptionsBuilder<OrbitaDbContext>()
                 .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
@@ -433,7 +414,6 @@ public sealed class CrmDeadlineNotificationServiceTests
             var time = new MutableTimeProvider(Start);
             var settings = new CrmDeadlineNotificationOptions
             {
-                Enabled = globalEnabled,
                 FirstReminderMinutes = 24 * 60,
                 FinalReminderMinutes = 60,
                 BatchSize = batchSize,

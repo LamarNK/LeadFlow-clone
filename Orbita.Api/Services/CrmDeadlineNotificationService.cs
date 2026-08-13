@@ -19,11 +19,6 @@ public sealed class CrmDeadlineNotificationService(
     public async Task<int> ProcessDueTasksAsync(CancellationToken ct = default)
     {
         var settings = options.Value;
-        if (!settings.Enabled)
-        {
-            return 0;
-        }
-
         var now = DateTimeUtcHelper.EnsureUtc(timeProvider.GetUtcNow().UtcDateTime);
         var firstReminderMinutes = Math.Clamp(settings.FirstReminderMinutes, 2, 7 * 24 * 60);
         var finalReminderMinutes = Math.Clamp(settings.FinalReminderMinutes, 1, firstReminderMinutes - 1);
@@ -297,15 +292,13 @@ public sealed class CrmDeadlineNotificationService(
                     && profile.OfficeId == notification.OfficeId));
 
     private Task<bool> IsEnabledForOfficeAsync(Guid officeId, CancellationToken ct) =>
-        options.Value.Enabled
-            ? db.Offices.AsNoTracking().AnyAsync(
-                office => office.Id == officeId
-                          && office.IsEnabled
-                          && office.CrmEnabled
-                          && office.CrmDeadlineNotificationsEnabled
-                          && office.CrmDeadlineNotificationsEnabledAtUtc != null,
-                ct)
-            : Task.FromResult(false);
+        db.Offices.AsNoTracking().AnyAsync(
+            office => office.Id == officeId
+                      && office.IsEnabled
+                      && office.CrmEnabled
+                      && office.CrmDeadlineNotificationsEnabled
+                      && office.CrmDeadlineNotificationsEnabledAtUtc != null,
+            ct);
 
     private async Task AppendCandidatesAsync(
         IQueryable<CrmTaskEntity> query,
