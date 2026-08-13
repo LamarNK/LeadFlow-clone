@@ -151,6 +151,7 @@ public static class CrmEndpoints
 
         crmTasks.MapGet("/tasks", async (
             Guid? officeId,
+            string? managerUserId,
             CrmWorkspaceService workspace,
             OfficeScopeService officeScope,
             ClaimsPrincipal principal,
@@ -180,7 +181,15 @@ public static class CrmEndpoints
                 });
             }
 
-            return Results.Ok(await workspace.GetTasksAsync(resolvedOfficeId, userId, isAdmin, ct));
+            var selectedManagerUserId = isAdmin && !string.IsNullOrWhiteSpace(managerUserId)
+                ? managerUserId.Trim()
+                : null;
+            return Results.Ok(await workspace.GetTasksAsync(
+                resolvedOfficeId,
+                userId,
+                isAdmin,
+                selectedManagerUserId,
+                ct));
         });
 
         crmTasks.MapGet("/tasks/managers", async (

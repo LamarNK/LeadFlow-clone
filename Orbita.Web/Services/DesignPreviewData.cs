@@ -633,11 +633,21 @@ internal static class DesignPreviewData
     private static IReadOnlyList<CrmPhoneHistoryDto> BuildPreviewPhoneHistory(PreviewCrmCandidate candidate) =>
         [new CrmPhoneHistoryDto(candidate.PhoneRaw, candidate.PhoneRaw, DateTime.UtcNow.AddDays(-3))];
 
-    public static IReadOnlyList<CrmTaskDto> GetCrmTasks()
+    public static IReadOnlyList<CrmTaskDto> GetCrmTasks(string? managerUserId = null)
     {
         lock (CrmSync)
         {
-            return PreviewCrmTasks
+            var tasks = PreviewCrmTasks.AsEnumerable();
+            if (!string.IsNullOrWhiteSpace(managerUserId))
+            {
+                var selectedManagerUserId = managerUserId.Trim();
+                tasks = tasks.Where(task => string.Equals(
+                    task.AssigneeUserId,
+                    selectedManagerUserId,
+                    StringComparison.Ordinal));
+            }
+
+            return tasks
                 .OrderBy(task => task.Status)
                 .ThenBy(task => task.DueAtUtc)
                 .ThenByDescending(task => task.CreatedAtUtc)

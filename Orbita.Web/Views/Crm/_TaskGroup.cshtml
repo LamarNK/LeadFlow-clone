@@ -6,6 +6,7 @@
     var fromTeam = ViewData["TaskDetailsFromTeam"] as bool? == true;
     var teamTaskScope = ViewData["TeamTaskScope"] as string;
     var taskListScope = ViewData["TaskListScope"] as string;
+    var taskManagerUserId = ViewData["TaskManagerUserId"] as string;
     var groupClass = Model.Title switch
     {
         "Просрочено" => "crm-task-group--overdue",
@@ -60,9 +61,17 @@
                         id = cardId,
                         tab = "tasks",
                         returnTo = fromTeam ? "team-tasks" : "tasks",
-                        taskScope = fromTeam ? teamTaskScope : taskListScope
+                        taskScope = fromTeam ? teamTaskScope : taskListScope,
+                        managerUserId = fromTeam ? null : taskManagerUserId
                     })
-                    : Url.Action("TaskDetails", new { id = task.Id, fromTeam, teamTaskScope });
+                    : Url.Action("TaskDetails", new
+                    {
+                        id = task.Id,
+                        fromTeam,
+                        teamTaskScope,
+                        taskScope = fromTeam ? null : taskListScope,
+                        managerUserId = fromTeam ? null : taskManagerUserId
+                    });
                 <article class="crm-task-row @(isOverdue ? "is-overdue" : "") @(task.Status == CrmTaskStatuses.Completed ? "is-complete" : "") @(task.Status == CrmTaskStatuses.Cancelled ? "is-cancelled" : "")">
                     <a class="crm-task-row__main" href="@taskTargetUrl">
                         <div class="crm-task-row__title"><strong>@task.Title</strong><span class="crm-task-importance crm-task-importance--@task.Importance.ToLowerInvariant()">@CrmTaskImportances.GetLabel(task.Importance)</span></div>

@@ -747,7 +747,7 @@ public sealed class CrmWorkspaceServiceTests
     }
 
     [Fact]
-    public async Task Tasks_AreVisibleToCreatorAndAssigneeOnly_AndCommentsKeepAuthor()
+    public async Task Tasks_ListShowsOnlyAssigneeToManager_WhileTaskAccessKeepsAuthor()
     {
         await using var harness = await Harness.CreateAsync();
         SeedOffice(harness.Db, crmEnabled: true);
@@ -776,7 +776,7 @@ public sealed class CrmWorkspaceServiceTests
         Assert.Equal(CrmTaskTypes.CallBack, task.TaskType);
         Assert.Equal("Иван Петров", task.CreatorName);
         Assert.Equal("Мария Сидорова", task.AssigneeName);
-        Assert.Contains((await harness.Sut.GetTasksAsync(OfficeId, creator.Id, isAdmin: false)).Select(x => x.Id), id => id == task.Id);
+        Assert.DoesNotContain((await harness.Sut.GetTasksAsync(OfficeId, creator.Id, isAdmin: false)).Select(x => x.Id), id => id == task.Id);
         Assert.Contains((await harness.Sut.GetTasksAsync(OfficeId, assignee.Id, isAdmin: false)).Select(x => x.Id), id => id == task.Id);
         Assert.DoesNotContain((await harness.Sut.GetTasksAsync(OfficeId, outsider.Id, isAdmin: false)).Select(x => x.Id), id => id == task.Id);
         Assert.Contains((await harness.Sut.GetTasksAsync(OfficeId, "admin", isAdmin: true)).Select(x => x.Id), id => id == task.Id);
@@ -803,6 +803,45 @@ public sealed class CrmWorkspaceServiceTests
         Assert.False((await harness.Sut.CompleteTaskAsync(task.Id, "готово", creator.Id, isAdmin: false)).Ok);
         Assert.False((await harness.Sut.CompleteTaskAsync(task.Id, "   ", assignee.Id, isAdmin: false)).Ok);
         Assert.True((await harness.Sut.CompleteTaskAsync(task.Id, "Созвон проведён, анкета отправлена", assignee.Id, isAdmin: false)).Ok);
+    }
+
+    [Fact]
+    public async Task ElevatedTasks_FilterBySelectedAssigneeOrShowWholeOffice()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var first = await harness.CreateManagerAsync("first@test.local", capacity: 5, onShift: true);
+        var second = await harness.CreateManagerAsync("second@test.local", capacity: 5, onShift: true);
+
+        var firstTask = await harness.Sut.CreateTaskAsync(
+            OfficeId,
+            new CrmTaskCreateRequest(null, "Задача первого", null, first.Id, DateTime.UtcNow.AddHours(1)),
+            first.Id,
+            isAdmin: false);
+        var secondTask = await harness.Sut.CreateTaskAsync(
+            OfficeId,
+            new CrmTaskCreateRequest(null, "Задача второго", null, second.Id, DateTime.UtcNow.AddHours(1)),
+            second.Id,
+            isAdmin: false);
+
+        Assert.NotNull(firstTask);
+        Assert.NotNull(secondTask);
+
+        var allOfficeTasks = await harness.Sut.GetTasksAsync(
+            OfficeId,
+            "admin",
+            isAdmin: true,
+            managerUserId: null);
+        var firstManagerTasks = await harness.Sut.GetTasksAsync(
+            OfficeId,
+            "admin",
+            isAdmin: true,
+            managerUserId: first.Id);
+
+        Assert.Contains(allOfficeTasks, task => task.Id == firstTask.Id);
+        Assert.Contains(allOfficeTasks, task => task.Id == secondTask.Id);
+        Assert.Contains(firstManagerTasks, task => task.Id == firstTask.Id);
+        Assert.DoesNotContain(firstManagerTasks, task => task.Id == secondTask.Id);
     }
 
     [Fact]

@@ -232,7 +232,10 @@ public sealed class CrmController(
 
     [HttpGet]
     [Authorize(Policy = PanelPermissions.CrmTasks)]
-    public async Task<IActionResult> Tasks(string? scope, CancellationToken ct = default)
+    public async Task<IActionResult> Tasks(
+        string? scope,
+        string? managerUserId = null,
+        CancellationToken ct = default)
     {
         var officeId = ResolveOfficeId(null);
         if (PanelRoles.IsGlobalAdmin(User) && officeId is null)
@@ -242,7 +245,30 @@ public sealed class CrmController(
             return View("Unavailable");
         }
 
-        var tasksRequest = api.GetCrmTasksAsync(officeId, ct);
+        var currentUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+        var canFilterResponsible = PanelRoles.HasElevatedOfficeAccess(User);
+        var managerFilterSubmitted = managerUserId is not null
+                                     || Request.Query.ContainsKey("managerUserId");
+        var showAllOfficeTasks = string.Equals(managerUserId, "all", StringComparison.OrdinalIgnoreCase)
+                                 || string.IsNullOrWhiteSpace(managerUserId);
+        string? selectedManagerUserId;
+        if (!canFilterResponsible)
+        {
+            selectedManagerUserId = currentUserId;
+        }
+        else if (User.IsInRole(PanelRoles.SeniorManager) && !managerFilterSubmitted)
+        {
+            selectedManagerUserId = currentUserId;
+        }
+        else
+        {
+            selectedManagerUserId = showAllOfficeTasks ? null : managerUserId!.Trim();
+        }
+
+        var tasksRequest = api.GetCrmTasksAsync(
+            officeId,
+            ct,
+            selectedManagerUserId);
         var managersRequest = api.GetCrmTaskManagersAsync(officeId, ct);
         await Task.WhenAll(tasksRequest, managersRequest);
         var tasks = await tasksRequest;
@@ -263,8 +289,10 @@ public sealed class CrmController(
             tasks,
             managers,
             selectedScope,
-            User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty,
-            PanelRoles.HasElevatedOfficeAccess(User),
+            currentUserId,
+            canFilterResponsible,
+            selectedManagerUserId,
+            canFilterResponsible,
             ResolveBrowserUtcOffsetMinutes()));
     }
 
@@ -274,6 +302,8 @@ public sealed class CrmController(
         Guid id,
         bool fromTeam = false,
         string? teamTaskScope = null,
+        string? taskScope = null,
+        string? managerUserId = null,
         CancellationToken ct = default)
     {
         var task = await api.GetCrmTaskAsync(id, ct);
@@ -281,7 +311,7 @@ public sealed class CrmController(
 
         ViewData["TaskListUrl"] = fromTeam
             ? Url.Action(nameof(Team), new { taskScope = teamTaskScope })
-            : Url.Action(nameof(Tasks));
+            : Url.Action(nameof(Tasks), new { scope = taskScope, managerUserId });
         ViewData["TaskListTitle"] = fromTeam ? "Команда CRM" : "Задачи";
         return View(task);
     }

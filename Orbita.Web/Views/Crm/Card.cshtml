@@ -17,9 +17,14 @@
     }
     var returnTo = Context.Request.Query["returnTo"].ToString();
     var taskReturnScope = Context.Request.Query["taskScope"].ToString();
+    var taskReturnManagerUserId = Context.Request.Query["managerUserId"].ToString();
     var taskReturnUrl = returnTo switch
     {
-        "tasks" => Url.Action("Tasks", new { scope = taskReturnScope == "all" ? null : taskReturnScope }),
+        "tasks" => Url.Action("Tasks", new
+        {
+            scope = taskReturnScope == "all" ? null : taskReturnScope,
+            managerUserId = taskReturnManagerUserId
+        }),
         "team-tasks" => Url.Action("Team", new { taskScope = taskReturnScope == "all" ? null : taskReturnScope }),
         _ => null
     };

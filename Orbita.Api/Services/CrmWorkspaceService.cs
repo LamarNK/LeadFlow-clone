@@ -782,12 +782,25 @@ public sealed class CrmWorkspaceService(
     }
 
     public async Task<IReadOnlyList<CrmTaskDto>> GetTasksAsync(Guid officeId, string userId, bool isAdmin, CancellationToken ct = default)
+        => await GetTasksAsync(officeId, userId, isAdmin, managerUserId: null, ct);
+
+    public async Task<IReadOnlyList<CrmTaskDto>> GetTasksAsync(
+        Guid officeId,
+        string userId,
+        bool isAdmin,
+        string? managerUserId,
+        CancellationToken ct = default)
     {
         var managers = await GetManagersAsync(officeId, ct);
         var names = managers.ToDictionary(x => x.Profile.UserId, x => x.Name, StringComparer.Ordinal);
         var now = DateTime.UtcNow;
+        var selectedManagerUserId = isAdmin && !string.IsNullOrWhiteSpace(managerUserId)
+            ? managerUserId.Trim()
+            : userId;
         var tasks = await db.CrmTasks.AsNoTracking()
-            .Where(x => x.OfficeId == officeId && (isAdmin || x.AssigneeUserId == userId || x.CreatorUserId == userId))
+            .Where(x => x.OfficeId == officeId
+                        && (isAdmin && string.IsNullOrWhiteSpace(managerUserId)
+                            || x.AssigneeUserId == selectedManagerUserId))
             .OrderBy(x => x.Status == CrmTaskStatuses.Open ? 0 : x.Status == CrmTaskStatuses.Completed ? 1 : 2)
             .ThenBy(x => x.Status == CrmTaskStatuses.Open && x.DueAtUtc != null && x.DueAtUtc < now ? 0 : 1)
             .ThenBy(x => x.DueAtUtc ?? DateTime.MaxValue)

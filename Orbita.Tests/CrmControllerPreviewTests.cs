@@ -150,6 +150,63 @@ public sealed class CrmControllerPreviewTests
     }
 
     [Fact]
+    public async Task Tasks_SeniorManagerDefaultsToOwnTasksAndCanFilterOffice()
+    {
+        var principal = CreateOfficePrincipal(
+            "preview-manager-elena",
+            PanelRoles.SeniorManager,
+            DesignPreviewData.PreviewOfficeId);
+        var (controller, _) = CreateController(previewEnabled: true, principal);
+
+        var ownResult = await controller.Tasks(scope: null);
+        var ownModel = Assert.IsType<CrmTasksViewModel>(Assert.IsType<ViewResult>(ownResult).Model);
+        Assert.True(ownModel.CanFilterResponsible);
+        Assert.Equal("preview-manager-elena", ownModel.ManagerUserId);
+        Assert.All(ownModel.Tasks, task => Assert.Equal("preview-manager-elena", task.AssigneeUserId));
+
+        var allResult = await controller.Tasks(scope: null, managerUserId: "all");
+        var allModel = Assert.IsType<CrmTasksViewModel>(Assert.IsType<ViewResult>(allResult).Model);
+        Assert.Null(allModel.ManagerUserId);
+        Assert.True(allModel.Tasks.Count >= ownModel.Tasks.Count);
+    }
+
+    [Fact]
+    public async Task Tasks_ManagerSeesOnlyOwnTasksWithoutResponsibleFilter()
+    {
+        var principal = CreateOfficePrincipal(
+            "preview-manager-elena",
+            PanelRoles.Manager,
+            DesignPreviewData.PreviewOfficeId);
+        var (controller, _) = CreateController(previewEnabled: true, principal);
+
+        var result = await controller.Tasks(scope: null, managerUserId: "all");
+        var model = Assert.IsType<CrmTasksViewModel>(Assert.IsType<ViewResult>(result).Model);
+
+        Assert.False(model.CanFilterResponsible);
+        Assert.Equal("preview-manager-elena", model.ManagerUserId);
+        Assert.All(model.Tasks, task => Assert.Equal("preview-manager-elena", task.AssigneeUserId));
+    }
+
+    [Fact]
+    public async Task Tasks_OfficeLeadAndAdminDefaultToWholeOffice()
+    {
+        foreach (var role in new[] { PanelRoles.OfficeLead, PanelRoles.Admin })
+        {
+            var principal = CreateOfficePrincipal(
+                $"preview-{role.ToLowerInvariant()}",
+                role,
+                DesignPreviewData.PreviewOfficeId);
+            var (controller, _) = CreateController(previewEnabled: true, principal);
+
+            var result = await controller.Tasks(scope: null);
+            var model = Assert.IsType<CrmTasksViewModel>(Assert.IsType<ViewResult>(result).Model);
+
+            Assert.True(model.CanFilterResponsible);
+            Assert.Null(model.ManagerUserId);
+        }
+    }
+
+    [Fact]
     public async Task CreateTask_InDesignPreview_UsesTaskTypeAsTitle()
     {
         var (controller, _) = CreateController(previewEnabled: true);

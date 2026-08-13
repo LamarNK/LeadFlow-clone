@@ -101,6 +101,7 @@
     runtime.initDetailModal();
     runtime.initDetailOpenButtons();
     runtime.initCrmTaskCreateModal();
+    runtime.initCrmTaskResponsibleFilter();
     runtime.initLiveRowActions();
 
     // --- Fast page switching (client-side, no full reload) + loading spinner ---
@@ -179,6 +180,7 @@
         runtime.initDetailModal();
         runtime.initDetailOpenButtons();
         runtime.initCrmTaskCreateModal();
+        runtime.initCrmTaskResponsibleFilter();
         runtime.initCrmTaskAttachments?.();
         runtime.initCrmTaskEditButtons?.();
         runtime.initCrmClientTimes?.();

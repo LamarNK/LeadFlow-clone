@@ -2219,10 +2219,15 @@ public sealed class OrbitaApiClient(
         return buffer.Length == 0 ? (null, contentType) : (new MemoryStream(buffer), contentType);
     }
 
-    public Task<IReadOnlyList<CrmTaskDto>?> GetCrmTasksAsync(Guid? officeId = null, CancellationToken ct = default) =>
+    public Task<IReadOnlyList<CrmTaskDto>?> GetCrmTasksAsync(
+        Guid? officeId = null,
+        CancellationToken ct = default,
+        string? managerUserId = null) =>
         _preview.Enabled
-            ? Task.FromResult<IReadOnlyList<CrmTaskDto>?>(DesignPreviewData.GetCrmTasks())
-            : GetAsync<IReadOnlyList<CrmTaskDto>>(WithOfficeQuery("api/v1/crm/tasks", officeId), ct);
+            ? Task.FromResult<IReadOnlyList<CrmTaskDto>?>(DesignPreviewData.GetCrmTasks(managerUserId))
+            : GetAsync<IReadOnlyList<CrmTaskDto>>(
+                AppendQuery(WithOfficeQuery("api/v1/crm/tasks", officeId), "managerUserId", managerUserId),
+                ct);
 
     public Task<IReadOnlyList<CrmManagerDto>?> GetCrmTaskManagersAsync(Guid? officeId = null, CancellationToken ct = default) =>
         _preview.Enabled

@@ -8,4 +8,6 @@ public sealed record CrmTasksViewModel(
     string SelectedScope,
     string CurrentUserId,
     bool IsAdmin,
+    string? ManagerUserId,
+    bool CanFilterResponsible,
     int BrowserUtcOffsetMinutes = 0);

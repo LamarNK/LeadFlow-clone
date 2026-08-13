@@ -215,6 +215,52 @@
         }
     }
 
+    runtime.initCrmTaskResponsibleFilter = function initCrmTaskResponsibleFilter() {
+        var storageKey = 'orbita.crm.tasks.responsibleFilter.scroll.v1';
+
+        var restoreScroll = function () {
+            var state = null;
+            try {
+                state = JSON.parse(window.sessionStorage.getItem(storageKey) || 'null');
+                window.sessionStorage.removeItem(storageKey);
+            } catch (e) {
+                return;
+            }
+
+            if (!state || state.targetUrl !== window.location.pathname + window.location.search) return;
+            if (!Number.isFinite(state.savedAt) || Date.now() - state.savedAt > 2 * 60 * 1000) return;
+            var restore = function () {
+                window.scrollTo({ left: 0, top: Math.max(0, Number(state.scrollY) || 0), behavior: 'auto' });
+            };
+            restore();
+            window.requestAnimationFrame(function () {
+                restore();
+                window.requestAnimationFrame(restore);
+            });
+        };
+
+        document.querySelectorAll('[data-crm-task-responsible-auto-filter]').forEach(function (select) {
+            if (select.hasAttribute('data-crm-task-responsible-filter-bound')) return;
+            select.setAttribute('data-crm-task-responsible-filter-bound', '1');
+            select.addEventListener('change', function () {
+                var url = new URL(window.location.href);
+                url.searchParams.set('managerUserId', select.value);
+                try {
+                    window.sessionStorage.setItem(storageKey, JSON.stringify({
+                        targetUrl: url.pathname + url.search,
+                        scrollY: window.scrollY,
+                        savedAt: Date.now()
+                    }));
+                } catch (e) { }
+                select.disabled = true;
+                select.setAttribute('aria-busy', 'true');
+                window.location.assign(url.toString());
+            });
+        });
+
+        restoreScroll();
+    }
+
     var detailModal = null;
     var detailTitle = null;
     var detailSubtitle = null;

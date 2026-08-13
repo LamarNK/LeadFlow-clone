@@ -21,6 +21,23 @@
     ViewData["CurrentCrmUserId"] = Model.CurrentUserId;
     ViewData["IsCrmAdmin"] = Model.IsAdmin;
     ViewData["TaskListScope"] = selectedScope;
+    ViewData["TaskManagerUserId"] = Model.CanFilterResponsible
+        ? Model.ManagerUserId ?? "all"
+        : null;
+    var responsibleFilterValue = Model.ManagerUserId ?? "all";
+    var selectedResponsibleName = Model.Managers
+        .FirstOrDefault(x => string.Equals(x.UserId, Model.ManagerUserId, StringComparison.Ordinal))
+        ?.DisplayName;
+    var queueLabel = Model.ManagerUserId is null
+        ? "Задачи офиса"
+        : string.Equals(Model.ManagerUserId, Model.CurrentUserId, StringComparison.Ordinal)
+            ? "Моя очередь"
+            : "Задачи сотрудника";
+    string TaskScopeUrl(string scope) => Url.Action("Tasks", new
+    {
+        scope = scope == "all" ? null : scope,
+        managerUserId = Model.CanFilterResponsible ? responsibleFilterValue : null
+    })!;
     var defaultAssigneeUserId = Model.Managers.FirstOrDefault(x => x.UserId == Model.CurrentUserId)?.UserId
         ?? Model.Managers.FirstOrDefault()?.UserId;
     var shownCount = selectedScope switch
@@ -47,7 +64,7 @@
             <article class="kpi-card crm-task-metric crm-task-metric--queue" style="--kpi-index: 0;">
                 <header class="kpi-card-head">
                     <span class="kpi-icon-box kpi-icon-box--blue"><i class="fa-solid fa-list-check" aria-hidden="true"></i></span>
-                    <span class="kpi-card-label">Моя очередь</span>
+                    <span class="kpi-card-label">@queueLabel</span>
                 </header>
                 <div class="kpi-card-metric crm-task-metric__metric"><b class="kpi-value">@open.Count</b></div>
                 <p class="crm-task-metric__caption">Открытые задачи по срокам</p>
@@ -84,18 +101,55 @@
     <section class="card crm-task-workspace" aria-label="Список задач">
         <header class="crm-task-workspace__toolbar">
             <nav class="crm-task-tabs" aria-label="Отбор задач">
-                <a class="@(selectedScope == "all" ? "is-active" : "")" asp-action="Tasks">Все задачи</a>
-                <a class="@(selectedScope == "overdue" ? "is-active" : "")" asp-action="Tasks" asp-route-scope="overdue">Просроченные @if (overdue.Count > 0) { <span>@overdue.Count</span> }</a>
-                <a class="@(selectedScope == "today" ? "is-active" : "")" asp-action="Tasks" asp-route-scope="today">Сегодня @if (today.Count > 0) { <span>@today.Count</span> }</a>
-                <a class="@(selectedScope == "later" ? "is-active" : "")" asp-action="Tasks" asp-route-scope="later">Позже @if (later.Count > 0) { <span>@later.Count</span> }</a>
-                <a class="@(selectedScope == "completed" ? "is-active" : "")" asp-action="Tasks" asp-route-scope="completed">Завершённые</a>
-                <a class="@(selectedScope == "cancelled" ? "is-active" : "")" asp-action="Tasks" asp-route-scope="cancelled">Отменённые</a>
+                <a class="@(selectedScope == "all" ? "is-active" : "")" href="@TaskScopeUrl("all")">Все задачи</a>
+                <a class="@(selectedScope == "overdue" ? "is-active" : "")" href="@TaskScopeUrl("overdue")">Просроченные @if (overdue.Count > 0) { <span>@overdue.Count</span> }</a>
+                <a class="@(selectedScope == "today" ? "is-active" : "")" href="@TaskScopeUrl("today")">Сегодня @if (today.Count > 0) { <span>@today.Count</span> }</a>
+                <a class="@(selectedScope == "later" ? "is-active" : "")" href="@TaskScopeUrl("later")">Позже @if (later.Count > 0) { <span>@later.Count</span> }</a>
+                <a class="@(selectedScope == "completed" ? "is-active" : "")" href="@TaskScopeUrl("completed")">Завершённые</a>
+                <a class="@(selectedScope == "cancelled" ? "is-active" : "")" href="@TaskScopeUrl("cancelled")">Отменённые</a>
             </nav>
             <div class="crm-task-workspace__tools">
+                @if (Model.CanFilterResponsible)
+                {
+                    <form method="get" asp-action="Tasks" class="crm-task-responsible-filter">
+                        @if (selectedScope != "all")
+                        {
+                            <input type="hidden" name="scope" value="@selectedScope" />
+                        }
+                        <label class="crm-responsible-filter">
+                            <i class="fa-solid fa-user-group" aria-hidden="true"></i>
+                            <span>Ответственный</span>
+                            <select name="managerUserId"
+                                    aria-label="Фильтр задач по ответственному"
+                                    data-crm-task-responsible-auto-filter>
+                                <option value="all" selected="@(Model.ManagerUserId is null)">Все сотрудники</option>
+                                @foreach (var manager in Model.Managers.OrderBy(x => x.DisplayName, StringComparer.CurrentCultureIgnoreCase))
+                                {
+                                    <option value="@manager.UserId"
+                                            selected="@(string.Equals(manager.UserId, Model.ManagerUserId, StringComparison.Ordinal))">@manager.DisplayName</option>
+                                }
+                            </select>
+                        </label>
+                    </form>
+                }
                 <button type="button" class="crm-task-tool"><span>Сортировка: Срок (по возрастанию)</span><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></button>
                 <button type="button" class="crm-task-tool crm-task-tool--filter"><i class="fa-solid fa-filter" aria-hidden="true"></i> Фильтры</button>
             </div>
         </header>
+
+        @if (Model.CanFilterResponsible)
+        {
+            <p class="crm-task-responsible-caption">
+                @if (Model.ManagerUserId is null)
+                {
+                    <text><i class="fa-solid fa-users" aria-hidden="true"></i>Показаны задачи всех сотрудников офиса.</text>
+                }
+                else
+                {
+                    <text><i class="fa-solid fa-user-check" aria-hidden="true"></i>Показаны задачи: @(selectedResponsibleName ?? "сотрудник").</text>
+                }
+            </p>
+        }
 
         <div id="crm-task-all" class="crm-task-groups">
             @if (selectedScope == "overdue" || (selectedScope == "all" && overdue.Count > 0)) { <partial name="_TaskGroup" model="@("Просрочено", (IReadOnlyList<CrmTaskDto>)overdue, true)" /> }
