@@ -38,6 +38,7 @@ public static class CrmEndpoints
             Guid? officeId = null,
             string? search = null,
             string? scopeFilter = null,
+            string? managerUserId = null,
             string? city = null,
             string? vacancy = null,
             // Defaults: missing non-nullable bool query params otherwise → HTTP 400.
@@ -70,11 +71,31 @@ public static class CrmEndpoints
             }
 
             // Elevated roles only: team claim alone must not grant CanEdit / office-wide board powers.
+            var effectiveScopeFilter = string.IsNullOrWhiteSpace(scopeFilter)
+                ? principal.IsInRole(PanelRoles.Admin) || principal.IsInRole(PanelRoles.OfficeLead)
+                    ? CrmBoardScopes.Team
+                    : CrmBoardScopes.Mine
+                : scopeFilter;
+            if (isAdmin
+                && !string.IsNullOrWhiteSpace(managerUserId)
+                && effectiveScopeFilter is CrmBoardScopes.Mine or CrmBoardScopes.Team)
+            {
+                effectiveScopeFilter = CrmBoardScopes.Team;
+            }
+
             var board = await workspace.GetBoardAsync(
                 resolvedOfficeId,
                 userId,
                 isAdmin,
-                new CrmBoardQuery(search, scopeFilter, city, vacancy, overdueOnly, activeLoadOnly, includeClosed),
+                new CrmBoardQuery(
+                    search,
+                    effectiveScopeFilter,
+                    city,
+                    vacancy,
+                    overdueOnly,
+                    activeLoadOnly,
+                    includeClosed,
+                    managerUserId),
                 ct);
             return board is null
                 ? Results.NotFound(new { error = "Офис не найден." })
@@ -423,7 +444,7 @@ public static class CrmEndpoints
             CancellationToken ct) =>
         {
             var isAdmin = PanelRoles.HasElevatedOfficeAccess(principal);
-            if (!isAdmin)
+            if (!isAdmin && !PanelRoles.IsCrmDeskRole(principal))
             {
                 return Results.Forbid();
             }

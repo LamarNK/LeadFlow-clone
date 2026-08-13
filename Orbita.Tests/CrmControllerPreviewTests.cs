@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
+using System.Security.Claims;
 using Orbita.Contracts;
 using Orbita.Web.Controllers;
 using Orbita.Web.Models.ViewModels;
@@ -27,6 +28,51 @@ public sealed class CrmControllerPreviewTests
         Assert.Null(view.ViewName);
         var board = Assert.IsType<CrmBoardDto>(view.Model);
         Assert.True(board.RequireStageComment);
+        Assert.Equal(CrmBoardScopes.Team, board.Scope);
+    }
+
+    [Fact]
+    public async Task Index_SeniorManagerDefaultsToOwnCards()
+    {
+        var principal = CreateOfficePrincipal(
+            "preview-manager-elena",
+            PanelRoles.SeniorManager,
+            DesignPreviewData.PreviewOfficeId);
+        var (controller, _) = CreateController(previewEnabled: true, principal);
+
+        var result = await controller.Index(
+            officeId: null,
+            search: null,
+            scope: null,
+            city: null,
+            vacancy: null);
+
+        var board = Assert.IsType<CrmBoardDto>(Assert.IsType<ViewResult>(result).Model);
+        Assert.Equal(CrmBoardScopes.Mine, board.Scope);
+        Assert.All(
+            board.Stages.SelectMany(x => x.Cards),
+            card => Assert.Equal("preview-manager-elena", card.ManagerUserId));
+    }
+
+    [Fact]
+    public async Task Index_ElevatedManagerFilterShowsSelectedManagersCards()
+    {
+        var (controller, _) = CreateController(previewEnabled: true);
+
+        var result = await controller.Index(
+            officeId: null,
+            search: null,
+            scope: CrmBoardScopes.Team,
+            city: null,
+            vacancy: null,
+            managerUserId: "preview-manager-igor");
+
+        var board = Assert.IsType<CrmBoardDto>(Assert.IsType<ViewResult>(result).Model);
+        Assert.Equal(CrmBoardScopes.Team, board.Scope);
+        Assert.Equal("preview-manager-igor", board.ManagerUserId);
+        Assert.All(
+            board.Stages.SelectMany(x => x.Cards),
+            card => Assert.Equal("preview-manager-igor", card.ManagerUserId));
     }
 
     [Fact]
@@ -130,11 +176,37 @@ public sealed class CrmControllerPreviewTests
         Assert.Equal(CrmTaskImportances.Medium, task.Importance);
     }
 
-    private static (CrmController Controller, HttpClient Http) CreateController(bool previewEnabled)
+    [Fact]
+    public async Task CreateManual_ManagerIsAllowed()
+    {
+        var principal = CreateOfficePrincipal(
+            "preview-manager-elena",
+            PanelRoles.Manager,
+            DesignPreviewData.PreviewOfficeId);
+        var (controller, _) = CreateController(previewEnabled: true, principal);
+
+        var result = await controller.CreateManual(
+            fullName: "Новый Кандидат",
+            phoneRaw: "+7 900 123-45-67",
+            city: "Пермь",
+            vacancy: "Сварщик",
+            age: 35,
+            source: "Ручной ввод",
+            sourceResponseId: null,
+            stage: CrmStages.Lead,
+            assignToMe: false);
+
+        var redirect = Assert.IsType<RedirectToActionResult>(result);
+        Assert.Equal(nameof(CrmController.Card), redirect.ActionName);
+    }
+
+    private static (CrmController Controller, HttpClient Http) CreateController(
+        bool previewEnabled,
+        ClaimsPrincipal? principal = null)
     {
         var httpContext = new DefaultHttpContext
         {
-            User = TestPrincipalFactory.Admin("preview-admin", "Администратор")
+            User = principal ?? TestPrincipalFactory.Admin("preview-admin", "Администратор")
         };
         var accessor = new HttpContextAccessor { HttpContext = httpContext };
         var officeContext = new OfficeContext();
@@ -152,6 +224,18 @@ public sealed class CrmControllerPreviewTests
             ControllerContext = new ControllerContext { HttpContext = httpContext }
         };
         return (controller, http);
+    }
+
+    private static ClaimsPrincipal CreateOfficePrincipal(string userId, string role, Guid officeId)
+    {
+        var claims = new[]
+        {
+            new Claim(ClaimTypes.NameIdentifier, userId),
+            new Claim(ClaimTypes.Name, userId),
+            new Claim(ClaimTypes.Role, role),
+            new Claim(OfficeClaims.OfficeId, officeId.ToString("D"))
+        };
+        return new ClaimsPrincipal(new ClaimsIdentity(claims, "test"));
     }
 
     private sealed class ThrowingHttpMessageHandler : HttpMessageHandler

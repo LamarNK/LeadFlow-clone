@@ -323,6 +323,7 @@
                             <input type="hidden" name="stage" value="@boardReturnStage" />
                             <label>Закрыть
                                 <select name="reason" required>
+                                    <option value="" selected disabled hidden>Выберите тип закрытия</option>
                                     @foreach (var reason in CrmCloseReasons.All)
                                     {
                                         <option value="@reason">@reason</option>
@@ -367,134 +368,7 @@
                         <button class="settings-primary-btn" type="submit">Добавить</button>
                     </form>
                 }
-                <div class="crm-feed">
-                    @foreach (var item in Model.Activity)
-                    {
-                        var feedTask = item.TaskId is Guid taskId
-                            ? Model.Tasks.FirstOrDefault(task => task.Id == taskId)
-                            : null;
-                        var isOpenTask = item.Kind == "task" && feedTask?.Status == CrmTaskStatuses.Open;
-                        var feedTone = item.Kind switch
-                        {
-                            "note" => "note",
-                            "task-done" => "completed",
-                            "task" when isOpenTask && feedTask?.IsOverdue == true => "task-overdue",
-                            "task" when isOpenTask => "task-active",
-                            "task" => "completed",
-                            _ => "system"
-                        };
-                        var showFeedIcon = feedTone is "note" or "task-active" or "task-overdue";
-                        var feedIcon = item.IsPinned
-                            ? "fa-thumbtack"
-                            : feedTone switch
-                            {
-                                "note" => "fa-comment-dots",
-                                "task-overdue" => "fa-calendar-xmark",
-                                _ => "fa-calendar-check"
-                            };
-                        var displayTitle = DisplayCrmAction(item.Title);
-                        var systemTone = displayTitle switch
-                        {
-                            "Смена этапа" => "stage",
-                            "Назначен ответственный" => "assignment",
-                            "Карточка создана" or "Карточка изменена" or "Карточка закрыта" or "Карточка открыта снова" => "card",
-                            _ when displayTitle.StartsWith("Задача", StringComparison.Ordinal) => "task",
-                            _ => "event"
-                        };
-                        <article class="crm-feed-item crm-feed-item--@feedTone @(feedTone == "system" ? $"crm-feed-item--system-{systemTone}" : "") @(item.IsPinned ? "is-pinned" : "")">
-                            @if (showFeedIcon)
-                            {
-                                <div class="crm-feed-item__icon"><i class="fa-solid @feedIcon" aria-hidden="true"></i></div>
-                            }
-                            <div class="crm-feed-item__content">
-                                <header>
-                                    <div class="crm-feed-item__heading">
-                                        <strong>@displayTitle</strong>
-                                    </div>
-                                    @if (feedTask is not null)
-                                    {
-                                        <span class="crm-feed-item__meta">@item.ActorName</span>
-                                    }
-                                    else
-                                    {
-                                        <span class="crm-feed-item__meta">@item.ActorName · <time data-orbita-utc="@OrbitaTime.ToIsoUtc(item.AtUtc)" data-orbita-format="datetime-short-ru"></time></span>
-                                    }
-                                </header>
-                                @if (feedTask is not null)
-                                {
-                                    <div class="crm-feed-item__task-times" aria-label="Время работы с задачей">
-                                        <span><small>Создано</small><time data-orbita-utc="@OrbitaTime.ToIsoUtc(feedTask.CreatedAtUtc)" data-orbita-format="datetime-short-ru"></time></span>
-                                        @if (feedTask.UpdatedAtUtc is DateTime updatedAt)
-                                        {
-                                            <span><small>Изменено</small><time data-orbita-utc="@OrbitaTime.ToIsoUtc(updatedAt)" data-orbita-format="datetime-short-ru"></time></span>
-                                        }
-                                        @if (feedTask.CompletedAtUtc is DateTime completedAt)
-                                        {
-                                            <span><small>Закрыто</small><time data-orbita-utc="@OrbitaTime.ToIsoUtc(completedAt)" data-orbita-format="datetime-short-ru"></time></span>
-                                        }
-                                    </div>
-                                    @if (!string.IsNullOrWhiteSpace(item.Body))
-                                    {
-                                        <p class="crm-feed-item__task-comment"><strong>Комментарий:</strong> @item.Body</p>
-                                    }
-                                    @if (!string.IsNullOrWhiteSpace(item.CompletionReason))
-                                    {
-                                        <p class="crm-feed-item__task-result"><strong>Причина закрытия:</strong> @item.CompletionReason</p>
-                                    }
-                                }
-                                else if (!string.IsNullOrWhiteSpace(item.ActionComment))
-                                {
-                                    <div class="crm-feed-item__action-details">
-                                        @if (!string.IsNullOrWhiteSpace(item.Body))
-                                        {
-                                            <p><small>@(systemTone == "stage" ? "Переход" : systemTone == "card" ? "Причина" : "Детали")</small><span>@item.Body</span></p>
-                                        }
-                                        <p><small>Комментарий</small><span>@item.ActionComment</span></p>
-                                    </div>
-                                }
-                                else if (!string.IsNullOrWhiteSpace(item.Body))
-                                {
-                                    <p>@item.Body</p>
-                                }
-                                @if (item.Kind == "note" && item.NoteId is Guid noteId)
-                                {
-                                    <div class="crm-inline-actions">
-                                        @if (item.CanPin)
-                                        {
-                                            <form asp-action="PinNote" method="post">
-                                                <input type="hidden" name="id" value="@card.Id" />
-                                                <input type="hidden" name="noteId" value="@noteId" />
-                                                <input type="hidden" name="isPinned" value="@((!item.IsPinned).ToString().ToLowerInvariant())" />
-                                                <button type="submit"><i class="fa-solid fa-thumbtack" aria-hidden="true"></i>@(item.IsPinned ? "Открепить" : "Закрепить")</button>
-                                            </form>
-                                        }
-                                        @if (item.CanEdit)
-                                        {
-                                            <details>
-                                                <summary><i class="fa-solid fa-pen" aria-hidden="true"></i>Изменить</summary>
-                                                <form asp-action="UpdateNote" method="post" class="crm-inline-edit-form">
-                                                    <input type="hidden" name="id" value="@card.Id" />
-                                                    <input type="hidden" name="noteId" value="@noteId" />
-                                                    <textarea name="text" maxlength="4000" required>@item.Body</textarea>
-                                                    <button class="settings-primary-btn" type="submit">Сохранить</button>
-                                                </form>
-                                            </details>
-                                        }
-                                        @if (item.CanDelete)
-                                        {
-                                            <form asp-action="DeleteNote" method="post" onsubmit="return confirm('Удалить комментарий?');">
-                                                <input type="hidden" name="id" value="@card.Id" />
-                                                <input type="hidden" name="noteId" value="@noteId" />
-                                                <button type="submit" class="is-danger"><i class="fa-solid fa-trash" aria-hidden="true"></i>Удалить</button>
-                                            </form>
-                                        }
-                                    </div>
-                                }
-                            </div>
-                        </article>
-                    }
-                    @if (Model.Activity.Count == 0) { <p class="crm-empty">Пока нет активности — оставьте первый комментарий.</p> }
-                </div>
+                <partial name="_CrmActivityFeed" model="Model" />
             }
             else if (activeTab == "chat")
             {
@@ -710,6 +584,16 @@
                     }
                     @if (Model.Tasks.Count == 0) { <p class="crm-empty">Задач пока нет.</p> }
                 </div>
+                <section class="crm-card-persistent-feed" aria-labelledby="crm-card-feed-title">
+                    <header class="crm-card-persistent-feed__header">
+                        <div>
+                            <span>История работы</span>
+                            <h2 id="crm-card-feed-title">Лента</h2>
+                        </div>
+                        <small>@Model.Activity.Count событий</small>
+                    </header>
+                    <partial name="_CrmActivityFeed" model="Model" />
+                </section>
             }
             else
             {

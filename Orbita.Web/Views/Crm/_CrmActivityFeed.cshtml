@@ -1,0 +1,186 @@
+@model Orbita.Contracts.CrmCandidateDetailDto
+@using Orbita.Contracts
+@{
+    var card = Model.Card;
+    var boardReturnStage = Context.Request.Query["stage"].ToString();
+    if (string.IsNullOrWhiteSpace(boardReturnStage))
+    {
+        boardReturnStage = card.Stage;
+    }
+
+    string DisplayCrmAction(string action) => action switch
+    {
+        "Created" => "Карточка создана",
+        "Assigned" => "Назначен ответственный",
+        "StageChanged" => "Смена этапа",
+        "ReturnedToLoad" => "Вернули в нагрузку",
+        "RemovedFromLoad" => "Сняли с нагрузки",
+        "Closed" => "Карточка закрыта",
+        "Reopened" => "Карточка открыта снова",
+        "Note" => "Комментарий",
+        "CardUpdated" => "Карточка изменена",
+        "TaskCreated" => "Задача создана",
+        "TaskCompleted" => "Задача выполнена",
+        "TaskUpdated" => "Задача изменена",
+        "TaskCancelled" => "Задача отменена",
+        "TaskReopened" => "Задача возвращена в работу",
+        "TaskDeleted" => "Задача удалена",
+        "NoteUpdated" => "Комментарий изменён",
+        "NoteDeleted" => "Комментарий удалён",
+        "NotePinned" => "Комментарий закреплён",
+        "NoteUnpinned" => "Комментарий откреплён",
+        _ => action
+    };
+}
+<div class="crm-feed">
+    @foreach (var item in Model.Activity)
+    {
+        var feedTask = item.TaskId is Guid taskId
+            ? Model.Tasks.FirstOrDefault(task => task.Id == taskId)
+            : null;
+        var isOpenTask = item.Kind == "task" && feedTask?.Status == CrmTaskStatuses.Open;
+        var feedTone = item.Kind switch
+        {
+            "note" => "note",
+            "task-done" => "completed",
+            "task" when isOpenTask && feedTask?.IsOverdue == true => "task-overdue",
+            "task" when isOpenTask => "task-active",
+            "task" => "completed",
+            _ => "system"
+        };
+        var showFeedIcon = feedTone is "note" or "task-active" or "task-overdue";
+        var feedIcon = item.IsPinned
+            ? "fa-thumbtack"
+            : feedTone switch
+            {
+                "note" => "fa-comment-dots",
+                "task-overdue" => "fa-calendar-xmark",
+                _ => "fa-calendar-check"
+            };
+        var displayTitle = DisplayCrmAction(item.Title);
+        var systemTone = displayTitle switch
+        {
+            "Смена этапа" => "stage",
+            "Назначен ответственный" => "assignment",
+            "Карточка создана" or "Карточка изменена" or "Карточка закрыта" or "Карточка открыта снова" => "card",
+            _ when displayTitle.StartsWith("Задача", StringComparison.Ordinal) => "task",
+            _ => "event"
+        };
+        <article class="crm-feed-item crm-feed-item--@feedTone @(feedTone == "system" ? $"crm-feed-item--system-{systemTone}" : "") @(item.IsPinned ? "is-pinned" : "")">
+            @if (showFeedIcon)
+            {
+                <div class="crm-feed-item__icon"><i class="fa-solid @feedIcon" aria-hidden="true"></i></div>
+            }
+            <div class="crm-feed-item__content">
+                <header>
+                    <div class="crm-feed-item__heading">
+                        <strong>@displayTitle</strong>
+                    </div>
+                    @if (feedTask is not null)
+                    {
+                        <span class="crm-feed-item__meta">@item.ActorName</span>
+                    }
+                    else
+                    {
+                        <span class="crm-feed-item__meta">
+                            @item.ActorName · <time data-orbita-utc="@OrbitaTime.ToIsoUtc(item.AtUtc)" data-orbita-format="datetime-short-ru"></time>
+                            @if (item.Kind == "note")
+                            {
+                                <span class="crm-feed-item__edited @(item.UpdatedAtUtc is null ? "is-hidden" : "")" data-crm-note-edited>
+                                    · изменено <time data-orbita-utc="@OrbitaTime.ToIsoUtc(item.UpdatedAtUtc ?? item.AtUtc)" data-orbita-format="datetime-short-ru"></time>
+                                </span>
+                            }
+                        </span>
+                    }
+                </header>
+                @if (feedTask is not null)
+                {
+                    <div class="crm-feed-item__task-times" aria-label="Время работы с задачей">
+                        <span><small>Создано</small><time data-orbita-utc="@OrbitaTime.ToIsoUtc(feedTask.CreatedAtUtc)" data-orbita-format="datetime-short-ru"></time></span>
+                        @if (feedTask.DueAtUtc is DateTime dueAt)
+                        {
+                            <span class="crm-feed-item__task-deadline @(feedTask.IsOverdue && isOpenTask ? "is-overdue" : "")">
+                                <small>Выполнить до</small><time data-orbita-utc="@OrbitaTime.ToIsoUtc(dueAt)" data-orbita-format="datetime-short-ru"></time>
+                            </span>
+                        }
+                        @if (feedTask.UpdatedAtUtc is DateTime updatedAt)
+                        {
+                            <span><small>Изменено</small><time data-orbita-utc="@OrbitaTime.ToIsoUtc(updatedAt)" data-orbita-format="datetime-short-ru"></time></span>
+                        }
+                        @if (feedTask.CompletedAtUtc is DateTime completedAt)
+                        {
+                            <span><small>Закрыто</small><time data-orbita-utc="@OrbitaTime.ToIsoUtc(completedAt)" data-orbita-format="datetime-short-ru"></time></span>
+                        }
+                    </div>
+                    @if (!string.IsNullOrWhiteSpace(item.Body))
+                    {
+                        <p class="crm-feed-item__task-comment"><strong>Комментарий:</strong> @item.Body</p>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(item.CompletionReason))
+                    {
+                        <p class="crm-feed-item__task-result"><strong>Причина закрытия:</strong> @item.CompletionReason</p>
+                    }
+                }
+                else if (!string.IsNullOrWhiteSpace(item.ActionComment))
+                {
+                    <div class="crm-feed-item__action-details">
+                        @if (!string.IsNullOrWhiteSpace(item.Body))
+                        {
+                            <p><small>@(systemTone == "stage" ? "Переход" : systemTone == "card" ? "Причина" : "Детали")</small><span>@item.Body</span></p>
+                        }
+                        <p><small>Комментарий</small><span>@item.ActionComment</span></p>
+                    </div>
+                }
+                else if (item.Kind == "note" && !string.IsNullOrWhiteSpace(item.Body))
+                {
+                    <p data-crm-note-body>@item.Body</p>
+                }
+                else if (!string.IsNullOrWhiteSpace(item.Body))
+                {
+                    <p>@item.Body</p>
+                }
+                @if (item.Kind == "note" && item.NoteId is Guid noteId)
+                {
+                    <div class="crm-inline-actions">
+                        @if (item.CanPin)
+                        {
+                            <form asp-action="PinNote" method="post">
+                                <input type="hidden" name="id" value="@card.Id" />
+                                <input type="hidden" name="noteId" value="@noteId" />
+                                <input type="hidden" name="isPinned" value="@((!item.IsPinned).ToString().ToLowerInvariant())" />
+                                <button type="submit"><i class="fa-solid fa-thumbtack" aria-hidden="true"></i>@(item.IsPinned ? "Открепить" : "Закрепить")</button>
+                            </form>
+                        }
+                        @if (item.CanEdit)
+                        {
+                            <button type="button" data-crm-note-edit-open><i class="fa-solid fa-pen" aria-hidden="true"></i>Изменить</button>
+                        }
+                        @if (item.CanDelete)
+                        {
+                            <form asp-action="DeleteNote" method="post" onsubmit="return confirm('Удалить комментарий?');">
+                                <input type="hidden" name="id" value="@card.Id" />
+                                <input type="hidden" name="noteId" value="@noteId" />
+                                <button type="submit" class="is-danger"><i class="fa-solid fa-trash" aria-hidden="true"></i>Удалить</button>
+                            </form>
+                        }
+                    </div>
+                    @if (item.CanEdit)
+                    {
+                        <form asp-action="UpdateNote" method="post" class="crm-note-inline-editor" data-crm-note-edit-form hidden>
+                            <input type="hidden" name="id" value="@card.Id" />
+                            <input type="hidden" name="noteId" value="@noteId" />
+                            <input type="hidden" name="stage" value="@boardReturnStage" />
+                            <textarea id="note-text-@noteId" name="text" maxlength="4000" aria-label="Текст комментария" required>@item.Body</textarea>
+                            <div class="crm-note-inline-editor__actions">
+                                <button class="settings-primary-btn" type="submit">Сохранить</button>
+                                <button class="settings-secondary-btn" type="button" data-crm-note-edit-cancel>Отмена</button>
+                            </div>
+                            <span class="crm-note-inline-editor__error" data-crm-note-edit-error role="alert" hidden></span>
+                        </form>
+                    }
+                }
+            </div>
+        </article>
+    }
+    @if (Model.Activity.Count == 0) { <p class="crm-empty">Пока нет активности — оставьте первый комментарий.</p> }
+</div>

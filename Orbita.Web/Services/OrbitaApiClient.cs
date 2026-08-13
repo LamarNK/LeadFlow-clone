@@ -2144,6 +2144,7 @@ public sealed class OrbitaApiClient(
         var url = WithOfficeQuery("api/v1/crm/board", officeId);
         url = AppendQuery(url, "search", query.Search);
         url = AppendQuery(url, "scopeFilter", query.Scope);
+        url = AppendQuery(url, "managerUserId", query.ManagerUserId);
         url = AppendQuery(url, "city", query.City);
         url = AppendQuery(url, "vacancy", query.Vacancy);
         // Always send bools — older API builds rejected missing non-nullable query bools with 400.

@@ -54,7 +54,19 @@ internal static class DesignPreviewData
         new(Guid.Parse("90000000-0000-0000-0000-000000000006"), "Магомедов Либир Алигадыджиевич", 61, "+7 964 285-61-14", "Махачкала", "Сварщик", CrmStages.Negotiations, PreviewManagerIgor, true, 240),
         new(Guid.Parse("90000000-0000-0000-0000-000000000007"), "Махмутов Марат Магсумович", 49, "+7 908 447-93-52", "Анастасово", "Охранник вахта", CrmStages.Questionnaire, PreviewManagerElena, true, 285),
         new(Guid.Parse("90000000-0000-0000-0000-000000000008"), "Гаджиев Руслан Сулейманович", 35, "+7 995 623-40-15", "Хасавюрт", "Слесарь на вахту", CrmStages.Ticket, PreviewManagerIgor, false, 340),
-        new(Guid.Parse("90000000-0000-0000-0000-000000000009"), "Алексей Корнев", 28, "+7 927 104-70-32", "Самара", "Комплектовщик на склад", CrmStages.Lead, null, false, 12)
+        new(Guid.Parse("90000000-0000-0000-0000-000000000009"), "Алексей Корнев", 28, "+7 927 104-70-32", "Самара", "Комплектовщик на склад", CrmStages.Lead, null, false, 12),
+        new(Guid.Parse("90000000-0000-0000-0000-000000000010"), "Тестовая карточка 01", 31, "+7 900 000-00-01", "Пермь", "Слесарь на вахту", CrmStages.Lead, PreviewManagerElena, true, 18),
+        new(Guid.Parse("90000000-0000-0000-0000-000000000011"), "Тестовая карточка 02", 36, "+7 900 000-00-02", "Омск", "Разнорабочий с проживанием", CrmStages.Lead, PreviewManagerIgor, true, 24),
+        new(Guid.Parse("90000000-0000-0000-0000-000000000012"), "Тестовая карточка 03", 43, "+7 900 000-00-03", "Казань", "Электрик", CrmStages.Lead, PreviewManagerElena, true, 32),
+        new(Guid.Parse("90000000-0000-0000-0000-000000000013"), "Тестовая карточка 04", 29, "+7 900 000-00-04", "Уфа", "Сварщик", CrmStages.Lead, PreviewManagerIgor, true, 41),
+        new(Guid.Parse("90000000-0000-0000-0000-000000000014"), "Тестовая карточка 05", 47, "+7 900 000-00-05", "Тюмень", "Охранник на вахту", CrmStages.Lead, PreviewManagerElena, true, 53),
+        new(Guid.Parse("90000000-0000-0000-0000-000000000015"), "Тестовая карточка 06", 38, "+7 900 000-00-06", "Ижевск", "Комплектовщик", CrmStages.Lead, PreviewManagerIgor, true, 67),
+        new(Guid.Parse("90000000-0000-0000-0000-000000000016"), "Тестовая карточка 07", 52, "+7 900 000-00-07", "Киров", "Машинист", CrmStages.Lead, PreviewManagerElena, true, 79),
+        new(Guid.Parse("90000000-0000-0000-0000-000000000017"), "Тестовая карточка 08", 34, "+7 900 000-00-08", "Самара", "Водитель категории C", CrmStages.Lead, PreviewManagerIgor, true, 88),
+        new(Guid.Parse("90000000-0000-0000-0000-000000000018"), "Тестовая карточка 09", 41, "+7 900 000-00-09", "Челябинск", "Монтажник", CrmStages.Lead, PreviewManagerElena, true, 96),
+        new(Guid.Parse("90000000-0000-0000-0000-000000000019"), "Тестовая карточка 10", 45, "+7 900 000-00-10", "Екатеринбург", "Стропальщик", CrmStages.Lead, PreviewManagerIgor, true, 110),
+        new(Guid.Parse("90000000-0000-0000-0000-000000000020"), "Тестовая карточка 11", 27, "+7 900 000-00-11", "Барнаул", "Кладовщик", CrmStages.Lead, PreviewManagerElena, true, 124),
+        new(Guid.Parse("90000000-0000-0000-0000-000000000021"), "Тестовая карточка 12", 49, "+7 900 000-00-12", "Новосибирск", "Бетонщик", CrmStages.Lead, PreviewManagerIgor, true, 139)
     ];
     private static readonly Dictionary<Guid, List<CrmNoteDto>> PreviewCrmNotes = new()
     {
@@ -132,6 +144,22 @@ internal static class DesignPreviewData
         {
             query ??= new CrmBoardQuery();
             var managers = BuildPreviewCrmManagers();
+            var scope = query.Scope switch
+            {
+                CrmBoardScopes.Mine => CrmBoardScopes.Mine,
+                CrmBoardScopes.Team => CrmBoardScopes.Team,
+                CrmBoardScopes.Unassigned => CrmBoardScopes.Unassigned,
+                CrmBoardScopes.Closed => CrmBoardScopes.Closed,
+                _ => CrmBoardScopes.Team
+            };
+            var selectedManagerUserId = scope == CrmBoardScopes.Team
+                                        && !string.IsNullOrWhiteSpace(query.ManagerUserId)
+                                        && managers.Any(x => string.Equals(
+                                            x.UserId,
+                                            query.ManagerUserId.Trim(),
+                                            StringComparison.Ordinal))
+                ? query.ManagerUserId.Trim()
+                : null;
             var cards = PreviewCrmCandidates.AsEnumerable();
             var hasSearch = !string.IsNullOrWhiteSpace(query.Search);
             var includeClosed = query.IncludeClosed || hasSearch;
@@ -166,13 +194,21 @@ internal static class DesignPreviewData
                 cards = cards.Where(c => c.IsInActiveLoad);
             }
 
-            if (query.Scope == CrmBoardScopes.Unassigned)
+            if (scope == CrmBoardScopes.Unassigned)
             {
                 cards = cards.Where(c => c.ManagerUserId is null && (!c.IsClosed || includeClosed));
             }
-            else if (query.Scope == CrmBoardScopes.Closed)
+            else if (scope == CrmBoardScopes.Closed)
             {
                 cards = cards.Where(c => c.IsClosed);
+            }
+            else if (scope == CrmBoardScopes.Mine)
+            {
+                cards = cards.Where(c => c.ManagerUserId == PreviewManagerElena && (!c.IsClosed || includeClosed));
+            }
+            else if (selectedManagerUserId is not null)
+            {
+                cards = cards.Where(c => c.ManagerUserId == selectedManagerUserId && (!c.IsClosed || includeClosed));
             }
             else if (!includeClosed)
             {
@@ -190,7 +226,7 @@ internal static class DesignPreviewData
                     return new CrmStageDto(stage, stageCards, stageCards.Count);
                 })
                 .ToList();
-            if (query.Scope == CrmBoardScopes.Closed || includeClosed)
+            if (scope == CrmBoardScopes.Closed || includeClosed)
             {
                 var closedCards = list
                     .Where(c => c.IsClosed)
@@ -227,7 +263,7 @@ internal static class DesignPreviewData
                 true,
                 true,
                 team,
-                query.Scope ?? CrmBoardScopes.Team,
+                scope,
                 query.Search,
                 query.City,
                 query.Vacancy,
@@ -235,7 +271,8 @@ internal static class DesignPreviewData
                 query.ActiveLoadOnly,
                 query.IncludeClosed,
                 _previewCrmStages.ToList(),
-                _previewCrmDeadlineNotificationsEnabled);
+                _previewCrmDeadlineNotificationsEnabled,
+                selectedManagerUserId);
         }
     }
 
@@ -499,15 +536,16 @@ internal static class DesignPreviewData
                     "note",
                     x.IsPinned
                         ? "Закреплённый комментарий"
-                        : x.UpdatedAtUtc is null ? "Комментарий" : "Комментарий изменён",
+                        : "Комментарий",
                     x.Text,
                     x.AuthorName,
-                    x.UpdatedAtUtc ?? x.CreatedAtUtc,
+                    x.CreatedAtUtc,
                     NoteId: x.Id,
                     IsPinned: x.IsPinned,
                     CanEdit: x.CanEdit,
                     CanDelete: x.CanDelete,
-                    CanPin: x.CanPin))
+                    CanPin: x.CanPin,
+                    UpdatedAtUtc: x.UpdatedAtUtc))
                 .Concat(tasks.Select(t =>
                 {
                     var completionComment = t.Status == CrmTaskStatuses.Completed && t.CompletedAtUtc is DateTime completedAt

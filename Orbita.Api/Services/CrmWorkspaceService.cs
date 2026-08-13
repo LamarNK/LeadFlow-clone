@@ -127,6 +127,15 @@ public sealed class CrmWorkspaceService(
 
         var profile = await db.PanelUserProfiles.AsNoTracking().FirstOrDefaultAsync(x => x.UserId == userId, ct);
         var managers = await GetManagersAsync(officeId, ct);
+        var selectedManagerUserId = isAdmin
+                                    && scope == CrmBoardScopes.Team
+                                    && !string.IsNullOrWhiteSpace(query.ManagerUserId)
+                                    && managers.Any(x => string.Equals(
+                                        x.Profile.UserId,
+                                        query.ManagerUserId.Trim(),
+                                        StringComparison.Ordinal))
+            ? query.ManagerUserId.Trim()
+            : null;
         var names = managers.ToDictionary(x => x.Profile.UserId, x => x.Name, StringComparer.Ordinal);
         var loads = await leadDistribution.GetActiveLoadsAsync(officeId, ct);
         var now = DateTime.UtcNow;
@@ -144,7 +153,9 @@ public sealed class CrmWorkspaceService(
             CrmBoardScopes.Closed => isAdmin
                 ? cardsQuery.Where(x => x.IsClosed)
                 : cardsQuery.Where(x => x.IsClosed && x.ManagerUserId == userId),
-            CrmBoardScopes.Team => cardsQuery.Where(x => !x.IsClosed || includeClosed),
+            CrmBoardScopes.Team => selectedManagerUserId is null
+                ? cardsQuery.Where(x => !x.IsClosed || includeClosed)
+                : cardsQuery.Where(x => x.ManagerUserId == selectedManagerUserId && (!x.IsClosed || includeClosed)),
             _ => cardsQuery.Where(x => x.ManagerUserId == userId && (!x.IsClosed || includeClosed))
         };
 
@@ -278,13 +289,20 @@ public sealed class CrmWorkspaceService(
             .Select(g => new CrmStageCountDto(g.Key, g.Count()))
             .ToList());
 
+        var taskAssigneeUserId = scope == CrmBoardScopes.Mine
+            ? userId
+            : selectedManagerUserId;
         var openTaskCount = await db.CrmTasks.CountAsync(
-            x => x.OfficeId == officeId && x.Status == CrmTaskStatuses.Open && (isAdmin || x.AssigneeUserId == userId), ct);
+            x => x.OfficeId == officeId
+                 && x.Status == CrmTaskStatuses.Open
+                 && (!isAdmin || taskAssigneeUserId == null || x.AssigneeUserId == taskAssigneeUserId)
+                 && (isAdmin || x.AssigneeUserId == userId), ct);
         var overdueTaskCount = await db.CrmTasks.CountAsync(
             x => x.OfficeId == officeId
                  && x.Status == CrmTaskStatuses.Open
                  && x.DueAtUtc != null
                  && x.DueAtUtc < now
+                 && (!isAdmin || taskAssigneeUserId == null || x.AssigneeUserId == taskAssigneeUserId)
                  && (isAdmin || x.AssigneeUserId == userId), ct);
 
         return new CrmBoardDto(
@@ -309,7 +327,8 @@ public sealed class CrmWorkspaceService(
             query.ActiveLoadOnly,
             query.IncludeClosed,
             officeStages,
-            office.CrmDeadlineNotificationsEnabled);
+            office.CrmDeadlineNotificationsEnabled,
+            selectedManagerUserId);
     }
 
     public async Task<bool> StartShiftAsync(Guid officeId, string userId, CancellationToken ct = default)
@@ -1528,11 +1547,6 @@ public sealed class CrmWorkspaceService(
         bool isAdmin,
         CancellationToken ct = default)
     {
-        if (!isAdmin)
-        {
-            return (null, "Создавать отклики вручную могут только администратор, руководитель офиса или старший менеджер.");
-        }
-
         var fullName = (request.FullName ?? string.Empty).Trim();
         if (fullName.Length == 0)
         {
@@ -1562,13 +1576,14 @@ public sealed class CrmWorkspaceService(
 
         if (!isAdmin)
         {
-            var profileOffice = await db.PanelUserProfiles.AsNoTracking()
-                .Where(x => x.UserId == actorUserId)
-                .Select(x => x.OfficeId)
-                .FirstOrDefaultAsync(ct);
-            if (profileOffice != officeId)
+            var managerProfile = await GetManagerProfileAsync(
+                officeId,
+                actorUserId,
+                ct,
+                allowAdmin: false);
+            if (managerProfile is null)
             {
-                return (null, "Нет доступа к офису.");
+                return (null, "Создавать отклики вручную могут только сотрудники CRM своего офиса.");
             }
         }
 
@@ -1679,7 +1694,8 @@ public sealed class CrmWorkspaceService(
             StageChangedAtUtc = now,
             IsInActiveLoad = true
         };
-        if (request.AssignToMe)
+        var assignToActor = !isAdmin || request.AssignToMe;
+        if (assignToActor)
         {
             card.ManagerUserId = actorUserId;
         }
@@ -1687,7 +1703,7 @@ public sealed class CrmWorkspaceService(
         db.CrmCandidateCards.Add(card);
         var actorName = await ResolveDisplayNameAsync(actorUserId, ct);
         AddHistory(card.Id, "Created", "Карточка создана вручную", actorUserId, actorName, now);
-        if (request.AssignToMe)
+        if (assignToActor)
         {
             AddHistory(card.Id, "Assigned", actorName, actorUserId, actorName, now);
         }
@@ -2914,15 +2930,16 @@ public sealed class CrmWorkspaceService(
                 "note",
                 n.IsPinned
                     ? "Закреплённый комментарий"
-                    : n.UpdatedAtUtc is null ? "Комментарий" : "Комментарий изменён",
+                    : "Комментарий",
                 n.Text,
                 n.AuthorName,
-                n.UpdatedAtUtc ?? n.CreatedAtUtc,
+                n.CreatedAtUtc,
                 NoteId: n.Id,
                 IsPinned: n.IsPinned,
                 CanEdit: canManageNote,
                 CanDelete: canManageNote,
-                CanPin: canEditCard);
+                CanPin: canEditCard,
+                UpdatedAtUtc: n.UpdatedAtUtc);
         }));
         var commentsByTask = taskComments
             .GroupBy(comment => comment.TaskId)

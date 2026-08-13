@@ -1,6 +1,20 @@
 @model Orbita.Contracts.CrmBoardDto
 @using Orbita.Contracts
 @{
+    var currentUserId = ViewData["CurrentCrmUserId"] as string;
+    var canCreateManualResponse = Model.IsAdmin || PanelRoles.IsCrmDeskRole(User);
+    var selectedResponsibleUserId = Model.Scope == CrmBoardScopes.Mine
+        ? currentUserId
+        : Model.ManagerUserId;
+    var selectedResponsibleName = Model.Managers
+        .FirstOrDefault(x => string.Equals(x.UserId, Model.ManagerUserId, StringComparison.Ordinal))
+        ?.DisplayName;
+    var canFilterResponsible = Model.Scope == CrmBoardScopes.Team
+                               || Model.Managers.Any(x => string.Equals(
+                                   x.UserId,
+                                   currentUserId,
+                                   StringComparison.Ordinal));
+    var isResponsibleFilterScope = Model.Scope is CrmBoardScopes.Mine or CrmBoardScopes.Team;
     var activeAdvancedFilters = new[]
     {
         !string.IsNullOrWhiteSpace(Model.City),
@@ -38,7 +52,7 @@
             <span class="crm-pill @(Model.IsShiftActive ? "is-on" : "")">@(Model.IsShiftActive ? "На смене" : "Не на смене")</span>
             <strong class="crm-toolbar__load">@Model.ActiveLoad <span>/ @Model.Capacity</span></strong>
             <p>Нагрузка · открытых задач @Model.OpenTaskCount@if (Model.OverdueTaskCount > 0) { <text> · </text><a class="crm-toolbar__overdue" asp-action="Tasks">просрочено @Model.OverdueTaskCount</a> }</p>
-            @if (Model.IsAdmin && Model.IsEnabled)
+            @if (canCreateManualResponse && Model.IsEnabled)
             {
                 <button type="button" class="crm-manual-create-trigger" data-crm-manual-create-open aria-haspopup="dialog" aria-controls="crm-manual-create-modal">
                     <i class="fa-solid fa-user-plus" aria-hidden="true"></i>Создать отклик
@@ -54,7 +68,7 @@
             <form asp-action="StartShift" method="post"><button class="crm-shift-action crm-shift-action--start" type="submit"><i class="fa-solid fa-play" aria-hidden="true"></i>Старт смены</button></form>
         }
     </div>
-    @if (Model.IsAdmin && Model.IsEnabled)
+    @if (canCreateManualResponse && Model.IsEnabled)
     {
         <div class="crm-manual-create-modal" id="crm-manual-create-modal" data-crm-manual-create-modal hidden>
             <div class="crm-manual-create-modal__backdrop" data-crm-manual-create-close></div>
@@ -82,7 +96,15 @@
                                 }
                             </select>
                         </label>
-                        <label class="crm-checkbox-label"><input type="checkbox" name="assignToMe" value="true" checked /> Назначить на меня</label>
+                        @if (Model.IsAdmin)
+                        {
+                            <label class="crm-checkbox-label"><input type="checkbox" name="assignToMe" value="true" checked /> Назначить на меня</label>
+                        }
+                        else
+                        {
+                            <input type="hidden" name="assignToMe" value="true" />
+                            <p class="crm-hint"><i class="fa-solid fa-user-check" aria-hidden="true"></i> Новый отклик будет назначен на вас.</p>
+                        }
                         <footer class="crm-manual-create__actions">
                             <button class="settings-secondary-btn" type="button" data-crm-manual-create-close>Отмена</button>
                             <button class="settings-primary-btn" type="submit"><i class="fa-solid fa-plus" aria-hidden="true"></i>Создать отклик</button>
@@ -117,6 +139,38 @@
                 }
             </div>
             <input type="hidden" name="scope" value="@Model.Scope" />
+            @if (Model.IsAdmin
+                 && canFilterResponsible
+                 && isResponsibleFilterScope)
+            {
+                <label class="crm-responsible-filter">
+                    <i class="fa-solid fa-user-group" aria-hidden="true"></i>
+                    <span>Ответственный</span>
+                    <select name="managerUserId"
+                            aria-label="Фильтр по ответственному"
+                            data-crm-responsible-auto-filter>
+                        @if (string.IsNullOrWhiteSpace(selectedResponsibleUserId))
+                        {
+                            <option value="" selected>Все сотрудники</option>
+                        }
+                        else
+                        {
+                            <option value="">Все сотрудники</option>
+                        }
+                        @foreach (var manager in Model.Managers.OrderBy(x => x.DisplayName, StringComparer.CurrentCultureIgnoreCase))
+                        {
+                            if (string.Equals(manager.UserId, selectedResponsibleUserId, StringComparison.Ordinal))
+                            {
+                                <option value="@manager.UserId" selected>@manager.DisplayName</option>
+                            }
+                            else
+                            {
+                                <option value="@manager.UserId">@manager.DisplayName</option>
+                            }
+                        }
+                    </select>
+                </label>
+            }
             <input type="search" name="search" value="@Model.Search" placeholder="ФИО, телефон, город…" aria-label="Поиск кандидата" />
             <button class="settings-primary-btn" type="submit">Найти</button>
             <a class="settings-secondary-btn" asp-action="Index">Сброс</a>
@@ -134,7 +188,14 @@
         <p class="crm-scope-description">
             @if (Model.Scope == CrmBoardScopes.Team)
             {
-                <text><i class="fa-solid fa-users" aria-hidden="true"></i>Режим команды: видно распределение кандидатов и риски по этапам.</text>
+                if (!string.IsNullOrWhiteSpace(selectedResponsibleName))
+                {
+                    <text><i class="fa-solid fa-user-check" aria-hidden="true"></i>Карточки сотрудника: @selectedResponsibleName.</text>
+                }
+                else
+                {
+                    <text><i class="fa-solid fa-users" aria-hidden="true"></i>Все сотрудники: видно распределение кандидатов и риски по этапам.</text>
+                }
             }
             else if (Model.Scope == CrmBoardScopes.Unassigned)
             {

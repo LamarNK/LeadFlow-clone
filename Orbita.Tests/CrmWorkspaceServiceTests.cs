@@ -323,7 +323,7 @@ public sealed class CrmWorkspaceServiceTests
     }
 
     [Fact]
-    public async Task CreateManualCard_ManagerIsDenied()
+    public async Task CreateManualCard_ManagerCreatesCardAssignedToSelf()
     {
         await using var harness = await Harness.CreateAsync();
         SeedOffice(harness.Db, crmEnabled: true);
@@ -331,13 +331,23 @@ public sealed class CrmWorkspaceServiceTests
 
         var (cardId, error) = await harness.Sut.CreateManualCardAsync(
             OfficeId,
-            new CrmManualCardCreateRequest("Сидоров Сидор", "89001234567"),
+            new CrmManualCardCreateRequest(
+                "Сидоров Сидор",
+                "89001234567",
+                AssignToMe: false),
             manager.Id,
             isAdmin: false);
 
-        Assert.Null(cardId);
-        Assert.Equal("Создавать отклики вручную могут только администратор, руководитель офиса или старший менеджер.", error);
-        Assert.Empty(harness.Db.CrmCandidateCards);
+        Assert.NotNull(cardId);
+        Assert.Null(error);
+        var card = await harness.Db.CrmCandidateCards
+            .Include(x => x.Response)
+            .SingleAsync(x => x.Id == cardId);
+        Assert.Equal(manager.Id, card.ManagerUserId);
+        Assert.Equal("Сидоров Сидор", card.Response.FullName);
+        Assert.Contains(
+            harness.Db.CrmCandidateHistory,
+            x => x.CardId == cardId && x.Action == "Assigned" && x.ActorUserId == manager.Id);
     }
 
     [Fact]
@@ -587,9 +597,10 @@ public sealed class CrmWorkspaceServiceTests
             OfficeId,
             manager.Id,
             isAdmin: false,
-            new CrmBoardQuery(Scope: CrmBoardScopes.Team));
+            new CrmBoardQuery(Scope: CrmBoardScopes.Team, ManagerUserId: other.Id));
         Assert.NotNull(team);
         Assert.Equal(CrmBoardScopes.Mine, team.Scope);
+        Assert.Null(team.ManagerUserId);
         Assert.True(team.CanEdit);
         var visibleIds = team.Stages.SelectMany(s => s.Cards).Select(c => c.Id).ToHashSet();
         Assert.Contains(ownCard.Id, visibleIds);
@@ -603,6 +614,34 @@ public sealed class CrmWorkspaceServiceTests
         Assert.NotNull(mine);
         Assert.Equal(CrmBoardScopes.Mine, mine.Scope);
         Assert.True(mine.CanEdit);
+    }
+
+    [Fact]
+    public async Task GetBoard_ElevatedTeamManagerFilter_ShowsOnlySelectedManagersCards()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var first = await harness.CreateManagerAsync("first-filter@test.local", capacity: 5, onShift: true);
+        var second = await harness.CreateManagerAsync("second-filter@test.local", capacity: 5, onShift: true);
+        var firstResponse = await SeedResponseAsync(harness.Db, "first-filter-src");
+        var secondResponse = await SeedResponseAsync(harness.Db, "second-filter-src");
+        var firstCard = NewCard(firstResponse.Id, first.Id);
+        var secondCard = NewCard(secondResponse.Id, second.Id);
+        harness.Db.CrmCandidateCards.AddRange(firstCard, secondCard);
+        await harness.Db.SaveChangesAsync();
+
+        var board = await harness.Sut.GetBoardAsync(
+            OfficeId,
+            first.Id,
+            isAdmin: true,
+            new CrmBoardQuery(Scope: CrmBoardScopes.Team, ManagerUserId: second.Id));
+
+        Assert.NotNull(board);
+        Assert.Equal(CrmBoardScopes.Team, board.Scope);
+        Assert.Equal(second.Id, board.ManagerUserId);
+        var visibleIds = board.Stages.SelectMany(s => s.Cards).Select(c => c.Id).ToHashSet();
+        Assert.DoesNotContain(firstCard.Id, visibleIds);
+        Assert.Contains(secondCard.Id, visibleIds);
     }
 
     [Fact]
@@ -1006,6 +1045,8 @@ public sealed class CrmWorkspaceServiceTests
         Assert.True(detailNote.CanEdit);
         var noteActivity = Assert.Single(detail.Activity.Where(x => x.Kind == "note"));
         Assert.Equal("Закреплённый комментарий", noteActivity.Title);
+        Assert.Equal(detailNote.CreatedAtUtc, noteActivity.AtUtc);
+        Assert.Equal(detailNote.UpdatedAtUtc, noteActivity.UpdatedAtUtc);
         Assert.DoesNotContain(detail.Activity, x => x.Kind == "history" && x.Title is
             "Комментарий изменён" or "Комментарий закреплён" or "Комментарий откреплён");
         var detailComment = Assert.Single(detail.TaskComments!);
@@ -1018,6 +1059,44 @@ public sealed class CrmWorkspaceServiceTests
         Assert.Empty(harness.Db.CrmTasks);
         Assert.True((await harness.Sut.DeleteNoteAsync(card.Id, note.Id, manager.Id, isAdmin: false)).Ok);
         Assert.Empty(harness.Db.CrmCandidateNotes);
+    }
+
+    [Fact]
+    public async Task UpdateNote_KeepsOriginalPositionInActivityFeed()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var manager = await harness.CreateManagerAsync("note-order@test.local", capacity: 5, onShift: true);
+        var response = await SeedResponseAsync(harness.Db, "note-order");
+        var card = NewCard(response.Id, manager.Id);
+        harness.Db.CrmCandidateCards.Add(card);
+        await harness.Db.SaveChangesAsync();
+
+        Assert.True(await harness.Sut.AddNoteAsync(card.Id, "Старый комментарий", manager.Id, isAdmin: false));
+        Assert.True(await harness.Sut.AddNoteAsync(card.Id, "Новый комментарий", manager.Id, isAdmin: false));
+        var notes = await harness.Db.CrmCandidateNotes
+            .Where(x => x.CardId == card.Id)
+            .OrderBy(x => x.CreatedAtUtc)
+            .ToListAsync();
+        var olderNote = notes[0];
+        var newerNote = notes[1];
+        olderNote.CreatedAtUtc = DateTime.UtcNow.AddMinutes(-10);
+        newerNote.CreatedAtUtc = DateTime.UtcNow.AddMinutes(-5);
+        await harness.Db.SaveChangesAsync();
+
+        Assert.True((await harness.Sut.UpdateNoteAsync(
+            card.Id,
+            olderNote.Id,
+            "Изменённый старый комментарий",
+            manager.Id,
+            isAdmin: false)).Ok);
+
+        var detail = await harness.Sut.GetCardAsync(card.Id, manager.Id, isAdmin: false);
+        Assert.NotNull(detail);
+        var activityNotes = detail.Activity.Where(x => x.Kind == "note").ToList();
+        Assert.Equal([newerNote.Id, olderNote.Id], activityNotes.Select(x => x.NoteId));
+        Assert.Equal(olderNote.CreatedAtUtc, activityNotes[1].AtUtc);
+        Assert.NotNull(activityNotes[1].UpdatedAtUtc);
     }
 
     [Fact]

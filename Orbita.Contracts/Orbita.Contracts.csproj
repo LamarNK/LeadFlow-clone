@@ -9,6 +9,7 @@
   <!-- datacoon/russiannames (BSD-3-Clause): names + midnames + top surnames for gender lookup -->
   <ItemGroup>
     <EmbeddedResource Include="Data\russian-name-gender.tsv.gz" LogicalName="Orbita.Contracts.Data.russian-name-gender.tsv.gz" />
+    <EmbeddedResource Include="Data\russian-place-timezones.tsv.gz" LogicalName="Orbita.Contracts.Data.russian-place-timezones.tsv.gz" />
   </ItemGroup>
 
 </Project>

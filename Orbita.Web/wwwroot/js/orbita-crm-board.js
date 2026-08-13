@@ -6,6 +6,7 @@
     const boardStateKey = 'orbita.crm.board.position.v1';
     const cardTaskReturnKey = 'orbita.crm.card.taskReturn.v1';
     const cardOpenAtTopKey = 'orbita.crm.card.openAtTop.v1';
+    const responsibleFilterScrollKey = 'orbita.crm.responsibleFilter.scroll.v1';
 
     const normalizeBoardPath = (pathname) => {
         const normalized = (pathname || '').replace(/\/+$/, '').toLowerCase();
@@ -42,6 +43,42 @@
 
     const writeBoardState = (state) => {
         try { sessionStorage.setItem(boardStateKey, JSON.stringify(state)); } catch { /* ignore */ }
+    };
+
+    const rememberResponsibleFilterScroll = (targetUrl) => {
+        try {
+            sessionStorage.setItem(responsibleFilterScrollKey, JSON.stringify({
+                version: 1,
+                targetUrl: normalizeBoardUrl(targetUrl),
+                scrollX: window.scrollX,
+                scrollY: window.scrollY,
+                savedAt: Date.now()
+            }));
+        } catch { /* ignore */ }
+    };
+
+    const restoreResponsibleFilterScroll = () => {
+        let state = null;
+        try {
+            state = JSON.parse(sessionStorage.getItem(responsibleFilterScrollKey) || 'null');
+            sessionStorage.removeItem(responsibleFilterScrollKey);
+        } catch {
+            return;
+        }
+
+        if (!state || state.version !== 1 || state.targetUrl !== normalizeBoardUrl()) return;
+        if (!Number.isFinite(state.savedAt) || Date.now() - state.savedAt > 2 * 60 * 1000) return;
+
+        const restore = () => window.scrollTo({
+            left: Number.isFinite(state.scrollX) ? Math.max(0, state.scrollX) : 0,
+            top: Number.isFinite(state.scrollY) ? Math.max(0, state.scrollY) : 0,
+            behavior: 'auto'
+        });
+        restore();
+        window.requestAnimationFrame(() => {
+            restore();
+            window.requestAnimationFrame(restore);
+        });
     };
 
     const clearCardTaskReturn = () => {
@@ -825,6 +862,22 @@
         });
     };
 
+    const initResponsibleAutoFilter = () => {
+        document.querySelectorAll('[data-crm-responsible-auto-filter]').forEach((select) => {
+            if (select.dataset.crmResponsibleAutoFilterReady === 'true') return;
+            select.dataset.crmResponsibleAutoFilterReady = 'true';
+
+            select.addEventListener('change', () => {
+                const url = new URL(window.location.href);
+                url.searchParams.set('managerUserId', select.value.trim());
+                rememberResponsibleFilterScroll(url.toString());
+                select.disabled = true;
+                select.setAttribute('aria-busy', 'true');
+                window.location.assign(url.toString());
+            });
+        });
+    };
+
     const initCrmCardPage = () => {
         const page = document.querySelector('.crm-card-page');
         if (!page || page.dataset.crmCardReady === 'true') return;
@@ -921,6 +974,8 @@
 
         document.querySelectorAll('[data-crm-board-carousel]').forEach(initBoardNavigation);
         document.querySelectorAll('[data-crm-funnel-editor]').forEach(initCrmFunnelEditor);
+        initResponsibleAutoFilter();
+        restoreResponsibleFilterScroll();
         initManualCreateModal();
         initCrmCardPage();
         restoreBoardBackLinks();

@@ -78,6 +78,7 @@ public sealed class CrmController(
         string? scope,
         string? city,
         string? vacancy,
+        string? managerUserId = null,
         bool overdueOnly = false,
         bool activeLoadOnly = false,
         bool includeClosed = false,
@@ -91,9 +92,18 @@ public sealed class CrmController(
             return View("Unavailable");
         }
 
+        var effectiveScope = ResolveBoardScope(scope, managerUserId);
         var (board, errorCode) = await api.GetCrmBoardResultAsync(
             officeId,
-            new CrmBoardQuery(search, scope, city, vacancy, overdueOnly, activeLoadOnly, includeClosed),
+            new CrmBoardQuery(
+                search,
+                effectiveScope,
+                city,
+                vacancy,
+                overdueOnly,
+                activeLoadOnly,
+                includeClosed,
+                managerUserId),
             ct);
         if (board is null)
         {
@@ -129,6 +139,7 @@ public sealed class CrmController(
         string? scope,
         string? city,
         string? vacancy,
+        string? managerUserId = null,
         bool overdueOnly = false,
         bool activeLoadOnly = false,
         bool includeClosed = false,
@@ -140,9 +151,18 @@ public sealed class CrmController(
             return NoContent();
         }
 
+        var effectiveScope = ResolveBoardScope(scope, managerUserId);
         var (board, errorCode) = await api.GetCrmBoardResultAsync(
             officeId,
-            new CrmBoardQuery(search, scope, city, vacancy, overdueOnly, activeLoadOnly, includeClosed),
+            new CrmBoardQuery(
+                search,
+                effectiveScope,
+                city,
+                vacancy,
+                overdueOnly,
+                activeLoadOnly,
+                includeClosed,
+                managerUserId),
             ct);
         ViewData["CurrentCrmUserId"] = User.FindFirstValue(ClaimTypes.NameIdentifier);
         return board is null ? NoContent() : PartialView("_CrmWorkspace", board);
@@ -653,7 +673,7 @@ public sealed class CrmController(
         bool assignToMe = false,
         CancellationToken ct = default)
     {
-        if (!PanelRoles.HasElevatedOfficeAccess(User))
+        if (!PanelRoles.HasElevatedOfficeAccess(User) && !PanelRoles.IsCrmDeskRole(User))
         {
             return Forbid();
         }
@@ -693,11 +713,27 @@ public sealed class CrmController(
     [HttpPost]
     [Authorize(Policy = PanelPermissions.CrmBoard)]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> UpdateNote(Guid id, Guid noteId, string text, CancellationToken ct = default)
+    public async Task<IActionResult> UpdateNote(
+        Guid id,
+        Guid noteId,
+        string text,
+        string? stage,
+        CancellationToken ct = default)
     {
-        var (_, error) = await api.UpdateCrmNoteAsync(id, noteId, text, ct);
+        var (success, error) = await api.UpdateCrmNoteAsync(id, noteId, text, ct);
+        var isInlineRequest = string.Equals(
+            Request.Headers["X-Requested-With"].ToString(),
+            "XMLHttpRequest",
+            StringComparison.OrdinalIgnoreCase);
+        if (isInlineRequest)
+        {
+            return success
+                ? Ok(new { text = text.Trim(), updatedAtUtc = DateTime.UtcNow })
+                : BadRequest(new { error = error ?? "Не удалось изменить комментарий." });
+        }
+
         if (error is not null) TempData["CrmError"] = error;
-        return RedirectToAction(nameof(Card), new { id });
+        return RedirectToAction(nameof(Card), new { id, stage });
     }
 
     [HttpPost]
@@ -928,6 +964,30 @@ public sealed class CrmController(
         officeId
         ?? officeContext.EffectiveOfficeId
         ?? (previewOptions.Value.Enabled ? DesignPreviewData.PreviewOfficeId : null);
+
+    private string ResolveBoardScope(string? requestedScope, string? managerUserId)
+    {
+        var scope = string.IsNullOrWhiteSpace(requestedScope)
+            ? User.IsInRole(PanelRoles.Admin) || User.IsInRole(PanelRoles.OfficeLead)
+                ? CrmBoardScopes.Team
+                : CrmBoardScopes.Mine
+            : requestedScope;
+
+        var managerFilterSubmitted = managerUserId is not null || Request.Query.ContainsKey("managerUserId");
+        if (!PanelRoles.HasElevatedOfficeAccess(User)
+            || !managerFilterSubmitted
+            || scope is not (CrmBoardScopes.Mine or CrmBoardScopes.Team))
+        {
+            return scope;
+        }
+
+        var currentUserId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        return scope == CrmBoardScopes.Mine
+               && !string.IsNullOrWhiteSpace(managerUserId)
+               && string.Equals(managerUserId, currentUserId, StringComparison.Ordinal)
+            ? CrmBoardScopes.Mine
+            : CrmBoardScopes.Team;
+    }
 
     private int ResolveBrowserUtcOffsetMinutes()
     {

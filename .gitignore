@@ -398,3 +398,6 @@ Desktop.ini
 # Локальные копии настроек с секретами (если появятся)
 **/appsettings.Development.Local.json
 deploy/**/.env
+
+# Source datasets used to regenerate compact embedded dictionaries
+.local-data/

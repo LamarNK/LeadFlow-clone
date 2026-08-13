@@ -235,7 +235,8 @@ public sealed record CrmBoardQuery(
     string? Vacancy = null,
     bool OverdueOnly = false,
     bool ActiveLoadOnly = false,
-    bool IncludeClosed = false);
+    bool IncludeClosed = false,
+    string? ManagerUserId = null);
 
 /// <summary>
 /// CRM analytics filter. The period is a half-open UTC interval: [FromUtc, ToUtc).
@@ -332,7 +333,8 @@ public sealed record CrmBoardDto(
     bool ActiveLoadOnly,
     bool IncludeClosed,
     IReadOnlyList<string> FunnelStages,
-    bool DeadlineNotificationsEnabled = false);
+    bool DeadlineNotificationsEnabled = false,
+    string? ManagerUserId = null);
 
 public sealed record CrmStageDto(string Name, IReadOnlyList<CrmCandidateCardDto> Cards, int TotalCount);
 
@@ -563,7 +565,8 @@ public sealed record CrmActivityItemDto(
     bool CanDelete = false,
     bool CanPin = false,
     string? CompletionReason = null,
-    string? ActionComment = null);
+    string? ActionComment = null,
+    DateTime? UpdatedAtUtc = null);
 
 public static class CrmActivityDetails
 {

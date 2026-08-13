@@ -1,0 +1,13 @@
+The russian-place-timezones.tsv.gz resource is derived from the GeoNames
+RU country dump, Russian alternate names and administrative code tables,
+downloaded on 2026-08-13.
+
+GeoNames data is licensed under Creative Commons Attribution 4.0:
+https://creativecommons.org/licenses/by/4.0/
+
+Source and format documentation:
+https://download.geonames.org/export/dump/
+https://www.geonames.org/
+
+The embedded derivative contains only normalized locality aliases and UTC
+offsets. It does not contain coordinates, GeoNames identifiers or FIAS data.
