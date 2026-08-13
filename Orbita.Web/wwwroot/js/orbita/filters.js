@@ -261,6 +261,74 @@
         restoreScroll();
     }
 
+    runtime.initCrmTaskListScroll = function initCrmTaskListScroll() {
+        var storageKey = 'orbita.crm.tasks.listScroll.v1';
+        var taskRows = document.querySelectorAll('.crm-task-row__main');
+        var taskList = document.querySelector('.crm-task-workspace');
+
+        function normalizePath(pathname) {
+            return (pathname || '').replace(/\/+$/, '').toLowerCase();
+        }
+
+        function currentTaskScope() {
+            var params = new URLSearchParams(window.location.search || '');
+            return (params.get('scope') || params.get('taskScope') || 'all').trim().toLowerCase();
+        }
+
+        function rememberPosition() {
+            try {
+                window.sessionStorage.setItem(storageKey, JSON.stringify({
+                    pathname: normalizePath(window.location.pathname),
+                    scope: currentTaskScope(),
+                    scrollX: window.scrollX,
+                    scrollY: window.scrollY,
+                    savedAt: Date.now()
+                }));
+            } catch (e) { }
+        }
+
+        taskRows.forEach(function (link) {
+            if (link.hasAttribute('data-crm-task-list-scroll-bound')) return;
+            link.setAttribute('data-crm-task-list-scroll-bound', '1');
+            link.addEventListener('click', rememberPosition);
+        });
+
+        if (!taskList) return;
+
+        var state = null;
+        try {
+            state = JSON.parse(window.sessionStorage.getItem(storageKey) || 'null');
+        } catch (e) {
+            return;
+        }
+
+        if (!state) return;
+
+        if (state.pathname !== normalizePath(window.location.pathname)
+            || state.scope !== currentTaskScope()
+            || !Number.isFinite(state.savedAt)
+            || Date.now() - state.savedAt > 30 * 60 * 1000) {
+            try { window.sessionStorage.removeItem(storageKey); } catch (e) { }
+            return;
+        }
+
+        try { window.sessionStorage.removeItem(storageKey); } catch (e) { }
+
+        var restore = function () {
+            window.scrollTo({
+                left: Math.max(0, Number(state.scrollX) || 0),
+                top: Math.max(0, Number(state.scrollY) || 0),
+                behavior: 'auto'
+            });
+        };
+
+        restore();
+        window.requestAnimationFrame(function () {
+            restore();
+            window.requestAnimationFrame(restore);
+        });
+    }
+
     var detailModal = null;
     var detailTitle = null;
     var detailSubtitle = null;

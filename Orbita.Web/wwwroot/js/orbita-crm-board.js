@@ -137,8 +137,54 @@
             const localUrl = boardUrl.pathname + boardUrl.search + boardUrl.hash;
             document.querySelectorAll('[data-crm-back-to-board]').forEach((link) => {
                 link.setAttribute('href', localUrl);
+                const label = link.querySelector('[data-crm-back-to-board-label]');
+                if (label) {
+                    label.textContent = (boardUrl.searchParams.get('scope') || '').toLowerCase() === 'closed'
+                        ? 'К закрытым'
+                        : 'К воронке';
+                }
             });
         } catch { /* ignore */ }
+    };
+
+    const initClosedArchiveNavigation = () => {
+        const archive = document.querySelector('.crm-closed[aria-label="Закрытые кандидаты"]');
+        if (!archive || archive.dataset.crmClosedNavigationReady === 'true') return;
+        archive.dataset.crmClosedNavigationReady = 'true';
+
+        archive.addEventListener('click', (event) => {
+            const openCard = event.target.closest('.crm-table-candidate__identity');
+            if (!openCard) return;
+
+            clearCardTaskReturn();
+            writeBoardState({
+                version: 1,
+                pathname: window.location.pathname,
+                boardUrl: window.location.pathname + window.location.search,
+                scrollLeft: 0,
+                jumpsScrollLeft: 0,
+                windowScrollX: window.scrollX,
+                windowScrollY: window.scrollY,
+                stageScrollTops: {},
+                focusStage: '',
+                savedAt: Date.now()
+            });
+            markCardOpenAtTop();
+        });
+
+        const storedState = readBoardState();
+        if (!storedState || !Number.isFinite(storedState.windowScrollY)) return;
+
+        const restore = () => window.scrollTo({
+            left: Number.isFinite(storedState.windowScrollX) ? Math.max(0, storedState.windowScrollX) : 0,
+            top: Math.max(0, storedState.windowScrollY),
+            behavior: 'auto'
+        });
+        restore();
+        window.requestAnimationFrame(() => {
+            restore();
+            window.requestAnimationFrame(restore);
+        });
     };
 
     if (!window.__orbitaCrmBoardResizeBound) {
@@ -974,6 +1020,7 @@
 
         document.querySelectorAll('[data-crm-board-carousel]').forEach(initBoardNavigation);
         document.querySelectorAll('[data-crm-funnel-editor]').forEach(initCrmFunnelEditor);
+        initClosedArchiveNavigation();
         initResponsibleAutoFilter();
         restoreResponsibleFilterScroll();
         initManualCreateModal();

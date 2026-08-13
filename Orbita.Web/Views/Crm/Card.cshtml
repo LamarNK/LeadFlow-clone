@@ -75,7 +75,7 @@
     }
     else
     {
-        <a asp-action="Index" asp-route-stage="@boardReturnStage" class="crm-back" data-crm-back-to-board data-crm-stage="@boardReturnStage"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i>К воронке</a>
+        <a asp-action="Index" asp-route-stage="@boardReturnStage" class="crm-back" data-crm-back-to-board data-crm-stage="@boardReturnStage"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i><span data-crm-back-to-board-label>К воронке</span></a>
     }
     @if (TempData["CrmError"] is string error)
     {
