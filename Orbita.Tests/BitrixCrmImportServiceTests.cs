@@ -69,7 +69,7 @@ public sealed class BitrixCrmImportServiceTests
         var snapshot = new BitrixImportSnapshot(
             [new BitrixImportStage("UC_ANKETA", CrmStages.Questionnaire)],
             new Dictionary<string, string> { ["UF_CITY"] = "Город", ["UF_JOB"] = "Вакансия" },
-            new Dictionary<long, BitrixImportUser> { [77] = new(77, "Иванов Иван Иванович") },
+            new Dictionary<long, BitrixImportUser> { [77] = new(77, "Иванов Иван") },
             [
                 new BitrixImportDeal(
                     41769,

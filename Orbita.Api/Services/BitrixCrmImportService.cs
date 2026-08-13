@@ -580,6 +580,13 @@ public sealed class BitrixCrmImportService(
         {
             var normalized = NormalizeName(user.FullName);
             var matches = managers.Where(x => x.NormalizedName == normalized).ToList();
+            if (matches.Count == 0)
+            {
+                matches = managers
+                    .Where(x => NamesMatchByUniqueKnownParts(normalized, x.NormalizedName))
+                    .ToList();
+            }
+
             if (matches.Count == 1)
             {
                 result[user.Id] = new ManagerMatch(
@@ -722,6 +729,17 @@ public sealed class BitrixCrmImportService(
 
     private static string NormalizeName(string? value) =>
         WhiteSpaceRegex.Replace((value ?? string.Empty).Trim().ToLowerInvariant().Replace('ё', 'е'), " ");
+
+    private static bool NamesMatchByUniqueKnownParts(string left, string right)
+    {
+        var leftParts = left.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToHashSet(StringComparer.Ordinal);
+        var rightParts = right.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToHashSet(StringComparer.Ordinal);
+        var shorter = leftParts.Count <= rightParts.Count ? leftParts : rightParts;
+        var longer = ReferenceEquals(shorter, leftParts) ? rightParts : leftParts;
+
+        // One-word names remain strict: matching "Dmitry" to any longer name is unsafe.
+        return shorter.Count >= 2 && shorter.IsSubsetOf(longer);
+    }
 
     private sealed record ImportContext(
         Guid InstanceId,
