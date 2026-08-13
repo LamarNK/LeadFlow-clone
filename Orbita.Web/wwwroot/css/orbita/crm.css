@@ -604,7 +604,7 @@
 .crm-staff-group > header h3 { margin: 0; color: #344054; font-size: 12px; }
 .crm-staff-group > header p { margin: 2px 0 0; color: #98a2b3; font-size: 10px; }
 .crm-staff-list { padding: 0 13px; }
-.crm-staff-row { display: grid; grid-template-columns: minmax(152px, 1.35fr) minmax(100px, .8fr) auto auto; gap: 12px; align-items: center; min-height: 66px; border-bottom: 1px solid #edf0f5; }
+.crm-staff-row { display: grid; grid-template-columns: minmax(152px, 1.35fr) minmax(100px, .8fr) minmax(176px, .9fr) auto; gap: 12px; align-items: center; min-height: 66px; border-bottom: 1px solid #edf0f5; }
 .crm-staff-row:last-child { border-bottom: 0; }
 .crm-staff-row.is-locked { opacity: .62; }
 .crm-staff-row__identity { display: flex; align-items: center; gap: 9px; min-width: 0; }
