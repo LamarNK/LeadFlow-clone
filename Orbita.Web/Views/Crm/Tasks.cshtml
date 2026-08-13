@@ -132,8 +132,20 @@
                         </label>
                     </form>
                 }
-                <button type="button" class="crm-task-tool"><span>Сортировка: Срок (по возрастанию)</span><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></button>
-                <button type="button" class="crm-task-tool crm-task-tool--filter"><i class="fa-solid fa-filter" aria-hidden="true"></i> Фильтры</button>
+                <button type="button"
+                        class="crm-task-tool"
+                        data-crm-vacation-popup-open
+                        aria-controls="crm-button-vacation-popup"
+                        aria-expanded="false">
+                    <span>Сортировка: Срок (по возрастанию)</span><i class="fa-solid fa-chevron-down" aria-hidden="true"></i>
+                </button>
+                <button type="button"
+                        class="crm-task-tool crm-task-tool--filter"
+                        data-crm-vacation-popup-open
+                        aria-controls="crm-button-vacation-popup"
+                        aria-expanded="false">
+                    <i class="fa-solid fa-filter" aria-hidden="true"></i> Фильтры
+                </button>
             </div>
         </header>
 
@@ -194,4 +206,22 @@
             </form>
         </section>
     </div>
+
+    <aside id="crm-button-vacation-popup"
+           class="crm-button-vacation-popup"
+           data-crm-vacation-popup
+           role="status"
+           aria-live="polite"
+           hidden>
+        <button type="button"
+                class="crm-button-vacation-popup__close"
+                data-crm-vacation-popup-close
+                aria-label="Закрыть">
+            <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+        </button>
+        <strong>Кнопка в отпуске, а ты нет</strong>
+        <img src="~/images/crm-button-vacation.png"
+             asp-append-version="true"
+             alt="Коллеги, я в отпуске" />
+    </aside>
 </main>

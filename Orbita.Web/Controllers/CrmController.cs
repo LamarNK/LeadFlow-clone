@@ -79,6 +79,7 @@ public sealed class CrmController(
         string? city,
         string? vacancy,
         string? managerUserId = null,
+        string? closeReason = null,
         bool overdueOnly = false,
         bool activeLoadOnly = false,
         bool includeClosed = false,
@@ -103,7 +104,8 @@ public sealed class CrmController(
                 overdueOnly,
                 activeLoadOnly,
                 includeClosed,
-                managerUserId),
+                managerUserId,
+                closeReason),
             ct);
         if (board is null)
         {
@@ -140,6 +142,7 @@ public sealed class CrmController(
         string? city,
         string? vacancy,
         string? managerUserId = null,
+        string? closeReason = null,
         bool overdueOnly = false,
         bool activeLoadOnly = false,
         bool includeClosed = false,
@@ -162,7 +165,8 @@ public sealed class CrmController(
                 overdueOnly,
                 activeLoadOnly,
                 includeClosed,
-                managerUserId),
+                managerUserId,
+                closeReason),
             ct);
         ViewData["CurrentCrmUserId"] = User.FindFirstValue(ClaimTypes.NameIdentifier);
         return board is null ? NoContent() : PartialView("_CrmWorkspace", board);

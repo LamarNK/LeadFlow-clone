@@ -9,16 +9,17 @@
     var selectedResponsibleName = Model.Managers
         .FirstOrDefault(x => string.Equals(x.UserId, Model.ManagerUserId, StringComparison.Ordinal))
         ?.DisplayName;
-    var canFilterResponsible = Model.Scope == CrmBoardScopes.Team
+    var canFilterResponsible = Model.Scope is CrmBoardScopes.Team or CrmBoardScopes.Closed
                                || Model.Managers.Any(x => string.Equals(
                                    x.UserId,
                                    currentUserId,
                                    StringComparison.Ordinal));
-    var isResponsibleFilterScope = Model.Scope is CrmBoardScopes.Mine or CrmBoardScopes.Team;
+    var isResponsibleFilterScope = Model.Scope is CrmBoardScopes.Mine or CrmBoardScopes.Team or CrmBoardScopes.Closed;
     var activeAdvancedFilters = new[]
     {
         !string.IsNullOrWhiteSpace(Model.City),
         !string.IsNullOrWhiteSpace(Model.Vacancy),
+        Model.Scope == CrmBoardScopes.Closed && !string.IsNullOrWhiteSpace(Model.CloseReason),
         Model.OverdueOnly,
         Model.ActiveLoadOnly,
         Model.IncludeClosed
@@ -30,6 +31,7 @@
         search = Model.Search,
         city = Model.City,
         vacancy = Model.Vacancy,
+        closeReason = scope == CrmBoardScopes.Closed ? Model.CloseReason : null,
         overdueOnly = Model.OverdueOnly,
         activeLoadOnly = Model.ActiveLoadOnly,
         includeClosed = Model.IncludeClosed,
@@ -173,13 +175,30 @@
             }
             <input type="search" name="search" value="@Model.Search" placeholder="ФИО, телефон, город…" aria-label="Поиск кандидата" />
             <button class="settings-primary-btn" type="submit">Найти</button>
-            <a class="settings-secondary-btn" asp-action="Index">Сброс</a>
+            <a class="settings-secondary-btn" asp-action="Index" asp-route-scope="@Model.Scope">Сброс</a>
         </div>
         <details class="crm-filter-details" @(activeAdvancedFilters > 0 ? "open" : null)>
             <summary><i class="fa-solid fa-sliders" aria-hidden="true"></i>Дополнительные фильтры<span class="crm-filter-details__count @(activeAdvancedFilters == 0 ? "is-empty" : "")">@advancedFilterBadge</span></summary>
             <div class="crm-filter-details__body">
                 <input type="text" name="city" value="@Model.City" placeholder="Город" />
                 <input type="text" name="vacancy" value="@Model.Vacancy" placeholder="Вакансия" />
+                @if (Model.Scope == CrmBoardScopes.Closed)
+                {
+                    <select name="closeReason" aria-label="Фильтр по типу закрытия">
+                        <option value="">Все типы закрытия</option>
+                        @foreach (var reason in CrmCloseReasons.All)
+                        {
+                            if (string.Equals(reason, Model.CloseReason, StringComparison.Ordinal))
+                            {
+                                <option value="@reason" selected>@reason</option>
+                            }
+                            else
+                            {
+                                <option value="@reason">@reason</option>
+                            }
+                        }
+                    </select>
+                }
                 <label class="crm-check"><input type="checkbox" name="overdueOnly" value="true" @(Model.OverdueOnly ? "checked" : null) /> Просрочка</label>
                 <label class="crm-check"><input type="checkbox" name="activeLoadOnly" value="true" @(Model.ActiveLoadOnly ? "checked" : null) /> В нагрузке</label>
                 <label class="crm-check"><input type="checkbox" name="includeClosed" value="true" @(Model.IncludeClosed ? "checked" : null) /> + закрытые</label>
@@ -203,7 +222,16 @@
             }
             else if (Model.Scope == CrmBoardScopes.Closed)
             {
-                <text><i class="fa-solid fa-box-archive" aria-hidden="true"></i>Архив закрытых карточек.</text>
+                <i class="fa-solid fa-box-archive" aria-hidden="true"></i><text>Архив закрытых карточек</text>
+                @if (!string.IsNullOrWhiteSpace(selectedResponsibleName))
+                {
+                    <text> сотрудника @selectedResponsibleName</text>
+                }
+                @if (!string.IsNullOrWhiteSpace(Model.CloseReason))
+                {
+                    <text> с результатом «@Model.CloseReason»</text>
+                }
+                <text>.</text>
             }
             else
             {

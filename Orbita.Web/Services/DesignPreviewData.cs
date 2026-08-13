@@ -153,12 +153,14 @@ internal static class DesignPreviewData
                 _ => CrmBoardScopes.Team
             };
             var selectedManagerUserId = scope == CrmBoardScopes.Team
-                                        && !string.IsNullOrWhiteSpace(query.ManagerUserId)
-                                        && managers.Any(x => string.Equals(
-                                            x.UserId,
-                                            query.ManagerUserId.Trim(),
-                                            StringComparison.Ordinal))
-                ? query.ManagerUserId.Trim()
+                                        || scope == CrmBoardScopes.Closed
+                ? !string.IsNullOrWhiteSpace(query.ManagerUserId)
+                  && managers.Any(x => string.Equals(
+                      x.UserId,
+                      query.ManagerUserId.Trim(),
+                      StringComparison.Ordinal))
+                    ? query.ManagerUserId.Trim()
+                    : null
                 : null;
             var cards = PreviewCrmCandidates.AsEnumerable();
             var hasSearch = !string.IsNullOrWhiteSpace(query.Search);
@@ -201,6 +203,10 @@ internal static class DesignPreviewData
             else if (scope == CrmBoardScopes.Closed)
             {
                 cards = cards.Where(c => c.IsClosed);
+                if (selectedManagerUserId is not null)
+                {
+                    cards = cards.Where(c => c.ManagerUserId == selectedManagerUserId);
+                }
             }
             else if (scope == CrmBoardScopes.Mine)
             {
@@ -213,6 +219,15 @@ internal static class DesignPreviewData
             else if (!includeClosed)
             {
                 cards = cards.Where(c => !c.IsClosed);
+            }
+
+            var selectedCloseReason = scope == CrmBoardScopes.Closed
+                                      && CrmCloseReasons.IsValid(query.CloseReason)
+                ? query.CloseReason!.Trim()
+                : null;
+            if (selectedCloseReason is not null)
+            {
+                cards = cards.Where(c => string.Equals(c.CloseReason, selectedCloseReason, StringComparison.Ordinal));
             }
 
             var list = cards.ToList();
@@ -272,7 +287,8 @@ internal static class DesignPreviewData
                 query.IncludeClosed,
                 _previewCrmStages.ToList(),
                 _previewCrmDeadlineNotificationsEnabled,
-                selectedManagerUserId);
+                selectedManagerUserId,
+                selectedCloseReason);
         }
     }
 

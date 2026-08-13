@@ -645,6 +645,75 @@ public sealed class CrmWorkspaceServiceTests
     }
 
     [Fact]
+    public async Task GetBoard_CityAndVacancyFilters_AreCaseInsensitive()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var manager = await harness.CreateManagerAsync("case-filter@test.local", capacity: 5, onShift: true);
+        var matchingResponse = await SeedResponseAsync(harness.Db, "case-filter-match");
+        matchingResponse.City = "Подольск";
+        matchingResponse.Vacancy = "Сварщик вахта";
+        var otherResponse = await SeedResponseAsync(harness.Db, "case-filter-other");
+        otherResponse.City = "Москва";
+        otherResponse.Vacancy = "Курьер";
+        var matchingCard = NewCard(matchingResponse.Id, manager.Id);
+        var otherCard = NewCard(otherResponse.Id, manager.Id);
+        harness.Db.CrmCandidateCards.AddRange(matchingCard, otherCard);
+        await harness.Db.SaveChangesAsync();
+
+        var board = await harness.Sut.GetBoardAsync(
+            OfficeId,
+            manager.Id,
+            isAdmin: false,
+            new CrmBoardQuery(
+                Scope: CrmBoardScopes.Mine,
+                City: "подольск",
+                Vacancy: "СВАРЩИК"));
+
+        Assert.NotNull(board);
+        var visibleIds = board.Stages.SelectMany(x => x.Cards).Select(x => x.Id).ToList();
+        Assert.Equal([matchingCard.Id], visibleIds);
+    }
+
+    [Fact]
+    public async Task GetBoard_ElevatedClosedFiltersByManagerAndCloseReason()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var first = await harness.CreateManagerAsync("closed-first@test.local", capacity: 5, onShift: true);
+        var second = await harness.CreateManagerAsync("closed-second@test.local", capacity: 5, onShift: true);
+        var firstResponse = await SeedResponseAsync(harness.Db, "closed-first");
+        var secondResponse = await SeedResponseAsync(harness.Db, "closed-second");
+        var wrongReasonResponse = await SeedResponseAsync(harness.Db, "closed-wrong-reason");
+        var firstCard = NewCard(firstResponse.Id, first.Id);
+        firstCard.IsClosed = true;
+        firstCard.CloseReason = CrmCloseReasons.Success;
+        var secondCard = NewCard(secondResponse.Id, second.Id);
+        secondCard.IsClosed = true;
+        secondCard.CloseReason = CrmCloseReasons.Success;
+        var wrongReasonCard = NewCard(wrongReasonResponse.Id, second.Id);
+        wrongReasonCard.IsClosed = true;
+        wrongReasonCard.CloseReason = CrmCloseReasons.NotRelevant;
+        harness.Db.CrmCandidateCards.AddRange(firstCard, secondCard, wrongReasonCard);
+        await harness.Db.SaveChangesAsync();
+
+        var board = await harness.Sut.GetBoardAsync(
+            OfficeId,
+            first.Id,
+            isAdmin: true,
+            new CrmBoardQuery(
+                Scope: CrmBoardScopes.Closed,
+                ManagerUserId: second.Id,
+                CloseReason: CrmCloseReasons.Success));
+
+        Assert.NotNull(board);
+        Assert.Equal(second.Id, board.ManagerUserId);
+        Assert.Equal(CrmCloseReasons.Success, board.CloseReason);
+        var card = Assert.Single(board.Stages.SelectMany(x => x.Cards));
+        Assert.Equal(secondCard.Id, card.Id);
+    }
+
+    [Fact]
     public async Task GetCard_ManagerCannotOpenForeignCard_OwnerCanEdit()
     {
         await using var harness = await Harness.CreateAsync();

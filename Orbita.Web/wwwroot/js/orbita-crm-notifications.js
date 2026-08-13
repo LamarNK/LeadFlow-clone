@@ -29,6 +29,27 @@
         return 'Срок через 24 часа';
     }
 
+    function normalizeNotification(notification) {
+        return {
+            id: notification.id || notification.Id || '',
+            taskId: notification.taskId || notification.TaskId || '',
+            cardId: notification.cardId || notification.CardId || '',
+            kind: notification.kind || notification.Kind || 'due_24h',
+            taskTitle: notification.taskTitle || notification.TaskTitle || 'CRM-задача',
+            message: notification.message || notification.Message || 'Новый срок CRM-задачи.',
+            dueAtUtc: notification.dueAtUtc || notification.DueAtUtc || '',
+            createdAtUtc: notification.createdAtUtc || notification.CreatedAtUtc || new Date().toISOString(),
+            readAtUtc: notification.readAtUtc || notification.ReadAtUtc || null
+        };
+    }
+
+    function taskUrl(item) {
+        if (item.cardId && (!item.taskId || item.taskId === '00000000-0000-0000-0000-000000000000')) {
+            return '/Crm/Card/' + encodeURIComponent(item.cardId);
+        }
+        return '/Crm/TaskDetails/' + encodeURIComponent(item.taskId);
+    }
+
     function setBadge(root, unreadCount) {
         var badge = root.querySelector('[data-crm-notifications-badge]');
         var caption = root.querySelector('[data-crm-notifications-caption]');
@@ -173,13 +194,9 @@
 
     function openTask(root, item) {
         var navigate = function () {
-            if (item.cardId && (!item.taskId || item.taskId === '00000000-0000-0000-0000-000000000000')) {
-                window.location.href = '/Crm/Card/' + encodeURIComponent(item.cardId);
-                return;
-            }
-            window.location.href = '/Crm/TaskDetails/' + encodeURIComponent(item.taskId);
+            window.location.href = taskUrl(item);
         };
-        if (item.readAtUtc) {
+        if (item.readAtUtc || !root || !item.id) {
             navigate();
             return;
         }
@@ -189,6 +206,78 @@
                 refreshBadges();
                 navigate();
             });
+    }
+
+    function realtimeHost() {
+        var host = document.querySelector('[data-crm-realtime-notification-host]');
+        if (host) return host;
+        host = document.createElement('div');
+        host.className = 'orbita-crm-realtime-notifications';
+        host.setAttribute('data-crm-realtime-notification-host', '');
+        host.setAttribute('aria-live', 'polite');
+        host.setAttribute('aria-atomic', 'false');
+        document.body.appendChild(host);
+        return host;
+    }
+
+    function showRealtimeNotification(root, item) {
+        var host = realtimeHost();
+        while (host.children.length >= 4) host.firstElementChild.remove();
+
+        var link = document.createElement('a');
+        link.href = taskUrl(item);
+        link.className = 'orbita-crm-realtime-notification' + (item.kind === 'overdue' ? ' is-overdue' : ' is-upcoming');
+        link.setAttribute('aria-label', 'Открыть задачу «' + item.taskTitle + '»');
+
+        var icon = document.createElement('span');
+        icon.className = 'orbita-crm-realtime-notification__icon';
+        var iconGlyph = document.createElement('i');
+        iconGlyph.className = item.kind === 'overdue'
+            ? 'fa-solid fa-triangle-exclamation'
+            : item.kind === 'phone_changed'
+                ? 'fa-solid fa-phone'
+                : 'fa-regular fa-clock';
+        icon.appendChild(iconGlyph);
+
+        var body = document.createElement('span');
+        body.className = 'orbita-crm-realtime-notification__body';
+        var meta = document.createElement('span');
+        meta.className = 'orbita-crm-realtime-notification__meta';
+        meta.textContent = kindLabel(item.kind);
+        var title = document.createElement('strong');
+        title.textContent = item.taskTitle;
+        var message = document.createElement('span');
+        message.className = 'orbita-crm-realtime-notification__message';
+        message.textContent = item.message;
+        var action = document.createElement('span');
+        action.className = 'orbita-crm-realtime-notification__action';
+        action.textContent = 'Открыть задачу';
+        body.appendChild(meta);
+        body.appendChild(title);
+        body.appendChild(message);
+        body.appendChild(action);
+
+        link.appendChild(icon);
+        link.appendChild(body);
+        host.appendChild(link);
+
+        var removeTimer;
+        var remove = function () {
+            window.clearTimeout(removeTimer);
+            link.classList.remove('is-visible');
+            window.setTimeout(function () {
+                if (link.parentNode) link.parentNode.removeChild(link);
+            }, 220);
+        };
+        link.addEventListener('click', function (event) {
+            event.preventDefault();
+            window.clearTimeout(removeTimer);
+            openTask(root, item);
+        });
+        window.requestAnimationFrame(function () {
+            link.classList.add('is-visible');
+        });
+        removeTimer = window.setTimeout(remove, 9000);
     }
 
     function closeAll(except) {
@@ -269,17 +358,7 @@
         init();
         roots().forEach(load);
         refreshBadges();
-
-        var kind = notification.kind || notification.Kind;
-        var message = notification.message || notification.Message || 'Новый срок CRM-задачи.';
-        var taskTitle = notification.taskTitle || notification.TaskTitle;
-        if (taskTitle) message += ' «' + taskTitle + '»';
-        if (window.Orbita && typeof window.Orbita.toast === 'function') {
-            window.Orbita.toast(message, {
-                variant: kind === 'overdue' ? 'error' : 'info',
-                duration: 9000
-            });
-        }
+        showRealtimeNotification(roots()[0] || null, normalizeNotification(notification));
     }
 
     document.addEventListener('click', function () { closeAll(null); });

@@ -103,6 +103,7 @@
     runtime.initCrmTaskCreateModal();
     runtime.initCrmTaskResponsibleFilter();
     runtime.initCrmTaskListScroll();
+    runtime.initCrmVacationPopup();
     runtime.initLiveRowActions();
 
     // --- Fast page switching (client-side, no full reload) + loading spinner ---
@@ -183,6 +184,7 @@
         runtime.initCrmTaskCreateModal();
         runtime.initCrmTaskResponsibleFilter();
         runtime.initCrmTaskListScroll();
+        runtime.initCrmVacationPopup();
         runtime.initCrmTaskAttachments?.();
         runtime.initCrmTaskEditButtons?.();
         runtime.initCrmClientTimes?.();
@@ -356,6 +358,21 @@
             }
             if (pageTitle) {
                 document.title = pageTitle;
+            }
+
+            // A forward transition from task/team lists into a candidate card or
+            // standalone task detail must start at the top. Back navigation keeps
+            // push=false, allowing the dedicated list-state restorers to return the
+            // user to the exact previous scroll position.
+            if (push && content.querySelector('.crm-card-page, .crm-task-detail-page')) {
+                var scrollDetailToTop = function () {
+                    window.scrollTo({ left: 0, top: 0, behavior: 'auto' });
+                };
+                scrollDetailToTop();
+                window.requestAnimationFrame(function () {
+                    scrollDetailToTop();
+                    window.requestAnimationFrame(scrollDetailToTop);
+                });
             }
 
             if (push) {

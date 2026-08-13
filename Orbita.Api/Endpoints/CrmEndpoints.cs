@@ -41,6 +41,7 @@ public static class CrmEndpoints
             string? managerUserId = null,
             string? city = null,
             string? vacancy = null,
+            string? closeReason = null,
             // Defaults: missing non-nullable bool query params otherwise → HTTP 400.
             bool overdueOnly = false,
             bool activeLoadOnly = false,
@@ -95,7 +96,8 @@ public static class CrmEndpoints
                     overdueOnly,
                     activeLoadOnly,
                     includeClosed,
-                    managerUserId),
+                    managerUserId,
+                    closeReason),
                 ct);
             return board is null
                 ? Results.NotFound(new { error = "Офис не найден." })

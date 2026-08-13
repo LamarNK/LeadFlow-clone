@@ -329,6 +329,59 @@
         });
     }
 
+    runtime.closeCrmVacationPopup = function closeCrmVacationPopup(popup) {
+        if (!popup) return;
+        popup.hidden = true;
+        if (popup.__orbitaVacationTimer) {
+            window.clearTimeout(popup.__orbitaVacationTimer);
+            popup.__orbitaVacationTimer = null;
+        }
+        document.querySelectorAll('[data-crm-vacation-popup-open]').forEach(function (trigger) {
+            trigger.setAttribute('aria-expanded', 'false');
+        });
+    }
+
+    runtime.initCrmVacationPopup = function initCrmVacationPopup() {
+        var popup = document.querySelector('[data-crm-vacation-popup]');
+        if (!popup) return;
+
+        document.querySelectorAll('[data-crm-vacation-popup-open]').forEach(function (trigger) {
+            if (trigger.hasAttribute('data-crm-vacation-popup-bound')) return;
+            trigger.setAttribute('data-crm-vacation-popup-bound', '1');
+            trigger.addEventListener('click', function () {
+                popup.hidden = false;
+                document.querySelectorAll('[data-crm-vacation-popup-open]').forEach(function (item) {
+                    item.setAttribute('aria-expanded', item === trigger ? 'true' : 'false');
+                });
+                if (popup.__orbitaVacationTimer) window.clearTimeout(popup.__orbitaVacationTimer);
+                popup.__orbitaVacationTimer = window.setTimeout(function () {
+                    runtime.closeCrmVacationPopup(popup);
+                }, 1000);
+            });
+        });
+
+        popup.querySelectorAll('[data-crm-vacation-popup-close]').forEach(function (trigger) {
+            if (trigger.hasAttribute('data-crm-vacation-popup-close-bound')) return;
+            trigger.setAttribute('data-crm-vacation-popup-close-bound', '1');
+            trigger.addEventListener('click', function () {
+                runtime.closeCrmVacationPopup(popup);
+            });
+        });
+
+        if (!window.__orbitaCrmVacationPopupGlobalBound) {
+            document.addEventListener('pointerdown', function (e) {
+                var openedPopup = document.querySelector('[data-crm-vacation-popup]:not([hidden])');
+                if (!openedPopup || openedPopup.contains(e.target) || e.target.closest('[data-crm-vacation-popup-open]')) return;
+                runtime.closeCrmVacationPopup(openedPopup);
+            });
+            document.addEventListener('keydown', function (e) {
+                if (e.key !== 'Escape') return;
+                runtime.closeCrmVacationPopup(document.querySelector('[data-crm-vacation-popup]:not([hidden])'));
+            });
+            window.__orbitaCrmVacationPopupGlobalBound = true;
+        }
+    }
+
     var detailModal = null;
     var detailTitle = null;
     var detailSubtitle = null;

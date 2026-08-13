@@ -128,7 +128,7 @@ public sealed class CrmWorkspaceService(
         var profile = await db.PanelUserProfiles.AsNoTracking().FirstOrDefaultAsync(x => x.UserId == userId, ct);
         var managers = await GetManagersAsync(officeId, ct);
         var selectedManagerUserId = isAdmin
-                                    && scope == CrmBoardScopes.Team
+                                    && scope is CrmBoardScopes.Team or CrmBoardScopes.Closed
                                     && !string.IsNullOrWhiteSpace(query.ManagerUserId)
                                     && managers.Any(x => string.Equals(
                                         x.Profile.UserId,
@@ -151,7 +151,9 @@ public sealed class CrmWorkspaceService(
             CrmBoardScopes.Unassigned => cardsQuery.Where(x => x.ManagerUserId == null && (!x.IsClosed || includeClosed)),
             // Elevated: all closed in office. Manager: only own closed.
             CrmBoardScopes.Closed => isAdmin
-                ? cardsQuery.Where(x => x.IsClosed)
+                ? selectedManagerUserId is null
+                    ? cardsQuery.Where(x => x.IsClosed)
+                    : cardsQuery.Where(x => x.IsClosed && x.ManagerUserId == selectedManagerUserId)
                 : cardsQuery.Where(x => x.IsClosed && x.ManagerUserId == userId),
             CrmBoardScopes.Team => selectedManagerUserId is null
                 ? cardsQuery.Where(x => !x.IsClosed || includeClosed)
@@ -182,14 +184,23 @@ public sealed class CrmWorkspaceService(
 
         if (!string.IsNullOrWhiteSpace(query.City))
         {
-            var city = query.City.Trim();
-            cardsQuery = cardsQuery.Where(x => x.Response.City.Contains(city));
+            var city = query.City.Trim().ToLower();
+            cardsQuery = cardsQuery.Where(x => x.Response.City.ToLower().Contains(city));
         }
 
         if (!string.IsNullOrWhiteSpace(query.Vacancy))
         {
-            var vacancy = query.Vacancy.Trim();
-            cardsQuery = cardsQuery.Where(x => x.Response.Vacancy.Contains(vacancy));
+            var vacancy = query.Vacancy.Trim().ToLower();
+            cardsQuery = cardsQuery.Where(x => x.Response.Vacancy.ToLower().Contains(vacancy));
+        }
+
+        var selectedCloseReason = scope == CrmBoardScopes.Closed
+                                  && CrmCloseReasons.IsValid(query.CloseReason)
+            ? query.CloseReason!.Trim()
+            : null;
+        if (selectedCloseReason is not null)
+        {
+            cardsQuery = cardsQuery.Where(x => x.CloseReason == selectedCloseReason);
         }
 
         if (query.ActiveLoadOnly)
@@ -328,7 +339,8 @@ public sealed class CrmWorkspaceService(
             query.IncludeClosed,
             officeStages,
             office.CrmDeadlineNotificationsEnabled,
-            selectedManagerUserId);
+            selectedManagerUserId,
+            selectedCloseReason);
     }
 
     public async Task<bool> StartShiftAsync(Guid officeId, string userId, CancellationToken ct = default)
