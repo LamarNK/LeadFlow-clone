@@ -48,7 +48,7 @@ builder.Services.AddControllersWithViews();
 
 builder.Services.AddScoped<AuthSession>();
 builder.Services.AddScoped<OrbitaAuthService>();
-builder.Services.AddSingleton<ThemeService>();
+builder.Services.AddScoped<ThemeService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<IWorkersService, WorkersService>();
 builder.Services.AddScoped<IEventsService, EventsService>();
