@@ -67,7 +67,7 @@ public sealed class BitrixCrmImportServiceTests
         await db.SaveChangesAsync();
 
         var snapshot = new BitrixImportSnapshot(
-            [new BitrixImportStage("UC_ANKETA", CrmStages.Questionnaire)],
+            [new BitrixImportStage("UC_ANKETA", CrmStages.Questionnaire.ToUpperInvariant())],
             new Dictionary<string, string> { ["UF_CITY"] = "Город", ["UF_JOB"] = "Вакансия" },
             new Dictionary<long, BitrixImportUser> { [77] = new(77, "Иванов Иван") },
             [
@@ -75,15 +75,15 @@ public sealed class BitrixCrmImportServiceTests
                     41769,
                     "Иванов Иван Иванович",
                     "UC_ANKETA",
-                    CrmStages.Questionnaire,
+                    CrmStages.Questionnaire.ToUpperInvariant(),
                     77,
                     now.AddDays(-2),
                     now.AddHours(-2),
-                    string.Empty,
+                    "[p]Технические данные отклика[/p]",
                     new Dictionary<string, string?> { ["UF_CITY"] = "Подольск", ["UF_JOB"] = "Сварщик" },
                     new BitrixImportContact(501, "Иванов Иван Иванович", "+7 999 111-22-33", new Dictionary<string, string?>()),
-                    [new BitrixImportComment(9001, 77, "Созвонились, ждёт документы", now.AddDays(-1))],
-                    [new BitrixImportActivity(8001, "Перезвонить", "Уточнить дату", 77, 77, now.AddDays(1), now.AddHours(-3), now.AddHours(-2), null, false)])
+                    [new BitrixImportComment(9001, 77, "[p]Созвонились, ждёт документы[/p]", now.AddDays(-1))],
+                    [new BitrixImportActivity(8001, "[b]Перезвонить[/b]", "[p]Уточнить дату[/p]", 77, 77, now.AddDays(1), now.AddHours(-3), now.AddHours(-2), null, false)])
             ]);
         var bitrixInstances = new BitrixInstanceService(
             db,
@@ -91,10 +91,11 @@ public sealed class BitrixCrmImportServiceTests
             null!,
             Options.Create(new OrbitaBitrixSettings()),
             new PanelAuditService(db));
+        var stubClient = new StubClient(snapshot);
         var sut = new BitrixCrmImportService(
             db,
             bitrixInstances,
-            new StubClient(snapshot),
+            stubClient,
             new PhoneNormalizer(),
             new CandidateParser());
 
@@ -107,6 +108,7 @@ public sealed class BitrixCrmImportServiceTests
         Assert.Null(previewError);
         var row = Assert.Single(preview!.Deals);
         Assert.Equal(BitrixCrmImportActions.Create, row.Action);
+        Assert.Equal(CrmStages.Questionnaire, row.StageName);
         Assert.Equal(managerId, row.OrbitaResponsibleUserId);
         Assert.Equal(1, row.CommentCount);
         Assert.Equal(1, row.ActivityCount);
@@ -121,6 +123,7 @@ public sealed class BitrixCrmImportServiceTests
 
         Assert.Null(importError);
         Assert.Equal(1, result!.Created);
+        Assert.Equal([41769L], stubClient.LastDealIds);
         var card = await db.CrmCandidateCards.Include(x => x.Response).SingleAsync();
         Assert.Equal(CrmStages.Questionnaire, card.Stage);
         Assert.Equal(managerId, card.ManagerUserId);
@@ -130,6 +133,7 @@ public sealed class BitrixCrmImportServiceTests
         Assert.Equal("Созвонились, ждёт документы", (await db.CrmCandidateNotes.SingleAsync()).Text);
         var task = await db.CrmTasks.SingleAsync();
         Assert.Equal("Перезвонить", task.Title);
+        Assert.Equal("Уточнить дату", task.Description);
         Assert.Equal(managerId, task.AssigneeUserId);
 
         var (second, secondError) = await sut.ImportAsync(
@@ -149,10 +153,17 @@ public sealed class BitrixCrmImportServiceTests
 
     private sealed class StubClient(BitrixImportSnapshot snapshot) : IBitrixCrmImportClient
     {
+        public IReadOnlyCollection<long>? LastDealIds { get; private set; }
+
         public Task<BitrixImportSnapshot> LoadAsync(
             string webhookUrl,
             int categoryId,
             IReadOnlyCollection<string> requestedStageNames,
-            CancellationToken ct) => Task.FromResult(snapshot);
+            IReadOnlyCollection<long>? dealIds,
+            CancellationToken ct)
+        {
+            LastDealIds = dealIds;
+            return Task.FromResult(snapshot);
+        }
     }
 }

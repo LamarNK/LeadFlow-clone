@@ -59,6 +59,7 @@ public interface IBitrixCrmImportClient
         string webhookUrl,
         int categoryId,
         IReadOnlyCollection<string> requestedStageNames,
+        IReadOnlyCollection<long>? dealIds,
         CancellationToken ct);
 }
 
@@ -71,6 +72,7 @@ public sealed class BitrixCrmImportClient(IHttpClientFactory httpClientFactory) 
         string webhookUrl,
         int categoryId,
         IReadOnlyCollection<string> requestedStageNames,
+        IReadOnlyCollection<long>? dealIds,
         CancellationToken ct)
     {
         var allStages = await LoadStagesAsync(webhookUrl, categoryId, ct);
@@ -95,7 +97,7 @@ public sealed class BitrixCrmImportClient(IHttpClientFactory httpClientFactory) 
         var deals = new List<BitrixImportDeal>();
         foreach (var stage in stages)
         {
-            var rawDeals = await LoadDealsAsync(webhookUrl, categoryId, stage, ct);
+            var rawDeals = await LoadDealsAsync(webhookUrl, categoryId, stage, dealIds, ct);
             foreach (var rawDeal in rawDeals)
             {
                 var contact = await LoadPrimaryContactAsync(webhookUrl, rawDeal.Id, ct);
@@ -183,23 +185,35 @@ public sealed class BitrixCrmImportClient(IHttpClientFactory httpClientFactory) 
         string webhookUrl,
         int categoryId,
         BitrixImportStage stage,
+        IReadOnlyCollection<long>? dealIds,
         CancellationToken ct)
     {
+        if (dealIds is { Count: 0 })
+        {
+            return [];
+        }
+
         var result = new List<BitrixImportDeal>();
         var start = 0;
         do
         {
+            var filter = new Dictionary<string, object?>
+            {
+                ["CATEGORY_ID"] = categoryId,
+                ["STAGE_ID"] = stage.Id
+            };
+            if (dealIds is not null)
+            {
+                filter["@ID"] = dealIds.Where(x => x > 0).Distinct().ToArray();
+            }
+
             using var json = await CallAsync(
                 webhookUrl,
                 "crm.deal.list",
                 new
                 {
                     order = new { ID = "ASC" },
-                    filter = new Dictionary<string, object?>
-                    {
-                        ["CATEGORY_ID"] = categoryId,
-                        ["STAGE_ID"] = stage.Id
-                    },
+                    filter,
                     select = new[] { "*", "UF_*" },
                     start
                 },

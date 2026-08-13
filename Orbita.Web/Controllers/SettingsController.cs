@@ -482,21 +482,16 @@ public sealed class SettingsController(
             new BitrixCrmImportExecuteRequest(model.CategoryId, BitrixCrmImportStages.Default, model.DealIds),
             model.OfficeId,
             ct);
-        var (freshPreview, refreshError) = await api.PreviewBitrixCrmImportAsync(
-            model.BitrixInstanceId,
-            new BitrixCrmImportPreviewRequest(model.CategoryId, BitrixCrmImportStages.Default),
-            model.OfficeId,
-            ct);
         var status = result is null
             ? null
             : $"Импорт завершён: создано {result.Created}, обновлено {result.Updated}, уже было {result.AlreadyImported}, пропущено {result.Skipped}.";
         return View("BitrixCrmImport", BuildBitrixCrmImportPage(
             instance,
             model.CategoryId,
-            freshPreview,
+            null,
             result,
             status,
-            importError ?? refreshError));
+            importError));
     }
 
     private static BitrixCrmImportPageViewModel BuildBitrixCrmImportPage(

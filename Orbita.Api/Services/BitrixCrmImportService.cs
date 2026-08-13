@@ -18,6 +18,9 @@ public sealed class BitrixCrmImportService(
 {
     private const int MaxImportDeals = 1000;
     private static readonly Regex HtmlTagRegex = new("<[^>]+>", RegexOptions.Compiled);
+    private static readonly Regex BbCodeTagRegex = new(
+        @"\[/?[a-z][a-z0-9]*(?:=[^\]]*)?\]",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     private static readonly Regex WhiteSpaceRegex = new("\\s+", RegexOptions.Compiled);
 
     public async Task<(BitrixCrmImportPreviewDto? Preview, string? Error)> PreviewAsync(
@@ -27,7 +30,14 @@ public sealed class BitrixCrmImportService(
         BitrixCrmImportPreviewRequest request,
         CancellationToken ct = default)
     {
-        var context = await LoadContextAsync(bitrixInstanceId, scope, officeId, request.CategoryId, request.StageNames, ct);
+        var context = await LoadContextAsync(
+            bitrixInstanceId,
+            scope,
+            officeId,
+            request.CategoryId,
+            request.StageNames,
+            null,
+            ct);
         if (context.Error is not null)
         {
             return (null, context.Error);
@@ -45,16 +55,27 @@ public sealed class BitrixCrmImportService(
         string actorUserId,
         CancellationToken ct = default)
     {
-        var context = await LoadContextAsync(bitrixInstanceId, scope, officeId, request.CategoryId, request.StageNames, ct);
+        var selectedDealIds = request.DealIds?
+            .Where(x => x > 0)
+            .Distinct()
+            .ToArray();
+        var context = await LoadContextAsync(
+            bitrixInstanceId,
+            scope,
+            officeId,
+            request.CategoryId,
+            request.StageNames,
+            selectedDealIds,
+            ct);
         if (context.Error is not null)
         {
             return (null, context.Error);
         }
 
         var preview = await BuildPreviewAsync(context, ct);
-        var selected = request.DealIds is null
+        var selected = selectedDealIds is null
             ? null
-            : request.DealIds.Where(x => x > 0).Distinct().ToHashSet();
+            : selectedDealIds.ToHashSet();
         var previewById = preview.Deals.ToDictionary(x => x.DealId);
         var managers = await LoadOrbitaManagersAsync(context.OfficeId, ct);
         var managerMatches = BuildManagerMatches(context.Snapshot.Users, managers);
@@ -287,22 +308,6 @@ public sealed class BitrixCrmImportService(
             AddImportMarker(card.Id, "NoteUpdated", "bitrix-comment:", comment.Id, actorUserId, now);
         }
 
-        if (!string.IsNullOrWhiteSpace(deal.Comments)
-            && !await db.CrmCandidateNotes.AnyAsync(
-                x => x.CardId == card.Id && x.Text == Clamp(CleanText(deal.Comments), 4000),
-                ct))
-        {
-            db.CrmCandidateNotes.Add(new CrmCandidateNoteEntity
-            {
-                Id = Guid.NewGuid(),
-                CardId = card.Id,
-                AuthorUserId = "bitrix",
-                AuthorName = "Bitrix24",
-                Text = Clamp(CleanText(deal.Comments), 4000),
-                CreatedAtUtc = deal.CreatedAtUtc
-            });
-        }
-
         var existingActivityIds = await LoadImportedIdsAsync(
             card.Id,
             "TaskUpdated",
@@ -320,7 +325,7 @@ public sealed class BitrixCrmImportService(
                 Id = Guid.NewGuid(),
                 OfficeId = context.OfficeId,
                 CardId = card.Id,
-                Title = Clamp(activity.Subject, 500),
+                Title = Clamp(CleanText(activity.Subject), 500),
                 Description = string.IsNullOrWhiteSpace(activity.Description)
                     ? null
                     : Clamp(CleanText(activity.Description), 4000),
@@ -446,7 +451,7 @@ public sealed class BitrixCrmImportService(
                 responsible,
                 match?.OrbitaUserId,
                 match?.OrbitaName,
-                deal.TimelineComments.Count + (string.IsNullOrWhiteSpace(deal.Comments) ? 0 : 1),
+                deal.TimelineComments.Count,
                 deal.Activities.Count,
                 action,
                 importedCardId != Guid.Empty ? importedCardId : phoneCardId != Guid.Empty ? phoneCardId : null,
@@ -485,6 +490,7 @@ public sealed class BitrixCrmImportService(
         Guid? requestedOfficeId,
         int categoryId,
         IReadOnlyList<string>? requestedStages,
+        IReadOnlyCollection<long>? dealIds,
         CancellationToken ct)
     {
         var instance = await db.BitrixInstances.AsNoTracking()
@@ -539,7 +545,8 @@ public sealed class BitrixCrmImportService(
 
         try
         {
-            var snapshot = await client.LoadAsync(webhookUrl, categoryId, stages, ct);
+            var snapshot = await client.LoadAsync(webhookUrl, categoryId, stages, dealIds, ct);
+            snapshot = NormalizeStageNames(snapshot, officeStages);
             if (snapshot.Deals.Count > MaxImportDeals)
             {
                 return ImportContext.Failed(
@@ -718,7 +725,28 @@ public sealed class BitrixCrmImportService(
     private static string CleanText(string value)
     {
         var withoutTags = HtmlTagRegex.Replace(value ?? string.Empty, " ");
-        return WhiteSpaceRegex.Replace(WebUtility.HtmlDecode(withoutTags), " ").Trim();
+        var withoutBbCode = BbCodeTagRegex.Replace(withoutTags, " ");
+        return WhiteSpaceRegex.Replace(WebUtility.HtmlDecode(withoutBbCode), " ").Trim();
+    }
+
+    private static BitrixImportSnapshot NormalizeStageNames(
+        BitrixImportSnapshot snapshot,
+        IReadOnlyList<string> officeStages)
+    {
+        string Resolve(string value) =>
+            officeStages.FirstOrDefault(stage =>
+                string.Equals(stage, value.Trim(), StringComparison.OrdinalIgnoreCase))
+            ?? value.Trim();
+
+        return snapshot with
+        {
+            Stages = snapshot.Stages
+                .Select(stage => stage with { Name = Resolve(stage.Name) })
+                .ToList(),
+            Deals = snapshot.Deals
+                .Select(deal => deal with { StageName = Resolve(deal.StageName) })
+                .ToList()
+        };
     }
 
     private static string Clamp(string value, int maxLength) =>
