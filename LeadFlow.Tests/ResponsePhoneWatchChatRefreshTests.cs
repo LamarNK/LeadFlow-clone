@@ -41,6 +41,22 @@ public sealed class ResponsePhoneWatchChatRefreshTests
     }
 
     [Fact]
+    public void ShouldPublish_WhenWatchOpen_Skip_AndProfileFieldsPresent()
+    {
+        Assert.True(ResponsePhoneWatchChatRefresh.ShouldPublish(
+            watchingOpen: true,
+            ResponsePhoneWatchAction.Skip,
+            chatMessagesJson: "",
+            hasProfileRefresh: true));
+        Assert.True(ResponsePhoneWatchChatRefresh.HasProfileRefresh(new CandidateResponse
+        {
+            City = "Батайск",
+            Vacancy = "Разнорабочий вахта"
+        }));
+        Assert.False(ResponsePhoneWatchChatRefresh.HasProfileRefresh(new CandidateResponse()));
+    }
+
+    [Fact]
     public void ShouldNotPublish_WhenActionIsNotSkip()
     {
         Assert.False(ResponsePhoneWatchChatRefresh.ShouldPublish(

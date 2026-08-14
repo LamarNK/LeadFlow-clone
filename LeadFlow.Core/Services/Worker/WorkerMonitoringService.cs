@@ -1000,8 +1000,8 @@ public sealed class WorkerMonitoringService(
                     utcNow);
 
                 // Skip: тот же номер в окне / окно закрыто / нет данных.
-                // Пока phone-watch открыт — всё равно досылаем отклик, если есть чат:
-                // API обновит ChatMessagesJson только при фактическом изменении.
+                // Пока phone-watch открыт — досылаем, если есть чат или поля карточки:
+                // API обновит чат и незалоченные оператором поля.
                 if (decision.Action == ResponsePhoneWatchAction.Skip)
                 {
                     await _phoneObservationStore
@@ -1011,7 +1011,8 @@ public sealed class WorkerMonitoringService(
                     if (ResponsePhoneWatchChatRefresh.ShouldPublish(
                             watchingOpen,
                             decision.Action,
-                            candidate.ChatMessagesJson))
+                            candidate.ChatMessagesJson,
+                            ResponsePhoneWatchChatRefresh.HasProfileRefresh(candidate)))
                     {
                         ApplyPhoneWatchDecision(candidate, decision, phoneNormalized);
                         await PublishCandidateAsync(candidate, cancellationToken).ConfigureAwait(false);
