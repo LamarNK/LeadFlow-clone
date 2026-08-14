@@ -1803,9 +1803,9 @@ public sealed partial class AdsPowerAvitoAutomationService(
     internal enum AdsPowerStartupNavigationStep
     {
         None = 0,
-        GoTo = 1,
-        LocationAssign = 2,
-        NewPage = 3,
+        CreateTarget = 1,
+        PageNavigate = 2,
+        LocationAssign = 3,
         Done = 4,
         Failed = 5
     }
@@ -1821,9 +1821,9 @@ public sealed partial class AdsPowerAvitoAutomationService(
 
         return lastAttempt switch
         {
-            AdsPowerStartupNavigationStep.None => AdsPowerStartupNavigationStep.GoTo,
-            AdsPowerStartupNavigationStep.GoTo => AdsPowerStartupNavigationStep.LocationAssign,
-            AdsPowerStartupNavigationStep.LocationAssign => AdsPowerStartupNavigationStep.NewPage,
+            AdsPowerStartupNavigationStep.None => AdsPowerStartupNavigationStep.CreateTarget,
+            AdsPowerStartupNavigationStep.CreateTarget => AdsPowerStartupNavigationStep.PageNavigate,
+            AdsPowerStartupNavigationStep.PageNavigate => AdsPowerStartupNavigationStep.LocationAssign,
             _ => AdsPowerStartupNavigationStep.Failed
         };
     }
@@ -1881,41 +1881,18 @@ public sealed partial class AdsPowerAvitoAutomationService(
     {
         switch (step)
         {
-            case AdsPowerStartupNavigationStep.GoTo:
-                await TryGoToTargetAsync(page, targetUrl, cancellationToken).ConfigureAwait(false);
+            case AdsPowerStartupNavigationStep.CreateTarget:
+                return await TryCreateTargetWithUrlAsync(page, targetUrl, cancellationToken)
+                    .ConfigureAwait(false);
+
+            case AdsPowerStartupNavigationStep.PageNavigate:
+                await TryCdpPageNavigateAsync(page, targetUrl, cancellationToken).ConfigureAwait(false);
+                await PollUntilLeftPlaceholderAsync(page, cancellationToken).ConfigureAwait(false);
                 return page;
 
             case AdsPowerStartupNavigationStep.LocationAssign:
                 await TryAssignLocationAsync(page, targetUrl, cancellationToken).ConfigureAwait(false);
-                return page;
-
-            case AdsPowerStartupNavigationStep.NewPage:
-                var fresh = await page.Browser.NewPageAsync().ConfigureAwait(false);
-                await TryGoToTargetAsync(fresh, targetUrl, cancellationToken).ConfigureAwait(false);
-                var freshUrl = await ReadPageUrlAsync(fresh).ConfigureAwait(false);
-                if (IsUsableWorkerPageUrl(freshUrl))
-                {
-                    try
-                    {
-                        await page.CloseAsync().ConfigureAwait(false);
-                    }
-                    catch
-                    {
-                        // исходная вкладка могла уже закрыться
-                    }
-
-                    return fresh;
-                }
-
-                try
-                {
-                    await fresh.CloseAsync().ConfigureAwait(false);
-                }
-                catch
-                {
-                    // новая вкладка тоже оказалась пустой
-                }
-
+                await PollUntilLeftPlaceholderAsync(page, cancellationToken).ConfigureAwait(false);
                 return page;
 
             default:
@@ -1923,18 +1900,101 @@ public sealed partial class AdsPowerAvitoAutomationService(
         }
     }
 
-    private static async Task TryGoToTargetAsync(
+    private static async Task<IPage> TryCreateTargetWithUrlAsync(
         IPage page,
         string targetUrl,
         CancellationToken cancellationToken)
     {
         try
         {
-            await page.GoToAsync(targetUrl, new NavigationOptions
+            var client = await page.Browser.CreateCDPSessionAsync().ConfigureAwait(false);
+            try
             {
-                Timeout = 60_000,
-                WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
-            }).ConfigureAwait(false);
+                await client.SendAsync(
+                        "Target.createTarget",
+                        new Dictionary<string, object> { ["url"] = targetUrl })
+                    .ConfigureAwait(false);
+            }
+            finally
+            {
+                try
+                {
+                    await client.DetachAsync().ConfigureAwait(false);
+                }
+                catch
+                {
+                    // сессия CDP могла уже закрыться
+                }
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+
+            return page;
+        }
+
+        var timeout = TimeSpan.FromMilliseconds(MonitoringTiming.AdsPowerForcedNavigationMaxWaitMs);
+        var poll = TimeSpan.FromMilliseconds(MonitoringTiming.AdsPowerStartupNavigationPollMs);
+        var elapsed = TimeSpan.Zero;
+        while (elapsed < timeout)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var pages = await page.Browser.PagesAsync().ConfigureAwait(false);
+            var avito = pages.FirstOrDefault(candidate => IsUsableAvitoPageUrl(candidate.Url));
+            if (avito is not null)
+            {
+                if (!ReferenceEquals(avito, page))
+                {
+                    try
+                    {
+                        await page.CloseAsync().ConfigureAwait(false);
+                    }
+                    catch
+                    {
+                        // стартовый about:blank мог уже закрыться
+                    }
+                }
+
+                return avito;
+            }
+
+            await Task.Delay(poll, cancellationToken).ConfigureAwait(false);
+            elapsed += poll;
+        }
+
+        return page;
+    }
+
+    private static async Task TryCdpPageNavigateAsync(
+        IPage page,
+        string targetUrl,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var client = await page.CreateCDPSessionAsync().ConfigureAwait(false);
+            try
+            {
+                await client.SendAsync(
+                        "Page.navigate",
+                        new Dictionary<string, object> { ["url"] = targetUrl })
+                    .ConfigureAwait(false);
+            }
+            finally
+            {
+                try
+                {
+                    await client.DetachAsync().ConfigureAwait(false);
+                }
+                catch
+                {
+                    // сессия CDP могла уже закрыться
+                }
+            }
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
@@ -1952,14 +2012,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
     {
         try
         {
-            var wait = page.WaitForNavigationAsync(new NavigationOptions
-            {
-                Timeout = 60_000,
-                WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
-            });
             var jsUrl = JsonSerializer.Serialize(targetUrl);
             await page.EvaluateExpressionAsync($"window.location.assign({jsUrl})").ConfigureAwait(false);
-            await wait.ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
@@ -1967,6 +2021,26 @@ public sealed partial class AdsPowerAvitoAutomationService(
             {
                 throw;
             }
+        }
+    }
+
+    private static async Task PollUntilLeftPlaceholderAsync(
+        IPage page,
+        CancellationToken cancellationToken)
+    {
+        var timeout = TimeSpan.FromMilliseconds(MonitoringTiming.AdsPowerForcedNavigationMaxWaitMs);
+        var poll = TimeSpan.FromMilliseconds(MonitoringTiming.AdsPowerStartupNavigationPollMs);
+        var elapsed = TimeSpan.Zero;
+        while (elapsed < timeout)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (IsUsableWorkerPageUrl(await ReadPageUrlAsync(page).ConfigureAwait(false)))
+            {
+                return;
+            }
+
+            await Task.Delay(poll, cancellationToken).ConfigureAwait(false);
+            elapsed += poll;
         }
     }
 

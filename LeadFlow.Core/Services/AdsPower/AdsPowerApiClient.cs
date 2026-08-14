@@ -104,7 +104,9 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
             async ct =>
             {
                 var baseUrl = NormalizeBaseUrl(options.BaseUrl);
-                var q = $"user_id={Uri.EscapeDataString(adsPowerUserId)}&ip_tab=0&open_tabs=1";
+                // ip_tab=0: не открывать вкладку проверки IP. open_tabs не ставим:
+                // open_tabs=1 у части сборок AdsPower глушит и open_urls — остаётся один about:blank.
+                var q = $"user_id={Uri.EscapeDataString(adsPowerUserId)}&ip_tab=0";
                 if (!string.IsNullOrWhiteSpace(openUrl))
                 {
                     var openUrlsJson = JsonSerializer.Serialize(new[] { openUrl });

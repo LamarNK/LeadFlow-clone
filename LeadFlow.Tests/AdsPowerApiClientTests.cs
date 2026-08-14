@@ -175,8 +175,8 @@ public sealed class AdsPowerApiClientTests
         var decodedQuery = Uri.UnescapeDataString(capturedRequest.RequestUri?.Query ?? string.Empty);
         Assert.Contains("user_id=user-1", decodedQuery);
         Assert.Contains("""open_urls=["https://www.avito.ru/profile"]""", decodedQuery);
-        Assert.Contains("open_tabs=1", decodedQuery);
         Assert.Contains("ip_tab=0", decodedQuery);
+        Assert.DoesNotContain("open_tabs=", decodedQuery);
     }
 
     [Fact]
