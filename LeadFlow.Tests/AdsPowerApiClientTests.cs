@@ -70,6 +70,33 @@ public sealed class AdsPowerApiClientTests
         Assert.Equal(-1, pageIndex);
     }
 
+    [Theory]
+    [InlineData(null, 0, 1)]
+    [InlineData("about:blank", 1, 2)]
+    [InlineData(":", 2, 3)]
+    [InlineData("about:blank", 3, 5)]
+    public void NextStartupNavigationStep_WhenStillOnPlaceholder_AdvancesStrategy(
+        string? url,
+        int lastAttempt,
+        int expected)
+    {
+        Assert.Equal(
+            (AdsPowerAvitoAutomationService.AdsPowerStartupNavigationStep)expected,
+            AdsPowerAvitoAutomationService.NextStartupNavigationStep(
+                url,
+                (AdsPowerAvitoAutomationService.AdsPowerStartupNavigationStep)lastAttempt));
+    }
+
+    [Fact]
+    public void NextStartupNavigationStep_WhenAvitoAlreadyOpen_IsDone()
+    {
+        Assert.Equal(
+            AdsPowerAvitoAutomationService.AdsPowerStartupNavigationStep.Done,
+            AdsPowerAvitoAutomationService.NextStartupNavigationStep(
+                "https://www.avito.ru/profile/pro/items",
+                AdsPowerAvitoAutomationService.AdsPowerStartupNavigationStep.None));
+    }
+
     [Fact]
     public void ShouldKeepWaitingForStartupNavigation_WhileOnlyBlank_UntilTimeout()
     {
@@ -148,6 +175,8 @@ public sealed class AdsPowerApiClientTests
         var decodedQuery = Uri.UnescapeDataString(capturedRequest.RequestUri?.Query ?? string.Empty);
         Assert.Contains("user_id=user-1", decodedQuery);
         Assert.Contains("""open_urls=["https://www.avito.ru/profile"]""", decodedQuery);
+        Assert.Contains("open_tabs=1", decodedQuery);
+        Assert.Contains("ip_tab=0", decodedQuery);
     }
 
     [Fact]

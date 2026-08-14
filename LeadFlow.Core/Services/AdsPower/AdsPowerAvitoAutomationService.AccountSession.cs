@@ -87,6 +87,16 @@ public sealed partial class AdsPowerAvitoAutomationService
             // не критично
         }
 
+        if (IsReusableStartupPlaceholderUrl(page.Url) || !IsUsableWorkerPageUrl(page.Url))
+        {
+            page = await NavigateOffStartupPlaceholderAsync(
+                    page,
+                    ProfileItemsPageUrl,
+                    nameof(WarmUpSessionPageAsync),
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         if (!IsAvitoProfileAutomationTab(page.Url))
         {
             try
@@ -106,6 +116,12 @@ public sealed partial class AdsPowerAvitoAutomationService
                     WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
                 }).ConfigureAwait(false);
             }
+        }
+
+        if (IsReusableStartupPlaceholderUrl(page.Url) || !IsUsableWorkerPageUrl(page.Url))
+        {
+            throw new InvalidOperationException(
+                $"AdsPower: после прогрева вкладка осталась на «{page.Url}», Avito не открылся.");
         }
 
         // Вход должен происходить прямо после старта AdsPower. Раньше recovery

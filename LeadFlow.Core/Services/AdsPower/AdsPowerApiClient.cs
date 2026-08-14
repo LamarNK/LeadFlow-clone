@@ -104,7 +104,7 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
             async ct =>
             {
                 var baseUrl = NormalizeBaseUrl(options.BaseUrl);
-                var q = $"user_id={Uri.EscapeDataString(adsPowerUserId)}";
+                var q = $"user_id={Uri.EscapeDataString(adsPowerUserId)}&ip_tab=0&open_tabs=1";
                 if (!string.IsNullOrWhiteSpace(openUrl))
                 {
                     var openUrlsJson = JsonSerializer.Serialize(new[] { openUrl });

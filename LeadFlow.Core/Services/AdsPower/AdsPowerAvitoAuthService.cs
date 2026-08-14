@@ -365,6 +365,18 @@ public sealed class AdsPowerAvitoAuthService(
             return;
         }
 
+        if (AdsPowerAvitoAutomationService.IsReusableStartupPlaceholderUrl(url))
+        {
+            await AdsPowerAvitoAutomationService
+                .NavigateOffStartupPlaceholderAsync(
+                    page,
+                    AvitoProfileUrl,
+                    nameof(EnsureAvitoProfilePageAsync),
+                    cancellationToken)
+                .ConfigureAwait(false);
+            return;
+        }
+
         try
         {
             await page.GoToAsync(AvitoProfileUrl, new NavigationOptions

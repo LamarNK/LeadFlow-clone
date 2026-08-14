@@ -1800,6 +1800,194 @@ public sealed partial class AdsPowerAvitoAutomationService(
         }
     }
 
+    internal enum AdsPowerStartupNavigationStep
+    {
+        None = 0,
+        GoTo = 1,
+        LocationAssign = 2,
+        NewPage = 3,
+        Done = 4,
+        Failed = 5
+    }
+
+    internal static AdsPowerStartupNavigationStep NextStartupNavigationStep(
+        string? currentUrl,
+        AdsPowerStartupNavigationStep lastAttempt)
+    {
+        if (IsUsableWorkerPageUrl(currentUrl))
+        {
+            return AdsPowerStartupNavigationStep.Done;
+        }
+
+        return lastAttempt switch
+        {
+            AdsPowerStartupNavigationStep.None => AdsPowerStartupNavigationStep.GoTo,
+            AdsPowerStartupNavigationStep.GoTo => AdsPowerStartupNavigationStep.LocationAssign,
+            AdsPowerStartupNavigationStep.LocationAssign => AdsPowerStartupNavigationStep.NewPage,
+            _ => AdsPowerStartupNavigationStep.Failed
+        };
+    }
+
+    internal static async Task<IPage> NavigateOffStartupPlaceholderAsync(
+        IPage page,
+        string targetUrl,
+        string callerMemberName,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(page);
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetUrl);
+
+        var current = page;
+        var lastAttempt = AdsPowerStartupNavigationStep.None;
+
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var currentUrl = await ReadPageUrlAsync(current).ConfigureAwait(false);
+            var next = NextStartupNavigationStep(currentUrl, lastAttempt);
+            if (next == AdsPowerStartupNavigationStep.Done)
+            {
+                return current;
+            }
+
+            if (next == AdsPowerStartupNavigationStep.Failed)
+            {
+                throw new InvalidOperationException(
+                    $"AdsPower: вкладка осталась на «{currentUrl}», страница Avito не открылась.");
+            }
+
+            _ = GlobalLogger.Instance.LogAsync(
+                $"AdsPower CDP: навигация {next} → {targetUrl} (сейчас {currentUrl}).",
+                DeskLinkAuditLogLevel.Info,
+                memberName: callerMemberName,
+                properties: new Dictionary<string, object?>
+                {
+                    ["automation.navStep"] = next.ToString(),
+                    ["automation.targetUrl"] = targetUrl,
+                    ["page.url"] = currentUrl
+                });
+
+            lastAttempt = next;
+            current = await ExecuteStartupNavigationStepAsync(current, targetUrl, next, cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
+    private static async Task<IPage> ExecuteStartupNavigationStepAsync(
+        IPage page,
+        string targetUrl,
+        AdsPowerStartupNavigationStep step,
+        CancellationToken cancellationToken)
+    {
+        switch (step)
+        {
+            case AdsPowerStartupNavigationStep.GoTo:
+                await TryGoToTargetAsync(page, targetUrl, cancellationToken).ConfigureAwait(false);
+                return page;
+
+            case AdsPowerStartupNavigationStep.LocationAssign:
+                await TryAssignLocationAsync(page, targetUrl, cancellationToken).ConfigureAwait(false);
+                return page;
+
+            case AdsPowerStartupNavigationStep.NewPage:
+                var fresh = await page.Browser.NewPageAsync().ConfigureAwait(false);
+                await TryGoToTargetAsync(fresh, targetUrl, cancellationToken).ConfigureAwait(false);
+                var freshUrl = await ReadPageUrlAsync(fresh).ConfigureAwait(false);
+                if (IsUsableWorkerPageUrl(freshUrl))
+                {
+                    try
+                    {
+                        await page.CloseAsync().ConfigureAwait(false);
+                    }
+                    catch
+                    {
+                        // исходная вкладка могла уже закрыться
+                    }
+
+                    return fresh;
+                }
+
+                try
+                {
+                    await fresh.CloseAsync().ConfigureAwait(false);
+                }
+                catch
+                {
+                    // новая вкладка тоже оказалась пустой
+                }
+
+                return page;
+
+            default:
+                return page;
+        }
+    }
+
+    private static async Task TryGoToTargetAsync(
+        IPage page,
+        string targetUrl,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await page.GoToAsync(targetUrl, new NavigationOptions
+            {
+                Timeout = 60_000,
+                WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
+            }).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+        }
+    }
+
+    private static async Task TryAssignLocationAsync(
+        IPage page,
+        string targetUrl,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var wait = page.WaitForNavigationAsync(new NavigationOptions
+            {
+                Timeout = 60_000,
+                WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
+            });
+            var jsUrl = JsonSerializer.Serialize(targetUrl);
+            await page.EvaluateExpressionAsync($"window.location.assign({jsUrl})").ConfigureAwait(false);
+            await wait.ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+        }
+    }
+
+    private static async Task<string> ReadPageUrlAsync(IPage page)
+    {
+        try
+        {
+            var href = await page.EvaluateExpressionAsync<string>("window.location.href").ConfigureAwait(false);
+            if (!string.IsNullOrWhiteSpace(href))
+            {
+                return href;
+            }
+        }
+        catch
+        {
+            // нет JS-контекста — берём URL из CDP
+        }
+
+        return page.Url ?? string.Empty;
+    }
+
     internal static bool ShouldKeepWaitingForStartupNavigation(
         IReadOnlyList<string?> pageUrls,
         TimeSpan elapsed,
