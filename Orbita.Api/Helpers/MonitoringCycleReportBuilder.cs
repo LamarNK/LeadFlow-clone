@@ -48,7 +48,8 @@ internal sealed record MonitoringSubProfileRunSnapshot(
     string Outcome,
     string? ErrorType,
     string? ErrorMessage,
-    int PublishedCount);
+    int PublishedCount,
+    int FoundCount = 0);
 
 /// <summary>Enabled subprofiles of an account (panel order) for a full day matrix.</summary>
 internal sealed record MonitoringAccountSubProfileCatalogEntry(
@@ -100,7 +101,7 @@ internal static partial class MonitoringCycleReportBuilder
     private static partial Regex NewWorkerSwitchMarkerRegex();
 
     /// <summary>
-    /// Полный отчёт из журнала запусков (+ лиды из Sent-откликов).
+    /// Полный отчёт только из типизированного журнала запусков.
     /// «Успешное завершение» = проход субпрофиля без ошибки (Outcome=Completed), не факт отправки лида.
     /// Строки — все включённые субпрофили аккаунта (каталог), журнал накладывается поверх.
     /// </summary>
@@ -113,7 +114,6 @@ internal static partial class MonitoringCycleReportBuilder
         IReadOnlyDictionary<string, IReadOnlyList<MonitoringAccountSubProfileCatalogEntry>>? accountCatalog = null)
     {
         const bool isDetailed = true;
-        var sent = sentResponses ?? [];
         var catalog = accountCatalog
             ?? new Dictionary<string, IReadOnlyList<MonitoringAccountSubProfileCatalogEntry>>(StringComparer.OrdinalIgnoreCase);
         var filteredCycles = cycles
@@ -128,7 +128,7 @@ internal static partial class MonitoringCycleReportBuilder
 
         if (filteredCycles.Count == 0)
         {
-            return BuildSummaryFromSentResponses(sent, startLocal, endLocal, allowedAccountNames);
+            return Empty(isDetailed: false);
         }
 
         var reports = new List<MonitoringCycleAccountReportDto>();
@@ -163,7 +163,7 @@ internal static partial class MonitoringCycleReportBuilder
                 var totalPositions = rowsMeta.Count;
                 var posToName = rowsMeta.ToDictionary(r => r.Position, r => r.Name);
                 var posTimes = rowsMeta.ToDictionary(r => r.Position, _ => new List<DateTime?>());
-                var posLeads = rowsMeta.ToDictionary(r => r.Position, _ => new List<string?>());
+                var posResponses = rowsMeta.ToDictionary(r => r.Position, _ => new List<string?>());
                 var posErrors = rowsMeta.ToDictionary(r => r.Position, _ => new List<MonitoringCycleErrorDto>());
                 var posHadRun = rowsMeta.ToDictionary(r => r.Position, _ => false);
                 var posExplicitNotStarted = new HashSet<int>();
@@ -171,10 +171,6 @@ internal static partial class MonitoringCycleReportBuilder
                 for (var cycleIndex = 0; cycleIndex < accountCycles.Count; cycleIndex++)
                 {
                     var cycle = accountCycles[cycleIndex];
-                    var nextCycleStart = cycleIndex + 1 < accountCycles.Count
-                        ? accountCycles[cycleIndex + 1].StartedAtUtc
-                        : LocalCalendarDateRange.GetUtcRangeForLocalCalendarDay(day).UtcEndExclusive;
-                    var cycleEnd = cycle.FinishedAtUtc ?? nextCycleStart;
                     var isLastCycle = cycleIndex == accountCycles.Count - 1;
                     var cycleInterrupted = isLastCycle
                         && cycle.Status is MonitoringCycleRunStatuses.Aborted
@@ -198,19 +194,14 @@ internal static partial class MonitoringCycleReportBuilder
                         var position = row.Position;
                         if (!runsByRow.TryGetValue(position, out var run))
                         {
-                            var everCompleted = posTimes[position].Any(t => t is not null);
                             posTimes[position].Add(null);
-                            posLeads[position].Add(null);
-                            // "Не запущен" only if never successfully completed today and last cycle
-                            // cut short without starting this subprofile.
+                            posResponses[position].Add(null);
+                            // A subprofile is "not started" only when the last interrupted
+                            // cycle never reached it. A failed run still counts as started.
                             if (cycleInterrupted
-                                && !everCompleted
                                 && !posHadRun[position]
                                 && runsByRow.Count > 0)
                             {
-                                posErrors[position].Add(new MonitoringCycleErrorDto(
-                                    cycle.FinishedAtUtc ?? cycle.StartedAtUtc,
-                                    "Не запущен (прервано до очереди)"));
                                 posExplicitNotStarted.Add(position);
                             }
 
@@ -222,31 +213,17 @@ internal static partial class MonitoringCycleReportBuilder
                             ? posToName[position]
                             : run.SubProfileName.Trim();
 
-                        // Successful completion = full pass OK (not “had responses / Bitrix leads”).
+                        // FoundCount is the number of responses found during this successful pass.
                         if (run.Outcome == MonitoringSubProfileRunOutcomes.Completed
                             && run.CompletedAtUtc is DateTime completedAt)
                         {
                             posTimes[position].Add(completedAt);
-                            var windowEnd = cycle.SubProfiles
-                                .Where(x => x.Position > run.Position)
-                                .OrderBy(x => x.Position)
-                                .Select(x => (DateTime?)x.StartedAtUtc)
-                                .FirstOrDefault() ?? cycleEnd;
-                            var sentInWindow = CountSentInWindow(
-                                sent,
-                                accountName,
-                                posToName[position],
-                                run.StartedAtUtc,
-                                windowEnd);
-                            var leadCount = sentInWindow > 0 ? sentInWindow : run.PublishedCount;
-                            posLeads[position].Add(leadCount > 0
-                                ? leadCount.ToString(CultureInfo.InvariantCulture)
-                                : "—");
+                            posResponses[position].Add(run.FoundCount.ToString(CultureInfo.InvariantCulture));
                         }
                         else if (run.Outcome == MonitoringSubProfileRunOutcomes.Failed)
                         {
                             posTimes[position].Add(null);
-                            posLeads[position].Add(null);
+                            posResponses[position].Add(null);
                             var detail = !string.IsNullOrWhiteSpace(run.ErrorMessage)
                                 ? run.ErrorMessage!
                                 : !string.IsNullOrWhiteSpace(run.ErrorType)
@@ -265,7 +242,7 @@ internal static partial class MonitoringCycleReportBuilder
                         {
                             // Started but not finished — no completion tick, no "не запущен".
                             posTimes[position].Add(null);
-                            posLeads[position].Add(null);
+                            posResponses[position].Add(null);
                         }
                     }
                 }
@@ -286,18 +263,23 @@ internal static partial class MonitoringCycleReportBuilder
                     notStartedSummaries.Add($"  {accountName}: {notStarted.Count} не запущены — {names}");
                 }
 
-                var leadTotal = CountSentForAccountOnDay(sent, accountName, day);
+                var leadTotal = accountCycles
+                    .SelectMany(c => c.SubProfiles)
+                    .Where(run => run.Outcome == MonitoringSubProfileRunOutcomes.Completed
+                        && run.CompletedAtUtc is not null)
+                    .Sum(run => run.FoundCount);
                 var leadParts = new List<string>();
                 foreach (var position in posToName.Keys.OrderBy(x => x))
                 {
-                    var positionLeadTotal = CountSentForSubProfileOnDay(
-                        sent,
-                        accountName,
-                        posToName[position],
-                        day);
-                    if (positionLeadTotal > 0)
+                    var positionResponseTotal = accountCycles
+                        .SelectMany(c => c.SubProfiles)
+                        .Where(run => MatchRunToRowPosition(run, rowsMeta) == position)
+                        .Where(run => run.Outcome == MonitoringSubProfileRunOutcomes.Completed
+                            && run.CompletedAtUtc is not null)
+                        .Sum(run => run.FoundCount);
+                    if (positionResponseTotal > 0)
                     {
-                        leadParts.Add($"{position}/{totalPositions} ({posToName[position]}) = {positionLeadTotal}");
+                        leadParts.Add($"{position}/{totalPositions} ({posToName[position]}) = {positionResponseTotal}");
                     }
                 }
 
@@ -311,7 +293,7 @@ internal static partial class MonitoringCycleReportBuilder
                     .Select(position =>
                     {
                         var times = posTimes[position].Where(t => t is not null).Select(t => t!.Value).ToList();
-                        var leads = posLeads[position].Where(v => v is not null).Select(v => v!).ToList();
+                        var leads = posResponses[position].Where(v => v is not null).Select(v => v!).ToList();
                         var errors = posErrors[position]
                             .GroupBy(e => (e.TimestampUtc, e.Detail))
                             .Select(g => g.First())
@@ -323,7 +305,8 @@ internal static partial class MonitoringCycleReportBuilder
                             posToName[position],
                             times,
                             leads,
-                            errors);
+                            errors,
+                            WasStarted: posHadRun[position]);
                     })
                     .ToList();
 
@@ -345,25 +328,6 @@ internal static partial class MonitoringCycleReportBuilder
                 g.Key,
                 g.Sum(x => x.TotalLeads),
                 g.SelectMany(x => x.Breakdown).Distinct(StringComparer.Ordinal).ToList()))
-            .OrderBy(x => ExtractAccountSortKey(x.AccountName))
-            .ToList();
-
-        // Accounts with sent leads but no journal cycles still appear in totals.
-        var journalAccountNames = mergedLeadSummaries
-            .Select(x => x.AccountName)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var sentOnly = BuildSummaryFromSentResponses(sent, startLocal, endLocal, allowedAccountNames);
-        foreach (var extra in sentOnly.LeadSummaries)
-        {
-            if (journalAccountNames.Contains(extra.AccountName))
-            {
-                continue;
-            }
-
-            mergedLeadSummaries.Add(extra);
-        }
-
-        mergedLeadSummaries = mergedLeadSummaries
             .OrderBy(x => ExtractAccountSortKey(x.AccountName))
             .ToList();
 
@@ -699,7 +663,7 @@ internal static partial class MonitoringCycleReportBuilder
                 : []);
     }
 
-    private static MonitoringCycleReportDto Empty(bool isDetailed) =>
+    internal static MonitoringCycleReportDto Empty(bool isDetailed) =>
         new(isDetailed, 0, 0, 0, [], [], []);
 
     private static IEnumerable<DateTime> EnumerateDays(DateTime startLocal, DateTime endLocal)

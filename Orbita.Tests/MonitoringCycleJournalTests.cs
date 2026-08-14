@@ -36,7 +36,8 @@ public sealed class MonitoringCycleJournalTests
                         Outcome: MonitoringSubProfileRunOutcomes.Completed,
                         ErrorType: null,
                         ErrorMessage: null,
-                        PublishedCount: 2),
+                        PublishedCount: 2,
+                        FoundCount: 17),
                     new MonitoringSubProfileRunSnapshot(
                         Guid.NewGuid(),
                         "sp-2",
@@ -66,15 +67,16 @@ public sealed class MonitoringCycleJournalTests
             sent);
 
         Assert.True(report.IsDetailed);
-        Assert.Equal(2, report.TotalLeads);
+        Assert.Equal(17, report.TotalLeads);
         Assert.Single(report.AccountReports);
         Assert.Equal(1, report.AccountReports[0].CycleCount);
         // Only positions with journal rows — no synthetic "#3" from Total=3.
         Assert.Equal(2, report.AccountReports[0].Rows.Count);
         Assert.Equal("профиль A", report.AccountReports[0].Rows[0].Name);
         Assert.Single(report.AccountReports[0].Rows[0].CompletionTimesUtc);
-        Assert.Equal(["2"], report.AccountReports[0].Rows[0].LeadsPerCycle);
+        Assert.Equal(["17"], report.AccountReports[0].Rows[0].LeadsPerCycle);
         Assert.True(report.AccountReports[0].Rows[1].Errors.Count > 0);
+        Assert.True(report.AccountReports[0].Rows[1].WasStarted);
         Assert.DoesNotContain(report.AccountReports[0].Rows, r => r.Name.StartsWith("#", StringComparison.Ordinal));
         Assert.Empty(report.AccountReports[0].NotStartedPositions);
     }
@@ -198,7 +200,7 @@ public sealed class MonitoringCycleJournalTests
                 [
                     new MonitoringSubProfileRunSnapshot(
                         Guid.NewGuid(), "a", "main", 1, 1, t1, t1.AddMinutes(3),
-                        MonitoringSubProfileRunOutcomes.Completed, null, null, 1)
+                        MonitoringSubProfileRunOutcomes.Completed, null, null, 1, FoundCount: 4)
                 ]),
             new(
                 Guid.NewGuid(),
@@ -209,7 +211,7 @@ public sealed class MonitoringCycleJournalTests
                 [
                     new MonitoringSubProfileRunSnapshot(
                         Guid.NewGuid(), "a", "main", 1, 1, t2, t2.AddMinutes(2),
-                        MonitoringSubProfileRunOutcomes.Completed, null, null, 1)
+                        MonitoringSubProfileRunOutcomes.Completed, null, null, 1, FoundCount: 6)
                 ])
         };
         var sent = new List<MonitoringCycleSentResponse>
@@ -227,7 +229,7 @@ public sealed class MonitoringCycleJournalTests
 
         Assert.True(report.IsDetailed);
         Assert.Equal(2, report.AccountReports.Count);
-        Assert.Equal(2, report.TotalLeads);
+        Assert.Equal(10, report.TotalLeads);
         Assert.Single(report.LeadSummaries);
         Assert.All(report.AccountReports, a => Assert.Equal("Avito 1", a.AccountName));
         Assert.True(report.AccountReports[0].DateUtc <= report.AccountReports[1].DateUtc);
@@ -471,6 +473,7 @@ public sealed class MonitoringCycleJournalTests
             StartedAtUtc = cycleStart,
             CompletedAtUtc = cycleStart.AddMinutes(5),
             Outcome = MonitoringSubProfileRunOutcomes.Completed,
+            FoundCount = 3,
             PublishedCount = 1
         });
         db.CandidateResponses.Add(new CandidateResponseEntity
@@ -500,7 +503,7 @@ public sealed class MonitoringCycleJournalTests
                 DateTime.Today.AddDays(-6),
                 DateTime.Today);
 
-        Assert.Equal(1, result.MonitoringCycles.TotalLeads);
+        Assert.Equal(3, result.MonitoringCycles.TotalLeads);
         Assert.Single(result.MonitoringCycles.LeadSummaries);
         Assert.Equal("Account A", result.MonitoringCycles.LeadSummaries[0].AccountName);
         Assert.True(result.MonitoringCycles.IsDetailed);

@@ -10,7 +10,7 @@
     {
         IconClass = "fa-solid fa-rotate",
         Title = "Нет данных за период",
-        Description = "За период нет отправок в Битрикс24. Для детальной таблицы по циклам выберите один день.",
+        Description = "За период нет записей журнала активности мониторинга.",
         CtaLabel = "Воркеры",
         CtaUrl = Url.Action("Index", "Workers")
     })" />
@@ -35,7 +35,7 @@ else
 
         <section class="monitoring-report-total-block">
             <h4 class="monitoring-report-total-title">
-                ИТОГО В БИТРИКС24 ЗА @totalsLabel: <span data-statistics-cycle-leads>@report.TotalLeads</span>
+                    ИТОГО ОТКЛИКОВ ЗА @totalsLabel: <span data-statistics-cycle-leads>@report.TotalLeads</span>
             </h4>
             <ul class="monitoring-report-total-list" data-statistics-cycle-leads-body>
                 @foreach (var row in report.LeadSummaries)
@@ -48,7 +48,7 @@ else
             @if (report.ZeroLeadAccountCount > 0)
             {
                 <p class="monitoring-report-zero-leads cell-muted" data-statistics-cycle-zero-leads>
-                    Ещё @report.ZeroLeadAccountCount аккаунт(ов) без отправок в Битрикс24 за период
+                    Ещё @report.ZeroLeadAccountCount аккаунт(ов) без найденных откликов за период
                 </p>
             }
         </section>
@@ -57,14 +57,14 @@ else
     @if (report.IsDetailed && report.AccountReports.Count > 0)
     {
         <p class="monitoring-report-hint cell-muted">
-            «Успешное завершение» — полный проход субпрофиля без ошибки (не сбор откликов).
-            «Битрикс24» — отправки за день. Пустая строка = в журнале проходов за день записи нет.
+            «Успешное завершение» — проход субпрофиля без ошибки. «Откликов» — сколько найдено в каждом таком проходе.
+            Внизу перечислены только суб-профили, которые не были запущены до прерывания цикла.
         </p>
     }
     else if (!report.IsDetailed && report.HasData)
     {
         <p class="monitoring-report-hint cell-muted">
-            Детальные таблицы появятся после обновления воркера (журнал проходов). Пока — сводка по отправкам в Битрикс24.
+            Детальные таблицы появятся после того, как воркер передаст журнал активности мониторинга.
         </p>
     }
 }

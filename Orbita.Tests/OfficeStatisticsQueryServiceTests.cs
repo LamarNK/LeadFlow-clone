@@ -187,20 +187,39 @@ public sealed class OfficeStatisticsQueryServiceTests
     }
 
     [Fact]
-    public async Task GetStatisticsAsync_Week_MonitoringCycles_UsesSentResponsesWithoutLogs()
+    public async Task GetStatisticsAsync_Week_MonitoringCycles_WithoutJournal_ReturnsNoMonitoringData()
     {
         await using var db = CreateDb();
         SeedOfficeData(db);
-        // No WorkerLogEntries seeded — multi-day monitoring must work from CandidateResponses alone.
+        // Candidate responses do not substitute for the typed monitoring journal.
         var result = await CreateService(db).GetStatisticsAsync(
             OfficeScope.ForOffice(OfficeA),
             OfficeA,
             DateTime.Today.AddDays(-6),
             DateTime.Today);
 
-        Assert.Equal(1, result.MonitoringCycles.TotalLeads);
-        Assert.Single(result.MonitoringCycles.LeadSummaries);
-        Assert.Equal("Account A", result.MonitoringCycles.LeadSummaries[0].AccountName);
+        Assert.False(result.MonitoringCycles.IsDetailed);
+        Assert.Equal(0, result.MonitoringCycles.TotalLeads);
+        Assert.Empty(result.MonitoringCycles.LeadSummaries);
+        Assert.Empty(result.MonitoringCycles.AccountReports);
+    }
+
+    [Fact]
+    public async Task GetStatisticsAsync_DayWithoutJournal_ReturnsNoMonitoringData()
+    {
+        await using var db = CreateDb();
+        SeedOfficeData(db);
+
+        var result = await CreateService(db).GetStatisticsAsync(
+            OfficeScope.ForOffice(OfficeA),
+            OfficeA,
+            DateTime.Today,
+            DateTime.Today);
+
+        Assert.False(result.MonitoringCycles.IsDetailed);
+        Assert.Equal(0, result.MonitoringCycles.TotalLeads);
+        Assert.Empty(result.MonitoringCycles.LeadSummaries);
+        Assert.Empty(result.MonitoringCycles.AccountReports);
     }
 
     [Fact]

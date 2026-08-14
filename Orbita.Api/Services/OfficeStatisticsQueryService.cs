@@ -194,7 +194,6 @@ public sealed class OfficeStatisticsQueryService(
             startLocal,
             endLocal,
             accountRows,
-            bitrixSends,
             ct);
 
         var result = new OfficeStatisticsDto(
@@ -298,7 +297,6 @@ public sealed class OfficeStatisticsQueryService(
         DateTime startLocal,
         DateTime endLocal,
         IReadOnlyList<AccountProjection> accountRows,
-        IReadOnlyList<BitrixSendEvent> bitrixSends,
         CancellationToken ct)
     {
         var allowedAccountNames = accountRows
@@ -311,21 +309,7 @@ public sealed class OfficeStatisticsQueryService(
             return MonitoringCycleReportBuilder.Build([], startLocal, endLocal);
         }
 
-        // One lead event per response, timestamp = actual Bitrix send.
-        var sentRows = bitrixSends
-            .GroupBy(x => x.ResponseId)
-            .Select(g =>
-            {
-                var first = g.OrderBy(x => x.SentAtUtc).First();
-                return new MonitoringCycleSentResponse(
-                    first.AccountName.Trim(),
-                    first.SubProfileName.Trim(),
-                    first.SentAtUtc);
-            })
-            .Where(x => allowedAccountNames.Contains(x.AccountName))
-            .ToList();
-
-        // Prefer typed monitoring journal (no WorkerLogEntries scan).
+        // Prefer the typed monitoring journal.
         var journalCycles = await LoadMonitoringCycleJournalAsync(workerIds, utcStart, utcEnd, ct);
         if (journalCycles.Count > 0)
         {
@@ -335,48 +319,12 @@ public sealed class OfficeStatisticsQueryService(
                 startLocal,
                 endLocal,
                 allowedAccountNames,
-                sentRows,
-                accountCatalog);
+                accountCatalog: accountCatalog);
         }
 
-        // No journal yet for this period (old workers / pre-migration data).
-        var isDetailed = (endLocal.Date - startLocal.Date).Days == 0;
-        if (!isDetailed)
-        {
-            // Multi-day without journal: response-data summary only (never scan week of logs).
-            return MonitoringCycleReportBuilder.BuildSummaryFromSentResponses(
-                sentRows,
-                startLocal,
-                endLocal,
-                allowedAccountNames);
-        }
-
-        // Single day legacy fallback: parse WorkerLogEntries for cycle matrix.
-        var logRows = await db.WorkerLogEntries
-            .AsNoTracking()
-            .Where(x => workerIds.Contains(x.WorkerId))
-            .Where(x => x.TimestampUtc >= utcStart && x.TimestampUtc < utcEnd)
-            .Where(x =>
-                EF.Functions.ILike(x.Message, "%переключаем суб-профиль%")
-                || EF.Functions.ILike(x.Message, "%переключение субпрофиля%")
-                || EF.Functions.ILike(x.Message, "%новых для LeadFlow%")
-                || EF.Functions.ILike(x.Message, "%обработано сейчас%")
-                || EF.Functions.ILike(x.Message, "%новых к публикации%")
-                || EF.Functions.ILike(x.Message, "%— отклики:%")
-                || EF.Functions.ILike(x.Message, "%— опубликовано%")
-                || (EF.Functions.ILike(x.Message, "%(объявления)%") && EF.Functions.ILike(x.Message, "%активных%"))
-                || EF.Functions.ILike(x.Message, "%Не удалось обработать суб-профиль%")
-                || EF.Functions.ILike(x.Message, "%— проблема (%")
-                || EF.Functions.ILike(x.Message, "%— не переключился:%"))
-            .OrderBy(x => x.TimestampUtc)
-            .Select(x => new { x.TimestampUtc, x.Message })
-            .ToListAsync(ct);
-
-        var rows = logRows
-            .Select(x => (x.TimestampUtc, x.Message, PropertiesJson: (string?)null))
-            .ToList();
-
-        return MonitoringCycleReportBuilder.Build(rows, startLocal, endLocal, allowedAccountNames, sentRows);
+        // Monitoring activity is recorded only by the typed journal. File logs are
+        // diagnostic data and must never be interpreted as statistics.
+        return MonitoringCycleReportBuilder.Empty(isDetailed: false);
     }
 
     private async Task<IReadOnlyList<MonitoringCycleRunSnapshot>> LoadMonitoringCycleJournalAsync(
@@ -421,7 +369,8 @@ public sealed class OfficeStatisticsQueryService(
                 x.Outcome,
                 x.ErrorType,
                 x.ErrorMessage,
-                x.PublishedCount
+                x.PublishedCount,
+                x.FoundCount
             })
             .ToListAsync(ct);
 
@@ -441,7 +390,8 @@ public sealed class OfficeStatisticsQueryService(
                         s.Outcome,
                         s.ErrorType,
                         s.ErrorMessage,
-                        s.PublishedCount))
+                        s.PublishedCount,
+                        s.FoundCount))
                     .OrderBy(s => s.Position)
                     .ThenBy(s => s.StartedAtUtc)
                     .ToList());

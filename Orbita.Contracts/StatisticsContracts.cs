@@ -113,7 +113,8 @@ public sealed record MonitoringCycleSubProfileRowDto(
     string Name,
     IReadOnlyList<DateTime> CompletionTimesUtc,
     IReadOnlyList<string> LeadsPerCycle,
-    IReadOnlyList<MonitoringCycleErrorDto> Errors);
+    IReadOnlyList<MonitoringCycleErrorDto> Errors,
+    bool WasStarted = false);
 
 public sealed record MonitoringCycleAccountReportDto(
     string AccountName,

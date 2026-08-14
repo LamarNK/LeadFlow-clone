@@ -11,7 +11,7 @@
             @Model.Summary.WorkersOnline / @Model.Summary.WorkersTotal онлайн
             @if (report.HasData)
             {
-                <span>· <span data-statistics-cycle-leads>@report.TotalLeads</span> в Битрикс24</span>
+                <span>· <span data-statistics-cycle-leads>@report.TotalLeads</span> откликов</span>
             }
         </span>
         <a class="card-header-link" href="@Url.Action("Index", "Workers")">Все воркеры</a>

@@ -313,7 +313,7 @@ internal static class StatisticsIndexBuilder
             {
                 AccountName = x.AccountName,
                 TotalLeads = x.TotalLeads,
-                BreakdownText = x.Breakdown.Count == 0 ? "без отправок в Битрикс24" : string.Join("; ", x.Breakdown)
+                BreakdownText = x.Breakdown.Count == 0 ? "откликов не найдено" : string.Join("; ", x.Breakdown)
             })
             .ToList();
 
@@ -340,7 +340,7 @@ internal static class StatisticsIndexBuilder
                     DateUtc = account.DateUtc,
                     HeaderText =
                         $"{account.AccountName} — {account.SubProfileCount} суб-профилей, {FormatCycleCount(account.CycleCount)}" +
-                        (account.TotalLeads > 0 ? $", {account.TotalLeads} в Битрикс24" : string.Empty),
+                        $", откликов: {account.TotalLeads}",
                     SubProfileCount = account.SubProfileCount,
                     CycleCount = account.CycleCount,
                     TotalLeads = account.TotalLeads,
@@ -361,7 +361,7 @@ internal static class StatisticsIndexBuilder
                                 })
                                 .ToList(),
                             HasErrors = row.Errors.Count > 0,
-                            HasNotStarted = row.CompletionTimesUtc.Count == 0
+                            HasNotStarted = !row.WasStarted
                         })
                         .ToList()
                 })
