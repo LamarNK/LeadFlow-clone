@@ -1712,9 +1712,10 @@ public sealed partial class AdsPowerAvitoAutomationService(
 
         var targetKind = ClassifyAutomationPageKind(preferredUrl);
         var existingPages = (await browser.PagesAsync().ConfigureAwait(false)).ToList();
-        var worker = preferExistingMatchingPage
-            ? existingPages.FirstOrDefault(page => PageMatchesAutomationKind(page.Url, targetKind))
-            : null;
+        var existingWorkerPageIndex = preferExistingMatchingPage
+            ? SelectExistingAutomationPageIndex(existingPages.Select(static page => page.Url).ToArray(), preferredUrl)
+            : -1;
+        var worker = existingWorkerPageIndex >= 0 ? existingPages[existingWorkerPageIndex] : null;
         worker ??= await browser.NewPageAsync().ConfigureAwait(false);
         var pagesToClose = existingPages
             .Where(page => !ReferenceEquals(page, worker))
@@ -1744,6 +1745,25 @@ public sealed partial class AdsPowerAvitoAutomationService(
             });
 
         return worker;
+    }
+
+    internal static int SelectExistingAutomationPageIndex(
+        IReadOnlyList<string?> pageUrls,
+        string preferredUrl)
+    {
+        ArgumentNullException.ThrowIfNull(pageUrls);
+        ArgumentException.ThrowIfNullOrWhiteSpace(preferredUrl);
+
+        var targetKind = ClassifyAutomationPageKind(preferredUrl);
+        for (var index = 0; index < pageUrls.Count; index++)
+        {
+            if (PageMatchesAutomationKind(pageUrls[index], targetKind))
+            {
+                return index;
+            }
+        }
+
+        return -1;
     }
 
     private static async Task<int> CloseBrowserPagesAsync(

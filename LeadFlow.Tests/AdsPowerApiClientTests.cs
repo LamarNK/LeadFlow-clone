@@ -8,6 +8,19 @@ namespace LeadFlow.Tests;
 public sealed class AdsPowerApiClientTests
 {
     [Fact]
+    public void SelectExistingAutomationPageIndex_WhenOnlyAnotherAvitoPageIsOpen_UsesItInsteadOfBlankTab()
+    {
+        var pageIndex = AdsPowerAvitoAutomationService.SelectExistingAutomationPageIndex(
+            [
+                "https://www.avito.ru/avito-career/vacancies",
+                "about:blank"
+            ],
+            "https://www.avito.ru/profile/pro/items");
+
+        Assert.Equal(0, pageIndex);
+    }
+
+    [Fact]
     public async Task OpenAccountSessionAsync_StartsAdsPowerOnProfileItemsPage()
     {
         var apiClient = new RecordingAdsPowerApiClient();
