@@ -320,7 +320,7 @@ public sealed class CrmWorkspaceService(
             office.CrmEnabled,
             true,
             profile is not null && IsOnShift(profile, now),
-            profile?.CrmCapacity ?? 10,
+            profile?.CrmCapacity ?? 100,
             loads.GetValueOrDefault(userId),
             stageDtos,
             isAdmin ? allManagerDtos : managerDtos,
