@@ -31,7 +31,7 @@ public sealed class WorkerLogArchiveServiceTests
             });
             await db.SaveChangesAsync();
 
-            var timestamp = DateTime.UtcNow.AddMinutes(-1);
+            var timestamp = DateTime.UtcNow.AddDays(-8).AddMinutes(-1);
             var archive = new WorkerLogFileArchive(configuration);
             var sut = new WorkerLogArchiveService(db, archive);
             var (accepted, error) = await sut.IngestBatchAsync(workerId,
@@ -47,6 +47,14 @@ public sealed class WorkerLogArchiveServiceTests
 
             Assert.Null(error);
             Assert.Equal(1, accepted);
+
+            var expectedFile = Path.Combine(
+                root,
+                "Orbita.Worker",
+                timestamp.ToString("yyyy"),
+                timestamp.ToString("MM"),
+                $"log-{timestamp:yyyy-MM-dd}.bin");
+            Assert.True(File.Exists(expectedFile));
 
             var page = await new ServiceLogsQueryService(configuration).SearchAsync(
                 $"worker:{workerId:D}",

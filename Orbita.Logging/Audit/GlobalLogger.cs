@@ -672,7 +672,10 @@ public class Logger
 
     private async Task WriteOneEntryAsync(DateTime timestamp, DeskLinkAuditLogLevel level, string prefix, string message, string? traceId, string? propertiesJson, string? suffix = null)
     {
-        string currentLogFilePath = GetLogFilePath();
+        // Импортированные записи могут прийти с задержкой. Имя файла должно
+        // соответствовать времени самой записи, иначе журнал за нужную дату
+        // не сможет её обнаружить по файловому пути.
+        string currentLogFilePath = GetLogFilePath(timestamp);
         string baseMessage = suffix == null ? message : (message + suffix);
         string finalMessage = baseMessage;
 
@@ -1696,7 +1699,11 @@ public class Logger
         string? sourceContains = null,
         string? service = null)
     {
-        var files = date.HasValue ? GetLogFilesForDate(date.Value, service) : GetAllLogFiles(service);
+        // В старых архивах записи воркера могли попасть в файл дня приёма,
+        // а не дня события. При наличии даты читаем индексы всех файлов и
+        // фильтруем по timestamp записи: это сохраняет доступ к уже принятым
+        // логам и не требует их физического перемещения.
+        var files = GetAllLogFiles(service);
         var entries = new ConcurrentBag<LogFileEntry>();
 
         bool isDateTimeSearch = false;
@@ -1753,8 +1760,9 @@ public class Logger
 
         bool hasLevels = levels != null && levels.Count > 0;
 
-        // Если есть фильтр по level(s) или TraceId, используем индекс для быстрого поиска
-        bool useIndex = hasLevels || isTraceIdSearch;
+        // Фильтр по дате также выполняем через индекс: timestamp в индексе —
+        // источник истины, независимо от даты в имени файла.
+        bool useIndex = hasLevels || isTraceIdSearch || date.HasValue;
 
         await Parallel.ForEachAsync(files, new ParallelOptions { MaxDegreeOfParallelism = 4 }, async (file, ct) =>
         {
@@ -1955,11 +1963,12 @@ public class Logger
     /// Получает путь к текущему файлу лога.
     /// </summary>
     /// <returns>Полный путь к файлу лога.</returns>
-    private string GetLogFilePath()
+    private string GetLogFilePath(DateTime? timestamp = null)
     {
-        string year = DateTime.UtcNow.ToString("yyyy");
-        string month = DateTime.UtcNow.ToString("MM");
-        string date = DateTime.UtcNow.ToString("yyyy-MM-dd");
+        var fileDate = timestamp ?? DateTime.UtcNow;
+        string year = fileDate.ToString("yyyy");
+        string month = fileDate.ToString("MM");
+        string date = fileDate.ToString("yyyy-MM-dd");
 
         string yearDirectory = Path.Combine(logDirectory, year);
         string monthDirectory = Path.Combine(yearDirectory, month);
