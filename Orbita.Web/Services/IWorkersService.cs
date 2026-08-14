@@ -15,11 +15,6 @@ public interface IWorkersService
         CancellationToken ct = default);
     Task<WorkerDetailsViewModel?> GetDetailsAsync(
         Guid id,
-        string? logsQ = null,
-        string? logsLevel = null,
-        DateTime? logsDate = null,
-        int logsPage = 1,
-        bool includeLogs = false,
         string? sort = null,
         string? sortDir = null,
         CancellationToken ct = default);

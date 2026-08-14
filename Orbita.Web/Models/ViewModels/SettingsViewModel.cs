@@ -199,11 +199,8 @@ public sealed class ServiceLogsViewModel
     public string? Level { get; init; }
     public string? Service { get; init; }
     public DateTime? Date { get; init; }
-    public Guid? WorkerId { get; init; }
-    public bool IsWorkerLogs { get; init; }
     public IReadOnlyList<EventFilterOptionViewModel> LevelOptions { get; init; } = [];
     public IReadOnlyList<EventFilterOptionViewModel> ServiceOptions { get; init; } = [];
-    public IReadOnlyList<EventFilterOptionViewModel> WorkerOptions { get; init; } = [];
     public IReadOnlyList<ServiceLogRowViewModel> Rows { get; init; } = [];
     public PaginationViewModel Pagination { get; init; } = new();
 }

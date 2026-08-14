@@ -33,7 +33,6 @@ public sealed class WorkersController(IWorkersService workers) : Controller
     {
         var model = await workers.GetDetailsAsync(
             id,
-            includeLogs: false,
             sort: sort,
             sortDir: dir,
             ct: ct);
@@ -87,7 +86,7 @@ public sealed class WorkersController(IWorkersService workers) : Controller
     [HttpGet]
     public async Task<IActionResult> Browsers(Guid id, CancellationToken ct = default)
     {
-        var model = await workers.GetDetailsAsync(id, includeLogs: false, ct: ct);
+        var model = await workers.GetDetailsAsync(id, ct: ct);
         if (model is null)
         {
             return NotFound();
@@ -111,22 +110,12 @@ public sealed class WorkersController(IWorkersService workers) : Controller
     [HttpGet]
     public async Task<IActionResult> Details(
         Guid id,
-        string? logsQ,
-        string? logsLevel,
-        DateTime? logsDate,
-        int logsPage = 1,
         string? sort = null,
         string? dir = null,
         CancellationToken ct = default)
     {
-        var isAdmin = User.IsInRole(PanelRoles.Admin);
         var model = await workers.GetDetailsAsync(
             id,
-            logsQ,
-            logsLevel,
-            logsDate,
-            logsPage,
-            includeLogs: isAdmin,
             sort: sort,
             sortDir: dir,
             ct);

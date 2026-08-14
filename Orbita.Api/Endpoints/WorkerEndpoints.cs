@@ -333,7 +333,7 @@ public static class WorkerEndpoints
 
         workers.MapPost("/logs/batch", async (
             WorkerLogsBatchRequest request,
-            WorkerLogsService logs,
+            WorkerLogArchiveService logs,
             ClaimsPrincipal user,
             CancellationToken ct) =>
         {

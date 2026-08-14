@@ -253,7 +253,6 @@ public sealed class WorkerAdminService(
                 ct);
 
         await diagnostics.DeleteAllForWorkerAsync(id, ct);
-        await db.WorkerLogEntries.Where(x => x.WorkerId == id).ExecuteDeleteAsync(ct);
         await db.WorkerEvents.Where(x => x.WorkerId == id).ExecuteDeleteAsync(ct);
         await db.WorkerAccounts.Where(x => x.WorkerId == id).ExecuteDeleteAsync(ct);
         await db.WorkerSnapshots.Where(x => x.WorkerId == id).ExecuteDeleteAsync(ct);

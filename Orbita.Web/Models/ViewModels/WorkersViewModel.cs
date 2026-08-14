@@ -194,19 +194,8 @@ public sealed class WorkerDetailsViewModel
     public IReadOnlyList<WorkerPeriodStatViewModel> PeriodStats { get; init; } = [];
     public IReadOnlyList<WorkerAccountRowViewModel> Accounts { get; init; } = [];
     public TableSortState Sort { get; init; } = TableSortState.Create("account", descending: false);
-    public WorkerLogsPanelViewModel? Logs { get; init; }
     public WorkerActivityViewModel CurrentActivity { get; init; } = new();
     public IReadOnlyList<WorkerActivityViewModel> ActiveAccountActivities { get; init; } = [];
-}
-
-public sealed class WorkerLogsPanelViewModel
-{
-    public string? SearchQuery { get; init; }
-    public string? Level { get; init; }
-    public DateTime? Date { get; init; }
-    public int Page { get; init; } = 1;
-    public IReadOnlyList<EventFilterOptionViewModel> LevelOptions { get; init; } = [];
-    public LogFeedPanelViewModel Feed { get; init; } = new();
 }
 
 public sealed class WorkerSystemPanelViewModel

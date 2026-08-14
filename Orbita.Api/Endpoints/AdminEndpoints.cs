@@ -867,23 +867,5 @@ public static class AdminEndpoints
                 pageSize ?? ServiceLogsQueryService.DefaultPageSize,
                 ct)));
 
-        admin.MapGet("/workers/{workerId:guid}/logs", async (
-            Guid workerId,
-            string? q,
-            string? level,
-            DateTime? date,
-            int? page,
-            int? pageSize,
-            WorkerLogsService logs,
-            CancellationToken ct) =>
-            Results.Ok(await logs.SearchAsync(
-                workerId,
-                q,
-                level,
-                date,
-                page ?? 1,
-                pageSize ?? WorkerLogsService.DefaultPageSize,
-                ct)));
-
     }
 }

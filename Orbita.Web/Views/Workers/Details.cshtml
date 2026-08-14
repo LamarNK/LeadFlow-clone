@@ -895,95 +895,13 @@
         </div>
     </div>
 
-    @if (User.IsInRole(PanelRoles.Admin) && Model.Logs is not null)
+    @if (User.IsInRole(PanelRoles.Admin))
     {
-        var workerLogs = Model.Logs;
-        var workerLogsPagination = workerLogs.Feed.Pagination;
         <div class="card card--worker-logs" id="worker-logs">
             <div class="card-header worker-logs-header">
                 <h2>Логи воркера</h2>
-                <a class="card-footer-btn card-footer-btn--inline" href="@Url.Action("Index", "Settings", new { tab = "logs", workerId = Model.WorkerId })">Открыть в администрировании</a>
+                <a class="card-footer-btn card-footer-btn--inline" href="@Url.Action("Index", "Settings", new { tab = "logs", service = "Orbita.Worker", q = $"worker:{Model.WorkerId:D}" })">Открыть журнал</a>
             </div>
-            <div class="card card--settings-logs-filters card--worker-logs-filters">
-                <form class="settings-logs-filters" method="get" asp-action="Details">
-                    <input type="hidden" name="id" value="@Model.WorkerId" />
-                    <div class="settings-logs-filters-row">
-                        <label class="settings-filter-field">
-                            <span class="settings-filter-label">Уровень</span>
-                            <select name="logsLevel" class="settings-select" aria-label="Уровень">
-                                @foreach (var opt in workerLogs.LevelOptions)
-                                {
-                                    if (opt.Value == (workerLogs.Level ?? ""))
-                                    {
-                                        <option value="@opt.Value" selected>@opt.Label</option>
-                                    }
-                                    else
-                                    {
-                                        <option value="@opt.Value">@opt.Label</option>
-                                    }
-                                }
-                            </select>
-                        </label>
-                        <label class="settings-filter-field">
-                            <span class="settings-filter-label">Дата</span>
-                            <input type="date"
-                                   name="logsDate"
-                                   class="settings-date-input"
-                                   value="@workerLogs.Date?.ToString("yyyy-MM-dd")"
-                                   aria-label="Дата" />
-                        </label>
-                        <label class="settings-filter-field settings-filter-field--grow">
-                            <span class="settings-filter-label">Поиск</span>
-                            <input type="search"
-                                   name="logsQ"
-                                   class="settings-search-input"
-                                   value="@workerLogs.SearchQuery"
-                                   placeholder="Сообщение, источник, trace id..."
-                                   aria-label="Поиск по логам" />
-                        </label>
-                        <button type="submit" class="settings-primary-btn settings-primary-btn--compact">
-                            <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
-                            <span>Найти</span>
-                        </button>
-                    </div>
-                </form>
-            </div>
-            <partial name="_LogFeed" model="workerLogs.Feed" />
-            @if (workerLogsPagination.TotalItems > 0)
-            {
-                <div class="settings-pagination">
-                    <span class="settings-pagination-info">
-                        Показано @workerLogsPagination.RangeStart–@workerLogsPagination.RangeEnd из @workerLogsPagination.TotalItems
-                    </span>
-                    <div class="settings-pagination-controls">
-                        @{
-                            var workerLogsPrev = workerLogsPagination.Page > 1 ? workerLogsPagination.Page - 1 : (int?)null;
-                            var workerLogsNext = workerLogsPagination.Page < workerLogsPagination.TotalPages ? workerLogsPagination.Page + 1 : (int?)null;
-                        }
-                        @if (workerLogsPrev is not null)
-                        {
-                            <a class="settings-page-btn"
-                               href="@Url.Action("Details", new { id = Model.WorkerId, logsQ = workerLogs.SearchQuery, logsLevel = workerLogs.Level, logsDate = workerLogs.Date?.ToString("yyyy-MM-dd"), logsPage = workerLogsPrev })#worker-logs"
-                               aria-label="Предыдущая страница">&lt;</a>
-                        }
-                        else
-                        {
-                            <span class="settings-page-btn settings-page-btn--disabled" aria-hidden="true">&lt;</span>
-                        }
-                        <span class="settings-page-btn settings-page-btn--active" aria-current="page">@workerLogsPagination.Page</span>
-                        @if (workerLogsNext is not null)
-                        {
-                            <a class="settings-page-btn"
-                               href="@Url.Action("Details", new { id = Model.WorkerId, logsQ = workerLogs.SearchQuery, logsLevel = workerLogs.Level, logsDate = workerLogs.Date?.ToString("yyyy-MM-dd"), logsPage = workerLogsNext })#worker-logs"
-                               aria-label="Следующая страница">&gt;</a>
-                        }
-                        else
-                        {
-                            <span class="settings-page-btn settings-page-btn--disabled" aria-hidden="true">&gt;</span>
-                        }
-                    </div>
-                </div>
-            }
         </div>
     }
 

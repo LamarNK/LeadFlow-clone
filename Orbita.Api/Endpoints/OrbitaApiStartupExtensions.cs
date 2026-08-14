@@ -258,15 +258,14 @@ public static class OrbitaApiStartupExtensions
         builder.Services.Configure<WorkerDiagnosticsOptions>(builder.Configuration.GetSection(WorkerDiagnosticsOptions.SectionName));
         builder.Services.Configure<CrmTaskAttachmentOptions>(builder.Configuration.GetSection(CrmTaskAttachmentOptions.SectionName));
         builder.Services.Configure<CrmDeadlineNotificationOptions>(builder.Configuration.GetSection(CrmDeadlineNotificationOptions.SectionName));
-        builder.Services.Configure<WorkerLogsOptions>(builder.Configuration.GetSection(WorkerLogsOptions.SectionName));
         builder.Services.Configure<ServiceLogsOptions>(builder.Configuration.GetSection(ServiceLogsOptions.SectionName));
         builder.Services.AddSingleton<WorkerReleaseService>();
         builder.Services.AddScoped<WorkerDiagnosticsService>();
         builder.Services.AddScoped<CrmTaskAttachmentStorageService>();
         builder.Services.AddHostedService<WorkerDiagnosticsCleanupService>();
-        builder.Services.AddScoped<WorkerLogsService>();
+        builder.Services.AddSingleton<WorkerLogFileArchive>();
+        builder.Services.AddScoped<WorkerLogArchiveService>();
         builder.Services.AddScoped<MonitoringRunIngestService>();
-        builder.Services.AddHostedService<WorkerLogsCleanupService>();
         builder.Services.Configure<FormOptions>(options =>
         {
             options.MultipartBodyLengthLimit = maxUploadBytes;

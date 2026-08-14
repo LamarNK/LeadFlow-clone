@@ -303,22 +303,6 @@ public sealed class WorkerDiagnosticAttachmentEntity
     public WorkerEntity Worker { get; set; } = null!;
 }
 
-public sealed class WorkerLogEntryEntity
-{
-    public long Id { get; set; }
-    public Guid WorkerId { get; set; }
-    public DateTime TimestampUtc { get; set; }
-    public string Level { get; set; } = string.Empty;
-    public string Source { get; set; } = string.Empty;
-    public string Message { get; set; } = string.Empty;
-    public string? TraceId { get; set; }
-    public bool IsTampered { get; set; }
-    public DateTime IngestedAtUtc { get; set; }
-    public string DedupHash { get; set; } = string.Empty;
-
-    public WorkerEntity Worker { get; set; } = null!;
-}
-
 /// <summary>Один проход аккаунта (цикл субпрофилей) — типизированный журнал вместо разбора логов.</summary>
 public sealed class MonitoringCycleRunEntity
 {

@@ -419,6 +419,55 @@ public class Logger
         await WriteLogAsync(message, level, prefix, errorKey, properties);
     }
 
+    /// <summary>
+    /// Adds an externally produced audit record to this logger's file stream.
+    /// Unlike <see cref="LogAsync(string,DeskLinkAuditLogLevel,string,string,string,Dictionary{string,object?})"/>,
+    /// the caller supplies the original timestamp, source and trace identifier.
+    /// The call completes only after the record and its index entry are written to disk.
+    /// </summary>
+    public async Task AppendImportedAsync(
+        DateTime timestampUtc,
+        DeskLinkAuditLogLevel level,
+        string source,
+        string message,
+        string? traceId = null,
+        IReadOnlyDictionary<string, object?>? properties = null,
+        CancellationToken cancellationToken = default)
+    {
+        var timestamp = timestampUtc.Kind switch
+        {
+            DateTimeKind.Utc => timestampUtc,
+            DateTimeKind.Local => timestampUtc.ToUniversalTime(),
+            _ => DateTime.SpecifyKind(timestampUtc, DateTimeKind.Utc)
+        };
+        var prefix = source?.Trim() ?? string.Empty;
+        var finalMessage = message ?? string.Empty;
+        var safeTraceId = TruncateUtf8(traceId, MaxTraceIdBytes);
+        var propertiesJson = BuildStructuredPropertiesJson(
+            timestamp,
+            level,
+            prefix,
+            finalMessage,
+            errorKey: null,
+            correlationId: safeTraceId,
+            otelTraceId: null,
+            spanId: null,
+            userProps: properties);
+
+        await writeSemaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            // Imported worker logs are an at-least-once file archive. Do not apply
+            // the in-memory duplicate suppressor used by local application logging.
+            await WriteOneEntryAsync(timestamp, level, prefix, finalMessage, safeTraceId, propertiesJson)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            writeSemaphore.Release();
+        }
+    }
+
     private async Task WriteLogAsync(
         string message,
         DeskLinkAuditLogLevel level,
@@ -1656,7 +1705,10 @@ public class Logger
         bool hasOnlyTime = false;
 
         // Проверяем, является ли searchText трассой
-        bool isTraceIdSearch = !string.IsNullOrEmpty(searchText) && searchText.Length >= 16 && !searchText.Contains(' ');
+        bool isTraceIdSearch = !string.IsNullOrEmpty(searchText)
+            && searchText.Length >= 16
+            && !searchText.Contains(' ')
+            && !searchText.Contains(':');
 
         if (!string.IsNullOrEmpty(searchText) && !isTraceIdSearch)
         {

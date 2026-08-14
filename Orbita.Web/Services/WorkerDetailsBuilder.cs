@@ -12,7 +12,6 @@ internal static class WorkerDetailsBuilder
         IReadOnlyList<DashboardEventRowViewModel> events,
         WorkerExtraInfoViewModel? extra = null,
         WorkerRowViewModel? summary = null,
-        WorkerLogsPanelViewModel? logs = null,
         TableSortState? sort = null)
     {
         extra ??= new WorkerExtraInfoViewModel();
@@ -100,7 +99,6 @@ internal static class WorkerDetailsBuilder
             OfficeId = worker.OfficeId,
             OfficeName = worker.OfficeName,
             System = BuildSystemPanel(worker, extra),
-            Logs = logs,
             CurrentActivity = WorkerActivityPresenter.Present(
                 worker.CurrentActivity,
                 worker.IsOnline,

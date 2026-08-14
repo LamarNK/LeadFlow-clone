@@ -819,23 +819,6 @@
                 <input type="hidden" name="tab" value="logs" />
                 <div class="settings-logs-filters-row">
                     <label class="settings-filter-field">
-                        <span class="settings-filter-label">Источник</span>
-                        <select name="workerId" class="settings-select" aria-label="Источник логов">
-                            @foreach (var opt in logs.WorkerOptions)
-                            {
-                                var selectedWorker = logs.WorkerId?.ToString() ?? "";
-                                if (opt.Value == selectedWorker)
-                                {
-                                    <option value="@opt.Value" selected>@opt.Label</option>
-                                }
-                                else
-                                {
-                                    <option value="@opt.Value">@opt.Label</option>
-                                }
-                            }
-                        </select>
-                    </label>
-                    <label class="settings-filter-field">
                         <span class="settings-filter-label">Уровень</span>
                         <select name="level" class="settings-select" aria-label="Уровень">
                             @foreach (var opt in logs.LevelOptions)
@@ -851,8 +834,6 @@
                             }
                         </select>
                     </label>
-                    @if (!logs.IsWorkerLogs)
-                    {
                     <label class="settings-filter-field">
                         <span class="settings-filter-label">Сервис</span>
                         <select name="service" class="settings-select" aria-label="Сервис">
@@ -869,7 +850,6 @@
                             }
                         </select>
                     </label>
-                    }
                     <label class="settings-filter-field">
                         <span class="settings-filter-label">Дата</span>
                         <input type="date"
@@ -900,8 +880,7 @@
             {
                 Rows = logs.Rows,
                 Pagination = logs.Pagination,
-                FeedAriaLabel = logs.IsWorkerLogs ? "Логи воркера" : "Логи сервиса",
-                ShowServiceTag = !logs.IsWorkerLogs
+                FeedAriaLabel = "Логи сервисов"
             })" />
 
             @if (logsPagination is not null && logsPagination.TotalItems > 0)
@@ -918,7 +897,7 @@
                         @if (prevPage is not null)
                         {
                             <a class="settings-page-btn"
-                               href="@Url.Action("Index", new { tab = "logs", workerId = logs.WorkerId, q = logs.SearchQuery, level = logs.Level, service = logs.Service, date = logs.Date?.ToString("yyyy-MM-dd"), page = prevPage })"
+                               href="@Url.Action("Index", new { tab = "logs", q = logs.SearchQuery, level = logs.Level, service = logs.Service, date = logs.Date?.ToString("yyyy-MM-dd"), page = prevPage })"
                                aria-label="Предыдущая страница">&lt;</a>
                         }
                         else
@@ -929,7 +908,7 @@
                         @if (nextPage is not null)
                         {
                             <a class="settings-page-btn"
-                               href="@Url.Action("Index", new { tab = "logs", workerId = logs.WorkerId, q = logs.SearchQuery, level = logs.Level, service = logs.Service, date = logs.Date?.ToString("yyyy-MM-dd"), page = nextPage })"
+                               href="@Url.Action("Index", new { tab = "logs", q = logs.SearchQuery, level = logs.Level, service = logs.Service, date = logs.Date?.ToString("yyyy-MM-dd"), page = nextPage })"
                                aria-label="Следующая страница">&gt;</a>
                         }
                         else

@@ -83,11 +83,6 @@ public sealed class WorkersService(
 
     public async Task<WorkerDetailsViewModel?> GetDetailsAsync(
         Guid id,
-        string? logsQ = null,
-        string? logsLevel = null,
-        DateTime? logsDate = null,
-        int logsPage = 1,
-        bool includeLogs = false,
         string? sort = null,
         string? sortDir = null,
         CancellationToken ct = default)
@@ -96,19 +91,7 @@ public sealed class WorkersService(
 
         if (previewOptions.Value.Enabled)
         {
-            if (!includeLogs)
-            {
-                return DesignPreviewData.BuildWorkerDetailsViewModel(id, sort, sortDir);
-            }
-
-            return DesignPreviewData.BuildWorkerDetailsViewModelWithLogs(
-                id,
-                logsQ,
-                logsLevel,
-                logsDate,
-                logsPage,
-                sort,
-                sortDir);
+            return DesignPreviewData.BuildWorkerDetailsViewModel(id, sort, sortDir);
         }
 
         var apiWorker = await api.GetWorkerAsync(id, ct);
@@ -131,27 +114,6 @@ public sealed class WorkersService(
             }),
             tableSort).ToList();
 
-        WorkerLogsPanelViewModel? logsPanel = null;
-        if (includeLogs)
-        {
-            logsPage = Math.Max(1, logsPage);
-            var logsPageDto = await api.GetWorkerLogsAsync(
-                id,
-                logsQ,
-                logsLevel,
-                logsDate ?? DateTime.UtcNow.Date,
-                logsPage,
-                SettingsIndexBuilder.LogsPageSize,
-                ct) ?? new WorkerLogsPageDto([], 0, logsPage, SettingsIndexBuilder.LogsPageSize);
-
-            logsPanel = SettingsIndexBuilder.BuildWorkerDetailsLogsPanel(
-                logsQ,
-                logsLevel,
-                logsDate,
-                logsPage,
-                logsPageDto);
-        }
-
         return WorkerDetailsBuilder.Build(
             apiWorker,
             accountRows,
@@ -167,7 +129,6 @@ public sealed class WorkersService(
                 OperatingSystem = string.IsNullOrWhiteSpace(apiWorker.OperatingSystem) ? "—" : apiWorker.OperatingSystem,
                 ConnectionCheck = apiWorker.IsOnline ? "Успешно" : "Нет связи"
             },
-            logs: logsPanel,
             sort: tableSort);
     }
 
