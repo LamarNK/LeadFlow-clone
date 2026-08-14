@@ -50,6 +50,14 @@
         hidden.value = Number.isNaN(localDate.getTime()) ? '' : localDate.toISOString();
     }
 
+    function setDefaultNow(input) {
+        if (!input.hasAttribute('data-default-now')) return;
+        if (input.getAttribute('data-crm-deadline-touched') === '1') return;
+
+        input.value = toLocalInputValue(new Date().toISOString());
+        syncInput(input);
+    }
+
     function bindInput(input) {
         if (input.hasAttribute('data-crm-deadline-bound')) return;
         input.setAttribute('data-crm-deadline-bound', '1');
@@ -57,10 +65,18 @@
         var initialUtc = input.getAttribute('data-initial-utc');
         if (initialUtc) {
             input.value = toLocalInputValue(initialUtc);
+        } else {
+            setDefaultNow(input);
         }
 
-        input.addEventListener('change', function () { syncInput(input); });
-        input.addEventListener('input', function () { syncInput(input); });
+        input.addEventListener('change', function () {
+            input.setAttribute('data-crm-deadline-touched', '1');
+            syncInput(input);
+        });
+        input.addEventListener('input', function () {
+            input.setAttribute('data-crm-deadline-touched', '1');
+            syncInput(input);
+        });
 
         var form = input.closest('form');
         if (form && !form.hasAttribute('data-crm-deadline-form-bound')) {
@@ -83,4 +99,14 @@
     }
 
     document.addEventListener('orbita:content-updated', function () { init(document); });
+
+    document.addEventListener('click', function (event) {
+        if (!event.target.closest('[data-crm-task-create-open]')) return;
+
+        window.setTimeout(function () {
+            var modal = document.querySelector('[data-crm-task-create-modal]:not([hidden])');
+            if (!modal) return;
+            modal.querySelectorAll('[data-crm-deadline-local][data-default-now]').forEach(setDefaultNow);
+        }, 0);
+    });
 })();

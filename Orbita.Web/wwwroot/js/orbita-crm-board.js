@@ -4,6 +4,7 @@
 
     const refreshers = new Set();
     const boardStateKey = 'orbita.crm.board.position.v1';
+    const focusStageKey = 'orbita.crm.board.focusStage';
     const cardTaskReturnKey = 'orbita.crm.card.taskReturn.v1';
     const cardOpenAtTopKey = 'orbita.crm.card.openAtTop.v1';
     const responsibleFilterScrollKey = 'orbita.crm.responsibleFilter.scroll.v1';
@@ -572,7 +573,6 @@
             viewport.addEventListener('scroll', () => window.requestAnimationFrame(syncJumpScroll), { passive: true });
         }
 
-        const focusStageKey = 'orbita.crm.board.focusStage';
         let storedBoardState = readBoardState();
 
         const resolveFocusStageName = () => {
@@ -924,6 +924,30 @@
         });
     };
 
+    const initScopeTabPositionReset = () => {
+        const boardScopes = new Set(['mine', 'team', 'unassigned']);
+
+        document.querySelectorAll('.crm-scope-tabs a[href]').forEach((link) => {
+            if (link.dataset.crmScopePositionResetReady === 'true') return;
+
+            let scope = '';
+            try {
+                scope = (new URL(link.href, window.location.origin).searchParams.get('scope') || '').toLowerCase();
+            } catch {
+                return;
+            }
+            if (!boardScopes.has(scope)) return;
+
+            link.dataset.crmScopePositionResetReady = 'true';
+            link.addEventListener('click', () => {
+                try {
+                    sessionStorage.removeItem(boardStateKey);
+                    sessionStorage.removeItem(focusStageKey);
+                } catch { /* ignore */ }
+            });
+        });
+    };
+
     const initCrmCardPage = () => {
         const page = document.querySelector('.crm-card-page');
         if (!page || page.dataset.crmCardReady === 'true') return;
@@ -999,7 +1023,7 @@
 
         const returnStage = (page.querySelector('[data-crm-back-to-board]')?.getAttribute('data-crm-stage') || '').trim();
         if (returnStage) {
-            try { sessionStorage.setItem('orbita.crm.board.focusStage', returnStage); } catch { /* ignore */ }
+            try { sessionStorage.setItem(focusStageKey, returnStage); } catch { /* ignore */ }
         }
 
         const thread = page.querySelector('[data-crm-chat-thread][data-mark-read="1"]');
@@ -1022,6 +1046,7 @@
         document.querySelectorAll('[data-crm-funnel-editor]').forEach(initCrmFunnelEditor);
         initClosedArchiveNavigation();
         initResponsibleAutoFilter();
+        initScopeTabPositionReset();
         restoreResponsibleFilterScroll();
         initManualCreateModal();
         initCrmCardPage();

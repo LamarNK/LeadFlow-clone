@@ -144,9 +144,10 @@ public static class CrmTaskTypes
     public const string Meet = "Meet";
     public const string SignContract = "SignContract";
     public const string Decision = "Decision";
+    public const string Documents = "Documents";
 
     public static readonly IReadOnlyList<string> All =
-        [Contact, CallBack, FollowUp, BuyTicket, Send, Meet, SignContract, Decision];
+        [Contact, CallBack, FollowUp, BuyTicket, Send, Meet, SignContract, Decision, Documents];
 
     public static bool IsValid(string? taskType) =>
         All.Contains(taskType ?? string.Empty, StringComparer.Ordinal);
@@ -161,6 +162,7 @@ public static class CrmTaskTypes
         Meet => "Встретить",
         SignContract => "Подписать контракт",
         Decision => "Что решил",
+        Documents => "Документы",
         _ => "Тип не указан"
     };
 }

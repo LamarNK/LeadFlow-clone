@@ -197,7 +197,7 @@
                     }
                 </select></label>
                 <label><span>Ответственный</span><select name="assigneeUserId" required>@foreach (var manager in Model.Managers) { if (manager.UserId == defaultAssigneeUserId) { <option value="@manager.UserId" selected>@manager.DisplayName</option> } else { <option value="@manager.UserId">@manager.DisplayName</option> } }</select></label>
-                <label><span>Срок</span><input type="datetime-local" data-crm-deadline-local /><input type="hidden" name="dueAtUtc" data-crm-deadline-utc /></label>
+                <label><span>Срок</span><input type="datetime-local" data-crm-deadline-local data-default-now /><input type="hidden" name="dueAtUtc" data-crm-deadline-utc /></label>
                 <label class="crm-task-create-form__description"><span>Комментарий <small>необязательно</small></span><textarea name="description" placeholder="Контекст или следующий шаг"></textarea></label>
                 <footer class="crm-task-create-form__actions">
                     <button class="settings-secondary-btn" type="button" data-crm-task-create-close>Отмена</button>

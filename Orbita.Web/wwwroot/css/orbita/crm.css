@@ -519,6 +519,7 @@
 .crm-feed-item strong { color: #101828; font-size: 13px; }
 .crm-feed-item header .crm-feed-item__meta { color: #98a2b3; font-size: 10px; }
 .crm-feed-item p { margin: 5px 0 0; color: #475467; font-size: 13px; line-height: 1.45; }
+.crm-feed-item [data-crm-note-body] { white-space: pre-wrap; overflow-wrap: anywhere; }
 .crm-feed-item--task-active { border-color: #f0d68d; background: #fffdf4; box-shadow: inset 3px 0 0 #e9a900; }
 .crm-feed-item--task-active .crm-feed-item__icon { background: #fff0b8; color: #956000; }
 .crm-feed-item--task-overdue { border-color: #efb8b6; background: #fff8f7; box-shadow: inset 3px 0 0 #df3f45; }

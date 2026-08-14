@@ -206,8 +206,10 @@ public sealed class CrmControllerPreviewTests
         }
     }
 
-    [Fact]
-    public async Task CreateTask_InDesignPreview_UsesTaskTypeAsTitle()
+    [Theory]
+    [InlineData(CrmTaskTypes.Decision, "Что решил")]
+    [InlineData(CrmTaskTypes.Documents, "Документы")]
+    public async Task CreateTask_InDesignPreview_UsesTaskTypeAsTitle(string taskType, string expectedTitle)
     {
         var (controller, _) = CreateController(previewEnabled: true);
         var cardId = Guid.Parse("90000000-0000-0000-0000-000000000001");
@@ -221,15 +223,15 @@ public sealed class CrmControllerPreviewTests
             card.Managers[0].UserId,
             DateTime.UtcNow.AddHours(1),
             importance: null,
-            taskType: CrmTaskTypes.Decision,
+            taskType: taskType,
             returnUrl: null,
             stage: null);
 
         var updatedCard = DesignPreviewData.GetCrmCard(cardId);
         Assert.NotNull(updatedCard);
         var task = Assert.Single(updatedCard.Tasks, item => item.Description == description);
-        Assert.Equal(CrmTaskTypes.Decision, task.TaskType);
-        Assert.Equal("Что решил", task.Title);
+        Assert.Equal(taskType, task.TaskType);
+        Assert.Equal(expectedTitle, task.Title);
         Assert.Equal(CrmTaskImportances.Medium, task.Importance);
     }
 
