@@ -67,6 +67,122 @@ public sealed class CandidateIngestionServiceTests
     }
 
     [Fact]
+    public async Task IngestBatchAsync_ExistingWatch_RefreshesUnlockedAvitoFields()
+    {
+        await using var db = CreateDb();
+        SeedWorker(db, autoDistributionEnabled: false);
+
+        var accountId = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc");
+        var person = TestCandidatePersonFactory.CreatePerson(OfficeId, fullName: "Ахмед аминов русланов", firstName: "Ахмед", lastName: "Аминов", city: "");
+        var response = TestCandidatePersonFactory.CreateResponse(
+            OfficeId,
+            person.Id,
+            WorkerId,
+            sourceResponseId: "phone-watch:watch1",
+            fullName: "Ахмед аминов русланов",
+            age: null,
+            city: "");
+        response.AccountId = accountId;
+        response.Vacancy = string.Empty;
+        response.Gender = string.Empty;
+        db.CandidatePersons.Add(person);
+        db.CandidateResponses.Add(response);
+        await db.SaveChangesAsync();
+
+        var sut = CreateService(db);
+        await sut.IngestBatchAsync(WorkerId, new WorkerCandidateBatchRequest([
+            new WorkerCandidateDto(
+                accountId,
+                "acc",
+                "Avito",
+                "phone-watch:watch1",
+                "",
+                "Ахмед аминов русланов",
+                28,
+                CandidateGenders.Male,
+                "+7 (900) 111-11-11",
+                "Батайск",
+                "Разнорабочий вахта",
+                "https://www.avito.ru/8186548533",
+                "",
+                "",
+                "Мужчина · 28 лет · Гражданство: Россия",
+                "",
+                DateTime.UtcNow,
+                Citizenship: "Россия")
+        ]));
+
+        var stored = await db.CandidateResponses.SingleAsync(x => x.Id == response.Id);
+        Assert.Equal("Батайск", stored.City);
+        Assert.Equal("Разнорабочий вахта", stored.Vacancy);
+        Assert.Equal(28, stored.Age);
+        Assert.Equal(CandidateGenders.Male, stored.Gender);
+        Assert.Equal("https://www.avito.ru/8186548533", stored.VacancyUrl);
+        Assert.Equal("Россия", stored.Citizenship);
+
+        var storedPerson = await db.CandidatePersons.SingleAsync(x => x.Id == person.Id);
+        Assert.Equal("Батайск", storedPerson.City);
+        Assert.Equal(28, storedPerson.Age);
+    }
+
+    [Fact]
+    public async Task IngestBatchAsync_ExistingWatch_DoesNotOverwriteOperatorLockedFields()
+    {
+        await using var db = CreateDb();
+        SeedWorker(db, autoDistributionEnabled: false);
+
+        var accountId = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc");
+        var person = TestCandidatePersonFactory.CreatePerson(OfficeId, city: "Казань");
+        var response = TestCandidatePersonFactory.CreateResponse(
+            OfficeId,
+            person.Id,
+            WorkerId,
+            sourceResponseId: "phone-watch:locked",
+            city: "Казань");
+        response.AccountId = accountId;
+        response.City = string.Empty;
+        response.Vacancy = string.Empty;
+        response.Age = null;
+        response.OperatorLockedFields = ResponseOperatorLocks.Add(
+            ResponseOperatorLocks.Add(null, ResponseOperatorLocks.City),
+            ResponseOperatorLocks.Age);
+        db.CandidatePersons.Add(person);
+        db.CandidateResponses.Add(response);
+        await db.SaveChangesAsync();
+
+        var sut = CreateService(db);
+        await sut.IngestBatchAsync(WorkerId, new WorkerCandidateBatchRequest([
+            new WorkerCandidateDto(
+                accountId,
+                "acc",
+                "Avito",
+                "phone-watch:locked",
+                "",
+                "Test User",
+                28,
+                null,
+                "79001111111",
+                "Батайск",
+                "Разнорабочий вахта",
+                "",
+                "",
+                "",
+                "",
+                "",
+                DateTime.UtcNow)
+        ]));
+
+        var stored = await db.CandidateResponses.SingleAsync(x => x.Id == response.Id);
+        Assert.Equal(string.Empty, stored.City);
+        Assert.Null(stored.Age);
+        Assert.Equal("Разнорабочий вахта", stored.Vacancy);
+
+        var storedPerson = await db.CandidatePersons.SingleAsync(x => x.Id == person.Id);
+        Assert.Equal("Казань", storedPerson.City);
+        Assert.Equal(25, storedPerson.Age);
+    }
+
+    [Fact]
     public async Task IngestBatchAsync_PhoneChangedMetric_DoesNotMarkAsDuplicate()
     {
         await using var db = CreateDb();

@@ -539,6 +539,11 @@ public sealed class CrmWorkspaceServiceTests
         Assert.Contains(
             harness.Db.CrmCandidateHistory,
             h => h.CardId == card.Id && h.Action == "CardUpdated" && h.Details!.Contains("ФИО"));
+        Assert.True(ResponseOperatorLocks.Contains(response.OperatorLockedFields, ResponseOperatorLocks.City));
+        Assert.True(ResponseOperatorLocks.Contains(response.OperatorLockedFields, ResponseOperatorLocks.Vacancy));
+        Assert.True(ResponseOperatorLocks.Contains(response.OperatorLockedFields, ResponseOperatorLocks.Age));
+        Assert.True(ResponseOperatorLocks.Contains(response.OperatorLockedFields, ResponseOperatorLocks.Citizenship));
+        Assert.True(ResponseOperatorLocks.Contains(response.OperatorLockedFields, ResponseOperatorLocks.VacancyUrl));
     }
 
     [Fact]

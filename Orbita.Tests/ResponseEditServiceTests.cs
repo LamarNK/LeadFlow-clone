@@ -110,6 +110,10 @@ public sealed class ResponseEditServiceTests
 
         Assert.True(await db.CandidatePhoneHistory.AnyAsync(x =>
             x.PersonId == personId && x.PhoneNormalized == "79012223344"));
+        Assert.True(ResponseOperatorLocks.Contains(response.OperatorLockedFields, ResponseOperatorLocks.FullName));
+        Assert.True(ResponseOperatorLocks.Contains(response.OperatorLockedFields, ResponseOperatorLocks.City));
+        Assert.True(ResponseOperatorLocks.Contains(response.OperatorLockedFields, ResponseOperatorLocks.Age));
+        Assert.True(ResponseOperatorLocks.Contains(response.OperatorLockedFields, ResponseOperatorLocks.Gender));
     }
 
     [Fact]

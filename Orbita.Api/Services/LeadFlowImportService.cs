@@ -296,7 +296,6 @@ public sealed class LeadFlowImportService(
         await db.CandidateResponses
             .Where(x => x.WorkerId == importWorker.Id)
             .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.WorkerId, (Guid?)null), ct);
-        await db.WorkerLogEntries.Where(x => x.WorkerId == importWorker.Id).ExecuteDeleteAsync(ct);
         await db.WorkerEvents.Where(x => x.WorkerId == importWorker.Id).ExecuteDeleteAsync(ct);
         await db.WorkerAccounts.Where(x => x.WorkerId == importWorker.Id).ExecuteDeleteAsync(ct);
         await db.WorkerSnapshots.Where(x => x.WorkerId == importWorker.Id).ExecuteDeleteAsync(ct);

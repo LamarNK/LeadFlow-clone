@@ -92,10 +92,12 @@ public sealed class ResponseEditService(
 
         var (firstName, lastName, middleName) = candidateParser.ParseName(fullName);
         var changed = false;
+        var locks = entity.OperatorLockedFields;
 
         if (!string.Equals(entity.FullName, fullName, StringComparison.Ordinal))
         {
             entity.FullName = fullName;
+            locks = ResponseOperatorLocks.Add(locks, ResponseOperatorLocks.FullName);
             changed = true;
         }
 
@@ -112,18 +114,21 @@ public sealed class ResponseEditService(
         if (entity.Age != age)
         {
             entity.Age = age;
+            locks = ResponseOperatorLocks.Add(locks, ResponseOperatorLocks.Age);
             changed = true;
         }
 
         if (!string.Equals(entity.Gender ?? string.Empty, gender, StringComparison.Ordinal))
         {
             entity.Gender = gender;
+            locks = ResponseOperatorLocks.Add(locks, ResponseOperatorLocks.Gender);
             changed = true;
         }
 
         if (!string.Equals(entity.City, city, StringComparison.Ordinal))
         {
             entity.City = city;
+            locks = ResponseOperatorLocks.Add(locks, ResponseOperatorLocks.City);
             changed = true;
         }
 
@@ -163,6 +168,12 @@ public sealed class ResponseEditService(
                 person.UpdatedAtUtc = DateTime.UtcNow;
                 changed = true;
             }
+        }
+
+        if (!string.Equals(entity.OperatorLockedFields, locks, StringComparison.Ordinal))
+        {
+            entity.OperatorLockedFields = locks;
+            changed = true;
         }
 
         if (phoneChanged && person is not null)

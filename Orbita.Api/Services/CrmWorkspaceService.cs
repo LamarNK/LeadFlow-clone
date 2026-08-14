@@ -1157,6 +1157,49 @@ public sealed class CrmWorkspaceService(
         response.MessengerUrl = messengerUrl;
         response.Citizenship = citizenship;
 
+        var locks = response.OperatorLockedFields;
+        if (changes.Contains("ФИО"))
+        {
+            locks = ResponseOperatorLocks.Add(locks, ResponseOperatorLocks.FullName);
+        }
+
+        if (changes.Contains("город"))
+        {
+            locks = ResponseOperatorLocks.Add(locks, ResponseOperatorLocks.City);
+        }
+
+        if (changes.Contains("вакансия"))
+        {
+            locks = ResponseOperatorLocks.Add(locks, ResponseOperatorLocks.Vacancy);
+        }
+
+        if (changes.Contains("возраст"))
+        {
+            locks = ResponseOperatorLocks.Add(locks, ResponseOperatorLocks.Age);
+        }
+
+        if (changes.Contains("объявление"))
+        {
+            locks = ResponseOperatorLocks.Add(locks, ResponseOperatorLocks.VacancyUrl);
+        }
+
+        if (changes.Contains("ссылка"))
+        {
+            locks = ResponseOperatorLocks.Add(locks, ResponseOperatorLocks.SourceUrl);
+        }
+
+        if (changes.Contains("мессенджер"))
+        {
+            locks = ResponseOperatorLocks.Add(locks, ResponseOperatorLocks.MessengerUrl);
+        }
+
+        if (changes.Contains("гражданство"))
+        {
+            locks = ResponseOperatorLocks.Add(locks, ResponseOperatorLocks.Citizenship);
+        }
+
+        response.OperatorLockedFields = locks;
+
         if (phoneChanged)
         {
             response.PreviousPhoneRaw = response.PhoneRaw;

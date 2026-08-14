@@ -303,42 +303,77 @@ public sealed class CandidateIngestionService(
             changed = true;
         }
 
-        if (string.IsNullOrWhiteSpace(tracked.Citizenship))
+        // phone-watch шлёт тот же SourceResponseId повторно. Обновляем поля Avito,
+        // кроме тех, что оператор правил вручную. Пустой повторный парсинг ничего не затирает.
+        var locks = tracked.OperatorLockedFields;
+        var city = candidate.City?.Trim() ?? string.Empty;
+        if (TryApplyUnlocked(tracked.City, city, locks, ResponseOperatorLocks.City, out var nextCity))
         {
-            var citizenship = CandidateCitizenshipResolver.Resolve(
-                candidate.Citizenship,
-                candidate.RawText,
-                candidate.ChatMessagesJson,
-                tracked.RawText,
-                tracked.ChatMessagesJson);
-            if (!string.IsNullOrWhiteSpace(citizenship))
-            {
-                tracked.Citizenship = citizenship;
-                changed = true;
-            }
-        }
-
-        if (string.IsNullOrWhiteSpace(tracked.MessengerUrl)
-            && !string.IsNullOrWhiteSpace(candidate.MessengerUrl))
-        {
-            tracked.MessengerUrl = candidate.MessengerUrl;
+            tracked.City = nextCity;
             changed = true;
         }
 
-        // phone-watch сохраняет один и тот же SourceResponseId для повторных наблюдений.
-        // Заполняем поля, которые отсутствовали при первой публикации, не затирая уже
-        // отредактированные оператором значения пустым/другим значением из Avito.
-        var city = candidate.City?.Trim();
-        if (string.IsNullOrWhiteSpace(tracked.City) && !string.IsNullOrWhiteSpace(city))
+        var vacancy = candidate.Vacancy?.Trim() ?? string.Empty;
+        if (TryApplyUnlocked(tracked.Vacancy, vacancy, locks, ResponseOperatorLocks.Vacancy, out var nextVacancy))
         {
-            tracked.City = city;
+            tracked.Vacancy = nextVacancy;
             changed = true;
         }
 
-        var vacancy = candidate.Vacancy?.Trim();
-        if (string.IsNullOrWhiteSpace(tracked.Vacancy) && !string.IsNullOrWhiteSpace(vacancy))
+        if (!ResponseOperatorLocks.Contains(locks, ResponseOperatorLocks.Age)
+            && tracked.Age is null
+            && candidate.Age is int incomingAge
+            && incomingAge > 0)
         {
-            tracked.Vacancy = vacancy;
+            tracked.Age = incomingAge;
+            changed = true;
+        }
+
+        var incomingGender = CandidateGenderResolver.ToStoredGender(
+            CandidateGenderResolver.Resolve(candidate.FullName, candidate.Gender, candidate.RawText));
+        if (TryApplyUnlocked(tracked.Gender, incomingGender, locks, ResponseOperatorLocks.Gender, out var nextGender))
+        {
+            tracked.Gender = nextGender;
+            changed = true;
+        }
+
+        var citizenship = CandidateCitizenshipResolver.Resolve(
+            candidate.Citizenship,
+            candidate.RawText,
+            candidate.ChatMessagesJson,
+            tracked.RawText,
+            tracked.ChatMessagesJson);
+        if (TryApplyUnlocked(tracked.Citizenship, citizenship, locks, ResponseOperatorLocks.Citizenship, out var nextCitizenship))
+        {
+            tracked.Citizenship = nextCitizenship;
+            changed = true;
+        }
+
+        var messengerUrl = candidate.MessengerUrl?.Trim() ?? string.Empty;
+        if (TryApplyUnlocked(tracked.MessengerUrl, messengerUrl, locks, ResponseOperatorLocks.MessengerUrl, out var nextMessenger))
+        {
+            tracked.MessengerUrl = nextMessenger;
+            changed = true;
+        }
+
+        var vacancyUrl = candidate.VacancyUrl?.Trim() ?? string.Empty;
+        if (TryApplyUnlocked(tracked.VacancyUrl, vacancyUrl, locks, ResponseOperatorLocks.VacancyUrl, out var nextVacancyUrl))
+        {
+            tracked.VacancyUrl = nextVacancyUrl;
+            changed = true;
+        }
+
+        if (TryApplyUnlocked(tracked.SourceUrl, vacancyUrl, locks, ResponseOperatorLocks.SourceUrl, out var nextSourceUrl))
+        {
+            tracked.SourceUrl = nextSourceUrl;
+            changed = true;
+        }
+
+        var rawText = candidate.RawText?.Trim() ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(rawText)
+            && !string.Equals(tracked.RawText, rawText, StringComparison.Ordinal))
+        {
+            tracked.RawText = rawText;
             changed = true;
         }
 
@@ -354,19 +389,33 @@ public sealed class CandidateIngestionService(
             changed = true;
         }
 
-        var vacancyUrl = candidate.VacancyUrl?.Trim();
-        if (!string.IsNullOrWhiteSpace(vacancyUrl)
-            && !string.Equals(tracked.VacancyUrl, vacancyUrl, StringComparison.Ordinal))
+        if (changed)
         {
-            tracked.VacancyUrl = vacancyUrl;
-            changed = true;
-        }
+            var person = await db.CandidatePersons.FirstOrDefaultAsync(x => x.Id == tracked.PersonId, ct);
+            if (person is not null)
+            {
+                var personTouched = false;
+                if (!ResponseOperatorLocks.Contains(locks, ResponseOperatorLocks.City)
+                    && !string.IsNullOrWhiteSpace(tracked.City)
+                    && !string.Equals(person.City, tracked.City, StringComparison.Ordinal))
+                {
+                    person.City = tracked.City;
+                    personTouched = true;
+                }
 
-        if (string.IsNullOrWhiteSpace(tracked.SourceUrl)
-            && !string.IsNullOrWhiteSpace(vacancyUrl))
-        {
-            tracked.SourceUrl = vacancyUrl;
-            changed = true;
+                if (!ResponseOperatorLocks.Contains(locks, ResponseOperatorLocks.Age)
+                    && tracked.Age is int personAge
+                    && person.Age != personAge)
+                {
+                    person.Age = personAge;
+                    personTouched = true;
+                }
+
+                if (personTouched)
+                {
+                    person.UpdatedAtUtc = DateTime.UtcNow;
+                }
+            }
         }
 
         var phoneChanged = !string.Equals(tracked.PhoneNormalized, phoneNormalized, StringComparison.Ordinal);
@@ -510,6 +559,26 @@ public sealed class CandidateIngestionService(
             candidate.VacancyUrl,
             candidate.MessengerUrl,
             AvitoResponseCardFingerprint.NormalizeAgeText(null, candidate.Age));
+    }
+
+    private static bool TryApplyUnlocked(
+        string current,
+        string incoming,
+        string locks,
+        string field,
+        out string next)
+    {
+        next = current ?? string.Empty;
+        var value = incoming?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(value)
+            || !string.IsNullOrWhiteSpace(next)
+            || ResponseOperatorLocks.Contains(locks, field))
+        {
+            return false;
+        }
+
+        next = value;
+        return true;
     }
 
     private static WorkerCandidateIngestionResultDto EmptyResult(int received) =>

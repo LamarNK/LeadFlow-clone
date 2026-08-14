@@ -212,6 +212,7 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.Property(x => x.DuplicateSummary).HasMaxLength(2000);
             entity.Property(x => x.Gender).HasMaxLength(16);
             entity.Property(x => x.Citizenship).HasMaxLength(CandidateCitizenshipResolver.MaxLength);
+            entity.Property(x => x.OperatorLockedFields).HasMaxLength(256);
             entity.Property(x => x.WorkerName).HasMaxLength(200);
             entity.Property(x => x.DistributionMode).HasMaxLength(16);
             entity.Property(x => x.PhoneMetricKind).HasMaxLength(32);

@@ -452,6 +452,12 @@ public sealed class CandidateResponseEntity
     public int? PhoneUnchangedHours { get; set; }
     public DateTime? PhoneChangedAtUtc { get; set; }
 
+    /// <summary>
+    /// Список полей, которые оператор правил вручную (<see cref="Orbita.Contracts.ResponseOperatorLocks"/>).
+    /// Повторный ingest с Avito эти поля не затирает.
+    /// </summary>
+    public string OperatorLockedFields { get; set; } = string.Empty;
+
     public CandidatePersonEntity Person { get; set; } = null!;
     public OfficeEntity? Office { get; set; }
     public WorkerEntity? Worker { get; set; }

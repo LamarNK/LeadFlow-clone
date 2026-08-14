@@ -969,6 +969,11 @@ namespace Orbita.Api.Data.Migrations
                     b.Property<Guid?>("OfficeId")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("OperatorLockedFields")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
                     b.Property<Guid>("PersonId")
                         .HasColumnType("uuid");
 
