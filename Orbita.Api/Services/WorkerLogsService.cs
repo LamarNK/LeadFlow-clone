@@ -53,6 +53,7 @@ public sealed class WorkerLogsService(
 
         var existingSet = existing.ToHashSet(StringComparer.Ordinal);
         var toInsert = entities
+            .DistinctBy(x => x.DedupHash, StringComparer.Ordinal)
             .Where(x => !existingSet.Contains(x.DedupHash))
             .ToList();
 

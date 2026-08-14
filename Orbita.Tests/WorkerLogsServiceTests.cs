@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Options;
 using Orbita.Api.Data;
 using Orbita.Api.Options;
@@ -58,6 +59,31 @@ public sealed class WorkerLogsServiceTests
 
         Assert.Equal(1, first.Accepted);
         Assert.Equal(0, second.Accepted);
+        Assert.Equal(1, await db.WorkerLogEntries.CountAsync());
+    }
+
+    [Fact]
+    public async Task IngestBatch_DeduplicatesIdenticalEntriesWithinOneBatch()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateSqliteDb(connection);
+        await db.Database.EnsureCreatedAsync();
+        await SeedWorkerAsync(db);
+        var service = CreateService(db);
+
+        var entry = new WorkerLogEntryUploadDto(
+            DateTime.UtcNow.AddMinutes(-1),
+            "Warning",
+            "[Sync.Method]",
+            "Retry scheduled",
+            null,
+            false);
+
+        var (accepted, error) = await service.IngestBatchAsync(WorkerId, [entry, entry]);
+
+        Assert.Null(error);
+        Assert.Equal(1, accepted);
         Assert.Equal(1, await db.WorkerLogEntries.CountAsync());
     }
 
@@ -189,6 +215,14 @@ public sealed class WorkerLogsServiceTests
     {
         var options = new DbContextOptionsBuilder<OrbitaDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        return new OrbitaDbContext(options);
+    }
+
+    private static OrbitaDbContext CreateSqliteDb(SqliteConnection connection)
+    {
+        var options = new DbContextOptionsBuilder<OrbitaDbContext>()
+            .UseSqlite(connection)
             .Options;
         return new OrbitaDbContext(options);
     }
