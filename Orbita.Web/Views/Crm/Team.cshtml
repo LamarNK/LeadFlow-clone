@@ -260,7 +260,7 @@
                                 <form asp-action="SaveCapacity" method="post" class="crm-capacity-form">
                                     @Html.AntiForgeryToken()
                                     <input type="hidden" name="managerUserId" value="@m.UserId" />
-                                    <label>Лимит<input type="number" name="capacity" min="1" max="100" value="@m.Capacity" aria-label="Лимит нагрузки для @m.DisplayName" /></label>
+                                    <label>Лимит<input type="number" name="capacity" min="1" max="300" value="@m.Capacity" aria-label="Лимит нагрузки для @m.DisplayName" /></label>
                                     <button type="submit" class="settings-secondary-btn">Сохранить</button>
                                 </form>
                             }
@@ -399,7 +399,7 @@
                 <input type="hidden" name="userId" data-crm-staff-edit-id />
                 <label class="crm-field"><span>ФИО</span><input type="text" name="fullName" required maxlength="256" autocomplete="name" data-crm-staff-edit-name /></label>
                 <label class="crm-field"><span>Должность</span><select name="role" data-crm-staff-edit-role>@foreach (var option in OfficeStaffRules.RoleOptions) { <option value="@option.Value">@option.Label</option> }</select></label>
-                <label class="crm-field" data-crm-staff-capacity-field hidden><span>Лимит нагрузки</span><input type="number" name="capacity" min="1" max="100" data-crm-staff-edit-capacity /></label>
+                <label class="crm-field" data-crm-staff-capacity-field hidden><span>Лимит нагрузки</span><input type="number" name="capacity" min="1" max="300" data-crm-staff-edit-capacity /></label>
                 <label class="crm-field"><span>Новый пароль <small>необязательно</small></span><input type="password" name="password" minlength="8" placeholder="Оставьте пустым, чтобы не менять" autocomplete="new-password" data-crm-staff-edit-password /></label>
                 <footer class="crm-staff-form__actions"><button type="button" class="settings-secondary-btn" data-crm-staff-modal-close>Отмена</button><button type="submit" class="settings-primary-btn"><i class="fa-solid fa-check" aria-hidden="true"></i>Сохранить изменения</button></footer>
             </form>

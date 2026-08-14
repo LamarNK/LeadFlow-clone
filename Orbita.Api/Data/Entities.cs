@@ -46,7 +46,7 @@ public sealed class PanelUserProfileEntity
     public string UserId { get; set; } = string.Empty;
     public string? FullName { get; set; }
     public Guid? OfficeId { get; set; }
-    public int CrmCapacity { get; set; } = 100;
+    public int CrmCapacity { get; set; } = 300;
     public bool CrmShiftActive { get; set; }
 
     /// <summary>

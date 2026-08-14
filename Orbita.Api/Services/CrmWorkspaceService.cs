@@ -320,7 +320,7 @@ public sealed class CrmWorkspaceService(
             office.CrmEnabled,
             true,
             profile is not null && IsOnShift(profile, now),
-            profile?.CrmCapacity ?? 100,
+            profile?.CrmCapacity ?? 300,
             loads.GetValueOrDefault(userId),
             stageDtos,
             isAdmin ? allManagerDtos : managerDtos,
@@ -531,7 +531,7 @@ public sealed class CrmWorkspaceService(
 
     public async Task<bool> SetCapacityAsync(Guid officeId, string managerUserId, int capacity, CancellationToken ct = default)
     {
-        if (capacity is < 1 or > 100)
+        if (capacity is < 1 or > 300)
         {
             return false;
         }

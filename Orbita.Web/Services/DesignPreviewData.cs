@@ -1267,7 +1267,7 @@ internal static class DesignPreviewData
     {
         lock (CrmSync)
         {
-            if (capacity is < 1 or > 100) return (false, "Ёмкость 1–100.");
+            if (capacity is < 1 or > 300) return (false, "Ёмкость 1–300.");
             if (managerUserId is not (PreviewManagerElena or PreviewManagerIgor)) return (false, "Менеджер не найден.");
             return (true, null);
         }
