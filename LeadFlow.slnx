@@ -3,24 +3,34 @@
     <Platform Name="Any CPU" />
     <Platform Name="x64" />
   </Configurations>
-  <Project Path="LeadFlow.Tests/LeadFlow.Tests.csproj" />
-  <Project Path="LeadFlow.Core/LeadFlow.Core.csproj" />
-  <Project Path="LeadFlow/LeadFlow.csproj">
-    <Platform Solution="*|x64" Project="x64" />
-  </Project>
-  <Project Path="Orbita.Contracts/Orbita.Contracts.csproj" />
-  <Project Path="Orbita.Logging/Orbita.Logging.csproj" />
-  <Project Path="Orbita.Api/Orbita.Api.csproj" />
-  <Project Path="Orbita.Web/Orbita.Web.csproj" />
-  <Project Path="Orbita.Tests/Orbita.Tests.csproj" />
-  <Project Path="tools/OrbitaMockWorker/OrbitaMockWorker.csproj" />
-  <Project Path="Orbita.Worker/Orbita.Worker.csproj">
-    <Platform Solution="*|x64" Project="x64" />
-  </Project>
-  <Project Path="installer/Orbita.Worker.Msi/Orbita.Worker.Msi.wixproj" />
-  <Project Path="src/NotifyBot.Domain/NotifyBot.Domain.csproj" />
-  <Project Path="src/NotifyBot.Application/NotifyBot.Application.csproj" />
-  <Project Path="src/NotifyBot.Infrastructure/NotifyBot.Infrastructure.csproj" />
-  <Project Path="src/NotifyBot.Api/NotifyBot.Api.csproj" />
-  <Project Path="NotifyBot.Tests/NotifyBot.Tests.csproj" />
+  <Folder Name="/LeadFlow/">
+    <Project Path="LeadFlow/LeadFlow.csproj">
+      <Platform Solution="*|x64" Project="x64" />
+    </Project>
+    <Project Path="LeadFlow.Core/LeadFlow.Core.csproj" />
+    <Project Path="LeadFlow.Tests/LeadFlow.Tests.csproj" />
+  </Folder>
+  <Folder Name="/Orbita/">
+    <Project Path="Orbita.Api/Orbita.Api.csproj" />
+    <Project Path="Orbita.Contracts/Orbita.Contracts.csproj" />
+    <Project Path="Orbita.Logging/Orbita.Logging.csproj" />
+    <Project Path="Orbita.Web/Orbita.Web.csproj" />
+    <Project Path="Orbita.Worker/Orbita.Worker.csproj">
+      <Platform Solution="*|x64" Project="x64" />
+    </Project>
+    <Project Path="Orbita.Tests/Orbita.Tests.csproj" />
+  </Folder>
+  <Folder Name="/Orbita/Tools/">
+    <Project Path="tools/OrbitaMockWorker/OrbitaMockWorker.csproj" />
+  </Folder>
+  <Folder Name="/Orbita/Installer/">
+    <Project Path="installer/Orbita.Worker.Msi/Orbita.Worker.Msi.wixproj" />
+  </Folder>
+  <Folder Name="/NotifyBot/">
+    <Project Path="src/NotifyBot.Api/NotifyBot.Api.csproj" />
+    <Project Path="src/NotifyBot.Application/NotifyBot.Application.csproj" />
+    <Project Path="src/NotifyBot.Domain/NotifyBot.Domain.csproj" />
+    <Project Path="src/NotifyBot.Infrastructure/NotifyBot.Infrastructure.csproj" />
+    <Project Path="NotifyBot.Tests/NotifyBot.Tests.csproj" />
+  </Folder>
 </Solution>
