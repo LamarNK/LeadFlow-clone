@@ -83,6 +83,38 @@ public sealed class CrmManagerShiftEntity
     public OfficeEntity? Office { get; set; }
 }
 
+/// <summary>
+/// One five-minute collection/distribution session per office and Moscow day.
+/// The row also stores the lead round-robin cursor for later arrivals.
+/// </summary>
+public sealed class CrmDailyDistributionSessionEntity
+{
+    public Guid Id { get; set; }
+    public Guid OfficeId { get; set; }
+    public DateOnly LocalDate { get; set; }
+    public DateTime FirstShiftStartedAtUtc { get; set; }
+    public DateTime DistributeAfterUtc { get; set; }
+    public DateTime? DistributedAtUtc { get; set; }
+    public string? ManagerRosterJson { get; set; }
+    public string? LastLeadManagerUserId { get; set; }
+    public DateTime CreatedAtUtc { get; set; }
+    public DateTime UpdatedAtUtc { get; set; }
+}
+
+/// <summary>
+/// Number of cards from a distribution pool received by a manager during the
+/// business day. Lead counters continue to be used for all later arrivals.
+/// </summary>
+public sealed class CrmDailyDistributionCounterEntity
+{
+    public Guid OfficeId { get; set; }
+    public DateOnly LocalDate { get; set; }
+    public string Pool { get; set; } = CrmDailyDistribution.LeadPool;
+    public string ManagerUserId { get; set; } = string.Empty;
+    public int AssignedCount { get; set; }
+    public DateTime UpdatedAtUtc { get; set; }
+}
+
 public sealed class WorkerEntity
 {
     public Guid Id { get; set; }
@@ -398,6 +430,7 @@ public sealed class CandidateResponseEntity
     public string MiddleName { get; set; } = string.Empty;
     public int? Age { get; set; }
     public string Gender { get; set; } = string.Empty;
+    public string Citizenship { get; set; } = string.Empty;
     public string PhoneRaw { get; set; } = string.Empty;
     public string PhoneNormalized { get; set; } = string.Empty;
     public string City { get; set; } = string.Empty;

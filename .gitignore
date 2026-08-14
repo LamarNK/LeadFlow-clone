@@ -401,3 +401,4 @@ deploy/**/.env
 
 # Source datasets used to regenerate compact embedded dictionaries
 .local-data/
+.codex-data-protection-web/

@@ -134,7 +134,8 @@ public sealed record WorkerCandidateDto(
     /// <summary>Тип скачанного аватара кандидата. URL Avito по сети не передаётся.</summary>
     string? AvatarContentType = null,
     /// <summary>Скачанный аватар кандидата в Base64; ограничен <see cref="CandidateResponseAvatar.MaxImageBytes"/>.</summary>
-    string? AvatarImageBase64 = null);
+    string? AvatarImageBase64 = null,
+    string? Citizenship = null);
 
 public sealed record WorkerCandidateBatchRequest(
     IReadOnlyList<WorkerCandidateDto> Candidates);

@@ -35,6 +35,8 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
     public DbSet<CrmOutboundChatMessageEntity> CrmOutboundChatMessages => Set<CrmOutboundChatMessageEntity>();
     public DbSet<CrmDeskAlertEntity> CrmDeskAlerts => Set<CrmDeskAlertEntity>();
     public DbSet<CrmManagerShiftEntity> CrmManagerShifts => Set<CrmManagerShiftEntity>();
+    public DbSet<CrmDailyDistributionSessionEntity> CrmDailyDistributionSessions => Set<CrmDailyDistributionSessionEntity>();
+    public DbSet<CrmDailyDistributionCounterEntity> CrmDailyDistributionCounters => Set<CrmDailyDistributionCounterEntity>();
     public DbSet<ResponseBitrixDeliveryEntity> ResponseBitrixDeliveries => Set<ResponseBitrixDeliveryEntity>();
     public DbSet<ResponseCrmDeliveryEntity> ResponseCrmDeliveries => Set<ResponseCrmDeliveryEntity>();
     public DbSet<BitrixInstanceEntity> BitrixInstances => Set<BitrixInstanceEntity>();
@@ -79,6 +81,30 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
                 .WithMany(x => x.UserProfiles)
                 .HasForeignKey(x => x.OfficeId)
                 .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<CrmDailyDistributionSessionEntity>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.OfficeId, x.LocalDate }).IsUnique();
+            entity.HasIndex(x => new { x.DistributedAtUtc, x.DistributeAfterUtc });
+            entity.Property(x => x.ManagerRosterJson).HasMaxLength(8000);
+            entity.Property(x => x.LastLeadManagerUserId).HasMaxLength(128);
+            entity.HasOne<OfficeEntity>()
+                .WithMany()
+                .HasForeignKey(x => x.OfficeId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<CrmDailyDistributionCounterEntity>(entity =>
+        {
+            entity.HasKey(x => new { x.OfficeId, x.LocalDate, x.Pool, x.ManagerUserId });
+            entity.Property(x => x.Pool).HasMaxLength(16);
+            entity.Property(x => x.ManagerUserId).HasMaxLength(128);
+            entity.HasOne<OfficeEntity>()
+                .WithMany()
+                .HasForeignKey(x => x.OfficeId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<WorkerEntity>(entity =>
@@ -186,6 +212,7 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
                 .HasFilter("\"SourceResponseId\" <> ''");
             entity.Property(x => x.DuplicateSummary).HasMaxLength(2000);
             entity.Property(x => x.Gender).HasMaxLength(16);
+            entity.Property(x => x.Citizenship).HasMaxLength(CandidateCitizenshipResolver.MaxLength);
             entity.Property(x => x.WorkerName).HasMaxLength(200);
             entity.Property(x => x.DistributionMode).HasMaxLength(16);
             entity.Property(x => x.PhoneMetricKind).HasMaxLength(32);

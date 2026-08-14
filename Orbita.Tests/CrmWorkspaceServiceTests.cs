@@ -49,7 +49,7 @@ public sealed class CrmWorkspaceServiceTests
     }
 
     [Fact]
-    public async Task CreateCard_AutoAssignsToManagerOnShiftWithCapacity()
+    public async Task CreateCard_IsAssignedAfterFiveMinuteShiftCollectionWindow()
     {
         await using var harness = await Harness.CreateAsync();
         SeedOffice(harness.Db, crmEnabled: true);
@@ -59,12 +59,17 @@ public sealed class CrmWorkspaceServiceTests
         await harness.Sut.CreateCardForResponseAsync(response);
 
         var card = Assert.Single(harness.Db.CrmCandidateCards);
+        Assert.Null(card.ManagerUserId);
+
+        harness.Clock.Advance(TimeSpan.FromMinutes(6));
+        await harness.Sut.ProcessDueDailyDistributionsAsync();
+
         Assert.Equal(manager.Id, card.ManagerUserId);
         Assert.True(card.IsInActiveLoad);
     }
 
     [Fact]
-    public async Task StartShift_OfficeLead_CanStartShiftAndReceiveQueueCards()
+    public async Task StartShift_OfficeLead_CanStartShiftButDoesNotReceiveQueueCards()
     {
         await using var harness = await Harness.CreateAsync();
         SeedOffice(harness.Db, crmEnabled: true);
@@ -81,18 +86,24 @@ public sealed class CrmWorkspaceServiceTests
         var ok = await harness.Sut.StartShiftAsync(OfficeId, lead.Id);
         Assert.True(ok);
 
-        Assert.Equal(2, await harness.Db.CrmCandidateCards.CountAsync(x => x.ManagerUserId == lead.Id));
+        harness.Clock.Advance(TimeSpan.FromMinutes(6));
+        await harness.Sut.ProcessDueDailyDistributionsAsync();
+
+        Assert.Equal(0, await harness.Db.CrmCandidateCards.CountAsync(x => x.ManagerUserId == lead.Id));
+        Assert.Equal(2, await harness.Db.CrmCandidateCards.CountAsync(x => x.ManagerUserId == null));
+        Assert.Empty(harness.Db.CrmDailyDistributionSessions);
         var profile = await harness.Db.PanelUserProfiles.SingleAsync(x => x.UserId == lead.Id);
         Assert.True(profile.CrmShiftActive);
         Assert.Single(await harness.Db.CrmManagerShifts.Where(x => x.ManagerUserId == lead.Id).ToListAsync());
     }
 
     [Fact]
-    public async Task StartShift_FillsFreeSlotsFromUnassignedQueue()
+    public async Task StartShift_DistributesWholeLeadPoolIgnoringCapacityAfterFiveMinutes()
     {
         await using var harness = await Harness.CreateAsync();
         SeedOffice(harness.Db, crmEnabled: true);
-        var manager = await harness.CreateManagerAsync("shift@test.local", capacity: 2, onShift: false);
+        var manager = await harness.CreateManagerAsync("shift@test.local", capacity: 1, onShift: false);
+        var secondManager = await harness.CreateManagerAsync("shift-2@test.local", capacity: 1, onShift: false);
         var r1 = await SeedResponseAsync(harness.Db, "src-1");
         var r2 = await SeedResponseAsync(harness.Db, "src-2");
         var r3 = await SeedResponseAsync(harness.Db, "src-3");
@@ -101,9 +112,19 @@ public sealed class CrmWorkspaceServiceTests
 
         var ok = await harness.Sut.StartShiftAsync(OfficeId, manager.Id);
         Assert.True(ok);
+        Assert.True(await harness.Sut.StartShiftAsync(OfficeId, secondManager.Id));
 
-        Assert.Equal(2, await harness.Db.CrmCandidateCards.CountAsync(x => x.ManagerUserId == manager.Id));
-        Assert.Equal(1, await harness.Db.CrmCandidateCards.CountAsync(x => x.ManagerUserId == null));
+        Assert.Equal(3, await harness.Db.CrmCandidateCards.CountAsync(x => x.ManagerUserId == null));
+        harness.Clock.Advance(TimeSpan.FromMinutes(6));
+        await harness.Sut.ProcessDueDailyDistributionsAsync();
+
+        var counts = await harness.Db.CrmCandidateCards
+            .GroupBy(x => x.ManagerUserId)
+            .Select(x => x.Count())
+            .OrderBy(x => x)
+            .ToListAsync();
+        Assert.Equal([1, 2], counts);
+        Assert.Equal(0, await harness.Db.CrmCandidateCards.CountAsync(x => x.ManagerUserId == null));
         var profile = await harness.Db.PanelUserProfiles.SingleAsync(x => x.UserId == manager.Id);
         Assert.True(profile.CrmShiftActive);
         Assert.NotNull(profile.CrmShiftStartedAtUtc);
@@ -113,6 +134,95 @@ public sealed class CrmWorkspaceServiceTests
         Assert.Null(history.EndedAtUtc);
         Assert.Null(history.EndReason);
         Assert.Equal(profile.CrmShiftStartedAtUtc, history.StartedAtUtc);
+    }
+
+    [Fact]
+    public async Task DailyDistribution_BalancesLeadAndNdzSeparately_AndNormalizesNdz2()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var first = await harness.CreateManagerAsync("pool-1@test.local", capacity: 1, onShift: true);
+        var second = await harness.CreateDeskUserAsync(
+            "pool-2@test.local",
+            capacity: 1,
+            onShift: true,
+            PanelRoles.SeniorManager);
+
+        for (var index = 0; index < 7; index++)
+        {
+            var response = await SeedResponseAsync(harness.Db, $"pool-{index}");
+            var card = NewCard(response.Id);
+            card.Stage = index < 4
+                ? CrmStages.Lead
+                : index % 2 == 0 ? CrmStages.Ndz73 : CrmStages.Ndz26;
+            harness.Db.CrmCandidateCards.Add(card);
+        }
+
+        await harness.Db.SaveChangesAsync();
+        harness.Clock.Advance(TimeSpan.FromMinutes(6));
+        await harness.Sut.ProcessDueDailyDistributionsAsync();
+
+        var recipientIds = new[] { first.Id, second.Id };
+        Assert.All(
+            await harness.Db.CrmCandidateCards.ToListAsync(),
+            card => Assert.Contains(card.ManagerUserId, recipientIds));
+        Assert.DoesNotContain(
+            await harness.Db.CrmCandidateCards.ToListAsync(),
+            card => card.Stage == CrmStages.Ndz26);
+
+        var leadCounters = await harness.Db.CrmDailyDistributionCounters
+            .Where(x => x.Pool == CrmDailyDistribution.LeadPool)
+            .Select(x => x.AssignedCount)
+            .OrderBy(x => x)
+            .ToListAsync();
+        var ndzCounters = await harness.Db.CrmDailyDistributionCounters
+            .Where(x => x.Pool == CrmDailyDistribution.NdzPool)
+            .Select(x => x.AssignedCount)
+            .OrderBy(x => x)
+            .ToListAsync();
+        Assert.Equal([2, 2], leadCounters);
+        Assert.Equal([1, 2], ndzCounters);
+    }
+
+    [Fact]
+    public async Task NewLeadsDuringDay_ContinueByDailyReceivedCount()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var first = await harness.CreateManagerAsync("later-1@test.local", capacity: 1, onShift: true);
+        var second = await harness.CreateManagerAsync("later-2@test.local", capacity: 1, onShift: true);
+
+        for (var index = 0; index < 4; index++)
+        {
+            var response = await SeedResponseAsync(harness.Db, $"morning-{index}");
+            harness.Db.CrmCandidateCards.Add(NewCard(response.Id));
+        }
+
+        await harness.Db.SaveChangesAsync();
+        harness.Clock.Advance(TimeSpan.FromMinutes(6));
+        await harness.Sut.ProcessDueDailyDistributionsAsync();
+
+        for (var index = 0; index < 4; index++)
+        {
+            var response = await SeedResponseAsync(harness.Db, $"later-{index}");
+            var result = await harness.Sut.TryCreateCardForDeliveryAsync(response, OfficeId);
+            Assert.Null(result.Error);
+        }
+
+        var counts = await harness.Db.CrmCandidateCards
+            .Where(x => x.ManagerUserId == first.Id || x.ManagerUserId == second.Id)
+            .GroupBy(x => x.ManagerUserId)
+            .Select(x => x.Count())
+            .OrderBy(x => x)
+            .ToListAsync();
+        Assert.Equal([4, 4], counts);
+        Assert.Equal(
+            [4, 4],
+            await harness.Db.CrmDailyDistributionCounters
+                .Where(x => x.Pool == CrmDailyDistribution.LeadPool)
+                .Select(x => x.AssignedCount)
+                .OrderBy(x => x)
+                .ToListAsync());
     }
 
     [Fact]
@@ -310,7 +420,7 @@ public sealed class CrmWorkspaceServiceTests
 
         var (cardId, error) = await harness.Sut.CreateManualCardAsync(
             OfficeId,
-            new CrmManualCardCreateRequest("Сидоров Сидор", "89001234567", "Уфа", "Водитель", 28, "Битрикс", null, null, AssignToMe: true),
+            new CrmManualCardCreateRequest("Сидоров Сидор", "89001234567", "Уфа", "Водитель", 28, "Битрикс", null, null, AssignToMe: true, Citizenship: "Россия"),
             seniorManager.Id,
             isAdmin: true);
         Assert.True(cardId is not null, error);
@@ -319,6 +429,7 @@ public sealed class CrmWorkspaceServiceTests
         Assert.Equal("Сидоров Сидор", card.Response.FullName);
         Assert.Equal("79001234567", card.Response.PhoneNormalized);
         Assert.Equal("Manual", card.Response.Source);
+        Assert.Equal("Россия", card.Response.Citizenship);
         Assert.Contains(harness.Db.CandidateContactPhones, p => p.PersonId == card.Response.PersonId && p.IsPrimary);
     }
 
@@ -410,7 +521,8 @@ public sealed class CrmWorkspaceServiceTests
                 "Авито HQ",
                 "https://example.com/src",
                 "https://example.com/vac",
-                "https://t.me/test"),
+                "https://t.me/test",
+                "Республика Беларусь"),
             manager.Id,
             isAdmin: false);
         Assert.True(ok, error);
@@ -421,6 +533,7 @@ public sealed class CrmWorkspaceServiceTests
         Assert.Equal("Казань", response.City);
         Assert.Equal("Токарь", response.Vacancy);
         Assert.Equal(30, response.Age);
+        Assert.Equal("Республика Беларусь", response.Citizenship);
         Assert.Equal("manual-42", response.SourceResponseId);
         Assert.Equal("Авито HQ", response.AccountName);
         Assert.Contains(
@@ -1445,14 +1558,22 @@ public sealed class CrmWorkspaceServiceTests
         public OrbitaDbContext Db { get; }
         public UserManager<IdentityUser> Users { get; }
         public CrmWorkspaceService Sut { get; }
+        public ManualTimeProvider Clock { get; }
         private string AttachmentRoot { get; }
 
-        private Harness(ServiceProvider services, OrbitaDbContext db, UserManager<IdentityUser> users, CrmWorkspaceService sut, string attachmentRoot)
+        private Harness(
+            ServiceProvider services,
+            OrbitaDbContext db,
+            UserManager<IdentityUser> users,
+            CrmWorkspaceService sut,
+            ManualTimeProvider clock,
+            string attachmentRoot)
         {
             _services = services;
             Db = db;
             Users = users;
             Sut = sut;
+            Clock = clock;
             AttachmentRoot = attachmentRoot;
         }
 
@@ -1489,7 +1610,8 @@ public sealed class CrmWorkspaceServiceTests
             }
 
             var users = sp.GetRequiredService<UserManager<IdentityUser>>();
-            var distribution = new CrmLeadDistributionService(db, users);
+            var clock = new ManualTimeProvider(DateTimeOffset.UtcNow);
+            var distribution = new CrmLeadDistributionService(db, users, clock);
             var attachmentRoot = Path.Combine(Path.GetTempPath(), "orbita-crm-task-tests", Guid.NewGuid().ToString("N"));
             var attachments = new CrmTaskAttachmentStorageService(Options.Create(new CrmTaskAttachmentOptions
             {
@@ -1507,7 +1629,7 @@ public sealed class CrmWorkspaceServiceTests
                 distribution,
                 taskAttachments: attachments,
                 deadlineNotifications: deadlineNotifications);
-            return new Harness(sp, db, users, sut, attachmentRoot);
+            return new Harness(sp, db, users, sut, clock, attachmentRoot);
         }
 
         public Task<IdentityUser> CreateManagerAsync(string email, int capacity, bool onShift) =>
@@ -1530,7 +1652,7 @@ public sealed class CrmWorkspaceServiceTests
                 OfficeId = officeId ?? OfficeId,
                 CrmCapacity = capacity,
                 CrmShiftActive = onShift,
-                CrmShiftStartedAtUtc = onShift ? DateTime.UtcNow : null
+                CrmShiftStartedAtUtc = onShift ? Clock.GetUtcNow().UtcDateTime : null
             });
             await Db.SaveChangesAsync();
             return user;
@@ -1545,6 +1667,15 @@ public sealed class CrmWorkspaceServiceTests
                 Directory.Delete(AttachmentRoot, recursive: true);
             }
         }
+    }
+
+    public sealed class ManualTimeProvider(DateTimeOffset initialUtc) : TimeProvider
+    {
+        private DateTimeOffset _utcNow = initialUtc;
+
+        public override DateTimeOffset GetUtcNow() => _utcNow;
+
+        public void Advance(TimeSpan amount) => _utcNow = _utcNow.Add(amount);
     }
 
     private sealed class NoOpCrmNotificationRealtimeNotifier : ICrmNotificationRealtimeNotifier

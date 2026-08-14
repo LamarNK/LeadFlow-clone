@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+using System.Text.Json;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Orbita.Api.Data;
@@ -6,28 +8,28 @@ using Orbita.Contracts;
 namespace Orbita.Api.Services;
 
 /// <summary>
-/// Оркестрация распределения CRM-лидов: читает смену/нагрузку, применяет
-/// <see cref="CrmLeadDistribution"/>, пишет ManagerUserId и историю Assigned.
-///
-/// <para>
-/// <b>Владение модулем:</b> вся логика «кому отдать отклик» живёт здесь + в
-/// <see cref="CrmLeadDistribution"/>. CRM workspace только вызывает эти методы.
-/// </para>
-///
-/// Не меняет Bitrix / status отклика.
+/// Daily native-CRM distribution. The first eligible shift opens a persisted
+/// five-minute collection window. Leads and NDZ are then balanced separately;
+/// later leads use a daily counter instead of capacity or current workload.
 /// </summary>
 public sealed class CrmLeadDistributionService(
     OrbitaDbContext db,
-    UserManager<IdentityUser> users)
+    UserManager<IdentityUser> users,
+    TimeProvider? timeProvider = null)
 {
+    private static readonly ConcurrentDictionary<Guid, SemaphoreSlim> OfficeLocks = new();
+    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
+
     public const string ReasonAuto = "Автоматическое распределение";
     public const string ReasonShiftStart = "Выдан при старте смены";
     public const string ReasonManual = "Ручное назначение";
+    public const string ReasonDailyLead = "Ежедневное распределение: Лиды";
+    public const string ReasonDailyNdz = "Ежедневное распределение: НДЗ";
 
     /// <summary>
-    /// Попытаться назначить новую карточку менеджеру на смене.
-    /// Если никого нет — карточка остаётся unassigned.
-    /// Не вызывает SaveChanges (caller решает).
+    /// Assign a lead that arrived after the morning batch. During the five-minute
+    /// collection window it remains unassigned and joins the morning lead pool.
+    /// Caller owns SaveChanges.
     /// </summary>
     public async Task<CrmLeadDistribution.AutoAssignDecision> TryAutoAssignNewCardAsync(
         CrmCandidateCardEntity card,
@@ -35,90 +37,159 @@ public sealed class CrmLeadDistributionService(
         string? actorName = null,
         CancellationToken ct = default)
     {
-        if (card.IsClosed || card.ManagerUserId is not null)
+        if (card.IsClosed
+            || card.ManagerUserId is not null
+            || !string.Equals(card.Stage, CrmStages.Lead, StringComparison.Ordinal))
         {
-            return new CrmLeadDistribution.AutoAssignDecision(card.ManagerUserId, "Уже назначена или закрыта");
+            return new CrmLeadDistribution.AutoAssignDecision(
+                card.ManagerUserId,
+                "Уже назначена, закрыта или находится не в Лидах");
         }
 
-        var managers = await LoadManagerCandidatesAsync(card.OfficeId, ct);
-        var decision = CrmLeadDistribution.SelectManagerForNewLead(managers);
-        if (decision.ManagerUserId is null)
+        var gate = OfficeLocks.GetOrAdd(card.OfficeId, static _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(ct);
+        try
         {
-            return decision;
-        }
+            var now = UtcNow();
+            var managers = await LoadEligibleDistributionManagersAsync(card.OfficeId, now, ct);
+            if (managers.Count == 0)
+            {
+                return new CrmLeadDistribution.AutoAssignDecision(
+                    null,
+                    "Нет менеджеров или старших менеджеров на смене");
+            }
 
-        var now = DateTime.UtcNow;
-        ApplyAssignment(card, decision.ManagerUserId, now);
-        await TouchManagerLastAssignedAsync(card.OfficeId, decision.ManagerUserId, now, ct);
-        AddAssignedHistory(
-            card.Id,
-            ReasonAuto,
-            actorUserId ?? "system",
-            actorName ?? "Система",
-            now);
-        return decision;
+            var firstShiftStartedAtUtc = managers
+                .Select(x => x.CrmShiftStartedAtUtc)
+                .Where(x => x.HasValue)
+                .Min() ?? now;
+            var session = await EnsureSessionNoLockAsync(
+                card.OfficeId,
+                firstShiftStartedAtUtc,
+                now,
+                ct);
+
+            if (session.DistributedAtUtc is null || now < session.DistributeAfterUtc)
+            {
+                return new CrmLeadDistribution.AutoAssignDecision(
+                    null,
+                    "Ожидание завершения пятиминутного сбора смены");
+            }
+
+            var counters = await db.CrmDailyDistributionCounters
+                .Where(x => x.OfficeId == card.OfficeId
+                            && x.LocalDate == session.LocalDate
+                            && x.Pool == CrmDailyDistribution.LeadPool)
+                .ToListAsync(ct);
+            var selected = CrmDailyDistribution.SelectNextForNewLead(
+                managers.Select(x => x.UserId),
+                counters.Select(x => new CrmDailyDistribution.Counter(x.ManagerUserId, x.AssignedCount)),
+                session.LastLeadManagerUserId);
+            if (selected is null)
+            {
+                return new CrmLeadDistribution.AutoAssignDecision(null, "Не удалось выбрать менеджера смены");
+            }
+
+            ApplyAssignment(card, selected, now);
+            IncrementCounter(
+                counters,
+                card.OfficeId,
+                session.LocalDate,
+                CrmDailyDistribution.LeadPool,
+                selected,
+                now);
+            session.LastLeadManagerUserId = selected;
+            session.UpdatedAtUtc = now;
+            await TouchManagerLastAssignedAsync(card.OfficeId, selected, now, ct);
+            AddAssignedHistory(
+                card.Id,
+                ReasonDailyLead,
+                actorUserId ?? "system",
+                actorName ?? "Система",
+                now);
+            return new CrmLeadDistribution.AutoAssignDecision(selected, "Дневная равномерная очередь Лидов");
+        }
+        finally
+        {
+            gate.Release();
+        }
     }
 
     /// <summary>
-    /// При старте смены: выдать менеджеру до freeSlots старейших unassigned.
-    /// Не включает/выключает смену — только раздача из очереди.
-    /// Не вызывает SaveChanges (caller решает).
+    /// The first Manager/SeniorManager shift persists the five-minute window.
+    /// OfficeLead/Admin shifts do not participate in automatic distribution.
     /// </summary>
-    /// <returns>Сколько карточек выдано.</returns>
-    public async Task<int> FillManagerFromQueueOnShiftStartAsync(
+    public async Task ScheduleDailyDistributionAsync(
+        Guid officeId,
+        string managerUserId,
+        DateTime shiftStartedAtUtc,
+        CancellationToken ct = default)
+    {
+        if (!await IsDistributionRecipientAsync(managerUserId))
+        {
+            return;
+        }
+
+        var gate = OfficeLocks.GetOrAdd(officeId, static _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(ct);
+        try
+        {
+            await EnsureSessionNoLockAsync(officeId, shiftStartedAtUtc, UtcNow(), ct);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Recreates missing sessions after an API restart and executes all due
+    /// morning distributions. Returned office ids need a board refresh.
+    /// </summary>
+    public async Task<IReadOnlySet<Guid>> ProcessDueDailyDistributionsAsync(CancellationToken ct = default)
+    {
+        var now = UtcNow();
+        await EnsureSessionsForActiveShiftsAsync(now, ct);
+        var dueOfficeIds = await db.CrmDailyDistributionSessions.AsNoTracking()
+            .Where(x => x.DistributedAtUtc == null && x.DistributeAfterUtc <= now)
+            .Select(x => x.OfficeId)
+            .Distinct()
+            .ToListAsync(ct);
+        var changed = new HashSet<Guid>();
+
+        foreach (var officeId in dueOfficeIds)
+        {
+            var gate = OfficeLocks.GetOrAdd(officeId, static _ => new SemaphoreSlim(1, 1));
+            await gate.WaitAsync(ct);
+            try
+            {
+                if (await DistributeDueSessionNoLockAsync(officeId, now, ct))
+                {
+                    changed.Add(officeId);
+                }
+            }
+            finally
+            {
+                gate.Release();
+            }
+        }
+
+        return changed;
+    }
+
+    /// <summary>
+    /// Legacy compatibility helper. New shift code must schedule the daily
+    /// session instead of filling one manager to capacity.
+    /// </summary>
+    [Obsolete("Use ScheduleDailyDistributionAsync")]
+    public Task<int> FillManagerFromQueueOnShiftStartAsync(
         Guid officeId,
         string managerUserId,
         int capacity,
         string actorUserId,
         string actorName,
-        CancellationToken ct = default)
-    {
-        var load = await GetActiveLoadAsync(officeId, managerUserId, ct);
-        var freeSlots = CrmLeadDistribution.FreeSlots(capacity, load);
-        if (freeSlots <= 0)
-        {
-            return 0;
-        }
+        CancellationToken ct = default) => Task.FromResult(0);
 
-        var queue = await db.CrmCandidateCards
-            .Where(x => x.OfficeId == officeId
-                        && x.ManagerUserId == null
-                        && x.IsInActiveLoad
-                        && !x.IsClosed)
-            .OrderBy(x => x.CreatedAtUtc)
-            .Select(x => new CrmLeadDistribution.QueueCard(x.Id, x.CreatedAtUtc))
-            .Take(freeSlots)
-            .ToListAsync(ct);
-
-        var selectedIds = CrmLeadDistribution.SelectCardsForShiftStart(queue, freeSlots);
-        if (selectedIds.Count == 0)
-        {
-            return 0;
-        }
-
-        var cards = await db.CrmCandidateCards
-            .Where(x => selectedIds.Contains(x.Id))
-            .ToListAsync(ct);
-        var now = DateTime.UtcNow;
-        var byId = cards.ToDictionary(x => x.Id);
-        foreach (var id in selectedIds)
-        {
-            if (!byId.TryGetValue(id, out var card))
-            {
-                continue;
-            }
-
-            ApplyAssignment(card, managerUserId, now);
-            AddAssignedHistory(card.Id, ReasonShiftStart, actorUserId, actorName, now);
-        }
-
-        await TouchManagerLastAssignedAsync(officeId, managerUserId, now, ct);
-        return selectedIds.Count;
-    }
-
-    /// <summary>
-    /// Ручное назначение (admin). Не вызывает SaveChanges.
-    /// </summary>
     public void AssignManually(
         CrmCandidateCardEntity card,
         string managerUserId,
@@ -127,7 +198,7 @@ public sealed class CrmLeadDistributionService(
         string actorName,
         DateTime? atUtc = null)
     {
-        var now = atUtc ?? DateTime.UtcNow;
+        var now = atUtc ?? UtcNow();
         ApplyAssignment(card, managerUserId, now);
         if (card.IsClosed)
         {
@@ -139,8 +210,8 @@ public sealed class CrmLeadDistributionService(
         AddAssignedHistory(card.Id, managerDisplayName, actorUserId, actorName, now);
     }
 
-    public async Task<int> GetActiveLoadAsync(Guid officeId, string managerUserId, CancellationToken ct = default) =>
-        await db.CrmCandidateCards.CountAsync(
+    public Task<int> GetActiveLoadAsync(Guid officeId, string managerUserId, CancellationToken ct = default) =>
+        db.CrmCandidateCards.CountAsync(
             x => x.OfficeId == officeId
                  && x.ManagerUserId == managerUserId
                  && x.IsInActiveLoad
@@ -150,7 +221,10 @@ public sealed class CrmLeadDistributionService(
     public async Task<Dictionary<string, int>> GetActiveLoadsAsync(Guid officeId, CancellationToken ct = default)
     {
         var managerIds = await db.CrmCandidateCards.AsNoTracking()
-            .Where(x => x.OfficeId == officeId && x.ManagerUserId != null && x.IsInActiveLoad && !x.IsClosed)
+            .Where(x => x.OfficeId == officeId
+                        && x.ManagerUserId != null
+                        && x.IsInActiveLoad
+                        && !x.IsClosed)
             .Select(x => x.ManagerUserId!)
             .ToListAsync(ct);
         return managerIds
@@ -158,33 +232,339 @@ public sealed class CrmLeadDistributionService(
             .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
     }
 
-    private async Task<List<CrmLeadDistribution.ManagerCandidate>> LoadManagerCandidatesAsync(
+    private async Task EnsureSessionsForActiveShiftsAsync(DateTime now, CancellationToken ct)
+    {
+        var recipientIds = await LoadDistributionRecipientIdsAsync();
+        if (recipientIds.Count == 0)
+        {
+            return;
+        }
+
+        var active = await db.PanelUserProfiles
+            .Where(x => x.OfficeId != null
+                        && recipientIds.Contains(x.UserId)
+                        && x.CrmShiftActive
+                        && x.CrmShiftStartedAtUtc != null)
+            .ToListAsync(ct);
+        var created = false;
+        foreach (var officeGroup in active
+                     .Where(x => CrmShiftRules.IsEffectivelyOnShift(
+                         x.CrmShiftActive,
+                         x.CrmShiftStartedAtUtc,
+                         now))
+                     .GroupBy(x => x.OfficeId!.Value))
+        {
+            var firstStart = officeGroup.Min(x => x.CrmShiftStartedAtUtc) ?? now;
+            var before = db.ChangeTracker.Entries<CrmDailyDistributionSessionEntity>()
+                .Count(x => x.State == EntityState.Added);
+            await EnsureSessionNoLockAsync(officeGroup.Key, firstStart, now, ct);
+            created |= db.ChangeTracker.Entries<CrmDailyDistributionSessionEntity>()
+                .Count(x => x.State == EntityState.Added) > before;
+        }
+
+        if (created)
+        {
+            await db.SaveChangesAsync(ct);
+        }
+    }
+
+    private async Task<CrmDailyDistributionSessionEntity> EnsureSessionNoLockAsync(
         Guid officeId,
+        DateTime firstShiftStartedAtUtc,
+        DateTime now,
         CancellationToken ct)
     {
-        var deskUserIds = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var role in PanelRoles.CrmDeskRoles)
+        var localDate = CrmDailyDistribution.BusinessDate(now);
+        var tracked = db.CrmDailyDistributionSessions.Local.FirstOrDefault(
+            x => x.OfficeId == officeId && x.LocalDate == localDate);
+        if (tracked is not null)
         {
-            foreach (var user in await users.GetUsersInRoleAsync(role))
+            return tracked;
+        }
+
+        var existing = await db.CrmDailyDistributionSessions.FirstOrDefaultAsync(
+            x => x.OfficeId == officeId && x.LocalDate == localDate,
+            ct);
+        if (existing is not null)
+        {
+            return existing;
+        }
+
+        var normalizedStart = NormalizeUtc(firstShiftStartedAtUtc);
+        var session = new CrmDailyDistributionSessionEntity
+        {
+            Id = Guid.NewGuid(),
+            OfficeId = officeId,
+            LocalDate = localDate,
+            FirstShiftStartedAtUtc = normalizedStart,
+            DistributeAfterUtc = normalizedStart.Add(CrmDailyDistribution.ShiftCollectionDelay),
+            CreatedAtUtc = now,
+            UpdatedAtUtc = now
+        };
+        db.CrmDailyDistributionSessions.Add(session);
+        return session;
+    }
+
+    private async Task<bool> DistributeDueSessionNoLockAsync(
+        Guid officeId,
+        DateTime now,
+        CancellationToken ct)
+    {
+        await using var transaction = db.Database.IsRelational()
+            ? await db.Database.BeginTransactionAsync(ct)
+            : null;
+        var session = await db.CrmDailyDistributionSessions
+            .Where(x => x.OfficeId == officeId
+                        && x.DistributedAtUtc == null
+                        && x.DistributeAfterUtc <= now)
+            .OrderBy(x => x.LocalDate)
+            .FirstOrDefaultAsync(ct);
+        if (session is null)
+        {
+            return false;
+        }
+
+        var managers = await LoadEligibleDistributionManagersAsync(officeId, now, ct);
+        if (managers.Count == 0)
+        {
+            session.DistributeAfterUtc = now.AddMinutes(1);
+            session.UpdatedAtUtc = now;
+            await db.SaveChangesAsync(ct);
+            if (transaction is not null)
             {
-                deskUserIds.Add(user.Id);
+                await transaction.CommitAsync(ct);
             }
+
+            return false;
+        }
+
+        var cards = await db.CrmCandidateCards
+            .Where(x => x.OfficeId == officeId
+                        && !x.IsClosed
+                        && x.IsInActiveLoad
+                        && (x.Stage == CrmStages.Lead
+                            || x.Stage == CrmStages.Ndz73
+                            || x.Stage == CrmStages.Ndz26))
+            .ToListAsync(ct);
+        var managerIds = managers.Select(x => x.UserId).ToList();
+        var leadPlan = CrmDailyDistribution.BuildBalancedPlan(
+            cards.Where(x => x.Stage == CrmStages.Lead).Select(x => x.Id),
+            managerIds,
+            officeId,
+            session.LocalDate,
+            CrmDailyDistribution.LeadPool);
+        var ndzPlan = CrmDailyDistribution.BuildBalancedPlan(
+            cards.Where(x => CrmDailyDistribution.IsNdz(x.Stage)).Select(x => x.Id),
+            managerIds,
+            officeId,
+            session.LocalDate,
+            CrmDailyDistribution.NdzPool);
+
+        var counters = await db.CrmDailyDistributionCounters
+            .Where(x => x.OfficeId == officeId && x.LocalDate == session.LocalDate)
+            .ToListAsync(ct);
+        foreach (var counter in counters)
+        {
+            counter.AssignedCount = 0;
+            counter.UpdatedAtUtc = now;
+        }
+
+        var cardsById = cards.ToDictionary(x => x.Id);
+        ApplyMorningPlan(
+            leadPlan,
+            cardsById,
+            counters,
+            officeId,
+            session.LocalDate,
+            CrmDailyDistribution.LeadPool,
+            ReasonDailyLead,
+            normalizeNdz: false,
+            now);
+        ApplyMorningPlan(
+            ndzPlan,
+            cardsById,
+            counters,
+            officeId,
+            session.LocalDate,
+            CrmDailyDistribution.NdzPool,
+            ReasonDailyNdz,
+            normalizeNdz: true,
+            now);
+
+        session.ManagerRosterJson = JsonSerializer.Serialize(managerIds.OrderBy(x => x, StringComparer.Ordinal));
+        session.LastLeadManagerUserId = leadPlan.LastOrDefault()?.ManagerUserId;
+        session.DistributedAtUtc = now;
+        session.UpdatedAtUtc = now;
+        foreach (var manager in managers)
+        {
+            manager.CrmLastAutoAssignmentAtUtc = now;
+        }
+
+        await db.SaveChangesAsync(ct);
+        if (transaction is not null)
+        {
+            await transaction.CommitAsync(ct);
+        }
+
+        return cards.Count > 0;
+    }
+
+    private void ApplyMorningPlan(
+        IReadOnlyList<CrmDailyDistribution.Assignment> plan,
+        IReadOnlyDictionary<Guid, CrmCandidateCardEntity> cardsById,
+        List<CrmDailyDistributionCounterEntity> counters,
+        Guid officeId,
+        DateOnly localDate,
+        string pool,
+        string reason,
+        bool normalizeNdz,
+        DateTime now)
+    {
+        foreach (var assignment in plan)
+        {
+            if (!cardsById.TryGetValue(assignment.CardId, out var card))
+            {
+                continue;
+            }
+
+            var ownerChanged = !string.Equals(
+                card.ManagerUserId,
+                assignment.ManagerUserId,
+                StringComparison.Ordinal);
+            if (normalizeNdz && !string.Equals(card.Stage, CrmStages.Ndz73, StringComparison.Ordinal))
+            {
+                var previous = card.Stage;
+                card.Stage = CrmStages.Ndz73;
+                card.StageChangedAtUtc = now;
+                db.CrmCandidateHistory.Add(new CrmCandidateHistoryEntity
+                {
+                    Id = Guid.NewGuid(),
+                    CardId = card.Id,
+                    Action = "StageChanged",
+                    Details = $"{previous} → {CrmStages.Ndz73} · {reason}",
+                    ActorUserId = "system",
+                    ActorName = "Система",
+                    CreatedAtUtc = now
+                });
+            }
+
+            ApplyAssignment(card, assignment.ManagerUserId, now);
+            IncrementCounter(counters, officeId, localDate, pool, assignment.ManagerUserId, now);
+            if (ownerChanged)
+            {
+                AddAssignedHistory(card.Id, reason, "system", "Система", now);
+            }
+        }
+    }
+
+    private void IncrementCounter(
+        List<CrmDailyDistributionCounterEntity> counters,
+        Guid officeId,
+        DateOnly localDate,
+        string pool,
+        string managerUserId,
+        DateTime now)
+    {
+        var counter = counters.FirstOrDefault(
+            x => x.Pool == pool
+                 && string.Equals(x.ManagerUserId, managerUserId, StringComparison.Ordinal));
+        if (counter is null)
+        {
+            counter = new CrmDailyDistributionCounterEntity
+            {
+                OfficeId = officeId,
+                LocalDate = localDate,
+                Pool = pool,
+                ManagerUserId = managerUserId
+            };
+            counters.Add(counter);
+            db.CrmDailyDistributionCounters.Add(counter);
+        }
+
+        counter.AssignedCount++;
+        counter.UpdatedAtUtc = now;
+    }
+
+    private async Task<List<PanelUserProfileEntity>> LoadEligibleDistributionManagersAsync(
+        Guid officeId,
+        DateTime now,
+        CancellationToken ct)
+    {
+        var recipientIds = await LoadDistributionRecipientIdsAsync();
+        if (recipientIds.Count == 0)
+        {
+            return [];
         }
 
         var profiles = await db.PanelUserProfiles
-            .Where(x => x.OfficeId == officeId && deskUserIds.Contains(x.UserId))
+            .Where(x => x.OfficeId == officeId && recipientIds.Contains(x.UserId))
             .ToListAsync(ct);
-        var loads = await GetActiveLoadsAsync(officeId, ct);
-
-        var now = DateTime.UtcNow;
         return profiles
-            .Select(p => new CrmLeadDistribution.ManagerCandidate(
-                p.UserId,
-                p.CrmCapacity,
-                loads.GetValueOrDefault(p.UserId),
-                p.CrmLastAutoAssignmentAtUtc,
-                CrmShiftRules.IsEffectivelyOnShift(p.CrmShiftActive, p.CrmShiftStartedAtUtc, now)))
+            .Where(x => CrmShiftRules.IsEffectivelyOnShift(
+                x.CrmShiftActive,
+                x.CrmShiftStartedAtUtc,
+                now))
+            .OrderBy(x => x.UserId, StringComparer.Ordinal)
             .ToList();
+    }
+
+    private async Task<HashSet<string>> LoadDistributionRecipientIdsAsync()
+    {
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        if (users is null)
+        {
+            return ids;
+        }
+
+        foreach (var role in PanelRoles.CrmDistributionRoles)
+        {
+            foreach (var user in await users.GetUsersInRoleAsync(role))
+            {
+                ids.Add(user.Id);
+            }
+        }
+
+        // Identity supports multiple roles. An elevated account must not start
+        // receiving cards merely because an old Manager role was left on it.
+        foreach (var excludedRole in new[] { PanelRoles.Admin, PanelRoles.OfficeLead })
+        {
+            foreach (var user in await users.GetUsersInRoleAsync(excludedRole))
+            {
+                ids.Remove(user.Id);
+            }
+        }
+
+        return ids;
+    }
+
+    private async Task<bool> IsDistributionRecipientAsync(string userId)
+    {
+        if (users is null)
+        {
+            return false;
+        }
+
+        var user = await users.FindByIdAsync(userId);
+        if (user is null)
+        {
+            return false;
+        }
+
+        if (await users.IsInRoleAsync(user, PanelRoles.Admin)
+            || await users.IsInRoleAsync(user, PanelRoles.OfficeLead))
+        {
+            return false;
+        }
+
+        foreach (var role in PanelRoles.CrmDistributionRoles)
+        {
+            if (await users.IsInRoleAsync(user, role))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private async Task TouchManagerLastAssignedAsync(
@@ -224,4 +604,13 @@ public sealed class CrmLeadDistributionService(
             ActorName = actorName,
             CreatedAtUtc = at
         });
+
+    private DateTime UtcNow() => _timeProvider.GetUtcNow().UtcDateTime;
+
+    private static DateTime NormalizeUtc(DateTime value) => value.Kind switch
+    {
+        DateTimeKind.Utc => value,
+        DateTimeKind.Local => value.ToUniversalTime(),
+        _ => DateTime.SpecifyKind(value, DateTimeKind.Utc)
+    };
 }

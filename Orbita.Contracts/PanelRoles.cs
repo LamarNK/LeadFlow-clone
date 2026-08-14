@@ -27,6 +27,14 @@ public static class PanelRoles
     public static readonly IReadOnlyList<string> CrmDeskRoles =
         [Manager, SeniorManager, OfficeLead];
 
+    /// <summary>
+    /// Roles that receive cards from automatic CRM distribution.
+    /// Office leads keep elevated CRM access and may run a shift, but never
+    /// participate in the automatic lead/NDZ allocation.
+    /// </summary>
+    public static readonly IReadOnlyList<string> CrmDistributionRoles =
+        [Manager, SeniorManager];
+
     public static string Normalize(string? role) =>
         string.Equals(role, Admin, StringComparison.OrdinalIgnoreCase) ? Admin :
         string.Equals(role, OfficeLead, StringComparison.OrdinalIgnoreCase) ? OfficeLead :
@@ -76,7 +84,7 @@ public static class PanelRoles
         || principal.IsInRole(OfficeLead)
         || principal.IsInRole(SeniorManager);
 
-    /// <summary>CRM desk role that can run a shift and receive cards.</summary>
+    /// <summary>CRM desk role that can run a shift and work with cards.</summary>
     public static bool IsCrmDeskRole(string? role)
     {
         var normalized = Normalize(role);

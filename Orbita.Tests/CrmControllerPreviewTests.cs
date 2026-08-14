@@ -248,6 +248,7 @@ public sealed class CrmControllerPreviewTests
             city: "Пермь",
             vacancy: "Сварщик",
             age: 35,
+            citizenship: "Россия",
             source: "Ручной ввод",
             sourceResponseId: null,
             stage: CrmStages.Lead,

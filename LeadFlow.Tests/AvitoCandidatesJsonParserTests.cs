@@ -57,7 +57,7 @@ public sealed class AvitoCandidatesJsonParserTests
                   "vacancyUrl": "/item/1",
                   "messengerUrl": "https://www.avito.ru/messenger",
                   "avatarUrl": "https://80.img.avito.st/image/1/1.avatar",
-                  "rawText": "line",
+                  "rawText": "Мужчина · 25 лет · Гражданство: Россия · Опыт: Нет",
                   "age": "25 лет"
                 }
               ]
@@ -74,6 +74,7 @@ public sealed class AvitoCandidatesJsonParserTests
         Assert.Equal("Москва", c.City);
         Assert.Equal("https://80.img.avito.st/image/1/1.avatar", c.AvatarUrl);
         Assert.Equal(25, c.Age);
+        Assert.Equal("Россия", c.Citizenship);
         Assert.Equal(account.Id, c.AccountId);
         Assert.Equal("TestAcc", c.AccountName);
     }
@@ -170,6 +171,7 @@ public sealed class AvitoCandidatesJsonParserTests
 
         Assert.Single(list);
         Assert.Equal(53, list[0].Age);
+        Assert.Equal("Россия", list[0].Citizenship);
     }
 
     [Theory]

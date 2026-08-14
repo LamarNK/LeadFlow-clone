@@ -1421,6 +1421,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         LastName = model.LastName,
         MiddleName = model.MiddleName,
         Age = model.Age,
+        Citizenship = model.Citizenship,
         PhoneRaw = model.PhoneRaw,
         PhoneNormalized = model.PhoneNormalized,
         City = model.City,
@@ -1455,6 +1456,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         LastName = entity.LastName,
         MiddleName = entity.MiddleName,
         Age = entity.Age,
+        Citizenship = entity.Citizenship,
         PhoneRaw = entity.PhoneRaw,
         PhoneNormalized = entity.PhoneNormalized,
         City = entity.City,
@@ -1487,6 +1489,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         target.LastName = source.LastName;
         target.MiddleName = source.MiddleName;
         target.Age = source.Age;
+        target.Citizenship = source.Citizenship;
         target.PhoneRaw = source.PhoneRaw;
         target.PhoneNormalized = source.PhoneNormalized;
         target.City = source.City;
@@ -1657,6 +1660,14 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         {
             await db.Database.ExecuteSqlRawAsync(
                 "ALTER TABLE CandidateResponses ADD COLUMN CardFingerprint TEXT NOT NULL DEFAULT '';",
+                cancellationToken);
+        }
+
+        existingColumns = await GetTableColumnsAsync(db, "CandidateResponses", cancellationToken);
+        if (!existingColumns.Contains("Citizenship"))
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                "ALTER TABLE CandidateResponses ADD COLUMN Citizenship TEXT NOT NULL DEFAULT '';",
                 cancellationToken);
         }
 

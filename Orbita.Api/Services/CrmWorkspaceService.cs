@@ -365,18 +365,26 @@ public sealed class CrmWorkspaceService(
         OpenShiftRecord(officeId, userId, now);
         profile.CrmShiftActive = true;
         profile.CrmShiftStartedAtUtc = now;
-        var actorName = await ResolveDisplayNameAsync(userId, ct);
-        await leadDistribution.FillManagerFromQueueOnShiftStartAsync(
+        await leadDistribution.ScheduleDailyDistributionAsync(
             officeId,
             userId,
-            profile.CrmCapacity,
-            userId,
-            actorName,
+            now,
             ct);
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
         NotifyBoardChanged(officeId);
         return true;
+    }
+
+    public async Task<int> ProcessDueDailyDistributionsAsync(CancellationToken ct = default)
+    {
+        var changedOffices = await leadDistribution.ProcessDueDailyDistributionsAsync(ct);
+        foreach (var officeId in changedOffices)
+        {
+            NotifyBoardChanged(officeId);
+        }
+
+        return changedOffices.Count;
     }
 
     public async Task<bool> StopShiftAsync(Guid officeId, string userId, CancellationToken ct = default)
@@ -1104,6 +1112,9 @@ public sealed class CrmWorkspaceService(
         var sourceUrl = Clamp(request.SourceUrl, 1024);
         var vacancyUrl = Clamp(request.VacancyUrl, 1024);
         var messengerUrl = Clamp(request.MessengerUrl, 1024);
+        var citizenship = request.Citizenship is null
+            ? card.Response.Citizenship
+            : CandidateCitizenshipResolver.Normalize(request.Citizenship);
 
         var response = card.Response;
         var (firstName, lastName, middleName) = _candidateParser.ParseName(fullName);
@@ -1128,6 +1139,7 @@ public sealed class CrmWorkspaceService(
         Track("ссылка", response.SourceUrl, sourceUrl);
         Track("объявление", response.VacancyUrl, vacancyUrl);
         Track("мессенджер", response.MessengerUrl, messengerUrl);
+        Track("гражданство", response.Citizenship, citizenship);
 
         var phoneChanged = !string.Equals(response.PhoneNormalized, phoneNormalized, StringComparison.Ordinal);
 
@@ -1143,6 +1155,7 @@ public sealed class CrmWorkspaceService(
         response.SourceUrl = sourceUrl;
         response.VacancyUrl = vacancyUrl;
         response.MessengerUrl = messengerUrl;
+        response.Citizenship = citizenship;
 
         if (phoneChanged)
         {
@@ -1622,6 +1635,7 @@ public sealed class CrmWorkspaceService(
         var sourceResponseId = string.IsNullOrWhiteSpace(request.SourceResponseId)
             ? $"manual-{Guid.NewGuid():N}"
             : request.SourceResponseId.Trim();
+        var citizenship = CandidateCitizenshipResolver.Normalize(request.Citizenship);
 
         // Same AccountId (Empty) + SourceResponseId is unique in DB — fail early with a clear message.
         var sourceTaken = await db.CandidateResponses.AsNoTracking()
@@ -1677,6 +1691,7 @@ public sealed class CrmWorkspaceService(
             LastName = lastName,
             MiddleName = middleName,
             Age = person.Age,
+            Citizenship = citizenship,
             PhoneRaw = phoneRaw,
             PhoneNormalized = phoneNormalized,
             City = person.City,
@@ -2908,7 +2923,11 @@ public sealed class CrmWorkspaceService(
             string.IsNullOrWhiteSpace(card.Response.VacancyUrl) ? null : card.Response.VacancyUrl,
             string.IsNullOrWhiteSpace(card.Response.AccountName) ? null : card.Response.AccountName,
             string.IsNullOrWhiteSpace(card.Response.SourceResponseId) ? null : card.Response.SourceResponseId,
-            chatUnreadCount);
+            chatUnreadCount,
+            CandidateCitizenshipResolver.Resolve(
+                card.Response.Citizenship,
+                card.Response.RawText,
+                card.Response.ChatMessagesJson));
     }
 
     private static CrmTaskDto ToTaskDto(
@@ -2991,7 +3010,9 @@ public sealed class CrmWorkspaceService(
                 and not "NoteUnpinned"
                 and not "TaskCreated"
                 and not "TaskUpdated"
-                and not "TaskCompleted")
+                and not "TaskCompleted"
+                and not "BitrixCommentImported"
+                and not "BitrixActivityImported")
             .Select(h =>
             {
                 var activityDetails = CrmActivityDetails.Split(h.Details);
@@ -3047,6 +3068,7 @@ public sealed class CrmWorkspaceService(
         "NoteUnpinned" => "Комментарий откреплён",
         "ChatQueued" => "Сообщение поставлено в очередь",
         "ChatSent" => "Сообщение отправлено в Avito",
+        "BitrixDealImported" => "Карточка импортирована из Bitrix24",
         "ChatCancelled" => "Сообщение в чат отменено",
         _ => action
     };

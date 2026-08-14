@@ -907,6 +907,11 @@ namespace Orbita.Api.Data.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("Citizenship")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
                     b.Property<DateTime>("CollectedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -1353,6 +1358,80 @@ namespace Orbita.Api.Data.Migrations
                     b.HasIndex("OfficeId", "RecipientUserId", "ReadAtUtc", "CreatedAtUtc");
 
                     b.ToTable("CrmDeskAlerts");
+                });
+
+            modelBuilder.Entity("Orbita.Api.Data.CrmDailyDistributionCounterEntity", b =>
+                {
+                    b.Property<Guid>("OfficeId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateOnly>("LocalDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Pool")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<string>("ManagerUserId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<int>("AssignedCount")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("OfficeId", "LocalDate", "Pool", "ManagerUserId");
+
+                    b.ToTable("CrmDailyDistributionCounters");
+                });
+
+            modelBuilder.Entity("Orbita.Api.Data.CrmDailyDistributionSessionEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("DistributeAfterUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("DistributedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("FirstShiftStartedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("LastLeadManagerUserId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<DateOnly>("LocalDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("ManagerRosterJson")
+                        .HasMaxLength(8000)
+                        .HasColumnType("character varying(8000)");
+
+                    b.Property<Guid>("OfficeId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DistributedAtUtc", "DistributeAfterUtc");
+
+                    b.HasIndex("OfficeId", "LocalDate")
+                        .IsUnique();
+
+                    b.ToTable("CrmDailyDistributionSessions");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.CrmManagerShiftEntity", b =>
@@ -2911,6 +2990,24 @@ namespace Orbita.Api.Data.Migrations
                         .HasForeignKey("CardId")
                         .OnDelete(DeleteBehavior.SetNull);
 
+                    b.HasOne("Orbita.Api.Data.OfficeEntity", null)
+                        .WithMany()
+                        .HasForeignKey("OfficeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Orbita.Api.Data.CrmDailyDistributionCounterEntity", b =>
+                {
+                    b.HasOne("Orbita.Api.Data.OfficeEntity", null)
+                        .WithMany()
+                        .HasForeignKey("OfficeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Orbita.Api.Data.CrmDailyDistributionSessionEntity", b =>
+                {
                     b.HasOne("Orbita.Api.Data.OfficeEntity", null)
                         .WithMany()
                         .HasForeignKey("OfficeId")

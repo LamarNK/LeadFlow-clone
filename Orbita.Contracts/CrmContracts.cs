@@ -389,7 +389,8 @@ public sealed record CrmCandidateCardDto(
     string? AccountName,
     string? SourceResponseId,
     /// <summary>Unread chat messages for the current viewer (0 if none / no chat).</summary>
-    int ChatUnreadCount = 0);
+    int ChatUnreadCount = 0,
+    string Citizenship = "");
 
 public sealed record CrmCandidateDetailDto(
     CrmCandidateCardDto Card,
@@ -464,7 +465,8 @@ public sealed record CrmManualCardCreateRequest(
     string? Source = null,
     string? SourceResponseId = null,
     string? Stage = null,
-    bool AssignToMe = true);
+    bool AssignToMe = true,
+    string? Citizenship = null);
 
 public sealed record CrmManualCardCreateResult(Guid Id);
 
@@ -611,7 +613,8 @@ public sealed record CrmCardUpdateRequest(
     string? AccountName = null,
     string? SourceUrl = null,
     string? VacancyUrl = null,
-    string? MessengerUrl = null);
+    string? MessengerUrl = null,
+    string? Citizenship = null);
 public sealed record CrmTaskCreateRequest(
     Guid? CardId,
     string Title,

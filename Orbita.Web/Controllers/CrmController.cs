@@ -590,6 +590,7 @@ public sealed class CrmController(
         string phoneRaw,
         int? age,
         string city,
+        string? citizenship,
         string? tab,
         string? stage,
         CancellationToken ct = default)
@@ -615,7 +616,8 @@ public sealed class CrmController(
                     current.Card.AccountName,
                     current.Card.SourceUrl,
                     current.Card.VacancyUrl,
-                    current.Card.MessengerUrl),
+                    current.Card.MessengerUrl,
+                    citizenship),
                 ct);
         }
         if (error is not null) TempData["CrmError"] = error;
@@ -701,6 +703,7 @@ public sealed class CrmController(
         string? city,
         string? vacancy,
         int? age,
+        string? citizenship,
         string? source,
         string? sourceResponseId,
         string? stage,
@@ -713,7 +716,17 @@ public sealed class CrmController(
         }
 
         var (cardId, error) = await api.CreateManualCrmCardAsync(
-            new CrmManualCardCreateRequest(fullName, phoneRaw, city, vacancy, age, source, sourceResponseId, stage, assignToMe),
+            new CrmManualCardCreateRequest(
+                fullName,
+                phoneRaw,
+                city,
+                vacancy,
+                age,
+                source,
+                sourceResponseId,
+                stage,
+                assignToMe,
+                citizenship),
             ct);
         if (error is not null || cardId is null)
         {

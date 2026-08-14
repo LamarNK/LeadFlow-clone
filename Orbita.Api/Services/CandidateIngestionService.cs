@@ -206,6 +206,10 @@ public sealed class CandidateIngestionService(
             MiddleName = middleName,
             Age = candidate.Age,
             Gender = storedGender,
+            Citizenship = CandidateCitizenshipResolver.Resolve(
+                candidate.Citizenship,
+                candidate.RawText,
+                candidate.ChatMessagesJson),
             PhoneRaw = candidate.PhoneRaw,
             PhoneNormalized = phoneNormalized,
             City = candidate.City,
@@ -297,6 +301,21 @@ public sealed class CandidateIngestionService(
         {
             tracked.ChatMessagesJson = candidate.ChatMessagesJson;
             changed = true;
+        }
+
+        if (string.IsNullOrWhiteSpace(tracked.Citizenship))
+        {
+            var citizenship = CandidateCitizenshipResolver.Resolve(
+                candidate.Citizenship,
+                candidate.RawText,
+                candidate.ChatMessagesJson,
+                tracked.RawText,
+                tracked.ChatMessagesJson);
+            if (!string.IsNullOrWhiteSpace(citizenship))
+            {
+                tracked.Citizenship = citizenship;
+                changed = true;
+            }
         }
 
         if (string.IsNullOrWhiteSpace(tracked.MessengerUrl)

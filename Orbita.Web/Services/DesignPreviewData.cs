@@ -1327,7 +1327,8 @@ internal static class DesignPreviewData
             $"https://www.avito.ru/item/{candidate.Id:N}",
             $"https://www.avito.ru/item/{candidate.Id:N}",
             "Avito · Северный парк",
-            candidate.Id.ToString("N")[..8]);
+            candidate.Id.ToString("N")[..8],
+            Citizenship: candidate.Citizenship);
     }
 
     private static void AddPreviewCrmHistory(string action, string details) =>
@@ -1341,6 +1342,7 @@ internal static class DesignPreviewData
         public string PhoneRaw { get; } = phoneRaw;
         public string City { get; } = city;
         public string Vacancy { get; } = vacancy;
+        public string Citizenship { get; } = "Россия";
         public string Stage { get; set; } = stage;
         public string? ManagerUserId { get; set; } = managerUserId;
         public bool IsInActiveLoad { get; set; } = isInActiveLoad;

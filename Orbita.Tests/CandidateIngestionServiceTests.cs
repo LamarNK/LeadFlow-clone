@@ -54,7 +54,8 @@ public sealed class CandidateIngestionServiceTests
                 "",
                 "",
                 "",
-                DateTime.UtcNow)
+                DateTime.UtcNow,
+                Citizenship: "Россия")
         ]);
 
         await sut.IngestBatchAsync(WorkerId, request);
@@ -62,6 +63,7 @@ public sealed class CandidateIngestionServiceTests
         var stored = await db.CandidateResponses.SingleAsync(x => x.Id == response.Id);
         Assert.Equal("https://www.avito.ru/example/vacancy", stored.VacancyUrl);
         Assert.Equal("https://www.avito.ru/example/vacancy", stored.SourceUrl);
+        Assert.Equal("Россия", stored.Citizenship);
     }
 
     [Fact]

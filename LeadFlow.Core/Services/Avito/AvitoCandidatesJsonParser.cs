@@ -52,6 +52,13 @@ public static class AvitoCandidatesJsonParser
             var chatMessages = AvitoChatMessagesJson.ParseFromCandidateJson(item);
             var chatMessagesJson = AvitoChatMessagesJson.Serialize(chatMessages);
             var age = ResolveAge(ageText, rawText, chatMessages);
+            var explicitCitizenship = item.TryGetProperty("citizenship", out var citizenshipProp)
+                ? citizenshipProp.GetString()
+                : null;
+            var citizenship = CandidateCitizenshipResolver.Resolve(
+                explicitCitizenship,
+                rawText,
+                string.Join('\n', chatMessages.Select(message => message.Text)));
             var cardFingerprint = AvitoResponseCardFingerprint.Build(
                 fullName,
                 vacancy,
@@ -77,6 +84,7 @@ public static class AvitoCandidatesJsonParser
                 Vacancy = vacancy,
                 Age = age,
                 Gender = gender,
+                Citizenship = citizenship,
                 VacancyUrl = vacancyUrl,
                 MessengerUrl = messengerUrl,
                 AvatarUrl = avatarUrl,
