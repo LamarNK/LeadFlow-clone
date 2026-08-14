@@ -1763,6 +1763,16 @@ public sealed partial class AdsPowerAvitoAutomationService(
             }
         }
 
+        // AdsPower может открыть Avito не на целевом маршруте (например, на последней странице сессии).
+        // Такая вкладка безопаснее новой about:blank: WarmUpSessionPageAsync переведёт её на нужный URL.
+        for (var index = 0; index < pageUrls.Count; index++)
+        {
+            if (IsUsableAvitoPageUrl(pageUrls[index]))
+            {
+                return index;
+            }
+        }
+
         return -1;
     }
 
@@ -1843,6 +1853,18 @@ public sealed partial class AdsPowerAvitoAutomationService(
 
         return url.Contains("/profile/", StringComparison.OrdinalIgnoreCase)
             || url.Contains("dashboard#profile", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsUsableAvitoPageUrl(string? url)
+    {
+        if (!IsUsableWorkerPageUrl(url)
+            || !Uri.TryCreate(url, UriKind.Absolute, out var uri))
+        {
+            return false;
+        }
+
+        return uri.Host.Equals("avito.ru", StringComparison.OrdinalIgnoreCase)
+               || uri.Host.EndsWith(".avito.ru", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
