@@ -864,6 +864,18 @@ public static class AvitoCandidatesPageScripts
                     return directHref;
                 }
 
+                for (const paragraph of root.querySelectorAll("p")) {
+                    const text = normalizeCardText(paragraph.textContent);
+                    if (!/на\s+вакансию/i.test(text)) {
+                        continue;
+                    }
+
+                    const href = normalizeUrl(paragraph.querySelector("a[href]")?.getAttribute("href") ?? "");
+                    if (href && /\/\d{5,}/.test(href)) {
+                        return href;
+                    }
+                }
+
                 return directHref;
             };
 
@@ -874,6 +886,27 @@ public static class AvitoCandidatesPageScripts
                     return {
                         vacancy: vacancyParts[0] ?? "",
                         city: vacancyParts.length > 1 ? vacancyParts[1] : ""
+                    };
+                }
+
+                for (const paragraph of root.querySelectorAll("p")) {
+                    const text = normalizeCardText(paragraph.textContent);
+                    if (!/на\s+вакансию/i.test(text)) {
+                        continue;
+                    }
+
+                    const anchor = paragraph.querySelector("a[href]");
+                    const vacancy = normalizeCardText(anchor?.textContent ?? "");
+                    if (!vacancy) {
+                        continue;
+                    }
+
+                    const anchorIndex = text.toLowerCase().indexOf(vacancy.toLowerCase());
+                    const tail = anchorIndex >= 0 ? text.slice(anchorIndex + vacancy.length) : "";
+                    const cityParts = tail.split("·").map((x) => x.trim()).filter(Boolean);
+                    return {
+                        vacancy,
+                        city: cityParts.at(-1) ?? ""
                     };
                 }
 
@@ -1030,6 +1063,27 @@ public static class AvitoCandidatesPageScripts
                     return {
                         vacancy: vacancyParts[0] ?? "",
                         city: vacancyParts.length > 1 ? vacancyParts[1] : ""
+                    };
+                }
+
+                for (const paragraph of root.querySelectorAll("p")) {
+                    const text = normalizeCardText(paragraph.textContent);
+                    if (!/на\s+вакансию/i.test(text)) {
+                        continue;
+                    }
+
+                    const anchor = paragraph.querySelector("a[href]");
+                    const vacancy = normalizeCardText(anchor?.textContent ?? "");
+                    if (!vacancy) {
+                        continue;
+                    }
+
+                    const anchorIndex = text.toLowerCase().indexOf(vacancy.toLowerCase());
+                    const tail = anchorIndex >= 0 ? text.slice(anchorIndex + vacancy.length) : "";
+                    const cityParts = tail.split("·").map((x) => x.trim()).filter(Boolean);
+                    return {
+                        vacancy,
+                        city: cityParts.at(-1) ?? ""
                     };
                 }
 
@@ -1866,6 +1920,27 @@ public static class AvitoCandidatesPageScripts
                             city: (match[2] ?? "").trim()
                         };
                     }
+                }
+
+                for (const paragraph of root.querySelectorAll("p")) {
+                    const text = (paragraph.textContent ?? "").replace(/\s+/g, " ").trim();
+                    if (!/на\s+вакансию/i.test(text)) {
+                        continue;
+                    }
+
+                    const anchor = paragraph.querySelector("a[href]");
+                    const vacancy = (anchor?.textContent ?? "").replace(/\s+/g, " ").trim();
+                    if (!vacancy) {
+                        continue;
+                    }
+
+                    const anchorIndex = text.toLowerCase().indexOf(vacancy.toLowerCase());
+                    const tail = anchorIndex >= 0 ? text.slice(anchorIndex + vacancy.length) : "";
+                    const cityParts = tail.split("·").map((x) => x.trim()).filter(Boolean);
+                    return {
+                        vacancy,
+                        city: cityParts.at(-1) ?? ""
+                    };
                 }
 
                 return { vacancy: "", city: "" };

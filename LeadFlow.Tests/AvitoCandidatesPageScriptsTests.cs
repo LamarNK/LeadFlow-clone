@@ -111,4 +111,21 @@ public sealed class AvitoCandidatesPageScriptsTests
         Assert.Contains("readItemPhone(root, rootIndex)", script, StringComparison.Ordinal);
         Assert.Contains("__leadflowRevealedPhones", script, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void VacancyAndCityScripts_SupportCurrentLinkedVacancyLine()
+    {
+        var scripts = new[]
+        {
+            AvitoCandidatesPageScripts.BuildCollectListItemSkipKeysScript(),
+            AvitoCandidatesPageScripts.BuildCollectListItemCardFingerprintsScript(),
+            AvitoCandidatesPageScripts.BuildExtractionScript()
+        };
+
+        Assert.All(scripts, script =>
+        {
+            Assert.Contains("на\\s+вакансию", script, StringComparison.Ordinal);
+            Assert.Contains("const cityParts = tail.split(\"·\")", script, StringComparison.Ordinal);
+        });
+    }
 }
