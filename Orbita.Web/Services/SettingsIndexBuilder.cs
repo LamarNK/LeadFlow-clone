@@ -137,7 +137,9 @@ internal static class SettingsIndexBuilder
         string? level,
         string? service,
         DateTime? date,
-        ServiceLogsPageDto page) =>
+        ServiceLogsPageDto page,
+        Guid? workerId = null,
+        IReadOnlyList<EventFilterOptionViewModel>? workerOptions = null) =>
         new()
         {
             ActiveTab = "logs",
@@ -149,8 +151,11 @@ internal static class SettingsIndexBuilder
                 Level = level,
                 Service = service,
                 Date = date ?? DateTime.UtcNow.Date,
+                WorkerId = workerId,
+                IsWorkerLogs = workerId.HasValue,
                 LevelOptions = BuildLevelOptions(),
                 ServiceOptions = BuildServiceOptions(),
+                WorkerOptions = workerOptions ?? [],
                 Rows = page.Items.Select(MapLogRow).ToList(),
                 Pagination = new PaginationViewModel
                 {
@@ -500,6 +505,26 @@ internal static class SettingsIndexBuilder
         new() { Value = "Orbita.Api", Label = "Orbita.Api" },
         new() { Value = "Orbita.Worker", Label = "Orbita.Worker" }
     ];
+
+    public static IReadOnlyList<EventFilterOptionViewModel> BuildWorkerOptions(
+        IReadOnlyList<AdminWorkerListItemDto> workers,
+        Guid? selectedWorkerId = null)
+    {
+        var options = new List<EventFilterOptionViewModel>
+        {
+            new() { Value = string.Empty, Label = "Сервисные логи" }
+        };
+
+        options.AddRange(workers
+            .OrderBy(x => x.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .Select(worker => new EventFilterOptionViewModel
+            {
+                Value = worker.Id.ToString("D"),
+                Label = worker.DisplayName
+            }));
+
+        return options;
+    }
 
     private static ServiceLogRowViewModel MapLogRow(ServiceLogEntryDto entry)
     {

@@ -20,6 +20,7 @@ public sealed class SettingsService(
         string? userId = null,
         Guid? officeId = null,
         Guid? instanceId = null,
+        Guid? workerId = null,
         int page = 1,
         CancellationToken ct = default)
     {
@@ -36,9 +37,16 @@ public sealed class SettingsService(
                 "logs" => SettingsIndexBuilder.BuildLogsTab(
                     q,
                     level,
-                    service,
+                    workerId is null ? service : "Orbita.Worker",
                     date,
-                    DesignPreviewData.BuildServiceLogsPage(q, level, service, date, page)),
+                    DesignPreviewData.BuildServiceLogsPage(
+                        workerId is null ? q : $"worker:{workerId:D}",
+                        level,
+                        workerId is null ? service : "Orbita.Worker",
+                        date,
+                        page),
+                    workerId,
+                    SettingsIndexBuilder.BuildWorkerOptions(DesignPreviewData.AdminWorkers, workerId)),
                 "offices" => SettingsIndexBuilder.BuildOfficesTab(
                     previewOffices,
                     DesignPreviewData.GetOfficeDetail(officeId)),
@@ -63,7 +71,7 @@ public sealed class SettingsService(
         var offices = await api.GetOfficesAsync(ct) ?? [];
         var model = activeTab switch
         {
-            "logs" => await BuildLogsTabAsync(q, level, service, date, page, ct),
+            "logs" => await BuildLogsTabAsync(q, level, service, date, workerId, page, ct),
             "offices" => await BuildOfficesTabAsync(officeId, ct),
             "profiles" => SettingsIndexBuilder.BuildProfilesTab(
                 await api.GetPanelUsersAsync(ct) ?? [],
@@ -521,19 +529,24 @@ public sealed class SettingsService(
         string? level,
         string? service,
         DateTime? date,
+        Guid? workerId,
         int page,
         CancellationToken ct)
     {
+        var workers = await api.GetAdminWorkersAsync(ct) ?? [];
+        var workerOptions = SettingsIndexBuilder.BuildWorkerOptions(workers, workerId);
+        var effectiveQuery = workerId is null ? q : $"worker:{workerId:D}";
+        var effectiveService = workerId is null ? service : "Orbita.Worker";
         var pageDto = await api.GetServiceLogsAsync(
-            q,
+            effectiveQuery,
             level,
-            service,
+            effectiveService,
             date ?? DateTime.UtcNow.Date,
             page,
             SettingsIndexBuilder.LogsPageSize,
             ct) ?? new ServiceLogsPageDto([], 0, page, SettingsIndexBuilder.LogsPageSize);
 
-        return SettingsIndexBuilder.BuildLogsTab(q, level, service, date, pageDto);
+        return SettingsIndexBuilder.BuildLogsTab(q, level, effectiveService, date, pageDto, workerId, workerOptions);
     }
 
     private async Task<SettingsIndexViewModel> BuildWorkerReleasesTabAsync(CancellationToken ct)

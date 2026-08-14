@@ -23,11 +23,12 @@ public sealed class SettingsController(
         string? userId,
         Guid? officeId,
         Guid? instanceId,
+        Guid? workerId,
         DateTime? date,
         int page = 1,
         CancellationToken ct = default)
     {
-        var model = await settings.GetIndexAsync(tab, q, level, service, date, userId, officeId, instanceId, page, ct);
+        var model = await settings.GetIndexAsync(tab, q, level, service, date, userId, officeId, instanceId, workerId, page, ct);
         model = model with
         {
             StatusMessage = TempData["SettingsStatus"] as string ?? model.StatusMessage,

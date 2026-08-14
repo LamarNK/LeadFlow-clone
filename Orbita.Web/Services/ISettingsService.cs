@@ -14,6 +14,7 @@ public interface ISettingsService
         string? userId = null,
         Guid? officeId = null,
         Guid? instanceId = null,
+        Guid? workerId = null,
         int page = 1,
         CancellationToken ct = default);
 
