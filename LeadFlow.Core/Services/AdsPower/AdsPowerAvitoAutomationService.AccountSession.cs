@@ -17,7 +17,7 @@ public sealed partial class AdsPowerAvitoAutomationService
         ArgumentException.ThrowIfNullOrWhiteSpace(adsPowerUserId);
 
         var start = await adsPowerApiClient
-            .StartBrowserAsync(options, adsPowerUserId, openUrl: null, cancellationToken)
+            .StartBrowserAsync(options, adsPowerUserId, ProfileItemsPageUrl, cancellationToken)
             .ConfigureAwait(false);
 
         if (string.IsNullOrWhiteSpace(start.WebSocketDebuggerUrl))
@@ -42,7 +42,8 @@ public sealed partial class AdsPowerAvitoAutomationService
                     browser,
                     ProfileItemsPageUrl,
                     nameof(OpenAccountSessionAsync),
-                    cancellationToken)
+                    cancellationToken,
+                    preferExistingMatchingPage: true)
                 .ConfigureAwait(false);
 
             page = await WarmUpSessionPageAsync(page, adsPowerUserId, cancellationToken).ConfigureAwait(false);

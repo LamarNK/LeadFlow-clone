@@ -8,6 +8,21 @@ namespace LeadFlow.Tests;
 public sealed class AdsPowerApiClientTests
 {
     [Fact]
+    public async Task OpenAccountSessionAsync_StartsAdsPowerOnProfileItemsPage()
+    {
+        var apiClient = new RecordingAdsPowerApiClient();
+        var service = new AdsPowerAvitoAutomationService(apiClient, null!, null!);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.OpenAccountSessionAsync(
+                new AdsPowerConnectionOptions("http://127.0.0.1:57610", null),
+                "user-1",
+                CancellationToken.None));
+
+        Assert.Equal("https://www.avito.ru/profile/pro/items", apiClient.OpenUrl);
+    }
+
+    [Fact]
     public async Task ListProfilesAsync_UsesBearerAuthorizationHeader_WhenApiKeyProvided()
     {
         HttpRequestMessage? capturedRequest = null;
@@ -157,5 +172,31 @@ public sealed class AdsPowerApiClientTests
         var stub = new StubHttpMessageHandler(handler);
         var factory = new StubHttpClientFactory(stub);
         return new AdsPowerApiClient(factory);
+    }
+
+    private sealed class RecordingAdsPowerApiClient : IAdsPowerApiClient
+    {
+        public string? OpenUrl { get; private set; }
+
+        public Task<IReadOnlyList<AdsPowerProfileSummary>> ListProfilesAsync(
+            AdsPowerConnectionOptions options,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<AdsPowerProfileSummary>>([]);
+
+        public Task<AdsPowerBrowserStartResult> StartBrowserAsync(
+            AdsPowerConnectionOptions options,
+            string adsPowerUserId,
+            string? openUrl,
+            CancellationToken cancellationToken = default)
+        {
+            OpenUrl = openUrl;
+            return Task.FromResult(new AdsPowerBrowserStartResult(null, null));
+        }
+
+        public Task StopBrowserAsync(
+            AdsPowerConnectionOptions options,
+            string adsPowerUserId,
+            CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
     }
 }

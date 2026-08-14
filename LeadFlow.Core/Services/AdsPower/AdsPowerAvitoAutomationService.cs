@@ -1698,21 +1698,28 @@ public sealed partial class AdsPowerAvitoAutomationService(
     }
 
     /// <summary>
-    /// Одна свежая рабочая вкладка на сессию CDP: открываем новую, остальные закрываем (экономия ОЗУ,
-    /// автоматизация не уходит в фоновую вкладку AdsPower).
+    /// Одна рабочая вкладка на сессию CDP: по запросу используем уже открытую AdsPower вкладку с целевой
+    /// страницей, иначе открываем новую. Остальные вкладки закрываем, чтобы автоматизация не ушла в фоновую вкладку.
     /// </summary>
     private static async Task<IPage> AcquireAutomationPageAsync(
         IBrowser browser,
         string preferredUrl,
         string callerMemberName,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool preferExistingMatchingPage = false)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
         var targetKind = ClassifyAutomationPageKind(preferredUrl);
         var existingPages = (await browser.PagesAsync().ConfigureAwait(false)).ToList();
-        var worker = await browser.NewPageAsync().ConfigureAwait(false);
-        var closed = await CloseBrowserPagesAsync(existingPages, callerMemberName).ConfigureAwait(false);
+        var worker = preferExistingMatchingPage
+            ? existingPages.FirstOrDefault(page => PageMatchesAutomationKind(page.Url, targetKind))
+            : null;
+        worker ??= await browser.NewPageAsync().ConfigureAwait(false);
+        var pagesToClose = existingPages
+            .Where(page => !ReferenceEquals(page, worker))
+            .ToArray();
+        var closed = await CloseBrowserPagesAsync(pagesToClose, callerMemberName).ConfigureAwait(false);
 
         try
         {
@@ -1724,7 +1731,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
         }
 
         _ = GlobalLogger.Instance.LogAsync(
-            $"AdsPower CDP: новая рабочая вкладка (закрыто лишних: {closed}, было: {existingPages.Count}).",
+            $"AdsPower CDP: рабочая вкладка выбрана (закрыто лишних: {closed}, было: {existingPages.Count}).",
             DeskLinkAuditLogLevel.Info,
             memberName: callerMemberName,
             properties: new Dictionary<string, object?>
