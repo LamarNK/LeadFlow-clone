@@ -214,6 +214,8 @@ public sealed class CandidateIngestionServiceTests
         response.AccountId = accountId;
         response.Status = ResponseStatuses.Sent;
         response.PhoneRaw = "+79930099416";
+        response.City = string.Empty;
+        response.Vacancy = string.Empty;
         db.CandidatePersons.Add(person);
         db.CandidateResponses.Add(response);
         db.CandidatePhoneHistory.Add(new CandidatePhoneHistoryEntity
@@ -260,6 +262,8 @@ public sealed class CandidateIngestionServiceTests
         Assert.Equal(1, await db.CandidateResponses.CountAsync());
         var stored = await db.CandidateResponses.SingleAsync(x => x.Id == response.Id);
         Assert.Equal("79910001122", stored.PhoneNormalized);
+        Assert.Equal("рабочий поселок Чик", stored.City);
+        Assert.Equal("Курьер", stored.Vacancy);
         Assert.Equal(ResponsePhoneMetricKinds.PhoneChanged, stored.PhoneMetricKind);
         Assert.Equal("79930099416", stored.PreviousPhoneNormalized);
         Assert.Equal(ResponseStatuses.Sent, stored.Status);

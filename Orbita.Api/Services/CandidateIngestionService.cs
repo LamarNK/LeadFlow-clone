@@ -325,6 +325,23 @@ public sealed class CandidateIngestionService(
             changed = true;
         }
 
+        // phone-watch сохраняет один и тот же SourceResponseId для повторных наблюдений.
+        // Заполняем поля, которые отсутствовали при первой публикации, не затирая уже
+        // отредактированные оператором значения пустым/другим значением из Avito.
+        var city = candidate.City?.Trim();
+        if (string.IsNullOrWhiteSpace(tracked.City) && !string.IsNullOrWhiteSpace(city))
+        {
+            tracked.City = city;
+            changed = true;
+        }
+
+        var vacancy = candidate.Vacancy?.Trim();
+        if (string.IsNullOrWhiteSpace(tracked.Vacancy) && !string.IsNullOrWhiteSpace(vacancy))
+        {
+            tracked.Vacancy = vacancy;
+            changed = true;
+        }
+
         if (tracked.AvatarImage is null
             && CandidateResponseAvatar.TryDecode(
                 candidate.AvatarContentType,
