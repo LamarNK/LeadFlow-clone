@@ -113,19 +113,22 @@ public sealed class AvitoCandidatesPageScriptsTests
     }
 
     [Fact]
-    public void VacancyAndCityScripts_SupportCurrentLinkedVacancyLine()
+    public void VacancyAndCityScripts_SupportQuotedAndLinkedVacancyLines()
     {
         var scripts = new[]
         {
             AvitoCandidatesPageScripts.BuildCollectListItemSkipKeysScript(),
             AvitoCandidatesPageScripts.BuildCollectListItemCardFingerprintsScript(),
-            AvitoCandidatesPageScripts.BuildExtractionScript()
+            AvitoCandidatesPageScripts.BuildExtractionScript(),
+            AvitoCandidatesPageScripts.BuildReadDetailPanelScript()
         };
 
         Assert.All(scripts, script =>
         {
+            Assert.Contains("parseVacancyLineFromText", script, StringComparison.Ordinal);
+            Assert.Contains("parseVacancyAndCityFromRoot", script, StringComparison.Ordinal);
             Assert.Contains("на\\s+вакансию", script, StringComparison.Ordinal);
-            Assert.Contains("const cityParts = tail.split(\"·\")", script, StringComparison.Ordinal);
+            Assert.Contains("stripVacancyQuotes", script, StringComparison.Ordinal);
         });
     }
 }

@@ -186,15 +186,17 @@ public sealed class AvitoCandidatesJsonParserTests
     public void ParseGender_NormalizesValues(string? input, string expected) =>
         Assert.Equal(expected, AvitoCandidatesJsonParser.ParseGender(input));
 
-    [Fact]
-    public void ParseVacancyLineFromDetailText_ExtractsVacancyAndCity()
+    [Theory]
+    [InlineData("Отклик: 29 июня в 18:38 на вакансию Разнорабочий вахта · Фрязино", "Разнорабочий вахта", "Фрязино")]
+    [InlineData("Откликнулся 12 августа в 19:53 на вакансию «Разнорабочий вахта» · Батайск", "Разнорабочий вахта", "Батайск")]
+    [InlineData("Отклик: 12 августа в 19:53 на вакансию Разнорабочий вахта · Батайск", "Разнорабочий вахта", "Батайск")]
+    [InlineData("3 июня в 14:25 · «Разнорабочий вахта» · Фрязино", "Разнорабочий вахта", "Фрязино")]
+    public void ParseVacancyLineFromDetailText_ExtractsVacancyAndCity(string line, string expectedVacancy, string expectedCity)
     {
-        const string line = "Отклик: 29 июня в 18:38 на вакансию Разнорабочий вахта · Фрязино";
-
         var (vacancy, city) = AvitoCandidatesJsonParser.ParseVacancyLineFromDetailText(line);
 
-        Assert.Equal("Разнорабочий вахта", vacancy);
-        Assert.Equal("Фрязино", city);
+        Assert.Equal(expectedVacancy, vacancy);
+        Assert.Equal(expectedCity, city);
     }
 
     [Fact]

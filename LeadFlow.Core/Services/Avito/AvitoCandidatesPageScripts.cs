@@ -287,6 +287,76 @@ public static class AvitoCandidatesPageScripts
         };
         """;
 
+    /// <summary>
+    /// Название и город вакансии: ссылка «на вакансию», текст «на вакансию «…» · город» и старый «· «…» · город».
+    /// </summary>
+    private const string VacancyParseHelpersJs =
+        """
+        const stripVacancyQuotes = (value) => (value ?? "").trim().replace(/^[«"„“]+|[»"”]+$/g, "").trim();
+
+        const parseVacancyLineFromText = (value) => {
+            const normalized = (value ?? "").replace(/\s+/g, " ").trim();
+            if (!normalized) {
+                return { vacancy: "", city: "" };
+            }
+
+            const quotedParts = normalized.match(/·\s*«([^»]+)»\s*·\s*([^·]+)/);
+            if (quotedParts) {
+                return {
+                    vacancy: (quotedParts[1] ?? "").trim(),
+                    city: (quotedParts[2] ?? "").trim()
+                };
+            }
+
+            const vacancyLine = normalized.match(/на\s+вакансию\s+([^·]+?)(?:\s*[·]\s*([^·]+))?\s*$/i);
+            if (!vacancyLine) {
+                return { vacancy: "", city: "" };
+            }
+
+            return {
+                vacancy: stripVacancyQuotes(vacancyLine[1] ?? ""),
+                city: (vacancyLine[2] ?? "").trim()
+            };
+        };
+
+        const parseVacancyAndCityFromRoot = (root, vacancyListingAnchor) => {
+            const fromAnchor = (vacancyListingAnchor?.textContent ?? "").replace(/\s+/g, " ").trim();
+            if (fromAnchor) {
+                const vacancyParts = fromAnchor.split("·").map((x) => x.trim()).filter(Boolean);
+                return {
+                    vacancy: stripVacancyQuotes(vacancyParts[0] ?? ""),
+                    city: vacancyParts.length > 1 ? vacancyParts[1] : ""
+                };
+            }
+
+            for (const paragraph of root.querySelectorAll("p")) {
+                const text = (paragraph.textContent ?? "").replace(/\s+/g, " ").trim();
+                if (!/на\s+вакансию/i.test(text)) {
+                    continue;
+                }
+
+                const anchor = paragraph.querySelector("a[href]");
+                const fromLink = stripVacancyQuotes((anchor?.textContent ?? "").replace(/\s+/g, " ").trim());
+                if (fromLink) {
+                    const anchorIndex = text.toLowerCase().indexOf(fromLink.toLowerCase());
+                    const tail = anchorIndex >= 0 ? text.slice(anchorIndex + fromLink.length) : "";
+                    const cityParts = tail.split("·").map((x) => x.trim()).filter(Boolean);
+                    return {
+                        vacancy: fromLink,
+                        city: cityParts.at(-1) ?? ""
+                    };
+                }
+
+                const fromText = parseVacancyLineFromText(text);
+                if (fromText.vacancy || fromText.city) {
+                    return fromText;
+                }
+            }
+
+            return { vacancy: "", city: "" };
+        };
+        """;
+
     private const string CardFingerprintJs =
         """
         const normalizeCardText = (text) => (text ?? "").replace(/\s+/g, " ").trim();
@@ -731,6 +801,7 @@ public static class AvitoCandidatesPageScripts
         (() => {
         {{ContactsPhoneHelpersJs}}
         {{AgeParseHelpersJs}}
+        {{VacancyParseHelpersJs}}
             initRevealedPhonesStore();
 
             const normalize = (text) => (text ?? "").replace(/\s+/g, " ").trim();
@@ -771,34 +842,22 @@ public static class AvitoCandidatesPageScripts
             const searchRoot = responseRoot ?? document;
 
             let vacancyUrl = "";
-            let vacancy = "";
-            let city = "";
             for (const paragraph of searchRoot.querySelectorAll("p")) {
                 const text = normalize(paragraph.textContent);
-                if (!/на вакансию/i.test(text)) {
+                if (!/на\s+вакансию/i.test(text)) {
                     continue;
                 }
 
-                const anchor = paragraph.querySelector("a[href]");
-                if (!anchor) {
-                    continue;
+                const href = normalizeUrl(paragraph.querySelector("a[href]")?.getAttribute("href") ?? "");
+                if (href && /\/\d{5,}/.test(href)) {
+                    vacancyUrl = href;
+                    break;
                 }
-
-                const href = normalizeUrl(anchor.getAttribute("href") ?? "");
-                if (!href || !/\/\d{5,}/.test(href)) {
-                    continue;
-                }
-
-                vacancyUrl = href;
-                vacancy = normalize(anchor.textContent);
-                const tail = text.slice(text.toLowerCase().indexOf(anchor.textContent.toLowerCase()) + anchor.textContent.length);
-                const cityParts = tail.split(/[·]/).map((x) => x.trim()).filter(Boolean);
-                if (cityParts.length > 0) {
-                    city = cityParts[cityParts.length - 1];
-                }
-
-                break;
             }
+
+            const parsedVacancy = parseVacancyAndCityFromRoot(searchRoot, null);
+            const vacancy = parsedVacancy.vacancy;
+            const city = parsedVacancy.city;
 
             let age = "";
             for (const paragraph of searchRoot.querySelectorAll("p")) {
@@ -830,6 +889,7 @@ public static class AvitoCandidatesPageScripts
         (() => {
         {{ContactsPhoneHelpersJs}}
         {{CardFingerprintJs}}
+        {{VacancyParseHelpersJs}}
         {{SourceResponseIdJs}}
             initRevealedPhonesStore();
 
@@ -879,39 +939,7 @@ public static class AvitoCandidatesPageScripts
                 return directHref;
             };
 
-            const parseVacancyAndCity = (root, vacancyListingAnchor) => {
-                const fromAnchor = normalizeCardText(vacancyListingAnchor?.textContent ?? "");
-                if (fromAnchor) {
-                    const vacancyParts = fromAnchor.split("·").map((x) => x.trim()).filter(Boolean);
-                    return {
-                        vacancy: vacancyParts[0] ?? "",
-                        city: vacancyParts.length > 1 ? vacancyParts[1] : ""
-                    };
-                }
-
-                for (const paragraph of root.querySelectorAll("p")) {
-                    const text = normalizeCardText(paragraph.textContent);
-                    if (!/на\s+вакансию/i.test(text)) {
-                        continue;
-                    }
-
-                    const anchor = paragraph.querySelector("a[href]");
-                    const vacancy = normalizeCardText(anchor?.textContent ?? "");
-                    if (!vacancy) {
-                        continue;
-                    }
-
-                    const anchorIndex = text.toLowerCase().indexOf(vacancy.toLowerCase());
-                    const tail = anchorIndex >= 0 ? text.slice(anchorIndex + vacancy.length) : "";
-                    const cityParts = tail.split("·").map((x) => x.trim()).filter(Boolean);
-                    return {
-                        vacancy,
-                        city: cityParts.at(-1) ?? ""
-                    };
-                }
-
-                return { vacancy: "", city: "" };
-            };
+            const parseVacancyAndCity = parseVacancyAndCityFromRoot;
 
             const readPhone = (item, index) => readItemPhone(item, index);
 
@@ -948,6 +976,7 @@ public static class AvitoCandidatesPageScripts
         {{ContactsPhoneHelpersJs}}
         {{AgeParseHelpersJs}}
         {{CardFingerprintJs}}
+        {{VacancyParseHelpersJs}}
         {{SourceResponseIdJs}}
             initRevealedPhonesStore();
 
@@ -1056,39 +1085,7 @@ public static class AvitoCandidatesPageScripts
                 return directHref;
             };
 
-            const parseVacancyAndCity = (root, vacancyListingAnchor) => {
-                const fromAnchor = normalizeCardText(vacancyListingAnchor?.textContent ?? "");
-                if (fromAnchor) {
-                    const vacancyParts = fromAnchor.split("·").map((x) => x.trim()).filter(Boolean);
-                    return {
-                        vacancy: vacancyParts[0] ?? "",
-                        city: vacancyParts.length > 1 ? vacancyParts[1] : ""
-                    };
-                }
-
-                for (const paragraph of root.querySelectorAll("p")) {
-                    const text = normalizeCardText(paragraph.textContent);
-                    if (!/на\s+вакансию/i.test(text)) {
-                        continue;
-                    }
-
-                    const anchor = paragraph.querySelector("a[href]");
-                    const vacancy = normalizeCardText(anchor?.textContent ?? "");
-                    if (!vacancy) {
-                        continue;
-                    }
-
-                    const anchorIndex = text.toLowerCase().indexOf(vacancy.toLowerCase());
-                    const tail = anchorIndex >= 0 ? text.slice(anchorIndex + vacancy.length) : "";
-                    const cityParts = tail.split("·").map((x) => x.trim()).filter(Boolean);
-                    return {
-                        vacancy,
-                        city: cityParts.at(-1) ?? ""
-                    };
-                }
-
-                return { vacancy: "", city: "" };
-            };
+            const parseVacancyAndCity = parseVacancyAndCityFromRoot;
 
             const parseAgeText = (root) => {
                 for (const line of Array.from(root.querySelectorAll("p"))) {
@@ -1629,6 +1626,7 @@ public static class AvitoCandidatesPageScripts
         (() => {
         {{ContactsPhoneHelpersJs}}
         {{AgeParseHelpersJs}}
+        {{VacancyParseHelpersJs}}
             initRevealedPhonesStore();
 
             const itemCount = document.querySelectorAll("[data-marker='job-application/item']").length;
@@ -1899,52 +1897,7 @@ public static class AvitoCandidatesPageScripts
                 return "";
             };
 
-            const parseVacancyAndCity = (root, vacancyListingAnchor) => {
-                const fromAnchor = (vacancyListingAnchor?.textContent ?? "").replace(/\s+/g, " ").trim();
-                if (fromAnchor) {
-                    const vacancyParts = fromAnchor.split("·").map((x) => x.trim()).filter(Boolean);
-                    return {
-                        vacancy: vacancyParts[0] ?? "",
-                        city: vacancyParts.length > 1 ? vacancyParts[1] : ""
-                    };
-                }
-
-                const lines = Array.from(root.querySelectorAll("p"))
-                    .map((x) => (x.textContent ?? "").replace(/\s+/g, " ").trim())
-                    .filter(Boolean);
-                for (const line of lines) {
-                    const match = line.match(/·\s*«([^»]+)»\s*·\s*([^·]+)/);
-                    if (match) {
-                        return {
-                            vacancy: (match[1] ?? "").trim(),
-                            city: (match[2] ?? "").trim()
-                        };
-                    }
-                }
-
-                for (const paragraph of root.querySelectorAll("p")) {
-                    const text = (paragraph.textContent ?? "").replace(/\s+/g, " ").trim();
-                    if (!/на\s+вакансию/i.test(text)) {
-                        continue;
-                    }
-
-                    const anchor = paragraph.querySelector("a[href]");
-                    const vacancy = (anchor?.textContent ?? "").replace(/\s+/g, " ").trim();
-                    if (!vacancy) {
-                        continue;
-                    }
-
-                    const anchorIndex = text.toLowerCase().indexOf(vacancy.toLowerCase());
-                    const tail = anchorIndex >= 0 ? text.slice(anchorIndex + vacancy.length) : "";
-                    const cityParts = tail.split("·").map((x) => x.trim()).filter(Boolean);
-                    return {
-                        vacancy,
-                        city: cityParts.at(-1) ?? ""
-                    };
-                }
-
-                return { vacancy: "", city: "" };
-            };
+            const parseVacancyAndCity = parseVacancyAndCityFromRoot;
 
             const parseGender = (root, rawText) => {
                 const normalize = (text) => (text ?? "").replace(/\s+/g, " ").trim();

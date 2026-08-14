@@ -256,18 +256,36 @@ public static class AvitoCandidatesJsonParser
         }
 
         var normalized = Regex.Replace(value.Trim(), @"\s+", " ");
+
+        // Старый список: «3 июня в 14:25 · «Разнорабочий вахта» · Фрязино»
+        var quotedParts = Regex.Match(
+            normalized,
+            @"·\s*«([^»]+)»\s*·\s*([^·]+)",
+            RegexOptions.CultureInvariant);
+        if (quotedParts.Success)
+        {
+            return (quotedParts.Groups[1].Value.Trim(), quotedParts.Groups[2].Value.Trim());
+        }
+
+        // Текущая карточка/панель: «… на вакансию «Разнорабочий вахта» · Батайск»
         var match = Regex.Match(
             normalized,
-            @"на вакансию\s+(?<title>[^·]+?)(?:\s*[·]\s*(?<city>[^·]+))?\s*$",
+            @"на\s+вакансию\s+(?<title>[^·]+?)(?:\s*[·]\s*(?<city>[^·]+))?\s*$",
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         if (!match.Success)
         {
             return (string.Empty, string.Empty);
         }
 
-        var vacancy = match.Groups["title"].Value.Trim();
+        var vacancy = StripVacancyQuotes(match.Groups["title"].Value);
         var city = match.Groups["city"].Success ? match.Groups["city"].Value.Trim() : string.Empty;
         return (vacancy, city);
+    }
+
+    private static string StripVacancyQuotes(string value)
+    {
+        var trimmed = (value ?? string.Empty).Trim();
+        return Regex.Replace(trimmed, @"^[«""„“]+|[»""”]+$", string.Empty).Trim();
     }
 
     /// <summary>Стабильный ID отклика: при наличии ссылки на объявление — <c>avito:itemId:phone</c>, иначе хэш ФИО+телефон+вакансия+город.</summary>
