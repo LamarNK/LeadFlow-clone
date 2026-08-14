@@ -21,6 +21,75 @@ public sealed class AdsPowerApiClientTests
     }
 
     [Fact]
+    public void SelectExistingAutomationPageIndex_WhenOnlyAboutBlankIsOpen_ReusesItInsteadOfOpeningNewTab()
+    {
+        var pageIndex = AdsPowerAvitoAutomationService.SelectExistingAutomationPageIndex(
+            ["about:blank"],
+            "https://www.avito.ru/profile/pro/items");
+
+        Assert.Equal(0, pageIndex);
+    }
+
+    [Fact]
+    public void SelectExistingAutomationPageIndex_WhenAdsPowerColonPlaceholderIsOpen_ReusesIt()
+    {
+        var pageIndex = AdsPowerAvitoAutomationService.SelectExistingAutomationPageIndex(
+            [":"],
+            "https://www.avito.ru/profile/pro/items");
+
+        Assert.Equal(0, pageIndex);
+    }
+
+    [Fact]
+    public void SelectExistingAutomationPageIndex_WhenBlankAndChromePages_PrefersBlankOverChrome()
+    {
+        var pageIndex = AdsPowerAvitoAutomationService.SelectExistingAutomationPageIndex(
+            ["chrome://new-tab-page", "about:blank"],
+            "https://www.avito.ru/profile/pro/items");
+
+        Assert.Equal(1, pageIndex);
+    }
+
+    [Fact]
+    public void SelectExistingAutomationPageIndex_WhenNoPages_ReturnsMinusOne()
+    {
+        var pageIndex = AdsPowerAvitoAutomationService.SelectExistingAutomationPageIndex(
+            [],
+            "https://www.avito.ru/profile/pro/items");
+
+        Assert.Equal(-1, pageIndex);
+    }
+
+    [Fact]
+    public void SelectExistingAutomationPageIndex_WhenOnlyChromeInternalPage_DoesNotReuseIt()
+    {
+        var pageIndex = AdsPowerAvitoAutomationService.SelectExistingAutomationPageIndex(
+            ["chrome://new-tab-page"],
+            "https://www.avito.ru/profile/pro/items");
+
+        Assert.Equal(-1, pageIndex);
+    }
+
+    [Fact]
+    public void ShouldKeepWaitingForStartupNavigation_WhileOnlyBlank_UntilTimeout()
+    {
+        Assert.True(AdsPowerAvitoAutomationService.ShouldKeepWaitingForStartupNavigation(
+            ["about:blank"],
+            elapsed: TimeSpan.FromSeconds(1),
+            timeout: TimeSpan.FromSeconds(8)));
+
+        Assert.False(AdsPowerAvitoAutomationService.ShouldKeepWaitingForStartupNavigation(
+            ["https://www.avito.ru/profile/pro/items"],
+            elapsed: TimeSpan.FromSeconds(1),
+            timeout: TimeSpan.FromSeconds(8)));
+
+        Assert.False(AdsPowerAvitoAutomationService.ShouldKeepWaitingForStartupNavigation(
+            ["about:blank"],
+            elapsed: TimeSpan.FromSeconds(8),
+            timeout: TimeSpan.FromSeconds(8)));
+    }
+
+    [Fact]
     public async Task OpenAccountSessionAsync_StartsAdsPowerOnProfileItemsPage()
     {
         var apiClient = new RecordingAdsPowerApiClient();

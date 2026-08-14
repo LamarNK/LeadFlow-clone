@@ -32,9 +32,6 @@ public sealed partial class AdsPowerAvitoAutomationService
             DefaultViewport = null
         }).ConfigureAwait(false);
 
-        // AdsPower при старте поднимает несколько вкладок — даём браузеру подключиться, затем одна свежая вкладка.
-        await Task.Delay(2000, cancellationToken).ConfigureAwait(false);
-
         IPage page;
         try
         {
@@ -43,7 +40,7 @@ public sealed partial class AdsPowerAvitoAutomationService
                     ProfileItemsPageUrl,
                     nameof(OpenAccountSessionAsync),
                     cancellationToken,
-                    preferExistingMatchingPage: true)
+                    waitForStartupNavigation: true)
                 .ConfigureAwait(false);
 
             page = await WarmUpSessionPageAsync(page, adsPowerUserId, cancellationToken).ConfigureAwait(false);

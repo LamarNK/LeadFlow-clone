@@ -139,7 +139,7 @@ public sealed class AdsPowerAvitoAuthService(
                     ["adsPower.userId"] = adsPowerUserId
                 });
 
-            var page = await GetOrCreateAvitoPageAsync(browser).ConfigureAwait(false);
+            var page = await GetOrCreateAvitoPageAsync(browser, cancellationToken).ConfigureAwait(false);
             Log(
                 DeskLinkAuditLogLevel.Info,
                 $"Working with page {page.Url}.",
@@ -305,13 +305,27 @@ public sealed class AdsPowerAvitoAuthService(
         || parsed.HasCaptcha
         || (!parsed.IsAuthorized && string.IsNullOrWhiteSpace(parsed.ErrorMessage));
 
-    private static async Task<IPage> GetOrCreateAvitoPageAsync(IBrowser browser)
+    private static async Task<IPage> GetOrCreateAvitoPageAsync(IBrowser browser, CancellationToken cancellationToken)
     {
+        await AdsPowerAvitoAutomationService
+            .WaitForAdsPowerStartupNavigationAsync(browser, nameof(GetOrCreateAvitoPageAsync), cancellationToken)
+            .ConfigureAwait(false);
+
         var existingPages = (await browser.PagesAsync().ConfigureAwait(false)).ToList();
-        var worker = await browser.NewPageAsync().ConfigureAwait(false);
+        var selectedIndex = AdsPowerAvitoAutomationService.SelectExistingAutomationPageIndex(
+            existingPages.Select(static page => page.Url).ToArray(),
+            AvitoProfileUrl);
+        var worker = selectedIndex >= 0
+            ? existingPages[selectedIndex]
+            : existingPages.FirstOrDefault() ?? await browser.NewPageAsync().ConfigureAwait(false);
 
         foreach (var page in existingPages)
         {
+            if (ReferenceEquals(page, worker))
+            {
+                continue;
+            }
+
             try
             {
                 await page.CloseAsync().ConfigureAwait(false);

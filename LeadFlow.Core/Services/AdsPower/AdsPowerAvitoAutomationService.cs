@@ -65,7 +65,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
                     browser,
                     CandidatesPageUrl,
                     nameof(ExtractCandidatesJsonAsync),
-                    cancellationToken)
+                    cancellationToken,
+                    waitForStartupNavigation: true)
                 .ConfigureAwait(false);
 
             var executeScript = (string script, CancellationToken ct) =>
@@ -179,7 +180,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
                     browser,
                     ProfileItemsPageUrl,
                     nameof(LoadProfileItemsHtmlAsync),
-                    cancellationToken)
+                    cancellationToken,
+                    waitForStartupNavigation: true)
                 .ConfigureAwait(false);
 
             if (!IsOnActiveProfileItemsPage(page.Url))
@@ -374,7 +376,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
                     browser,
                     ProfileBlockedItemsPageUrl,
                     nameof(LoadBlockedItemsHtmlAsync),
-                    cancellationToken)
+                    cancellationToken,
+                    waitForStartupNavigation: true)
                 .ConfigureAwait(false);
 
             // Гарантируем, что мы на rejected-вкладке: даже если хеш/фильтр сбросились — переходим явно.
@@ -565,7 +568,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
                     browser,
                     ProfileSwitchPageUrl,
                     nameof(LoadProfileSwitchHtmlAsync),
-                    cancellationToken)
+                    cancellationToken,
+                    waitForStartupNavigation: true)
                 .ConfigureAwait(false);
             return await CaptureProfileSwitchHtmlInSessionAsync(page, adsPowerUserId, cancellationToken)
                 .ConfigureAwait(false);
@@ -745,7 +749,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
                     browser,
                     ProfileSwitchPageUrl,
                     nameof(SwitchActiveProfileAsync),
-                    cancellationToken)
+                    cancellationToken,
+                    waitForStartupNavigation: true)
                 .ConfigureAwait(false);
 
             if (IsOnCandidatesResponsesPage(page.Url))
@@ -1130,7 +1135,13 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 DefaultViewport = null
             }).ConfigureAwait(false);
 
-            var page = await browser.NewPageAsync().ConfigureAwait(false);
+            var page = await AcquireAutomationPageAsync(
+                    browser,
+                    target,
+                    nameof(OpenUrlInRunningProfileAsync),
+                    cancellationToken,
+                    waitForStartupNavigation: true)
+                .ConfigureAwait(false);
             try
             {
                 await page.GoToAsync(target, new NavigationOptions
@@ -1150,7 +1161,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
             }
 
             _ = GlobalLogger.Instance.LogAsync(
-                "AdsPower: URL открыт в новой вкладке через CDP.",
+                "AdsPower: URL открыт через CDP.",
                 DeskLinkAuditLogLevel.Info,
                 memberName: nameof(OpenUrlInRunningProfileAsync),
                 
@@ -1698,23 +1709,30 @@ public sealed partial class AdsPowerAvitoAutomationService(
     }
 
     /// <summary>
-    /// Одна рабочая вкладка на сессию CDP: по запросу используем уже открытую AdsPower вкладку с целевой
-    /// страницей, иначе открываем новую. Остальные вкладки закрываем, чтобы автоматизация не ушла в фоновую вкладку.
+    /// Одна рабочая вкладка на сессию CDP: берём уже открытую вкладку AdsPower (в том числе стартовый
+    /// about:blank) и навигируем её. Новую вкладку через CDP не создаём, если есть хоть одна существующая —
+    /// новая about:blank в AdsPower часто остаётся мёртвой.
     /// </summary>
     private static async Task<IPage> AcquireAutomationPageAsync(
         IBrowser browser,
         string preferredUrl,
         string callerMemberName,
         CancellationToken cancellationToken,
-        bool preferExistingMatchingPage = false)
+        bool waitForStartupNavigation = false)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
+        if (waitForStartupNavigation)
+        {
+            await WaitForAdsPowerStartupNavigationAsync(browser, callerMemberName, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         var targetKind = ClassifyAutomationPageKind(preferredUrl);
         var existingPages = (await browser.PagesAsync().ConfigureAwait(false)).ToList();
-        var existingWorkerPageIndex = preferExistingMatchingPage
-            ? SelectExistingAutomationPageIndex(existingPages.Select(static page => page.Url).ToArray(), preferredUrl)
-            : -1;
+        var existingWorkerPageIndex = SelectExistingAutomationPageIndex(
+            existingPages.Select(static page => page.Url).ToArray(),
+            preferredUrl);
         var worker = existingWorkerPageIndex >= 0 ? existingPages[existingWorkerPageIndex] : null;
         worker ??= await browser.NewPageAsync().ConfigureAwait(false);
         var pagesToClose = existingPages
@@ -1747,6 +1765,56 @@ public sealed partial class AdsPowerAvitoAutomationService(
         return worker;
     }
 
+    internal static async Task WaitForAdsPowerStartupNavigationAsync(
+        IBrowser browser,
+        string callerMemberName,
+        CancellationToken cancellationToken)
+    {
+        var timeout = TimeSpan.FromMilliseconds(MonitoringTiming.AdsPowerStartupNavigationMaxWaitMs);
+        var poll = TimeSpan.FromMilliseconds(MonitoringTiming.AdsPowerStartupNavigationPollMs);
+        var elapsed = TimeSpan.Zero;
+
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var urls = (await browser.PagesAsync().ConfigureAwait(false))
+                .Select(static page => page.Url)
+                .ToArray();
+
+            if (!ShouldKeepWaitingForStartupNavigation(urls, elapsed, timeout))
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"AdsPower CDP: ожидание стартовой навигации завершено ({elapsed.TotalMilliseconds:F0} мс).",
+                    DeskLinkAuditLogLevel.Info,
+                    memberName: callerMemberName,
+                    properties: new Dictionary<string, object?>
+                    {
+                        ["automation.startupWaitMs"] = elapsed.TotalMilliseconds,
+                        ["automation.startupUrls"] = string.Join(" | ", urls)
+                    });
+                return;
+            }
+
+            await Task.Delay(poll, cancellationToken).ConfigureAwait(false);
+            elapsed += poll;
+        }
+    }
+
+    internal static bool ShouldKeepWaitingForStartupNavigation(
+        IReadOnlyList<string?> pageUrls,
+        TimeSpan elapsed,
+        TimeSpan timeout)
+    {
+        ArgumentNullException.ThrowIfNull(pageUrls);
+        if (elapsed >= timeout)
+        {
+            return false;
+        }
+
+        return pageUrls.Count == 0
+               || pageUrls.All(static url => !IsUsableWorkerPageUrl(url));
+    }
+
     internal static int SelectExistingAutomationPageIndex(
         IReadOnlyList<string?> pageUrls,
         string preferredUrl)
@@ -1764,7 +1832,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
         }
 
         // AdsPower может открыть Avito не на целевом маршруте (например, на последней странице сессии).
-        // Такая вкладка безопаснее новой about:blank: WarmUpSessionPageAsync переведёт её на нужный URL.
+        // Такую вкладку навигируем сами — это надёжнее новой CDP-вкладки.
         for (var index = 0; index < pageUrls.Count; index++)
         {
             if (IsUsableAvitoPageUrl(pageUrls[index]))
@@ -1773,7 +1841,29 @@ public sealed partial class AdsPowerAvitoAutomationService(
             }
         }
 
+        // Стартовая вкладка AdsPower почти всегда about:blank / «:». Её оставляем и ведём на URL.
+        // Новая about:blank через NewPageAsync часто остаётся мёртвой.
+        for (var index = 0; index < pageUrls.Count; index++)
+        {
+            if (IsReusableStartupPlaceholderUrl(pageUrls[index]))
+            {
+                return index;
+            }
+        }
+
         return -1;
+    }
+
+    internal static bool IsReusableStartupPlaceholderUrl(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return true;
+        }
+
+        var t = url.Trim();
+        return t.Length <= 1
+               || string.Equals(t, "about:blank", StringComparison.OrdinalIgnoreCase);
     }
 
     private static async Task<int> CloseBrowserPagesAsync(
@@ -1868,7 +1958,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
     }
 
     /// <summary>
-    /// AdsPower при старте часто отдаёт вкладку с URL «:» / about:blank — CDP на ней не рендерит Avito SPA.
+    /// URL, на котором уже можно работать (не стартовый about:blank / chrome://).
+    /// Стартовый blank не «мёртвый»: его нужно навигировать, а не открывать новую вкладку.
     /// </summary>
     private static bool IsUsableWorkerPageUrl(string? url)
     {

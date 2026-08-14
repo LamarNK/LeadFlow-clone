@@ -39,6 +39,15 @@ public static class MonitoringTiming
     public const int ParallelAccountLaunchStaggerMs = 2000;
 
     /// <summary>
+    /// После CDP-подключения ждём, пока стартовая вкладка AdsPower уйдёт с about:blank
+    /// (open_urls / восстановление сессии). Если не ушла — навигируем ту же вкладку.
+    /// </summary>
+    public const int AdsPowerStartupNavigationMaxWaitMs = 8_000;
+
+    /// <summary>Интервал опроса URL стартовой вкладки AdsPower (мс).</summary>
+    public const int AdsPowerStartupNavigationPollMs = 250;
+
+    /// <summary>
     /// После стольких полных циклов мониторинга (с browser/start…browser/stop)
     /// воркер принудительно закрывает все известные браузеры AdsPower —
     /// чтобы окна, открытые оператором «посмотреть», не висели бесконечно.
