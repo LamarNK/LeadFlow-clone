@@ -13,14 +13,51 @@ public static class CrmDailyDistribution
     public const string NdzPool = "ndz";
     public static readonly TimeSpan ShiftCollectionDelay = TimeSpan.FromMinutes(5);
 
+    private static readonly IReadOnlyList<string> PrimaryNdzAliases =
+    [
+        "НДЗ",
+        CrmStages.Ndz73
+    ];
+
+    private static readonly IReadOnlyList<string> SecondaryNdzAliases =
+    [
+        "НДЗ 2",
+        CrmStages.Ndz26
+    ];
+
     public sealed record Counter(string ManagerUserId, int AssignedCount);
     public sealed record Assignment(Guid CardId, string ManagerUserId);
+    public sealed record NdzStageSet(string? PrimaryStage, IReadOnlyList<string> Stages);
 
     public static DateOnly BusinessDate(DateTime utcNow) => CrmShiftRules.BusinessDate(utcNow);
 
     public static bool IsNdz(string? stage) =>
-        string.Equals(stage, CrmStages.Ndz73, StringComparison.Ordinal)
-        || string.Equals(stage, CrmStages.Ndz26, StringComparison.Ordinal);
+        IsPrimaryNdz(stage) || IsSecondaryNdz(stage);
+
+    public static bool IsPrimaryNdz(string? stage) =>
+        MatchesAlias(stage, PrimaryNdzAliases);
+
+    public static bool IsSecondaryNdz(string? stage) =>
+        MatchesAlias(stage, SecondaryNdzAliases);
+
+    /// <summary>
+    /// Resolves the actual NDZ stage names configured for an office. Production
+    /// offices use "НДЗ"/"НДЗ 2", while older/local funnels can still use
+    /// "НДЗ 73"/"НДЗ 2.6". Returned values preserve the office configuration
+    /// exactly so distribution never creates a foreign stage name.
+    /// </summary>
+    public static NdzStageSet ResolveNdzStages(IEnumerable<string>? officeStages)
+    {
+        var stages = (officeStages ?? [])
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        var primary = stages.FirstOrDefault(IsPrimaryNdz);
+        var recognized = stages
+            .Where(IsNdz)
+            .ToList();
+        return new NdzStageSet(primary, recognized);
+    }
 
     /// <summary>
     /// Deterministically shuffles cards and managers and produces quotas whose
@@ -58,12 +95,13 @@ public static class CrmDailyDistribution
     }
 
     /// <summary>
-    /// Selects the manager who has received the fewest leads today. Ties are
-    /// resolved by a persisted round-robin cursor, never by current workload.
+    /// Selects the next active manager using only the persisted round-robin
+    /// cursor. Earlier assignments are deliberately ignored: when the active
+    /// roster changes, each newly arriving batch is shared evenly among the
+    /// managers who are on shift at that moment.
     /// </summary>
     public static string? SelectNextForNewLead(
         IEnumerable<string> eligibleManagerUserIds,
-        IEnumerable<Counter> counters,
         string? lastManagerUserId)
     {
         var eligible = eligibleManagerUserIds
@@ -76,31 +114,23 @@ public static class CrmDailyDistribution
             return null;
         }
 
-        var counts = counters
-            .GroupBy(x => x.ManagerUserId, StringComparer.Ordinal)
-            .ToDictionary(x => x.Key, x => x.Sum(y => y.AssignedCount), StringComparer.Ordinal);
-        var minimum = eligible.Min(x => counts.GetValueOrDefault(x));
-        var tied = eligible.Where(x => counts.GetValueOrDefault(x) == minimum).ToList();
-        if (tied.Count == 1)
-        {
-            return tied[0];
-        }
-
         var lastIndex = string.IsNullOrWhiteSpace(lastManagerUserId)
             ? -1
             : eligible.IndexOf(lastManagerUserId);
-        for (var offset = 1; offset <= eligible.Count; offset++)
-        {
-            var candidate = eligible[(lastIndex + offset + eligible.Count) % eligible.Count];
-            if (tied.Contains(candidate, StringComparer.Ordinal))
-            {
-                return candidate;
-            }
-        }
-
-        return tied[0];
+        return eligible[(lastIndex + 1 + eligible.Count) % eligible.Count];
     }
 
     private static string StableKey(string value) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
+
+    private static bool MatchesAlias(string? stage, IReadOnlyList<string> aliases)
+    {
+        if (string.IsNullOrWhiteSpace(stage))
+        {
+            return false;
+        }
+
+        var normalized = stage.Trim();
+        return aliases.Any(alias => string.Equals(normalized, alias, StringComparison.OrdinalIgnoreCase));
+    }
 }

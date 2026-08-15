@@ -61,18 +61,69 @@ public sealed class CrmDailyDistributionTests
     }
 
     [Fact]
-    public void SelectNextForNewLead_UsesDailyCountAndRoundRobinCursor()
+    public void SelectNextForNewLead_UsesOnlyRoundRobinCursor()
     {
         var managers = new[] { "a", "b", "c" };
-        var counters = new[]
-        {
-            new CrmDailyDistribution.Counter("a", 8),
-            new CrmDailyDistribution.Counter("b", 7),
-            new CrmDailyDistribution.Counter("c", 7)
-        };
 
-        Assert.Equal("c", CrmDailyDistribution.SelectNextForNewLead(managers, counters, "b"));
-        Assert.Equal("b", CrmDailyDistribution.SelectNextForNewLead(managers, counters, "c"));
+        Assert.Equal("c", CrmDailyDistribution.SelectNextForNewLead(managers, "b"));
+        Assert.Equal("a", CrmDailyDistribution.SelectNextForNewLead(managers, "c"));
+        Assert.Equal("a", CrmDailyDistribution.SelectNextForNewLead(managers, null));
+    }
+
+    [Fact]
+    public void SelectNextForNewLead_TwentyFiveNewLeadsAndThreeManagers_DoesNotCatchUpNewManager()
+    {
+        var managers = new[] { "a", "b", "c" };
+        var counts = managers.ToDictionary(x => x, _ => 0, StringComparer.Ordinal);
+        string? last = "b";
+
+        for (var index = 0; index < 25; index++)
+        {
+            last = CrmDailyDistribution.SelectNextForNewLead(managers, last);
+            Assert.NotNull(last);
+            counts[last!]++;
+        }
+
+        Assert.Equal(25, counts.Values.Sum());
+        Assert.Equal(1, counts.Values.Max() - counts.Values.Min());
+        Assert.All(counts.Values, count => Assert.InRange(count, 8, 9));
+    }
+
+    [Fact]
+    public void ResolveNdzStages_UsesProductionOfficeNamesWithoutMatchingSubstituteStages()
+    {
+        var resolved = CrmDailyDistribution.ResolveNdzStages(
+        [
+            "Лид",
+            "Недоступные подменные",
+            "НДЗ",
+            "НДЗ 2",
+            "НДЗ с подменным",
+            "НДЗ с подменным 2",
+            "Переговоры"
+        ]);
+
+        Assert.Equal("НДЗ", resolved.PrimaryStage);
+        Assert.Equal(["НДЗ", "НДЗ 2"], resolved.Stages);
+    }
+
+    [Theory]
+    [InlineData("НДЗ")]
+    [InlineData("НДЗ 2")]
+    [InlineData("НДЗ 73")]
+    [InlineData("НДЗ 2.6")]
+    public void IsNdz_AcceptsProductionAndLocalAliases(string stage)
+    {
+        Assert.True(CrmDailyDistribution.IsNdz(stage));
+    }
+
+    [Theory]
+    [InlineData("Недоступные подменные")]
+    [InlineData("НДЗ с подменным")]
+    [InlineData("НДЗ с подменным 2")]
+    public void IsNdz_DoesNotMixSubstitutePoolsIntoRegularNdz(string stage)
+    {
+        Assert.False(CrmDailyDistribution.IsNdz(stage));
     }
 
     [Fact]

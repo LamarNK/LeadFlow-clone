@@ -243,6 +243,47 @@ public sealed class CrmWorkspaceServiceTests
     }
 
     [Fact]
+    public async Task DailyDistribution_UsesProductionNdzStageNamesFromOfficeFunnel()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(
+            harness.Db,
+            crmEnabled: true,
+            stages: ["Лид", "НДЗ", "НДЗ 2", "Переговоры", "Анкета"]);
+        var first = await harness.CreateManagerAsync("prod-ndz-1@test.local", capacity: 1, onShift: false);
+        var second = await harness.CreateManagerAsync("prod-ndz-2@test.local", capacity: 1, onShift: false);
+        Assert.True(await harness.Sut.StartShiftAsync(OfficeId, first.Id));
+        Assert.True(await harness.Sut.StartShiftAsync(OfficeId, second.Id));
+
+        for (var index = 0; index < 9; index++)
+        {
+            var response = await SeedResponseAsync(harness.Db, $"prod-ndz-{index}");
+            var card = NewCard(response.Id);
+            card.Stage = index < 3 ? CrmStages.Lead : index % 2 == 0 ? "НДЗ" : "НДЗ 2";
+            harness.Db.CrmCandidateCards.Add(card);
+        }
+
+        await harness.Db.SaveChangesAsync();
+        harness.Clock.Advance(TimeSpan.FromMinutes(6));
+        await harness.Sut.ProcessDueDailyDistributionsAsync();
+
+        var cards = await harness.Db.CrmCandidateCards.ToListAsync();
+        Assert.Equal(9, cards.Count);
+        Assert.DoesNotContain(cards, card => card.Stage == "НДЗ 2");
+        Assert.Equal(6, cards.Count(card => card.Stage == "НДЗ"));
+        Assert.DoesNotContain(cards, card => card.Stage == CrmStages.Ndz73 || card.Stage == CrmStages.Ndz26);
+        Assert.All(cards, card => Assert.Contains(card.ManagerUserId, new[] { first.Id, second.Id }));
+
+        var ndzCounts = cards
+            .Where(card => card.Stage == "НДЗ")
+            .GroupBy(card => card.ManagerUserId)
+            .Select(group => group.Count())
+            .OrderBy(count => count)
+            .ToList();
+        Assert.Equal([3, 3], ndzCounts);
+    }
+
+    [Fact]
     public async Task NewLeadsDuringDay_ContinueByDailyReceivedCount()
     {
         await using var harness = await Harness.CreateAsync();
@@ -1574,7 +1615,10 @@ public sealed class CrmWorkspaceServiceTests
         StageChangedAtUtc = DateTime.UtcNow
     };
 
-    private static void SeedOffice(OrbitaDbContext db, bool crmEnabled)
+    private static void SeedOffice(
+        OrbitaDbContext db,
+        bool crmEnabled,
+        IReadOnlyList<string>? stages = null)
     {
         db.Offices.Add(new OfficeEntity
         {
@@ -1583,7 +1627,8 @@ public sealed class CrmWorkspaceServiceTests
             RegistrationSecretHash = "hash",
             CreatedAtUtc = DateTime.UtcNow,
             IsEnabled = true,
-            CrmEnabled = crmEnabled
+            CrmEnabled = crmEnabled,
+            CrmStagesJson = stages is null ? null : CrmStages.Serialize(stages)
         });
         db.Workers.Add(new WorkerEntity
         {

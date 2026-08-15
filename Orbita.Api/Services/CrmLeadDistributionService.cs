@@ -10,7 +10,8 @@ namespace Orbita.Api.Services;
 /// <summary>
 /// Daily native-CRM distribution. The first eligible shift opens a persisted
 /// five-minute collection window. Leads and NDZ are then balanced separately;
-/// later leads use a daily counter instead of capacity or current workload.
+/// later leads use round-robin among the managers currently on shift, without
+/// compensating for cards assigned before the active roster changed.
 /// </summary>
 public sealed class CrmLeadDistributionService(
     OrbitaDbContext db,
@@ -87,7 +88,6 @@ public sealed class CrmLeadDistributionService(
                 .ToListAsync(ct);
             var selected = CrmDailyDistribution.SelectNextForNewLead(
                 managers.Select(x => x.UserId),
-                counters.Select(x => new CrmDailyDistribution.Counter(x.ManagerUserId, x.AssignedCount)),
                 session.LastLeadManagerUserId);
             if (selected is null)
             {
@@ -318,12 +318,17 @@ public sealed class CrmLeadDistributionService(
             return false;
         }
 
+        var officeStagesJson = await db.Offices.AsNoTracking()
+            .Where(x => x.Id == officeId)
+            .Select(x => x.CrmStagesJson)
+            .SingleOrDefaultAsync(ct);
+        var ndzStages = CrmDailyDistribution.ResolveNdzStages(
+            CrmStages.Resolve(officeStagesJson));
         var cards = await db.CrmCandidateCards
             .Where(x => x.OfficeId == officeId
                         && !x.IsClosed
                         && (x.Stage == CrmStages.Lead
-                            || x.Stage == CrmStages.Ndz73
-                            || x.Stage == CrmStages.Ndz26))
+                            || ndzStages.Stages.Contains(x.Stage)))
             .ToListAsync(ct);
         var managerIds = managers.Select(x => x.UserId).ToList();
         var leadPlan = CrmDailyDistribution.BuildBalancedPlan(
@@ -357,7 +362,7 @@ public sealed class CrmLeadDistributionService(
             session.LocalDate,
             CrmDailyDistribution.LeadPool,
             ReasonDailyLead,
-            normalizeNdz: false,
+            normalizeNdzTo: null,
             now);
         ApplyMorningPlan(
             ndzPlan,
@@ -367,7 +372,7 @@ public sealed class CrmLeadDistributionService(
             session.LocalDate,
             CrmDailyDistribution.NdzPool,
             ReasonDailyNdz,
-            normalizeNdz: true,
+            normalizeNdzTo: ndzStages.PrimaryStage,
             now);
 
         session.ManagerRosterJson = JsonSerializer.Serialize(managerIds.OrderBy(x => x, StringComparer.Ordinal));
@@ -396,7 +401,7 @@ public sealed class CrmLeadDistributionService(
         DateOnly localDate,
         string pool,
         string reason,
-        bool normalizeNdz,
+        string? normalizeNdzTo,
         DateTime now)
     {
         foreach (var assignment in plan)
@@ -410,17 +415,18 @@ public sealed class CrmLeadDistributionService(
                 card.ManagerUserId,
                 assignment.ManagerUserId,
                 StringComparison.Ordinal);
-            if (normalizeNdz && !string.Equals(card.Stage, CrmStages.Ndz73, StringComparison.Ordinal))
+            if (!string.IsNullOrWhiteSpace(normalizeNdzTo)
+                && !string.Equals(card.Stage, normalizeNdzTo, StringComparison.Ordinal))
             {
                 var previous = card.Stage;
-                card.Stage = CrmStages.Ndz73;
+                card.Stage = normalizeNdzTo;
                 card.StageChangedAtUtc = now;
                 db.CrmCandidateHistory.Add(new CrmCandidateHistoryEntity
                 {
                     Id = Guid.NewGuid(),
                     CardId = card.Id,
                     Action = "StageChanged",
-                    Details = $"{previous} → {CrmStages.Ndz73} · {reason}",
+                    Details = $"{previous} → {normalizeNdzTo} · {reason}",
                     ActorUserId = "system",
                     ActorName = "Система",
                     CreatedAtUtc = now
