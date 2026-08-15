@@ -710,6 +710,142 @@
         initBoardDragAndDrop(root);
     };
 
+    const initCrmBulkActions = (root) => {
+        if (root.dataset.crmBulkReady === 'true') return;
+
+        const toolbar = root.querySelector('[data-crm-bulk-actions]');
+        const checkboxes = Array.from(root.querySelectorAll('[data-crm-card-select]'));
+        const forms = Array.from(root.querySelectorAll('[data-crm-bulk-form]'));
+        const modal = root.querySelector('[data-crm-bulk-modal]');
+        if (!toolbar || checkboxes.length === 0 || !modal) return;
+
+        root.dataset.crmBulkReady = 'true';
+        const countLabels = Array.from(root.querySelectorAll('[data-crm-bulk-count], [data-crm-bulk-modal-count]'));
+        const operationField = modal.querySelector('[data-crm-bulk-operation]');
+        const stageField = modal.querySelector('[data-crm-bulk-stage-field]');
+        const stageSelect = modal.querySelector('[data-crm-bulk-stage-select]');
+        const closeField = modal.querySelector('[data-crm-bulk-close-field]');
+        const closeSelect = modal.querySelector('[data-crm-bulk-close-select]');
+        const stageTrigger = toolbar.querySelector('[data-crm-bulk-stage-trigger]');
+        const modalTitle = modal.querySelector('[data-crm-bulk-modal-title]');
+        const commentLabel = modal.querySelector('[data-crm-bulk-comment-label]');
+        const comment = modal.querySelector('[data-crm-bulk-comment]');
+        const submit = modal.querySelector('[data-crm-bulk-submit]');
+        const reasonRequired = root.dataset.crmBulkReasonRequired === 'true';
+
+        const selectedIds = () => checkboxes
+            .filter((checkbox) => checkbox.checked)
+            .map((checkbox) => checkbox.value)
+            .filter(Boolean);
+
+        const syncFormCardIds = () => {
+            const ids = selectedIds();
+            forms.forEach((form) => {
+                const container = form.querySelector('[data-crm-bulk-card-fields]');
+                if (!container) return;
+                container.replaceChildren(...ids.map((id) => {
+                    const input = document.createElement('input');
+                    input.type = 'hidden';
+                    input.name = 'cardIds';
+                    input.value = id;
+                    return input;
+                }));
+            });
+            return ids;
+        };
+
+        const updateSelection = () => {
+            const ids = syncFormCardIds();
+            countLabels.forEach((label) => { label.textContent = String(ids.length); });
+            toolbar.hidden = ids.length === 0;
+            checkboxes.forEach((checkbox) => {
+                checkbox.closest('.crm-tile')?.classList.toggle('is-bulk-selected', checkbox.checked);
+            });
+            return ids;
+        };
+
+        const closeModal = () => {
+            modal.hidden = true;
+            document.body.classList.remove('orbita-modal-open');
+            if (stageTrigger) stageTrigger.value = '';
+        };
+
+        const openModal = (operation, selectedStage = '') => {
+            const ids = updateSelection();
+            if (ids.length === 0) return;
+
+            const isClose = operation === 'close';
+            if (operationField) operationField.value = isClose ? 'close' : 'move';
+            if (stageField) stageField.hidden = isClose;
+            if (stageSelect) {
+                stageSelect.disabled = isClose;
+                stageSelect.required = !isClose;
+                if (!isClose && selectedStage) stageSelect.value = selectedStage;
+            }
+            if (closeField) closeField.hidden = !isClose;
+            if (closeSelect) {
+                closeSelect.disabled = !isClose;
+                closeSelect.required = isClose;
+            }
+            if (modalTitle) modalTitle.textContent = isClose ? 'Закрыть выбранные карточки' : 'Сменить этап карточек';
+            if (commentLabel) {
+                commentLabel.textContent = (isClose ? 'Причина закрытия' : 'Причина смены этапа') + (reasonRequired ? ' *' : '');
+            }
+            if (comment) {
+                comment.placeholder = reasonRequired ? 'Обязательно укажите причину' : 'Можно оставить пустым';
+                comment.required = reasonRequired;
+            }
+            if (submit) {
+                submit.innerHTML = isClose
+                    ? '<i class="fa-solid fa-box-archive" aria-hidden="true"></i>Закрыть карточки'
+                    : '<i class="fa-solid fa-check" aria-hidden="true"></i>Сменить этап';
+                submit.classList.toggle('is-danger', isClose);
+            }
+
+            modal.hidden = false;
+            document.body.classList.add('orbita-modal-open');
+            window.setTimeout(() => (isClose ? closeSelect : stageSelect)?.focus(), 0);
+        };
+
+        checkboxes.forEach((checkbox) => {
+            checkbox.addEventListener('change', updateSelection);
+            checkbox.addEventListener('click', (event) => event.stopPropagation());
+            checkbox.closest('.crm-tile__select')?.addEventListener('dragstart', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+            });
+        });
+
+        toolbar.querySelector('[data-crm-bulk-clear]')?.addEventListener('click', () => {
+            checkboxes.forEach((checkbox) => { checkbox.checked = false; });
+            updateSelection();
+        });
+        root.querySelectorAll('[data-crm-bulk-transition-open]').forEach((button) => {
+            button.addEventListener('click', () => openModal(button.dataset.crmBulkTransitionOpen || 'move'));
+        });
+        stageTrigger?.addEventListener('change', () => {
+            if (!stageTrigger.value) return;
+            openModal('move', stageTrigger.value);
+        });
+        modal.querySelectorAll('[data-crm-bulk-modal-close]').forEach((button) => {
+            button.addEventListener('click', closeModal);
+        });
+        modal.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') closeModal();
+        });
+        forms.forEach((form) => {
+            form.addEventListener('submit', (event) => {
+                if (syncFormCardIds().length > 0) return;
+                event.preventDefault();
+                if (window.Orbita && typeof window.Orbita.toast === 'function') {
+                    window.Orbita.toast('Выберите хотя бы одну карточку.', { variant: 'error' });
+                }
+            });
+        });
+
+        updateSelection();
+    };
+
     const initCrmFunnelEditor = (form) => {
         if (form.dataset.crmFunnelReady === 'true') return;
 
@@ -1043,6 +1179,7 @@
         });
 
         document.querySelectorAll('[data-crm-board-carousel]').forEach(initBoardNavigation);
+        document.querySelectorAll('[data-crm-bulk-board="true"]').forEach(initCrmBulkActions);
         document.querySelectorAll('[data-crm-funnel-editor]').forEach(initCrmFunnelEditor);
         initClosedArchiveNavigation();
         initResponsibleAutoFilter();

@@ -293,6 +293,74 @@ public static class CrmEndpoints
                 : Results.File(avatar.Bytes, avatar.ContentType);
         });
 
+        crmBoard.MapPost("/cards/bulk/assign", async (
+            CrmBulkAssignRequest request,
+            CrmWorkspaceService workspace,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrWhiteSpace(userId) || !PanelRoles.HasElevatedOfficeAccess(principal))
+            {
+                return Results.Forbid();
+            }
+
+            if (request.CardIds is null
+                || request.CardIds.Count is < 1 or > 500
+                || string.IsNullOrWhiteSpace(request.ManagerUserId))
+            {
+                return Results.BadRequest(new { error = "Выберите от 1 до 500 карточек и ответственного." });
+            }
+
+            return Results.Ok(await workspace.BulkAssignAsync(request, userId, ct));
+        });
+
+        crmBoard.MapPost("/cards/bulk/transition", async (
+            CrmBulkTransitionRequest request,
+            CrmWorkspaceService workspace,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrWhiteSpace(userId) || !PanelRoles.HasElevatedOfficeAccess(principal))
+            {
+                return Results.Forbid();
+            }
+
+            if (request.CardIds is null
+                || request.CardIds.Count is < 1 or > 500
+                || !CrmBulkTransitionOperations.IsValid(request.Operation))
+            {
+                return Results.BadRequest(new { error = "Выберите от 1 до 500 карточек и действие." });
+            }
+
+            var requiresComment = principal.IsInRole(PanelRoles.SeniorManager)
+                                  && !principal.IsInRole(PanelRoles.OfficeLead)
+                                  && !principal.IsInRole(PanelRoles.Admin);
+            if (requiresComment && string.IsNullOrWhiteSpace(request.Comment))
+            {
+                return Results.BadRequest(new { error = "Старшему менеджеру необходимо указать причину массового изменения." });
+            }
+
+            if (request.Operation == CrmBulkTransitionOperations.Move && string.IsNullOrWhiteSpace(request.Stage))
+            {
+                return Results.BadRequest(new { error = "Выберите новый этап." });
+            }
+
+            if (request.Operation == CrmBulkTransitionOperations.Close && !CrmCloseReasons.IsValid(request.CloseReason))
+            {
+                return Results.BadRequest(new { error = "Выберите тип закрытия." });
+            }
+
+            var auditComment = string.IsNullOrWhiteSpace(request.Comment)
+                ? request.Operation == CrmBulkTransitionOperations.Close
+                    ? "Массовое закрытие карточек."
+                    : "Массовая смена этапа."
+                : request.Comment.Trim();
+            var normalized = request with { Comment = auditComment };
+            return Results.Ok(await workspace.BulkTransitionAsync(normalized, userId, ct));
+        });
+
         crmBoard.MapPost("/cards/{cardId:guid}/move", async (Guid cardId, CrmMoveRequest request, CrmWorkspaceService workspace, ClaimsPrincipal principal, CancellationToken ct) =>
         {
             var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
