@@ -48,7 +48,7 @@ else
             @if (report.ZeroLeadAccountCount > 0)
             {
                 <p class="monitoring-report-zero-leads cell-muted" data-statistics-cycle-zero-leads>
-                    Ещё @report.ZeroLeadAccountCount аккаунт(ов) без найденных откликов за период
+                    Ещё @report.ZeroLeadAccountCount аккаунт(ов) без успешно обработанных откликов за период
                 </p>
             }
         </section>
@@ -57,7 +57,7 @@ else
     @if (report.IsDetailed && report.AccountReports.Count > 0)
     {
         <p class="monitoring-report-hint cell-muted">
-            «Успешное завершение» — проход субпрофиля без ошибки. «Откликов» — сколько найдено в каждом таком проходе.
+            «Успешное завершение» — проход субпрофиля без ошибки. «Откликов» — сколько успешно обработано и передано в Орбиту в каждом таком проходе.
             Внизу перечислены только суб-профили, которые не были запущены до прерывания цикла.
         </p>
     }

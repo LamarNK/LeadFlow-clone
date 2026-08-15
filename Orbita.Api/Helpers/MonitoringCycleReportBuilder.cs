@@ -213,12 +213,12 @@ internal static partial class MonitoringCycleReportBuilder
                             ? posToName[position]
                             : run.SubProfileName.Trim();
 
-                        // FoundCount is the number of responses found during this successful pass.
+                        // PublishedCount is the number of responses successfully processed in this pass.
                         if (run.Outcome == MonitoringSubProfileRunOutcomes.Completed
                             && run.CompletedAtUtc is DateTime completedAt)
                         {
                             posTimes[position].Add(completedAt);
-                            posResponses[position].Add(run.FoundCount.ToString(CultureInfo.InvariantCulture));
+                            posResponses[position].Add(run.PublishedCount.ToString(CultureInfo.InvariantCulture));
                         }
                         else if (run.Outcome == MonitoringSubProfileRunOutcomes.Failed)
                         {
@@ -267,7 +267,7 @@ internal static partial class MonitoringCycleReportBuilder
                     .SelectMany(c => c.SubProfiles)
                     .Where(run => run.Outcome == MonitoringSubProfileRunOutcomes.Completed
                         && run.CompletedAtUtc is not null)
-                    .Sum(run => run.FoundCount);
+                    .Sum(run => run.PublishedCount);
                 var leadParts = new List<string>();
                 foreach (var position in posToName.Keys.OrderBy(x => x))
                 {
@@ -276,7 +276,7 @@ internal static partial class MonitoringCycleReportBuilder
                         .Where(run => MatchRunToRowPosition(run, rowsMeta) == position)
                         .Where(run => run.Outcome == MonitoringSubProfileRunOutcomes.Completed
                             && run.CompletedAtUtc is not null)
-                        .Sum(run => run.FoundCount);
+                        .Sum(run => run.PublishedCount);
                     if (positionResponseTotal > 0)
                     {
                         leadParts.Add($"{position}/{totalPositions} ({posToName[position]}) = {positionResponseTotal}");
